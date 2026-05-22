@@ -13,3 +13,11 @@ bench2 = "bench2.cli:cli"
 
 [tool.setuptools.packages.find]
 where = ["."]
+
+[tool.setuptools.package-data]
+bench2 = [
+  "admin/templates/**/*.html",
+  "admin/templates/*.html",
+  "admin/static/*.css",
+  "admin/static/fonts/*.woff2",
+]

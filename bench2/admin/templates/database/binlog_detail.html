@@ -1,19 +1,23 @@
 {% extends 'base.html' %}
 {% block content %}
 
-<p>Database / <a href="/database/binlogs">Binary logs</a> / <strong>{{ log_name }}</strong></p>
+<div class="breadcrumb">
+  <a href="/database/binlogs">Database</a>
+  <span class="breadcrumb-sep">/</span>
+  <a href="/database/binlogs">Binary logs</a>
+  <span class="breadcrumb-sep">/</span>
+  <strong class="mono">{{ log_name }}</strong>
+</div>
 
-<p>
-  Showing events {{ offset + 1 }}–{{ offset + events | length }}
-  &nbsp;
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;font-size:13px;color:var(--gray-600)">
+  Events {{ offset + 1 }}–{{ offset + events | length }}
   {% if offset > 0 %}
-  <a href="/database/binlogs/{{ log_name }}?offset={{ [offset - limit, 0] | max }}&limit={{ limit }}">← prev</a>
+  &nbsp;<a href="/database/binlogs/{{ log_name }}?offset={{ [offset - limit, 0] | max }}&limit={{ limit }}" class="btn" style="text-decoration:none">← Prev</a>
   {% endif %}
-  &nbsp;
   {% if events | length == limit %}
-  <a href="/database/binlogs/{{ log_name }}?offset={{ offset + limit }}&limit={{ limit }}">next →</a>
+  <a href="/database/binlogs/{{ log_name }}?offset={{ offset + limit }}&limit={{ limit }}" class="btn" style="text-decoration:none">Next →</a>
   {% endif %}
-</p>
+</div>
 
 <div class="card">
   <table>
@@ -23,14 +27,14 @@
     <tbody>
       {% for event in events %}
       <tr>
-        <td>{{ event.pos }}</td>
+        <td class="mono">{{ event.pos }}</td>
         <td>{{ event.event_type }}</td>
-        <td>{{ event.server_id }}</td>
-        <td>{{ event.end_log_pos }}</td>
-        <td>{{ event.info }}</td>
+        <td class="text-muted">{{ event.server_id }}</td>
+        <td class="mono text-muted">{{ event.end_log_pos }}</td>
+        <td class="text-muted">{{ event.info }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="5">No events found.</td></tr>
+      <tr><td colspan="5" class="text-muted">No events found.</td></tr>
       {% endfor %}
     </tbody>
   </table>

@@ -1,42 +1,43 @@
 {% extends 'base.html' %}
 {% block content %}
 
-<h2>Apps ({{ apps | length }})</h2>
+<h2>Apps <span class="text-muted" style="font-weight:400;font-size:13px">({{ apps | length }})</span></h2>
 
 <div class="card">
   <table>
     <thead>
-      <tr><th>Name</th><th>Repo</th><th>Branch</th><th>Installed</th></tr>
+      <tr><th>Name</th><th>Repo</th><th>Branch</th><th>Commit</th><th>Dirty</th><th>Version</th></tr>
     </thead>
     <tbody>
       {% for app in apps %}
       <tr>
-        <td>{{ app.name }}</td>
-        <td>{{ app.repo }}</td>
-        <td>{{ app.branch }}</td>
-        <td>{{ app.installed_version or '—' }}</td>
+        <td><strong>{{ app.name }}</strong></td>
+        <td class="text-muted">{{ app.repo }}</td>
+        <td class="mono">{{ app.branch }}</td>
+        <td class="mono text-muted">
+          {% if app.is_cloned %}
+            {{ app.current_commit }}
+            {% if app.commit_message %}
+              &nbsp;<span class="text-muted" style="font-family:inherit;font-size:12px">"{{ app.commit_message }}"</span>
+            {% endif %}
+          {% else %}
+            not cloned
+          {% endif %}
+        </td>
+        <td>
+          {% if app.uncommitted_changes %}
+            <span class="badge status-stopped">uncommitted</span>
+          {% else %}
+            <span class="text-muted">clean</span>
+          {% endif %}
+        </td>
+        <td class="text-muted">{{ app.installed_version or '—' }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="4">No apps configured.</td></tr>
+      <tr><td colspan="6" class="text-muted">No apps configured.</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
-
-{% for app in apps %}
-<div class="card">
-  <strong>{{ app.name }}</strong>
-  <table>
-    <tr>
-      <th>Commit</th>
-      <td>{% if app.is_cloned %}{{ app.current_commit }} &nbsp; "{{ app.commit_message }}"{% else %}not cloned{% endif %}</td>
-    </tr>
-    <tr>
-      <th>Dirty</th>
-      <td>{% if app.uncommitted_changes %}yes ⚠ (uncommitted changes present){% else %}no{% endif %}</td>
-    </tr>
-  </table>
-</div>
-{% endfor %}
 
 {% endblock %}

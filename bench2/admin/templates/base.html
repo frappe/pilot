@@ -4,41 +4,31 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>bench2 admin</title>
-  <style>
-    body { font-family: monospace; padding: 1rem 2rem; }
-    table { border-collapse: collapse; width: 100%; }
-    th, td { text-align: left; padding: 0.3rem 0.8rem; border-bottom: 1px solid #ddd; }
-    .status-running { color: green; }
-    .status-stopped { color: orange; }
-    .status-error, .status-failed { color: red; }
-    .status-unknown, .status-killed { color: grey; }
-    .status-success { color: green; }
-    pre { background: #f5f5f5; padding: 1rem; overflow-x: auto; }
-    .card { border: 1px solid #ddd; padding: 1rem; margin-bottom: 1rem; }
-    nav a { margin-right: 1rem; }
-    .badge { padding: 0.1rem 0.5rem; border-radius: 3px; font-size: 0.85em; }
-    header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #333; margin-bottom: 1rem; padding-bottom: 0.5rem; }
-    footer { border-top: 1px solid #ddd; margin-top: 2rem; padding-top: 0.5rem; color: #999; font-size: 0.85em; }
-    form { display: inline; }
-    button { font-family: monospace; cursor: pointer; }
-  </style>
+  <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <header>
-    <strong>bench2 admin</strong>
-    <nav>
-      <a href="/">Dashboard</a>
-      <a href="/apps">Apps</a>
-      <a href="/sites">Sites</a>
-      <a href="/processes">Processes</a>
-      <a href="/logs">Logs</a>
-      <a href="/database/binlogs">Database</a>
-      <a href="/tasks">Tasks</a>
-    </nav>
-  </header>
+  <div class="layout">
+    <header>
+      <a class="header-brand" href="/">
+        <span class="brand-icon">b2</span>
+        bench2
+      </a>
+      <nav>
+        <a href="/" class="{{ 'active' if request.path == '/' else '' }}">Dashboard</a>
+        <a href="/apps" class="{{ 'active' if request.path.startswith('/apps') else '' }}">Apps</a>
+        <a href="/sites" class="{{ 'active' if request.path.startswith('/sites') else '' }}">Sites</a>
+        <a href="/processes" class="{{ 'active' if request.path.startswith('/processes') else '' }}">Processes</a>
+        <a href="/logs" class="{{ 'active' if request.path.startswith('/logs') else '' }}">Logs</a>
+        <a href="/database/binlogs" class="{{ 'active' if request.path.startswith('/database') else '' }}">Database</a>
+        <a href="/tasks" class="{{ 'active' if request.path.startswith('/tasks') else '' }}">Tasks</a>
+      </nav>
+    </header>
 
-  {% block content %}{% endblock %}
+    <main class="main">
+      {% block content %}{% endblock %}
+    </main>
 
-  <footer>bench2 &middot; reads filesystem on every request &middot; no state stored</footer>
+    <footer>bench2 &middot; reads filesystem on every request &middot; no state stored</footer>
+  </div>
 </body>
 </html>

@@ -62,6 +62,11 @@ nginx:
 letsencrypt:
   email: admin@example.com  # required if any site has ssl: true
   webroot_path: /var/www/letsencrypt
+
+# ── Admin UI ──────────────────────────────────────────────────────────────────
+admin:
+  port: 8002     # port the admin UI listens on (bench2 start-admin)
+  timeout: 900   # seconds of inactivity before auto-stop (default: 15 min)
 ```
 
 ---
@@ -154,6 +159,13 @@ Omit this section entirely for development benches. The section is only read by 
 |-------|------|----------|---------|-------------|
 | `email` | string | yes (if any `ssl: true`) | — | Contact email for ACME account registration. |
 | `webroot_path` | string | no | `/var/www/letsencrypt` | Directory certbot writes HTTP-01 challenge files to. Nginx serves this path at `/.well-known/acme-challenge/`. |
+
+### `admin`
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `port` | int | no | `8002` | Port the admin UI listens on when started with `bench2 start-admin`. The `--port` CLI flag overrides this. |
+| `timeout` | int | no | `900` | Seconds of inactivity before the admin process auto-stops. Default is 15 minutes (900 s). |
 
 ---
 

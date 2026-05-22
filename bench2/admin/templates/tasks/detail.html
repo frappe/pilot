@@ -1,18 +1,21 @@
 {% extends 'base.html' %}
 {% block content %}
 
-<p>
-  <a href="/tasks">← Tasks</a> /
-  {% if task.args %}
-    {{ task.command }} — {{ task.args.values() | join(', ') }}
-  {% else %}
-    {{ task.command }}
-  {% endif %}
-</p>
+<div class="breadcrumb">
+  <a href="/tasks">Tasks</a>
+  <span class="breadcrumb-sep">/</span>
+  <strong>
+    {% if task.args %}
+      {{ task.command }} — {{ task.args.values() | join(', ') }}
+    {% else %}
+      {{ task.command }}
+    {% endif %}
+  </strong>
+</div>
 
 <div class="card" id="task-header">
-  <strong>Task</strong>
-  <table>
+  <div class="card-header"><h3>Task</h3></div>
+  <table class="kv-table">
     <tr><th>Command</th><td>{{ task.command }}</td></tr>
     {% for key, value in task.args.items() %}
     <tr><th>{{ key }}</th><td>{{ value }}</td></tr>
@@ -20,28 +23,30 @@
     <tr>
       <th>Status</th>
       <td>
-        <span id="status-badge" class="status-{{ task.status }}">
-          {% if task.status == 'success' %}✓{% elif task.status == 'failed' %}✗{% elif task.status == 'running' %}●{% else %}—{% endif %}
+        <span id="status-badge" class="badge status-{{ task.status }}">
+          <span class="badge-dot status-{{ task.status }}"></span>
           {{ task.status }}
         </span>
         {% if task.status == 'running' %}
         &nbsp;
-        <form action="/tasks/{{ task.task_id }}/kill" method="post" id="kill-form" style="display:inline">
-          <button type="submit">[ Kill ]</button>
+        <form action="/tasks/{{ task.task_id }}/kill" method="post" id="kill-form">
+          <button type="submit" class="btn-danger">Kill</button>
         </form>
         {% endif %}
       </td>
     </tr>
-    <tr><th>Started</th><td>{{ task.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</td></tr>
-    <tr><th>Finished</th><td id="finished-at">{{ task.finished_at.strftime('%Y-%m-%d %H:%M:%S') if task.finished_at else '—' }}</td></tr>
-    <tr><th>Exit code</th><td id="exit-code">{{ task.exit_code if task.exit_code is not none else '—' }}</td></tr>
+    <tr><th>Started</th><td class="text-muted">{{ task.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</td></tr>
+    <tr><th>Finished</th><td id="finished-at" class="text-muted">{{ task.finished_at.strftime('%Y-%m-%d %H:%M:%S') if task.finished_at else '—' }}</td></tr>
+    <tr><th>Exit code</th><td id="exit-code" class="mono">{{ task.exit_code if task.exit_code is not none else '—' }}</td></tr>
   </table>
 </div>
 
 <div class="card">
-  <strong>Output</strong>
-  <pre id="output">{% for line in output %}{{ line }}
+  <div class="card-header"><h3>Output</h3></div>
+  <div style="padding:0">
+    <pre id="output" style="border-radius:0;margin:0">{% for line in output %}{{ line }}
 {% endfor %}</pre>
+  </div>
 </div>
 
 {% if task.status == 'running' %}
@@ -60,16 +65,14 @@
     es.close();
     const exitCode = parseInt(event.data);
     const newStatus = exitCode === 0 ? 'success' : 'failed';
-    const icon = exitCode === 0 ? '✓' : '✗';
-    statusBadge.className = 'status-' + newStatus;
-    statusBadge.textContent = icon + ' ' + newStatus;
+    statusBadge.className = 'badge status-' + newStatus;
+    statusBadge.innerHTML =
+      '<span class="badge-dot status-' + newStatus + '"></span>' + newStatus;
     document.getElementById('exit-code').textContent = exitCode;
     if (killForm) killForm.style.display = 'none';
   });
 
-  es.onerror = function() {
-    es.close();
-  };
+  es.onerror = function() { es.close(); };
 </script>
 {% endif %}
 

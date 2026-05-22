@@ -95,9 +95,9 @@ def kill_orphaned(context: click.Context) -> None:
 
 
 @cli.command("start-admin")
-@click.option("--port", default=8002, type=int, help="Port for the admin interface.")
+@click.option("--port", default=None, type=int, help="Port for the admin interface (overrides bench.yml admin.port).")
 @click.pass_context
-def start_admin(context: click.Context, port: int) -> None:
+def start_admin(context: click.Context, port: int | None) -> None:
     """Start the admin UI as a background daemon."""
     try:
         from bench2.commands.start_admin import StartAdminCommand

@@ -12,20 +12,25 @@
       {% for process in processes %}
       <tr>
         <td>{{ process.name }}</td>
-        <td class="status-{{ process.status }}">● {{ process.status }}</td>
-        <td>{{ process.pid or '—' }}</td>
-        <td>{{ process.uptime or '—' }}</td>
-        <td><a href="/logs/{{ process.name }}.log">[▶] {{ process.name }}.log</a></td>
+        <td>
+          <span class="badge status-{{ process.status }}">
+            <span class="badge-dot status-{{ process.status }}"></span>
+            {{ process.status }}
+          </span>
+        </td>
+        <td class="mono text-muted">{{ process.pid or '—' }}</td>
+        <td class="text-muted">{{ process.uptime or '—' }}</td>
+        <td><a href="/logs/{{ process.name }}.log">{{ process.name }}.log</a></td>
       </tr>
       {% else %}
-      <tr><td colspan="5">No processes found.</td></tr>
+      <tr><td colspan="5" class="text-muted">No processes found.</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
 
 {% if process_manager == 'supervisor' %}
-<p><em>Note: manage via <code>supervisorctl -c config/supervisor.conf</code></em></p>
+<p class="text-muted" style="font-size:12px">Manage via <code>supervisorctl -c config/supervisor.conf</code></p>
 {% endif %}
 
 {% endblock %}

@@ -1,24 +1,28 @@
 {% extends 'base.html' %}
 {% block content %}
 
-<p>
-  <a href="/logs">Logs</a> / <strong>{{ filename }}</strong>
-  &nbsp;&nbsp;
+<div class="breadcrumb">
+  <a href="/logs">Logs</a>
+  <span class="breadcrumb-sep">/</span>
+  <strong class="mono">{{ filename }}</strong>
   {% if stream_mode %}
-    <span class="status-running">● streaming</span>
-    &nbsp;
-    <a href="/logs/{{ filename }}">Stop</a>
+    &nbsp;<span class="badge status-running"><span class="badge-dot status-running"></span>live</span>
+  {% endif %}
+</div>
+
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+  {% if stream_mode %}
+    <a href="/logs/{{ filename }}" class="btn" style="text-decoration:none">Stop live tail</a>
   {% else %}
-    Lines:
+    <label style="font-size:13px;color:var(--gray-600)">Lines:</label>
     <select onchange="window.location='/logs/{{ filename }}?lines='+this.value">
       {% for n in [200, 500, 1000, 5000] %}
       <option value="{{ n }}" {% if n == lines_count %}selected{% endif %}>{{ n }}</option>
       {% endfor %}
     </select>
-    &nbsp;
-    <a href="/logs/{{ filename }}?stream=1">Live tail ↺</a>
+    <a href="/logs/{{ filename }}?stream=1" class="btn" style="text-decoration:none">Live tail ↺</a>
   {% endif %}
-</p>
+</div>
 
 <pre id="output">{% if not stream_mode %}{% for line in lines %}{{ line }}
 {% endfor %}{% endif %}</pre>

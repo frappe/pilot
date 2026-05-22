@@ -1,22 +1,27 @@
 {% extends 'base.html' %}
 {% block content %}
 
-<p>Database / <strong>Slow queries</strong> (showing last {{ limit }})</p>
+<div style="display:flex;gap:16px;margin-bottom:18px">
+  <a href="/database/binlogs" class="text-muted">Binary logs</a>
+  <a href="/database/slow-queries" style="font-weight:500;color:var(--gray-900)">Slow queries</a>
+</div>
+
+<h2>Slow queries <span class="text-muted" style="font-weight:400;font-size:13px">(last {{ limit }})</span></h2>
 
 <div class="card">
   <table>
     <thead>
-      <tr><th>Timestamp</th><th>Q-time</th><th>Lock</th><th>Rows examined</th><th>Rows sent</th><th>User</th><th>SQL</th></tr>
+      <tr><th>Timestamp</th><th>Query time</th><th>Lock</th><th>Rows examined</th><th>Rows sent</th><th>User</th><th>SQL</th></tr>
     </thead>
     <tbody>
       {% for query in queries %}
       <tr>
-        <td>{{ query.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        <td class="mono text-muted">{{ query.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
         <td>{{ query.query_time }}s</td>
-        <td>{{ query.lock_time }}s</td>
-        <td>{{ query.rows_examined }}</td>
-        <td>{{ query.rows_sent }}</td>
-        <td>{{ query.user_host }}</td>
+        <td class="text-muted">{{ query.lock_time }}s</td>
+        <td class="text-muted">{{ query.rows_examined }}</td>
+        <td class="text-muted">{{ query.rows_sent }}</td>
+        <td class="text-muted">{{ query.user_host }}</td>
         <td>
           <details>
             <summary>show SQL</summary>
@@ -25,12 +30,10 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="7">No slow queries found.</td></tr>
+      <tr><td colspan="7" class="text-muted">No slow queries found.</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
-
-<p><a href="/database/binlogs">Binary logs →</a></p>
 
 {% endblock %}

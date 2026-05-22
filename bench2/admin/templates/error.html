@@ -1,7 +1,13 @@
 {% extends 'base.html' %}
 {% block content %}
-<div class="card">
-  <strong>Error</strong>
-  <p>{{ error }}</p>
+
+<div class="card" style="border-color:#fca5a5">
+  <div class="card-header" style="background:var(--red-50);border-color:#fca5a5">
+    <h3 style="color:var(--red-700)">Error</h3>
+  </div>
+  <div class="card-body">
+    <p style="color:var(--gray-700)">{{ error }}</p>
+  </div>
 </div>
+
 {% endblock %}

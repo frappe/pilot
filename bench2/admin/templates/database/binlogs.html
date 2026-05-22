@@ -1,7 +1,12 @@
 {% extends 'base.html' %}
 {% block content %}
 
-<p>Database / <strong>Binary logs</strong></p>
+<h2>Database</h2>
+
+<div style="display:flex;gap:16px;margin-bottom:18px">
+  <a href="/database/binlogs" style="font-weight:500;color:var(--gray-900)">Binary logs</a>
+  <a href="/database/slow-queries" class="text-muted">Slow queries</a>
+</div>
 
 <div class="card">
   <table>
@@ -11,17 +16,15 @@
     <tbody>
       {% for log in binary_logs %}
       <tr>
-        <td>{{ log.log_name }}</td>
-        <td>{{ (log.file_size / 1024 / 1024) | round(2) }} MB</td>
-        <td><a href="/database/binlogs/{{ log.log_name }}">[▶]</a></td>
+        <td class="mono">{{ log.log_name }}</td>
+        <td class="text-muted">{{ (log.file_size / 1024 / 1024) | round(2) }} MB</td>
+        <td><a href="/database/binlogs/{{ log.log_name }}">View →</a></td>
       </tr>
       {% else %}
-      <tr><td colspan="3">No binary logs found.</td></tr>
+      <tr><td colspan="3" class="text-muted">No binary logs found.</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
-
-<p><a href="/database/slow-queries">Slow queries →</a></p>
 
 {% endblock %}

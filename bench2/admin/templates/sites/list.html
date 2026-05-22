@@ -1,24 +1,30 @@
 {% extends 'base.html' %}
 {% block content %}
 
-<h2>Sites ({{ sites | length }})</h2>
+<h2>Sites <span class="text-muted" style="font-weight:400;font-size:13px">({{ sites | length }})</span></h2>
 
 <div class="card">
   <table>
     <thead>
-      <tr><th>Name</th><th>Exists</th><th>DB Name</th><th>Installed Apps</th><th></th></tr>
+      <tr><th>Name</th><th>Status</th><th>Database</th><th>Installed apps</th><th></th></tr>
     </thead>
     <tbody>
       {% for site in sites %}
       <tr>
-        <td>{{ site.name }}</td>
-        <td>{% if site.exists %}✓{% else %}✗{% endif %}</td>
-        <td>{{ site.db_name or '—' }}</td>
-        <td>{{ site.installed_apps | join(', ') or '—' }}</td>
-        <td><a href="/sites/{{ site.name }}">[▶]</a></td>
+        <td><a href="/sites/{{ site.name }}">{{ site.name }}</a></td>
+        <td>
+          {% if site.exists %}
+            <span class="badge status-running">exists</span>
+          {% else %}
+            <span class="badge status-unknown">not created</span>
+          {% endif %}
+        </td>
+        <td class="mono text-muted">{{ site.db_name or '—' }}</td>
+        <td class="text-muted">{{ site.installed_apps | join(', ') or '—' }}</td>
+        <td><a href="/sites/{{ site.name }}">View →</a></td>
       </tr>
       {% else %}
-      <tr><td colspan="5">No sites configured.</td></tr>
+      <tr><td colspan="5" class="text-muted">No sites configured.</td></tr>
       {% endfor %}
     </tbody>
   </table>

@@ -5,6 +5,7 @@ from typing import List
 
 import yaml
 
+from bench2.config.admin_config import AdminConfig
 from bench2.config.app_config import AppConfig
 from bench2.config.letsencrypt_config import LetsEncryptConfig
 from bench2.config.mariadb_config import MariaDBConfig
@@ -35,6 +36,7 @@ class BenchConfig:
     socketio_port: int = 9000
     nginx: NginxConfig = field(default_factory=NginxConfig)
     letsencrypt: LetsEncryptConfig = field(default_factory=LetsEncryptConfig)
+    admin: AdminConfig = field(default_factory=AdminConfig)
 
     @classmethod
     def from_file(cls, path: Path) -> "BenchConfig":
@@ -54,6 +56,7 @@ class BenchConfig:
         workers = cls._parse_workers(data.get("workers", {}))
         nginx = cls._parse_nginx(data.get("nginx", {}))
         letsencrypt = cls._parse_letsencrypt(data.get("letsencrypt", {}))
+        admin = cls._parse_admin(data.get("admin", {}))
         return cls(
             name=bench_data.get("name", ""),
             python_version=bench_data.get("python", ""),
@@ -67,6 +70,7 @@ class BenchConfig:
             workers=workers,
             nginx=nginx,
             letsencrypt=letsencrypt,
+            admin=admin,
         )
 
     @staticmethod
@@ -105,6 +109,13 @@ class BenchConfig:
         return LetsEncryptConfig(
             email=data.get("email", ""),
             webroot_path=Path(webroot_path),
+        )
+
+    @staticmethod
+    def _parse_admin(data: dict) -> AdminConfig:
+        return AdminConfig(
+            port=data.get("port", 8002),
+            timeout=data.get("timeout", 900),
         )
 
     def validate(self) -> None:

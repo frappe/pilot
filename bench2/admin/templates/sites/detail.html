@@ -1,54 +1,72 @@
 {% extends 'base.html' %}
 {% block content %}
 
-<p><a href="/sites">← Sites</a> / {{ site.name }}</p>
+<div class="breadcrumb">
+  <a href="/sites">Sites</a>
+  <span class="breadcrumb-sep">/</span>
+  <strong>{{ site.name }}</strong>
+</div>
 
 <div class="card">
-  <strong>Overview</strong>
-  <table>
+  <div class="card-header"><h3>Overview</h3></div>
+  <table class="kv-table">
     <tr><th>Name</th><td>{{ site.name }}</td></tr>
-    <tr><th>DB</th><td>{{ site.db_name or '—' }} @ {{ site.db_host or 'localhost' }}</td></tr>
-    <tr><th>Exists</th><td>{% if site.exists %}✓{% else %}✗{% endif %}</td></tr>
+    <tr><th>Status</th><td>
+      {% if site.exists %}
+        <span class="badge status-running">exists</span>
+      {% else %}
+        <span class="badge status-unknown">not created</span>
+      {% endif %}
+    </td></tr>
+    <tr><th>Database</th><td class="mono">{{ site.db_name or '—' }} @ {{ site.db_host or 'localhost' }}</td></tr>
   </table>
 </div>
 
 <div class="card">
-  <strong>Installed apps</strong>
-  <ul>
-    {% for app in site.installed_apps %}
-    <li>{{ app }}</li>
+  <div class="card-header"><h3>Installed apps</h3></div>
+  <div class="card-body">
+    {% if site.installed_apps %}
+      <ul style="display:flex;flex-direction:column;gap:6px">
+        {% for app in site.installed_apps %}
+        <li>{{ app }}</li>
+        {% endfor %}
+      </ul>
     {% else %}
-    <li>None</li>
-    {% endfor %}
-  </ul>
+      <span class="text-muted">None</span>
+    {% endif %}
+  </div>
 </div>
 
 <div class="card">
-  <strong>Actions</strong>
-  <form action="/tasks/run" method="post">
-    <input type="hidden" name="command" value="migrate">
-    <input type="hidden" name="site" value="{{ site.name }}">
-    <button type="submit">Run migrate</button>
-  </form>
-  &nbsp;
-  <form action="/tasks/run" method="post">
-    <input type="hidden" name="command" value="clear-cache">
-    <input type="hidden" name="site" value="{{ site.name }}">
-    <button type="submit">Clear cache</button>
-  </form>
-  <br><br>
-  <form action="/tasks/run" method="post">
-    Install app on this site:<br>
-    <input type="hidden" name="command" value="install-app">
-    <input type="hidden" name="site" value="{{ site.name }}">
-    App name: <input type="text" name="app" placeholder="app-name">
-    <button type="submit">Install</button>
-  </form>
+  <div class="card-header"><h3>Actions</h3></div>
+  <div class="action-bar">
+    <form action="/tasks/run" method="post">
+      <input type="hidden" name="command" value="migrate">
+      <input type="hidden" name="site" value="{{ site.name }}">
+      <button type="submit" class="btn-primary">Run migrate</button>
+    </form>
+    <form action="/tasks/run" method="post">
+      <input type="hidden" name="command" value="clear-cache">
+      <input type="hidden" name="site" value="{{ site.name }}">
+      <button type="submit">Clear cache</button>
+    </form>
+  </div>
+  <div class="card-body" style="border-top:1px solid var(--gray-100)">
+    <form action="/tasks/run" method="post" class="form-row">
+      <input type="hidden" name="command" value="install-app">
+      <input type="hidden" name="site" value="{{ site.name }}">
+      <label>Install app</label>
+      <input type="text" name="app" placeholder="app-name" style="width:180px">
+      <button type="submit">Install</button>
+    </form>
+  </div>
 </div>
 
 <div class="card">
-  <strong>site_config.json</strong>
-  <pre>{{ site_config_json }}</pre>
+  <div class="card-header"><h3>site_config.json</h3></div>
+  <div class="card-body" style="padding:0">
+    <pre style="border-radius:0;margin:0">{{ site_config_json }}</pre>
+  </div>
 </div>
 
 {% endblock %}

@@ -11,14 +11,14 @@
     <tbody>
       {% for log in log_files %}
       <tr>
-        <td>{{ log.filename }}</td>
-        <td>{{ log.process_name }}</td>
-        <td>{{ (log.size_bytes / 1024) | round(1) }} KB</td>
-        <td>{{ log.last_modified.strftime('%Y-%m-%d %H:%M:%S') }}</td>
-        <td><a href="/logs/{{ log.filename }}">[▶]</a></td>
+        <td class="mono">{{ log.filename }}</td>
+        <td class="text-muted">{{ log.process_name }}</td>
+        <td class="text-muted">{{ (log.size_bytes / 1024) | round(1) }} KB</td>
+        <td class="text-muted">{{ log.last_modified.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td><a href="/logs/{{ log.filename }}">View →</a></td>
       </tr>
       {% else %}
-      <tr><td colspan="5">No log files found.</td></tr>
+      <tr><td colspan="5" class="text-muted">No log files found.</td></tr>
       {% endfor %}
     </tbody>
   </table>

@@ -13,13 +13,10 @@ from bench2.exceptions import BenchError
 if TYPE_CHECKING:
     from bench2.core.bench import Bench
 
-_TIMEOUT_SECONDS = 900  # 15 minutes
-
-
 class StartAdminCommand:
-    def __init__(self, bench: "Bench", port: int = 8002) -> None:
+    def __init__(self, bench: "Bench", port: int | None = None) -> None:
         self.bench = bench
-        self.port = port
+        self.port = port if port is not None else bench.config.admin.port
 
     @property
     def _pid_file(self):
@@ -33,8 +30,9 @@ class StartAdminCommand:
         self._check_not_already_running()
         proc = self._spawn()
         self._write_state(proc.pid)
+        timeout_minutes = self.bench.config.admin.timeout // 60
         click.echo(f"Admin UI started at http://127.0.0.1:{self.port}/")
-        click.echo("Will auto-stop after 15 minutes of inactivity.")
+        click.echo(f"Will auto-stop after {timeout_minutes} minutes of inactivity.")
 
     def _check_not_already_running(self) -> None:
         if not self._pid_file.exists():
@@ -61,7 +59,7 @@ class StartAdminCommand:
                 "--port",
                 str(self.port),
                 "--timeout",
-                str(_TIMEOUT_SECONDS),
+                str(self.bench.config.admin.timeout),
             ],
             start_new_session=True,
             stdout=DEVNULL,
