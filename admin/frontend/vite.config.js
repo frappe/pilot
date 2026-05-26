@@ -33,5 +33,6 @@ export default defineConfig({
   },
   optimizeDeps: {
     exclude: ['frappe-ui'],
+    include: ['feather-icons', 'debug'],
   },
 })
