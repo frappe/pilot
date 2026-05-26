@@ -5,9 +5,8 @@ from pathlib import Path
 from bench_cli.exceptions import BenchError
 
 _OWN_COMMANDS = frozenset([
-    "new", "init", "start", "stop", "kill-orphaned", "get-app", "new-site",
-    "frappe", "build", "update", "update-config", "update-bench", "start-admin",
-    "stop-admin", "rebuild-admin", "admin", "setup",
+    "new", "init", "start", "stop", "get-app", "new-site",
+    "frappe", "build", "update", "update-config", "build-admin", "setup",
 ])
 _OWN_GROUP_OPTIONS = frozenset(["--verbose", "--yes", "-y", "--bench", "-b", "--help", "-h"])
 
@@ -131,14 +130,9 @@ def _make_parser() -> argparse.ArgumentParser:
     sub.add_parser("init", help="Initialise the bench.")
     sub.add_parser("start", help="Start all bench processes.")
     sub.add_parser("stop", help="Stop the running bench.")
-    sub.add_parser("kill-orphaned", help="Kill orphaned bench processes.")
     sub.add_parser("build", help="Rebuild assets.")
     sub.add_parser("update", help="Pull latest code and migrate sites.")
     sub.add_parser("update-config", help="Regenerate config files from bench.toml.")
-    sub.add_parser("update-bench", help="Update bench-cli itself.")
-    sub.add_parser("stop-admin", help="Stop the background admin UI.")
-    sub.add_parser("rebuild-admin", help="Rebuild admin frontend assets.")
-
     p_get = sub.add_parser("get-app", help="Clone and install an app.")
     p_get.add_argument("repo", help="Git repository URL.")
     p_get.add_argument("--branch", default="", help="Git branch to checkout.")
@@ -151,12 +145,7 @@ def _make_parser() -> argparse.ArgumentParser:
     p_frappe = sub.add_parser("frappe", help="Run a frappe CLI command.")
     p_frappe.add_argument("args", nargs=argparse.REMAINDER)
 
-    p_sadmin = sub.add_parser("start-admin", help="Start admin UI as a background daemon.")
-    p_sadmin.add_argument("--port", type=int, default=None)
-
-    p_admin = sub.add_parser("admin", help="Start the admin web interface (foreground).")
-    p_admin.add_argument("--port", type=int, default=8001)
-    p_admin.add_argument("--host", default="127.0.0.1")
+    sub.add_parser("build-admin", help="Rebuild admin frontend assets.")
 
     p_setup = sub.add_parser("setup", help="Production setup commands.")
     setup_sub = p_setup.add_subparsers(dest="setup_command")
@@ -244,10 +233,6 @@ def _dispatch(args: argparse.Namespace) -> None:
         from bench_cli.commands.stop import StopCommand
         StopCommand(_load_bench()).run()
 
-    elif cmd == "kill-orphaned":
-        from bench_cli.commands.kill_orphaned import KillOrphanedCommand
-        KillOrphanedCommand(_load_bench(), skip_confirm=args.yes).run()
-
     elif cmd == "get-app":
         _cmd_get_app(args)
 
@@ -270,26 +255,9 @@ def _dispatch(args: argparse.Namespace) -> None:
         from bench_cli.commands.update_config import UpdateConfigCommand
         UpdateConfigCommand(_load_bench()).run()
 
-    elif cmd == "update-bench":
-        from bench_cli.commands.update_bench import UpdateBenchCliCommand
-        UpdateBenchCliCommand().run()
-
-    elif cmd == "start-admin":
-        from bench_cli.commands.start_admin import StartAdminCommand
-        StartAdminCommand(_load_bench(), port=args.port).run()
-
-    elif cmd == "stop-admin":
-        from bench_cli.commands.stop_admin import StopAdminCommand
-        StopAdminCommand(_load_bench()).run()
-
-    elif cmd == "rebuild-admin":
-        from bench_cli.commands.rebuild_admin import RebuildAdminCommand
-        RebuildAdminCommand().run()
-
-    elif cmd == "admin":
-        from bench_cli.commands.start_admin import StartAdminCommand
-        bench = _load_bench()
-        StartAdminCommand(bench, port=args.port).run_foreground(host=args.host)
+    elif cmd == "build-admin":
+        from bench_cli.commands.admin import BuildAdminCommand
+        BuildAdminCommand().run()
 
     elif cmd == "setup":
         _dispatch_setup(args)

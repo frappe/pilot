@@ -6,7 +6,12 @@ from bench_cli.exceptions import BenchError
 from bench_cli.utils import run_command
 
 
-class RebuildAdminCommand:
+def _cli_root() -> Path:
+    import bench_cli as _pkg
+    return Path(_pkg.__file__).parent.parent
+
+
+class BuildAdminCommand:
     def run(self) -> None:
         frontend = self._find_frontend()
         print(f"Building admin frontend at {frontend}...")
@@ -17,8 +22,7 @@ class RebuildAdminCommand:
         print("\nAdmin frontend rebuilt successfully.")
 
     def _find_frontend(self) -> Path:
-        import bench_cli as _pkg
-        candidate = Path(_pkg.__file__).parent.parent / "admin" / "frontend"
+        candidate = _cli_root() / "admin" / "frontend"
         if (candidate / "package.json").exists():
             return candidate
         raise BenchError(

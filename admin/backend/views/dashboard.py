@@ -8,7 +8,7 @@ from ..readers.app_reader import AppReader
 from ..readers.bench_reader import BenchReader
 from ..readers.process_reader import ProcessReader
 from ..readers.site_reader import SiteReader
-from bench_cli.tasks.task_reader import TaskReader
+from admin.backend.tasks.manager.task_reader import TaskReader
 
 dashboard_bp = Blueprint("dashboard", __name__)
 

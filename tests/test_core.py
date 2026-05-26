@@ -11,7 +11,7 @@ from bench_cli.config.worker_config import WorkerConfig
 from bench_cli.core.app import App
 from bench_cli.core.bench import Bench
 from bench_cli.core.site import Site
-from bench_cli.managers.honcho_process_manager import HonchoProcessManager
+from bench_cli.managers.process_manager import ProcessManager
 
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -159,7 +159,7 @@ def test_bench_init_apps_comes_from_config(tmp_path: Path) -> None:
     assert init_apps[0].config.name == "frappe"
 
 
-# ── ProcessManager tests ─────────────────────────────────────────────────────
+# ── ProcessManager._process_definitions ──────────────────────────────────────
 
 
 def test_process_definitions_returns_correct_count(tmp_path: Path) -> None:
@@ -167,14 +167,14 @@ def test_process_definitions_returns_correct_count(tmp_path: Path) -> None:
     # workers: default=2, short=1, long=1 => 4 worker processes
     # plus web, socketio, redis_cache, redis_queue, redis_socketio = 5
     # total = 9
-    process_manager = HonchoProcessManager(bench)
+    process_manager = ProcessManager(bench)
     definitions = process_manager._process_definitions()
     assert len(definitions) == 9
 
 
 def test_process_definitions_worker_names_are_numbered(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
-    process_manager = HonchoProcessManager(bench)
+    process_manager = ProcessManager(bench)
     definitions = process_manager._process_definitions()
     names = [pd.name for pd in definitions]
     assert "worker_default_1" in names
@@ -185,7 +185,7 @@ def test_process_definitions_worker_names_are_numbered(tmp_path: Path) -> None:
 
 def test_process_definitions_includes_redis_processes(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
-    process_manager = HonchoProcessManager(bench)
+    process_manager = ProcessManager(bench)
     definitions = process_manager._process_definitions()
     names = [pd.name for pd in definitions]
     assert "redis_cache" in names
@@ -195,18 +195,18 @@ def test_process_definitions_includes_redis_processes(tmp_path: Path) -> None:
 
 def test_process_definitions_order_starts_with_web(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
-    process_manager = HonchoProcessManager(bench)
+    process_manager = ProcessManager(bench)
     definitions = process_manager._process_definitions()
     assert definitions[0].name == "web"
 
 
-# ── HonchoProcessManager tests ───────────────────────────────────────────────
+# ── ProcessManager tests ───────────────────────────────────────────────
 
 
 def test_honcho_generate_config_writes_procfile(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     bench.create_directories()
-    process_manager = HonchoProcessManager(bench)
+    process_manager = ProcessManager(bench)
     process_manager.generate_config()
 
     procfile = tmp_path / "config" / "Procfile"
@@ -221,7 +221,7 @@ def test_honcho_generate_config_writes_procfile(tmp_path: Path) -> None:
 def test_honcho_generate_config_procfile_format(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     bench.create_directories()
-    process_manager = HonchoProcessManager(bench)
+    process_manager = ProcessManager(bench)
     process_manager.generate_config()
 
     procfile = tmp_path / "config" / "Procfile"
@@ -237,7 +237,7 @@ def test_honcho_start_writes_per_process_pid_files(tmp_path: Path) -> None:
 
     bench = make_bench(tmp_path)
     bench.create_directories()
-    process_manager = HonchoProcessManager(bench)
+    process_manager = ProcessManager(bench)
     process_manager.generate_config()
 
     fake_proc = MagicMock()
@@ -249,7 +249,7 @@ def test_honcho_start_writes_per_process_pid_files(tmp_path: Path) -> None:
     def fake_popen(cmd, **kwargs):
         return fake_proc
 
-    with patch("bench_cli.managers.honcho_process_manager.subprocess.Popen", side_effect=fake_popen):
+    with patch("bench_cli.managers.process_manager.subprocess.Popen", side_effect=fake_popen):
         with patch.object(process_manager, "_stop_all"):
             entries = process_manager._parse_procfile()
             for name, command in entries:

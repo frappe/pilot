@@ -1,7 +1,7 @@
 """
 Entry point for a forked child process that runs a bench command.
 
-Invoked as: python -m bench_bench_cli.tasks.wrapper <task-dir>
+Invoked as: python -m admin.backend.tasks.manager.wrapper <task-dir>
 
 This module uses only the standard library — no cli imports.
 """

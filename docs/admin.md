@@ -1,12 +1,12 @@
 # Admin Interface Specification
 
-bench ships a lightweight web-based admin interface built on Flask with no Python dependencies beyond Flask itself. It is started as a background daemon with `bench start-admin` and intended for local inspection and day-to-day operations.
+bench ships a lightweight web-based admin interface built on Flask with no Python dependencies beyond Flask itself. It runs as a process inside the Procfile and starts automatically with `bench start`.
 
 ---
 
 ## Design constraints
 
-- **Stateless.** The Flask app stores nothing in memory between requests. Every page reads current state from the filesystem (bench.yml, git, log files, site_config.json) or from MariaDB on each request. There is no session, no cache, no background thread.
+- **Stateless.** The Flask app stores nothing in memory between requests. Every page reads current state from the filesystem (bench.toml, git, log files, site_config.json) or from MariaDB on each request. There is no session, no cache, no background thread.
 - **No extra Python dependencies.** Only Flask and the Python standard library. No SQLAlchemy, no Celery, no frontend framework.
 - **No frontend framework.** Plain HTML templates with minimal inline CSS. A small amount of vanilla JS is acceptable for auto-refresh and SSE output streaming.
 - **Localhost only by default.** Binds to `127.0.0.1` unless overridden. No authentication — treat this as a local developer/ops tool.
@@ -15,34 +15,19 @@ bench ships a lightweight web-based admin interface built on Flask with no Pytho
 
 ## Starting the admin
 
-The admin process is included in the Procfile and starts automatically with `bench start`. It is always running, but serves a plain **"Admin is off"** page by default. To activate the full UI, set `admin.enabled: true` in `bench.yml` — no restart required, as the config is re-read on every request.
+The admin process is part of the Procfile and starts automatically alongside the web server, workers, and Redis when you run `bench start`. No separate command is needed.
 
-```yaml
-admin:
-  port: 8002
-  enabled: true   # flip this to turn the UI on or off
+```
+admin: PYTHONPATH=<cli_root> .admin-venv/bin/python -m admin.backend.server --bench-root <bench> --port 8002
 ```
 
-When `enabled` is `false`:
-- Every request (except static file requests) returns a 503 "Admin is off" page.
-- No filesystem reads, no data queries, no view logic executes.
+The admin UI is always available at `http://localhost:8002` while the bench is running. To stop it, stop the bench (`bench stop` or Ctrl-C in the `bench start` terminal).
 
-For standalone use outside of `bench start`:
+The admin port is configurable in `bench.toml`:
 
-```bash
-bench start-admin              # start daemon on default port 8002
-bench start-admin --port 9000  # custom port
-bench stop-admin               # stop the daemon
-```
-
-The standalone daemon auto-stops after the configured inactivity timeout (default 180 seconds). State is tracked in `pids/admin.pid` and `pids/admin.port`. When managed by the Procfile, the watchdog is disabled — honcho owns the process lifecycle.
-
-For interactive foreground use during development:
-
-```bash
-bench admin               # start on default port 8001, Ctrl-C to stop
-bench admin --port 9000   # custom port
-bench admin --host 0.0.0.0  # expose to the network (your responsibility)
+```toml
+[admin]
+port = 8002
 ```
 
 ---
@@ -50,50 +35,42 @@ bench admin --host 0.0.0.0  # expose to the network (your responsibility)
 ## Package layout
 
 ```
-bench_cli/
-└── bench_cli/
-    └── admin/
-        ├── __init__.py
-        ├── app.py                   # Flask app factory — create_app(bench_root: Path)
-        ├── server.py                # daemon entry point — inactivity watchdog + app.run()
-        │
-        ├── readers/                 # Stateless filesystem/DB readers
-        │   ├── __init__.py
-        │   ├── bench_reader.py      # BenchReader
-        │   ├── app_reader.py        # AppReader
-        │   ├── site_reader.py       # SiteReader
-        │   ├── process_reader.py    # ProcessReader
-        │   ├── log_reader.py        # LogReader
-        │   └── database_reader.py   # DatabaseReader
-        │
-        ├── views/                   # Flask blueprints — one per section
-        │   ├── __init__.py
-        │   ├── dashboard.py         # GET /
-        │   ├── apps.py              # GET /apps
-        │   ├── sites.py             # GET /sites, /sites/<name>
-        │   ├── processes.py         # GET /processes, POST /processes/<name>/restart
-        │   ├── logs.py              # GET /logs, /logs/<filename>
-        │   ├── database.py          # GET /database/binlogs, /database/slow-queries
-        │   └── tasks.py             # GET /tasks, /tasks/<id>, POST /tasks/run, /tasks/<id>/kill
-        │
-        └── templates/
-            ├── base.html
-            ├── dashboard.html
-            ├── apps.html
-            ├── sites/
-            │   ├── list.html
-            │   └── detail.html
-            ├── processes.html
-            ├── logs/
-            │   ├── list.html
-            │   └── viewer.html
-            ├── database/
-            │   ├── binlogs.html
-            │   ├── binlog_detail.html
-            │   └── slow_queries.html
-            └── tasks/
-                ├── list.html
-                └── detail.html
+admin/
+└── backend/
+    ├── app.py                   # Flask app factory — create_app(bench_root: Path)
+    ├── server.py                # entry point — started by ProcessManager via Procfile
+    │
+    ├── readers/                 # Stateless filesystem/DB readers
+    │   ├── bench_reader.py      # BenchReader
+    │   ├── app_reader.py        # AppReader
+    │   ├── site_reader.py       # SiteReader
+    │   ├── process_reader.py    # ProcessReader
+    │   ├── log_reader.py        # LogReader
+    │   └── database_reader.py   # DatabaseReader
+    │
+    ├── views/                   # Flask blueprints — one per section
+    │   ├── dashboard.py         # GET /
+    │   ├── apps.py              # GET /apps
+    │   ├── sites.py             # GET /sites, /sites/<name>
+    │   ├── processes.py         # GET /processes, POST /processes/<name>/restart
+    │   ├── logs.py              # GET /logs, /logs/<filename>
+    │   ├── database.py          # GET /database/binlogs, /database/slow-queries
+    │   └── tasks.py             # GET /tasks, /tasks/<id>, POST /tasks/run, /tasks/<id>/kill
+    │
+    └── tasks/
+        ├── manager/             # Task infrastructure
+        │   ├── task_runner.py   # TaskRunner — spawns background job subprocesses
+        │   ├── task_reader.py   # TaskReader — reads task state from filesystem
+        │   ├── models.py        # TaskInfo dataclass
+        │   └── wrapper.py       # subprocess entry point for running jobs
+        └── jobs/                # Individual job scripts (OO, one class per file)
+            ├── build_assets.py
+            ├── get_app_task.py
+            ├── install_app_task.py
+            ├── new_site_task.py
+            ├── drop_site_task.py
+            ├── switch_branch_task.py
+            └── update_task.py
 ```
 
 ---
@@ -131,12 +108,12 @@ class BenchReader:
     def __init__(self, bench_root: Path): ...
 
     def config(self) -> BenchConfig:
-        """Parse bench.yml. Returns BenchConfig or raises ConfigError."""
+        """Parse bench.toml. Returns BenchConfig or raises ConfigError."""
 
     def summary(self) -> BenchSummary:
         """
         Return a lightweight summary struct: bench name, python version,
-        process_manager, app count, site count. Reads only bench.yml.
+        process_manager, app count, site count. Reads only bench.toml.
         """
 ```
 
@@ -145,7 +122,6 @@ class BenchReader:
 class BenchSummary:
     name: str
     python_version: str
-    process_manager: str
     app_count: int
     site_count: int
 ```
@@ -158,7 +134,7 @@ class AppReader:
 
     def read_all(self) -> List[AppInfo]:
         """
-        For each app in bench.yml: check if cloned, read git state, read installed version.
+        For each app in bench.toml: check if cloned, read git state, read installed version.
         """
 
     def read_one(self, app_name: str) -> AppInfo: ...
@@ -194,7 +170,7 @@ class SiteReader:
 class SiteInfo:
     name: str
     exists: bool                 # True if sites/<name>/site_config.json is present
-    db_name: str                 # from bench.yml
+    db_name: str                 # from bench.toml
     db_host: str                 # from site_config.json
     installed_apps: List[str]    # from sites/<name>/site_config.json "installed_apps"
     site_config: dict            # full parsed site_config.json; empty dict if not found
@@ -208,9 +184,8 @@ class ProcessReader:
 
     def read_all(self) -> List[ProcessInfo]:
         """
-        If process_manager is supervisor: parse `supervisorctl status` output.
-        If process_manager is honcho: check pids/ directory for PID files
-        and verify each PID is alive via os.kill(pid, 0).
+        Check pids/ directory for per-process PID files and verify each
+        PID is alive via os.kill(pid, 0).
         """
 ```
 
@@ -326,7 +301,7 @@ class SlowQuery:
 
 Reads `BenchReader.summary()`, `AppReader.read_all()`, `SiteReader.read_all()`, `ProcessReader.read_all()`. Displays a single-page overview:
 
-- Bench name and process manager mode
+- Bench name and Python version
 - Apps table: name, branch, short commit hash, uncommitted changes indicator
 - Sites table: name, installed apps, DB name, exists flag
 - Processes table: name, status (coloured), PID, uptime
@@ -351,7 +326,7 @@ Full `AppReader.read_all()` output in a table. Shows per-app: repo URL, branch, 
 
 `ProcessReader.read_all()`. Shows name, status, PID, uptime, link to its log file.
 
-For supervisor benches, also shows a note: "manage via `supervisorctl -c config/supervisor.conf`".
+Process lifecycle is managed by `bench start` / `bench stop`.
 
 ### `GET /logs` — Log file list
 
@@ -432,14 +407,12 @@ Views catch `ConfigError`, `FileNotFoundError`, and database connection errors a
 - `LogReader.read_tail` and `stream_tail` validate that the requested filename contains no path separators and resolves to a file inside `logs/`. Any traversal attempt returns HTTP 400.
 - Command execution uses `TaskRunner._build_argv`, which only accepts whitelisted commands. No user-supplied string is passed to a shell.
 - `task_id` values are validated against `^\d{8}-\d{6}-[0-9a-f]{6}$` before being used as directory names.
-- Root MariaDB credentials come from `bench.yml` — the admin must be run by a user who can read that file.
+- Root MariaDB credentials come from `bench.toml` — the admin must be run by a user who can read that file.
 
 ---
 
 ## CLI commands
 
-- **`bench start-admin [--port 8002]`** — spawns `bench_cli.admin.server` as a detached subprocess, writes `pids/admin.pid` and `pids/admin.port`, prints the URL.
-- **`bench stop-admin`** — sends `SIGTERM` to the PID in `pids/admin.pid`, cleans up state files.
-- **`bench admin [--port 8001] [--host 127.0.0.1]`** — foreground mode, blocks until `Ctrl-C`.
+- **`bench build-admin`** — rebuilds the admin frontend static assets. Run this after pulling admin UI changes. The server itself is managed by `bench start` / `bench stop` — no separate start/stop commands exist.
 
-The daemon entry point (`bench_cli/admin/server.py`) accepts `--no-timeout` to disable the inactivity watchdog. This flag is set automatically when the process is launched from the Procfile so that honcho owns the process lifecycle. In standalone mode (via `bench start-admin`), the watchdog fires `SIGTERM` after the configured timeout.
+Admin lifecycle is owned by `ProcessManager`: the `admin:` entry is written into `config/Procfile` during `bench init`, and the process is started and stopped alongside all other bench processes.

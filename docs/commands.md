@@ -117,7 +117,7 @@ Yarn is installed globally afterward: `npm install -g yarn`.
 
 `RedisManager.generate_configs()` writes config files to `config/`. The output depends on whether single-instance or multi-instance mode is used.
 
-**Single-instance mode** (`redis.port` is set) — one file:
+**Single-instance mode** (`redis.port` is set):
 
 **`redis.conf`**
 ```
@@ -125,7 +125,7 @@ port 13000
 bind 127.0.0.1
 ```
 
-**Multi-instance mode** (`cache_port`/`queue_port`/`socketio_port`) — three files:
+**Multi-instance mode** (`cache_port`/`queue_port`/`socketio_port`):
 
 **`redis_cache.conf`** / **`redis_queue.conf`** / **`redis_socketio.conf`**
 ```
@@ -137,20 +137,21 @@ Existing files are overwritten.
 
 #### Step 9 — Generate Procfile
 
-Writes `config/Procfile` with one line per process: web server, socketio, workers, and Redis.
+Writes `config/Procfile` with one line per process: web server, socketio, admin UI, workers, and Redis.
 
-Single-instance Redis (`redis.port`):
+Single-instance Redis:
 ```
-web: bench frappe serve --port 8000 --noreload
-socketio: node apps/frappe/socketio.js
-worker_default_1: env/bin/bench worker --queue default
-worker_default_2: env/bin/bench worker --queue default
-worker_short_1: env/bin/bench worker --queue short
-worker_long_1: env/bin/bench worker --queue long
+web: cd sites && env/bin/bench frappe serve --port 8000 --noreload
+socketio: cd sites && node apps/frappe/socketio.js
+admin: PYTHONPATH=<cli_root> .admin-venv/bin/python -m admin.backend.server --bench-root <bench> --port 8002
+worker_default_1: cd sites && env/bin/bench frappe worker --queue default
+worker_default_2: cd sites && env/bin/bench frappe worker --queue default
+worker_short_1: cd sites && env/bin/bench frappe worker --queue short
+worker_long_1: cd sites && env/bin/bench frappe worker --queue long
 redis: redis-server config/redis.conf
 ```
 
-Multi-instance Redis (`cache_port`/`queue_port`/`socketio_port`):
+Multi-instance Redis:
 ```
 ...
 redis_cache: redis-server config/redis_cache.conf
@@ -178,21 +179,20 @@ bench get-app https://github.com/frappe/erpnext --branch version-16
 ### Steps
 
 ```
-1.  Validate bench.toml
-2.  Clone the app
-3.  Install Python dependencies
-4.  Update apps.txt
+1.  Clone the app
+2.  Install Python dependencies
+3.  Update apps.txt
 ```
 
-#### Step 2 — Clone the app
+#### Step 1 — Clone the app
 
 `App.clone()` runs `git clone <repo> --branch <branch> --depth 1 apps/<name>`. The app name is inferred from the repository URL (last path component, without `.git`). Skipped if already cloned.
 
-#### Step 3 — Install Python dependencies
+#### Step 2 — Install Python dependencies
 
 `PythonEnvManager.install_app(app)` runs `uv pip install -e apps/<name>`.
 
-#### Step 4 — Update apps.txt
+#### Step 3 — Update apps.txt
 
 Appends the app name to `sites/apps.txt`. Does **not** modify `bench.toml`.
 
@@ -210,13 +210,12 @@ bench new-site site1.localhost --admin-password admin
 ### Steps
 
 ```
-1.  Validate bench.toml
-2.  Check site does not already exist
-3.  Create the site
-4.  Update common_site_config.json
+1.  Check site does not already exist
+2.  Create the site
+3.  Update common_site_config.json
 ```
 
-#### Step 3 — Create the site
+#### Step 2 — Create the site
 
 `Site.create(mariadb_config)` runs the framework app's `new-site` command:
 ```
@@ -228,7 +227,7 @@ env/bin/bench new-site <site.name>
 
 frappe generates and manages the database name and credentials internally; they are written into `sites/<name>/site_config.json`. The site directory is created on disk — it is **not** written to `bench.toml`.
 
-#### Step 4 — Update common_site_config.json
+#### Step 3 — Update common_site_config.json
 
 `Bench.write_common_site_config()` rewrites `sites/common_site_config.json` with Redis URLs and the default site. Sites are discovered from the filesystem (`sites/` directory), not from `bench.toml`.
 
@@ -246,20 +245,21 @@ Starts all bench processes using the built-in Procfile runner.
 ### Steps
 
 ```
-1.  Validate bench.toml
-2.  Check Procfile exists
-3.  Start processes
+1.  Check Procfile exists
+2.  Start processes
 ```
 
-#### Step 2 — Check Procfile exists
+#### Step 1 — Check Procfile exists
 
 If `config/Procfile` is missing, print a message telling the user to run `bench init` first and exit with code 1.
 
-#### Step 3 — Start processes
+#### Step 2 — Start processes
 
-`HonchoProcessManager.start()` reads `config/Procfile` and spawns each process with `subprocess.Popen`. A dedicated thread per process streams output to stdout with a `<process-name> |` prefix and writes to `logs/<process-name>.log`. Per-process PID files are written to `pids/<name>.pid`.
+`ProcessManager.start()` reads `config/Procfile` and spawns each process with `subprocess.Popen`. A dedicated thread per process streams output to stdout with a color-coded `[<name>]` prefix — each process name gets a distinct ANSI color so concurrent output is easy to read. Per-process PID files are written to `pids/<name>.pid`.
 
-`bench start` **blocks** — it stays in the foreground until the user sends `SIGINT` (Ctrl-C). On `SIGINT`, all child processes receive `SIGTERM` and are waited on before the parent exits.
+The `admin:` entry in the Procfile means the admin UI is always available at `http://localhost:8002` while the bench is running.
+
+`bench start` **blocks** — it stays in the foreground until `SIGINT` (Ctrl-C). On `SIGINT`, all child processes receive `SIGTERM` and are waited on before the parent exits.
 
 ---
 
@@ -288,25 +288,17 @@ Builds JavaScript and CSS assets for all installed apps.
 ### Steps
 
 ```
-1.  Validate bench.toml
-2.  For each app, build assets
-3.  Copy built assets to sites/assets/
+1.  For each app with a frontend/, install frontend JS dependencies
+2.  Run bench frappe build --force
 ```
 
-#### Step 2 — Per-app asset build
+#### Step 1 — Frontend installs
 
-`App.build_assets()` checks whether the app has a `package.json` at its root.
+`BuildCommand._install_frontend_deps()` walks `apps/` and runs `yarn install` in any `app/frontend/` directory that has a `package.json`. App-root JS dependencies are handled per-app during `bench get-app`.
 
-- If yes: `yarn --cwd apps/<name> build` (or the build script defined in `package.json`).
-- If no: skip silently.
+#### Step 2 — Asset build
 
-#### Step 3 — Copy to sites/assets/
-
-After all per-app builds complete, run the framework app's asset collection command:
-```
-env/bin/bench build --make-copy
-```
-This collects all built assets into `sites/assets/`.
+`bench frappe build --force` symlinks each app's `public/` into `sites/assets/`, runs esbuild for root-level JS, and executes each app's `build` script.
 
 ---
 
@@ -322,34 +314,30 @@ Pulls the latest commits for all apps, reinstalls Python packages, and migrates 
 ### Steps
 
 ```
-1.  Validate bench.toml
-2.  Warn if processes are running
-3.  For each app: git pull
-4.  For each app: uv pip install -e
-5.  For each site: bench migrate
+1.  Warn if processes are running
+2.  For each app: git pull
+3.  For each app: uv pip install -e
+4.  For each site: bench migrate
 ```
 
-#### Step 2 — Warn if processes are running
+#### Step 1 — Warn if processes are running
 
 If `pids/bench.pid` exists and the process is alive, print a warning and ask the user to confirm before continuing. In non-interactive mode (`--yes` flag), skip the prompt and proceed.
 
-#### Step 3 — git pull for each app
+#### Step 2 — git pull for each app
 
-`App.update()` runs (for each app discovered in `apps/`):
+For each app discovered in `apps/`:
 ```
-git -C apps/<name> fetch origin
-git -C apps/<name> merge --ff-only origin/<branch>
+git -C apps/<name> pull
 ```
 
-Fast-forward only. If a merge conflict would occur, print an error for that app and skip it (continue with remaining apps).
-
-#### Step 4 — uv pip install -e for each app
+#### Step 3 — uv pip install -e for each app
 
 `PythonEnvManager.install_app(app)` re-runs `uv pip install -e apps/<name>` to pick up any new Python dependencies.
 
-#### Step 5 — bench migrate for each site
+#### Step 4 — bench migrate for each site
 
-`Site.migrate()` runs (for each site discovered in `sites/`):
+For each site discovered in `sites/`:
 ```
 env/bin/bench --site <site.name> migrate
 ```
@@ -372,47 +360,15 @@ Regenerates all derived config files from `bench.toml` without running a full `b
 
 ---
 
-## `bench start-admin`
+## `bench build-admin`
 
-Starts the admin web interface as a standalone background daemon, independently of the Procfile.
-
-```bash
-bench start-admin              # default port 8002
-bench start-admin --port 9000  # custom port
-```
-
-**Steps:**
-1. Check `pids/admin.pid` — if the process is already alive, print its URL and exit.
-2. Spawn `bench_cli.admin.server` as a detached subprocess (`start_new_session=True`).
-3. Write `pids/admin.pid` and `pids/admin.port`.
-4. Print the admin URL.
-
-The admin server includes a watchdog that sends `SIGTERM` to itself after the configured inactivity timeout (default: 3 minutes). Use `bench stop-admin` to stop it immediately.
-
----
-
-## `bench stop-admin`
-
-Stops the background admin daemon.
-
-**Steps:**
-1. Read `pids/admin.pid`. If it does not exist, print "Admin is not running." and exit.
-2. Send `SIGTERM` to the process.
-3. Remove `pids/admin.pid` and `pids/admin.port`.
-
-Handles stale PID files gracefully — if the process has already exited (e.g. after the inactivity timeout), it still cleans up the state files.
-
----
-
-## `bench admin`
-
-Starts the admin web interface in the **foreground** (development use). Press `Ctrl-C` to stop.
+Rebuilds the admin UI frontend assets. Run this after pulling admin UI changes.
 
 ```bash
-bench admin                    # default port 8002
-bench admin --port 9000        # custom port
-bench admin --host 0.0.0.0     # expose to the network
+bench build-admin
 ```
+
+The admin server starts automatically as part of `bench start` (via the `admin:` entry in the Procfile) and is always available at `http://localhost:8002` while the bench is running. This command only rebuilds the static assets — it does not start or stop the server.
 
 See [docs/admin.md](admin.md) for the full interface specification.
 
@@ -438,7 +394,7 @@ See [docs/production.md](production.md) for the full step-by-step.
 
 Pre-conditions: `bench setup nginx` has run, nginx is serving port 80, DNS records for all SSL sites point to this server.
 
-> **macOS note:** Let's Encrypt certificates require a publicly reachable server with real DNS records. This command is intended for Ubuntu/Linux production servers only. Do not run it on a local macOS development machine.
+> **macOS note:** Let's Encrypt certificates require a publicly reachable server with real DNS records. This command is intended for Ubuntu/Linux production servers only.
 
 ---
 
@@ -447,8 +403,6 @@ Pre-conditions: `bench setup nginx` has run, nginx is serving port 80, DNS recor
 See [docs/production.md](production.md) for the full step-by-step.
 
 **Summary:** Writes `dns_multitenant: 1` to `sites/common_site_config.json`, then runs `bench setup nginx` and `bench setup letsencrypt` in sequence.
-
-> **macOS note:** Production setup targets Ubuntu/Linux servers. On macOS, use `bench start` for development.
 
 ---
 
@@ -464,10 +418,8 @@ See [docs/production.md](production.md) for the full step-by-step.
 
 ## Common flags
 
-All commands accept:
-
 | Flag | Description |
 |------|-------------|
-| `-b/--bench NAME` | Specify which bench to operate on (its name under `benches/`). Required when multiple benches exist and none is active. |
-| `--verbose` | Print full tracebacks on error and all subprocess output. |
+| `-b/--bench NAME` | Specify which bench to operate on. Required when multiple benches exist. |
+| `--verbose` | Print full tracebacks on error. |
 | `--yes` | Skip confirmation prompts (useful in CI). |

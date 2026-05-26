@@ -3,7 +3,7 @@ set -e
 
 BENCH_CLI_DIR="$HOME/bench-cli"
 
-# Clone or update bench-cli
+# Clone or update
 if [ -d "$BENCH_CLI_DIR" ]; then
     echo "Updating bench-cli..."
     git -C "$BENCH_CLI_DIR" pull
@@ -12,26 +12,40 @@ else
     git clone https://github.com/frappe/bench-cli "$BENCH_CLI_DIR"
 fi
 
-# Make the bench wrapper executable
 chmod +x "$BENCH_CLI_DIR/bench"
 
-# Add ~/bench-cli to PATH permanently so `bench` is available anywhere
-SHELL_RC="$HOME/.bashrc"
-if [[ "$SHELL" == */zsh ]]; then
-    SHELL_RC="$HOME/.zshrc"
-fi
+# Add to PATH in the appropriate shell rc file
+add_to_path() {
+    local rc="$1"
+    local line="export PATH=\"\$HOME/bench-cli:\$PATH\""
+    if ! grep -qF 'bench-cli' "$rc" 2>/dev/null; then
+        echo "$line" >> "$rc"
+        echo "Added bench to PATH in $rc"
+    fi
+}
 
-PATH_LINE="export PATH=\"\$HOME/bench-cli:\$PATH\""
-if ! grep -qF 'bench-cli' "$SHELL_RC" 2>/dev/null; then
-    echo "$PATH_LINE" >> "$SHELL_RC"
+if [[ "$SHELL" == */fish ]]; then
+    FISH_CONFIG="$HOME/.config/fish/config.fish"
+    mkdir -p "$(dirname "$FISH_CONFIG")"
+    if ! grep -qF 'bench-cli' "$FISH_CONFIG" 2>/dev/null; then
+        echo "fish_add_path \$HOME/bench-cli" >> "$FISH_CONFIG"
+        echo "Added bench to PATH in $FISH_CONFIG"
+    fi
+elif [[ "$SHELL" == */zsh ]]; then
+    add_to_path "$HOME/.zshrc"
+else
+    add_to_path "$HOME/.bashrc"
 fi
 
 export PATH="$BENCH_CLI_DIR:$PATH"
 
 echo ""
 echo "bench installed to $BENCH_CLI_DIR"
-echo "bench commands are available from any directory."
 echo ""
-echo "Run: bench new my-bench"
+echo "Quick start:"
+echo "  bench new my-bench"
+echo "  bench init"
+echo "  bench new-site site1.localhost"
+echo "  bench start"
 echo ""
-echo "If bench is not found, run: source $SHELL_RC"
+echo "If 'bench' is not found, open a new terminal or run: source ~/.zshrc"

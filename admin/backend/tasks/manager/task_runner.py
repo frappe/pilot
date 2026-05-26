@@ -51,7 +51,7 @@ class TaskRunner:
         (task_dir / "status").write_text("running")
 
         process = subprocess.Popen(
-            [sys.executable, "-m", "bench_cli.tasks.wrapper", str(task_dir)],
+            [sys.executable, "-m", "admin.backend.tasks.manager.wrapper", str(task_dir)],
             start_new_session=True,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -97,24 +97,24 @@ class TaskRunner:
         if command == "clear-cache":
             return [bench_bin, "frappe", "--site", args["site"], "clear-cache"]
         if command == "install-app":
-            return [sys.executable, "-m", "bench_cli.tasks.install_app_task",
+            return [sys.executable, "-m", "admin.backend.tasks.jobs.install_app_task",
                     str(self._bench_root), args["site"], args["app"]]
         if command == "uninstall-app":
             return [bench_bin, "frappe", "--site", args["site"], "uninstall-app", args["app"], "--yes", "--no-backup"]
         if command == "get-app":
-            argv = [sys.executable, "-m", "bench_cli.tasks.get_app_task",
+            argv = [sys.executable, "-m", "admin.backend.tasks.jobs.get_app_task",
                     str(self._bench_root), args["name"], args["repo"]]
             if args.get("branch"):
                 argv += ["--branch", args["branch"]]
             return argv
         if command == "new-site":
-            argv = [sys.executable, "-m", "bench_cli.tasks.new_site_task",
+            argv = [sys.executable, "-m", "admin.backend.tasks.jobs.new_site_task",
                     str(self._bench_root), args["name"]]
             if args.get("admin_password"):
                 argv += ["--admin-password", args["admin_password"]]
             return argv
         if command == "drop-site":
-            return [sys.executable, "-m", "bench_cli.tasks.drop_site_task",
+            return [sys.executable, "-m", "admin.backend.tasks.jobs.drop_site_task",
                     str(self._bench_root), args["site"]]
         if command == "backup-site":
             return [bench_bin, "frappe", "--site", args["site"], "backup"]
@@ -124,9 +124,9 @@ class TaskRunner:
                 cmd += ["--app", args["app"]]
             return cmd
         if command == "update":
-            return [sys.executable, "-m", "bench_cli.tasks.update_task", str(self._bench_root)]
+            return [sys.executable, "-m", "admin.backend.tasks.jobs.update_task", str(self._bench_root)]
         if command == "switch-branch":
-            return [sys.executable, "-m", "bench_cli.tasks.switch_branch_task",
+            return [sys.executable, "-m", "admin.backend.tasks.jobs.switch_branch_task",
                     str(self._bench_root), args["name"], args["branch"]]
 
         raise ValueError(f"Unhandled command: {command!r}")

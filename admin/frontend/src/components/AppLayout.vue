@@ -48,7 +48,7 @@ const breadcrumbs = computed(() => {
   <div class="flex h-screen overflow-hidden">
     <AppSidebar />
     <main class="flex-1 overflow-auto bg-surface-white">
-      <header class="sticky top-0 z-10 flex items-center border-b bg-surface-white px-5 py-2.5">
+      <header class="sticky top-0 z-[10] flex items-center border-b bg-surface-white px-5 py-2.5">
         <Breadcrumbs :items="breadcrumbs" />
       </header>
       <div class="p-6">

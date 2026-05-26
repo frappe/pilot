@@ -1,3 +1,8 @@
 html {
   font-size: 14px;
 }
+
+/* Ensure frappe-ui dialog overlay sits above the sticky app header */
+.dialog-overlay {
+  z-index: 50;
+}

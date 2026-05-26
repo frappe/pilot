@@ -7,7 +7,7 @@ from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request
 
 from ..readers.app_reader import AppReader
-from bench_cli.tasks.task_runner import TaskRunner
+from admin.backend.tasks.manager.task_runner import TaskRunner
 
 apps_bp = Blueprint("apps", __name__)
 

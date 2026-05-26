@@ -8,7 +8,7 @@ from flask import Blueprint, current_app, jsonify, request
 
 from ..readers.app_reader import AppReader
 from ..readers.site_reader import SiteReader
-from bench_cli.tasks.task_runner import TaskRunner
+from admin.backend.tasks.manager.task_runner import TaskRunner
 
 sites_bp = Blueprint("sites", __name__)
 

@@ -1,4 +1,4 @@
-"""Tests for bench_cli.tasks — TaskRunner and TaskReader."""
+"""Tests for admin.backend.tasks — TaskRunner and TaskReader."""
 from __future__ import annotations
 
 import json
@@ -9,8 +9,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from bench_cli.tasks.task_runner import TaskRunner, TASK_RETENTION_LIMIT
-from bench_cli.tasks.task_reader import TaskReader
+from admin.backend.tasks.manager.task_runner import TaskRunner, TASK_RETENTION_LIMIT
+from admin.backend.tasks.manager.task_reader import TaskReader
 from bench_cli.exceptions import TaskNotFoundError, TaskNotRunningError
 
 
@@ -45,7 +45,7 @@ def test_build_argv_install_app(tmp_path: Path) -> None:
     argv = runner._build_argv("install-app", {"site": "mysite.localhost", "app": "erpnext"})
     # install-app uses the install_app_task module (chains install + build)
     assert argv[0] == sys.executable
-    assert argv[1:3] == ["-m", "bench_cli.tasks.install_app_task"]
+    assert argv[1:3] == ["-m", "admin.backend.tasks.jobs.install_app_task"]
     assert str(tmp_path) in argv
     assert "mysite.localhost" in argv
     assert "erpnext" in argv
@@ -62,7 +62,7 @@ def test_build_argv_get_app(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     argv = runner._build_argv("get-app", {"name": "erpnext", "repo": "https://github.com/frappe/erpnext"})
     assert argv[0] == sys.executable
-    assert argv[1:3] == ["-m", "bench_cli.tasks.get_app_task"]
+    assert argv[1:3] == ["-m", "admin.backend.tasks.jobs.get_app_task"]
     assert str(tmp_path) in argv
     assert "erpnext" in argv
     assert "https://github.com/frappe/erpnext" in argv
@@ -94,7 +94,7 @@ def test_build_argv_update(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     argv = runner._build_argv("update", {})
     assert argv[0] == sys.executable
-    assert argv[1:3] == ["-m", "bench_cli.tasks.update_task"]
+    assert argv[1:3] == ["-m", "admin.backend.tasks.jobs.update_task"]
     assert str(tmp_path) in argv
 
 
@@ -102,7 +102,7 @@ def test_build_argv_switch_branch(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     argv = runner._build_argv("switch-branch", {"name": "gameplan", "branch": "develop"})
     assert argv[0] == sys.executable
-    assert argv[1:3] == ["-m", "bench_cli.tasks.switch_branch_task"]
+    assert argv[1:3] == ["-m", "admin.backend.tasks.jobs.switch_branch_task"]
     assert str(tmp_path) in argv
     assert "gameplan" in argv
     assert "develop" in argv
@@ -259,7 +259,7 @@ def test_task_retention_limit(tmp_path: Path) -> None:
     mock_proc = MagicMock()
     mock_proc.pid = 99999
 
-    with patch("bench_cli.tasks.task_runner.subprocess.Popen", return_value=mock_proc):
+    with patch("admin.backend.tasks.manager.task_runner.subprocess.Popen", return_value=mock_proc):
         runner.run("build", {})
 
     # The oldest completed task directory should have been removed.

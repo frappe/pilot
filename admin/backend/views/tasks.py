@@ -10,8 +10,8 @@ from flask import (
 )
 
 from bench_cli.exceptions import TaskNotFoundError, TaskNotRunningError
-from bench_cli.tasks.task_reader import TaskReader
-from bench_cli.tasks.task_runner import TaskRunner
+from admin.backend.tasks.manager.task_reader import TaskReader
+from admin.backend.tasks.manager.task_runner import TaskRunner
 
 tasks_bp = Blueprint("tasks", __name__)
 

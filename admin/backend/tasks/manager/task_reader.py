@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from bench_cli.exceptions import TaskNotFoundError
-from bench_cli.tasks.models import TaskInfo
+from admin.backend.tasks.manager.models import TaskInfo
 
 _TASK_ID_PATTERN = re.compile(r"^\d{8}-\d{6}-[a-f0-9]{6}$")
 _POLL_INTERVAL = 0.5

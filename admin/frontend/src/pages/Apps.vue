@@ -261,10 +261,12 @@ onMounted(load)
     <!-- Add App dialog -->
     <Dialog v-model="showAdd" :options="{ title: 'Add App', size: 'lg' }">
       <template #body-content>
+        <!-- @pointerdown.stop prevents the overlay's preventDefault from blocking input focus -->
+        <div @pointerdown.stop>
 
         <!-- Registry picker mode -->
         <div v-if="addMode === 'picker'">
-          <FormControl type="text" v-model="registrySearch" placeholder="Search apps…" class="mb-3" />
+          <TextInput v-model="registrySearch" placeholder="Search apps…" class="mb-3" />
           <div class="max-h-52 overflow-y-auto mb-3">
             <div v-if="!filteredRegistry.length" class="p-4 text-gray-400">No apps found</div>
             <button
@@ -401,6 +403,7 @@ onMounted(load)
           </div>
         </div>
 
+        </div> <!-- end @pointerdown.stop wrapper -->
       </template>
     </Dialog>
 
