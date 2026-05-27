@@ -10,9 +10,8 @@ const routes = [
   { path: '/logs/:filename', component: () => import('./pages/LogViewer.vue'), meta: { title: 'Logs' } },
   { path: '/tasks', component: () => import('./pages/TaskList.vue'), meta: { title: 'Tasks' } },
   { path: '/tasks/:id', component: () => import('./pages/TaskDetail.vue'), meta: { title: 'Tasks' } },
-  { path: '/database/binlogs', component: () => import('./pages/Database.vue'), meta: { title: 'Binlogs' } },
+  { path: '/database', component: () => import('./pages/Database.vue'), meta: { title: 'Database' } },
   { path: '/database/binlogs/:name', component: () => import('./pages/BinlogDetail.vue'), meta: { title: 'Binlogs' } },
-  { path: '/database/slow-queries', component: () => import('./pages/SlowQueries.vue'), meta: { title: 'Slow Queries' } },
 ]
 
 export const router = createRouter({

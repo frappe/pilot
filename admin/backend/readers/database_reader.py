@@ -113,6 +113,15 @@ class DatabaseReader:
         finally:
             connection.close()
 
+    def read_processlist(self) -> list[dict]:
+        connection = self._connect()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SHOW FULL PROCESSLIST")
+                return cursor.fetchall()
+        finally:
+            connection.close()
+
     def read_slow_queries(self, limit: int = 50) -> list[SlowQuery]:
         log_path = self.slow_query_log_path()
         if log_path is None or not log_path.exists():

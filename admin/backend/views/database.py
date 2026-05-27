@@ -58,6 +58,29 @@ def binlog_detail(log_name: str):
     })
 
 
+@database_bp.route("/processlist")
+def processlist():
+    bench_root = current_app.config["BENCH_ROOT"]
+    try:
+        reader = _get_database_reader(bench_root)
+        rows = reader.read_processlist()
+    except Exception as error:
+        return jsonify({"error": str(error)}), 500
+    return jsonify([
+        {
+            "id": r["Id"],
+            "user": r["User"],
+            "host": r["Host"],
+            "db": r["db"] or "",
+            "command": r["Command"],
+            "time": r["Time"],
+            "state": r["State"] or "",
+            "info": r["Info"] or "",
+        }
+        for r in rows
+    ])
+
+
 @database_bp.route("/slow-queries")
 def slow_queries():
     bench_root = current_app.config["BENCH_ROOT"]

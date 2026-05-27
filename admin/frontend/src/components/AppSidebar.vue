@@ -23,7 +23,7 @@ const navItems = [
   { label: 'Sites', to: '/sites', icon: LucideGlobe },
   { label: 'Processes', to: '/processes', icon: LucideActivity },
   { label: 'Logs', to: '/logs', icon: LucideFileText },
-  { label: 'Database', to: '/database/binlogs', icon: LucideDatabase },
+  { label: 'Database', to: '/database', icon: LucideDatabase },
   { label: 'Tasks', to: '/tasks', icon: LucideListTodo },
 ]
 
