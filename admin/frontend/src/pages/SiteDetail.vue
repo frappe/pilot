@@ -454,8 +454,8 @@ onMounted(() => { load(); loadRegistry() })
             </div>
 
             <!-- History -->
-            <div>
-              <div class="mb-2 flex items-center justify-between">
+            <div class="rounded border p-4">
+              <div class="mb-3 flex items-center justify-between">
                 <h3 class="text-sm font-semibold text-ink-gray-9">Backup History</h3>
                 <Button variant="ghost" size="sm" @click="loadBackups">Refresh</Button>
               </div>
