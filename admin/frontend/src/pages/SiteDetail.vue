@@ -29,6 +29,35 @@ const showDrop = ref(false)
 const showUninstall = ref(false)
 const uninstallTarget = ref('')
 
+const showLogin = ref(false)
+const loginPassword = ref('')
+const loginLoading = ref(false)
+const loginError = ref('')
+
+async function loginToSite() {
+  loginError.value = ''
+  loginLoading.value = true
+  try {
+    const res = await fetch(`/api/sites/${siteName}/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: loginPassword.value }),
+    })
+    const d = await res.json()
+    if (d.ok) {
+      showLogin.value = false
+      loginPassword.value = ''
+      window.open(d.url, '_blank')
+    } else {
+      loginError.value = d.error
+    }
+  } catch (e) {
+    loginError.value = e.message
+  } finally {
+    loginLoading.value = false
+  }
+}
+
 const showEditConfig = ref(false)
 const editConfigText = ref('')
 const editConfigError = ref('')
@@ -180,6 +209,9 @@ onMounted(() => { load(); loadRegistry() })
           </div>
         </div>
         <div class="flex shrink-0 items-center gap-2">
+          <Button variant="outline" @click="showLogin = true">
+            Login to Site
+          </Button>
           <Button variant="outline" :loading="actionLoading === 'backup'" @click="doAction('backup')">
             Backup
           </Button>
@@ -283,6 +315,28 @@ onMounted(() => { load(); loadRegistry() })
           <Button variant="ghost" @click="showDrop = false">Cancel</Button>
           <Button variant="solid" theme="red" :loading="actionLoading === 'drop'"
             @click="showDrop = false; doAction('drop')">Drop Site</Button>
+        </div>
+      </template>
+    </Dialog>
+
+    <!-- Login dialog -->
+    <Dialog v-model="showLogin" :options="{ title: 'Login to Site', size: 'sm' }">
+      <template #body-content>
+        <div @pointerdown.stop>
+          <FormControl
+            label="Administrator password"
+            type="password"
+            v-model="loginPassword"
+            placeholder="admin"
+            @keydown.enter="loginToSite"
+          />
+          <ErrorMessage :message="loginError" class="mt-2" />
+          <div class="mt-4 flex justify-end gap-2">
+            <Button variant="ghost" @click="showLogin = false">Cancel</Button>
+            <Button variant="solid" :loading="loginLoading" :disabled="!loginPassword" @click="loginToSite">
+              Login
+            </Button>
+          </div>
         </div>
       </template>
     </Dialog>

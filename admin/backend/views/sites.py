@@ -115,6 +115,59 @@ def uninstall_app(name: str):
     return jsonify({"ok": True, "task_id": task_id})
 
 
+@sites_bp.route("/<name>/login", methods=["POST"])
+def login_to_site(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    if not (bench_root / "sites" / name / "site_config.json").exists():
+        return jsonify({"ok": False, "error": "Site not found."}), 404
+
+    data = request.get_json(silent=True) or {}
+    password = (data.get("password") or "").strip()
+    if not password:
+        return jsonify({"ok": False, "error": "Password is required."})
+
+    import http.client
+    import urllib.parse
+    from bench_cli.config.bench_config import BenchConfig
+
+    try:
+        http_port = BenchConfig.from_file(bench_root / "bench.toml").http_port
+    except Exception:
+        http_port = 8000
+
+    try:
+        conn = http.client.HTTPConnection("localhost", http_port, timeout=10)
+        conn.request(
+            "POST",
+            "/api/method/login",
+            body=urllib.parse.urlencode({"usr": "Administrator", "pwd": password}),
+            headers={
+                "Host": name,
+                "X-Frappe-Site-Name": name,
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+        )
+        resp = conn.getresponse()
+    except OSError as e:
+        return jsonify({"ok": False, "error": f"Could not reach site web server: {e}"})
+
+    if resp.status == 401:
+        return jsonify({"ok": False, "error": "Incorrect password."})
+    if resp.status != 200:
+        return jsonify({"ok": False, "error": f"Site returned HTTP {resp.status}."})
+
+    sid = None
+    for header, value in resp.getheaders():
+        if header.lower() == "set-cookie" and value.startswith("sid="):
+            sid = value.split("=", 1)[1].split(";")[0]
+            break
+
+    if not sid or sid == "Guest":
+        return jsonify({"ok": False, "error": "Login failed — wrong password?"})
+
+    return jsonify({"ok": True, "url": f"http://{name}:{http_port}/desk?sid={sid}"})
+
+
 @sites_bp.route("/<name>/config", methods=["PATCH"])
 def update_config(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
