@@ -21,6 +21,9 @@ venv/
 .venv/
 .admin-venv/
 
+# Redis
+*.rdb
+
 # pytest
 .pytest_cache/
 .coverage

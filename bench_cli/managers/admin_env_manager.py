@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 import sys
 from pathlib import Path
+import tomllib
 
 
 class AdminEnvManager:
@@ -19,17 +20,31 @@ class AdminEnvManager:
         return self.venv_path / "bin" / "python"
 
     def ensure(self) -> None:
-        """Create the admin venv and install flask if not already done."""
+        """Create the admin venv and install admin dependencies if not already done."""
         if self.python.exists():
             return
         print("Setting up admin environment (one-time)...")
         print("  Creating virtual environment...", end=" ", flush=True)
         subprocess.run([sys.executable, "-m", "venv", str(self.venv_path)], check=True)
         print("done")
-        print("  Installing flask...", end=" ", flush=True)
+
+        deps = self._read_admin_deps()
+        if not deps:
+            print("  No admin dependencies specified, skipping installation.")
+            return
+
+        print(f"  Installing {', '.join(deps)}...", end=" ", flush=True)
         pip = self.venv_path / "bin" / "pip"
         subprocess.run(
-            [str(pip), "install", "--quiet", "flask>=3.0"],
+            [str(pip), "install", "--quiet", *deps],
             check=True,
         )
         print("done")
+
+    def _read_admin_deps(self) -> list[str]:
+        pyproject = self.venv_path.parent / "pyproject.toml"
+        if not pyproject.exists():
+            return ["flask>=3.0", "psutil>=5.9", "pymysql>=1.1"]
+        with open(pyproject, "rb") as f:
+            data = tomllib.load(f)
+        return data.get("project", {}).get("optional-dependencies", {}).get("admin")
