@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -50,6 +51,19 @@ class Site:
                 cmd += ["--db-root-password", mariadb.root_password]
 
         run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
+
+        # Frappe's new-site creates the DB user as @'localhost', which breaks
+        # TCP connections (127.0.0.1 != localhost in MySQL privilege tables).
+        # Re-create the user with the correct host scope when no unix socket
+        # is in use. Credentials are read from the generated site_config.json.
+        if not socket_path:
+            site_cfg_path = self.path / "site_config.json"
+            if site_cfg_path.exists():
+                site_cfg = json.loads(site_cfg_path.read_text())
+                db_name = site_cfg.get("db_name", "")
+                db_password = site_cfg.get("db_password", "")
+                if db_name and db_password:
+                    MariaDBManager(mariadb).create_user(db_name, db_password, db_name)
 
     def restore(self, db_file: str, public_files: str | None = None, private_files: str | None = None) -> None:
         cmd = self._frappe_call("frappe", "--site", self.config.name, "restore", db_file)

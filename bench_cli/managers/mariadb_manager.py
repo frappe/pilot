@@ -39,6 +39,43 @@ class MariaDBManager:
             return f"mariadb-server-{self.config.version}"
         return "mariadb-server"
 
+    def _grant_host(self) -> str:
+        """Return the MySQL grant host for CREATE USER / GRANT statements.
+
+        Use '%' when connecting over TCP so that the site DB user can reach
+        MariaDB from 127.0.0.1 (TCP loopback).  Fall back to 'localhost'
+        only when a unix socket is detected — in MySQL's privilege tables
+        'localhost' matches socket connections exclusively.
+        """
+        return "localhost" if self._detect_socket() else "%"
+
+    def create_user(self, username: str, password: str, db_name: str) -> None:
+        """Create the DB user and grant all privileges with the correct host scope.
+
+        Frappe's new-site always creates the user as @'localhost', which
+        breaks TCP connections (127.0.0.1 != localhost in privilege tables).
+        This method uses the grant host derived from _grant_host() so TCP
+        connections work when no unix socket is available.
+        """
+        grant_host = self._grant_host()
+        sql = (
+            f"CREATE USER IF NOT EXISTS '{username}'@'{grant_host}'"
+            f" IDENTIFIED BY '{password}';"
+            f"GRANT ALL PRIVILEGES ON `{db_name}`.* TO '{username}'@'{grant_host}';"
+            "FLUSH PRIVILEGES;"
+        )
+        mysql_bin = shutil.which("mariadb") or shutil.which("mysql") or "mysql"
+        cmd = [mysql_bin, f"-u{self.config.admin_user}"]
+        if self.config.root_password:
+            cmd.append(f"-p{self.config.root_password}")
+        socket_path = self._detect_socket()
+        if socket_path:
+            cmd.append(f"--socket={socket_path}")
+        else:
+            cmd += [f"-h{self.config.host}", f"-P{self.config.port}"]
+        cmd += ["-e", sql]
+        run_command(cmd)
+
     def _detect_socket(self) -> str:
         if self.config.socket_path:
             return self.config.socket_path
