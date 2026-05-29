@@ -1,14 +1,15 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
-import { useRoute } from 'vue-router'
 import { Sidebar, SidebarItem } from 'frappe-ui'
-import LucideLayoutDashboard from '~icons/lucide/layout-dashboard'
-import LucidePackage2 from '~icons/lucide/package-2'
-import LucideGlobe from '~icons/lucide/globe'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import LucideActivity from '~icons/lucide/activity'
-import LucideFileText from '~icons/lucide/file-text'
+import LucideCamera from '~icons/lucide/camera'
 import LucideDatabase from '~icons/lucide/database'
+import LucideFileText from '~icons/lucide/file-text'
+import LucideGlobe from '~icons/lucide/globe'
+import LucideLayoutDashboard from '~icons/lucide/layout-dashboard'
 import LucideListTodo from '~icons/lucide/list-todo'
+import LucidePackage2 from '~icons/lucide/package-2'
 
 const route = useRoute()
 
@@ -17,7 +18,7 @@ const header = {
   logo: '/logos/frappe-icon.png',
 }
 
-const navItems = [
+const baseNavItems = [
   { label: 'Dashboard', to: '/', icon: LucideLayoutDashboard },
   { label: 'Apps', to: '/apps', icon: LucidePackage2 },
   { label: 'Sites', to: '/sites', icon: LucideGlobe },
@@ -27,7 +28,14 @@ const navItems = [
   { label: 'Tasks', to: '/tasks', icon: LucideListTodo },
 ]
 
-const sections = [{ items: navItems }]
+const snapshotsEnabled = ref(false)
+
+const navItems = computed(() => [
+  ...baseNavItems,
+  ...(snapshotsEnabled.value ? [{ label: 'Snapshots', to: '/snapshots', icon: LucideCamera }] : []),
+])
+
+const sections = computed(() => [{ items: navItems.value }])
 
 function isActive(to) {
   if (to === '/') return route.path === '/'
@@ -44,11 +52,23 @@ async function pollRunning() {
       const tasks = await res.json()
       runningCount.value = Array.isArray(tasks) ? tasks.length : 0
     }
-  } catch {}
+  } catch { }
+}
+
+async function loadVolumeConfig() {
+  try {
+    const res = await fetch('/api/volume/status')
+    if (res.ok) {
+      const data = await res.json()
+      console.log(data)
+      snapshotsEnabled.value = data.enabled === true
+    }
+  } catch { }
 }
 
 onMounted(() => {
   pollRunning()
+  loadVolumeConfig()
   pollTimer = setInterval(pollRunning, 4000)
 })
 onUnmounted(() => clearInterval(pollTimer))
@@ -57,14 +77,10 @@ onUnmounted(() => clearInterval(pollTimer))
 <template>
   <Sidebar :header="header" :sections="sections" disableCollapse>
     <template #sidebar-item="{ item }">
-      <SidebarItem
-        :label="item.label"
-        :icon="item.icon"
-        :to="item.to"
-        :isActive="isActive(item.to)"
-      >
+      <SidebarItem :label="item.label" :icon="item.icon" :to="item.to" :isActive="isActive(item.to)">
         <template v-if="item.to === '/tasks' && runningCount > 0" #suffix>
-          <span class="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-bold text-white">
+          <span
+            class="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-bold text-white">
             {{ runningCount }}
           </span>
         </template>
