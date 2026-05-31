@@ -184,10 +184,10 @@ class ProcessManager:
     def _web_definition(self) -> ProcessDefinition:
         port = self.bench.config.http_port
         sites = self.bench.sites_path
-        bench_bin = self.bench.env_path / "bin" / "bench"
+        python = self.bench.env_path / "bin" / "python"
         return ProcessDefinition(
             name="web",
-            command=f"cd {sites} && {bench_bin} frappe serve --port {port} --noreload",
+            command=f"cd {sites} && {python} -m frappe.utils.bench_helper frappe serve --port {port} --noreload",
             log_file=self.bench.logs_path / "web.log",
         )
 
@@ -204,7 +204,7 @@ class ProcessManager:
         return [
             ProcessDefinition(
                 name=f"worker_{queue}_{i}",
-                command=f"cd {sites} && {self.bench.env_path}/bin/bench frappe worker --queue {queue}",
+                command=f"cd {sites} && {self.bench.env_path}/bin/python -m frappe.utils.bench_helper frappe worker --queue {queue}",
                 log_file=self.bench.logs_path / f"worker_{queue}_{i}.log",
             )
             for i in range(1, count + 1)

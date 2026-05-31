@@ -9,9 +9,8 @@ class BuildCommand:
         self.bench = bench
 
     def run(self) -> None:
-        bench_binary = str(self.bench.env_path / "bin" / "bench")
         run_command(
-            [bench_binary, "frappe", "build", "--force"],
+            [*self.bench.frappe_call, "frappe", "build", "--force"],
             cwd=self.bench.sites_path,
             stream_output=True,
         )

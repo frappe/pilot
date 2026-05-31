@@ -59,9 +59,8 @@ class GetAppCommand:
 
         print(f"\nBuilding assets...")
         sys.stdout.flush()
-        bench_bin = str(self.bench.env_path / "bin" / "bench")
         subprocess.run(
-            [bench_bin, "frappe", "build", "--force"],
+            [*self.bench.frappe_call, "frappe", "build", "--force"],
             cwd=str(self.bench.sites_path),
             check=False,
         )

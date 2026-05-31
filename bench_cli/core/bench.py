@@ -45,6 +45,11 @@ class Bench:
     def python(self) -> Path:
         return self.env_path / "bin" / "python"
 
+    @property
+    def frappe_call(self) -> list[str]:
+        """Command prefix to invoke frappe's bench helper via the venv Python."""
+        return [str(self.python), "-m", "frappe.utils.bench_helper"]
+
     def apps(self) -> List["App"]:
         """Return all cloned apps by scanning apps/ directory."""
         from bench_cli.config.app_config import AppConfig

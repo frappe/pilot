@@ -16,8 +16,7 @@ class DropSiteCommand:
         self.name = name
 
     def run(self) -> None:
-        bench_bin = str(self.bench.env_path / "bin" / "bench")
-        cmd = [bench_bin, "frappe", "drop-site", "--force", self.name]
+        cmd = [*self.bench.frappe_call, "frappe", "drop-site", "--force", self.name]
         if self.bench.config.mariadb.root_password:
             cmd += ["--db-root-password", self.bench.config.mariadb.root_password]
         print(f"Dropping site '{self.name}'...")

@@ -28,7 +28,6 @@ class InitCommand:
         python_env_manager = PythonEnvManager(self.bench)
         python_env_manager.ensure_python()
         python_env_manager.create_venv()
-        python_env_manager.generate_bench_script()
 
         self._step(5, total, "Clone and install framework app")
         for app in self.bench.init_apps():
