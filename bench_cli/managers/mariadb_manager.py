@@ -1,4 +1,5 @@
 import shutil
+import socket
 from pathlib import Path
 
 from bench_cli.config.mariadb_config import MariaDBConfig
@@ -23,7 +24,16 @@ class MariaDBManager:
         package = self._brew_package() if is_macos() else self._apt_package()
         package_manager.install(package)
 
+    def is_running(self) -> bool:
+        try:
+            with socket.create_connection((self.config.host, self.config.port), timeout=1):
+                return True
+        except OSError:
+            return False
+
     def start(self) -> None:
+        if self.is_running():
+            return
         if is_macos():
             run_command(["brew", "services", "start", self._brew_package()])
         else:
