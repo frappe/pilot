@@ -23,8 +23,9 @@ class Site:
     def exists(self) -> bool:
         return (self.path / "site_config.json").exists()
 
-    def _bench_binary(self) -> str:
-        return str(self.bench.env_path / "bin" / "bench")
+    def _fc(self, *args: str) -> list[str]:
+        """Build a frappe bench_helper command."""
+        return [*self.bench.frappe_call, *args]
 
     def create(self) -> None:
         from bench_cli.managers.mariadb_manager import MariaDBManager
@@ -32,13 +33,12 @@ class Site:
         mariadb = self.bench.config.mariadb
         socket_path = MariaDBManager(mariadb)._detect_socket()
 
-        cmd = [
-            self._bench_binary(), "frappe",
-            "--site", self.config.name,
+        cmd = self._fc(
+            "frappe", "--site", self.config.name,
             "new-site", self.config.name,
             "--db-root-username", mariadb.admin_user,
             "--admin-password", self.config.admin_password,
-        ]
+        )
         if socket_path:
             cmd += ["--db-socket", socket_path]
             # unix_socket auth ignores the password; pass a non-empty placeholder
@@ -63,15 +63,31 @@ class Site:
         run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
 
     def install_app(self, app_name: str) -> None:
-        run_command([
-            self._bench_binary(), "frappe",
-            "--site", self.config.name,
-            "install-app", app_name,
-        ], cwd=self.bench.sites_path, stream_output=True)
+        run_command(
+            self._fc("frappe", "--site", self.config.name, "install-app", app_name),
+            cwd=self.bench.sites_path, stream_output=True,
+        )
+
+    def uninstall_app(self, app_name: str) -> None:
+        run_command(
+            self._fc("frappe", "--site", self.config.name, "uninstall-app", app_name, "--yes"),
+            cwd=self.bench.sites_path, stream_output=True,
+        )
+
+    def list_apps(self) -> list[str]:
+        import subprocess
+        result = subprocess.run(
+            self._fc("frappe", "--site", self.config.name, "list-apps"),
+            cwd=str(self.bench.sites_path),
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            return []
+        return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
     def migrate(self) -> None:
-        run_command([
-            self._bench_binary(), "frappe",
-            "--site", self.config.name,
-            "migrate",
-        ], cwd=self.bench.sites_path, stream_output=True)
+        run_command(
+            self._fc("frappe", "--site", self.config.name, "migrate"),
+            cwd=self.bench.sites_path, stream_output=True,
+        )

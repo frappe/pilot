@@ -29,22 +29,15 @@ class PythonEnvManager:
         version = self.bench.config.python_version
         run_command([uv, "venv", "--python", version, str(self.bench.env_path)], stream_output=True)
 
-    def generate_bench_script(self) -> None:
-        python_path = self.bench.env_path / "bin" / "python"
-        bench_script = self.bench.env_path / "bin" / "bench"
-        bench_script.write_text(
-            f"#!{python_path}\n"
-            "import sys\n"
-            "from frappe.utils.bench_helper import main\n"
-            "if __name__ == '__main__':\n"
-            "    sys.exit(main() or 0)\n"
-        )
-        bench_script.chmod(0o755)
-
     def install_app(self, app: "App") -> None:
         uv = self._ensure_uv()
         python = str(self.bench.env_path / "bin" / "python")
         run_command([uv, "pip", "install", "--python", python, "-e", str(app.path)], stream_output=True)
+
+    def uninstall_app(self, app_name: str) -> None:
+        uv = self._ensure_uv()
+        python = str(self.bench.env_path / "bin" / "python")
+        run_command([uv, "pip", "uninstall", "--python", python, app_name], stream_output=True)
 
     def install_node(self) -> None:
         if shutil.which("node"):
@@ -63,8 +56,10 @@ class PythonEnvManager:
                 run_command(["npm", "install"], cwd=app.path, stream_output=True)
 
     def build_assets(self) -> None:
-        bench_binary = str(self.bench.env_path / "bin" / "bench")
-        run_command([bench_binary, "frappe", "build", "--force"], cwd=self.bench.sites_path, stream_output=True)
+        run_command(
+            [*self.bench.frappe_call, "frappe", "build", "--force"],
+            cwd=self.bench.sites_path, stream_output=True,
+        )
 
     def _ensure_uv(self) -> str:
         """Return path to uv, installing it if not on PATH."""

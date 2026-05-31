@@ -7,6 +7,7 @@ from bench_cli.exceptions import BenchError
 _OWN_COMMANDS = frozenset([
     "new", "init", "start", "stop", "get-app", "new-site",
     "frappe", "build", "update", "build-admin", "setup",
+    "remove-app", "uninstall-app", "list-apps",
 ])
 _OWN_GROUP_OPTIONS = frozenset(["--verbose", "--yes", "-y", "--bench", "-b", "--help", "-h"])
 
@@ -136,6 +137,15 @@ def _make_parser() -> argparse.ArgumentParser:
     p_get.add_argument("repo", help="Git repository URL.")
     p_get.add_argument("--branch", default="", help="Git branch to checkout.")
 
+    p_remove = sub.add_parser("remove-app", help="Remove an app from the bench.")
+    p_remove.add_argument("app", help="App name to remove.")
+
+    p_uninstall = sub.add_parser("uninstall-app", help="Uninstall an app from a site.")
+    p_uninstall.add_argument("site", help="Site name.")
+    p_uninstall.add_argument("app", help="App name to uninstall.")
+
+    sub.add_parser("list-apps", help="List apps installed in the bench.")
+
     p_newsite = sub.add_parser("new-site", help="Create a new site and add it to bench.toml.")
     p_newsite.add_argument("name", help="Site name (e.g. site2.localhost).")
     p_newsite.add_argument("--admin-password", default="admin", help="Frappe admin password.")
@@ -152,6 +162,7 @@ def _make_parser() -> argparse.ArgumentParser:
     setup_sub.add_parser("nginx", help="Generate nginx config.")
     setup_sub.add_parser("letsencrypt", help="Setup Let's Encrypt SSL.")
     setup_sub.add_parser("production", help="Full production setup (nginx + supervisor).")
+    setup_sub.add_parser("requirements", help="Install Python and JS requirements for all apps.")
 
     return parser
 
@@ -236,6 +247,24 @@ def _dispatch(args: argparse.Namespace) -> None:
     elif cmd == "get-app":
         _cmd_get_app(args)
 
+    elif cmd == "remove-app":
+        from bench_cli.commands.remove_app import RemoveAppCommand
+        RemoveAppCommand(_load_bench(), args.app, skip_confirm=args.yes).run()
+
+    elif cmd == "uninstall-app":
+        from bench_cli.commands.uninstall_app import UninstallAppCommand
+        UninstallAppCommand(_load_bench(), args.site, args.app).run()
+
+    elif cmd == "list-apps":
+        bench = _load_bench()
+        apps_txt = bench.sites_path / "apps.txt"
+        if apps_txt.exists():
+            apps = [a.strip() for a in apps_txt.read_text().splitlines() if a.strip()]
+        else:
+            apps = [a.config.name for a in bench.apps()]
+        for app in apps:
+            print(app)
+
     elif cmd == "new-site":
         _cmd_new_site(args)
 
@@ -296,6 +325,9 @@ def _dispatch_setup(args: argparse.Namespace) -> None:
     elif setup_cmd == "production":
         from bench_cli.commands.setup.production import SetupProductionCommand
         SetupProductionCommand(_load_bench()).run()
+    elif setup_cmd == "requirements":
+        from bench_cli.commands.setup.requirements import SetupRequirementsCommand
+        SetupRequirementsCommand(_load_bench()).run()
     else:
-        print("Usage: bench setup [config|nginx|letsencrypt|production]", file=sys.stderr)
+        print("Usage: bench setup [config|nginx|letsencrypt|production|requirements]", file=sys.stderr)
         sys.exit(1)
