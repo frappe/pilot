@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -12,6 +14,9 @@ from bench_cli.utils import run_command
 if TYPE_CHECKING:
     from bench_cli.core.app import App
     from bench_cli.core.bench import Bench
+
+# Matches esbuild content-hash output names: name.bundle.XXXXXXXX.js / .css
+_BUNDLE_RE = re.compile(r"^(.+)\.bundle\.[A-Z0-9]{8}\.(js|css)$")
 
 
 class PythonEnvManager:
@@ -60,6 +65,114 @@ class PythonEnvManager:
             [*self.bench.frappe_call, "frappe", "build", "--force"],
             cwd=self.bench.sites_path, stream_output=True,
         )
+
+    def build_assets_for_app(self, app: "App") -> None:
+        """Build or link assets for one app.
+
+        If the app ships pre-built bundles in dist/ (committed to git),
+        wire them up without running yarn or esbuild. Otherwise fall back
+        to a full yarn install + frappe build.
+        """
+        app_dir = app.path  # apps/{name}/
+        # Frappe apps keep their Python package (and public/) one level in:
+        # apps/{name}/{name}/public/
+        app_public_dir = app_dir / app.config.name / "public"
+        dist_dir = app_public_dir / "dist"
+
+        if self._has_prebuilt_assets(dist_dir):
+            print(f"  Pre-built assets found for {app.config.name} — linking without rebuild...")
+            sys.stdout.flush()
+            self._setup_prebuilt_assets(app.config.name, app_public_dir, dist_dir)
+            return
+
+        if (app_dir / "package.json").exists():
+            print(f"  Installing JS dependencies for {app.config.name}...")
+            sys.stdout.flush()
+            run_command(["yarn", "install"], cwd=app_dir, stream_output=True)
+
+        print(f"  Building assets for {app.config.name}...")
+        sys.stdout.flush()
+        run_command(
+            [*self.bench.frappe_call, "frappe", "build", "--force"],
+            cwd=self.bench.sites_path,
+            stream_output=True,
+        )
+
+    # ------------------------------------------------------------------
+    # Pre-built asset helpers
+    # ------------------------------------------------------------------
+
+    def _has_prebuilt_assets(self, dist_dir: Path) -> bool:
+        js_dir = dist_dir / "js"
+        return js_dir.is_dir() and any(
+            _BUNDLE_RE.match(f.name) for f in js_dir.iterdir()
+        )
+
+    def _setup_prebuilt_assets(
+        self, app_name: str, app_public_dir: Path, dist_dir: Path
+    ) -> None:
+        """Symlink public/ into sites/assets/ and generate assets.json files."""
+        assets_dir = self.bench.sites_path / "assets"
+        assets_dir.mkdir(exist_ok=True)
+
+        # sites/assets/{app}/ -> apps/{app}/{app}/public/
+        app_link = assets_dir / app_name
+        if app_link.is_symlink():
+            app_link.unlink()
+        elif app_link.is_dir():
+            shutil.rmtree(str(app_link))
+        app_link.symlink_to(app_public_dir.resolve())
+
+        self._write_assets_json(app_name, dist_dir, assets_dir)
+        print(f"  Linked {app_link} -> {app_public_dir.resolve()}")
+
+    def _write_assets_json(
+        self, app_name: str, dist_dir: Path, assets_dir: Path
+    ) -> None:
+        assets: dict[str, str] = {}
+        rtl_assets: dict[str, str] = {}
+
+        js_dir = dist_dir / "js"
+        if js_dir.is_dir():
+            for f in sorted(js_dir.iterdir()):
+                m = _BUNDLE_RE.match(f.name)
+                if m and m.group(2) == "js":
+                    assets[f"{m.group(1)}.bundle.js"] = (
+                        f"/assets/{app_name}/dist/js/{f.name}"
+                    )
+
+        css_dir = dist_dir / "css"
+        if css_dir.is_dir():
+            for f in sorted(css_dir.iterdir()):
+                m = _BUNDLE_RE.match(f.name)
+                if m and m.group(2) == "css":
+                    assets[f"{m.group(1)}.bundle.css"] = (
+                        f"/assets/{app_name}/dist/css/{f.name}"
+                    )
+
+        rtl_dir = dist_dir / "css-rtl"
+        if rtl_dir.is_dir():
+            for f in sorted(rtl_dir.iterdir()):
+                m = _BUNDLE_RE.match(f.name)
+                if m and m.group(2) == "css":
+                    rtl_assets[f"rtl_{m.group(1)}.bundle.css"] = (
+                        f"/assets/{app_name}/dist/css-rtl/{f.name}"
+                    )
+
+        self._merge_json(assets_dir / "assets.json", assets)
+        if rtl_assets:
+            self._merge_json(assets_dir / "assets-rtl.json", rtl_assets)
+
+    @staticmethod
+    def _merge_json(path: Path, new_entries: dict) -> None:
+        existing: dict = {}
+        if path.exists():
+            try:
+                existing = json.loads(path.read_text())
+            except json.JSONDecodeError:
+                pass
+        existing.update(new_entries)
+        path.write_text(json.dumps(existing, indent="\t", sort_keys=True) + "\n")
 
     def _ensure_uv(self) -> str:
         """Return path to uv, installing it if not on PATH."""
