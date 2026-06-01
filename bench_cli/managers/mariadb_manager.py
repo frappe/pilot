@@ -46,6 +46,14 @@ class MariaDBManager:
             return f"mariadb-server-{self.config.version}"
         return "mariadb-server"
 
+    def kill_process(self, process_id: int) -> None:
+        connection = self._connect()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("KILL %s", (process_id,))
+        finally:
+            connection.close()
+
     @contextmanager
     def snapshot_lock(self):
         connection = self._connect()
