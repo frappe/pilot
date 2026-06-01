@@ -7,6 +7,7 @@ from bench_cli.config.volume_config import VolumeConfig
 from bench_cli.exceptions import BenchError, CommandError
 from bench_cli.platform import is_linux
 from bench_cli.utils import run_command
+from bench_cli.managers.volume_manager import VolumeManager
 
 
 def _require_enabled(config: VolumeConfig):
@@ -29,22 +30,15 @@ def _start_mariadb() -> None:
 
 
 class VolumeSetupCommand:
-    def __init__(self, config: VolumeConfig) -> None:
+    def __init__(self, config: VolumeConfig, bench_path: Path) -> None:
         self.config = config
+        self.bench_path = bench_path
 
-    def run(self) -> None:
-        if not is_linux():
-            raise BenchError("Volume management requires Linux (ZFS is not supported on macOS).")
-
-        _require_enabled(self.config)
-
-        from bench_cli.managers.volume_manager import VolumeManager
-
-        manager = VolumeManager(self.config)
+    def setup_mariadb(self, manager: VolumeManager):
         data_dir = Path(self.config.mariadb.data_dir)
         has_data = data_dir.exists() and any(data_dir.iterdir())
 
-        print(f"Creating ZFS pool '{self.config.pool}' and datasets...")
+        print(f"Creating ZFS pool '{self.config.pool}' and mariadb dataset...")
         manager.setup()
 
         if has_data:
@@ -57,6 +51,20 @@ class VolumeSetupCommand:
         if has_data:
             _start_mariadb()
 
+    def setup_bench(self, manager: VolumeManager):
+        data_dir = self.bench_path.parent
+        manager.migrate_data(self.config.benches_dataset, data_dir)
+        manager.set_mountpoint(self.config.benches_dataset, data_dir)
+
+    def run(self) -> None:
+        if not is_linux():
+            raise BenchError("Volume management requires Linux (ZFS is not supported on macOS).")
+
+        _require_enabled(self.config)
+
+        manager = VolumeManager(self.config)
+        self.setup_mariadb(manager)
+        self.setup_bench(manager)
         print("Volume setup complete.")
 
 

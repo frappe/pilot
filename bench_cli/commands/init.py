@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from bench_cli.core.bench import Bench
+from bench_cli.managers.process_manager import ProcessManagerFactory
 from bench_cli.managers.python_env_manager import PythonEnvManager
 from bench_cli.managers.redis_manager import RedisManager
-from bench_cli.managers.process_manager import ProcessManagerFactory
 
 
 class InitCommand:
@@ -77,7 +77,7 @@ class InitCommand:
     def _setup_volume(self) -> None:
         from bench_cli.commands.volume import VolumeSetupCommand
 
-        VolumeSetupCommand(self.bench.config.volume).run()
+        VolumeSetupCommand(self.bench.config.volume, self.bench.path).run()
 
     def _install_system_packages(self) -> None:
         from bench_cli.managers.mariadb_manager import MariaDBManager
