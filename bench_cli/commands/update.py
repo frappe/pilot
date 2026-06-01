@@ -17,6 +17,7 @@ class UpdateCommand:
         self._warn_if_running()
         self._update_apps()
         self._reinstall_apps()
+        self._rebuild_assets()
         self._migrate_sites()
 
     def _warn_if_running(self) -> None:
@@ -49,6 +50,12 @@ class UpdateCommand:
         for app in self.bench.apps():
             print(f"Reinstalling {app.config.name}...")
             mgr.install_app(app)
+
+    def _rebuild_assets(self) -> None:
+        mgr = PythonEnvManager(self.bench)
+        for app in self.bench.apps():
+            print(f"Updating assets for {app.config.name}...")
+            mgr.build_assets_for_app(app)
 
     def _migrate_sites(self) -> None:
         failed = False

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-import subprocess
 from pathlib import Path
 
 from bench_cli.config.app_config import AppConfig
@@ -51,16 +50,6 @@ class GetAppCommand:
             apps_txt.write_text("\n".join(existing + [self.name]) + "\n")
 
     def _build(self) -> None:
-        app_dir = self.bench.path / "apps" / self.name
-        if (app_dir / "package.json").exists():
-            print(f"\nInstalling JS dependencies for {self.name}...")
-            sys.stdout.flush()
-            subprocess.run(["yarn", "install"], cwd=str(app_dir), check=False)
-
-        print(f"\nBuilding assets...")
+        print(f"\nSetting up assets for {self.name}...")
         sys.stdout.flush()
-        subprocess.run(
-            [*self.bench.frappe_call, "frappe", "build", "--force"],
-            cwd=str(self.bench.sites_path),
-            check=False,
-        )
+        PythonEnvManager(self.bench).build_assets_for_app(self.app)
