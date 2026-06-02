@@ -1,8 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ListView, Button, LoadingText, ErrorMessage } from 'frappe-ui'
-import StatusBadge from '../components/StatusBadge.vue'
+import { Badge, ListView, Button, LoadingText, ErrorMessage } from 'frappe-ui'
 
 const processes = ref([])
 const loading = ref(true)
@@ -13,12 +12,7 @@ let countdown = 15
 let timer
 
 const router = useRouter()
-const STATUS_COLOR = {
-  running: 'badge-running',
-  stopped: 'badge-error',
-  error: 'badge-error',
-  unknown: 'badge-neutral',
-}
+const STATUS_COLOR = { running: 'blue', stopped: 'red', error: 'red', unknown: 'gray' }
 
 function openLog(filename) {
   router.push(`/logs/${filename}`)
@@ -77,11 +71,15 @@ onUnmounted(() => clearInterval(timer))
         :options="{ selectable: false, showTooltip: false }"
       >
         <template #cell="{ column, item }">
-          <StatusBadge
+          <Badge
             v-if="column.key === 'status'"
             :label="item"
-            :variant="STATUS_COLOR[item] || 'badge-neutral'"
-          />
+            :theme="STATUS_COLOR[item] || 'gray'"
+          >
+            <template v-if="item === 'running'" #prefix>
+              <span class="pulse-dot" />
+            </template>
+          </Badge>
           <button
             v-else-if="column.key === 'log_filename' && item"
             class="text-ink-blue-2 hover:underline"

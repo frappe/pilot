@@ -1,10 +1,9 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Button, Dialog, LoadingText, ErrorMessage } from 'frappe-ui'
+import { Button, Badge, Dialog, LoadingText, ErrorMessage } from 'frappe-ui'
 import TerminalOutput from '../components/TerminalOutput.vue'
 import { processLine } from '../utils/ansi.js'
-import StatusBadge from '../components/StatusBadge.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -21,13 +20,7 @@ const actionError = ref('')
 let es = null
 const terminal = ref(null)
 
-const TASK_STATUS_BADGE = {
-  running: 'badge-running',
-  success: 'badge-success',
-  failed:  'badge-error',
-  stopped: 'badge-error',
-  killed:  'badge-neutral',
-}
+const TASK_COLOR = { success: 'green', failed: 'red', running: 'blue', killed: 'gray', stopped: 'red' }
 
 function fmtDate(iso) {
   if (!iso) return '—'
@@ -121,10 +114,14 @@ onUnmounted(() => { if (es) { es.close(); es = null } })
 
       <!-- Header -->
       <div class="flex flex-wrap items-center gap-3">
-        <StatusBadge
+        <Badge
           :label="streaming ? 'running…' : task.status"
-          :variant="streaming ? 'badge-running' : (TASK_STATUS_BADGE[task.status] || 'badge-neutral')"
-        />
+          :theme="streaming ? 'blue' : (TASK_COLOR[task.status] || 'gray')"
+        >
+          <template v-if="streaming" #prefix>
+            <span class="pulse-dot" />
+          </template>
+        </Badge>
         <span class="font-mono text-sm font-medium">{{ task.command }}</span>
         <span
           v-if="Object.keys(task.args).length"

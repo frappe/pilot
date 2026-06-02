@@ -1,10 +1,9 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Button, Dialog, FormControl, LoadingText, ErrorMessage, Tabs } from 'frappe-ui'
+import { Button, Badge, Dialog, FormControl, LoadingText, ErrorMessage, Tabs } from 'frappe-ui'
 import LucideDatabase from '~icons/lucide/database'
 import LucideServer from '~icons/lucide/server'
-import StatusBadge from '../components/StatusBadge.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -338,9 +337,9 @@ onMounted(() => { load(); loadRegistry() })
         <div class="flex flex-col gap-1.5">
           <div class="flex items-center gap-2">
             <h1 class="text-2xl font-semibold text-ink-gray-9">{{ siteName }}</h1>
-            <StatusBadge
+            <Badge
               :label="site.exists ? 'Online' : 'Offline'"
-              :variant="site.exists ? 'badge-success' : 'badge-neutral'"
+              :theme="site.exists ? 'green' : 'gray'"
             />
             <Badge v-if="site.site_config?.ssl" label="SSL" theme="blue" />
           </div>

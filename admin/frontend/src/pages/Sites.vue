@@ -3,7 +3,6 @@ import { h, ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, Badge, Dialog, ListView, FormControl, LoadingText, ErrorMessage, Switch, TabButtons } from 'frappe-ui'
 import FilePickerField from '../components/FilePickerField.vue'
-import StatusBadge from '../components/StatusBadge.vue'
 
 const router = useRouter()
 const sites = ref([])
@@ -50,7 +49,7 @@ const columns = computed(() => [
   { label: 'Name', key: 'name', width: '200px' },
   {
     label: 'Status', key: '_status', width: '80px',
-    prefix: ({ row }) => h(StatusBadge, { label: row._status, variant: row._status === 'online' ? 'badge-success' : 'badge-neutral' }),
+    prefix: ({ row }) => h(Badge, { label: row._status, theme: row._status === 'online' ? 'green' : 'gray' }),
     getLabel: () => '',
   },
   {
