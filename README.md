@@ -77,6 +77,7 @@ long = 1
 [admin]
 port = 8002
 password = "your-admin-password"   # required — admin refuses to start without this
+domain = "admin.example.com"       # optional — serve admin over HTTPS via nginx
 ```
 
 Apps and sites are tracked by the filesystem — no need to list them in `bench.toml`.
@@ -111,11 +112,19 @@ enabled = true
 
 [letsencrypt]
 email = "ops@example.com"
+
+[admin]
+port = 8002
+password = "your-admin-password"
+domain = "admin.example.com"   # optional — serve admin UI over HTTPS
 ```
 
 ```bash
-bench setup production
+bench setup production         # nginx + supervisor
+bench setup letsencrypt        # SSL certs for all sites + admin domain
 ```
+
+When `admin.domain` is set, `bench setup letsencrypt` obtains a certificate for that domain and `bench setup nginx` generates an HTTPS proxy block for it. HTTP redirects to HTTPS automatically.
 
 ## Directory layout
 

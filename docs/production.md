@@ -19,7 +19,7 @@ The three `bench setup` sub-commands orchestrate these concerns:
 | Command | What it does |
 |---------|-------------|
 | `bench setup nginx` | Generate per-site Nginx config files and install them |
-| `bench setup letsencrypt` | Obtain Let's Encrypt certificates for all SSL-enabled sites |
+| `bench setup letsencrypt` | Obtain Let's Encrypt certificates for all SSL-enabled sites and the admin domain |
 | `bench setup production` | Run both in the correct order; also enables `dns_multitenant` in Frappe |
 
 ---
@@ -100,6 +100,25 @@ webroot_path = "/var/www/letsencrypt"    # certbot places challenge files here
 |-------|------|----------|---------|-------------|
 | `email` | string | yes (if any site has `ssl: true`) | — | Contact email registered with Let's Encrypt. |
 | `webroot_path` | string | no | `/var/www/letsencrypt` | Directory used for HTTP-01 ACME challenges. Must be served by Nginx at `/.well-known/acme-challenge/`. |
+
+### `admin` section — HTTPS domain
+
+```toml
+[admin]
+port = 8002
+password = "your-admin-password"
+domain = "admin.example.com"   # optional
+```
+
+When `admin.domain` is set and `nginx.enabled = true`:
+
+- `bench setup nginx` generates an nginx server block that proxies the admin port on that domain.
+- `bench setup letsencrypt` obtains a certificate for the domain and switches the block to HTTPS.
+- HTTP requests to `admin.domain` are redirected to HTTPS automatically.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `domain` | string | no | `""` | Hostname for the admin UI. When set, nginx proxies this domain to the admin port and letsencrypt obtains a cert for it. |
 
 ### Validation additions
 
@@ -478,8 +497,7 @@ Idempotent — re-running after certs are obtained upgrades each site's block to
 ### `bench setup letsencrypt`
 
 **Pre-conditions:**
-- `bench setup nginx` has been run and nginx is serving port 80.
-- DNS records for all `ssl: true` sites (and their `domains`) point to this server.
+- DNS records for all `ssl: true` sites (and `admin.domain` if set) point to this server.
 - `letsencrypt.email` is set in `bench.toml`.
 
 **Steps:**
@@ -488,17 +506,13 @@ Idempotent — re-running after certs are obtained upgrades each site's block to
 1.  Validate bench.toml
 2.  Install certbot if not present
 3.  Ensure webroot_path exists (create with mkdir -p)
-4.  For each site with ssl: true:
-    a.  Run certbot certonly --webroot
-        -w <webroot_path>
-        -d <site.name> [-d <domain> ...]
-        --email <letsencrypt.email>
-        --agree-tos
-        --non-interactive
-        --deploy-hook "systemctl reload nginx"
+4.  Regenerate nginx with ssl_ready=False (HTTP-only) and reload
+    — ensures all domains have a server block to serve ACME challenges
+5.  For each site with ssl: true:
+    a.  Run certbot certonly --webroot for site.name + domains
     b.  Skip if cert already exists and expires in > 30 days
-5.  Regenerate nginx config with ssl_ready=True for all sites that now have certs
-6.  Reload nginx
+6.  If admin.domain is set: run certbot certonly for that domain
+7.  Regenerate nginx config with ssl_ready=True and reload
 ```
 
 Certbot's built-in renewal timer (`certbot.timer` systemd unit, installed with certbot) handles future renewals automatically. The `--deploy-hook` ensures nginx reloads after each renewal.
@@ -597,6 +611,7 @@ long = 1
 [admin]
 port = 8002
 password = "your-admin-password"
+domain = "admin.example.com"    # optional — serve admin UI over HTTPS via nginx
 
 [nginx]
 enabled = true
