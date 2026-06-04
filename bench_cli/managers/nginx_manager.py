@@ -294,9 +294,9 @@ class NginxManager:
             )
 
     def reload(self) -> None:
-        run_command(["nginx", "-t"])
+        run_command(["sudo", "nginx", "-t"])
         if is_linux():
-            run_command(["systemctl", "reload", "nginx"])
+            run_command(["sudo", "systemctl", "reload", "nginx"])
         else:
             run_command(["nginx", "-s", "reload"])
 
