@@ -18,12 +18,14 @@ class SetupProductionCommand:
         self.bench.config.validate()
         self._require_linux()
         self._write_dns_multitenancy()
-        if self.bench.config.lightweight:
+        if self.bench.config.production.lightweight:
             self._setup_systemd()
         else:
             self._setup_supervisor()
-        self._setup_nginx()
-        self._setup_letsencrypt_if_needed()
+        if self.bench.config.production.nginx:
+            self._setup_nginx()
+            self._setup_letsencrypt_if_needed()
+
         self._print_summary()
 
     def _require_linux(self) -> None:
@@ -45,7 +47,9 @@ class SetupProductionCommand:
     def _setup_supervisor(self) -> None:
         from bench_cli.platform import get_package_manager
 
-        get_package_manager().install("supervisor")
+        pkg = get_package_manager()
+        if not pkg.is_installed("supervisor"):
+            pkg.install("supervisor")
         from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
 
         mgr = SupervisorProcessManager(self.bench)

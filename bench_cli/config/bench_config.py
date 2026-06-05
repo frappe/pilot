@@ -9,6 +9,7 @@ from bench_cli.config.app_config import AppConfig
 from bench_cli.config.letsencrypt_config import LetsEncryptConfig
 from bench_cli.config.mariadb_config import MariaDBConfig
 from bench_cli.config.nginx_config import NginxConfig
+from bench_cli.config.production_config import ProductionConfig
 from bench_cli.config.redis_config import RedisConfig
 from bench_cli.config.volume_config import BenchesDatasetConfig, MariaDBDatasetConfig, SnapshotConfig, VolumeConfig
 from bench_cli.config.worker_config import CustomWorkerEntry, WorkerConfig
@@ -32,7 +33,7 @@ class BenchConfig:
     apps: List[AppConfig] = field(default_factory=list)
     http_port: int = 8000
     socketio_port: int = 9000
-    lightweight: bool = False
+    production: ProductionConfig = field(default_factory=ProductionConfig)
     nginx: NginxConfig = field(default_factory=NginxConfig)
     letsencrypt: LetsEncryptConfig = field(default_factory=LetsEncryptConfig)
     admin: AdminConfig = field(default_factory=AdminConfig)
@@ -61,6 +62,7 @@ class BenchConfig:
         mariadb = MariaDBConfig(**data.get("mariadb", {}))
         redis = cls._parse_redis(data.get("redis", {}))
         workers = cls._parse_workers(data.get("workers", {}))
+        production = cls._parse_production(data.get("production", {}))
         nginx = cls._parse_nginx(data.get("nginx", {}))
         letsencrypt = cls._parse_letsencrypt(data.get("letsencrypt", {}))
         admin = cls._parse_admin(data.get("admin", {}))
@@ -70,11 +72,11 @@ class BenchConfig:
             python_version=bench_data.get("python", ""),
             http_port=bench_data.get("http_port", 8000),
             socketio_port=bench_data.get("socketio_port", 9000),
-            lightweight=bench_data.get("lightweight", False),
             apps=apps,
             mariadb=mariadb,
             redis=redis,
             workers=workers,
+            production=production,
             nginx=nginx,
             letsencrypt=letsencrypt,
             admin=admin,
@@ -116,10 +118,16 @@ class BenchConfig:
         )
 
     @staticmethod
+    def _parse_production(data: dict) -> ProductionConfig:
+        return ProductionConfig(
+            nginx=data.get("nginx", False),
+            lightweight=data.get("lightweight", False),
+        )
+
+    @staticmethod
     def _parse_nginx(data: dict) -> NginxConfig:
         config_dir = data.get("config_dir", "/etc/nginx/conf.d")
         return NginxConfig(
-            enabled=data.get("enabled", False),
             http_port=data.get("http_port", 80),
             https_port=data.get("https_port", 443),
             config_dir=Path(config_dir),

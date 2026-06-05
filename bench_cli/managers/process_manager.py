@@ -169,12 +169,8 @@ class ProcessManager:
     # ── Process definitions ─────────────────────────────────────────────────
 
     def _prod_process_definitions(self) -> List[ProcessDefinition]:
-        if self.bench.config.lightweight:
-            num_workers = (
-                self.bench.config.workers.default_count
-                + self.bench.config.workers.short_count
-                + self.bench.config.workers.long_count
-            )
+        if self.bench.config.production.lightweight:
+            num_workers = self.bench.config.workers.default_count + self.bench.config.workers.short_count + self.bench.config.workers.long_count
             worker_defs: List[ProcessDefinition] = [self._worker_pool_definition("long,default,short", num_workers)]
         else:
             worker_defs = [
@@ -280,9 +276,13 @@ class ProcessManager:
 class ProcessManagerFactory:
     @staticmethod
     def create(bench: "Bench") -> ProcessManager:
+        if not bench.config.production:
+            return ProcessManager(bench)
+
         from bench_cli.managers.systemd_process_manager import SystemdProcessManager
         from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
 
-        if bench.config.lightweight:
+        if bench.config.production.lightweight:
             return SystemdProcessManager(bench)
+
         return SupervisorProcessManager(bench)

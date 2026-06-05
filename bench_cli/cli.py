@@ -8,25 +8,27 @@ from bench_cli.exceptions import BenchError
 if typing.TYPE_CHECKING:
     from bench_cli.core.bench import Bench
 
-_OWN_COMMANDS = frozenset([
-    "new",
-    "init",
-    "start",
-    "stop",
-    "restart",
-    "get-app",
-    "new-site",
-    "frappe",
-    "build",
-    "update",
-    "upgrade",
-    "build-admin",
-    "setup",
-    "volume",
-    "remove-app",
-    "uninstall-app",
-    "list-apps",
-])
+_OWN_COMMANDS = frozenset(
+    [
+        "new",
+        "init",
+        "start",
+        "stop",
+        "restart",
+        "get-app",
+        "new-site",
+        "frappe",
+        "build",
+        "update",
+        "upgrade",
+        "build-admin",
+        "setup",
+        "volume",
+        "remove-app",
+        "uninstall-app",
+        "list-apps",
+    ]
+)
 _OWN_GROUP_OPTIONS = frozenset(["--verbose", "--yes", "-y", "--bench", "-b", "--help", "-h"])
 
 # Global bench name selected via -b / --bench; set in main() before dispatch.
@@ -241,6 +243,7 @@ def main() -> None:
     _active_bench = args.bench
 
     import time
+
     verbose = getattr(args, "verbose", False)
     _t0 = time.monotonic()
     try:
@@ -388,6 +391,9 @@ def _dispatch_setup(args: argparse.Namespace) -> None:
         SetupLetsEncryptCommand(_load_bench()).run()
     elif setup_cmd == "production":
         from bench_cli.commands.setup.production import SetupProductionCommand
+        from bench_cli.commands.admin import BuildAdminCommand
+
+        BuildAdminCommand().run()
 
         SetupProductionCommand(_load_bench()).run()
     elif setup_cmd == "requirements":
