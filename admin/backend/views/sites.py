@@ -188,6 +188,49 @@ def uninstall_app(name: str):
     return jsonify({"ok": True, "task_id": task_id})
 
 
+@sites_bp.route("/<name>/force-uninstall-app", methods=["POST"])
+def force_uninstall_app(name: str):
+    import os
+    import subprocess as _sp
+
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    data = request.get_json(silent=True) or {}
+
+    from ..validators import validate_app_name
+    app = (data.get("app") or "").strip()
+    err = validate_app_name(app)
+    if err:
+        return jsonify({"ok": False, "error": err})
+
+    if not (bench_root / "sites" / name / "site_config.json").exists():
+        return jsonify({"ok": False, "error": "Site not found."}), 404
+
+    python = str(bench_root / "env" / "bin" / "python")
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+
+    try:
+        result = _sp.run(
+            [
+                python, "-m", "frappe.utils.bench_helper", "frappe",
+                "--site", name,
+                "execute", "frappe.installer.remove_from_installed_apps",
+                "--args", f'["{app}"]',
+            ],
+            cwd=str(bench_root / "sites"),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=env,
+        )
+        if result.returncode != 0:
+            return jsonify({"ok": False, "error": result.stderr.strip() or "Force remove failed."})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+    return jsonify({"ok": True})
+
+
 @sites_bp.route("/<name>/login", methods=["POST"])
 def login_to_site(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])

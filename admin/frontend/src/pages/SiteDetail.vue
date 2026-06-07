@@ -33,6 +33,8 @@ const forceDropLoading = ref(false)
 const forceDropError = ref('')
 const showUninstall = ref(false)
 const uninstallTarget = ref('')
+const forceUninstallLoading = ref(false)
+const forceUninstallError = ref('')
 
 const showLogin = ref(false)
 const loginPassword = ref('')
@@ -335,7 +337,31 @@ async function installApp() {
 
 function confirmUninstall(app) {
   uninstallTarget.value = app
+  forceUninstallError.value = ''
   showUninstall.value = true
+}
+
+async function doForceUninstall() {
+  forceUninstallError.value = ''
+  forceUninstallLoading.value = true
+  try {
+    const res = await fetch(`/api/sites/${siteName}/force-uninstall-app`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ app: uninstallTarget.value }),
+    })
+    const d = await res.json()
+    if (d.ok) {
+      showUninstall.value = false
+      await load()
+    } else {
+      forceUninstallError.value = d.error
+    }
+  } catch (e) {
+    forceUninstallError.value = e.message
+  } finally {
+    forceUninstallLoading.value = false
+  }
 }
 
 async function forceDrop() {
@@ -665,6 +691,13 @@ onMounted(() => { load(); loadRegistry() })
           <Button variant="ghost" @click="showUninstall = false">Cancel</Button>
           <Button variant="solid" theme="red"
             @click="showUninstall = false; doAction('uninstall-app', { app: uninstallTarget })">Uninstall</Button>
+        </div>
+        <div class="mt-4 border-t border-outline-gray-1 pt-3">
+          <p class="mb-2 text-xs text-ink-gray-4">If the app is broken and normal uninstall fails, force-remove it from the site's app list without running any app scripts.</p>
+          <ErrorMessage :message="forceUninstallError" class="mb-2" />
+          <Button variant="outline" theme="red" size="sm" :loading="forceUninstallLoading" @click="doForceUninstall">
+            Force Remove
+          </Button>
         </div>
       </template>
     </Dialog>
