@@ -150,6 +150,7 @@ class SupervisorProcessManager(ProcessManager):
             f"command={cmd}",
             "autostart=true",
             "autorestart=true",
+            "startretries=3",
             f"stdout_logfile={log_dir}/{pd.name}.log",
             f"stderr_logfile={log_dir}/{pd.name}.error.log",
             "stopasgroup=true",
