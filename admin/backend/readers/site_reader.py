@@ -79,8 +79,8 @@ def _query_via_db_cli(site_config: dict) -> list[str] | None:
     """Query installed apps via mariadb/mysql CLI, with unix socket auto-detection."""
     db_name = site_config.get("db_name", "")
     db_password = site_config.get("db_password", "")
-    db_host = site_config.get("db_host", "localhost")
-    db_port = int(site_config.get("db_port", 3306))
+    db_host = site_config.get("db_host") or "localhost"
+    db_port = int(site_config.get("db_port") or 3306)
     if not db_name or not db_password:
         return None
 
