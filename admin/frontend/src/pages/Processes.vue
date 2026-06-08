@@ -117,7 +117,7 @@ onUnmounted(() => clearInterval(timer))
         :rows="rows"
         row-key="name"
         :options="{ selectable: false, showTooltip: false }"
-      >
+      fix: remove extra closing tag
         <template #cell="{ column, item }">
           <Badge
             v-if="column.key === 'status'"
@@ -128,7 +128,6 @@ onUnmounted(() => clearInterval(timer))
               <span class="pulse-dot" />
             </template>
           </Badge>
-          />
           <span v-else-if="column.key === 'cpu_percent'">
             {{ item != null ? item.toFixed(1) + '%' : '—' }}
           </span>
