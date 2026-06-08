@@ -52,12 +52,34 @@ class App:
             str(self.path),
         ], stream_output=True)
 
+    @property
+    def _is_shallow(self) -> bool:
+        import subprocess
+        result = subprocess.run(
+            ["git", "-C", str(self.path), "rev-parse", "--is-shallow-repository"],
+            capture_output=True, text=True,
+        )
+        return result.stdout.strip() == "true"
+
+    @staticmethod
+    def _pack_threads() -> int:
+        import os
+        cpus = os.cpu_count() or 1
+        # On constrained servers (≤2 vCPUs) cap at 1 to avoid saturating the CPU.
+        # On beefier machines let git use half the cores so other processes stay responsive.
+        if cpus <= 2:
+            return 1
+        return max(1, cpus // 2)
+
     def update(self) -> None:
-        run_command(["git", "-C", str(self.path), "fetch", "origin"])
+        cmd = ["git", "-c", f"pack.threads={self._pack_threads()}", "-C", str(self.path),
+               "fetch", "origin", self.config.branch]
+        if self._is_shallow:
+            cmd.append("--depth=1")
+        run_command(cmd)
         run_command([
             "git", "-C", str(self.path),
-            "merge", "--ff-only",
-            f"origin/{self.config.branch}",
+            "reset", "--hard", f"origin/{self.config.branch}",
         ])
 
     def build_assets(self) -> None:

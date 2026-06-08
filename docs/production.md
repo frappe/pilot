@@ -1,6 +1,6 @@
 # Production Setup Specification
 
-Covers DNS-based multitenancy, Nginx reverse-proxy configuration, and Let's Encrypt SSL certificate management. All settings live in `bench.yml`.
+Covers DNS-based multitenancy, Nginx reverse-proxy configuration, and Let's Encrypt SSL certificate management. All settings live in `bench.toml`.
 
 > **Platform scope:** Everything in this file targets **Ubuntu/Linux servers**. Let's Encrypt requires a publicly reachable server with real DNS records. Nginx system integration (`/etc/nginx/conf.d/`, `systemctl reload nginx`) is Linux-specific. On macOS, use `bench run` with honcho for development; skip the `bench setup` commands entirely.
 
@@ -10,17 +10,18 @@ Covers DNS-based multitenancy, Nginx reverse-proxy configuration, and Let's Encr
 
 A production bench differs from a development bench in three ways:
 
-1. **Process manager is supervisor** — processes run as a background daemon (see architecture.md).
+1. **Process manager** — processes run as a background daemon managed by supervisor (default) or systemd.
 2. **Nginx sits in front of Gunicorn** — terminates SSL, serves static assets directly, and passes the `Host` header to Frappe to identify the requested site.
 3. **Each site has a real domain** — Frappe uses the `Host` header to route requests to the correct site database and files. This is called DNS multitenancy.
 
-The three `bench setup` sub-commands orchestrate these concerns:
+The `bench setup` sub-commands orchestrate these concerns:
 
 | Command | What it does |
 |---------|-------------|
+| `bench setup production` | Configure process manager, nginx, and SSL in the correct order |
 | `bench setup nginx` | Generate per-site Nginx config files and install them |
-| `bench setup letsencrypt` | Obtain Let's Encrypt certificates for all SSL-enabled sites |
-| `bench setup production` | Run both in the correct order; also enables `dns_multitenant` in Frappe |
+| `bench setup letsencrypt` | Obtain Let's Encrypt certificates for all SSL-enabled sites and the admin domain |
+| `bench restart` | Restart all bench processes via supervisor or systemd |
 
 ---
 
@@ -39,7 +40,7 @@ A site whose `name` (or any entry in its `domains` list) matches the incoming `H
 
 ### Site name vs domains
 
-The site `name` in `bench.yml` is the canonical hostname — it is the directory name under `sites/` and the key Frappe uses internally. Each site may also declare additional `domains` that are aliases pointing at the same site. Nginx includes all of them in the `server_name` directive and in the SSL certificate SAN list.
+The site `name` in `bench.toml` is the canonical hostname — it is the directory name under `sites/` and the key Frappe uses internally. Each site may also declare additional `domains` that are aliases pointing at the same site. Nginx includes all of them in the `server_name` directive and in the SSL certificate SAN list.
 
 ```
 site1.example.com    ← site name (canonical)
@@ -48,21 +49,43 @@ www.site1.example.com ← domain alias
 
 ---
 
-## bench.yml additions
+## bench.toml additions
+
+### `production` section (required for production mode)
+
+Adding a `[production]` section to `bench.toml` enables production mode. The section may be empty — presence alone is enough.
+
+```toml
+[production]
+lightweight = false   # false = supervisor (default), true = systemd --user
+nginx = true          # include nginx setup in bench setup production
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `lightweight` | bool | no | `false` | When `false` (default), uses a bench-owned `supervisord` instance. When `true`, uses `systemctl --user` units (requires `loginctl enable-linger` once as root). |
+| `nginx` | bool | no | `false` | When `true`, `bench setup production` also runs nginx setup and (if any site has `ssl: true`) Let's Encrypt certificate issuance. |
+
+**Supervisor** (default, `lightweight = false`):
+- Installs `supervisor` package if not present and disables the system-wide service.
+- Writes `config/supervisor/supervisord.conf` and starts a bench-owned supervisord.
+- No `sudo` needed for day-to-day process management.
+
+**Systemd** (`lightweight = true`):
+- Writes `.service` files to `~/.config/systemd/user/` and a `.target` that groups them.
+- Requires `sudo loginctl enable-linger <user>` once so the user session persists after logout.
+- No `sudo` needed after that — `systemctl --user` manages everything.
 
 ### `sites[]` — new optional fields
 
-```yaml
-sites:
-  - name: site1.example.com
-    db_name: site1_db
-    db_password: "secret"
-    apps:
-      - frappe
-      - erpnext
-    domains:                       # additional hostnames served by this site
-      - www.site1.example.com
-    ssl: true                      # obtain a Let's Encrypt cert covering name + domains
+```toml
+[[sites]]
+name = "site1.example.com"
+db_name = "site1_db"
+db_password = "secret"
+apps = ["frappe", "erpnext"]
+domains = ["www.site1.example.com"]  # additional hostnames served by this site
+ssl = true                            # obtain a Let's Encrypt cert covering name + domains
 ```
 
 | Field | Type | Required | Default | Description |
@@ -72,14 +95,14 @@ sites:
 
 ### `nginx` section (new)
 
-```yaml
-nginx:
-  enabled: false               # must be set to true for bench setup nginx to proceed
-  http_port: 80
-  https_port: 443
-  config_dir: /etc/nginx/conf.d    # where to write the include-pointer file (requires sudo)
-  worker_processes: auto           # passed through to nginx.conf
-  client_max_body_size: 50m        # for file uploads
+```toml
+[nginx]
+enabled = false              # must be set to true for bench setup nginx to proceed
+http_port = 80
+https_port = 443
+config_dir = "/etc/nginx/conf.d"   # where to write the include-pointer file (requires sudo)
+worker_processes = "auto"          # passed through to nginx.conf
+client_max_body_size = "50m"       # for file uploads
 ```
 
 | Field | Type | Required | Default | Description |
@@ -93,16 +116,35 @@ nginx:
 
 ### `letsencrypt` section (new)
 
-```yaml
-letsencrypt:
-  email: admin@example.com      # required for ACME account registration
-  webroot_path: /var/www/letsencrypt  # certbot places challenge files here
+```toml
+[letsencrypt]
+email = "admin@example.com"              # required for ACME account registration
+webroot_path = "/var/www/letsencrypt"    # certbot places challenge files here
 ```
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `email` | string | yes (if any site has `ssl: true`) | — | Contact email registered with Let's Encrypt. |
 | `webroot_path` | string | no | `/var/www/letsencrypt` | Directory used for HTTP-01 ACME challenges. Must be served by Nginx at `/.well-known/acme-challenge/`. |
+
+### `admin` section — HTTPS domain
+
+```toml
+[admin]
+port = 8002
+password = "your-admin-password"
+domain = "admin.example.com"   # optional
+```
+
+When `admin.domain` is set and `nginx.enabled = true`:
+
+- `bench setup nginx` generates an nginx server block that proxies the admin port on that domain.
+- `bench setup letsencrypt` obtains a certificate for the domain and switches the block to HTTPS.
+- HTTP requests to `admin.domain` are redirected to HTTPS automatically.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `domain` | string | no | `""` | Hostname for the admin UI. When set, nginx proxies this domain to the admin port and letsencrypt obtains a cert for it. |
 
 ### Validation additions
 
@@ -139,7 +181,7 @@ include /absolute/path/to/bench/config/nginx/*.conf;
 This means:
 - Per-site configs stay inside the bench directory (no root needed to edit them).
 - Only the symlink creation and nginx reload require `sudo`.
-- Removing a site from `bench.yml` and re-running `bench setup nginx` removes its config file and the dead entry disappears automatically.
+- Removing a site from `bench.toml` and re-running `bench setup nginx` removes its config file and the dead entry disappears automatically.
 
 ---
 
@@ -457,14 +499,14 @@ bench_cli/
 ### `bench setup nginx`
 
 **Pre-conditions:**
-- `nginx.enabled: true` in `bench.yml`.
+- `nginx.enabled = true` in `bench.toml`.
 - `bench init` has been run (sites exist).
 - Process has `sudo` access.
 
 **Steps:**
 
 ```
-1.  Validate bench.yml (including production validation rules)
+1.  Validate bench.toml (including production validation rules)
 2.  Install nginx if not present
 3.  Ensure config/nginx/ directory exists
 4.  For each site: generate HTTP-only config (ssl_ready=False even for ssl sites)
@@ -481,27 +523,22 @@ Idempotent — re-running after certs are obtained upgrades each site's block to
 ### `bench setup letsencrypt`
 
 **Pre-conditions:**
-- `bench setup nginx` has been run and nginx is serving port 80.
-- DNS records for all `ssl: true` sites (and their `domains`) point to this server.
-- `letsencrypt.email` is set in `bench.yml`.
+- DNS records for all `ssl: true` sites (and `admin.domain` if set) point to this server.
+- `letsencrypt.email` is set in `bench.toml`.
 
 **Steps:**
 
 ```
-1.  Validate bench.yml
+1.  Validate bench.toml
 2.  Install certbot if not present
 3.  Ensure webroot_path exists (create with mkdir -p)
-4.  For each site with ssl: true:
-    a.  Run certbot certonly --webroot
-        -w <webroot_path>
-        -d <site.name> [-d <domain> ...]
-        --email <letsencrypt.email>
-        --agree-tos
-        --non-interactive
-        --deploy-hook "systemctl reload nginx"
+4.  Regenerate nginx with ssl_ready=False (HTTP-only) and reload
+    — ensures all domains have a server block to serve ACME challenges
+5.  For each site with ssl: true:
+    a.  Run certbot certonly --webroot for site.name + domains
     b.  Skip if cert already exists and expires in > 30 days
-5.  Regenerate nginx config with ssl_ready=True for all sites that now have certs
-6.  Reload nginx
+6.  If admin.domain is set: run certbot certonly for that domain
+7.  Regenerate nginx config with ssl_ready=True and reload
 ```
 
 Certbot's built-in renewal timer (`certbot.timer` systemd unit, installed with certbot) handles future renewals automatically. The `--deploy-hook` ensures nginx reloads after each renewal.
@@ -511,25 +548,44 @@ Certbot's built-in renewal timer (`certbot.timer` systemd unit, installed with c
 Orchestrates the full production setup in the correct dependency order.
 
 **Pre-conditions:**
-- `process_manager: supervisor` in `bench.yml`.
-- `nginx.enabled: true` in `bench.yml`.
+- `[production]` section present in `bench.toml`.
 - `bench init` has been run.
-- DNS records are configured (required before `letsencrypt` step).
+- DNS records are configured (required before the letsencrypt step).
 - Running on a Linux server (Ubuntu). Exits with an error on macOS.
 
 **Steps:**
 
 ```
-1.  Validate bench.yml
+1.  Validate bench.toml
 2.  Verify running on Linux (error with helpful message if macOS)
-3.  Verify process_manager is supervisor (error if not)
-4.  Write "dns_multitenant": 1 into sites/common_site_config.json
-5.  Generate supervisor config (SupervisorProcessManager.generate_config())
-6.  Start or reload supervisord (SupervisorProcessManager.start())
-7.  SetupNginxCommand.run()
-8.  SetupLetsEncryptCommand.run()  (skipped if no sites have ssl: true)
-9.  Print summary: process status, site URLs
+3.  Write "dns_multitenant": 1 into sites/common_site_config.json
+4a. If lightweight = false (supervisor):
+      Install supervisor package if absent, generate config/supervisor/supervisord.conf,
+      start supervisord.
+4b. If lightweight = true (systemd):
+      Write ~/.config/systemd/user/*.service + *.target, run systemctl --user daemon-reload
+      and enable the target.
+5.  If production.nginx = true: SetupNginxCommand.run()
+6.  If production.nginx = true and any site has ssl: true: SetupLetsEncryptCommand.run()
+7.  Build admin frontend for production.
+8.  Print summary: process status, site URLs
 ```
+
+### `bench restart`
+
+Restarts all bench processes. Works with both supervisor and systemd — auto-detected from the filesystem (no flag required).
+
+```
+1. Detect process manager:
+   a. If config/supervisor/supervisord.conf exists → supervisor
+   b. Else if systemd target is enabled → systemd
+   c. Else error: "Run 'bench setup production' first"
+2. Regenerate process manager config from bench.toml
+3. Reload daemon (supervisorctl reread+update or systemctl daemon-reload)
+4. Restart all processes
+```
+
+`bench upgrade` also calls restart automatically after pulling new bench-cli code, if a production process manager is configured and running.
 
 ### CLI additions
 
@@ -568,54 +624,59 @@ Renders the content of each generated `config/nginx/<site>.conf` as a syntax-hig
 
 ---
 
-## Full production bench.yml example
+## Full production bench.toml example
 
-```yaml
-bench:
-  name: prod-bench
-  python: "3.14"
-  process_manager: supervisor
+```toml
+[bench]
+name = "prod-bench"
+python = "3.14"
 
-apps:
-  - name: frappe
-    repo: https://github.com/frappe/frappe
-    branch: version-16
-  - name: erpnext
-    repo: https://github.com/frappe/erpnext
-    branch: version-16
+[[apps]]
+name = "frappe"
+repo = "https://github.com/frappe/frappe"
+branch = "version-16"
 
-sites:
-  - name: acme.example.com
-    db_name: acme_db
-    db_password: "s3cr3t"
-    apps: [frappe, erpnext]
-    domains:
-      - www.acme.example.com
-    ssl: true
+[[apps]]
+name = "erpnext"
+repo = "https://github.com/frappe/erpnext"
+branch = "version-16"
 
-  - name: beta.example.com
-    db_name: beta_db
-    db_password: "b3t@pwd"
-    apps: [frappe]
-    ssl: true
+[mariadb]
+root_password = "root_s3cr3t"
 
-mariadb:
-  root_password: "root_s3cr3t"
+[redis]
+cache_port = 13000
+queue_port = 11000
+socketio_port = 12000
 
-redis:
-  cache_port: 13000
-  queue_port: 11000
-  socketio_port: 12000
+[workers]
+default = 4
+short = 2
+long = 1
 
-workers:
-  default: 4
-  short: 2
-  long: 1
+[admin]
+port = 8002
+password = "your-admin-password"
+domain = "admin.example.com"    # optional — serve admin UI over HTTPS via nginx
 
-nginx:
-  enabled: true
-  client_max_body_size: 100m
+[production]
+nginx = true          # run nginx + letsencrypt as part of bench setup production
+# lightweight = true  # uncomment to use systemd --user instead of supervisor
 
-letsencrypt:
-  email: ops@example.com
+[nginx]
+enabled = true
+client_max_body_size = "100m"
+
+[letsencrypt]
+email = "ops@example.com"
 ```
+
+## Admin UI — process controls
+
+When running in production mode, the Processes page in the admin UI shows three buttons:
+
+- **Start** — starts all bench processes (enabled when all are stopped).
+- **Stop** — stops web workers and queues, leaving the admin server running.
+- **Restart** — restarts web workers and queues without touching the admin server.
+
+The admin server itself is only restarted by `bench restart` (CLI) or `bench upgrade`.

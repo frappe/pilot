@@ -62,17 +62,17 @@ jobs:
 
       - name: Migrate both sites
         run: |
-          BENCH=$GITHUB_WORKSPACE/benches/ci-bench/env/bin/bench
+          PYTHON=$GITHUB_WORKSPACE/benches/ci-bench/env/bin/python
           cd $GITHUB_WORKSPACE/benches/ci-bench/sites
-          $BENCH frappe --site site1.localhost migrate
-          $BENCH frappe --site site2.localhost migrate
+          $PYTHON -m frappe.utils.bench_helper frappe --site site1.localhost migrate
+          $PYTHON -m frappe.utils.bench_helper frappe --site site2.localhost migrate
 
       - name: Clear cache on both sites
         run: |
-          BENCH=$GITHUB_WORKSPACE/benches/ci-bench/env/bin/bench
+          PYTHON=$GITHUB_WORKSPACE/benches/ci-bench/env/bin/python
           cd $GITHUB_WORKSPACE/benches/ci-bench/sites
-          $BENCH frappe --site site1.localhost clear-cache
-          $BENCH frappe --site site2.localhost clear-cache
+          $PYTHON -m frappe.utils.bench_helper frappe --site site1.localhost clear-cache
+          $PYTHON -m frappe.utils.bench_helper frappe --site site2.localhost clear-cache
 
       - name: bench update
         run: bench --yes update

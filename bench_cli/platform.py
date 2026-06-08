@@ -32,6 +32,11 @@ class SystemPackageManager(ABC):
     def is_installed(self, package: str) -> bool:
         """Return True if the package is already installed."""
 
+    @abstractmethod
+    def update(self) -> None:
+        """Update package manager"""
+
+
 
 class AptPackageManager(SystemPackageManager):
     def install(self, *packages: str) -> None:
@@ -46,6 +51,9 @@ class AptPackageManager(SystemPackageManager):
             capture_output=True,
         )
         return result.returncode == 0
+    
+    def update(self):
+        subprocess.run(["sudo", "apt-get", "-y", "update"])    
 
 
 class BrewPackageManager(SystemPackageManager):
@@ -61,6 +69,9 @@ class BrewPackageManager(SystemPackageManager):
             capture_output=True,
         )
         return bool(result.stdout.strip())
+    
+    def update(self):
+        return super().update()
 
 
 def get_package_manager() -> SystemPackageManager:

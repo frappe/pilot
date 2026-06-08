@@ -166,10 +166,11 @@ def test_process_definitions_returns_correct_count(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     # workers: default=2, short=1, long=1 => 4 worker processes
     # plus web, socketio, redis_cache, redis_queue, redis_socketio = 5
-    # total = 9
+    # plus admin, admin-ui = 2
+    # total = 11
     process_manager = ProcessManager(bench)
     definitions = process_manager._process_definitions()
-    assert len(definitions) == 9
+    assert len(definitions) == 11
 
 
 def test_process_definitions_worker_names_are_numbered(tmp_path: Path) -> None:

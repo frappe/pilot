@@ -20,6 +20,9 @@ class SetupLetsEncryptCommand:
         self._validate_email_set()
         self.letsencrypt_manager.install()
         self.letsencrypt_manager.ensure_webroot()
+        # Ensure HTTP blocks exist for all domains so certbot can serve ACME challenges.
+        self.nginx_manager.generate_config(ssl_ready=False)
+        self.nginx_manager.reload()
         self.letsencrypt_manager.obtain_all()
         self.nginx_manager.generate_config(ssl_ready=True)
         self.nginx_manager.reload()

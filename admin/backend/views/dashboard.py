@@ -4,11 +4,13 @@ from dataclasses import asdict
 
 from flask import Blueprint, current_app, jsonify
 
+from admin.backend.tasks.manager.task_reader import TaskReader
+
 from ..readers.app_reader import AppReader
 from ..readers.bench_reader import BenchReader
 from ..readers.process_reader import ProcessReader
 from ..readers.site_reader import SiteReader
-from admin.backend.tasks.manager.task_reader import TaskReader
+from ..readers.volume_reader import VolumeReader
 
 dashboard_bp = Blueprint("dashboard", __name__)
 
@@ -22,19 +24,23 @@ def index():
         sites = SiteReader(bench_root).read_all()
         processes = ProcessReader(bench_root).read_all()
         recent_tasks = TaskReader(bench_root).list_tasks(limit=5)
+        volume = VolumeReader(bench_root).read()
     except Exception as error:
         return jsonify({"error": str(error)}), 500
 
-    return jsonify({
-        "summary": asdict(summary),
-        "apps": [asdict(a) for a in apps],
-        "sites": [asdict(s) for s in sites],
-        "processes": [_proc_dict(p) for p in processes],
-        "recent_tasks": [_task_dict(t) for t in recent_tasks],
-        "running_count": sum(1 for p in processes if p.status == "running"),
-        "cloned_count": sum(1 for a in apps if a.is_cloned),
-        "online_count": sum(1 for s in sites if s.exists),
-    })
+    return jsonify(
+        {
+            "summary": asdict(summary),
+            "apps": [asdict(a) for a in apps],
+            "sites": [asdict(s) for s in sites],
+            "processes": [_proc_dict(p) for p in processes],
+            "recent_tasks": [_task_dict(t) for t in recent_tasks],
+            "volume": asdict(volume),
+            "running_count": sum(1 for p in processes if p.status == "running"),
+            "cloned_count": sum(1 for a in apps if a.is_cloned),
+            "online_count": sum(1 for s in sites if s.exists),
+        }
+    )
 
 
 def _proc_dict(p):

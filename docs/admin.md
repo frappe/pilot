@@ -6,10 +6,11 @@ bench ships a lightweight web-based admin interface built on Flask with no Pytho
 
 ## Design constraints
 
-- **Stateless.** The Flask app stores nothing in memory between requests. Every page reads current state from the filesystem (bench.toml, git, log files, site_config.json) or from MariaDB on each request. There is no session, no cache, no background thread.
+- **Stateless.** The Flask app stores nothing in memory between requests. Every page reads current state from the filesystem (bench.toml, git, log files, site_config.json) or from MariaDB on each request. There is no cache, no background thread.
 - **No extra Python dependencies.** Only Flask and the Python standard library. No SQLAlchemy, no Celery, no frontend framework.
 - **No frontend framework.** Plain HTML templates with minimal inline CSS. A small amount of vanilla JS is acceptable for auto-refresh and SSE output streaming.
-- **Localhost only by default.** Binds to `127.0.0.1` unless overridden. No authentication — treat this as a local developer/ops tool.
+- **Localhost only by default.** Binds to `127.0.0.1` unless overridden.
+- **Password always required.** The admin will refuse to start (returning a 503 on all requests) if no password is set in `bench.toml`. There is no unauthenticated mode.
 
 ---
 
@@ -23,12 +24,15 @@ admin: PYTHONPATH=<cli_root> .admin-venv/bin/python -m admin.backend.server --be
 
 The admin UI is always available at `http://localhost:8002` while the bench is running. To stop it, stop the bench (`bench stop` or Ctrl-C in the `bench start` terminal).
 
-The admin port is configurable in `bench.toml`:
+The admin port and password are configured in `bench.toml`:
 
 ```toml
 [admin]
 port = 8002
+password = "your-password"
 ```
+
+`password` is mandatory. If it is missing or empty, the admin UI shows an "Admin Unavailable" error and all API routes return HTTP 503 until a password is configured and the bench is restarted.
 
 ---
 
@@ -404,6 +408,8 @@ Views catch `ConfigError`, `FileNotFoundError`, and database connection errors a
 ## Security notes
 
 - Bind to `127.0.0.1` by default.
+- **Password is mandatory.** The admin refuses all requests with HTTP 503 if `[admin] password` is not set in `bench.toml`. There is no way to bypass authentication.
+- Sessions are Flask cookie-based. The session key is a random 32-byte hex string generated at startup — sessions are invalidated on process restart.
 - `LogReader.read_tail` and `stream_tail` validate that the requested filename contains no path separators and resolves to a file inside `logs/`. Any traversal attempt returns HTTP 400.
 - Command execution uses `TaskRunner._build_argv`, which only accepts whitelisted commands. No user-supplied string is passed to a shell.
 - `task_id` values are validated against `^\d{8}-\d{6}-[0-9a-f]{6}$` before being used as directory names.

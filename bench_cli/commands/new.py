@@ -1,45 +1,8 @@
+import secrets
 from pathlib import Path
 
+from bench_cli.config.bench_toml_builder import BenchTomlBuilder
 from bench_cli.exceptions import BenchError
-
-_BENCH_TOML_TEMPLATE = """\
-[bench]
-name = "{name}"
-python = "3.14"
-
-[[apps]]
-name = "frappe"
-repo = "https://github.com/frappe/frappe"
-branch = "version-16"
-
-[mariadb]
-host = "localhost"
-port = 3306
-root_password = "root"
-# version = "10.6"
-
-[redis]
-port = 13000
-# or use separate ports:
-# cache_port = 13000
-# queue_port = 11000
-# socketio_port = 12000
-
-[workers]
-default = 2
-short = 1
-long = 1
-
-# [[workers.custom]]
-# queue = "backup"
-# count = 2
-# timeout = 3600
-
-[admin]
-port = 8002
-enabled = false
-timeout = 180
-"""
 
 
 class NewCommand:
@@ -50,10 +13,7 @@ class NewCommand:
     def run(self) -> None:
         bench_toml = self.target_directory / "bench.toml"
         if bench_toml.exists():
-            raise BenchError(
-                f"A bench named '{self.name}' already exists at {self.target_directory}. "
-                "Choose a different name or remove the existing bench."
-            )
+            raise BenchError(f"A bench named '{self.name}' already exists at {self.target_directory}. Choose a different name or remove the existing bench.")
 
         benches_dir = self.target_directory.parent
         if not benches_dir.exists():
@@ -64,10 +24,11 @@ class NewCommand:
         self.target_directory.mkdir(parents=True, exist_ok=True)
 
         print("Writing bench.toml")
-        bench_toml.write_text(_BENCH_TOML_TEMPLATE.format(name=self.name))
+        settings = {"admin_password": secrets.token_hex(nbytes=5)}
+        bench_toml.write_text(BenchTomlBuilder(self.name, settings).render())
 
         print(f"\nBench '{self.name}' created at {self.target_directory}")
-        print(f"\nNext steps:")
-        print(f"  1. Edit the config:  {bench_toml}")
-        print(f"  2. Run:              bench init")
-        print(f"  3. Create a site:    bench new-site site1.localhost")
+        print("\nNext step:")
+        print("  bench start")
+        print("  Open http://localhost:8002 — the setup wizard guides you through the rest,")
+        print("  including ZFS volume management under Advanced settings.")

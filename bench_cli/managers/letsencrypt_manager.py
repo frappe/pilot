@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from bench_cli.platform import get_package_manager
@@ -57,16 +58,42 @@ class LetsEncryptManager:
         for site in self.bench.sites():
             if site.config.ssl:
                 self.obtain(site.config)
+        if self.bench.config.admin.domain:
+            self.obtain_admin()
+
+    def obtain_admin(self) -> None:
+        from bench_cli.managers.nginx_manager import NginxManager
+
+        nginx_manager = NginxManager(self.bench)
+        domain = self.bench.config.admin.domain
+
+        if nginx_manager.admin_cert_exists() and not self._is_near_expiry_cert(nginx_manager.admin_cert_path()):
+            print(f"Certificate for {domain} already exists and is not near expiry. Skipping.")
+            return
+
+        run_command([
+            "certbot", "certonly",
+            "--webroot",
+            "-w", str(self.bench.config.letsencrypt.webroot_path),
+            "-d", domain,
+            "--email", self.bench.config.letsencrypt.email,
+            "--agree-tos",
+            "--non-interactive",
+            "--deploy-hook", "systemctl reload nginx",
+        ])
 
     def renew(self) -> None:
         run_command(["certbot", "renew", "--quiet"])
 
     def _is_near_expiry(self, site: "SiteConfig") -> bool:
-        import subprocess
         from bench_cli.managers.nginx_manager import NginxManager
 
         nginx_manager = NginxManager(self.bench)
-        cert_file = nginx_manager.cert_path(site)
+        return self._is_near_expiry_cert(nginx_manager.cert_path(site))
+
+    def _is_near_expiry_cert(self, cert_file: Path) -> bool:
+        import subprocess
+        from datetime import datetime, timezone
 
         result = subprocess.run(
             ["openssl", "x509", "-enddate", "-noout", "-in", str(cert_file)],
@@ -76,10 +103,7 @@ class LetsEncryptManager:
         if result.returncode != 0:
             return True
 
-        from datetime import datetime, timezone
-
         date_str = result.stdout.strip().replace("notAfter=", "")
         expiry = datetime.strptime(date_str, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=timezone.utc)
         now = datetime.now(tz=timezone.utc)
-        days_remaining = (expiry - now).days
-        return days_remaining < _CERT_EXPIRY_THRESHOLD_DAYS
+        return (expiry - now).days < _CERT_EXPIRY_THRESHOLD_DAYS

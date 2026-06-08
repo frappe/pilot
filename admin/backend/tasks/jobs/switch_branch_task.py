@@ -66,7 +66,6 @@ class SwitchBranchTask(BaseTask):
         print(f"Updated bench.toml: {self.name} -> {self.branch}")
         sys.stdout.flush()
 
-        bench_bin = str(self.bench.env_path / "bin" / "bench")
         if (app_path / "package.json").exists():
             print(f"\nInstalling JS dependencies for {self.name}...")
             sys.stdout.flush()
@@ -74,7 +73,7 @@ class SwitchBranchTask(BaseTask):
 
         print("\nBuilding assets...")
         sys.stdout.flush()
-        subprocess.run([bench_bin, "frappe", "build", "--force"], cwd=str(self.bench.sites_path), check=False)
+        subprocess.run([*self.bench.frappe_call, "frappe", "build", "--force"], cwd=str(self.bench.sites_path), check=False)
         print(f"\n'{self.name}' switched to '{self.branch}' successfully.")
 
 

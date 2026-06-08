@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import sys
 import subprocess
+import sys
 from pathlib import Path
 
 from bench_cli.config.app_config import AppConfig
@@ -26,6 +26,7 @@ class GetAppCommand:
     def run(self) -> None:
         self._clone()
         self._install()
+        self._validate()
         self._register()
         self._build()
         print(f"\n'{self.name}' installed successfully.")
@@ -50,18 +51,27 @@ class GetAppCommand:
         if self.name not in existing:
             apps_txt.write_text("\n".join(existing + [self.name]) + "\n")
 
-    def _build(self) -> None:
-        app_dir = self.bench.path / "apps" / self.name
-        if (app_dir / "package.json").exists():
-            print(f"\nInstalling JS dependencies for {self.name}...")
-            sys.stdout.flush()
-            subprocess.run(["yarn", "install"], cwd=str(app_dir), check=False)
+    def _validate(self) -> None:
+        from bench_cli.exceptions import BenchError
 
-        print(f"\nBuilding assets...")
-        sys.stdout.flush()
-        bench_bin = str(self.bench.env_path / "bin" / "bench")
-        subprocess.run(
-            [bench_bin, "frappe", "build", "--force"],
-            cwd=str(self.bench.sites_path),
-            check=False,
+        python = str(self.bench.env_path / "bin" / "python")
+        result = subprocess.run(
+            [python, "-c", f"import {self.name}"],
+            capture_output=True,
+            text=True,
         )
+        if result.returncode != 0:
+            # Roll back: remove from apps dir so a broken app doesn't crash workers.
+            import shutil
+            shutil.rmtree(self.app.path, ignore_errors=True)
+            raise BenchError(
+                f"App '{self.name}' installed but its Python package could not be imported.\n"
+                f"  This usually means the app's folder name ('{self.name}') does not match\n"
+                f"  its Python package name (check pyproject.toml / hooks.py app_name).\n"
+                f"  Error: {result.stderr.strip()}"
+            )
+
+    def _build(self) -> None:
+        print(f"\nSetting up assets for {self.name}...")
+        sys.stdout.flush()
+        PythonEnvManager(self.bench).build_assets_for_app(self.app)

@@ -16,10 +16,15 @@ function fmtDate(iso) {
   return new Date(iso).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })
 }
 
+function fmtLines(lines) {
+  return Number(lines ?? 0).toLocaleString()
+}
+
 const columns = [
   { label: 'File', key: 'filename', width: '200px' },
   { label: 'Process', key: 'process_name', width: '150px' },
   { label: 'Size', key: '_size', width: '80px' },
+  { label: 'Lines', key: '_lines', width: '100px' },
   { label: 'Last Modified', key: '_modified' },
 ]
 
@@ -27,6 +32,7 @@ const rows = computed(() =>
   logs.value.map(l => ({
     ...l,
     _size: fmtSize(l.size_bytes),
+    _lines: fmtLines(l.line_count),
     _modified: fmtDate(l.last_modified),
   }))
 )

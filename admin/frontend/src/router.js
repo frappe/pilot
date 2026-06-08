@@ -12,6 +12,7 @@ const routes = [
   { path: '/tasks/:id', component: () => import('./pages/TaskDetail.vue'), meta: { title: 'Tasks' } },
   { path: '/database', component: () => import('./pages/Database.vue'), meta: { title: 'Database' } },
   { path: '/database/binlogs/:name', component: () => import('./pages/BinlogDetail.vue'), meta: { title: 'Binlogs' } },
+  { path: '/snapshots', component: () => import('./pages/Snapshots.vue'), meta: { title: 'Snapshots' } },
 ]
 
 export const router = createRouter({

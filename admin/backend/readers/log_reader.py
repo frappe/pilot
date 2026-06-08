@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import time
 from collections.abc import Generator
 from dataclasses import dataclass
@@ -16,6 +17,7 @@ class LogFileInfo:
     size_bytes: int
     last_modified: datetime
     process_name: str
+    line_count: int
 
 
 _MAX_STREAM_LINES = 5000
@@ -29,17 +31,26 @@ class LogReader:
         logs_dir = self._bench_root / "logs"
         if not logs_dir.exists():
             return []
+        return [self._build_info(p) for p in sorted(logs_dir.glob("*.log"))]
 
-        result = []
-        for log_path in sorted(logs_dir.glob("*.log")):
-            stat = log_path.stat()
-            result.append(LogFileInfo(
-                filename=log_path.name,
-                size_bytes=stat.st_size,
-                last_modified=datetime.fromtimestamp(stat.st_mtime),
-                process_name=log_path.stem,
-            ))
-        return result
+    @staticmethod
+    def _build_info(path: Path) -> LogFileInfo:
+        stat = path.stat()
+        return LogFileInfo(
+            filename=path.name,
+            size_bytes=stat.st_size,
+            last_modified=datetime.fromtimestamp(stat.st_mtime),
+            process_name=path.stem,
+            line_count=LogReader._count_lines(path),
+        )
+
+    @staticmethod
+    def _count_lines(path: Path) -> int:
+        try:
+            output = subprocess.check_output(["wc", "-l", str(path)])
+            return int(output.split()[0])
+        except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
+            return 0
 
     def read_tail(self, filename: str, lines: int = 200) -> list[str]:
         log_path = self._validated_path(filename)

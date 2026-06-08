@@ -1,10 +1,14 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
 import { Breadcrumbs } from 'frappe-ui'
 import AppSidebar from './AppSidebar.vue'
+import SettingsModal from './SettingsModal.vue'
+
+const emit = defineEmits(['logout'])
 
 const route = useRoute()
+const showSettings = ref(false)
 
 const breadcrumbs = computed(() => {
   const { path, params } = route
@@ -39,14 +43,16 @@ const breadcrumbs = computed(() => {
 
 <template>
   <div class="flex h-screen overflow-hidden">
-    <AppSidebar />
+    <AppSidebar @logout="$emit('logout')" @open-settings="showSettings = true" />
     <main class="flex-1 overflow-auto bg-surface-white">
       <header class="sticky top-0 z-[10] flex items-center border-b bg-surface-white px-5 py-2.5">
         <Breadcrumbs :items="breadcrumbs" />
+        <div id="header-actions" class="ml-auto flex items-center gap-2" />
       </header>
       <div class="p-6">
         <RouterView />
       </div>
     </main>
+    <SettingsModal v-model="showSettings" />
   </div>
 </template>

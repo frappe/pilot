@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import shutil
 import subprocess
-import sys
 from pathlib import Path
 import tomllib
 
@@ -19,13 +19,20 @@ class AdminEnvManager:
     def python(self) -> Path:
         return self.venv_path / "bin" / "python"
 
+    @property
+    def uv(self) -> str:
+        uv = shutil.which("uv")
+        if not uv:
+            raise RuntimeError("uv not found — run the bench-cli install script to set it up")
+        return uv
+
     def ensure(self) -> None:
         """Create the admin venv and install admin dependencies if not already done."""
         if self.python.exists():
             return
         print("Setting up admin environment (one-time)...")
         print("  Creating virtual environment...", end=" ", flush=True)
-        subprocess.run([sys.executable, "-m", "venv", str(self.venv_path)], check=True)
+        subprocess.run([self.uv, "venv", str(self.venv_path)], check=True)
         print("done")
 
         deps = self._read_admin_deps()
@@ -34,11 +41,10 @@ class AdminEnvManager:
             return
 
         print(f"  Installing {', '.join(deps)}...", end=" ", flush=True)
-        pip = self.venv_path / "bin" / "pip"
-        subprocess.run(
-            [str(pip), "install", "--quiet", *deps],
-            check=True,
-        )
+        subprocess.run([self.uv, "pip", "install", "--python", str(self.python), "--quiet", *deps], check=True)
+        print("done")
+        print("   Installing Node.js dependencies...")
+        subprocess.run(["npm", "install"], cwd=self.venv_path.parent / "admin" / "frontend", check=True)
         print("done")
 
     def _read_admin_deps(self) -> list[str]:

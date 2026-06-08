@@ -1,0 +1,32 @@
+name: Unit Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  unit:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install system dependencies
+        run: sudo apt-get install -y redis-tools
+
+      - name: Install dependencies
+        run: pip install -e ".[test]"
+
+      - name: Run unit tests with coverage
+        run: pytest tests/ --ignore=tests/integration --cov=bench_cli --cov-report=term-missing -q

@@ -45,6 +45,11 @@ class Bench:
     def python(self) -> Path:
         return self.env_path / "bin" / "python"
 
+    @property
+    def frappe_call(self) -> list[str]:
+        """Command prefix to invoke frappe's bench helper via the venv Python."""
+        return [str(self.python), "-m", "frappe.utils.bench_helper"]
+
     def apps(self) -> List["App"]:
         """Return all cloned apps by scanning apps/ directory."""
         from bench_cli.config.app_config import AppConfig
@@ -105,6 +110,12 @@ class Bench:
         names = [app.config.name for app in self.apps()]
         apps_txt.write_text("\n".join(names) + "\n" if names else "")
 
+    def set_maintenance_mode(self, enabled: bool) -> None:
+        config_path = self.sites_path / "common_site_config.json"
+        config = json.loads(config_path.read_text())
+        config["maintenance_mode"] = 1 if enabled else 0
+        config_path.write_text(json.dumps(config, indent=2))
+
     def write_common_site_config(self) -> None:
         r = self.config.redis
         if r.is_single_instance:
@@ -129,14 +140,6 @@ class Bench:
         }
         if custom_workers:
             config["workers"] = custom_workers
-        # Use first site found as default (if any exist)
-        first_site = next(
-            (d.name for d in sorted(self.sites_path.iterdir())
-             if d.is_dir() and (d / "site_config.json").exists()),
-            None,
-        ) if self.sites_path.is_dir() else None
-        if first_site:
-            config["default_site"] = first_site
         config_path = self.sites_path / "common_site_config.json"
         config_path.write_text(json.dumps(config, indent=2) + "\n")
 

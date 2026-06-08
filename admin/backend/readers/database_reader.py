@@ -35,9 +35,7 @@ class SlowQuery:
     sql: str
 
 
-_SLOW_QUERY_HEADER = re.compile(
-    r"# Time: (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})"
-)
+_SLOW_QUERY_HEADER = re.compile(r"# Time: (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})")
 _SLOW_QUERY_USER = re.compile(r"# User@Host:\s*(.+)")
 _SLOW_QUERY_STATS = re.compile(
     r"# Query_time:\s*([\d.]+)\s+Lock_time:\s*([\d.]+)\s+"
@@ -51,6 +49,7 @@ class DatabaseReader:
 
     def _connect(self):
         import pymysql
+
         return pymysql.connect(
             host=self._config.host,
             port=self._config.port,

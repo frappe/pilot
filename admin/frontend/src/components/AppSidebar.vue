@@ -1,23 +1,32 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
-import { useRoute } from 'vue-router'
 import { Sidebar, SidebarItem } from 'frappe-ui'
-import LucideLayoutDashboard from '~icons/lucide/layout-dashboard'
-import LucidePackage2 from '~icons/lucide/package-2'
-import LucideGlobe from '~icons/lucide/globe'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import LucideActivity from '~icons/lucide/activity'
-import LucideFileText from '~icons/lucide/file-text'
+import LucideCamera from '~icons/lucide/camera'
 import LucideDatabase from '~icons/lucide/database'
+import LucideFileText from '~icons/lucide/file-text'
+import LucideGlobe from '~icons/lucide/globe'
+import LucideLayoutDashboard from '~icons/lucide/layout-dashboard'
 import LucideListTodo from '~icons/lucide/list-todo'
+import LucideLogOut from '~icons/lucide/log-out'
+import LucidePackage2 from '~icons/lucide/package-2'
+import LucideSettings from '~icons/lucide/settings'
+
+const emit = defineEmits(['logout', 'open-settings'])
 
 const route = useRoute()
 
 const header = {
   title: 'Bench',
   logo: '/logos/frappe-icon.png',
+  menuItems: [
+    { label: 'Settings', icon: LucideSettings, onClick: () => emit('open-settings') },
+    { label: 'Logout', icon: LucideLogOut, onClick: () => logout() },
+  ],
 }
 
-const navItems = [
+const baseNavItems = [
   { label: 'Dashboard', to: '/', icon: LucideLayoutDashboard },
   { label: 'Apps', to: '/apps', icon: LucidePackage2 },
   { label: 'Sites', to: '/sites', icon: LucideGlobe },
@@ -27,28 +36,50 @@ const navItems = [
   { label: 'Tasks', to: '/tasks', icon: LucideListTodo },
 ]
 
-const sections = [{ items: navItems }]
+const snapshotsEnabled = ref(false)
+const runningCount = ref(0)
+let pollTimer = null
+
+const navItems = computed(() => [
+  ...baseNavItems,
+  ...(snapshotsEnabled.value ? [{ label: 'Snapshots', to: '/snapshots', icon: LucideCamera }] : []),
+])
+
+const sections = computed(() => [{ items: navItems.value }])
 
 function isActive(to) {
   if (to === '/') return route.path === '/'
   return route.path.startsWith(to)
 }
 
-const runningCount = ref(0)
-let pollTimer = null
-
 async function pollRunning() {
   try {
-    const res = await fetch('/api/tasks/?status=running')
-    if (res.ok) {
-      const tasks = await res.json()
+    const response = await fetch('/api/tasks/?status=running')
+    if (response.ok) {
+      const tasks = await response.json()
       runningCount.value = Array.isArray(tasks) ? tasks.length : 0
     }
-  } catch {}
+  } catch { }
+}
+
+async function loadVolumeConfig() {
+  try {
+    const response = await fetch('/api/volume/status')
+    if (response.ok) {
+      const data = await response.json()
+      snapshotsEnabled.value = data.enabled === true
+    }
+  } catch { }
+}
+
+async function logout() {
+  await fetch('/api/logout', { method: 'POST' })
+  emit('logout')
 }
 
 onMounted(() => {
   pollRunning()
+  loadVolumeConfig()
   pollTimer = setInterval(pollRunning, 4000)
 })
 onUnmounted(() => clearInterval(pollTimer))
@@ -57,18 +88,15 @@ onUnmounted(() => clearInterval(pollTimer))
 <template>
   <Sidebar :header="header" :sections="sections" disableCollapse>
     <template #sidebar-item="{ item }">
-      <SidebarItem
-        :label="item.label"
-        :icon="item.icon"
-        :to="item.to"
-        :isActive="isActive(item.to)"
-      >
+      <SidebarItem :label="item.label" :icon="item.icon" :to="item.to" :isActive="isActive(item.to)">
         <template v-if="item.to === '/tasks' && runningCount > 0" #suffix>
-          <span class="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-bold text-white">
+          <span
+            class="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-ink-gray-8 px-1 text-[10px] font-bold text-surface-white">
             {{ runningCount }}
           </span>
         </template>
       </SidebarItem>
     </template>
+    <template #footer-items />
   </Sidebar>
 </template>

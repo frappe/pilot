@@ -16,18 +16,33 @@ class SetupProductionCommand:
 
     def run(self) -> None:
         self.bench.config.validate()
+        self._require_production_enabled()
         self._require_linux()
         self._write_dns_multitenancy()
-        self._setup_supervisor()
-        self._setup_nginx()
-        self._setup_letsencrypt_if_needed()
+        if self.bench.config.production.process_manager == "systemd":
+            self._setup_systemd()
+        else:
+            self._setup_supervisor()
+        if self.bench.config.production.nginx:
+            self._setup_nginx()
+            self._setup_letsencrypt_if_needed()
+
+        self._build_admin_for_production()
+
         self._print_summary()
+
+    def _require_production_enabled(self) -> None:
+        if not self.bench.config.production.enabled:
+            print(
+                "Error: [production] is not configured in bench.toml. Add a [production] section to enable production setup.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
     def _require_linux(self) -> None:
         if not is_linux():
             print(
-                "Error: bench setup production only runs on Linux servers.\n"
-                "On macOS, use 'bench start' for local development.",
+                "Error: bench setup production only runs on Linux servers.\nOn macOS, use 'bench start' for local development.",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -41,26 +56,48 @@ class SetupProductionCommand:
         common_config_path.write_text(json.dumps(existing_data, indent=2))
 
     def _setup_supervisor(self) -> None:
+        import subprocess
         from bench_cli.platform import get_package_manager
-        get_package_manager().install("supervisor")
+
+        pkg = get_package_manager()
+        if not pkg.is_installed("supervisor"):
+            pkg.install("supervisor")
+            subprocess.run(["sudo", "systemctl", "disable", "--now", "supervisor"], check=False)
         from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
+
         mgr = SupervisorProcessManager(self.bench)
+        mgr.generate_config()
+        mgr.install_config()
+        mgr.reload()
+
+    def _setup_systemd(self) -> None:
+        from bench_cli.managers.systemd_process_manager import SystemdProcessManager
+
+        mgr = SystemdProcessManager(self.bench)
         mgr.generate_config()
         mgr.install_config()
         mgr.reload()
 
     def _setup_nginx(self) -> None:
         from bench_cli.commands.setup.nginx import SetupNginxCommand
+
         SetupNginxCommand(self.bench).run()
 
     def _setup_letsencrypt_if_needed(self) -> None:
         if not any(site.config.ssl for site in self.bench.sites()):
             return
         from bench_cli.commands.setup.letsencrypt import SetupLetsEncryptCommand
+
         SetupLetsEncryptCommand(self.bench).run()
+
+    def _build_admin_for_production(self) -> None:
+        from bench_cli.commands.admin import BuildAdminCommand
+
+        BuildAdminCommand().run()
 
     def _print_summary(self) -> None:
         from bench_cli.managers.nginx_manager import NginxManager
+
         nginx_manager = NginxManager(self.bench)
         print("\nProduction setup complete.")
         print("Sites:")

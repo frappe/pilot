@@ -44,10 +44,10 @@ class CronManager:
         return f"{_MARKER_PREFIX}{self._bench_root}:{site}"
 
     def _build_command(self, site: str) -> str:
-        bench_bin = self._bench_root / "env" / "bin" / "bench"
+        python = self._bench_root / "env" / "bin" / "python"
         sites_dir = self._bench_root / "sites"
         log_file = self._bench_root / "logs" / f"backup-{site}.log"
-        return f"cd {sites_dir} && {bench_bin} frappe --site {site} backup --with-files >> {log_file} 2>&1"
+        return f"cd {sites_dir} && {python} -m frappe.utils.bench_helper frappe --site {site} backup --with-files >> {log_file} 2>&1"
 
     def _read_crontab(self) -> list[str]:
         result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)

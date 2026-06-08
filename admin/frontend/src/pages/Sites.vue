@@ -6,9 +6,23 @@ import FilePickerField from '../components/FilePickerField.vue'
 
 const router = useRouter()
 const sites = ref([])
-const registry = ref([])
 const loading = ref(true)
 const error = ref('')
+
+async function loadSites() {
+  loading.value = true
+  error.value = ''
+  try {
+    const res = await fetch('/api/sites/')
+    if (!res.ok) throw new Error(`${res.status}`)
+    sites.value = await res.json()
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    loading.value = false
+  }
+}
+const registry = ref([])
 
 const showCreate = ref(false)
 const siteName = ref('')
@@ -49,7 +63,7 @@ const columns = computed(() => [
   { label: 'Name', key: 'name', width: '200px' },
   {
     label: 'Status', key: '_status', width: '80px',
-    prefix: ({ row }) => h(Badge, { label: row._status, theme: row._status === 'online' ? 'green' : 'gray' }),
+    prefix: ({ row }) => h(Badge, { label: row._status, theme: row._status === 'online' ? 'green' : row._status === 'broken' ? 'red' : 'gray' }),
     getLabel: () => '',
   },
   {
@@ -65,20 +79,9 @@ const columns = computed(() => [
 const rows = computed(() =>
   sites.value.map(s => ({
     ...s,
-    _status: s.exists ? 'online' : 'offline',
+    _status: !s.exists ? 'offline' : s.broken ? 'broken' : 'online',
   }))
 )
-
-async function load() {
-  try {
-    const res = await fetch('/api/sites/')
-    sites.value = await res.json()
-  } catch (e) {
-    error.value = e.message
-  } finally {
-    loading.value = false
-  }
-}
 
 async function loadRegistry() {
   try {
@@ -105,6 +108,10 @@ watch(backupSourceSite, async (site) => {
 
 async function createSite() {
   if (!siteName.value.trim()) { createError.value = 'Site name is required.'; return }
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9\-.]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$/.test(siteName.value.trim())) {
+    createError.value = 'Site name must be a valid hostname (letters, numbers, hyphens, and dots only).'
+    return
+  }
   if (restoreFromBackup.value) {
     if (restoreMode.value === 'existing') {
       if (!backupSourceSite.value) { createError.value = 'Select a source site.'; return }
@@ -168,7 +175,7 @@ function openCreate() {
   uploadPrivate.value = null
 }
 
-onMounted(() => { load(); loadRegistry() })
+onMounted(() => { loadSites(); loadRegistry() })
 </script>
 
 <template>

@@ -14,6 +14,14 @@ _TASK_ID_PATTERN = re.compile(r"^\d{8}-\d{6}-[a-f0-9]{6}$")
 _POLL_INTERVAL = 0.5
 
 
+def _collapse_cr(line: str) -> str:
+    """Simulate terminal carriage-return: \r resets to column 0, last write wins."""
+    if '\r' not in line:
+        return line
+    parts = line.split('\r')
+    return next((p for p in reversed(parts) if p), '')
+
+
 class TaskReader:
     def __init__(self, bench_root: Path) -> None:
         self._bench_root = bench_root
@@ -44,15 +52,18 @@ class TaskReader:
 
         return _read_task_dir(self, task_dir)
 
-    def read_output(self, task_id: str, lines: int = 200) -> list[str]:
+    def read_output(self, task_id: str, lines: int | None = None) -> list[str]:
         self.read_task(task_id)  # validates task_id and existence
         output_path = self._bench_root / "tasks" / task_id / "output.log"
         if not output_path.exists():
             return []
-        text = output_path.read_text(errors="replace")
-        all_lines = text.split("\n")
+        with open(output_path, "r", errors="replace", newline='') as f:
+            text = f.read()
+        all_lines = [_collapse_cr(l) for l in text.split("\n")]
         while all_lines and not all_lines[-1]:
             all_lines.pop()
+        if lines is None:
+            return all_lines
         return all_lines[-lines:]
 
     def stream_output(self, task_id: str) -> Generator[str, None, None]:
@@ -60,13 +71,13 @@ class TaskReader:
         output_path = task.output_path
 
         output_path.touch()
-        with open(output_path, "r", errors="replace") as log_file:
+        with open(output_path, "r", errors="replace", newline='') as log_file:
             log_file.seek(0, 2)  # seek to end
 
             while True:
                 line = log_file.readline()
                 if line:
-                    yield line.rstrip("\n")
+                    yield _collapse_cr(line.rstrip("\n"))
                     continue
 
                 status_path = self._bench_root / "tasks" / task_id / "status"

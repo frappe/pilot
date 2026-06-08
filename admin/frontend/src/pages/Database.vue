@@ -1,7 +1,7 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, reactive, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Tabs, ListView, LoadingText, ErrorMessage } from 'frappe-ui'
+import { Tabs, ListView, LoadingText, ErrorMessage, Button } from 'frappe-ui'
 
 const router = useRouter()
 
@@ -15,18 +15,22 @@ const binlogColumns = [
   { label: 'Size', key: '_size', width: '100px' },
 ]
 const binlogRows = computed(() =>
-  binlogs.value.map(l => ({ ...l, _size: fmtSize(l.file_size) }))
+  binlogs.value.map(log => ({ ...log, _size: fmtSize(log.file_size) }))
 )
+
+async function fetchBinlogs() {
+  const response = await fetch('/api/database/binlogs')
+  if (!response.ok) throw new Error(await response.text())
+  return response.json()
+}
 
 async function loadBinlogs() {
   binlogsLoading.value = true
   binlogsError.value = ''
   try {
-    const res = await fetch('/api/database/binlogs')
-    if (!res.ok) throw new Error(await res.text())
-    binlogs.value = await res.json()
-  } catch (e) {
-    binlogsError.value = e.message
+    binlogs.value = await fetchBinlogs()
+  } catch (error) {
+    binlogsError.value = error.message
   } finally {
     binlogsLoading.value = false
   }
@@ -44,23 +48,27 @@ const queryColumns = [
   { label: 'SQL', key: 'sql' },
 ]
 const queryRows = computed(() =>
-  queries.value.map(q => ({
-    ...q,
-    _time: new Date(q.timestamp).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }),
-    _query_time: `${q.query_time.toFixed(3)}s`,
-    _rows: `${q.rows_sent} / ${q.rows_examined}`,
+  queries.value.map(query => ({
+    ...query,
+    _time: new Date(query.timestamp).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }),
+    _query_time: `${query.query_time.toFixed(3)}s`,
+    _rows: `${query.rows_sent} / ${query.rows_examined}`,
   }))
 )
+
+async function fetchQueries() {
+  const response = await fetch('/api/database/slow-queries?limit=50')
+  if (!response.ok) throw new Error(await response.text())
+  return response.json()
+}
 
 async function loadQueries() {
   queriesLoading.value = true
   queriesError.value = ''
   try {
-    const res = await fetch('/api/database/slow-queries?limit=50')
-    if (!res.ok) throw new Error(await res.text())
-    queries.value = await res.json()
-  } catch (e) {
-    queriesError.value = e.message
+    queries.value = await fetchQueries()
+  } catch (error) {
+    queriesError.value = error.message
   } finally {
     queriesLoading.value = false
   }
@@ -79,16 +87,46 @@ const processColumns = [
   { label: 'Time (s)', key: 'time', width: '90px' },
   { label: 'State', key: 'state', width: '140px' },
   { label: 'Query', key: 'info' },
+  { label: '', key: '_actions', width: '70px' },
 ]
+
+const processRows = computed(() =>
+  processes.value.map(row => ({ ...row, _actions: row.id }))
+)
+
+const killing = reactive(new Set())
+
+async function fetchKill(processId) {
+  const response = await fetch(`/api/database/processlist/${processId}`, { method: 'DELETE' })
+  return response.json()
+}
+
+async function killProcess(processId) {
+  killing.add(processId)
+  processesError.value = ''
+  try {
+    const result = await fetchKill(processId)
+    if (!result.ok) processesError.value = result.error || 'Failed to kill process'
+    else await loadProcesses()
+  } catch {
+    processesError.value = 'Could not reach the server'
+  } finally {
+    killing.delete(processId)
+  }
+}
+
+async function fetchProcesses() {
+  const response = await fetch('/api/database/processlist')
+  if (!response.ok) throw new Error(await response.text())
+  return response.json()
+}
 
 async function loadProcesses() {
   processesError.value = ''
   try {
-    const res = await fetch('/api/database/processlist')
-    if (!res.ok) throw new Error(await res.text())
-    processes.value = await res.json()
-  } catch (e) {
-    processesError.value = e.message
+    processes.value = await fetchProcesses()
+  } catch (error) {
+    processesError.value = error.message
   } finally {
     processesLoading.value = false
   }
@@ -137,13 +175,21 @@ onUnmounted(() => clearInterval(processTimer))
         <ListView
           v-else
           :columns="processColumns"
-          :rows="processes"
+          :rows="processRows"
           row-key="id"
           :options="{ selectable: false, showTooltip: false }"
         >
           <template #cell="{ column, item }">
+            <Button
+              v-if="column.key === '_actions'"
+              variant="ghost"
+              theme="red"
+              size="sm"
+              :loading="killing.has(item)"
+              @click.stop="killProcess(item)"
+            >Kill</Button>
             <span
-              v-if="column.key === 'time'"
+              v-else-if="column.key === 'time'"
               :class="item > 30 ? 'font-semibold text-red-600' : item > 5 ? 'text-amber-600' : ''"
             >{{ item }}</span>
             <span v-else class="truncate max-w-xs block">{{ item }}</span>

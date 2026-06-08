@@ -19,7 +19,9 @@ if TYPE_CHECKING:
 
 def _cli_root() -> Path:
     import bench_cli as _pkg
+
     return Path(_pkg.__file__).parent.parent
+
 
 _COLORS = ["\033[36m", "\033[32m", "\033[33m", "\033[35m", "\033[34m", "\033[96m", "\033[92m", "\033[93m"]
 _RESET = "\033[0m"
@@ -55,7 +57,12 @@ class ProcessManager:
 
     # ── Lifecycle ───────────────────────────────────────────────────────────
 
+    def is_configured(self) -> bool:
+        return self.procfile_path.exists()
+
     def start(self) -> None:
+        if not self.is_configured():
+            raise BenchError(f"Procfile not found at {self.procfile_path}. Run 'bench init' first.")
         self.pid_file.write_text(str(os.getpid()))
         try:
             self._run_procfile()
@@ -78,6 +85,9 @@ class ProcessManager:
         pattern = "|".join(process_names)
         result = subprocess.run(["pgrep", "-f", pattern], capture_output=True)
         return bool(result.stdout.strip())
+
+    def reload_web(self) -> None:
+        pass
 
     # ── Procfile runner ─────────────────────────────────────────────────────
 
@@ -158,36 +168,43 @@ class ProcessManager:
 
     # ── Process definitions ─────────────────────────────────────────────────
 
-    def _process_definitions(self) -> List[ProcessDefinition]:
-        definitions = [
+    def _prod_process_definitions(self) -> List[ProcessDefinition]:
+        if self.bench.config.production.process_manager == "systemd":
+            num_workers = self.bench.config.workers.default_count + self.bench.config.workers.short_count + self.bench.config.workers.long_count
+            worker_defs: List[ProcessDefinition] = [self._worker_pool_definition("long,default,short", num_workers)]
+        else:
+            worker_defs = [
+                *self._worker_definitions("default", self.bench.config.workers.default_count),
+                *self._worker_definitions("short", self.bench.config.workers.short_count),
+                *self._worker_definitions("long", self.bench.config.workers.long_count),
+            ]
+        defs = [
             self._web_definition(),
             self._socketio_definition(),
             self._admin_definition(),
-            *self._worker_definitions("default", self.bench.config.workers.default_count),
-            *self._worker_definitions("short", self.bench.config.workers.short_count),
-            *self._worker_definitions("long", self.bench.config.workers.long_count),
-            *[
-                pd
-                for entry in self.bench.config.workers.custom
-                for pd in self._worker_definitions(entry.queue, entry.count)
-            ],
+            *worker_defs,
+            *[pd for entry in self.bench.config.workers.custom for pd in self._worker_definitions(entry.queue, entry.count)],
         ]
         if self.bench.config.redis.is_single_instance:
-            definitions.append(self._redis_definition("redis", "redis.conf"))
+            defs.append(self._redis_definition("redis", "redis.conf"))
         else:
-            definitions.append(self._redis_definition("redis_cache", "redis_cache.conf"))
-            definitions.append(self._redis_definition("redis_queue", "redis_queue.conf"))
-            definitions.append(self._redis_definition("redis_socketio", "redis_socketio.conf"))
-        definitions.append(self._admin_frontend_dev_definition())
-        return definitions
+            defs.append(self._redis_definition("redis_cache", "redis_cache.conf"))
+            defs.append(self._redis_definition("redis_queue", "redis_queue.conf"))
+            defs.append(self._redis_definition("redis_socketio", "redis_socketio.conf"))
+        return defs
+
+    def _process_definitions(self) -> List[ProcessDefinition]:
+        defs = [self._admin_dev_definition() if pd.name == "admin" else pd for pd in self._prod_process_definitions()]
+        defs.append(self._admin_frontend_dev_definition())
+        return defs
 
     def _web_definition(self) -> ProcessDefinition:
         port = self.bench.config.http_port
         sites = self.bench.sites_path
-        bench_bin = self.bench.env_path / "bin" / "bench"
+        python = self.bench.env_path / "bin" / "python"
         return ProcessDefinition(
             name="web",
-            command=f"cd {sites} && {bench_bin} frappe serve --port {port} --noreload",
+            command=f"cd {sites} && {python} -m frappe.utils.bench_helper frappe serve --port {port} --noreload",
             log_file=self.bench.logs_path / "web.log",
         )
 
@@ -199,12 +216,20 @@ class ProcessManager:
             log_file=self.bench.logs_path / "socketio.log",
         )
 
+    def _worker_pool_definition(self, queues: str, num_workers: int) -> ProcessDefinition:
+        sites = self.bench.sites_path
+        return ProcessDefinition(
+            name="worker_pool",
+            command=f"cd {sites} && {self.bench.env_path}/bin/python -m frappe.utils.bench_helper frappe worker-pool --num-workers {num_workers} --queue {queues}",
+            log_file=self.bench.logs_path / "worker_pool.log",
+        )
+
     def _worker_definitions(self, queue: str, count: int) -> List[ProcessDefinition]:
         sites = self.bench.sites_path
         return [
             ProcessDefinition(
                 name=f"worker_{queue}_{i}",
-                command=f"cd {sites} && {self.bench.env_path}/bin/bench frappe worker --queue {queue}",
+                command=f"cd {sites} && {self.bench.env_path}/bin/python -m frappe.utils.bench_helper frappe worker --queue {queue}",
                 log_file=self.bench.logs_path / f"worker_{queue}_{i}.log",
             )
             for i in range(1, count + 1)
@@ -221,16 +246,19 @@ class ProcessManager:
         cli_root = _cli_root()
         python = AdminEnvManager(cli_root).python
         cfg = self.bench.config.admin
-        command = (
-            f"PYTHONPATH={cli_root} {python} -m admin.backend.server"
-            f" --bench-root {self.bench.path}"
-            f" --port {cfg.port}"
-            f" --timeout {cfg.timeout}"
-        )
-        command += " --dev"
         return ProcessDefinition(
             name="admin",
-            command=command,
+            command=(f"PYTHONPATH={cli_root} {python} -m admin.backend.server --bench-root {self.bench.path} --port {cfg.port} --timeout {cfg.timeout} --no-timeout"),
+            log_file=self.bench.logs_path / "admin.log",
+        )
+
+    def _admin_dev_definition(self) -> ProcessDefinition:
+        cli_root = _cli_root()
+        python = AdminEnvManager(cli_root).python
+        cfg = self.bench.config.admin
+        return ProcessDefinition(
+            name="admin",
+            command=(f"PYTHONPATH={cli_root} {python} -m admin.backend.server --bench-root {self.bench.path} --port {cfg.port} --timeout {cfg.timeout} --dev"),
             log_file=self.bench.logs_path / "admin.log",
         )
 
@@ -248,7 +276,36 @@ class ProcessManager:
 class ProcessManagerFactory:
     @staticmethod
     def create(bench: "Bench") -> ProcessManager:
-        if bench.config.nginx.enabled:
-            from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
-            return SupervisorProcessManager(bench)
-        return ProcessManager(bench)
+        if not bench.config.production.enabled:
+            return ProcessManager(bench)
+
+        from bench_cli.managers.systemd_process_manager import SystemdProcessManager
+        from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
+
+        if bench.config.production.process_manager == "systemd":
+            return SystemdProcessManager(bench)
+
+        return SupervisorProcessManager(bench)
+
+    @classmethod
+    def detect_running(cls, bench: "Bench") -> ProcessManager:
+        """Return the process manager that is currently active for this bench.
+
+        Probes actual runtime state — systemd is-active and supervisord
+        pid + supervisorctl status — rather than config file presence.
+        This avoids confusion when config files linger after switching managers.
+        Falls back to create() when nothing is detected as running, so callers
+        still get the appropriate "not running" error for the configured manager.
+        """
+        from bench_cli.managers.systemd_process_manager import SystemdProcessManager
+        from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
+
+        systemd = SystemdProcessManager(bench)
+        if systemd.is_running():
+            return systemd
+
+        supervisor = SupervisorProcessManager(bench)
+        if supervisor.is_running():
+            return supervisor
+
+        return cls.create(bench)

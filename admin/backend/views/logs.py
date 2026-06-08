@@ -23,6 +23,7 @@ def index():
             "size_bytes": lf.size_bytes,
             "last_modified": lf.last_modified.isoformat(),
             "process_name": lf.process_name,
+            "line_count": lf.line_count,
         }
         for lf in log_files
     ])

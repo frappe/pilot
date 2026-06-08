@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+import pickle
 import secrets
 import signal
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TypedDict
 
 from bench_cli.exceptions import TaskNotFoundError, TaskNotRunningError
 
@@ -19,6 +21,7 @@ _WHITELIST: dict[str, list[str]] = {
     "install-app": ["site", "app"],
     "uninstall-app": ["site", "app"],
     "get-app": ["name", "repo"],
+    "remove-app": ["name"],
     "new-site": ["name"],
     "drop-site": ["site"],
     "backup-site": ["site"],
@@ -30,14 +33,21 @@ _WHITELIST: dict[str, list[str]] = {
     "setup-production": [],
     "setup-letsencrypt": [],
     "new-site-from-backup": ["name", "db_file"],
+    "bench-init": [],
+    "update-cli": [],
 }
+
+
+class TaskCallbacks(TypedDict):
+    on_success: callable | None
+    on_failure: callable | None
 
 
 class TaskRunner:
     def __init__(self, bench_root: Path) -> None:
         self._bench_root = bench_root
 
-    def run(self, command: str, args: dict) -> str:
+    def run(self, command: str, args: dict, callbacks: TaskCallbacks | None = None) -> str:
         command_argv = self._build_argv(command, args)
         task_id = self._generate_task_id()
         task_dir = self._task_dir(task_id)
@@ -51,9 +61,16 @@ class TaskRunner:
             "started_at": datetime.now(timezone.utc).isoformat(),
             "finished_at": None,
             "exit_code": None,
+            "bench_root": str(self._bench_root),
         }
         (task_dir / "meta.json").write_text(json.dumps(meta, indent=2))
         (task_dir / "status").write_text("running")
+
+        if callbacks:
+            if on_success := callbacks.get("on_success"):
+                (task_dir / "on_success.bin").write_bytes(pickle.dumps(on_success))
+            if on_failure := callbacks.get("on_failure"):
+                (task_dir / "on_failure.bin").write_bytes(pickle.dumps(on_failure))
 
         process = subprocess.Popen(
             [sys.executable, "-m", "admin.backend.tasks.manager.wrapper", str(task_dir)],
@@ -95,21 +112,22 @@ class TaskRunner:
             if key not in args:
                 raise ValueError(f"Command {command!r} requires arg {key!r}")
 
-        bench_bin = str(self._bench_root / "env" / "bin" / "bench")
+        python = str(self._bench_root / "env" / "bin" / "python")
+        frappe_call = [python, "-m", "frappe.utils.bench_helper"]
 
         if command == "migrate":
-            return [bench_bin, "frappe", "--site", args["site"], "migrate"]
+            return [*frappe_call, "frappe", "--site", args["site"], "migrate"]
         if command == "clear-cache":
-            return [bench_bin, "frappe", "--site", args["site"], "clear-cache"]
+            return [*frappe_call, "frappe", "--site", args["site"], "clear-cache"]
         if command == "uninstall-app":
-            return [bench_bin, "frappe", "--site", args["site"], "uninstall-app", args["app"], "--yes", "--no-backup"]
+            return [*frappe_call, "frappe", "--site", args["site"], "uninstall-app", args["app"], "--yes", "--no-backup"]
         if command == "backup-site":
-            command = [bench_bin, "frappe", "--site", args["site"], "backup"]
+            command = [*frappe_call, "frappe", "--site", args["site"], "backup"]
             if args.get("with_files"):
                 command += ["--with-files"]
             return command
         if command == "build":
-            cmd = [bench_bin, "frappe", "build"]
+            cmd = [*frappe_call, "frappe", "build"]
             if args.get("app"):
                 cmd += ["--app", args["app"]]
             return cmd
@@ -120,6 +138,8 @@ class TaskRunner:
             if args.get("branch"):
                 argv += ["--branch", args["branch"]]
             return argv
+        if command == "remove-app":
+            return [sys.executable, "-m", "admin.backend.tasks.jobs.remove_app_task", str(self._bench_root), args["name"]]
         if command == "new-site":
             argv = [sys.executable, "-m", "admin.backend.tasks.jobs.new_site_task", str(self._bench_root), args["name"]]
             if args.get("admin_password"):
@@ -139,6 +159,11 @@ class TaskRunner:
             return [sys.executable, "-m", "admin.backend.tasks.jobs.setup_production_task", str(self._bench_root)]
         if command == "setup-letsencrypt":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.setup_letsencrypt_task", str(self._bench_root)]
+        if command == "bench-init":
+            argv = [sys.executable, "-m", "admin.backend.tasks.jobs.init_task", str(self._bench_root)]
+            if args.get("sudo_password"):
+                argv += ["--sudo-password", args["sudo_password"]]
+            return argv
         if command == "new-site-from-backup":
             argv = [sys.executable, "-m", "admin.backend.tasks.jobs.new_site_from_backup_task", str(self._bench_root), args["name"], args["db_file"]]
             if args.get("admin_password"):
@@ -148,6 +173,8 @@ class TaskRunner:
             if args.get("private_files"):
                 argv += ["--private-files", args["private_files"]]
             return argv
+        if command == "update-cli":
+            return [sys.executable, "-m", "admin.backend.tasks.jobs.update_cli_task", str(self._bench_root)]
 
         raise ValueError(f"Unhandled command: {command!r}")
 

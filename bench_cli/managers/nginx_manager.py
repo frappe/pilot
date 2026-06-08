@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -32,6 +31,9 @@ class NginxManager:
             site_ssl_ready = ssl_ready and self.cert_exists(site.config)
             conf_text = self._generate_site_config(site.config, site_ssl_ready)
             (sites_dir / f"{site.config.name}.conf").write_text(conf_text)
+        if self.bench.config.admin.domain:
+            conf_text = self._generate_admin_config(ssl_ready)
+            (sites_dir / "_admin.conf").write_text(conf_text)
         self._write_include_conf(nginx_dir)
 
     def _write_include_conf(self, nginx_dir: Path) -> None:
@@ -198,29 +200,92 @@ class NginxManager:
             f"    }}\n"
         )
 
+    def _generate_admin_config(self, ssl_ready: bool = False) -> str:
+        admin = self.bench.config.admin
+        nginx_config = self.bench.config.nginx
+        webroot = self.bench.config.letsencrypt.webroot_path
+        http_port = nginx_config.http_port
+        https_port = nginx_config.https_port
+        domain = admin.domain
+
+        acme_block = (
+            f"    location /.well-known/acme-challenge/ {{\n"
+            f"        root {webroot};\n"
+            f"        try_files $uri =404;\n"
+            f"    }}\n\n"
+        )
+        proxy_block = (
+            f"    location / {{\n"
+            f"        proxy_pass         http://127.0.0.1:{admin.port};\n"
+            f"        proxy_read_timeout 120;\n"
+            f"        proxy_redirect     off;\n"
+            f"        proxy_set_header   Host               $host;\n"
+            f"        proxy_set_header   X-Real-IP          $remote_addr;\n"
+            f"        proxy_set_header   X-Forwarded-For    $proxy_add_x_forwarded_for;\n"
+            f"        proxy_set_header   X-Forwarded-Proto  $scheme;\n"
+            f"    }}\n"
+        )
+
+        if not ssl_ready or not self.admin_cert_exists():
+            return (
+                f"server {{\n"
+                f"    listen {http_port};\n"
+                f"    server_name {domain};\n\n"
+                + acme_block
+                + proxy_block
+                + f"}}\n"
+            )
+
+        cert = self.admin_cert_path()
+        key = Path("/etc/letsencrypt/live") / domain / "privkey.pem"
+        ssl_directives = (
+            f"    ssl_certificate     {cert};\n"
+            f"    ssl_certificate_key {key};\n"
+            f"    ssl_protocols       TLSv1.2 TLSv1.3;\n"
+            f"    ssl_ciphers         ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:"
+            f"ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;\n"
+            f"    ssl_prefer_server_ciphers off;\n"
+            f"    ssl_session_cache   shared:SSL:10m;\n"
+            f"    ssl_session_timeout 1d;\n\n"
+        )
+        return (
+            f"server {{\n"
+            f"    listen {http_port};\n"
+            f"    server_name {domain};\n\n"
+            + acme_block
+            + f"    location / {{\n"
+            f"        return 301 https://$host$request_uri;\n"
+            f"    }}\n"
+            f"}}\n\n"
+            f"server {{\n"
+            f"    listen {https_port} ssl http2;\n"
+            f"    server_name {domain};\n\n"
+            + ssl_directives
+            + proxy_block
+            + f"}}\n"
+        )
+
+    def admin_cert_path(self) -> Path:
+        return Path("/etc/letsencrypt/live") / self.bench.config.admin.domain / "fullchain.pem"
+
+    def admin_cert_exists(self) -> bool:
+        domain = self.bench.config.admin.domain
+        live_dir = Path("/etc/letsencrypt/live") / domain
+        return (live_dir / "fullchain.pem").exists() and (live_dir / "privkey.pem").exists()
+
     def install_config(self) -> None:
         nginx_dir = self.bench.config.nginx.config_dir
         symlink_path = nginx_dir / f"{self.bench.config.name}.conf"
         source_path = self.bench.config_path / "nginx" / "include.conf"
 
         if symlink_path.exists() or symlink_path.is_symlink():
-            symlink_path.unlink()
-
-        try:
-            os.symlink(source_path, symlink_path)
-        except PermissionError:
-            print(
-                f"Permission denied creating symlink at {symlink_path}.\n"
-                f"Run the following command manually:\n"
-                f"  sudo ln -sf {source_path} {symlink_path}\n"
-                f"Then reload nginx:\n"
-                f"  sudo systemctl reload nginx"
-            )
+            run_command(["sudo", "unlink", str(symlink_path)])
+        run_command(["sudo", "ln", "-s", str(source_path), str(symlink_path)])
 
     def reload(self) -> None:
-        run_command(["nginx", "-t"])
+        run_command(["sudo", "nginx", "-t"])
         if is_linux():
-            run_command(["systemctl", "reload", "nginx"])
+            run_command(["sudo", "systemctl", "reload", "nginx"])
         else:
             run_command(["nginx", "-s", "reload"])
 

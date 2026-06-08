@@ -5,20 +5,35 @@ Invoked as: python -m admin.backend.tasks.manager.wrapper <task-dir>
 
 This module uses only the standard library — no cli imports.
 """
+
 import json
+import pickle
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 
+def callback_handler(callback_bin_path: Path, output_log: Path, meta: dict) -> None:
+    callback = pickle.loads(callback_bin_path.read_bytes())
+    callback_bin_path.unlink()
+    with open(output_log, "a") as log_file:
+        try:
+            callback(meta)
+            log_file.write("\nCallback successfully triggered")
+        except Exception as error:
+            log_file.write(f"\nCallback failed: {error!s}\n")
+
+
 def main() -> None:
     task_dir = Path(sys.argv[1])
     meta = json.loads((task_dir / "meta.json").read_text())
+    on_success_bin = task_dir / "on_success.bin"
+    on_failure_bin = task_dir / "on_failure.bin"
 
-    bench_root = task_dir.parent.parent
     # frappe's bench CLI (env/bin/bench) loads apps.txt from the current
     # directory using sites_path=".", so cwd must be the sites/ subdirectory.
+    bench_root = Path(meta["bench_root"])
     sites_dir = bench_root / "sites"
     cwd = str(sites_dir) if sites_dir.is_dir() else str(bench_root)
 
@@ -29,6 +44,15 @@ def main() -> None:
             stdout=log_file,
             stderr=subprocess.STDOUT,
         )
+
+    if result.returncode == 0 and on_success_bin.exists():
+        callback_handler(on_success_bin, task_dir / "output.log", meta=meta)
+    elif result.returncode != 0 and on_failure_bin.exists():
+        callback_handler(on_failure_bin, task_dir / "output.log", meta=meta)
+
+    for leftover in (on_success_bin, on_failure_bin):
+        if leftover.exists():
+            leftover.unlink()
 
     meta["finished_at"] = datetime.now(timezone.utc).isoformat()
     meta["exit_code"] = result.returncode

@@ -42,6 +42,7 @@ class RedisManager:
         content = (
             f"port {self.config.cache_port}\n"
             "bind 127.0.0.1\n"
+            'save ""\n'
         )
         (self.bench.config_path / "redis.conf").write_text(content)
 
@@ -57,6 +58,7 @@ class RedisManager:
         content = (
             f"port {self.config.queue_port}\n"
             "bind 127.0.0.1\n"
+            'save ""\n'
         )
         (self.bench.config_path / "redis_queue.conf").write_text(content)
 

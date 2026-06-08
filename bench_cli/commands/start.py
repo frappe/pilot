@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import os
+import subprocess
+import tomllib
+
 from bench_cli.core.bench import Bench
-from bench_cli.exceptions import BenchError
 from bench_cli.managers.process_manager import ProcessManagerFactory
 
 
@@ -10,11 +13,39 @@ class RunCommand:
         self.bench = bench
 
     def run(self) -> None:
-        process_manager = ProcessManagerFactory.create(self.bench)
-        procfile = process_manager.procfile_path
-        if not procfile.exists():
-            raise BenchError(
-                f"Procfile not found at {procfile}. "
-                "Run 'bench init' first to initialise the bench."
-            )
-        process_manager.start()
+        if not (self.bench.path / "env" / "bin" / "python").exists():
+            self._start_wizard()
+        else:
+            ProcessManagerFactory.create(self.bench).start()
+
+    def _start_wizard(self) -> None:
+        from bench_cli.managers.admin_env_manager import AdminEnvManager
+        from bench_cli.commands.admin import download_admin_frontend, _cli_root
+
+        cli_root = _cli_root()
+        admin_mgr = AdminEnvManager(cli_root)
+        admin_mgr.ensure()
+
+        dist = cli_root / "admin" / "backend" / "static" / "dist"
+        if not dist.exists():
+            print("Downloading admin frontend...")
+            download_admin_frontend(cli_root)
+
+        port = self._admin_port()
+        print("\nBench not initialized. Starting setup wizard...")
+        print(f"  Open http://localhost:{port} in your browser\n")
+
+        env = {**os.environ, "PYTHONPATH": str(cli_root)}
+        subprocess.run([
+            str(admin_mgr.python), "-m", "admin.backend.server",
+            "--bench-root", str(self.bench.path),
+            "--port", str(port),
+            "--timeout", "7200",
+        ], env=env)
+
+    def _admin_port(self) -> int:
+        try:
+            with open(self.bench.path / "bench.toml", "rb") as f:
+                return tomllib.load(f).get("admin", {}).get("port", 8002)
+        except Exception:
+            return 8002

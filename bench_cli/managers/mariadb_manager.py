@@ -1,4 +1,5 @@
 import shutil
+from contextlib import contextmanager
 from pathlib import Path
 
 from bench_cli.config.mariadb_config import MariaDBConfig
@@ -29,6 +30,12 @@ class MariaDBManager:
         else:
             run_command(["sudo", "systemctl", "start", "mariadb"])
 
+    def stop(self) -> None:
+        if is_macos():
+            run_command(["brew", "services", "stop", self._brew_package()])
+        else:
+            run_command(["sudo", "systemctl", "stop", "mariadb"])
+
     def _brew_package(self) -> str:
         if self.config.version:
             return f"mariadb@{self.config.version}"
@@ -38,6 +45,37 @@ class MariaDBManager:
         if self.config.version:
             return f"mariadb-server-{self.config.version}"
         return "mariadb-server"
+
+    def kill_process(self, process_id: int) -> None:
+        connection = self._connect()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("KILL %s", (process_id,))
+        finally:
+            connection.close()
+
+    @contextmanager
+    def snapshot_lock(self):
+        connection = self._connect()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("FLUSH TABLES WITH READ LOCK")
+            yield
+        finally:
+            with connection.cursor() as cursor:
+                cursor.execute("UNLOCK TABLES")
+            connection.close()
+
+    def _connect(self):
+        import pymysql
+
+        return pymysql.connect(
+            host=self.config.host,
+            port=self.config.port,
+            user=self.config.admin_user,
+            password=self.config.root_password,
+            unix_socket=self._detect_socket() or None,
+        )
 
     def _detect_socket(self) -> str:
         if self.config.socket_path:

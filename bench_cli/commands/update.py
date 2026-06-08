@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import time
 
 from bench_cli.core.bench import Bench
 from bench_cli.exceptions import CommandError
@@ -13,11 +14,23 @@ class UpdateCommand:
         self.bench = bench
         self.skip_confirm = skip_confirm
 
+    @staticmethod
+    def _step(key: str, label: str) -> None:
+        print(f"##[step:{key},{time.time():.3f}] {label}", flush=True)
+
     def run(self) -> None:
         self._warn_if_running()
+        self._step("fetch", "Fetching latest code")
         self._update_apps()
+        self._step("install", "Installing dependencies")
         self._reinstall_apps()
+        self._step("assets", "Building assets")
+        self._rebuild_assets()
+        self._step("migrate", "Migrating sites")
         self._migrate_sites()
+        self._step("restart", "Restarting services")
+        ProcessManagerFactory.create(self.bench).reload_web()
+        self._step("done", "Done")
 
     def _warn_if_running(self) -> None:
         if not ProcessManagerFactory.create(self.bench).is_running():
@@ -49,6 +62,12 @@ class UpdateCommand:
         for app in self.bench.apps():
             print(f"Reinstalling {app.config.name}...")
             mgr.install_app(app)
+
+    def _rebuild_assets(self) -> None:
+        mgr = PythonEnvManager(self.bench)
+        for app in self.bench.apps():
+            print(f"Updating assets for {app.config.name}...")
+            mgr.build_assets_for_app(app)
 
     def _migrate_sites(self) -> None:
         failed = False

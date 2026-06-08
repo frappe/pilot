@@ -28,16 +28,16 @@ def test_generate_task_id_format() -> None:
 def test_build_argv_migrate(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     argv = runner._build_argv("migrate", {"site": "mysite.localhost"})
-    bench_bin = str(tmp_path / "env" / "bin" / "bench")
-    assert argv == [bench_bin, "frappe", "--site", "mysite.localhost", "migrate"]
+    python = str(tmp_path / "env" / "bin" / "python")
+    assert argv == [python, "-m", "frappe.utils.bench_helper", "frappe", "--site", "mysite.localhost", "migrate"]
     assert Path(argv[0]).is_absolute()
 
 
 def test_build_argv_clear_cache(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     argv = runner._build_argv("clear-cache", {"site": "mysite.localhost"})
-    bench_bin = str(tmp_path / "env" / "bin" / "bench")
-    assert argv == [bench_bin, "frappe", "--site", "mysite.localhost", "clear-cache"]
+    python = str(tmp_path / "env" / "bin" / "python")
+    assert argv == [python, "-m", "frappe.utils.bench_helper", "frappe", "--site", "mysite.localhost", "clear-cache"]
 
 
 def test_build_argv_install_app(tmp_path: Path) -> None:
@@ -54,8 +54,8 @@ def test_build_argv_install_app(tmp_path: Path) -> None:
 def test_build_argv_uninstall_app(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     argv = runner._build_argv("uninstall-app", {"site": "mysite.localhost", "app": "erpnext"})
-    bench_bin = str(tmp_path / "env" / "bin" / "bench")
-    assert argv == [bench_bin, "frappe", "--site", "mysite.localhost", "uninstall-app", "erpnext", "--yes", "--no-backup"]
+    python = str(tmp_path / "env" / "bin" / "python")
+    assert argv == [python, "-m", "frappe.utils.bench_helper", "frappe", "--site", "mysite.localhost", "uninstall-app", "erpnext", "--yes", "--no-backup"]
 
 
 def test_build_argv_get_app(tmp_path: Path) -> None:
@@ -64,7 +64,6 @@ def test_build_argv_get_app(tmp_path: Path) -> None:
     assert argv[0] == sys.executable
     assert argv[1:3] == ["-m", "admin.backend.tasks.jobs.get_app_task"]
     assert str(tmp_path) in argv
-    assert "erpnext" in argv
     assert "https://github.com/frappe/erpnext" in argv
 
 
@@ -78,16 +77,16 @@ def test_build_argv_get_app_with_branch(tmp_path: Path) -> None:
 def test_build_argv_build_no_app(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     argv = runner._build_argv("build", {})
-    bench_bin = str(tmp_path / "env" / "bin" / "bench")
-    assert argv == [bench_bin, "frappe", "build"]
+    python = str(tmp_path / "env" / "bin" / "python")
+    assert argv == [python, "-m", "frappe.utils.bench_helper", "frappe", "build"]
     assert Path(argv[0]).is_absolute()
 
 
 def test_build_argv_build_with_app(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     argv = runner._build_argv("build", {"app": "erpnext"})
-    bench_bin = str(tmp_path / "env" / "bin" / "bench")
-    assert argv == [bench_bin, "frappe", "build", "--app", "erpnext"]
+    python = str(tmp_path / "env" / "bin" / "python")
+    assert argv == [python, "-m", "frappe.utils.bench_helper", "frappe", "build", "--app", "erpnext"]
 
 
 def test_build_argv_update(tmp_path: Path) -> None:
@@ -111,8 +110,8 @@ def test_build_argv_switch_branch(tmp_path: Path) -> None:
 def test_build_argv_backup_site(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     argv = runner._build_argv("backup-site", {"site": "mysite.localhost"})
-    bench_bin = str(tmp_path / "env" / "bin" / "bench")
-    assert argv == [bench_bin, "frappe", "--site", "mysite.localhost", "backup"]
+    python = str(tmp_path / "env" / "bin" / "python")
+    assert argv == [python, "-m", "frappe.utils.bench_helper", "frappe", "--site", "mysite.localhost", "backup"]
 
 
 def test_build_argv_unknown_command_raises(tmp_path: Path) -> None:
@@ -219,6 +218,43 @@ def test_read_output_returns_all_lines_when_fewer_than_limit(tmp_path: Path) -> 
         result = reader.read_output(task_id, lines=200)
 
     assert result == ["alpha", "beta", "gamma"]
+
+
+# ── _collapse_cr ────────────────────────────────────────────────────────────
+
+
+def test_collapse_cr_no_cr() -> None:
+    from admin.backend.tasks.manager.task_reader import _collapse_cr
+    assert _collapse_cr("hello world") == "hello world"
+
+
+def test_collapse_cr_takes_last_segment() -> None:
+    from admin.backend.tasks.manager.task_reader import _collapse_cr
+    assert _collapse_cr("[50%]\r[60%]\r[70%]") == "[70%]"
+
+
+def test_collapse_cr_leading_cr() -> None:
+    from admin.backend.tasks.manager.task_reader import _collapse_cr
+    assert _collapse_cr("\rUpdating [93%]") == "Updating [93%]"
+
+
+def test_collapse_cr_trailing_cr_ignored() -> None:
+    from admin.backend.tasks.manager.task_reader import _collapse_cr
+    assert _collapse_cr("[100%]\r") == "[100%]"
+
+
+def test_read_output_collapses_cr_lines(tmp_path: Path) -> None:
+    task_id = "20260521-143022-aabbcc"
+    task_dir = _make_task_dir(tmp_path / "tasks", task_id)
+    # Simulate progress bar: three \r-terminated updates, then \n
+    raw = b"[50%]\r[60%]\r[70%]\nDone\n"
+    (task_dir / "output.log").write_bytes(raw)
+
+    reader = TaskReader(tmp_path)
+    with patch("os.kill", return_value=None):
+        result = reader.read_output(task_id, lines=200)
+
+    assert result == ["[70%]", "Done"]
 
 
 # ── TaskRunner task retention ────────────────────────────────────────────────
