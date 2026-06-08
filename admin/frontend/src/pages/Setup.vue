@@ -202,7 +202,7 @@ function backToConfig() {
       <!-- Header -->
       <div class="border-b border-outline-gray-2 px-5 py-4">
         <p v-if="isConfiguring" class="mb-1 text-xs text-ink-gray-4">
-          {{ benchName }} · Step {{ stepNumber }} of {{ configSteps.length }}
+          Step {{ stepNumber }} of {{ configSteps.length }}
         </p>
         <h1 class="text-base font-medium text-ink-gray-7">{{ title }}</h1>
         <p v-if="subtitle" class="mt-0.5 text-sm text-ink-gray-4">{{ subtitle }}</p>
