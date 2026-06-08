@@ -117,7 +117,6 @@ onUnmounted(() => clearInterval(timer))
         :rows="rows"
         row-key="name"
         :options="{ selectable: false, showTooltip: false }"
-      fix: remove extra closing tag
         <template #cell="{ column, item }">
           <Badge
             v-if="column.key === 'status'"
