@@ -38,7 +38,7 @@ class NewSiteCommand:
                 raise BenchError(f"App '{app}' is not installed. Run 'bench get-app <repo>' first.")
 
     def _reload_nginx(self) -> None:
-        if not self.bench.config.nginx.enabled:
+        if not self.bench.config.production.nginx:
             return
         from bench_cli.managers.nginx_manager import NginxManager
         mgr = NginxManager(self.bench)

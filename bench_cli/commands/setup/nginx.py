@@ -24,9 +24,13 @@ class SetupNginxCommand:
         self._print_site_urls()
 
     def _validate_nginx_enabled(self) -> None:
-        if not self.bench.config.nginx.enabled:
+        if not self.bench.config.production.enabled:
             raise ConfigError(
-                "nginx.enabled must be true in bench.toml to run setup nginx."
+                "[production] is not configured in bench.toml. Add a [production] section to enable production setup."
+            )
+        if not self.bench.config.production.nginx:
+            raise ConfigError(
+                "production.nginx must be true in bench.toml to run setup nginx."
             )
 
     def _ensure_nginx_config_directory(self) -> None:

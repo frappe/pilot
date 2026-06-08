@@ -140,14 +140,6 @@ class Bench:
         }
         if custom_workers:
             config["workers"] = custom_workers
-        # Use first site found as default (if any exist)
-        first_site = next(
-            (d.name for d in sorted(self.sites_path.iterdir())
-             if d.is_dir() and (d / "site_config.json").exists()),
-            None,
-        ) if self.sites_path.is_dir() else None
-        if first_site:
-            config["default_site"] = first_site
         config_path = self.sites_path / "common_site_config.json"
         config_path.write_text(json.dumps(config, indent=2) + "\n")
 

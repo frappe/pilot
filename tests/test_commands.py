@@ -403,10 +403,11 @@ def test_requirements_installs_js_for_app_with_package_json(tmp_path: Path) -> N
     (app_dir / ".git").mkdir()
     (app_dir / "package.json").write_text('{"name": "myapp"}\n')
 
-    with patch("bench_cli.commands.setup.requirements.run_command") as mock_rc:
-        SetupRequirementsCommand(bench)._install_js()
-        mock_rc.assert_called_once()
-        assert mock_rc.call_args[0][0] == ["yarn", "install"]
+    with patch("bench_cli.commands.setup.requirements.get_yarn_bin", return_value="yarn"):
+        with patch("bench_cli.commands.setup.requirements.run_command") as mock_rc:
+            SetupRequirementsCommand(bench)._install_js()
+            mock_rc.assert_called_once()
+            assert mock_rc.call_args[0][0] == ["yarn", "install"]
 
 
 # ── UpdateCommand ─────────────────────────────────────────────────────────────

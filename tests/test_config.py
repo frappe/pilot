@@ -4,6 +4,8 @@ from pathlib import Path
 import pytest
 
 from bench_cli.config.bench_config import BenchConfig
+from bench_cli.config.production_config import ProductionConfig
+from bench_cli.config.toml_writer import bench_config_to_toml
 from bench_cli.exceptions import ConfigError
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -233,3 +235,94 @@ def test_branches_single_branch_no_list_is_valid() -> None:
     config = load_from_dict(data)
     assert config.apps[0].branch == "some-custom-branch"
     assert config.apps[0].branches == []
+
+
+# ── ProductionConfig tests ────────────────────────────────────────────────────
+
+
+def test_production_defaults() -> None:
+    p = ProductionConfig()
+    assert p.process_manager == "none"
+    assert p.nginx is False
+    assert p.enabled is False
+
+
+def test_production_enabled_when_supervisor() -> None:
+    p = ProductionConfig(process_manager="supervisor")
+    assert p.enabled is True
+
+
+def test_production_enabled_when_systemd() -> None:
+    p = ProductionConfig(process_manager="systemd")
+    assert p.enabled is True
+
+
+def test_production_not_enabled_when_none() -> None:
+    p = ProductionConfig(process_manager="none")
+    assert p.enabled is False
+
+
+def test_production_parse_new_format_supervisor() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = {"process_manager": "supervisor", "nginx": False}
+    config = load_from_dict(data)
+    assert config.production.process_manager == "supervisor"
+    assert config.production.nginx is False
+    assert config.production.enabled is True
+
+
+def test_production_parse_new_format_systemd_with_nginx() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = {"process_manager": "systemd", "nginx": True}
+    config = load_from_dict(data)
+    assert config.production.process_manager == "systemd"
+    assert config.production.nginx is True
+
+
+def test_production_parse_new_format_none() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = {"process_manager": "none"}
+    config = load_from_dict(data)
+    assert config.production.process_manager == "none"
+    assert config.production.enabled is False
+
+
+def test_production_legacy_enabled_supervisor() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = {"enabled": True, "lightweight": False, "nginx": True}
+    config = load_from_dict(data)
+    assert config.production.process_manager == "supervisor"
+    assert config.production.nginx is True
+
+
+def test_production_legacy_enabled_systemd() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = {"enabled": True, "lightweight": True}
+    config = load_from_dict(data)
+    assert config.production.process_manager == "systemd"
+
+
+def test_production_legacy_disabled() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = {"enabled": False}
+    config = load_from_dict(data)
+    assert config.production.process_manager == "none"
+    assert config.production.enabled is False
+
+
+def test_production_missing_section_defaults() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    config = load_from_dict(data)
+    assert config.production.process_manager == "none"
+    assert config.production.nginx is False
+
+
+def test_toml_writer_production_uses_process_manager() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = {"process_manager": "supervisor", "nginx": True}
+    config = load_from_dict(data)
+    toml = bench_config_to_toml(config)
+    assert 'process_manager = "supervisor"' in toml
+    assert "nginx = true" in toml
+    assert "lightweight" not in toml
+    assert "enabled" not in toml.split("[production]")[1].split("[")[0]

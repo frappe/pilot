@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from bench_cli.exceptions import BenchError
 from bench_cli.platform import is_macos
-from bench_cli.utils import run_command
+from bench_cli.utils import get_yarn_bin, run_command
 
 if TYPE_CHECKING:
     from bench_cli.core.app import App
@@ -43,15 +43,21 @@ class PythonEnvManager:
         run_command([uv, "pip", "uninstall", "--python", python, app_name], stream_output=True)
 
     def install_node(self) -> None:
-        if shutil.which("node"):
-            if not shutil.which("yarn"):
-                run_command(["sudo", "npm", "install", "-g", "yarn"])
-            return
+        if not shutil.which("node"):
+            if is_macos():
+                run_command(["brew", "install", "node"])
+            else:
+                self._install_node_linux()
+        if not shutil.which("yarn"):
+            self._install_yarn()
+
+    def _install_yarn(self) -> None:
         if is_macos():
-            run_command(["brew", "install", "node"])
+            run_command(["npm", "install", "-g", "yarn"])
         else:
-            self._install_node_linux()
-        run_command(["npm", "install", "-g", "yarn"])
+            npm_prefix = Path.home() / ".local"
+            npm_prefix.mkdir(parents=True, exist_ok=True)
+            run_command(["npm", "install", "-g", "yarn", "--prefix", str(npm_prefix)])
 
     def install_node_dependencies(self) -> None:
         for app in self.bench.apps():
@@ -78,7 +84,7 @@ class PythonEnvManager:
         if (app.path / "package.json").exists():
             print(f"  Installing JS dependencies for {app.config.name}...")
             sys.stdout.flush()
-            run_command(["yarn", "install"], cwd=app.path, stream_output=True)
+            run_command([get_yarn_bin(), "install"], cwd=app.path, stream_output=True)
 
         print(f"  Building assets for {app.config.name}...")
         sys.stdout.flush()

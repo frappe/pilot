@@ -9,13 +9,12 @@ from pathlib import Path
 from bench_cli.exceptions import BenchError
 from bench_cli.utils import run_command
 
-_ADMIN_RELEASE_URL = (
-    "https://github.com/frappe/bench-cli/releases/download/latest-build/admin-frontend.tar.gz"
-)
+_ADMIN_RELEASE_URL = "https://github.com/frappe/bench-cli/releases/download/latest-build/admin-frontend.tar.gz"
 
 
 def _cli_root() -> Path:
     import bench_cli as _pkg
+
     return Path(_pkg.__file__).parent.parent
 
 
@@ -46,12 +45,22 @@ def download_admin_frontend(cli_root: Path) -> bool:
 
 
 class BuildAdminCommand:
+    def __init__(self, force_build: bool = False) -> None:
+        self.force_build = force_build
+
     def run(self) -> None:
+        if not self.force_build and download_admin_frontend(_cli_root()):
+            return
+        if self.force_build:
+            print("Skipping download, building from source...")
+        else:
+            print("Download failed, building from source...")
         frontend = self._find_frontend()
         print(f"Building admin frontend at {frontend}...")
         if not (frontend / "node_modules").exists():
             print("Running npm install...")
             run_command(["npm", "install"], cwd=frontend, stream_output=True)
+        print("Running npm build")
         run_command(["npm", "run", "build"], cwd=frontend, stream_output=True)
         print("\nAdmin frontend rebuilt successfully.")
 
@@ -59,7 +68,4 @@ class BuildAdminCommand:
         candidate = _cli_root() / "admin" / "frontend"
         if (candidate / "package.json").exists():
             return candidate
-        raise BenchError(
-            "admin/frontend not found. "
-            "This command requires the bench-cli source directory with admin/frontend/."
-        )
+        raise BenchError("admin/frontend not found. This command requires the bench-cli source directory with admin/frontend/.")

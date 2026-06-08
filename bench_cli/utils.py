@@ -1,8 +1,9 @@
 import io
+import shutil
 import subprocess
 from pathlib import Path
 
-from bench_cli.exceptions import CommandError
+from bench_cli.exceptions import BenchError, CommandError
 
 
 def write_toml(path: Path, data: dict) -> None:
@@ -40,6 +41,15 @@ def write_toml(path: Path, data: dict) -> None:
 
     _write_section(data)
     path.write_text(out.getvalue())
+
+
+def get_yarn_bin() -> str:
+    if yarn := shutil.which("yarn"):
+        return yarn
+    local_yarn = Path.home() / ".local" / "bin" / "yarn"
+    if local_yarn.exists():
+        return str(local_yarn)
+    raise BenchError("yarn not found — run bench init to install it.")
 
 
 def run_command(

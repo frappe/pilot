@@ -8,25 +8,29 @@ from bench_cli.exceptions import BenchError
 if typing.TYPE_CHECKING:
     from bench_cli.core.bench import Bench
 
-_OWN_COMMANDS = frozenset([
-    "new",
-    "init",
-    "start",
-    "stop",
-    "restart",
-    "get-app",
-    "new-site",
-    "frappe",
-    "build",
-    "update",
-    "upgrade",
-    "build-admin",
-    "setup",
-    "volume",
-    "remove-app",
-    "uninstall-app",
-    "list-apps",
-])
+_OWN_COMMANDS = frozenset(
+    [
+        "new",
+        "init",
+        "start",
+        "stop",
+        "restart",
+        "get-app",
+        "new-site",
+        "frappe",
+        "build",
+        "update",
+        "upgrade",
+        "build-admin",
+        "setup",
+        "volume",
+        "remove-app",
+        "uninstall-app",
+        "list-apps",
+        "list-site-apps",
+        "status",
+    ]
+)
 _OWN_GROUP_OPTIONS = frozenset(["--verbose", "--yes", "-y", "--bench", "-b", "--help", "-h"])
 
 # Global bench name selected via -b / --bench; set in main() before dispatch.
@@ -137,7 +141,8 @@ def _make_parser() -> argparse.ArgumentParser:
     p_new = sub.add_parser("new", help="Create a new bench.")
     p_new.add_argument("name", help="Name for the new bench.")
 
-    sub.add_parser("init", help="Initialise the bench.")
+    p_init = sub.add_parser("init", help="Initialise the bench.")
+    p_init.add_argument("--sudo-password", default="", help="Sudo password used once to write /etc/sudoers.d/<user>. Not stored.")
     sub.add_parser("start", help="Start all bench processes.")
     sub.add_parser("stop", help="Stop the running bench.")
     sub.add_parser("restart", help="Restart supervisor processes (production mode only).")
@@ -157,6 +162,11 @@ def _make_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("list-apps", help="List apps installed in the bench.")
 
+    p_list_site_apps = sub.add_parser("list-site-apps", help="List apps installed on a site.")
+    p_list_site_apps.add_argument("site", help="Site name (e.g. site1.localhost).")
+
+    sub.add_parser("status", help="Show bench status summary.")
+
     p_newsite = sub.add_parser("new-site", help="Create a new site and add it to bench.toml.")
     p_newsite.add_argument("name", help="Site name (e.g. site2.localhost).")
     p_newsite.add_argument("--admin-password", default="admin", help="Frappe admin password.")
@@ -165,7 +175,8 @@ def _make_parser() -> argparse.ArgumentParser:
     p_frappe = sub.add_parser("frappe", help="Run a frappe CLI command.")
     p_frappe.add_argument("args", nargs=argparse.REMAINDER)
 
-    sub.add_parser("build-admin", help="Rebuild admin frontend assets from source.")
+    p_build_admin = sub.add_parser("build-admin", help="Download or rebuild admin frontend assets.")
+    p_build_admin.add_argument("--force", action="store_true", help="Skip download and build from source.")
     sub.add_parser("upgrade", help="Pull latest bench-cli and download the admin frontend.")
 
     p_setup = sub.add_parser("setup", help="Production setup commands.")
@@ -241,6 +252,7 @@ def main() -> None:
     _active_bench = args.bench
 
     import time
+
     verbose = getattr(args, "verbose", False)
     _t0 = time.monotonic()
     try:
@@ -274,7 +286,7 @@ def _dispatch(args: argparse.Namespace) -> None:
     elif cmd == "init":
         from bench_cli.commands.init import InitCommand
 
-        InitCommand(_load_bench()).run()
+        InitCommand(_load_bench(), sudo_password=args.sudo_password).run()
 
     elif cmd == "start":
         from bench_cli.commands.start import RunCommand
@@ -314,6 +326,11 @@ def _dispatch(args: argparse.Namespace) -> None:
         for app in apps:
             print(app)
 
+    elif cmd == "list-site-apps":
+        from bench_cli.commands.list_site_apps import ListSiteAppsCommand
+
+        ListSiteAppsCommand(_load_bench(), args.site).run()
+
     elif cmd == "new-site":
         _cmd_new_site(args)
 
@@ -335,12 +352,17 @@ def _dispatch(args: argparse.Namespace) -> None:
     elif cmd == "build-admin":
         from bench_cli.commands.admin import BuildAdminCommand
 
-        BuildAdminCommand().run()
+        BuildAdminCommand(force_build=args.force).run()
 
     elif cmd == "upgrade":
         from bench_cli.commands.upgrade import UpgradeCommand
 
         UpgradeCommand().run()
+
+    elif cmd == "status":
+        from bench_cli.commands.status import StatusCommand
+
+        StatusCommand(_load_bench()).run()
 
     elif cmd == "setup":
         _dispatch_setup(args)
@@ -388,7 +410,7 @@ def _dispatch_setup(args: argparse.Namespace) -> None:
         SetupLetsEncryptCommand(_load_bench()).run()
     elif setup_cmd == "production":
         from bench_cli.commands.setup.production import SetupProductionCommand
-
+    
         SetupProductionCommand(_load_bench()).run()
     elif setup_cmd == "requirements":
         from bench_cli.commands.setup.requirements import SetupRequirementsCommand

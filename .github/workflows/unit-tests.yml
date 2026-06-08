@@ -22,6 +22,9 @@ jobs:
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
+      - name: Install system dependencies
+        run: sudo apt-get install -y redis-tools
+
       - name: Install dependencies
         run: pip install -e ".[test]"
 

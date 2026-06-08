@@ -6,3 +6,11 @@ html {
 .dialog-overlay {
   z-index: 50;
 }
+
+/* @tailwindcss/forms sets appearance:none on all inputs, which strips the system font Safari
+   uses to render password masking bullets — they appear as boxes without this override.
+   We are doing to for safari compatibility!
+   */
+input[type='password'] {
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+}

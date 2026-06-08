@@ -10,17 +10,18 @@ Covers DNS-based multitenancy, Nginx reverse-proxy configuration, and Let's Encr
 
 A production bench differs from a development bench in three ways:
 
-1. **Process manager is supervisor** — processes run as a background daemon (see architecture.md).
+1. **Process manager** — processes run as a background daemon managed by supervisor (default) or systemd.
 2. **Nginx sits in front of Gunicorn** — terminates SSL, serves static assets directly, and passes the `Host` header to Frappe to identify the requested site.
 3. **Each site has a real domain** — Frappe uses the `Host` header to route requests to the correct site database and files. This is called DNS multitenancy.
 
-The three `bench setup` sub-commands orchestrate these concerns:
+The `bench setup` sub-commands orchestrate these concerns:
 
 | Command | What it does |
 |---------|-------------|
+| `bench setup production` | Configure process manager, nginx, and SSL in the correct order |
 | `bench setup nginx` | Generate per-site Nginx config files and install them |
 | `bench setup letsencrypt` | Obtain Let's Encrypt certificates for all SSL-enabled sites and the admin domain |
-| `bench setup production` | Run both in the correct order; also enables `dns_multitenant` in Frappe |
+| `bench restart` | Restart all bench processes via supervisor or systemd |
 
 ---
 
@@ -49,6 +50,31 @@ www.site1.example.com ← domain alias
 ---
 
 ## bench.toml additions
+
+### `production` section (required for production mode)
+
+Adding a `[production]` section to `bench.toml` enables production mode. The section may be empty — presence alone is enough.
+
+```toml
+[production]
+lightweight = false   # false = supervisor (default), true = systemd --user
+nginx = true          # include nginx setup in bench setup production
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `lightweight` | bool | no | `false` | When `false` (default), uses a bench-owned `supervisord` instance. When `true`, uses `systemctl --user` units (requires `loginctl enable-linger` once as root). |
+| `nginx` | bool | no | `false` | When `true`, `bench setup production` also runs nginx setup and (if any site has `ssl: true`) Let's Encrypt certificate issuance. |
+
+**Supervisor** (default, `lightweight = false`):
+- Installs `supervisor` package if not present and disables the system-wide service.
+- Writes `config/supervisor/supervisord.conf` and starts a bench-owned supervisord.
+- No `sudo` needed for day-to-day process management.
+
+**Systemd** (`lightweight = true`):
+- Writes `.service` files to `~/.config/systemd/user/` and a `.target` that groups them.
+- Requires `sudo loginctl enable-linger <user>` once so the user session persists after logout.
+- No `sudo` needed after that — `systemctl --user` manages everything.
 
 ### `sites[]` — new optional fields
 
@@ -522,9 +548,9 @@ Certbot's built-in renewal timer (`certbot.timer` systemd unit, installed with c
 Orchestrates the full production setup in the correct dependency order.
 
 **Pre-conditions:**
-- `nginx.enabled = true` in `bench.toml`.
+- `[production]` section present in `bench.toml`.
 - `bench init` has been run.
-- DNS records are configured (required before `letsencrypt` step).
+- DNS records are configured (required before the letsencrypt step).
 - Running on a Linux server (Ubuntu). Exits with an error on macOS.
 
 **Steps:**
@@ -532,14 +558,34 @@ Orchestrates the full production setup in the correct dependency order.
 ```
 1.  Validate bench.toml
 2.  Verify running on Linux (error with helpful message if macOS)
-3.  Verify process_manager is supervisor (error if not)
-4.  Write "dns_multitenant": 1 into sites/common_site_config.json
-5.  Generate supervisor config (SupervisorProcessManager.generate_config())
-6.  Start or reload supervisord (SupervisorProcessManager.start())
-7.  SetupNginxCommand.run()
-8.  SetupLetsEncryptCommand.run()  (skipped if no sites have ssl: true)
-9.  Print summary: process status, site URLs
+3.  Write "dns_multitenant": 1 into sites/common_site_config.json
+4a. If lightweight = false (supervisor):
+      Install supervisor package if absent, generate config/supervisor/supervisord.conf,
+      start supervisord.
+4b. If lightweight = true (systemd):
+      Write ~/.config/systemd/user/*.service + *.target, run systemctl --user daemon-reload
+      and enable the target.
+5.  If production.nginx = true: SetupNginxCommand.run()
+6.  If production.nginx = true and any site has ssl: true: SetupLetsEncryptCommand.run()
+7.  Build admin frontend for production.
+8.  Print summary: process status, site URLs
 ```
+
+### `bench restart`
+
+Restarts all bench processes. Works with both supervisor and systemd — auto-detected from the filesystem (no flag required).
+
+```
+1. Detect process manager:
+   a. If config/supervisor/supervisord.conf exists → supervisor
+   b. Else if systemd target is enabled → systemd
+   c. Else error: "Run 'bench setup production' first"
+2. Regenerate process manager config from bench.toml
+3. Reload daemon (supervisorctl reread+update or systemctl daemon-reload)
+4. Restart all processes
+```
+
+`bench upgrade` also calls restart automatically after pulling new bench-cli code, if a production process manager is configured and running.
 
 ### CLI additions
 
@@ -613,6 +659,10 @@ port = 8002
 password = "your-admin-password"
 domain = "admin.example.com"    # optional — serve admin UI over HTTPS via nginx
 
+[production]
+nginx = true          # run nginx + letsencrypt as part of bench setup production
+# lightweight = true  # uncomment to use systemd --user instead of supervisor
+
 [nginx]
 enabled = true
 client_max_body_size = "100m"
@@ -620,3 +670,13 @@ client_max_body_size = "100m"
 [letsencrypt]
 email = "ops@example.com"
 ```
+
+## Admin UI — process controls
+
+When running in production mode, the Processes page in the admin UI shows three buttons:
+
+- **Start** — starts all bench processes (enabled when all are stopped).
+- **Stop** — stops web workers and queues, leaving the admin server running.
+- **Restart** — restarts web workers and queues without touching the admin server.
+
+The admin server itself is only restarted by `bench restart` (CLI) or `bench upgrade`.

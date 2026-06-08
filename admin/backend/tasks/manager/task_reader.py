@@ -52,7 +52,7 @@ class TaskReader:
 
         return _read_task_dir(self, task_dir)
 
-    def read_output(self, task_id: str, lines: int = 200) -> list[str]:
+    def read_output(self, task_id: str, lines: int | None = None) -> list[str]:
         self.read_task(task_id)  # validates task_id and existence
         output_path = self._bench_root / "tasks" / task_id / "output.log"
         if not output_path.exists():
@@ -62,6 +62,8 @@ class TaskReader:
         all_lines = [_collapse_cr(l) for l in text.split("\n")]
         while all_lines and not all_lines[-1]:
             all_lines.pop()
+        if lines is None:
+            return all_lines
         return all_lines[-lines:]
 
     def stream_output(self, task_id: str) -> Generator[str, None, None]:

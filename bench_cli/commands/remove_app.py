@@ -12,10 +12,11 @@ if TYPE_CHECKING:
 
 
 class RemoveAppCommand:
-    def __init__(self, bench: "Bench", app_name: str, skip_confirm: bool = False) -> None:
+    def __init__(self, bench: "Bench", app_name: str, skip_confirm: bool = False, force: bool = False) -> None:
         self.bench = bench
         self.app_name = app_name
         self.skip_confirm = skip_confirm
+        self.force = force
         self.app_path = bench.apps_path / app_name
 
     def run(self) -> None:
@@ -49,7 +50,14 @@ class RemoveAppCommand:
             if self.app_name in installed:
                 print(f"Uninstalling '{self.app_name}' from site '{site.config.name}'...")
                 sys.stdout.flush()
-                site.uninstall_app(self.app_name)
+                try:
+                    site.uninstall_app(self.app_name, force=self.force)
+                except Exception as e:
+                    if self.force:
+                        print(f"Warning: could not cleanly uninstall from '{site.config.name}': {e}")
+                        sys.stdout.flush()
+                    else:
+                        raise
 
     def _remove_from_apps_txt(self) -> None:
         apps_txt = self.bench.sites_path / "apps.txt"

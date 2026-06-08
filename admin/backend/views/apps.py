@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from dataclasses import asdict
 from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request
 
 from ..readers.app_reader import AppReader
+from ..validators import first_error, validate_app_name, validate_branch_name, validate_repo_url
 from admin.backend.tasks.manager.task_runner import TaskRunner
 
 apps_bp = Blueprint("apps", __name__)
@@ -41,10 +43,9 @@ def add():
     repo = (data.get("repo") or "").strip()
     branch = (data.get("branch") or "").strip()
 
-    if not name:
-        return jsonify({"ok": False, "error": "App name is required."})
-    if not repo:
-        return jsonify({"ok": False, "error": "Repository URL is required."})
+    err = first_error(validate_app_name(name), validate_repo_url(repo), validate_branch_name(branch))
+    if err:
+        return jsonify({"ok": False, "error": err})
 
     # Check app isn't already cloned
     if (bench_root / "apps" / name / ".git").exists():
@@ -60,14 +61,58 @@ def add():
     return jsonify({"ok": True, "task_id": task_id})
 
 
+@apps_bp.route("/<name>/remove", methods=["POST"])
+def remove(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+
+    if not (bench_root / "apps" / name).exists():
+        return jsonify({"ok": False, "error": f"App '{name}' not found in bench."})
+
+    try:
+        task_id = TaskRunner(bench_root).run("remove-app", {"name": name})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+    return jsonify({"ok": True, "task_id": task_id})
+
+
+@apps_bp.route("/<name>/set-upstream", methods=["POST"])
+def set_upstream(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    data = request.get_json(silent=True) or {}
+    repo = (data.get("repo") or "").strip()
+
+    err = validate_repo_url(repo)
+    if err:
+        return jsonify({"ok": False, "error": err})
+
+    app_path = bench_root / "apps" / name
+    if not (app_path / ".git").exists():
+        return jsonify({"ok": False, "error": f"App '{name}' not found"})
+
+    result = subprocess.run(
+        ["git", "-C", str(app_path), "remote", "set-url", "origin", repo],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return jsonify({"ok": False, "error": result.stderr.strip() or "Failed to update remote URL"})
+
+    return jsonify({"ok": True})
+
+
 @apps_bp.route("/<name>/switch-branch", methods=["POST"])
 def switch_branch(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     data = request.get_json(silent=True) or {}
 
     branch = (data.get("branch") or "").strip()
-    if not branch:
-        return jsonify({"ok": False, "error": "branch is required."})
+    err = first_error(
+        (None if branch else "Branch is required."),
+        validate_branch_name(branch),
+    )
+    if err:
+        return jsonify({"ok": False, "error": err})
 
     # Verify app is cloned
     if not (bench_root / "apps" / name / ".git").exists():

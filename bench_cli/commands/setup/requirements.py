@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from bench_cli.utils import run_command
+from bench_cli.utils import get_yarn_bin, run_command
 
 if TYPE_CHECKING:
     from bench_cli.core.bench import Bench
@@ -37,4 +37,4 @@ class SetupRequirementsCommand:
             if not (app.path / "package.json").exists():
                 continue
             print(f"Installing JS requirements for {app.config.name}...")
-            run_command(["yarn", "install"], cwd=app.path, stream_output=True)
+            run_command([get_yarn_bin(), "install"], cwd=app.path, stream_output=True)
