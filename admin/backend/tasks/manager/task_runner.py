@@ -34,6 +34,7 @@ _WHITELIST: dict[str, list[str]] = {
     "setup-letsencrypt": [],
     "new-site-from-backup": ["name", "db_file"],
     "bench-init": [],
+    "update-cli": [],
 }
 
 
@@ -172,6 +173,8 @@ class TaskRunner:
             if args.get("private_files"):
                 argv += ["--private-files", args["private_files"]]
             return argv
+        if command == "update-cli":
+            return [sys.executable, "-m", "admin.backend.tasks.jobs.update_cli_task", str(self._bench_root)]
 
         raise ValueError(f"Unhandled command: {command!r}")
 

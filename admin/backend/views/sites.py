@@ -8,6 +8,7 @@ from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request
 
 from admin.backend.tasks.callbacks import new_site_failure_callback, ssl_setup_failure_callback
+from ..validators import validate_cron_expression, validate_site_name
 from admin.backend.tasks.manager.task_runner import TaskRunner
 
 from ..readers.app_reader import AppReader
@@ -63,8 +64,9 @@ def create():
 
     name = (data.get("name") or "").strip()
     admin_password = (data.get("admin_password") or "admin").strip() or "admin"
-    if not name:
-        return jsonify({"ok": False, "error": "Site name is required."})
+    err = validate_site_name(name)
+    if err:
+        return jsonify({"ok": False, "error": err})
 
     # Check site doesn't already exist
     if (bench_root / "sites" / name / "site_config.json").exists():
@@ -87,9 +89,9 @@ def create_from_upload():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     name = (request.form.get("name") or "").strip()
     admin_password = (request.form.get("admin_password") or "admin").strip() or "admin"
-
-    if not name:
-        return jsonify({"ok": False, "error": "Site name is required."})
+    err = validate_site_name(name)
+    if err:
+        return jsonify({"ok": False, "error": err})
     if (bench_root / "sites" / name / "site_config.json").exists():
         return jsonify({"ok": False, "error": f"Site '{name}' already exists."})
 
@@ -134,6 +136,20 @@ def drop_site(name: str):
     return jsonify({"ok": True, "task_id": task_id})
 
 
+@sites_bp.route("/<name>/force-drop", methods=["POST"])
+def force_drop_site(name: str):
+    import shutil
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    site_path = bench_root / "sites" / name
+    if not (site_path / "site_config.json").exists():
+        return jsonify({"ok": False, "error": "Site not found."}), 404
+    try:
+        shutil.rmtree(site_path)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"ok": True})
+
+
 @sites_bp.route("/<name>/backup", methods=["POST"])
 def backup_site(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
@@ -170,6 +186,49 @@ def uninstall_app(name: str):
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
     return jsonify({"ok": True, "task_id": task_id})
+
+
+@sites_bp.route("/<name>/force-uninstall-app", methods=["POST"])
+def force_uninstall_app(name: str):
+    import os
+    import subprocess as _sp
+
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    data = request.get_json(silent=True) or {}
+
+    from ..validators import validate_app_name
+    app = (data.get("app") or "").strip()
+    err = validate_app_name(app)
+    if err:
+        return jsonify({"ok": False, "error": err})
+
+    if not (bench_root / "sites" / name / "site_config.json").exists():
+        return jsonify({"ok": False, "error": "Site not found."}), 404
+
+    python = str(bench_root / "env" / "bin" / "python")
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+
+    try:
+        result = _sp.run(
+            [
+                python, "-m", "frappe.utils.bench_helper", "frappe",
+                "--site", name,
+                "execute", "frappe.installer.remove_from_installed_apps",
+                "--args", f'["{app}"]',
+            ],
+            cwd=str(bench_root / "sites"),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=env,
+        )
+        if result.returncode != 0:
+            return jsonify({"ok": False, "error": result.stderr.strip() or "Force remove failed."})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+    return jsonify({"ok": True})
 
 
 @sites_bp.route("/<name>/login", methods=["POST"])
@@ -325,8 +384,9 @@ def set_backup_schedule(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     data = request.get_json(silent=True) or {}
     schedule = (data.get("schedule") or "").strip()
-    if not schedule:
-        return jsonify({"ok": False, "error": "Schedule expression is required."})
+    err = validate_cron_expression(schedule)
+    if err:
+        return jsonify({"ok": False, "error": err})
     try:
         CronManager(bench_root).set_schedule(name, schedule)
     except Exception as e:

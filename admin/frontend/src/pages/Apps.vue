@@ -9,6 +9,8 @@ const router = useRouter()
 const apps = ref([])
 const loading = ref(true)
 const error = ref('')
+const updateMap = ref({})  // name → { commits_behind, remote_commit }
+const updateLoading = ref(false)
 
 async function loadApps() {
   loading.value = true
@@ -24,35 +26,42 @@ async function loadApps() {
   }
 }
 
+async function loadUpdateStatus() {
+  try {
+    const res = await fetch('/api/updates/')
+    if (!res.ok) return
+    const data = await res.json()
+    updateMap.value = Object.fromEntries((data.apps || []).map(a => [a.name, a]))
+  } catch {}
+}
+
 // Add app dialog
 const showAdd = ref(false)
 const addMode = ref('picker')
 const registry = ref([])
 const registrySearch = ref('')
 const selectedApp = ref(null)
-const pickerBranches = ref([])        // string[] — the branches to store
-const pickerActiveBranch = ref('')    // the chosen active branch
-const pickerBranchInput = ref('')     // free-form input for adding a branch
+const pickerBranches = ref([])
+const pickerActiveBranch = ref('')
+const pickerBranchInput = ref('')
 const manualName = ref('')
 const manualRepo = ref('')
-const manualBranches = ref([])        // string[]
+const manualBranches = ref([])
 const manualActiveBranch = ref('')
 const manualBranchInput = ref('')
 const addLoading = ref(false)
 const addError = ref('')
 
-// Switch branch dialog
-const showSwitch = ref(false)
-const switchApp = ref(null)
-const switchBranch = ref('')
-const switchLoading = ref(false)
-const switchError = ref('')
-
-// Remove app dialog
-const showRemove = ref(false)
-const removeApp = ref(null)
-const removeLoading = ref(false)
-const removeError = ref('')
+// Edit app dialog (upstream + branch + remove)
+const showEdit = ref(false)
+const editApp = ref(null)
+const editRepo = ref('')
+const editBranch = ref('')
+const editLoading = ref(false)
+const editError = ref('')
+const editShowRemove = ref(false)
+const editRemoveLoading = ref(false)
+const editRemoveError = ref('')
 
 const filteredRegistry = computed(() => {
   const q = registrySearch.value.toLowerCase()
@@ -82,20 +91,19 @@ const columns = computed(() => [
   },
   { label: 'Repo', key: 'repo' },
   {
-    label: 'Branch',
-    key: '_branch',
-    width: '200px',
-    prefix: ({ row }) => h('div', { class: 'flex items-center gap-1 flex-wrap py-1' },
-      row._branchChips.map(b =>
-        h(Badge, {
-          label: b,
-          theme: b === row.branch ? 'blue' : 'gray',
-          variant: b === row.branch ? 'subtle' : 'outline',
-          class: b !== row.branch ? 'cursor-pointer hover:bg-surface-gray-2' : '',
-          onClick: () => b !== row.branch && openSwitch(row, b),
-        })
-      )
-    ),
+    label: 'Branch', key: 'branch', width: '130px',
+    prefix: ({ row }) => h(Badge, { label: row.branch || '—', theme: 'gray', variant: 'subtle' }),
+    getLabel: () => '',
+  },
+  {
+    label: 'Updates', key: '_updates', width: '110px',
+    prefix: ({ row }) => {
+      const u = updateMap.value[row.name]
+      if (!u) return h('span', { class: 'text-xs text-ink-gray-3' }, '—')
+      if (u.commits_behind > 0)
+        return h(Badge, { label: `${u.commits_behind} behind`, theme: 'yellow' })
+      return h(Badge, { label: 'Up to date', theme: 'green' })
+    },
     getLabel: () => '',
   },
   {
@@ -107,10 +115,10 @@ const columns = computed(() => [
   {
     label: '', key: '_actions', width: '60px',
     prefix: ({ row }) => h(Button, {
-      variant: 'ghost',
-      theme: 'red',
-      label: 'Remove',
-      onClick: (e) => { e.stopPropagation(); openRemove(row) },
+      variant: 'outline',
+      label: 'Edit',
+      size: 'sm',
+      onClick: (e) => { e.stopPropagation(); openEdit(row) },
     }),
     getLabel: () => '',
   },
@@ -119,9 +127,7 @@ const columns = computed(() => [
 const rows = computed(() =>
   apps.value.map(a => ({
     ...a,
-    _commit: a.is_cloned ? a.current_commit : 'not cloned',
     _status: a.uncommitted_changes ? 'dirty' : 'clean',
-    _branchChips: a.branches && a.branches.length > 0 ? a.branches : [a.branch],
   }))
 )
 
@@ -195,37 +201,103 @@ function onManualBranchKeydown(e) {
 }
 
 
-function openSwitch(app, branch) {
-  switchApp.value = app
-  switchBranch.value = branch
-  switchError.value = ''
-  showSwitch.value = true
+function openEdit(app) {
+  editApp.value = app
+  editRepo.value = app.repo
+  editBranch.value = app.branch
+  editError.value = ''
+  editShowRemove.value = false
+  editRemoveError.value = ''
+  showEdit.value = true
 }
 
-function openRemove(app) {
-  removeApp.value = app
-  removeError.value = ''
-  showRemove.value = true
-}
-
-async function doRemove() {
-  removeLoading.value = true
-  removeError.value = ''
+async function saveEdit() {
+  const app = editApp.value
+  editError.value = ''
+  const newRepo = editRepo.value.trim()
+  const newBranch = editBranch.value.trim()
+  if (newRepo && newRepo !== app.repo && !isValidRepoUrl(newRepo)) {
+    editError.value = 'Repository URL must be a valid git URL (https://, git@host:path, or local path).'
+    return
+  }
+  if (newBranch && newBranch !== app.branch && !isValidBranch(newBranch)) {
+    editError.value = "Branch name may only contain letters, numbers, hyphens, underscores, dots, and slashes."
+    return
+  }
+  editLoading.value = true
   try {
-    const res = await fetch(`/api/apps/${removeApp.value.name}/remove`, { method: 'POST' })
-    const d = await res.json()
-    if (d.ok) { showRemove.value = false; router.push(`/tasks/${d.task_id}`) }
-    else removeError.value = d.error
+    if (newRepo && newRepo !== app.repo) {
+      const res = await fetch(`/api/apps/${app.name}/set-upstream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repo: newRepo }),
+      })
+      const d = await res.json()
+      if (!d.ok) { editError.value = d.error; return }
+    }
+    if (newBranch && newBranch !== app.branch) {
+      const res = await fetch(`/api/apps/${app.name}/switch-branch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ branch: newBranch }),
+      })
+      const d = await res.json()
+      if (!d.ok) { editError.value = d.error; return }
+      showEdit.value = false
+      router.push(`/tasks/${d.task_id}`)
+      return
+    }
+    showEdit.value = false
+    loadApps()
   } catch (e) {
-    removeError.value = e.message
+    editError.value = e.message
   } finally {
-    removeLoading.value = false
+    editLoading.value = false
   }
 }
 
+async function doEditRemove() {
+  editRemoveLoading.value = true
+  editRemoveError.value = ''
+  try {
+    const res = await fetch(`/api/apps/${editApp.value.name}/remove`, { method: 'POST' })
+    const d = await res.json()
+    if (d.ok) { showEdit.value = false; router.push(`/tasks/${d.task_id}`) }
+    else editRemoveError.value = d.error
+  } catch (e) {
+    editRemoveError.value = e.message
+  } finally {
+    editRemoveLoading.value = false
+  }
+}
+
+function isValidRepoUrl(url) {
+  return /^(https?:\/\/.+|git@.+:.+|[/~].*|\.\.\/.*)/.test(url.trim())
+}
+
+function isValidBranch(branch) {
+  return branch && !/\.\./.test(branch) && /^[A-Za-z0-9._/\-]+$/.test(branch)
+}
+
 async function doAdd(name, repo, branch, branches) {
-  addLoading.value = true
   addError.value = ''
+  if (addMode.value === 'manual') {
+    if (!name.trim()) { addError.value = 'App name is required.'; return }
+    if (!/^[A-Za-z][A-Za-z0-9_\-]*$/.test(name.trim())) {
+      addError.value = 'App name must start with a letter and contain only letters, numbers, hyphens, and underscores.'
+      return
+    }
+    if (!repo.trim()) { addError.value = 'Repository URL is required.'; return }
+    if (!isValidRepoUrl(repo)) {
+      addError.value = 'Repository URL must be a valid git URL (https://, git@host:path, or local path).'
+      return
+    }
+    if (branch && !isValidBranch(branch)) {
+      addError.value = "Branch name may only contain letters, numbers, hyphens, underscores, dots, and slashes."
+      return
+    }
+  }
+  addLoading.value = true
   try {
     const res = await fetch('/api/apps/add', {
       method: 'POST',
@@ -242,25 +314,6 @@ async function doAdd(name, repo, branch, branches) {
   }
 }
 
-async function doSwitch() {
-  switchLoading.value = true
-  switchError.value = ''
-  try {
-    const res = await fetch(`/api/apps/${switchApp.value.name}/switch-branch`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ branch: switchBranch.value }),
-    })
-    const d = await res.json()
-    if (d.ok) { showSwitch.value = false; router.push(`/tasks/${d.task_id}`) }
-    else switchError.value = d.error
-  } catch (e) {
-    switchError.value = e.message
-  } finally {
-    switchLoading.value = false
-  }
-}
-
 const COLORS = ['#4f46e5','#0891b2','#059669','#d97706','#dc2626','#7c3aed']
 function hashColor(name) {
   let h = 0
@@ -268,12 +321,32 @@ function hashColor(name) {
   return COLORS[Math.abs(h) % COLORS.length]
 }
 
-onMounted(() => { loadApps(); loadRegistry() })
+async function runUpdate() {
+  updateLoading.value = true
+  error.value = ''
+  try {
+    const res = await fetch('/api/tasks/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: 'update' }),
+    })
+    const d = await res.json()
+    if (d.ok) router.push(`/tasks/${d.task_id}`)
+    else error.value = d.error
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    updateLoading.value = false
+  }
+}
+
+onMounted(() => { loadApps(); loadRegistry(); loadUpdateStatus() })
 </script>
 
 <template>
   <div class="flex flex-col gap-4">
-    <div class="flex justify-end">
+    <div class="flex justify-end gap-2">
+      <Button variant="outline" :loading="updateLoading" @click="runUpdate">Update Bench</Button>
       <Button variant="solid" @click="openAdd">Add App</Button>
     </div>
 
@@ -299,7 +372,7 @@ onMounted(() => { loadApps(); loadRegistry() })
         <div v-if="addMode === 'picker'">
           <TextInput v-model="registrySearch" placeholder="Search apps…" class="mb-3" />
           <div class="max-h-52 overflow-y-auto mb-3">
-            <div v-if="!filteredRegistry.length" class="p-4 text-gray-400">No apps found</div>
+            <div v-if="!filteredRegistry.length" class="p-4 text-ink-gray-4">No apps found</div>
             <button
               v-for="a in filteredRegistry"
               :key="a.name"
@@ -407,39 +480,36 @@ onMounted(() => { loadApps(); loadRegistry() })
       </template>
     </Dialog>
 
-    <!-- Remove App confirmation dialog -->
-    <Dialog v-model="showRemove" :options="{ title: 'Remove App' }">
+    <!-- Edit App dialog -->
+    <Dialog v-model="showEdit" :options="{ title: editApp?.name || 'Edit App', size: 'sm' }">
       <template #body-content>
-        <p v-if="removeApp" class="text-sm">
-          Remove <strong>{{ removeApp.name }}</strong> from the bench?
-        </p>
-        <p class="mt-1 text-sm text-ink-gray-4">
-          This will uninstall it from all sites, remove it from the Python environment, and delete the app directory. Uncommitted changes will be lost.
-        </p>
-        <ErrorMessage :message="removeError" class="mt-2" />
-        <div class="mt-4 flex justify-end gap-2">
-          <Button variant="ghost" @click="showRemove = false">Cancel</Button>
-          <Button variant="solid" theme="red" :loading="removeLoading" @click="doRemove">Remove</Button>
-        </div>
-      </template>
-    </Dialog>
+        <div @pointerdown.stop class="flex flex-col gap-4">
+          <FormControl label="Upstream URL" v-model="editRepo" placeholder="https://github.com/org/repo" />
+          <FormControl label="Branch" v-model="editBranch" placeholder="e.g. version-15, develop" />
 
-    <!-- Switch Branch confirmation dialog -->
-    <Dialog v-model="showSwitch" :options="{ title: 'Switch Branch' }">
-      <template #body-content>
-        <p v-if="switchApp" class="text-sm">
-          Switch <strong>{{ switchApp.name }}</strong> from
-          <Badge :label="switchApp.branch" theme="gray" />
-          to
-          <Badge :label="switchBranch" theme="blue" />?
-        </p>
-        <p class="mt-1 text-sm text-ink-gray-4">
-          This will run git checkout, reinstall the app, and rebuild its assets.
-        </p>
-        <ErrorMessage :message="switchError" class="mt-2" />
-        <div class="mt-4 flex justify-end gap-2">
-          <Button variant="ghost" @click="showSwitch = false">Cancel</Button>
-          <Button variant="solid" :loading="switchLoading" @click="doSwitch">Switch Branch</Button>
+          <ErrorMessage :message="editError" />
+
+          <!-- Danger zone -->
+          <div class="border-t border-outline-gray-1 pt-3">
+            <template v-if="!editShowRemove">
+              <Button variant="outline" theme="red" @click="editShowRemove = true">Remove App</Button>
+            </template>
+            <template v-else>
+              <p class="mb-3 text-sm text-ink-gray-5">
+                Remove <strong>{{ editApp?.name }}</strong>? This will uninstall it from all sites and delete the app directory.
+              </p>
+              <ErrorMessage :message="editRemoveError" />
+              <div class="mt-2 flex gap-2">
+                <Button variant="ghost" @click="editShowRemove = false">Cancel</Button>
+                <Button variant="solid" theme="red" :loading="editRemoveLoading" @click="doEditRemove">Remove</Button>
+              </div>
+            </template>
+          </div>
+
+          <div class="flex justify-end gap-2 border-t border-outline-gray-1 pt-3">
+            <Button variant="ghost" @click="showEdit = false">Cancel</Button>
+            <Button variant="solid" :loading="editLoading" @click="saveEdit">Save</Button>
+          </div>
         </div>
       </template>
     </Dialog>

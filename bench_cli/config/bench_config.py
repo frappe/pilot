@@ -121,11 +121,17 @@ class BenchConfig:
     def _parse_production(data: dict | None) -> ProductionConfig:
         if data is None:
             return ProductionConfig()
-        return ProductionConfig(
-            enabled=True,
-            nginx=data.get("nginx", False),
-            lightweight=data.get("lightweight", False),
-        )
+        if "process_manager" in data:
+            return ProductionConfig(
+                process_manager=str(data.get("process_manager", "none")),
+                nginx=data.get("nginx", False),
+            )
+        # Legacy format: enabled + lightweight → derive process_manager
+        if data.get("enabled", False):
+            pm = "systemd" if data.get("lightweight", False) else "supervisor"
+        else:
+            pm = "none"
+        return ProductionConfig(process_manager=pm, nginx=data.get("nginx", False))
 
     @staticmethod
     def _parse_nginx(data: dict) -> NginxConfig:

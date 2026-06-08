@@ -24,9 +24,11 @@ function openLog(filename) {
 }
 
 const columns = [
-  { label: 'Name', key: 'name', width: '200px' },
+  { label: 'Name', key: 'name', width: '180px' },
   { label: 'Status', key: 'status', width: '100px' },
-  { label: 'PID', key: 'pid', width: '80px' },
+  { label: 'PID', key: 'pid', width: '70px' },
+  { label: 'CPU', key: 'cpu_percent', width: '70px' },
+  { label: 'Memory', key: 'memory_mb', width: '90px' },
   { label: 'Uptime', key: 'uptime', width: '100px' },
   { label: 'Log', key: 'log_filename' },
 ]
@@ -122,6 +124,12 @@ onUnmounted(() => clearInterval(timer))
             :label="item"
             :theme="STATUS_COLOR[item] || 'gray'"
           />
+          <span v-else-if="column.key === 'cpu_percent'">
+            {{ item != null ? item.toFixed(1) + '%' : '—' }}
+          </span>
+          <span v-else-if="column.key === 'memory_mb'">
+            {{ item != null ? item.toFixed(0) + ' MB' : '—' }}
+          </span>
           <button
             v-else-if="column.key === 'log_filename' && item"
             class="text-ink-blue-2 hover:underline"

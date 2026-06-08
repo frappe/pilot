@@ -15,6 +15,25 @@ class ProcessInfo:
     pid: int | None
     uptime: str | None
     log_file: Path
+    cpu_percent: float | None = None
+    memory_mb: float | None = None
+
+
+def _get_process_stats(pid: int) -> tuple[float | None, float | None]:
+    """Return (cpu_percent, memory_mb) for pid via `ps`, or (None, None) on failure."""
+    try:
+        result = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "%cpu=,rss="],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode != 0:
+            return None, None
+        parts = result.stdout.strip().split()
+        if len(parts) >= 2:
+            return float(parts[0]), round(int(parts[1]) / 1024.0, 1)
+    except Exception:
+        pass
+    return None, None
 
 
 class ProcessReader:
@@ -89,7 +108,8 @@ class ProcessReader:
         log_name = program.replace("-", "_")    # "worker_default_1"
         log_file = self._bench_root / "logs" / f"{log_name}.log"
 
-        return ProcessInfo(name=display_name, status=status, pid=pid, uptime=uptime, log_file=log_file)
+        cpu, mem = _get_process_stats(pid) if pid and status == "running" else (None, None)
+        return ProcessInfo(name=display_name, status=status, pid=pid, uptime=uptime, log_file=log_file, cpu_percent=cpu, memory_mb=mem)
 
     def _read_from_pids(self) -> list[ProcessInfo]:
         pids_dir = self._bench_root / "pids"
@@ -115,4 +135,5 @@ class ProcessReader:
         except OSError:
             status = "stopped"
 
-        return ProcessInfo(name=name, status=status, pid=pid, uptime=None, log_file=log_file)
+        cpu, mem = _get_process_stats(pid) if status == "running" else (None, None)
+        return ProcessInfo(name=name, status=status, pid=pid, uptime=None, log_file=log_file, cpu_percent=cpu, memory_mb=mem)

@@ -27,6 +27,7 @@ _OWN_COMMANDS = frozenset(
         "remove-app",
         "uninstall-app",
         "list-apps",
+        "list-site-apps",
         "status",
     ]
 )
@@ -160,6 +161,10 @@ def _make_parser() -> argparse.ArgumentParser:
     p_uninstall.add_argument("app", help="App name to uninstall.")
 
     sub.add_parser("list-apps", help="List apps installed in the bench.")
+
+    p_list_site_apps = sub.add_parser("list-site-apps", help="List apps installed on a site.")
+    p_list_site_apps.add_argument("site", help="Site name (e.g. site1.localhost).")
+
     sub.add_parser("status", help="Show bench status summary.")
 
     p_newsite = sub.add_parser("new-site", help="Create a new site and add it to bench.toml.")
@@ -320,6 +325,11 @@ def _dispatch(args: argparse.Namespace) -> None:
             apps = [a.config.name for a in bench.apps()]
         for app in apps:
             print(app)
+
+    elif cmd == "list-site-apps":
+        from bench_cli.commands.list_site_apps import ListSiteAppsCommand
+
+        ListSiteAppsCommand(_load_bench(), args.site).run()
 
     elif cmd == "new-site":
         _cmd_new_site(args)

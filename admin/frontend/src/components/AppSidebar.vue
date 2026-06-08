@@ -11,14 +11,19 @@ import LucideLayoutDashboard from '~icons/lucide/layout-dashboard'
 import LucideListTodo from '~icons/lucide/list-todo'
 import LucideLogOut from '~icons/lucide/log-out'
 import LucidePackage2 from '~icons/lucide/package-2'
+import LucideSettings from '~icons/lucide/settings'
 
-const emit = defineEmits(['logout'])
+const emit = defineEmits(['logout', 'open-settings'])
 
 const route = useRoute()
 
 const header = {
   title: 'Bench',
   logo: '/logos/frappe-icon.png',
+  menuItems: [
+    { label: 'Settings', icon: LucideSettings, onClick: () => emit('open-settings') },
+    { label: 'Logout', icon: LucideLogOut, onClick: () => logout() },
+  ],
 }
 
 const baseNavItems = [
@@ -86,14 +91,12 @@ onUnmounted(() => clearInterval(pollTimer))
       <SidebarItem :label="item.label" :icon="item.icon" :to="item.to" :isActive="isActive(item.to)">
         <template v-if="item.to === '/tasks' && runningCount > 0" #suffix>
           <span
-            class="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-bold text-white">
+            class="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-ink-gray-8 px-1 text-[10px] font-bold text-surface-white">
             {{ runningCount }}
           </span>
         </template>
       </SidebarItem>
     </template>
-    <template #footer-items>
-      <SidebarItem label="Logout" :icon="LucideLogOut" @click="logout" />
-    </template>
+    <template #footer-items />
   </Sidebar>
 </template>

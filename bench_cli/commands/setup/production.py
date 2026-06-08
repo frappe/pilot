@@ -19,7 +19,7 @@ class SetupProductionCommand:
         self._require_production_enabled()
         self._require_linux()
         self._write_dns_multitenancy()
-        if self.bench.config.production.lightweight:
+        if self.bench.config.production.process_manager == "systemd":
             self._setup_systemd()
         else:
             self._setup_supervisor()

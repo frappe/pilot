@@ -4,6 +4,9 @@ import AppLayout from './components/AppLayout.vue'
 import Login from './pages/Login.vue'
 import Setup from './pages/Setup.vue'
 import { Alert } from 'frappe-ui'
+import { Alert, useTheme } from 'frappe-ui'
+
+const { initializeTheme } = useTheme()
 
 const loading = ref(true)
 const adminEnabled = ref(true)
@@ -25,6 +28,7 @@ async function loadStatus() {
 }
 
 onMounted(async () => {
+  initializeTheme()
   try {
     await loadStatus()
   } catch {

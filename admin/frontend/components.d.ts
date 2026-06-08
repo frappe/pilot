@@ -14,6 +14,7 @@ declare module 'vue' {
     FilePickerField: typeof import('./src/components/FilePickerField.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    SettingsModal: typeof import('./src/components/SettingsModal.vue')['default']
     TerminalOutput: typeof import('./src/components/TerminalOutput.vue')['default']
   }
 }

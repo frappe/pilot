@@ -233,7 +233,7 @@ class InitCommand:
         common_config_path.write_text(json.dumps(existing, indent=2))
 
     def _setup_process_manager(self) -> None:
-        if self.bench.config.production.lightweight:
+        if self.bench.config.production.process_manager == "systemd":
             from bench_cli.managers.systemd_process_manager import SystemdProcessManager
 
             mgr = SystemdProcessManager(self.bench)

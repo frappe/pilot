@@ -25,7 +25,7 @@ class StatusCommand:
             self._row("Mode", "development (Procfile)")
             self._print_processes_dev()
         else:
-            mode = "systemd (--user)" if prod.lightweight else "supervisor (bench-local)"
+            mode = "systemd (--user)" if prod.process_manager == "systemd" else "supervisor (bench-local)"
             self._row("Mode", f"production  [{mode}]")
             self._print_processes_prod()
 

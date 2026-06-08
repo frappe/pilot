@@ -61,6 +61,8 @@ def index():
                 "status": p.status,
                 "pid": p.pid,
                 "uptime": p.uptime,
+                "cpu_percent": p.cpu_percent,
+                "memory_mb": p.memory_mb,
                 "log_filename": p.log_file.name,
             }
             for p in processes
