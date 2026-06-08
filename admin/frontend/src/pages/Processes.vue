@@ -116,7 +116,7 @@ onUnmounted(() => clearInterval(timer))
         :columns="columns"
         :rows="rows"
         row-key="name"
-        :options="{ selectable: false, showTooltip: false }"
+        :options="{ selectable: false, showTooltip: false }">
         <template #cell="{ column, item }">
           <Badge
             v-if="column.key === 'status'"
