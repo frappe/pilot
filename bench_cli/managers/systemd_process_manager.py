@@ -49,6 +49,8 @@ class SystemdProcessManager(ProcessManager):
         (self.systemd_conf_dir / self._target_name()).write_text(self._render_target(defs))
 
     def install_config(self) -> None:
+        import getpass
+
         self.user_unit_dir.mkdir(parents=True, exist_ok=True)
         defs = self._prod_process_definitions()
         units = [self._unit_name(pd.name) for pd in defs] + [self._target_name()]
@@ -58,17 +60,16 @@ class SystemdProcessManager(ProcessManager):
             if dst.is_symlink() or dst.exists():
                 dst.unlink()
             dst.symlink_to(src)
+
+        subprocess.run(
+            ["sudo", "loginctl", "enable-linger", getpass.getuser()],
+            capture_output=True,
+            check=False,
+        )
+
         env = self._systemctl_env()
-        try:
-            run_command(self._systemctl("daemon-reload"), env=env)
-            run_command(self._systemctl("enable", self._target_name()), env=env)
-        except Exception:
-            print(
-                f"\nNote: Could not reach the user systemd bus for {os.environ.get('USER', 'this user')}.\n"
-                "If linger is not yet enabled, run once as root:\n"
-                f"  sudo loginctl enable-linger {os.environ.get('USER', '<bench-user>')}\n"
-                "Then re-run: bench setup production"
-            )
+        run_command(self._systemctl("daemon-reload"), env=env)
+        run_command(self._systemctl("enable", self._target_name()), env=env)
 
     def is_configured(self) -> bool:
         result = subprocess.run(

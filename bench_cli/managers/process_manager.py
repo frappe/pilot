@@ -286,3 +286,26 @@ class ProcessManagerFactory:
             return SystemdProcessManager(bench)
 
         return SupervisorProcessManager(bench)
+
+    @classmethod
+    def detect_running(cls, bench: "Bench") -> ProcessManager:
+        """Return the process manager that is currently active for this bench.
+
+        Probes actual runtime state — systemd is-active and supervisord
+        pid + supervisorctl status — rather than config file presence.
+        This avoids confusion when config files linger after switching managers.
+        Falls back to create() when nothing is detected as running, so callers
+        still get the appropriate "not running" error for the configured manager.
+        """
+        from bench_cli.managers.systemd_process_manager import SystemdProcessManager
+        from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
+
+        systemd = SystemdProcessManager(bench)
+        if systemd.is_running():
+            return systemd
+
+        supervisor = SupervisorProcessManager(bench)
+        if supervisor.is_running():
+            return supervisor
+
+        return cls.create(bench)

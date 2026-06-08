@@ -8,6 +8,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AdvancedSetup: typeof import('./src/components/AdvancedSetup.vue')['default']
     AppLayout: typeof import('./src/components/AppLayout.vue')['default']
     AppSidebar: typeof import('./src/components/AppSidebar.vue')['default']
     FilePickerField: typeof import('./src/components/FilePickerField.vue')['default']

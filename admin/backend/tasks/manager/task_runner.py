@@ -33,6 +33,7 @@ _WHITELIST: dict[str, list[str]] = {
     "setup-production": [],
     "setup-letsencrypt": [],
     "new-site-from-backup": ["name", "db_file"],
+    "bench-init": [],
     "update-cli": [],
 }
 
@@ -158,6 +159,11 @@ class TaskRunner:
             return [sys.executable, "-m", "admin.backend.tasks.jobs.setup_production_task", str(self._bench_root)]
         if command == "setup-letsencrypt":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.setup_letsencrypt_task", str(self._bench_root)]
+        if command == "bench-init":
+            argv = [sys.executable, "-m", "admin.backend.tasks.jobs.init_task", str(self._bench_root)]
+            if args.get("sudo_password"):
+                argv += ["--sudo-password", args["sudo_password"]]
+            return argv
         if command == "new-site-from-backup":
             argv = [sys.executable, "-m", "admin.backend.tasks.jobs.new_site_from_backup_task", str(self._bench_root), args["name"], args["db_file"]]
             if args.get("admin_password"):

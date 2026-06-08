@@ -9,5 +9,5 @@ class StopCommand:
         self.bench = bench
 
     def run(self) -> None:
-        ProcessManagerFactory.create(self.bench).stop()
+        ProcessManagerFactory.detect_running(self.bench).stop()
         print("Bench stopped.")

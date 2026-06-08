@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import subprocess
-import time
 from pathlib import Path
 
 from bench_cli.managers.admin_env_manager import AdminEnvManager
@@ -51,7 +50,6 @@ class SupervisorProcessManager(ProcessManager):
             os.kill(pid, 0)
             return True
         except (ValueError, ProcessLookupError, OSError):
-            print("HERE!")
             return False
 
     def reload(self) -> None:

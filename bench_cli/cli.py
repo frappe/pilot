@@ -141,7 +141,8 @@ def _make_parser() -> argparse.ArgumentParser:
     p_new = sub.add_parser("new", help="Create a new bench.")
     p_new.add_argument("name", help="Name for the new bench.")
 
-    sub.add_parser("init", help="Initialise the bench.")
+    p_init = sub.add_parser("init", help="Initialise the bench.")
+    p_init.add_argument("--sudo-password", default="", help="Sudo password used once to write /etc/sudoers.d/<user>. Not stored.")
     sub.add_parser("start", help="Start all bench processes.")
     sub.add_parser("stop", help="Stop the running bench.")
     sub.add_parser("restart", help="Restart supervisor processes (production mode only).")
@@ -285,7 +286,7 @@ def _dispatch(args: argparse.Namespace) -> None:
     elif cmd == "init":
         from bench_cli.commands.init import InitCommand
 
-        InitCommand(_load_bench()).run()
+        InitCommand(_load_bench(), sudo_password=args.sudo_password).run()
 
     elif cmd == "start":
         from bench_cli.commands.start import RunCommand
