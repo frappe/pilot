@@ -290,6 +290,15 @@ class NginxManager:
             run_command(_privileged(["unlink", str(symlink_path)]))
         run_command(_privileged(["ln", "-s", str(source_path), str(symlink_path)]))
 
+        if is_alpine():
+            # Alpine ships a catch-all default_server on both IPv4 and IPv6 (in the
+            # same http.d dir) that exists to "prevent access to any other
+            # virtualhost" — exactly what shadows the bench site over IPv6. Remove
+            # it so the bench server block is the sole listener on :80.
+            default_conf = nginx_dir / "default.conf"
+            if default_conf.exists():
+                run_command(_privileged(["rm", "-f", str(default_conf)]))
+
     def reload(self) -> None:
         run_command(_privileged(["nginx", "-t"]))
         if not is_linux():
