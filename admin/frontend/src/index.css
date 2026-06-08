@@ -18,6 +18,7 @@ html {
 .pulse-dot::after {
   content: '';
   @apply relative inline-flex h-2 w-2 rounded-full bg-blue-500;
+}
 /* @tailwindcss/forms sets appearance:none on all inputs, which strips the system font Safari
    uses to render password masking bullets — they appear as boxes without this override.
    We are doing to for safari compatibility!
