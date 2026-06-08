@@ -42,7 +42,7 @@ class SupervisorProcessManager(ProcessManager):
     def is_configured(self) -> bool:
         return self.supervisor_conf_path.exists()
 
-    def _is_supervisord_alive(self) -> bool:
+    def is_alive(self) -> bool:
         if not self.supervisor_pid.exists():
             return False
         try:
@@ -53,13 +53,13 @@ class SupervisorProcessManager(ProcessManager):
             return False
 
     def reload(self) -> None:
-        if self._is_supervisord_alive():
+        if self.is_alive():
             run_command([*self._supervisorctl(), "reread"])
             run_command([*self._supervisorctl(), "update"])
 
     def start(self) -> None:
         self.generate_config()
-        if self._is_supervisord_alive():
+        if self.is_alive():
             run_command([*self._supervisorctl(), "reread"])
             run_command([*self._supervisorctl(), "update"])
         else:
@@ -67,14 +67,14 @@ class SupervisorProcessManager(ProcessManager):
         run_command([*self._supervisorctl(), "start", f"{self.bench.config.name}:*"])
 
     def stop(self) -> None:
-        if self._is_supervisord_alive():
+        if self.is_alive():
             run_command([*self._supervisorctl(), "shutdown"])
 
     def restart(self) -> None:
         run_command([*self._supervisorctl(), "restart", f"{self.bench.config.name}:*"])
 
     def is_running(self) -> bool:
-        if not self._is_supervisord_alive():
+        if not self.is_alive():
             return False
         result = subprocess.run(
             [*self._supervisorctl(), "status", f"{self.bench.config.name}:*"],

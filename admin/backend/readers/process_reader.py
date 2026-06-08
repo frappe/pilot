@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import re
 import subprocess
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,11 +19,12 @@ class ProcessInfo:
 
 
 def _get_process_stats(pid: int) -> tuple[float | None, float | None]:
-    """Return (cpu_percent, memory_mb) for pid via `ps`, or (None, None) on failure."""
     try:
         result = subprocess.run(
             ["ps", "-p", str(pid), "-o", "%cpu=,rss="],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if result.returncode != 0:
             return None, None
@@ -41,86 +41,101 @@ class ProcessReader:
         self._bench_root = bench_root
 
     def read_all(self) -> list[ProcessInfo]:
+        from bench_cli.core.bench import Bench
+        from bench_cli.config.bench_config import BenchConfig
+        from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
+        from bench_cli.managers.systemd_process_manager import SystemdProcessManager
+
+        config = BenchConfig.from_file(self._bench_root / "bench.toml")
+        bench = Bench(config, self._bench_root)
+        bench_name = config.name
         supervisor_conf = self._bench_root / "config" / "supervisor" / "supervisord.conf"
-        if supervisor_conf.exists():
-            return self._read_from_supervisor(supervisor_conf)
+
+        systemd = SystemdProcessManager(bench)
+        supervisor = SupervisorProcessManager(bench)
+
+        if systemd.is_running():
+            return self._read_from_systemd(bench_name)
+        if supervisor.is_running():
+            return self._read_from_supervisor(supervisor_conf, bench_name)
         return self._read_from_pids()
 
-    def _bench_name(self) -> str:
-        try:
-            with open(self._bench_root / "bench.toml", "rb") as f:
-                return tomllib.load(f).get("bench", {}).get("name", "bench")
-        except Exception:
-            return "bench"
+    # ── Systemd ──────────────────────────────────────────────────────────────
 
-    def _read_from_supervisor(self, conf_path: Path) -> list[ProcessInfo]:
+    def _systemd_env(self) -> dict:
+        env = dict(os.environ)
+        if not env.get("XDG_RUNTIME_DIR"):
+            env["XDG_RUNTIME_DIR"] = f"/run/user/{os.getuid()}"
+        return env
+
+    def _get_systemd_units(self, bench_name: str) -> list[str]:
+        user_unit_dir = Path.home() / ".config" / "systemd" / "user"
+        return [f.name for f in sorted(user_unit_dir.glob(f"{bench_name}-*.service"))]
+
+    def _read_from_systemd(self, bench_name: str) -> list[ProcessInfo]:
+        units = self._get_systemd_units(bench_name)
+        if not units:
+            return []
+        result = subprocess.run(
+            ["systemctl", "--user", "show", *units, "--property=Id,ActiveState,MainPID"],
+            capture_output=True,
+            text=True,
+            env=self._systemd_env(),
+        )
+        return [info for block in result.stdout.strip().split("\n\n") if (info := self._parse_systemd_block(block.strip(), bench_name))]
+
+    def _parse_systemd_block(self, block: str, bench_name: str) -> ProcessInfo | None:
+        props = dict(line.partition("=")[::2] for line in block.splitlines() if "=" in line)
+        unit_id = props.get("Id", "")
+        if not unit_id.endswith(".service"):
+            return None
+
+        name = unit_id.removesuffix(".service").removeprefix(f"{bench_name}-")
+        state = props.get("ActiveState", "")
+        status = "running" if state == "active" else ("stopped" if state in ("inactive", "failed", "deactivating") else "unknown")
+        pid_str = props.get("MainPID", "0")
+        pid = int(pid_str) if pid_str.isdigit() and pid_str != "0" else None
+        log_file = self._bench_root / "logs" / f"{name}.log"
+        cpu, mem = _get_process_stats(pid) if pid and status == "running" else (None, None)
+        return ProcessInfo(name=name, status=status, pid=pid, uptime=None, log_file=log_file, cpu_percent=cpu, memory_mb=mem)
+
+    # ── Supervisor ───────────────────────────────────────────────────────────
+
+    def _read_from_supervisor(self, conf_path: Path, bench_name: str) -> list[ProcessInfo]:
         result = subprocess.run(
             ["supervisorctl", "-c", str(conf_path), "status"],
             capture_output=True,
             text=True,
         )
-        bench_name = self._bench_name()
-        processes = []
-        for line in result.stdout.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            info = self._parse_supervisorctl_line(line, bench_name)
-            if info:
-                processes.append(info)
-        return processes
+        return [info for line in result.stdout.splitlines() if line.strip() and (info := self._parse_supervisorctl_line(line.strip(), bench_name))]
 
     def _parse_supervisorctl_line(self, line: str, bench_name: str) -> ProcessInfo | None:
-        # Format: "group:program-name    RUNNING   pid 1234, uptime 0:01:23"
         m = re.match(r"(\S+:\S+)\s+(\S+)\s*(.*)", line)
         if not m:
             return None
 
-        full_name = m.group(1)   # e.g. "frappe:frappe-web"
-        state = m.group(2).lower()
-        rest = m.group(3)
-
-        if state == "running":
-            status = "running"
-        elif state in ("stopped", "exited", "fatal", "backoff"):
-            status = "stopped"
-        else:
-            status = "unknown"
+        full_name, state, rest = m.group(1), m.group(2).lower(), m.group(3)
+        status = "running" if state == "running" else ("stopped" if state in ("stopped", "exited", "fatal", "backoff") else "unknown")
 
         pid: int | None = None
         uptime: str | None = None
-        pid_m = re.search(r"pid (\d+)", rest)
-        if pid_m:
+        if pid_m := re.search(r"pid (\d+)", rest):
             pid = int(pid_m.group(1))
-        uptime_m = re.search(r"uptime (\S+)", rest)
-        if uptime_m:
+        if uptime_m := re.search(r"uptime (\S+)", rest):
             uptime = uptime_m.group(1)
 
-        # Program part: "frappe-web" → strip bench_name prefix → "web"
-        # Supervisor renames underscores to dashes, log files keep underscores.
-        program = full_name.split(":", 1)[-1]  # "frappe-web"
-        prefix = f"{bench_name}-"
-        if program.startswith(prefix):
-            program = program[len(prefix):]     # "web" or "worker-default-1"
-
-        # Display name keeps dashes for readability; log file uses underscores.
-        display_name = program
-        log_name = program.replace("-", "_")    # "worker_default_1"
-        log_file = self._bench_root / "logs" / f"{log_name}.log"
-
+        program = full_name.split(":", 1)[-1].removeprefix(f"{bench_name}-")
+        log_file = self._bench_root / "logs" / f"{program.replace('-', '_')}.log"
         cpu, mem = _get_process_stats(pid) if pid and status == "running" else (None, None)
-        return ProcessInfo(name=display_name, status=status, pid=pid, uptime=uptime, log_file=log_file, cpu_percent=cpu, memory_mb=mem)
+        return ProcessInfo(name=program, status=status, pid=pid, uptime=uptime, log_file=log_file, cpu_percent=cpu, memory_mb=mem)
+
+    # ── Procfile (dev) ───────────────────────────────────────────────────────
 
     def _read_from_pids(self) -> list[ProcessInfo]:
         pids_dir = self._bench_root / "pids"
         if not pids_dir.exists():
             return []
-
-        processes = []
-        for pid_file in sorted(pids_dir.glob("*.pid")):
-            name = pid_file.stem
-            processes.append(self._read_process(name, pid_file))
-        return processes
+        return [self._read_process(f.stem, f) for f in sorted(pids_dir.glob("*.pid"))]
 
     def _read_process(self, name: str, pid_file: Path) -> ProcessInfo:
         log_file = self._bench_root / "logs" / f"{name}.log"

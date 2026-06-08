@@ -64,6 +64,35 @@ class VolumeManager:
             return
         self._run(["sudo", "zfs", "create", dataset])
 
+    def get_used_bytes(self, dataset: str) -> int:
+        result = self._run(["sudo", "zfs", "get", "-H", "-p", "-o", "value", "used", dataset])
+        return int(result.stdout.decode().strip())
+
+    @staticmethod
+    def _parse_size_bytes(size_str: str) -> int:
+        s = size_str.strip().upper()
+        for suffix, mult in [("P", 1024**5), ("T", 1024**4), ("G", 1024**3), ("M", 1024**2), ("K", 1024)]:
+            if s.endswith(suffix):
+                return int(float(s[: -len(suffix)]) * mult)
+        return int(s)
+
+    def validate_quota(self, dataset: str, quota: str) -> str | None:
+        """Return an error string if quota is less than the dataset's current used size, else None."""
+        if quota.lower() in ("none", "0"):
+            return None
+        if not self.dataset_exists(dataset):
+            return None
+        try:
+            used = self.get_used_bytes(dataset)
+            new_quota = self._parse_size_bytes(quota)
+            if new_quota < used:
+                used_g = round(used / 1024**3, 2)
+                name = dataset.split("/")[-1]
+                return f"Quota {quota} is less than current used size ({used_g}G) for {name} dataset"
+        except Exception:
+            pass
+        return None
+
     def set_quota(self, dataset: str, quota: str) -> None:
         self._run(["sudo", "zfs", "set", f"quota={quota}", dataset])
 

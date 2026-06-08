@@ -24,7 +24,7 @@ const THEME_OPTIONS = [
   { label: 'Auto (System)', value: 'system' },
 ]
 
-const TABS = [
+const BASE_TABS = [
   { key: 'bench', label: 'Bench' },
   { key: 'appearance', label: 'Appearance' },
   { key: 'mariadb', label: 'MariaDB' },
@@ -34,9 +34,19 @@ const TABS = [
   { key: 'letsencrypt', label: "Let's Encrypt" },
   { key: 'updates', label: 'Updates' },
 ]
+const isLinux = ref(false)
+const TABS = computed(() => {
+  let tabs = isLinux.value
+    ? [...BASE_TABS, { key: 'volume', label: 'ZFS Volume' }]
+    : BASE_TABS
+
+    return tabs
+}
+)
+
 const activeTab = ref('bench')
 
-const loading = ref(false)
+const loading = ref(true)
 const loadError = ref('')
 const saving = ref(false)
 const saveError = ref('')
@@ -48,15 +58,7 @@ const PROCESS_MANAGER_OPTIONS = [
   { label: 'Systemd', value: 'systemd' },
 ]
 
-const form = ref({
-  bench: { name: '', python: '', http_port: 8000, socketio_port: 9000 },
-  mariadb: { host: 'localhost', port: 3306, admin_user: 'root', socket_path: '', version: '' },
-  redis: { cache_port: 13000, queue_port: 11000, socketio_port: 12000, version: '' },
-  workers: { default: 2, short: 1, long: 1 },
-  nginx: { http_port: 80, https_port: 443, config_dir: '/etc/nginx/conf.d', worker_processes: 'auto', client_max_body_size: '50m' },
-  letsencrypt: { email: '', webroot_path: '/var/www/letsencrypt' },
-  production: { process_manager: 'none', nginx: false },
-})
+const form = ref(null)
 
 async function load() {
   loading.value = true
@@ -64,7 +66,9 @@ async function load() {
   try {
     const res = await fetch('/api/settings/')
     if (!res.ok) throw new Error(`${res.status}`)
-    form.value = await res.json()
+    const data = await res.json()
+    isLinux.value = data.is_linux === true
+    form.value = data
   } catch (e) {
     loadError.value = e.message
   } finally {
@@ -76,12 +80,9 @@ function validateSettings() {
   const ports = [
     [form.value.bench.http_port, 'HTTP Port'],
     [form.value.bench.socketio_port, 'SocketIO Port'],
-    [form.value.mariadb.port, 'MariaDB Port'],
     [form.value.redis.cache_port, 'Redis Cache Port'],
     [form.value.redis.queue_port, 'Redis Queue Port'],
     [form.value.redis.socketio_port, 'Redis SocketIO Port'],
-    [form.value.nginx.http_port, 'Nginx HTTP Port'],
-    [form.value.nginx.https_port, 'Nginx HTTPS Port'],
   ]
   for (const [port, name] of ports) {
     const n = Number(port)
@@ -197,7 +198,7 @@ watch(() => props.modelValue, (val) => {
 <template>
   <Dialog v-model="show" :options="{ size: '3xl' }">
     <template #body>
-      <div class="flex h-[calc(100vh-8rem)] bg-surface-menu-bar">
+      <div class="flex h-[calc(100vh-8rem)] bg-surface-menu-bar" @pointerdown.stop>
         <!-- Left sidebar - full height, same bg as outer, no border -->
         <div class="flex flex-col m-1 w-48 shrink-0 rounded-l-lg bg-surface-menu-bar overflow-y-auto">
           <h3 class="px-3 py-3 text-sm font-semibold text-ink-gray-9 sticky top-0 bg-surface-menu-bar">
@@ -237,7 +238,7 @@ watch(() => props.modelValue, (val) => {
             <LoadingText v-if="loading" />
             <ErrorMessage v-else-if="loadError" :message="loadError" />
 
-            <template v-else>
+            <template v-else-if="form">
               <!-- Bench -->
               <div v-if="activeTab === 'bench'" class="flex flex-col gap-4">
                 <h4 class="text-sm font-semibold text-ink-gray-8">Process Manager</h4>
@@ -258,12 +259,15 @@ watch(() => props.modelValue, (val) => {
 
               <!-- MariaDB -->
               <div v-else-if="activeTab === 'mariadb'" class="flex flex-col gap-4">
+                <p class="rounded-md bg-surface-gray-2 px-3 py-2 text-xs text-ink-gray-5">
+                  MariaDB connection settings are set during bench initialization and cannot be changed here.
+                </p>
                 <div class="grid grid-cols-2 gap-4">
-                  <FormControl label="Host" v-model="form.mariadb.host" />
-                  <FormControl type="number" label="Port" v-model="form.mariadb.port" />
-                  <FormControl label="Admin User" v-model="form.mariadb.admin_user" />
-                  <FormControl label="Version" v-model="form.mariadb.version" placeholder="e.g. 10.6" />
-                  <FormControl class="col-span-2" label="Socket Path" v-model="form.mariadb.socket_path" placeholder="Leave empty to use TCP" />
+                  <FormControl label="Host" :modelValue="form.mariadb.host" disabled />
+                  <FormControl type="number" label="Port" :modelValue="form.mariadb.port" disabled />
+                  <FormControl label="Admin User" :modelValue="form.mariadb.admin_user" disabled />
+                  <FormControl label="Version" :modelValue="form.mariadb.version" disabled />
+                  <FormControl class="col-span-2" label="Socket Path" :modelValue="form.mariadb.socket_path" disabled />
                 </div>
               </div>
 
@@ -280,9 +284,23 @@ watch(() => props.modelValue, (val) => {
               <!-- Workers -->
               <div v-else-if="activeTab === 'workers'" class="flex flex-col gap-4">
                 <div class="grid grid-cols-3 gap-4">
-                  <FormControl type="number" label="Default Workers" v-model="form.workers.default" />
-                  <FormControl type="number" label="Short Workers" v-model="form.workers.short" />
-                  <FormControl type="number" label="Long Workers" v-model="form.workers.long" />
+              <FormControl
+                type="number"
+                label="Default Workers"
+                v-model.number="form.workers.default"
+              />
+
+              <FormControl
+                type="number"
+                label="Short Workers"
+                v-model.number="form.workers.short"
+              />
+
+              <FormControl
+                type="number"
+                label="Long Workers"
+                v-model.number="form.workers.long"
+              />
                 </div>
               </div>
 
@@ -290,8 +308,13 @@ watch(() => props.modelValue, (val) => {
               <div v-else-if="activeTab === 'nginx'" class="flex flex-col gap-4">
                 <Switch v-model="form.production.nginx" label="Manage Nginx" />
                 <div class="grid grid-cols-2 gap-4">
-                  <FormControl type="number" label="HTTP Port" v-model="form.nginx.http_port" />
-                  <FormControl type="number" label="HTTPS Port" v-model="form.nginx.https_port" />
+                  <div class="col-span-2 grid grid-cols-2 gap-4">
+                    <FormControl type="number" label="HTTP Port" :modelValue="form.nginx.http_port" disabled />
+                    <FormControl type="number" label="HTTPS Port" :modelValue="form.nginx.https_port" disabled />
+                    <p class="col-span-2 -mt-2 text-xs text-ink-gray-4">
+                      System listen ports are fixed after Nginx is configured. To change them, update <code class="font-mono">bench.toml</code> and re-run Setup Nginx.
+                    </p>
+                  </div>
                   <FormControl label="Worker Processes" v-model="form.nginx.worker_processes" placeholder="auto" />
                   <FormControl label="Client Max Body Size" v-model="form.nginx.client_max_body_size" placeholder="50m" />
                   <FormControl class="col-span-2" label="Config Directory" v-model="form.nginx.config_dir" />
@@ -304,6 +327,33 @@ watch(() => props.modelValue, (val) => {
                   <FormControl label="Email" v-model="form.letsencrypt.email" placeholder="you@example.com" />
                   <FormControl label="Webroot Path" v-model="form.letsencrypt.webroot_path" />
                 </div>
+              </div>
+
+              <!-- ZFS Volume -->
+              <div v-else-if="activeTab === 'volume'" class="flex flex-col gap-4">
+                <div class="flex items-center gap-3">
+                  <Badge :theme="form.volume.enabled ? 'green' : 'gray'" size="sm">
+                    {{ form.volume.enabled ? 'Enabled' : 'Disabled' }}
+                  </Badge>
+                </div>
+                <template v-if="form.volume.enabled">
+                  <div class="grid grid-cols-2 gap-4">
+                    <FormControl label="Pool Name" :modelValue="form.volume.pool" disabled />
+                    <FormControl label="Block Device" :modelValue="form.volume.device" disabled />
+                  </div>
+                  <div class="grid grid-cols-2 gap-4">
+                    <FormControl label="Bench Reservation" v-model="form.volume.benches_reservation" />
+                    <FormControl label="Bench Quota" v-model="form.volume.benches_quota" />
+                  </div>
+                  <div class="grid grid-cols-2 gap-4">
+                    <FormControl label="MariaDB Reservation" v-model="form.volume.mariadb_reservation" />
+                    <FormControl label="MariaDB Quota" v-model="form.volume.mariadb_quota" />
+                  </div>
+<Switch v-model="form.volume.snapshots_enabled" label="Enable Snapshots" />
+                </template>
+                <p v-else class="text-sm text-ink-gray-5">
+                  ZFS volume management was not enabled during setup.
+                </p>
               </div>
 
               <!-- Updates -->
@@ -336,7 +386,7 @@ watch(() => props.modelValue, (val) => {
           </div>
 
           <!-- Footer -->
-          <div v-if="activeTab !== 'appearance' && activeTab !== 'updates'" class="flex items-center justify-end gap-3 px-6 py-3 border-t border-outline-gray-1 flex-shrink-0">
+          <div v-if="activeTab !== 'appearance' && activeTab !== 'updates' && !(activeTab === 'volume' && !form?.volume?.enabled)" class="flex items-center justify-end gap-3 px-6 py-3 border-t border-outline-gray-1 flex-shrink-0">
             <ErrorMessage :message="saveError" />
             <span v-if="saveSuccess" class="text-sm text-green-600 font-medium">{{ saveSuccess }}</span>
             <Button @click="show = false">Cancel</Button>

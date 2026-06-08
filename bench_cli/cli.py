@@ -357,7 +357,11 @@ def _dispatch(args: argparse.Namespace) -> None:
     elif cmd == "upgrade":
         from bench_cli.commands.upgrade import UpgradeCommand
 
-        UpgradeCommand().run()
+        try:
+            bench = _load_bench()
+        except Exception:
+            bench = None
+        UpgradeCommand(bench).run()
 
     elif cmd == "status":
         from bench_cli.commands.status import StatusCommand
