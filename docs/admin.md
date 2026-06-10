@@ -507,6 +507,37 @@ Views catch `ConfigError`, `FileNotFoundError`, and database connection errors a
 
 ---
 
+## Marketplace
+
+`GET /api/apps/registry` returns the full `registry/apps.json` array. The Marketplace page reads this endpoint alongside `GET /api/apps/` (installed apps) to render the app list.
+
+Each registry entry has:
+
+```json
+{
+  "name": "erpnext",
+  "title": "ERPNext",
+  "description": "Open source ERP",
+  "repo": "https://github.com/frappe/erpnext",
+  "branch": "version-16",
+  "branches": ["version-15", "version-16"],
+  "logo_url": "https://cloud.frappe.io/files/erpnext-blue.png",
+  "website": "https://frappe.io/erpnext",
+  "documentation": "https://docs.frappe.io/erpnext",
+  "categories": ["Accounting", "Business", "Featured"],
+  "category": "Applications",
+  "stars": 35439
+}
+```
+
+**`category`** is one of six values: `Applications`, `Extensions`, `Integrations`, `Compliance`, `Developer Tools`, `Utilities`. The frontend sidebar filters by this field.
+
+Apps whose `repo` is under `github.com/frappe/` are sorted to the top by `stars` and labelled "From Frappe". All others appear below under "Community".
+
+Clicking **Add** on an app with a `repo` posts to `POST /api/apps/add` with `{ name, repo, branch }` and redirects to the resulting task.
+
+---
+
 ## CLI commands
 
 - **`bench build-admin`** — rebuilds the admin frontend static assets. Run this after pulling admin UI changes. The server itself is managed by `bench start` / `bench stop` — no separate start/stop commands exist.

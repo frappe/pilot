@@ -9,14 +9,17 @@ const installedNames = ref(new Set())
 const loading = ref(true)
 const error = ref('')
 const search = ref('')
+const selectedCategory = ref('All')
 
-const filteredRegistry = computed(() => {
-  const q = search.value.toLowerCase().trim()
-  if (!q) return registry.value
-  return registry.value.filter(a =>
-    a.title.toLowerCase().includes(q) || a.description?.toLowerCase().includes(q)
-  )
-})
+const CATEGORIES = [
+  'All',
+  'Applications',
+  'Extensions',
+  'Integrations',
+  'Compliance',
+  'Developer Tools',
+  'Utilities',
+]
 
 const COLORS = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed']
 function hashColor(name) {
@@ -24,6 +27,46 @@ function hashColor(name) {
   for (const c of name) h = (h * 31 + c.charCodeAt(0)) | 0
   return COLORS[Math.abs(h) % COLORS.length]
 }
+
+function isFrappe(app) {
+  return Boolean(app.repo?.includes('github.com/frappe/'))
+}
+
+const sortedRegistry = computed(() =>
+  [...registry.value].sort((a, b) => {
+    const af = isFrappe(a), bf = isFrappe(b)
+    if (af !== bf) return af ? -1 : 1
+    const as = a.stars ?? -1, bs = b.stars ?? -1
+    if (as !== bs) return bs - as
+    return (a.title || a.name).localeCompare(b.title || b.name)
+  })
+)
+
+const categoryCounts = computed(() => {
+  const counts = { All: registry.value.length }
+  for (const cat of CATEGORIES.slice(1)) {
+    counts[cat] = registry.value.filter(a => a.category === cat).length
+  }
+  return counts
+})
+
+const filteredRegistry = computed(() => {
+  let apps = sortedRegistry.value
+  if (selectedCategory.value !== 'All') {
+    apps = apps.filter(a => a.category === selectedCategory.value)
+  }
+  const q = search.value.toLowerCase().trim()
+  if (q) {
+    apps = apps.filter(a =>
+      a.title?.toLowerCase().includes(q) || a.description?.toLowerCase().includes(q)
+    )
+  }
+  return apps
+})
+
+const hasMixedGroups = computed(() =>
+  filteredRegistry.value.some(isFrappe) && filteredRegistry.value.some(a => !isFrappe(a))
+)
 
 async function load() {
   loading.value = true
@@ -52,7 +95,7 @@ const installError = ref('')
 
 function openInstall(app) {
   installApp.value = app
-  installBranch.value = app.branches[0] ?? app.branch
+  installBranch.value = app.branches?.[0] ?? app.branch ?? ''
   installing.value = false
   installError.value = ''
   showInstall.value = true
@@ -90,51 +133,94 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="mx-auto flex max-w-2xl flex-col gap-4">
-    <LoadingText v-if="loading" />
-    <ErrorMessage v-else-if="error" :message="error" />
-
-    <template v-else>
-      <TextInput v-model="search" placeholder="Search apps…" />
-      <div
-        v-for="app in filteredRegistry"
-        :key="app.name"
-        class="flex items-start gap-4 rounded-lg border border-outline-gray-1 bg-surface-white px-4 py-3 shadow-sm"
+  <div class="not-prose flex gap-6">
+    <!-- Category sidebar -->
+    <nav class="w-44 shrink-0 sticky top-0 h-fit flex flex-col gap-0.5 pt-0.5">
+      <button
+        v-for="cat in CATEGORIES"
+        :key="cat"
+        @click="selectedCategory = cat"
+        :class="[
+          'flex w-full items-center justify-between rounded px-2.5 py-1.5 text-left text-sm transition-colors',
+          selectedCategory === cat
+            ? 'bg-surface-gray-3 font-medium text-ink-gray-9'
+            : 'text-ink-gray-6 hover:bg-surface-gray-2 hover:text-ink-gray-8',
+        ]"
       >
-        <!-- Logo -->
-        <div
-          class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg overflow-hidden"
-          :style="app.logo_url ? {} : { background: hashColor(app.name) }"
-        >
-          <img v-if="app.logo_url" :src="app.logo_url" :alt="app.title" class="h-full w-full object-contain" />
-          <span v-else class="text-sm font-bold text-white leading-none">{{ app.title[0].toUpperCase() }}</span>
-        </div>
+        <span>{{ cat }}</span>
+        <span v-if="!search" class="text-xs text-ink-gray-4">{{ categoryCounts[cat] }}</span>
+      </button>
+    </nav>
 
-        <!-- Info -->
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-2">
-            <span class="font-medium text-ink-gray-9">{{ app.title }}</span>
-            <div class="flex gap-1">
-              <Badge
-                v-for="b in app.branches"
-                :key="b"
-                :label="b"
-                theme="gray"
-                size="sm"
-              />
+    <!-- Main content -->
+    <div class="flex-1 flex flex-col gap-2.5 min-w-0">
+      <TextInput v-model="search" placeholder="Search apps…" class="mb-1" />
+
+      <LoadingText v-if="loading" />
+      <ErrorMessage v-else-if="error" :message="error" />
+
+      <template v-else>
+        <template v-for="(app, i) in filteredRegistry" :key="app.name">
+          <!-- Section labels (only shown when both frappe + community apps are present) -->
+          <p
+            v-if="hasMixedGroups && i === 0 && isFrappe(app)"
+            class="text-xs font-medium uppercase tracking-wide text-ink-gray-4 mt-1 mb-0.5"
+          >
+            From Frappe
+          </p>
+          <p
+            v-if="hasMixedGroups && !isFrappe(app) && (i === 0 || isFrappe(filteredRegistry[i - 1]))"
+            class="text-xs font-medium uppercase tracking-wide text-ink-gray-4 mt-2 mb-0.5"
+          >
+            Community
+          </p>
+
+          <!-- App card -->
+          <div class="flex items-start gap-4 rounded-lg border border-outline-gray-1 bg-surface-white px-4 py-3 shadow-sm">
+            <!-- Logo -->
+            <div
+              class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg overflow-hidden"
+              :style="app.logo_url ? {} : { background: hashColor(app.name) }"
+            >
+              <img v-if="app.logo_url" :src="app.logo_url" :alt="app.title" class="h-full w-full object-contain" />
+              <span v-else class="text-sm font-bold text-white leading-none">{{ app.title?.[0]?.toUpperCase() }}</span>
+            </div>
+
+            <!-- Info -->
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="font-medium text-ink-gray-9">{{ app.title }}</span>
+                <Badge v-if="isFrappe(app)" label="Frappe" theme="gray" size="sm" />
+                <div class="flex gap-1">
+                  <Badge
+                    v-for="b in (app.branches ?? []).slice(0, 3)"
+                    :key="b"
+                    :label="b"
+                    theme="gray"
+                    size="sm"
+                  />
+                </div>
+              </div>
+              <p v-if="app.description" class="mt-0.5 text-sm leading-relaxed text-ink-gray-5 line-clamp-2">
+                {{ app.description }}
+              </p>
+            </div>
+
+            <!-- Action -->
+            <div class="shrink-0">
+              <Badge v-if="installedNames.has(app.name)" label="Installed" theme="green" />
+              <Button v-else-if="app.repo" variant="outline" size="sm" @click="openInstall(app)">Add</Button>
             </div>
           </div>
-          <p v-if="app.description" class="mt-0.5 text-sm leading-relaxed text-ink-gray-5 line-clamp-2">{{ app.description }}</p>
-        </div>
+        </template>
 
-        <!-- Action -->
-        <div class="shrink-0">
-          <Badge v-if="installedNames.has(app.name)" label="Installed" theme="green" />
-          <Button v-else variant="outline" size="sm" @click="openInstall(app)">Add</Button>
-        </div>
-      </div>
-    </template>
+        <p v-if="filteredRegistry.length === 0" class="text-sm text-ink-gray-5 py-4 text-center">
+          No apps found.
+        </p>
+      </template>
+    </div>
 
+    <!-- Install dialog -->
     <Dialog v-model="showInstall" :options="{ title: `Add ${installApp?.title}` }">
       <template #body-content>
         <div class="flex flex-col gap-4">

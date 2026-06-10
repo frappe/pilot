@@ -11,7 +11,7 @@ A zero-dependency CLI for managing [Frappe](https://frappeframework.com) environ
 | | Legacy | bench-cli |
 |---|---|---|
 | Dependencies | ~20 Python packages | Zero — stdlib only |
-| Marketplace | None | App registry `apps.json` |
+| Marketplace | None | App registry `registry/apps.json` — 326 apps across 6 categories |
 | Config | None | Single `bench.toml` |
 | Folder layout | Wherever you `bench init` | All benches under `bench-cli/benches/` |
 | Process manager | Honcho / Supervisor | Built-in Procfile runner |
@@ -169,6 +169,7 @@ The built-in admin UI runs on port 8002 (configurable via `[admin] port`).
 |------|----------|
 | Dashboard | Bench overview and quick stats |
 | Apps | Install/remove apps, edit upstream URL and branch, per-app update status |
+| Marketplace | App registry — filter by 6 categories, search, install with branch selection |
 | Sites | Create/restore/drop sites, install apps, edit site config, backup schedules |
 | Processes | Live process list with CPU %, memory (MB), uptime, and log links; Start/Stop/Restart in production mode |
 | Logs | Tail and search log files with live streaming |
@@ -213,3 +214,25 @@ pytest tests/ --ignore=tests/integration --cov=bench_cli --cov-report=term-missi
 Unit tests run against mocked filesystems — no MariaDB, Redis, or network required.
 
 Integration tests (in `tests/integration/`) run the full `bench init` → `bench new-site` lifecycle against real services and are triggered by CI on push to `main`.
+
+## Marketplace registry
+
+The app registry lives in `registry/apps.json` — a static JSON file checked into the repo. Three scripts in `scripts/` populate it from CSV exports of the Marketplace App and App Source doctypes:
+
+| Script | Input | What it does |
+|--------|-------|--------------|
+| `scripts/import_marketplace.py marketplace <csv>` | `Marketplace App.csv` | Imports title, description, logo, categories, and versions |
+| `scripts/import_marketplace.py sources <csv>` | `App Source.csv` | Imports repo URLs and stable branches; picks canonical repo |
+| `scripts/categorize_marketplace.py` | — | Assigns one of 6 categories to every app |
+| `scripts/fetch_stars.py` | — | Fetches GitHub star counts via `gh api` |
+
+Run them in order after exporting fresh CSVs:
+
+```bash
+python3 scripts/import_marketplace.py marketplace ~/downloads/Marketplace\ App.csv
+python3 scripts/import_marketplace.py sources ~/downloads/App\ Source.csv
+python3 scripts/categorize_marketplace.py
+python3 scripts/fetch_stars.py   # requires gh CLI, authenticated
+```
+
+**Categories:** Applications · Extensions · Integrations · Compliance · Developer Tools · Utilities

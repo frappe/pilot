@@ -14,6 +14,7 @@ declare module 'vue' {
     AdvancedSetup: typeof import('./src/components/AdvancedSetup.vue')['default']
     AppLayout: typeof import('./src/components/AppLayout.vue')['default']
     AppSidebar: typeof import('./src/components/AppSidebar.vue')['default']
+    ConfigTree: typeof import('./src/components/ConfigTree.vue')['default']
     FilePickerField: typeof import('./src/components/FilePickerField.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
