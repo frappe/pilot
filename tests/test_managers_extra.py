@@ -130,7 +130,7 @@ def test_supervisor_render_program_extracts_cd_prefix(tmp_path: Path) -> None:
     mgr = _make_supervisor_manager(tmp_path)
     pd = ProcessDefinition(
         name="web",
-        command=f"cd /sites && /env/bin/python -m frappe.utils.bench_helper frappe serve",
+        command="cd /sites && /env/bin/python -m frappe.utils.bench_helper frappe serve",
         log_file=tmp_path / "logs" / "web.log",
     )
     block = mgr._render_program(pd, "web")
@@ -354,3 +354,95 @@ def test_systemd_generate_config_writes_unit_files(tmp_path: Path) -> None:
             mgr.generate_config()
     assert (mgr.systemd_conf_dir / "test-bench-web.service").exists()
     assert (mgr.systemd_conf_dir / "test-bench.target").exists()
+
+
+def test_systemd_is_running_true_when_systemctl_exits_zero(tmp_path: Path) -> None:
+    mgr = _make_systemd_manager(tmp_path)
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0)
+        assert mgr.is_running() is True
+
+
+def test_systemd_is_running_false_when_systemctl_exits_nonzero(tmp_path: Path) -> None:
+    mgr = _make_systemd_manager(tmp_path)
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=1)
+        assert mgr.is_running() is False
+
+
+def test_systemd_is_running_false_when_systemctl_not_installed(tmp_path: Path) -> None:
+    mgr = _make_systemd_manager(tmp_path)
+    with patch("subprocess.run", side_effect=FileNotFoundError):
+        assert mgr.is_running() is False
+
+
+def test_systemd_is_configured_true_when_target_enabled(tmp_path: Path) -> None:
+    mgr = _make_systemd_manager(tmp_path)
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0)
+        assert mgr.is_configured() is True
+
+
+def test_systemd_is_configured_false_when_target_not_enabled(tmp_path: Path) -> None:
+    mgr = _make_systemd_manager(tmp_path)
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=1)
+        assert mgr.is_configured() is False
+
+
+# ── SupervisorProcessManager — runtime ────────────────────────────────────────
+
+
+def test_supervisor_is_alive_false_when_no_pid_file(tmp_path: Path) -> None:
+    mgr = _make_supervisor_manager(tmp_path)
+    assert mgr.is_alive() is False
+
+
+def test_supervisor_is_alive_true_when_process_running(tmp_path: Path) -> None:
+    import os
+    mgr = _make_supervisor_manager(tmp_path)
+    mgr.supervisor_pid.write_text(str(os.getpid()))
+    assert mgr.is_alive() is True
+
+
+def test_supervisor_is_alive_false_when_process_dead(tmp_path: Path) -> None:
+    mgr = _make_supervisor_manager(tmp_path)
+    mgr.supervisor_pid.write_text("999999")  # non-existent PID
+    assert mgr.is_alive() is False
+
+
+def test_supervisor_is_running_false_when_not_configured(tmp_path: Path) -> None:
+    mgr = _make_supervisor_manager(tmp_path)
+    # conf file absent — is_configured() short-circuits before any subprocess call
+    with patch("subprocess.run") as mock_run:
+        assert mgr.is_running() is False
+        mock_run.assert_not_called()
+
+
+def test_supervisor_is_running_false_when_not_alive(tmp_path: Path) -> None:
+    mgr = _make_supervisor_manager(tmp_path)
+    mgr.supervisor_conf_path.write_text("[supervisord]\n")
+    # no PID file → is_alive() returns False before subprocess
+    with patch("subprocess.run") as mock_run:
+        assert mgr.is_running() is False
+        mock_run.assert_not_called()
+
+
+def test_supervisor_is_running_true_when_running_in_output(tmp_path: Path) -> None:
+    import os
+    mgr = _make_supervisor_manager(tmp_path)
+    mgr.supervisor_conf_path.write_text("[supervisord]\n")
+    mgr.supervisor_pid.write_text(str(os.getpid()))
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(stdout="test-bench:test-bench-web  RUNNING  pid 123\n")
+        assert mgr.is_running() is True
+
+
+def test_supervisor_is_running_false_when_no_running_in_output(tmp_path: Path) -> None:
+    import os
+    mgr = _make_supervisor_manager(tmp_path)
+    mgr.supervisor_conf_path.write_text("[supervisord]\n")
+    mgr.supervisor_pid.write_text(str(os.getpid()))
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(stdout="test-bench:test-bench-web  STOPPED\n")
+        assert mgr.is_running() is False

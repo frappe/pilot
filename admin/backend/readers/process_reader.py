@@ -5,6 +5,11 @@ import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
+    from bench_cli.managers.systemd_process_manager import SystemdProcessManager
 
 
 @dataclass
@@ -41,46 +46,35 @@ class ProcessReader:
         self._bench_root = bench_root
 
     def read_all(self) -> list[ProcessInfo]:
-        from bench_cli.core.bench import Bench
         from bench_cli.config.bench_config import BenchConfig
+        from bench_cli.core.bench import Bench
         from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
         from bench_cli.managers.systemd_process_manager import SystemdProcessManager
 
+        # If the bench config file is not present there is no point in look at procs
         config = BenchConfig.from_file(self._bench_root / "bench.toml")
         bench = Bench(config, self._bench_root)
-        bench_name = config.name
-        supervisor_conf = self._bench_root / "config" / "supervisor" / "supervisord.conf"
-
         systemd = SystemdProcessManager(bench)
         supervisor = SupervisorProcessManager(bench)
-
         if systemd.is_running():
-            return self._read_from_systemd(bench_name)
+            return self._read_from_systemd(systemd)
         if supervisor.is_running():
-            return self._read_from_supervisor(supervisor_conf, bench_name)
+            return self._read_from_supervisor(supervisor)
+
         return self._read_from_pids()
 
     # ── Systemd ──────────────────────────────────────────────────────────────
 
-    def _systemd_env(self) -> dict:
-        env = dict(os.environ)
-        if not env.get("XDG_RUNTIME_DIR"):
-            env["XDG_RUNTIME_DIR"] = f"/run/user/{os.getuid()}"
-        return env
-
-    def _get_systemd_units(self, bench_name: str) -> list[str]:
-        user_unit_dir = Path.home() / ".config" / "systemd" / "user"
-        return [f.name for f in sorted(user_unit_dir.glob(f"{bench_name}-*.service"))]
-
-    def _read_from_systemd(self, bench_name: str) -> list[ProcessInfo]:
-        units = self._get_systemd_units(bench_name)
+    def _read_from_systemd(self, systemd: "SystemdProcessManager") -> list[ProcessInfo]:
+        bench_name = systemd.bench.config.name
+        units = [f.name for f in sorted(systemd.user_unit_dir.glob(f"{bench_name}-*.service"))]
         if not units:
             return []
         result = subprocess.run(
-            ["systemctl", "--user", "show", *units, "--property=Id,ActiveState,MainPID"],
+            [*systemd._systemctl("show", *units), "--property=Id,ActiveState,MainPID"],
             capture_output=True,
             text=True,
-            env=self._systemd_env(),
+            env=systemd._systemctl_env(),
         )
         return [info for block in result.stdout.strip().split("\n\n") if (info := self._parse_systemd_block(block.strip(), bench_name))]
 
@@ -101,13 +95,24 @@ class ProcessReader:
 
     # ── Supervisor ───────────────────────────────────────────────────────────
 
-    def _read_from_supervisor(self, conf_path: Path, bench_name: str) -> list[ProcessInfo]:
+    def _read_from_supervisor(self, supervisor: SupervisorProcessManager) -> list[ProcessInfo]:
+        bench_name = supervisor.bench.config.name
         result = subprocess.run(
-            ["supervisorctl", "-c", str(conf_path), "status"],
+            [*supervisor._supervisorctl(), "status"],
             capture_output=True,
             text=True,
         )
-        return [info for line in result.stdout.splitlines() if line.strip() and (info := self._parse_supervisorctl_line(line.strip(), bench_name))]
+        return [
+            info
+            for line in result.stdout.splitlines()
+            if line.strip()
+            and (
+                info := self._parse_supervisorctl_line(
+                    line.strip(),
+                    bench_name
+                )
+            )
+        ]
 
     def _parse_supervisorctl_line(self, line: str, bench_name: str) -> ProcessInfo | None:
         m = re.match(r"(\S+:\S+)\s+(\S+)\s*(.*)", line)
