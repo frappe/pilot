@@ -45,10 +45,13 @@ def _validate(data: dict) -> str | None:
 
 @setup_bp.route("/init", methods=["POST"])
 def start_init():
+    import os
+
     bench_root = Path(current_app.config["BENCH_ROOT"])
     data = request.get_json(silent=True) or {}
     args = {}
-    if data.get("sudo_password"):
+    sudoers_already_setup = bool(os.environ.get("IS_SUDOERS_SETUP"))
+    if not sudoers_already_setup and data.get("sudo_password"):
         args["sudo_password"] = data["sudo_password"]
     try:
         task_id = TaskRunner(bench_root).run("bench-init", args)
@@ -90,10 +93,16 @@ def stream_task(task_id: str):
 
 
 def _read_defaults(bench_root: Path) -> dict:
+    import os
     from bench_cli.platform import is_linux
     from admin.backend.tasks.manager.task_reader import TaskReader
 
-    result = {"bench_name": bench_root.name, "is_linux": is_linux(), **BenchTomlBuilder.DEFAULTS}
+    result = {
+        "bench_name": bench_root.name,
+        "is_linux": is_linux(),
+        "is_sudoers_setup": bool(os.environ.get("IS_SUDOERS_SETUP")),
+        **BenchTomlBuilder.DEFAULTS,
+    }
     toml_path = bench_root / "bench.toml"
     if toml_path.exists():
         try:

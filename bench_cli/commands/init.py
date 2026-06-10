@@ -158,21 +158,33 @@ class InitCommand:
     def _setup_sudoers(self) -> None:
         import getpass
         import subprocess
+        from pathlib import Path
 
         username = getpass.getuser()
-        rules = "\n".join([
-            f"{username} ALL=(ALL) NOPASSWD: /usr/bin/apt-get",
-            f"{username} ALL=(ALL) NOPASSWD: /usr/sbin/nginx",
-            f"{username} ALL=(ALL) NOPASSWD: /usr/bin/systemctl",
-            f"{username} ALL=(ALL) NOPASSWD: /usr/bin/loginctl",
-            f"{username} ALL=(ALL) NOPASSWD: /usr/bin/ln",
-            f"{username} ALL=(ALL) NOPASSWD: /usr/bin/unlink",
-            f"{username} ALL=(ALL) NOPASSWD: /usr/sbin/zpool",
-            f"{username} ALL=(ALL) NOPASSWD: /usr/sbin/zfs",
-            f"{username} ALL=(ALL) NOPASSWD: /usr/bin/rsync",
-        ])
+        rules = "\n".join(
+            [
+                f"{username} ALL=(ALL) NOPASSWD: /usr/bin/apt-get",
+                f"{username} ALL=(ALL) NOPASSWD: /usr/sbin/nginx",
+                f"{username} ALL=(ALL) NOPASSWD: /usr/bin/systemctl",
+                f"{username} ALL=(ALL) NOPASSWD: /usr/bin/loginctl",
+                f"{username} ALL=(ALL) NOPASSWD: /usr/bin/ln",
+                f"{username} ALL=(ALL) NOPASSWD: /usr/bin/unlink",
+                f"{username} ALL=(ALL) NOPASSWD: /usr/sbin/zpool",
+                f"{username} ALL=(ALL) NOPASSWD: /usr/sbin/zfs",
+                f"{username} ALL=(ALL) NOPASSWD: /usr/bin/rsync",
+            ]
+        )
         content = f"# Frappe bench — managed by bench init, do not edit\n{rules}\n"
         sudoers_path = f"/etc/sudoers.d/{username}"
+
+        try:
+            existing = Path(sudoers_path).read_text()
+            if all(rule in existing for rule in rules.splitlines()):
+                print(f"  {sudoers_path} already up to date, skipping.")
+                return
+        except OSError:
+            pass
+
         result = subprocess.run(
             ["sudo", "-S", "tee", sudoers_path],
             input=f"{self._sudo_password}\n{content}",
@@ -242,6 +254,7 @@ class InitCommand:
             self._on_rollback("systemd user units", self._remove_systemd_units)
         else:
             import subprocess
+
             from bench_cli.platform import get_package_manager, is_linux
 
             pkg = get_package_manager()
