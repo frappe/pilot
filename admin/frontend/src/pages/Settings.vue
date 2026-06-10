@@ -23,7 +23,7 @@ const saveError = ref('')
 const saveSuccess = ref('')
 
 const form = ref({
-  bench: { name: '', python: '', http_port: 8000, socketio_port: 9000 },
+  bench: { name: '', python: '', http_port: 8000, socketio_port: 9000, default_branch: '' },
   mariadb: { host: 'localhost', port: 3306, admin_user: 'root', socket_path: '', version: '' },
   redis: { cache_port: 13000, queue_port: 11000, socketio_port: 12000, version: '' },
   workers: { default: 2, short: 1, long: 1 },
@@ -163,6 +163,8 @@ onMounted(load)
         <div class="grid grid-cols-2 gap-4">
           <FormControl label="Name" :modelValue="form.bench.name" disabled />
           <FormControl label="Python Version" :modelValue="form.bench.python" disabled />
+          <FormControl label="Default Branch" v-model="form.bench.default_branch" placeholder="version-16" />
+          <div />
           <FormControl type="number" label="HTTP Port" v-model="form.bench.http_port" />
           <FormControl type="number" label="SocketIO Port" v-model="form.bench.socketio_port" />
         </div>

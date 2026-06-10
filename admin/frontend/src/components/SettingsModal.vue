@@ -242,7 +242,7 @@ watch(() => props.modelValue, (val) => {
               <!-- Bench -->
               <div v-if="activeTab === 'bench'" class="flex flex-col gap-4">
                 <h4 class="text-sm font-semibold text-ink-gray-8">Process Manager</h4>
-                <Select label="Process Manager" :options="PROCESS_MANAGER_OPTIONS" v-model="form.production.process_manager" class="w-64" />
+                <Select :options="PROCESS_MANAGER_OPTIONS" v-model="form.production.process_manager" class="w-64" />
                 <div class="border-t border-outline-gray-1" />
                 <div class="grid grid-cols-2 gap-4">
                   <FormControl label="Name" :modelValue="form.bench.name" disabled />

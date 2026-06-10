@@ -74,6 +74,8 @@ class ConfigPatcher:
             self.config.http_port = int(bench["http_port"])
         if "socketio_port" in bench:
             self.config.socketio_port = int(bench["socketio_port"])
+        if "default_branch" in bench:
+            self.config.default_branch = str(bench["default_branch"]).strip()
 
     def _apply_mariadb(self) -> None:
         mariadb = self.data.get("mariadb") or {}
@@ -217,7 +219,7 @@ def _build_settings_response(config: BenchConfig) -> dict:
     volume = config.volume
     return {
         "is_linux": is_linux(),
-        "bench": {"name": config.name, "python": config.python_version, "http_port": config.http_port, "socketio_port": config.socketio_port},
+        "bench": {"name": config.name, "python": config.python_version, "http_port": config.http_port, "socketio_port": config.socketio_port, "default_branch": config.default_branch},
         "mariadb": {
             "host": config.mariadb.host,
             "port": config.mariadb.port,

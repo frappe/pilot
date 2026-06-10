@@ -13,14 +13,14 @@ const showSettings = ref(false)
 const breadcrumbs = computed(() => {
   const { path, params } = route
 
-  if (path === '/') return [{ label: 'Dashboard' }]
-  if (path === '/apps') return [{ label: 'Apps' }]
-  if (path === '/sites') return [{ label: 'Sites' }]
+  if (path === '/' || path === '/sites') return [{ label: 'Sites' }]
   if (path.startsWith('/sites/')) return [
-    { label: 'Sites', route: '/sites' },
+    { label: 'Sites', route: '/' },
     { label: String(params.name) },
   ]
-  if (path === '/processes') return [{ label: 'Processes' }]
+  if (path === '/apps') return [{ label: 'Apps' }]
+  if (path === '/marketplace') return [{ label: 'Marketplace' }]
+  if (path === '/monitor') return [{ label: 'Monitor' }]
   if (path === '/logs') return [{ label: 'Logs' }]
   if (path.startsWith('/logs/')) return [
     { label: 'Logs', route: '/logs' },
@@ -49,7 +49,7 @@ const breadcrumbs = computed(() => {
         <Breadcrumbs :items="breadcrumbs" />
         <div id="header-actions" class="ml-auto flex items-center gap-2" />
       </header>
-      <div class="p-6">
+      <div class="prose prose-sm max-w-none p-6">
         <RouterView />
       </div>
     </main>

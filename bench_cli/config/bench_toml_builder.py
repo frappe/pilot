@@ -9,11 +9,12 @@ name = "{name}"
 python = "{python}"
 http_port = {http_port}
 socketio_port = {socketio_port}
+default_branch = "{default_branch}"
 
 [[apps]]
 name = "frappe"
 repo = "{app_repo}"
-branch = "{app_branch}"
+branch = "{default_branch}"
 
 [mariadb]
 host = "localhost"
@@ -71,7 +72,7 @@ class BenchTomlBuilder:
         "http_port": 8000,
         "socketio_port": 9000,
         "app_repo": "https://github.com/frappe/frappe",
-        "app_branch": "version-16",
+        "default_branch": "version-16",
         "mariadb_password": "root",
         "admin_password": "",
         "admin_port": 8002,
@@ -107,8 +108,8 @@ class BenchTomlBuilder:
             python=self._settings["python"],
             http_port=int(self._settings["http_port"]),
             socketio_port=int(self._settings["socketio_port"]),
+            default_branch=self._settings["default_branch"],
             app_repo=self._settings["app_repo"],
-            app_branch=self._settings["app_branch"],
             mariadb_password=self._settings["mariadb_password"],
             redis_port=int(self._settings["redis_port"]),
             workers_default=int(self._settings["workers_default"]),
@@ -159,7 +160,7 @@ class BenchTomlBuilder:
                 "mariadb_password": data.get("mariadb", {}).get("root_password", d["mariadb_password"]),
                 "admin_password": data.get("admin", {}).get("password", d["admin_password"]),
                 "app_repo": app.get("repo", d["app_repo"]),
-                "app_branch": app.get("branch", d["app_branch"]),
+                "default_branch": bench.get("default_branch") or app.get("branch", d["default_branch"]),
                 "redis_port": data.get("redis", {}).get("port", d["redis_port"]),
                 "workers_default": data.get("workers", {}).get("default", d["workers_default"]),
                 "workers_short": data.get("workers", {}).get("short", d["workers_short"]),

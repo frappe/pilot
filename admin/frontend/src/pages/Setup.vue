@@ -22,7 +22,7 @@ const form = ref({
   mariadb_password: '',
   admin_password: '',
   app_repo: 'https://github.com/frappe/frappe',
-  app_branch: 'version-16',
+  default_branch: 'version-16',
   http_port: 8000,
   socketio_port: 9000,
   redis_port: 13000,
@@ -269,7 +269,7 @@ function backToConfig() {
 
         <div v-else-if="step === 'customize'" class="flex flex-col gap-4">
           <FormControl label="Python version" v-model="form.python" placeholder="3.14" />
-          <FormControl label="Frappe branch" v-model="form.app_branch" placeholder="version-16" />
+          <FormControl label="Default branch" v-model="form.default_branch" placeholder="version-16" description="All apps will default to this branch (e.g. version-16, develop)" />
           <FormControl label="Frappe repository" v-model="form.app_repo" />
           <div class="grid grid-cols-3 gap-2">
             <FormControl label="HTTP port" v-model="form.http_port" type="number" />
@@ -355,7 +355,7 @@ function backToConfig() {
         </Button>
         <template v-else-if="step === 'create-site'">
           <Button variant="subtle" class="flex-1" @click="$emit('done')">
-            Go to Dashboard
+            Skip
           </Button>
           <Button variant="solid" :loading="loading" class="flex-1" @click="createSite">
             Create Site

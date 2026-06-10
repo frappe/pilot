@@ -1,8 +1,8 @@
 <script setup>
-import { h, ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  Button, Badge, Dialog, ListView, FormControl,
+  Button, Badge, Dialog, FormControl,
   LoadingText, ErrorMessage, TextInput, Select,
 } from 'frappe-ui'
 const router = useRouter()
@@ -32,6 +32,18 @@ async function loadUpdateStatus() {
     if (!res.ok) return
     const data = await res.json()
     updateMap.value = Object.fromEntries((data.apps || []).map(a => [a.name, a]))
+  } catch {}
+}
+
+// Bench default branch
+const defaultBranch = ref('')
+
+async function loadDefaultBranch() {
+  try {
+    const res = await fetch('/api/settings/')
+    if (!res.ok) return
+    const data = await res.json()
+    defaultBranch.value = data.bench?.default_branch || ''
   } catch {}
 }
 
@@ -74,62 +86,8 @@ const filteredRegistry = computed(() => {
 })
 
 const logoMap = computed(() => Object.fromEntries(registry.value.map(a => [a.name, a.logo_url])))
+const titleMap = computed(() => Object.fromEntries(registry.value.map(a => [a.name, a.title])))
 
-const columns = computed(() => [
-  {
-    label: 'App', key: 'name', width: '180px',
-    prefix: ({ row }) => {
-      const logo = logoMap.value[row.name]
-      return h('div', {
-        class: 'flex h-6 w-6 shrink-0 items-center justify-center rounded overflow-hidden mr-1',
-        style: logo ? {} : { background: hashColor(row.name) },
-      }, logo
-        ? [h('img', { src: logo, alt: row.name, class: 'h-full w-full object-contain' })]
-        : [h('span', { class: 'text-xs font-bold text-white' }, row.name[0].toUpperCase())]
-      )
-    },
-  },
-  { label: 'Repo', key: 'repo' },
-  {
-    label: 'Branch', key: 'branch', width: '130px',
-    prefix: ({ row }) => h(Badge, { label: row.branch || '—', theme: 'gray', variant: 'subtle' }),
-    getLabel: () => '',
-  },
-  {
-    label: 'Updates', key: '_updates', width: '110px',
-    prefix: ({ row }) => {
-      const u = updateMap.value[row.name]
-      if (!u) return h('span', { class: 'text-xs text-ink-gray-3' }, '—')
-      if (u.commits_behind > 0)
-        return h(Badge, { label: `${u.commits_behind} behind`, theme: 'yellow' })
-      return h(Badge, { label: 'Up to date', theme: 'green' })
-    },
-    getLabel: () => '',
-  },
-  {
-    label: 'Status', key: '_status', width: '90px',
-    prefix: ({ row }) => h(Badge, { label: row._status, theme: row._status === 'dirty' ? 'orange' : 'gray' }),
-    getLabel: () => '',
-  },
-  { label: 'Version', key: 'installed_version', width: '90px' },
-  {
-    label: '', key: '_actions', width: '60px',
-    prefix: ({ row }) => h(Button, {
-      variant: 'outline',
-      label: 'Edit',
-      size: 'sm',
-      onClick: (e) => { e.stopPropagation(); openEdit(row) },
-    }),
-    getLabel: () => '',
-  },
-])
-
-const rows = computed(() =>
-  apps.value.map(a => ({
-    ...a,
-    _status: a.uncommitted_changes ? 'dirty' : 'clean',
-  }))
-)
 
 const activeBranchOptions = computed(() =>
   pickerBranches.value.map(b => ({ label: b, value: b }))
@@ -156,8 +114,8 @@ function openAdd() {
   registrySearch.value = ''
   manualName.value = ''
   manualRepo.value = ''
-  manualBranches.value = []
-  manualActiveBranch.value = ''
+  manualBranches.value = defaultBranch.value ? [defaultBranch.value] : []
+  manualActiveBranch.value = defaultBranch.value
   manualBranchInput.value = ''
   if (!registry.value.length) loadRegistry()
 }
@@ -165,7 +123,10 @@ function openAdd() {
 function selectRegistryApp(a) {
   selectedApp.value = a
   pickerBranches.value = a.branches ? [...a.branches] : (a.branch ? [a.branch] : [])
-  pickerActiveBranch.value = a.branch || pickerBranches.value[0] || ''
+  const preferred = defaultBranch.value && pickerBranches.value.includes(defaultBranch.value)
+    ? defaultBranch.value
+    : pickerBranches.value[0] || a.branch || ''
+  pickerActiveBranch.value = preferred
 }
 
 function addPickerBranch() {
@@ -340,11 +301,11 @@ async function runUpdate() {
   }
 }
 
-onMounted(() => { loadApps(); loadRegistry(); loadUpdateStatus() })
+onMounted(() => { loadApps(); loadRegistry(); loadUpdateStatus(); loadDefaultBranch() })
 </script>
 
 <template>
-  <div class="flex flex-col gap-4">
+  <div class="mx-auto flex max-w-2xl flex-col gap-4">
     <div class="flex justify-end gap-2">
       <Button variant="outline" :loading="updateLoading" @click="runUpdate">Update Bench</Button>
       <Button variant="solid" @click="openAdd">Add App</Button>
@@ -353,13 +314,47 @@ onMounted(() => { loadApps(); loadRegistry(); loadUpdateStatus() })
     <LoadingText v-if="loading" />
     <ErrorMessage v-else-if="error" :message="error" />
 
-    <div v-else class="overflow-hidden">
-      <ListView
-        :columns="columns"
-        :rows="rows"
-        row-key="name"
-        :options="{ selectable: false, showTooltip: false }"
-      />
+    <div v-else class="flex flex-col gap-2">
+      <p v-if="!apps.length" class="py-8 text-center text-sm text-ink-gray-4">No apps installed.</p>
+      <div
+        v-for="a in apps"
+        :key="a.name"
+        class="flex items-start gap-3 rounded-lg border border-outline-gray-1 bg-surface-white px-4 py-3 shadow-sm"
+      >
+        <!-- Logo -->
+        <div
+          class="flex h-8 w-8 shrink-0 items-center justify-center rounded overflow-hidden"
+          :style="logoMap[a.name] ? {} : { background: hashColor(a.name) }"
+        >
+          <img v-if="logoMap[a.name]" :src="logoMap[a.name]" :alt="a.name" class="h-full w-full object-contain" />
+          <span v-else class="text-xs font-bold text-white">{{ a.name[0].toUpperCase() }}</span>
+        </div>
+
+        <!-- Info -->
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2">
+            <span class="font-medium text-ink-gray-9">{{ titleMap[a.name] || a.name }}</span>
+            <Badge :label="a.branch || '—'" theme="gray" variant="subtle" />
+            <Badge v-if="a.uncommitted_changes" label="dirty" theme="orange" />
+          </div>
+          <p class="mt-0.5 truncate text-xs text-ink-gray-4">{{ a.repo }}</p>
+        </div>
+
+        <!-- Update status -->
+        <div class="shrink-0">
+          <template v-if="updateMap[a.name]">
+            <Badge
+              v-if="updateMap[a.name].commits_behind > 0"
+              :label="`${updateMap[a.name].commits_behind} behind`"
+              theme="yellow"
+            />
+            <Badge v-else label="Up to date" theme="green" />
+          </template>
+        </div>
+
+        <!-- Edit button -->
+        <Button variant="outline" size="sm" @click="openEdit(a)">Edit</Button>
+      </div>
     </div>
 
     <!-- Add App dialog -->
