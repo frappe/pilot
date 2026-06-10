@@ -90,7 +90,15 @@ def bench_config_to_toml(config: BenchConfig) -> str:
     parts.append("[volume]")
     parts.append(f"enabled = {'true' if v.enabled else 'false'}")
     parts.append(f'pool = "{v.pool}"')
-    parts.append(f'device = "{v.device}"')
+    parts.append(f'backing = "{v.backing}"')
+    if v.backing == "image":
+        parts.append("")
+        parts.append("[volume.image]")
+        parts.append(f'size = "{v.image.size}"')
+        if v.image.path:
+            parts.append(f'path = "{v.image.path}"')
+    else:
+        parts.append(f'device = "{v.device}"')
     parts.append("")
     parts.append("[volume.benches]")
     parts.append(f'reservation = "{v.benches.reservation}"')

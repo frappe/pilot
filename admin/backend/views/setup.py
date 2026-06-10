@@ -37,9 +37,13 @@ def _validate(data: dict) -> str | None:
         if not data.get(field):
             return f"{field} is required"
     if data.get("volume_enabled"):
-        for field in ("volume_pool", "volume_device"):
-            if not data.get(field):
-                return f"{field} is required when volume management is enabled"
+        if not data.get("volume_pool"):
+            return "volume_pool is required when volume management is enabled"
+        backing = data.get("volume_backing", "device")
+        if backing == "device" and not data.get("volume_device"):
+            return "volume_device is required when volume backing is a block device"
+        if backing == "image" and not data.get("volume_image_size"):
+            return "volume_image_size is required when volume backing is a disk image"
     return None
 
 
@@ -60,7 +64,7 @@ def start_init():
         config.validate()
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
-    if error := VolumeManager(config.volume).validate_sizes_fit_device():
+    if error := VolumeManager(config.volume).validate_sizes_fit_backing():
         return jsonify({"ok": False, "error": error}), 400
 
     args = {}
@@ -126,6 +130,8 @@ def _read_defaults(bench_root: Path) -> dict:
         except Exception:
             pass
 
+    result.update(_volume_suggestions(toml_path))
+
     try:
         tasks = TaskReader(bench_root).list_tasks()
         running = next((t for t in tasks if t.command == "bench-init" and t.status == "running"), None)
@@ -134,6 +140,35 @@ def _read_defaults(bench_root: Path) -> dict:
         result["running_init_task_id"] = None
 
     return result
+
+
+def _volume_suggestions(toml_path: Path) -> dict:
+    """Smart volume defaults for the wizard.
+
+    Fresh setups (no [volume] table yet) get discovery-driven defaults:
+    device backing on the largest unused disk, or image backing sized from
+    rootfs free space, with quotas/reservations derived from the backing size.
+    Existing volume config is never overridden — only the discovered device
+    list is returned so the UI can still offer a dropdown.
+    """
+    from bench_cli.platform import is_linux
+
+    if not is_linux():
+        return {"available_devices": []}
+
+    from bench_cli.managers.volume_manager import compute_smart_defaults, list_device_choices
+
+    try:
+        import tomllib
+
+        with open(toml_path, "rb") as f:
+            has_volume_config = "volume" in tomllib.load(f)
+    except Exception:
+        has_volume_config = False
+
+    if has_volume_config:
+        return {"available_devices": list_device_choices()}
+    return compute_smart_defaults()
 
 
 def _current_name(bench_root: Path) -> str:

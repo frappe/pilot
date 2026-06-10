@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { Button, FormControl, FormLabel, Password, Switch, ErrorMessage, TextInput } from 'frappe-ui'
 import TerminalOutput from '../components/TerminalOutput.vue'
 import { processLine } from '../utils/ansi.js'
@@ -31,7 +31,9 @@ const form = ref({
   workers_long: 1,
   volume_enabled: false,
   volume_pool: '',
+  volume_backing: 'device',
   volume_device: '',
+  volume_image_size: '60G',
   volume_benches_reservation: '10G',
   volume_benches_quota: '50G',
   volume_mariadb_reservation: '5G',
@@ -41,6 +43,58 @@ const form = ref({
 })
 
 const siteForm = ref({ name: 'site1.localhost', admin_password: 'admin' })
+
+// ── volume smart defaults ─────────────────────────────────────────────────
+const CUSTOM_DEVICE = '__custom__'
+const availableDevices = ref([])
+const customDevice = ref(false)
+const sizesTouched = ref(false)
+
+const deviceOptions = computed(() => [
+  ...availableDevices.value.map((d) => ({
+    label: `${d.path} (${Math.floor(d.size_bytes / 1024 ** 3)}G${
+      d.pool ? `, existing pool ${d.pool}` : d.has_signature ? ', has old data — will be wiped' : ''
+    })`,
+    value: d.path,
+  })),
+  { label: 'Custom path…', value: CUSTOM_DEVICE },
+])
+const showDeviceDropdown = computed(() => availableDevices.value.length > 0 && !customDevice.value)
+
+watch(
+  () => form.value.volume_device,
+  (value) => {
+    if (value === CUSTOM_DEVICE) {
+      customDevice.value = true
+      form.value.volume_device = ''
+    }
+  }
+)
+
+function backingSizeBytes() {
+  if (form.value.volume_backing === 'device') {
+    const device = availableDevices.value.find((d) => d.path === form.value.volume_device)
+    return device ? device.size_bytes : null
+  }
+  return parseSize(form.value.volume_image_size)
+}
+
+// Mirrors the backend policy: quotas 60/40, reservations 10/5 of the backing size.
+function applySmartSizes() {
+  if (sizesTouched.value) return
+  const bytes = backingSizeBytes()
+  if (!bytes) return
+  const wholeG = (n) => `${Math.max(1, Math.floor(n / 1024 ** 3))}G`
+  form.value.volume_benches_quota = wholeG(bytes * 0.6)
+  form.value.volume_mariadb_quota = wholeG(bytes * 0.4)
+  form.value.volume_benches_reservation = wholeG(bytes * 0.1)
+  form.value.volume_mariadb_reservation = wholeG(bytes * 0.05)
+}
+
+watch(
+  () => [form.value.volume_backing, form.value.volume_device, form.value.volume_image_size],
+  applySmartSizes
+)
 
 const configSteps = computed(() =>
   isLinux.value ? ['passwords', 'customize', 'volume'] : ['passwords', 'customize']
@@ -73,6 +127,7 @@ async function loadConfig() {
     benchName.value = data.bench_name || ''
     isLinux.value = data.is_linux !== false
     isSudoersSetup.value = data.is_sudoers_setup === true
+    availableDevices.value = data.available_devices || []
     for (const key of Object.keys(form.value)) {
       if (data[key] !== undefined) form.value[key] = data[key]
     }
@@ -157,18 +212,27 @@ function parseSize(value) {
 function validateVolume() {
   if (!form.value.volume_enabled) return null
   if (!form.value.volume_pool) return 'Pool name is required.'
-  if (!form.value.volume_device) return 'Block device is required.'
+  const sizeHint = 'must be a positive integer with an optional K/M/G/T suffix (e.g. 10G)'
+  let imageSize = null
+  if (form.value.volume_backing === 'image') {
+    imageSize = parseSize(form.value.volume_image_size)
+    if (imageSize === null) return `Image size "${form.value.volume_image_size}" ${sizeHint}.`
+  } else if (!form.value.volume_device) {
+    return 'Block device is required.'
+  }
   const datasets = [
     ['Bench', form.value.volume_benches_reservation, form.value.volume_benches_quota],
     ['MariaDB', form.value.volume_mariadb_reservation, form.value.volume_mariadb_quota],
   ]
-  const sizeHint = 'must be a positive integer with an optional K/M/G/T suffix (e.g. 10G)'
   for (const [label, reservation, quota] of datasets) {
     const res = parseSize(reservation)
     const q = parseSize(quota)
     if (res === null) return `${label} reservation "${reservation}" ${sizeHint}.`
     if (q === null) return `${label} quota "${quota}" ${sizeHint}.`
     if (res > q) return `${label} reservation (${reservation}) cannot exceed quota (${quota}).`
+    if (imageSize !== null && q > imageSize) {
+      return `${label} quota (${quota}) exceeds the disk image size (${form.value.volume_image_size}).`
+    }
   }
   return null
 }
@@ -303,17 +367,43 @@ function backToConfig() {
             description="Isolates bench and MariaDB data in ZFS datasets with quotas. Pool and device cannot be changed after initialization."
           />
           <template v-if="form.volume_enabled">
+            <FormControl
+              type="select"
+              label="Storage backing"
+              v-model="form.volume_backing"
+              :options="[
+                { label: 'Dedicated block device', value: 'device' },
+                { label: 'Disk image on root filesystem (no spare disk needed)', value: 'image' },
+              ]"
+            />
             <div class="grid grid-cols-2 gap-2">
               <FormControl label="Pool name" v-model="form.volume_pool" placeholder="bench-pool" />
-              <FormControl label="Block device" v-model="form.volume_device" placeholder="/dev/sdb" />
+              <FormControl
+                v-if="form.volume_backing === 'device' && showDeviceDropdown"
+                type="select"
+                label="Block device"
+                v-model="form.volume_device"
+                :options="deviceOptions"
+              />
+              <FormControl
+                v-else-if="form.volume_backing === 'device'"
+                label="Block device"
+                v-model="form.volume_device"
+                placeholder="/dev/sdb"
+              />
+              <FormControl v-else label="Image size" v-model="form.volume_image_size" placeholder="60G" />
+            </div>
+            <p v-if="form.volume_backing === 'image'" class="text-xs text-ink-gray-4">
+              A preallocated file of this size will be created at
+              /var/lib/bench-zfs/{{ form.volume_pool || 'pool' }}.img and used as the ZFS pool.
+            </p>
+            <div class="grid grid-cols-2 gap-2">
+              <FormControl label="Bench reservation" v-model="form.volume_benches_reservation" @input="sizesTouched = true" />
+              <FormControl label="Bench quota" v-model="form.volume_benches_quota" @input="sizesTouched = true" />
             </div>
             <div class="grid grid-cols-2 gap-2">
-              <FormControl label="Bench reservation" v-model="form.volume_benches_reservation" />
-              <FormControl label="Bench quota" v-model="form.volume_benches_quota" />
-            </div>
-            <div class="grid grid-cols-2 gap-2">
-              <FormControl label="MariaDB reservation" v-model="form.volume_mariadb_reservation" />
-              <FormControl label="MariaDB quota" v-model="form.volume_mariadb_quota" />
+              <FormControl label="MariaDB reservation" v-model="form.volume_mariadb_reservation" @input="sizesTouched = true" />
+              <FormControl label="MariaDB quota" v-model="form.volume_mariadb_quota" @input="sizesTouched = true" />
             </div>
             <FormControl label="MariaDB data directory" v-model="form.volume_mariadb_data_dir" />
             <Switch v-model="form.volume_snapshots_enabled" label="Enable snapshots" />

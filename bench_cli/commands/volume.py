@@ -11,6 +11,7 @@ from bench_cli.utils import run_command
 from bench_cli.managers.volume_manager import VolumeManager
 
 if TYPE_CHECKING:
+    from bench_cli.config.bench_config import BenchConfig
     from bench_cli.core.bench import Bench
     from bench_cli.managers.snapshot_orchestrator import SnapshotOrchestrator
 
@@ -71,9 +72,10 @@ def _start_mariadb() -> None:
 
 
 class VolumeSetupCommand:
-    def __init__(self, config: VolumeConfig, bench_path: Path) -> None:
+    def __init__(self, config: VolumeConfig, bench_path: Path, bench_config: "BenchConfig | None" = None) -> None:
         self.config = config
         self.bench_path = bench_path
+        self.bench_config = bench_config
 
     def setup_mariadb(self, manager: VolumeManager):
         data_dir = Path(self.config.mariadb.data_dir)
@@ -99,6 +101,7 @@ class VolumeSetupCommand:
             raise BenchError("Volume management requires Linux (ZFS is not supported on macOS).")
 
         _require_enabled(self.config)
+        self._resolve_backing()
 
         manager = VolumeManager(self.config)
         print(f"Creating ZFS pool '{self.config.pool}' and datasets...")
@@ -106,6 +109,19 @@ class VolumeSetupCommand:
         self.setup_mariadb(manager)
         self.setup_bench(manager)
         print("Volume setup complete.")
+
+    def _resolve_backing(self) -> None:
+        from bench_cli.managers.volume_manager import resolve_auto_backing
+
+        choice = resolve_auto_backing(self.config)
+        if not choice:
+            return
+        print(f"  {choice}")
+        if self.bench_config is not None:
+            from bench_cli.config.toml_writer import bench_config_to_toml
+
+            (self.bench_path / "bench.toml").write_text(bench_config_to_toml(self.bench_config))
+            print("  Saved resolved volume settings to bench.toml")
 
 
 class VolumeStatusCommand:

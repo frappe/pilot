@@ -11,7 +11,7 @@ from bench_cli.config.mariadb_config import MariaDBConfig
 from bench_cli.config.nginx_config import NginxConfig
 from bench_cli.config.production_config import ProductionConfig
 from bench_cli.config.redis_config import RedisConfig
-from bench_cli.config.volume_config import BenchesDatasetConfig, MariaDBDatasetConfig, SnapshotConfig, VolumeConfig
+from bench_cli.config.volume_config import BenchesDatasetConfig, ImageConfig, MariaDBDatasetConfig, SnapshotConfig, VolumeConfig
 from bench_cli.config.worker_config import CustomWorkerEntry, WorkerConfig
 from bench_cli.exceptions import ConfigError
 
@@ -169,10 +169,16 @@ class BenchConfig:
         benches_data = data.get("benches", {})
         mariadb_data = data.get("mariadb", {})
         snapshots_data = data.get("snapshots", {})
+        image_data = data.get("image", {})
         return VolumeConfig(
             enabled=data.get("enabled", False),
             pool=data.get("pool", ""),
+            backing=data.get("backing", "device"),
             device=data.get("device", ""),
+            image=ImageConfig(
+                size=image_data.get("size", ""),
+                path=image_data.get("path", ""),
+            ),
             benches=BenchesDatasetConfig(
                 reservation=benches_data.get("reservation", "10G"),
                 quota=benches_data.get("quota", "50G"),
@@ -277,8 +283,7 @@ class BenchConfig:
             return
         if not self.volume.pool:
             raise ConfigError("volume.pool is required when volume.enabled = true.")
-        if not self.volume.device:
-            raise ConfigError("volume.device is required when volume.enabled = true.")
+        self._validate_volume_backing()
         self._validate_zfs_size("volume.benches.reservation", self.volume.benches.reservation)
         self._validate_zfs_size("volume.benches.quota", self.volume.benches.quota)
         self._validate_zfs_size("volume.mariadb.reservation", self.volume.mariadb.reservation)
@@ -286,6 +291,23 @@ class BenchConfig:
         self._validate_reservation_quota()
         if not Path(self.volume.mariadb.data_dir).is_absolute():
             raise ConfigError(f"volume.mariadb.data_dir '{self.volume.mariadb.data_dir}' must be an absolute path.")
+
+    def _validate_volume_backing(self) -> None:
+        backing = self.volume.backing
+        if backing not in ("device", "image", "auto"):
+            raise ConfigError(f"volume.backing '{backing}' is invalid. Must be 'device', 'image', or 'auto'.")
+        if backing == "auto":
+            # Resolved to a concrete backing (with smart sizes) during bench init.
+            return
+        if backing == "device":
+            if not self.volume.device:
+                raise ConfigError("volume.device is required when volume.backing = 'device'.")
+            return
+        if not self.volume.image.size:
+            raise ConfigError("volume.image.size is required when volume.backing = 'image'.")
+        self._validate_zfs_size("volume.image.size", self.volume.image.size)
+        if self.volume.image.path and not Path(self.volume.image.path).is_absolute():
+            raise ConfigError(f"volume.image.path '{self.volume.image.path}' must be an absolute path.")
 
     def _validate_reservation_quota(self) -> None:
         from bench_cli.managers.volume_manager import VolumeManager

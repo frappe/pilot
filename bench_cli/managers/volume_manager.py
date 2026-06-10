@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shlex
 import shutil
 import subprocess
@@ -22,6 +23,216 @@ class SnapshotInfo:
     used_bytes: int
 
 
+@dataclass
+class DiskInfo:
+    path: str
+    size_bytes: int
+    has_signature: bool = False  # leftover partitions/filesystem labels — wiped on pool creation
+
+
+@dataclass
+class PoolInfo:
+    name: str
+    size_bytes: int
+    device: str
+
+
+# Smart sizing policy: strict 60/40 quota split between benches and mariadb,
+# 10/5 reservations, image sized at 75% of the root filesystem's free space.
+_MIN_USABLE_DISK_BYTES = 10 * 1024**3
+_BENCHES_QUOTA_FRACTION = 0.60
+_MARIADB_QUOTA_FRACTION = 0.40
+_BENCHES_RESERVATION_FRACTION = 0.10
+_MARIADB_RESERVATION_FRACTION = 0.05
+_IMAGE_FREE_SPACE_FRACTION = 0.75
+
+
+def discover_unused_disks() -> list[DiskInfo]:
+    """Block devices safe to hand to ZFS: whole disks where nothing is mounted
+    anywhere on the disk, no active storage stack (LVM/RAID/dm-crypt) sits on
+    top of it, and it is not a member of an imported ZFS pool.
+
+    Leftover partitions or filesystem signatures — e.g. from a destroyed pool
+    or an old install — do NOT disqualify a disk: ``zpool create -f`` wipes
+    them. Such disks are flagged via ``has_signature`` so the UI can warn.
+    The root disk is excluded because its partitions are mounted. Runs without
+    sudo and is best-effort: returns [] on any failure. Largest first.
+    """
+    try:
+        result = subprocess.run(
+            ["lsblk", "-J", "-b", "-o", "NAME,TYPE,SIZE,RO,MOUNTPOINTS,FSTYPE"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            return []
+        devices = json.loads(result.stdout).get("blockdevices", [])
+    except (OSError, ValueError):
+        return []
+    active_pool_disks = {pool.device for pool in existing_pools()}
+    disks = [
+        DiskInfo(
+            path=f"/dev/{device['name']}",
+            size_bytes=int(device["size"]),
+            has_signature=bool(device.get("fstype") or device.get("children")),
+        )
+        for device in devices
+        if device.get("type") == "disk"
+        and not device.get("ro")
+        and int(device.get("size") or 0) >= _MIN_USABLE_DISK_BYTES
+        and f"/dev/{device['name']}" not in active_pool_disks
+        and not _anything_mounted(device)
+        and not _has_storage_stack(device)
+    ]
+    return sorted(disks, key=lambda disk: disk.size_bytes, reverse=True)
+
+
+def _anything_mounted(device: dict) -> bool:
+    if any(device.get("mountpoints") or []):
+        return True
+    return any(_anything_mounted(child) for child in device.get("children") or [])
+
+
+def _has_storage_stack(device: dict) -> bool:
+    """True when something deeper than plain partitions sits on the disk
+    (LVM volumes, RAID members, dm-crypt) — those may be active without a
+    visible mountpoint, so the disk is not safe to wipe."""
+    return any(child.get("type") != "part" or _has_storage_stack(child) for child in device.get("children") or [])
+
+
+def existing_pools() -> list[PoolInfo]:
+    """ZFS pools already imported on this machine, with their backing disk.
+
+    A disk hosting a live pool is excluded from :func:`discover_unused_disks`
+    (it is busy), but for setup it is the best suggestion of all — re-running
+    the wizard or init on a machine that already has a bench pool should reuse
+    it rather than fall back to an image file. Unprivileged and best-effort.
+    """
+    try:
+        result = subprocess.run(
+            ["zpool", "list", "-H", "-p", "-o", "name,size"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            return []
+    except OSError:
+        return []
+    pools = []
+    for line in result.stdout.strip().splitlines():
+        parts = line.split("\t")
+        if len(parts) < 2:
+            continue
+        try:
+            pools.append(PoolInfo(name=parts[0], size_bytes=int(parts[1]), device=_pool_backing_device(parts[0])))
+        except ValueError:
+            continue
+    return pools
+
+
+def _pool_backing_device(pool: str) -> str:
+    """The pool's first vdev, mapped to its parent disk when it's a partition."""
+    try:
+        result = subprocess.run(["zpool", "list", "-v", "-H", "-P", pool], capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            return ""
+        vdev = next(
+            (line.strip().split("\t")[0] for line in result.stdout.splitlines()[1:] if line.strip().startswith("/")),
+            "",
+        )
+        if not vdev:
+            return ""
+        parent = subprocess.run(["lsblk", "-no", "PKNAME", vdev], capture_output=True, text=True, check=False)
+        name = parent.stdout.strip().splitlines()[0].strip() if parent.returncode == 0 and parent.stdout.strip() else ""
+        return f"/dev/{name}" if name else vdev
+    except (OSError, IndexError):
+        return ""
+
+
+def list_device_choices() -> list[dict]:
+    """Devices the wizard can offer: disks hosting existing pools first, then unused disks."""
+    choices = [{"path": pool.device, "size_bytes": pool.size_bytes, "pool": pool.name} for pool in existing_pools() if pool.device]
+    choices += [{"path": disk.path, "size_bytes": disk.size_bytes, "has_signature": disk.has_signature} for disk in discover_unused_disks()]
+    return choices
+
+
+def default_image_size_bytes() -> int:
+    free = shutil.disk_usage("/").free
+    return max(int(free * _IMAGE_FREE_SPACE_FRACTION), 10 * 1024**3)
+
+
+def smart_dataset_sizes(backing_bytes: int) -> dict:
+    """Quota/reservation defaults derived from the backing size (flat wizard keys)."""
+    return {
+        "volume_benches_quota": _whole_gigabytes(backing_bytes * _BENCHES_QUOTA_FRACTION),
+        "volume_mariadb_quota": _whole_gigabytes(backing_bytes * _MARIADB_QUOTA_FRACTION),
+        "volume_benches_reservation": _whole_gigabytes(backing_bytes * _BENCHES_RESERVATION_FRACTION),
+        "volume_mariadb_reservation": _whole_gigabytes(backing_bytes * _MARIADB_RESERVATION_FRACTION),
+    }
+
+
+def compute_smart_defaults() -> dict:
+    """Wizard defaults, in order of preference: reuse a disk that already
+    hosts a ZFS pool, else device backing on the largest unused disk, else
+    image backing at 75% of rootfs free space. Includes the device choices so
+    the UI can offer a dropdown."""
+    pools = existing_pools()
+    disks = discover_unused_disks()
+    if pools:
+        backing_bytes = pools[0].size_bytes
+        defaults = {"volume_backing": "device", "volume_device": pools[0].device, "volume_pool": pools[0].name}
+    elif disks:
+        backing_bytes = disks[0].size_bytes
+        defaults = {"volume_backing": "device", "volume_device": disks[0].path}
+    else:
+        backing_bytes = default_image_size_bytes()
+        defaults = {"volume_backing": "image", "volume_image_size": _whole_gigabytes(backing_bytes)}
+    defaults.update(smart_dataset_sizes(backing_bytes))
+    defaults["available_devices"] = [{"path": pool.device, "size_bytes": pool.size_bytes, "pool": pool.name} for pool in pools if pool.device] + [
+        {"path": disk.path, "size_bytes": disk.size_bytes, "has_signature": disk.has_signature} for disk in disks
+    ]
+    return defaults
+
+
+def resolve_auto_backing(config: VolumeConfig) -> str:
+    """Resolve backing = "auto" in place; return a description of the choice.
+
+    Auto backing implies auto sizing: quotas and reservations are always
+    recomputed from the resolved backing size. Set backing explicitly to
+    control sizes manually.
+    """
+    if config.backing != "auto":
+        return ""
+    pool_match = next((p for p in existing_pools() if p.name == config.pool and p.device), None)
+    disks = discover_unused_disks()
+    if pool_match:
+        config.backing = "device"
+        config.device = pool_match.device
+        backing_bytes = pool_match.size_bytes
+        choice = f"Found existing pool {pool_match.name} on {pool_match.device} — reusing it"
+    elif disks:
+        config.backing = "device"
+        config.device = disks[0].path
+        backing_bytes = disks[0].size_bytes
+        choice = f"Found unused disk {config.device} ({_whole_gigabytes(backing_bytes)}) — using device backing"
+    else:
+        backing_bytes = default_image_size_bytes()
+        config.backing = "image"
+        config.image.size = _whole_gigabytes(backing_bytes)
+        choice = f"No unused disk found — using a {config.image.size} image file at {config.image_path}"
+    config.benches.quota = _whole_gigabytes(backing_bytes * _BENCHES_QUOTA_FRACTION)
+    config.mariadb.quota = _whole_gigabytes(backing_bytes * _MARIADB_QUOTA_FRACTION)
+    config.benches.reservation = _whole_gigabytes(backing_bytes * _BENCHES_RESERVATION_FRACTION)
+    config.mariadb.reservation = _whole_gigabytes(backing_bytes * _MARIADB_RESERVATION_FRACTION)
+    return choice
+
+
+def _whole_gigabytes(num_bytes: float) -> str:
+    return f"{max(1, int(num_bytes // 1024**3))}G"
+
+
 class VolumeManager:
     def __init__(self, config: VolumeConfig) -> None:
         self.config = config
@@ -40,7 +251,7 @@ class VolumeManager:
 
     def pool_exists(self) -> bool:
         try:
-            self._run(["sudo", "zpool", "list", "-H", self.config.pool])
+            self._run(["zpool", "list", "-H", self.config.pool])
             return True
         except VolumeError:
             return False
@@ -50,8 +261,27 @@ class VolumeManager:
         if self.pool_exists():
             print(f"Found existing pool {self.config.pool}")
             return
-        self._run(["sudo", "zpool", "create", self.config.pool, self.config.device])
+        vdev = self.config.device if self.config.backing == "device" else self._ensure_image_file()
+        # -f: the device may carry leftover partitions or labels (e.g. a destroyed
+        # pool). Discovery only offers disks with nothing mounted and no active
+        # storage stack, and an explicitly configured device is the user's call.
+        self._run(["sudo", "zpool", "create", "-f", self.config.pool, vdev])
         print(f"Created pool {self.config.pool}")
+
+    def _ensure_image_file(self) -> str:
+        """Create the preallocated backing image file if missing; return its path.
+
+        Preallocated (fallocate, never sparse) so the pool cannot be corrupted
+        later by the root filesystem filling up — setup fails fast instead.
+        """
+        path = self.config.image_path
+        if Path(path).exists():
+            print(f"Found existing image file {path}")
+            return path
+        print(f"Creating {self.config.image.size} image file at {path}")
+        self._run(["sudo", "mkdir", "-p", str(Path(path).parent)])
+        self._run(["sudo", "fallocate", "-l", self.config.image.size, path])
+        return path
 
     def dataset_exists(self, dataset: str) -> bool:
         try:
@@ -66,7 +296,7 @@ class VolumeManager:
         self._run(["sudo", "zfs", "create", dataset])
 
     def get_used_bytes(self, dataset: str) -> int:
-        result = self._run(["sudo", "zfs", "get", "-H", "-p", "-o", "value", "used", dataset])
+        result = self._run(["zfs", "get", "-H", "-p", "-o", "value", "used", dataset])
         return int(result.stdout.decode().strip())
 
     @staticmethod
@@ -114,14 +344,20 @@ class VolumeManager:
             return f"Reservation {reservation} cannot exceed quota {quota}{label}"
         return None
 
-    def device_size_bytes(self) -> int | None:
-        """Size of the backing block device in bytes, via ``lsblk``.
+    def backing_size_bytes(self) -> int | None:
+        """Size of the pool's backing storage in bytes.
 
+        Device backing: the block device size via ``lsblk``. Image backing: the
+        image file's size if it exists, else the configured ``image.size``.
         Read-only and unprivileged — no sudo — so it is safe to call from the
-        admin web process. The device is present both before the pool exists
-        (setup wizard) and after (settings). Returns ``None`` if it cannot be
-        read, so callers skip the check rather than raise a false positive.
+        admin web process. Returns ``None`` if it cannot be determined, so
+        callers skip the check rather than raise a false positive.
         """
+        if self.config.backing == "image":
+            return self._image_size_bytes()
+        return self._device_size_bytes()
+
+    def _device_size_bytes(self) -> int | None:
         if not self.config.device:
             return None
         try:
@@ -137,14 +373,31 @@ class VolumeManager:
         except (OSError, ValueError, IndexError):
             return None
 
-    def validate_sizes_fit_device(self) -> str | None:
-        """Return an error if any quota/reservation exceeds the device size, else None."""
+    def _image_size_bytes(self) -> int | None:
+        try:
+            return Path(self.config.image_path).stat().st_size
+        except OSError:
+            pass
+        try:
+            return self._parse_size_bytes(self.config.image.size)
+        except Exception:
+            return None
+
+    def validate_sizes_fit_backing(self) -> str | None:
+        """Return an error if any quota/reservation exceeds the backing size, else None.
+
+        For image backing also pre-flights that the root filesystem has enough
+        free space to preallocate the image file (when it doesn't exist yet).
+        """
         if not self.config.enabled:
             return None
-        device_bytes = self.device_size_bytes()
-        if device_bytes is None:
+        if error := self._validate_image_fits_filesystem():
+            return error
+        backing_bytes = self.backing_size_bytes()
+        if backing_bytes is None:
             return None
-        device_g = round(device_bytes / 1024**3, 2)
+        backing_label = "image size" if self.config.backing == "image" else "device size"
+        backing_g = round(backing_bytes / 1024**3, 2)
         for label, dataset in (("benches", self.config.benches), ("mariadb", self.config.mariadb)):
             for kind, value in (("reservation", dataset.reservation), ("quota", dataset.quota)):
                 if value.lower() in ("none", "0"):
@@ -153,8 +406,27 @@ class VolumeManager:
                     size = self._parse_size_bytes(value)
                 except Exception:
                     continue
-                if size > device_bytes:
-                    return f"{label} {kind} {value} exceeds device size ({device_g}G)"
+                if size > backing_bytes:
+                    return f"{label} {kind} {value} exceeds {backing_label} ({backing_g}G)"
+        return None
+
+    def _validate_image_fits_filesystem(self) -> str | None:
+        if self.config.backing != "image" or not self.config.image.size:
+            return None
+        image = Path(self.config.image_path)
+        if image.exists():
+            return None
+        try:
+            size = self._parse_size_bytes(self.config.image.size)
+        except Exception:
+            return None
+        ancestor = image.parent
+        while not ancestor.exists():
+            ancestor = ancestor.parent
+        free = shutil.disk_usage(ancestor).free
+        if size > free:
+            free_g = round(free / 1024**3, 2)
+            return f"Image size {self.config.image.size} exceeds free space on the root filesystem ({free_g}G available)"
         return None
 
     # ── settings-modal helpers ──────────────────────────────────────────────
@@ -184,9 +456,9 @@ class VolumeManager:
         if not self.config.enabled:
             return None
         new = self.current_sizes()
-        return self._apply_dataset_sizes(
-            self.config.benches_dataset, "benches_quota", "benches_reservation", old, new
-        ) or self._apply_dataset_sizes(self.config.mariadb_dataset, "mariadb_quota", "mariadb_reservation", old, new)
+        return self._apply_dataset_sizes(self.config.benches_dataset, "benches_quota", "benches_reservation", old, new) or self._apply_dataset_sizes(
+            self.config.mariadb_dataset, "mariadb_quota", "mariadb_reservation", old, new
+        )
 
     def _apply_dataset_sizes(self, dataset: str, quota_key: str, reservation_key: str, old: dict, new: dict) -> str | None:
         if not self.dataset_exists(dataset):
@@ -210,7 +482,7 @@ class VolumeManager:
         self._run(["sudo", "zfs", "set", f"recordsize={recordsize}", dataset])
 
     def get_mountpoint(self, dataset: str) -> Path:
-        result = self._run(["sudo", "zfs", "get", "-H", "-o", "value", "mountpoint", dataset])
+        result = self._run(["zfs", "get", "-H", "-o", "value", "mountpoint", dataset])
         return Path(result.stdout.decode().strip())
 
     def set_mountpoint(self, dataset: str, target: Path) -> None:

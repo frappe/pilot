@@ -210,7 +210,7 @@ class InitCommand:
     def _setup_volume(self) -> None:
         from bench_cli.commands.volume import VolumeSetupCommand
 
-        VolumeSetupCommand(self.bench.config.volume, self.bench.path).run()
+        VolumeSetupCommand(self.bench.config.volume, self.bench.path, bench_config=self.bench.config).run()
 
     def _install_system_packages(self) -> None:
         from bench_cli.managers.mariadb_manager import MariaDBManager

@@ -21,10 +21,18 @@ class SnapshotConfig:
 
 
 @dataclass
+class ImageConfig:
+    size: str = ""
+    path: str = ""
+
+
+@dataclass
 class VolumeConfig:
     enabled: bool = False
     pool: str = ""
+    backing: str = "device"  # "device" (dedicated block device) | "image" (file on the root filesystem)
     device: str = ""
+    image: ImageConfig = field(default_factory=ImageConfig)
     benches: BenchesDatasetConfig = field(default_factory=BenchesDatasetConfig)
     mariadb: MariaDBDatasetConfig = field(default_factory=MariaDBDatasetConfig)
     snapshots: SnapshotConfig = field(default_factory=SnapshotConfig)
@@ -36,3 +44,7 @@ class VolumeConfig:
     @property
     def mariadb_dataset(self) -> str:
         return f"{self.pool}/mariadb"
+
+    @property
+    def image_path(self) -> str:
+        return self.image.path or f"/var/lib/bench-zfs/{self.pool}.img"

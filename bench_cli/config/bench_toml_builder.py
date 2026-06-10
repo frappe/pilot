@@ -39,8 +39,8 @@ _VOLUME_TEMPLATE = """
 [volume]
 enabled = true
 pool = "{volume_pool}"
-device = "{volume_device}"
-
+backing = "{volume_backing}"
+{volume_backing_lines}
 [volume.benches]
 reservation = "{volume_benches_reservation}"
 quota = "{volume_benches_quota}"
@@ -82,7 +82,10 @@ class BenchTomlBuilder:
         "workers_long": 1,
         "volume_enabled": False,
         "volume_pool": "",
+        "volume_backing": "device",
         "volume_device": "",
+        "volume_image_size": "60G",
+        "volume_image_path": "",
         "volume_benches_reservation": "10G",
         "volume_benches_quota": "50G",
         "volume_mariadb_reservation": "5G",
@@ -122,7 +125,8 @@ class BenchTomlBuilder:
     def _render_volume(self) -> str:
         return _VOLUME_TEMPLATE.format(
             volume_pool=self._settings["volume_pool"],
-            volume_device=self._settings["volume_device"],
+            volume_backing=self._settings["volume_backing"],
+            volume_backing_lines=self._render_backing_lines(),
             volume_benches_reservation=self._settings["volume_benches_reservation"],
             volume_benches_quota=self._settings["volume_benches_quota"],
             volume_mariadb_reservation=self._settings["volume_mariadb_reservation"],
@@ -130,6 +134,14 @@ class BenchTomlBuilder:
             volume_mariadb_data_dir=self._settings["volume_mariadb_data_dir"],
             volume_snapshots_enabled=_toml_bool(self._settings["volume_snapshots_enabled"]),
         )
+
+    def _render_backing_lines(self) -> str:
+        if self._settings["volume_backing"] == "image":
+            lines = ["", "[volume.image]", f'size = "{self._settings["volume_image_size"]}"']
+            if self._settings["volume_image_path"]:
+                lines.append(f'path = "{self._settings["volume_image_path"]}"')
+            return "\n".join(lines) + "\n"
+        return f'device = "{self._settings["volume_device"]}"\n'
 
     @classmethod
     def read_settings(cls, toml_path: Path) -> dict:
@@ -166,7 +178,10 @@ class BenchTomlBuilder:
                 "workers_long": data.get("workers", {}).get("long", d["workers_long"]),
                 "volume_enabled": volume.get("enabled", d["volume_enabled"]),
                 "volume_pool": volume.get("pool", d["volume_pool"]),
+                "volume_backing": volume.get("backing", d["volume_backing"]),
                 "volume_device": volume.get("device", d["volume_device"]),
+                "volume_image_size": volume.get("image", {}).get("size", d["volume_image_size"]),
+                "volume_image_path": volume.get("image", {}).get("path", d["volume_image_path"]),
                 "volume_benches_reservation": bvol.get("reservation", d["volume_benches_reservation"]),
                 "volume_benches_quota": bvol.get("quota", d["volume_benches_quota"]),
                 "volume_mariadb_reservation": mvol.get("reservation", d["volume_mariadb_reservation"]),

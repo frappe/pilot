@@ -239,7 +239,10 @@ def _build_settings_response(config: BenchConfig) -> dict:
         "volume": {
             "enabled": volume.enabled,
             "pool": volume.pool,
+            "backing": volume.backing,
             "device": volume.device,
+            "image_size": volume.image.size,
+            "image_path": volume.image_path if volume.backing == "image" else "",
             "benches_reservation": volume.benches.reservation,
             "benches_quota": volume.benches.quota,
             "mariadb_reservation": volume.mariadb.reservation,
@@ -280,7 +283,7 @@ def update_settings():
     if error := ConfigPatcher(config, data).apply():
         return jsonify({"ok": False, "error": error}), 400
 
-    if error := volume_manager.validate_sizes_fit_device():
+    if error := volume_manager.validate_sizes_fit_backing():
         return jsonify({"ok": False, "error": error}), 400
     if error := volume_manager.validate_quota_above_usage(old_zfs):
         return jsonify({"ok": False, "error": error}), 400

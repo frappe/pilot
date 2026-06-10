@@ -339,7 +339,13 @@ watch(() => props.modelValue, (val) => {
                 <template v-if="form.volume.enabled">
                   <div class="grid grid-cols-2 gap-4">
                     <FormControl label="Pool Name" :modelValue="form.volume.pool" disabled />
-                    <FormControl label="Block Device" :modelValue="form.volume.device" disabled />
+                    <FormControl
+                      v-if="form.volume.backing === 'image'"
+                      label="Disk Image"
+                      :modelValue="`${form.volume.image_path} (${form.volume.image_size})`"
+                      disabled
+                    />
+                    <FormControl v-else label="Block Device" :modelValue="form.volume.device" disabled />
                   </div>
                   <div class="grid grid-cols-2 gap-4">
                     <FormControl label="Bench Reservation" v-model="form.volume.benches_reservation" />
