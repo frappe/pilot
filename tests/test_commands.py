@@ -30,9 +30,10 @@ def make_bench(tmp_path: Path) -> Bench:
 # ── NewCommand ────────────────────────────────────────────────────────────────
 
 
-def test_new_command_creates_directory_and_toml(tmp_path: Path) -> None:
+def test_new_command_creates_directory_and_toml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from bench_cli.commands.new import NewCommand
 
+    monkeypatch.setattr("builtins.input", lambda _: "")
     target = tmp_path / "benches" / "my-bench"
     NewCommand(target, "my-bench").run()
 
@@ -52,9 +53,10 @@ def test_new_command_raises_if_bench_already_exists(tmp_path: Path) -> None:
         NewCommand(target, "my-bench").run()
 
 
-def test_new_command_creates_benches_dir_if_missing(tmp_path: Path) -> None:
+def test_new_command_creates_benches_dir_if_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from bench_cli.commands.new import NewCommand
 
+    monkeypatch.setattr("builtins.input", lambda _: "")
     target = tmp_path / "benches" / "fresh"
     assert not target.parent.exists()
     NewCommand(target, "fresh").run()
