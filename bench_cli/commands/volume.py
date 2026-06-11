@@ -29,11 +29,6 @@ def _ask_dataset() -> str | None:
     return None
 
 
-def _require_enabled(config: VolumeConfig) -> None:
-    if not config.enabled:
-        raise BenchError("Volume management is disabled. Set volume.enabled = true in bench.toml.")
-
-
 def _resolve_dataset(config: VolumeConfig, dataset_name: str) -> str:
     if dataset_name == "mariadb":
         return config.mariadb_dataset
@@ -100,7 +95,6 @@ class VolumeSetupCommand:
         if not is_linux():
             raise BenchError("Volume management requires Linux (ZFS is not supported on macOS).")
 
-        _require_enabled(self.config)
         self._resolve_backing()
 
         manager = VolumeManager(self.config)
@@ -129,9 +123,6 @@ class VolumeStatusCommand:
         self.config = config
 
     def run(self) -> None:
-        if not self.config.enabled:
-            print("Volume management is disabled (volume.enabled = false).")
-            return
         self._print_pool()
         self._print_dataset(self.config.benches_dataset)
         self._print_dataset(self.config.mariadb_dataset)
@@ -162,7 +153,6 @@ class VolumeSnapshotCommand:
         self.dataset_name = dataset_name
 
     def run(self) -> None:
-        _require_enabled(self.config)
         dataset_name = self.dataset_name if self.dataset_name is not None else _ask_dataset()
         orchestrator = _build_orchestrator(self.bench)
         tag = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -177,7 +167,6 @@ class VolumeListSnapshotsCommand:
         self.dataset_name = dataset_name
 
     def run(self) -> None:
-        _require_enabled(self.config)
         manager = VolumeManager(self.config)
         for dataset in _target_datasets(self.config, self.dataset_name):
             snapshots = manager.list_snapshots(dataset)
@@ -198,7 +187,6 @@ class VolumeDestroySnapshotCommand:
         self.dataset_name = dataset_name
 
     def run(self) -> None:
-        _require_enabled(self.config)
         dataset = _resolve_dataset(self.config, self.dataset_name)
         VolumeManager(self.config).destroy_snapshot(dataset, self.tag)
         print(f"Snapshot destroyed: {dataset}@{self.tag}")
@@ -212,7 +200,6 @@ class VolumeRestoreSnapshotCommand:
         self.dataset_name = dataset_name
 
     def run(self) -> None:
-        _require_enabled(self.config)
         dataset = _resolve_dataset(self.config, self.dataset_name)
         print(f"Restoring {dataset} to snapshot {self.tag}...")
         self._warn(dataset)

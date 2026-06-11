@@ -389,8 +389,6 @@ class VolumeManager:
         For image backing also pre-flights that the root filesystem has enough
         free space to preallocate the image file (when it doesn't exist yet).
         """
-        if not self.config.enabled:
-            return None
         if error := self._validate_image_fits_filesystem():
             return error
         backing_bytes = self.backing_size_bytes()
@@ -431,45 +429,26 @@ class VolumeManager:
 
     # ── settings-modal helpers ──────────────────────────────────────────────
 
-    def current_sizes(self) -> dict:
-        """Snapshot the current quota/reservation sizes as a flat dict."""
-        return {
-            "benches_quota": self.config.benches.quota,
-            "benches_reservation": self.config.benches.reservation,
-            "mariadb_quota": self.config.mariadb.quota,
-            "mariadb_reservation": self.config.mariadb.reservation,
-        }
+    def _dataset_configs(self) -> list[tuple[str, object]]:
+        return [(self.config.benches_dataset, self.config.benches), (self.config.mariadb_dataset, self.config.mariadb)]
 
-    def validate_quota_above_usage(self, old: dict) -> str | None:
-        """For datasets whose quota changed, ensure the new quota isn't below current usage."""
-        if not self.config.enabled:
-            return None
-        new = self.current_sizes()
-        for dataset, key in [(self.config.benches_dataset, "benches_quota"), (self.config.mariadb_dataset, "mariadb_quota")]:
-            if new[key] != old.get(key):
-                if error := self.validate_quota(dataset, new[key]):
-                    return error
+    def validate_quotas_above_usage(self) -> str | None:
+        """Ensure no configured quota is below its dataset's current used size."""
+        for dataset, cfg in self._dataset_configs():
+            if error := self.validate_quota(dataset, cfg.quota):
+                return error
         return None
 
-    def apply_size_changes(self, old: dict) -> str | None:
-        """Apply changed quota/reservation values to existing datasets."""
-        if not self.config.enabled:
-            return None
-        new = self.current_sizes()
-        return self._apply_dataset_sizes(self.config.benches_dataset, "benches_quota", "benches_reservation", old, new) or self._apply_dataset_sizes(
-            self.config.mariadb_dataset, "mariadb_quota", "mariadb_reservation", old, new
-        )
-
-    def _apply_dataset_sizes(self, dataset: str, quota_key: str, reservation_key: str, old: dict, new: dict) -> str | None:
-        if not self.dataset_exists(dataset):
-            return None
-        try:
-            if new[quota_key] != old.get(quota_key):
-                self.set_quota(dataset, new[quota_key])
-            if new[reservation_key] != old.get(reservation_key):
-                self.set_reservation(dataset, new[reservation_key])
-        except VolumeError as error:
-            return str(error)
+    def apply_sizes(self) -> str | None:
+        """Apply the configured quota/reservation to existing datasets (idempotent)."""
+        for dataset, cfg in self._dataset_configs():
+            if not self.dataset_exists(dataset):
+                continue
+            try:
+                self.set_quota(dataset, cfg.quota)
+                self.set_reservation(dataset, cfg.reservation)
+            except VolumeError as error:
+                return str(error)
         return None
 
     def set_quota(self, dataset: str, quota: str) -> None:
@@ -496,8 +475,6 @@ class VolumeManager:
         print("Data migration complete.")
 
     def snapshot(self, dataset: str, tag: str) -> None:
-        if not self.config.snapshots.enabled:
-            raise VolumeError("Snapshots are disabled. Set volume.snapshots.enabled = true in bench.toml to enable.")
         self._run(["sudo", "zfs", "snapshot", f"{dataset}@{tag}"])
 
     def rollback_snapshot(self, dataset: str, tag: str) -> None:

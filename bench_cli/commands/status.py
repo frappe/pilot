@@ -67,7 +67,9 @@ class StatusCommand:
             self._row("URL", f"http://localhost:{cfg.admin.port}")
             self._row("Auth", "enabled" if cfg.admin.password else "no password set")
 
-        if cfg.volume.enabled:
+        from bench_cli.platform import is_linux
+
+        if is_linux():
             self._section("Volume (ZFS)")
             self._print_zfs()
 
@@ -90,8 +92,7 @@ class StatusCommand:
     def _print_zfs(self) -> None:
         vol = self.bench.config.volume
         self._row("Pool", vol.pool)
-        self._row("Device", vol.device)
-        self._row("Snapshots", "enabled" if vol.snapshots.enabled else "disabled")
+        self._row("Backing", vol.device if vol.backing == "device" else vol.image_path if vol.backing == "image" else "auto (resolved at init)")
 
         if not shutil.which("zfs"):
             self._row("ZFS data", _warn("zfs binary not found"))

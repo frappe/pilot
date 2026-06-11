@@ -11,7 +11,7 @@ from bench_cli.config.mariadb_config import MariaDBConfig
 from bench_cli.config.nginx_config import NginxConfig
 from bench_cli.config.production_config import ProductionConfig
 from bench_cli.config.redis_config import RedisConfig
-from bench_cli.config.volume_config import BenchesDatasetConfig, ImageConfig, MariaDBDatasetConfig, SnapshotConfig, VolumeConfig
+from bench_cli.config.volume_config import BenchesDatasetConfig, ImageConfig, MariaDBDatasetConfig, VolumeConfig
 from bench_cli.config.worker_config import CustomWorkerEntry, WorkerConfig
 from bench_cli.exceptions import ConfigError
 
@@ -168,12 +168,12 @@ class BenchConfig:
     def _parse_volume(data: dict) -> VolumeConfig:
         benches_data = data.get("benches", {})
         mariadb_data = data.get("mariadb", {})
-        snapshots_data = data.get("snapshots", {})
         image_data = data.get("image", {})
+        # Older tomls predate `backing`: an explicit device implies device backing.
+        backing = data.get("backing") or ("device" if data.get("device") else "auto")
         return VolumeConfig(
-            enabled=data.get("enabled", False),
-            pool=data.get("pool", ""),
-            backing=data.get("backing", "device"),
+            pool=data.get("pool", "bench-pool"),
+            backing=backing,
             device=data.get("device", ""),
             image=ImageConfig(
                 size=image_data.get("size", ""),
@@ -188,9 +188,6 @@ class BenchConfig:
                 reservation=mariadb_data.get("reservation", "5G"),
                 quota=mariadb_data.get("quota", "20G"),
                 data_dir=mariadb_data.get("data_dir", "/var/lib/mysql"),
-            ),
-            snapshots=SnapshotConfig(
-                enabled=snapshots_data.get("enabled", False),
             ),
         )
 
@@ -279,10 +276,8 @@ class BenchConfig:
             raise ConfigError(f"redis.version '{self.redis.version}' is invalid. Must be a version string like '7' or '7.0'.")
 
     def _validate_volume(self) -> None:
-        if not self.volume.enabled:
-            return
         if not self.volume.pool:
-            raise ConfigError("volume.pool is required when volume.enabled = true.")
+            raise ConfigError("volume.pool is required.")
         self._validate_volume_backing()
         self._validate_zfs_size("volume.benches.reservation", self.volume.benches.reservation)
         self._validate_zfs_size("volume.benches.quota", self.volume.benches.quota)

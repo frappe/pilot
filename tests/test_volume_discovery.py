@@ -158,7 +158,7 @@ def test_default_image_size_floors_at_10g(monkeypatch) -> None:
 def test_resolve_auto_picks_largest_disk(monkeypatch) -> None:
     monkeypatch.setattr(volume_manager, "existing_pools", lambda: [])
     monkeypatch.setattr(volume_manager, "discover_unused_disks", lambda: [DiskInfo("/dev/sdc", 200 * G), DiskInfo("/dev/sdb", 50 * G)])
-    config = VolumeConfig(enabled=True, pool="bench-pool", backing="auto")
+    config = VolumeConfig(pool="bench-pool", backing="auto")
     choice = resolve_auto_backing(config)
     assert "/dev/sdc" in choice
     assert config.backing == "device"
@@ -173,7 +173,7 @@ def test_resolve_auto_falls_back_to_image(monkeypatch) -> None:
     monkeypatch.setattr(volume_manager, "existing_pools", lambda: [])
     monkeypatch.setattr(volume_manager, "discover_unused_disks", lambda: [])
     monkeypatch.setattr(volume_manager, "default_image_size_bytes", lambda: 40 * G)
-    config = VolumeConfig(enabled=True, pool="bench-pool", backing="auto")
+    config = VolumeConfig(pool="bench-pool", backing="auto")
     choice = resolve_auto_backing(config)
     assert "image" in choice
     assert config.backing == "image"
@@ -183,7 +183,7 @@ def test_resolve_auto_falls_back_to_image(monkeypatch) -> None:
 
 
 def test_resolve_auto_noop_for_explicit_backing() -> None:
-    config = VolumeConfig(enabled=True, pool="bench-pool", backing="device", device="/dev/sdb")
+    config = VolumeConfig(pool="bench-pool", backing="device", device="/dev/sdb")
     assert resolve_auto_backing(config) == ""
     assert config.device == "/dev/sdb"
     assert config.benches.quota == "50G"  # untouched defaults
@@ -209,7 +209,7 @@ def test_compute_smart_defaults_prefers_existing_pool(monkeypatch) -> None:
 def test_resolve_auto_reuses_matching_pool(monkeypatch) -> None:
     monkeypatch.setattr(volume_manager, "existing_pools", lambda: [PoolInfo("bench-pool", 50 * G, "/dev/nvme1n1")])
     monkeypatch.setattr(volume_manager, "discover_unused_disks", lambda: [DiskInfo("/dev/sdb", 100 * G)])
-    config = VolumeConfig(enabled=True, pool="bench-pool", backing="auto")
+    config = VolumeConfig(pool="bench-pool", backing="auto")
     choice = resolve_auto_backing(config)
     assert "reusing" in choice
     assert config.backing == "device"
@@ -220,7 +220,7 @@ def test_resolve_auto_reuses_matching_pool(monkeypatch) -> None:
 def test_resolve_auto_ignores_pool_with_other_name(monkeypatch) -> None:
     monkeypatch.setattr(volume_manager, "existing_pools", lambda: [PoolInfo("other-pool", 50 * G, "/dev/nvme1n1")])
     monkeypatch.setattr(volume_manager, "discover_unused_disks", lambda: [DiskInfo("/dev/sdb", 100 * G)])
-    config = VolumeConfig(enabled=True, pool="bench-pool", backing="auto")
+    config = VolumeConfig(pool="bench-pool", backing="auto")
     resolve_auto_backing(config)
     assert config.device == "/dev/sdb"  # never hijacks someone else's pool
 

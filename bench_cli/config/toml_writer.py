@@ -88,17 +88,16 @@ def bench_config_to_toml(config: BenchConfig) -> str:
 
     v = config.volume
     parts.append("[volume]")
-    parts.append(f"enabled = {'true' if v.enabled else 'false'}")
     parts.append(f'pool = "{v.pool}"')
     parts.append(f'backing = "{v.backing}"')
     if v.backing == "image":
         parts.append("")
         parts.append("[volume.image]")
         parts.append(f'size = "{v.image.size}"')
-        if v.image.path:
-            parts.append(f'path = "{v.image.path}"')
-    else:
+        parts.append(f'path = "{v.image_path}"')
+    elif v.backing == "device":
         parts.append(f'device = "{v.device}"')
+    # backing = "auto" carries no device/image fields — resolved during bench init
     parts.append("")
     parts.append("[volume.benches]")
     parts.append(f'reservation = "{v.benches.reservation}"')
@@ -109,9 +108,6 @@ def bench_config_to_toml(config: BenchConfig) -> str:
     parts.append(f'reservation = "{v.mariadb.reservation}"')
     parts.append(f'quota = "{v.mariadb.quota}"')
     parts.append(f'data_dir = "{v.mariadb.data_dir}"')
-    parts.append("")
-    parts.append("[volume.snapshots]")
-    parts.append(f"enabled = {'true' if v.snapshots.enabled else 'false'}")
     parts.append("")
 
     return "\n".join(parts)

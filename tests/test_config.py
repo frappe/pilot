@@ -345,7 +345,19 @@ def test_volume_device_backing_valid() -> None:
 
 def test_volume_device_backing_requires_device() -> None:
     with pytest.raises(ConfigError, match="volume.device is required"):
-        load_from_dict(_data_with_volume({}))
+        load_from_dict(_data_with_volume({"backing": "device"}))
+
+
+def test_volume_backing_inferred_from_device() -> None:
+    config = load_from_dict(_data_with_volume({"device": "/dev/sdb"}))
+    assert config.volume.backing == "device"
+
+
+def test_volume_defaults_to_auto_backing() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    config = load_from_dict(data)  # no [volume] section at all
+    assert config.volume.pool == "bench-pool"
+    assert config.volume.backing == "auto"
 
 
 def test_volume_image_backing_valid() -> None:

@@ -16,11 +16,6 @@ class MariaDBDatasetConfig:
 
 
 @dataclass
-class SnapshotConfig:
-    enabled: bool = False
-
-
-@dataclass
 class ImageConfig:
     size: str = ""
     path: str = ""
@@ -28,14 +23,17 @@ class ImageConfig:
 
 @dataclass
 class VolumeConfig:
-    enabled: bool = True
-    pool: str = ""
-    backing: str = "device"  # "device" (dedicated block device) | "image" (file on the root filesystem)
+    """ZFS storage for the bench. Mandatory on Linux — every bench gets a pool,
+    backed by a dedicated disk, a preallocated image file on the root
+    filesystem, or auto-resolved at init time. Skipped on macOS (dev only).
+    Snapshots are always available."""
+
+    pool: str = "bench-pool"
+    backing: str = "auto"  # "device" | "image" | "auto" (resolved during bench init)
     device: str = ""
     image: ImageConfig = field(default_factory=ImageConfig)
     benches: BenchesDatasetConfig = field(default_factory=BenchesDatasetConfig)
     mariadb: MariaDBDatasetConfig = field(default_factory=MariaDBDatasetConfig)
-    snapshots: SnapshotConfig = field(default_factory=SnapshotConfig)
 
     @property
     def benches_dataset(self) -> str:

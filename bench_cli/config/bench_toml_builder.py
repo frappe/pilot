@@ -1,193 +1,129 @@
 from __future__ import annotations
 
+import copy
 import tomllib
 from pathlib import Path
 
-_BASE_TEMPLATE = """\
-[bench]
-name = "{name}"
-python = "{python}"
-http_port = {http_port}
-socketio_port = {socketio_port}
+from bench_cli.config.bench_config import BenchConfig
+from bench_cli.config.toml_writer import bench_config_to_toml
 
-[[apps]]
-name = "frappe"
-repo = "{app_repo}"
-branch = "{app_branch}"
+# The single registry of wizard-editable settings: flat key -> attribute path on
+# BenchConfig. Defaults and serialization live in the dataclasses and
+# bench_config_to_toml; adding a config field means adding the dataclass field
+# (+ its toml_writer line) and, if it is wizard-editable, one entry here.
+FLAT_KEYS = {
+    "bench_name": "name",
+    "python": "python_version",
+    "http_port": "http_port",
+    "socketio_port": "socketio_port",
+    "mariadb_password": "mariadb.root_password",
+    "admin_enabled": "admin.enabled",
+    "admin_port": "admin.port",
+    "admin_password": "admin.password",
+    "workers_default": "workers.default_count",
+    "workers_short": "workers.short_count",
+    "workers_long": "workers.long_count",
+    "volume_pool": "volume.pool",
+    "volume_backing": "volume.backing",
+    "volume_device": "volume.device",
+    "volume_image_size": "volume.image.size",
+    "volume_image_path": "volume.image.path",
+    "volume_benches_reservation": "volume.benches.reservation",
+    "volume_benches_quota": "volume.benches.quota",
+    "volume_mariadb_reservation": "volume.mariadb.reservation",
+    "volume_mariadb_quota": "volume.mariadb.quota",
+    "volume_mariadb_data_dir": "volume.mariadb.data_dir",
+    "production_process_manager": "production.process_manager",
+}
 
-[mariadb]
-host = "localhost"
-port = 3306
-root_password = "{mariadb_password}"
-
-[redis]
-port = {redis_port}
-
-[workers]
-default = {workers_default}
-short = {workers_short}
-long = {workers_long}
-
-[admin]
-port = {admin_port}
-enabled = {admin_enabled}
-timeout = 180
-password = "{admin_password}"
-"""
-
-_VOLUME_TEMPLATE = """
-[volume]
-enabled = true
-pool = "{volume_pool}"
-backing = "{volume_backing}"
-{volume_backing_lines}
-[volume.benches]
-reservation = "{volume_benches_reservation}"
-quota = "{volume_benches_quota}"
-
-[volume.mariadb]
-reservation = "{volume_mariadb_reservation}"
-quota = "{volume_mariadb_quota}"
-data_dir = "{volume_mariadb_data_dir}"
-
-[volume.snapshots]
-enabled = {volume_snapshots_enabled}
-"""
+_DEFAULT_DATA: dict = {
+    "bench": {"name": "", "python": "3.14"},
+    "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}],
+    "mariadb": {"root_password": "root"},
+    "redis": {"port": 13000},
+}
 
 
-def _toml_bool(value: object) -> str:
-    return "true" if value else "false"
+def _default_config(name: str = "") -> BenchConfig:
+    data = copy.deepcopy(_DEFAULT_DATA)
+    data["bench"]["name"] = name
+    return BenchConfig._from_dict(data)
+
+
+def _get_path(config: BenchConfig, path: str):
+    obj = config
+    for part in path.split("."):
+        obj = getattr(obj, part)
+    return obj
+
+
+def _set_path(config: BenchConfig, path: str, value) -> None:
+    *parents, leaf = path.split(".")
+    obj = config
+    for part in parents:
+        obj = getattr(obj, part)
+    current = getattr(obj, leaf)
+    if isinstance(current, bool):
+        value = bool(value)
+    elif isinstance(current, int):
+        value = int(value)
+    elif isinstance(current, str):
+        value = str(value)
+    setattr(obj, leaf, value)
+
+
+def _apply_setting(config: BenchConfig, key: str, value) -> None:
+    if key in FLAT_KEYS:
+        _set_path(config, FLAT_KEYS[key], value)
+    elif key == "app_repo":
+        config.apps[0].repo = str(value)
+    elif key == "app_branch":
+        config.apps[0].branch = str(value)
+    elif key == "redis_port":
+        redis = config.redis
+        redis.cache_port = redis.queue_port = redis.socketio_port = int(value)
+    # unknown keys (wizard extras like is_linux) are ignored
+
+
+def _flatten(config: BenchConfig) -> dict:
+    settings = {key: _get_path(config, path) for key, path in FLAT_KEYS.items()}
+    app = config.framework_app
+    settings["app_repo"] = app.repo
+    settings["app_branch"] = app.branch
+    settings["redis_port"] = config.redis.cache_port
+    return settings
 
 
 class BenchTomlBuilder:
-    """Single source of truth for bench settings: defaults, rendering, and reading.
+    """Adapter between the wizard's flat settings dicts and ``BenchConfig``.
 
-    All three operations share the same key names so adding a field only
-    requires touching this class and the wizard frontend.
+    ``BenchConfig`` + ``bench_config_to_toml`` are the single source of truth
+    for defaults and serialization; this class only translates flat keys.
     """
 
-    DEFAULTS: dict = {
-        "python": "3.14",
-        "http_port": 8000,
-        "socketio_port": 9000,
-        "app_repo": "https://github.com/frappe/frappe",
-        "app_branch": "version-16",
-        "mariadb_password": "root",
-        "admin_password": "",
-        "admin_port": 8002,
-        "admin_enabled": False,
-        "redis_port": 13000,
-        "workers_default": 2,
-        "workers_short": 1,
-        "workers_long": 1,
-        "volume_enabled": False,
-        "volume_pool": "",
-        "volume_backing": "device",
-        "volume_device": "",
-        "volume_image_size": "60G",
-        "volume_image_path": "",
-        "volume_benches_reservation": "10G",
-        "volume_benches_quota": "50G",
-        "volume_mariadb_reservation": "5G",
-        "volume_mariadb_quota": "20G",
-        "volume_mariadb_data_dir": "/var/lib/mysql",
-        "volume_snapshots_enabled": False,
-    }
+    DEFAULTS = {key: value for key, value in _flatten(_default_config()).items() if key != "bench_name"}
+    DEFAULTS["volume_image_size"] = DEFAULTS["volume_image_size"] or "60G"
 
     def __init__(self, name: str, settings: dict | None = None) -> None:
         self._name = name
-        self._settings = {**self.DEFAULTS, **(settings or {})}
+        self._settings = settings or {}
 
     def render(self) -> str:
-        content = self._render_base()
-        if self._settings.get("volume_enabled"):
-            content += self._render_volume()
-        return content
-
-    def _render_base(self) -> str:
-        return _BASE_TEMPLATE.format(
-            name=self._name,
-            python=self._settings["python"],
-            http_port=int(self._settings["http_port"]),
-            socketio_port=int(self._settings["socketio_port"]),
-            app_repo=self._settings["app_repo"],
-            app_branch=self._settings["app_branch"],
-            mariadb_password=self._settings["mariadb_password"],
-            redis_port=int(self._settings["redis_port"]),
-            workers_default=int(self._settings["workers_default"]),
-            workers_short=int(self._settings["workers_short"]),
-            workers_long=int(self._settings["workers_long"]),
-            admin_port=int(self._settings["admin_port"]),
-            admin_enabled=_toml_bool(self._settings["admin_enabled"]),
-            admin_password=self._settings["admin_password"],
-        )
-
-    def _render_volume(self) -> str:
-        return _VOLUME_TEMPLATE.format(
-            volume_pool=self._settings["volume_pool"],
-            volume_backing=self._settings["volume_backing"],
-            volume_backing_lines=self._render_backing_lines(),
-            volume_benches_reservation=self._settings["volume_benches_reservation"],
-            volume_benches_quota=self._settings["volume_benches_quota"],
-            volume_mariadb_reservation=self._settings["volume_mariadb_reservation"],
-            volume_mariadb_quota=self._settings["volume_mariadb_quota"],
-            volume_mariadb_data_dir=self._settings["volume_mariadb_data_dir"],
-            volume_snapshots_enabled=_toml_bool(self._settings["volume_snapshots_enabled"]),
-        )
-
-    def _render_backing_lines(self) -> str:
-        if self._settings["volume_backing"] == "image":
-            lines = ["", "[volume.image]", f'size = "{self._settings["volume_image_size"]}"']
-            if self._settings["volume_image_path"]:
-                lines.append(f'path = "{self._settings["volume_image_path"]}"')
-            return "\n".join(lines) + "\n"
-        return f'device = "{self._settings["volume_device"]}"\n'
+        config = _default_config(self._name)
+        for key, value in self._settings.items():
+            _apply_setting(config, key, value)
+        if self._name:
+            config.name = self._name
+        return bench_config_to_toml(config)
 
     @classmethod
     def read_settings(cls, toml_path: Path) -> dict:
         """Read bench.toml into the same flat-dict format as DEFAULTS.
 
-        Missing keys fall back to DEFAULTS. bench_name is included (empty
-        string if bench.name is absent so callers can substitute a path-based
-        fallback).
+        Parse-only (no validation) so a half-configured file can still be read.
+        ``bench_name`` is included (empty string if absent so callers can
+        substitute a path-based fallback).
         """
-        with open(toml_path, "rb") as f:
-            data = tomllib.load(f)
-
-        d = dict(cls.DEFAULTS)
-        bench = data.get("bench", {})
-        app = (data.get("apps") or [{}])[0]
-        volume = data.get("volume", {})
-        bvol = volume.get("benches", {})
-        mvol = volume.get("mariadb", {})
-        snap = volume.get("snapshots", {})
-
-        d.update(
-            {
-                "bench_name": bench.get("name", ""),
-                "python": bench.get("python", d["python"]),
-                "http_port": bench.get("http_port", d["http_port"]),
-                "socketio_port": bench.get("socketio_port", d["socketio_port"]),
-                "mariadb_password": data.get("mariadb", {}).get("root_password", d["mariadb_password"]),
-                "admin_password": data.get("admin", {}).get("password", d["admin_password"]),
-                "app_repo": app.get("repo", d["app_repo"]),
-                "app_branch": app.get("branch", d["app_branch"]),
-                "redis_port": data.get("redis", {}).get("port", d["redis_port"]),
-                "workers_default": data.get("workers", {}).get("default", d["workers_default"]),
-                "workers_short": data.get("workers", {}).get("short", d["workers_short"]),
-                "workers_long": data.get("workers", {}).get("long", d["workers_long"]),
-                "volume_enabled": volume.get("enabled", d["volume_enabled"]),
-                "volume_pool": volume.get("pool", d["volume_pool"]),
-                "volume_backing": volume.get("backing", d["volume_backing"]),
-                "volume_device": volume.get("device", d["volume_device"]),
-                "volume_image_size": volume.get("image", {}).get("size", d["volume_image_size"]),
-                "volume_image_path": volume.get("image", {}).get("path", d["volume_image_path"]),
-                "volume_benches_reservation": bvol.get("reservation", d["volume_benches_reservation"]),
-                "volume_benches_quota": bvol.get("quota", d["volume_benches_quota"]),
-                "volume_mariadb_reservation": mvol.get("reservation", d["volume_mariadb_reservation"]),
-                "volume_mariadb_quota": mvol.get("quota", d["volume_mariadb_quota"]),
-                "volume_mariadb_data_dir": mvol.get("data_dir", d["volume_mariadb_data_dir"]),
-                "volume_snapshots_enabled": snap.get("enabled", d["volume_snapshots_enabled"]),
-            }
-        )
-        return d
+        with open(toml_path, "rb") as fh:
+            data = tomllib.load(fh)
+        return _flatten(BenchConfig._from_dict(data))
