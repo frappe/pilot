@@ -24,6 +24,19 @@ A zero-dependency CLI for managing [Frappe](https://frappeframework.com) environ
 **Ubuntu 22.04+** — Python 3.11+, `sudo` access  
 **macOS** — Python 3.11+, [Homebrew](https://brew.sh) (dev only)
 
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/frappe/bench-cli/main/install.sh | bash
+```
+
+Clones to `~/bench-cli` and adds `bench` to `PATH`. Or manually:
+
+```bash
+git clone https://github.com/frappe/bench-cli ~/bench-cli
+echo 'export PATH="$HOME/bench-cli:$PATH"' >> ~/.zshrc && source ~/.zshrc
+```
+
 ## Passwordless sudo (optional)
 
 `bench init` can write a sudoers drop-in so that subsequent `apt-get`, `nginx`, `systemctl`, and related calls run without a password prompt:
@@ -38,18 +51,6 @@ The write is idempotent: if the required rules are already in the file, the step
 
 If the `IS_SUDOERS_SETUP` environment variable is set (e.g. in CI or a managed deployment where the file is pre-provisioned), the password is not requested and the step is skipped entirely.
 
-## Install
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/frappe/bench-cli/main/install.sh | bash
-```
-
-Clones to `~/bench-cli` and adds `bench` to `PATH`. Or manually:
-
-```bash
-git clone https://github.com/frappe/bench-cli ~/bench-cli
-echo 'export PATH="$HOME/bench-cli:$PATH"' >> ~/.zshrc && source ~/.zshrc
-```
 
 ## Quick start
 
