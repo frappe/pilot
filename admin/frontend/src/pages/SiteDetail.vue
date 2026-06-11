@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Button, Badge, Dialog, FormControl, LoadingText, ErrorMessage, Tabs } from 'frappe-ui'
 import LucideDatabase from '~icons/lucide/database'
 import LucideServer from '~icons/lucide/server'
+import ConfigTree from '../components/ConfigTree.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -18,6 +19,7 @@ const loading = ref(true)
 const error = ref('')
 
 const logoMap = computed(() => Object.fromEntries(registry.value.map(a => [a.name, a.logo_url])))
+const titleMap = computed(() => Object.fromEntries(registry.value.map(a => [a.name, a.title])))
 
 const actionLoading = ref('')
 const actionError = ref('')
@@ -383,7 +385,7 @@ onMounted(() => { load(); loadRegistry() })
 </script>
 
 <template>
-  <div class="flex flex-col gap-6">
+  <div class="mx-auto flex max-w-2xl flex-col gap-6">
     <LoadingText v-if="loading" />
     <ErrorMessage v-else-if="error" :message="error" />
 
@@ -392,11 +394,17 @@ onMounted(() => { load(); loadRegistry() })
       <div class="flex items-start justify-between gap-4">
         <div class="flex flex-col gap-1.5">
           <div class="flex items-center gap-2">
-            <h1 class="text-2xl font-semibold text-ink-gray-9">{{ siteName }}</h1>
-            <Badge
-              :label="!site.exists ? 'Offline' : site.broken ? 'Broken' : 'Online'"
-              :theme="!site.exists ? 'gray' : site.broken ? 'red' : 'green'"
-            />
+            <h1 class="flex items-center gap-1.5 font-semibold text-ink-gray-9">
+              {{ siteName }}
+              <span
+                class="group relative inline-flex h-2 w-2 shrink-0 rounded-full"
+                :class="!site.exists ? 'bg-ink-gray-3' : site.broken ? 'bg-surface-red-4' : 'bg-surface-green-3'"
+              >
+                <span class="pointer-events-none absolute bottom-full left-1/2 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded bg-ink-gray-9 px-1.5 py-0.5 text-[10px] text-surface-white opacity-0 transition-opacity group-hover:opacity-100">
+                  {{ !site.exists ? 'Offline' : site.broken ? 'Broken' : 'Online' }}
+                </span>
+              </span>
+            </h1>
             <Badge v-if="site.site_config?.ssl" label="SSL" theme="blue" />
           </div>
           <div class="flex items-center gap-4 text-sm text-ink-gray-5">
@@ -414,17 +422,17 @@ onMounted(() => { load(); loadRegistry() })
           </div>
         </div>
         <div class="flex shrink-0 items-center gap-2">
-          <Button variant="outline" @click="showLogin = true">
-            Login to Site
-          </Button>
           <Button variant="outline" :loading="actionLoading === 'backup'" @click="doAction('backup')">
             Backup
           </Button>
           <Button v-if="nginxEnabled && !site.site_config?.ssl" variant="outline" :loading="sslLoading" @click="enableSsl">
             Enable SSL
           </Button>
-          <Button v-if="installable.length" variant="solid" @click="showInstall = true">
+          <Button v-if="installable.length" variant="outline" @click="showInstall = true">
             Install App
+          </Button>
+          <Button variant="solid" @click="showLogin = true">
+            Login to Site
           </Button>
         </div>
       </div>
@@ -454,7 +462,7 @@ onMounted(() => { load(); loadRegistry() })
                     <img v-if="logoMap[app]" :src="logoMap[app]" :alt="app" class="h-full w-full object-contain" />
                     <span v-else class="text-sm font-bold text-white">{{ app[0].toUpperCase() }}</span>
                   </div>
-                  <span class="text-sm font-medium text-ink-gray-8">{{ app }}</span>
+                  <span class="text-sm font-medium text-ink-gray-8">{{ titleMap[app] || app }}</span>
                 </div>
                 <Button variant="ghost" theme="red" size="sm" @click="confirmUninstall(app)">
                   Uninstall
@@ -466,11 +474,14 @@ onMounted(() => { load(); loadRegistry() })
           <!-- Config -->
           <div v-else-if="tab.label === 'Config'" class="pt-4">
             <div class="rounded border bg-surface-gray-1 p-4">
-              <div class="mb-2 flex items-center justify-between">
+              <div class="mb-3 flex items-center justify-between">
                 <p class="text-xs font-medium text-ink-gray-5">site_config.json</p>
                 <Button variant="ghost" size="sm" @click="openEditConfig">Edit</Button>
               </div>
-              <pre class="overflow-x-auto font-mono text-sm text-ink-gray-8">{{ JSON.stringify(site.site_config, null, 2) }}</pre>
+              <div v-if="!site.site_config || !Object.keys(site.site_config).length" class="text-xs text-ink-gray-4">
+                Empty config.
+              </div>
+              <ConfigTree v-else :data="site.site_config" class="font-mono text-xs" />
             </div>
           </div>
 
@@ -478,7 +489,7 @@ onMounted(() => { load(); loadRegistry() })
           <div v-else-if="tab.label === 'Backups'" class="pt-4 flex flex-col gap-4">
             <!-- Schedule -->
             <div class="rounded border p-4">
-              <h3 class="mb-3 text-sm font-semibold text-ink-gray-9">Backup Schedule</h3>
+              <h3 class="mb-3 font-semibold text-ink-gray-9">Backup Schedule</h3>
               <div v-if="scheduleLoading" class="text-sm text-ink-gray-5">Loading…</div>
               <div v-else class="flex flex-col gap-3">
                 <p class="text-sm text-ink-gray-7">
@@ -512,7 +523,7 @@ onMounted(() => { load(); loadRegistry() })
             <!-- History -->
             <div class="rounded border p-4">
               <div class="mb-3 flex items-center justify-between">
-                <h3 class="text-sm font-semibold text-ink-gray-9">Backup History</h3>
+                <h3 class="font-semibold text-ink-gray-9">Backup History</h3>
                 <Button variant="ghost" size="sm" @click="loadBackups">Refresh</Button>
               </div>
               <div v-if="backupsLoading" class="py-6 text-center text-sm text-ink-gray-5">Loading…</div>

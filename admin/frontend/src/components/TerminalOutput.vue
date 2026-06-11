@@ -7,6 +7,7 @@ const props = defineProps({
   lineNumbers: { type: Boolean, default: false },
   emptyText: { type: String, default: 'No output.' },
   maxHeight: { type: String, default: '65vh' },
+  fill: { type: Boolean, default: false },
 })
 
 const el = ref(null)
@@ -22,7 +23,9 @@ defineExpose({ scrollToBottom })
   <div
     ref="el"
     class="overflow-auto rounded-lg font-mono text-sm leading-[1.6] select-text"
-    :style="`background:#1e1e2e; color:#cdd6f4; padding: 0.75rem 0; max-height:${maxHeight}; min-height:120px;`"
+    :style="fill
+      ? 'background:#1e1e2e; color:#cdd6f4; padding: 0.75rem 0; flex: 1; height: 0; min-height: 120px;'
+      : `background:#1e1e2e; color:#cdd6f4; padding: 0.75rem 0; max-height:${maxHeight}; min-height:120px;`"
   >
     <div v-if="!lines.length" class="px-4 py-1" style="color:#585b70;">{{ emptyText }}</div>
     <template v-else>

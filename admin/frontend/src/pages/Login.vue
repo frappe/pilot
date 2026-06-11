@@ -40,7 +40,7 @@ async function login() {
 <template>
   <div class="flex h-screen flex-col items-center justify-center bg-surface-gray-2">
     <div class="w-full max-w-sm rounded-xl border border-outline-gray-2 bg-surface-white p-5 shadow-sm">
-      <h1 class="mb-4 text-center text-base font-medium text-ink-gray-7">
+      <h1 class="mb-4 text-center font-medium text-ink-gray-7">
         {{ benchName || 'Bench Admin' }}
       </h1>
       <div class="flex flex-col gap-4">

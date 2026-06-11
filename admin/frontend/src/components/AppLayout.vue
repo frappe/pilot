@@ -13,24 +13,16 @@ const showSettings = ref(false)
 const breadcrumbs = computed(() => {
   const { path, params } = route
 
-  if (path === '/') return [{ label: 'Dashboard' }]
-  if (path === '/apps') return [{ label: 'Apps' }]
-  if (path === '/sites') return [{ label: 'Sites' }]
+  if (path === '/' || path === '/sites') return [{ label: 'Sites' }]
   if (path.startsWith('/sites/')) return [
-    { label: 'Sites', route: '/sites' },
+    { label: 'Sites', route: '/' },
     { label: String(params.name) },
   ]
-  if (path === '/processes') return [{ label: 'Processes' }]
+  if (path === '/apps') return [{ label: 'Apps' }]
+  if (path === '/marketplace') return [{ label: 'Marketplace' }]
+  if (path === '/monitor') return [{ label: 'Monitor' }]
   if (path === '/logs') return [{ label: 'Logs' }]
-  if (path.startsWith('/logs/')) return [
-    { label: 'Logs', route: '/logs' },
-    { label: String(params.filename) },
-  ]
   if (path === '/tasks') return [{ label: 'Tasks' }]
-  if (path.startsWith('/tasks/')) return [
-    { label: 'Tasks', route: '/tasks' },
-    { label: String(params.id) },
-  ]
   if (path === '/database') return [{ label: 'Database' }]
   if (path.startsWith('/database/binlogs/')) return [
     { label: 'Database' },
@@ -44,12 +36,12 @@ const breadcrumbs = computed(() => {
 <template>
   <div class="flex h-screen overflow-hidden">
     <AppSidebar @logout="$emit('logout')" @open-settings="showSettings = true" />
-    <main class="flex-1 overflow-auto bg-surface-white">
-      <header class="sticky top-0 z-[10] flex items-center border-b bg-surface-white px-5 py-2.5">
+    <main class="flex-1 overflow-hidden flex flex-col bg-surface-white">
+      <header class="shrink-0 sticky top-0 z-[10] flex items-center border-b bg-surface-white px-5 py-2.5">
         <Breadcrumbs :items="breadcrumbs" />
         <div id="header-actions" class="ml-auto flex items-center gap-2" />
       </header>
-      <div class="p-6">
+      <div class="p-6 flex-1 overflow-auto min-h-0">
         <RouterView />
       </div>
     </main>

@@ -21,7 +21,7 @@ const form = ref({
   mariadb_password: '',
   admin_password: '',
   app_repo: 'https://github.com/frappe/frappe',
-  app_branch: 'version-16',
+  default_branch: 'version-16',
   http_port: 8000,
   socketio_port: 9000,
   redis_port: 13000,
@@ -309,7 +309,7 @@ function backToConfig() {
         <p v-if="isConfiguring" class="mb-1 text-xs text-ink-gray-4">
           Step {{ stepNumber }} of {{ configSteps.length }}
         </p>
-        <h1 class="text-base font-medium text-ink-gray-7">{{ title }}</h1>
+        <h1 class="font-medium text-ink-gray-7">{{ title }}</h1>
         <p v-if="subtitle" class="mt-0.5 text-sm text-ink-gray-4">{{ subtitle }}</p>
       </div>
 
@@ -449,7 +449,7 @@ function backToConfig() {
         </Button>
         <template v-else-if="step === 'create-site'">
           <Button variant="subtle" class="flex-1" @click="$emit('done')">
-            Go to Dashboard
+            Skip
           </Button>
           <Button variant="solid" :loading="loading" class="flex-1" @click="createSite">
             Create Site

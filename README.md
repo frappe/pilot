@@ -11,7 +11,7 @@ A zero-dependency CLI for managing [Frappe](https://frappeframework.com) environ
 | | Legacy | bench-cli |
 |---|---|---|
 | Dependencies | ~20 Python packages | Zero — stdlib only |
-| Marketplace | None | App registry `apps.json` |
+| Marketplace | None | App registry `registry/apps.json` |
 | Config | None | Single `bench.toml` |
 | Folder layout | Wherever you `bench init` | All benches under `bench-cli/benches/` |
 | Process manager | Honcho / Supervisor | Built-in Procfile runner |
@@ -23,6 +23,19 @@ A zero-dependency CLI for managing [Frappe](https://frappeframework.com) environ
 
 **Ubuntu 22.04+** — Python 3.11+, `sudo` access  
 **macOS** — Python 3.11+, [Homebrew](https://brew.sh) (dev only)
+
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/frappe/bench-cli/main/install.sh | bash
+```
+
+Clones to `~/bench-cli` and adds `bench` to `PATH`. Or manually:
+
+```bash
+git clone https://github.com/frappe/bench-cli ~/bench-cli
+echo 'export PATH="$HOME/bench-cli:$PATH"' >> ~/.zshrc && source ~/.zshrc
+```
 
 ## Passwordless sudo (optional)
 
@@ -38,18 +51,6 @@ The write is idempotent: if the required rules are already in the file, the step
 
 If the `IS_SUDOERS_SETUP` environment variable is set (e.g. in CI or a managed deployment where the file is pre-provisioned), the password is not requested and the step is skipped entirely.
 
-## Install
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/frappe/bench-cli/main/install.sh | bash
-```
-
-Clones to `~/bench-cli` and adds `bench` to `PATH`. Or manually:
-
-```bash
-git clone https://github.com/frappe/bench-cli ~/bench-cli
-echo 'export PATH="$HOME/bench-cli:$PATH"' >> ~/.zshrc && source ~/.zshrc
-```
 
 ## Quick start
 
@@ -178,6 +179,7 @@ The built-in admin UI runs on port 8002 (configurable via `[admin] port`).
 |------|----------|
 | Dashboard | Bench overview and quick stats |
 | Apps | Install/remove apps, edit upstream URL and branch, per-app update status |
+| Marketplace | App registry — filter by 6 categories, search, install with branch selection |
 | Sites | Create/restore/drop sites, install apps, edit site config, backup schedules |
 | Processes | Live process list with CPU %, memory (MB), uptime, and log links; Start/Stop/Restart in production mode |
 | Logs | Tail and search log files with live streaming |

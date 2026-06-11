@@ -11,6 +11,8 @@ def bench_config_to_toml(config: BenchConfig) -> str:
     parts.append(f'python = "{config.python_version}"')
     parts.append(f"http_port = {config.http_port}")
     parts.append(f"socketio_port = {config.socketio_port}")
+    if config.default_branch:
+        parts.append(f'default_branch = "{config.default_branch}"')
     parts.append("")
 
     for app in config.apps:

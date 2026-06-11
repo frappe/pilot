@@ -7,10 +7,10 @@ import LucideCamera from '~icons/lucide/camera'
 import LucideDatabase from '~icons/lucide/database'
 import LucideFileText from '~icons/lucide/file-text'
 import LucideGlobe from '~icons/lucide/globe'
-import LucideLayoutDashboard from '~icons/lucide/layout-dashboard'
 import LucideListTodo from '~icons/lucide/list-todo'
 import LucideLogOut from '~icons/lucide/log-out'
 import LucidePackage2 from '~icons/lucide/package-2'
+import LucideStore from '~icons/lucide/store'
 import LucideSettings from '~icons/lucide/settings'
 
 const emit = defineEmits(['logout', 'open-settings'])
@@ -27,10 +27,10 @@ const header = {
 }
 
 const baseNavItems = [
-  { label: 'Dashboard', to: '/', icon: LucideLayoutDashboard },
+  { label: 'Sites', to: '/', icon: LucideGlobe },
   { label: 'Apps', to: '/apps', icon: LucidePackage2 },
-  { label: 'Sites', to: '/sites', icon: LucideGlobe },
-  { label: 'Processes', to: '/processes', icon: LucideActivity },
+  { label: 'Marketplace', to: '/marketplace', icon: LucideStore },
+  { label: 'Monitor', to: '/monitor', icon: LucideActivity },
   { label: 'Logs', to: '/logs', icon: LucideFileText },
   { label: 'Database', to: '/database', icon: LucideDatabase },
   { label: 'Tasks', to: '/tasks', icon: LucideListTodo },
@@ -48,7 +48,7 @@ const navItems = computed(() => [
 const sections = computed(() => [{ items: navItems.value }])
 
 function isActive(to) {
-  if (to === '/') return route.path === '/'
+  if (to === '/') return route.path === '/' || route.path.startsWith('/sites')
   return route.path.startsWith(to)
 }
 

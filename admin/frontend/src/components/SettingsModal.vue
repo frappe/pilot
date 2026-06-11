@@ -201,7 +201,7 @@ watch(() => props.modelValue, (val) => {
       <div class="flex h-[calc(100vh-8rem)] bg-surface-menu-bar" @pointerdown.stop>
         <!-- Left sidebar - full height, same bg as outer, no border -->
         <div class="flex flex-col m-1 w-48 shrink-0 rounded-l-lg bg-surface-menu-bar overflow-y-auto">
-          <h3 class="px-3 py-3 text-sm font-semibold text-ink-gray-9 sticky top-0 bg-surface-menu-bar">
+          <h3 class="px-3 py-3 font-semibold text-ink-gray-9 sticky top-0 bg-surface-menu-bar">
             Settings
           </h3>
           <nav class="space-y-0.5 px-1">
@@ -223,7 +223,7 @@ watch(() => props.modelValue, (val) => {
         <div class="flex flex-col flex-1 overflow-hidden bg-surface-modal rounded-r-xl">
           <!-- Header with close button -->
           <div class="flex items-center justify-between px-6 py-4 border-b border-outline-gray-1 flex-shrink-0">
-            <h3 class="text-base font-semibold text-ink-gray-9">
+            <h3 class="font-semibold text-ink-gray-9">
               {{ TABS.find(t => t.key === activeTab)?.label }}
             </h3>
             <Button variant="ghost" @click="show = false">
@@ -241,8 +241,8 @@ watch(() => props.modelValue, (val) => {
             <template v-else-if="form">
               <!-- Bench -->
               <div v-if="activeTab === 'bench'" class="flex flex-col gap-4">
-                <h4 class="text-sm font-semibold text-ink-gray-8">Process Manager</h4>
-                <Select label="Process Manager" :options="PROCESS_MANAGER_OPTIONS" v-model="form.production.process_manager" class="w-64" />
+                <h4 class="font-semibold text-ink-gray-8">Process Manager</h4>
+                <Select :options="PROCESS_MANAGER_OPTIONS" v-model="form.production.process_manager" class="w-64" />
                 <div class="border-t border-outline-gray-1" />
                 <div class="grid grid-cols-2 gap-4">
                   <FormControl label="Name" :modelValue="form.bench.name" disabled />
