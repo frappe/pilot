@@ -198,10 +198,10 @@ class ProcessManager:
         )
 
     def _socketio_definition(self) -> ProcessDefinition:
-        sites = self.bench.sites_path
+        bench_entry = _cli_root() / "bench"
         return ProcessDefinition(
             name="socketio",
-            command=f"cd {sites} && node {self.bench.apps_path}/frappe/socketio.js",
+            command=f"{bench_entry} -b {self.bench.config.name} socketio",
             log_file=self.bench.logs_path / "socketio.log",
         )
 

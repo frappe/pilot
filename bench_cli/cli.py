@@ -15,6 +15,7 @@ _OWN_COMMANDS = frozenset(
         "start",
         "stop",
         "restart",
+        "socketio",
         "get-app",
         "new-site",
         "frappe",
@@ -146,6 +147,7 @@ def _make_parser() -> argparse.ArgumentParser:
     sub.add_parser("start", help="Start all bench processes.")
     sub.add_parser("stop", help="Stop the running bench.")
     sub.add_parser("restart", help="Restart supervisor processes (production mode only).")
+    sub.add_parser("socketio", help="Run the realtime server (backend chosen at runtime from socketio_backend).")
     p_build = sub.add_parser("build", help="Build assets (downloads pre-built if available).")
     p_build.add_argument("--force", action="store_true", help="Force a full rebuild, skipping pre-built asset download.")
     sub.add_parser("update", help="Pull latest code and migrate sites.")
@@ -302,6 +304,11 @@ def _dispatch(args: argparse.Namespace) -> None:
         from bench_cli.commands.restart import RestartCommand
 
         RestartCommand(_load_bench()).run()
+
+    elif cmd == "socketio":
+        from bench_cli.commands.socketio import SocketIOCommand
+
+        SocketIOCommand(_load_bench()).run()
 
     elif cmd == "get-app":
         _cmd_get_app(args)
