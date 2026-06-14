@@ -183,17 +183,26 @@ class ProcessManager:
         return defs
 
     def _process_definitions(self) -> List[ProcessDefinition]:
-        defs = [self._admin_dev_definition() if pd.name == "admin" else pd for pd in self._prod_process_definitions()]
+        defs = [self._to_dev(pd) for pd in self._prod_process_definitions()]
         defs.append(self._admin_frontend_dev_definition())
         return defs
 
-    def _web_definition(self) -> ProcessDefinition:
+    def _to_dev(self, pd: ProcessDefinition) -> ProcessDefinition:
+        """Map a production process definition to its dev-mode variant."""
+        if pd.name == "admin":
+            return self._admin_dev_definition()
+        if pd.name == "web":
+            return self._web_definition(dev=True)
+        return pd
+
+    def _web_definition(self, dev: bool = False) -> ProcessDefinition:
         port = self.bench.config.http_port
         sites = self.bench.sites_path
         python = self.bench.env_path / "bin" / "python"
+        env_prefix = "DEV_SERVER=1 " if dev else ""
         return ProcessDefinition(
             name="web",
-            command=f"cd {sites} && {python} -m frappe.utils.bench_helper frappe serve --port {port} --noreload",
+            command=f"cd {sites} && {env_prefix}{python} -m frappe.utils.bench_helper frappe serve --port {port} --noreload",
             log_file=self.bench.logs_path / "web.log",
         )
 
