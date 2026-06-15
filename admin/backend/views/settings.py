@@ -7,6 +7,7 @@ from flask import Blueprint, current_app, jsonify, request
 
 from bench_cli.config.bench_config import BenchConfig
 from bench_cli.config.toml_writer import bench_config_to_toml
+from bench_cli.managers.redis_manager import RedisManager
 from bench_cli.managers.volume_manager import VolumeManager
 from bench_cli.platform import is_linux
 
@@ -224,7 +225,7 @@ def _build_settings_response(config: BenchConfig) -> dict:
             "socket_path": config.mariadb.socket_path,
             "version": config.mariadb.version or "",
         },
-        "redis": {"cache_port": config.redis.cache_port, "queue_port": config.redis.queue_port, "version": config.redis.version or ""},
+        "redis": {"cache_port": config.redis.cache_port, "queue_port": config.redis.queue_port, "version": RedisManager.installed_version() or config.redis.version or ""},
         "workers": {"default": config.workers.default_count, "short": config.workers.short_count, "long": config.workers.long_count},
         "nginx": {
             "http_port": config.nginx.http_port,

@@ -191,7 +191,7 @@ onMounted(load)
         <div class="grid grid-cols-2 gap-4">
           <FormControl type="number" label="Cache Port" v-model="form.redis.cache_port" />
           <FormControl type="number" label="Queue Port" v-model="form.redis.queue_port" />
-          <FormControl label="Version" v-model="form.redis.version" placeholder="e.g. 7" />
+          <FormControl label="Version" v-model="form.redis.version" disabled placeholder="not installed" />
         </div>
       </div>
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 import shutil
+import subprocess
 from typing import TYPE_CHECKING
 
 from bench_cli.config.redis_config import RedisConfig
@@ -17,6 +19,24 @@ class RedisManager:
 
     def is_installed(self) -> bool:
         return shutil.which("redis-server") is not None
+
+    @staticmethod
+    def installed_version() -> str:
+        """Return the installed redis-server version (e.g. '7.0.11'), or '' if unavailable."""
+        if shutil.which("redis-server") is None:
+            return ""
+        try:
+            result = subprocess.run(
+                ["redis-server", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return ""
+        # Output: "Redis server v=7.0.11 sha=... malloc=... bits=64 build=..."
+        match = re.search(r"v=(\S+)", result.stdout)
+        return match.group(1) if match else ""
 
     def install(self) -> None:
         if self.is_installed():
