@@ -162,7 +162,7 @@ onMounted(load)
         <div class="grid grid-cols-2 gap-4">
           <FormControl label="Name" :modelValue="form.bench.name" disabled />
           <FormControl label="Python Version" :modelValue="form.bench.python" disabled />
-          <FormControl label="Default Branch" v-model="form.bench.default_branch" placeholder="version-16" />
+          <FormControl label="Default Branch" v-model="form.bench.default_branch" placeholder="develop" />
           <div />
           <FormControl type="number" label="HTTP Port" v-model="form.bench.http_port" />
           <FormControl type="number" label="SocketIO Port" v-model="form.bench.socketio_port" />

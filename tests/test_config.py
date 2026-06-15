@@ -115,11 +115,12 @@ def test_rule_8_redis_ports_out_of_range() -> None:
     assert "redis.cache_port" in str(exc_info.value)
 
 
-def test_rule_8_redis_ports_not_distinct() -> None:
+def test_rule_8_redis_ports_must_be_distinct() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["redis"]["queue_port"] = 13000
-    config = load_from_dict(data)
-    assert config.redis.cache_port == config.redis.queue_port
+    data["redis"]["queue_port"] = 13000  # same as cache_port
+    with pytest.raises(ConfigError) as exc_info:
+        load_from_dict(data)
+    assert "redis.cache_port" in str(exc_info.value) or "redis.queue_port" in str(exc_info.value)
 
 
 def test_rule_9_worker_counts_must_be_positive() -> None:

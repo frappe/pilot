@@ -14,8 +14,6 @@ from bench_cli.config.toml_writer import bench_config_to_toml
 FLAT_KEYS = {
     "bench_name": "name",
     "python": "python_version",
-    "http_port": "http_port",
-    "socketio_port": "socketio_port",
     "socketio_backend": "socketio_backend",
     "mariadb_password": "mariadb.root_password",
     "admin_enabled": "admin.enabled",
@@ -37,11 +35,13 @@ FLAT_KEYS = {
     "production_process_manager": "production.process_manager",
 }
 
+# Framework branches the setup wizard offers, newest/recommended first. The
+FRAMEWORK_BRANCHES = ["develop"]
+
 _DEFAULT_DATA: dict = {
     "bench": {"name": "", "python": "3.14"},
-    "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}],
+    "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": FRAMEWORK_BRANCHES[0]}],
     "mariadb": {"root_password": "root"},
-    "redis": {"port": 13000},
 }
 
 
@@ -80,9 +80,6 @@ def _apply_setting(config: BenchConfig, key: str, value) -> None:
         config.apps[0].repo = str(value)
     elif key == "app_branch":
         config.apps[0].branch = str(value)
-    elif key == "redis_port":
-        redis = config.redis
-        redis.cache_port = redis.queue_port = int(value)
     # unknown keys (wizard extras like is_linux) are ignored
 
 
@@ -91,7 +88,6 @@ def _flatten(config: BenchConfig) -> dict:
     app = config.framework_app
     settings["app_repo"] = app.repo
     settings["app_branch"] = app.branch
-    settings["redis_port"] = config.redis.cache_port
     return settings
 
 

@@ -31,22 +31,9 @@ def make_bench(tmp_path: Path) -> Bench:
 # ── RedisManager ──────────────────────────────────────────────────────────────
 
 
-def test_redis_manager_single_instance_writes_one_config(tmp_path: Path) -> None:
-    bench = make_bench(tmp_path)
-    redis_cfg = RedisConfig(cache_port=13000, queue_port=13000)
-    assert redis_cfg.is_single_instance
-
-    manager = RedisManager(redis_cfg, bench)
-    manager.generate_configs()
-
-    assert (bench.config_path / "redis.conf").exists()
-    assert not (bench.config_path / "redis_cache.conf").exists()
-
-
-def test_redis_manager_multi_instance_writes_two_configs(tmp_path: Path) -> None:
+def test_redis_manager_writes_two_configs(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     redis_cfg = RedisConfig(cache_port=13000, queue_port=11000)
-    assert not redis_cfg.is_single_instance
 
     manager = RedisManager(redis_cfg, bench)
     manager.generate_configs()
@@ -55,16 +42,6 @@ def test_redis_manager_multi_instance_writes_two_configs(tmp_path: Path) -> None
     assert (bench.config_path / "redis_queue.conf").exists()
     assert not (bench.config_path / "redis_socketio.conf").exists()
     assert not (bench.config_path / "redis.conf").exists()
-
-
-def test_redis_manager_single_config_content(tmp_path: Path) -> None:
-    bench = make_bench(tmp_path)
-    redis_cfg = RedisConfig(cache_port=13000, queue_port=13000)
-    RedisManager(redis_cfg, bench).generate_configs()
-
-    content = (bench.config_path / "redis.conf").read_text()
-    assert "port 13000" in content
-    assert "bind 127.0.0.1" in content
 
 
 def test_redis_manager_multi_config_ports(tmp_path: Path) -> None:

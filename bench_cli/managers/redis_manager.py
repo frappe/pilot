@@ -51,32 +51,13 @@ class RedisManager:
         return "redis"
 
     def generate_configs(self) -> None:
-        if self.config.is_single_instance:
-            self._write_single_config()
-        else:
-            self._write_cache_config()
-            self._write_queue_config()
+        self._write_config("redis_cache.conf", self.config.cache_port)
+        self._write_config("redis_queue.conf", self.config.queue_port)
 
-    def _write_single_config(self) -> None:
+    def _write_config(self, filename: str, port: int) -> None:
         content = (
-            f"port {self.config.cache_port}\n"
+            f"port {port}\n"
             "bind 127.0.0.1\n"
             'save ""\n'
         )
-        (self.bench.config_path / "redis.conf").write_text(content)
-
-    def _write_cache_config(self) -> None:
-        content = (
-            f"port {self.config.cache_port}\n"
-            "bind 127.0.0.1\n"
-            'save ""\n'
-        )
-        (self.bench.config_path / "redis_cache.conf").write_text(content)
-
-    def _write_queue_config(self) -> None:
-        content = (
-            f"port {self.config.queue_port}\n"
-            "bind 127.0.0.1\n"
-            'save ""\n'
-        )
-        (self.bench.config_path / "redis_queue.conf").write_text(content)
+        (self.bench.config_path / filename).write_text(content)

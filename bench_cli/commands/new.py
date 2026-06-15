@@ -33,4 +33,3 @@ class NewCommand:
         print("\nNext step:")
         print("  bench start")
         print("  Open http://localhost:8002 — the setup wizard guides you through the rest,")
-        print("  including ZFS volume management under Advanced settings.")

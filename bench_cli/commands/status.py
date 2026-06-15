@@ -55,11 +55,8 @@ class StatusCommand:
 
         self._section("Redis")
         redis = cfg.redis
-        if redis.is_single_instance:
-            self._row("Port", str(redis.cache_port))
-        else:
-            self._row("Cache port", str(redis.cache_port))
-            self._row("Queue port", str(redis.queue_port))
+        self._row("Cache port", str(redis.cache_port))
+        self._row("Queue port", str(redis.queue_port))
 
         if cfg.admin.enabled:
             self._section("Admin")

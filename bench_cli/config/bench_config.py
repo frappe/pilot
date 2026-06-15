@@ -91,13 +91,6 @@ class BenchConfig:
 
     @staticmethod
     def _parse_redis(data: dict) -> RedisConfig:
-        if "port" in data:
-            port = data["port"]
-            return RedisConfig(
-                cache_port=port,
-                queue_port=port,
-                version=data.get("version"),
-            )
         return RedisConfig(
             cache_port=data.get("cache_port", 13000),
             queue_port=data.get("queue_port", 11000),
@@ -253,6 +246,9 @@ class BenchConfig:
             if not (_REDIS_PORT_MIN <= port <= _REDIS_PORT_MAX):
                 raise ConfigError(f"{name} {port} is out of range. Must be between {_REDIS_PORT_MIN} and {_REDIS_PORT_MAX}.")
 
+        if self.redis.cache_port == self.redis.queue_port:
+            raise ConfigError(f"redis.cache_port and redis.queue_port must be distinct, but both are set to {self.redis.cache_port}.")
+
     def _validate_worker_counts(self) -> None:
         counts = {
             "workers.default_count": self.workers.default_count,
@@ -322,8 +318,7 @@ class BenchConfig:
     def _validate_zfs_size(field_name: str, value: str) -> None:
         if not _ZFS_SIZE_PATTERN.match(value):
             raise ConfigError(
-                f"{field_name} '{value}' is not a valid ZFS size. Must be a positive integer with an "
-                f"optional K/M/G/T suffix — examples: '10G', '512M', '1T'. Decimals and negatives are not allowed."
+                f"{field_name} '{value}' is not a valid ZFS size. Must be a positive integer with an optional K/M/G/T suffix — examples: '10G', '512M', '1T'. Decimals and negatives are not allowed."
             )
 
     @property

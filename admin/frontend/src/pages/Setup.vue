@@ -19,10 +19,7 @@ const form = ref({
   mariadb_password: '',
   admin_password: '',
   app_repo: 'https://github.com/frappe/frappe',
-  app_branch: 'version-16',
-  http_port: 8000,
-  socketio_port: 9000,
-  redis_port: 13000,
+  app_branch: 'develop',
   workers_default: 2,
   workers_short: 1,
   workers_long: 1,
@@ -35,6 +32,29 @@ const form = ref({
   volume_mariadb_reservation: '5G',
   volume_mariadb_quota: '20G',
   production_process_manager: 'none',
+})
+
+// ── framework branch dropdown (fetched from the admin backend) ────────────
+const branchOptions = ref([])
+
+async function fetchBranches() {
+  try {
+    const res = await fetch('/api/setup/branches')
+    const data = await res.json()
+    branchOptions.value = data.branches || []
+  } catch {
+    branchOptions.value = []
+  }
+}
+
+// Keep the configured branch selectable even if it isn't in the fetched list,
+// so the dropdown never silently blanks out the saved value.
+const branchSelectOptions = computed(() => {
+  const options = branchOptions.value.map((b) => ({ label: b, value: b }))
+  if (form.value.app_branch && !branchOptions.value.includes(form.value.app_branch)) {
+    options.unshift({ label: form.value.app_branch, value: form.value.app_branch })
+  }
+  return options
 })
 
 // ── volume smart defaults ─────────────────────────────────────────────────
@@ -147,6 +167,7 @@ async function loadConfig() {
       streamTask(`/api/setup/stream/${data.running_init_task_id}`, onInitDone)
     }
   } catch {}
+  fetchBranches()
 }
 
 async function postJson(url, body) {
@@ -332,13 +353,13 @@ function backToConfig() {
         </div>
 
         <div v-else-if="step === 'customize'" class="flex flex-col gap-4">
-          <FormControl label="Frappe branch" v-model="form.app_branch" placeholder="version-16" />
+          <FormControl
+            type="select"
+            label="Frappe branch"
+            v-model="form.app_branch"
+            :options="branchSelectOptions"
+          />
           <FormControl label="Frappe repository" v-model="form.app_repo" />
-          <div class="grid grid-cols-3 gap-2">
-            <FormControl label="HTTP port" v-model="form.http_port" type="number" />
-            <FormControl label="Socket.IO port" v-model="form.socketio_port" type="number" />
-            <FormControl label="Redis port" v-model="form.redis_port" type="number" />
-          </div>
           <div class="space-y-1.5">
             <FormLabel label="Workers" />
             <div class="grid grid-cols-3 gap-2">
