@@ -200,9 +200,12 @@ def list_device_choices() -> list[dict]:
     return choices
 
 
+def rootfs_free_bytes() -> int:
+    return shutil.disk_usage("/").free
+
+
 def default_image_size_bytes() -> int:
-    free = shutil.disk_usage("/").free
-    return max(int(free * _IMAGE_FREE_SPACE_FRACTION), 10 * 1024**3)
+    return max(rootfs_free_bytes(), 10 * 1024**3)
 
 
 def smart_dataset_sizes(backing_bytes: int) -> dict:

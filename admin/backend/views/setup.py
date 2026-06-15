@@ -185,7 +185,13 @@ def _volume_suggestions(toml_path: Path) -> dict:
     if not is_linux():
         return {"available_devices": []}
 
-    from bench_cli.managers.volume_manager import compute_smart_defaults, list_device_choices
+    from bench_cli.managers.volume_manager import (
+        compute_smart_defaults,
+        list_device_choices,
+        rootfs_free_bytes,
+    )
+
+    slider_bounds = {"rootfs_free_bytes": rootfs_free_bytes()}
 
     try:
         import tomllib
@@ -196,8 +202,8 @@ def _volume_suggestions(toml_path: Path) -> dict:
         has_volume_config = False
 
     if has_volume_config:
-        return {"available_devices": list_device_choices()}
-    return compute_smart_defaults()
+        return {"available_devices": list_device_choices(), **slider_bounds}
+    return {**compute_smart_defaults(), **slider_bounds}
 
 
 def _current_name(bench_root: Path) -> str:

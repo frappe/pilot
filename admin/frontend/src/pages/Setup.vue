@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
-import { Button, FormControl, FormLabel, Password, ErrorMessage, TextInput } from 'frappe-ui'
+import { Button, FormControl, FormLabel, Password, ErrorMessage, TextInput, Slider } from 'frappe-ui'
 import TerminalOutput from '../components/TerminalOutput.vue'
 import { processLine } from '../utils/ansi.js'
 
@@ -19,7 +19,7 @@ const form = ref({
   mariadb_password: '',
   admin_password: '',
   app_repo: 'https://github.com/frappe/frappe',
-  default_branch: 'version-16',
+  app_branch: 'version-16',
   http_port: 8000,
   socketio_port: 9000,
   redis_port: 13000,
@@ -42,6 +42,22 @@ const CUSTOM_DEVICE = '__custom__'
 const availableDevices = ref([])
 const customDevice = ref(false)
 const sizesTouched = ref(false)
+
+// ── image-size slider, bounded by total rootfs free space ─────────────────
+const GIB = 1024 ** 3
+const rootfsFreeBytes = ref(0)
+const freeGiB = computed(() => Math.floor(rootfsFreeBytes.value / GIB))
+const imageSizeMaxGiB = computed(() => Math.max(5, freeGiB.value || 100))
+const imageSizeMinGiB = computed(() => Math.min(5, imageSizeMaxGiB.value))
+const imageSliderModel = computed({
+  get() {
+    const n = parseInt(form.value.volume_image_size) || imageSizeMinGiB.value
+    return [Math.min(imageSizeMaxGiB.value, Math.max(imageSizeMinGiB.value, n))]
+  },
+  set(arr) {
+    form.value.volume_image_size = `${arr[0]}G`
+  },
+})
 
 const deviceOptions = computed(() => [
   ...availableDevices.value.map((d) => ({
@@ -122,6 +138,7 @@ async function loadConfig() {
     benchName.value = data.bench_name || ''
     isLinux.value = data.is_linux !== false
     availableDevices.value = data.available_devices || []
+    rootfsFreeBytes.value = data.rootfs_free_bytes || 0
     for (const key of Object.keys(form.value)) {
       if (data[key] !== undefined) form.value[key] = data[key]
     }
@@ -376,9 +393,15 @@ function backToConfig() {
             v-model="form.volume_device"
             placeholder="/dev/sdb"
           />
-          <FormControl v-else label="Image size" v-model="form.volume_image_size" placeholder="60G" />
+          <div v-else-if="form.volume_backing === 'image'" class="space-y-1.5">
+            <div class="flex items-baseline justify-between">
+              <FormLabel label="Image size" />
+              <span class="text-xs text-ink-gray-5">{{ imageSliderModel[0] }} GB of {{ freeGiB }} GB free</span>
+            </div>
+            <Slider v-model="imageSliderModel" :min="imageSizeMinGiB" :max="imageSizeMaxGiB" :step="1" />
+          </div>
           <p v-if="form.volume_backing === 'image'" class="text-xs text-ink-gray-4">
-            A preallocated file of this size will be created at
+            A preallocated {{ form.volume_image_size }} file will be created at
             /var/lib/bench-zfs/{{ form.volume_pool || 'pool' }}.img and used as the ZFS pool.
           </p>
           <div class="grid grid-cols-2 gap-2">
