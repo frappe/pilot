@@ -24,6 +24,40 @@ class ProcessInfo:
     pss_mb: float | None = None
 
 
+def _format_duration(seconds: float) -> str:
+    s = int(seconds)
+    d, s = divmod(s, 86400)
+    h, s = divmod(s, 3600)
+    m, s = divmod(s, 60)
+    if d:
+        return f"{d}d {h}h"
+    if h:
+        return f"{h}h {m}m"
+    if m:
+        return f"{m}m {s}s"
+    return f"{s}s"
+
+
+def _proc_uptime(pid: int) -> str | None:
+    """Wall-clock uptime of a process from its /proc start time.
+
+    Works for any manager (systemd/supervisor/dev) since it only needs the
+    PID; returns None if the process is gone or /proc is unreadable.
+    """
+    try:
+        with open("/proc/uptime") as f:
+            system_uptime = float(f.read().split()[0])
+        with open(f"/proc/{pid}/stat") as f:
+            data = f.read()
+        # starttime is field 22 (clock ticks since boot); fields after comm ')'
+        # start at field 3, so field 22 is index 19 here.
+        starttime_ticks = int(data[data.rindex(")") + 2:].split()[19])
+        elapsed = system_uptime - starttime_ticks / os.sysconf("SC_CLK_TCK")
+        return _format_duration(elapsed) if elapsed >= 0 else None
+    except (OSError, ValueError, IndexError):
+        return None
+
+
 def _read_pss_kb(pid: int) -> int | None:
     """Proportional Set Size in KB from /proc/<pid>/smaps_rollup (Linux 4.14+).
 
@@ -144,8 +178,10 @@ class ProcessReader:
         pid_str = props.get("MainPID", "0")
         pid = int(pid_str) if pid_str.isdigit() and pid_str != "0" else None
         log_file = self._bench_root / "logs" / f"{name}.log"
-        cpu, rss, pss = _get_process_stats(pid) if pid and status == "running" else (None, None, None)
-        return ProcessInfo(name=name, status=status, pid=pid, uptime=None, log_file=log_file, cpu_percent=cpu, rss_mb=rss, pss_mb=pss)
+        running = bool(pid and status == "running")
+        cpu, rss, pss = _get_process_stats(pid) if running else (None, None, None)
+        uptime = _proc_uptime(pid) if running else None
+        return ProcessInfo(name=name, status=status, pid=pid, uptime=uptime, log_file=log_file, cpu_percent=cpu, rss_mb=rss, pss_mb=pss)
 
     # ── Supervisor ───────────────────────────────────────────────────────────
 
@@ -177,15 +213,14 @@ class ProcessReader:
         status = "running" if state == "running" else ("stopped" if state in ("stopped", "exited", "fatal", "backoff") else "unknown")
 
         pid: int | None = None
-        uptime: str | None = None
         if pid_m := re.search(r"pid (\d+)", rest):
             pid = int(pid_m.group(1))
-        if uptime_m := re.search(r"uptime (\S+)", rest):
-            uptime = uptime_m.group(1)
 
         program = full_name.split(":", 1)[-1].removeprefix(f"{bench_name}-")
         log_file = self._bench_root / "logs" / f"{program.replace('-', '_')}.log"
-        cpu, rss, pss = _get_process_stats(pid) if pid and status == "running" else (None, None, None)
+        running = bool(pid and status == "running")
+        cpu, rss, pss = _get_process_stats(pid) if running else (None, None, None)
+        uptime = _proc_uptime(pid) if running else None
         return ProcessInfo(name=program, status=status, pid=pid, uptime=uptime, log_file=log_file, cpu_percent=cpu, rss_mb=rss, pss_mb=pss)
 
     # ── Procfile (dev) ───────────────────────────────────────────────────────
@@ -210,4 +245,5 @@ class ProcessReader:
             status = "stopped"
 
         cpu, rss, pss = _get_process_stats(pid) if status == "running" else (None, None, None)
-        return ProcessInfo(name=name, status=status, pid=pid, uptime=None, log_file=log_file, cpu_percent=cpu, rss_mb=rss, pss_mb=pss)
+        uptime = _proc_uptime(pid) if status == "running" else None
+        return ProcessInfo(name=name, status=status, pid=pid, uptime=uptime, log_file=log_file, cpu_percent=cpu, rss_mb=rss, pss_mb=pss)
