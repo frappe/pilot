@@ -114,6 +114,10 @@ async function loadContent() {
     if (!res.ok) throw new Error(`${res.status}`)
     const d = await res.json()
     rawLines.value = d.lines
+    if (!search.value.trim()) {
+      await nextTick()
+      terminal.value?.scrollToBottom()
+    }
   } catch (e) {
     contentError.value = e.message
   } finally {
