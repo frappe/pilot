@@ -1,0 +1,52 @@
+rules:
+- id: overusing-args
+  patterns:
+    - pattern: |
+        def $FUNC(args):
+          ...
+  message: |
+    Using args as argument in functions reduces readability and allows passing ill-specified arguments. Avoid using `args` as only argument unless absolutely necessary.
+  languages: [python]
+  severity: WARNING
+
+- id: use-vanilla-js-include
+  pattern: in_list($LIST, $ITEM)
+  fix: $LIST.includes($ITEM)
+  message: |
+    in_list(list, item) is simple wrapper around list.includes(item), avoid use of such wrappers.
+  languages: [javascript]
+  severity: WARNING
+
+- id: useless-get-doc-dict
+  pattern: frappe.get_doc(dict($X=$Y, $...OTHER_KEYS))
+  fix: frappe.get_doc($X=$Y, $...OTHER_KEYS)
+  message: |
+    get_doc(dict(k=v)) is same as get_doc(k=v)
+  languages: [python]
+  severity: WARNING
+
+- id: unchecked-frappe-permission-call
+  languages:
+    - python
+  message: >-
+    Found a call to `frappe.has_permission` where the return value is ignored.
+    Unless `throw=True` is passed, this function only returns a boolean and
+    does not enforce security on its own.
+  severity: ERROR
+  patterns:
+    - pattern: frappe.has_permission(...)
+    - pattern-not: frappe.has_permission(..., throw=True, ...)
+    - pattern-not: frappe.has_permission(..., throw=$SOMETHING, ...)
+    - pattern-not-inside: $VAR = frappe.has_permission(...)
+    - pattern-not-inside: "return ..."
+    - pattern-not-inside: "if <... frappe.has_permission(...) ...> : ..."
+    - pattern-not-inside: "$PRED_TRUE if frappe.has_permission(...) else $PRED_FALSE"
+    - pattern-not-inside: assert frappe.has_permission(...)
+    # value used as a comprehension predicate (list / set / dict / generator)
+    - pattern-not-inside: "[$EL for $V in $IT if <... frappe.has_permission(...) ...>]"
+    - pattern-not-inside: "{$EL for $V in $IT if <... frappe.has_permission(...) ...>}"
+    - pattern-not-inside: "{$K: $VAL for $V in $IT if <... frappe.has_permission(...) ...>}"
+    - pattern-not-inside: "($EL for $V in $IT if <... frappe.has_permission(...) ...>)"
+  paths:
+    exclude:
+      - "**/test_*.py"

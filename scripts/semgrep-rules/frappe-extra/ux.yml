@@ -1,0 +1,57 @@
+rules:
+- id: frappe-missing-translate-function-python
+  pattern-either:
+  - patterns:
+      - pattern: frappe.msgprint("...", ...)
+      - pattern-not: frappe.msgprint(_("..."), ...)
+  - patterns:
+      - pattern: frappe.throw("...", ...)
+      - pattern-not: frappe.throw(_("..."), ...)
+  - patterns:
+      - pattern: frappe.throw("..." + ..., ...)
+      - pattern-not: frappe.throw(_("...") + ..., ...)
+  - patterns:
+      - pattern: frappe.msgprint("..." + ..., ...)
+      - pattern-not: frappe.msgprint(_("...") + ..., ...)
+  - patterns:
+      - pattern: frappe.throw(..., title="...")
+      - pattern-not: frappe.throw(..., title=_("..."))
+  - patterns:
+      - pattern: frappe.msgprint(..., title="...")
+      - pattern-not: frappe.msgprint(..., title=_("..."))
+  message: |
+      All user facing text must be wrapped in translate function. Please refer to translation documentation. https://frappeframework.com/docs/user/en/guides/basics/translations
+  languages: [python]
+  severity: WARNING
+
+- id: frappe-missing-translate-function-js
+  pattern-either:
+  - patterns:
+      - pattern: frappe.msgprint("...", ...)
+      - pattern-not: frappe.msgprint(__("..."), ...)
+      # ignore microtemplating e.g. msgprint("{{ _("server side translation") }}")
+      - pattern-not: frappe.msgprint("=~/\{\{.*\_.*\}\}/i", ...)
+  - patterns:
+      - pattern: frappe.throw("...", ...)
+      - pattern-not: frappe.throw(__("..."), ...)
+      # ignore microtemplating
+      - pattern-not: frappe.throw("=~/\{\{.*\_.*\}\}/i", ...)
+  - patterns:
+      - pattern: frappe.show_alert("...", ...)
+      - pattern-not: frappe.show_alert(__("..."), ...)
+  message: |
+      All user facing text must be wrapped in translate function. Please refer to translation documentation. https://frappeframework.com/docs/user/en/guides/basics/translations
+  languages: [javascript]
+  severity: WARNING
+
+- id: frappe-missing-translation-button-text
+  pattern-either:
+  - patterns:
+      - pattern: frm.add_custom_button("...", ...)
+      - pattern-not: frm.add_custom_button(__("..."), ...)
+      # ignore microtemplating e.g. msgprint("{{ _("server side translation") }}")
+      - pattern-not: frm.add_custom_button("=~/\{\{.*\_.*\}\}/i", ...)
+  message: |
+      All user facing button text must be wrapped in translate function. Please refer to translation documentation. https://frappeframework.com/docs/user/en/guides/basics/translations
+  languages: [javascript]
+  severity: WARNING

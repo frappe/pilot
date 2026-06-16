@@ -5845,5 +5845,16 @@
     "logo_url": null,
     "category": "Applications",
     "stars": 93
+  },
+  {
+    "name": "test_bad_marketplace_app",
+    "title": "Test Bad Marketplace App",
+    "description": "Throwaway app used to test the marketplace-app-check workflow.",
+    "repo": "https://github.com/AryamanSharma14/test-bad-marketplace-app",
+    "branch": "main",
+    "branches": [
+      "main"
+    ],
+    "category": "Utilities"
   }
 ]
