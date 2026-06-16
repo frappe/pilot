@@ -10,7 +10,7 @@ from bench_cli.config.app_config import AppConfig
 from bench_cli.config.bench_config import BenchConfig
 from bench_cli.config.mariadb_config import MariaDBConfig
 from bench_cli.config.redis_config import RedisConfig
-from bench_cli.config.worker_config import WorkerConfig
+from bench_cli.config.worker_config import WorkerConfig, WorkerGroup
 from bench_cli.core.bench import Bench
 from bench_cli.exceptions import BenchError
 
@@ -22,7 +22,11 @@ def make_bench(tmp_path: Path) -> Bench:
         apps=[AppConfig(name="frappe", repo="https://github.com/frappe/frappe", branch="version-16")],
         mariadb=MariaDBConfig(root_password="root"),
         redis=RedisConfig(cache_port=13000, queue_port=11000),
-        workers=WorkerConfig(default_count=2, short_count=1, long_count=1),
+        workers=WorkerConfig(groups=[
+            WorkerGroup(queues=["default"], count=2),
+            WorkerGroup(queues=["short"], count=1),
+            WorkerGroup(queues=["long"], count=1),
+        ]),
     )
     return Bench(config, tmp_path)
 

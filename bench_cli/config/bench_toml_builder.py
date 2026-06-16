@@ -19,9 +19,7 @@ FLAT_KEYS = {
     "admin_enabled": "admin.enabled",
     "admin_port": "admin.port",
     "admin_password": "admin.password",
-    "workers_default": "workers.default_count",
-    "workers_short": "workers.short_count",
-    "workers_long": "workers.long_count",
+
     "volume_pool": "volume.pool",
     "volume_backing": "volume.backing",
     "volume_device": "volume.device",

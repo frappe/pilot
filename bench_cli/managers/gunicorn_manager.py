@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from bench_cli.config.worker_config import WorkerGroup
     from bench_cli.core.bench import Bench
 
 
@@ -32,11 +33,15 @@ class GunicornManager:
 
     def _render_config(self) -> str:
         cfg = self.bench.config.gunicorn
+        worker_class = cfg.worker_class
+        # gthread is required for threads to actually be used.
+        if cfg.threads > 0 and worker_class == "sync":
+            worker_class = "gthread"
         base = (
             f'bind = "{self._bind()}"\n'
             f"workers = {cfg.workers}\n"
             f"threads = {cfg.threads}\n"
-            f'worker_class = "{cfg.worker_class}"\n'
+            f'worker_class = "{worker_class}"\n'
             f"timeout = {cfg.timeout}\n"
             f"preload_app = True\n"
         )
@@ -109,24 +114,8 @@ class GunicornManager:
             )
         ]
 
-        cfg = self.bench.config.workers
-        workers.extend(
-            self._worker_companion_specs("default", cfg.default_count, sites_dir, logs_dir)
-        )
-        workers.extend(
-            self._worker_companion_specs("short", cfg.short_count, sites_dir, logs_dir)
-        )
-        workers.extend(
-            self._worker_companion_specs("long", cfg.long_count, sites_dir, logs_dir)
-        )
-
-        for entry in cfg.custom:
-            timeout = entry.timeout if entry.timeout else _COMPANION_QUEUE_STOP_TIMEOUT["default"]
-            workers.extend(
-                self._worker_companion_specs(
-                    entry.queue, entry.count, sites_dir, logs_dir, timeout=timeout
-                )
-            )
+        for group_index, group in enumerate(self.bench.config.workers.groups, start=1):
+            workers.extend(self._worker_group_specs(group_index, group, sites_dir, logs_dir))
 
         if self._socketio_companion_enabled():
             workers.append(
@@ -141,25 +130,29 @@ class GunicornManager:
 
         return workers
 
-    def _worker_companion_specs(
+    def _worker_group_specs(
         self,
-        queue: str,
-        count: int,
+        group_index: int,
+        group: "WorkerGroup",
         sites_dir: Path,
         logs_dir: Path,
-        timeout: int | None = None,
     ) -> list[dict]:
-        stop_timeout = timeout or _COMPANION_QUEUE_STOP_TIMEOUT.get(queue, _COMPANION_QUEUE_STOP_TIMEOUT["default"])
+        queue_names = ",".join(group.queues)
+        stop_timeout = max(
+            _COMPANION_QUEUE_STOP_TIMEOUT.get(q, _COMPANION_QUEUE_STOP_TIMEOUT["default"])
+            for q in group.queues
+        )
+        name_slug = "-".join(group.queues)
         return [
             self._companion_spec(
-                f"worker-{queue}-{i}",
+                f"worker-{name_slug}-{i}",
                 "frappe.gunicorn_companion:run_worker",
                 cwd=sites_dir,
                 stop_timeout=stop_timeout,
                 logs_dir=logs_dir,
-                env={"FRAPPE_COMPANION_QUEUE": queue},
+                env={"FRAPPE_COMPANION_QUEUE": queue_names},
             )
-            for i in range(1, count + 1)
+            for i in range(1, group.count + 1)
         ]
 
     def _companion_spec(

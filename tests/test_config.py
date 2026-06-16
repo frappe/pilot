@@ -125,10 +125,10 @@ def test_rule_8_redis_ports_must_be_distinct() -> None:
 
 def test_rule_9_worker_counts_must_be_positive() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["workers"] = {"default": 0, "short": 1, "long": 1}
+    data["workers"] = [{"queues": ["default"], "count": 0}]
     with pytest.raises(ConfigError) as exc_info:
         load_from_dict(data)
-    assert "workers.default_count" in str(exc_info.value)
+    assert "workers[0].count" in str(exc_info.value)
 
 
 def test_rule_11_invalid_letsencrypt_email() -> None:

@@ -45,18 +45,12 @@ def bench_config_to_toml(config: BenchConfig) -> str:
         parts.append(f'version = "{r.version}"')
     parts.append("")
 
-    w = config.workers
-    parts.append("[workers]")
-    parts.append(f"default = {w.default_count}")
-    parts.append(f"short = {w.short_count}")
-    parts.append(f"long = {w.long_count}")
-    for entry in w.custom:
+    for group in config.workers.groups:
+        parts.append("[[workers]]")
+        queues = ", ".join(f'"{q}"' for q in group.queues)
+        parts.append(f"queues = [{queues}]")
+        parts.append(f"count = {group.count}")
         parts.append("")
-        parts.append("[[workers.custom]]")
-        parts.append(f'queue = "{entry.queue}"')
-        parts.append(f"count = {entry.count}")
-        parts.append(f"timeout = {entry.timeout}")
-    parts.append("")
 
     p = config.production
     parts.append("[production]")

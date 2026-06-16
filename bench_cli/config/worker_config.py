@@ -2,15 +2,19 @@ from dataclasses import dataclass, field
 
 
 @dataclass
-class CustomWorkerEntry:
-    queue: str
+class WorkerGroup:
+    """One worker group: spawn ``count`` workers listening to ``queues``."""
+
+    queues: list[str]
     count: int
-    timeout: int = 300
 
 
 @dataclass
 class WorkerConfig:
-    default_count: int = 2
-    short_count: int = 1
-    long_count: int = 1
-    custom: list[CustomWorkerEntry] = field(default_factory=list)
+    groups: list[WorkerGroup] = field(
+        default_factory=lambda: [
+            WorkerGroup(queues=["default"], count=2),
+            WorkerGroup(queues=["short"], count=1),
+            WorkerGroup(queues=["long"], count=1),
+        ]
+    )

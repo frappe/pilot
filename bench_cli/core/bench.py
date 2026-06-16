@@ -129,13 +129,6 @@ class Bench:
             "webserver_port": self.config.http_port,
             "socketio_backend": self.config.socketio_backend,
         }
-        # Add custom worker timeouts to config (if any exist)
-        custom_workers = {
-            entry.queue: {"timeout": entry.timeout}
-            for entry in self.config.workers.custom
-        }
-        if custom_workers:
-            config["workers"] = custom_workers
         config_path = self.sites_path / "common_site_config.json"
         config_path.write_text(json.dumps(config, indent=2) + "\n")
 

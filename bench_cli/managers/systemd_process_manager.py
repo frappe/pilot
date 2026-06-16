@@ -44,6 +44,14 @@ class SystemdProcessManager(ProcessManager):
         AdminEnvManager(_cli_root()).ensure()
         self._ensure_gunicorn_config()
         self.systemd_conf_dir.mkdir(parents=True, exist_ok=True)
+
+        # Remove stale unit files (e.g. after switching process managers or enabling
+        # companion mode, which drops socketio/worker services).
+        target_file = self._target_name()
+        for path in list(self.systemd_conf_dir.iterdir()):
+            if path.is_file() and (path.suffix == ".service" or path.name == target_file):
+                path.unlink()
+
         defs = self._prod_process_definitions()
         for pd in defs:
             (self.systemd_conf_dir / self._unit_name(pd.name)).write_text(self._render_unit(pd))
@@ -54,7 +62,19 @@ class SystemdProcessManager(ProcessManager):
 
         self.user_unit_dir.mkdir(parents=True, exist_ok=True)
         defs = self._prod_process_definitions()
-        units = [self._unit_name(pd.name) for pd in defs] + [self._target_name()]
+        units = set(self._unit_name(pd.name) for pd in defs) | {self._target_name()}
+
+        # Remove stale user-unit symlinks pointing to this bench's config dir.
+        for dst in self.user_unit_dir.iterdir():
+            if not (dst.is_symlink() and dst.exists()):
+                continue
+            try:
+                points_to_bench = dst.resolve().parent == self.systemd_conf_dir.resolve()
+            except OSError:
+                continue
+            if points_to_bench and dst.name not in units:
+                dst.unlink()
+
         for unit in units:
             src = (self.systemd_conf_dir / unit).resolve()
             dst = self.user_unit_dir / unit

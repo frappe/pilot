@@ -166,27 +166,26 @@ class ProcessManager:
         if self.bench.config.production.use_companion_manager:
             defs = [self._web_definition(), self._admin_definition()]
         elif self.bench.config.production.process_manager == "systemd":
-            num_workers = self.bench.config.workers.default_count + self.bench.config.workers.short_count + self.bench.config.workers.long_count
-            worker_defs: List[ProcessDefinition] = [self._worker_pool_definition("long,default,short", num_workers)]
+            all_queues = ",".join(q for group in self.bench.config.workers.groups for q in group.queues)
+            num_workers = sum(group.count for group in self.bench.config.workers.groups)
+            worker_defs: List[ProcessDefinition] = [self._worker_pool_definition(all_queues, num_workers)]
             defs = [
                 self._web_definition(),
                 self._socketio_definition(),
                 self._admin_definition(),
                 *worker_defs,
-                *[pd for entry in self.bench.config.workers.custom for pd in self._worker_definitions(entry.queue, entry.count)],
             ]
         else:
             worker_defs = [
-                *self._worker_definitions("default", self.bench.config.workers.default_count),
-                *self._worker_definitions("short", self.bench.config.workers.short_count),
-                *self._worker_definitions("long", self.bench.config.workers.long_count),
+                pd
+                for group in self.bench.config.workers.groups
+                for pd in self._worker_definitions(",".join(group.queues), group.count)
             ]
             defs = [
                 self._web_definition(),
                 self._socketio_definition(),
                 self._admin_definition(),
                 *worker_defs,
-                *[pd for entry in self.bench.config.workers.custom for pd in self._worker_definitions(entry.queue, entry.count)],
             ]
         defs.append(self._redis_definition("redis_cache", "redis_cache.conf"))
         defs.append(self._redis_definition("redis_queue", "redis_queue.conf"))
