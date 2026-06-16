@@ -70,7 +70,7 @@ class BenchConfig:
         nginx = cls._parse_nginx(data.get("nginx", {}))
         letsencrypt = cls._parse_letsencrypt(data.get("letsencrypt", {}))
         admin = cls._parse_admin(data.get("admin", {}))
-        volume = cls._parse_volume(data.get("volume", {}))
+        volume = cls._parse_volume(data.get("volume"))
         return cls(
             name=bench_data.get("name", ""),
             python_version=bench_data.get("python", ""),
@@ -160,13 +160,16 @@ class BenchConfig:
         )
 
     @staticmethod
-    def _parse_volume(data: dict) -> VolumeConfig:
+    def _parse_volume(data: dict | None) -> VolumeConfig:
+        if data is None:
+            return VolumeConfig()
         benches_data = data.get("benches", {})
         mariadb_data = data.get("mariadb", {})
         image_data = data.get("image", {})
         # Older tomls predate `backing`: an explicit device implies device backing.
         backing = data.get("backing") or ("device" if data.get("device") else "auto")
         return VolumeConfig(
+            enabled=True,
             pool=data.get("pool", "bench-pool"),
             backing=backing,
             device=data.get("device", ""),
@@ -279,6 +282,8 @@ class BenchConfig:
             raise ConfigError(f"redis.version '{self.redis.version}' is invalid. Must be a version string like '7' or '7.0'.")
 
     def _validate_volume(self) -> None:
+        if not self.volume.enabled:
+            return
         if not self.volume.pool:
             raise ConfigError("volume.pool is required.")
         self._validate_volume_backing()

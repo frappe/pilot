@@ -28,6 +28,7 @@ class VolumeConfig:
     filesystem, or auto-resolved at init time. Skipped on macOS (dev only).
     Snapshots are always available."""
 
+    enabled: bool = False  # True only when [volume] section is present in bench.toml
     pool: str = "bench-pool"
     backing: str = "auto"  # "device" | "image" | "auto" (resolved during bench init)
     device: str = ""
