@@ -124,3 +124,20 @@ def test_http_port_is_configurable(tmp_path: Path) -> None:
 
     assert "listen 8080;" in config
     assert "listen 80;" not in config
+
+
+# ── upstream block ────────────────────────────────────────────────────────────
+
+
+def test_upstream_block_uses_bench_http_port(tmp_path: Path) -> None:
+    """Regression: the upstream block used to hardcode 127.0.0.1:8000
+    regardless of the bench's actual http_port."""
+    data = copy.deepcopy(_BASE_DATA)
+    data["bench"]["http_port"] = 8001
+    bench = _make_bench(tmp_path, data)
+    manager = NginxManager(bench)
+
+    upstream = manager._render_upstream_block(bench.config.name)
+
+    assert "server 127.0.0.1:8001;" in upstream
+    assert "8000" not in upstream
