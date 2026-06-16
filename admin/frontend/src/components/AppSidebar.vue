@@ -213,7 +213,7 @@ onUnmounted(() => clearInterval(pollTimer))
 
     <Dialog v-model="showNewBenchDialog" title="New Bench" size="sm" :showCloseButton="true">
       <template #default>
-        <div class="px-4 pb-6 flex flex-col gap-3">
+        <div class="px-4 flex flex-col gap-4">
           <div autofocus>
             <FormControl
               label="Bench name"
@@ -225,9 +225,10 @@ onUnmounted(() => clearInterval(pollTimer))
           </div>
           <ErrorMessage v-if="newBenchError" :message="newBenchError" />
           <p v-if="newBenchStatus" class="text-sm text-ink-gray-6">{{ newBenchStatus }}</p>
-          <Button variant="solid" :loading="newBenchCreating" @click="createBench">
-            {{ newBenchCreating ? 'Creating…' : 'Create' }}
-          </Button>
+          <div class="flex justify-end gap-2 border-t border-outline-gray-1 pt-3">
+            <Button variant="ghost" @click="showNewBenchDialog = false">Cancel</Button>
+            <Button variant="solid" :loading="newBenchCreating" @click="createBench">Create</Button>
+          </div>
         </div>
       </template>
     </Dialog>
