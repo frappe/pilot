@@ -543,8 +543,25 @@ class VolumeManager:
             raise VolumeError(f"Snapshot '{snapshot}' does not exist.")
         self._run(["sudo", "zfs", "destroy", snapshot])
 
+    def _is_pool_already_configured(self) -> bool:
+        pools = existing_pools()
+
+        for pool in pools:
+            for dataset_info in pool.datasets:
+                # Two active datasets of the same name are not allowed
+                if dataset_info.name == self.config.mariadb_dataset or dataset_info.name == self.config.benches_dataset:
+                    return True
+
+        return False
+
     def setup(self) -> None:
         self._ensure_zfs()
+        if self._is_pool_already_configured():
+            print("Pool is already configured skipping")
+            return
+
+        print(f"Creating ZFS pool '{self.config.pool}' and datasets...")
+
         self.create_pool()
         self._setup_dataset(self.config.benches_dataset, self.config.benches.quota, self.config.benches.reservation)
         self._setup_dataset(self.config.mariadb_dataset, self.config.mariadb.quota, self.config.mariadb.reservation)

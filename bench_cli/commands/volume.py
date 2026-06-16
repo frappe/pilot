@@ -6,9 +6,9 @@ from typing import TYPE_CHECKING
 
 from bench_cli.config.volume_config import VolumeConfig
 from bench_cli.exceptions import BenchError, CommandError
+from bench_cli.managers.volume_manager import VolumeManager
 from bench_cli.platform import is_linux
 from bench_cli.utils import run_command
-from bench_cli.managers.volume_manager import VolumeManager
 
 if TYPE_CHECKING:
     from bench_cli.config.bench_config import BenchConfig
@@ -91,36 +91,41 @@ class VolumeSetupCommand:
         manager.migrate_data(self.config.benches_dataset, data_dir)
         manager.set_mountpoint(self.config.benches_dataset, data_dir)
 
+    def _is_pool_in_use(self) -> None:
+        if self.bench_config is None:
+            return
+
+        from bench_cli.config.bench_config import BenchConfig
+
+        me = self.bench_path.resolve()
+        parent_dir = self.bench_path.parent.resolve()
+
+        for sibling in parent_dir.iterdir():
+            if not sibling.is_dir() or sibling.resolve() == me:
+                continue
+
+            sibling_bench_config_path = sibling / "bench.toml"
+            if not sibling_bench_config_path.exists():
+                continue
+
+            sibling_bench_config = BenchConfig.from_file(sibling_bench_config_path)
+            if sibling_bench_config.volume.pool == self.bench_config.volume.pool:
+                raise BenchError(f"Pool {self.bench_config.volume.pool} is already in use by {sibling_bench_config.name}")
+
     def run(self) -> None:
         if not is_linux():
             raise BenchError("Volume management requires Linux (ZFS is not supported on macOS).")
 
+        # Throw an error in case this pool is already in use by some other bench
+        self._is_pool_in_use()
         self._resolve_backing()
 
-        if self._is_pool_already_configured():
-            print(f"Pool {self.config.pool} already setup")
-            return
-
         manager = VolumeManager(self.config)
-        print(f"Creating ZFS pool '{self.config.pool}' and datasets...")
         manager.setup()
         self.setup_mariadb(manager)
         self.setup_bench(manager)
 
         print("Volume setup complete.")
-
-    def _is_pool_already_configured(self) -> bool:
-        from bench_cli.managers.volume_manager import existing_pools
-
-        pools = existing_pools()
-
-        for pool in pools:
-            for dataset_info in pool.datasets:
-                # Two active datasets of the same name are not allowed
-                if dataset_info.name == self.config.mariadb_dataset or dataset_info.name == self.config.benches_dataset:
-                    return True
-
-        return False
 
     def _resolve_backing(self) -> None:
         from bench_cli.managers.volume_manager import resolve_auto_backing
