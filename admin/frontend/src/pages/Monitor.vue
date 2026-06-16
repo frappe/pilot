@@ -76,7 +76,7 @@ const columns = [
   { label: 'Status', key: 'status', width: '100px' },
   { label: 'PID', key: 'pid', width: '70px' },
   { label: 'CPU', key: 'cpu_percent', width: '70px' },
-  { label: 'Memory', key: 'memory_mb', width: '90px' },
+  { label: 'Memory', key: 'pss_mb', width: '90px' },
   { label: 'Uptime', key: 'uptime', width: '100px' },
   { label: 'Log', key: 'log_filename' },
 ]
@@ -265,7 +265,7 @@ onUnmounted(() => {
           <span v-else-if="column.key === 'cpu_percent'">
             {{ item != null ? item.toFixed(1) + '%' : '—' }}
           </span>
-          <span v-else-if="column.key === 'memory_mb'">
+          <span v-else-if="column.key === 'pss_mb'">
             {{ item != null ? item.toFixed(0) + ' MB' : '—' }}
           </span>
           <button

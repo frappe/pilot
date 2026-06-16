@@ -44,7 +44,7 @@ def stats():
         {
             "cpu_percent": psutil.cpu_percent(),
             "memory_percent": mem.percent,
-            "memory_used": mem.used,
+            "memory_used": mem.total - mem.available,
             "memory_total": mem.total,
             "disk_percent": disk.percent,
             "disk_used": disk.used,
