@@ -103,6 +103,30 @@ def test_site_path_is_under_sites_directory(tmp_path: Path) -> None:
     assert site.path == tmp_path / "sites" / "site1.localhost"
 
 
+def test_site_create_tcp_passes_host_login_scope(tmp_path: Path) -> None:
+    from unittest.mock import patch
+    bench = make_bench(tmp_path)
+    site = Site(SiteConfig(name="site1.localhost", apps=["frappe"]), bench)
+    with patch("bench_cli.managers.mariadb_manager.MariaDBManager._detect_socket", return_value=""), \
+         patch("bench_cli.core.site.run_command") as run_cmd:
+        site.create()
+    cmd = run_cmd.call_args[0][0]
+    assert "--mariadb-user-host-login-scope" in cmd
+    assert "%" in cmd
+
+
+def test_site_create_socket_omits_host_login_scope(tmp_path: Path) -> None:
+    from unittest.mock import patch
+    bench = make_bench(tmp_path)
+    site = Site(SiteConfig(name="site1.localhost", apps=["frappe"]), bench)
+    with patch("bench_cli.managers.mariadb_manager.MariaDBManager._detect_socket",
+               return_value="/var/run/mysqld/mysqld.sock"), \
+         patch("bench_cli.core.site.run_command") as run_cmd:
+        site.create()
+    cmd = run_cmd.call_args[0][0]
+    assert "--mariadb-user-host-login-scope" not in cmd
+
+
 # ── Bench tests ───────────────────────────────────────────────────────────────
 
 

@@ -46,6 +46,7 @@ class Site:
             cmd += ["--db-root-password", mariadb.root_password or "socket_auth"]
         else:
             cmd += ["--db-host", mariadb.host, "--db-port", str(mariadb.port)]
+            cmd += ["--mariadb-user-host-login-scope", "%"]
             if mariadb.root_password:
                 cmd += ["--db-root-password", mariadb.root_password]
 
