@@ -45,6 +45,7 @@ class GetAppCommand(Command):
         self._register()
         self._build()
         print(f"\n'{self.name}' installed successfully.")
+        self._restart_bench()
 
     def _clone(self) -> None:
         if self.app.is_cloned:
@@ -96,3 +97,19 @@ class GetAppCommand(Command):
         print(f"\nSetting up assets for {self.name}...")
         sys.stdout.flush()
         PythonEnvManager(self.bench).build_assets_for_app(self.app)
+
+    def _restart_bench(self) -> None:
+        from bench_cli.managers.process_manager import ProcessManager, ProcessManagerFactory
+
+        try:
+            manager = ProcessManagerFactory.detect_running(self.bench)
+        except Exception:
+            return
+
+        if type(manager) is ProcessManager:
+            print("\nRestart bench to load the new app: bench stop && bench start")
+            return
+
+        print("\nRestarting bench processes...")
+        sys.stdout.flush()
+        manager.restart()
