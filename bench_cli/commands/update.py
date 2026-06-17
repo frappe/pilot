@@ -2,15 +2,24 @@ from __future__ import annotations
 
 import sys
 import time
+from typing import TYPE_CHECKING
 
-from bench_cli.core.bench import Bench
+from bench_cli.commands.base import Command
 from bench_cli.exceptions import CommandError
-from bench_cli.managers.process_manager import ProcessManagerFactory
-from bench_cli.managers.python_env_manager import PythonEnvManager
+
+if TYPE_CHECKING:
+    from bench_cli.core.bench import Bench
 
 
-class UpdateCommand:
-    def __init__(self, bench: Bench, skip_confirm: bool = False) -> None:
+class UpdateCommand(Command):
+    name = "update"
+    help = "Pull latest code and migrate sites."
+
+    @classmethod
+    def from_args(cls, args, bench):
+        return cls(bench, skip_confirm=args.yes)
+
+    def __init__(self, bench: "Bench", skip_confirm: bool = False) -> None:
         self.bench = bench
         self.skip_confirm = skip_confirm
 
@@ -19,6 +28,8 @@ class UpdateCommand:
         print(f"##[step:{key},{time.time():.3f}] {label}", flush=True)
 
     def run(self) -> None:
+        from bench_cli.managers.process_manager import ProcessManagerFactory
+
         self._warn_if_running()
         self._step("fetch", "Fetching latest code")
         self._update_apps()
@@ -33,6 +44,8 @@ class UpdateCommand:
         self._step("done", "Done")
 
     def _warn_if_running(self) -> None:
+        from bench_cli.managers.process_manager import ProcessManagerFactory
+
         if not ProcessManagerFactory.create(self.bench).is_running():
             return
         print(
@@ -58,12 +71,16 @@ class UpdateCommand:
                 print(f"  Error updating {app.config.name}: {e}", file=sys.stderr)
 
     def _reinstall_apps(self) -> None:
+        from bench_cli.managers.python_env_manager import PythonEnvManager
+
         mgr = PythonEnvManager(self.bench)
         for app in self.bench.apps():
             print(f"Reinstalling {app.config.name}...")
             mgr.install_app(app)
 
     def _rebuild_assets(self) -> None:
+        from bench_cli.managers.python_env_manager import PythonEnvManager
+
         mgr = PythonEnvManager(self.bench)
         for app in self.bench.apps():
             print(f"Updating assets for {app.config.name}...")

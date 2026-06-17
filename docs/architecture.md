@@ -10,7 +10,9 @@ bench_cli/
 │
 └── bench_cli/                         # Python package
     ├── __init__.py
-    ├── cli.py                   # argparse entry point — wires commands to classes
+    ├── cli.py                   # thin entry point — global flags + Frappe passthrough
+    ├── registry.py              # auto-discovers commands, builds parser, dispatches
+    ├── loader.py                # find_bench_root / load_bench — bench resolution
     ├── platform.py              # OS detection and system package manager abstraction
     ├── utils.py                 # write_toml — stdlib TOML serialiser
     │
@@ -40,14 +42,15 @@ bench_cli/
     │   ├── nginx_manager.py          # NginxManager — config generation and reload
     │   └── letsencrypt_manager.py    # LetsEncryptManager — cert obtain and renew
     │
-    ├── commands/                # One class per CLI command
+    ├── commands/                # One self-registering Command subclass per file
     │   ├── __init__.py
+    │   ├── base.py              # Command    — base class all commands subclass
     │   ├── new.py               # NewCommand     — scaffold a starter bench.toml
     │   ├── init.py              # InitCommand    — install deps, clone framework app
-    │   ├── start.py             # StartCommand   — run Procfile processes in foreground
+    │   ├── start.py             # RunCommand     — run Procfile processes in foreground
     │   ├── build.py             # BuildCommand
     │   ├── update.py            # UpdateCommand
-    │   └── setup/
+    │   └── setup/               # commands with group = "setup"
     │       ├── __init__.py
     │       ├── nginx.py         # SetupNginxCommand
     │       ├── letsencrypt.py   # SetupLetsEncryptCommand
@@ -462,24 +465,91 @@ class UpdateCommand:
 
 ---
 
-## CLI entry point (`bench_cli/cli.py`)
+## CLI entry point and command registry
 
-Built with `argparse` (stdlib). Zero Python dependencies. Responsibilities:
-1. Find the bench root — locate `bench.toml` by name under `benches/`, or use `-b/--bench NAME`.
-2. Parse and validate it into a `BenchConfig` via `tomllib` (stdlib).
-3. Construct a `Bench`.
-4. Instantiate and call the appropriate command class.
+Built with `argparse` (stdlib). Zero Python dependencies. The wiring is split into
+three small modules so that **a command owns everything about itself in one file** —
+adding or changing a command never touches the CLI layer.
 
-Also handles `bench frappe ...` passthrough: unknown sub-commands are forwarded to `env/bin/bench` inside the active bench.
+### `commands/base.py` — the `Command` base class
+
+Every command subclasses `Command` and declares its own metadata, arguments, and
+execution. Subclasses keep their own `__init__` (used directly in tests and by other
+commands); the registry builds an instance through `from_args`.
 
 ```python
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-b', '--bench', ...)   # bench name under benches/
-    subparsers = parser.add_subparsers(dest='command')
-    # new, init, start, stop, get-app, new-site, build, update, update-config,
-    # admin, start-admin, stop-admin, setup nginx, setup letsencrypt, setup production
+class Command:
+    name: ClassVar[str]                  # CLI name, e.g. "remove-app"
+    help: ClassVar[str] = ""
+    group: ClassVar[str | None] = None   # subcommand group: "setup" | "volume" | None
+    requires_bench: ClassVar[bool] = True # registry loads the Bench and passes it in
+
+    def __init__(self, bench=None): ...
+
+    @classmethod
+    def add_arguments(cls, parser): ...           # declare argparse arguments
+
+    @classmethod
+    def from_args(cls, args, bench): ...          # map parsed args → constructor
+
+    def run(self) -> None: ...                    # do the work
 ```
+
+### `registry.py` — discovery, parser, dispatch
+
+1. **Discover** — imports every module under `commands/` and collects all `Command`
+   subclasses that set a `name`. No hand-maintained list.
+2. **`build_parser()`** — adds the global flags (`--verbose`, `--yes`, `--bench`) once,
+   then one sub-parser per command (and a parent parser per `group`). Each command's
+   `add_arguments()` populates its own sub-parser, and `set_defaults(_command_cls=…)`
+   records which class owns it.
+3. **`dispatch(args)`** — reads `_command_cls`, loads the `Bench` when
+   `requires_bench` is set, then runs `cls.from_args(args, bench).run()`. No `elif`
+   chain.
+
+### `cli.py` — the thin entry point
+
+Resolves global flags, then either forwards to the registry or handles the one special
+case: `bench frappe …` / unknown sub-commands are passed through to `env/bin/bench`
+inside the active bench (handled before argparse so flags like `--site` aren't consumed).
+
+### Adding a command
+
+Create one file under `commands/` — nothing else:
+
+```python
+# bench_cli/commands/list_apps.py
+from bench_cli.commands.base import Command
+
+
+class ListAppsCommand(Command):
+    name = "list-apps"
+    help = "List apps installed in the bench."
+
+    def run(self) -> None:
+        for line in (self.bench.sites_path / "apps.txt").read_text().splitlines():
+            print(line)
+```
+
+For arguments and grouping:
+
+```python
+class RemoveAppCommand(Command):
+    name = "remove-app"
+    help = "Remove an app from the bench."
+
+    @classmethod
+    def add_arguments(cls, parser):
+        parser.add_argument("app", help="App name to remove.")
+
+    @classmethod
+    def from_args(cls, args, bench):
+        return cls(bench, args.app, skip_confirm=args.yes)
+```
+
+Set `group = "setup"` (or `"volume"`) on the class to nest it as `bench setup <name>`.
+Set `requires_bench = False` for commands that don't operate on a bench (e.g. `new`,
+`build-admin`).
 
 ---
 

@@ -1,13 +1,29 @@
+import argparse
 import secrets
 import socket
 import tomllib
 from pathlib import Path
 
+from bench_cli.commands.base import Command
 from bench_cli.config.bench_toml_builder import BenchTomlBuilder, default_ports
 from bench_cli.exceptions import BenchError
 
 
-class NewCommand:
+class NewCommand(Command):
+    name = "new"
+    help = "Create a new bench."
+    requires_bench = False
+
+    @classmethod
+    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument("name", help="Name for the new bench.")
+
+    @classmethod
+    def from_args(cls, args, bench):
+        from bench_cli.loader import cli_root
+
+        return cls(cli_root() / "benches" / args.name, args.name)
+
     def __init__(self, target_directory: Path, name: str) -> None:
         self.target_directory = target_directory
         self.name = name

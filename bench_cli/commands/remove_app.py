@@ -1,17 +1,29 @@
 from __future__ import annotations
 
+import argparse
 import shutil
 import sys
 from typing import TYPE_CHECKING
 
+from bench_cli.commands.base import Command
 from bench_cli.exceptions import BenchError
-from bench_cli.managers.python_env_manager import PythonEnvManager
 
 if TYPE_CHECKING:
     from bench_cli.core.bench import Bench
 
 
-class RemoveAppCommand:
+class RemoveAppCommand(Command):
+    name = "remove-app"
+    help = "Remove an app from the bench."
+
+    @classmethod
+    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument("app", help="App name to remove.")
+
+    @classmethod
+    def from_args(cls, args, bench):
+        return cls(bench, args.app, skip_confirm=args.yes)
+
     def __init__(self, bench: "Bench", app_name: str, skip_confirm: bool = False, force: bool = False) -> None:
         self.bench = bench
         self.app_name = app_name
@@ -70,6 +82,8 @@ class RemoveAppCommand:
         apps_txt.write_text("\n".join(lines) + ("\n" if lines else ""))
 
     def _pip_uninstall(self) -> None:
+        from bench_cli.managers.python_env_manager import PythonEnvManager
+
         print(f"Removing '{self.app_name}' from Python environment...")
         sys.stdout.flush()
         PythonEnvManager(self.bench).uninstall_app(self.app_name)

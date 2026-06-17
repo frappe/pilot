@@ -1,6 +1,9 @@
 """Tests for bench_cli.cli — argument parsing helpers."""
 from __future__ import annotations
 
+import subprocess
+import sys
+
 import pytest
 
 from bench_cli.cli import _strip_bench_flag, _is_frappe_passthrough
@@ -72,3 +75,24 @@ def test_passthrough_bench_flag_does_not_trigger_passthrough() -> None:
 
 def test_passthrough_empty_args() -> None:
     assert _is_frappe_passthrough([]) is False
+
+
+# ── discovery stays light ─────────────────────────────────────────────────────
+
+
+def test_discovery_does_not_import_heavy_layers() -> None:
+    """Command discovery imports every module under bench_cli/commands/, so command
+    modules must keep their managers/core/config imports scoped to point of use.
+    If any of those heavy layers loads at discovery time, CLI startup grows with
+    every command added. Run in a clean interpreter so other tests' imports don't
+    pollute sys.modules.
+    """
+    code = (
+        "import sys, bench_cli.registry as r; r._discover();"
+        "print('\\n'.join(m for m in sys.modules"
+        " if m.startswith(('bench_cli.managers', 'bench_cli.core', 'bench_cli.config'))))"
+    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    leaked = result.stdout.strip()
+    assert leaked == "", f"discovery imported heavy layers at import time:\n{leaked}"

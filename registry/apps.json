@@ -73,7 +73,7 @@
   {
     "name": "aql_quality_assurance",
     "title": "AQL Quality Assurance By HavaraTech",
-    "description": "The app extends ERPNext’s Quality Inspection to support sampling, defect classification, and automated pass/fail lot disposition.",
+    "description": "The app extends ERPNext\u2019s Quality Inspection to support sampling, defect classification, and automated pass/fail lot disposition.",
     "repo": "https://github.com/havaratech/aql_quality_assurance",
     "branch": "develop",
     "branches": [
@@ -91,7 +91,7 @@
   {
     "name": "easy_cash",
     "title": "Easy Cash",
-    "description": "Easy Cash — Simplified Cash In/Out for Non-Accounting Staff",
+    "description": "Easy Cash \u2014 Simplified Cash In/Out for Non-Accounting Staff",
     "repo": "https://github.com/ahmedyousef96/erpnext_easy_cash",
     "branch": "main",
     "branches": [
@@ -328,7 +328,7 @@
   {
     "name": "e_sign",
     "title": "Digital Signature",
-    "description": "DSC digital signing for Frappe & ERPNext — sign PDFs with a hardware DSC USB token, PAdES-compliant, with a rules engine and audit trail",
+    "description": "DSC digital signing for Frappe & ERPNext \u2014 sign PDFs with a hardware DSC USB token, PAdES-compliant, with a rules engine and audit trail",
     "repo": "https://github.com/Ranganathanfinstien/Frappe-DSC",
     "branch": "develop",
     "branches": [
@@ -343,7 +343,7 @@
   {
     "name": "report_builder",
     "title": "Report Builder",
-    "description": "Report Builder: a Frappe/ERPNext app to build table reports via drag-and-drop UI — columns, filters, joins, exports no code, no SQL.",
+    "description": "Report Builder: a Frappe/ERPNext app to build table reports via drag-and-drop UI \u2014 columns, filters, joins, exports no code, no SQL.",
     "repo": "https://github.com/PravinKumarJ-Finstein/reportStudio",
     "branch": "develop",
     "branches": [
@@ -358,7 +358,7 @@
   {
     "name": "fintheme_and_sounds",
     "title": "Fintheme and Sounds",
-    "description": "Customize Frappe & ERPNext Desk per user — live theme editor, WCAG-checked palettes, 17 themes, and a Sound Studio for Desk audio.",
+    "description": "Customize Frappe & ERPNext Desk per user \u2014 live theme editor, WCAG-checked palettes, 17 themes, and a Sound Studio for Desk audio.",
     "repo": "https://github.com/Darwin-DJR-Finstein/Fintheme-and-sounds",
     "branch": "main",
     "branches": [
@@ -489,7 +489,7 @@
   {
     "name": "quickbooks_master_sync",
     "title": "Quickbooks to ERPNext Data Migrator",
-    "description": "A Frappe app for seamlessly syncing master data from QuickBooks Online into ERPNext—built and maintained by Invento Software Limited.",
+    "description": "A Frappe app for seamlessly syncing master data from QuickBooks Online into ERPNext\u2014built and maintained by Invento Software Limited.",
     "repo": "https://github.com/invento-software-limited/quickbooks_master_sync",
     "branch": "version-16",
     "branches": [
@@ -562,7 +562,7 @@
   {
     "name": "nexgen_pms",
     "title": "EstateFlow",
-    "description": "The ultimate Property Management for ERPNext— Automated rent collection, Free WhatsApp reminders, Lease tracking and Financial dashboards.",
+    "description": "The ultimate Property Management for ERPNext\u2014 Automated rent collection, Free WhatsApp reminders, Lease tracking and Financial dashboards.",
     "repo": "https://github.com/nexgenerptechnologies/nexgen_pms",
     "branch": "main",
     "branches": [
@@ -728,13 +728,13 @@
   {
     "name": "saas_theme",
     "title": "Saas Theme by CommitStreet",
-    "description": "A modern, polished SaaS UI theme for Frappe Framework v16 — dual sidebar, slide-in editors, enhanced forms & dashboard.",
+    "description": "A modern, polished SaaS UI theme for Frappe Framework v16 \u2014 dual sidebar, slide-in editors, enhanced forms & dashboard.",
     "repo": "https://github.com/vineyrawat/saas_theme",
     "branch": "version-16",
     "branches": [
       "version-16"
     ],
-    "logo_url": "https://cloud.frappe.io/files/Screenshot 2026-04-05 at 1.43.00 AM 1 (3).webp",
+    "logo_url": "https://cloud.frappe.io/files/Screenshot 2026-04-05 at 1.43.00\u202fAM 1 (3).webp",
     "website": "https://vinay-rawat.dev/",
     "documentation": "https://github.com/vineyrawat/saas_theme",
     "categories": [
@@ -1316,7 +1316,7 @@
   {
     "name": "erpnext_thailand",
     "title": "ERPNext Thailand",
-    "description": "Useful feature set for Thailand community, i.e., Thai Tax, Bill (ใบวางบิล), Get Address from Tax ID / zip code.",
+    "description": "Useful feature set for Thailand community, i.e., Thai Tax, Bill (\u0e43\u0e1a\u0e27\u0e32\u0e07\u0e1a\u0e34\u0e25), Get Address from Tax ID / zip code.",
     "repo": "https://github.com/ecosoft-frappe/erpnext_thailand",
     "branch": "main",
     "branches": [
@@ -1352,7 +1352,7 @@
   {
     "name": "lodin",
     "title": "LodinPay Payment Link",
-    "description": "Intégrez LodinPay à ERPNext et encaissez vos factures instantanément via des liens de paiement et codes QR.",
+    "description": "Int\u00e9grez LodinPay \u00e0 ERPNext et encaissez vos factures instantan\u00e9ment via des liens de paiement et codes QR.",
     "repo": null,
     "branch": null,
     "branches": [
@@ -1370,7 +1370,7 @@
   {
     "name": "myinvois_erpgulf",
     "title": "Malaysia Compliance",
-    "description": "MyInvois app connects ERPNext with LHDN - Malaysia’s MyInvois e-Invoicing platform, ensuring compliance with phase 1 & 2 e-Invoice mandates",
+    "description": "MyInvois app connects ERPNext with LHDN - Malaysia\u2019s MyInvois e-Invoicing platform, ensuring compliance with phase 1 & 2 e-Invoice mandates",
     "repo": "https://github.com/ERPGulf/myinvois",
     "branch": "version-3.0",
     "branches": [
@@ -2046,7 +2046,7 @@
   {
     "name": "pwa_frappe",
     "title": "PWA Frappe",
-    "description": "PWA for enabling your applications to be installed and run as native-like apps on both desktop and mobile devices. 🚀",
+    "description": "PWA for enabling your applications to be installed and run as native-like apps on both desktop and mobile devices. \ud83d\ude80",
     "repo": "https://github.com/omfsakib/pwa_frappe",
     "branch": "main",
     "branches": [
@@ -3160,7 +3160,7 @@
     "branches": [
       "main"
     ],
-    "logo_url": "https://cloud.frappe.io/files/téléchargement (1).jfif",
+    "logo_url": "https://cloud.frappe.io/files/t\u00e9l\u00e9chargement (1).jfif",
     "website": "https://ipconnex.com",
     "documentation": "https://ipconnex.com",
     "categories": [
@@ -4178,7 +4178,7 @@
   {
     "name": "document_progress_tracker",
     "title": "Document Progress Tracker",
-    "description": "📈 Document Progress Tracker is an essential app for ERPNext/Frappe users",
+    "description": "\ud83d\udcc8 Document Progress Tracker is an essential app for ERPNext/Frappe users",
     "repo": "https://github.com/asoral/document-progress-tracker",
     "branch": "main",
     "branches": [
@@ -4386,7 +4386,7 @@
   {
     "name": "nbpos",
     "title": "GETPOS",
-    "description": "GETPOS is a comprehensive cloud-based Point of Sale (POS) app developed by NestorBird. It’s designed to support multi-store retail, restaurant, and supermarket businesses. Manage real-time transactions, inventory, and operations across multiple locations effortlessly. With features like dynamic taxation, currency management, and customer tracking, GETPOS enhances efficiency and increases profitability.",
+    "description": "GETPOS is a comprehensive cloud-based Point of Sale (POS) app developed by NestorBird. It\u2019s designed to support multi-store retail, restaurant, and supermarket businesses. Manage real-time transactions, inventory, and operations across multiple locations effortlessly. With features like dynamic taxation, currency management, and customer tracking, GETPOS enhances efficiency and increases profitability.",
     "repo": null,
     "branch": null,
     "branches": [
@@ -4591,7 +4591,7 @@
   {
     "name": "frappe_zakat",
     "title": "Frappe Zakat",
-    "description": "Zakat app is a key Islamic duty that involves giving part of one’s wealth to those in need. This feature helps individuals and businesses accurately calculate their Zakat in line with Islamic guidelines.",
+    "description": "Zakat app is a key Islamic duty that involves giving part of one\u2019s wealth to those in need. This feature helps individuals and businesses accurately calculate their Zakat in line with Islamic guidelines.",
     "repo": "https://github.com/lavaloon-eg/frappe-zakat",
     "branch": "develop",
     "branches": [
@@ -4629,7 +4629,7 @@
   {
     "name": "frappe_openai_integration",
     "title": "OpenAI Integration",
-    "description": "An easy-to-use Frappe app that integrates OpenAI’s GPT models (like ChatGPT) into your ERP system. Send prompts and get AI responses directly from the Frappe interface.",
+    "description": "An easy-to-use Frappe app that integrates OpenAI\u2019s GPT models (like ChatGPT) into your ERP system. Send prompts and get AI responses directly from the Frappe interface.",
     "repo": "https://github.com/manavmandli/frappe_openai_integration",
     "branch": "master",
     "branches": [
@@ -4680,7 +4680,7 @@
   {
     "name": "sanpra_easypay",
     "title": "Sanpra Easypay",
-    "description": "Easypay – ICICI Integrated Payments App",
+    "description": "Easypay \u2013 ICICI Integrated Payments App",
     "repo": null,
     "branch": null,
     "branches": [
@@ -4862,7 +4862,7 @@
   {
     "name": "eshipz",
     "title": "eShipz - Logistics Automation Solution",
-    "description": "Effortlessly integrate ERPNext with eShipz to streamline your logistics operations with leading multi-courier partners like Blue Dart, Delhivery, and FedEx. Experience faster, smoother, and more efficient shipping solutions, enhanced by eShipz’s comprehensive services, including real-time tracking, automated shipping, and advanced analytics. Optimize your supply chain and ensure reliable deliveries with our seamless ERPNext integration.",
+    "description": "Effortlessly integrate ERPNext with eShipz to streamline your logistics operations with leading multi-courier partners like Blue Dart, Delhivery, and FedEx. Experience faster, smoother, and more efficient shipping solutions, enhanced by eShipz\u2019s comprehensive services, including real-time tracking, automated shipping, and advanced analytics. Optimize your supply chain and ensure reliable deliveries with our seamless ERPNext integration.",
     "repo": null,
     "branch": null,
     "branches": [
@@ -5102,7 +5102,7 @@
   {
     "name": "myojana",
     "title": "mYojana",
-    "description": "Enhance your NGO’s impact with a beneficiary management solution!",
+    "description": "Enhance your NGO\u2019s impact with a beneficiary management solution!",
     "repo": "https://github.com/dhwani-ris/mYojana",
     "branch": "main",
     "branches": [

@@ -1,0 +1,24 @@
+rules:
+  - id: missing-argument-type-hint
+    languages: [python]
+    severity: WARNING
+    patterns:
+      - pattern: |
+          @frappe.whitelist(...)
+          def $FUNC(..., $ARG, ...): ...
+      - pattern-not: |
+          @frappe.whitelist(...)
+          def $FUNC(..., $ARG: $TYPE, ...): ...
+      - metavariable-regex:
+          metavariable: $ARG
+          # Exclude 'self', 'cls', and '*' as they typically don't take hints
+          regex: ^(?!self$|cls$|\*$).*$
+    message: "The argument '$ARG' in function '$FUNC' is missing a type hint."
+  - id: guest-whitelisted-method
+    languages: [python]
+    severity: WARNING
+    patterns:
+      - pattern: |
+          @frappe.whitelist(..., allow_guest=True, ...)
+          def $FUNC(...): ...
+    message: "Whitelisted method that's accesible to guest should be manually reviewed by security team."

@@ -1,19 +1,36 @@
 from __future__ import annotations
 
+import argparse
 import subprocess
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from bench_cli.config.site_config import SiteConfig
-from bench_cli.core.site import Site
+from bench_cli.commands.base import Command
 from bench_cli.exceptions import BenchError
 
 if TYPE_CHECKING:
     from bench_cli.core.bench import Bench
 
 
-class NewSiteCommand:
+class NewSiteCommand(Command):
+    name = "new-site"
+    help = "Create a new site and add it to bench.toml."
+
+    @classmethod
+    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument("name", help="Site name (e.g. site2.localhost).")
+        parser.add_argument("--admin-password", default="admin", help="Frappe admin password.")
+        parser.add_argument("--apps", nargs="*", help="Apps to assign (defaults to framework app).")
+
+    @classmethod
+    def from_args(cls, args, bench):
+        app_names = args.apps
+        if not app_names:
+            framework = bench.config.framework_app.name
+            app_names = [framework] if framework else []
+        return cls(bench, args.name, app_names, args.admin_password)
+
     def __init__(self, bench: "Bench", name: str, apps: list[str], admin_password: str = "admin") -> None:
         self.bench = bench
         self.name = name
@@ -21,6 +38,9 @@ class NewSiteCommand:
         self.admin_password = admin_password
 
     def run(self) -> None:
+        from bench_cli.config.site_config import SiteConfig
+        from bench_cli.core.site import Site
+
         self._validate()
         site = Site(SiteConfig(name=self.name, apps=self.apps, admin_password=self.admin_password), self.bench)
         print(f"Creating site '{self.name}'...")

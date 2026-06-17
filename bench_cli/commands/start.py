@@ -3,24 +3,32 @@ from __future__ import annotations
 import os
 import subprocess
 import tomllib
+from typing import TYPE_CHECKING
 
-from bench_cli.core.bench import Bench
-from bench_cli.managers.process_manager import ProcessManagerFactory
+from bench_cli.commands.base import Command
+
+if TYPE_CHECKING:
+    from bench_cli.core.bench import Bench
 
 
-class RunCommand:
-    def __init__(self, bench: Bench) -> None:
+class RunCommand(Command):
+    name = "start"
+    help = "Start all bench processes."
+
+    def __init__(self, bench: "Bench") -> None:
         self.bench = bench
 
     def run(self) -> None:
+        from bench_cli.managers.process_manager import ProcessManagerFactory
+
         if not (self.bench.path / "env" / "bin" / "python").exists():
             self._start_wizard()
         else:
             ProcessManagerFactory.create(self.bench).start()
 
     def _start_wizard(self) -> None:
-        from bench_cli.managers.admin_env_manager import AdminEnvManager
         from bench_cli.commands.admin import download_admin_frontend, _cli_root
+        from bench_cli.managers.admin_env_manager import AdminEnvManager
 
         cli_root = _cli_root()
         admin_mgr = AdminEnvManager(cli_root)

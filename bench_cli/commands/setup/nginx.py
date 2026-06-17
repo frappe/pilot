@@ -2,15 +2,21 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from bench_cli.commands.base import Command
 from bench_cli.exceptions import ConfigError
-from bench_cli.managers.nginx_manager import NginxManager
 
 if TYPE_CHECKING:
     from bench_cli.core.bench import Bench
 
 
-class SetupNginxCommand:
+class SetupNginxCommand(Command):
+    name = "nginx"
+    help = "Generate nginx config."
+    group = "setup"
+
     def __init__(self, bench: "Bench") -> None:
+        from bench_cli.managers.nginx_manager import NginxManager
+
         self.bench = bench
         self.nginx_manager = NginxManager(bench)
 

@@ -4,11 +4,16 @@ import shutil
 import subprocess
 from typing import TYPE_CHECKING
 
+from bench_cli.commands.base import Command
+
 if TYPE_CHECKING:
     from bench_cli.core.bench import Bench
 
 
-class StatusCommand:
+class StatusCommand(Command):
+    name = "status"
+    help = "Show bench status summary."
+
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
 

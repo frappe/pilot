@@ -4,8 +4,6 @@ import sys
 import tomllib
 from typing import TYPE_CHECKING
 
-from bench_cli.utils import run_command, write_toml
-
 if TYPE_CHECKING:
     from bench_cli.core.bench import Bench
 
@@ -16,6 +14,8 @@ class DropSiteCommand:
         self.name = name
 
     def run(self) -> None:
+        from bench_cli.utils import run_command
+
         cmd = [*self.bench.frappe_call, "frappe", "drop-site", "--force", self.name]
         if self.bench.config.mariadb.root_password:
             cmd += ["--db-root-password", self.bench.config.mariadb.root_password]
@@ -27,6 +27,8 @@ class DropSiteCommand:
         self._reload_nginx()
 
     def _remove_from_bench_toml(self) -> None:
+        from bench_cli.utils import write_toml
+
         bench_toml = self.bench.path / "bench.toml"
         with bench_toml.open("rb") as fh:
             raw = tomllib.load(fh)

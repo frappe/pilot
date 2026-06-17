@@ -1,19 +1,21 @@
 from __future__ import annotations
 
+import argparse
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from bench_cli.config.volume_config import VolumeConfig
+from bench_cli.commands.base import Command
 from bench_cli.exceptions import BenchError, CommandError
-from bench_cli.managers.volume_manager import VolumeManager
-from bench_cli.platform import is_linux
-from bench_cli.utils import run_command
+
+_DATASET_CHOICES = ["benches", "mariadb"]
 
 if TYPE_CHECKING:
     from bench_cli.config.bench_config import BenchConfig
+    from bench_cli.config.volume_config import VolumeConfig
     from bench_cli.core.bench import Bench
     from bench_cli.managers.snapshot_orchestrator import SnapshotOrchestrator
+    from bench_cli.managers.volume_manager import VolumeManager
 
 
 def _ask_dataset() -> str | None:
@@ -46,6 +48,7 @@ def _target_datasets(config: VolumeConfig, dataset_name: str | None) -> list[str
 def _build_orchestrator(bench: Bench) -> SnapshotOrchestrator:
     from bench_cli.managers.mariadb_manager import MariaDBManager
     from bench_cli.managers.snapshot_orchestrator import SnapshotOrchestrator
+    from bench_cli.managers.volume_manager import VolumeManager
 
     volume = VolumeManager(bench.config.volume)
     mariadb = MariaDBManager(bench.config.mariadb)
@@ -53,6 +56,8 @@ def _build_orchestrator(bench: Bench) -> SnapshotOrchestrator:
 
 
 def _stop_mariadb() -> None:
+    from bench_cli.utils import run_command
+
     try:
         run_command(["sudo", "systemctl", "stop", "mariadb"])
     except CommandError:
@@ -60,6 +65,8 @@ def _stop_mariadb() -> None:
 
 
 def _start_mariadb() -> None:
+    from bench_cli.utils import run_command
+
     try:
         run_command(["sudo", "systemctl", "start", "mariadb"])
     except CommandError as e:
@@ -113,6 +120,9 @@ class VolumeSetupCommand:
                 raise BenchError(f"Pool {self.bench_config.volume.pool} is already in use by {sibling_bench_config.name}")
 
     def run(self) -> None:
+        from bench_cli.managers.volume_manager import VolumeManager
+        from bench_cli.platform import is_linux
+
         if not is_linux():
             raise BenchError("Volume management requires Linux (ZFS is not supported on macOS).")
 
@@ -141,7 +151,15 @@ class VolumeSetupCommand:
             print("  Saved resolved volume settings to bench.toml")
 
 
-class VolumeStatusCommand:
+class VolumeStatusCommand(Command):
+    name = "status"
+    help = "Show pool and dataset status."
+    group = "volume"
+
+    @classmethod
+    def from_args(cls, args, bench):
+        return cls(bench.config.volume)
+
     def __init__(self, config: VolumeConfig) -> None:
         self.config = config
 
@@ -151,6 +169,8 @@ class VolumeStatusCommand:
         self._print_dataset(self.config.mariadb_dataset)
 
     def _print_pool(self) -> None:
+        from bench_cli.utils import run_command
+
         try:
             result = run_command(["zpool", "list", "-H", "-o", "name,health,size,free", self.config.pool])
         except CommandError:
@@ -160,6 +180,8 @@ class VolumeStatusCommand:
         print(f"Pool       {name:<20} {health}  size={size}  free={free}")
 
     def _print_dataset(self, dataset: str) -> None:
+        from bench_cli.utils import run_command
+
         try:
             result = run_command(["zfs", "list", "-H", "-o", "name,quota,reservation,used,avail", dataset])
         except CommandError:
@@ -169,7 +191,19 @@ class VolumeStatusCommand:
         print(f"Dataset    {name:<30} quota={quota}  reservation={reservation}  used={used}  avail={avail}")
 
 
-class VolumeSnapshotCommand:
+class VolumeSnapshotCommand(Command):
+    name = "snapshot"
+    help = "Create a snapshot."
+    group = "volume"
+
+    @classmethod
+    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument("--dataset", choices=_DATASET_CHOICES, default=None, help="Dataset to snapshot (default: both).")
+
+    @classmethod
+    def from_args(cls, args, bench):
+        return cls(bench, args.dataset)
+
     def __init__(self, bench: Bench, dataset_name: str | None) -> None:
         self.bench = bench
         self.config = bench.config.volume
@@ -184,12 +218,26 @@ class VolumeSnapshotCommand:
             print(f"Snapshot created: {dataset}@{tag}")
 
 
-class VolumeListSnapshotsCommand:
+class VolumeListSnapshotsCommand(Command):
+    name = "list-snapshots"
+    help = "List snapshots."
+    group = "volume"
+
+    @classmethod
+    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument("--dataset", choices=_DATASET_CHOICES, default=None, help="Dataset to list (default: both).")
+
+    @classmethod
+    def from_args(cls, args, bench):
+        return cls(bench.config.volume, args.dataset)
+
     def __init__(self, config: VolumeConfig, dataset_name: str | None) -> None:
         self.config = config
         self.dataset_name = dataset_name
 
     def run(self) -> None:
+        from bench_cli.managers.volume_manager import VolumeManager
+
         manager = VolumeManager(self.config)
         for dataset in _target_datasets(self.config, self.dataset_name):
             snapshots = manager.list_snapshots(dataset)
@@ -203,19 +251,47 @@ class VolumeListSnapshotsCommand:
                 print(f"  {snap.snapshot_tag:<30} created: {ts}  used: {used_mb}M")
 
 
-class VolumeDestroySnapshotCommand:
+class VolumeDestroySnapshotCommand(Command):
+    name = "destroy-snapshot"
+    help = "Destroy a snapshot."
+    group = "volume"
+
+    @classmethod
+    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument("tag", help="Snapshot tag to destroy (e.g. 20250528-140000).")
+        parser.add_argument("--dataset", choices=_DATASET_CHOICES, default="benches", help="Dataset the snapshot belongs to.")
+
+    @classmethod
+    def from_args(cls, args, bench):
+        return cls(bench.config.volume, args.tag, args.dataset)
+
     def __init__(self, config: VolumeConfig, tag: str, dataset_name: str) -> None:
         self.config = config
         self.tag = tag
         self.dataset_name = dataset_name
 
     def run(self) -> None:
+        from bench_cli.managers.volume_manager import VolumeManager
+
         dataset = _resolve_dataset(self.config, self.dataset_name)
         VolumeManager(self.config).destroy_snapshot(dataset, self.tag)
         print(f"Snapshot destroyed: {dataset}@{self.tag}")
 
 
-class VolumeRestoreSnapshotCommand:
+class VolumeRestoreSnapshotCommand(Command):
+    name = "restore-snapshot"
+    help = "Restore a dataset to a snapshot."
+    group = "volume"
+
+    @classmethod
+    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument("tag", help="Snapshot tag to restore to (e.g. 20250528-140000).")
+        parser.add_argument("--dataset", choices=_DATASET_CHOICES, default="benches", help="Dataset to restore.")
+
+    @classmethod
+    def from_args(cls, args, bench):
+        return cls(bench, args.tag, args.dataset)
+
     def __init__(self, bench: Bench, tag: str, dataset_name: str) -> None:
         self.bench = bench
         self.config = bench.config.volume

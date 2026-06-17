@@ -398,7 +398,7 @@ def test_requirements_skips_app_without_python_setup_files(tmp_path: Path) -> No
     # No pyproject.toml or setup.py
 
     with patch("bench_cli.managers.python_env_manager.PythonEnvManager._ensure_uv", return_value="uv"), \
-         patch("bench_cli.commands.setup.requirements.run_command") as mock_rc:
+         patch("bench_cli.utils.run_command") as mock_rc:
         SetupRequirementsCommand(bench)._install_python()
         mock_rc.assert_not_called()
 
@@ -414,7 +414,7 @@ def test_requirements_installs_app_with_pyproject_toml(tmp_path: Path) -> None:
     (app_dir / "pyproject.toml").write_text("[project]\nname = 'myapp'\n")
 
     with patch("bench_cli.managers.python_env_manager.PythonEnvManager._ensure_uv", return_value="uv"), \
-         patch("bench_cli.commands.setup.requirements.run_command") as mock_rc:
+         patch("bench_cli.utils.run_command") as mock_rc:
         SetupRequirementsCommand(bench)._install_python()
         mock_rc.assert_called_once()
 
@@ -430,7 +430,7 @@ def test_requirements_installs_app_with_setup_py(tmp_path: Path) -> None:
     (app_dir / "setup.py").write_text("from setuptools import setup; setup()\n")
 
     with patch("bench_cli.managers.python_env_manager.PythonEnvManager._ensure_uv", return_value="uv"), \
-         patch("bench_cli.commands.setup.requirements.run_command") as mock_rc:
+         patch("bench_cli.utils.run_command") as mock_rc:
         SetupRequirementsCommand(bench)._install_python()
         mock_rc.assert_called_once()
 
@@ -445,7 +445,7 @@ def test_requirements_skips_js_for_app_without_package_json(tmp_path: Path) -> N
     (app_dir / ".git").mkdir()
     # No package.json
 
-    with patch("bench_cli.commands.setup.requirements.run_command") as mock_rc:
+    with patch("bench_cli.utils.run_command") as mock_rc:
         SetupRequirementsCommand(bench)._install_js()
         mock_rc.assert_not_called()
 
@@ -460,8 +460,8 @@ def test_requirements_installs_js_for_app_with_package_json(tmp_path: Path) -> N
     (app_dir / ".git").mkdir()
     (app_dir / "package.json").write_text('{"name": "myapp"}\n')
 
-    with patch("bench_cli.commands.setup.requirements.get_yarn_bin", return_value="yarn"):
-        with patch("bench_cli.commands.setup.requirements.run_command") as mock_rc:
+    with patch("bench_cli.utils.get_yarn_bin", return_value="yarn"):
+        with patch("bench_cli.utils.run_command") as mock_rc:
             SetupRequirementsCommand(bench)._install_js()
             mock_rc.assert_called_once()
             assert mock_rc.call_args[0][0] == ["yarn", "install"]

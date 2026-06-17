@@ -1,0 +1,33 @@
+name: Marketplace App Check
+
+on:
+  pull_request:
+    paths:
+      - "registry/apps.json"
+
+jobs:
+  semgrep-check:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install semgrep
+        run: uv tool install semgrep
+
+      - name: Get base apps.json
+        run: git show ${{ github.event.pull_request.base.sha }}:registry/apps.json > /tmp/apps_before.json
+
+      - name: Check changed marketplace apps
+        run: python3 scripts/check_marketplace_apps.py /tmp/apps_before.json registry/apps.json
