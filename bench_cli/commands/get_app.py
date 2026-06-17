@@ -1,17 +1,33 @@
 from __future__ import annotations
 
-import subprocess
+import argparse
 import sys
+from typing import TYPE_CHECKING
 
-from bench_cli.config.app_config import AppConfig
-from bench_cli.core.app import App
-from bench_cli.core.bench import Bench
-from bench_cli.managers.python_env_manager import PythonEnvManager
+from bench_cli.commands.base import Command
+
+if TYPE_CHECKING:
+    from bench_cli.core.bench import Bench
 
 
-class GetAppCommand:
-    def __init__(self, bench: Bench, repo: str, branch: str = "") -> None:
+class GetAppCommand(Command):
+    name = "get-app"
+    help = "Clone and install an app."
+
+    @classmethod
+    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument("repo", help="Git repository URL.")
+        parser.add_argument("--branch", default="", help="Git branch to checkout.")
+
+    @classmethod
+    def from_args(cls, args, bench):
+        return cls(bench, args.repo, args.branch or "main")
+
+    def __init__(self, bench: "Bench", repo: str, branch: str = "") -> None:
         from pathlib import PurePosixPath
+
+        from bench_cli.config.app_config import AppConfig
+        from bench_cli.core.app import App
 
         name = PurePosixPath(repo.rstrip("/")).name
         if name.endswith(".git"):
@@ -40,6 +56,8 @@ class GetAppCommand:
             self.app.clone()
 
     def _install(self) -> None:
+        from bench_cli.managers.python_env_manager import PythonEnvManager
+
         print(f"Installing {self.name}...")
         sys.stdout.flush()
         PythonEnvManager(self.bench).install_app(self.app)
@@ -51,6 +69,8 @@ class GetAppCommand:
             apps_txt.write_text("\n".join(existing + [self.name]) + "\n")
 
     def _validate(self) -> None:
+        import subprocess
+
         from bench_cli.exceptions import BenchError
 
         python = str(self.bench.env_path / "bin" / "python")
@@ -71,6 +91,8 @@ class GetAppCommand:
             )
 
     def _build(self) -> None:
+        from bench_cli.managers.python_env_manager import PythonEnvManager
+
         print(f"\nSetting up assets for {self.name}...")
         sys.stdout.flush()
         PythonEnvManager(self.bench).build_assets_for_app(self.app)

@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import tarfile
-import tempfile
-import urllib.error
-import urllib.request
+import argparse
 from pathlib import Path
 
+from bench_cli.commands.base import Command
 from bench_cli.exceptions import BenchError
-from bench_cli.utils import run_command
 
 _ADMIN_RELEASE_URL = "https://github.com/frappe/bench-cli/releases/download/latest-build/admin-frontend.tar.gz"
 
@@ -20,6 +17,11 @@ def _cli_root() -> Path:
 
 def download_admin_frontend(cli_root: Path) -> bool:
     """Download and extract the pre-built admin frontend. Returns True on success."""
+    import tarfile
+    import tempfile
+    import urllib.error
+    import urllib.request
+
     static_dir = cli_root / "admin" / "backend" / "static"
     tmp = Path(tempfile.mktemp(suffix=".tar.gz"))
 
@@ -44,11 +46,25 @@ def download_admin_frontend(cli_root: Path) -> bool:
         tmp.unlink(missing_ok=True)
 
 
-class BuildAdminCommand:
+class BuildAdminCommand(Command):
+    name = "build-admin"
+    help = "Download or rebuild admin frontend assets."
+    requires_bench = False
+
+    @classmethod
+    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument("--force", action="store_true", help="Skip download and build from source.")
+
+    @classmethod
+    def from_args(cls, args, bench):
+        return cls(force_build=args.force)
+
     def __init__(self, force_build: bool = False) -> None:
         self.force_build = force_build
 
     def run(self) -> None:
+        from bench_cli.utils import run_command
+
         if not self.force_build and download_admin_frontend(_cli_root()):
             return
         if self.force_build:

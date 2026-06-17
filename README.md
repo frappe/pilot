@@ -144,6 +144,31 @@ Apps and sites are tracked by the filesystem — no need to list them in `bench.
 
 With multiple benches: `bench -b my-bench start`
 
+## Extending the CLI
+
+Commands are **self-registering** — adding one means creating a single file under
+`bench_cli/commands/`. No edits to `cli.py` or any central list. Subclass `Command`,
+declare its name/help/arguments, and a registry auto-discovers it:
+
+```python
+# bench_cli/commands/hello.py
+from bench_cli.commands.base import Command
+
+
+class HelloCommand(Command):
+    name = "hello"
+    help = "Print a greeting."
+    requires_bench = False          # omit to receive the active Bench
+
+    def run(self) -> None:
+        print("hello")
+```
+
+That's the whole change — `bench hello` now works. Commands that take arguments add an
+`add_arguments(parser)` classmethod and a `from_args(args, bench)` factory; set
+`group = "setup"` (or `"volume"`) to nest under a subcommand group. See
+[docs/architecture.md](docs/architecture.md#cli-entry-point-and-command-registry).
+
 ## Production
 
 ```toml

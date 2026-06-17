@@ -2,13 +2,17 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from bench_cli.utils import get_yarn_bin, run_command
+from bench_cli.commands.base import Command
 
 if TYPE_CHECKING:
     from bench_cli.core.bench import Bench
 
 
-class SetupRequirementsCommand:
+class SetupRequirementsCommand(Command):
+    name = "requirements"
+    help = "Install Python and JS requirements for all apps."
+    group = "setup"
+
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
 
@@ -18,6 +22,7 @@ class SetupRequirementsCommand:
 
     def _install_python(self) -> None:
         from bench_cli.managers.python_env_manager import PythonEnvManager
+        from bench_cli.utils import run_command
 
         manager = PythonEnvManager(self.bench)
         uv = manager._ensure_uv()
@@ -33,6 +38,8 @@ class SetupRequirementsCommand:
             )
 
     def _install_js(self) -> None:
+        from bench_cli.utils import get_yarn_bin, run_command
+
         for app in self.bench.apps():
             if not (app.path / "package.json").exists():
                 continue

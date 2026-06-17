@@ -2,17 +2,21 @@ from __future__ import annotations
 
 import shutil
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
-from bench_cli.core.bench import Bench
-from bench_cli.managers.process_manager import ProcessManagerFactory
-from bench_cli.managers.python_env_manager import PythonEnvManager
-from bench_cli.managers.redis_manager import RedisManager
+from bench_cli.commands.base import Command
+
+if TYPE_CHECKING:
+    from bench_cli.core.bench import Bench
 
 _BENCH_DIRS = ("apps", "sites", "logs", "config", "pids", "env", "admin", "tasks")
 
 
-class InitCommand:
-    def __init__(self, bench: Bench) -> None:
+class InitCommand(Command):
+    name = "init"
+    help = "Initialise the bench."
+
+    def __init__(self, bench: "Bench") -> None:
         self.bench = bench
         self._step_counter = 0
         self._total_steps = 0
@@ -77,6 +81,9 @@ class InitCommand:
     # ── init steps ─────────────────────────────────────────────────────────
 
     def _do_run(self) -> None:
+        from bench_cli.managers.process_manager import ProcessManagerFactory
+        from bench_cli.managers.python_env_manager import PythonEnvManager
+        from bench_cli.managers.redis_manager import RedisManager
         from bench_cli.platform import is_linux
 
         production = self.bench.config.production.nginx
@@ -159,6 +166,8 @@ class InitCommand:
 
     def _install_system_packages(self) -> None:
         from bench_cli.managers.mariadb_manager import MariaDBManager
+        from bench_cli.managers.python_env_manager import PythonEnvManager
+        from bench_cli.managers.redis_manager import RedisManager
         from bench_cli.platform import get_package_manager, is_linux
 
         pkg = get_package_manager()

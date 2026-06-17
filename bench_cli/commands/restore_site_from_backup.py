@@ -3,10 +3,6 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING
 
-from bench_cli.commands.new_site import NewSiteCommand
-from bench_cli.config.site_config import SiteConfig
-from bench_cli.core.site import Site
-
 if TYPE_CHECKING:
     from bench_cli.core.bench import Bench
 
@@ -29,6 +25,10 @@ class NewSiteFromBackupCommand:
         self.private_files = private_files
 
     def run(self) -> None:
+        from bench_cli.commands.new_site import NewSiteCommand
+        from bench_cli.config.site_config import SiteConfig
+        from bench_cli.core.site import Site
+
         NewSiteCommand(self.bench, self.name, [], self.admin_password).run()
         print(f"Restoring backup: {self.db_file}")
         sys.stdout.flush()

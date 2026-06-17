@@ -4,13 +4,17 @@ import json
 import sys
 from typing import TYPE_CHECKING
 
-from bench_cli.platform import is_linux
+from bench_cli.commands.base import Command
 
 if TYPE_CHECKING:
     from bench_cli.core.bench import Bench
 
 
-class SetupProductionCommand:
+class SetupProductionCommand(Command):
+    name = "production"
+    help = "Full production setup (nginx + supervisor)."
+    group = "setup"
+
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
 
@@ -31,6 +35,8 @@ class SetupProductionCommand:
         self._print_summary()
 
     def _require_linux(self) -> None:
+        from bench_cli.platform import is_linux
+
         if not is_linux():
             print(
                 "Error: bench setup production only runs on Linux servers.\nOn macOS, use 'bench start' for local development.",

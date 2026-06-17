@@ -2,18 +2,36 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from bench_cli.utils import run_command
-from bench_cli.commands.admin import download_admin_frontend, _cli_root
+from bench_cli.commands.base import Command
 
 if TYPE_CHECKING:
     from bench_cli.core.bench import Bench
 
 
-class UpgradeCommand:
+class UpgradeCommand(Command):
+    name = "upgrade"
+    help = "Pull latest bench-cli and download the admin frontend."
+    requires_bench = False
+
+    @classmethod
+    def from_args(cls, args, bench):
+        # Bench is optional: used only to restart processes in production.
+        if bench is None:
+            from bench_cli.loader import load_bench
+
+            try:
+                bench = load_bench()
+            except Exception:
+                bench = None
+        return cls(bench)
+
     def __init__(self, bench: "Bench | None" = None) -> None:
         self.bench = bench
 
     def run(self) -> None:
+        from bench_cli.commands.admin import download_admin_frontend, _cli_root
+        from bench_cli.utils import run_command
+
         cli_root = _cli_root()
 
         print("Pulling latest bench-cli...")

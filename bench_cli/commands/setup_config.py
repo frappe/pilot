@@ -1,16 +1,26 @@
 from __future__ import annotations
 
-from bench_cli.core.bench import Bench
-from bench_cli.managers.nginx_manager import NginxManager
-from bench_cli.managers.process_manager import ProcessManagerFactory
-from bench_cli.managers.redis_manager import RedisManager
+from typing import TYPE_CHECKING
+
+from bench_cli.commands.base import Command
+
+if TYPE_CHECKING:
+    from bench_cli.core.bench import Bench
 
 
-class UpdateConfigCommand:
-    def __init__(self, bench: Bench) -> None:
+class UpdateConfigCommand(Command):
+    name = "config"
+    help = "Regenerate config files from bench.toml."
+    group = "setup"
+
+    def __init__(self, bench: "Bench") -> None:
         self.bench = bench
 
     def run(self) -> None:
+        from bench_cli.managers.nginx_manager import NginxManager
+        from bench_cli.managers.process_manager import ProcessManagerFactory
+        from bench_cli.managers.redis_manager import RedisManager
+
         print("Updating Redis configs...")
         RedisManager(self.bench.config.redis, self.bench).generate_configs()
 
