@@ -419,7 +419,7 @@ def test_malloc_arena_max_validation(tmp_path: Path) -> None:
         make_bench(tmp_path, gunicorn=GunicornConfig(malloc_arena_max=-1)).config.validate()
 
 
-# ── malloc_trim post_request hook ─────────────────────────────────────────────
+# ── malloc_trim timer hook ────────────────────────────────────────────────────
 
 
 def _gen_gunicorn_config(tmp_path: Path, gunicorn: GunicornConfig | None = None, *, companion: bool = False) -> str:
@@ -432,17 +432,21 @@ def _gen_gunicorn_config(tmp_path: Path, gunicorn: GunicornConfig | None = None,
 
 def test_malloc_trim_hook_in_standalone_config(tmp_path: Path) -> None:
     content = _gen_gunicorn_config(tmp_path)
-    assert "def post_request(worker, req, environ, resp):" in content
+    # A real timer thread, started per worker, drives the periodic trim.
+    assert "def post_worker_init(worker):" in content
+    assert "def _malloc_trim_loop():" in content
+    assert "_malloc_trim_event.wait(timeout)" in content
     assert "_libc.malloc_trim(0)" in content
-    assert 'st["count"] >= 100' in content
-    assert '(now - st["last"]) >= 300' in content
-    # The generated config must be valid Python.
+    # Default: trim every 300s, wake early at 100 requests.
+    assert "timeout = 300 or None" in content
+    assert "_malloc_trim_count >= 100" in content
+    assert "def post_request(worker, req, environ, resp):" in content
     compile(content, "gunicorn.conf.py", "exec")
 
 
 def test_malloc_trim_hook_in_companion_config(tmp_path: Path) -> None:
     content = _gen_gunicorn_config(tmp_path, companion=True)
-    assert "def post_request(worker, req, environ, resp):" in content
+    assert "def post_worker_init(worker):" in content
     assert "_libc.malloc_trim(0)" in content
     # Coexists with the existing companion hooks.
     assert "def when_ready(server):" in content
@@ -451,19 +455,29 @@ def test_malloc_trim_hook_in_companion_config(tmp_path: Path) -> None:
 
 def test_malloc_trim_hook_honours_custom_thresholds(tmp_path: Path) -> None:
     content = _gen_gunicorn_config(tmp_path, GunicornConfig(malloc_trim_requests=50, malloc_trim_interval=60))
-    assert 'st["count"] >= 50' in content
-    assert '(now - st["last"]) >= 60' in content
+    assert "timeout = 60 or None" in content
+    assert "_malloc_trim_count >= 50" in content
 
 
 def test_malloc_trim_hook_omitted_when_both_disabled(tmp_path: Path) -> None:
     content = _gen_gunicorn_config(tmp_path, GunicornConfig(malloc_trim_requests=0, malloc_trim_interval=0))
-    assert "post_request" not in content
+    assert "post_worker_init" not in content
     assert "malloc_trim" not in content
 
 
-def test_malloc_trim_single_knob_disabled_uses_false_branch(tmp_path: Path) -> None:
+def test_malloc_trim_interval_only_omits_post_request(tmp_path: Path) -> None:
+    # No request threshold -> pure periodic timer, no post_request hook.
     content = _gen_gunicorn_config(tmp_path, GunicornConfig(malloc_trim_requests=0, malloc_trim_interval=300))
-    assert "False or (now - st[\"last\"]) >= 300" in content
+    assert "timeout = 300 or None" in content
+    assert "def post_request" not in content
+    compile(content, "gunicorn.conf.py", "exec")
+
+
+def test_malloc_trim_requests_only_waits_indefinitely(tmp_path: Path) -> None:
+    # No interval -> thread blocks until the request counter wakes it.
+    content = _gen_gunicorn_config(tmp_path, GunicornConfig(malloc_trim_requests=100, malloc_trim_interval=0))
+    assert "timeout = 0 or None" in content
+    assert "def post_request(worker, req, environ, resp):" in content
     compile(content, "gunicorn.conf.py", "exec")
 
 

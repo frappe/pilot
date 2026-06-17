@@ -73,29 +73,33 @@ class GunicornManager:
         return self._render_companion_config(base)
 
     def _malloc_trim_hook(self) -> str:
-        """A throttled post_request hook that returns freed heap to the OS.
+        """A background timer thread that returns freed heap to the OS.
 
         glibc keeps freed allocations in per-arena free lists, so a transient
         spike (large query/report) pins the web worker's RSS at its high-water
-        mark. Calling malloc_trim(0) periodically gives that memory back. We
-        trim after `malloc_trim_requests` requests OR every `malloc_trim_interval`
-        seconds, whichever comes first; the time check only fires on the next
-        request, which is fine because an idle worker has nothing new to free.
-        Returns "" when both knobs are disabled."""
+        mark. malloc_trim(0) gives that memory back. A daemon thread (started in
+        each worker via post_worker_init) trims every `malloc_trim_interval`
+        seconds regardless of traffic — so an idle worker still reclaims after a
+        spike — and post_request wakes it early once `malloc_trim_requests`
+        requests have accrued. Either knob is disabled with 0; both 0 -> ""."""
         cfg = self.bench.config.gunicorn
         reqs, interval = cfg.malloc_trim_requests, cfg.malloc_trim_interval
         if reqs <= 0 and interval <= 0:
             return ""
-        req_cond = f'st["count"] >= {reqs}' if reqs > 0 else "False"
-        time_cond = f'(now - st["last"]) >= {interval}' if interval > 0 else "False"
+        post_request = "" if reqs <= 0 else f'''
+
+def post_request(worker, req, environ, resp):
+    global _malloc_trim_count
+    with _malloc_trim_lock:
+        _malloc_trim_count += 1
+        if _malloc_trim_count >= {reqs}:
+            _malloc_trim_event.set()
+'''
         return f'''
 
 import ctypes
 import threading
-import time
 
-_malloc_trim_lock = threading.Lock()
-_malloc_trim_state = {{"count": 0, "last": 0.0}}
 try:
     _libc = ctypes.CDLL("libc.so.6", use_errno=True)
     _libc.malloc_trim.argtypes = [ctypes.c_size_t]
@@ -103,24 +107,27 @@ try:
 except (OSError, AttributeError):
     _libc = None
 
+_malloc_trim_event = threading.Event()
+_malloc_trim_lock = threading.Lock()
+_malloc_trim_count = 0
 
-def post_request(worker, req, environ, resp):
-    if _libc is None:
-        return
-    now = time.monotonic()
-    do_trim = False
-    with _malloc_trim_lock:
-        st = _malloc_trim_state
-        if st["last"] == 0.0:
-            st["last"] = now
-        st["count"] += 1
-        if {req_cond} or {time_cond}:
-            st["count"] = 0
-            st["last"] = now
-            do_trim = True
-    if do_trim:
-        _libc.malloc_trim(0)
-'''
+
+def _malloc_trim_loop():
+    global _malloc_trim_count
+    timeout = {interval} or None
+    while True:
+        _malloc_trim_event.wait(timeout)
+        _malloc_trim_event.clear()
+        with _malloc_trim_lock:
+            _malloc_trim_count = 0
+        if _libc is not None:
+            _libc.malloc_trim(0)
+
+
+def post_worker_init(worker):
+    if _libc is not None:
+        threading.Thread(target=_malloc_trim_loop, name="malloc-trim", daemon=True).start()
+{post_request}'''
 
     def _render_companion_config(self, base: str) -> str:
         sites_dir = self.bench.sites_path
