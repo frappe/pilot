@@ -32,9 +32,21 @@ class MariaDBManager:
         package_manager.update()
         package_manager.install("mariadb-server", "mariadb-client")
 
+    def is_running(self) -> bool:
+        if is_macos():
+            result = subprocess.run(["brew", "services", "list"], capture_output=True, text=True)
+            return any(
+                line.split()[1] == "started"
+                for line in result.stdout.splitlines()
+                if line.split() and line.split()[0].startswith("mariadb")
+            )
+        result = subprocess.run(["systemctl", "is-active", "mariadb"], capture_output=True, text=True)
+        return result.returncode == 0
+
     def start(self) -> None:
         if is_macos():
-            run_command(["brew", "services", "start", self._brew_package()])
+            if not self.is_running():
+                run_command(["brew", "services", "start", self._brew_package()])
         else:
             run_command(["sudo", "systemctl", "start", "mariadb"])
 

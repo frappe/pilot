@@ -51,6 +51,59 @@ def test_secure_installation_sets_password_and_hardens() -> None:
     assert "FLUSH PRIVILEGES;" in sql
 
 
+# ── is_running ───────────────────────────────────────────────────────────────
+
+
+def test_is_running_macos_true() -> None:
+    brew_output = "Name      Status  User File\nmariadb@11.8  started root ~\n"
+    with patch("bench_cli.managers.mariadb_manager.is_macos", return_value=True), patch(
+        "subprocess.run", return_value=type("R", (), {"stdout": brew_output, "returncode": 0})()
+    ):
+        assert _manager().is_running() is True
+
+
+def test_is_running_macos_false() -> None:
+    brew_output = "Name      Status  User File\nmariadb@11.8  stopped root ~\n"
+    with patch("bench_cli.managers.mariadb_manager.is_macos", return_value=True), patch(
+        "subprocess.run", return_value=type("R", (), {"stdout": brew_output, "returncode": 0})()
+    ):
+        assert _manager().is_running() is False
+
+
+def test_is_running_linux_true() -> None:
+    with patch("bench_cli.managers.mariadb_manager.is_macos", return_value=False), patch(
+        "subprocess.run", return_value=type("R", (), {"stdout": "active\n", "returncode": 0})()
+    ):
+        assert _manager().is_running() is True
+
+
+def test_is_running_linux_false() -> None:
+    with patch("bench_cli.managers.mariadb_manager.is_macos", return_value=False), patch(
+        "subprocess.run", return_value=type("R", (), {"stdout": "inactive\n", "returncode": 3})()
+    ):
+        assert _manager().is_running() is False
+
+
+def test_start_macos_skips_when_already_running() -> None:
+    manager = _manager()
+    with patch("bench_cli.managers.mariadb_manager.is_macos", return_value=True), patch.object(
+        manager, "is_running", return_value=True
+    ), patch("bench_cli.managers.mariadb_manager.run_command") as run_cmd:
+        manager.start()
+    run_cmd.assert_not_called()
+
+
+def test_start_macos_starts_when_not_running() -> None:
+    manager = _manager()
+    with patch("bench_cli.managers.mariadb_manager.is_macos", return_value=True), patch.object(
+        manager, "is_running", return_value=False
+    ), patch.object(manager, "_brew_package", return_value="mariadb@11.8"), patch(
+        "bench_cli.managers.mariadb_manager.run_command"
+    ) as run_cmd:
+        manager.start()
+    run_cmd.assert_called_once_with(["brew", "services", "start", "mariadb@11.8"])
+
+
 # ── check_credentials ─────────────────────────────────────────────────────────
 
 
