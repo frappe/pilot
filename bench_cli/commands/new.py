@@ -84,9 +84,6 @@ class NewCommand(Command):
                 continue
 
         offset = 0
-        if len(used) == 0:
-            return offset
-
         while offset in used or any(self._port_is_live(base + offset) for base in bases.values()):
             offset += 1
         return offset

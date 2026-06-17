@@ -510,7 +510,7 @@ class VolumeManager:
         return Path(result.stdout.decode().strip())
 
     def set_mountpoint(self, dataset: str, target: Path) -> None:
-        target.mkdir(parents=True, exist_ok=True)
+        self._run(["sudo", "mkdir", "-p", str(target.absolute())])
         self._run(["sudo", "zfs", "set", f"mountpoint={target}", dataset])
 
     def migrate_data(self, dataset: str, source: Path) -> None:
