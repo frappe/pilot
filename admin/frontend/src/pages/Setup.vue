@@ -169,7 +169,7 @@ const modalWidthClass = computed(() => {
 const titles = {
   passwords: 'Set up passwords',
   customize: 'Customize your bench',
-  volume: 'Storage setup',
+  volume: 'Storage setup (ZFS)',
   running: 'Initializing bench…',
   done: 'Setup complete',
 }
