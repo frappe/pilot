@@ -262,6 +262,7 @@ def test_production_config_parses_use_companion_manager(tmp_path: Path) -> None:
         '[[apps]]\nname = "frappe"\nrepo = "https://github.com/frappe/frappe"\nbranch = "version-16"\n\n'
         '[mariadb]\nroot_password = "root"\n\n'
         '[redis]\ncache_port = 13000\nqueue_port = 11000\n\n'
+        '[admin]\ndomain = "admin.test.localhost"\n\n'
         '[production]\nprocess_manager = "supervisor"\nnginx = true\nuse_companion_manager = true\n'
     )
     config = BenchConfig.from_file(toml)

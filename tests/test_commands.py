@@ -79,7 +79,7 @@ def test_new_command_first_bench_uses_default_ports(tmp_path: Path, monkeypatch:
     with open(target / "bench.toml", "rb") as f:
         data = tomllib.load(f)
     assert data["bench"]["http_port"] == 8000
-    assert data["admin"]["port"] == 8002
+    assert data["admin"]["port"] == 7000
 
 
 def test_new_command_second_bench_gets_next_offset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -99,7 +99,7 @@ def test_new_command_second_bench_gets_next_offset(tmp_path: Path, monkeypatch: 
     assert data["bench"]["socketio_port"] == 9001
     assert data["redis"]["cache_port"] == 13001
     assert data["redis"]["queue_port"] == 11001
-    assert data["admin"]["port"] == 8003
+    assert data["admin"]["port"] == 7001
 
 
 def test_new_command_writes_dedicated_mariadb_instance(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

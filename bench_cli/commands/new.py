@@ -45,7 +45,10 @@ class NewCommand(Command):
 
         offset = self._pick_port_offset(self.target_directory)
         print("Writing bench.toml")
-        settings = {"admin_password": secrets.token_hex(nbytes=5)}
+        settings = {
+            "admin_password": secrets.token_hex(nbytes=5),
+            "admin_domain": f"{self.name}-admin.localhost",
+        }
         # New benches get their own MariaDB instance (mariadb@<name>) with an
         # isolated socket/datadir; mariadb.port is offset automatically via
         # _PORT_FIELDS. Existing benches without these fields keep using the

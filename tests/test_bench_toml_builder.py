@@ -28,7 +28,7 @@ def test_default_ports_values_match_known_defaults() -> None:
     assert ports["socketio_port"] == 9000
     assert ports["redis.cache_port"] == 13000
     assert ports["redis.queue_port"] == 11000
-    assert ports["admin.port"] == 8002
+    assert ports["admin.port"] == 7000
     assert ports["mariadb.port"] == 3306
 
 
@@ -45,7 +45,7 @@ def _render(tmp_path: Path, settings: dict | None = None, port_offset: int = 0) 
 def test_port_offset_zero_leaves_defaults(tmp_path: Path) -> None:
     data = _render(tmp_path)
     assert data["bench"]["http_port"] == 8000
-    assert data["admin"]["port"] == 8002
+    assert data["admin"]["port"] == 7000
 
 
 def test_port_offset_shifts_all_fields_together(tmp_path: Path) -> None:
@@ -54,7 +54,7 @@ def test_port_offset_shifts_all_fields_together(tmp_path: Path) -> None:
     assert data["bench"]["socketio_port"] == 9001
     assert data["redis"]["cache_port"] == 13001
     assert data["redis"]["queue_port"] == 11001
-    assert data["admin"]["port"] == 8003
+    assert data["admin"]["port"] == 7001
     assert data["mariadb"]["port"] == 3307
 
 
@@ -65,7 +65,7 @@ def test_port_fields_not_settable_via_settings(tmp_path: Path) -> None:
     touch any port field — only port_offset can."""
     data = _render(tmp_path, settings={"admin_port": 9999, "http_port": 1234}, port_offset=1)
     assert data["bench"]["http_port"] == 8001
-    assert data["admin"]["port"] == 8003
+    assert data["admin"]["port"] == 7001
 
 
 # ── current_port_offset ──────────────────────────────────────────────────────

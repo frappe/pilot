@@ -24,6 +24,7 @@ MINIMAL_VALID_DATA: dict = {
     ],
     "mariadb": {"root_password": "root"},
     "redis": {"cache_port": 13000, "queue_port": 11000},
+    "admin": {"domain": "admin.test.localhost"},
 }
 
 

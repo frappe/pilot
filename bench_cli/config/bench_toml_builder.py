@@ -23,6 +23,7 @@ FLAT_KEYS = {
     "mariadb_port": "mariadb.port",
     "admin_enabled": "admin.enabled",
     "admin_password": "admin.password",
+    "admin_domain": "admin.domain",
     "volume_enabled": "volume.enabled",
     "volume_pool": "volume.pool",
     "volume_backing": "volume.backing",

@@ -20,6 +20,11 @@ _BENCH_NAME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]*$")
 _EMAIL_PATTERN = re.compile(r"^[^@]+@[^@]+\.[^@]+$")
 _VERSION_PATTERN = re.compile(r"^\d+(\.\d+)*$")
 _ZFS_SIZE_PATTERN = re.compile(r"^[1-9]\d*[KMGTkmgt]?$")
+# Lenient hostname: dotted labels of alphanumerics/hyphens. Allows dev names
+# like "admin1.localhost" and real domains like "admin.example.com".
+_HOSTNAME_PATTERN = re.compile(
+    r"^(?=.{1,253}$)[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
+)
 _REDIS_PORT_MIN = 1024
 _REDIS_PORT_MAX = 65535
 _PORT_MIN = 1
@@ -170,7 +175,7 @@ class BenchConfig:
     @staticmethod
     def _parse_admin(data: dict) -> AdminConfig:
         return AdminConfig(
-            port=data.get("port", 8002),
+            port=data.get("port", 7000),
             timeout=data.get("timeout", 180),
             enabled=data.get("enabled", False),
             password=data.get("password", ""),
@@ -221,6 +226,7 @@ class BenchConfig:
         self._validate_mariadb_version()
         self._validate_mariadb_instance()
         self._validate_redis_version()
+        self._validate_admin_domain()
         if self.volume.enabled:
             self._validate_volume()
 
@@ -288,6 +294,18 @@ class BenchConfig:
     def _validate_letsencrypt_email(self) -> None:
         if self.letsencrypt.email and not _EMAIL_PATTERN.match(self.letsencrypt.email):
             raise ConfigError(f"letsencrypt.email '{self.letsencrypt.email}' is not a valid email address.")
+
+    def _validate_admin_domain(self) -> None:
+        domain = self.admin.domain
+        if not domain:
+            if self.production.enabled:
+                raise ConfigError(
+                    "admin.domain is required in production. Set it in bench.toml "
+                    "(e.g. admin.example.com) or run 'bench setup production' to be prompted."
+                )
+            return
+        if not _HOSTNAME_PATTERN.match(domain):
+            raise ConfigError(f"admin.domain '{domain}' is not a valid hostname.")
 
     def _validate_nginx_ports_distinct(self) -> None:
         if self.nginx.http_port == self.nginx.https_port:
