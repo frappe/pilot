@@ -289,9 +289,7 @@ class NginxManager:
         return Path("/etc/letsencrypt/live") / self.bench.config.admin.domain / "fullchain.pem"
 
     def admin_cert_exists(self) -> bool:
-        domain = self.bench.config.admin.domain
-        live_dir = Path("/etc/letsencrypt/live") / domain
-        return (live_dir / "fullchain.pem").exists() and (live_dir / "privkey.pem").exists()
+        return self._cert_files_exist(Path("/etc/letsencrypt/live") / self.bench.config.admin.domain)
 
     def install_config(self) -> None:
         nginx_dir = self.bench.config.nginx.config_dir
@@ -330,5 +328,15 @@ class NginxManager:
         return Path("/etc/letsencrypt/live") / site.name / "fullchain.pem"
 
     def cert_exists(self, site: "SiteConfig") -> bool:
-        live_dir = Path("/etc/letsencrypt/live") / site.name
-        return (live_dir / "fullchain.pem").exists() and (live_dir / "privkey.pem").exists()
+        return self._cert_files_exist(Path("/etc/letsencrypt/live") / site.name)
+
+    @staticmethod
+    def _cert_files_exist(live_dir: Path) -> bool:
+        # /etc/letsencrypt/live is root-only (0700), so stat via sudo rather than
+        # letting Path.exists() raise EACCES for the bench user.
+        import subprocess
+
+        return subprocess.run(
+            ["sudo", "test", "-f", str(live_dir / "fullchain.pem"), "-a", "-f", str(live_dir / "privkey.pem")],
+            capture_output=True,
+        ).returncode == 0

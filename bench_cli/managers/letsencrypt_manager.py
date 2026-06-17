@@ -114,7 +114,7 @@ class LetsEncryptManager:
         from datetime import datetime, timezone
 
         result = subprocess.run(
-            ["openssl", "x509", "-enddate", "-noout", "-in", str(cert_file)],
+            ["sudo", "openssl", "x509", "-enddate", "-noout", "-in", str(cert_file)],
             capture_output=True,
             text=True,
         )
