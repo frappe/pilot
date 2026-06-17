@@ -34,8 +34,9 @@ FLAT_KEYS = {
     "production_process_manager": "production.process_manager",
 }
 
-# Framework branches the setup wizard offers, newest/recommended first. The
-FRAMEWORK_BRANCHES = ["develop"]
+# Framework branches the setup wizard offers. version-16 is the stable release;
+# develop is bleeding edge. First entry is the default.
+FRAMEWORK_BRANCHES = ["version-16", "develop"]
 
 _DEFAULT_DATA: dict = {
     "bench": {"name": "", "python": "3.14"},
