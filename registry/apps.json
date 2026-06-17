@@ -5845,5 +5845,17 @@
     "logo_url": null,
     "category": "Applications",
     "stars": 93
+  },
+  {
+    "name": "myvuln_app",
+    "title": "My Vuln App",
+    "description": "Demo app for the marketplace security check.",
+    "repo": "https://github.com/AryamanSharma14/myvuln_app",
+    "branch": "version-16",
+    "branches": [
+      "version-16"
+    ],
+    "logo_url": null,
+    "category": "Extensions"
   }
 ]
