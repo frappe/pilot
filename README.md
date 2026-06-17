@@ -41,6 +41,7 @@ echo 'export PATH="$HOME/bench-cli:$PATH"' >> ~/.zshrc && source ~/.zshrc
 
 ```bash
 bench new my-bench       # creates bench.toml — edit it to set MariaDB password
+cd ~/bench-cli/benches/my-bench
 bench init               # installs deps, creates venv, clones frappe, generates Procfile
 bench get-app https://github.com/frappe/erpnext --branch version-16
 bench new-site site1.localhost
