@@ -157,6 +157,24 @@ def test_supervisor_render_conf_has_group_section(tmp_path: Path) -> None:
     assert "[group:test-bench]" in conf
 
 
+def test_supervisor_render_conf_separates_admin_group(tmp_path: Path) -> None:
+    from bench_cli.managers.process_manager import ProcessDefinition
+
+    mgr = _make_supervisor_manager(tmp_path)
+    fake_defs = [
+        ProcessDefinition("web", "cmd_web", tmp_path / "logs" / "web.log"),
+        ProcessDefinition("admin", "cmd_admin", tmp_path / "logs" / "admin.log"),
+    ]
+    with patch.object(mgr, "_prod_process_definitions", return_value=fake_defs):
+        conf = mgr._render_supervisord_conf()
+    assert "[group:test-bench]" in conf
+    assert "[group:test-bench-admin]" in conf
+    # The workload group must not include the admin program.
+    workload_line = [ln for ln in conf.splitlines() if ln.startswith("programs=") ][0]
+    assert "test-bench-admin" not in workload_line
+    assert "test-bench-web" in workload_line
+
+
 def test_supervisor_render_conf_has_unix_http_server(tmp_path: Path) -> None:
     mgr = _make_supervisor_manager(tmp_path)
     with patch.object(mgr, "_prod_process_definitions", return_value=[]):
@@ -342,7 +360,9 @@ def test_systemd_admin_socket_listens_on_internal_port(tmp_path: Path) -> None:
     internal = mgr.bench.config.admin.internal_port
     assert "[Socket]" in socket_unit
     assert f"ListenStream=127.0.0.1:{internal}" in socket_unit
-    assert "WantedBy=test-bench.target" in socket_unit
+    # Independent of the workload target so the admin survives `bench stop`.
+    assert "WantedBy=default.target" in socket_unit
+    assert "PartOf=" not in socket_unit
 
 
 def test_systemd_admin_service_runs_gunicorn_with_idle_timeout(tmp_path: Path) -> None:
@@ -354,9 +374,11 @@ def test_systemd_admin_service_runs_gunicorn_with_idle_timeout(tmp_path: Path) -
     assert "After=test-bench-admin.socket" in service
     # Re-activation is via the socket, not a systemd restart loop.
     assert "Restart=no" in service
+    # Not PartOf the target — stopping the workload must not stop the admin.
+    assert "PartOf=" not in service
 
 
-def test_systemd_target_wants_admin_socket_not_service(tmp_path: Path) -> None:
+def test_systemd_target_excludes_admin(tmp_path: Path) -> None:
     from bench_cli.managers.process_manager import ProcessDefinition
 
     mgr = _make_systemd_manager(tmp_path)
@@ -365,7 +387,8 @@ def test_systemd_target_wants_admin_socket_not_service(tmp_path: Path) -> None:
         ProcessDefinition("admin", "x", tmp_path / "logs" / "admin.log"),
     ]
     target = mgr._render_target(defs)
-    assert "test-bench-admin.socket" in target
+    # The target groups the workload only; the admin is independent.
+    assert "test-bench-admin.socket" not in target
     assert "test-bench-admin.service" not in target
     assert "test-bench-web.service" in target
 

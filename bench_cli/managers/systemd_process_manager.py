@@ -244,18 +244,20 @@ class SystemdProcessManager(ProcessManager):
 
     def _render_admin_socket(self) -> str:
         cfg = self.bench.config.admin
+        # The admin is the control plane: it stays reachable while the workload
+        # target is stopped, so the socket is independent of the target (no
+        # PartOf) and enabled on its own (WantedBy=default.target).
         return (
             "\n".join(
                 [
                     "[Unit]",
                     f"Description={self.bench.config.name} admin (socket)",
-                    f"PartOf={self._target_name()}",
                     "",
                     "[Socket]",
                     f"ListenStream=127.0.0.1:{cfg.internal_port}",
                     "",
                     "[Install]",
-                    f"WantedBy={self._target_name()}",
+                    "WantedBy=default.target",
                 ]
             )
             + "\n"
@@ -271,7 +273,6 @@ class SystemdProcessManager(ProcessManager):
                 [
                     "[Unit]",
                     f"Description={self.bench.config.name} admin",
-                    f"PartOf={self._target_name()}",
                     f"Requires={self._admin_socket_name()}",
                     f"After={self._admin_socket_name()}",
                     "",
@@ -293,11 +294,11 @@ class SystemdProcessManager(ProcessManager):
         )
 
     def _render_target(self, defs: list[ProcessDefinition]) -> str:
-        # The admin is socket-activated and on-demand, so the target wants its
-        # socket (the always-on listener), never the service itself.
+        # The target groups the workload only. The admin (socket + service) is an
+        # independent control-plane unit, so `bench stop` (stop target) never
+        # tears it down.
         wants = " ".join(
-            self._admin_socket_name() if pd.name == "admin" else self._unit_name(pd.name)
-            for pd in defs
+            self._unit_name(pd.name) for pd in defs if pd.name != "admin"
         )
         return (
             "\n".join(
