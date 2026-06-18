@@ -264,8 +264,18 @@ def create_app(bench_root: Path) -> Flask:
         # from its own reloader. Inheriting those into a child process makes
         # Werkzeug try to reuse a stale fd as an already-bound socket, which
         # crashes it on startup with no visible error.
-        spawn_env = {k: v for k, v in os.environ.items() if not k.startswith("WERKZEUG_")}
+        # Strip BENCH_ADMIN_* too: those belong to the socket-activated admin
+        # (e.g. BENCH_ADMIN_IDLE_TIMEOUT, BENCH_ADMIN_ROOT) and must not leak into
+        # the standalone wizard server, which manages its own lifetime/root.
+        spawn_env = {
+            k: v for k, v in os.environ.items()
+            if not k.startswith("WERKZEUG_") and not k.startswith("BENCH_ADMIN_")
+        }
         spawn_env["PYTHONPATH"] = str(cli_root)
+        # systemd-run --user (below) needs to reach this user's systemd manager.
+        uid = os.getuid()
+        spawn_env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{uid}")
+        spawn_env.setdefault("DBUS_SESSION_BUS_ADDRESS", f"unix:path=/run/user/{uid}/bus")
 
         # Both dev and production parents drop the user on the setup wizard so
         # they enter the bench's details themselves (DB/admin passwords, site,
@@ -286,19 +296,48 @@ def create_app(bench_root: Path) -> Flask:
             except Exception as exc:
                 return jsonify({"error": f"Failed to route the new bench's domain: {exc}"}), 500
 
-        subprocess.Popen(
-            [str(admin_python), "-m", "admin.backend.server",
-             "--bench-root", str(new_dir), "--port", str(new_port),
-             "--timeout", "7200", "--wizard"],
-            cwd=str(cli_root), env=spawn_env,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
-        )
+        wizard_argv = [
+            str(admin_python), "-m", "admin.backend.server",
+            "--bench-root", str(new_dir), "--port", str(new_port),
+            "--timeout", "7200", "--wizard",
+        ]
+        if _current_process_manager() == "systemd":
+            # The current admin is socket-activated: it idle-stops and, with the
+            # default KillMode=control-group, systemd kills its whole cgroup when
+            # it does. A plain child shares that cgroup and would be killed
+            # mid-setup (→ 502 at the wizard domain). Launch the wizard as its own
+            # transient user unit so it gets an independent cgroup that outlives
+            # the parent admin. --collect reaps the unit once the wizard exits.
+            launch = subprocess.run(
+                ["systemd-run", "--user", "--collect", f"--unit={name}-wizard",
+                 f"--working-directory={cli_root}", f"--setenv=PYTHONPATH={cli_root}",
+                 *wizard_argv],
+                env=spawn_env, capture_output=True, text=True,
+            )
+            if launch.returncode != 0:
+                return jsonify({"error": f"Failed to start the setup wizard: "
+                                f"{launch.stderr.strip() or launch.stdout.strip()}"}), 500
+        else:
+            # Dev parent: the admin isn't socket-activated, so a detached child is
+            # safe and we avoid depending on systemd.
+            subprocess.Popen(
+                wizard_argv, cwd=str(cli_root), env=spawn_env,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+            )
         admin = new_toml.get("admin", {})
         return jsonify({
             "name": name, "port": new_port,
             "wizard_at_domain": wizard_at_domain,
             "domain": admin.get("domain", ""),
         })
+
+    def _current_process_manager() -> str:
+        try:
+            with open(bench_root / "bench.toml", "rb") as f:
+                pm = str(tomllib.load(f).get("production", {}).get("process_manager", "")).lower()
+            return "supervisor" if pm == "supervisord" else pm
+        except Exception:
+            return ""
 
     def _current_is_production() -> bool:
         # Read the flag straight from toml (no full validation) so a slightly
