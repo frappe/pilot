@@ -103,8 +103,9 @@ async function createBench() {
     status.value = 'Bench created — opening setup…'
     if (data.wizard_at_domain && data.domain) {
       // The bench's own (socket-activated) admin serves the wizard at its
-      // domain; it spins up on first request, so just go there.
-      window.location.href = `http://${data.domain}`
+      // domain. nginx needs a moment to apply the new routing — redirecting
+      // too soon lands on the default site page — so give it a few seconds.
+      setTimeout(() => { window.location.href = `http://${data.domain}` }, 3000)
     } else {
       // Dev parent: standalone wizard on this host's raw port.
       waitUntilLive(data.port, `${window.location.protocol}//${window.location.hostname}:${data.port}`)
