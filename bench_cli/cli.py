@@ -90,9 +90,12 @@ def main() -> None:
         _run_frappe(bench_name, remaining[1:], verbose="--verbose" in args_list)
         return
 
+    # Parse the bench-flag-stripped args so -b/--bench works in any position
+    # (argparse only accepts top-level options before the subcommand, but users
+    # naturally write `bench init -b foo`).
     parser = registry.build_parser()
-    args = parser.parse_args(args_list)
-    loader.set_active_bench(args.bench)
+    args = parser.parse_args(remaining)
+    loader.set_active_bench(bench_name)
 
     import time
 
