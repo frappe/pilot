@@ -7,7 +7,9 @@ from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
+from bench_cli.config.bench_config import BenchConfig
 from bench_cli.config.bench_toml_builder import BenchTomlBuilder
+from bench_cli.config.toml_writer import bench_config_to_toml
 
 
 def _write_bench_toml(bench_dir: Path, name: str, **settings) -> None:
@@ -17,7 +19,15 @@ def _write_bench_toml(bench_dir: Path, name: str, **settings) -> None:
 
 def _write_raw_bench_toml(bench_dir: Path, name: str, admin_port: int) -> None:
     bench_dir.mkdir(parents=True, exist_ok=True)
-    (bench_dir / "bench.toml").write_text(f'[bench]\nname = "{name}"\n\n[admin]\nport = {admin_port}\n')
+    config = BenchConfig._from_dict(
+        {
+            "bench": {"name": name, "python": "3.14"},
+            "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "develop"}],
+            "mariadb": {"root_password": "root"},
+            "admin": {"port": admin_port},
+        }
+    )
+    (bench_dir / "bench.toml").write_text(bench_config_to_toml(config))
 
 
 def _client(bench_root: Path, password: str = "secret"):
@@ -59,7 +69,7 @@ def test_api_benches_requires_auth(tmp_path: Path) -> None:
     assert resp.status_code == 401
 
 
-def test_api_benches_lists_only_running_benches(tmp_path: Path) -> None:
+def test_api_benches_lists_all_benches_with_running_flag(tmp_path: Path) -> None:
     benches_dir = tmp_path / "benches"
     client = _client(benches_dir / "current")
 
@@ -68,9 +78,9 @@ def test_api_benches_lists_only_running_benches(tmp_path: Path) -> None:
         _write_raw_bench_toml(benches_dir / "dead-bench", "dead-bench", admin_port=1)
         resp = client.get("/api/benches/")
 
-    names = [b["name"] for b in resp.get_json()]
-    assert "live-bench" in names
-    assert "dead-bench" not in names
+    running = {b["name"]: b["running"] for b in resp.get_json()}
+    assert running["live-bench"] is True
+    assert running["dead-bench"] is False
 
 
 # ── POST /api/benches/new ────────────────────────────────────────────────────

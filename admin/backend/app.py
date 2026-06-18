@@ -29,6 +29,7 @@ from bench_cli.commands.admin import _cli_root
 from bench_cli.commands.new import NewCommand
 from bench_cli.config.bench_config import BenchConfig
 from bench_cli.exceptions import BenchError, ConfigError
+from bench_cli.utils import iter_sibling_benches
 
 _STATIC_DIR = Path(__file__).parent / "static"
 _OPEN_PATHS = {"/api/status", "/api/login", "/api/logout"}
@@ -156,27 +157,38 @@ def create_app(bench_root: Path) -> Flask:
 
     @app.route("/api/benches/")
     def api_benches():
-        benches_dir = bench_root.parent
-        running = []
-        for bench_dir in sorted(benches_dir.iterdir()):
-            if not bench_dir.is_dir():
-                continue
-            toml_path = bench_dir / "bench.toml"
-            if not toml_path.exists():
-                continue
+        def _is_running(port: int) -> bool:
             try:
-                with open(toml_path, "rb") as f:
-                    config = tomllib.load(f)
-                port = config.get("admin", {}).get("port")
-                name = config.get("bench", {}).get("name", bench_dir.name)
-                if not port:
-                    continue
                 with socket.create_connection(("127.0.0.1", port), timeout=0.5):
                     pass
-                running.append({"name": name, "port": port})
-            except Exception:
-                continue
-        return jsonify(running)
+                return True
+            except OSError:
+                return False
+
+        def _entry(bench_dir: Path, config: BenchConfig) -> dict | None:
+            port = config.admin.port
+            if not port:
+                return None
+            return {
+                "name": config.name or bench_dir.name,
+                "port": port,
+                "running": _is_running(port),
+            }
+
+        benches = []
+        try:
+            current = BenchConfig.from_file(bench_root / "bench.toml")
+            entry = _entry(bench_root, current)
+            if entry:
+                benches.append(entry)
+        except Exception:
+            pass
+        for bench_dir, config in iter_sibling_benches(bench_root):
+            entry = _entry(bench_dir, config)
+            if entry:
+                benches.append(entry)
+        benches.sort(key=lambda b: b["name"])
+        return jsonify(benches)
 
     @app.route("/api/benches/new", methods=["POST"])
     def api_benches_new():

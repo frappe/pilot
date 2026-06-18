@@ -23,12 +23,23 @@ const route = useRoute()
 const benches = ref([])
 const showBenchDialog = ref(false)
 const currentPort = window.location.port
+const benchName = ref('Bench')
 
 async function loadBenches() {
   try {
     const response = await fetch('/api/benches/')
     if (response.ok) {
       benches.value = await response.json()
+    }
+  } catch { }
+}
+
+async function loadBenchName() {
+  try {
+    const response = await fetch('/api/status')
+    if (response.ok) {
+      const data = await response.json()
+      if (data.name) benchName.value = data.name
     }
   } catch { }
 }
@@ -49,9 +60,9 @@ function openBenchDialog() {
   })
 }
 
-function switchBench(port) {
-  if (String(port) === String(currentPort)) return
-  window.location.href = `${window.location.protocol}//${window.location.hostname}:${port}`
+function switchBench(bench) {
+  if (!bench.running || String(bench.port) === String(currentPort)) return
+  window.location.href = `${window.location.protocol}//${window.location.hostname}:${bench.port}`
 }
 
 const showNewBenchDialog = ref(false)
@@ -119,8 +130,8 @@ async function createBench() {
   }
 }
 
-const header = {
-  title: 'Bench',
+const header = computed(() => ({
+  title: benchName.value,
   logo: '/logos/frappe-icon.png',
   menuItems: [
     { label: 'Settings', icon: LucideSettings, onClick: () => emit('open-settings') },
@@ -128,7 +139,7 @@ const header = {
     { label: 'New Bench', icon: LucidePlus, onClick: openNewBenchDialog },
     { label: 'Logout', icon: LucideLogOut, onClick: () => logout() },
   ],
-}
+}))
 
 const baseNavItems = [
   { label: 'Sites', to: '/', icon: LucideGlobe },
@@ -184,6 +195,7 @@ async function logout() {
 onMounted(() => {
   pollRunning()
   loadVolumeConfig()
+  loadBenchName()
   pollTimer = setInterval(pollRunning, 4000)
 })
 onUnmounted(() => clearInterval(pollTimer))
@@ -209,19 +221,25 @@ onUnmounted(() => clearInterval(pollTimer))
       <template #default>
         <div class="px-4 pb-6">
           <div v-if="benches.length === 0" class="text-sm text-ink-gray-5 py-2">
-            No other benches running.
+            No benches found.
           </div>
           <div v-else class="flex flex-col gap-1">
             <button
               v-for="bench in benches"
               :key="bench.port"
+              :disabled="!bench.running && String(bench.port) !== String(currentPort)"
               class="flex items-center justify-between rounded-lg px-3 py-2.5 text-sm transition-colors w-full text-left"
               :class="String(bench.port) === String(currentPort)
                 ? 'bg-surface-gray-2 text-ink-gray-9 font-medium cursor-default'
-                : 'text-ink-gray-7 hover:bg-surface-gray-2 cursor-pointer'"
-              @click="switchBench(bench.port)"
+                : bench.running
+                  ? 'text-ink-gray-7 hover:bg-surface-gray-2 cursor-pointer'
+                  : 'text-ink-gray-4 cursor-not-allowed'"
+              @click="switchBench(bench)"
             >
-              <span>{{ bench.name }}</span>
+              <span>
+                {{ bench.name }}
+                <span v-if="!bench.running" class="text-ink-gray-4">(stopped)</span>
+              </span>
               <LucideCheck v-if="String(bench.port) === String(currentPort)" class="h-4 w-4 text-ink-green-3" />
             </button>
           </div>
