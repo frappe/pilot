@@ -65,6 +65,7 @@ watch(show, (open) => {
             : 'hover:bg-surface-gray-2 cursor-pointer'"
           @click="switchBench(bench)"
         >
+          <span class="h-2 w-2 flex-shrink-0 rounded-full bg-ink-green-3" />
           <span class="min-w-0 flex-1">
             <span class="block truncate text-sm font-medium text-ink-gray-9">{{ bench.name }}</span>
             <span class="block truncate text-xs text-ink-gray-5">{{ benchMode(bench) }}</span>
