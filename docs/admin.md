@@ -398,12 +398,9 @@ Returns the full settings payload as JSON. The frontend uses this to populate th
     "enabled": true,
     "pool": "bench-pool",
     "device": "/dev/sdb",
-    "benches_quota": "50G",
-    "benches_reservation": "10G",
-    "mariadb_quota": "20G",
-    "mariadb_reservation": "5G",
-    "mariadb_data_dir": "/var/lib/mysql",
-    "snapshots_enabled": false
+    "quota": "60G",
+    "reservation": "15G",
+    "snapshots_enabled": true
   }
 }
 ```
@@ -462,9 +459,11 @@ The frontend presents settings as a tabbed modal dialog. Tabs are:
 | **Let's Encrypt** | Email, Webroot Path | — |
 | **Production** | Process Manager (none/supervisor/systemd) | — |
 | **Updates** | — | Current version, update availability badge; Update button |
-| **ZFS Volume** *(Linux only)* | Quota, Reservation | Pool Name, Block Device |
+| **ZFS Volume** *(Linux only, dedicated DB only)* | Quota, Reservation | Pool Name, Block Device |
 
 MariaDB fields are read-only because the host, port, credentials, and socket path are set once during `bench init` and cannot be meaningfully changed by editing `bench.toml` after the fact — the database server itself is not reconfigured.
+
+The **ZFS Volume** tab and the **Snapshots** page in the sidebar are only shown for benches that use a dedicated MariaDB instance with `volume.enabled = true`. Shared-DB benches hide both.
 
 The Process Manager dropdown lets you switch between `none`, `supervisor`, and `systemd`. A change here writes to `bench.toml` and triggers a process restart.
 
@@ -538,6 +537,57 @@ Each registry entry has:
 Apps whose `repo` is under `github.com/frappe/` are sorted to the top by `stars` and labelled "From Frappe". All others appear below under "Community".
 
 Clicking **Add** on an app with a `repo` posts to `POST /api/apps/add` with `{ name, repo, branch }` and redirects to the resulting task.
+
+---
+
+## Setup wizard API
+
+When a bench has not been initialized (`config/Procfile` is missing), `bench start` launches a standalone wizard server instead of the normal admin. The wizard exposes these endpoints:
+
+### `GET /api/setup/config`
+
+Returns the current `bench.toml` values pre-populated in the wizard form, plus environment metadata:
+
+```json
+{
+  "bench_name": "my-bench",
+  "is_linux": true,
+  "available_devices": [{ "path": "/dev/sdb", "size_bytes": 107374182400 }],
+  "rootfs_free_bytes": 42949672960,
+  "mariadb_instance": "my-bench",
+  "mariadb_admin_user": "root",
+  "volume_enabled": false,
+  ...
+}
+```
+
+### `POST /api/setup/validate-mariadb`
+
+Checks whether the supplied credentials will work before the wizard proceeds.
+
+**Request body:**
+```json
+{
+  "mariadb_password": "secret",
+  "mariadb_admin_user": "root",
+  "dedicated_db": false
+}
+```
+
+**Behaviour:**
+- `dedicated_db: true` (dedicated instance) — if the instance is not yet provisioned, returns `will_install` without attempting a connection; init will create the instance with the supplied password.
+- `dedicated_db: false` (shared system MariaDB) — always attempts a connection using the system socket; returns `valid` or `invalid`.
+- If MariaDB is not installed at all, returns `will_install`.
+
+**Response:** `{ "state": "valid" | "invalid" | "will_install" }`
+
+### `POST /api/setup/save`
+
+Writes the wizard form data to `bench.toml`. The wizard sends the final payload after the last configuration step. Unknown keys are ignored; existing keys not in the payload are preserved.
+
+### `POST /api/setup/init`
+
+Kicks off `bench init` as a background task. Returns `{ "ok": true, "task_id": "..." }`. Progress is streamed via `GET /api/setup/stream/<task_id>` (SSE).
 
 ---
 

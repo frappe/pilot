@@ -99,14 +99,19 @@ bench start              # not yet initialized → launches the setup wizard
 ```
 
 `bench start` detects that the bench isn't initialized and opens a browser-based wizard at
-`http://localhost:8002`. The wizard collects your MariaDB and admin passwords, lets you pick
-storage options, and runs the full initialization with a live progress view.
+`http://localhost:8002`. The wizard walks you through three steps:
+
+1. **Admin password** — password for the bench admin UI
+2. **Database** — choose between a dedicated MariaDB instance (default, recommended) or the shared system MariaDB; set the MariaDB root user (default `root`) and password
+3. **Customize** — Frappe branch/repo; optionally enable ZFS volumes (dedicated DB only)
+
+It then runs the full initialization with a live progress view.
 
 ### Manual setup
 
 ```bash
 bench new my-bench                      # creates bench.toml
-$EDITOR benches/my-bench/bench.toml     # set the MariaDB root + admin passwords
+$EDITOR benches/my-bench/bench.toml     # set admin password, MariaDB root password (and admin_user if not root)
 bench init                              # installs deps, creates venv, clones frappe, generates Procfile
 bench get-app https://github.com/frappe/erpnext --branch version-16
 bench new-site site1.localhost
