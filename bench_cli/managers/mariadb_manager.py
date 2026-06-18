@@ -52,8 +52,7 @@ class MariaDBManager:
         return result.returncode == 0
 
     def is_installed(self) -> bool:
-        # mysqld/mariadbd live in /usr/sbin, often absent from a minimal PATH —
-        # use which() (searches sbin too) so we don't reinstall an existing server.
+        # which() searches sbin too; mysqld/mariadbd live in /usr/sbin.
         return bool(which("mysqld") or which("mariadbd"))
 
     def install(self) -> None:
