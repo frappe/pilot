@@ -104,6 +104,13 @@ def _validate(data: dict) -> str | None:
     for field in ("mariadb_password", "admin_password"):
         if not data.get(field):
             return f"{field} is required"
+    # A fresh install (dedicated instance or freshly installed shared server) is
+    # secured with ALTER USER 'root'@'localhost', which only works on the
+    # pre-existing root account — an arbitrary name is never created. Lock it to
+    # root so init can't fail deep in secure_installation.
+    admin_user = data.get("mariadb_admin_user")
+    if admin_user not in (None, "", "root"):
+        return "MariaDB root user must be 'root'."
     if data.get("volume_enabled", True):
         if not data.get("volume_pool"):
             return "volume_pool is required"

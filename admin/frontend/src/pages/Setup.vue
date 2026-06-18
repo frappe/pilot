@@ -12,6 +12,21 @@ const loading = ref(false)
 const benchName = ref('')
 const isLinux = ref(true)
 const dedicatedWillInstall = ref(false)  // true when a new dedicated instance will be created
+const sharedWillInstall = ref(false)     // true when the system/shared MariaDB isn't installed yet
+
+// Whether init will install + secure MariaDB for the selected mode (and so set
+// its root password to the entered value). macOS has no dedicated mode, so it
+// always follows the shared/system MariaDB.
+const dbWillInstall = computed(() => {
+  if (isLinux.value && form.value.dedicated_db === 'dedicated') return dedicatedWillInstall.value
+  return sharedWillInstall.value
+})
+const dbPasswordDescription = computed(() => {
+  if (!dbWillInstall.value) return undefined
+  if (isLinux.value && form.value.dedicated_db === 'dedicated')
+    return 'A new MariaDB instance will be created and its root password set to this value.'
+  return 'MariaDB will be installed and its root password set to this value.'
+})
 
 // ── init-task streaming state ─────────────────────────────────────────────
 const taskLines = ref([])
@@ -196,15 +211,16 @@ async function loadConfig() {
   checkDedicatedInstall()
 }
 
-// For dedicated DB: check whether init will create a new instance (vs an existing one).
-// Only relevant for dedicated — shared always connects to the running system MariaDB.
+// Check whether init will install MariaDB fresh for each mode, so the password
+// step can tell the user their entered value becomes the new root password.
 async function checkDedicatedInstall() {
   try {
-    const { state } = await postJson('/api/setup/validate-mariadb', {
-      mariadb_password: '',
-      dedicated_db: true,
-    })
-    dedicatedWillInstall.value = state === 'will_install'
+    const [dedicated, shared] = await Promise.all([
+      postJson('/api/setup/validate-mariadb', { mariadb_password: '', dedicated_db: true }),
+      postJson('/api/setup/validate-mariadb', { mariadb_password: '', dedicated_db: false }),
+    ])
+    dedicatedWillInstall.value = dedicated.state === 'will_install'
+    sharedWillInstall.value = shared.state === 'will_install'
   } catch {}
 }
 
@@ -302,6 +318,7 @@ async function nextStep() {
           mariadb_admin_user: form.value.mariadb_admin_user,
           dedicated_db: false,
         })
+        sharedWillInstall.value = state === 'will_install'
         if (state === 'invalid') {
           error.value = 'Incorrect MariaDB credentials.'
           return
@@ -336,6 +353,7 @@ async function saveConfig() {
       payload.mariadb_instance = ''
       payload.mariadb_socket_path = ''
       payload.mariadb_data_dir = ''
+      payload.mariadb_admin_user = 'root'  // fresh shared install only has root; not user-configurable
       payload.volume_enabled = false
     }
   }
@@ -452,14 +470,15 @@ function backToConfig() {
           <FormControl
             v-if="form.dedicated_db === 'shared'"
             label="MariaDB root user"
-            v-model="form.mariadb_admin_user"
-            placeholder="root"
+            modelValue="root"
+            disabled
+            description="A fresh MariaDB install only has the 'root' superuser."
           />
           <Password
             label="MariaDB root password"
             v-model="form.mariadb_password"
             placeholder="password"
-            :description="form.dedicated_db === 'dedicated' && dedicatedWillInstall ? 'A new MariaDB instance will be created with this password.' : undefined"
+            :description="dbPasswordDescription"
             @keydown.enter="nextStep"
           />
           <ErrorMessage v-if="error" :message="error" />
