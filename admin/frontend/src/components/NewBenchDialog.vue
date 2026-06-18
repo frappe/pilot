@@ -90,7 +90,10 @@ async function createBench() {
 <template>
   <Dialog v-model="show" title="New Bench" size="lg" :showCloseButton="true">
     <template #default>
-      <div class="flex flex-col gap-5">
+      <!-- Stop pointerdown from reaching reka-ui's DismissableLayer, which
+           otherwise hijacks focus and prevents a click from focusing inputs
+           (keyboard/Tab is unaffected) — same guard SettingsModal uses. -->
+      <div class="flex flex-col gap-5" @pointerdown.stop>
         <FormControl
           label="Bench name"
           type="text"

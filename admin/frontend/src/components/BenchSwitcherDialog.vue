@@ -51,10 +51,11 @@ watch(show, (open) => {
 <template>
   <Dialog v-model="show" title="Change Bench" size="lg" :showCloseButton="true">
     <template #default>
-      <div v-if="benches.length === 0" class="rounded-lg bg-surface-gray-1 px-3 py-6 text-center text-sm text-ink-gray-5">
-        No other benches running.
-      </div>
-      <div v-else class="flex flex-col gap-1">
+      <div @pointerdown.stop>
+        <div v-if="benches.length === 0" class="rounded-lg bg-surface-gray-1 px-3 py-6 text-center text-sm text-ink-gray-5">
+          No other benches running.
+        </div>
+        <div v-else class="flex flex-col gap-1">
         <button
           v-for="bench in benches"
           :key="bench.port"
@@ -72,6 +73,7 @@ watch(show, (open) => {
           <span v-if="isCurrentBench(bench)" class="flex-shrink-0 text-xs font-medium text-ink-gray-5">Current</span>
           <LucideCheck v-if="isCurrentBench(bench)" class="h-4 w-4 flex-shrink-0 text-ink-green-3" />
         </button>
+        </div>
       </div>
     </template>
   </Dialog>
