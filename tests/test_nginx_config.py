@@ -110,6 +110,7 @@ def test_admin_domainless_proxy_under_systemd(tmp_path: Path) -> None:
     content = admin_conf.read_text()
     assert "server_name _;" in content
     assert "listen 8002;" in content
+    assert "listen [::]:8002;" in content
     # Forwards to the socket-activated gunicorn on the internal port, not admin.port.
     assert f"proxy_pass         http://127.0.0.1:{bench.config.admin.internal_port};" in content
 
@@ -163,9 +164,45 @@ def test_http_port_is_configurable(tmp_path: Path) -> None:
 
     assert "listen 8080;" in config
     assert "listen 80;" not in config
+    assert "listen [::]:8080;" in config
 
 
-# ── upstream block ────────────────────────────────────────────────────────────
+# ── IPv6 (dual-stack listeners) ───────────────────────────────────────────────
+
+
+def test_http_site_listens_dual_stack(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, _BASE_DATA)
+    manager = NginxManager(bench)
+
+    config = manager._generate_site_config(_BASE_SITE, ssl_ready=False)
+
+    assert "listen 80;" in config
+    assert "listen [::]:80;" in config
+
+
+def test_https_site_listens_dual_stack(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, _SSL_DATA)
+    manager = NginxManager(bench)
+
+    config = manager._generate_site_config(_SSL_SITE, ssl_ready=True)
+
+    # HTTP→HTTPS redirect block and the SSL block both listen on both stacks.
+    assert "listen 80;" in config
+    assert "listen [::]:80;" in config
+    assert "listen 443 ssl http2;" in config
+    assert "listen [::]:443 ssl http2;" in config
+
+
+def test_admin_domain_config_listens_dual_stack(tmp_path: Path) -> None:
+    data = copy.deepcopy(_SSL_DATA)
+    data["admin"] = {"enabled": True, "domain": "admin.example.com"}
+    bench = _make_bench(tmp_path, data)
+    manager = NginxManager(bench)
+
+    config = manager._generate_admin_config(ssl_ready=False)
+
+    assert "listen 80;" in config
+    assert "listen [::]:80;" in config
 
 
 def test_upstream_block_uses_bench_http_port(tmp_path: Path) -> None:
