@@ -40,7 +40,7 @@ jobs:
           cp tests/fixtures/ci_bench.toml benches/ci-bench/bench.toml
 
       - name: bench init
-        run: bench init
+        run: bench init -b ci-bench
         timeout-minutes: 45
 
       - name: Create sites

@@ -23,7 +23,7 @@ def cli_root() -> Path:
     return Path(_pkg.__file__).parent.parent
 
 
-def find_bench_root() -> Path:
+def find_bench_root(require_explicit: bool = False) -> Path:
     """
     Locate the directory containing bench.toml for the active bench.
 
@@ -32,6 +32,8 @@ def find_bench_root() -> Path:
     2. Walk up from cwd → the bench you're inside wins (even when many exist).
     3. Exactly one bench in benches/ → use it automatically.
     4. Multiple benches and no other signal → ask for -b.
+
+    With ``require_explicit``, only (1) and (2) apply — auto-pick (3) is off.
     """
     benches_dir = cli_root() / "benches"
 
@@ -50,6 +52,14 @@ def find_bench_root() -> Path:
         if (directory / "bench.toml").exists():
             return directory
 
+    if require_explicit:
+        candidates = [d.name for d in benches_dir.iterdir() if d.is_dir() and (d / "bench.toml").exists()] if benches_dir.is_dir() else []
+        hint = f"  Available: {', '.join(sorted(candidates))}" if candidates else "  No benches found. Run: bench new <name>"
+        raise BenchError(
+            "This command needs an explicit bench — run it from inside the bench "
+            "directory, or pass -b <name>.\n" + hint
+        )
+
     if benches_dir.is_dir():
         candidates = [d for d in benches_dir.iterdir() if d.is_dir() and (d / "bench.toml").exists()]
         if len(candidates) == 1:
@@ -61,10 +71,10 @@ def find_bench_root() -> Path:
     raise BenchError("No bench found. Create one with: bench new <name>")
 
 
-def load_bench() -> "Bench":
+def load_bench(require_explicit: bool = False) -> "Bench":
     from bench_cli.config.bench_config import BenchConfig
     from bench_cli.core.bench import Bench
 
-    bench_root = find_bench_root()
+    bench_root = find_bench_root(require_explicit=require_explicit)
     config = BenchConfig.from_file(bench_root / "bench.toml")
     return Bench(config, bench_root)

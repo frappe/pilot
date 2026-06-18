@@ -15,6 +15,8 @@ _BENCH_DIRS = ("apps", "sites", "logs", "config", "pids", "env", "admin", "tasks
 class InitCommand(Command):
     name = "init"
     help = "Initialise the bench."
+    # Heavy/irreversible — never guess the target bench.
+    requires_explicit_bench = True
 
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
