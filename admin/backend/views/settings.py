@@ -61,6 +61,7 @@ class ConfigPatcher:
         self._apply_redis()
         self._apply_workers()
         self._apply_volume()
+        self._apply_admin()
         if error := self._apply_production():
             return error
         try:
@@ -121,6 +122,17 @@ class ConfigPatcher:
         volume_config.benches.quota = str(volume.get("benches_quota", volume_config.benches.quota))
         volume_config.mariadb.reservation = str(volume.get("mariadb_reservation", volume_config.mariadb.reservation))
         volume_config.mariadb.quota = str(volume.get("mariadb_quota", volume_config.mariadb.quota))
+
+    def _apply_admin(self) -> None:
+        """TLS termination is opt-in: persisting tls=true only records the intent;
+        the caller runs `setup-letsencrypt` to actually obtain certs and rewrite
+        nginx with the HTTP→HTTPS redirect. The email is the ACME account address."""
+        admin = self.data.get("admin") or {}
+        if "tls" in admin:
+            self.config.admin.tls = bool(admin["tls"])
+        letsencrypt = self.data.get("letsencrypt") or {}
+        if "email" in letsencrypt:
+            self.config.letsencrypt.email = str(letsencrypt["email"]).strip()
 
     def _apply_production(self) -> str | None:
         production = self.data.get("production") or {}
@@ -216,6 +228,8 @@ def _build_settings_response(config: BenchConfig) -> dict:
         "redis": {"cache_port": config.redis.cache_port, "queue_port": config.redis.queue_port, "version": RedisManager.installed_version() or config.redis.version or ""},
         "workers": _worker_groups_payload(config),
         "production": {"process_manager": config.production.process_manager or "none"},
+        "admin": {"domain": config.admin.domain, "tls": config.admin.tls},
+        "letsencrypt": {"email": config.letsencrypt.email},
         "volume": {
             "pool": volume.pool,
             "backing": volume.backing,

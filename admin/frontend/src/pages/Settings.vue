@@ -28,6 +28,8 @@ const form = ref({
   redis: { cache_port: 13000, queue_port: 11000, version: '' },
   workers: [{ queues: 'default, short, long', count: 1 }],
   production: { enabled: false, lightweight: false },
+  admin: { domain: '', tls: false },
+  letsencrypt: { email: '' },
 })
 
 async function load() {
@@ -114,6 +116,37 @@ async function save() {
 
 const taskLoading = ref('')
 const taskError = ref('')
+const httpsApplying = ref(false)
+
+// Enabling HTTPS is a two-step action: persist the choice, then run the task
+// that actually obtains certificates (or, when disabling, regenerates plain
+// HTTP routing). Both stream their progress on the task page we route to.
+async function applyHttps() {
+  saveError.value = ''
+  saveSuccess.value = ''
+  if (form.value.admin.tls && !String(form.value.letsencrypt.email || '').trim()) {
+    saveError.value = "An email is required to issue Let's Encrypt certificates."
+    return
+  }
+  httpsApplying.value = true
+  try {
+    const res = await fetch('/api/settings/', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        admin: { tls: form.value.admin.tls },
+        letsencrypt: { email: form.value.letsencrypt.email },
+      }),
+    })
+    const d = await res.json()
+    if (!d.ok) { saveError.value = d.error; return }
+    await runTask(form.value.admin.tls ? 'setup-letsencrypt' : 'setup-nginx')
+  } catch (e) {
+    saveError.value = e.message
+  } finally {
+    httpsApplying.value = false
+  }
+}
 
 async function runTask(command) {
   taskError.value = ''
@@ -164,6 +197,31 @@ onMounted(load)
           <div v-if="form.production.enabled" class="flex flex-col gap-3 pl-4 border-l border-outline-gray-2">
             <Switch v-model="form.production.lightweight" label="Lightweight" />
           </div>
+        </div>
+      </div>
+
+      <div class="border-t border-outline-gray-1" />
+
+      <!-- HTTPS -->
+      <div class="flex flex-col gap-4">
+        <h3 class="font-semibold text-ink-gray-8">HTTPS</h3>
+        <p class="text-sm text-ink-gray-6">
+          The bench is served over plain HTTP by default. Enable HTTPS to obtain a
+          Let's Encrypt certificate for the admin and SSL sites; HTTP is then
+          redirected to HTTPS. Leave it off when a proxy in front terminates TLS.
+        </p>
+        <Switch v-model="form.admin.tls" label="Enable HTTPS (Let's Encrypt)" />
+        <FormControl
+          v-if="form.admin.tls"
+          type="email"
+          label="Let's Encrypt email"
+          v-model="form.letsencrypt.email"
+          placeholder="you@example.com"
+        />
+        <div>
+          <Button variant="outline" :loading="httpsApplying" @click="applyHttps">
+            {{ form.admin.tls ? 'Enable HTTPS & issue certificate' : 'Disable HTTPS' }}
+          </Button>
         </div>
       </div>
 
