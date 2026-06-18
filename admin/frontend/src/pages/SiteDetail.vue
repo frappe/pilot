@@ -51,17 +51,34 @@ const loginError = ref('')
 
 const sslLoading = ref(false)
 const sslError = ref('')
+const showSslEmail = ref(false)
+const sslEmail = ref('')
+const sslEmailError = ref('')
 
-async function enableSsl() {
+async function enableSsl(email) {
   sslError.value = ''
+  sslEmailError.value = ''
   sslLoading.value = true
   try {
-    const res = await fetch(`/api/sites/${siteName}/enable-ssl`, { method: 'POST' })
+    const res = await fetch(`/api/sites/${siteName}/enable-ssl`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(email ? { email } : {}),
+    })
     const d = await res.json()
-    if (d.ok) router.push(`/tasks/${d.task_id}`)
-    else sslError.value = d.error
+    if (d.ok) {
+      showSslEmail.value = false
+      router.push(`/tasks/${d.task_id}`)
+    } else if (d.needs_email) {
+      // No Let's Encrypt email on file yet — prompt for one, then retry.
+      showSslEmail.value = true
+      if (email) sslEmailError.value = d.error
+    } else {
+      sslError.value = d.error
+    }
   } catch (e) {
-    sslError.value = e.message
+    if (showSslEmail.value) sslEmailError.value = e.message
+    else sslError.value = e.message
   } finally {
     sslLoading.value = false
   }
@@ -786,7 +803,7 @@ onMounted(() => { load(); loadRegistry() })
                 </div>
                 <Badge v-if="site.ssl" label="Enabled" theme="green" class="shrink-0" />
                 <Button v-else variant="outline" class="shrink-0" :disabled="!nginxEnabled" :loading="sslLoading"
-                  @click="enableSsl">
+                  @click="enableSsl()">
                   Enable SSL
                 </Button>
               </div>
@@ -888,6 +905,26 @@ onMounted(() => { load(); loadRegistry() })
     </Dialog>
 
     <!-- Login dialog -->
+    <Dialog v-model="showSslEmail" :options="{ title: 'Enable SSL', size: 'sm' }">
+      <template #body-content>
+        <div @pointerdown.stop>
+          <p class="text-sm text-ink-gray-6">
+            A Let's Encrypt account email is required to issue certificates. It's saved to this
+            bench's config and reused for future certificates and renewal notices.
+          </p>
+          <FormControl class="mt-3" label="Let's Encrypt email" type="email" v-model="sslEmail"
+            placeholder="you@example.com" @keydown.enter="enableSsl(sslEmail)" />
+          <ErrorMessage :message="sslEmailError" class="mt-2" />
+          <div class="mt-4 flex justify-end gap-2">
+            <Button variant="ghost" @click="showSslEmail = false">Cancel</Button>
+            <Button variant="solid" :loading="sslLoading" :disabled="!sslEmail" @click="enableSsl(sslEmail)">
+              Enable SSL
+            </Button>
+          </div>
+        </div>
+      </template>
+    </Dialog>
+
     <Dialog v-model="showLogin" :options="{ title: 'Login to Site', size: 'sm' }">
       <template #body-content>
         <div @pointerdown.stop>

@@ -77,13 +77,9 @@ def create():
 
     name = (data.get("name") or "").strip()
     admin_password = (data.get("admin_password") or "admin").strip() or "admin"
-    err = validate_site_name(name)
+    err = validate_site_name(name) or _new_site_name_error(bench_root, name)
     if err:
         return jsonify({"ok": False, "error": err})
-
-    # Check site doesn't already exist
-    if (bench_root / "sites" / name / "site_config.json").exists():
-        return jsonify({"ok": False, "error": f"Site '{name}' already exists."})
 
     try:
         task_id = TaskRunner(bench_root).run(
@@ -102,11 +98,9 @@ def create_from_upload():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     name = (request.form.get("name") or "").strip()
     admin_password = (request.form.get("admin_password") or "admin").strip() or "admin"
-    err = validate_site_name(name)
+    err = validate_site_name(name) or _new_site_name_error(bench_root, name)
     if err:
         return jsonify({"ok": False, "error": err})
-    if (bench_root / "sites" / name / "site_config.json").exists():
-        return jsonify({"ok": False, "error": f"Site '{name}' already exists."})
 
     db_upload = request.files.get("db_file")
     if not db_upload:
@@ -320,6 +314,36 @@ def enable_ssl(name: str):
     if not config_path.exists():
         return jsonify({"ok": False, "error": "Site not found."}), 404
 
+    from bench_cli.config.bench_config import BenchConfig
+    from bench_cli.config.toml_writer import bench_config_to_toml
+
+    from ..validators import validate_email
+
+    try:
+        config = BenchConfig.from_file(bench_root / "bench.toml")
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    # Let's Encrypt needs an ACME account email; persist one if the UI supplied it.
+    data = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip()
+    if email:
+        if err := validate_email(email):
+            return jsonify({"ok": False, "error": err, "needs_email": True})
+        config.letsencrypt.email = email
+        try:
+            (bench_root / "bench.toml").write_text(bench_config_to_toml(config))
+        except Exception as e:
+            return jsonify({"ok": False, "error": f"Failed to save email: {e}"}), 500
+
+    # No email anywhere — ask the UI to collect one instead of starting a doomed task.
+    if not config.letsencrypt.email:
+        return jsonify({
+            "ok": False,
+            "needs_email": True,
+            "error": "A Let's Encrypt account email is required to issue certificates.",
+        })
+
     import json
 
     current = json.loads(config_path.read_text())
@@ -445,6 +469,34 @@ def delete_backup_schedule(name: str):
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
     return jsonify({"ok": True})
+
+
+def _new_site_name_error(bench_root: Path, name: str) -> str | None:
+    """Validate a new-site name before any task starts, so the error lands in the UI
+    instead of failing mid-run. Mirrors NewSiteCommand._validate."""
+    from bench_cli.config.bench_config import BenchConfig
+    from bench_cli.utils import host_owner, normalize_host
+
+    if (bench_root / "sites" / name / "site_config.json").exists():
+        return f"Site '{name}' already exists."
+
+    owner = host_owner(bench_root, name)
+    if owner:
+        return (
+            f"'{name}' is already used by bench '{owner}' (as a site or its admin domain). "
+            f"All benches share one nginx, so hostnames must be unique."
+        )
+
+    try:
+        admin_domain = BenchConfig.from_file(bench_root / "bench.toml").admin.domain
+    except Exception:
+        admin_domain = ""
+    if admin_domain and normalize_host(name) == normalize_host(admin_domain):
+        return (
+            f"Site '{name}' clashes with this bench's admin domain. "
+            f"An admin domain must not match a site domain."
+        )
+    return None
 
 
 def _public_config(config: dict) -> dict:

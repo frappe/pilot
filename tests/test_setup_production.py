@@ -103,11 +103,12 @@ def test_resolve_target_normalizes_supervisord(tmp_path: Path) -> None:
     assert bench.config.production.process_manager == "supervisor"
 
 
-def test_resolve_target_errors_without_manager(tmp_path: Path) -> None:
+def test_resolve_target_defaults_to_systemd(tmp_path: Path) -> None:
     bench = _make_bench(tmp_path, process_manager="none")
     cmd = SetupProductionCommand(bench)
-    with pytest.raises(BenchError, match="No process manager"):
-        cmd._resolve_target()
+    cmd._resolve_target()
+    assert bench.config.production.process_manager == "systemd"
+    assert bench.config.production.enabled is True
 
 
 def test_resolve_target_applies_admin_domain(tmp_path: Path) -> None:

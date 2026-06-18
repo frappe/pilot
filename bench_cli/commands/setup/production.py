@@ -23,29 +23,21 @@ class SetupProductionCommand(Command):
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
             "--process-manager",
-            choices=["systemd", "supervisor", "supervisord"],
+            choices=["systemd", "supervisord"],
             default=None,
-            help="Process manager to deploy with (defaults to production.process_manager in bench.toml).",
+            help="Process manager to deploy with (defaults to production.process_manager in bench.toml, or systemd).",
         )
         parser.add_argument(
             "--admin-domain",
             default=None,
             help="Admin domain (defaults to admin.domain in bench.toml).",
         )
-        tls = parser.add_mutually_exclusive_group()
-        tls.add_argument(
+        parser.add_argument(
             "--tls",
             dest="admin_tls",
             action="store_true",
-            default=None,
-            help="Terminate TLS for the admin via Let's Encrypt (default).",
-        )
-        tls.add_argument(
-            "--no-tls",
-            dest="admin_tls",
-            action="store_false",
-            default=None,
-            help="Don't terminate TLS — a central proxy fronts the admin on :80.",
+            help="Terminate TLS via Let's Encrypt for the admin and SSL-enabled sites. "
+                 "Omit to serve plain HTTP (a central proxy may terminate TLS upstream).",
         )
 
     @classmethod
@@ -88,12 +80,7 @@ class SetupProductionCommand(Command):
         from bench_cli.config.bench_config import BenchConfig
         from bench_cli.config.production_config import VALID_PROCESS_MANAGERS
 
-        pm = BenchConfig._normalize_process_manager(self._pm_arg or self.bench.config.production.process_manager)
-        if not pm:
-            raise BenchError(
-                "No process manager configured. Pass --process-manager systemd|supervisor "
-                "(or set production.process_manager in bench.toml)."
-            )
+        pm = BenchConfig._normalize_process_manager(self._pm_arg or self.bench.config.production.process_manager) or "systemd"
         if pm not in VALID_PROCESS_MANAGERS:
             raise BenchError(f"Invalid process manager '{pm}'. Must be one of {', '.join(VALID_PROCESS_MANAGERS)}.")
         self.bench.config.production.process_manager = pm
