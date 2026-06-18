@@ -18,12 +18,6 @@ class NewCommand(Command):
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
         parser.add_argument("name", help="Name for the new bench.")
         parser.add_argument(
-            "--process-manager",
-            choices=["systemd", "supervisor", "supervisord"],
-            default="",
-            help="Intended production process manager (stored for later 'setup production').",
-        )
-        parser.add_argument(
             "--admin-domain",
             default="",
             help="Admin domain for this bench (defaults to <name>-admin.localhost).",
@@ -36,7 +30,6 @@ class NewCommand(Command):
         return cls(
             cli_root() / "benches" / args.name,
             args.name,
-            process_manager=args.process_manager,
             admin_domain=args.admin_domain,
         )
 
