@@ -118,6 +118,52 @@ def test_api_benches_new_creates_bench(tmp_path: Path) -> None:
     mock_popen.assert_called_once()
 
 
+def test_api_benches_new_provisions_when_current_is_production(tmp_path: Path) -> None:
+    # A bench created from a production admin is provisioned to production in the
+    # background and the response points at its own domain (not a raw wizard port).
+    benches_dir = tmp_path / "benches"
+    current = benches_dir / "current"
+    # A real production current bench has an admin domain (config validates).
+    _write_bench_toml(current, "current", admin_enabled=True, admin_password="secret",
+                      admin_domain="current-admin.example.com")
+    from admin.backend.app import create_app
+    toml = (current / "bench.toml").read_text()
+    (current / "bench.toml").write_text(
+        toml.replace("enabled = false\nuse_companion_manager",
+                     'enabled = true\nprocess_manager = "systemd"\nuse_companion_manager')
+    )
+    app = create_app(current)
+    app.config["TESTING"] = True
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["authenticated"] = True
+
+    with patch("subprocess.Popen") as mock_popen:
+        resp = client.post("/api/benches/new", json=_new_payload("fresh"))
+
+    data = resp.get_json()
+    assert data["production"] is True
+    assert data["domain"] == "fresh-admin.example.com"
+    assert data["scheme"] == "https"
+    # Spawned the background provisioner, not a wizard server.
+    argv = mock_popen.call_args[0][0]
+    assert "admin.backend.provision_bench" in argv
+
+
+def test_api_benches_provision_status_reports_status_and_log(tmp_path: Path) -> None:
+    benches_dir = tmp_path / "benches"
+    client = _client(benches_dir / "current")
+    new_dir = benches_dir / "fresh"
+    new_dir.mkdir(parents=True)
+    (new_dir / "provision.status").write_text("running")
+    (new_dir / "provision.log").write_text("line1\nline2\n")
+
+    resp = client.get("/api/benches/provision-status?name=fresh")
+    data = resp.get_json()
+    assert data["status"] == "running"
+    assert "line2" in data["log"]
+
+
 def test_api_benches_new_rejects_invalid_name(tmp_path: Path) -> None:
     benches_dir = tmp_path / "benches"
     client = _client(benches_dir / "current")

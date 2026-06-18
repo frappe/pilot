@@ -256,39 +256,71 @@ def create_app(bench_root: Path) -> Flask:
             return jsonify({"error": str(exc)}), 400
 
         with open(new_dir / "bench.toml", "rb") as f:
-            new_port = tomllib.load(f)["admin"]["port"]
+            new_toml = tomllib.load(f)
+        new_port = new_toml["admin"]["port"]
 
         cli_root = _cli_root()
         admin_python = cli_root / ".admin-venv" / "bin" / "python"
         # Strip WERKZEUG_* — if this request is being handled by a dev-mode
         # (--dev) admin server, its env carries WERKZEUG_SERVER_FD/RUN_MAIN
-        # from its own reloader. Inheriting those into the new bench's admin
-        # process makes Werkzeug try to reuse a stale fd as an already-bound
-        # socket, which crashes it on startup with no visible error.
-        # Since this is just spawining the setup server we can ignore the phantom
-        # process runner it will be killed once the setup is completed anyways.
+        # from its own reloader. Inheriting those into a child process makes
+        # Werkzeug try to reuse a stale fd as an already-bound socket, which
+        # crashes it on startup with no visible error.
         spawn_env = {k: v for k, v in os.environ.items() if not k.startswith("WERKZEUG_")}
         spawn_env["PYTHONPATH"] = str(cli_root)
+
+        # A bench created from a production admin should come up the same way:
+        # provision it to production (init + setup production) in the background
+        # and let the dialog redirect to its own domain. A dev admin keeps the
+        # raw-port wizard flow.
+        if _current_is_production():
+            subprocess.Popen(
+                [str(admin_python), "-m", "admin.backend.provision_bench", str(new_dir)],
+                cwd=str(cli_root), env=spawn_env,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+            )
+            admin = new_toml.get("admin", {})
+            scheme = "https" if admin.get("tls", True) else "http"
+            return jsonify({
+                "name": name, "port": new_port, "production": True,
+                "domain": admin.get("domain", ""), "scheme": scheme,
+            })
+
         subprocess.Popen(
-            [
-                str(admin_python),
-                "-m",
-                "admin.backend.server",
-                "--bench-root",
-                str(new_dir),
-                "--port",
-                str(new_port),
-                "--timeout",
-                "7200",
-                "--wizard",
-            ],
-            cwd=str(cli_root),
-            env=spawn_env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
+            [str(admin_python), "-m", "admin.backend.server",
+             "--bench-root", str(new_dir), "--port", str(new_port),
+             "--timeout", "7200", "--wizard"],
+            cwd=str(cli_root), env=spawn_env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
         )
-        return jsonify({"name": name, "port": new_port})
+        return jsonify({"name": name, "port": new_port, "production": False})
+
+    def _current_is_production() -> bool:
+        # Read the flag straight from toml (no full validation) so a slightly
+        # incomplete current config can't block creating a new bench.
+        try:
+            with open(bench_root / "bench.toml", "rb") as f:
+                prod = tomllib.load(f).get("production", {})
+            pm = str(prod.get("process_manager", "")).lower()
+            return bool(prod.get("enabled", pm not in ("", "none")))
+        except Exception:
+            return False
+
+    @app.route("/api/benches/provision-status")
+    def api_benches_provision_status():
+        name = (request.args.get("name") or "").strip()
+        if not name or not _NAME_RE.match(name):
+            return jsonify({"error": "Invalid bench name"}), 400
+        new_dir = bench_root.parent / name
+        status_file = new_dir / "provision.status"
+        log_file = new_dir / "provision.log"
+        status = status_file.read_text().strip() if status_file.exists() else "unknown"
+        log_tail = ""
+        if log_file.exists():
+            # Tail the log so the dialog can show recent progress without
+            # streaming the whole file every poll.
+            log_tail = "\n".join(log_file.read_text().splitlines()[-40:])
+        return jsonify({"status": status, "log": log_tail})
 
     @app.route("/api/benches/ready")
     def api_benches_ready():

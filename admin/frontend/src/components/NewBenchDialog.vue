@@ -16,6 +16,10 @@ const adminDomain = ref('')
 const error = ref('')
 const creating = ref(false)
 const status = ref('')
+// Background provisioning (production parent): live log tail + whether we're
+// past the form and into the "bringing it up" phase.
+const provisioning = ref(false)
+const provisionLog = ref('')
 
 // Whether the *current* bench is running in production. A dev bench (started
 // with `bench start`) most likely has no systemd/supervisor configured, so
@@ -51,9 +55,12 @@ watch(show, (open) => {
   error.value = ''
   creating.value = false
   status.value = ''
+  provisioning.value = false
+  provisionLog.value = ''
   loadMode()
 })
 
+// Dev parent: the new bench runs a raw-port wizard; reach it on this host's port.
 async function waitUntilLive(port, attempt = 0) {
   try {
     const response = await fetch(`/api/benches/ready?port=${port}`)
@@ -72,6 +79,35 @@ async function waitUntilLive(port, attempt = 0) {
     return
   }
   setTimeout(() => waitUntilLive(port, attempt + 1), 1000)
+}
+
+// Production parent: the new bench is provisioned (init + setup production) in
+// the background; poll until it's live, then go to its own domain.
+async function pollProvision(benchName, target, attempt = 0) {
+  try {
+    const response = await fetch(`/api/benches/provision-status?name=${encodeURIComponent(benchName)}`)
+    if (response.ok) {
+      const data = await response.json()
+      if (data.log) provisionLog.value = data.log
+      if (data.status === 'done') {
+        status.value = `Bench is live! Redirecting to ${target}…`
+        setTimeout(() => { window.location.href = target }, 1500)
+        return
+      }
+      if (data.status === 'failed') {
+        error.value = 'Provisioning failed. See the log below.'
+        creating.value = false
+        return
+      }
+    }
+  } catch { }
+  // init + setup production can take a few minutes (clone, assets, certbot).
+  if (attempt >= 600) {
+    error.value = 'Provisioning did not finish in time. Check the new bench on the server.'
+    creating.value = false
+    return
+  }
+  setTimeout(() => pollProvision(benchName, target, attempt + 1), 2000)
 }
 
 async function createBench() {
@@ -100,8 +136,17 @@ async function createBench() {
       creating.value = false
       return
     }
-    status.value = 'Bench created — waiting for it to come up…'
-    waitUntilLive(data.port)
+    if (data.production) {
+      // Stay in the dialog and show progress while the server provisions it,
+      // then redirect to the bench's own (HTTPS) domain — same as this bench.
+      provisioning.value = true
+      status.value = 'Setting up your bench (this can take a few minutes)…'
+      const target = `${data.scheme}://${data.domain}`
+      pollProvision(benchName, target)
+    } else {
+      status.value = 'Bench created — waiting for it to come up…'
+      waitUntilLive(data.port)
+    }
   } catch {
     error.value = 'Failed to create bench'
     creating.value = false
@@ -129,6 +174,17 @@ async function createBench() {
             <span class="font-medium">bench start</span> to develop, or
             <span class="font-medium">bench setup production</span> to make it live.
           </p>
+        </div>
+
+        <!-- Provisioning: the new bench is being set up to production in the
+             background; show progress, then we redirect to its own domain. -->
+        <div v-else-if="provisioning" class="flex flex-col gap-3">
+          <p class="text-sm text-ink-gray-7">{{ status }}</p>
+          <pre
+            v-if="provisionLog"
+            class="max-h-64 overflow-auto rounded-lg bg-surface-gray-2 px-3 py-2.5 text-xs text-ink-gray-7 whitespace-pre-wrap"
+          >{{ provisionLog }}</pre>
+          <ErrorMessage v-if="error" :message="error" />
         </div>
 
         <!-- Production bench: a process manager is configured, so we can
@@ -180,8 +236,10 @@ async function createBench() {
     </template>
     <template #actions>
       <div class="flex justify-end gap-2">
-        <Button variant="ghost" @click="show = false">{{ isProduction === false ? 'Close' : 'Cancel' }}</Button>
-        <Button v-if="isProduction === true" variant="solid" :loading="creating" @click="createBench">Create</Button>
+        <Button variant="ghost" @click="show = false">
+          {{ isProduction === false || provisioning ? 'Close' : 'Cancel' }}
+        </Button>
+        <Button v-if="isProduction === true && !provisioning" variant="solid" :loading="creating" @click="createBench">Create</Button>
       </div>
     </template>
   </Dialog>
