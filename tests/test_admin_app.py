@@ -152,8 +152,12 @@ def test_api_benches_new_routes_wizard_at_domain_when_production(tmp_path: Path)
     mock_admin.assert_called_once()
     mock_gen.assert_called_once()
     mock_popen.assert_not_called()
+    fresh_toml = (benches_dir / "fresh" / "bench.toml").read_text()
     # New benches from the UI default to plain HTTP (TLS is opt-in afterwards).
-    assert "tls = false" in (benches_dir / "fresh" / "bench.toml").read_text()
+    assert "tls = false" in fresh_toml
+    # Its admin now runs under the chosen manager, so it's recorded as production
+    # (else `bench status`/`stop` would treat it as a foreground dev bench).
+    assert "enabled = true" in fresh_toml.split("[production]")[1].split("[")[0]
 
 
 def test_api_benches_new_rejects_invalid_name(tmp_path: Path) -> None:

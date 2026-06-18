@@ -48,6 +48,17 @@ def _port_open(port: int) -> bool:
         return False
 
 
+def _persist_toml(bench_dir: Path, updates: dict) -> None:
+    """Merge ``updates`` into a bench's bench.toml in place, preserving other keys."""
+    from bench_cli.utils import write_toml
+
+    toml_path = bench_dir / "bench.toml"
+    data = tomllib.loads(toml_path.read_text())
+    for section, values in updates.items():
+        data.setdefault(section, {}).update(values)
+    write_toml(toml_path, data)
+
+
 def _wizard_status(bench_root: Path) -> dict:
     name = bench_root.name
     try:
@@ -274,7 +285,7 @@ def create_app(bench_root: Path) -> Flask:
                 from bench_cli.managers.systemd_process_manager import SystemdProcessManager
 
                 bench = Bench(BenchConfig.from_file(new_dir / "bench.toml"), new_dir)
-                # The bench isn't deployed yet (production.enabled is false), so
+                # Not deployed yet (production.enabled is false at this point), so
                 # pick the manager by the configured process_manager rather than
                 # via the factory, which gates on enabled.
                 pm = (SystemdProcessManager if bench.config.production.process_manager == "systemd"
@@ -284,6 +295,11 @@ def create_app(bench_root: Path) -> Flask:
                 nginx.generate_config()
                 nginx.install_config()
                 nginx.reload()
+                # The admin now runs under the chosen process manager, so record
+                # the bench as production — otherwise `bench status`/`stop` fall
+                # back to the foreground (Procfile) manager and misreport it. The
+                # workload simply stays stopped until the user finishes setup.
+                _persist_toml(new_dir, {"production": {"enabled": True}})
             except Exception as exc:
                 return jsonify({"error": f"Failed to bring up the new bench: {exc}"}), 500
             return jsonify({"name": name, "port": new_port, "wizard_at_domain": True,
