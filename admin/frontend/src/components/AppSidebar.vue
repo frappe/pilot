@@ -46,17 +46,17 @@ async function loadBenches() {
   } catch { }
 }
 
-// Opened from the sidebar header dropdown (reka-ui Menu). While open, the menu
-// sets `pointer-events: none` on <body> and only restores it after its close
-// transition finishes. Opening a (portaled) Dialog before then leaves the whole
-// dialog — text boxes included — unclickable. Wait until the body is interactive
-// again (with a frame-count fallback so we never hang), then clear any lingering
-// lock before mounting the dialog.
+// These dialogs open from the sidebar header dropdown (reka-ui DropdownMenu).
+// The menu content is portaled near the trigger (top-left) and stays mounted
+// through its close animation, sitting *over* the dialog's upper fields. If the
+// dialog opens before the menu unmounts, that leftover content swallows clicks
+// on the fields it overlaps — so a click can't focus the input, even though Tab
+// (keyboard) still reaches it. Wait until the menu is fully gone, then open.
 function openAfterMenuCloses(fn) {
   let tries = 0
   const tick = () => {
-    const locked = getComputedStyle(document.body).pointerEvents === 'none'
-    if (!locked || tries++ > 30) {
+    const menuStillMounted = document.querySelector('[role="menu"], .dropdown-content')
+    if (!menuStillMounted || tries++ > 60) {
       document.body.style.pointerEvents = ''
       fn()
     } else {
