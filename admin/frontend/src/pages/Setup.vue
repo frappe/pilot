@@ -11,7 +11,7 @@ const error = ref('')
 const loading = ref(false)
 const benchName = ref('')
 const isLinux = ref(true)
-const mariadbWillInstall = ref(false)
+const dedicatedWillInstall = ref(false)  // true when a new dedicated instance will be created
 
 // ── init-task streaming state ─────────────────────────────────────────────
 const taskLines = ref([])
@@ -22,8 +22,10 @@ const currentStep = ref('Starting…')
 const showDetails = ref(false)
 
 const form = ref({
-  mariadb_password: '',
   admin_password: '',
+  mariadb_password: '',
+  mariadb_admin_user: 'root',
+  dedicated_db: 'dedicated',  // 'dedicated' | 'shared' — Linux only, UI-only field
   app_repo: 'https://github.com/frappe/frappe',
   app_branch: 'develop',
   volume_enabled: false,
@@ -132,14 +134,19 @@ function applySmartSizes() {
   form.value.volume_reservation = wholeG(bytes * 0.15)
 }
 
+watch(() => form.value.dedicated_db, (val) => {
+  if (val === 'shared') form.value.volume_enabled = false
+  if (val === 'dedicated') form.value.mariadb_admin_user = 'root'
+})
 watch(() => [form.value.volume_backing, form.value.volume_device, form.value.volume_image_size], applySmartSizes)
 
 // ── step flow ──────────────────────────────────────────────────────────────
-const configSteps = computed(() =>
-  isLinux.value && form.value.volume_enabled
-    ? ['passwords', 'customize', 'storage']
-    : ['passwords', 'customize']
-)
+const configSteps = computed(() => {
+  const steps = ['passwords', 'database', 'customize']
+  if (isLinux.value && form.value.dedicated_db === 'dedicated' && form.value.volume_enabled)
+    steps.push('storage')
+  return steps
+})
 const stepNumber = computed(() => configSteps.value.indexOf(step.value) + 1)
 const isConfiguring = computed(() => stepNumber.value > 0)
 const isRunning = computed(() => step.value === 'running')
@@ -147,13 +154,15 @@ const isLastConfigStep = computed(() => step.value === configSteps.value[configS
 const modalWidthClass = computed(() => (isRunning.value && showDetails.value ? 'max-w-2xl' : 'max-w-lg'))
 
 const titles = {
-  passwords: 'Set up passwords',
+  passwords: 'Admin password',
+  database: 'Database',
   customize: 'Customize your bench',
   storage: 'Storage',
   running: 'Setting up your bench',
   done: 'Setup complete',
 }
 const subtitles = {
+  database: 'Configure your MariaDB connection',
   storage: 'Choose where your bench keeps its data',
 }
 const title = computed(() => titles[step.value] || benchName.value)
@@ -177,22 +186,25 @@ async function loadConfig() {
       if (data[key] !== undefined) form.value[key] = data[key]
     }
     clampImageSize()
+    if (isLinux.value) form.value.dedicated_db = data.mariadb_instance ? 'dedicated' : 'shared'
     if (data.running_init_task_id) {
       step.value = 'running'
       streamTask(`/api/setup/stream/${data.running_init_task_id}`, onInitDone)
     }
   } catch {}
   fetchBranches()
-  checkMariadbInstall()
+  checkDedicatedInstall()
 }
 
-// Whether init will create MariaDB and adopt the entered password as root.
-// /validate-mariadb decides this before looking at credentials, so an empty
-// password is enough to learn it — no separate endpoint needed.
-async function checkMariadbInstall() {
+// For dedicated DB: check whether init will create a new instance (vs an existing one).
+// Only relevant for dedicated — shared always connects to the running system MariaDB.
+async function checkDedicatedInstall() {
   try {
-    const { state } = await postJson('/api/setup/validate-mariadb', { mariadb_password: '' })
-    mariadbWillInstall.value = state === 'will_install'
+    const { state } = await postJson('/api/setup/validate-mariadb', {
+      mariadb_password: '',
+      dedicated_db: true,
+    })
+    dedicatedWillInstall.value = state === 'will_install'
   } catch {}
 }
 
@@ -269,25 +281,39 @@ function toggleDetails() {
 // ── navigation ─────────────────────────────────────────────────────────────
 async function nextStep() {
   if (step.value === 'passwords') {
-    if (!form.value.mariadb_password || !form.value.admin_password) {
-      error.value = 'All password fields are required'
+    if (!form.value.admin_password) {
+      error.value = 'Admin password is required'
       return
     }
-    loading.value = true
-    try {
-      const { state } = await postJson('/api/setup/validate-mariadb', {
-        mariadb_password: form.value.mariadb_password,
-      })
-      if (state === 'invalid') {
-        error.value = 'Incorrect MariaDB root password.'
-        return
+  }
+
+  if (step.value === 'database') {
+    if (!form.value.mariadb_password) {
+      error.value = 'MariaDB password is required'
+      return
+    }
+    // For shared DB, validate credentials against the running instance.
+    // For dedicated, init will create the instance — skip validation.
+    if (form.value.dedicated_db === 'shared') {
+      loading.value = true
+      try {
+        const { state } = await postJson('/api/setup/validate-mariadb', {
+          mariadb_password: form.value.mariadb_password,
+          mariadb_admin_user: form.value.mariadb_admin_user,
+          dedicated_db: false,
+        })
+        if (state === 'invalid') {
+          error.value = 'Incorrect MariaDB credentials.'
+          return
+        }
+      } catch {
+        // Validation is best-effort; init still guards the password.
+      } finally {
+        loading.value = false
       }
-    } catch {
-      // Validation is best-effort; init still guards the password.
-    } finally {
-      loading.value = false
     }
   }
+
   error.value = ''
   step.value = configSteps.value[configSteps.value.indexOf(step.value) + 1]
 }
@@ -298,7 +324,22 @@ function prevStep() {
 }
 
 async function saveConfig() {
-  const data = await postJson('/api/setup/save', form.value)
+  const payload = { ...form.value }
+  delete payload.dedicated_db
+  if (isLinux.value) {
+    if (form.value.dedicated_db === 'dedicated') {
+      payload.mariadb_instance = benchName.value
+      payload.mariadb_socket_path = `/run/mysqld/mysqld-${benchName.value}.sock`
+      payload.mariadb_data_dir = `/var/lib/mysql-${benchName.value}`
+      payload.mariadb_admin_user = 'root'  // fresh instance always has root; not user-configurable
+    } else {
+      payload.mariadb_instance = ''
+      payload.mariadb_socket_path = ''
+      payload.mariadb_data_dir = ''
+      payload.volume_enabled = false
+    }
+  }
+  const data = await postJson('/api/setup/save', payload)
   if (!data.ok) throw new Error(data.error || 'Failed to save configuration.')
 }
 
@@ -393,13 +434,34 @@ function backToConfig() {
       <!-- Body -->
       <div class="flex-1 overflow-y-auto p-5">
         <div v-if="step === 'passwords'" class="flex flex-col gap-4">
+          <Password label="Admin password" v-model="form.admin_password" placeholder="Choose a password" @keydown.enter="nextStep" />
+          <ErrorMessage v-if="error" :message="error" />
+        </div>
+
+        <div v-else-if="step === 'database'" class="flex flex-col gap-4">
+          <FormControl
+            v-if="isLinux"
+            type="select"
+            label="Database"
+            v-model="form.dedicated_db"
+            :options="[
+              { label: 'Dedicated instance (recommended)', value: 'dedicated' },
+              { label: 'Shared system MariaDB', value: 'shared' },
+            ]"
+          />
+          <FormControl
+            v-if="form.dedicated_db === 'shared'"
+            label="MariaDB root user"
+            v-model="form.mariadb_admin_user"
+            placeholder="root"
+          />
           <Password
             label="MariaDB root password"
             v-model="form.mariadb_password"
-            placeholder="root"
-            :description="mariadbWillInstall ? 'MariaDB isn’t installed yet, this will be set as the root password.' : undefined"
+            placeholder="password"
+            :description="form.dedicated_db === 'dedicated' && dedicatedWillInstall ? 'A new MariaDB instance will be created with this password.' : undefined"
+            @keydown.enter="nextStep"
           />
-          <Password label="Admin password" v-model="form.admin_password" placeholder="Choose a password" @keydown.enter="nextStep" />
           <ErrorMessage v-if="error" :message="error" />
         </div>
 
@@ -412,7 +474,7 @@ function backToConfig() {
           />
           <FormControl label="Frappe repository" v-model="form.app_repo" />
           <FormControl
-            v-if="isLinux"
+            v-if="isLinux && form.dedicated_db === 'dedicated'"
             type="checkbox"
             label="Use volumes (snapshots & backups)"
             v-model="form.volume_enabled"
@@ -494,7 +556,10 @@ function backToConfig() {
           <Button v-if="stepNumber > 1" variant="subtle" class="flex-1" @click="prevStep">
             Back
           </Button>
-          <Button v-if="step === 'passwords'" variant="solid" :loading="loading" class="w-full" @click="nextStep">
+          <Button v-if="step === 'passwords'" variant="solid" class="w-full" @click="nextStep">
+            Next
+          </Button>
+          <Button v-else-if="step === 'database'" variant="solid" :loading="loading" class="flex-1" @click="nextStep">
             Next
           </Button>
           <Button v-else-if="!isLastConfigStep" variant="solid" class="flex-1" @click="nextStep">
