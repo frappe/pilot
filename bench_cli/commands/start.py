@@ -23,8 +23,15 @@ class RunCommand(Command):
 
         if not (self.bench.path / "env" / "bin" / "python").exists():
             self._start_wizard()
-        else:
-            ProcessManagerFactory.create(self.bench).start()
+            return
+
+        manager = ProcessManagerFactory.create(self.bench)
+        if self.bench.config.production.enabled and not manager.is_configured():
+            from bench_cli.commands.restart import _incomplete_message
+
+            print(_incomplete_message(self.bench))
+            return
+        manager.start()
 
     def _start_wizard(self) -> None:
         from bench_cli.commands.admin import download_admin_frontend, _cli_root

@@ -621,3 +621,46 @@ def test_drop_site_removes_from_toml_when_no_sites_key(tmp_path: Path) -> None:
 
     cmd = DropSiteCommand(bench, "nonexistent")
     cmd._remove_from_bench_toml()  # no raise
+
+
+# ── RestartCommand / StartCommand routing ───────────────────────────────────────
+
+
+def test_restart_dev_bench_prints_guidance(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+    from bench_cli.commands.restart import RestartCommand
+
+    bench = make_bench(tmp_path)  # production disabled by default
+    RestartCommand(bench).run()
+    out = capsys.readouterr().out
+    assert "only for production benches" in out
+
+
+def test_restart_production_incomplete_prints_repair(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+    from bench_cli.commands.restart import RestartCommand
+
+    bench = make_bench(tmp_path)
+    bench.config.production.enabled = True
+    bench.config.production.process_manager = "systemd"
+    with patch("bench_cli.managers.process_manager.ProcessManagerFactory.create") as create:
+        mgr = MagicMock()
+        mgr.is_configured.return_value = False
+        create.return_value = mgr
+        RestartCommand(bench).run()
+    out = capsys.readouterr().out
+    assert "deployment is incomplete" in out
+    mgr.restart.assert_not_called()
+
+
+def test_restart_production_restarts_when_configured(tmp_path: Path) -> None:
+    from bench_cli.commands.restart import RestartCommand
+
+    bench = make_bench(tmp_path)
+    bench.config.production.enabled = True
+    bench.config.production.process_manager = "supervisor"
+    with patch("bench_cli.managers.process_manager.ProcessManagerFactory.create") as create:
+        mgr = MagicMock()
+        mgr.is_configured.return_value = True
+        create.return_value = mgr
+        RestartCommand(bench).run()
+    mgr.generate_config.assert_called_once()
+    mgr.restart.assert_called_once()
