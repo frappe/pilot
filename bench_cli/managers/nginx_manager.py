@@ -233,6 +233,19 @@ class NginxManager:
         )
         proxy_block = self._render_admin_proxy_location()
 
+        # admin.tls = False: a central proxy terminates TLS, so nginx serves the
+        # admin over plain HTTP on :80 and never redirects to HTTPS, even if a
+        # stale cert is still on disk.
+        if not admin.tls:
+            return (
+                f"server {{\n"
+                f"    listen {http_port};\n"
+                f"    server_name {domain};\n\n"
+                + acme_block
+                + proxy_block
+                + f"}}\n"
+            )
+
         if not ssl_ready or not self.admin_cert_exists():
             return (
                 f"server {{\n"

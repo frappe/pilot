@@ -18,7 +18,7 @@ from bench_cli.managers.letsencrypt_manager import needs_letsencrypt
 
 
 def _make_bench(tmp_path: Path, name: str = "prod", *, admin_domain: str = "prod-admin.localhost",
-                email: str = "", process_manager: str = "supervisor") -> Bench:
+                email: str = "", process_manager: str = "supervisor", tls: bool = True) -> Bench:
     bench_dir = tmp_path / "benches" / name
     (bench_dir / "sites").mkdir(parents=True, exist_ok=True)
     le = f'\n[letsencrypt]\nemail = "{email}"\n' if email else ""
@@ -27,7 +27,7 @@ def _make_bench(tmp_path: Path, name: str = "prod", *, admin_domain: str = "prod
         '[[apps]]\nname = "frappe"\nrepo = "https://github.com/frappe/frappe"\nbranch = "version-16"\n\n'
         '[mariadb]\nroot_password = "root"\n\n'
         '[redis]\ncache_port = 13000\nqueue_port = 11000\n\n'
-        f'[admin]\ndomain = "{admin_domain}"\n'
+        f'[admin]\ndomain = "{admin_domain}"\ntls = {"true" if tls else "false"}\n'
         f'{le}\n'
         f'[production]\nprocess_manager = "{process_manager}"\n'
     )
@@ -70,6 +70,10 @@ def test_needs_letsencrypt(tmp_path: Path) -> None:
     assert not needs_letsencrypt(_make_bench(tmp_path, name="b", admin_domain="admin.example.com"))
     # Local dev domain → not obtainable.
     assert not needs_letsencrypt(_make_bench(tmp_path, name="c", admin_domain="c-admin.localhost", email="x@y.com"))
+    # TLS disabled (central proxy terminates TLS) → no admin cert needed.
+    assert not needs_letsencrypt(
+        _make_bench(tmp_path, name="d", admin_domain="admin.example.com", email="x@y.com", tls=False)
+    )
 
 
 # ── --process-manager / persist-last / migration ────────────────────────────────
