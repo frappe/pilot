@@ -477,6 +477,8 @@ See [docs/production.md](production.md) for the full step-by-step.
 
 **Summary:** Installs nginx if absent, generates per-site config files into `config/nginx/`, symlinks `include.conf` into `nginx.config_dir`, validates with `nginx -t`, and reloads nginx. Sites are discovered from the filesystem.
 
+Each vhost serves minimal 404/502/503 pages (`config/nginx/error_pages/`) for nginx-generated errors. It also installs a server-wide catch-all `default_server` (`/etc/nginx/conf.d/00-bench-default.conf`, pages in `/usr/share/nginx/bench-error-pages/`) so requests for unknown hosts get a 404 instead of nginx's stock welcome page — this removes the distro's default site (`/etc/nginx/sites-enabled/default`). Re-running this command (or `bench setup production`) regenerates all of it.
+
 Pre-conditions: `nginx.enabled = true` in `bench.toml`, `bench init` has been run, process has `sudo` (Ubuntu) or Homebrew (macOS).
 
 > **macOS note:** This command works on macOS with Homebrew nginx for local testing, but its primary use case is production deployment on Ubuntu/Linux servers. The `config_dir` default (`/etc/nginx/conf.d`) does not exist on macOS — set it to `/opt/homebrew/etc/nginx/servers/` (Apple Silicon) or `/usr/local/etc/nginx/servers/` (Intel) in `bench.toml`.

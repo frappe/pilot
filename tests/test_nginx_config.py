@@ -332,3 +332,16 @@ def test_generate_config_writes_error_page_files(tmp_path: Path) -> None:
     # admin vhost also serves the custom pages
     admin_conf = (bench.config_path / "nginx" / "sites" / "_admin.conf").read_text()
     assert "/_errors/" in admin_conf
+
+
+def test_catchall_default_server(tmp_path: Path) -> None:
+    from pathlib import Path as _P
+
+    bench = _make_bench(tmp_path, _BASE_DATA)
+    conf = NginxManager(bench)._render_catchall(80, _P("/usr/share/nginx/bench-error-pages"))
+
+    assert "listen 80 default_server;" in conf
+    assert "server_name _;" in conf
+    assert "error_page 404 /_errors/404.html;" in conf
+    assert "return 404;" in conf
+    assert "alias /usr/share/nginx/bench-error-pages/;" in conf

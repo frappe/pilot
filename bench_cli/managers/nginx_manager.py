@@ -4,6 +4,7 @@ import pwd
 import re
 import shutil
 from pathlib import Path
+from string import Template
 from typing import TYPE_CHECKING
 
 from bench_cli.managers.gunicorn_manager import GunicornManager
@@ -12,6 +13,13 @@ from bench_cli.utils import run_command
 
 _NGINX_CONF = Path("/etc/nginx/nginx.conf")
 _USER_DIRECTIVE = re.compile(r"^[ \t]*user[ \t]+[^;\n]+;", re.MULTILINE)
+
+# Server-wide catch-all so unknown hosts get our 404 instead of nginx's stock
+# welcome page. Shared by every bench (one default_server per port), so it lives
+# in fixed machine paths rather than under a bench.
+_CATCHALL_CONF = Path("/etc/nginx/conf.d/00-bench-default.conf")
+_SHARED_ERROR_DIR = Path("/usr/share/nginx/bench-error-pages")
+_STOCK_DEFAULT_SITE = Path("/etc/nginx/sites-enabled/default")
 
 # Custom pages for nginx-generated errors (downed upstream, missing static
 # file). App responses pass through unchanged — proxy_intercept_errors is off.
@@ -22,25 +30,42 @@ _ERROR_PAGES = {
 }
 
 
+# $-placeholders (not .format) so the CSS braces below stay literal.
+_ERROR_PAGE_TEMPLATE = Template(
+    """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>$code — $title</title>
+<style>
+:root{--bg:#fbfbfc;--fg:#1c2024;--muted:#6b7280;--accent:#d1d5db;--font:system-ui,-apple-system,sans-serif}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--fg);font-family:var(--font);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+.box{text-align:center;padding:2.5rem 1.5rem;max-width:30rem}
+.code{font-size:clamp(3.5rem,12vw,6rem);font-weight:700;line-height:1;letter-spacing:.05em;margin:0;color:var(--fg)}
+.rule{width:2.5rem;height:3px;border-radius:999px;background:var(--accent);margin:1.5rem auto}
+.title{font-size:1.125rem;font-weight:600;letter-spacing:-.01em;margin:0 0 .4rem}
+.msg{font-size:.95rem;line-height:1.55;color:var(--muted);margin:0}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1115;--fg:#e6e8eb;--muted:#9ba1a8;--accent:#2c2f36}}
+</style>
+</head>
+<body>
+<div class="box">
+<p class="code">$code</p>
+<div class="rule"></div>
+<p class="title">$title</p>
+<p class="msg">$message</p>
+</div>
+</body>
+</html>
+"""
+)
+
+
 def _render_error_html(code: int, title: str, message: str) -> str:
-    return (
-        "<!DOCTYPE html>\n"
-        '<html lang="en">\n<head>\n<meta charset="utf-8">\n'
-        '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
-        f"<title>{code} — {title}</title>\n<style>\n"
-        "html,body{height:100%;margin:0}\n"
-        "body{display:flex;align-items:center;justify-content:center;"
-        'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'
-        "background:#f8f9fa;color:#1f2730}\n"
-        ".box{text-align:center;padding:2rem;max-width:32rem}\n"
-        ".code{font-size:4rem;font-weight:700;line-height:1;margin:0;color:#171c23}\n"
-        ".title{font-size:1.25rem;font-weight:600;margin:.75rem 0 .25rem}\n"
-        ".msg{font-size:1rem;color:#6b7785;margin:0}\n"
-        "</style>\n</head>\n<body>\n"
-        f'<div class="box">\n<p class="code">{code}</p>\n'
-        f'<p class="title">{title}</p>\n<p class="msg">{message}</p>\n</div>\n'
-        "</body>\n</html>\n"
-    )
+    return _ERROR_PAGE_TEMPLATE.substitute(code=code, title=title, message=message)
 
 if TYPE_CHECKING:
     from bench_cli.config.site_config import SiteConfig
@@ -117,6 +142,45 @@ class NginxManager:
         error_dir.mkdir(parents=True, exist_ok=True)
         for code, (title, message) in _ERROR_PAGES.items():
             (error_dir / f"{code}.html").write_text(_render_error_html(code, title, message))
+
+    def install_default_server(self) -> None:
+        """Install the server-wide catch-all vhost (and its error pages) so
+        requests for unknown hosts return our 404, not nginx's welcome page.
+        Idempotent; shared by all benches."""
+        staging = self.bench.config_path / "nginx"
+        for code, (title, message) in _ERROR_PAGES.items():
+            staged = staging / f"_catchall_{code}.html"
+            staged.write_text(_render_error_html(code, title, message))
+            run_command(["sudo", "install", "-D", "-m", "644", str(staged), str(_SHARED_ERROR_DIR / f"{code}.html")])
+            staged.unlink()
+
+        staged = staging / "_catchall.conf"
+        staged.write_text(self._render_catchall(self.bench.config.nginx.http_port, _SHARED_ERROR_DIR))
+        run_command(["sudo", "cp", str(staged), str(_CATCHALL_CONF)])
+        staged.unlink()
+
+        # The stock default site also claims default_server on :80; nginx rejects
+        # a duplicate, so drop it and let ours win.
+        if _STOCK_DEFAULT_SITE.exists() or _STOCK_DEFAULT_SITE.is_symlink():
+            run_command(["sudo", "unlink", str(_STOCK_DEFAULT_SITE)])
+
+    def _render_catchall(self, http_port: int, error_dir: Path) -> str:
+        directives = "".join(f"    error_page {code} /_errors/{code}.html;\n" for code in _ERROR_PAGES)
+        return (
+            "server {\n"
+            f"    listen {http_port} default_server;\n"
+            f"    listen [::]:{http_port} default_server;\n"
+            "    server_name _;\n\n"
+            + directives
+            + "    location ^~ /_errors/ {\n"
+            + "        internal;\n"
+            + f"        alias {error_dir}/;\n"
+            + "    }\n\n"
+            + "    location / {\n"
+            + "        return 404;\n"
+            + "    }\n"
+            "}\n"
+        )
 
     def _render_error_pages(self) -> str:
         directives = "".join(f"    error_page {code} /_errors/{code}.html;\n" for code in _ERROR_PAGES)
@@ -374,6 +438,7 @@ class NginxManager:
             run_command(["sudo", "unlink", str(symlink_path)])
         run_command(["sudo", "ln", "-s", str(source_path), str(symlink_path)])
         self._set_worker_user()
+        self.install_default_server()
 
     def _set_worker_user(self) -> None:
         """Run nginx workers as the bench owner. Idempotent."""
