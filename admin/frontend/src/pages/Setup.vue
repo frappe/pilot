@@ -153,6 +153,11 @@ watch(() => form.value.dedicated_db, (val) => {
   if (val === 'shared') form.value.volume_enabled = false
   if (val === 'dedicated') form.value.mariadb_admin_user = 'root'
 })
+// A fresh install can only ever secure the pre-existing 'root' account, so lock
+// the root user to 'root' whenever init will install MariaDB itself.
+watch(dbWillInstall, (fresh) => {
+  if (fresh) form.value.mariadb_admin_user = 'root'
+}, { immediate: true })
 watch(() => [form.value.volume_backing, form.value.volume_device, form.value.volume_image_size], applySmartSizes)
 
 // ── step flow ──────────────────────────────────────────────────────────────
@@ -308,28 +313,29 @@ async function nextStep() {
       error.value = 'MariaDB password is required'
       return
     }
-    // Validate credentials against the running instance for any DB that init
-    // connects to rather than creates: shared system MariaDB on Linux, and
-    // macOS (which has no dedicated mode — it always uses the system MariaDB).
-    // For a Linux dedicated instance, init creates it — skip validation.
-    if (!isLinux.value || form.value.dedicated_db === 'shared') {
-      loading.value = true
-      try {
-        const { state } = await postJson('/api/setup/validate-mariadb', {
-          mariadb_password: form.value.mariadb_password,
-          mariadb_admin_user: form.value.mariadb_admin_user,
-          dedicated_db: false,
-        })
-        sharedWillInstall.value = state === 'will_install'
-        if (state === 'invalid') {
-          error.value = 'Incorrect MariaDB credentials.'
-          return
-        }
-      } catch {
-        // Validation is best-effort; init still guards the password.
-      } finally {
-        loading.value = false
+    // Always validate before leaving the database step. The endpoint reports
+    // 'will_install' (fresh — nothing to validate), 'valid', or 'invalid'.
+    // dedicated only applies to a Linux dedicated instance; shared system
+    // MariaDB (Linux 'shared' and all of macOS) validates the live credentials.
+    const dedicated = isLinux.value && form.value.dedicated_db === 'dedicated'
+    loading.value = true
+    try {
+      const { state } = await postJson('/api/setup/validate-mariadb', {
+        mariadb_password: form.value.mariadb_password,
+        mariadb_admin_user: form.value.mariadb_admin_user,
+        dedicated_db: dedicated,
+      })
+      if (dedicated) dedicatedWillInstall.value = state === 'will_install'
+      else sharedWillInstall.value = state === 'will_install'
+      if (state === 'invalid') {
+        error.value = 'Incorrect MariaDB credentials.'
+        return
       }
+    } catch {
+      // Validation is best-effort against transport errors; init still guards
+      // the password. An explicit 'invalid' above always blocks.
+    } finally {
+      loading.value = false
     }
   }
 
@@ -355,8 +361,9 @@ async function saveConfig() {
       payload.mariadb_instance = ''
       payload.mariadb_socket_path = ''
       payload.mariadb_data_dir = ''
-      payload.mariadb_admin_user = 'root'  // fresh shared install only has root; not user-configurable
       payload.volume_enabled = false
+      // Shared: the root user is locked to 'root' only for a fresh install;
+      // an existing server may use a custom superuser (see the field's watcher).
     }
   }
   const data = await postJson('/api/setup/save', payload)
@@ -470,11 +477,11 @@ function backToConfig() {
             ]"
           />
           <FormControl
-            v-if="form.dedicated_db === 'shared'"
+            v-if="!isLinux || form.dedicated_db === 'shared'"
             label="MariaDB root user"
-            modelValue="root"
-            disabled
-            description="A fresh MariaDB install only has the 'root' superuser."
+            v-model="form.mariadb_admin_user"
+            :disabled="dbWillInstall"
+            :description="dbWillInstall ? 'A fresh MariaDB install only has the \'root\' superuser.' : undefined"
           />
           <Password
             label="MariaDB root password"
