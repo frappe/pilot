@@ -144,6 +144,7 @@ def create_app(bench_root: Path) -> Flask:
             {
                 "enabled": config.admin.enabled,
                 "name": config.name,
+                "production": config.production.enabled,
                 "authenticated": bool(session.get("authenticated")),
             }
         )

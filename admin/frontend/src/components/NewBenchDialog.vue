@@ -17,10 +17,31 @@ const error = ref('')
 const creating = ref(false)
 const status = ref('')
 
+// Whether the *current* bench is running in production. A dev bench (started
+// with `bench start`) most likely has no systemd/supervisor configured, so
+// auto-provisioning a managed bench from the UI would silently fail or confuse.
+// In that case we point the user at the CLI instead.
+const isProduction = ref(null)
+
 const processManagerOptions = [
   { value: 'systemd', label: 'Systemd', hint: 'Recommended' },
   { value: 'supervisor', label: 'Supervisor', hint: 'Alternative' },
 ]
+
+async function loadMode() {
+  isProduction.value = null
+  try {
+    const response = await fetch('/api/status')
+    if (response.ok) {
+      const data = await response.json()
+      isProduction.value = data.production === true
+    } else {
+      isProduction.value = false
+    }
+  } catch {
+    isProduction.value = false
+  }
+}
 
 watch(show, (open) => {
   if (!open) return
@@ -30,6 +51,7 @@ watch(show, (open) => {
   error.value = ''
   creating.value = false
   status.value = ''
+  loadMode()
 })
 
 async function waitUntilLive(port, attempt = 0) {
@@ -94,53 +116,72 @@ async function createBench() {
            otherwise hijacks focus and prevents a click from focusing inputs
            (keyboard/Tab is unaffected) — same guard SettingsModal uses. -->
       <div class="flex flex-col gap-5" @pointerdown.stop>
-        <FormControl
-          label="Bench name"
-          type="text"
-          v-model="name"
-          placeholder="my-bench"
-          @input="error = ''"
-          @keyup.enter="createBench"
-        />
-        <div>
-          <span class="mb-1.5 block text-xs text-ink-gray-5">Process manager</span>
-          <div class="grid grid-cols-2 gap-2">
-            <button
-              v-for="opt in processManagerOptions"
-              :key="opt.value"
-              type="button"
-              class="rounded-lg border px-3 py-2 text-left transition-colors"
-              :class="processManager === opt.value
-                ? 'border-outline-gray-3 bg-surface-gray-2'
-                : 'border-outline-gray-2 hover:bg-surface-gray-1'"
-              @click="processManager = opt.value"
-            >
-              <span class="block text-sm font-medium text-ink-gray-9">{{ opt.label }}</span>
-              <span class="block text-xs text-ink-gray-5">{{ opt.hint }}</span>
-            </button>
-          </div>
+        <!-- Dev bench: guide to the CLI rather than auto-provisioning a
+             managed bench the host probably can't run. -->
+        <div v-if="isProduction === false" class="flex flex-col gap-3">
+          <p class="text-sm text-ink-gray-7">
+            This bench is running in development mode, so new benches are best
+            created from the command line where you control how they run:
+          </p>
+          <pre class="rounded-lg bg-surface-gray-2 px-3 py-2.5 text-sm text-ink-gray-8 select-all">bench new my-bench</pre>
+          <p class="text-xs text-ink-gray-5">
+            Then <span class="font-medium">cd</span> into it and run
+            <span class="font-medium">bench start</span> to develop, or
+            <span class="font-medium">bench setup production</span> to make it live.
+          </p>
         </div>
-        <div>
+
+        <!-- Production bench: a process manager is configured, so we can
+             provision and bring up a managed bench directly. -->
+        <template v-else-if="isProduction === true">
           <FormControl
-            label="Admin domain"
+            label="Bench name"
             type="text"
-            v-model="adminDomain"
-            placeholder="my-admin.example.com"
+            v-model="name"
+            placeholder="my-bench"
             @input="error = ''"
             @keyup.enter="createBench"
           />
-          <p class="mt-1.5 text-xs text-ink-gray-5">
-            The web address you'll use to open this bench.
-          </p>
-        </div>
-        <ErrorMessage v-if="error" :message="error" />
-        <p v-if="status" class="text-sm text-ink-gray-6">{{ status }}</p>
+          <div>
+            <span class="mb-1.5 block text-xs text-ink-gray-5">Process manager</span>
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                v-for="opt in processManagerOptions"
+                :key="opt.value"
+                type="button"
+                class="rounded-lg border px-3 py-2 text-left transition-colors"
+                :class="processManager === opt.value
+                  ? 'border-outline-gray-3 bg-surface-gray-2'
+                  : 'border-outline-gray-2 hover:bg-surface-gray-1'"
+                @click="processManager = opt.value"
+              >
+                <span class="block text-sm font-medium text-ink-gray-9">{{ opt.label }}</span>
+                <span class="block text-xs text-ink-gray-5">{{ opt.hint }}</span>
+              </button>
+            </div>
+          </div>
+          <div>
+            <FormControl
+              label="Admin domain"
+              type="text"
+              v-model="adminDomain"
+              placeholder="my-admin.example.com"
+              @input="error = ''"
+              @keyup.enter="createBench"
+            />
+            <p class="mt-1.5 text-xs text-ink-gray-5">
+              The web address you'll use to open this bench.
+            </p>
+          </div>
+          <ErrorMessage v-if="error" :message="error" />
+          <p v-if="status" class="text-sm text-ink-gray-6">{{ status }}</p>
+        </template>
       </div>
     </template>
     <template #actions>
       <div class="flex justify-end gap-2">
-        <Button variant="ghost" @click="show = false">Cancel</Button>
-        <Button variant="solid" :loading="creating" @click="createBench">Create</Button>
+        <Button variant="ghost" @click="show = false">{{ isProduction === false ? 'Close' : 'Cancel' }}</Button>
+        <Button v-if="isProduction === true" variant="solid" :loading="creating" @click="createBench">Create</Button>
       </div>
     </template>
   </Dialog>
