@@ -69,12 +69,21 @@ function switchBench(bench) {
 
 const showNewBenchDialog = ref(false)
 const newBenchName = ref('')
+const newBenchProcessManager = ref('systemd')
+const newBenchAdminDomain = ref('')
 const newBenchError = ref('')
 const newBenchCreating = ref(false)
 const newBenchStatus = ref('')
 
+const processManagerOptions = [
+  { label: 'Systemd — systemctl --user units', value: 'systemd' },
+  { label: 'Supervisor — bench-owned supervisord', value: 'supervisor' },
+]
+
 function openNewBenchDialog() {
   newBenchName.value = ''
+  newBenchProcessManager.value = 'systemd'
+  newBenchAdminDomain.value = ''
   newBenchError.value = ''
   newBenchCreating.value = false
   newBenchStatus.value = ''
@@ -110,13 +119,22 @@ async function createBench() {
     newBenchError.value = "Bench name must contain only letters, numbers, '-' and '_'"
     return
   }
+  const adminDomain = newBenchAdminDomain.value.trim()
+  if (!adminDomain) {
+    newBenchError.value = 'Admin domain is required so the bench is reachable.'
+    return
+  }
   newBenchError.value = ''
   newBenchCreating.value = true
   try {
     const response = await fetch('/api/benches/new', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newBenchName.value.trim() }),
+      body: JSON.stringify({
+        name,
+        process_manager: newBenchProcessManager.value,
+        admin_domain: adminDomain,
+      }),
     })
     const data = await response.json()
     if (!response.ok) {
@@ -254,6 +272,25 @@ onUnmounted(() => clearInterval(pollTimer))
               @input="newBenchError = ''"
               @keyup.enter="createBench"
             />
+          </div>
+          <FormControl
+            label="Process manager"
+            type="select"
+            v-model="newBenchProcessManager"
+            :options="processManagerOptions"
+          />
+          <div>
+            <FormControl
+              label="Admin domain"
+              type="text"
+              v-model="newBenchAdminDomain"
+              placeholder="my-admin.example.com"
+              @input="newBenchError = ''"
+              @keyup.enter="createBench"
+            />
+            <p class="mt-1 text-xs text-ink-gray-5">
+              The bench's admin is reached at this domain in production (nginx-fronted).
+            </p>
           </div>
           <ErrorMessage v-if="newBenchError" :message="newBenchError" />
           <p v-if="newBenchStatus" class="text-sm text-ink-gray-6">{{ newBenchStatus }}</p>

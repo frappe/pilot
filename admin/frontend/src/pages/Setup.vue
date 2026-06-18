@@ -31,6 +31,7 @@ const form = ref({
   volume_mariadb_reservation: '5G',
   volume_mariadb_quota: '20G',
   production_process_manager: 'none',
+  admin_domain: '',
 })
 
 function addWorkerGroup() {
@@ -311,6 +312,10 @@ function validateVolume() {
 
 async function initialize() {
   error.value = ''
+  if (form.value.production_process_manager !== 'none' && !form.value.admin_domain.trim()) {
+    error.value = 'Admin domain is required for a production process manager.'
+    return
+  }
   const volumeError = validateVolume()
   if (volumeError) {
     error.value = volumeError
@@ -334,8 +339,40 @@ function onInitDone(success) {
     error.value = 'Initialization failed. Check the output above and try again.'
     return
   }
+  if (form.value.production_process_manager !== 'none') {
+    deployProduction()
+  } else {
+    step.value = 'done'
+    shutdownAndPoll()
+  }
+}
+
+async function deployProduction() {
+  try {
+    const data = await postJson('/api/setup/setup-production', {})
+    if (!data.ok) throw new Error(data.error || 'Failed to start production setup.')
+    streamTask(`/api/setup/stream/${data.task_id}`, onProductionDone)
+  } catch (e) {
+    error.value = e.message
+  }
+}
+
+function onProductionDone(success) {
+  if (!success) {
+    error.value = 'Production setup failed. Check the output above and try again.'
+    return
+  }
   step.value = 'done'
-  shutdownAndPoll()
+  finishAndRedirectToDomain()
+}
+
+async function finishAndRedirectToDomain() {
+  try {
+    await postJson('/api/setup/finish', {})
+  } catch {}
+  // The admin now lives behind nginx at its domain, not the local wizard port.
+  const url = `https://${form.value.admin_domain.trim()}`
+  setTimeout(() => { window.location.href = url }, 2500)
 }
 
 async function shutdownAndPoll() {
@@ -439,6 +476,17 @@ function backToConfig() {
               { label: 'Systemd — systemctl --user units', value: 'systemd' },
             ]"
           />
+          <div v-if="form.production_process_manager !== 'none'">
+            <FormControl
+              type="text"
+              label="Admin domain"
+              v-model="form.admin_domain"
+              placeholder="my-admin.example.com"
+            />
+            <p class="mt-1 text-xs text-ink-gray-5">
+              After init the bench is deployed to production and reachable at this domain.
+            </p>
+          </div>
           <FormControl
             v-if="isLinux"
             type="checkbox"
