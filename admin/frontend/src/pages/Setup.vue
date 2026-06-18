@@ -32,7 +32,7 @@ const form = ref({
   volume_mariadb_quota: '20G',
   production_process_manager: 'none',
   admin_domain: '',
-  admin_tls: true,
+  admin_tls: false,
 })
 
 function addWorkerGroup() {
@@ -372,7 +372,7 @@ async function finishAndRedirectToDomain() {
     await postJson('/api/setup/finish', {})
   } catch {}
   // The admin now lives behind nginx at its domain, not the local wizard port.
-  const scheme = form.value.admin_tls === false ? 'http' : 'https'
+  const scheme = form.value.admin_tls === true ? 'https' : 'http'
   const url = `${scheme}://${form.value.admin_domain.trim()}`
   setTimeout(() => { window.location.href = url }, 2500)
 }

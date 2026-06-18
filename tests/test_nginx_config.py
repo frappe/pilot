@@ -153,6 +153,26 @@ def test_admin_tls_disabled_serves_plain_http(tmp_path: Path) -> None:
     assert "ssl_certificate" not in content
 
 
+def test_admin_tls_enabled_redirects_http_to_https(tmp_path: Path) -> None:
+    # admin.tls = True with a cert on disk: nginx serves HTTPS and redirects the
+    # whole HTTP vhost to it.
+    data = copy.deepcopy(_ADMIN_SYSTEMD_DATA)
+    data["admin"]["tls"] = True
+    bench = _make_bench(tmp_path, data)
+    bench.create_directories()
+    (tmp_path / "sites" / "site1.example.com").mkdir(parents=True)
+    (tmp_path / "sites" / "site1.example.com" / "site_config.json").write_text("{}")
+
+    manager = NginxManager(bench)
+    manager.admin_cert_exists = lambda: True  # pretend the admin cert is present
+    manager.generate_config(ssl_ready=True)
+
+    content = (tmp_path / "config" / "nginx" / "sites" / "_admin.conf").read_text()
+    assert "listen 443 ssl http2" in content
+    assert "ssl_certificate" in content
+    assert "return 301 https://$host$request_uri" in content
+
+
 def test_admin_domain_proxy_under_supervisor(tmp_path: Path) -> None:
     data = copy.deepcopy(_ADMIN_SYSTEMD_DATA)
     data["production"]["process_manager"] = "supervisor"

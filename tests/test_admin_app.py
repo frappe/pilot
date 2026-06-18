@@ -124,8 +124,9 @@ def test_api_benches_new_provisions_when_current_is_production(tmp_path: Path) -
     benches_dir = tmp_path / "benches"
     current = benches_dir / "current"
     # A real production current bench has an admin domain (config validates).
+    # The parent terminates TLS, so the child inherits HTTPS (scheme = https).
     _write_bench_toml(current, "current", admin_enabled=True, admin_password="secret",
-                      admin_domain="current-admin.example.com")
+                      admin_domain="current-admin.example.com", admin_tls=True)
     from admin.backend.app import create_app
     toml = (current / "bench.toml").read_text()
     (current / "bench.toml").write_text(

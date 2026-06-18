@@ -56,7 +56,7 @@ class NewCommand(Command):
         self.name = name
         self.process_manager = process_manager
         self.admin_domain = admin_domain
-        # None → inherit the server-wide value from a sibling bench (default True).
+        # None → inherit the server-wide value from a sibling bench (default False).
         self.admin_tls = admin_tls
 
     def run(self) -> None:
@@ -77,7 +77,7 @@ class NewCommand(Command):
         offset = self._pick_port_offset(self.target_directory)
         print("Writing bench.toml")
         # TLS termination is a server-wide choice: unless explicitly overridden,
-        # carry forward whatever sibling benches use (default True).
+        # carry forward whatever sibling benches use (default False).
         admin_tls = self.admin_tls if self.admin_tls is not None else self._sibling_admin_tls()
         settings = {
             "admin_password": secrets.token_hex(nbytes=5),
@@ -124,10 +124,10 @@ class NewCommand(Command):
 
     def _sibling_admin_tls(self) -> bool:
         """Carry forward the server-wide TLS choice from a sibling bench; default
-        to True (terminate TLS) when this is the first bench."""
+        to False (plain HTTP, enable TLS explicitly) when this is the first bench."""
         for _, config in iter_sibling_benches(self.target_directory):
-            return bool(getattr(config.admin, "tls", True))
-        return True
+            return bool(getattr(config.admin, "tls", False))
+        return False
 
     def _pick_port_offset(self, bench_path: Path) -> int:
         """Smallest offset (added to every base port) that collides with

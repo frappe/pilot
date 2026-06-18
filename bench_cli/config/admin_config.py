@@ -8,11 +8,14 @@ class AdminConfig:
     enabled: bool = False
     password: str = ""
     domain: str = ""
-    # Bench-wide TLS termination. True: nginx serves sites/admin over HTTPS via
-    # Let's Encrypt. False: a central proxy terminates TLS upstream, so this
-    # bench serves everything over plain HTTP and obtains no certs. It's a
-    # server-global choice carried forward to new benches.
-    tls: bool = True
+    # Bench-wide TLS termination, opt-in. False (default): nginx serves sites and
+    # the admin over plain HTTP on the http port and obtains no certs — the bench
+    # is reachable as soon as production setup finishes, and a central proxy may
+    # terminate TLS upstream. True: nginx terminates TLS here via Let's Encrypt
+    # (HTTPS, with HTTP redirected to HTTPS for every TLS-enabled domain). Enable
+    # it explicitly with `bench setup letsencrypt` or the admin Settings toggle.
+    # It's a server-global choice carried forward to new benches.
+    tls: bool = False
 
     @property
     def internal_port(self) -> int:

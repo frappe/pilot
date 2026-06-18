@@ -191,7 +191,7 @@ def create_app(bench_root: Path) -> Flask:
                 pm = "" if pm in ("", "none") else ("supervisor" if pm == "supervisord" else pm)
                 production = bool(prod.get("enabled", pm != ""))
                 domain = admin.get("domain", "")
-                tls = bool(admin.get("tls", True))
+                tls = bool(admin.get("tls", False))
                 # The admin binds `port` directly in dev, but under socket
                 # activation gunicorn binds internal_port (port + 1) and nginx
                 # serves the public domain — nothing listens on `port` itself.
@@ -280,7 +280,7 @@ def create_app(bench_root: Path) -> Flask:
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
             )
             admin = new_toml.get("admin", {})
-            scheme = "https" if admin.get("tls", True) else "http"
+            scheme = "https" if admin.get("tls", False) else "http"
             return jsonify({
                 "name": name, "port": new_port, "production": True,
                 "domain": admin.get("domain", ""), "scheme": scheme,

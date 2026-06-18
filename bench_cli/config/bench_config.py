@@ -174,7 +174,7 @@ class BenchConfig:
             enabled=data.get("enabled", False),
             password=data.get("password", ""),
             domain=data.get("domain", ""),
-            tls=data.get("tls", True),
+            tls=data.get("tls", False),
         )
 
     @staticmethod
