@@ -31,6 +31,15 @@ def save_config():
     if error:
         return jsonify({"ok": False, "error": error}), 400
 
+    # A fresh install can only secure the pre-existing 'root' account
+    # (secure_installation runs ALTER USER 'root'@'localhost' — an arbitrary name
+    # is never created), so reject a custom root user for fresh installs. An
+    # existing DB can legitimately use a custom superuser.
+    admin_user = data.get("mariadb_admin_user") or "root"
+    if admin_user != "root" and _will_install_fresh(bench_root, data):
+        return jsonify({"ok": False, "error":
+            "A fresh MariaDB install only has the 'root' superuser; set the MariaDB root user to 'root'."}), 400
+
     # Preserve any settings the wizard didn't send (e.g. python version, fields
     # not shown in the current step). Incoming data wins on conflicts.
     toml_path = bench_root / "bench.toml"
@@ -65,17 +74,41 @@ def validate_mariadb():
     config = _mariadb_config(bench_root, password, admin_user, dedicated=dedicated)
     manager = MariaDBManager(config)
 
-    if not manager.is_installed():
-        return jsonify({"state": "will_install"})
-
-    # Dedicated instance not yet provisioned — init will create + secure it.
-    if dedicated and manager.is_dedicated and not manager.service_is_active():
+    # Fresh install → init will install + secure it (the wizard locks the root
+    # user to 'root' in this case, since secure_installation can only ALTER the
+    # pre-existing root account).
+    if _is_fresh_install(manager, dedicated):
         return jsonify({"state": "will_install"})
 
     if manager.check_credentials(password):
         return jsonify({"state": "valid"})
 
     return jsonify({"state": "invalid"})
+
+
+def _is_fresh_install(manager, dedicated: bool) -> bool:
+    """True when init will install/provision + secure MariaDB itself (rather than
+    connecting to an already-configured server)."""
+    if not manager.is_installed():
+        return True
+    # Dedicated instance not yet provisioned — init will create + secure it.
+    if dedicated and manager.is_dedicated and not manager.service_is_active():
+        return True
+    return False
+
+
+def _will_install_fresh(bench_root: Path, data: dict) -> bool:
+    """Fresh-install check for the /save payload (shared if no instance name)."""
+    from bench_cli.managers.mariadb_manager import MariaDBManager
+
+    dedicated = bool(data.get("mariadb_instance"))
+    config = _mariadb_config(
+        bench_root,
+        data.get("mariadb_password", ""),
+        data.get("mariadb_admin_user") or "root",
+        dedicated=dedicated,
+    )
+    return _is_fresh_install(MariaDBManager(config), dedicated)
 
 
 def _mariadb_config(bench_root: Path, password: str, admin_user: str = "root", dedicated: bool = True):
@@ -104,13 +137,6 @@ def _validate(data: dict) -> str | None:
     for field in ("mariadb_password", "admin_password"):
         if not data.get(field):
             return f"{field} is required"
-    # A fresh install (dedicated instance or freshly installed shared server) is
-    # secured with ALTER USER 'root'@'localhost', which only works on the
-    # pre-existing root account — an arbitrary name is never created. Lock it to
-    # root so init can't fail deep in secure_installation.
-    admin_user = data.get("mariadb_admin_user")
-    if admin_user not in (None, "", "root"):
-        return "MariaDB root user must be 'root'."
     if data.get("volume_enabled", True):
         if not data.get("volume_pool"):
             return "volume_pool is required"
