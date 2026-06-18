@@ -23,6 +23,18 @@ def _cli_root() -> Path:
     return Path(_pkg.__file__).parent.parent
 
 
+def _tcp_port_open(port: int, host: str = "127.0.0.1") -> bool:
+    """True if something is listening on host:port — a reliable liveness check
+    for a foreground process that binds a known port."""
+    import socket
+
+    try:
+        with socket.create_connection((host, port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
 _COLORS = ["\033[36m", "\033[32m", "\033[33m", "\033[35m", "\033[34m", "\033[96m", "\033[92m", "\033[93m"]
 _RESET = "\033[0m"
 
@@ -88,18 +100,25 @@ class ProcessManager:
             raise BenchError(f"Process {pid} is not running. Removed stale PID file.")
 
     def is_running(self) -> bool:
-        process_names = [pd.name for pd in self._process_definitions()]
-        pattern = "|".join(process_names)
-        result = subprocess.run(["pgrep", "-f", pattern], capture_output=True)
-        return bool(result.stdout.strip())
+        # The foreground runner writes its own pid to bench.pid and removes it on
+        # exit — a live pid there is a reliable signal (pgrep on process names
+        # matched unrelated processes system-wide).
+        if not self.pid_file.exists():
+            return False
+        try:
+            os.kill(int(self.pid_file.read_text().strip()), 0)
+            return True
+        except (ValueError, ProcessLookupError, PermissionError, OSError):
+            return False
 
     def stop_admin(self) -> None:
         # Dev admin runs in the foreground Procfile group; stop() already ends it.
         pass
 
     def admin_is_running(self) -> bool:
-        # In development the admin is part of the foreground Procfile runner.
-        return self.is_running()
+        # In development the admin is served on admin.port by the foreground
+        # runner; a bound port is the truth (not whether the runner pid is alive).
+        return _tcp_port_open(self.bench.config.admin.port)
 
     def reload_web(self) -> None:
         pass
