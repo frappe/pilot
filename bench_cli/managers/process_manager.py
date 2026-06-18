@@ -35,6 +35,21 @@ def _tcp_port_open(port: int, host: str = "127.0.0.1") -> bool:
         return False
 
 
+def _pids_listening(port: int) -> set[int]:
+    """PIDs of processes listening on ``port`` (this user), via ss. Empty on any
+    error or when nothing is bound."""
+    import re
+
+    try:
+        result = subprocess.run(
+            ["ss", "-H", "-ltnp", f"sport = :{port}"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return set()
+    return {int(m) for m in re.findall(r"pid=(\d+)", result.stdout)}
+
+
 _COLORS = ["\033[36m", "\033[32m", "\033[33m", "\033[35m", "\033[34m", "\033[96m", "\033[92m", "\033[93m"]
 _RESET = "\033[0m"
 
@@ -90,14 +105,30 @@ class ProcessManager:
             self._cleanup_proc_pid_files()
 
     def stop(self) -> None:
-        if not self.pid_file.exists():
-            raise BenchError("Bench is not running (no PID file found at pids/bench.pid).")
-        pid = int(self.pid_file.read_text().strip())
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except ProcessLookupError:
+        # The full foreground runner writes bench.pid and runs everything in its
+        # process group, so SIGTERM there stops the lot.
+        if self.pid_file.exists():
+            pid = int(self.pid_file.read_text().strip())
             self.pid_file.unlink(missing_ok=True)
-            raise BenchError(f"Process {pid} is not running. Removed stale PID file.")
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                raise BenchError(f"Process {pid} is not running. Removed stale PID file.")
+            return
+
+        # No pid file: e.g. the pre-init setup wizard, which doesn't write one.
+        # Stop whatever is actually bound to this bench's ports.
+        config = self.bench.config
+        pids = set()
+        for port in (config.admin.port, config.http_port):
+            pids |= _pids_listening(port)
+        if not pids:
+            raise BenchError("Bench is not running.")
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
 
     def is_running(self) -> bool:
         # The foreground runner writes its own pid to bench.pid and removes it on
