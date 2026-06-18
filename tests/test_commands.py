@@ -621,3 +621,46 @@ def test_drop_site_removes_from_toml_when_no_sites_key(tmp_path: Path) -> None:
 
     cmd = DropSiteCommand(bench, "nonexistent")
     cmd._remove_from_bench_toml()  # no raise
+
+
+# ── GetAppCommand ───────────────────────────────────────────────────────────────
+
+
+def test_get_app_module_name_detects_package_from_hooks(tmp_path: Path) -> None:
+    from bench_cli.commands.get_app import GetAppCommand
+
+    bench = make_bench(tmp_path)
+    # Repo/folder name is hyphenated, package name is underscored.
+    cmd = GetAppCommand(bench, "https://github.com/resilient-tech/india-compliance", "develop")
+    pkg = cmd.app.path / "india_compliance"
+    pkg.mkdir(parents=True)
+    (pkg / "hooks.py").write_text("app_name = 'india_compliance'\n")
+
+    assert cmd._module_name() == "india_compliance"
+
+
+def test_get_app_module_name_falls_back_to_underscored_name(tmp_path: Path) -> None:
+    from bench_cli.commands.get_app import GetAppCommand
+
+    bench = make_bench(tmp_path)
+    cmd = GetAppCommand(bench, "https://github.com/foo/india-compliance.git", "develop")
+    cmd.app.path.mkdir(parents=True)  # no package dir / hooks.py present
+
+    assert cmd._module_name() == "india_compliance"
+
+
+def test_get_app_register_writes_package_name_to_apps_txt(tmp_path: Path) -> None:
+    from bench_cli.commands.get_app import GetAppCommand
+
+    bench = make_bench(tmp_path)
+    bench.sites_path.mkdir(parents=True, exist_ok=True)
+    cmd = GetAppCommand(bench, "https://github.com/resilient-tech/india-compliance", "develop")
+    pkg = cmd.app.path / "india_compliance"
+    pkg.mkdir(parents=True)
+    (pkg / "hooks.py").write_text("app_name = 'india_compliance'\n")
+
+    cmd._register()
+
+    lines = (bench.sites_path / "apps.txt").read_text().splitlines()
+    assert lines == ["india_compliance"]
+    assert "india-compliance" not in lines
