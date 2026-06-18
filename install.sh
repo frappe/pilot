@@ -1,117 +1,19 @@
-# #!/bin/bash
-# set -e
-
-# # TARGET CONFIGURATION
-# INSTALL_URL="https://raw.githubusercontent.com/frappe/bench-cli/main/install.sh"
-# BENCH_CLI_DIR="$HOME/bench-cli"
-# DEFAULT_USER="frappe"
-
-# # ── arguments / environment (non-interactive support) ───────────────────────
-# BENCH_USER="${BENCH_USER:-}"
-# NONINTERACTIVE="${BENCH_YES:-0}"
-# SUDO_PASS=""
-
-# while [ $# -gt 0 ]; do
-#     case "$1" in
-#         --user) BENCH_USER="$2"; shift 2 ;;
-#         --user=*) BENCH_USER="${1#*=}"; shift ;;
-#         -y|--yes) NONINTERACTIVE=1; shift ;;
-#         --sudo-password|--sudo-pass) SUDO_PASS="$2"; shift 2 ;;
-#         --sudo-password=*|--sudo-pass=*) SUDO_PASS="${1#*=}"; shift ;;
-#         *) echo "Unknown option: $1"; exit 1 ;;
-#     esac
-# done
-
-# # Smart Sudo Wrapper: Safely injects password when provided non-interactively
-# run_sudo() {
-#     if [ "$(id -u)" -eq 0 ]; then
-#         "$@"
-#     elif [ -n "$SUDO_PASS" ]; then
-#         echo "$SUDO_PASS" | sudo -S "$@"
-#     else
-#         sudo "$@"
-#     fi
-# }
-
-# # ── passwordless sudo configuration ──────────────────────────────────────────
-# write_sudoers() {
-#     local user="$1"
-#     local file="/etc/sudoers.d/$user"
-#     local tmp
-#     tmp="$(mktemp)"
-    
-#     # Disable requiretty globally if present to avoid non-interactive execution errors
-#     if run_sudo grep -q "requiretty" /etc/sudoers 2>/dev/null; then
-#         run_sudo sed -i 's/Defaults[[:space:]]*requiretty/# Defaults requiretty/g' /etc/sudoers 2>/dev/null || true
-#     fi
-
-#     printf '# Frappe bench — managed by install.sh, do not edit\n%s ALL=(ALL) NOPASSWD: ALL\n' "$user" > "$tmp"
-#     if run_sudo visudo -cf "$tmp" >/dev/null; then
-#         run_sudo install -m 0440 "$tmp" "$file"
-#         echo "Configured passwordless sudo at $file"
-        
-#         # Fallback: Append directly to /etc/sudoers if the include directory isn't active
-#         if ! run_sudo grep -q "$user ALL=(ALL) NOPASSWD: ALL" /etc/sudoers; then
-#             run_sudo bash -c "echo '$user ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers"
-#         fi
-#     else
-#         echo "Generated sudoers file is invalid — aborting."
-#         rm -f "$tmp"
-#         exit 1
-#     fi
-#     rm -f "$tmp"
-# }
-
-# ensure_passwordless_sudo() {
-#     [ "$(uname)" = "Darwin" ] && return 0
-#     command -v sudo >/dev/null 2>&1 || return 0
-
-#     if sudo -n true 2>/dev/null; then
-#         return 0
-#     fi
-
-#     if [ "$NONINTERACTIVE" = "1" ] && [ -z "$SUDO_PASS" ]; then
-#         echo "Passwordless sudo is required but not configured, and running non-interactively."
-#         exit 1
-#     fi
-
-#     echo "Bench needs passwordless sudo to install packages and manage services."
-#     if [ -n "$SUDO_PASS" ]; then
-#         if ! echo "$SUDO_PASS" | sudo -S -v >/dev/null 2>&1; then
-#             echo "sudo authentication failed."
-#             exit 1
-#         fi
-#     else
-#         if ! sudo -v; then
-#             echo "sudo authentication failed."
-#             exit 1
-#         fi
-#     fi
-#     write_sudoers "$(id -un)"
-# }
-
-# # ── Phase 1: User Initialization ─────────────────────────────────────────────
-# setup_user_and_exit() {
-#     if [ "$(uname)" = "Darwin" ]; then
-#         echo "Warning: running as root on macOS — continuing as root (dev only)."
-#         return 0
-#     fi
-
-
-
 #!/bin/bash
 set -e
 
-# TARGET CONFIGURATION
-BRANCH_NAME="simpler-setup"
-INSTALL_URL="https://raw.githubusercontent.com/frappe/bench-cli/simpler-setup/install.sh"
+# ── configuration ────────────────────────────────────────────────────────────
+INSTALL_URL="https://raw.githubusercontent.com/frappe/bench-cli/main/install.sh"
+REPO_URL="https://github.com/frappe/bench-cli"
+BRANCH_NAME="main"
 BENCH_CLI_DIR="$HOME/bench-cli"
 DEFAULT_USER="frappe"
 
-# ── arguments / environment (non-interactive support) ───────────────────────
-BENCH_USER="${BENCH_USER:-}"
+# ── arguments / environment ──────────────────────────────────────────────────
+BENCH_USER="${BENCH_USER:-$DEFAULT_USER}"
+# Non-interactive support: -y/--yes (or BENCH_YES=1) never prompts; the sudo
+# password may be supplied with --sudo-password or the SUDO_PASS env var.
 NONINTERACTIVE="${BENCH_YES:-0}"
-SUDO_PASS=""
+SUDO_PASS="${SUDO_PASS:-}"
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -124,7 +26,15 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-# Smart Sudo Wrapper: Safely injects password when provided non-interactively
+# If a sudo password was supplied, we can run unattended.
+[ -n "$SUDO_PASS" ] && NONINTERACTIVE=1
+
+# A tty is required to prompt; without one we must run non-interactively.
+[ -e /dev/tty ] || NONINTERACTIVE=1
+
+# ── sudo wrapper ──────────────────────────────────────────────────────────────
+# Injects SUDO_PASS when provided so the script works unattended; otherwise
+# relies on cached/passwordless sudo.
 run_sudo() {
     if [ "$(id -u)" -eq 0 ]; then
         "$@"
@@ -136,26 +46,19 @@ run_sudo() {
 }
 
 # ── passwordless sudo configuration ──────────────────────────────────────────
+# Writes /etc/sudoers.d/<user> granting passwordless sudo. Validated with visudo
+# before being installed so a bad file can never lock anyone out.
 write_sudoers() {
     local user="$1"
     local file="/etc/sudoers.d/$user"
     local tmp
     tmp="$(mktemp)"
-    
-    # Disable requiretty globally if present to avoid non-interactive execution errors
-    if run_sudo grep -q "requiretty" /etc/sudoers 2>/dev/null; then
-        run_sudo sed -i 's/Defaults[[:space:]]*requiretty/# Defaults requiretty/g' /etc/sudoers 2>/dev/null || true
-    fi
 
     printf '# Frappe bench — managed by install.sh, do not edit\n%s ALL=(ALL) NOPASSWD: ALL\n' "$user" > "$tmp"
+
     if run_sudo visudo -cf "$tmp" >/dev/null; then
         run_sudo install -m 0440 "$tmp" "$file"
         echo "Configured passwordless sudo at $file"
-        
-        # Fallback: Append directly to /etc/sudoers if the include directory isn't active
-        if ! run_sudo grep -q "$user ALL=(ALL) NOPASSWD: ALL" /etc/sudoers; then
-            run_sudo bash -c "echo '$user ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers"
-        fi
     else
         echo "Generated sudoers file is invalid — aborting."
         rm -f "$tmp"
@@ -164,91 +67,94 @@ write_sudoers() {
     rm -f "$tmp"
 }
 
-ensure_passwordless_sudo() {
-    [ "$(uname)" = "Darwin" ] && return 0
-    command -v sudo >/dev/null 2>&1 || return 0
+# ── Path A: running as root → create the bench user, then stop ───────────────
+# We do NOT switch users on the fly. We prepare the account and ask the operator
+# to re-run the installer as that user.
+if [ "$(id -u)" -eq 0 ]; then
+    echo "Running as root. Preparing the '$BENCH_USER' user for bench..."
 
-    if sudo -n true 2>/dev/null; then
-        return 0
+    if ! id "$BENCH_USER" >/dev/null 2>&1; then
+        echo "Creating user '$BENCH_USER'..."
+        useradd -m -s /bin/bash "$BENCH_USER"
+        usermod -aG sudo "$BENCH_USER" 2>/dev/null || true
     fi
 
-    if [ "$NONINTERACTIVE" = "1" ] && [ -z "$SUDO_PASS" ]; then
-        echo "Passwordless sudo is required but not configured, and running non-interactively."
+    write_sudoers "$BENCH_USER"
+
+    echo ""
+    echo "========================================================================"
+    echo " User '$BENCH_USER' is ready with passwordless sudo."
+    echo ""
+    echo " bench must NOT be installed as root. Switch to '$BENCH_USER' and run"
+    echo " the installer again:"
+    echo ""
+    echo "   su - $BENCH_USER"
+    echo "   curl -fsSL $INSTALL_URL | bash"
+    echo "========================================================================"
+    exit 0
+fi
+
+# ── Path B: running as a normal user → configure sudo, then install ──────────
+# Establish a usable sudo credential. Order of preference:
+#   1. passwordless sudo already configured        → nothing to do
+#   2. SUDO_PASS provided (unattended)             → validate it
+#   3. interactive terminal                        → prompt, with retries
+# We read the prompt from /dev/tty so it still works when the script is piped
+# (curl ... | bash), where stdin is the script rather than the keyboard.
+authenticate_sudo() {
+    if sudo -n true 2>/dev/null; then
+        return 0  # passwordless sudo already configured
+    fi
+
+    if [ -n "$SUDO_PASS" ]; then
+        if echo "$SUDO_PASS" | sudo -S -v 2>/dev/null; then
+            return 0
+        fi
+        echo "sudo authentication failed with the supplied password."
         exit 1
     fi
 
-    echo "Bench needs passwordless sudo to install packages and manage services."
-    if [ -n "$SUDO_PASS" ]; then
-        if ! echo "$SUDO_PASS" | sudo -S -v >/dev/null 2>&1; then
-            echo "sudo authentication failed."
-            exit 1
-        fi
-    else
-        if ! sudo -v; then
-            echo "sudo authentication failed."
-            exit 1
-        fi
+    if [ "$NONINTERACTIVE" = "1" ]; then
+        echo "Passwordless sudo is required but not configured, and no password"
+        echo "was supplied. Re-run with --sudo-password or configure sudo first."
+        exit 1
     fi
-    write_sudoers "$(id -un)"
+
+    local pass
+    while true; do
+        printf "[sudo] password for %s: " "$(id -un)" > /dev/tty
+        read -rs pass < /dev/tty
+        echo > /dev/tty
+        if echo "$pass" | sudo -S -v 2>/dev/null; then
+            SUDO_PASS="$pass"
+            return 0
+        fi
+        echo "Sorry, try again." > /dev/tty
+    done
 }
 
-# ── Phase 1: User Initialization ─────────────────────────────────────────────
-setup_user_and_exit() {
-    if [ "$(uname)" = "Darwin" ]; then
-        echo "Warning: running as root on macOS — continuing as root (dev only)."
-        return 0
-    fi
-
-    echo "Setting up non-root user '$TARGET_USER'..."
-
-    if ! id "$TARGET_USER" >/dev/null 2>&1; then
-        echo "Creating user '$TARGET_USER'..."
-        run_sudo useradd -m -s /bin/bash "$TARGET_USER"
-        run_sudo usermod -aG sudo "$TARGET_USER" 2>/dev/null || true
-    fi
-
-    write_sudoers "$TARGET_USER"
-
-    echo ""
-    echo "========================================================================"
-    echo " SUCCESS: User '$TARGET_USER' is ready with passwordless sudo privileges."
-    echo "========================================================================"
-    echo "Please copy, paste, and run the following commands to complete the setup:"
-    echo ""
-    
-    if [ -f "$0" ] && [ "$0" != "bash" ] && [ "$0" != "/bin/bash" ]; then
-        run_sudo cp "$0" "/home/$TARGET_USER/install.sh"
-        run_sudo chown "$TARGET_USER:$TARGET_USER" "/home/$TARGET_USER/install.sh"
-        run_sudo chmod +x "/home/$TARGET_USER/install.sh"
-        echo "  su - $TARGET_USER"
-        echo "  ./install.sh"
-    else
-        echo "  su - $TARGET_USER"
-        echo "  curl -fsSL $INSTALL_URL | bash"
-    fi
-    echo ""
-    echo "========================================================================"
-    exit 0
-}
-
-# Determine if we need to run Phase 1 (User Setup)
-TARGET_USER="${BENCH_USER:-$DEFAULT_USER}"
-CURRENT_USER="$(id -un)"
-
-if [ "$CURRENT_USER" != "$TARGET_USER" ]; then
-    setup_user_and_exit
+if ! command -v sudo >/dev/null 2>&1; then
+    echo "sudo is required but not installed — aborting."
+    exit 1
 fi
 
-# ── Phase 2: Execution (Runs natively inside target user shell) ──────────────
-ensure_passwordless_sudo
+echo "Bench needs passwordless sudo to install packages and manage services."
+if [ "$(uname)" = "Darwin" ]; then
+    echo ""
+    echo "NOTE: this will grant the current user '$(id -un)' passwordless sudo"
+    echo "      access by writing /etc/sudoers.d/$(id -un)."
+    echo ""
+fi
+authenticate_sudo
+write_sudoers "$(id -un)"
 
-# Clone or update the specific branch
+# Clone or update the repo
 if [ -d "$BENCH_CLI_DIR" ]; then
     echo "Updating bench-cli..."
     git -C "$BENCH_CLI_DIR" pull
 else
     echo "Cloning bench-cli ($BRANCH_NAME branch)..."
-    git clone -b "$BRANCH_NAME" https://github.com/frappe/bench-cli "$BENCH_CLI_DIR"
+    git clone -b "$BRANCH_NAME" "$REPO_URL" "$BENCH_CLI_DIR"
 fi
 
 chmod +x "$BENCH_CLI_DIR/bench"
@@ -263,7 +169,6 @@ fi
 # Install Node.js
 if ! command -v node >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
     echo "Installing Node.js..."
-    # Download script to file first to ensure sudo -S does not intercept stdin stream
     NODE_SETUP_TMP="$(mktemp)"
     curl -fsSL https://deb.nodesource.com/setup_24.x -o "$NODE_SETUP_TMP"
     run_sudo bash "$NODE_SETUP_TMP"
@@ -271,7 +176,7 @@ if ! command -v node >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
     run_sudo apt-get install -y nodejs
 fi
 
-# ── add bench to PATH ───────────────────────────────────────────────────────
+# ── add bench to PATH ─────────────────────────────────────────────────────────
 add_to_path() {
     local rc="$1"
     local line="export PATH=\"\$HOME/bench-cli:\$PATH\""
@@ -296,7 +201,7 @@ fi
 
 export PATH="$BENCH_CLI_DIR:$PATH"
 
-# ── admin venv ──────────────────────────────────────────────────────────────
+# ── admin venv ────────────────────────────────────────────────────────────────
 ADMIN_VENV="$BENCH_CLI_DIR/.admin-venv"
 if [ ! -f "$ADMIN_VENV/bin/python" ]; then
     echo "Setting up admin environment..."
@@ -311,7 +216,7 @@ print(' '.join(deps))
 " 2>/dev/null)
     fi
     if [ -z "$ADMIN_DEPS" ]; then
-        ADMIN_DEPS="flask>=3.0 psutil>=5.9 pymysql>=1.1"
+        ADMIN_DEPS="flask>=3.0 psutil>=5.9 pymysql>=1.1 gunicorn>=21.2"
     fi
     uv pip install --python "$ADMIN_VENV/bin/python" --quiet $ADMIN_DEPS
     echo "Admin environment ready."
