@@ -190,6 +190,7 @@ Each bench lives on a single dataset (`<pool>/<bench>`) holding both its files a
 | `bench restart` | Restart all processes — supervisor or systemd (production only) |
 | `bench get-app <repo>` | Clone and install an app |
 | `bench new-site <name>` | Create a site |
+| `bench rename-site <old> <new>` | Rename a site (checks the hostname is free across all benches) |
 | `bench build` | Download pre-built assets (use `--force` to rebuild from source) |
 | `bench update` | git pull + reinstall + migrate all sites |
 | `bench upgrade` | Pull latest bench-cli and download the admin frontend |

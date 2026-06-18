@@ -268,6 +268,29 @@ frappe generates and manages the database name and credentials internally; they 
 
 ---
 
+## `bench rename-site`
+
+Renames a site within the current bench.
+
+```bash
+bench rename-site old.localhost new.localhost
+```
+
+**Pre-conditions:**
+- The old site exists in this bench.
+- The new hostname is free across **all** benches — not already a site (or alias) of any sibling bench, not a sibling's admin domain (via `host_owner`), and not this bench's own admin domain. All benches share one nginx, so hostnames must be unique.
+
+**Steps:**
+1. Move `sites/<old>` → `sites/<new>` (the DB is untouched — `db_name` lives in `site_config.json`).
+2. Update `default_site` in `common_site_config.json` if it pointed at the old name, and rename any `[[sites]]` entry in `bench.toml`.
+3. Drop the stale `config/nginx/sites/<old>.conf`; in dev mode add the new host to `/etc/hosts`; if production is enabled, regenerate and reload nginx.
+
+**After renaming**, the applicable follow-up is run automatically for the new domain (if it fails, the manual command to run is printed):
+- If the bench runs in production: `bench setup production` (refreshes services/nginx and reissues certs for SSL sites).
+- Else if the site had TLS enabled (`ssl = true`): `bench setup letsencrypt`.
+
+---
+
 ## `bench start`
 
 Starts all bench processes using the built-in Procfile runner.
