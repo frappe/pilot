@@ -93,6 +93,12 @@ class SupervisorProcessManager(ProcessManager):
         if self.is_alive():
             run_command([*self._supervisorctl(), "stop", f"{self.workload_group}:*"])
 
+    def stop_admin(self) -> None:
+        """Stop the admin group; `bench start` brings it back. The supervisord
+        daemon stays so the workload/admin can be restarted without a respawn."""
+        if self.is_alive():
+            run_command([*self._supervisorctl(), "stop", f"{self.admin_group}:*"])
+
     def shutdown(self) -> None:
         """Tear down everything, including the admin group and the daemon."""
         if self.is_alive():

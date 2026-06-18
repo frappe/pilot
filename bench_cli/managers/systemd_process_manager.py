@@ -201,10 +201,21 @@ class SystemdProcessManager(ProcessManager):
     def start(self) -> None:
         self.generate_config()
         self.reload()
-        run_command(self._systemctl("start", self._target_name()), env=self._systemctl_env())
+        env = self._systemctl_env()
+        run_command(self._systemctl("start", self._target_name()), env=env)
+        # Bring the admin control plane back up too (it's socket-activated and
+        # independent of the target), so `bench start` mirrors `bench stop`.
+        self._activate_admin_socket(env)
 
     def stop(self) -> None:
         run_command(self._systemctl("stop", self._target_name()), env=self._systemctl_env())
+
+    def stop_admin(self) -> None:
+        """Stop the admin control plane (socket + service). `bench start`
+        re-activates it; this keeps the unit files installed."""
+        env = self._systemctl_env()
+        for unit in (self._admin_socket_name(), self._unit_name("admin")):
+            subprocess.run(self._systemctl("stop", unit), capture_output=True, env=env)
 
     def restart(self) -> None:
         run_command(self._systemctl("restart", self._target_name()), env=self._systemctl_env())

@@ -93,6 +93,10 @@ class ProcessManager:
         result = subprocess.run(["pgrep", "-f", pattern], capture_output=True)
         return bool(result.stdout.strip())
 
+    def stop_admin(self) -> None:
+        # Dev admin runs in the foreground Procfile group; stop() already ends it.
+        pass
+
     def admin_is_running(self) -> bool:
         # In development the admin is part of the foreground Procfile runner.
         return self.is_running()
