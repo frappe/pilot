@@ -41,4 +41,9 @@ class RestartCommand(Command):
 
 def _incomplete_message(bench: "Bench") -> str:
     pm = bench.config.production.process_manager
-    return f"Bench {bench.config.name} is configured for production, but its {pm}\ndeployment is incomplete.\n\nRepair it with:\n  bench -b {bench.config.name} setup production"
+    return (
+        f"Bench {bench.config.name} is configured for production, but its {pm}\n"
+        f"deployment is incomplete.\n\n"
+        f"Repair it with:\n"
+        f"  bench -b {bench.config.name} setup production"
+    )
