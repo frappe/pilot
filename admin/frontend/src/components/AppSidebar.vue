@@ -9,7 +9,6 @@ import LucideFileText from '~icons/lucide/file-text'
 import LucideGlobe from '~icons/lucide/globe'
 import LucideListTodo from '~icons/lucide/list-todo'
 import LucideLogOut from '~icons/lucide/log-out'
-import LucidePackage2 from '~icons/lucide/package-2'
 import LucideStore from '~icons/lucide/store'
 import LucideSettings from '~icons/lucide/settings'
 import LucideRepeat from '~icons/lucide/repeat'
@@ -32,7 +31,6 @@ const header = {
 
 const baseNavItems = [
   { label: 'Sites', to: '/', icon: LucideGlobe },
-  { label: 'Apps', to: '/apps', icon: LucidePackage2 },
   { label: 'Marketplace', to: '/marketplace', icon: LucideStore },
   { label: 'Monitor', to: '/monitor', icon: LucideActivity },
   { label: 'Logs', to: '/logs', icon: LucideFileText },

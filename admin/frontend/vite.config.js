@@ -3,7 +3,7 @@ import vue from '@vitejs/plugin-vue'
 import path from 'path'
 import frappeuiPlugin from 'frappe-ui/vite'
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     frappeuiPlugin({
       lucideIcons: true,
@@ -16,6 +16,8 @@ export default defineConfig({
   build: {
     outDir: '../backend/static/dist',
     emptyOutDir: true,
+    sourcemap: mode === 'development',
+    minify: mode !== 'development',
   },
   resolve: {
     alias: {
@@ -25,4 +27,4 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['frappe-ui'],
   },
-})
+}))

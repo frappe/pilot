@@ -67,7 +67,7 @@ def _start_vite_watch() -> None:
         return
 
     def _run() -> None:
-        subprocess.run(["node_modules/.bin/vite", "build", "--watch"], cwd=str(frontend_dir))
+        subprocess.run(["node_modules/.bin/vite", "build", "--watch", "--mode", "development"], cwd=str(frontend_dir))
 
     threading.Thread(target=_run, daemon=True).start()
 

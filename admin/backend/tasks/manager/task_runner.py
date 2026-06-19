@@ -28,11 +28,14 @@ _WHITELIST: dict[str, list[str]] = {
     "delete-backup": ["site", "filenames"],
     "build": [],  # optional: app
     "update": [],
+    "get-and-install-app": ["site", "app", "repo"],
+    "add-and-install-app": ["name", "repo"],
     "switch-branch": ["name", "branch"],
     "setup-nginx": [],
     "setup-production": [],
     "setup-letsencrypt": [],
     "new-site-from-backup": ["name", "db_file"],
+    "reinstall-site": ["site", "admin_password"],
     "bench-init": [],
     "update-cli": [],
 }
@@ -147,10 +150,26 @@ class TaskRunner:
             return argv
         if command == "drop-site":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.drop_site_task", str(self._bench_root), args["site"]]
+        if command == "reinstall-site":
+            argv = [sys.executable, "-m", "admin.backend.tasks.jobs.reinstall_site_task", str(self._bench_root), args["site"]]
+            argv += ["--admin-password", args["admin_password"]]
+            return argv
         if command == "delete-backup":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.delete_backup_task", str(self._bench_root), args["site"], *args["filenames"]]
         if command == "install-app":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.install_app_task", str(self._bench_root), args["site"], args["app"]]
+        if command == "get-and-install-app":
+            argv = [sys.executable, "-m", "admin.backend.tasks.jobs.get_and_install_app_task", str(self._bench_root), args["site"], args["app"], args["repo"]]
+            if args.get("branch"):
+                argv += ["--branch", args["branch"]]
+            return argv
+        if command == "add-and-install-app":
+            argv = [sys.executable, "-m", "admin.backend.tasks.jobs.add_and_install_app_task", str(self._bench_root), args["repo"], args["name"]]
+            if args.get("branch"):
+                argv += ["--branch", args["branch"]]
+            if args.get("sites"):
+                argv += ["--sites"] + list(args["sites"])
+            return argv
         if command == "switch-branch":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.switch_branch_task", str(self._bench_root), args["name"], args["branch"]]
         if command == "setup-nginx":

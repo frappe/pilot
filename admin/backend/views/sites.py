@@ -145,6 +145,20 @@ def drop_site(name: str):
     return jsonify({"ok": True, "task_id": task_id})
 
 
+@sites_bp.route("/<name>/reinstall", methods=["POST"])
+def reinstall_site(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    if not (bench_root / "sites" / name / "site_config.json").exists():
+        return jsonify({"ok": False, "error": "Site not found."}), 404
+    data = request.get_json(silent=True) or {}
+    admin_password = (data.get("admin_password") or "admin").strip() or "admin"
+    try:
+        task_id = TaskRunner(bench_root).run("reinstall-site", {"site": name, "admin_password": admin_password})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+    return jsonify({"ok": True, "task_id": task_id})
+
+
 @sites_bp.route("/<name>/force-drop", methods=["POST"])
 def force_drop_site(name: str):
     import shutil
@@ -178,6 +192,27 @@ def install_app(name: str):
         return jsonify({"ok": False, "error": "App name is required."})
     try:
         task_id = TaskRunner(bench_root).run("install-app", {"site": name, "app": app})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+    return jsonify({"ok": True, "task_id": task_id})
+
+
+@sites_bp.route("/<name>/get-and-install-app", methods=["POST"])
+def get_and_install_app(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    data = request.get_json(silent=True) or {}
+    app = (data.get("app") or "").strip()
+    repo = (data.get("repo") or "").strip()
+    branch = (data.get("branch") or "").strip()
+    if not app:
+        return jsonify({"ok": False, "error": "App name is required."})
+    if not repo:
+        return jsonify({"ok": False, "error": "Repo URL is required."})
+    try:
+        task_args = {"site": name, "app": app, "repo": repo}
+        if branch:
+            task_args["branch"] = branch
+        task_id = TaskRunner(bench_root).run("get-and-install-app", task_args)
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
     return jsonify({"ok": True, "task_id": task_id})

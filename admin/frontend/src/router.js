@@ -3,7 +3,6 @@ import { createRouter, createWebHistory } from 'vue-router'
 const routes = [
   { path: '/', component: () => import('./pages/Sites.vue'), meta: { title: 'Sites' } },
   { path: '/sites/:name', component: () => import('./pages/SiteDetail.vue'), meta: { title: 'Sites' } },
-  { path: '/apps', component: () => import('./pages/Apps.vue'), meta: { title: 'Apps' } },
   { path: '/marketplace', component: () => import('./pages/Marketplace.vue'), meta: { title: 'Marketplace' } },
   { path: '/monitor', component: () => import('./pages/Monitor.vue'), meta: { title: 'Monitor' } },
   { path: '/logs', component: () => import('./pages/Logs.vue'), meta: { title: 'Logs' } },

@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Button, Badge, Dialog, Dropdown, FormControl, ListView, LoadingText, ErrorMessage, Tabs } from 'frappe-ui'
+import { Button, Badge, Dialog, Dropdown, FormControl, ListView, LoadingText, ErrorMessage, Tabs, TextInput } from 'frappe-ui'
 import LucideDatabase from '~icons/lucide/database'
 import LucideServer from '~icons/lucide/server'
 import LucideMoreVertical from '~icons/lucide/more-vertical'
@@ -31,9 +31,49 @@ const actionLoading = ref('')
 const actionError = ref('')
 
 const showInstall = ref(false)
-const selectedInstallApp = ref('')
+const installSearch = ref('')
+const installCategory = ref('All')
+const installPending = ref(null)
+const installPendingBranch = ref('')
 const installLoading = ref(false)
 const installError = ref('')
+
+const INSTALL_CATEGORIES = ['All', 'Applications', 'Extensions', 'Integrations', 'Compliance', 'Developer Tools', 'Utilities']
+
+function isFrappe(app) {
+  return Boolean(app.repo?.includes('github.com/frappe/'))
+}
+
+const installableSet = computed(() => new Set(installable.value))
+const installedSet = computed(() => new Set(site.value?.installed_apps || []))
+const registryNames = computed(() => new Set(registry.value.map(a => a.name)))
+const extraInstallable = computed(() => installable.value.filter(name => !registryNames.value.has(name)))
+
+const sortedInstallRegistry = computed(() =>
+  [...registry.value].sort((a, b) => {
+    const af = isFrappe(a), bf = isFrappe(b)
+    if (af !== bf) return af ? -1 : 1
+    return (a.title || a.name).localeCompare(b.title || b.name)
+  })
+)
+
+const filteredInstallRegistry = computed(() => {
+  let apps = sortedInstallRegistry.value
+  if (installCategory.value !== 'All') apps = apps.filter(a => a.category === installCategory.value)
+  const q = installSearch.value.toLowerCase().trim()
+  if (q) apps = apps.filter(a =>
+    (a.title || a.name).toLowerCase().includes(q) || (a.description || '').toLowerCase().includes(q)
+  )
+  return apps
+})
+
+const installBranchOptions = computed(() =>
+  (installPending.value?.branches ?? []).map(b => ({ label: b, value: b }))
+)
+
+const showReinstall = ref(false)
+const reinstallConfirmText = ref('')
+const reinstallAdminPassword = ref('')
 
 const showDrop = ref(false)
 const dropConfirmText = ref('')
@@ -528,15 +568,60 @@ async function doAction(path, body = {}) {
   }
 }
 
-async function installApp() {
-  if (!selectedInstallApp.value) return
+function openInstallModal() {
+  installSearch.value = ''
+  installCategory.value = 'All'
+  installPending.value = null
+  installPendingBranch.value = ''
+  installError.value = ''
+  showInstall.value = true
+}
+
+function selectInstallApp(app) {
+  const branches = app.branches ?? (app.branch ? [app.branch] : [])
+  installPendingBranch.value = branches[0] ?? ''
+  installPending.value = app
+  installError.value = ''
+}
+
+async function confirmInstall() {
+  if (!installPending.value) return
+  installLoading.value = true
+  installError.value = ''
+  try {
+    const inBench = installableSet.value.has(installPending.value.name)
+    let res
+    if (inBench) {
+      res = await fetch(`/api/sites/${siteName}/install-app`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ app: installPending.value.name }),
+      })
+    } else {
+      res = await fetch(`/api/sites/${siteName}/get-and-install-app`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ app: installPending.value.name, repo: installPending.value.repo, branch: installPendingBranch.value }),
+      })
+    }
+    const d = await res.json()
+    if (d.ok) { showInstall.value = false; router.push(`/tasks/${d.task_id}`) }
+    else installError.value = d.error
+  } catch (e) {
+    installError.value = e.message
+  } finally {
+    installLoading.value = false
+  }
+}
+
+async function installBenchApp(appName) {
   installLoading.value = true
   installError.value = ''
   try {
     const res = await fetch(`/api/sites/${siteName}/install-app`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ app: selectedInstallApp.value }),
+      body: JSON.stringify({ app: appName }),
     })
     const d = await res.json()
     if (d.ok) { showInstall.value = false; router.push(`/tasks/${d.task_id}`) }
@@ -648,7 +733,7 @@ onMounted(() => { load(); loadRegistry() })
             <div class="rounded-lg border border-outline-gray-2">
               <div class="flex items-center justify-between border-b border-outline-gray-2 px-4 py-2.5">
                 <h3 class="text-sm font-semibold text-ink-gray-9">Installed Apps</h3>
-                <Button v-if="installable.length" variant="ghost" size="sm" @click="showInstall = true">
+                <Button variant="ghost" size="sm" @click="openInstallModal">
                   <template #prefix><LucidePlus class="h-4 w-4" /></template>
                   Install App
                 </Button>
@@ -756,7 +841,7 @@ onMounted(() => { load(); loadRegistry() })
               </div>
               <ListView v-else class="px-2 pb-2" :columns="backupColumns" :rows="backupRows" row-key="name"
                 :options="{ selectable: false, showTooltip: false, rowHeight: 44 }">
-                <template #cell="{ column, row, item, align }">
+                <template #cell="{ column, row, item }">
                   <div v-if="column.key === 'actions'" class="flex w-full justify-end">
                     <Dropdown :options="backupMenuOptions(row.set)" placement="left">
                       <template #default="{ open }">
@@ -820,6 +905,19 @@ onMounted(() => { load(); loadRegistry() })
                 <p class="text-sm font-semibold text-ink-red-4">Danger Zone</p>
               </div>
               <div class="divide-y divide-outline-red-1">
+                <!-- Reinstall Site -->
+                <div class="flex items-center justify-between gap-4 px-4 py-3.5">
+                  <div>
+                    <p class="text-sm font-medium text-ink-gray-8">Reinstall Site</p>
+                    <p class="mt-0.5 text-sm text-ink-gray-5">
+                      Wipe all data and reinstall frappe from scratch. Installed apps are preserved but all records are lost.
+                    </p>
+                  </div>
+                  <Button variant="subtle" theme="red" class="shrink-0" @click="reinstallConfirmText = ''; showReinstall = true">
+                    Reinstall
+                  </Button>
+                </div>
+
                 <!-- Drop Site -->
                 <div class="flex items-center justify-between gap-4 px-4 py-3.5">
                   <div>
@@ -854,16 +952,118 @@ onMounted(() => { load(); loadRegistry() })
     </template>
 
     <!-- Install App dialog -->
-    <Dialog v-model="showInstall" :options="{ title: 'Install App' }">
+    <Dialog v-model="showInstall" :options="{ title: installPending ? (titleMap[installPending.name] || installPending.name) : 'Install App', size: 'xl' }">
       <template #body-content>
         <div @pointerdown.stop>
-          <FormControl label="App to install" type="select" v-model="selectedInstallApp"
-            :options="[{ label: 'Select an app…', value: '' }, ...installable.map(a => ({ label: a, value: a }))]" />
-          <ErrorMessage :message="installError" class="mt-2" />
+          <!-- Confirmation view -->
+          <template v-if="installPending">
+            <div class="flex flex-col gap-4">
+              <div class="flex items-center gap-3">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg overflow-hidden"
+                  :style="installPending.logo_url ? {} : { background: hashColor(installPending.name) }">
+                  <img v-if="installPending.logo_url" :src="installPending.logo_url" class="h-full w-full object-contain" :alt="installPending.title" />
+                  <span v-else class="text-sm font-bold text-white leading-none">{{ installPending.title?.[0]?.toUpperCase() }}</span>
+                </div>
+                <div class="min-w-0">
+                  <p class="font-medium text-ink-gray-9">{{ installPending.title || installPending.name }}</p>
+                  <p v-if="installPending.description" class="text-sm text-ink-gray-5 line-clamp-2">{{ installPending.description }}</p>
+                </div>
+              </div>
+              <FormControl v-if="installBranchOptions.length > 1" label="Branch" type="select"
+                v-model="installPendingBranch" :options="installBranchOptions" />
+              <p v-else-if="installPendingBranch" class="text-sm text-ink-gray-6">
+                Branch: <span class="font-medium text-ink-gray-9">{{ installPendingBranch }}</span>
+              </p>
+              <ErrorMessage v-if="installError" :message="installError" />
+              <div class="flex items-center justify-between gap-2">
+                <Button variant="ghost" @click="installPending = null">← Back</Button>
+                <div class="flex gap-2">
+                  <Button variant="ghost" @click="showInstall = false">Cancel</Button>
+                  <Button variant="solid" :loading="installLoading" @click="confirmInstall">Install</Button>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <!-- Browse view -->
+          <template v-else>
+            <div class="flex flex-col gap-3">
+              <TextInput v-model="installSearch" placeholder="Search apps…" />
+              <div class="flex gap-1.5 overflow-x-auto pb-1">
+                <button v-for="cat in INSTALL_CATEGORIES" :key="cat"
+                  @click="installCategory = cat"
+                  :class="[
+                    'shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors whitespace-nowrap',
+                    installCategory === cat
+                      ? 'border-outline-gray-4 bg-surface-gray-3 text-ink-gray-9'
+                      : 'border-outline-gray-2 bg-surface-white text-ink-gray-6 hover:border-outline-gray-3',
+                  ]">{{ cat }}</button>
+              </div>
+              <div class="max-h-80 overflow-y-auto flex flex-col gap-2 pr-1">
+                <p v-if="!registry.length" class="py-8 text-center text-sm text-ink-gray-4">Loading apps…</p>
+                <p v-else-if="!filteredInstallRegistry.length && !extraInstallable.length" class="py-8 text-center text-sm text-ink-gray-4">No apps found.</p>
+                <template v-else>
+                  <div v-for="app in filteredInstallRegistry" :key="app.name"
+                    class="flex items-center gap-3 rounded-lg border border-outline-gray-1 px-3 py-2.5">
+                    <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md overflow-hidden"
+                      :style="app.logo_url ? {} : { background: hashColor(app.name) }">
+                      <img v-if="app.logo_url" :src="app.logo_url" :alt="app.title" class="h-full w-full object-contain" />
+                      <span v-else class="text-xs font-bold text-white leading-none">{{ app.title?.[0]?.toUpperCase() }}</span>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-sm font-medium text-ink-gray-9">{{ app.title || app.name }}</p>
+                      <p v-if="app.description" class="text-xs text-ink-gray-5 truncate">{{ app.description }}</p>
+                    </div>
+                    <div class="shrink-0">
+                      <Badge v-if="installedSet.has(app.name)" label="Installed" theme="green" size="sm" />
+                      <Button v-else-if="app.repo" variant="outline" size="sm" @click="selectInstallApp(app)">Add</Button>
+                    </div>
+                  </div>
+                  <template v-if="!installSearch && installCategory === 'All' && extraInstallable.length">
+                    <p class="mt-2 text-xs font-medium uppercase tracking-wide text-ink-gray-4">Other (in bench)</p>
+                    <div v-for="appName in extraInstallable" :key="appName"
+                      class="flex items-center gap-3 rounded-lg border border-outline-gray-1 px-3 py-2.5">
+                      <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md overflow-hidden"
+                        :style="{ background: hashColor(appName) }">
+                        <span class="text-xs font-bold text-white leading-none">{{ appName[0].toUpperCase() }}</span>
+                      </div>
+                      <div class="flex-1 min-w-0">
+                        <p class="text-sm font-medium text-ink-gray-9">{{ appName }}</p>
+                      </div>
+                      <Button variant="outline" size="sm" :loading="installLoading" @click="installBenchApp(appName)">Add</Button>
+                    </div>
+                  </template>
+                </template>
+              </div>
+              <ErrorMessage v-if="installError" :message="installError" />
+            </div>
+          </template>
+        </div>
+      </template>
+    </Dialog>
+
+    <!-- Reinstall Site dialog -->
+    <Dialog v-model="showReinstall" :options="{ title: 'Reinstall Site', size: 'sm' }"
+      @close="reinstallConfirmText = ''; reinstallAdminPassword = ''">
+      <template #body-content>
+        <div @pointerdown.stop>
+          <div class="flex items-start gap-3 rounded-md border border-outline-red-2 bg-surface-red-1 p-3">
+            <LucideTriangleAlert class="mt-0.5 h-4 w-4 shrink-0 text-ink-red-4" />
+            <p class="text-sm leading-relaxed text-ink-gray-7">
+              This will wipe <strong>all data</strong> from <strong>{{ siteName }}</strong> and reinstall frappe from scratch.
+              Installed apps will be preserved but all records, users, and configuration will be lost.
+              This action <strong>cannot be undone</strong>.
+            </p>
+          </div>
+          <FormControl class="mt-4" type="password" label="New Administrator password" v-model="reinstallAdminPassword"
+            placeholder="admin" autocomplete="new-password" />
+          <FormControl class="mt-3" type="text" label="Type the site name to confirm" v-model="reinstallConfirmText"
+            :placeholder="siteName" autocomplete="off" />
           <div class="mt-4 flex justify-end gap-2">
-            <Button variant="ghost" @click="showInstall = false">Cancel</Button>
-            <Button variant="solid" :loading="installLoading" :disabled="!selectedInstallApp"
-              @click="installApp">Install</Button>
+            <Button variant="ghost" @click="showReinstall = false">Cancel</Button>
+            <Button variant="solid" theme="red" :loading="actionLoading === 'reinstall'"
+              :disabled="reinstallConfirmText !== siteName || !reinstallAdminPassword"
+              @click="showReinstall = false; doAction('reinstall', { admin_password: reinstallAdminPassword })">Reinstall</Button>
           </div>
         </div>
       </template>

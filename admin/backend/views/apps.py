@@ -61,6 +61,35 @@ def add():
     return jsonify({"ok": True, "task_id": task_id})
 
 
+@apps_bp.route("/add-and-install", methods=["POST"])
+def add_and_install():
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    data = request.get_json(silent=True) or {}
+
+    name = (data.get("name") or "").strip()
+    repo = (data.get("repo") or "").strip()
+    branch = (data.get("branch") or "").strip()
+    sites = data.get("sites") or []
+
+    err = first_error(validate_app_name(name), validate_repo_url(repo), validate_branch_name(branch))
+    if err:
+        return jsonify({"ok": False, "error": err})
+
+    if not isinstance(sites, list):
+        return jsonify({"ok": False, "error": "sites must be a list."})
+
+    if (bench_root / "apps" / name / ".git").exists():
+        return jsonify({"ok": False, "error": f"'{name}' is already installed."})
+
+    try:
+        task_args = {"name": name, "repo": repo, "branch": branch, "sites": sites}
+        task_id = TaskRunner(bench_root).run("add-and-install-app", task_args)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Could not start add-and-install: {e}"})
+
+    return jsonify({"ok": True, "task_id": task_id})
+
+
 @apps_bp.route("/<name>/remove", methods=["POST"])
 def remove(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])

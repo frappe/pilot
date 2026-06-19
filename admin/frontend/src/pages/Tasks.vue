@@ -184,8 +184,6 @@ function startStream(id) {
     if (volatile) { rawLines.value.pop(); lines.value.pop(); volatile = false }
     rawLines.value.push(raw)
     lines.value.push(processLine(raw))
-    const m = raw.match(/^##\[step:(\w+),/)
-    if (m && m[1] !== 'done') expandedSteps.value = new Set([m[1]])
     terminal.value?.scrollToBottom()
   }
   es.addEventListener('overwrite', (e) => {

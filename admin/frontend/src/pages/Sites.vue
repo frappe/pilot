@@ -147,6 +147,28 @@ function openCreate() {
   uploadPrivate.value = null
 }
 
+const updateLoading = ref(false)
+const updateError = ref('')
+
+async function runUpdate() {
+  updateLoading.value = true
+  updateError.value = ''
+  try {
+    const res = await fetch('/api/tasks/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: 'update' }),
+    })
+    const d = await res.json()
+    if (d.ok) router.push(`/tasks/${d.task_id}`)
+    else updateError.value = d.error
+  } catch (e) {
+    updateError.value = e.message
+  } finally {
+    updateLoading.value = false
+  }
+}
+
 onMounted(() => { loadSites(); loadRegistry() })
 </script>
 
@@ -155,8 +177,10 @@ onMounted(() => { loadSites(); loadRegistry() })
     <!-- defer: after login, this page mounts in the same render pass as the
          AppLayout header, before #header-actions is attached to the document -->
     <Teleport defer to="#header-actions">
+      <Button variant="outline" :loading="updateLoading" @click="runUpdate">Update Bench</Button>
       <Button variant="outline" @click="openCreate">Create Site</Button>
     </Teleport>
+    <ErrorMessage v-if="updateError" :message="updateError" />
 
     <h2 class="font-normal text-ink-gray-5">Your Sites</h2>
 

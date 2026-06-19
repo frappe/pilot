@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Button, FormControl, ErrorMessage, LoadingText, Select, Badge, useTheme, Dialog } from 'frappe-ui'
+import { Button, FormControl, ErrorMessage, LoadingText, Select, Badge, useTheme, Dialog, TextInput } from 'frappe-ui'
 import LucideX from '~icons/lucide/x'
 
 const props = defineProps({ modelValue: Boolean })
@@ -26,6 +26,7 @@ const THEME_OPTIONS = [
 
 const BASE_TABS = [
   { key: 'bench', label: 'Bench' },
+  { key: 'apps', label: 'Apps' },
   { key: 'appearance', label: 'Appearance' },
   { key: 'mariadb', label: 'MariaDB' },
   { key: 'redis', label: 'Redis' },
@@ -195,6 +196,60 @@ async function updateCli() {
   }
 }
 
+// Apps tab
+const benchApps = ref([])
+const appRegistry = ref([])
+const appsLoading = ref(false)
+const appsError = ref('')
+const appSearch = ref('')
+
+const COLORS = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed']
+function hashColor(name) {
+  let h = 0
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) | 0
+  return COLORS[Math.abs(h) % COLORS.length]
+}
+
+const appLogoMap = computed(() =>
+  Object.fromEntries(appRegistry.value.filter(a => a?.name).map(a => [a.name, a.logo_url]))
+)
+const appTitleMap = computed(() =>
+  Object.fromEntries(appRegistry.value.filter(a => a?.name).map(a => [a.name, a.title]))
+)
+
+const filteredApps = computed(() => {
+  const q = appSearch.value.toLowerCase().trim()
+  const apps = benchApps.value.filter(a => a?.name)
+  if (!q) return apps
+  return apps.filter(a =>
+    a.name.toLowerCase().includes(q) ||
+    (appTitleMap.value[a.name] || '').toLowerCase().includes(q)
+  )
+})
+
+async function loadBenchApps() {
+  appsLoading.value = true
+  appsError.value = ''
+  try {
+    const [appsRes, regRes] = await Promise.all([
+      fetch('/api/apps/'),
+      fetch('/api/apps/registry'),
+    ])
+    const appsData = await appsRes.json()
+    const regData = await regRes.json()
+    benchApps.value = Array.isArray(appsData) ? appsData : []
+    appRegistry.value = Array.isArray(regData) ? regData : []
+  } catch (e) {
+    appsError.value = e.message
+  } finally {
+    appsLoading.value = false
+  }
+}
+
+watch(activeTab, (tab) => {
+  if (tab === 'apps') loadBenchApps()
+})
+
 watch(() => props.modelValue, (val) => {
   if (val) {
     activeTab.value = 'bench'
@@ -202,6 +257,7 @@ watch(() => props.modelValue, (val) => {
     saveSuccess.value = ''
     cliUpdate.value = null
     showUpdateDetails.value = false
+    benchApps.value = []
     load()
   }
 })
@@ -251,8 +307,40 @@ watch(() => props.modelValue, (val) => {
             <ErrorMessage v-else-if="loadError" :message="loadError" />
 
             <template v-else-if="form">
+              <!-- Apps -->
+              <div v-if="activeTab === 'apps'" class="flex flex-col gap-3">
+                <TextInput v-model="appSearch" placeholder="Search apps…" />
+                <LoadingText v-if="appsLoading" />
+                <ErrorMessage v-else-if="appsError" :message="appsError" />
+                <p v-else-if="!benchApps.length" class="py-8 text-center text-sm text-ink-gray-4">No apps installed on this bench.</p>
+                <div v-else-if="!filteredApps.length" class="py-8 text-center text-sm text-ink-gray-4">No apps match your search.</div>
+                <div v-else class="flex flex-col gap-2">
+                  <div
+                    v-for="app in filteredApps"
+                    :key="app.name"
+                    class="flex items-center gap-3 rounded-lg border border-outline-gray-1 px-4 py-3"
+                  >
+                    <div
+                      class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md overflow-hidden"
+                      :style="appLogoMap[app.name] ? {} : { background: hashColor(app.name) }"
+                    >
+                      <img v-if="appLogoMap[app.name]" :src="appLogoMap[app.name]" :alt="app.name" class="h-full w-full object-contain" />
+                      <span v-else class="text-xs font-bold text-white leading-none">{{ app.name[0].toUpperCase() }}</span>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <span class="text-sm font-medium text-ink-gray-9">{{ appTitleMap[app.name] || app.name }}</span>
+                        <Badge v-if="app.branch" :label="app.branch" theme="gray" size="sm" />
+                        <Badge v-if="app.uncommitted_changes" label="Modified" theme="orange" size="sm" />
+                      </div>
+                      <p class="text-xs text-ink-gray-4 font-mono mt-0.5">{{ app.name }}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <!-- Bench -->
-              <div v-if="activeTab === 'bench'" class="flex flex-col gap-4">
+              <div v-else-if="activeTab === 'bench'" class="flex flex-col gap-4">
                 <h4 class="font-semibold text-ink-gray-8">Process Manager</h4>
                 <Select :options="PROCESS_MANAGER_OPTIONS" v-model="form.production.process_manager" class="w-64" />
                 <div class="border-t border-outline-gray-1" />
@@ -368,7 +456,7 @@ watch(() => props.modelValue, (val) => {
           </div>
 
           <!-- Footer -->
-          <div v-if="activeTab !== 'appearance' && activeTab !== 'updates'" class="flex items-center justify-end gap-3 px-6 py-3 border-t border-outline-gray-1 flex-shrink-0">
+          <div v-if="activeTab !== 'appearance' && activeTab !== 'updates' && activeTab !== 'apps'" class="flex items-center justify-end gap-3 px-6 py-3 border-t border-outline-gray-1 flex-shrink-0">
             <ErrorMessage :message="saveError" />
             <span v-if="saveSuccess" class="text-sm text-ink-green-2 font-medium">{{ saveSuccess }}</span>
             <Button @click="show = false">Cancel</Button>
