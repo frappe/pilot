@@ -488,9 +488,11 @@ Pre-conditions: `production.enabled = true` in `bench.toml`, `bench init` has be
 
 See [docs/production.md](production.md) for the full step-by-step.
 
-**Summary:** Installs certbot if absent, ensures the webroot directory exists, runs `certbot certonly --webroot` for each site with `ssl = true` in `site_config.json` (with all domains as `-d` arguments), then regenerates nginx config with HTTPS blocks and reloads nginx.
+**Summary:** Installs certbot if absent, ensures the webroot directory exists, runs `certbot certonly --webroot` for each site with `ssl = true` in `site_config.json` (plus the admin domain, with all domains as `-d` arguments), then regenerates nginx config with HTTPS blocks and reloads nginx.
 
-Pre-conditions: `bench setup nginx` has run, nginx is serving port 80, DNS records for all SSL sites point to this server.
+**Requires `admin.tls = true`.** TLS is a server-wide opt-in: when `admin.tls` is `false` the bench is HTTP-only (a central proxy may terminate TLS upstream), so this command obtains no certificates and nginx emits no 443 blocks. Enable it via `bench setup production --tls`, the Settings → HTTPS toggle, or by setting `[admin] tls = true` in `bench.toml`.
+
+Pre-conditions: `bench setup nginx` has run, nginx is serving port 80, DNS records for all SSL sites point to this server, and `letsencrypt.email` is set.
 
 > **macOS note:** Let's Encrypt certificates require a publicly reachable server with real DNS records. This command is intended for Ubuntu/Linux production servers only.
 

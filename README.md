@@ -148,11 +148,12 @@ count = 1
 [admin]
 port = 8002
 password = "your-admin-password"   # required — admin refuses to start without this
-domain = "admin.example.com"       # optional — serve admin over HTTPS via nginx
+domain = "admin.example.com"       # optional — serve admin behind this domain via nginx
+tls = false                        # server-wide HTTPS opt-in (Let's Encrypt); false = plain HTTP
 
 [production]
-process_manager = "supervisor"   # none | supervisor | systemd
-nginx = true
+enabled = true                     # set by `bench setup production`
+process_manager = "supervisor"     # systemd | supervisor
 use_companion_manager = false      # run scheduler/workers/socketio inside gunicorn
 
 [gunicorn]
@@ -184,6 +185,7 @@ Each bench lives on a single dataset (`<pool>/<bench>`) holding both its files a
 | Command | What it does |
 |---------|-------------|
 | `bench new <name>` | Scaffold a new bench |
+| `bench ls` | List all benches with status, production state, and admin URL |
 | `bench init -b <name>` | Install deps, create venv, clone framework, generate Procfile (needs `-b <name>` or run inside the bench dir) |
 | `bench start` | Start all processes (web, workers, Redis, admin UI) |
 | `bench stop` | Stop a running bench from another terminal |
@@ -198,7 +200,8 @@ Each bench lives on a single dataset (`<pool>/<bench>`) holding both its files a
 | `bench build-admin` | Rebuild admin frontend assets from source |
 | `bench setup nginx` | Generate and install nginx config |
 | `bench setup letsencrypt` | Obtain SSL certificates |
-| `bench setup production` | Full production setup (nginx + SSL + supervisor/systemd) |
+| `bench setup production` | Full production setup — `--process-manager`, `--admin-domain`, `--tls` |
+| `bench remove production` | Tear down production, return to dev (keeps certs/logs/domain) |
 | `bench volume status` | Show ZFS pool and dataset usage |
 | `bench volume snapshot` | Snapshot the bench (files + database) |
 | `bench volume list-snapshots` | List snapshots |
@@ -236,12 +239,9 @@ That's the whole change — `bench hello` now works. Commands that take argument
 
 ```toml
 [production]
-process_manager = "supervisor"   # none | supervisor | systemd
-nginx = true
+enabled = true                   # set by `bench setup production`
+process_manager = "supervisor"   # systemd | supervisor
 use_companion_manager = false      # run scheduler/workers/socketio inside gunicorn
-
-[nginx]
-enabled = true
 
 [gunicorn]
 workers = 4
@@ -256,12 +256,14 @@ email = "ops@example.com"
 [admin]
 port = 8002
 password = "your-admin-password"
-domain = "admin.example.com"   # optional — serve admin UI over HTTPS
+domain = "admin.example.com"   # required in production — admin is served behind this domain
+tls = true                     # server-wide HTTPS via Let's Encrypt (omit/false = plain HTTP)
 ```
 
 ```bash
-bench setup production         # process manager (supervisor or systemd) + nginx + SSL
+bench setup production --tls   # process manager + nginx + SSL; flags: --process-manager, --admin-domain, --tls
 bench restart                  # restart all bench processes (works with both managers)
+bench remove production        # tear down production, back to dev (keeps certs/logs/domain)
 ```
 
 **Process managers:**
@@ -272,7 +274,7 @@ bench restart                  # restart all bench processes (works with both ma
 **Companion manager:**
 Set `production.use_companion_manager = true` to run the scheduler, RQ workers, and socket.io as Gunicorn companion processes. This keeps them under the same preloaded Gunicorn master to share memory copy-on-write. Requires the Frappe Gunicorn fork with companion support.
 
-When `admin.domain` is set, `bench setup production` obtains a certificate for that domain and generates an HTTPS nginx proxy block. HTTP redirects to HTTPS automatically.
+HTTPS is opt-in: with `admin.tls = true`, `bench setup production` (or the Settings → HTTPS toggle) obtains Let's Encrypt certificates for the admin domain and all SSL-enabled sites and redirects HTTP to HTTPS. With `admin.tls = false` the bench is served over plain HTTP (e.g. a central proxy terminates TLS upstream), and per-site SSL is hidden in the UI.
 
 The admin UI (port 8002 / `admin.domain`) shows Start, Stop, and Restart buttons on the Processes page when running in production mode. The Processes page also displays live CPU and memory usage per process.
 
@@ -290,7 +292,7 @@ The built-in admin UI runs on port 8002 (configurable via `[admin] port`).
 | Logs | Tail and search log files with live streaming |
 | Tasks | Multi-step task view with collapsible output per step; task history |
 | Database | MariaDB process list, slow queries, binary log viewer |
-| Settings | Tabbed modal — Bench ports, MariaDB (read-only), Redis ports, Workers, Nginx, Let's Encrypt, Production process manager, ZFS Volume (Linux); saves to `bench.toml` and restarts affected processes automatically |
+| Settings | Tabbed — Bench ports, MariaDB (read-only), Redis ports, Workers, Nginx, HTTPS toggle (`admin.tls` + Let's Encrypt), Production process manager, ZFS Volume (Linux); saves to `bench.toml` and restarts affected processes automatically |
 | Updates | Check for bench-cli updates and apply in one click |
 
 All forms validate input before submission — site names are checked for valid hostname format, repository URLs for valid git URL format, branch names for legal characters, cron expressions for valid 5-field syntax, and port numbers for the 1–65535 range.
