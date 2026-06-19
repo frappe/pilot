@@ -206,7 +206,10 @@ async function loadConfig() {
       if (data[key] !== undefined) form.value[key] = data[key]
     }
     clampImageSize()
-    if (isLinux.value) form.value.dedicated_db = data.mariadb_instance ? 'dedicated' : 'shared'
+    if (isLinux.value) {
+      form.value.dedicated_db = data.mariadb_instance ? 'dedicated' : 'shared'
+      if (form.value.production_process_manager === 'none') form.value.production_process_manager = 'systemd'
+    }
     if (data.running_init_task_id) {
       step.value = 'running'
       streamTask(`/api/setup/stream/${data.running_init_task_id}`, onInitDone)
@@ -542,11 +545,13 @@ function backToConfig() {
             type="select"
             label="Production process manager"
             v-model="form.production_process_manager"
-            :options="[
-              { label: 'Development — run it yourself', value: 'none' },
-              { label: 'Systemd — recommended', value: 'systemd' },
-              { label: 'Supervisor — alternative', value: 'supervisor' },
-            ]"
+            :options="isLinux
+              ? [
+                  { label: 'Development — run it yourself', value: 'none' },
+                  { label: 'Systemd — recommended', value: 'systemd' },
+                  { label: 'Supervisor — alternative', value: 'supervisor' },
+                ]
+              : [{ label: 'Development — run it yourself', value: 'none' }]"
           />
           <div v-if="form.production_process_manager !== 'none'">
             <FormControl
