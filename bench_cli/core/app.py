@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from bench_cli.config.app_config import AppConfig
+from bench_cli.exceptions import BenchError, CommandError
 from bench_cli.utils import run_command
 
 if TYPE_CHECKING:
@@ -25,9 +26,11 @@ class App:
 
     def _detect_default_branch(self) -> str:
         import subprocess
+
         result = subprocess.run(
             ["git", "ls-remote", "--symref", self.config.repo, "HEAD"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         for line in result.stdout.splitlines():
             if line.startswith("ref: refs/heads/"):
@@ -35,35 +38,61 @@ class App:
         # Probe common Frappe branch names in priority order
         refs = subprocess.run(
             ["git", "ls-remote", "--heads", self.config.repo],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         ).stdout
         for candidate in ("develop", "master", "version-16", "version-15"):
             if f"refs/heads/{candidate}" in refs:
                 return candidate
         return "develop"
 
+    def is_commit_hash(self, ref: str) -> bool:
+        import re
+
+        return bool(re.fullmatch(r"[0-9a-f]{7,40}", ref))
+
+    def _clone_rev(self, commit: str) -> None:
+        run_command(["git", "clone", self.config.repo, str(self.path)], stream_output=True)
+        try:
+            run_command(["git", "-C", str(self.path), "checkout", commit])
+        except CommandError:
+            raise BenchError(f"Commit '{commit}' not found in {self.config.repo}.")
+
     def clone(self) -> None:
         branch = self.config.branch or self._detect_default_branch()
-        run_command([
-            "git", "clone",
-            self.config.repo,
-            "--branch", branch,
-            "--depth", "1",
-            str(self.path),
-        ], stream_output=True)
+        if self.is_commit_hash(branch):
+            self._clone_rev(branch)
+
+        else:
+            run_command(
+                [
+                    "git",
+                    "clone",
+                    self.config.repo,
+                    "--branch",
+                    branch,
+                    "--depth",
+                    "1",
+                    str(self.path),
+                ],
+                stream_output=True,
+            )
 
     @property
     def _is_shallow(self) -> bool:
         import subprocess
+
         result = subprocess.run(
             ["git", "-C", str(self.path), "rev-parse", "--is-shallow-repository"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         return result.stdout.strip() == "true"
 
     @staticmethod
     def _pack_threads() -> int:
         import os
+
         cpus = os.cpu_count() or 1
         # On constrained servers (≤2 vCPUs) cap at 1 to avoid saturating the CPU.
         # On beefier machines let git use half the cores so other processes stay responsive.
@@ -72,15 +101,20 @@ class App:
         return max(1, cpus // 2)
 
     def update(self) -> None:
-        cmd = ["git", "-c", f"pack.threads={self._pack_threads()}", "-C", str(self.path),
-               "fetch", "origin", self.config.branch]
+        cmd = ["git", "-c", f"pack.threads={self._pack_threads()}", "-C", str(self.path), "fetch", "origin", self.config.branch]
         if self._is_shallow:
             cmd.append("--depth=1")
         run_command(cmd)
-        run_command([
-            "git", "-C", str(self.path),
-            "reset", "--hard", f"origin/{self.config.branch}",
-        ])
+        run_command(
+            [
+                "git",
+                "-C",
+                str(self.path),
+                "reset",
+                "--hard",
+                f"origin/{self.config.branch}",
+            ]
+        )
 
     def build_assets(self) -> None:
         if not (self.path / "package.json").exists():
