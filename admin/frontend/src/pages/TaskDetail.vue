@@ -1,9 +1,10 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Button, Badge, Dialog, LoadingText, ErrorMessage } from 'frappe-ui'
 import TerminalOutput from '../components/TerminalOutput.vue'
 import { processLine } from '../utils/ansi.js'
+import { useTaskStream } from '../composables/useTaskStream.js'
 import LucideCheck from '~icons/lucide/check'
 import LucideLoader2 from '~icons/lucide/loader-2'
 import LucideX from '~icons/lucide/x'
@@ -14,18 +15,14 @@ const route = useRoute()
 const router = useRouter()
 const taskId = route.params.id
 
+const { terminal, lines, rawLines, streaming, start } = useTaskStream()
 const task = ref(null)
-const rawLines = ref([])
-const lines = ref([])
 const loading = ref(true)
 const error = ref('')
-const streaming = ref(false)
 const showKill = ref(false)
 const actionLoading = ref('')
 const actionError = ref('')
 const expandedSteps = ref(new Set())
-let es = null
-const terminal = ref(null)
 
 const TASK_COLOR = { success: 'green', failed: 'red', running: 'blue', killed: 'gray' }
 
@@ -119,40 +116,20 @@ async function load() {
 }
 
 function startStream() {
-  streaming.value = true
-  let volatile = false  // last line is an uncommitted \r progress preview
-  es = new EventSource(`/api/tasks/${taskId}/stream`)
-  es.onmessage = (e) => {
-    const raw = e.data
-    if (volatile) { rawLines.value.pop(); lines.value.pop(); volatile = false }
-    rawLines.value.push(raw)
-    lines.value.push(processLine(raw))
-    // Auto-expand the new step as it starts
-    const m = raw.match(/^##\[step:(\w+),/)
-    if (m && m[1] !== 'done') expandedSteps.value = new Set([m[1]])
-    terminal.value?.scrollToBottom()
-  }
-  es.addEventListener('overwrite', (e) => {
-    const raw = e.data
-    if (volatile) {
-      rawLines.value[rawLines.value.length - 1] = raw
-      lines.value[lines.value.length - 1] = processLine(raw)
-    } else {
-      rawLines.value.push(raw)
-      lines.value.push(processLine(raw))
-      volatile = true
-    }
-    terminal.value?.scrollToBottom()
+  start(`/api/tasks/${taskId}/stream`, {
+    onLine: (raw) => {
+      const m = raw.match(/^##\[step:(\w+),/)
+      if (m && m[1] !== 'done') expandedSteps.value = new Set([m[1]])
+    },
+    onDone: (success) => {
+      if (!success && stepSections.value.length) {
+        // Expand the failed step so the output is immediately visible
+        expandedSteps.value = new Set([stepSections.value[stepSections.value.length - 1].key])
+      }
+      load()
+    },
+    onError: () => load(),
   })
-  es.addEventListener('done', () => {
-    streaming.value = false
-    es.close(); es = null
-    load()
-  })
-  es.onerror = () => {
-    streaming.value = false
-    if (es) { es.close(); es = null }
-  }
 }
 
 async function killTask() {
@@ -190,7 +167,6 @@ onMounted(async () => {
   await load()
   if (task.value?.status === 'running') startStream()
 })
-onUnmounted(() => { if (es) { es.close(); es = null } })
 </script>
 
 <template>

@@ -1,8 +1,8 @@
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { Button, FormControl, FormLabel, Password, Slider, ErrorMessage, Progress, FeatherIcon } from 'frappe-ui'
 import TerminalOutput from '../components/TerminalOutput.vue'
-import { processLine } from '../utils/ansi.js'
+import { useTaskStream } from '../composables/useTaskStream.js'
 
 const emit = defineEmits(['done'])
 
@@ -26,9 +26,7 @@ const dbPasswordDescription = computed(() =>
 )
 
 // ── init-task streaming state ─────────────────────────────────────────────
-const taskLines = ref([])
-const taskStreaming = ref(false)
-const terminal = ref(null)
+const { terminal, lines: taskLines, streaming: taskStreaming, start: startStream } = useTaskStream()
 const progress = ref(0)
 const currentStep = ref('Starting…')
 const showDetails = ref(false)
@@ -188,11 +186,7 @@ const subtitles = {
 const title = computed(() => titles[step.value] || benchName.value)
 const subtitle = computed(() => subtitles[step.value] || null)
 
-onMounted(() => {
-  loadConfig()
-  document.addEventListener('visibilitychange', onVisibilityChange)
-})
-onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisibilityChange))
+onMounted(loadConfig)
 
 async function loadConfig() {
   try {
@@ -252,44 +246,15 @@ function updateProgress(raw) {
   currentStep.value = label
 }
 
-function scrollTerminal() {
-  // Skip while the tab is hidden: scrolling against un-painted background-tab
-  // layout is what made the terminal jump to a blank area on return.
-  if (!document.hidden) terminal.value?.scrollToBottom()
-}
-
-function onVisibilityChange() {
-  if (!document.hidden) terminal.value?.scrollToBottom()
-}
-
 function streamTask(url, onDone) {
   taskLines.value = []
-  taskStreaming.value = true
   progress.value = 0
   currentStep.value = 'Starting…'
-  let volatile = false // last line is an uncommitted \r progress preview
-  const source = new EventSource(url)
-  source.onmessage = (e) => {
-    if (volatile) { taskLines.value.pop(); volatile = false }
-    taskLines.value.push(processLine(e.data))
-    updateProgress(e.data)
-    scrollTerminal()
-  }
-  source.addEventListener('overwrite', (e) => {
-    if (volatile) taskLines.value[taskLines.value.length - 1] = processLine(e.data)
-    else { taskLines.value.push(processLine(e.data)); volatile = true }
-    scrollTerminal()
+  startStream(url, {
+    onDone,
+    onLine: updateProgress,
+    onError: () => failWith('Lost connection to the setup process.'),
   })
-  source.addEventListener('done', (e) => {
-    taskStreaming.value = false
-    source.close()
-    onDone(parseInt(e.data) === 0)
-  })
-  source.onerror = () => {
-    taskStreaming.value = false
-    source.close()
-    failWith('Lost connection to the setup process.')
-  }
 }
 
 function failWith(message) {
@@ -299,7 +264,7 @@ function failWith(message) {
 
 function toggleDetails() {
   showDetails.value = !showDetails.value
-  if (showDetails.value) scrollTerminal()
+  if (showDetails.value) terminal.value?.scrollToBottom()
 }
 
 // ── navigation ─────────────────────────────────────────────────────────────
@@ -432,7 +397,7 @@ async function deployProduction() {
 
 function onProductionDone(success) {
   if (!success) {
-    error.value = 'Production setup failed. Check the output above and try again.'
+    failWith('Production setup failed. Check the output above and try again.')
     return
   }
   progress.value = 100
