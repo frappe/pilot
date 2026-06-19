@@ -34,10 +34,15 @@ class Site:
         socket_path = MariaDBManager(mariadb)._detect_socket()
 
         cmd = self._frappe_call(
-            "frappe", "--site", self.config.name,
-            "new-site", self.config.name,
-            "--db-root-username", mariadb.admin_user,
-            "--admin-password", self.config.admin_password,
+            "frappe",
+            "--site",
+            self.config.name,
+            "new-site",
+            self.config.name,
+            "--db-root-username",
+            mariadb.admin_user,
+            "--admin-password",
+            self.config.admin_password,
         )
         if socket_path:
             cmd += ["--db-socket", socket_path]
@@ -65,8 +70,10 @@ class Site:
     def install_app(self, app_name: str) -> None:
         run_command(
             self._frappe_call("frappe", "--site", self.config.name, "install-app", app_name),
-            cwd=self.bench.sites_path, stream_output=True,
+            cwd=self.bench.sites_path,
+            stream_output=True,
         )
+        self.bench.restart()
 
     def uninstall_app(self, app_name: str, force: bool = False) -> None:
         cmd = self._frappe_call("frappe", "--site", self.config.name, "uninstall-app", app_name, "--yes", "--no-backup")
@@ -74,8 +81,11 @@ class Site:
             cmd.append("--force")
         run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
 
+        self.bench.restart()
+
     def list_apps(self) -> list[str]:
         import subprocess
+
         result = subprocess.run(
             self._frappe_call("frappe", "--site", self.config.name, "list-apps"),
             cwd=str(self.bench.sites_path),
@@ -89,5 +99,6 @@ class Site:
     def migrate(self) -> None:
         run_command(
             self._frappe_call("frappe", "--site", self.config.name, "migrate"),
-            cwd=self.bench.sites_path, stream_output=True,
+            cwd=self.bench.sites_path,
+            stream_output=True,
         )

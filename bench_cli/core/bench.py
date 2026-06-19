@@ -71,6 +71,7 @@ class Bench:
     def init_apps(self) -> List["App"]:
         """Return apps declared in bench.toml (used only during bench init)."""
         from bench_cli.core.app import App
+
         return [App(app_config, self) for app_config in self.config.apps]
 
     def sites(self) -> List["Site"]:
@@ -132,11 +133,18 @@ class Bench:
         config_path = self.sites_path / "common_site_config.json"
         config_path.write_text(json.dumps(config, indent=2) + "\n")
 
+    def restart(self):
+        """Restart bench in case we are running in production"""
+        from bench_cli.commands.restart import RestartCommand
+
+        RestartCommand(self).run()
+
     @staticmethod
     def _git_remote(path: Path) -> str:
         result = subprocess.run(
             ["git", "-C", str(path), "remote", "get-url", "origin"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         return result.stdout.strip() if result.returncode == 0 else ""
 
@@ -144,6 +152,7 @@ class Bench:
     def _git_branch(path: Path) -> str:
         result = subprocess.run(
             ["git", "-C", str(path), "branch", "--show-current"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         return result.stdout.strip() if result.returncode == 0 else ""
