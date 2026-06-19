@@ -185,25 +185,24 @@ onMounted(load)
       <ErrorMessage v-else-if="error" :message="error" />
 
       <template v-else>
-        <template v-for="(app, i) in filteredRegistry">
+        <!-- eslint-disable-next-line vue/no-v-for-template-key -->
+        <template v-for="(app, i) in filteredRegistry" :key="app.name">
           <!-- Section labels (only shown when both frappe + community apps are present) -->
           <p
             v-if="hasMixedGroups && i === 0 && isFrappe(app)"
-            :key="`lbl-frappe-${app.name}`"
             class="text-xs font-medium uppercase tracking-wide text-ink-gray-4 mt-1 mb-0.5"
           >
             From Frappe
           </p>
           <p
             v-if="hasMixedGroups && !isFrappe(app) && (i === 0 || isFrappe(filteredRegistry[i - 1]))"
-            :key="`lbl-community-${app.name}`"
             class="text-xs font-medium uppercase tracking-wide text-ink-gray-4 mt-2 mb-0.5"
           >
             Community
           </p>
 
           <!-- App card -->
-          <div :key="app.name" class="flex items-start gap-4 rounded-lg border border-outline-gray-1 bg-surface-white px-4 py-3 shadow-sm">
+          <div class="flex items-start gap-4 rounded-lg border border-outline-gray-1 bg-surface-white px-4 py-3 shadow-sm">
             <!-- Logo -->
             <div
               class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg overflow-hidden"
