@@ -27,11 +27,11 @@ class StatusCommand(Command):
         self._row("Path", str(self.bench.path))
 
         if not prod.enabled:
-            self._row("Mode", "development (Procfile)")
+            self._row("Mode", "development")
+            self._row("Manager", "foreground (Procfile)")
             self._print_processes_dev()
         else:
-            mode = "systemd (--user)" if prod.process_manager == "systemd" else "supervisor (bench-local)"
-            self._row("Mode", f"production  [{mode}]")
+            self._row("Mode", "production")
             self._print_processes_prod()
 
         self._section("Sites")
@@ -51,7 +51,7 @@ class StatusCommand(Command):
         else:
             print("  (no apps cloned)")
 
-        if prod.enabled and prod.nginx:
+        if prod.enabled:
             self._section("Nginx")
             nginx_status = self._service_status("nginx")
             self._row("Status", nginx_status)
@@ -64,8 +64,10 @@ class StatusCommand(Command):
         self._row("Queue port", str(redis.queue_port))
 
         if cfg.admin.enabled:
+            from bench_cli.admin_url import admin_url
+
             self._section("Admin")
-            self._row("URL", f"http://localhost:{cfg.admin.port}")
+            self._row("URL", admin_url(cfg))
             self._row("Auth", "enabled" if cfg.admin.password else "no password set")
 
         from bench_cli.platform import is_linux
@@ -84,11 +86,20 @@ class StatusCommand(Command):
 
     def _print_processes_prod(self) -> None:
         from bench_cli.managers.process_manager import ProcessManagerFactory
+        cfg = self.bench.config
         mgr = ProcessManagerFactory.create(self.bench)
         configured = mgr.is_configured()
-        running = mgr.is_running() if configured else False
-        self._row("Configured", _ok("yes") if configured else _warn("no  (run: bench setup production)"))
-        self._row("Processes", _ok("running") if running else _dim("stopped"))
+        self._row("Configured manager", cfg.production.process_manager)
+        if not configured:
+            self._row("Installed manager", _warn("missing"))
+            self._row("State", _warn("incomplete deployment"))
+            print(f"\n  Repair:\n    bench -b {cfg.name} setup production")
+            return
+        self._row("Installed manager", _ok(cfg.production.process_manager))
+        workload = mgr.is_running()
+        admin = mgr.admin_is_running()
+        self._row("Workload", _ok("running") if workload else _dim("stopped"))
+        self._row("Admin", _ok("running") if admin else _dim("stopped"))
 
     def _print_zfs(self) -> None:
         vol = self.bench.config.volume

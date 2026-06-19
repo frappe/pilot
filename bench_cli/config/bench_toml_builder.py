@@ -24,6 +24,9 @@ FLAT_KEYS = {
     "mariadb_port": "mariadb.port",
     "admin_enabled": "admin.enabled",
     "admin_password": "admin.password",
+    "admin_domain": "admin.domain",
+    "admin_tls": "admin.tls",
+    "letsencrypt_email": "letsencrypt.email",
     "volume_enabled": "volume.enabled",
     "volume_pool": "volume.pool",
     "volume_backing": "volume.backing",
@@ -115,6 +118,10 @@ def _apply_setting(config: BenchConfig, key: str, value) -> None:
         config.apps[0].branch = str(value)
     elif key == "workers":
         config.workers.groups = _workers_to_groups(value)
+    elif key == "production_process_manager":
+        # Store the manager preference only. Production is enabled (and the
+        # deployment built) by `bench setup production`, never by editing config.
+        config.production.process_manager = "" if str(value) in ("", "none") else str(value)
     # unknown keys (wizard extras like is_linux) are ignored
 
 
@@ -144,6 +151,7 @@ def _flatten(config: BenchConfig) -> dict:
     settings["app_repo"] = app.repo
     settings["app_branch"] = app.branch
     settings["workers"] = [{"queues": list(g.queues), "count": g.count} for g in config.workers.groups]
+    settings["production_process_manager"] = config.production.process_manager or "none"
     return settings
 
 

@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import argparse
 import json
 import sys
-from typing import TYPE_CHECKING
+import tomllib
+from typing import TYPE_CHECKING, Optional
 
 from bench_cli.commands.base import Command
+from bench_cli.exceptions import BenchError
+from bench_cli.utils import host_owner, write_toml
 
 if TYPE_CHECKING:
     from bench_cli.core.bench import Bench
@@ -12,27 +16,122 @@ if TYPE_CHECKING:
 
 class SetupProductionCommand(Command):
     name = "production"
-    help = "Full production setup (nginx + supervisor)."
+    help = "Deploy a bench to production (process manager + nginx)."
     group = "setup"
 
-    def __init__(self, bench: "Bench") -> None:
+    @classmethod
+    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--process-manager",
+            choices=["systemd", "supervisord"],
+            default=None,
+            help="Process manager to deploy with (defaults to production.process_manager in bench.toml, or systemd).",
+        )
+        parser.add_argument(
+            "--admin-domain",
+            default=None,
+            help="Admin domain (defaults to admin.domain in bench.toml).",
+        )
+        parser.add_argument(
+            "--tls",
+            dest="admin_tls",
+            action="store_true",
+            help="Terminate TLS via Let's Encrypt for the admin and SSL-enabled sites. "
+                 "Omit to serve plain HTTP (a central proxy may terminate TLS upstream).",
+        )
+
+    @classmethod
+    def from_args(cls, args, bench):
+        return cls(bench, process_manager=args.process_manager, admin_domain=args.admin_domain,
+                   admin_tls=args.admin_tls)
+
+    def __init__(self, bench: "Bench", process_manager: Optional[str] = None, admin_domain: Optional[str] = None,
+                 admin_tls: Optional[bool] = None) -> None:
         self.bench = bench
+        self._pm_arg = process_manager
+        self._domain_arg = admin_domain
+        self._tls_arg = admin_tls
 
     def run(self) -> None:
-        self.bench.config.validate()
         self._require_linux()
+        self._resolve_target()
+        self._check_admin_domain()
+        self.bench.config.validate()
+        old_pm = self._installed_manager()
         self._write_dns_multitenancy()
         if self.bench.config.production.process_manager == "systemd":
             self._setup_systemd()
         else:
             self._setup_supervisor()
-        if self.bench.config.production.nginx:
-            self._setup_nginx()
-            self._setup_letsencrypt_if_needed()
+        self._start_workload()
+        self._setup_nginx()
+        self._setup_letsencrypt_if_needed()
 
         self._build_admin_for_production()
 
+        self._migrate_from(old_pm)
+        self._persist_production_state()
+
         self._print_summary()
+
+    def _resolve_target(self) -> None:
+        """Apply --process-manager / --admin-domain to the in-memory config so the
+        rest of setup operates on the requested target. The toml is written last."""
+        from bench_cli.config.bench_config import BenchConfig
+        from bench_cli.config.production_config import VALID_PROCESS_MANAGERS
+
+        pm = BenchConfig._normalize_process_manager(self._pm_arg or self.bench.config.production.process_manager) or "systemd"
+        if pm not in VALID_PROCESS_MANAGERS:
+            raise BenchError(f"Invalid process manager '{pm}'. Must be one of {', '.join(VALID_PROCESS_MANAGERS)}.")
+        self.bench.config.production.process_manager = pm
+        self.bench.config.production.enabled = True
+        # Production serves the admin behind its domain, so it must be enabled —
+        # otherwise the API answers 503 "Admin is disabled". The wizard sets this
+        # too; do it here so pure-CLI deploys are reachable as well.
+        self.bench.config.admin.enabled = True
+        if self._domain_arg:
+            self.bench.config.admin.domain = self._domain_arg
+        if self._tls_arg is not None:
+            self.bench.config.admin.tls = self._tls_arg
+
+    def _installed_manager(self) -> Optional[str]:
+        """Which process manager already has a deployment on disk, if any —
+        used to migrate when --process-manager differs."""
+        from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
+        from bench_cli.managers.systemd_process_manager import SystemdProcessManager
+
+        if SystemdProcessManager(self.bench).is_configured():
+            return "systemd"
+        if SupervisorProcessManager(self.bench).is_configured():
+            return "supervisor"
+        return None
+
+    def _migrate_from(self, old_pm: Optional[str]) -> None:
+        """Tear down the previous manager after the new one is up and healthy."""
+        new_pm = self.bench.config.production.process_manager
+        if not old_pm or old_pm == new_pm:
+            return
+        print(f"Migrating from {old_pm} to {new_pm}: removing old manager resources...")
+        if old_pm == "supervisor":
+            from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
+
+            SupervisorProcessManager(self.bench).shutdown()
+        else:
+            from bench_cli.managers.systemd_process_manager import SystemdProcessManager
+
+            SystemdProcessManager(self.bench).remove_units()
+
+    def _persist_production_state(self) -> None:
+        """Write the production state to bench.toml LAST, so the switcher never
+        points users at a half-built deployment."""
+        prod = self.bench.config.production
+        admin = self.bench.config.admin
+        self._persist(
+            {
+                "production": {"enabled": True, "process_manager": prod.process_manager},
+                "admin": {"domain": admin.domain, "tls": admin.tls, "enabled": True},
+            }
+        )
 
     def _require_linux(self) -> None:
         from bench_cli.platform import is_linux
@@ -43,6 +142,36 @@ class SetupProductionCommand(Command):
                 file=sys.stderr,
             )
             sys.exit(1)
+
+    def _check_admin_domain(self) -> None:
+        """Admin is reached only via its domain in production. Use whatever is in
+        bench.toml (validate() enforces it is present); just reject a domain that
+        another bench already claims."""
+        from bench_cli.utils import normalize_host
+
+        domain = self.bench.config.admin.domain
+        if not domain:
+            return  # validate() raises the required-in-prod error, naming the bench
+        owner = host_owner(self.bench.path, domain)
+        if owner:
+            raise BenchError(f"Admin domain '{domain}' is already used by bench '{owner}'.")
+        target = normalize_host(domain)
+        for site in self.bench.sites():
+            if normalize_host(site.config.name) == target:
+                raise BenchError(
+                    f"Admin domain '{domain}' conflicts with this bench's own site '{site.config.name}'. "
+                    f"An admin domain must not match a site domain."
+                )
+
+    def _persist(self, updates: dict) -> None:
+        """Merge ``updates`` into bench.toml in place, preserving all other fields."""
+        toml_path = self.bench.path / "bench.toml"
+        data = tomllib.loads(toml_path.read_text())
+        for section, values in updates.items():
+            data.setdefault(section, {}).update(values)
+        # Drop the deprecated production.nginx key — nginx is always on in prod.
+        data.get("production", {}).pop("nginx", None)
+        write_toml(toml_path, data)
 
     def _write_dns_multitenancy(self) -> None:
         common_config_path = self.bench.sites_path / "common_site_config.json"
@@ -75,13 +204,22 @@ class SetupProductionCommand(Command):
         mgr.install_config()
         mgr.reload()
 
+    def _start_workload(self) -> None:
+        """Start the workload (and admin) so the bench is actually serving once
+        setup completes — otherwise sites 502 until a separate `bench start`."""
+        from bench_cli.managers.process_manager import ProcessManagerFactory
+
+        ProcessManagerFactory.create(self.bench).start()
+
     def _setup_nginx(self) -> None:
         from bench_cli.commands.setup.nginx import SetupNginxCommand
 
         SetupNginxCommand(self.bench).run()
 
     def _setup_letsencrypt_if_needed(self) -> None:
-        if not any(site.config.ssl for site in self.bench.sites()):
+        from bench_cli.managers.letsencrypt_manager import needs_letsencrypt
+
+        if not needs_letsencrypt(self.bench):
             return
         from bench_cli.commands.setup.letsencrypt import SetupLetsEncryptCommand
 
@@ -105,3 +243,6 @@ class SetupProductionCommand(Command):
                 http_port = self.bench.config.nginx.http_port
                 port_suffix = "" if http_port == 80 else f":{http_port}"
                 print(f"  http://{site.config.name}{port_suffix}")
+        admin_https = self.bench.config.admin.tls and nginx_manager.admin_cert_exists()
+        scheme = "https" if admin_https else "http"
+        print(f"Admin:\n  {scheme}://{self.bench.config.admin.domain}")

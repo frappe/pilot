@@ -53,19 +53,19 @@ www.site1.example.com ← domain alias
 
 ### `production` section (required for production mode)
 
-Adding a `[production]` section to `bench.toml` enables production mode. The section may be empty — presence alone is enough.
+`bench setup production` writes the `[production]` section; `bench remove production` clears it. nginx is always part of a production deploy — there is no separate nginx flag.
 
 ```toml
 [production]
-process_manager = "supervisor"   # none | supervisor | systemd
-nginx = true                     # include nginx setup in bench setup production
+enabled = true                   # set by bench setup production
+process_manager = "supervisor"   # systemd | supervisor
 use_companion_manager = false    # run scheduler/workers/socketio inside gunicorn
 ```
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `process_manager` | string | no | `none` | Production process manager: `none`, `supervisor`, or `systemd`. |
-| `nginx` | bool | no | `false` | When `true`, `bench setup production` also runs nginx setup and (if any site has `ssl: true`) Let's Encrypt certificate issuance. |
+| `enabled` | bool | no | `false` | `true` once deployed to production. Gates `bench restart`, nginx setup, and production process management. |
+| `process_manager` | string | no | `""` | Production process manager: `systemd` or `supervisor`. Empty on an undeployed bench. |
 | `use_companion_manager` | bool | no | `false` | Run scheduler, RQ workers, and socket.io as Gunicorn companion processes under a single preloaded master. Requires the Frappe Gunicorn fork with companion support. |
 
 **Supervisor** (`process_manager = "supervisor"`, default):
@@ -103,11 +103,12 @@ ssl = true                            # obtain a Let's Encrypt cert covering nam
 | `domains` | list of strings | no | `[]` | Extra hostnames that should resolve to this site. Nginx includes them in `server_name`; certbot includes them as SANs. |
 | `ssl` | bool | no | `false` | When `true`, the Nginx config terminates TLS and redirects HTTP to HTTPS. Requires a cert obtained via `bench setup letsencrypt`. |
 
-### `nginx` section (new)
+### `nginx` section
+
+nginx is mandatory for production and has no enable flag of its own — production is gated by `production.enabled` (set by `bench setup production`).
 
 ```toml
 [nginx]
-enabled = false              # must be set to true for bench setup nginx to proceed
 http_port = 80
 https_port = 443
 config_dir = "/etc/nginx/conf.d"   # where to write the include-pointer file (requires sudo)
@@ -171,7 +172,7 @@ password = "your-admin-password"
 domain = "admin.example.com"   # optional
 ```
 
-When `admin.domain` is set and `nginx.enabled = true`:
+When `admin.domain` is set and the bench is deployed to production (`production.enabled = true`):
 
 - `bench setup nginx` generates an nginx server block that proxies the admin port on that domain.
 - `bench setup letsencrypt` obtains a certificate for the domain and switches the block to HTTPS.
@@ -183,10 +184,9 @@ When `admin.domain` is set and `nginx.enabled = true`:
 
 ### Validation additions
 
-10. If any `sites[].ssl` is `true`, `nginx.enabled` must be `true` and `letsencrypt.email` must be present.
-11. `letsencrypt.email` must match a basic email pattern if present.
-12. All entries in `sites[].domains` must be valid hostnames (no spaces, no slashes).
-13. `nginx.http_port` and `nginx.https_port` must be distinct integers in the range 1–65535.
+10. When `production.enabled` is `true`, `production.process_manager` must be `systemd` or `supervisor`, and `admin.domain` must be set.
+11. `letsencrypt.email` must match a basic email pattern if present. Serving SSL sites over HTTPS requires `admin.tls = true` and a `letsencrypt.email`.
+12. `admin.domain`, when set, must be a valid hostname.
 
 ---
 
@@ -572,7 +572,7 @@ bench_cli/
 ### `bench setup nginx`
 
 **Pre-conditions:**
-- `nginx.enabled = true` in `bench.toml`.
+- `production.enabled = true` in `bench.toml` (set by `bench setup production`).
 - `bench init` has been run (sites exist).
 - Process has `sudo` access.
 
@@ -638,8 +638,8 @@ Orchestrates the full production setup in the correct dependency order.
 4b. If lightweight = true (systemd):
       Write ~/.config/systemd/user/*.service + *.target, run systemctl --user daemon-reload
       and enable the target.
-5.  If production.nginx = true: SetupNginxCommand.run()
-6.  If production.nginx = true and any site has ssl: true: SetupLetsEncryptCommand.run()
+5.  SetupNginxCommand.run()  (nginx is always part of a production deploy)
+6.  If admin.tls = true (and any site has ssl: true): SetupLetsEncryptCommand.run()
 7.  Build admin frontend for production.
 8.  Print summary: process status, site URLs
 ```
@@ -740,12 +740,11 @@ password = "your-admin-password"
 domain = "admin.example.com"    # optional — serve admin UI over HTTPS via nginx
 
 [production]
-nginx = true          # run nginx + letsencrypt as part of bench setup production
-# process_manager = "systemd"  # uncomment to use systemd --user instead of supervisor
-# use_companion_manager = true  # run scheduler/workers/socketio inside gunicorn
+enabled = true
+process_manager = "supervisor"   # systemd | supervisor
+# use_companion_manager = true   # run scheduler/workers/socketio inside gunicorn
 
 [nginx]
-enabled = true
 client_max_body_size = "100m"
 
 [gunicorn]

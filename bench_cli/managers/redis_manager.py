@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import re
-import shutil
 import subprocess
 from typing import TYPE_CHECKING
 
 from bench_cli.config.redis_config import RedisConfig
-from bench_cli.platform import get_package_manager, is_macos
+from bench_cli.platform import get_package_manager, is_macos, which
 
 if TYPE_CHECKING:
     from bench_cli.core.bench import Bench
@@ -18,12 +17,12 @@ class RedisManager:
         self.bench = bench
 
     def is_installed(self) -> bool:
-        return shutil.which("redis-server") is not None
+        return which("redis-server") is not None
 
     @staticmethod
     def installed_version() -> str:
         """Return the installed redis-server version (e.g. '7.0.11'), or '' if unavailable."""
-        if shutil.which("redis-server") is None:
+        if which("redis-server") is None:
             return ""
         try:
             result = subprocess.run(

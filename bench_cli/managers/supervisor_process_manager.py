@@ -53,6 +53,14 @@ class SupervisorProcessManager(ProcessManager):
         except (ValueError, ProcessLookupError, OSError):
             return False
 
+    @property
+    def workload_group(self) -> str:
+        return self.bench.config.name
+
+    @property
+    def admin_group(self) -> str:
+        return f"{self.bench.config.name}-admin"
+
     def reload(self) -> None:
         if self.is_alive():
             run_command([*self._supervisorctl(), "reread"])
@@ -65,20 +73,55 @@ class SupervisorProcessManager(ProcessManager):
             run_command([*self._supervisorctl(), "update"])
         else:
             run_command(["supervisord", "-c", str(self.supervisor_conf_path)])
-        run_command([*self._supervisorctl(), "start", f"{self.bench.config.name}:*"])
+        run_command([*self._supervisorctl(), "start", f"{self.admin_group}:*"])
+        run_command([*self._supervisorctl(), "start", f"{self.workload_group}:*"])
+
+    def setup_admin(self) -> None:
+        """Bring up just the admin group, leaving the workload down — serves a new
+        bench's setup wizard at its domain before it's initialized."""
+        self.generate_config()
+        if self.is_alive():
+            run_command([*self._supervisorctl(), "reread"])
+            run_command([*self._supervisorctl(), "update"])
+        else:
+            run_command(["supervisord", "-c", str(self.supervisor_conf_path)])
+        run_command([*self._supervisorctl(), "start", f"{self.admin_group}:*"])
 
     def stop(self) -> None:
+        """Stop the workload only; the admin group and supervisord daemon keep
+        running so the control plane stays reachable while the workload is down."""
+        if self.is_alive():
+            run_command([*self._supervisorctl(), "stop", f"{self.workload_group}:*"])
+
+    def stop_admin(self) -> None:
+        """Stop the admin group; `bench start` brings it back. The supervisord
+        daemon stays so the workload/admin can be restarted without a respawn."""
+        if self.is_alive():
+            run_command([*self._supervisorctl(), "stop", f"{self.admin_group}:*"])
+
+    def shutdown(self) -> None:
+        """Tear down everything, including the admin group and the daemon."""
         if self.is_alive():
             run_command([*self._supervisorctl(), "shutdown"])
 
     def restart(self) -> None:
-        run_command([*self._supervisorctl(), "restart", f"{self.bench.config.name}:*"])
+        run_command([*self._supervisorctl(), "restart", f"{self.workload_group}:*"])
 
     def is_running(self) -> bool:
         if not self.is_configured() or not self.is_alive():
             return False
         result = subprocess.run(
-            [*self._supervisorctl(), "status", f"{self.bench.config.name}:*"],
+            [*self._supervisorctl(), "status", f"{self.workload_group}:*"],
+            capture_output=True,
+            text=True,
+        )
+        return "RUNNING" in result.stdout
+
+    def admin_is_running(self) -> bool:
+        if not self.is_configured() or not self.is_alive():
+            return False
+        result = subprocess.run(
+            [*self._supervisorctl(), "status", f"{self.admin_group}:*"],
             capture_output=True,
             text=True,
         )
@@ -92,10 +135,14 @@ class SupervisorProcessManager(ProcessManager):
             run_command([*self._supervisorctl(), "restart", f"{self.bench.config.name}:{self.bench.config.name}-web"])
 
     def _render_supervisord_conf(self) -> str:
+        name = self.bench.config.name
         defs = self._prod_process_definitions()
-        program_names = ",".join(
-            f"{self.bench.config.name}-{pd.name.replace('_', '-')}" for pd in defs
-        )
+        workload = [pd for pd in defs if pd.name != "admin"]
+        admin = [pd for pd in defs if pd.name == "admin"]
+
+        def _names(items: list) -> str:
+            return ",".join(f"{name}-{pd.name.replace('_', '-')}" for pd in items)
+
         sections: list[str] = [
             "[unix_http_server]",
             f"file={self.supervisor_sock}",
@@ -115,10 +162,18 @@ class SupervisorProcessManager(ProcessManager):
             "[supervisorctl]",
             f"serverurl=unix://{self.supervisor_sock}",
             "",
-            f"[group:{self.bench.config.name}]",
-            f"programs={program_names}",
+            # Workload and admin are separate groups so `bench stop` can stop the
+            # workload while the admin control plane keeps running.
+            f"[group:{self.workload_group}]",
+            f"programs={_names(workload)}",
             "",
         ]
+        if admin:
+            sections += [
+                f"[group:{self.admin_group}]",
+                f"programs={_names(admin)}",
+                "",
+            ]
         for pd in defs:
             sections.append(self._render_program(pd, pd.name.replace("_", "-")))
 

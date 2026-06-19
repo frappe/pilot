@@ -114,6 +114,32 @@ class SystemdProcessManager(ProcessManager):
         env = self._systemctl_env()
         run_command(self._systemctl("daemon-reload"), env=env)
         run_command(self._systemctl("enable", self._target_name()), env=env)
+        self._activate_admin_socket(env)
+
+    def setup_admin(self) -> None:
+        """Bring up just the admin control plane (socket-activated), leaving the
+        workload down. Used to serve a new bench's setup wizard at its domain
+        before it's initialized; install_config activates the admin socket but
+        the workload target is only enabled, not started."""
+        # The admin service appends to logs/admin.log; the dir won't exist yet on
+        # an uninitialized bench, and systemd fails the unit if it's missing.
+        self.bench.logs_path.mkdir(parents=True, exist_ok=True)
+        self.generate_config()
+        self.install_config()
+
+    def _activate_admin_socket(self, env: dict) -> None:
+        """(Re)open the admin socket so a changed ListenStream takes effect.
+
+        systemd marks a running .socket "not functional" when its ListenStream
+        changes under a daemon-reload (no open fd left) — that surfaces as a 502
+        through nginx. A plain restart reopens the listener. Stop any running
+        admin service first so it can't keep holding a stale port; the next
+        request re-activates it on the new one via the socket."""
+        socket = self._admin_socket_name()
+        service = self._unit_name("admin")
+        subprocess.run(self._systemctl("stop", service), capture_output=True, env=env)
+        run_command(self._systemctl("enable", socket), env=env)
+        run_command(self._systemctl("restart", socket), env=env)
 
     def _installed_bench_units(self) -> set[str]:
         """Names of this bench's currently-loaded .service/.socket units."""
@@ -140,6 +166,27 @@ class SystemdProcessManager(ProcessManager):
             subprocess.run(self._systemctl("stop", unit), capture_output=True, env=env)
             subprocess.run(self._systemctl("disable", unit), capture_output=True, env=env)
 
+    def remove_units(self) -> None:
+        """Stop, disable and unlink every unit this bench owns (workload + admin).
+        Best-effort: missing units are ignored. Conf files under config/systemd
+        stay on disk; only the installed symlinks are removed."""
+        env = self._systemctl_env()
+        units = self._installed_bench_units() | {self._target_name()}
+        subprocess.run(self._systemctl("stop", self._target_name()), capture_output=True, env=env)
+        for unit in units:
+            subprocess.run(self._systemctl("stop", unit), capture_output=True, env=env)
+            subprocess.run(self._systemctl("disable", unit), capture_output=True, env=env)
+        if self.user_unit_dir.is_dir():
+            for dst in list(self.user_unit_dir.iterdir()):
+                if not dst.is_symlink():
+                    continue
+                try:
+                    if dst.resolve(strict=False).parent == self.systemd_conf_dir.resolve():
+                        dst.unlink()
+                except OSError:
+                    continue
+        subprocess.run(self._systemctl("daemon-reload"), capture_output=True, env=env)
+
     def is_configured(self) -> bool:
         result = subprocess.run(
             self._systemctl("is-enabled", self._target_name()),
@@ -154,10 +201,21 @@ class SystemdProcessManager(ProcessManager):
     def start(self) -> None:
         self.generate_config()
         self.reload()
-        run_command(self._systemctl("start", self._target_name()), env=self._systemctl_env())
+        env = self._systemctl_env()
+        run_command(self._systemctl("start", self._target_name()), env=env)
+        # Bring the admin control plane back up too (it's socket-activated and
+        # independent of the target), so `bench start` mirrors `bench stop`.
+        self._activate_admin_socket(env)
 
     def stop(self) -> None:
         run_command(self._systemctl("stop", self._target_name()), env=self._systemctl_env())
+
+    def stop_admin(self) -> None:
+        """Stop the admin control plane (socket + service). `bench start`
+        re-activates it; this keeps the unit files installed."""
+        env = self._systemctl_env()
+        for unit in (self._admin_socket_name(), self._unit_name("admin")):
+            subprocess.run(self._systemctl("stop", unit), capture_output=True, env=env)
 
     def restart(self) -> None:
         run_command(self._systemctl("restart", self._target_name()), env=self._systemctl_env())
@@ -172,6 +230,21 @@ class SystemdProcessManager(ProcessManager):
             return result.returncode == 0
         except FileNotFoundError:
             return False
+
+    def admin_is_running(self) -> bool:
+        """Admin is reachable if its socket is listening or the service is active
+        (socket-activated, so a listening socket counts)."""
+        env = self._systemctl_env()
+        for unit in (self._admin_socket_name(), self._unit_name("admin")):
+            try:
+                result = subprocess.run(
+                    self._systemctl("is-active", unit), capture_output=True, env=env
+                )
+            except FileNotFoundError:
+                return False
+            if result.returncode == 0:
+                return True
+        return False
 
     def reload_web(self) -> None:
         cache_port = self.bench.config.redis.cache_port
@@ -229,18 +302,20 @@ class SystemdProcessManager(ProcessManager):
 
     def _render_admin_socket(self) -> str:
         cfg = self.bench.config.admin
+        # The admin is the control plane: it stays reachable while the workload
+        # target is stopped, so the socket is independent of the target (no
+        # PartOf) and enabled on its own (WantedBy=default.target).
         return (
             "\n".join(
                 [
                     "[Unit]",
                     f"Description={self.bench.config.name} admin (socket)",
-                    f"PartOf={self._target_name()}",
                     "",
                     "[Socket]",
                     f"ListenStream=127.0.0.1:{cfg.internal_port}",
                     "",
                     "[Install]",
-                    f"WantedBy={self._target_name()}",
+                    "WantedBy=default.target",
                 ]
             )
             + "\n"
@@ -256,7 +331,6 @@ class SystemdProcessManager(ProcessManager):
                 [
                     "[Unit]",
                     f"Description={self.bench.config.name} admin",
-                    f"PartOf={self._target_name()}",
                     f"Requires={self._admin_socket_name()}",
                     f"After={self._admin_socket_name()}",
                     "",
@@ -270,6 +344,10 @@ class SystemdProcessManager(ProcessManager):
                     f"ExecStart={gunicorn} -c {admin_conf} admin.backend.wsgi:application",
                     # Re-activation happens via the socket, not systemd restart.
                     "Restart=no",
+                    # Only signal gunicorn itself on stop; never cgroup-kill. Tasks
+                    # (init, setup production, update) run as children of the admin
+                    # but must outlive it idle-stopping or restarting its own socket.
+                    "KillMode=process",
                     f"StandardOutput=append:{log_file}",
                     f"StandardError=append:{log_file}.error.log",
                 ]
@@ -278,11 +356,11 @@ class SystemdProcessManager(ProcessManager):
         )
 
     def _render_target(self, defs: list[ProcessDefinition]) -> str:
-        # The admin is socket-activated and on-demand, so the target wants its
-        # socket (the always-on listener), never the service itself.
+        # The target groups the workload only. The admin (socket + service) is an
+        # independent control-plane unit, so `bench stop` (stop target) never
+        # tears it down.
         wants = " ".join(
-            self._admin_socket_name() if pd.name == "admin" else self._unit_name(pd.name)
-            for pd in defs
+            self._unit_name(pd.name) for pd in defs if pd.name != "admin"
         )
         return (
             "\n".join(

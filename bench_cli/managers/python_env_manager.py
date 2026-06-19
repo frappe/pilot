@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from bench_cli.exceptions import BenchError
-from bench_cli.platform import is_macos
+from bench_cli.platform import is_macos, which
 from bench_cli.utils import get_yarn_bin, run_command
 
 if TYPE_CHECKING:
@@ -97,12 +97,12 @@ class PythonEnvManager:
         run_command([uv, "pip", "uninstall", "--python", python, app_name], stream_output=True)
 
     def install_node(self) -> None:
-        if not shutil.which("node"):
+        if not which("node"):
             if is_macos():
                 run_command(["brew", "install", "node"])
             else:
                 self._install_node_linux()
-        if not shutil.which("yarn"):
+        if not which("yarn"):
             self._install_yarn()
 
     def _install_yarn(self) -> None:

@@ -1,7 +1,18 @@
+import os
 import platform
+import shutil
 import subprocess
 from abc import ABC, abstractmethod
 from enum import Enum
+
+# sbin/bin dirs a minimal PATH often omits (e.g. /usr/sbin for mariadbd/nginx).
+_EXTRA_BIN_DIRS = ("/usr/local/sbin", "/usr/sbin", "/sbin", "/usr/local/bin", "/usr/bin", "/bin")
+
+
+def which(name: str) -> str | None:
+    """``shutil.which`` that also searches the standard sbin/bin dirs."""
+    path = os.environ.get("PATH", os.defpath)
+    return shutil.which(name, path=os.pathsep.join([path, *_EXTRA_BIN_DIRS]))
 
 
 class Platform(Enum):

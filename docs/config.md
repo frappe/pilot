@@ -46,9 +46,13 @@ port = 13000            # single Redis instance for all services (simplest)
 queues = ["default", "short", "long"]   # one worker handling all three queues
 count = 1
 
+# ── Production (set by `bench setup production`) ──────────────────────────────
+# [production]
+# enabled = false        # true once deployed; cleared by `bench remove production`
+# process_manager = ""   # systemd | supervisor
+
 # ── Nginx (production only) ───────────────────────────────────────────────────
 [nginx]
-enabled = false         # set to true to enable production nginx setup
 http_port = 80
 https_port = 443
 config_dir = "/etc/nginx/conf.d"
@@ -171,17 +175,16 @@ count = 1
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `process_manager` | string | no | `none` | Production process manager: `none`, `supervisor`, or `systemd`. |
-| `nginx` | bool | no | `false` | Run nginx setup as part of `bench setup production`. |
+| `enabled` | bool | no | `false` | `true` once the bench is deployed to production. Set by `bench setup production` and cleared by `bench remove production`; gates `bench restart`, nginx setup, and production process management. |
+| `process_manager` | string | no | `""` | Production process manager: `systemd` or `supervisor`. Empty on an undeployed bench. |
 | `use_companion_manager` | bool | no | `false` | Run scheduler, RQ workers, and socket.io as Gunicorn companion processes under a single preloaded master. Requires the Frappe Gunicorn fork with companion support. |
 
 ### `[nginx]` _(production only)_
 
-Omit this section entirely for development benches. The section is only read by `bench setup nginx` and `bench setup production`.
+Omit this section entirely for development benches. The section is only read by `bench setup nginx` and `bench setup production` (which run when `production.enabled = true`). nginx is mandatory for production — there is no separate enable flag.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `enabled` | bool | yes | `false` | Must be `true` for `bench setup nginx` to proceed. Acts as an explicit opt-in to production nginx setup. |
 | `http_port` | int | no | `80` | Port Nginx listens on for plain HTTP. |
 | `https_port` | int | no | `443` | Port Nginx listens on for HTTPS. |
 | `config_dir` | string | no | `/etc/nginx/conf.d` | System directory where the bench include-pointer file is symlinked. Requires sudo. |
@@ -211,9 +214,11 @@ Omit this section entirely for development benches. The section is only read by 
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
+| `enabled` | bool | no | `false` | Whether the admin API serves requests. Production deploys enable it automatically so the admin is reachable behind its domain. |
 | `port` | int | no | `8002` | Port the admin process listens on. |
 | `password` | string | yes | — | Password for the admin UI. The process refuses all requests with HTTP 503 if this is empty. |
-| `domain` | string | no | `""` | Hostname to serve the admin UI over HTTPS in production (e.g. `admin.example.com`). When set, `bench setup production` obtains a certificate and generates an nginx proxy block. |
+| `domain` | string | no | `""` | Hostname to serve the admin UI in production (e.g. `admin.example.com`). When set, `bench setup production` generates an nginx proxy block (and obtains a certificate if `tls = true`). |
+| `tls` | bool | no | `false` | Server-wide HTTPS opt-in. When `true`, the admin and SSL-enabled sites are served over HTTPS with Let's Encrypt; HTTP is redirected. When `false`, everything is served over plain HTTP (a central proxy may terminate TLS upstream). |
 
 ### `[volume]`
 

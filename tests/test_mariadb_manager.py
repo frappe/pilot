@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from unittest.mock import patch
 
 from bench_cli.config.mariadb_config import MariaDBConfig
@@ -183,16 +184,19 @@ def test_secure_installation_sets_password_and_hardens() -> None:
 
 def test_check_credentials_true_on_successful_connect() -> None:
     manager = _manager()
-    with patch.object(manager, "_connect") as connect:
+    with patch("bench_cli.managers.mariadb_manager.subprocess.run") as run:
+        run.return_value = subprocess.CompletedProcess([], 0)
         assert manager.check_credentials("pw") is True
-    connect.assert_called_once_with("pw")
+    # Password is passed via MYSQL_PWD env, never argv.
+    args, kwargs = run.call_args
+    assert "pw" not in args[0]
+    assert kwargs["env"]["MYSQL_PWD"] == "pw"
 
 
 def test_check_credentials_false_on_error() -> None:
-    import pymysql
-
     manager = _manager()
-    with patch.object(manager, "_connect", side_effect=pymysql.Error("denied")):
+    with patch("bench_cli.managers.mariadb_manager.subprocess.run") as run:
+        run.return_value = subprocess.CompletedProcess([], 1)
         assert manager.check_credentials("wrong") is False
 
 

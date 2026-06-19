@@ -455,7 +455,8 @@ The frontend presents settings as a tabbed modal dialog. Tabs are:
 | **MariaDB** | — | Host, Port, Admin User, Version, Socket Path |
 | **Redis** | Cache Port, Queue Port, SocketIO Port | — |
 | **Workers** | Default, Short, Long worker counts | — |
-| **Nginx** | Worker Processes, Client Max Body Size, Config Directory, Manage Nginx toggle | HTTP Port, HTTPS Port |
+| **Nginx** | Worker Processes, Client Max Body Size, Config Directory | HTTP Port, HTTPS Port |
+| **HTTPS** | Enable HTTPS toggle (`admin.tls`), Let's Encrypt email; "Enable HTTPS & issue certificate" action | — |
 | **Let's Encrypt** | Email, Webroot Path | — |
 | **Production** | Process Manager (none/supervisor/systemd) | — |
 | **Updates** | — | Current version, update availability badge; Update button |
@@ -466,6 +467,8 @@ MariaDB fields are read-only because the host, port, credentials, and socket pat
 The **ZFS Volume** tab and the **Snapshots** page in the sidebar are only shown for benches that use a dedicated MariaDB instance with `volume.enabled = true`. Shared-DB benches hide both.
 
 The Process Manager dropdown lets you switch between `none`, `supervisor`, and `systemd`. A change here writes to `bench.toml` and triggers a process restart.
+
+The **HTTPS** toggle sets the server-wide `admin.tls` flag. Enabling it (with a Let's Encrypt email) persists the choice and runs `setup-letsencrypt` to obtain certificates and rewrite nginx with the HTTP→HTTPS redirect; disabling it runs `setup-nginx` to fall back to plain HTTP. `admin.tls` governs HTTPS for both the admin domain and all SSL-enabled sites — per-site SSL is hidden while it is off.
 
 Theme changes are local to the browser session (stored in `localStorage`) and do not touch `bench.toml`.
 

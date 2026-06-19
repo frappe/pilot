@@ -640,6 +640,133 @@ def test_drop_site_removes_from_toml_when_no_sites_key(tmp_path: Path) -> None:
     cmd._remove_from_bench_toml()  # no raise
 
 
+# ── RestartCommand / StartCommand routing ───────────────────────────────────────
+
+
+def test_restart_dev_bench_prints_guidance(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+    from bench_cli.commands.restart import RestartCommand
+
+    bench = make_bench(tmp_path)  # production disabled by default
+    RestartCommand(bench).run()
+    out = capsys.readouterr().out
+    assert "only for production benches" in out
+
+
+def test_restart_production_incomplete_prints_repair(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+    from bench_cli.commands.restart import RestartCommand
+
+    bench = make_bench(tmp_path)
+    bench.config.production.enabled = True
+    bench.config.production.process_manager = "systemd"
+    with patch("bench_cli.managers.process_manager.ProcessManagerFactory.create") as create:
+        mgr = MagicMock()
+        mgr.is_configured.return_value = False
+        create.return_value = mgr
+        RestartCommand(bench).run()
+    out = capsys.readouterr().out
+    assert "deployment is incomplete" in out
+    mgr.restart.assert_not_called()
+
+
+def test_restart_production_restarts_when_configured(tmp_path: Path) -> None:
+    from bench_cli.commands.restart import RestartCommand
+
+    bench = make_bench(tmp_path)
+    bench.config.production.enabled = True
+    bench.config.production.process_manager = "supervisor"
+    with patch("bench_cli.managers.process_manager.ProcessManagerFactory.create") as create:
+        mgr = MagicMock()
+        mgr.is_configured.return_value = True
+        create.return_value = mgr
+        RestartCommand(bench).run()
+    mgr.generate_config.assert_called_once()
+    mgr.restart.assert_called_once()
+
+
+def test_ls_lists_benches_with_mode_and_address(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+    from bench_cli.commands.ls import ListCommand
+
+    benches = tmp_path / "benches"
+    (benches / "alpha").mkdir(parents=True)
+    (benches / "alpha" / "bench.toml").write_text(
+        '[bench]\nname = "alpha"\n\n[production]\nenabled = true\nprocess_manager = "systemd"\n\n'
+        '[admin]\ndomain = "alpha-admin.example.com"\n'
+    )
+    (benches / "beta").mkdir(parents=True)
+    (benches / "beta" / "bench.toml").write_text('[bench]\nname = "beta"\n\n[admin]\nport = 7005\n')
+
+    with patch("bench_cli.loader.cli_root", return_value=tmp_path), \
+         patch("bench_cli.commands.ls.ListCommand._is_running", return_value=False):
+        ListCommand().run()
+
+    out = capsys.readouterr().out
+    assert "alpha" in out and "production" in out and "alpha-admin.example.com" in out
+    assert "beta" in out and "development" in out and "http://localhost:7005" in out
+
+
+def test_ls_empty_when_no_benches(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+    from bench_cli.commands.ls import ListCommand
+
+    (tmp_path / "benches").mkdir()
+    with patch("bench_cli.loader.cli_root", return_value=tmp_path):
+        ListCommand().run()
+    assert "No benches yet" in capsys.readouterr().out
+
+
+def _mark_initialized(bench: Bench) -> None:
+    (bench.path / "env" / "bin").mkdir(parents=True, exist_ok=True)
+    (bench.path / "env" / "bin" / "python").write_text("")
+
+
+def test_start_dev_uninitialized_runs_wizard(tmp_path: Path) -> None:
+    from bench_cli.commands.start import RunCommand
+
+    bench = make_bench(tmp_path)  # no process manager → dev
+    with patch.object(RunCommand, "_start_wizard") as wizard, \
+         patch("bench_cli.managers.process_manager.ProcessManager.stop"):
+        RunCommand(bench).run()
+    wizard.assert_called_once()
+
+
+def test_start_dev_initialized_stops_then_starts(tmp_path: Path) -> None:
+    from bench_cli.commands.start import RunCommand
+
+    bench = make_bench(tmp_path)  # dev
+    _mark_initialized(bench)
+    with patch("bench_cli.managers.process_manager.ProcessManager.stop") as stop, \
+         patch("bench_cli.managers.process_manager.ProcessManager.start") as start:
+        RunCommand(bench).run()
+    stop.assert_called_once()
+    start.assert_called_once()
+
+
+def test_start_production_uninitialized_brings_up_admin(tmp_path: Path) -> None:
+    # A systemd bench that isn't initialized yet runs its admin under systemd
+    # (to serve the wizard), not a foreground wizard server.
+    from bench_cli.commands.start import RunCommand
+
+    bench = make_bench(tmp_path)
+    bench.config.production.process_manager = "systemd"
+    bench.config.admin.domain = "admin.example.com"
+    with patch("bench_cli.managers.systemd_process_manager.SystemdProcessManager.setup_admin") as setup_admin, \
+         patch.object(RunCommand, "_start_wizard") as wizard:
+        RunCommand(bench).run()
+    setup_admin.assert_called_once()
+    wizard.assert_not_called()
+
+
+def test_start_production_initialized_starts_manager(tmp_path: Path) -> None:
+    from bench_cli.commands.start import RunCommand
+
+    bench = make_bench(tmp_path)
+    bench.config.production.process_manager = "systemd"
+    _mark_initialized(bench)
+    with patch("bench_cli.managers.systemd_process_manager.SystemdProcessManager.is_configured", return_value=True), \
+         patch("bench_cli.managers.systemd_process_manager.SystemdProcessManager.start") as start:
+        RunCommand(bench).run()
+    start.assert_called_once()
+
+
 # ── snapshot orchestrator (single global dataset) ─────────────────────────────
 
 

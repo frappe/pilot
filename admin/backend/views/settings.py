@@ -43,7 +43,7 @@ def _restart_trigger_values(config: BenchConfig) -> dict:
         "mariadb": {"host": config.mariadb.host, "port": config.mariadb.port, "admin_user": config.mariadb.admin_user, "socket_path": config.mariadb.socket_path},
         "redis": {"cache_port": config.redis.cache_port, "queue_port": config.redis.queue_port},
         "workers": {"groups": _worker_groups_payload(config)},
-        "production": {"process_manager": config.production.process_manager},
+        "production": {"process_manager": config.production.process_manager or "none"},
     }
 
 
@@ -60,9 +60,8 @@ class ConfigPatcher:
         self._apply_mariadb()
         self._apply_redis()
         self._apply_workers()
-        self._apply_nginx()
-        self._apply_letsencrypt()
         self._apply_volume()
+        self._apply_admin()
         if error := self._apply_production():
             return error
         try:
@@ -114,27 +113,6 @@ class ConfigPatcher:
         if groups:
             self.config.workers.groups = groups
 
-    def _apply_nginx(self) -> None:
-        nginx = self.data.get("nginx") or {}
-        if not nginx:
-            return
-        nginx_config = self.config.nginx
-        nginx_config.http_port = int(nginx.get("http_port", nginx_config.http_port))
-        nginx_config.https_port = int(nginx.get("https_port", nginx_config.https_port))
-        if "config_dir" in nginx:
-            nginx_config.config_dir = Path(str(nginx["config_dir"]))
-        nginx_config.worker_processes = str(nginx.get("worker_processes", nginx_config.worker_processes))
-        nginx_config.client_max_body_size = str(nginx.get("client_max_body_size", nginx_config.client_max_body_size))
-
-    def _apply_letsencrypt(self) -> None:
-        letsencrypt = self.data.get("letsencrypt") or {}
-        if not letsencrypt:
-            return
-        letsencrypt_config = self.config.letsencrypt
-        letsencrypt_config.email = str(letsencrypt.get("email", letsencrypt_config.email))
-        if "webroot_path" in letsencrypt:
-            letsencrypt_config.webroot_path = Path(str(letsencrypt["webroot_path"]))
-
     def _apply_volume(self) -> None:
         volume = self.data.get("volume") or {}
         if not volume:
@@ -142,6 +120,17 @@ class ConfigPatcher:
         volume_config = self.config.volume
         volume_config.dataset.reservation = str(volume.get("reservation", volume_config.dataset.reservation))
         volume_config.dataset.quota = str(volume.get("quota", volume_config.dataset.quota))
+
+    def _apply_admin(self) -> None:
+        """TLS termination is opt-in: persisting tls=true only records the intent;
+        the caller runs `setup-letsencrypt` to actually obtain certs and rewrite
+        nginx with the HTTP→HTTPS redirect. The email is the ACME account address."""
+        admin = self.data.get("admin") or {}
+        if "tls" in admin:
+            self.config.admin.tls = bool(admin["tls"])
+        letsencrypt = self.data.get("letsencrypt") or {}
+        if "email" in letsencrypt:
+            self.config.letsencrypt.email = str(letsencrypt["email"]).strip()
 
     def _apply_production(self) -> str | None:
         production = self.data.get("production") or {}
@@ -151,8 +140,9 @@ class ConfigPatcher:
             process_manager = str(production["process_manager"])
             if process_manager not in ("none", "supervisor", "systemd"):
                 return "process_manager must be none, supervisor, or systemd"
-            self.config.production.process_manager = process_manager
-        self.config.production.nginx = bool(production.get("nginx", self.config.production.nginx))
+            pm = "" if process_manager == "none" else process_manager
+            self.config.production.process_manager = pm
+            self.config.production.enabled = pm != ""
         return None
 
 
@@ -235,15 +225,9 @@ def _build_settings_response(config: BenchConfig) -> dict:
         },
         "redis": {"cache_port": config.redis.cache_port, "queue_port": config.redis.queue_port, "version": RedisManager.installed_version() or config.redis.version or ""},
         "workers": _worker_groups_payload(config),
-        "nginx": {
-            "http_port": config.nginx.http_port,
-            "https_port": config.nginx.https_port,
-            "config_dir": str(config.nginx.config_dir),
-            "worker_processes": config.nginx.worker_processes,
-            "client_max_body_size": config.nginx.client_max_body_size,
-        },
-        "letsencrypt": {"email": config.letsencrypt.email, "webroot_path": str(config.letsencrypt.webroot_path)},
-        "production": {"process_manager": config.production.process_manager, "nginx": config.production.nginx},
+        "production": {"process_manager": config.production.process_manager or "none"},
+        "admin": {"domain": config.admin.domain, "tls": config.admin.tls},
+        "letsencrypt": {"email": config.letsencrypt.email},
         "volume": {
             "pool": volume.pool,
             "backing": volume.backing,

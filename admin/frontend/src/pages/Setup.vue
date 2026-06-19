@@ -47,6 +47,9 @@ const form = ref({
   volume_image_size: '60G',
   volume_reservation: '15G',
   volume_quota: '60G',
+  production_process_manager: 'none',
+  admin_domain: '',
+  admin_tls: false,
 })
 
 // ── framework branch dropdown (fetched from the admin backend) ────────────
@@ -376,6 +379,10 @@ function validateStorage() {
 
 async function initialize() {
   error.value = ''
+  if (form.value.production_process_manager !== 'none' && !form.value.admin_domain.trim()) {
+    error.value = 'Admin domain is required for a production process manager.'
+    return
+  }
   const storageError = validateStorage()
   if (storageError) {
     error.value = storageError
@@ -402,8 +409,43 @@ function onInitDone(success) {
   }
   progress.value = 100
   currentStep.value = 'Done'
+  if (form.value.production_process_manager !== 'none') {
+    deployProduction()
+  } else {
+    step.value = 'done'
+    shutdownAndPoll()
+  }
+}
+
+async function deployProduction() {
+  try {
+    const data = await postJson('/api/setup/setup-production', {})
+    if (!data.ok) throw new Error(data.error || 'Failed to start production setup.')
+    streamTask(`/api/setup/stream/${data.task_id}`, onProductionDone)
+  } catch (e) {
+    error.value = e.message
+  }
+}
+
+function onProductionDone(success) {
+  if (!success) {
+    error.value = 'Production setup failed. Check the output above and try again.'
+    return
+  }
+  progress.value = 100
+  currentStep.value = 'Done'
   step.value = 'done'
-  shutdownAndPoll()
+  finishAndRedirectToDomain()
+}
+
+async function finishAndRedirectToDomain() {
+  try {
+    await postJson('/api/setup/finish', {})
+  } catch {}
+  // The admin now lives behind nginx at its domain, not the local wizard port.
+  const scheme = form.value.admin_tls === true ? 'https' : 'http'
+  const url = `${scheme}://${form.value.admin_domain.trim()}`
+  setTimeout(() => { window.location.href = url }, 2500)
 }
 
 async function shutdownAndPoll() {
@@ -496,6 +538,27 @@ function backToConfig() {
             :options="branchSelectOptions"
           />
           <FormControl label="Frappe repository" v-model="form.app_repo" />
+          <FormControl
+            type="select"
+            label="Production process manager"
+            v-model="form.production_process_manager"
+            :options="[
+              { label: 'Development — run it yourself', value: 'none' },
+              { label: 'Systemd — recommended', value: 'systemd' },
+              { label: 'Supervisor — alternative', value: 'supervisor' },
+            ]"
+          />
+          <div v-if="form.production_process_manager !== 'none'">
+            <FormControl
+              type="text"
+              label="Admin domain"
+              v-model="form.admin_domain"
+              placeholder="my-admin.example.com"
+            />
+            <p class="mt-1 text-xs text-ink-gray-5">
+              After init the bench is deployed to production and reachable at this domain.
+            </p>
+          </div>
           <FormControl
             v-if="isLinux && form.dedicated_db === 'dedicated'"
             type="checkbox"

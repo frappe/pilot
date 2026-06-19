@@ -13,8 +13,10 @@ declare module 'vue' {
   export interface GlobalComponents {
     AppLayout: typeof import('./src/components/AppLayout.vue')['default']
     AppSidebar: typeof import('./src/components/AppSidebar.vue')['default']
+    BenchSwitcherDialog: typeof import('./src/components/BenchSwitcherDialog.vue')['default']
     ConfigTree: typeof import('./src/components/ConfigTree.vue')['default']
     FilePickerField: typeof import('./src/components/FilePickerField.vue')['default']
+    NewBenchDialog: typeof import('./src/components/NewBenchDialog.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SettingsModal: typeof import('./src/components/SettingsModal.vue')['default']

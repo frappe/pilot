@@ -28,6 +28,8 @@ class Command:
     group: ClassVar[Optional[str]] = None
     #: If True, the registry loads the active Bench and passes it to from_args.
     requires_bench: ClassVar[bool] = True
+    #: If True, require -b/--bench or running inside the bench dir (no auto-pick).
+    requires_explicit_bench: ClassVar[bool] = False
 
     def __init__(self, bench: "Bench | None" = None) -> None:
         self.bench = bench

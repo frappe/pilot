@@ -170,10 +170,18 @@ def test_process_definitions_returns_correct_count(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     # workers: default=2, short=1, long=1 => 4 worker processes
     # plus web, socketio, redis_cache, redis_queue = 4
-    # plus admin, admin-ui = 2
-    # total = 10
+    # plus admin = 1
+    # total = 9
     process_manager = ProcessManager(bench)
     definitions = process_manager._process_definitions()
+    assert len(definitions) == 9
+    assert "admin-ui" not in [pd.name for pd in definitions]
+
+
+def test_process_definitions_admin_dev_adds_vite_ui(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    definitions = ProcessManager(bench, admin_dev=True)._process_definitions()
+    assert "admin-ui" in [pd.name for pd in definitions]
     assert len(definitions) == 10
 
 

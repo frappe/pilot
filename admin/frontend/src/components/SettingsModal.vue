@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Button, FormControl, ErrorMessage, LoadingText, Switch, Select, Badge, useTheme, Dialog } from 'frappe-ui'
+import { Button, FormControl, ErrorMessage, LoadingText, Select, Badge, useTheme, Dialog } from 'frappe-ui'
 import LucideX from '~icons/lucide/x'
 
 const props = defineProps({ modelValue: Boolean })
@@ -30,8 +30,6 @@ const BASE_TABS = [
   { key: 'mariadb', label: 'MariaDB' },
   { key: 'redis', label: 'Redis' },
   { key: 'workers', label: 'Workers' },
-  { key: 'nginx', label: 'Nginx' },
-  { key: 'letsencrypt', label: "Let's Encrypt" },
   { key: 'updates', label: 'Updates' },
 ]
 const isLinux = ref(false)
@@ -112,9 +110,6 @@ function validateSettings() {
     if (!Number.isInteger(n) || n < 1)
       return `Worker group ${i + 1} count must be at least 1.`
   }
-  const email = (form.value.letsencrypt.email || '').trim()
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
-    return "Invalid email address for Let's Encrypt."
   return null
 }
 
@@ -134,8 +129,7 @@ async function save() {
     if (!d.ok) { saveError.value = d.error; return }
 
     const pm = form.value.production.process_manager
-    const nginxEnabled = form.value.production.nginx
-    const setupCommand = pm !== 'none' ? 'setup-production' : nginxEnabled ? 'setup-nginx' : null
+    const setupCommand = pm !== 'none' ? 'setup-production' : null
 
     if (setupCommand) {
       const taskRes = await fetch('/api/tasks/run', {
@@ -323,31 +317,6 @@ watch(() => props.modelValue, (val) => {
                 </div>
                 <div>
                   <Button variant="subtle" icon-left="plus" label="Add group" @click="addWorkerGroup" />
-                </div>
-              </div>
-
-              <!-- Nginx -->
-              <div v-else-if="activeTab === 'nginx'" class="flex flex-col gap-4">
-                <Switch v-model="form.production.nginx" label="Manage Nginx" />
-                <div class="grid grid-cols-2 gap-4">
-                  <div class="col-span-2 grid grid-cols-2 gap-4">
-                    <FormControl type="number" label="HTTP Port" :modelValue="form.nginx.http_port" disabled />
-                    <FormControl type="number" label="HTTPS Port" :modelValue="form.nginx.https_port" disabled />
-                    <p class="col-span-2 -mt-2 text-xs text-ink-gray-4">
-                      System listen ports are fixed after Nginx is configured. To change them, update <code class="font-mono">bench.toml</code> and re-run Setup Nginx.
-                    </p>
-                  </div>
-                  <FormControl label="Worker Processes" v-model="form.nginx.worker_processes" placeholder="auto" />
-                  <FormControl label="Client Max Body Size" v-model="form.nginx.client_max_body_size" placeholder="50m" />
-                  <FormControl class="col-span-2" label="Config Directory" v-model="form.nginx.config_dir" />
-                </div>
-              </div>
-
-              <!-- Let's Encrypt -->
-              <div v-else-if="activeTab === 'letsencrypt'" class="flex flex-col gap-4">
-                <div class="grid grid-cols-2 gap-4">
-                  <FormControl label="Email" v-model="form.letsencrypt.email" placeholder="you@example.com" />
-                  <FormControl label="Webroot Path" v-model="form.letsencrypt.webroot_path" />
                 </div>
               </div>
 

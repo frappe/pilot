@@ -186,6 +186,7 @@ add_to_path() {
     fi
 }
 
+RC_FILE=""
 if [[ "$SHELL" == */fish ]]; then
     FISH_CONFIG="$HOME/.config/fish/config.fish"
     mkdir -p "$(dirname "$FISH_CONFIG")"
@@ -194,12 +195,22 @@ if [[ "$SHELL" == */fish ]]; then
         echo "Added bench to PATH in $FISH_CONFIG"
     fi
 elif [[ "$SHELL" == */zsh ]]; then
-    add_to_path "$HOME/.zshrc"
+    RC_FILE="$HOME/.zshrc"
+    add_to_path "$RC_FILE"
 else
-    add_to_path "$HOME/.bashrc"
+    RC_FILE="$HOME/.bashrc"
+    add_to_path "$RC_FILE"
 fi
 
 export PATH="$BENCH_CLI_DIR:$PATH"
+
+# Best-effort: load the updated rc into this session. Shell-specific syntax (or a
+# zsh rc sourced under bash) may fail — that's fine, the PATH export above already
+# applies and a new terminal picks up the rc.
+if [ -n "$RC_FILE" ] && [ -f "$RC_FILE" ]; then
+    # shellcheck disable=SC1090
+    source "$RC_FILE" 2>/dev/null || true
+fi
 
 # ── admin venv ────────────────────────────────────────────────────────────────
 ADMIN_VENV="$BENCH_CLI_DIR/.admin-venv"
@@ -227,8 +238,6 @@ echo "bench installed to $BENCH_CLI_DIR"
 echo ""
 echo "Quick start:"
 echo "  bench new my-bench"
-echo "  bench init"
-echo "  new-site site1.localhost"
 echo "  bench start"
 echo ""
 echo "If 'bench' is not found, open a new terminal or run: source ~/.bashrc"

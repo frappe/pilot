@@ -4,6 +4,7 @@ import pwd
 import re
 import shutil
 from pathlib import Path
+from string import Template
 from typing import TYPE_CHECKING
 
 from bench_cli.managers.gunicorn_manager import GunicornManager
@@ -12,6 +13,59 @@ from bench_cli.utils import run_command
 
 _NGINX_CONF = Path("/etc/nginx/nginx.conf")
 _USER_DIRECTIVE = re.compile(r"^[ \t]*user[ \t]+[^;\n]+;", re.MULTILINE)
+
+# Server-wide catch-all so unknown hosts get our 404 instead of nginx's stock
+# welcome page. Shared by every bench (one default_server per port), so it lives
+# in fixed machine paths rather than under a bench.
+_CATCHALL_CONF = Path("/etc/nginx/conf.d/00-bench-default.conf")
+_SHARED_ERROR_DIR = Path("/usr/share/nginx/bench-error-pages")
+_STOCK_DEFAULT_SITE = Path("/etc/nginx/sites-enabled/default")
+
+# Custom pages for nginx-generated errors (downed upstream, missing static
+# file). App responses pass through unchanged — proxy_intercept_errors is off.
+_ERROR_PAGES = {
+    404: ("Page not found", "The page you’re looking for doesn’t exist."),
+    502: ("Temporarily unavailable", "The server isn’t responding right now. Please try again in a moment."),
+    503: ("Service unavailable", "The service is temporarily unavailable. Please try again shortly."),
+}
+
+
+# $-placeholders (not .format) so the CSS braces below stay literal.
+_ERROR_PAGE_TEMPLATE = Template(
+    """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>$code — $title</title>
+<style>
+:root{--bg:#fbfbfc;--fg:#1c2024;--muted:#6b7280;--accent:#d1d5db;--font:system-ui,-apple-system,sans-serif}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--fg);font-family:var(--font);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+.box{text-align:center;padding:2.5rem 1.5rem;max-width:30rem}
+.code{font-size:clamp(3.5rem,12vw,6rem);font-weight:700;line-height:1;letter-spacing:.05em;margin:0;color:var(--fg)}
+.rule{width:2.5rem;height:3px;border-radius:999px;background:var(--accent);margin:1.5rem auto}
+.title{font-size:1.125rem;font-weight:600;letter-spacing:-.01em;margin:0 0 .4rem}
+.msg{font-size:.95rem;line-height:1.55;color:var(--muted);margin:0}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1115;--fg:#e6e8eb;--muted:#9ba1a8;--accent:#2c2f36}}
+</style>
+</head>
+<body>
+<div class="box">
+<p class="code">$code</p>
+<div class="rule"></div>
+<p class="title">$title</p>
+<p class="msg">$message</p>
+</div>
+</body>
+</html>
+"""
+)
+
+
+def _render_error_html(code: int, title: str, message: str) -> str:
+    return _ERROR_PAGE_TEMPLATE.substitute(code=code, title=title, message=message)
 
 if TYPE_CHECKING:
     from bench_cli.config.site_config import SiteConfig
@@ -33,18 +87,19 @@ class NginxManager:
         nginx_dir = self.bench.config_path / "nginx"
         sites_dir = nginx_dir / "sites"
         sites_dir.mkdir(parents=True, exist_ok=True)
+        self._write_error_pages(nginx_dir)
+        # admin.tls = False makes the whole bench HTTP-only: a central proxy
+        # terminates TLS, so neither sites nor the admin serve HTTPS here.
+        tls = self.bench.config.admin.tls
         for site in self.bench.sites():
-            site_ssl_ready = ssl_ready and self.cert_exists(site.config)
+            site_ssl_ready = tls and ssl_ready and self.cert_exists(site.config)
             conf_text = self._generate_site_config(site.config, site_ssl_ready)
             (sites_dir / f"{site.config.name}.conf").write_text(conf_text)
-        # Expose the admin via nginx when it has its own domain, or — under
-        # systemd, where it is socket-activated on an internal port — as a
-        # domainless proxy listening on admin.port.
+        # The admin is always reached via its (mandatory) domain in production;
+        # nginx forwards that host to the local admin process.
         if self.bench.config.admin.domain:
             conf_text = self._generate_admin_config(ssl_ready)
             (sites_dir / "_admin.conf").write_text(conf_text)
-        elif self._admin_socket_activated():
-            (sites_dir / "_admin.conf").write_text(self._generate_admin_domainless_config())
         self._write_include_conf(nginx_dir)
 
     def _admin_socket_activated(self) -> bool:
@@ -77,6 +132,64 @@ class NginxManager:
         return (
             self._render_http_redirect_block(site, nginx_config)
             + self._render_https_block(site, bench_name, nginx_config, bench_root)
+        )
+
+    def _error_pages_dir(self) -> Path:
+        return self.bench.config_path / "nginx" / "error_pages"
+
+    def _write_error_pages(self, nginx_dir: Path) -> None:
+        error_dir = nginx_dir / "error_pages"
+        error_dir.mkdir(parents=True, exist_ok=True)
+        for code, (title, message) in _ERROR_PAGES.items():
+            (error_dir / f"{code}.html").write_text(_render_error_html(code, title, message))
+
+    def install_default_server(self) -> None:
+        """Install the server-wide catch-all vhost (and its error pages) so
+        requests for unknown hosts return our 404, not nginx's welcome page.
+        Idempotent; shared by all benches."""
+        staging = self.bench.config_path / "nginx"
+        for code, (title, message) in _ERROR_PAGES.items():
+            staged = staging / f"_catchall_{code}.html"
+            staged.write_text(_render_error_html(code, title, message))
+            run_command(["sudo", "install", "-D", "-m", "644", str(staged), str(_SHARED_ERROR_DIR / f"{code}.html")])
+            staged.unlink()
+
+        staged = staging / "_catchall.conf"
+        staged.write_text(self._render_catchall(self.bench.config.nginx.http_port, _SHARED_ERROR_DIR))
+        run_command(["sudo", "cp", str(staged), str(_CATCHALL_CONF)])
+        staged.unlink()
+
+        # The stock default site also claims default_server on :80; nginx rejects
+        # a duplicate, so drop it and let ours win.
+        if _STOCK_DEFAULT_SITE.exists() or _STOCK_DEFAULT_SITE.is_symlink():
+            run_command(["sudo", "unlink", str(_STOCK_DEFAULT_SITE)])
+
+    def _render_catchall(self, http_port: int, error_dir: Path) -> str:
+        directives = "".join(f"    error_page {code} /_errors/{code}.html;\n" for code in _ERROR_PAGES)
+        return (
+            "server {\n"
+            f"    listen {http_port} default_server;\n"
+            f"    listen [::]:{http_port} default_server;\n"
+            "    server_name _;\n\n"
+            + directives
+            + "    location ^~ /_errors/ {\n"
+            + "        internal;\n"
+            + f"        alias {error_dir}/;\n"
+            + "    }\n\n"
+            + "    location / {\n"
+            + "        return 404;\n"
+            + "    }\n"
+            "}\n"
+        )
+
+    def _render_error_pages(self) -> str:
+        directives = "".join(f"    error_page {code} /_errors/{code}.html;\n" for code in _ERROR_PAGES)
+        return (
+            directives
+            + "    location ^~ /_errors/ {\n"
+            + "        internal;\n"
+            + f"        alias {self._error_pages_dir()}/;\n"
+            + "    }\n\n"
         )
 
     def _render_upstream_block(self, bench_name: str) -> str:
@@ -112,6 +225,7 @@ class NginxManager:
             f"        root {webroot};\n"
             f"        try_files $uri =404;\n"
             f"    }}\n\n"
+            + self._render_error_pages()
             + self._render_assets_location()
             + self._render_files_location(site)
             + self._render_socketio_location(socketio_port)
@@ -172,6 +286,7 @@ class NginxManager:
             + ssl_directives
             + f"    root {bench_root}/sites;\n"
             f"    client_max_body_size {max_body};\n\n"
+            + self._render_error_pages()
             + self._render_assets_location()
             + self._render_files_location(site)
             + self._render_socketio_location(socketio_port)
@@ -237,7 +352,21 @@ class NginxManager:
             f"        try_files $uri =404;\n"
             f"    }}\n\n"
         )
-        proxy_block = self._render_admin_proxy_location()
+        proxy_block = self._render_error_pages() + self._render_admin_proxy_location()
+
+        # admin.tls = False: a central proxy terminates TLS, so nginx serves the
+        # admin over plain HTTP on :80 and never redirects to HTTPS, even if a
+        # stale cert is still on disk.
+        if not admin.tls:
+            return (
+                f"server {{\n"
+                f"    listen {http_port};\n"
+                f"    listen [::]:{http_port};\n"
+                f"    server_name {domain};\n\n"
+                + acme_block
+                + proxy_block
+                + f"}}\n"
+            )
 
         if not ssl_ready or not self.admin_cert_exists():
             return (
@@ -294,25 +423,11 @@ class NginxManager:
             f"    }}\n"
         )
 
-    def _generate_admin_domainless_config(self) -> str:
-        """Plain HTTP proxy on admin.port → socket-activated admin gunicorn.
-        No domain or SSL: nginx just fronts the on-demand admin on its port."""
-        return (
-            f"server {{\n"
-            f"    listen {self.bench.config.admin.port};\n"
-            f"    listen [::]:{self.bench.config.admin.port};\n"
-            f"    server_name _;\n\n"
-            + self._render_admin_proxy_location()
-            + f"}}\n"
-        )
-
     def admin_cert_path(self) -> Path:
         return Path("/etc/letsencrypt/live") / self.bench.config.admin.domain / "fullchain.pem"
 
     def admin_cert_exists(self) -> bool:
-        domain = self.bench.config.admin.domain
-        live_dir = Path("/etc/letsencrypt/live") / domain
-        return (live_dir / "fullchain.pem").exists() and (live_dir / "privkey.pem").exists()
+        return self._cert_files_exist(Path("/etc/letsencrypt/live") / self.bench.config.admin.domain)
 
     def install_config(self) -> None:
         nginx_dir = self.bench.config.nginx.config_dir
@@ -323,6 +438,7 @@ class NginxManager:
             run_command(["sudo", "unlink", str(symlink_path)])
         run_command(["sudo", "ln", "-s", str(source_path), str(symlink_path)])
         self._set_worker_user()
+        self.install_default_server()
 
     def _set_worker_user(self) -> None:
         """Run nginx workers as the bench owner. Idempotent."""
@@ -340,6 +456,14 @@ class NginxManager:
         run_command(["sudo", "cp", str(staged), str(_NGINX_CONF)])
         staged.unlink()
 
+    def uninstall_config(self) -> None:
+        """Remove this bench's nginx vhosts (the symlink in the config dir), then
+        validate and reload the remaining machine-wide config. Certs are kept."""
+        symlink_path = self.bench.config.nginx.config_dir / f"{self.bench.config.name}.conf"
+        if symlink_path.exists() or symlink_path.is_symlink():
+            run_command(["sudo", "unlink", str(symlink_path)])
+        self.reload()
+
     def reload(self) -> None:
         run_command(["sudo", "nginx", "-t"])
         if is_linux():
@@ -351,5 +475,15 @@ class NginxManager:
         return Path("/etc/letsencrypt/live") / site.name / "fullchain.pem"
 
     def cert_exists(self, site: "SiteConfig") -> bool:
-        live_dir = Path("/etc/letsencrypt/live") / site.name
-        return (live_dir / "fullchain.pem").exists() and (live_dir / "privkey.pem").exists()
+        return self._cert_files_exist(Path("/etc/letsencrypt/live") / site.name)
+
+    @staticmethod
+    def _cert_files_exist(live_dir: Path) -> bool:
+        # /etc/letsencrypt/live is root-only (0700), so stat via sudo rather than
+        # letting Path.exists() raise EACCES for the bench user.
+        import subprocess
+
+        return subprocess.run(
+            ["sudo", "test", "-f", str(live_dir / "fullchain.pem"), "-a", "-f", str(live_dir / "privkey.pem")],
+            capture_output=True,
+        ).returncode == 0

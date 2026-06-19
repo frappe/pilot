@@ -10,6 +10,7 @@ from bench_cli.loader import load_bench
 # Help text for command groups (e.g. `bench setup ...`, `bench volume ...`).
 GROUP_HELP = {
     "setup": "Production setup commands.",
+    "remove": "Teardown commands.",
     "volume": "ZFS volume management commands.",
 }
 
@@ -82,5 +83,5 @@ def dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         (printer or parser.print_help)()
         return
 
-    bench = load_bench() if cls.requires_bench else None
+    bench = load_bench(require_explicit=cls.requires_explicit_bench) if cls.requires_bench else None
     cls.from_args(args, bench).run()

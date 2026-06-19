@@ -18,5 +18,7 @@ class StopCommand(Command):
     def run(self) -> None:
         from bench_cli.managers.process_manager import ProcessManagerFactory
 
-        ProcessManagerFactory.detect_running(self.bench).stop()
-        print("Bench stopped.")
+        manager = ProcessManagerFactory.detect_running(self.bench)
+        manager.stop()
+        manager.stop_admin()
+        print(f"Stopped bench {self.bench.config.name}.")

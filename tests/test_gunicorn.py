@@ -40,10 +40,10 @@ def make_bench(tmp_path: Path, gunicorn: GunicornConfig | None = None) -> Bench:
 
 def test_gunicorn_config_defaults() -> None:
     cfg = GunicornConfig()
-    assert cfg.workers == 4
-    assert cfg.threads == 4
+    assert cfg.workers == 2
+    assert cfg.threads == 8
     assert cfg.timeout == 120
-    assert cfg.worker_class == "sync"
+    assert cfg.worker_class == "gthread"
     assert cfg.malloc_arena_max == 2
 
 
@@ -111,8 +111,8 @@ def test_gunicorn_manager_generates_config_file(tmp_path: Path) -> None:
     assert config_path.exists()
     content = config_path.read_text()
     assert 'bind = "127.0.0.1:8000"' in content
-    assert "workers = 4" in content
-    assert "threads = 4" in content
+    assert "workers = 2" in content
+    assert "threads = 8" in content
     # threads > 0 forces gthread because sync workers ignore threads
     assert 'worker_class = "gthread"' in content
     assert "timeout = 120" in content
@@ -247,7 +247,7 @@ def test_toml_writer_includes_gunicorn_section(tmp_path: Path) -> None:
     assert "workers = 8" in toml
     assert "threads = 16" in toml
     assert "timeout = 120" in toml
-    assert 'worker_class = "sync"' in toml
+    assert 'worker_class = "gthread"' in toml
     assert "bind" not in toml
     assert "preload_app" not in toml
 
@@ -262,6 +262,7 @@ def test_production_config_parses_use_companion_manager(tmp_path: Path) -> None:
         '[[apps]]\nname = "frappe"\nrepo = "https://github.com/frappe/frappe"\nbranch = "version-16"\n\n'
         '[mariadb]\nroot_password = "root"\n\n'
         '[redis]\ncache_port = 13000\nqueue_port = 11000\n\n'
+        '[admin]\ndomain = "admin.test.localhost"\n\n'
         '[production]\nprocess_manager = "supervisor"\nnginx = true\nuse_companion_manager = true\n'
     )
     config = BenchConfig.from_file(toml)

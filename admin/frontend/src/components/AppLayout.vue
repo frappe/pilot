@@ -4,11 +4,15 @@ import { RouterView, useRoute } from 'vue-router'
 import { Breadcrumbs } from 'frappe-ui'
 import AppSidebar from './AppSidebar.vue'
 import SettingsModal from './SettingsModal.vue'
+import BenchSwitcherDialog from './BenchSwitcherDialog.vue'
+import NewBenchDialog from './NewBenchDialog.vue'
 
 const emit = defineEmits(['logout'])
 
 const route = useRoute()
 const showSettings = ref(false)
+const showChangeBench = ref(false)
+const showNewBench = ref(false)
 
 const breadcrumbs = computed(() => {
   const { path, params } = route
@@ -35,7 +39,12 @@ const breadcrumbs = computed(() => {
 
 <template>
   <div class="flex h-screen overflow-hidden">
-    <AppSidebar @logout="$emit('logout')" @open-settings="showSettings = true" />
+    <AppSidebar
+      @logout="$emit('logout')"
+      @open-settings="showSettings = true"
+      @change-bench="showChangeBench = true"
+      @new-bench="showNewBench = true"
+    />
     <main class="flex-1 overflow-hidden flex flex-col bg-surface-white">
       <header class="shrink-0 sticky top-0 z-[10] flex items-center border-b bg-surface-white px-5 py-2.5">
         <Breadcrumbs :items="breadcrumbs" />
@@ -46,5 +55,7 @@ const breadcrumbs = computed(() => {
       </div>
     </main>
     <SettingsModal v-model="showSettings" />
+    <BenchSwitcherDialog v-model="showChangeBench" />
+    <NewBenchDialog v-model="showNewBench" />
   </div>
 </template>

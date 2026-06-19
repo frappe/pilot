@@ -100,7 +100,7 @@ bench-cli/
         │   ├── redis_queue.conf
         │   ├── redis_socketio.conf
         │   ├── Procfile        # built-in process runner input
-        │   └── nginx/          # written by bench setup nginx (nginx.enabled = true)
+        │   └── nginx/          # written by bench setup nginx (production.enabled = true)
         │       ├── include.conf    # single include directive — symlinked into nginx config_dir
         │       ├── site1.example.com.conf
         │       └── site2.example.com.conf

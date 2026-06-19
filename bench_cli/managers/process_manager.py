@@ -23,6 +23,33 @@ def _cli_root() -> Path:
     return Path(_pkg.__file__).parent.parent
 
 
+def _tcp_port_open(port: int, host: str = "127.0.0.1") -> bool:
+    """True if something is listening on host:port — a reliable liveness check
+    for a foreground process that binds a known port."""
+    import socket
+
+    try:
+        with socket.create_connection((host, port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
+def _pids_listening(port: int) -> set[int]:
+    """PIDs of processes listening on ``port`` (this user), via ss. Empty on any
+    error or when nothing is bound."""
+    import re
+
+    try:
+        result = subprocess.run(
+            ["ss", "-H", "-ltnp", f"sport = :{port}"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return set()
+    return {int(m) for m in re.findall(r"pid=(\d+)", result.stdout)}
+
+
 _COLORS = ["\033[36m", "\033[32m", "\033[33m", "\033[35m", "\033[34m", "\033[96m", "\033[92m", "\033[93m"]
 _RESET = "\033[0m"
 
@@ -37,8 +64,11 @@ class ProcessDefinition:
 
 
 class ProcessManager:
-    def __init__(self, bench: "Bench") -> None:
+    def __init__(self, bench: "Bench", admin_dev: bool = False) -> None:
         self.bench = bench
+        # Off: admin backend serves the prebuilt UI from dist. On: also live-rebuild
+        # the UI and run the Vite dev server (for developing the admin frontend).
+        self.admin_dev = admin_dev
         self._procs: dict[str, subprocess.Popen] = {}
         self._stopping = False
 
@@ -78,20 +108,51 @@ class ProcessManager:
             self._cleanup_proc_pid_files()
 
     def stop(self) -> None:
-        if not self.pid_file.exists():
-            raise BenchError("Bench is not running (no PID file found at pids/bench.pid).")
-        pid = int(self.pid_file.read_text().strip())
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except ProcessLookupError:
+        # The full foreground runner writes bench.pid and runs everything in its
+        # process group, so SIGTERM there stops the lot.
+        if self.pid_file.exists():
+            pid = int(self.pid_file.read_text().strip())
             self.pid_file.unlink(missing_ok=True)
-            raise BenchError(f"Process {pid} is not running. Removed stale PID file.")
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                raise BenchError(f"Process {pid} is not running. Removed stale PID file.")
+            return
+
+        # No pid file: e.g. the pre-init setup wizard, which doesn't write one.
+        # Stop whatever is actually bound to this bench's ports.
+        config = self.bench.config
+        pids = set()
+        for port in (config.admin.port, config.http_port):
+            pids |= _pids_listening(port)
+        if not pids:
+            raise BenchError("Bench is not running.")
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
 
     def is_running(self) -> bool:
-        process_names = [pd.name for pd in self._process_definitions()]
-        pattern = "|".join(process_names)
-        result = subprocess.run(["pgrep", "-f", pattern], capture_output=True)
-        return bool(result.stdout.strip())
+        # The foreground runner writes its own pid to bench.pid and removes it on
+        # exit — a live pid there is a reliable signal (pgrep on process names
+        # matched unrelated processes system-wide).
+        if not self.pid_file.exists():
+            return False
+        try:
+            os.kill(int(self.pid_file.read_text().strip()), 0)
+            return True
+        except (ValueError, ProcessLookupError, PermissionError, OSError):
+            return False
+
+    def stop_admin(self) -> None:
+        # Dev admin runs in the foreground Procfile group; stop() already ends it.
+        pass
+
+    def admin_is_running(self) -> bool:
+        # In development the admin is served on admin.port by the foreground
+        # runner; a bound port is the truth (not whether the runner pid is alive).
+        return _tcp_port_open(self.bench.config.admin.port)
 
     def reload_web(self) -> None:
         pass
@@ -195,12 +256,13 @@ class ProcessManager:
 
     def _process_definitions(self) -> List[ProcessDefinition]:
         defs = [self._to_dev(pd) for pd in self._prod_process_definitions()]
-        defs.append(self._admin_frontend_dev_definition())
+        if self.admin_dev:
+            defs.append(self._admin_frontend_dev_definition())
         return defs
 
     def _to_dev(self, pd: ProcessDefinition) -> ProcessDefinition:
         """Map a production process definition to its dev-mode variant."""
-        if pd.name == "admin":
+        if pd.name == "admin" and self.admin_dev:
             return self._admin_dev_definition()
         if pd.name == "web":
             return self._web_definition(dev=True)
@@ -257,11 +319,18 @@ class ProcessManager:
 
     def _worker_definitions(self, queue: str, count: int) -> List[ProcessDefinition]:
         sites = self.bench.sites_path
+        # `queue` may be a comma-separated list (a worker group can serve several
+        # queues). Commas are illegal in a process/unit name — they break
+        # supervisor's comma-delimited `programs=` list — so slug them for the
+        # name and log file while keeping the real list in the --queue argument.
+        import re
+
+        slug = re.sub(r"[^A-Za-z0-9]+", "_", queue).strip("_") or "default"
         return [
             ProcessDefinition(
-                name=f"worker_{queue}_{i}",
+                name=f"worker_{slug}_{i}",
                 command=f"cd {sites} && {self.bench.env_path}/bin/python -m frappe.utils.bench_helper frappe worker --queue {queue}",
-                log_file=self.bench.logs_path / f"worker_{queue}_{i}.log",
+                log_file=self.bench.logs_path / f"worker_{slug}_{i}.log",
                 env=self._py_memory_env(),
             )
             for i in range(1, count + 1)

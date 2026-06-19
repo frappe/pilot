@@ -24,6 +24,7 @@ MINIMAL_VALID_DATA: dict = {
     ],
     "mariadb": {"root_password": "root"},
     "redis": {"cache_port": 13000, "queue_port": 11000},
+    "admin": {"domain": "admin.test.localhost"},
 }
 
 
@@ -137,14 +138,6 @@ def test_rule_11_invalid_letsencrypt_email() -> None:
     with pytest.raises(ConfigError) as exc_info:
         load_from_dict(data)
     assert "letsencrypt.email" in str(exc_info.value)
-
-
-def test_rule_13_nginx_ports_must_be_distinct() -> None:
-    data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["nginx"] = {"enabled": False, "http_port": 80, "https_port": 80}
-    with pytest.raises(ConfigError) as exc_info:
-        load_from_dict(data)
-    assert "nginx.http_port" in str(exc_info.value) or "nginx.https_port" in str(exc_info.value)
 
 
 # ── Dependency version tests ──────────────────────────────────────────────────
@@ -286,90 +279,105 @@ def test_branches_single_branch_no_list_is_valid() -> None:
 
 def test_production_defaults() -> None:
     p = ProductionConfig()
-    assert p.process_manager == "none"
-    assert p.nginx is False
-    assert p.enabled is False
-
-
-def test_production_enabled_when_supervisor() -> None:
-    p = ProductionConfig(process_manager="supervisor")
-    assert p.enabled is True
-
-
-def test_production_enabled_when_systemd() -> None:
-    p = ProductionConfig(process_manager="systemd")
-    assert p.enabled is True
-
-
-def test_production_not_enabled_when_none() -> None:
-    p = ProductionConfig(process_manager="none")
+    assert p.process_manager == ""
     assert p.enabled is False
 
 
 def test_production_parse_new_format_supervisor() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["production"] = {"process_manager": "supervisor", "nginx": False}
+    data["production"] = {"enabled": True, "process_manager": "supervisor"}
     config = load_from_dict(data)
     assert config.production.process_manager == "supervisor"
-    assert config.production.nginx is False
     assert config.production.enabled is True
 
 
-def test_production_parse_new_format_systemd_with_nginx() -> None:
+def test_production_parse_new_format_systemd() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["production"] = {"process_manager": "systemd", "nginx": True}
+    data["production"] = {"enabled": True, "process_manager": "systemd"}
     config = load_from_dict(data)
     assert config.production.process_manager == "systemd"
-    assert config.production.nginx is True
+    assert config.production.enabled is True
 
 
-def test_production_parse_new_format_none() -> None:
+def test_production_parse_new_format_disabled() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["production"] = {"process_manager": "none"}
+    data["production"] = {"enabled": False}
     config = load_from_dict(data)
-    assert config.production.process_manager == "none"
+    assert config.production.process_manager == ""
     assert config.production.enabled is False
 
 
-def test_production_legacy_enabled_supervisor() -> None:
+def test_production_supervisord_alias_normalized() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["production"] = {"enabled": True, "lightweight": False, "nginx": True}
+    data["production"] = {"enabled": True, "process_manager": "supervisord"}
     config = load_from_dict(data)
     assert config.production.process_manager == "supervisor"
-    assert config.production.nginx is True
 
 
-def test_production_legacy_enabled_systemd() -> None:
+def test_production_legacy_process_manager_implies_enabled() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = {"process_manager": "supervisor", "nginx": True}
+    config = load_from_dict(data)
+    assert config.production.process_manager == "supervisor"
+    assert config.production.enabled is True
+
+
+def test_production_legacy_process_manager_none_disables() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = {"process_manager": "none"}
+    config = load_from_dict(data)
+    assert config.production.process_manager == ""
+    assert config.production.enabled is False
+
+
+def test_production_legacy_lightweight_systemd() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
     data["production"] = {"enabled": True, "lightweight": True}
     config = load_from_dict(data)
     assert config.production.process_manager == "systemd"
-
-
-def test_production_legacy_disabled() -> None:
-    data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["production"] = {"enabled": False}
-    config = load_from_dict(data)
-    assert config.production.process_manager == "none"
-    assert config.production.enabled is False
+    assert config.production.enabled is True
 
 
 def test_production_missing_section_defaults() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
     config = load_from_dict(data)
-    assert config.production.process_manager == "none"
-    assert config.production.nginx is False
+    assert config.production.process_manager == ""
+    assert config.production.enabled is False
 
 
-def test_toml_writer_production_uses_process_manager() -> None:
+def test_production_enabled_requires_process_manager() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["production"] = {"process_manager": "supervisor", "nginx": True}
+    data["production"] = {"enabled": True}
+    data["admin"] = {"domain": "admin.example.com"}
+    with pytest.raises(ConfigError):
+        load_from_dict(data)
+
+
+def test_toml_writer_production_emits_enabled_and_pm() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = {"enabled": True, "process_manager": "supervisor"}
     config = load_from_dict(data)
     toml = bench_config_to_toml(config)
+    assert "enabled = true" in toml.split("[production]")[1].split("[")[0]
     assert 'process_manager = "supervisor"' in toml
-    assert "nginx = true" in toml
+    assert "nginx" not in toml.split("[production]")[1].split("[")[0]
     assert "lightweight" not in toml
-    assert "enabled" not in toml.split("[production]")[1].split("[")[0]
+
+
+def test_toml_writer_production_disabled_omits_pm() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    config = load_from_dict(data)
+    section = bench_config_to_toml(config).split("[production]")[1].split("[")[0]
+    assert "enabled = false" in section
+    assert "process_manager" not in section
+
+
+def test_admin_tls_roundtrip() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["admin"] = {"domain": "admin.example.com", "tls": False}
+    config = load_from_dict(data)
+    assert config.admin.tls is False
+    assert "tls = false" in bench_config_to_toml(config)
 
 
 # ── volume backing ────────────────────────────────────────────────────────────

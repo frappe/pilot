@@ -36,7 +36,7 @@ class DropSiteCommand:
         write_toml(bench_toml, raw)
 
     def _reload_nginx(self) -> None:
-        if not self.bench.config.production.nginx:
+        if not self.bench.config.production.enabled:
             return
         from bench_cli.managers.nginx_manager import NginxManager
         mgr = NginxManager(self.bench)

@@ -17,16 +17,30 @@ class NewCommand(Command):
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
         parser.add_argument("name", help="Name for the new bench.")
+        parser.add_argument(
+            "--admin-domain",
+            default="",
+            help="Admin domain for this bench (defaults to <name>-admin.localhost).",
+        )
 
     @classmethod
     def from_args(cls, args, bench):
         from bench_cli.loader import cli_root
 
-        return cls(cli_root() / "benches" / args.name, args.name)
+        return cls(
+            cli_root() / "benches" / args.name,
+            args.name,
+            admin_domain=args.admin_domain,
+        )
 
-    def __init__(self, target_directory: Path, name: str) -> None:
+    def __init__(self, target_directory: Path, name: str, process_manager: str = "",
+                 admin_domain: str = "", admin_tls: bool | None = None) -> None:
         self.target_directory = target_directory
         self.name = name
+        self.process_manager = process_manager
+        self.admin_domain = admin_domain
+        # None → inherit the server-wide value from a sibling bench (default False).
+        self.admin_tls = admin_tls
 
     def run(self) -> None:
         from bench_cli.config.bench_toml_builder import BenchTomlBuilder, default_ports
@@ -45,7 +59,20 @@ class NewCommand(Command):
 
         offset = self._pick_port_offset(self.target_directory)
         print("Writing bench.toml")
-        settings = {"admin_password": secrets.token_hex(nbytes=5)}
+        admin_tls = self.admin_tls if self.admin_tls is not None else self._sibling_admin_tls()
+        settings = {
+            "admin_password": secrets.token_hex(nbytes=5),
+            "admin_domain": self.admin_domain or f"{self.name}-admin.localhost",
+            "admin_tls": admin_tls,
+        }
+        if self.process_manager:
+            settings["production_process_manager"] = self.process_manager
+        # The Let's Encrypt account email is a server-wide setting; inherit it
+        # from a sibling bench so a new production bench can issue certs without
+        # re-entering it.
+        sibling_email = self._sibling_letsencrypt_email()
+        if sibling_email:
+            settings["letsencrypt_email"] = sibling_email
         # New benches get their own MariaDB instance (mariadb@<name>) with an
         # isolated socket/datadir; mariadb.port is offset automatically via
         # _PORT_FIELDS. Existing benches without these fields keep using the
@@ -66,6 +93,22 @@ class NewCommand(Command):
         print("\nNext step:")
         print("  bench start")
         print(f"  Open http://localhost:{admin_port} — the setup wizard guides you through the rest,")
+
+    def _sibling_letsencrypt_email(self) -> str:
+        """The Let's Encrypt email from any sibling bench that has one, so a new
+        production bench inherits the server-wide ACME account."""
+        for _, config in iter_sibling_benches(self.target_directory):
+            email = getattr(config.letsencrypt, "email", "")
+            if email:
+                return email
+        return ""
+
+    def _sibling_admin_tls(self) -> bool:
+        """Carry forward the server-wide TLS choice from a sibling bench; default
+        to False (plain HTTP, enable TLS explicitly) when this is the first bench."""
+        for _, config in iter_sibling_benches(self.target_directory):
+            return bool(getattr(config.admin, "tls", False))
+        return False
 
     def _pick_port_offset(self, bench_path: Path) -> int:
         """Smallest offset (added to every base port) that collides with

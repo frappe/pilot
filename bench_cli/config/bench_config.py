@@ -20,6 +20,11 @@ _BENCH_NAME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]*$")
 _EMAIL_PATTERN = re.compile(r"^[^@]+@[^@]+\.[^@]+$")
 _VERSION_PATTERN = re.compile(r"^\d+(\.\d+)*$")
 _ZFS_SIZE_PATTERN = re.compile(r"^[1-9]\d*[KMGTkmgt]?$")
+# Lenient hostname: dotted labels of alphanumerics/hyphens. Allows dev names
+# like "admin1.localhost" and real domains like "admin.example.com".
+_HOSTNAME_PATTERN = re.compile(
+    r"^(?=.{1,253}$)[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
+)
 _REDIS_PORT_MIN = 1024
 _REDIS_PORT_MAX = 65535
 _PORT_MIN = 1
@@ -36,7 +41,7 @@ class BenchConfig:
     apps: List[AppConfig] = field(default_factory=list)
     http_port: int = 8000
     socketio_port: int = 9000
-    socketio_backend: str = "python"
+    socketio_backend: str = "node"
     default_branch: str = ""
     production: ProductionConfig = field(default_factory=ProductionConfig)
     nginx: NginxConfig = field(default_factory=NginxConfig)
@@ -69,7 +74,6 @@ class BenchConfig:
         redis = cls._parse_redis(data.get("redis", {}))
         workers = cls._parse_workers(data.get("workers", []))
         production = cls._parse_production(data.get("production"))
-        nginx = cls._parse_nginx(data.get("nginx", {}))
         gunicorn = cls._parse_gunicorn(data.get("gunicorn", {}), bench_data.get("http_port", 8000))
         letsencrypt = cls._parse_letsencrypt(data.get("letsencrypt", {}))
         admin = cls._parse_admin(data.get("admin", {}))
@@ -82,14 +86,13 @@ class BenchConfig:
             python_version=bench_data.get("python", ""),
             http_port=bench_data.get("http_port", 8000),
             socketio_port=bench_data.get("socketio_port", 9000),
-            socketio_backend=bench_data.get("socketio_backend", "python"),
+            socketio_backend=bench_data.get("socketio_backend", "node"),
             default_branch=bench_data.get("default_branch", ""),
             apps=apps,
             mariadb=mariadb,
             redis=redis,
             workers=workers,
             production=production,
-            nginx=nginx,
             gunicorn=gunicorn,
             letsencrypt=letsencrypt,
             admin=admin,
@@ -119,47 +122,44 @@ class BenchConfig:
         return WorkerConfig(groups=groups)
 
     @staticmethod
+    def _normalize_process_manager(value: str) -> str:
+        v = (value or "").strip().lower()
+        if v in ("", "none"):
+            return ""
+        if v == "supervisord":
+            return "supervisor"
+        return v
+
+    @staticmethod
     def _parse_production(data: dict | None) -> ProductionConfig:
         if data is None:
             return ProductionConfig()
-        if "process_manager" in data:
-            return ProductionConfig(
-                process_manager=str(data.get("process_manager", "none")),
-                nginx=data.get("nginx", False),
-                use_companion_manager=data.get("use_companion_manager", False),
-            )
-        # Legacy format: enabled + lightweight → derive process_manager
-        if data.get("enabled", False):
-            pm = "systemd" if data.get("lightweight", False) else "supervisor"
+        pm = BenchConfig._normalize_process_manager(str(data.get("process_manager", "")))
+        if "enabled" in data:
+            enabled = bool(data.get("enabled"))
         else:
-            pm = "none"
+            # Legacy: presence of a real process_manager implied production.
+            enabled = pm != ""
+        # Oldest format derived the manager from a `lightweight` flag.
+        if enabled and not pm and "lightweight" in data:
+            pm = "systemd" if data.get("lightweight", False) else "supervisor"
         return ProductionConfig(
+            enabled=enabled,
             process_manager=pm,
-            nginx=data.get("nginx", False),
             use_companion_manager=data.get("use_companion_manager", False),
         )
 
     @staticmethod
-    def _parse_nginx(data: dict) -> NginxConfig:
-        config_dir = data.get("config_dir", "/etc/nginx/conf.d")
-        return NginxConfig(
-            http_port=data.get("http_port", 80),
-            https_port=data.get("https_port", 443),
-            config_dir=Path(config_dir),
-            worker_processes=str(data.get("worker_processes", "auto")),
-            client_max_body_size=data.get("client_max_body_size", "50m"),
-        )
-
-    @staticmethod
     def _parse_gunicorn(data: dict, http_port: int = 8000) -> GunicornConfig:
+        d = GunicornConfig()
         return GunicornConfig(
-            workers=data.get("workers", 4),
-            threads=data.get("threads", 4),
-            timeout=data.get("timeout", 120),
-            worker_class=data.get("worker_class", "sync"),
-            malloc_arena_max=data.get("malloc_arena_max", 0),
-            max_requests=data.get("max_requests", 0),
-            max_requests_jitter=data.get("max_requests_jitter", 0),
+            workers=data.get("workers", d.workers),
+            threads=data.get("threads", d.threads),
+            timeout=data.get("timeout", d.timeout),
+            worker_class=data.get("worker_class", d.worker_class),
+            malloc_arena_max=data.get("malloc_arena_max", d.malloc_arena_max),
+            max_requests=data.get("max_requests", d.max_requests),
+            max_requests_jitter=data.get("max_requests_jitter", d.max_requests_jitter),
         )
 
     @staticmethod
@@ -178,6 +178,7 @@ class BenchConfig:
             enabled=data.get("enabled", False),
             password=data.get("password", ""),
             domain=data.get("domain", ""),
+            tls=data.get("tls", False),
         )
 
     @staticmethod
@@ -213,11 +214,12 @@ class BenchConfig:
         self._validate_redis_ports()
         self._validate_worker_counts()
         self._validate_letsencrypt_email()
-        self._validate_nginx_ports_distinct()
         self._validate_gunicorn()
         self._validate_mariadb_version()
         self._validate_mariadb_instance()
         self._validate_redis_version()
+        self._validate_production()
+        self._validate_admin_domain()
         if self.volume.enabled:
             self._validate_volume()
 
@@ -249,8 +251,6 @@ class BenchConfig:
             "bench.http_port": self.http_port,
             "bench.socketio_port": self.socketio_port,
             "mariadb.port": self.mariadb.port,
-            "nginx.http_port": self.nginx.http_port,
-            "nginx.https_port": self.nginx.https_port,
         }
         for name, port in ports.items():
             if not (_PORT_MIN <= port <= _PORT_MAX):
@@ -286,9 +286,33 @@ class BenchConfig:
         if self.letsencrypt.email and not _EMAIL_PATTERN.match(self.letsencrypt.email):
             raise ConfigError(f"letsencrypt.email '{self.letsencrypt.email}' is not a valid email address.")
 
-    def _validate_nginx_ports_distinct(self) -> None:
-        if self.nginx.http_port == self.nginx.https_port:
-            raise ConfigError(f"nginx.http_port and nginx.https_port must be distinct, but both are set to {self.nginx.http_port}.")
+    def _validate_production(self) -> None:
+        from bench_cli.config.production_config import VALID_PROCESS_MANAGERS
+
+        pm = self.production.process_manager
+        if self.production.enabled:
+            if pm not in VALID_PROCESS_MANAGERS:
+                raise ConfigError(
+                    f"production.process_manager must be one of {', '.join(VALID_PROCESS_MANAGERS)} "
+                    f"when production is enabled (bench '{self.name}'), got '{pm or '(empty)'}'."
+                )
+        elif pm and pm not in VALID_PROCESS_MANAGERS:
+            raise ConfigError(
+                f"production.process_manager '{pm}' is invalid (bench '{self.name}'). "
+                f"Must be one of {', '.join(VALID_PROCESS_MANAGERS)}."
+            )
+
+    def _validate_admin_domain(self) -> None:
+        domain = self.admin.domain
+        if not domain:
+            if self.production.enabled:
+                raise ConfigError(
+                    f"admin.domain is required in production but is missing for bench '{self.name}'. "
+                    f"Set it in bench.toml (e.g. admin.example.com) or run 'bench setup production' to be prompted."
+                )
+            return
+        if not _HOSTNAME_PATTERN.match(domain):
+            raise ConfigError(f"admin.domain '{domain}' is not a valid hostname (bench '{self.name}').")
 
     def _validate_gunicorn(self) -> None:
         if not isinstance(self.gunicorn.workers, int) or self.gunicorn.workers < 1:

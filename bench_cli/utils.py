@@ -3,7 +3,7 @@ import shutil
 import subprocess
 from collections.abc import Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from bench_cli.exceptions import BenchError, CommandError
 
@@ -19,6 +19,8 @@ def iter_sibling_benches(bench_path: Path) -> Iterator[tuple[Path, "BenchConfig"
     Skips ``bench_path`` itself and any directory without a readable
     ``bench.toml``. ``bench_path`` need not exist yet (e.g. during ``bench new``).
     """
+    import tomllib
+
     from bench_cli.core.bench import BenchConfig
 
     parent = bench_path.parent
@@ -32,9 +34,68 @@ def iter_sibling_benches(bench_path: Path) -> Iterator[tuple[Path, "BenchConfig"
         if not toml_path.exists():
             continue
         try:
-            yield sibling, BenchConfig.from_file(toml_path)
+            # Parse-only (no validate) so half-configured siblings are still
+            # seen — important for port-offset collision avoidance and
+            # cross-bench hostname checks.
+            yield sibling, BenchConfig._from_dict(tomllib.loads(toml_path.read_text()))
         except Exception:
             continue
+
+
+def normalize_host(host: str) -> str:
+    """Canonical form for hostname comparison: lowercased, trailing dot stripped,
+    internationalized labels reduced to their ASCII (IDNA) form. Returns an empty
+    string for falsy input. Best-effort — a name that cannot be IDNA-encoded is
+    returned lowercased/stripped so comparison still works for ASCII domains."""
+    if not host:
+        return ""
+    h = host.strip().lower().rstrip(".")
+    try:
+        h = h.encode("idna").decode("ascii")
+    except (UnicodeError, ValueError):
+        pass
+    return h
+
+
+def _bench_hosts(bench_dir: Path, config: "BenchConfig") -> Iterator[str]:
+    """Yield every hostname a bench claims: its admin domain, each site's name,
+    and each site's configured ``domains`` aliases — all normalized."""
+    import json
+
+    if config.admin.domain:
+        yield normalize_host(config.admin.domain)
+    sites_dir = bench_dir / "sites"
+    if not sites_dir.is_dir():
+        return
+    for site in sites_dir.iterdir():
+        cfg = site / "site_config.json"
+        if not cfg.exists():
+            continue
+        yield normalize_host(site.name)
+        try:
+            for alias in json.loads(cfg.read_text()).get("domains", []) or []:
+                name = alias.get("domain") if isinstance(alias, dict) else alias
+                if name:
+                    yield normalize_host(str(name))
+        except Exception:
+            continue
+
+
+def host_owner(bench_path: Path, host: str) -> Optional[str]:
+    """Return the name of *another* bench that already claims ``host`` — as one of
+    its sites (name or alias) or as its ``admin.domain`` — or ``None`` if the host
+    is free across all sibling benches.
+
+    Hosts are compared in normalized form (lowercase, no trailing dot, IDNA), so
+    two benches can never fight over the same hostname served by the same nginx.
+    """
+    target = normalize_host(host)
+    if not target:
+        return None
+    for sibling, config in iter_sibling_benches(bench_path):
+        if target in _bench_hosts(sibling, config):
+            return config.name
+    return None
 
 
 def write_toml(path: Path, data: dict) -> None:

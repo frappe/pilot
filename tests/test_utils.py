@@ -6,7 +6,69 @@ from pathlib import Path
 
 import pytest
 
-from bench_cli.utils import write_toml
+from bench_cli.utils import host_owner, normalize_host, write_toml
+
+
+def _make_bench(benches: Path, name: str, *, admin_domain: str, sites: list[str] | None = None) -> Path:
+    bench = benches / name
+    (bench / "sites").mkdir(parents=True, exist_ok=True)
+    (bench / "bench.toml").write_text(
+        f'[bench]\nname = "{name}"\npython = "3.14"\n\n'
+        '[[apps]]\nname = "frappe"\nrepo = "https://github.com/frappe/frappe"\nbranch = "version-16"\n\n'
+        '[mariadb]\nroot_password = "root"\n\n'
+        '[redis]\ncache_port = 13000\nqueue_port = 11000\n\n'
+        f'[admin]\ndomain = "{admin_domain}"\n'
+    )
+    for site in sites or []:
+        site_dir = bench / "sites" / site
+        site_dir.mkdir(parents=True, exist_ok=True)
+        (site_dir / "site_config.json").write_text("{}")
+    return bench
+
+
+def test_host_owner_detects_sibling_site(tmp_path: Path) -> None:
+    benches = tmp_path / "benches"
+    _make_bench(benches, "alpha", admin_domain="alpha-admin.localhost", sites=["shop.localhost"])
+    assert host_owner(benches / "beta", "shop.localhost") == "alpha"
+
+
+def test_host_owner_detects_sibling_admin_domain(tmp_path: Path) -> None:
+    benches = tmp_path / "benches"
+    _make_bench(benches, "alpha", admin_domain="admin.example.com")
+    assert host_owner(benches / "beta", "admin.example.com") == "alpha"
+
+
+def test_host_owner_free_host_returns_none(tmp_path: Path) -> None:
+    benches = tmp_path / "benches"
+    _make_bench(benches, "alpha", admin_domain="alpha-admin.localhost", sites=["shop.localhost"])
+    assert host_owner(benches / "beta", "fresh.localhost") is None
+
+
+def test_host_owner_ignores_self(tmp_path: Path) -> None:
+    benches = tmp_path / "benches"
+    bench = _make_bench(benches, "alpha", admin_domain="alpha-admin.localhost", sites=["shop.localhost"])
+    # Scanning from alpha itself must not report alpha as the owner.
+    assert host_owner(bench, "shop.localhost") is None
+
+
+def test_host_owner_normalizes_case_and_trailing_dot(tmp_path: Path) -> None:
+    benches = tmp_path / "benches"
+    _make_bench(benches, "alpha", admin_domain="Admin.Example.COM")
+    assert host_owner(benches / "beta", "admin.example.com.") == "alpha"
+
+
+def test_host_owner_detects_site_alias(tmp_path: Path) -> None:
+    benches = tmp_path / "benches"
+    bench = _make_bench(benches, "alpha", admin_domain="alpha-admin.localhost", sites=["shop.localhost"])
+    site_cfg = bench / "sites" / "shop.localhost" / "site_config.json"
+    site_cfg.write_text('{"domains": ["www.shop.example.com"]}')
+    assert host_owner(benches / "beta", "www.shop.example.com") == "alpha"
+
+
+def test_normalize_host() -> None:
+    assert normalize_host("Admin.Example.COM.") == "admin.example.com"
+    assert normalize_host("") == ""
+    assert normalize_host("  Foo.Local  ") == "foo.local"
 
 
 def _roundtrip(tmp_path: Path, data: dict) -> dict:

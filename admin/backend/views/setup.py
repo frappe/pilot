@@ -180,6 +180,19 @@ def start_init():
         return jsonify({"ok": False, "error": str(exc)}), 500
 
 
+@setup_bp.route("/setup-production", methods=["POST"])
+def start_setup_production():
+    """Deploy the freshly-initialized bench to production using the process
+    manager + admin domain stored during the wizard, so it's reachable at its
+    domain instead of a localhost dev port."""
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    try:
+        task_id = TaskRunner(bench_root).run("setup-production", {})
+        return jsonify({"ok": True, "task_id": task_id})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
 @setup_bp.route("/finish", methods=["POST"])
 def finish_setup():
     """Shut down the standalone wizard server so the user can run `bench start`.

@@ -16,6 +16,12 @@ from ..readers.site_reader import SiteReader
 
 sites_bp = Blueprint("sites", __name__)
 
+# Confidential / system-managed site_config keys. These are never sent to the
+# admin UI and cannot be edited through it — they are preserved as-is on disk.
+PROTECTED_CONFIG_KEYS = frozenset(
+    {"db_name", "db_password", "db_socket", "db_type", "db_user", "installed_apps", "ssl"}
+)
+
 
 @sites_bp.route("/")
 def index():
@@ -24,7 +30,13 @@ def index():
         sites = SiteReader(bench_root).read_all()
     except Exception as error:
         return jsonify({"error": str(error)}), 500
-    return jsonify([asdict(s) for s in sites])
+
+    payload = []
+    for s in sites:
+        d = asdict(s)
+        d["site_config"] = _public_config(s.site_config)
+        payload.append(d)
+    return jsonify(payload)
 
 
 @sites_bp.route("/<name>")
@@ -47,14 +59,17 @@ def detail(name: str):
     try:
         bench_config = BenchConfig.from_file(bench_root / "bench.toml")
         http_port = bench_config.http_port
-        nginx_enabled = bench_config.production.nginx
+        nginx_enabled = bench_config.production.enabled
+        admin_tls = bench_config.admin.tls
     except Exception:
         http_port = 8000
         nginx_enabled = False
+        admin_tls = False
 
     site_dict = asdict(site)
-    site_dict["site_config"] = _mask_password(site.site_config)
-    return jsonify({"site": site_dict, "installable_apps": installable, "http_port": http_port, "nginx_enabled": nginx_enabled})
+    site_dict["site_config"] = _public_config(site.site_config)
+    site_dict["ssl"] = bool(site.site_config.get("ssl"))
+    return jsonify({"site": site_dict, "installable_apps": installable, "http_port": http_port, "nginx_enabled": nginx_enabled, "admin_tls": admin_tls})
 
 
 @sites_bp.route("/create", methods=["POST"])
@@ -64,13 +79,9 @@ def create():
 
     name = (data.get("name") or "").strip()
     admin_password = (data.get("admin_password") or "admin").strip() or "admin"
-    err = validate_site_name(name)
+    err = validate_site_name(name) or _new_site_name_error(bench_root, name)
     if err:
         return jsonify({"ok": False, "error": err})
-
-    # Check site doesn't already exist
-    if (bench_root / "sites" / name / "site_config.json").exists():
-        return jsonify({"ok": False, "error": f"Site '{name}' already exists."})
 
     try:
         task_id = TaskRunner(bench_root).run(
@@ -89,11 +100,9 @@ def create_from_upload():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     name = (request.form.get("name") or "").strip()
     admin_password = (request.form.get("admin_password") or "admin").strip() or "admin"
-    err = validate_site_name(name)
+    err = validate_site_name(name) or _new_site_name_error(bench_root, name)
     if err:
         return jsonify({"ok": False, "error": err})
-    if (bench_root / "sites" / name / "site_config.json").exists():
-        return jsonify({"ok": False, "error": f"Site '{name}' already exists."})
 
     db_upload = request.files.get("db_file")
     if not db_upload:
@@ -248,9 +257,12 @@ def login_to_site(name: str):
     from bench_cli.config.bench_config import BenchConfig
 
     try:
-        http_port = BenchConfig.from_file(bench_root / "bench.toml").http_port
+        bench_config = BenchConfig.from_file(bench_root / "bench.toml")
+        http_port = bench_config.http_port
+        nginx_enabled = bench_config.production.enabled
     except Exception:
         http_port = 8000
+        nginx_enabled = False
 
     try:
         conn = http.client.HTTPConnection("localhost", http_port, timeout=10)
@@ -282,7 +294,19 @@ def login_to_site(name: str):
     if not sid or sid == "Guest":
         return jsonify({"ok": False, "error": "Login failed — wrong password?"})
 
-    return jsonify({"ok": True, "url": f"http://{name}:{http_port}/desk?sid={sid}"})
+    # Behind nginx the site is served by domain on 80/443; only dev talks to the gunicorn port directly.
+    if nginx_enabled:
+        import json
+
+        try:
+            ssl = bool(json.loads((bench_root / "sites" / name / "site_config.json").read_text()).get("ssl"))
+        except Exception:
+            ssl = False
+        url = f"{'https' if ssl else 'http'}://{name}/desk?sid={sid}"
+    else:
+        url = f"http://{name}:{http_port}/desk?sid={sid}"
+
+    return jsonify({"ok": True, "url": url})
 
 
 @sites_bp.route("/<name>/enable-ssl", methods=["POST"])
@@ -291,6 +315,36 @@ def enable_ssl(name: str):
     config_path = bench_root / "sites" / name / "site_config.json"
     if not config_path.exists():
         return jsonify({"ok": False, "error": "Site not found."}), 404
+
+    from bench_cli.config.bench_config import BenchConfig
+    from bench_cli.config.toml_writer import bench_config_to_toml
+
+    from ..validators import validate_email
+
+    try:
+        config = BenchConfig.from_file(bench_root / "bench.toml")
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    # Let's Encrypt needs an ACME account email; persist one if the UI supplied it.
+    data = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip()
+    if email:
+        if err := validate_email(email):
+            return jsonify({"ok": False, "error": err, "needs_email": True})
+        config.letsencrypt.email = email
+        try:
+            (bench_root / "bench.toml").write_text(bench_config_to_toml(config))
+        except Exception as e:
+            return jsonify({"ok": False, "error": f"Failed to save email: {e}"}), 500
+
+    # No email anywhere — ask the UI to collect one instead of starting a doomed task.
+    if not config.letsencrypt.email:
+        return jsonify({
+            "ok": False,
+            "needs_email": True,
+            "error": "A Let's Encrypt account email is required to issue certificates.",
+        })
 
     import json
 
@@ -324,15 +378,13 @@ def update_config(name: str):
 
     current = json.loads(config_path.read_text())
 
-    # Preserve the real db_password if the masked sentinel came back
-    _MASK = "••••••••"
-    if data.get("db_password") == _MASK:
-        if "db_password" in current:
-            data["db_password"] = current["db_password"]
-        else:
-            del data["db_password"]
+    # The editable keys are whatever the UI sent, minus any protected key it may
+    # have included; protected keys are always preserved from the on-disk config.
+    editable = {k: v for k, v in data.items() if k not in PROTECTED_CONFIG_KEYS}
+    preserved = {k: v for k, v in current.items() if k in PROTECTED_CONFIG_KEYS}
+    merged = {**editable, **preserved}
 
-    config_path.write_text(json.dumps(data, indent=1))
+    config_path.write_text(json.dumps(merged, indent=1))
     return jsonify({"ok": True})
 
 
@@ -421,8 +473,34 @@ def delete_backup_schedule(name: str):
     return jsonify({"ok": True})
 
 
-def _mask_password(config: dict) -> dict:
-    masked = copy.deepcopy(config)
-    if "db_password" in masked:
-        masked["db_password"] = "••••••••"
-    return masked
+def _new_site_name_error(bench_root: Path, name: str) -> str | None:
+    """Validate a new-site name before any task starts, so the error lands in the UI
+    instead of failing mid-run. Mirrors NewSiteCommand._validate."""
+    from bench_cli.config.bench_config import BenchConfig
+    from bench_cli.utils import host_owner, normalize_host
+
+    if (bench_root / "sites" / name / "site_config.json").exists():
+        return f"Site '{name}' already exists."
+
+    owner = host_owner(bench_root, name)
+    if owner:
+        return (
+            f"'{name}' is already used by bench '{owner}' (as a site or its admin domain). "
+            f"All benches share one nginx, so hostnames must be unique."
+        )
+
+    try:
+        admin_domain = BenchConfig.from_file(bench_root / "bench.toml").admin.domain
+    except Exception:
+        admin_domain = ""
+    if admin_domain and normalize_host(name) == normalize_host(admin_domain):
+        return (
+            f"Site '{name}' clashes with this bench's admin domain. "
+            f"An admin domain must not match a site domain."
+        )
+    return None
+
+
+def _public_config(config: dict) -> dict:
+    """Drop confidential / system-managed keys before exposing site_config."""
+    return {k: copy.deepcopy(v) for k, v in config.items() if k not in PROTECTED_CONFIG_KEYS}

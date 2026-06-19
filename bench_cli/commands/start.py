@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import os
 import subprocess
 import tomllib
@@ -15,16 +16,85 @@ class RunCommand(Command):
     name = "start"
     help = "Start all bench processes."
 
-    def __init__(self, bench: "Bench") -> None:
+    @classmethod
+    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--admin-dev",
+            action="store_true",
+            help="Develop the admin UI: live-rebuild it and run the Vite dev server. "
+                 "By default the admin backend just serves the prebuilt UI from dist.",
+        )
+
+    @classmethod
+    def from_args(cls, args, bench):
+        return cls(bench, admin_dev=args.admin_dev)
+
+    def __init__(self, bench: "Bench", admin_dev: bool = False) -> None:
         self.bench = bench
+        self.admin_dev = admin_dev
 
     def run(self) -> None:
-        from bench_cli.managers.process_manager import ProcessManagerFactory
+        from bench_cli.managers.process_manager import ProcessManager
 
-        if not (self.bench.path / "env" / "bin" / "python").exists():
-            self._start_wizard()
+        initialized = (self.bench.path / "env" / "bin" / "python").exists()
+        process_manager = self.bench.config.production.process_manager
+
+        # Dev bench (no process manager): run in the foreground, or the
+        # standalone setup wizard if it isn't initialized yet. Stop any existing
+        # instance first (best-effort) so a stale process doesn't hold the ports.
+        if not process_manager:
+            try:
+                ProcessManager(self.bench).stop()
+            except Exception:
+                pass
+            if not initialized:
+                self._start_wizard()
+                return
+            # In --admin-dev the Vite watcher rebuilds dist itself.
+            if not self.admin_dev:
+                self._ensure_admin_dist()
+            ProcessManager(self.bench, admin_dev=self.admin_dev).start()
+            return
+
+        # Production bench (systemd/supervisor): the admin always runs under the
+        # process manager. Pick by the configured manager rather than via the
+        # factory, which gates on production.enabled.
+        from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
+        from bench_cli.managers.systemd_process_manager import SystemdProcessManager
+
+        manager = (SystemdProcessManager if process_manager == "systemd"
+                   else SupervisorProcessManager)(self.bench)
+
+        if not initialized:
+            # No workload yet — bring up just the admin (socket-activated) so the
+            # setup wizard is served at the bench's domain. The workload starts
+            # once the bench is initialized and `setup production` is run.
+            from bench_cli.admin_url import admin_url
+
+            manager.setup_admin()
+            print(f"Admin running at {admin_url(self.bench.config)}")
+            print("Finish setup there; the bench starts serving once it's initialized.")
+            return
+
+        if not manager.is_configured():
+            from bench_cli.commands.restart import _incomplete_message
+
+            print(_incomplete_message(self.bench))
+            return
+        manager.start()
+
+    def _ensure_admin_dist(self) -> None:
+        # Build the admin UI from source if present, else download a prebuilt copy.
+        from bench_cli.commands.admin import BuildAdminCommand, _cli_root, download_admin_frontend
+
+        cli_root = _cli_root()
+        if (cli_root / "admin" / "backend" / "static" / "dist" / "assets").exists():
+            return
+        print("Admin UI not built yet; building it now...")
+        if (cli_root / "admin" / "frontend" / "package.json").exists():
+            BuildAdminCommand(force_build=True).run()
         else:
-            ProcessManagerFactory.create(self.bench).start()
+            download_admin_frontend(cli_root)
 
     def _start_wizard(self) -> None:
         from bench_cli.commands.admin import download_admin_frontend, _cli_root
@@ -66,6 +136,6 @@ class RunCommand(Command):
     def _admin_port(self) -> int:
         try:
             with open(self.bench.path / "bench.toml", "rb") as f:
-                return tomllib.load(f).get("admin", {}).get("port", 8002)
+                return tomllib.load(f).get("admin", {}).get("port", 7000)
         except Exception:
-            return 8002
+            return 7000

@@ -14,6 +14,26 @@ if TYPE_CHECKING:
 _CERT_EXPIRY_THRESHOLD_DAYS = 30
 
 
+def _is_public_domain(domain: str) -> bool:
+    """A domain certbot can actually validate over the public internet.
+    Local dev domains (``*.localhost``) are excluded."""
+    return bool(domain) and not domain.endswith(".localhost")
+
+
+def needs_letsencrypt(bench: "Bench") -> bool:
+    """True if any certificate is obtainable: an SSL site, or a public admin
+    domain. Requires letsencrypt.email to be configured."""
+    if not bench.config.letsencrypt.email:
+        return False
+    # admin.tls = False means a central proxy terminates TLS for the whole
+    # bench, so no certs are obtained here at all.
+    if not bench.config.admin.tls:
+        return False
+    if any(site.config.ssl and _is_public_domain(site.config.name) for site in bench.sites()):
+        return True
+    return _is_public_domain(bench.config.admin.domain)
+
+
 class LetsEncryptManager:
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
@@ -26,7 +46,9 @@ class LetsEncryptManager:
             get_package_manager().install("certbot")
 
     def ensure_webroot(self) -> None:
-        self.bench.config.letsencrypt.webroot_path.mkdir(parents=True, exist_ok=True)
+        # /var/www is root-owned, so create the webroot with sudo. Default 0755
+        # lets certbot (root) write ACME challenges and nginx read them.
+        run_command(["sudo", "mkdir", "-p", str(self.bench.config.letsencrypt.webroot_path)])
 
     def obtain(self, site: "SiteConfig") -> None:
         from bench_cli.managers.nginx_manager import NginxManager
@@ -44,7 +66,7 @@ class LetsEncryptManager:
         email = self.bench.config.letsencrypt.email
 
         run_command([
-            "certbot", "certonly",
+            "sudo", "certbot", "certonly",
             "--webroot",
             "-w", webroot_path,
             *domain_args,
@@ -55,10 +77,13 @@ class LetsEncryptManager:
         ])
 
     def obtain_all(self) -> None:
+        # With TLS disabled a central proxy fronts the bench; obtain nothing.
+        if not self.bench.config.admin.tls:
+            return
         for site in self.bench.sites():
-            if site.config.ssl:
+            if site.config.ssl and _is_public_domain(site.config.name):
                 self.obtain(site.config)
-        if self.bench.config.admin.domain:
+        if _is_public_domain(self.bench.config.admin.domain):
             self.obtain_admin()
 
     def obtain_admin(self) -> None:
@@ -72,7 +97,7 @@ class LetsEncryptManager:
             return
 
         run_command([
-            "certbot", "certonly",
+            "sudo", "certbot", "certonly",
             "--webroot",
             "-w", str(self.bench.config.letsencrypt.webroot_path),
             "-d", domain,
@@ -83,7 +108,7 @@ class LetsEncryptManager:
         ])
 
     def renew(self) -> None:
-        run_command(["certbot", "renew", "--quiet"])
+        run_command(["sudo", "certbot", "renew", "--quiet"])
 
     def _is_near_expiry(self, site: "SiteConfig") -> bool:
         from bench_cli.managers.nginx_manager import NginxManager
@@ -96,7 +121,7 @@ class LetsEncryptManager:
         from datetime import datetime, timezone
 
         result = subprocess.run(
-            ["openssl", "x509", "-enddate", "-noout", "-in", str(cert_file)],
+            ["sudo", "openssl", "x509", "-enddate", "-noout", "-in", str(cert_file)],
             capture_output=True,
             text=True,
         )

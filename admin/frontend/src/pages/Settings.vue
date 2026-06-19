@@ -27,9 +27,9 @@ const form = ref({
   mariadb: { host: 'localhost', port: 3306, admin_user: 'root', socket_path: '', version: '' },
   redis: { cache_port: 13000, queue_port: 11000, version: '' },
   workers: [{ queues: 'default, short, long', count: 1 }],
-  nginx: { http_port: 80, https_port: 443, config_dir: '/etc/nginx/conf.d', worker_processes: 'auto', client_max_body_size: '50m' },
-  letsencrypt: { email: '', webroot_path: '/var/www/letsencrypt' },
-  production: { enabled: false, nginx: false, lightweight: false },
+  production: { enabled: false, lightweight: false },
+  admin: { domain: '', tls: false },
+  letsencrypt: { email: '' },
 })
 
 async function load() {
@@ -69,8 +69,6 @@ function validateSettings() {
     [form.value.mariadb.port, 'MariaDB Port'],
     [form.value.redis.cache_port, 'Redis Cache Port'],
     [form.value.redis.queue_port, 'Redis Queue Port'],
-    [form.value.nginx.http_port, 'Nginx HTTP Port'],
-    [form.value.nginx.https_port, 'Nginx HTTPS Port'],
   ]
   for (const [port, name] of ports) {
     const n = Number(port)
@@ -86,9 +84,6 @@ function validateSettings() {
     if (!Number.isInteger(n) || n < 1)
       return `Worker group ${i + 1} count must be at least 1.`
   }
-  const email = (form.value.letsencrypt.email || '').trim()
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
-    return "Invalid email address for Let's Encrypt."
   return null
 }
 
@@ -121,6 +116,37 @@ async function save() {
 
 const taskLoading = ref('')
 const taskError = ref('')
+const httpsApplying = ref(false)
+
+// Enabling HTTPS is a two-step action: persist the choice, then run the task
+// that actually obtains certificates (or, when disabling, regenerates plain
+// HTTP routing). Both stream their progress on the task page we route to.
+async function applyHttps() {
+  saveError.value = ''
+  saveSuccess.value = ''
+  if (form.value.admin.tls && !String(form.value.letsencrypt.email || '').trim()) {
+    saveError.value = "An email is required to issue Let's Encrypt certificates."
+    return
+  }
+  httpsApplying.value = true
+  try {
+    const res = await fetch('/api/settings/', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        admin: { tls: form.value.admin.tls },
+        letsencrypt: { email: form.value.letsencrypt.email },
+      }),
+    })
+    const d = await res.json()
+    if (!d.ok) { saveError.value = d.error; return }
+    await runTask(form.value.admin.tls ? 'setup-letsencrypt' : 'setup-nginx')
+  } catch (e) {
+    saveError.value = e.message
+  } finally {
+    httpsApplying.value = false
+  }
+}
 
 async function runTask(command) {
   taskError.value = ''
@@ -171,6 +197,31 @@ onMounted(load)
           <div v-if="form.production.enabled" class="flex flex-col gap-3 pl-4 border-l border-outline-gray-2">
             <Switch v-model="form.production.lightweight" label="Lightweight" />
           </div>
+        </div>
+      </div>
+
+      <div class="border-t border-outline-gray-1" />
+
+      <!-- HTTPS -->
+      <div class="flex flex-col gap-4">
+        <h3 class="font-semibold text-ink-gray-8">HTTPS</h3>
+        <p class="text-sm text-ink-gray-6">
+          The bench is served over plain HTTP by default. Enable HTTPS to obtain a
+          Let's Encrypt certificate for the admin and SSL sites; HTTP is then
+          redirected to HTTPS. Leave it off when a proxy in front terminates TLS.
+        </p>
+        <Switch v-model="form.admin.tls" label="Enable HTTPS (Let's Encrypt)" />
+        <FormControl
+          v-if="form.admin.tls"
+          type="email"
+          label="Let's Encrypt email"
+          v-model="form.letsencrypt.email"
+          placeholder="you@example.com"
+        />
+        <div>
+          <Button variant="outline" :loading="httpsApplying" @click="applyHttps">
+            {{ form.admin.tls ? 'Enable HTTPS & issue certificate' : 'Disable HTTPS' }}
+          </Button>
         </div>
       </div>
 
@@ -244,38 +295,12 @@ onMounted(load)
 
       <div class="border-t border-outline-gray-1" />
 
-      <!-- Nginx -->
-      <div class="flex flex-col gap-4">
-        <h3 class="font-semibold text-ink-gray-8">Nginx</h3>
-        <Switch v-model="form.production.nginx" label="Manage Nginx" />
-        <div class="grid grid-cols-2 gap-4">
-          <FormControl type="number" label="HTTP Port" v-model="form.nginx.http_port" />
-          <FormControl type="number" label="HTTPS Port" v-model="form.nginx.https_port" />
-          <FormControl label="Worker Processes" v-model="form.nginx.worker_processes" placeholder="auto" />
-          <FormControl label="Client Max Body Size" v-model="form.nginx.client_max_body_size" placeholder="50m" />
-          <FormControl class="col-span-2" label="Config Directory" v-model="form.nginx.config_dir" />
-        </div>
-      </div>
-
-      <div class="border-t border-outline-gray-1" />
-
-      <!-- Let's Encrypt -->
-      <div class="flex flex-col gap-4">
-        <h3 class="font-semibold text-ink-gray-8">Let's Encrypt</h3>
-        <div class="grid grid-cols-2 gap-4">
-          <FormControl label="Email" v-model="form.letsencrypt.email" placeholder="you@example.com" />
-          <FormControl label="Webroot Path" v-model="form.letsencrypt.webroot_path" />
-        </div>
-      </div>
-
-      <div class="border-t border-outline-gray-1" />
-
       <!-- Setup -->
       <div class="flex flex-col gap-4">
         <h3 class="font-semibold text-ink-gray-8">Setup</h3>
         <ErrorMessage :message="taskError" />
         <div class="flex flex-wrap gap-2">
-          <Button variant="outline" :loading="taskLoading === 'setup-nginx'" @click="taskLoading = 'setup-nginx'; runTask('setup-nginx')">Setup Nginx</Button>
+          <Button variant="outline" :loading="taskLoading === 'setup-nginx'" @click="taskLoading = 'setup-nginx'; runTask('setup-nginx')">Refresh Web Routing</Button>
           <Button variant="outline" :loading="taskLoading === 'setup-production'" @click="taskLoading = 'setup-production'; runTask('setup-production')">Setup Production</Button>
           <Button variant="outline" :loading="taskLoading === 'update'" @click="taskLoading = 'update'; runTask('update')">Update Bench</Button>
         </div>

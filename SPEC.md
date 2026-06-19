@@ -26,7 +26,7 @@ uv tool install ./bench-cli
 bench new my-bench
 # Edit benches/my-bench/bench.toml — add your db credentials
 
-bench init             # install deps, clone framework app, set up venv
+bench init -b my-bench # install deps, clone framework app, set up venv
 bench new-site site1.localhost   # create your first site
 bench start            # start all processes
 ```

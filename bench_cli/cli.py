@@ -90,9 +90,10 @@ def main() -> None:
         _run_frappe(bench_name, remaining[1:], verbose="--verbose" in args_list)
         return
 
+    # Parse with the bench flag stripped so -b/--bench works after the subcommand too.
     parser = registry.build_parser()
-    args = parser.parse_args(args_list)
-    loader.set_active_bench(args.bench)
+    args = parser.parse_args(remaining)
+    loader.set_active_bench(bench_name)
 
     import time
 

@@ -30,7 +30,7 @@ class UpdateConfigCommand(Command):
         print("Updating common_site_config.json...")
         self.bench.write_common_site_config()
 
-        if self.bench.config.production.nginx:
+        if self.bench.config.production.enabled:
             print("Updating nginx configs...")
             NginxManager(self.bench).generate_config()
             print("  Note: run 'bench setup nginx' to reload nginx with the new config.")

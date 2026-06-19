@@ -1,11 +1,11 @@
-import shutil
+import os
 import subprocess
 import time
 from contextlib import contextmanager
 from pathlib import Path
 
 from bench_cli.config.mariadb_config import MariaDBConfig
-from bench_cli.platform import get_package_manager, is_macos
+from bench_cli.platform import get_package_manager, is_macos, which
 from bench_cli.utils import run_command
 
 _MACOS_SOCKET_CANDIDATES = ["/tmp/mysql.sock", "/usr/local/var/mysql/mysql.sock"]
@@ -52,7 +52,8 @@ class MariaDBManager:
         return result.returncode == 0
 
     def is_installed(self) -> bool:
-        return bool(shutil.which("mysqld") or shutil.which("mariadbd"))
+        # which() searches sbin too; mysqld/mariadbd live in /usr/sbin.
+        return bool(which("mysqld") or which("mariadbd"))
 
     def install(self) -> None:
         if self.is_installed():
@@ -222,16 +223,19 @@ class MariaDBManager:
             time.sleep(0.5)
 
     def check_credentials(self, password: str | None = None) -> bool:
-        """Return True if we can connect as the admin user with the given
-        password (defaults to the configured root password)."""
-        import pymysql
-
-        try:
-            connection = self._connect(password)
-        except pymysql.Error:
-            return False
-        connection.close()
-        return True
+        """True if the admin user can connect with the given password (default:
+        configured root password). Uses the ``mariadb`` client, not pymysql, so
+        the zero-dep CLI works during init; password goes via MYSQL_PWD, not argv."""
+        pw = self.config.root_password if password is None else password
+        cmd = ["mariadb", "-u", self.config.admin_user, "--batch", "--skip-column-names"]
+        socket = self._detect_socket()
+        if socket:
+            cmd.append(f"--socket={socket}")
+        else:
+            cmd += ["-h", self.config.host, "-P", str(self.config.port)]
+        cmd += ["-e", "SELECT 1"]
+        result = subprocess.run(cmd, env={**os.environ, "MYSQL_PWD": pw}, capture_output=True, text=True)
+        return result.returncode == 0
 
     def secure_installation(self) -> None:
         """
