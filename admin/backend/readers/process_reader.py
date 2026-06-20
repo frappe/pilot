@@ -82,7 +82,11 @@ def _subtree_pids(pid: int) -> list[int]:
     all systemd/supervisor hand us.
     """
     children: dict[int, list[int]] = {}
-    for entry in os.listdir("/proc"):
+    try:
+        proc_entries = os.listdir("/proc")
+    except OSError:
+        return [pid]
+    for entry in proc_entries:
         if not entry.isdigit():
             continue
         try:

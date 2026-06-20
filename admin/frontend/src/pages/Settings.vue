@@ -2,8 +2,10 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, FormControl, ErrorMessage, LoadingText, Switch, Select, useTheme } from 'frappe-ui'
+import { useTaskProgress } from '../composables/useTaskProgress.js'
 
 const router = useRouter()
+const { watchTask } = useTaskProgress()
 
 const { currentTheme, setTheme } = useTheme()
 const theme = computed({
@@ -157,7 +159,7 @@ async function runTask(command) {
       body: JSON.stringify({ command }),
     })
     const d = await res.json()
-    if (d.ok) router.push(`/tasks/${d.task_id}`)
+    if (d.ok) watchTask(d.task_id)
     else taskError.value = d.error
   } catch (e) {
     taskError.value = e.message

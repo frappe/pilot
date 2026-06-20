@@ -2,8 +2,10 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, Badge, Checkbox, Dialog, FormControl, LoadingText, ErrorMessage, TextInput } from 'frappe-ui'
+import { useTaskProgress } from '../composables/useTaskProgress.js'
 
 const router = useRouter()
+const { watchTask } = useTaskProgress()
 const registry = ref([])
 const installedNames = ref(new Set())
 const loading = ref(true)
@@ -141,7 +143,7 @@ async function doInstall() {
       })
     }
     const d = await res.json()
-    if (d.ok) { showInstall.value = false; router.push(`/tasks/${d.task_id}`) }
+    if (d.ok) { showInstall.value = false; watchTask(d.task_id) }
     else installError.value = d.error
   } catch (e) {
     installError.value = e.message

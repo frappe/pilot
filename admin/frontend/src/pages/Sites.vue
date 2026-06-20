@@ -3,8 +3,10 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import { Button, Dialog, FormControl, LoadingText, ErrorMessage, Switch, TabButtons } from 'frappe-ui'
 import FilePickerField from '../components/FilePickerField.vue'
+import { useTaskProgress } from '../composables/useTaskProgress.js'
 
 const router = useRouter()
+const { watchTask } = useTaskProgress()
 const sites = ref([])
 const loading = ref(true)
 const error = ref('')
@@ -123,7 +125,7 @@ async function createSite() {
       res = await fetch('/api/sites/create-from-upload', { method: 'POST', body: fd })
     }
     const d = await res.json()
-    if (d.ok) { showCreate.value = false; router.push(`/tasks/${d.task_id}`) }
+    if (d.ok) { showCreate.value = false; watchTask(d.task_id) }
     else createError.value = d.error
   } catch (e) {
     createError.value = e.message
@@ -160,7 +162,7 @@ async function runUpdate() {
       body: JSON.stringify({ command: 'update' }),
     })
     const d = await res.json()
-    if (d.ok) router.push(`/tasks/${d.task_id}`)
+    if (d.ok) watchTask(d.task_id)
     else updateError.value = d.error
   } catch (e) {
     updateError.value = e.message
@@ -173,7 +175,7 @@ onMounted(() => { loadSites(); loadRegistry() })
 </script>
 
 <template>
-  <div class="mx-auto flex max-w-2xl flex-col gap-4">
+  <div class="mx-auto flex max-w-2xl flex-col gap-4 mt-4">
     <!-- defer: after login, this page mounts in the same render pass as the
          AppLayout header, before #header-actions is attached to the document -->
     <Teleport defer to="#header-actions">
@@ -182,18 +184,16 @@ onMounted(() => { loadSites(); loadRegistry() })
     </Teleport>
     <ErrorMessage v-if="updateError" :message="updateError" />
 
-    <h2 class="font-normal text-ink-gray-5">Your Sites</h2>
-
     <LoadingText v-if="loading" />
     <ErrorMessage v-else-if="error" :message="error" />
 
-    <div v-else class="flex flex-col gap-2">
-      <p v-if="!sites.length" class="py-8 text-center text-sm text-ink-gray-4">No sites yet.</p>
+    <div v-else class="rounded-lg border border-outline-gray-1 overflow-hidden">
+      <p v-if="!sites.length" class="py-10 text-center text-sm text-ink-gray-4">No sites yet.</p>
       <RouterLink
         v-for="s in sites"
         :key="s.name"
         :to="`/sites/${s.name}`"
-        class="flex items-center gap-4 rounded-lg border border-outline-gray-1 bg-surface-white px-4 py-3 shadow-sm transition-colors hover:bg-surface-gray-1 no-underline"
+        class="flex items-center gap-4 border-b border-outline-gray-1 last:border-b-0 bg-surface-white px-4 py-5 transition-colors hover:bg-surface-gray-1 no-underline"
       >
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2">

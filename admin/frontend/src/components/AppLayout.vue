@@ -6,6 +6,7 @@ import AppSidebar from './AppSidebar.vue'
 import SettingsModal from './SettingsModal.vue'
 import BenchSwitcherDialog from './BenchSwitcherDialog.vue'
 import NewBenchDialog from './NewBenchDialog.vue'
+import TaskProgressModal from './TaskProgressModal.vue'
 
 const emit = defineEmits(['logout'])
 
@@ -57,5 +58,6 @@ const breadcrumbs = computed(() => {
     <SettingsModal v-model="showSettings" />
     <BenchSwitcherDialog v-model="showChangeBench" />
     <NewBenchDialog v-model="showNewBench" />
+    <TaskProgressModal />
   </div>
 </template>

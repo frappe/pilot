@@ -29,25 +29,29 @@ const header = {
   ],
 }
 
-const baseNavItems = [
+const primaryNavItems = [
   { label: 'Sites', to: '/', icon: LucideGlobe },
   { label: 'Marketplace', to: '/marketplace', icon: LucideStore },
-  { label: 'Monitor', to: '/monitor', icon: LucideActivity },
-  { label: 'Logs', to: '/logs', icon: LucideFileText },
-  { label: 'Database', to: '/database', icon: LucideDatabase },
-  { label: 'Tasks', to: '/tasks', icon: LucideListTodo },
 ]
 
 const snapshotsEnabled = ref(false)
 const runningCount = ref(0)
 let pollTimer = null
 
-const navItems = computed(() => [
-  ...baseNavItems,
-  ...(snapshotsEnabled.value ? [{ label: 'Snapshots', to: '/snapshots', icon: LucideCamera }] : []),
+const sections = computed(() => [
+  { items: primaryNavItems },
+  {
+    label: 'System',
+    collapsible: true,
+    items: [
+      { label: 'Monitor', to: '/monitor', icon: LucideActivity },
+      { label: 'Logs', to: '/logs', icon: LucideFileText },
+      { label: 'Tasks', to: '/tasks', icon: LucideListTodo },
+      { label: 'Database', to: '/database', icon: LucideDatabase },
+      ...(snapshotsEnabled.value ? [{ label: 'Snapshots', to: '/snapshots', icon: LucideCamera }] : []),
+    ],
+  },
 ])
-
-const sections = computed(() => [{ items: navItems.value }])
 
 function isActive(to) {
   if (to === '/') return route.path === '/' || route.path.startsWith('/sites')

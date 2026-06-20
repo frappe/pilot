@@ -3,10 +3,12 @@ import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, FormControl, ErrorMessage, LoadingText, Select, Badge, useTheme, Dialog, TextInput } from 'frappe-ui'
 import LucideX from '~icons/lucide/x'
+import { useTaskProgress } from '../composables/useTaskProgress.js'
 
 const props = defineProps({ modelValue: Boolean })
 const emit = defineEmits(['update:modelValue'])
 const router = useRouter()
+const { watchTask } = useTaskProgress()
 
 const show = computed({
   get: () => props.modelValue,
@@ -141,7 +143,7 @@ async function save() {
       const taskData = await taskRes.json()
       if (taskData.ok) {
         show.value = false
-        router.push(`/tasks/${taskData.task_id}`)
+        watchTask(taskData.task_id)
         return
       }
       saveError.value = taskData.error || 'Setup failed to start'
@@ -187,7 +189,7 @@ async function updateCli() {
     const d = await res.json()
     if (d.ok) {
       show.value = false
-      router.push(`/tasks/${d.task_id}`)
+      watchTask(d.task_id)
     } else {
       checkUpdateError.value = d.error
     }
