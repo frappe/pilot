@@ -126,3 +126,24 @@ def rerun_task(task_id: str):
         return jsonify({"ok": False, "error": str(error)}), 500
 
     return jsonify({"ok": True, "task_id": new_task_id})
+
+
+@tasks_bp.route("/<task_id>/output/download")
+def download_task_output(task_id: str):
+    bench_root = current_app.config["BENCH_ROOT"]
+    try:
+        task = TaskReader(bench_root).read_task(task_id)
+    except TaskNotFoundError as error:
+        return jsonify({"error": str(error)}), 404
+    except Exception as error:
+        return jsonify({"error": str(error)}), 500
+
+    output_path = task.output_path
+    if not output_path.exists():
+        return jsonify({"error": "No output file found"}), 404
+
+    return Response(
+        output_path.read_bytes(),
+        mimetype="text/plain",
+        headers={"Content-Disposition": f'attachment; filename="{task_id}_output.log"'},
+    )

@@ -5,6 +5,7 @@ import { Button, Badge, Dialog, LoadingText, ErrorMessage } from 'frappe-ui'
 import TerminalOutput from '../components/TerminalOutput.vue'
 import TaskStream from '../components/TaskStream.vue'
 import { processLine } from '../utils/ansi.js'
+import LucideDownload from '~icons/lucide/download'
 import LucideCheck from '~icons/lucide/check'
 import LucideLoader2 from '~icons/lucide/loader-2'
 import LucideX from '~icons/lucide/x'
@@ -200,6 +201,9 @@ onMounted(async () => {
           {{ fmtDuration(task.duration_seconds) }}
         </span>
         <div class="ml-auto flex gap-2">
+          <a :href="`/api/tasks/${taskId}/output/download`" class="ml-auto">
+            <Button variant="ghost" :prefix-icon="LucideDownload">Download</Button>
+          </a>
           <Button
             v-if="task.status === 'running'"
             variant="outline"
