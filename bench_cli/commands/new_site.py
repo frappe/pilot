@@ -97,12 +97,19 @@ class NewSiteCommand(Command):
             if entry in line.split("#", 1)[0].split():
                 return
 
-        subprocess.run(
-            ["sudo", "tee", "-a", str(hosts_path)],
-            input=f"{entry}\n".encode(),
-            capture_output=True,
-            check=True,
-        )
+        try:
+            subprocess.run(
+                ["sudo", "-n", "tee", "-a", str(hosts_path)],
+                input=f"{entry}\n".encode(),
+                capture_output=True,
+                check=True,
+            )
+        except (subprocess.CalledProcessError, OSError) as e:
+            print(
+                f"Warning: could not add '{entry}' to {hosts_path}: {e}.\n"
+                f"  Add it manually to reach the site by name.",
+                file=sys.stderr,
+            )
 
     def _reload_nginx(self) -> None:
         if not self.bench.config.production.enabled:
