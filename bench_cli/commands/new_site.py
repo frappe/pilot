@@ -42,7 +42,8 @@ class NewSiteCommand(Command):
         from bench_cli.core.site import Site
 
         self._validate()
-        site = Site(SiteConfig(name=self.name, apps=self.apps, admin_password=self.admin_password), self.bench)
+        ssl = self._should_enable_ssl()
+        site = Site(SiteConfig(name=self.name, apps=self.apps, admin_password=self.admin_password, ssl=ssl), self.bench)
         print(f"Creating site '{self.name}'...")
         sys.stdout.flush()
         site.create()
@@ -51,6 +52,8 @@ class NewSiteCommand(Command):
         self.build_missing_assets()
         self._add_to_hosts()
         self._reload_nginx()
+        if ssl:
+            self._obtain_cert(site)
 
     def build_missing_assets(self):
         from bench_cli.managers.python_env_manager import PythonEnvManager
@@ -61,6 +64,25 @@ class NewSiteCommand(Command):
         for app in self.bench.apps():
             if not (assets_dir / app.config.name).exists():
                 manager.build_assets_for_app(app)
+
+    def _should_enable_ssl(self) -> bool:
+        from bench_cli.managers.letsencrypt_manager import _is_public_domain, letsencrypt_active
+
+        return letsencrypt_active(self.bench) and _is_public_domain(self.name)
+
+    def _obtain_cert(self, site) -> None:
+        from bench_cli.managers.letsencrypt_manager import LetsEncryptManager
+        from bench_cli.managers.nginx_manager import NginxManager
+
+        if not self.bench.config.production.enabled:
+            return
+        print("Obtaining SSL certificate...")
+        sys.stdout.flush()
+        mgr = LetsEncryptManager(self.bench)
+        mgr.obtain(site.config)
+        nginx_mgr = NginxManager(self.bench)
+        nginx_mgr.generate_config(ssl_ready=True)
+        nginx_mgr.reload()
 
     def _validate(self) -> None:
         from bench_cli.utils import host_owner

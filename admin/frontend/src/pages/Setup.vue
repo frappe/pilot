@@ -52,6 +52,7 @@ const form = ref({
   production_process_manager: 'none',
   admin_domain: '',
   admin_tls: false,
+  letsencrypt_email: '',
 })
 
 // ── framework branch dropdown (fetched from the admin backend) ────────────
@@ -358,6 +359,10 @@ async function initialize() {
     error.value = 'Admin domain is required for a production process manager.'
     return
   }
+  if (form.value.admin_tls && !form.value.letsencrypt_email.trim()) {
+    error.value = 'An email address is required for Let\'s Encrypt.'
+    return
+  }
   const storageError = validateStorage()
   if (storageError) {
     error.value = storageError
@@ -526,16 +531,31 @@ function backToConfig() {
                 ]
               : [{ label: 'Development — run it yourself', value: 'none' }]"
           />
-          <div v-if="form.production_process_manager !== 'none'">
+          <div v-if="form.production_process_manager !== 'none'" class="flex flex-col gap-3">
+            <div>
+              <FormControl
+                type="text"
+                label="Admin domain"
+                v-model="form.admin_domain"
+                placeholder="my-admin.example.com"
+              />
+              <p class="mt-1 text-xs text-ink-gray-5">
+                After init the bench is deployed to production and reachable at this domain.
+              </p>
+            </div>
             <FormControl
-              type="text"
-              label="Admin domain"
-              v-model="form.admin_domain"
-              placeholder="my-admin.example.com"
+              type="checkbox"
+              label="Set up HTTPS with Let's Encrypt"
+              v-model="form.admin_tls"
             />
-            <p class="mt-1 text-xs text-ink-gray-5">
-              After init the bench is deployed to production and reachable at this domain.
-            </p>
+            <FormControl
+              v-if="form.admin_tls"
+              type="email"
+              label="Let's Encrypt email"
+              v-model="form.letsencrypt_email"
+              placeholder="you@example.com"
+              description="Used for certificate expiry notices. Sites on public domains will get HTTPS automatically."
+            />
           </div>
           <FormControl
             v-if="isLinux && form.dedicated_db === 'dedicated'"

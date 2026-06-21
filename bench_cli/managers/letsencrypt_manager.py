@@ -20,6 +20,11 @@ def _is_public_domain(domain: str) -> bool:
     return bool(domain) and not domain.endswith(".localhost")
 
 
+def letsencrypt_active(bench: "Bench") -> bool:
+    """True if this bench is configured to obtain its own TLS certificates."""
+    return bool(bench.config.letsencrypt.email) and bench.config.admin.tls
+
+
 def needs_letsencrypt(bench: "Bench") -> bool:
     """True if any certificate is obtainable: an SSL site, or a public admin
     domain. Requires letsencrypt.email to be configured."""
