@@ -10,7 +10,7 @@ from bench_cli.config.toml_writer import bench_config_to_toml
 from bench_cli.config.worker_config import WorkerGroup
 from bench_cli.managers.redis_manager import RedisManager
 from bench_cli.managers.volume_manager import VolumeManager
-from bench_cli.platform import is_linux
+from bench_cli.platform import is_linux, native_process_manager
 
 settings_bp = Blueprint("settings", __name__)
 
@@ -137,9 +137,12 @@ class ConfigPatcher:
         if not production:
             return None
         if "process_manager" in production:
+            from bench_cli.config.production_config import VALID_PROCESS_MANAGERS
+
             process_manager = str(production["process_manager"])
-            if process_manager not in ("none", "supervisor", "systemd"):
-                return "process_manager must be none, supervisor, or systemd"
+            valid = ("none", *VALID_PROCESS_MANAGERS)
+            if process_manager not in valid:
+                return f"process_manager must be one of: {', '.join(valid)}"
             pm = "" if process_manager == "none" else process_manager
             self.config.production.process_manager = pm
             self.config.production.enabled = pm != ""
@@ -181,6 +184,20 @@ def _restart_supervisor(manager, bench_name: str) -> tuple[bool, str | None]:
     return (result.returncode == 0), (result.stderr or result.stdout if result.returncode != 0 else None)
 
 
+def _restart_openrc(manager) -> tuple[bool, str | None]:
+    if not manager.is_running():
+        return False, None
+    # Configs were regenerated already; re-link any new services (e.g. an added
+    # worker group) before restarting the workload. The admin service is left
+    # running so the control plane stays reachable across the restart.
+    try:
+        manager.install_config()
+        manager.restart()
+    except Exception as error:
+        return False, str(error)
+    return True, None
+
+
 def _restart_systemd(manager) -> tuple[bool, str | None]:
     if not manager.is_running():
         return False, None
@@ -195,6 +212,7 @@ def _restart_systemd(manager) -> tuple[bool, str | None]:
 
 def _do_restart(bench_root: Path, config: BenchConfig) -> tuple[bool, str | None]:
     from bench_cli.core.bench import Bench
+    from bench_cli.managers.openrc_process_manager import OpenRCProcessManager
     from bench_cli.managers.process_manager import ProcessManagerFactory
     from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
     from bench_cli.managers.systemd_process_manager import SystemdProcessManager
@@ -205,6 +223,8 @@ def _do_restart(bench_root: Path, config: BenchConfig) -> tuple[bool, str | None
         return _restart_supervisor(manager, config.name)
     if isinstance(manager, SystemdProcessManager):
         return _restart_systemd(manager)
+    if isinstance(manager, OpenRCProcessManager):
+        return _restart_openrc(manager)
     return False, None
 
 
@@ -215,6 +235,7 @@ def _build_settings_response(config: BenchConfig) -> dict:
     volume = config.volume
     return {
         "is_linux": is_linux(),
+        "native_process_manager": native_process_manager(),
         "bench": {"name": config.name, "python": config.python_version, "http_port": config.http_port, "socketio_port": config.socketio_port, "default_branch": config.default_branch},
         "mariadb": {
             "host": config.mariadb.host,
