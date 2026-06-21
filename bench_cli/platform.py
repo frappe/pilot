@@ -116,6 +116,17 @@ def service_running(name: str) -> bool:
         return False
 
 
+def native_process_manager() -> str:
+    """The init system used to manage production benches on this host.
+
+    OpenRC on Alpine, systemd everywhere else. This is the recommended (and, on
+    Alpine, the only available) native manager; the supervisor manager is the
+    cross-platform alternative and is never the platform default. UI and CLI
+    deploy paths use this to offer the right default instead of assuming systemd.
+    """
+    return "openrc" if is_alpine() else "systemd"
+
+
 def default_nginx_config_dir() -> Path:
     """Directory nginx includes server blocks from (distro-specific).
 
