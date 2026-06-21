@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from bench_cli.platform import get_package_manager
+from bench_cli.platform import _privileged, get_package_manager, is_alpine
 from bench_cli.utils import run_command
 
 if TYPE_CHECKING:
@@ -12,6 +12,12 @@ if TYPE_CHECKING:
     from bench_cli.core.bench import Bench
 
 _CERT_EXPIRY_THRESHOLD_DAYS = 30
+
+
+def _nginx_reload_hook() -> str:
+    """Shell command certbot runs after a successful (re)issue to pick up the new
+    cert — rc-service on Alpine, systemctl elsewhere."""
+    return "rc-service nginx reload" if is_alpine() else "systemctl reload nginx"
 
 
 def _is_public_domain(domain: str) -> bool:
@@ -53,7 +59,7 @@ class LetsEncryptManager:
     def ensure_webroot(self) -> None:
         # /var/www is root-owned, so create the webroot with sudo. Default 0755
         # lets certbot (root) write ACME challenges and nginx read them.
-        run_command(["sudo", "mkdir", "-p", str(self.bench.config.letsencrypt.webroot_path)])
+        run_command(_privileged(["mkdir", "-p", str(self.bench.config.letsencrypt.webroot_path)]))
 
     def obtain(self, site: "SiteConfig") -> None:
         from bench_cli.managers.nginx_manager import NginxManager
@@ -70,16 +76,16 @@ class LetsEncryptManager:
         webroot_path = str(self.bench.config.letsencrypt.webroot_path)
         email = self.bench.config.letsencrypt.email
 
-        run_command([
-            "sudo", "certbot", "certonly",
+        run_command(_privileged([
+            "certbot", "certonly",
             "--webroot",
             "-w", webroot_path,
             *domain_args,
             "--email", email,
             "--agree-tos",
             "--non-interactive",
-            "--deploy-hook", "systemctl reload nginx",
-        ])
+            "--deploy-hook", _nginx_reload_hook(),
+        ]))
 
     def obtain_all(self) -> None:
         # With TLS disabled a central proxy fronts the bench; obtain nothing.
@@ -101,19 +107,19 @@ class LetsEncryptManager:
             print(f"Certificate for {domain} already exists and is not near expiry. Skipping.")
             return
 
-        run_command([
-            "sudo", "certbot", "certonly",
+        run_command(_privileged([
+            "certbot", "certonly",
             "--webroot",
             "-w", str(self.bench.config.letsencrypt.webroot_path),
             "-d", domain,
             "--email", self.bench.config.letsencrypt.email,
             "--agree-tos",
             "--non-interactive",
-            "--deploy-hook", "systemctl reload nginx",
-        ])
+            "--deploy-hook", _nginx_reload_hook(),
+        ]))
 
     def renew(self) -> None:
-        run_command(["sudo", "certbot", "renew", "--quiet"])
+        run_command(_privileged(["certbot", "renew", "--quiet"]))
 
     def _is_near_expiry(self, site: "SiteConfig") -> bool:
         from bench_cli.managers.nginx_manager import NginxManager
@@ -126,7 +132,7 @@ class LetsEncryptManager:
         from datetime import datetime, timezone
 
         result = subprocess.run(
-            ["sudo", "openssl", "x509", "-enddate", "-noout", "-in", str(cert_file)],
+            _privileged(["openssl", "x509", "-enddate", "-noout", "-in", str(cert_file)]),
             capture_output=True,
             text=True,
         )

@@ -29,21 +29,25 @@ def _build_orchestrator(bench: Bench) -> SnapshotOrchestrator:
 
 
 def _stop_mariadb(manager=None) -> None:
+    from bench_cli.platform import service_command
+
     try:
         if manager is not None:
             manager.stop()
         else:
-            run_command(["sudo", "systemctl", "stop", "mariadb"])
+            run_command(service_command("stop", "mariadb"))
     except CommandError:
         pass
 
 
 def _start_mariadb(manager=None) -> None:
+    from bench_cli.platform import service_command
+
     try:
         if manager is not None:
             manager.start()
         else:
-            run_command(["sudo", "systemctl", "start", "mariadb"])
+            run_command(service_command("start", "mariadb"))
     except CommandError as e:
         print(f"Warning: failed to restart MariaDB service: {e}")
 
