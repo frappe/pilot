@@ -8,18 +8,39 @@ from string import Template
 from typing import TYPE_CHECKING
 
 from bench_cli.managers.gunicorn_manager import GunicornManager
-from bench_cli.platform import get_package_manager, is_linux
+from bench_cli.platform import (
+    _privileged,
+    default_nginx_config_dir,
+    get_package_manager,
+    is_alpine,
+    is_linux,
+    service_command,
+    service_enable_command,
+    service_running,
+)
 from bench_cli.utils import run_command
 
 _NGINX_CONF = Path("/etc/nginx/nginx.conf")
 _USER_DIRECTIVE = re.compile(r"^[ \t]*user[ \t]+[^;\n]+;", re.MULTILINE)
 
-# Server-wide catch-all so unknown hosts get our 404 instead of nginx's stock
-# welcome page. Shared by every bench (one default_server per port), so it lives
-# in fixed machine paths rather than under a bench.
-_CATCHALL_CONF = Path("/etc/nginx/conf.d/00-bench-default.conf")
 _SHARED_ERROR_DIR = Path("/usr/share/nginx/bench-error-pages")
-_STOCK_DEFAULT_SITE = Path("/etc/nginx/sites-enabled/default")
+
+
+def _catchall_conf() -> Path:
+    """Server-wide catch-all so unknown hosts get our 404 instead of nginx's
+    stock welcome page. One default_server per port, shared by every bench, so
+    it lives in the distro's include dir (conf.d on Debian, http.d on Alpine)."""
+    return default_nginx_config_dir() / "00-bench-default.conf"
+
+
+def _stock_default_sites() -> list[Path]:
+    """The distro's own default vhost(s), which also claim default_server on :80
+    and would conflict with our catch-all. Debian symlinks sites-enabled/default;
+    Alpine ships http.d/default.conf."""
+    return [
+        Path("/etc/nginx/sites-enabled/default"),
+        default_nginx_config_dir() / "default.conf",
+    ]
 
 # Custom pages for nginx-generated errors (downed upstream, missing static
 # file). App responses pass through unchanged — proxy_intercept_errors is off.
@@ -151,18 +172,19 @@ class NginxManager:
         for code, (title, message) in _ERROR_PAGES.items():
             staged = staging / f"_catchall_{code}.html"
             staged.write_text(_render_error_html(code, title, message))
-            run_command(["sudo", "install", "-D", "-m", "644", str(staged), str(_SHARED_ERROR_DIR / f"{code}.html")])
+            run_command(_privileged(["install", "-D", "-m", "644", str(staged), str(_SHARED_ERROR_DIR / f"{code}.html")]))
             staged.unlink()
 
         staged = staging / "_catchall.conf"
         staged.write_text(self._render_catchall(self.bench.config.nginx.http_port, _SHARED_ERROR_DIR))
-        run_command(["sudo", "cp", str(staged), str(_CATCHALL_CONF)])
+        run_command(_privileged(["cp", str(staged), str(_catchall_conf())]))
         staged.unlink()
 
-        # The stock default site also claims default_server on :80; nginx rejects
-        # a duplicate, so drop it and let ours win.
-        if _STOCK_DEFAULT_SITE.exists() or _STOCK_DEFAULT_SITE.is_symlink():
-            run_command(["sudo", "unlink", str(_STOCK_DEFAULT_SITE)])
+        # The distro's stock default site also claims default_server on :80;
+        # nginx rejects a duplicate, so drop it and let ours win.
+        for default_site in _stock_default_sites():
+            if default_site.exists() or default_site.is_symlink():
+                run_command(_privileged(["rm", "-f", str(default_site)]))
 
     def _render_catchall(self, http_port: int, error_dir: Path) -> str:
         directives = "".join(f"    error_page {code} /_errors/{code}.html;\n" for code in _ERROR_PAGES)
@@ -435,8 +457,8 @@ class NginxManager:
         source_path = self.bench.config_path / "nginx" / "include.conf"
 
         if symlink_path.exists() or symlink_path.is_symlink():
-            run_command(["sudo", "unlink", str(symlink_path)])
-        run_command(["sudo", "ln", "-s", str(source_path), str(symlink_path)])
+            run_command(_privileged(["unlink", str(symlink_path)]))
+        run_command(_privileged(["ln", "-s", str(source_path), str(symlink_path)]))
         self._set_worker_user()
         self.install_default_server()
 
@@ -453,7 +475,7 @@ class NginxManager:
             return
         staged = self.bench.config_path / "nginx" / "nginx.conf"
         staged.write_text(updated)
-        run_command(["sudo", "cp", str(staged), str(_NGINX_CONF)])
+        run_command(_privileged(["cp", str(staged), str(_NGINX_CONF)]))
         staged.unlink()
 
     def uninstall_config(self) -> None:
@@ -461,15 +483,22 @@ class NginxManager:
         validate and reload the remaining machine-wide config. Certs are kept."""
         symlink_path = self.bench.config.nginx.config_dir / f"{self.bench.config.name}.conf"
         if symlink_path.exists() or symlink_path.is_symlink():
-            run_command(["sudo", "unlink", str(symlink_path)])
+            run_command(_privileged(["unlink", str(symlink_path)]))
         self.reload()
 
     def reload(self) -> None:
-        run_command(["sudo", "nginx", "-t"])
-        if is_linux():
-            run_command(["sudo", "systemctl", "reload", "nginx"])
-        else:
+        run_command(_privileged(["nginx", "-t"]))
+        if not is_linux():
             run_command(["nginx", "-s", "reload"])
+            return
+        if is_alpine():
+            # Alpine doesn't auto-start nginx after install — enable it, then
+            # bring it up the first time and reload in place on later runs.
+            run_command(service_enable_command("nginx"))
+            action = "reload" if service_running("nginx") else "start"
+            run_command(service_command(action, "nginx"))
+            return
+        run_command(service_command("reload", "nginx"))
 
     def cert_path(self, site: "SiteConfig") -> Path:
         return Path("/etc/letsencrypt/live") / site.name / "fullchain.pem"
@@ -479,11 +508,11 @@ class NginxManager:
 
     @staticmethod
     def _cert_files_exist(live_dir: Path) -> bool:
-        # /etc/letsencrypt/live is root-only (0700), so stat via sudo rather than
-        # letting Path.exists() raise EACCES for the bench user.
+        # /etc/letsencrypt/live is root-only (0700), so stat with privilege
+        # rather than letting Path.exists() raise EACCES for the bench user.
         import subprocess
 
         return subprocess.run(
-            ["sudo", "test", "-f", str(live_dir / "fullchain.pem"), "-a", "-f", str(live_dir / "privkey.pem")],
+            _privileged(["test", "-f", str(live_dir / "fullchain.pem"), "-a", "-f", str(live_dir / "privkey.pem")]),
             capture_output=True,
         ).returncode == 0
