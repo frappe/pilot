@@ -15,6 +15,7 @@ from flask import Flask, jsonify, request, send_file, session
 
 from .views.apps import apps_bp
 from .views.dashboard import dashboard_bp
+from .views.git import git_bp
 from .views.stats import stats_bp
 from .views.database import database_bp
 from .views.logs import logs_bp
@@ -358,6 +359,7 @@ def create_app(bench_root: Path) -> Flask:
     app.register_blueprint(settings_bp, url_prefix="/api/settings")
     app.register_blueprint(updates_bp, url_prefix="/api/updates")
     app.register_blueprint(volume_bp, url_prefix="/api/volume")
+    app.register_blueprint(git_bp, url_prefix="/api/git")
     app.register_blueprint(stats_bp, url_prefix="/api")
 
     app.register_error_handler(ConfigError, _handle_config_error)

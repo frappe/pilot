@@ -1,6 +1,9 @@
 # Benches (created by `bench new`)
 benches/
 
+# Git provider PAT store (plaintext token — never commit)
+.bench.git.info
+
 # Python
 __pycache__/
 *.py[cod]

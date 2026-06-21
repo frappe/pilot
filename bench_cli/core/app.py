@@ -24,11 +24,24 @@ class App:
     def is_cloned(self) -> bool:
         return self.path.exists() and (self.path / ".git").exists()
 
+    @property
+    def _remote_url(self) -> str:
+        """The clone URL to use, token-embedded when the repo is private.
+
+        Public repos resolve to the original URL; for a repo hosted on a
+        connected provider with a stored PAT, the token is injected so private
+        clones and ls-remote probes authenticate.
+        """
+        from bench_cli.core.git_providers import authenticated_url_for
+
+        return authenticated_url_for(self.bench.path, self.config.repo)
+
     def _detect_default_branch(self) -> str:
         import subprocess
 
+        remote = self._remote_url
         result = subprocess.run(
-            ["git", "ls-remote", "--symref", self.config.repo, "HEAD"],
+            ["git", "ls-remote", "--symref", remote, "HEAD"],
             capture_output=True,
             text=True,
         )
@@ -37,7 +50,7 @@ class App:
                 return line.split("refs/heads/")[1].split()[0]
         # Probe common Frappe branch names in priority order
         refs = subprocess.run(
-            ["git", "ls-remote", "--heads", self.config.repo],
+            ["git", "ls-remote", "--heads", remote],
             capture_output=True,
             text=True,
         ).stdout
@@ -52,7 +65,7 @@ class App:
         return bool(re.fullmatch(r"[0-9a-f]{7,40}", ref))
 
     def _clone_rev(self, commit: str) -> None:
-        run_command(["git", "clone", self.config.repo, str(self.path)], stream_output=True)
+        run_command(["git", "clone", self._remote_url, str(self.path)], stream_output=True)
         try:
             run_command(["git", "-C", str(self.path), "checkout", commit])
         except CommandError:
@@ -68,7 +81,7 @@ class App:
                 [
                     "git",
                     "clone",
-                    self.config.repo,
+                    self._remote_url,
                     "--branch",
                     branch,
                     "--depth",
