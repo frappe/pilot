@@ -10,7 +10,7 @@ from pathlib import Path
 
 from bench_cli.config.volume_config import VolumeConfig
 from bench_cli.exceptions import CommandError, VolumeError
-from bench_cli.platform import get_package_manager
+from bench_cli.platform import _privileged, get_package_manager, is_alpine, service_enable_command
 from bench_cli.utils import run_command
 
 
@@ -279,16 +279,70 @@ class VolumeManager:
         self.config = config
 
     def _ensure_zfs(self):
-        if shutil.which("zfs"):
+        # On Alpine the userland CLI can be installed while the kernel module is
+        # absent (e.g. wrong kernel), so verify ZFS is actually usable, not just
+        # that the `zfs` binary exists.
+        if shutil.which("zfs") and (not is_alpine() or self._zfs_usable()):
             return
 
         print("ZFS not found installing....")
-        pkg_manager = get_package_manager()
-        pkg_manager.install("zfsutils-linux")
-
-        if not shutil.which("zfs"):
-            raise VolumeError("Something went wrong in installing zfs")
+        if is_alpine():
+            self._install_zfs_alpine()
+        else:
+            get_package_manager().install("zfsutils-linux")
+            if not shutil.which("zfs"):
+                raise VolumeError("Something went wrong in installing zfs")
         print("ZFS installed....")
+
+    @staticmethod
+    def _zfs_usable() -> bool:
+        """True if the ZFS kernel module is loaded and the CLI can reach it."""
+        try:
+            return subprocess.run(["zpool", "list"], capture_output=True).returncode == 0
+        except FileNotFoundError:
+            return False
+
+    @staticmethod
+    def _alpine_kernel_flavor() -> str:
+        """The Alpine kernel 'flavor' from `uname -r` (e.g. 6.6.41-0-lts → 'lts',
+        -virt → 'virt'); '' for a non-Alpine kernel that has no flavor suffix."""
+        import os
+
+        tail = os.uname().release.rsplit("-", 1)
+        return tail[1] if len(tail) == 2 and tail[1].isalpha() else ""
+
+    def _install_zfs_alpine(self) -> None:
+        """Install ZFS on Alpine: userland (`zfs`) + OpenRC import/mount services
+        (`zfs-openrc`) + the per-kernel module package (`zfs-<flavor>`), then load
+        the module and enable the boot services. Alpine ships ZFS modules only for
+        its own kernels (linux-lts → zfs-lts, linux-virt → zfs-virt, …); a
+        non-Alpine kernel has no matching package, so ZFS can't run there."""
+        import os
+
+        pkg = get_package_manager()
+        pkg.install("zfs", "zfs-openrc")
+
+        flavor = self._alpine_kernel_flavor()
+        if flavor:
+            try:
+                pkg.install(f"zfs-{flavor}")
+            except Exception:
+                pass  # no matching module package — caught by the usability check
+
+        subprocess.run(_privileged(["modprobe", "zfs"]), capture_output=True)
+        # Re-import and mount pools at boot so volumes survive reboots.
+        for service in ("zfs-import", "zfs-mount"):
+            subprocess.run(service_enable_command(service), capture_output=True)
+
+        if not (shutil.which("zfs") and self._zfs_usable()):
+            raise VolumeError(
+                "The ZFS kernel module could not be loaded on this host "
+                f"(kernel {os.uname().release}). Alpine provides ZFS modules only "
+                "for its own kernels (e.g. linux-lts + zfs-lts, linux-virt + "
+                "zfs-virt). Boot a ZFS-capable kernel, or disable volumes "
+                "(uncheck 'Use volumes' / set volume.enabled = false) to deploy "
+                "without snapshots."
+            )
 
     def pool_exists(self) -> bool:
         try:

@@ -1,12 +1,17 @@
 import json
+import os
 from types import SimpleNamespace
+
+import pytest
 
 import bench_cli.managers.volume_manager as volume_manager
 from bench_cli.config.volume_config import VolumeConfig
+from bench_cli.exceptions import VolumeError
 from bench_cli.managers.volume_manager import (
     DatasetInfo,
     DiskInfo,
     PoolInfo,
+    VolumeManager,
     compute_smart_defaults,
     discover_unused_disks,
     resolve_auto_backing,
@@ -342,3 +347,61 @@ def test_persist_bind_mount_writes_ordered_entry(monkeypatch) -> None:
     written = run.call_args.kwargs["input"]
     assert b"/src /dst none bind" in written
     assert b"x-systemd.requires=zfs-mount.service" in written
+
+
+# ── Alpine ZFS install ──────────────────────────────────────────────────────────
+
+
+def _vm() -> VolumeManager:
+    return VolumeManager(VolumeConfig())
+
+
+def test_alpine_kernel_flavor(monkeypatch) -> None:
+    monkeypatch.setattr(os, "uname", lambda: SimpleNamespace(release="6.6.41-0-lts"))
+    assert VolumeManager._alpine_kernel_flavor() == "lts"
+    monkeypatch.setattr(os, "uname", lambda: SimpleNamespace(release="6.6.41-0-virt"))
+    assert VolumeManager._alpine_kernel_flavor() == "virt"
+    # A non-Alpine kernel (no flavor suffix) yields "" — no matching zfs-<flavor>.
+    monkeypatch.setattr(os, "uname", lambda: SimpleNamespace(release="6.1.155+"))
+    assert VolumeManager._alpine_kernel_flavor() == ""
+
+
+def _patch_zfs_install(monkeypatch, *, zpool_rc: int, installed: list) -> None:
+    pkg = SimpleNamespace(install=lambda *p: installed.extend(p))
+    monkeypatch.setattr(volume_manager, "get_package_manager", lambda: pkg)
+    monkeypatch.setattr(volume_manager, "service_enable_command", lambda s: ["rc-update", "add", s])
+    monkeypatch.setattr(volume_manager, "_privileged", lambda c: c)
+    monkeypatch.setattr(volume_manager.shutil, "which", lambda n: "/usr/sbin/zfs")
+    monkeypatch.setattr(
+        volume_manager.subprocess, "run",
+        lambda *a, **k: SimpleNamespace(returncode=zpool_rc, stdout=b"", stderr=b""),
+    )
+
+
+def test_install_zfs_alpine_uses_apk_packages_and_raises_without_module(monkeypatch) -> None:
+    """Installs Alpine's zfs/zfs-openrc (not Debian's zfsutils-linux); without a
+    loadable module it fails with a clear, actionable error rather than crashing
+    on a missing apk package."""
+    monkeypatch.setattr(os, "uname", lambda: SimpleNamespace(release="6.1.155+"))
+    installed: list = []
+    _patch_zfs_install(monkeypatch, zpool_rc=1, installed=installed)
+    with pytest.raises(VolumeError, match="ZFS kernel module"):
+        _vm()._install_zfs_alpine()
+    assert "zfs" in installed and "zfs-openrc" in installed
+
+
+def test_install_zfs_alpine_succeeds_when_module_loads(monkeypatch) -> None:
+    monkeypatch.setattr(os, "uname", lambda: SimpleNamespace(release="6.6.41-0-virt"))
+    installed: list = []
+    _patch_zfs_install(monkeypatch, zpool_rc=0, installed=installed)
+    _vm()._install_zfs_alpine()  # zpool reachable → no raise
+    assert "zfs-virt" in installed  # the matching kernel-module package
+
+
+def test_ensure_zfs_routes_to_alpine(monkeypatch) -> None:
+    monkeypatch.setattr(volume_manager, "is_alpine", lambda: True)
+    monkeypatch.setattr(volume_manager.shutil, "which", lambda n: None)
+    called: dict = {}
+    monkeypatch.setattr(VolumeManager, "_install_zfs_alpine", lambda self: called.setdefault("alpine", True))
+    _vm()._ensure_zfs()
+    assert called.get("alpine")
