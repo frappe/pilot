@@ -197,7 +197,7 @@ Each bench lives on a single dataset (`<pool>/<bench>`) holding both its files a
 | `bench init -b <name>` | Install deps, create venv, clone framework, generate Procfile (needs `-b <name>` or run inside the bench dir) |
 | `bench start` | Start all processes (web, workers, Redis, admin UI) |
 | `bench stop` | Stop a running bench from another terminal |
-| `bench restart` | Restart all processes — supervisor or systemd (production only) |
+| `bench restart` | Restart all processes — supervisor, systemd, or OpenRC (production only) |
 | `bench get-app <repo>` | Clone and install an app |
 | `bench new-site <name>` | Create a site |
 | `bench rename-site <old> <new>` | Rename a site (checks the hostname is free across all benches) |

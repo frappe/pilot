@@ -426,7 +426,7 @@ Accepts a JSON body with any subset of the settings sections. Only keys present 
 { "ok": true, "restarted": true, "restart_error": null, "zfs_error": null }
 ```
 
-**Process restart:** If any value in `bench.http_port`, `bench.socketio_port`, `redis.*_port`, `workers.*`, or `production.process_manager` changed, bench regenerates config files and restarts the running process manager (supervisor or systemd) automatically — excluding the admin process itself so the response is delivered before the restart.
+**Process restart:** If any value in `bench.http_port`, `bench.socketio_port`, `redis.*_port`, `workers.*`, or `production.process_manager` changed, bench regenerates config files and restarts the running process manager (supervisor, systemd, or OpenRC on Alpine) automatically — excluding the admin process itself so the response is delivered before the restart.
 
 **ZFS quota/reservation:** If `volume.quota` or `volume.reservation` changed, the new values are applied to the bench's dataset via `zfs set` after writing `bench.toml`. Quota changes are validated before saving: if the new quota is less than the dataset's current used size, the request is rejected with HTTP 400 and the config is not modified.
 
@@ -458,7 +458,7 @@ The frontend presents settings as a tabbed modal dialog. Tabs are:
 | **Nginx** | Worker Processes, Client Max Body Size, Config Directory | HTTP Port, HTTPS Port |
 | **HTTPS** | Enable HTTPS toggle (`admin.tls`), Let's Encrypt email; "Enable HTTPS & issue certificate" action | — |
 | **Let's Encrypt** | Email, Webroot Path | — |
-| **Production** | Process Manager (none/supervisor/systemd) | — |
+| **Production** | Process Manager (none/supervisor + the host's native manager: systemd, or OpenRC on Alpine) | — |
 | **Updates** | — | Current version, update availability badge; Update button |
 | **ZFS Volume** *(Linux only, dedicated DB only)* | Quota, Reservation | Pool Name, Block Device |
 
@@ -466,7 +466,7 @@ MariaDB fields are read-only because the host, port, credentials, and socket pat
 
 The **ZFS Volume** tab and the **Snapshots** page in the sidebar are only shown for benches that use a dedicated MariaDB instance with `volume.enabled = true`. Shared-DB benches hide both.
 
-The Process Manager dropdown lets you switch between `none`, `supervisor`, and `systemd`. A change here writes to `bench.toml` and triggers a process restart.
+The Process Manager dropdown lets you switch between `none`, `supervisor`, and the host's native manager — `systemd` on most Linux, `openrc` on Alpine (the backend reports `native_process_manager` so the UI never offers an unavailable option). A change here writes to `bench.toml` and triggers a process restart.
 
 The **HTTPS** toggle sets the server-wide `admin.tls` flag. Enabling it (with a Let's Encrypt email) persists the choice and runs `setup-letsencrypt` to obtain certificates and rewrite nginx with the HTTP→HTTPS redirect; disabling it runs `setup-nginx` to fall back to plain HTTP. `admin.tls` governs HTTPS for both the admin domain and all SSL-enabled sites — per-site SSL is hidden while it is off.
 
