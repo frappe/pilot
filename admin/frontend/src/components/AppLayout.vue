@@ -22,8 +22,7 @@ const breadcrumbs = computed(() => {
     { label: 'Sites', route: '/' },
     { label: String(params.name) },
   ]
-  if (path === '/apps') return [{ label: 'Apps' }]
-  if (path === '/marketplace') return [{ label: 'Marketplace' }]
+if (path === '/marketplace') return [{ label: 'Marketplace' }]
   if (path === '/monitor') return [{ label: 'Monitor' }]
   if (path === '/logs') return [{ label: 'Logs' }]
   if (path === '/tasks') return [{ label: 'Tasks' }]

@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import { Button, Badge, Combobox, Dialog, FormControl, TextInput, ErrorMessage } from 'frappe-ui'
 import { useTaskProgress } from '../composables/useTaskProgress.js'
+import { hashColor } from '../composables/useAppRegistry.js'
 import LucideTriangleAlert from '~icons/lucide/triangle-alert'
 
 const props = defineProps({
@@ -74,12 +75,6 @@ const dialogTitle = computed(() => {
   return 'Install App'
 })
 
-const COLORS = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed']
-function hashColor(name) {
-  let h = 0
-  for (const c of name) h = (h * 31 + c.charCodeAt(0)) | 0
-  return COLORS[Math.abs(h) % COLORS.length]
-}
 
 // Reset to a clean browse view whenever the dialog opens.
 function reset() {

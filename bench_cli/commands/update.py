@@ -19,9 +19,17 @@ class UpdateCommand(Command):
     def from_args(cls, args, bench):
         return cls(bench, skip_confirm=args.yes)
 
-    def __init__(self, bench: "Bench", skip_confirm: bool = False) -> None:
+    def __init__(
+        self,
+        bench: "Bench",
+        skip_confirm: bool = False,
+        apps: set | None = None,
+        sites: set | None = None,
+    ) -> None:
         self.bench = bench
         self.skip_confirm = skip_confirm
+        self._apps_filter = apps  # None = all apps
+        self._sites_filter = sites  # None = all sites
 
     @staticmethod
     def _step(key: str, label: str) -> None:
@@ -48,10 +56,7 @@ class UpdateCommand(Command):
 
         if not ProcessManagerFactory.create(self.bench).is_running():
             return
-        print(
-            "Warning: bench processes appear to be running. "
-            "Updating while running may cause instability."
-        )
+        print("Warning: bench processes appear to be running. Updating while running may cause instability.")
         if not self.skip_confirm:
             try:
                 answer = input("Continue anyway? [y/N] ").strip().lower()
@@ -64,6 +69,8 @@ class UpdateCommand(Command):
 
     def _update_apps(self) -> None:
         for app in self.bench.apps():
+            if self._apps_filter is not None and app.config.name not in self._apps_filter:
+                continue
             print(f"Updating {app.config.name}...")
             try:
                 app.update()
@@ -75,6 +82,8 @@ class UpdateCommand(Command):
 
         mgr = PythonEnvManager(self.bench)
         for app in self.bench.apps():
+            if self._apps_filter is not None and app.config.name not in self._apps_filter:
+                continue
             print(f"Reinstalling {app.config.name}...")
             mgr.install_app(app)
 
@@ -83,12 +92,16 @@ class UpdateCommand(Command):
 
         mgr = PythonEnvManager(self.bench)
         for app in self.bench.apps():
+            if self._apps_filter is not None and app.config.name not in self._apps_filter:
+                continue
             print(f"Updating assets for {app.config.name}...")
             mgr.build_assets_for_app(app)
 
     def _migrate_sites(self) -> None:
         failed = False
         for site in self.bench.sites():
+            if self._sites_filter is not None and site.config.name not in self._sites_filter:
+                continue
             print(f"Migrating {site.config.name}...")
             try:
                 site.migrate()
