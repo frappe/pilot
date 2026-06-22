@@ -109,18 +109,20 @@ def site_apps(name: str):
     return jsonify({"apps": result})
 
 
-@sites_bp.route("/<name>/apps/fetch", methods=["POST"])
-def fetch_app_updates(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
-    task_id = TaskRunner(bench_root).run("fetch-app-updates", {"site": name})
+@sites_bp.route("/<name>/update")
+def update_site(name: str):
+    data = request.get_json(silent=True)
+    apps_to_update = data.get("apps")
+
+    if not apps_to_update:
+        return jsonify({"ok": False, "error": "No apps selected to update"})
+
+    task_id = TaskRunner(bench_root=current_app.config["BENCH_ROOT"]).run(
+        "update-site",
+        {"name": name, "apps_to_update": apps_to_update},
+    )
+
     return jsonify({"task_id": task_id})
-
-
-@sites_bp.route("/<name>/apps/<app_name>/commits")
-def app_commits(name: str, app_name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
-    commits = AppReader(bench_root).list_commits(app_name)
-    return jsonify({"commits": commits})
 
 
 @sites_bp.route("/create", methods=["POST"])

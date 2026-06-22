@@ -154,7 +154,7 @@ class AppReader:
             return ""
         content = head.read_text().strip()
         if content.startswith("ref: refs/heads/"):
-            return content[len("ref: refs/heads/"):]
+            return content[len("ref: refs/heads/") :]
         return ""
 
     def _git_full_sha(self, git_dir: Path) -> str:
@@ -191,10 +191,10 @@ class AppReader:
         try:
             raw = zlib.decompress(obj_path.read_bytes())
             null_idx = raw.index(b"\0")
-            content = raw[null_idx + 1:].decode("utf-8", errors="replace")
+            content = raw[null_idx + 1 :].decode("utf-8", errors="replace")
             headers_end = content.find("\n\n")
             if headers_end >= 0:
-                return content[headers_end + 2:].split("\n")[0].strip()
+                return content[headers_end + 2 :].split("\n")[0].strip()
         except Exception:
             pass
         return ""
