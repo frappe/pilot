@@ -64,8 +64,8 @@ async function runUpdate() {
 
         <!-- Apps -->
         <div>
-          <p class="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-gray-4">
-            Select Apps to Update
+          <p class="mb-2 text-sm font-medium text-ink-gray-6">
+            Select apps to update
           </p>
           <div class="divide-y divide-outline-gray-1">
             <div

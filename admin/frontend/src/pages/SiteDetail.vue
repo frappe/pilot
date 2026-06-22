@@ -665,25 +665,29 @@ onMounted(() => {
                 No apps installed on this site.
               </div>
               <div v-else class="divide-y divide-outline-gray-1 px-4">
-                <div v-for="app in site.installed_apps" :key="app" class="flex items-center justify-between py-3">
-                  <div class="flex items-center gap-3">
-                    <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md overflow-hidden"
-                      :style="logoMap[app] ? {} : { background: hashColor(app) }">
-                      <img v-if="logoMap[app]" :src="logoMap[app]" :alt="app" class="h-full w-full object-contain" />
-                      <span v-else class="text-sm font-bold text-white">{{ app[0].toUpperCase() }}</span>
+                <div v-for="app in site.installed_apps" :key="app" class="flex items-center gap-3 py-3">
+                  <div class="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg"
+                    :style="logoMap[app] ? {} : { background: hashColor(app) }">
+                    <img v-if="logoMap[app]" :src="logoMap[app]" :alt="app" class="h-full w-full object-contain" />
+                    <span v-else class="text-sm font-bold text-white">{{ app[0].toUpperCase() }}</span>
+                  </div>
+                  <div class="flex min-w-0 flex-col gap-y-0.5">
+                    <p class="text-sm font-medium leading-snug text-ink-gray-9">{{ titleMap[app] || app }}</p>
+                    <div v-if="appDetailMap[app]" class="flex items-center gap-1.5">
+                      <span v-if="appDetailMap[app].is_dirty"
+                        class="inline-flex items-center rounded py-0.5 text-xs font-medium bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400">
+                        Modified
+                      </span>
+                      <span v-if="appDetailMap[app].has_update"
+                        class="inline-flex items-center rounded py-0.5 text-xs font-medium bg-orange-50 text-orange-600 dark:bg-orange-950/40 dark:text-orange-400">
+                        Update available
+                      </span>
+                      <span v-if="!appDetailMap[app].has_update"
+                        class="text-xs text-green-600 py-0.5 dark:text-green-400">
+                        Up to date
+                      </span>
                     </div>
-                    <div>
-                      <p class="text-sm font-medium text-ink-gray-8">{{ titleMap[app] || app }}</p>
-                      <div v-if="appDetailMap[app]" class="mt-0.5 flex items-center gap-1.5 text-xs">
-                        <span v-if="appDetailMap[app].is_dirty" class="flex items-center gap-1 text-xs text-ink-gray-6">
-                          <span class="inline-block h-1.5 w-1.5 rounded-full bg-amber-400" />
-                          Modified
-                        </span>
-                        <Badge v-if="appDetailMap[app].has_update" label="Update available" theme="orange" size="sm" />
-                        <span v-else class="text-ink-green-3">Up to date</span>
-                      </div>
-                      <div v-else-if="appDetailsLoading" class="mt-0.5 h-3 w-28 animate-pulse rounded bg-surface-gray-2" />
-                    </div>
+                    <div v-else-if="appDetailsLoading" class="h-3 w-28 animate-pulse rounded bg-surface-gray-2" />
                   </div>
                 </div>
               </div>
