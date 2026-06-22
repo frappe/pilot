@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Button, Badge, Dialog, LoadingText, ErrorMessage } from 'frappe-ui'
 import TerminalOutput from '../components/TerminalOutput.vue'
 import TaskStream from '../components/TaskStream.vue'
+import { useTaskSteps } from '../composables/useTaskSteps.js'
 import { processLine } from '../utils/ansi.js'
 import LucideDownload from '~icons/lucide/download'
 import LucideCheck from '~icons/lucide/check'
@@ -46,41 +47,7 @@ function fmtDuration(s) {
   return `${Math.round(s / 3600)}h`
 }
 
-// Parse ##[step:KEY,TIMESTAMP] markers into sections with line ranges
-const stepSections = computed(() => {
-  const markers = []
-  rawLines.value.forEach((line, idx) => {
-    const m = line.match(/^##\[step:(\w+),([\d.]+)\]\s*(.*)/)
-    if (m) markers.push({ key: m[1], ts: parseFloat(m[2]) * 1000, label: m[3].trim(), idx })
-  })
-
-  const sections = []
-  for (let i = 0; i < markers.length; i++) {
-    const m = markers[i]
-    if (m.key === 'done') break
-
-    const next = markers[i + 1]
-    const lineStart = m.idx + 1
-    const lineEnd = next ? next.idx : rawLines.value.length
-    const endedAt = next ? next.ts : null
-
-    let status
-    if (next) {
-      status = 'done'
-    } else if (!streaming.value && task.value?.status === 'failed') {
-      status = 'failed'
-    } else if (!streaming.value) {
-      status = 'done'
-    } else {
-      status = 'running'
-    }
-
-    sections.push({ key: m.key, label: m.label, startedAt: m.ts, endedAt, lineStart, lineEnd, status })
-  }
-  return sections
-})
-
-const hasSteps = computed(() => stepSections.value.length > 0)
+const { stepSections, hasSteps, stepDuration } = useTaskSteps(rawLines, streaming, task)
 
 function sectionLines(section) {
   return rawLines.value
@@ -93,12 +60,6 @@ function sectionHasOutput(section) {
   return rawLines.value
     .slice(section.lineStart, section.lineEnd)
     .some(l => l.trim() && !l.match(/^##\[step:/))
-}
-
-function stepDuration(section) {
-  if (!section.startedAt || !section.endedAt) return null
-  const s = (section.endedAt - section.startedAt) / 1000
-  return s < 60 ? `${s.toFixed(1)}s` : `${(s / 60).toFixed(1)}m`
 }
 
 function toggleStep(key) {

@@ -1,8 +1,9 @@
 import subprocess
-import sys
 import time
 
 from bench_cli.commands.get_app import GetAppCommand
+from bench_cli.exceptions import CommandError
+
 from .base_task import BaseTask
 
 
@@ -38,13 +39,7 @@ class GetAndInstallAppTask(BaseTask):
             cwd=str(sites_dir),
         )
         if result.returncode != 0:
-            sys.exit(result.returncode)
-
-        app = next((a for a in self.bench.apps() if a.config.name == self.app), None)
-        if app:
-            _step("build", f"Build assets for {self.app}")
-            from bench_cli.managers.python_env_manager import PythonEnvManager
-            PythonEnvManager(self.bench).build_assets_for_app(app)
+            raise CommandError("Error occured while installing the app on site")
 
         _step("done")
 

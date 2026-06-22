@@ -1,15 +1,11 @@
-import { ref } from 'vue'
-
-const activeTaskId = ref(null)
+import { useRouter } from 'vue-router'
 
 export function useTaskProgress() {
+  const router = useRouter()
+
   function watchTask(taskId) {
-    activeTaskId.value = taskId
+    router.push(`/tasks/${taskId}`)
   }
 
-  function clearTask() {
-    activeTaskId.value = null
-  }
-
-  return { activeTaskId, watchTask, clearTask }
+  return { watchTask }
 }

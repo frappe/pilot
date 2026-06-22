@@ -6,7 +6,6 @@ import AppSidebar from './AppSidebar.vue'
 import SettingsModal from './SettingsModal.vue'
 import BenchSwitcherDialog from './BenchSwitcherDialog.vue'
 import NewBenchDialog from './NewBenchDialog.vue'
-import TaskProgressModal from './TaskProgressModal.vue'
 
 const emit = defineEmits(['logout'])
 
@@ -28,6 +27,7 @@ const breadcrumbs = computed(() => {
   if (path === '/monitor') return [{ label: 'Monitor' }]
   if (path === '/logs') return [{ label: 'Logs' }]
   if (path === '/tasks') return [{ label: 'Tasks' }]
+  if (path.startsWith('/tasks/')) return [{ label: 'Tasks', route: '/tasks' }, { label: String(params.id) }]
   if (path === '/database') return [{ label: 'Database' }]
   if (path.startsWith('/database/binlogs/')) return [
     { label: 'Database' },
@@ -58,6 +58,5 @@ const breadcrumbs = computed(() => {
     <SettingsModal v-model="showSettings" />
     <BenchSwitcherDialog v-model="showChangeBench" />
     <NewBenchDialog v-model="showNewBench" />
-    <TaskProgressModal />
   </div>
 </template>
