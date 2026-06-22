@@ -38,6 +38,7 @@ _WHITELIST: dict[str, list[str]] = {
     "reinstall-site": ["site", "admin_password"],
     "bench-init": [],
     "update-cli": [],
+    "fetch-app-updates": ["site"],
 }
 
 
@@ -191,6 +192,8 @@ class TaskRunner:
             return argv
         if command == "update-cli":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.update_cli_task", str(self._bench_root)]
+        if command == "fetch-app-updates":
+            return [sys.executable, "-m", "admin.backend.tasks.jobs.fetch_app_updates_task", str(self._bench_root), args["site"]]
 
         raise ValueError(f"Unhandled command: {command!r}")
 

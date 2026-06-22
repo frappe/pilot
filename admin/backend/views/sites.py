@@ -112,13 +112,8 @@ def site_apps(name: str):
 @sites_bp.route("/<name>/apps/fetch", methods=["POST"])
 def fetch_app_updates(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    try:
-        site = SiteReader(bench_root).read_one(name)
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 404
-
-    updates = AppReader(bench_root).check_remote_updates(site.installed_apps)
-    return jsonify({"ok": True, "updates": updates})
+    task_id = TaskRunner(bench_root).run("fetch-app-updates", {"site": name})
+    return jsonify({"task_id": task_id})
 
 
 @sites_bp.route("/<name>/apps/<app_name>/commits")
