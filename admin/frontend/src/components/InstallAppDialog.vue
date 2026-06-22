@@ -381,7 +381,7 @@ function confirmCustomInstall() {
                   : 'text-ink-gray-5 hover:text-ink-gray-7'"
                 @click="switchTab('private')">
                 <span v-if="gitConnected" class="h-1.5 w-1.5 rounded-full bg-surface-green-3"></span>
-                Private Account
+                {{ gitConnected ? 'Connected Account' : 'Connect Account' }}
               </button>
             </div>
 
