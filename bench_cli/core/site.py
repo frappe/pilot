@@ -80,7 +80,6 @@ class Site:
         if force:
             cmd.append("--force")
         run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
-
         self.bench.restart()
 
     def list_apps(self) -> list[str]:

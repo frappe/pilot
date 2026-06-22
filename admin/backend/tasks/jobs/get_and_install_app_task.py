@@ -1,8 +1,8 @@
-import subprocess
 import time
 
 from bench_cli.commands.get_app import GetAppCommand
-from bench_cli.exceptions import CommandError
+from bench_cli.core.bench import Bench, BenchConfig
+from bench_cli.core.site import Site, SiteConfig
 
 from .base_task import BaseTask
 
@@ -33,13 +33,9 @@ class GetAndInstallAppTask(BaseTask):
         GetAppCommand(self.bench, self.repo, self.branch).run()
 
         _step("install", f"Install on {self.site}")
-        sites_dir = self.bench_root / "sites"
-        result = subprocess.run(
-            [*self.bench.frappe_call, "frappe", "--site", self.site, "install-app", self.app],
-            cwd=str(sites_dir),
-        )
-        if result.returncode != 0:
-            raise CommandError("Error occured while installing the app on site")
+        bench = Bench(BenchConfig.from_file(self.bench_root / "bench.toml"), self.bench_root)
+        site = Site(SiteConfig(name=self.site, apps=[]), bench)
+        site.install_app(self.app)
 
         _step("done")
 
