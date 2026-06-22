@@ -42,7 +42,20 @@ done
 # and the base build deps for compiling the admin venv (psutil) and frappe wheels.
 if [ -f /etc/alpine-release ] && command -v apk >/dev/null 2>&1; then
     echo "Alpine detected — installing base dependencies via apk..."
-    if [ "$(id -u)" -eq 0 ]; then APK_SUDO=""; else APK_SUDO="sudo"; fi
+    if [ "$(id -u)" -eq 0 ]; then
+        APK_SUDO=""
+    elif command -v sudo >/dev/null 2>&1; then
+        APK_SUDO="sudo"
+    else
+        # Bare Alpine ships no sudo, and a non-root user can't run apk. Re-run as
+        # root first — that path installs sudo and prepares the bench user — then
+        # run the installer again as that user.
+        echo "sudo is not installed and you are not root, so apk packages cannot be"
+        echo "installed. Re-run this installer as root first, then as the bench user:"
+        echo ""
+        echo "   wget -qO- $INSTALL_URL | sh   # as root"
+        exit 1
+    fi
     $APK_SUDO apk add --no-cache \
         git curl bash sudo shadow python3 python3-dev build-base linux-headers tzdata
 fi
