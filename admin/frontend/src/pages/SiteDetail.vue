@@ -235,7 +235,7 @@ const changeBranchApp = ref(null)
 const changeBranchInput = ref('')
 
 const showUpdateModal = ref(false)
-const updateModalApp = ref(null)
+const updateModalApps = ref([])
 
 const appsWithUpdates = computed(() => appDetails.value.filter(a => a.has_update))
 
@@ -246,7 +246,7 @@ function openChangeBranch(app) {
 }
 
 function openUpdateModal(app) {
-  updateModalApp.value = app
+  updateModalApps.value = Array.isArray(app) ? app : [app]
   showUpdateModal.value = true
 }
 
@@ -720,7 +720,7 @@ onMounted(() => {
                   </Button>
                   <div v-if="appsWithUpdates.length || checkingUpdates" class="h-4 w-px bg-outline-gray-2" />
                   <Button v-if="appsWithUpdates.length" variant="ghost" size="sm"
-                    @click="openUpdateModal(appsWithUpdates[0])">
+                    @click="openUpdateModal(appsWithUpdates)">
                     Update ({{ appsWithUpdates.length }})
                   </Button>
                   <div class="h-4 w-px bg-outline-gray-2" />
@@ -1200,7 +1200,7 @@ onMounted(() => {
       </template>
     </Dialog>
 
-    <UpdateAppDialog v-model="showUpdateModal" :app="updateModalApp" :site-name="siteName" />
+    <UpdateAppDialog v-model="showUpdateModal" :apps="updateModalApps" :site-name="siteName" />
 
     <Dialog v-model="showUninstall" :options="{ title: 'Uninstall App', size: 'sm' }">
       <template #body-content>
