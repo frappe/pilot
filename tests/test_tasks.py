@@ -243,6 +243,38 @@ def test_collapse_cr_trailing_cr_ignored() -> None:
     assert _collapse_cr("[100%]\r") == "[100%]"
 
 
+def test_collapse_cr_crlf_keeps_text() -> None:
+    # dpkg/apt emit CRLF line endings without a TTY; the \r must not blank the
+    # line out (this is what produced a wall of empty rows in the setup wizard).
+    from admin.backend.tasks.manager.task_reader import _collapse_cr
+    assert _collapse_cr("Unpacking package\r") == "Unpacking package"
+
+
+def test_collapse_cr_cleared_progress_padding() -> None:
+    # apt clears a progress line by overwriting it with spaces after a \r; the
+    # padding must collapse away to the last real segment, not leak spaces.
+    from admin.backend.tasks.manager.task_reader import _collapse_cr
+    assert _collapse_cr("Fetching\r        ") == "Fetching"
+
+
+def test_collapse_cr_all_whitespace_segments() -> None:
+    from admin.backend.tasks.manager.task_reader import _collapse_cr
+    assert _collapse_cr("   \r   ") == ""
+
+
+def test_read_output_crlf_lines_not_blank(tmp_path: Path) -> None:
+    # Regression: CRLF-terminated apt/dpkg output used to render as empty rows.
+    task_id = "20260521-143022-aabbcc"
+    task_dir = _make_task_dir(tmp_path / "tasks", task_id)
+    (task_dir / "output.log").write_bytes(b"Setting up mariadb\r\nUnpacking redis\r\n")
+
+    reader = TaskReader(tmp_path)
+    with patch("os.kill", return_value=None):
+        result = reader.read_output(task_id, lines=200)
+
+    assert result == ["Setting up mariadb", "Unpacking redis"]
+
+
 def test_read_output_collapses_cr_lines(tmp_path: Path) -> None:
     task_id = "20260521-143022-aabbcc"
     task_dir = _make_task_dir(tmp_path / "tasks", task_id)
