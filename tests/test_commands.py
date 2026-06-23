@@ -827,3 +827,64 @@ def test_orchestrator_rollback_stops_mariadb_and_sets_maintenance() -> None:
     mariadb.start.assert_called_once()
     volume.rollback_snapshot.assert_called_once_with("bench-pool/shop", "tag1")
     assert bench.set_maintenance_mode.call_args_list == [call(True), call(False)]
+
+
+# ── Node.js version enforcement ───────────────────────────────────────────────
+
+
+def test_install_node_skips_when_version_satisfies(tmp_path: Path) -> None:
+    """A new-enough Node already on PATH must not trigger a reinstall."""
+    from bench_cli.managers.python_env_manager import PythonEnvManager, REQUIRED_NODE_MAJOR
+
+    mgr = PythonEnvManager(make_bench(tmp_path))
+    with patch("bench_cli.managers.python_env_manager._installed_node_major", return_value=REQUIRED_NODE_MAJOR), \
+         patch("bench_cli.managers.python_env_manager.which", return_value="/usr/bin/yarn"), \
+         patch.object(PythonEnvManager, "_install_node") as mock_install:
+        mgr.install_node()
+        mock_install.assert_not_called()
+
+
+def test_install_node_reinstalls_when_too_old(tmp_path: Path) -> None:
+    """A stale Node (e.g. 14) must be upgraded before the build runs."""
+    from bench_cli.managers.python_env_manager import PythonEnvManager, REQUIRED_NODE_MAJOR
+
+    mgr = PythonEnvManager(make_bench(tmp_path))
+    with patch("bench_cli.managers.python_env_manager._installed_node_major",
+               side_effect=[14, REQUIRED_NODE_MAJOR]), \
+         patch("bench_cli.managers.python_env_manager.which", return_value="/usr/bin/yarn"), \
+         patch.object(PythonEnvManager, "_install_node") as mock_install:
+        mgr.install_node()
+        mock_install.assert_called_once()
+
+
+def test_install_node_raises_when_still_too_old(tmp_path: Path) -> None:
+    """If a supported Node still isn't reachable after install, fail with a
+    clear, actionable error instead of a cryptic yarn engine failure."""
+    from bench_cli.managers.python_env_manager import PythonEnvManager, REQUIRED_NODE_MAJOR
+
+    mgr = PythonEnvManager(make_bench(tmp_path))
+    with patch("bench_cli.managers.python_env_manager._installed_node_major", side_effect=[14, 14]), \
+         patch.object(PythonEnvManager, "_install_node"):
+        with pytest.raises(BenchError, match=rf">= {REQUIRED_NODE_MAJOR}"):
+            mgr.install_node()
+
+
+def test_install_node_raises_when_missing_after_install(tmp_path: Path) -> None:
+    from bench_cli.managers.python_env_manager import PythonEnvManager
+
+    mgr = PythonEnvManager(make_bench(tmp_path))
+    with patch("bench_cli.managers.python_env_manager._installed_node_major", side_effect=[None, None]), \
+         patch.object(PythonEnvManager, "_install_node"):
+        with pytest.raises(BenchError, match="could not be installed"):
+            mgr.install_node()
+
+
+def test_node_requirement_matches_nodesource_channel() -> None:
+    """The Linux installer's nodesource channel must track REQUIRED_NODE_MAJOR
+    so missing-Node installs land on a supported version."""
+    import inspect
+
+    from bench_cli.managers.python_env_manager import PythonEnvManager, REQUIRED_NODE_MAJOR
+
+    source = inspect.getsource(PythonEnvManager._install_node_linux)
+    assert f"setup_{REQUIRED_NODE_MAJOR}.x" in source
