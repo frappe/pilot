@@ -52,10 +52,10 @@ class TaskRunner:
         self._bench_root = bench_root
 
     def run(self, command: str, args: dict, callbacks: TaskCallbacks | None = None) -> str:
-        command_argv = self._build_argv(command, args)
         task_id = self._generate_task_id()
         task_dir = self._task_dir(task_id)
         task_dir.mkdir(parents=True)
+        command_argv = self._build_argv(command, args, task_dir)
 
         meta = {
             "task_id": task_id,
@@ -107,7 +107,7 @@ class TaskRunner:
     def _task_dir(self, task_id: str) -> Path:
         return self._bench_root / "tasks" / task_id
 
-    def _build_argv(self, command: str, args: dict) -> list[str]:
+    def _build_argv(self, command: str, args: dict, task_dir: Path | None = None) -> list[str]:
         if command not in _WHITELIST:
             raise ValueError(f"Unknown command: {command!r}. Allowed: {sorted(_WHITELIST)}")
 
@@ -137,6 +137,8 @@ class TaskRunner:
             return cmd
         if command == "update":
             argv = [sys.executable, "-m", "admin.backend.tasks.jobs.update_task", str(self._bench_root)]
+            if task_dir:
+                argv += ["--task-log", str(task_dir / "output.log")]
             if args.get("apps"):
                 argv += ["--apps"] + list(args["apps"])
             if args.get("sites"):

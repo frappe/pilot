@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from bench_cli.commands.base import Command
@@ -26,11 +27,14 @@ class UpdateCommand(Command):
         skip_confirm: bool = False,
         apps: set | None = None,
         sites: set | None = None,
+        task_log: Path | None = None,
     ) -> None:
         self.bench = bench
         self.skip_confirm = skip_confirm
         self._apps_filter = apps  # None = all apps
         self._sites_filter = sites  # None = all sites
+        self._task_log = task_log
+        self.tag: str | None = None
 
     @staticmethod
     def _step(key: str, label: str) -> None:
@@ -40,8 +44,9 @@ class UpdateCommand(Command):
         from bench_cli.managers.process_manager import ProcessManagerFactory
 
         self._warn_if_running()
-        if self.bench.config.volume.enabled:
-            self.bench.set_maintenance_mode(True)  # Avoid any more requests since we need a stable snapshot state
+        volume_enabled = self.bench.config.volume.enabled
+        if volume_enabled:
+            self.bench.set_maintenance_mode(True)
             self._step("pre", "Taking a snapshot")
             self._snapshot()
         try:
@@ -55,14 +60,22 @@ class UpdateCommand(Command):
             self._migrate_sites()
             self._step("restart", "Restarting services")
             ProcessManagerFactory.create(self.bench).reload_web()
-        except MigrateError:
-            if self.bench.config.volume.enabled and self.tag:
-                self._step("post", "Rolling Back")
+        except MigrateError as e:
+            self._step("failed", str(e))
+            if volume_enabled and self.tag:
+                self._preserve_failure_context(str(e))
+                self._step("post", "Rolling back to snapshot")
                 self._rollback()
-            else:
-                sys.exit(1)
+                self._restore_task_log()
+                self._step("restart", "Restarting services after rollback")
+                try:
+                    ProcessManagerFactory.create(self.bench).reload_web()
+                except Exception as reload_err:
+                    print(f"Warning: could not reload services after rollback: {reload_err}", file=sys.stderr)
+            sys.exit(1)
         finally:
-            self.bench.set_maintenance_mode(False) # Just to make sure we are not stuck in maintenance mode
+            if volume_enabled:
+                self.bench.set_maintenance_mode(False)
 
         self._step("done", "Done")
 
@@ -97,6 +110,39 @@ class UpdateCommand(Command):
             orchestrator.rollback_snapshot(self.tag)
         except Exception as e:
             print(f" Unable to rollback to snapshot: {e}")
+
+    def _preserve_failure_context(self, reason: str) -> None:
+        """Snapshot the task log + failure summary to /tmp before rollback wipes the ZFS pool."""
+        path = Path("/tmp") / f"bench-update-failure-{self.tag}.txt"
+        try:
+            sys.stdout.flush()
+            parts: list[bytes] = []
+            if self._task_log and self._task_log.exists():
+                parts.append(self._task_log.read_bytes())
+            summary = (
+                f"\n[Update failed — rolling back to snapshot {self.tag}]\n"
+                f"reason: {reason}\n"
+                f"time: {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}\n"
+            ).encode()
+            parts.append(summary)
+            path.write_bytes(b"".join(parts))
+        except Exception:
+            pass
+
+    def _restore_task_log(self) -> None:
+        """After rollback wipes the task dir, recreate it and write the saved log back."""
+        if not self._task_log:
+            return
+        path = Path("/tmp") / f"bench-update-failure-{self.tag}.txt"
+        if not path.exists():
+            return
+        try:
+            content = path.read_bytes()
+            self._task_log.parent.mkdir(parents=True, exist_ok=True)
+            self._task_log.write_bytes(content)
+            path.unlink()
+        except Exception:
+            pass
 
     def _update_apps(self) -> None:
         for app in self.bench.apps():

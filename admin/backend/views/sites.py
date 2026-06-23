@@ -109,22 +109,6 @@ def site_apps(name: str):
     return jsonify({"apps": result})
 
 
-@sites_bp.route("/<name>/update")
-def update_site(name: str):
-    data = request.get_json(silent=True)
-    apps_to_update = data.get("apps")
-
-    if not apps_to_update:
-        return jsonify({"ok": False, "error": "No apps selected to update"})
-
-    task_id = TaskRunner(bench_root=current_app.config["BENCH_ROOT"]).run(
-        "update-site",
-        {"name": name, "apps_to_update": apps_to_update},
-    )
-
-    return jsonify({"task_id": task_id})
-
-
 @sites_bp.route("/create", methods=["POST"])
 def create():
     bench_root = Path(current_app.config["BENCH_ROOT"])
