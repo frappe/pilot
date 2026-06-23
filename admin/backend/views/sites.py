@@ -90,7 +90,6 @@ def site_apps(name: str):
                     "commit": info.current_commit,
                     "version": info.installed_version,
                     "repo": info.repo,
-                    "has_update": info.has_update,
                     "is_dirty": info.uncommitted_changes,
                 }
             )
@@ -102,7 +101,6 @@ def site_apps(name: str):
                     "commit": "",
                     "version": "",
                     "repo": "",
-                    "has_update": False,
                 }
             )
 

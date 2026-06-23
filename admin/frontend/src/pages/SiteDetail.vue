@@ -675,16 +675,8 @@ onMounted(() => {
                     <p class="text-sm font-medium leading-snug text-ink-gray-9">{{ titleMap[app] || app }}</p>
                     <div v-if="appDetailMap[app]" class="flex items-center gap-1.5">
                       <span v-if="appDetailMap[app].is_dirty"
-                        class="inline-flex items-center rounded py-0.5 text-xs font-medium bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400">
+                        class="inline-flex items-center rounded px-0.5 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-300">
                         Modified
-                      </span>
-                      <span v-if="appDetailMap[app].has_update"
-                        class="inline-flex items-center rounded py-0.5 text-xs font-medium bg-orange-50 text-orange-600 dark:bg-orange-950/40 dark:text-orange-400">
-                        Update available
-                      </span>
-                      <span v-if="!appDetailMap[app].has_update"
-                        class="text-xs text-green-600 py-0.5 dark:text-green-400">
-                        Up to date
                       </span>
                     </div>
                     <div v-else-if="appDetailsLoading" class="h-3 w-28 animate-pulse rounded bg-surface-gray-2" />

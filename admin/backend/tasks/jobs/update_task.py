@@ -1,6 +1,8 @@
+import sys
 from pathlib import Path
 
 from bench_cli.commands.update import UpdateCommand
+from bench_cli.exceptions import MigrateError
 from .base_task import BaseTask
 
 
@@ -20,13 +22,16 @@ class UpdateTask(BaseTask):
         self._task_log = Path(args.task_log) if getattr(args, "task_log", None) else None
 
     def run(self) -> None:
-        UpdateCommand(
-            self.bench,
-            skip_confirm=True,
-            apps=self._apps_filter,
-            sites=self._sites_filter,
-            task_log=self._task_log,
-        ).run()
+        try:
+            UpdateCommand(
+                self.bench,
+                skip_confirm=True,
+                apps=self._apps_filter,
+                sites=self._sites_filter,
+                task_log=self._task_log,
+            ).run()
+        except MigrateError:
+            sys.exit(1)
 
 
 if __name__ == "__main__":

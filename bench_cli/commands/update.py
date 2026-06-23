@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import time
+import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -35,14 +36,17 @@ class UpdateCommand(Command):
         self._sites_filter = sites  # None = all sites
         self._task_log = task_log
         self.tag: str | None = None
+        self._current_step: str | None = None
 
-    @staticmethod
-    def _step(key: str, label: str) -> None:
+    def _step(self, key: str, label: str) -> None:
+        self._current_step = key
         print(f"##[step:{key},{time.time():.3f}] {label}", flush=True)
 
-    def run(self) -> None:
-        from bench_cli.managers.process_manager import ProcessManagerFactory
+    def _step_failed(self) -> None:
+        if self._current_step:
+            print(f"##[step-failed:{self._current_step},{time.time():.3f}]", flush=True)
 
+    def run(self) -> None:
         self._warn_if_running()
         volume_enabled = self.bench.config.volume.enabled
         if volume_enabled:
@@ -59,20 +63,19 @@ class UpdateCommand(Command):
             self._step("migrate", "Migrating sites")
             self._migrate_sites()
             self._step("restart", "Restarting services")
-            ProcessManagerFactory.create(self.bench).reload_web()
-        except MigrateError as e:
-            self._step("failed", str(e))
+            self._reload_web()
+        except MigrateError:
+            self._step_failed()
+            traceback.print_exc()  # print at the point of failure, before any rollback steps
+            sys.stdout.flush()
             if volume_enabled and self.tag:
-                self._preserve_failure_context(str(e))
+                self._preserve_failure_context()
                 self._step("post", "Rolling back to snapshot")
                 self._rollback()
                 self._restore_task_log()
                 self._step("restart", "Restarting services after rollback")
-                try:
-                    ProcessManagerFactory.create(self.bench).reload_web()
-                except Exception as reload_err:
-                    print(f"Warning: could not reload services after rollback: {reload_err}", file=sys.stderr)
-            sys.exit(1)
+                self._reload_web()
+            raise
         finally:
             if volume_enabled:
                 self.bench.set_maintenance_mode(False)
@@ -111,26 +114,22 @@ class UpdateCommand(Command):
         except Exception as e:
             print(f" Unable to rollback to snapshot: {e}")
 
-    def _preserve_failure_context(self, reason: str) -> None:
-        """Snapshot the task log + failure summary to /tmp before rollback wipes the ZFS pool."""
+    def _preserve_failure_context(self) -> None:
+        """Snapshot the current task log to /tmp before rollback wipes the ZFS pool."""
+        if not self._task_log or not self._task_log.exists():
+            return
         path = Path("/tmp") / f"bench-update-failure-{self.tag}.txt"
         try:
-            sys.stdout.flush()
-            parts: list[bytes] = []
-            if self._task_log and self._task_log.exists():
-                parts.append(self._task_log.read_bytes())
-            summary = (
-                f"\n[Update failed — rolling back to snapshot {self.tag}]\n"
-                f"reason: {reason}\n"
-                f"time: {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}\n"
-            ).encode()
-            parts.append(summary)
-            path.write_bytes(b"".join(parts))
+            path.write_bytes(self._task_log.read_bytes())
         except Exception:
             pass
 
     def _restore_task_log(self) -> None:
-        """After rollback wipes the task dir, recreate it and write the saved log back."""
+        """After rollback wipes the task dir, recreate it and write the saved log back.
+
+        Writes via the stdout FD rather than reopening the path, so the FD position
+        stays consistent and there are no null-byte gaps from a truncate-then-write.
+        """
         if not self._task_log:
             return
         path = Path("/tmp") / f"bench-update-failure-{self.tag}.txt"
@@ -139,7 +138,12 @@ class UpdateCommand(Command):
         try:
             content = path.read_bytes()
             self._task_log.parent.mkdir(parents=True, exist_ok=True)
-            self._task_log.write_bytes(content)
+            # Truncate and rewrite via the open stdout FD so position stays in sync.
+            stdout_fd = sys.stdout.fileno()
+            import os
+            os.ftruncate(stdout_fd, 0)
+            os.lseek(stdout_fd, 0, os.SEEK_SET)
+            os.write(stdout_fd, content)
             path.unlink()
         except Exception:
             pass
@@ -153,6 +157,7 @@ class UpdateCommand(Command):
                 app.update()
             except CommandError as e:
                 print(f"  Error updating {app.config.name}: {e}", file=sys.stderr)
+                raise MigrateError(f"Failed to update {app.config.name}")
 
     def _reinstall_apps(self) -> None:
         from bench_cli.managers.python_env_manager import PythonEnvManager
@@ -162,7 +167,10 @@ class UpdateCommand(Command):
             if self._apps_filter is not None and app.config.name not in self._apps_filter:
                 continue
             print(f"Reinstalling {app.config.name}...")
-            mgr.install_app(app)
+            try:
+                mgr.install_app(app)
+            except CommandError as e:
+                raise MigrateError(f"Failed to install app {app}: {e}")
 
     def _rebuild_assets(self) -> None:
         from bench_cli.managers.python_env_manager import PythonEnvManager
@@ -175,15 +183,20 @@ class UpdateCommand(Command):
             mgr.build_assets_for_app(app)
 
     def _migrate_sites(self) -> None:
-        failed = False
         for site in self.bench.sites():
             if self._sites_filter is not None and site.config.name not in self._sites_filter:
                 continue
             print(f"Migrating {site.config.name}...")
             try:
+                raise MigrateError(f"Migration failed for this site: {site.config.name}")
                 site.migrate()
             except CommandError as e:
-                print(f"  Migration failed for {site.config.name}: {e}", file=sys.stderr)
-                failed = True
-        if failed:
-            raise MigrateError("One or more site migrations failed.")
+                raise MigrateError(f"Migration failed for {site.config.name}") from e
+
+    def _reload_web(self) -> None:
+        from bench_cli.managers.process_manager import ProcessManagerFactory
+
+        try:
+            ProcessManagerFactory.create(self.bench).reload_web()
+        except Exception as e:
+            print(f"Warning: Failed to reload web service: {e}")
