@@ -190,6 +190,10 @@ const configSteps = computed(() => {
 const stepNumber = computed(() => configSteps.value.indexOf(step.value) + 1)
 const isConfiguring = computed(() => stepNumber.value > 0)
 const isRunning = computed(() => step.value === 'running')
+// The production deploy (a separate, shared `setup production` command) emits no
+// [N/M] markers, so its progress is shown as an indeterminate bar rather than a
+// fake percentage. All real step tracking lives in init.
+const indeterminate = computed(() => isRunning.value && streamPhase.value === 'production')
 const isLastConfigStep = computed(() => step.value === configSteps.value[configSteps.value.length - 1])
 const modalWidthClass = computed(() => (isRunning.value && showDetails.value ? 'max-w-2xl' : 'max-w-lg'))
 
@@ -227,7 +231,10 @@ async function loadConfig() {
       form.value.dedicated_db = data.mariadb_instance ? 'dedicated' : 'shared'
       if (form.value.production_process_manager === 'none') form.value.production_process_manager = nativeProcessManager.value
     }
-    if (data.running_init_task_id) {
+    if (data.running_production_task_id) {
+      step.value = 'running'
+      beginStream('production', data.running_production_task_id)
+    } else if (data.running_init_task_id) {
       step.value = 'running'
       beginStream('init', data.running_init_task_id)
     }
@@ -614,10 +621,13 @@ function backToConfig() {
         <div v-else-if="isRunning" class="flex flex-col gap-4">
           <div class="flex flex-col gap-2">
             <div class="flex items-center justify-between">
-              <p class="text-sm text-ink-gray-7">{{ currentStep }}</p>
-              <p class="text-sm text-ink-gray-4">{{ progress }}%</p>
+              <p class="text-sm text-ink-gray-7">{{ indeterminate ? 'Deploying to production…' : currentStep }}</p>
+              <p v-if="!indeterminate" class="text-sm text-ink-gray-4">{{ progress }}%</p>
             </div>
-            <Progress :value="progress" size="md" />
+            <Progress v-if="!indeterminate" :value="progress" size="md" />
+            <div v-else class="h-1.5 w-full overflow-hidden rounded-full bg-surface-gray-3">
+              <div class="indeterminate-bar h-full w-1/3 rounded-full bg-ink-gray-8" />
+            </div>
           </div>
           <button
             type="button"
@@ -681,3 +691,14 @@ function backToConfig() {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Indeterminate progress for the production deploy (no [N/M] steps to report). */
+@keyframes indeterminate-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+.indeterminate-bar {
+  animation: indeterminate-slide 1.2s ease-in-out infinite;
+}
+</style>

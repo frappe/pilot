@@ -28,11 +28,11 @@ export function ansiToHtml(text) {
   return html + '</span>'.repeat(openSpans)
 }
 
-// Resolve \r (progress-bar overwrites): keep the last non-empty segment
+// Resolve \r (progress-bar overwrites): keep the last non-whitespace segment
 function applyCarriageReturns(raw) {
   const parts = raw.split('\r')
   for (let i = parts.length - 1; i >= 0; i--) {
-    if (parts[i]) return parts[i]
+    if (parts[i].trim()) return parts[i].trimEnd()
   }
   return ''
 }
