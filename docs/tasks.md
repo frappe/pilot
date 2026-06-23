@@ -131,7 +131,7 @@ class TaskRunner:
 | `clear-cache` | `site` | `env/bin/bench --site <site> clear-cache` |
 | `install-app` | `site`, `app` | `env/bin/bench --site <site> install-app <app>` |
 | `build` | — | `env/bin/bench build` |
-| `update` | — | `env/bin/bench update --yes` |
+| `update` | `apps` (optional list) | `python -m admin.backend.tasks.jobs.update_task --bench-root <root> --apps [...] --task-log <output.log>` |
 | `reload-supervisor` | — | `supervisorctl -c config/supervisor.conf reload` |
 
 All paths in `command_argv` are absolute (resolved from `bench_root`) so the child process does not depend on `$CWD`.

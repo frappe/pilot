@@ -385,45 +385,59 @@ bench build --force  # skip download, rebuild from source
 
 ## `bench update`
 
-Pulls the latest commits for all apps, reinstalls Python packages, and migrates all sites.
+Pulls the latest commits for all apps, reinstalls Python packages, rebuilds assets, and migrates all sites. Fails fast on the first error. When the bench sits on a ZFS volume, a snapshot is taken before any changes are made and the bench is automatically rolled back if anything goes wrong.
 
-### Pre-conditions
+```
+bench update [--yes] [--apps <app> ...]
+```
 
-- `bench init` has been run.
-- All processes are stopped (warn the user if any Procfile processes are detected running).
+| Flag | Description |
+|------|-------------|
+| `--yes` / `-y` | Skip the "processes are running" confirmation prompt. |
+| `--apps <name> ...` | Limit git pull + reinstall to the named apps (default: all). |
 
 ### Steps
 
 ```
-1.  Warn if processes are running
-2.  For each app: git pull
-3.  For each app: uv pip install -e
-4.  For each site: bench migrate
+[pre]     Take a snapshot           (ZFS benches only)
+[fetch]   Fetch latest code         git pull for each app
+[install] Install dependencies      uv pip install -e for each app
+[assets]  Build assets              bench build for each app
+[migrate] Migrate sites             bench migrate for each site
+[restart] Restart services          reload_web
+[done]    Done
 ```
 
-#### Step 1 — Warn if processes are running
+Each step emits a `##[step:KEY,TIMESTAMP] Label` marker that the admin UI uses to display a live progress timeline with per-step status and duration.
 
-If `pids/bench.pid` exists and the process is alive, print a warning and ask the user to confirm before continuing. In non-interactive mode (`--yes` flag), skip the prompt and proceed.
+### ZFS snapshot and automatic rollback
 
-#### Step 2 — git pull for each app
+When `volume.enabled = true` in `bench.toml`, the update command:
 
-For each app discovered in `apps/`:
-```
-git -C apps/<name> pull
-```
+1. Enters maintenance mode before touching anything.
+2. Takes a timestamped snapshot (`YYYYMMDD-HHMMSS`) covering both the bench dataset and the MariaDB dataset (via the snapshot orchestrator).
+3. Runs the normal fetch → install → assets → migrate → restart sequence.
+4. **On failure:** marks the failed step, prints the full traceback, then rolls back to the snapshot and reloads the web service so the bench returns to a known-good state.
+5. Exits maintenance mode in the `finally` block whether or not the update succeeded.
 
-#### Step 3 — uv pip install -e for each app
+#### Log preservation across rollback
 
-`PythonEnvManager.install_app(app)` re-runs `uv pip install -e apps/<name>` to pick up any new Python dependencies.
+Because the task directory lives inside the ZFS dataset, a pool revert would erase `output.log` along with everything else. To keep the complete log:
 
-#### Step 4 — bench migrate for each site
+1. The current log is copied to `/tmp/bench-update-rollback-<tag>.log` before the rollback runs.
+2. The rollback step's own output is appended to that `/tmp` file (via `redirect_stdout`/`redirect_stderr`).
+3. After the revert, a fresh `output.log` is written from the `/tmp` copy and `sys.stdout`/`sys.stderr` are redirected there so subsequent steps (restart, maintenance-mode release) are also captured.
 
-For each site discovered in `sites/`:
-```
-env/bin/bench --site <site.name> migrate
-```
+### Pre-conditions
 
-If migration fails on one site, print the error and continue with remaining sites. Exit with a non-zero code at the end if any migration failed.
+- `bench init` has been run.
+- All processes are stopped (a warning is printed if any Procfile processes are detected running; use `--yes` to skip the confirmation).
+
+### Failure behaviour
+
+- Fails fast on the first error in any step (app pull, install, asset build, or site migration).
+- Raises `MigrateError`, which `UpdateTask` catches to set the exit code to 1.
+- On ZFS benches the bench is rolled back before exiting; on non-ZFS benches the process exits immediately after printing the traceback.
 
 ---
 

@@ -202,7 +202,7 @@ Each bench lives on a single dataset (`<pool>/<bench>`) holding both its files a
 | `bench new-site <name>` | Create a site |
 | `bench rename-site <old> <new>` | Rename a site (checks the hostname is free across all benches) |
 | `bench build` | Download pre-built assets (use `--force` to rebuild from source) |
-| `bench update` | git pull + reinstall + migrate all sites |
+| `bench update [--apps ..]` | git pull → reinstall deps → rebuild assets → migrate all sites; fails fast on the first error; on ZFS benches takes a snapshot first and auto-rolls back on failure |
 | `bench upgrade` | Pull latest bench-cli and download the admin frontend |
 | `bench setup config` | Regenerate Procfile and config files from bench.toml |
 | `bench build-admin` | Rebuild admin frontend assets from source |

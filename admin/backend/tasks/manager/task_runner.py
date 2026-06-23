@@ -141,8 +141,6 @@ class TaskRunner:
                 argv += ["--task-log", str(task_dir / "output.log")]
             if args.get("apps"):
                 argv += ["--apps"] + list(args["apps"])
-            if args.get("sites"):
-                argv += ["--sites"] + list(args["sites"])
             return argv
         if command == "get-app":
             argv = [sys.executable, "-m", "admin.backend.tasks.jobs.get_app_task", str(self._bench_root), args["repo"]]

@@ -11,14 +11,12 @@ class UpdateTask(BaseTask):
     def _parser(cls):
         p = super()._parser()
         p.add_argument("--apps", nargs="*", default=None)
-        p.add_argument("--sites", nargs="*", default=None)
         p.add_argument("--task-log", default=None)
         return p
 
     def __init__(self, bench, bench_root, args):
         super().__init__(bench, bench_root, args)
         self._apps_filter = set(args.apps) if args.apps else None
-        self._sites_filter = set(args.sites) if args.sites else None
         self._task_log = Path(args.task_log) if getattr(args, "task_log", None) else None
 
     def run(self) -> None:
@@ -27,7 +25,6 @@ class UpdateTask(BaseTask):
                 self.bench,
                 skip_confirm=True,
                 apps=self._apps_filter,
-                sites=self._sites_filter,
                 task_log=self._task_log,
             ).run()
         except MigrateError:

@@ -19,21 +19,28 @@ class UpdateCommand(Command):
     help = "Pull latest code and migrate sites."
 
     @classmethod
+    def add_arguments(cls, parser):
+        parser.add_argument(
+            "--apps",
+            nargs="+",
+            metavar="APP",
+            help="Limit git pull + reinstall to these apps (default: all).",
+        )
+
+    @classmethod
     def from_args(cls, args, bench):
-        return cls(bench, skip_confirm=args.yes)
+        return cls(bench, skip_confirm=args.yes, apps=set(args.apps) if args.apps else None)
 
     def __init__(
         self,
         bench: "Bench",
         skip_confirm: bool = False,
         apps: set | None = None,
-        sites: set | None = None,
         task_log: Path | None = None,
     ) -> None:
         self.bench = bench
         self.skip_confirm = skip_confirm
         self._apps_filter = apps  # None = all apps
-        self._sites_filter = sites  # None = all sites
         self._task_log = task_log
         self.tag: str | None = None
         self._current_step: str | None = None
@@ -198,8 +205,6 @@ class UpdateCommand(Command):
 
     def _migrate_sites(self) -> None:
         for site in self.bench.sites():
-            if self._sites_filter is not None and site.config.name not in self._sites_filter:
-                continue
             print(f"Migrating {site.config.name}...")
             try:
                 site.migrate()
