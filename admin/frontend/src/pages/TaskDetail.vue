@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Button, Badge, Dialog, LoadingText, ErrorMessage } from 'frappe-ui'
 import TerminalOutput from '../components/TerminalOutput.vue'
 import TaskStream from '../components/TaskStream.vue'
-import { useTaskSteps } from '../composables/useTaskSteps.js'
+import { useTaskSteps, STEP_MARKER_RE } from '../composables/useTaskSteps.js'
 import { processLine } from '../utils/ansi.js'
 import LucideDownload from '~icons/lucide/download'
 import LucideCheck from '~icons/lucide/check'
@@ -52,14 +52,14 @@ const { stepSections, hasSteps, stepDuration } = useTaskSteps(rawLines, streamin
 function sectionLines(section) {
   return rawLines.value
     .slice(section.lineStart, section.lineEnd)
-    .filter(l => !l.match(/^##\[step:/))
+    .filter(l => !l.match(STEP_MARKER_RE))
     .map(processLine)
 }
 
 function sectionHasOutput(section) {
   return rawLines.value
     .slice(section.lineStart, section.lineEnd)
-    .some(l => l.trim() && !l.match(/^##\[step:/))
+    .some(l => l.trim() && !l.match(STEP_MARKER_RE))
 }
 
 function toggleStep(key) {
@@ -91,8 +91,9 @@ function onStreamLine(raw) {
 
 function onStreamDone(success) {
   if (!success && stepSections.value.length) {
-    // Expand the failed step so the output is immediately visible
-    expandedSteps.value = new Set([stepSections.value[stepSections.value.length - 1].key])
+    const failed = stepSections.value.find(s => s.status === 'failed')
+      ?? stepSections.value[stepSections.value.length - 1]
+    expandedSteps.value = new Set([failed.key])
   }
   load()
 }

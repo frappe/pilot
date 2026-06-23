@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Button, Badge, Dialog, Dropdown, FormControl, ListView, LoadingText, ErrorMessage, Tabs } from 'frappe-ui'
 import { useTaskProgress } from '../composables/useTaskProgress.js'
+import { useAppRegistry, hashColor } from '../composables/useAppRegistry.js'
 import InstallAppDialog from '../components/InstallAppDialog.vue'
 import LucideServer from '~icons/lucide/server'
 import LucideMoreVertical from '~icons/lucide/more-vertical'
@@ -16,18 +17,15 @@ const route = useRoute()
 const router = useRouter()
 const siteName = route.params.name
 const { watchTask } = useTaskProgress()
+const { registry, logoMap, titleMap, loadRegistry } = useAppRegistry()
 
 const site = ref(null)
 const httpPort = ref(8000)
 const nginxEnabled = ref(false)
 const adminTls = ref(false)
 const installable = ref([])
-const registry = ref([])
 const loading = ref(true)
 const error = ref('')
-
-const logoMap = computed(() => Object.fromEntries(registry.value.map(a => [a.name, a.logo_url])))
-const titleMap = computed(() => Object.fromEntries(registry.value.map(a => [a.name, a.title])))
 
 const actionLoading = ref('')
 const actionError = ref('')
@@ -221,6 +219,23 @@ async function deleteConfigEntry() {
   }
 }
 
+// ── Apps tab detail ───────────────────────────────────────────────────────────
+const appDetails = ref([])       // [{has_update}]
+const appDetailsLoading = ref(false)
+const appsTabLoaded = ref(false)
+
+const appDetailMap = computed(() => Object.fromEntries(appDetails.value.map(a => [a.name, a])))
+
+async function loadAppDetails() {
+  appDetailsLoading.value = true
+  try {
+    const res = await fetch(`/api/sites/${siteName}/apps`)
+    const d = await res.json()
+    if (d.apps) appDetails.value = d.apps
+  } catch { /* non-fatal — falls back to name-only display */ }
+  finally { appDetailsLoading.value = false }
+}
+
 const TAB_SLUGS = ['apps', 'config', 'backups', 'actions']
 const tabs = [
   { label: 'Apps' },
@@ -344,6 +359,10 @@ async function deleteBackupSet() {
 
 watch(activeTab, (idx) => {
   router.replace({ hash: `#${TAB_SLUGS[idx]}` })
+  if (tabs[idx]?.label === 'Apps' && !appsTabLoaded.value) {
+    appsTabLoaded.value = true
+    loadAppDetails()
+  }
   if (tabs[idx]?.label === 'Backups' && !backupsTabLoaded.value) {
     backupsTabLoaded.value = true
     loadBackups()
@@ -489,13 +508,6 @@ const backupRows = computed(() => backups.value.map(set => ({
   set,
 })))
 
-const COLORS = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed']
-function hashColor(name) {
-  let h = 0
-  for (const c of name) h = (h * 31 + c.charCodeAt(0)) | 0
-  return COLORS[Math.abs(h) % COLORS.length]
-}
-
 async function load() {
   try {
     const res = await fetch(`/api/sites/${siteName}`)
@@ -511,13 +523,6 @@ async function load() {
   } finally {
     loading.value = false
   }
-}
-
-async function loadRegistry() {
-  try {
-    const res = await fetch('/api/apps/registry')
-    registry.value = await res.json()
-  } catch { registry.value = [] }
 }
 
 async function doAction(path, body = {}) {
@@ -586,6 +591,10 @@ async function forceDrop() {
 onMounted(() => {
   load()
   loadRegistry()
+  if (tabs[activeTab.value]?.label === 'Apps') {
+    appsTabLoaded.value = true
+    loadAppDetails()
+  }
   if (tabs[activeTab.value]?.label === 'Backups') {
     backupsTabLoaded.value = true
     loadBackups()
@@ -656,18 +665,22 @@ onMounted(() => {
                 No apps installed on this site.
               </div>
               <div v-else class="divide-y divide-outline-gray-1 px-4">
-                <div v-for="app in site.installed_apps" :key="app" class="flex items-center justify-between py-3">
-                  <div class="flex items-center gap-3">
-                    <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md overflow-hidden"
-                      :style="logoMap[app] ? {} : { background: hashColor(app) }">
-                      <img v-if="logoMap[app]" :src="logoMap[app]" :alt="app" class="h-full w-full object-contain" />
-                      <span v-else class="text-sm font-bold text-white">{{ app[0].toUpperCase() }}</span>
-                    </div>
-                    <span class="text-sm font-medium text-ink-gray-8">{{ titleMap[app] || app }}</span>
+                <div v-for="app in site.installed_apps" :key="app" class="flex items-center gap-3 py-3">
+                  <div class="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg"
+                    :style="logoMap[app] ? {} : { background: hashColor(app) }">
+                    <img v-if="logoMap[app]" :src="logoMap[app]" :alt="app" class="h-full w-full object-contain" />
+                    <span v-else class="text-sm font-bold text-white">{{ app[0].toUpperCase() }}</span>
                   </div>
-                  <Button v-if="app !== 'frappe'" variant="ghost" theme="red" size="sm" @click="confirmUninstall(app)">
-                    Uninstall
-                  </Button>
+                  <div class="flex min-w-0 flex-col gap-y-0.5">
+                    <p class="text-sm font-medium leading-snug text-ink-gray-9">{{ titleMap[app] || app }}</p>
+                    <div v-if="appDetailMap[app]" class="flex items-center gap-1.5">
+                      <span v-if="appDetailMap[app].is_dirty"
+                        class="inline-flex items-center rounded px-0.5 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-300">
+                        Modified
+                      </span>
+                    </div>
+                    <div v-else-if="appDetailsLoading" class="h-3 w-28 animate-pulse rounded bg-surface-gray-2" />
+                  </div>
                 </div>
               </div>
             </div>

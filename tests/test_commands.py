@@ -590,9 +590,9 @@ def test_update_command_skips_confirm_when_bench_not_running(tmp_path: Path) -> 
         cmd._warn_if_running()  # no raise, no prompt
 
 
-def test_update_command_update_apps_ignores_command_errors(tmp_path: Path) -> None:
+def test_update_command_update_apps_raises_on_command_error(tmp_path: Path) -> None:
     from bench_cli.commands.update import UpdateCommand
-    from bench_cli.exceptions import CommandError
+    from bench_cli.exceptions import CommandError, MigrateError
 
     bench = make_bench(tmp_path)
     bench.create_directories()
@@ -603,12 +603,13 @@ def test_update_command_update_apps_ignores_command_errors(tmp_path: Path) -> No
     cmd = UpdateCommand(bench, skip_confirm=True)
 
     with patch("bench_cli.core.app.App.update", side_effect=CommandError("git error")):
-        cmd._update_apps()  # should not raise
+        with pytest.raises(MigrateError):
+            cmd._update_apps()
 
 
-def test_update_command_migrate_sites_handles_failures(tmp_path: Path) -> None:
+def test_update_command_migrate_sites_raises_on_failure(tmp_path: Path) -> None:
     from bench_cli.commands.update import UpdateCommand
-    from bench_cli.exceptions import CommandError
+    from bench_cli.exceptions import CommandError, MigrateError
 
     bench = make_bench(tmp_path)
     bench.create_directories()
@@ -619,7 +620,7 @@ def test_update_command_migrate_sites_handles_failures(tmp_path: Path) -> None:
     cmd = UpdateCommand(bench, skip_confirm=True)
 
     with patch("bench_cli.core.site.Site.migrate", side_effect=CommandError("migrate failed")):
-        with pytest.raises(SystemExit):
+        with pytest.raises(MigrateError):
             cmd._migrate_sites()
 
 

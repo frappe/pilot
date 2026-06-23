@@ -130,28 +130,10 @@ def set_upstream(name: str):
     return jsonify({"ok": True})
 
 
-@apps_bp.route("/<name>/switch-branch", methods=["POST"])
-def switch_branch(name: str):
+@apps_bp.route("/fetch", methods=["POST"])
+def fetch_updates():
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True) or {}
+    task_id = TaskRunner(bench_root).run("fetch-all-app-updates", {})
+    return jsonify({"task_id": task_id})
 
-    branch = (data.get("branch") or "").strip()
-    err = first_error(
-        (None if branch else "Branch is required."),
-        validate_branch_name(branch),
-    )
-    if err:
-        return jsonify({"ok": False, "error": err})
 
-    # Verify app is cloned
-    if not (bench_root / "apps" / name / ".git").exists():
-        return jsonify({"ok": False, "error": f"App '{name}' is not installed."})
-
-    try:
-        task_id = TaskRunner(bench_root).run(
-            "switch-branch", {"name": name, "branch": branch}
-        )
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
-
-    return jsonify({"ok": True, "task_id": task_id})

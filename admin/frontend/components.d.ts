@@ -23,5 +23,6 @@ declare module 'vue' {
     SettingsModal: typeof import('./src/components/SettingsModal.vue')['default']
     TaskStream: typeof import('./src/components/TaskStream.vue')['default']
     TerminalOutput: typeof import('./src/components/TerminalOutput.vue')['default']
+    UpdateAppDialog: typeof import('./src/components/UpdateAppDialog.vue')['default']
   }
 }

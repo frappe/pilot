@@ -4,6 +4,8 @@ from datetime import datetime
 
 from flask import Blueprint, current_app, jsonify
 
+from bench_cli.managers.snapshot_orchestrator import get_orchestrator
+
 from ..readers.snapshot_reader import SnapshotReader
 from ..readers.volume_reader import VolumeReader
 
@@ -22,20 +24,6 @@ def _get_volume_manager(bench_root):
 
     bench_config = BenchConfig.from_file(bench_root / "bench.toml")
     return VolumeManager(bench_config.volume)
-
-
-def _get_orchestrator(bench_root):
-    from bench_cli.config.bench_config import BenchConfig
-    from bench_cli.core.bench import Bench
-    from bench_cli.managers.mariadb_manager import MariaDBManager
-    from bench_cli.managers.snapshot_orchestrator import SnapshotOrchestrator
-    from bench_cli.managers.volume_manager import VolumeManager
-
-    bench_config = BenchConfig.from_file(bench_root / "bench.toml")
-    volume = VolumeManager(bench_config.volume)
-    mariadb = MariaDBManager(bench_config.mariadb)
-    bench = Bench(bench_config, bench_root)
-    return SnapshotOrchestrator(volume, mariadb, bench)
 
 
 @volume_bp.route("/status")
@@ -103,7 +91,7 @@ def create_snapshot():
     config = _get_config(bench_root)
     tag = datetime.now().strftime("%Y%m%d-%H%M%S")
     try:
-        orchestrator = _get_orchestrator(bench_root)
+        orchestrator = get_orchestrator(bench_root)
         orchestrator.create_snapshot(tag)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -115,7 +103,7 @@ def create_snapshot():
 def rollback_snapshot(tag: str):
     bench_root = current_app.config["BENCH_ROOT"]
     try:
-        orchestrator = _get_orchestrator(bench_root)
+        orchestrator = get_orchestrator(bench_root)
         orchestrator.rollback_snapshot(tag)
     except Exception as e:
         return jsonify({"error": str(e)}), 500

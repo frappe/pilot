@@ -1,12 +1,15 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import { Button, Dialog, FormControl, LoadingText, ErrorMessage, Switch, TabButtons } from 'frappe-ui'
 import FilePickerField from '../components/FilePickerField.vue'
+import UpdateAppDialog from '../components/UpdateAppDialog.vue'
 import { useTaskProgress } from '../composables/useTaskProgress.js'
+import { useAppRegistry, hashColor } from '../composables/useAppRegistry.js'
 
 const router = useRouter()
 const { watchTask } = useTaskProgress()
+const { registry, logoMap, loadRegistry } = useAppRegistry()
 const sites = ref([])
 const loading = ref(true)
 const error = ref('')
@@ -24,8 +27,6 @@ async function loadSites() {
     loading.value = false
   }
 }
-const registry = ref([])
-
 const showCreate = ref(false)
 const siteName = ref('')
 const adminPassword = ref('')
@@ -41,28 +42,11 @@ const uploadDb = ref(null)
 const uploadPublic = ref(null)
 const uploadPrivate = ref(null)
 
-const logoMap = computed(() => Object.fromEntries(registry.value.map(a => [a.name, a.logo_url])))
-
-const COLORS = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed']
-function hashColor(name) {
-  let h = 0
-  for (const c of name) h = (h * 31 + c.charCodeAt(0)) | 0
-  return COLORS[Math.abs(h) % COLORS.length]
-}
-
-
 function siteStatus(s) {
   return !s.exists ? 'offline' : s.broken ? 'broken' : 'online'
 }
 
 const STATUS_DOT = { online: 'bg-surface-green-3', broken: 'bg-surface-red-4', offline: 'bg-ink-gray-3' }
-
-async function loadRegistry() {
-  try {
-    const res = await fetch('/api/apps/registry')
-    registry.value = await res.json()
-  } catch { registry.value = [] }
-}
 
 function formatBackupDate(isoStr) {
   return new Date(isoStr).toLocaleString()
@@ -149,29 +133,34 @@ function openCreate() {
   uploadPrivate.value = null
 }
 
-const updateLoading = ref(false)
-const updateError = ref('')
+// App update indicator
+const appsWithUpdates = ref([])
+const checkingUpdates = ref(false)
+const showUpdate = ref(false)
 
-async function runUpdate() {
-  updateLoading.value = true
-  updateError.value = ''
+async function checkAppUpdates() {
+  checkingUpdates.value = true
   try {
-    const res = await fetch('/api/tasks/run', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ command: 'update' }),
-    })
-    const d = await res.json()
-    if (d.ok) watchTask(d.task_id)
-    else updateError.value = d.error
-  } catch (e) {
-    updateError.value = e.message
-  } finally {
-    updateLoading.value = false
-  }
+    const { task_id } = await fetch('/api/apps/fetch', { method: 'POST' }).then(r => r.json())
+    while (true) {
+      await new Promise(r => setTimeout(r, 1500))
+      const { task, output } = await fetch(`/api/tasks/${task_id}`).then(r => r.json())
+      if (task.status === 'running') continue
+      if (task.status === 'success' && output?.length) {
+        const updates = JSON.parse(output[output.length - 1])
+        appsWithUpdates.value = Object.entries(updates)
+          .filter(([, hasUpdate]) => hasUpdate)
+          .map(([name]) => ({ name }))
+      }
+      break
+    }
+  } catch { /* best-effort */ }
+  finally { checkingUpdates.value = false }
 }
 
-onMounted(() => { loadSites(); loadRegistry() })
+const updateError = ref('')
+
+onMounted(() => { loadSites(); loadRegistry(); checkAppUpdates() })
 </script>
 
 <template>
@@ -179,7 +168,16 @@ onMounted(() => { loadSites(); loadRegistry() })
     <!-- defer: after login, this page mounts in the same render pass as the
          AppLayout header, before #header-actions is attached to the document -->
     <Teleport defer to="#header-actions">
-      <Button variant="outline" :loading="updateLoading" @click="runUpdate">Update Bench</Button>
+      <Button variant="outline" :loading="checkingUpdates" @click="showUpdate = true">
+        <template #prefix>
+          <span v-if="appsWithUpdates.length"
+            class="relative flex h-2 w-2 shrink-0">
+            <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+            <span class="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
+          </span>
+        </template>
+        Update Bench
+      </Button>
       <Button variant="outline" @click="openCreate">Create Site</Button>
     </Teleport>
     <ErrorMessage v-if="updateError" :message="updateError" />
@@ -221,6 +219,8 @@ onMounted(() => { loadSites(); loadRegistry() })
         </div>
       </RouterLink>
     </div>
+
+    <UpdateAppDialog v-model="showUpdate" :apps="appsWithUpdates" />
 
     <Dialog v-model="showCreate" :options="{ title: 'Create Site' }">
       <template #body-content>

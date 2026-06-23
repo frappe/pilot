@@ -70,6 +70,43 @@ def detail(name: str):
     return jsonify({"site": site_dict, "installable_apps": installable, "http_port": http_port, "nginx_enabled": nginx_enabled, "admin_tls": admin_tls})
 
 
+@sites_bp.route("/<name>/apps")
+def site_apps(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    try:
+        site = SiteReader(bench_root).read_one(name)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 404
+
+    reader = AppReader(bench_root)
+    result = []
+    for app_name in site.installed_apps:
+        try:
+            info = reader.read_one(app_name)
+            result.append(
+                {
+                    "name": app_name,
+                    "branch": info.branch,
+                    "commit": info.current_commit,
+                    "version": info.installed_version,
+                    "repo": info.repo,
+                    "is_dirty": info.uncommitted_changes,
+                }
+            )
+        except Exception:
+            result.append(
+                {
+                    "name": app_name,
+                    "branch": "",
+                    "commit": "",
+                    "version": "",
+                    "repo": "",
+                }
+            )
+
+    return jsonify({"apps": result})
+
+
 @sites_bp.route("/create", methods=["POST"])
 def create():
     bench_root = Path(current_app.config["BENCH_ROOT"])

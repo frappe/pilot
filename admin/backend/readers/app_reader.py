@@ -17,6 +17,7 @@ class AppInfo:
     commit_message: str
     uncommitted_changes: bool
     installed_version: str
+    has_update: bool
 
 
 class AppReader:
@@ -36,6 +37,69 @@ class AppReader:
     def read_one(self, app_name: str) -> AppInfo:
         return self._read_app(app_name)
 
+    def check_remote_updates(self, app_names: list[str]) -> dict[str, bool]:
+        """Run git ls-remote concurrently for each app. Returns {app_name: has_update}.
+
+        ls-remote only exchanges ref pointers with the remote — no object download —
+        so it completes in ~1-2s per app regardless of repo size.
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        def _check(name: str) -> tuple[str, bool]:
+            app_path = self._bench_root / "apps" / name
+            git_dir = app_path / ".git"
+            if not git_dir.exists():
+                return name, False
+            branch = self._git_branch(git_dir)
+            if not branch:
+                return name, False
+            result = subprocess.run(
+                ["git", "ls-remote", "origin", f"refs/heads/{branch}"],
+                cwd=str(app_path), capture_output=True, text=True, timeout=15,
+            )
+            for line in result.stdout.splitlines():
+                parts = line.split("\t", 1)
+                if len(parts) == 2:
+                    remote_sha = parts[0].strip()
+                    local_sha = self._git_full_sha(git_dir)
+                    return name, bool(remote_sha and local_sha and remote_sha != local_sha)
+            return name, False
+
+        updates: dict[str, bool] = {}
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            futures = {pool.submit(_check, name): name for name in app_names}
+            for fut in as_completed(futures):
+                name, has_update = fut.result()
+                updates[name] = has_update
+        return updates
+
+    def list_commits(self, app_name: str, depth: int = 10) -> list[dict]:
+        """Shallow-fetch the remote branch tip and return new commits not in HEAD.
+
+        Only fetches `depth` commits from the remote, so it's fast even on large repos.
+        Called on demand when the user opens the Update modal for a specific app.
+        """
+        app_path = self._bench_root / "apps" / app_name
+        if not (app_path / ".git").exists():
+            return []
+        info = self.read_one(app_name)
+        if not info.branch:
+            return []
+        subprocess.run(
+            ["git", "fetch", "origin", info.branch, f"--depth={depth}", "--quiet"],
+            cwd=str(app_path), capture_output=True, timeout=30,
+        )
+        result = subprocess.run(
+            ["git", "log", "HEAD..FETCH_HEAD", "--format=%h\x1f%s\x1f%an\x1f%ar", f"--max-count={depth}"],
+            cwd=str(app_path), capture_output=True, text=True,
+        )
+        commits = []
+        for line in result.stdout.splitlines():
+            parts = line.split("\x1f", 3)
+            if len(parts) == 4:
+                commits.append({"hash": parts[0], "message": parts[1], "author": parts[2], "date": parts[3]})
+        return commits
+
     def _read_app(self, name: str) -> AppInfo:
         app_path = self._bench_root / "apps" / name
         is_cloned = (app_path / ".git").exists()
@@ -51,20 +115,24 @@ class AppReader:
                 commit_message="",
                 uncommitted_changes=False,
                 installed_version=self._pip_version(name),
+                has_update=False,
             )
 
         git_dir = app_path / ".git"
         sha = self._git_full_sha(git_dir)
+        branch = self._git_branch(git_dir)
+        remote_sha = self._git_remote_tracking_sha(git_dir, branch)
         return AppInfo(
             name=name,
             repo=self._git_remote(git_dir),
-            branch=self._git_branch(git_dir),
+            branch=branch,
             branches=[],
             is_cloned=True,
             current_commit=sha[:7] if sha else "",
             commit_message=self._git_commit_message(git_dir, sha),
             uncommitted_changes=self._git_is_dirty(app_path),
             installed_version=self._pip_version(name),
+            has_update=bool(remote_sha and sha and remote_sha != sha),
         )
 
     def _git_remote(self, git_dir: Path) -> str:
@@ -86,7 +154,7 @@ class AppReader:
             return ""
         content = head.read_text().strip()
         if content.startswith("ref: refs/heads/"):
-            return content[len("ref: refs/heads/"):]
+            return content[len("ref: refs/heads/") :]
         return ""
 
     def _git_full_sha(self, git_dir: Path) -> str:
@@ -123,13 +191,21 @@ class AppReader:
         try:
             raw = zlib.decompress(obj_path.read_bytes())
             null_idx = raw.index(b"\0")
-            content = raw[null_idx + 1:].decode("utf-8", errors="replace")
+            content = raw[null_idx + 1 :].decode("utf-8", errors="replace")
             headers_end = content.find("\n\n")
             if headers_end >= 0:
-                return content[headers_end + 2:].split("\n")[0].strip()
+                return content[headers_end + 2 :].split("\n")[0].strip()
         except Exception:
             pass
         return ""
+
+    def _git_remote_tracking_sha(self, git_dir: Path, branch: str) -> str:
+        if not branch:
+            return ""
+        ref_file = git_dir / "refs" / "remotes" / "origin" / branch
+        if ref_file.exists():
+            return ref_file.read_text().strip()
+        return self._read_packed_ref(git_dir, f"refs/remotes/origin/{branch}")
 
     def _git_is_dirty(self, app_path: Path) -> bool:
         result = subprocess.run(

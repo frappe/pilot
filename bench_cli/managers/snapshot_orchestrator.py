@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import typing
 
-from bench_cli.managers.volume_manager import VolumeManager
-
-if TYPE_CHECKING:
+if typing.TYPE_CHECKING:
     from bench_cli.core.bench import Bench
     from bench_cli.managers.mariadb_manager import MariaDBManager
+    from bench_cli.managers.volume_manager import VolumeManager
 
 
 class SnapshotOrchestrator:
@@ -51,3 +50,16 @@ class SnapshotOrchestrator:
         finally:
             if self._bench:
                 self._bench.set_maintenance_mode(False)
+
+
+def get_orchestrator(bench_root):
+    from bench_cli.config.bench_config import BenchConfig
+    from bench_cli.core.bench import Bench
+    from bench_cli.managers.mariadb_manager import MariaDBManager
+    from bench_cli.managers.volume_manager import VolumeManager
+
+    bench_config = BenchConfig.from_file(bench_root / "bench.toml")
+    volume = VolumeManager(bench_config.volume)
+    mariadb = MariaDBManager(bench_config.mariadb)
+    bench = Bench(bench_config, bench_root)
+    return SnapshotOrchestrator(volume, mariadb, bench)
