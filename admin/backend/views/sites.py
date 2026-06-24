@@ -90,7 +90,7 @@ def site_apps(name: str):
                     "commit": info.current_commit,
                     "version": info.installed_version,
                     "repo": info.repo,
-                    "is_dirty": info.uncommitted_changes,
+                    "has_local_changes": info.has_local_changes,
                 }
             )
         except Exception:

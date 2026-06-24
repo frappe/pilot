@@ -17,7 +17,7 @@ class AppInfo:
     is_cloned: bool
     current_commit: str
     commit_message: str
-    uncommitted_changes: bool
+    has_local_changes: bool
     installed_version: str
     has_update: bool
 
@@ -115,7 +115,7 @@ class AppReader:
                 is_cloned=False,
                 current_commit="",
                 commit_message="",
-                uncommitted_changes=False,
+                has_local_changes=False,
                 installed_version=self._pip_version(name),
                 has_update=False,
             )
@@ -132,7 +132,7 @@ class AppReader:
             is_cloned=True,
             current_commit=sha[:7] if sha else "",
             commit_message=self._git_commit_message(git_dir, sha),
-            uncommitted_changes=git_has_local_changes(app_path),
+            has_local_changes=git_has_local_changes(app_path),
             installed_version=self._pip_version(name),
             has_update=bool(remote_sha and sha and remote_sha != sha),
         )

@@ -338,7 +338,7 @@ watch(() => props.modelValue, (val) => {
                       <div class="flex items-center gap-2 flex-wrap">
                         <span class="text-sm font-medium text-ink-gray-9">{{ appTitleMap[app.name] || app.name }}</span>
                         <Badge v-if="app.branch" :label="app.branch" theme="gray" size="sm" />
-                        <Badge v-if="app.uncommitted_changes" label="Modified" theme="orange" size="sm" />
+                        <Badge v-if="app.has_local_changes" label="Modified" theme="orange" size="sm" />
                       </div>
                       <p class="text-xs text-ink-gray-4 font-mono mt-0.5">{{ app.name }}</p>
                     </div>
