@@ -18,6 +18,26 @@ if TYPE_CHECKING:
 
 _BUNDLE_RE = re.compile(r"^(.+)\.bundle\.[A-Z0-9]{8}\.(js|css)$")
 
+# Frappe's asset build refuses to run on an unsupported Node: v15 needs >= 18,
+# v16/develop need >= 24. We target the highest so one bench can build either.
+# Keep in sync with the nodesource channel in `_install_node_linux`.
+REQUIRED_NODE_MAJOR = 24
+
+
+def _installed_node_major() -> int | None:
+    """Major version of the ``node`` on PATH, or None if absent/unparseable."""
+    import subprocess
+
+    node = which("node")
+    if not node:
+        return None
+    try:
+        result = subprocess.run([node, "--version"], capture_output=True, text=True)
+    except OSError:
+        return None
+    match = re.match(r"v?(\d+)\.", result.stdout.strip())
+    return int(match.group(1)) if match else None
+
 
 class PythonEnvManager:
     def __init__(self, bench: "Bench") -> None:
@@ -113,16 +133,48 @@ class PythonEnvManager:
         run_command([uv, "pip", "uninstall", "--python", python, app_name], stream_output=True)
 
     def install_node(self) -> None:
-        if not which("node"):
-            if is_macos():
-                run_command(["brew", "install", "node"])
-            elif is_alpine():
-                # nodesource ships no musl builds; use Alpine's own packages.
-                get_package_manager().install("nodejs", "npm")
-            else:
-                self._install_node_linux()
+        """Ensure a Frappe-compatible Node.js (and yarn) are available.
+
+        A stale Node already on PATH is the common failure mode: the build then
+        dies deep inside yarn with an opaque "engine is incompatible" error. So
+        we (re)install when Node is missing *or* older than
+        ``REQUIRED_NODE_MAJOR``, and fail fast with an actionable message if a
+        supported Node still isn't reachable afterwards. Cheap to call
+        repeatedly — a single ``node --version`` check when already satisfied.
+        """
+        if (_installed_node_major() or 0) < REQUIRED_NODE_MAJOR:
+            self._install_node()
+            major = _installed_node_major()
+            if major is None:
+                raise BenchError(
+                    f"Node.js >= {REQUIRED_NODE_MAJOR} is required to build assets, but Node "
+                    "could not be installed automatically. Install it and re-run."
+                )
+            if major < REQUIRED_NODE_MAJOR:
+                raise BenchError(
+                    f"Node.js {major} is on PATH but Frappe needs >= {REQUIRED_NODE_MAJOR} to "
+                    "build assets. Upgrade Node (e.g. `brew upgrade node`, or via nvm/fnm) so a "
+                    "newer `node` comes first on PATH, then re-run."
+                )
         if not which("yarn"):
             self._install_yarn()
+
+    def _install_node(self) -> None:
+        if is_macos():
+            # `brew install` is a no-op when an older keg is already linked, so
+            # follow up with an upgrade; ignore failure when Node isn't managed
+            # by Homebrew (the version check then surfaces a clear error).
+            run_command(["brew", "install", "node"])
+            if (_installed_node_major() or 0) < REQUIRED_NODE_MAJOR:
+                try:
+                    run_command(["brew", "upgrade", "node"])
+                except BenchError:
+                    pass
+        elif is_alpine():
+            # nodesource ships no musl builds; use Alpine's own packages.
+            get_package_manager().install("nodejs", "npm")
+        else:
+            self._install_node_linux()
 
     def _install_yarn(self) -> None:
         if is_macos():
@@ -142,6 +194,7 @@ class PythonEnvManager:
                 )
 
     def build_assets(self) -> None:
+        self.install_node()
         run_command(
             [*self.bench.frappe_call, "frappe", "build", "--force"],
             cwd=self.bench.sites_path,
@@ -159,6 +212,9 @@ class PythonEnvManager:
         if self._has_prebuilt_assets(dist_dir):
             self._setup_prebuilt_assets(app.config.name, app_public_dir, dist_dir)
             return
+
+        # Built from source past this point — ensure a supported Node toolchain.
+        self.install_node()
 
         if (app.path / "package.json").exists():
             print(f"  Installing JS dependencies for {app.config.name}...")
