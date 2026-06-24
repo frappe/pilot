@@ -114,6 +114,10 @@ class SystemdProcessManager(ProcessManager):
 
         env = self._systemctl_env()
         run_command(self._systemctl("daemon-reload"), env=env)
+        # Clear any leftover failed / start-limit state so a re-deploy can start
+        # units that previously crash-looped — notably the admin socket, which
+        # hits systemd's restart rate limit across repeated setup-production runs.
+        subprocess.run(self._systemctl("reset-failed", *units), capture_output=True, env=env)
         run_command(self._systemctl("enable", self._target_name()), env=env)
         self._activate_admin_socket(env)
 
