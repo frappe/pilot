@@ -41,6 +41,8 @@ SITE = "site1.localhost"
 RENAMED_SITE = "renamed.localhost"
 ADMIN_DOMAIN = "bench.localhost"
 ADMIN_DOMAIN_2 = "bench-admin2.localhost"
+ADMIN_PASSWORD = "admin"
+HTTP_PORT = 80
 HTTPS_PORT = 443
 # Marker baked into the self-signed certs so we can prove nginx served *ours*.
 CERT_ORG = "bench-cli-e2e"
@@ -130,6 +132,49 @@ def _https_status(domain: str) -> str:
     return r.stdout.strip()
 
 
+def _request(domain: str, path: str, *, scheme: str = "https", method: str = "GET",
+             json_body: dict | None = None) -> tuple[str, str]:
+    """Make an HTTP(S) request to *domain* (resolved to localhost, self-signed
+    cert accepted) and return (status_code, body). Used to prove nginx really
+    proxies through to the workload / admin, not just terminates TLS."""
+    port = HTTPS_PORT if scheme == "https" else HTTP_PORT
+    args = ["curl", "-s", "-w", "\n%{http_code}",
+            "--resolve", f"{domain}:{port}:127.0.0.1"]
+    if scheme == "https":
+        args.append("-k")
+    if method != "GET":
+        args += ["-X", method]
+    if json_body is not None:
+        args += ["-H", "Content-Type: application/json", "-d", json.dumps(json_body)]
+    args.append(f"{scheme}://{domain}:{port}{path}")
+    body, _, code = _run(*args).stdout.rpartition("\n")
+    return code.strip(), body
+
+
+def _http_redirect(domain: str) -> tuple[str, str]:
+    """Return (status_code, redirect_target) for a plain-HTTP request — an SSL
+    site must 301 to its https:// URL."""
+    r = _run(
+        "curl", "-s", "-o", "/dev/null", "-w", "%{http_code} %{redirect_url}",
+        "--resolve", f"{domain}:{HTTP_PORT}:127.0.0.1", f"http://{domain}/",
+    )
+    code, _, target = r.stdout.strip().partition(" ")
+    return code, target
+
+
+def _set_admin_password(bench_root: Path, password: str) -> None:
+    """Set admin.password in bench.toml so the admin reports full status and
+    accepts logins. The admin re-reads bench.toml per request, so no restart."""
+    import tomllib
+
+    from bench_cli.utils import write_toml
+
+    toml_path = bench_root / "bench.toml"
+    data = tomllib.loads(toml_path.read_text())
+    data.setdefault("admin", {})["password"] = password
+    write_toml(toml_path, data)
+
+
 def _served_cert_org(domain: str) -> str:
     """Organisation field of the leaf cert nginx presents for *domain* — used to
     confirm it served our self-signed cert, not something else."""
@@ -171,6 +216,7 @@ def production(bench_root: Path, bench_bin: str):
         f"setup production failed (exit {result.returncode}):\n"
         f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
+    _set_admin_password(bench_root, ADMIN_PASSWORD)
 
     yield bench_root
 
@@ -235,6 +281,39 @@ class TestProductionSSL:
         status = _https_status(ADMIN_DOMAIN)
         assert status and status != "000", f"no HTTPS response from admin (got {status!r})"
 
+    def test_site_serves_frappe_over_https(self, production: Path) -> None:
+        """The deployed site must answer a real Frappe request end to end:
+        nginx → workload → frappe. frappe.ping is whitelisted for guests, so it
+        works regardless of wizard state."""
+        status, body = _request(SITE, "/api/method/frappe.ping")
+        assert status == "200", f"frappe.ping returned {status}: {body!r}"
+        assert "pong" in body, f"expected pong from frappe, got: {body!r}"
+
+    def test_site_redirects_http_to_https(self, production: Path) -> None:
+        """An SSL site must bounce plain HTTP to its https:// URL."""
+        code, target = _http_redirect(SITE)
+        assert code in ("301", "308"), f"expected redirect, got {code}"
+        assert target.startswith(f"https://{SITE}"), f"unexpected redirect target: {target!r}"
+
+    def test_admin_status_endpoint_works(self, production: Path) -> None:
+        """The admin must serve its open /api/status through nginx over HTTPS and
+        report this bench as a live production deployment — proof the admin
+        process is up and reachable, not just that nginx answered."""
+        status, body = _request(ADMIN_DOMAIN, "/api/status")
+        assert status == "200", f"/api/status returned {status}: {body!r}"
+        data = json.loads(body)
+        assert data.get("name"), f"admin status missing bench name: {data}"
+        assert data.get("production") is True, f"admin does not report production: {data}"
+        assert "native_process_manager" in data, data
+
+    def test_admin_login_works(self, production: Path) -> None:
+        """The admin accepts the configured password over HTTPS."""
+        status, body = _request(
+            ADMIN_DOMAIN, "/api/login", method="POST", json_body={"password": ADMIN_PASSWORD}
+        )
+        assert status == "200", f"/api/login returned {status}: {body!r}"
+        assert json.loads(body).get("ok") is True, f"login not ok: {body!r}"
+
     def test_rename_site_refreshes_production(self, production: Path, bench_bin: str) -> None:
         """rename-site moves the dummy site to a new hostname and, because the
         bench is in production, re-runs setup production for the new domain. The
@@ -249,8 +328,9 @@ class TestProductionSSL:
         assert not (sites_dir / f"{SITE}.conf").exists(), "stale site vhost not pruned"
         assert (sites_dir / f"{RENAMED_SITE}.conf").exists()
 
-        status = _https_status(RENAMED_SITE)
-        assert status and status != "000", f"renamed site not served over HTTPS (got {status!r})"
+        status, body = _request(RENAMED_SITE, "/api/method/frappe.ping")
+        assert status == "200", f"renamed site frappe.ping returned {status}: {body!r}"
+        assert "pong" in body, f"renamed site not serving frappe: {body!r}"
 
     def test_setup_production_updates_admin_domain(self, production: Path, bench_bin: str) -> None:
         """Re-running setup production with a new --admin-domain (the second half
@@ -270,5 +350,6 @@ class TestProductionSSL:
 
         admin_conf = (_nginx_conf_dir(production) / "sites" / "_admin.conf").read_text()
         assert ADMIN_DOMAIN_2 in admin_conf
-        status = _https_status(ADMIN_DOMAIN_2)
-        assert status and status != "000", f"new admin domain not served over HTTPS (got {status!r})"
+        status, body = _request(ADMIN_DOMAIN_2, "/api/status")
+        assert status == "200", f"new admin domain /api/status returned {status}: {body!r}"
+        assert json.loads(body).get("production") is True, f"admin not live on new domain: {body!r}"
