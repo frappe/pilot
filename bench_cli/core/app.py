@@ -129,6 +129,24 @@ class App:
             ]
         )
 
+    @property
+    def module_name(self) -> str:
+        """Return the importable Python package name for the app.
+
+        Frappe convention: the Python package is a subdirectory of the repo
+        named by replacing hyphens with underscores (e.g. repo 'india-compliance'
+        -> package 'india_compliance'). Check that directory first; scan for any
+        subdir containing hooks.py only for non-standard layouts.
+        """
+        conventional = self.config.name.replace("-", "_")
+        if (self.path / conventional / "hooks.py").exists():
+            return conventional
+        if self.path.is_dir():
+            for child in self.path.iterdir():
+                if child.is_dir() and (child / "hooks.py").exists():
+                    return child.name
+        return conventional
+
     def build_assets(self) -> None:
         if not (self.path / "package.json").exists():
             return

@@ -29,6 +29,7 @@ class RemoveAppCommand(Command):
         self.app_name = app_name
         self.skip_confirm = skip_confirm
         self.force = force
+        self.app = bench.app(app_name)
         self.app_path = bench.apps_path / app_name
 
     def run(self) -> None:
@@ -59,11 +60,11 @@ class RemoveAppCommand(Command):
     def _uninstall_from_sites(self) -> None:
         for site in self.bench.sites():
             installed = site.list_apps()
-            if self.app_name in installed:
+            if self.app.module_name in installed:
                 print(f"Uninstalling '{self.app_name}' from site '{site.config.name}'...")
                 sys.stdout.flush()
                 try:
-                    site.uninstall_app(self.app_name, force=self.force)
+                    site.uninstall_app(self.app, force=self.force)
                 except Exception as e:
                     if self.force:
                         print(f"Warning: could not cleanly uninstall from '{site.config.name}': {e}")

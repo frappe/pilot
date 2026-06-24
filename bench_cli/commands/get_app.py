@@ -62,24 +62,10 @@ class GetAppCommand(Command):
         sys.stdout.flush()
         PythonEnvManager(self.bench).install_app(self.app)
 
-    def _module_name(self) -> str:
-        """Return the importable Python package name for the cloned app.
-
-        The repo/folder name often differs from the Python package name
-        (e.g. repo 'india-compliance' -> package 'india_compliance'). Frappe
-        apps keep their package in a subdirectory containing hooks.py, so detect
-        it from disk and fall back to the conventional hyphen->underscore
-        mapping if no such directory is found.
-        """
-        for child in sorted(self.app.path.iterdir()):
-            if child.is_dir() and (child / "hooks.py").exists():
-                return child.name
-        return self.name.replace("-", "_")
-
     def _register(self) -> None:
         # apps.txt must list the importable package name (Frappe imports each
         # entry by name), which can differ from the repo/folder name.
-        module = self._module_name()
+        module = self.app.module_name
         apps_txt = self.bench.sites_path / "apps.txt"
         existing = apps_txt.read_text().splitlines() if apps_txt.exists() else []
         if module not in existing:
@@ -90,7 +76,7 @@ class GetAppCommand(Command):
 
         from bench_cli.exceptions import BenchError
 
-        module = self._module_name()
+        module = self.app.module_name
         python = str(self.bench.env_path / "bin" / "python")
         result = subprocess.run(
             [python, "-c", f"import {module}"],
