@@ -8,8 +8,10 @@ on:
 
 jobs:
   integration:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    # 24.04 ships nginx 1.24; production deploys emit ssl_reject_handshake,
+    # which needs nginx >= 1.19.4 (22.04 only has 1.18 and fails nginx -t).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
 
     steps:
       - uses: actions/checkout@v4
@@ -25,9 +27,12 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y mariadb-server redis-server git
+          sudo apt-get install -y mariadb-server redis-server git nginx openssl
           sudo systemctl start mariadb redis-server
           sudo mysql -e "SET PASSWORD FOR root@localhost = PASSWORD('admin'); FLUSH PRIVILEGES;"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
 
       - name: Install yarn and bench
         run: |
@@ -79,7 +84,44 @@ jobs:
       - name: bench build
         run: bench build
 
-      - name: Run integration tests
-        run: pytest tests/integration/ -v
+      # Non-production tests rely on the redis started above. Production tests
+      # manage their own redis, so they run separately after that redis is
+      # stopped to avoid a port clash.
+      - name: Run integration tests (non-production)
+        run: pytest tests/integration/ -v -m "not production"
         env:
           BENCH_TEST_ROOT: ${{ github.workspace }}/benches/ci-bench
+
+      - name: Stop manually-started redis
+        if: ${{ !cancelled() }}
+        run: |
+          redis-cli -p 13000 shutdown nosave || true
+          redis-cli -p 11000 shutdown nosave || true
+
+      # Run regardless of the non-production result so the production signal
+      # isn't masked by an unrelated failure in the first group.
+      - name: Run production e2e tests
+        if: ${{ !cancelled() }}
+        run: pytest tests/integration/ -v -m "production"
+        env:
+          BENCH_TEST_ROOT: ${{ github.workspace }}/benches/ci-bench
+          # Opt in to the destructive production + self-signed SSL e2e
+          # (installs services, rewrites the machine's nginx config).
+          BENCH_E2E_PRODUCTION: "1"
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          export XDG_RUNTIME_DIR=/run/user/$(id -u)
+          echo "::group::systemd --user units"
+          systemctl --user list-units --all --no-pager | grep -i ci-bench || true
+          echo "::endgroup::"
+          echo "::group::failed unit status"
+          systemctl --user --no-pager status 'ci-bench-*' 'ci-bench.target' || true
+          echo "::endgroup::"
+          echo "::group::journal (user)"
+          journalctl --user -n 300 --no-pager || true
+          echo "::endgroup::"
+          echo "::group::bench logs"
+          tail -n 80 benches/ci-bench/logs/*.log 2>/dev/null || true
+          echo "::endgroup::"

@@ -17,6 +17,11 @@ def pytest_configure(config):
         "markers",
         "integration: requires a fully initialised Frappe bench (run bench init first)",
     )
+    config.addinivalue_line(
+        "markers",
+        "production: deploys to production and manages its own redis — run "
+        "separately from tests that rely on an externally-started redis.",
+    )
 
 
 @pytest.fixture(scope="session")
@@ -26,7 +31,8 @@ def bench_root() -> Path:
             f"No bench.toml at {BENCH_TEST_ROOT}. "
             "Run 'bench init' inside that directory first, or set BENCH_TEST_ROOT."
         )
-    if not (BENCH_TEST_ROOT / "env" / "bin" / "bench").exists():
+    # bench-cli installs no `bench` into the bench venv; probe the interpreter.
+    if not (BENCH_TEST_ROOT / "env" / "bin" / "python").exists():
         pytest.skip(
             f"Bench env not initialised at {BENCH_TEST_ROOT}. "
             "Run 'bench init' inside that directory first."
