@@ -24,7 +24,7 @@ class InstallAppTask(BaseTask):
         print(f"Installing {self.app} into {self.site}...")
         sys.stdout.flush()
         result = subprocess.run(
-            [*self.bench.frappe_call, "frappe", "--site", self.site, "install-app", app.module_name],
+            [*self.bench.frappe_call, "frappe", "--site", self.site, "install-app", app.config.name],
             cwd=str(sites_dir),
         )
         if result.returncode != 0:

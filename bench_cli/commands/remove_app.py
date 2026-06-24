@@ -60,7 +60,7 @@ class RemoveAppCommand(Command):
     def _uninstall_from_sites(self) -> None:
         for site in self.bench.sites():
             installed = site.list_apps()
-            if self.app.module_name in installed:
+            if self.app.config.name in installed:
                 print(f"Uninstalling '{self.app_name}' from site '{site.config.name}'...")
                 sys.stdout.flush()
                 try:

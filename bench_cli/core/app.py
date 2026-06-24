@@ -133,11 +133,23 @@ class App:
     def module_name(self) -> str:
         """Return the importable Python package name for the app.
 
-        Frappe convention: the Python package is a subdirectory of the repo
-        named by replacing hyphens with underscores (e.g. repo 'india-compliance'
-        -> package 'india_compliance'). Check that directory first; scan for any
-        subdir containing hooks.py only for non-standard layouts.
+        The authoritative source is pyproject.toml's ``[project] name`` (PEP 621),
+        which for Frappe apps is the importable module (e.g. 'india_compliance'
+        even when the repo/folder is 'india-compliance'). Fall back to scanning
+        for the subdir containing hooks.py, then to the conventional hyphen->
+        underscore mapping, for older apps that ship only setup.py.
         """
+        pyproject = self.path / "pyproject.toml"
+        if pyproject.exists():
+            import tomllib
+
+            try:
+                name = tomllib.loads(pyproject.read_text()).get("project", {}).get("name")
+            except (tomllib.TOMLDecodeError, OSError):
+                name = None
+            if name:
+                return name.replace("-", "_")
+
         conventional = self.config.name.replace("-", "_")
         if (self.path / conventional / "hooks.py").exists():
             return conventional

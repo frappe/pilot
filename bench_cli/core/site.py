@@ -70,14 +70,14 @@ class Site:
 
     def install_app(self, app: "App") -> None:
         run_command(
-            self._frappe_call("frappe", "--site", self.config.name, "install-app", app.module_name),
+            self._frappe_call("frappe", "--site", self.config.name, "install-app", app.config.name),
             cwd=self.bench.sites_path,
             stream_output=True,
         )
         self.bench.reload_workers(raises=True)
 
     def uninstall_app(self, app: "App", force: bool = False) -> None:
-        cmd = self._frappe_call("frappe", "--site", self.config.name, "uninstall-app", app.module_name, "--yes", "--no-backup")
+        cmd = self._frappe_call("frappe", "--site", self.config.name, "uninstall-app", app.config.name, "--yes", "--no-backup")
         if force:
             cmd.append("--force")
         run_command(cmd, cwd=self.bench.sites_path, stream_output=True)

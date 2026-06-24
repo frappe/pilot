@@ -40,6 +40,7 @@ class GetAppCommand(Command):
 
     def run(self) -> None:
         self._clone()
+        self._normalize_folder()
         self._install()
         self._validate()
         self._register()
@@ -47,13 +48,53 @@ class GetAppCommand(Command):
         print(f"\n'{self.name}' installed successfully.")
 
     def _clone(self) -> None:
-        if self.app.is_cloned:
+        existing = self._find_existing_clone()
+        if existing is not None:
+            # Re-point at the existing clone (repo-name or already-normalized
+            # module-name folder) so we don't clone a second copy.
+            self._set_app(existing.name)
             print(f"'{self.name}' already cloned at {self.app.path}, skipping clone.")
-        else:
-            print(f"Cloning {self.name}...")
+            sys.stdout.flush()
+            return
+        print(f"Cloning {self.name}...")
         sys.stdout.flush()
-        if not self.app.is_cloned:
-            self.app.clone()
+        self.app.clone()
+
+    def _find_existing_clone(self):
+        # The app may already be cloned under the repo name (india-compliance)
+        # or its normalized module name (india_compliance).
+        for candidate in (self.name, self.name.replace("-", "_")):
+            path = self.bench.apps_path / candidate
+            if (path / ".git").exists():
+                return path
+        return None
+
+    def _normalize_folder(self) -> None:
+        """Frappe identifies an app by its directory name and assumes that name
+        is the importable module (it builds assets, runs after_build hooks and
+        imports the package all by that one name). Rename the clone to the module
+        name (e.g. india-compliance -> india_compliance) so every frappe code
+        path agrees — matching what legacy bench does at clone time."""
+        from bench_cli.exceptions import BenchError
+
+        module = self.app.module_name
+        if module == self.app.config.name:
+            return
+        target = self.bench.apps_path / module
+        if target.exists():
+            raise BenchError(
+                f"Cannot normalize '{self.app.config.name}' to '{module}': "
+                f"{target} already exists."
+            )
+        self.app.path.rename(target)
+        self._set_app(module)
+
+    def _set_app(self, name: str) -> None:
+        from bench_cli.config.app_config import AppConfig
+        from bench_cli.core.app import App
+
+        self.name = name
+        self.app = App(AppConfig(name=name, repo=self.repo, branch=self.app.config.branch), self.bench)
 
     def _install(self) -> None:
         from bench_cli.managers.python_env_manager import PythonEnvManager
@@ -63,23 +104,21 @@ class GetAppCommand(Command):
         PythonEnvManager(self.bench).install_app(self.app)
 
     def _register(self) -> None:
-        # apps.txt must list the importable package name (Frappe imports each
-        # entry by name), which can differ from the repo/folder name.
-        module = self.app.module_name
+        # apps.txt lists the importable package name; the folder was normalized to
+        # that name in _normalize_folder, so self.name is it.
         apps_txt = self.bench.sites_path / "apps.txt"
         existing = apps_txt.read_text().splitlines() if apps_txt.exists() else []
-        if module not in existing:
-            apps_txt.write_text("\n".join(existing + [module]) + "\n")
+        if self.name not in existing:
+            apps_txt.write_text("\n".join(existing + [self.name]) + "\n")
 
     def _validate(self) -> None:
         import subprocess
 
         from bench_cli.exceptions import BenchError
 
-        module = self.app.module_name
         python = str(self.bench.env_path / "bin" / "python")
         result = subprocess.run(
-            [python, "-c", f"import {module}"],
+            [python, "-c", f"import {self.name}"],
             capture_output=True,
             text=True,
         )
@@ -90,7 +129,7 @@ class GetAppCommand(Command):
             shutil.rmtree(self.app.path, ignore_errors=True)
             raise BenchError(
                 f"App '{self.name}' installed but its Python package "
-                f"('{module}') could not be imported.\n"
+                f"could not be imported.\n"
                 f"  This usually means the app's package name does not match\n"
                 f"  its declared name (check pyproject.toml / hooks.py app_name).\n"
                 f"  Error: {result.stderr.strip()}"

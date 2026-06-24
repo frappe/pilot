@@ -40,7 +40,7 @@ class UninstallAppCommand(Command):
         installed = self.site.list_apps()
         for app_name in self.app_names:
             app = self.bench.app(app_name)
-            if installed and app.module_name not in installed:
+            if installed and app.config.name not in installed:
                 raise BenchError(
                     f"App '{app_name}' is not installed on site '{self.site_name}'."
                 )
