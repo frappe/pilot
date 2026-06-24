@@ -22,7 +22,14 @@ class App:
 
     @property
     def is_cloned(self) -> bool:
-        return self.path.exists() and (self.path / ".git").exists()
+        # The clone may live under the configured name or, after get-app
+        # normalised it, under the importable module name (e.g. india-compliance
+        # -> india_compliance). Check the cheap config-name path first and only
+        # resolve module_name (which reads pyproject) when that misses.
+        if (self.path / ".git").exists():
+            return True
+        module_path = self.bench.apps_path / self.module_name
+        return module_path != self.path and (module_path / ".git").exists()
 
     @property
     def _remote_url(self) -> str:
