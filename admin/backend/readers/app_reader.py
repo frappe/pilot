@@ -5,6 +5,8 @@ import zlib
 from dataclasses import dataclass
 from pathlib import Path
 
+from bench_cli.utils import git_has_local_changes
+
 
 @dataclass
 class AppInfo:
@@ -130,7 +132,7 @@ class AppReader:
             is_cloned=True,
             current_commit=sha[:7] if sha else "",
             commit_message=self._git_commit_message(git_dir, sha),
-            uncommitted_changes=self._git_is_dirty(app_path),
+            uncommitted_changes=git_has_local_changes(app_path),
             installed_version=self._pip_version(name),
             has_update=bool(remote_sha and sha and remote_sha != sha),
         )
@@ -206,14 +208,6 @@ class AppReader:
         if ref_file.exists():
             return ref_file.read_text().strip()
         return self._read_packed_ref(git_dir, f"refs/remotes/origin/{branch}")
-
-    def _git_is_dirty(self, app_path: Path) -> bool:
-        result = subprocess.run(
-            ["git", "-C", str(app_path), "status", "--porcelain"],
-            capture_output=True,
-            text=True,
-        )
-        return bool(result.stdout.strip()) if result.returncode == 0 else False
 
     def _pip_version(self, name: str) -> str:
         lib_dir = self._bench_root / "env" / "lib"

@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from bench_cli.exceptions import BenchError
 from bench_cli.platform import get_package_manager, is_alpine, is_macos, which
-from bench_cli.utils import get_yarn_bin, run_command
+from bench_cli.utils import get_yarn_bin, git_has_local_changes, run_command
 
 if TYPE_CHECKING:
     from bench_cli.core.app import App
@@ -156,12 +156,12 @@ class PythonEnvManager:
         app_public_dir = app.path / app.config.name / "public"
         dist_dir = app_public_dir / "dist"
 
-        if not self._has_local_commits(app) and self._try_download_prebuilt_assets(app, app_public_dir, dist_dir):
-            return
-
-        if self._has_prebuilt_assets(dist_dir):
-            self._setup_prebuilt_assets(app.config.name, app_public_dir, dist_dir)
-            return
+        if not git_has_local_changes(app.path):
+            if self._try_download_prebuilt_assets(app, app_public_dir, dist_dir):
+                return
+            if self._has_prebuilt_assets(dist_dir):
+                self._setup_prebuilt_assets(app.config.name, app_public_dir, dist_dir)
+                return
 
         if (app.path / "package.json").exists():
             self._ensure_yarn_install(app.path)
@@ -202,22 +202,6 @@ class PythonEnvManager:
             cwd=path,
             stream_output=True,
         )
-
-    @staticmethod
-    def _has_local_commits(app: "App") -> bool:
-        """True when the app has commits not yet on its upstream branch, meaning
-        prebuilt release assets won't reflect local changes."""
-        import subprocess
-
-        r = subprocess.run(
-            ["git", "rev-list", "--count", "@{u}..HEAD"],
-            capture_output=True,
-            text=True,
-            cwd=app.path,
-        )
-        if r.returncode != 0:
-            return False
-        return r.stdout.strip() not in ("", "0")
 
     def _try_download_prebuilt_assets(self, app: "App", app_public_dir: Path, dist_dir: Path) -> bool:
         branch = self._app_branch(app)

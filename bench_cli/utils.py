@@ -133,6 +133,24 @@ def write_toml(path: Path, data: dict) -> None:
     path.write_text(out.getvalue())
 
 
+def git_has_local_changes(path: Path) -> bool:
+    """True if the repo at *path* has uncommitted edits or commits not yet on upstream."""
+    import subprocess
+
+    r = subprocess.run(
+        ["git", "status", "--porcelain"],
+        capture_output=True, text=True, cwd=path,
+    )
+    if r.returncode == 0 and r.stdout.strip():
+        return True
+
+    r = subprocess.run(
+        ["git", "rev-list", "--count", "@{u}..HEAD"],
+        capture_output=True, text=True, cwd=path,
+    )
+    return r.returncode == 0 and r.stdout.strip() not in ("", "0")
+
+
 def get_yarn_bin() -> str:
     if yarn := shutil.which("yarn"):
         return yarn
