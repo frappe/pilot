@@ -36,6 +36,7 @@ class NewSiteCommand(Command):
         self.name = name
         self.apps = apps
         self.admin_password = admin_password
+        self._via_wildcard = False
 
     def run(self) -> None:
         from bench_cli.config.site_config import SiteConfig
@@ -49,11 +50,21 @@ class NewSiteCommand(Command):
         site.create()
         self.bench.write_common_site_config()
         print(f"\nSite '{self.name}' created successfully.")
+        self._register_with_provider()
         self.build_missing_assets()
         self._add_to_hosts()
         self._reload_nginx()
         if ssl:
             self._obtain_cert(site)
+
+    def _register_with_provider(self) -> None:
+        """A wildcard-derived name is the provider's to allocate; tell it before
+        spending time on assets/hosts/nginx/cert that would be wasted on failure."""
+        if not self._via_wildcard:
+            return
+        from bench_cli.core.domain_controller import DomainRouteProvider
+
+        DomainRouteProvider(self.bench).register(self.name, self.name)
 
     def build_missing_assets(self):
         from bench_cli.managers.python_env_manager import PythonEnvManager
@@ -116,6 +127,7 @@ class NewSiteCommand(Command):
         patterns = DomainRouteProvider.wildcard_domains(self.name)
         if patterns and not matches_wildcard(self.name, patterns):
             raise BenchError(f"Site name must match one of this bench's wildcard domains: {', '.join(patterns)}.")
+        self._via_wildcard = bool(patterns)
         apps_txt = self.bench.sites_path / "apps.txt"
         installed = set(apps_txt.read_text().splitlines()) if apps_txt.exists() else set()
         for app in self.apps:

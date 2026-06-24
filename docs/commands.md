@@ -242,6 +242,11 @@ bench new-site site1.localhost
 bench new-site site1.localhost --admin-password admin
 ```
 
+**Pre-conditions:**
+- The site doesn't already exist.
+- The name is free across all benches — not a sibling bench's site/alias or admin domain (`host_owner`), and not this bench's own admin domain.
+- If this bench has wildcard domains configured (see [docs/production.md](production.md#custom-domain-management)), the name matches one of them.
+
 ### Steps
 
 ```
@@ -502,7 +507,7 @@ Pre-conditions: `production.enabled = true` in `bench.toml`, `bench init` has be
 
 See [docs/production.md](production.md) for the full step-by-step.
 
-**Summary:** Installs certbot if absent, ensures the webroot directory exists, runs `certbot certonly --webroot` for each site with `ssl = true` in `site_config.json` (plus the admin domain, with all domains as `-d` arguments), then regenerates nginx config with HTTPS blocks and reloads nginx.
+**Summary:** Installs certbot if absent, ensures the webroot directory exists, runs `certbot certonly --webroot` for each site with `ssl = true` in `site_config.json` (plus the admin domain, with all domains as `-d` arguments), then regenerates nginx config with HTTPS blocks and reloads nginx. A certbot failure for one domain is skipped rather than aborting the rest; if any failed, the command still attempts every domain before reporting which ones need a rerun.
 
 **Requires `admin.tls = true`.** TLS is a server-wide opt-in: when `admin.tls` is `false` the bench is HTTP-only (a central proxy may terminate TLS upstream), so this command obtains no certificates and nginx emits no 443 blocks. Enable it via `bench setup production --tls`, the Settings → HTTPS toggle, or by setting `[admin] tls = true` in `bench.toml`.
 
@@ -523,7 +528,7 @@ bench setup production --process-manager supervisord --admin-domain admin.exampl
 
 **Flags:**
 - `--process-manager systemd|supervisord|openrc` — which process manager to deploy with (defaults to `production.process_manager` in `bench.toml`, or `systemd` — `openrc` on Alpine). Switching between them on a re-run migrates the existing deployment.
-- `--admin-domain` — admin domain (defaults to `admin.domain` in `bench.toml`).
+- `--admin-domain` — admin domain (defaults to `admin.domain` in `bench.toml`). Must match one of this bench's wildcard domains if any are configured (see [docs/production.md](production.md#custom-domain-management)).
 - `--tls` — terminate TLS via Let's Encrypt for the admin and SSL-enabled sites. Omit to serve plain HTTP (a central proxy may terminate TLS upstream).
 
 **Summary:** Writes `dns_multitenant: 1`, deploys the workload under the chosen process manager, enables and serves the admin behind its domain, runs `bench setup nginx`, issues certs when TLS is requested, then persists `production.enabled = true` and `production.process_manager` to `bench.toml`.

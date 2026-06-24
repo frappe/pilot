@@ -54,25 +54,29 @@ class DomainRouteProvider:
         }
 
     def register(self, site_name: str, domain: str) -> None:
-        """Step 2: re-validate, verify DNS, then persist."""
+        """Step 2: validate + verify DNS — skipped if the provider already did
+        it for us — then persist. Persistence always happens (except registering
+        the site's own name as the provider's pick needs no domains-list entry)."""
         ran, _ = self._ask_provider("register", site_name, domain)
         if ran:
+            domain = normalize_host(domain)
+        else:
+            domain = self._validate_new(site_name, domain)
+            self._verify(site_name, domain)
+        if domain == normalize_host(site_name):
             return
         config = self._read(site_name)
-        domain = self._validate_new(site_name, domain)
-        self._verify(site_name, domain)
         config.setdefault("domains", []).append(domain)
         self._write(site_name, config)
 
     def deregister(self, site_name: str, domain: str) -> None:
-        """Detach domain unless it's the primary."""
-        ran, _ = self._ask_provider("deregister", site_name, domain)
-        if ran:
-            return
+        """Detach domain unless it's the primary. Always persists; the provider
+        (if any) is just told about it first, so a failure there stops us early."""
         domain = normalize_host(domain)
         primary = self.primary(site_name)
         if primary and normalize_host(primary) == domain:
             raise BenchError("Cannot remove the primary domain. Make another domain primary first.")
+        self._ask_provider("deregister", site_name, domain)
         config = self._read(site_name)
         config["domains"] = [d for d in (config.get("domains") or []) if normalize_host(self._name(d)) != domain]
         self._write(site_name, config)

@@ -329,6 +329,19 @@ Full `AppReader.read_all()` output in a table. Shows per-app: repo URL, branch, 
 - Full `site_config.json` rendered as a formatted JSON block
 - Action buttons (see Commands section)
 
+### Custom domains (Sites)
+
+Backed by `DomainRouteProvider` (see [docs/production.md](production.md#custom-domain-management)):
+
+- `GET /api/sites/<name>/domains` — `{domains, primary}`
+- `POST /api/sites/<name>/domains/dns-records` — step 1 of attaching a domain (CNAME/A options)
+- `POST /api/sites/<name>/domains` — step 2, register the domain
+- `DELETE /api/sites/<name>/domains` — deregister a domain
+- `POST /api/sites/<name>/domains/primary` — set (or clear) the primary domain
+- `GET /api/sites/wildcard-domains` / `GET /api/benches/wildcard-domains` — suffixes (no leading `*`) the Create Site and New Bench dialogs build new names from
+
+In the Create Site dialog, the Site Name field is a plain text box when no wildcard domains are configured; with one, it's a prefix field plus a fixed suffix label; with several, a prefix field plus a dropdown to pick the suffix. The New Bench dialog's Admin domain field works the same way.
+
 ### `GET /processes` — Process status
 
 `ProcessReader.read_all()`. Shows name, status, PID, uptime, link to its log file.

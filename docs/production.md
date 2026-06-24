@@ -49,6 +49,27 @@ www.site1.example.com ← domain alias
 
 ---
 
+## Custom domain management
+
+Beyond the `domains` baked into `site_config.json` above, a site's domains can be managed at runtime — attaching a domain a customer brings, verifying it actually points here, and choosing which one is primary. This backs the admin UI's **Domains** tab on a site, via `DomainRouteProvider` (see `#### DomainRouteProvider` under Architecture additions).
+
+**Attach flow (two steps):**
+
+1. **Get DNS records** — for a candidate domain, validate it isn't already on this site, another site in this bench, this bench's admin domain, or a sibling bench (`host_owner`), then return CNAME (to the site name) and A (to this server's public IP) options to show the user.
+2. **Register** — re-run the same checks, verify the domain actually resolves to this server (CNAME to the site, or a matching A record), then append it to `site_config.json`'s `domains`. A domain that doesn't resolve, or points elsewhere, is rejected and the operator is told to retry once DNS has updated.
+
+Detaching just removes the domain from the list; the current primary (`host_name`) can't be removed until another domain is made primary first.
+
+### Wildcard domains
+
+A bench can offer wildcard domain patterns (e.g. `*.example.com`, or a per-host suffix like `*-box1.example.com`) that new site names and the admin domain must match. Matching strips the leading `*` from the pattern and requires the candidate to end with that suffix and have something before it. When wildcard domains are configured, `bench new-site` and `bench setup production --admin-domain` reject any name that doesn't match one of them; the admin UI's Create Site and New Bench dialogs build the name from a typed prefix plus the wildcard suffix (a fixed label with one pattern, a dropdown with several). With none configured, both fall back to a plain free-text field.
+
+### `bench-domain-provider` extension
+
+All of the above is this bench's own implementation. If a `bench-domain-provider` executable is found on `PATH` (e.g. installed by a managed/cloud hosting platform), it takes over entirely instead — see `#### DomainRouteProvider` for the CLI contract it must implement.
+
+---
+
 ## bench.toml additions
 
 ### `production` section (required for production mode)
@@ -193,6 +214,7 @@ When `admin.domain` is set and the bench is deployed to production (`production.
 10. When `production.enabled` is `true`, `production.process_manager` must be `systemd`, `supervisor`, or `openrc`, and `admin.domain` must be set.
 11. `letsencrypt.email` must match a basic email pattern if present. Serving SSL sites over HTTPS requires `admin.tls = true` and a `letsencrypt.email`.
 12. `admin.domain`, when set, must be a valid hostname.
+13. If the bench has wildcard domains configured (see Custom domain management above), a new site's `name` and `admin.domain` must match one of them.
 
 ---
 
@@ -523,11 +545,60 @@ class LetsEncryptManager:
         """
 
     def obtain_all(self) -> None:
-        """Call obtain() for every site in bench.config.sites where ssl=True."""
+        """
+        Call obtain() for every ssl=True site, then for a public admin.domain.
+        A failure for one domain is printed and skipped rather than aborting
+        the rest; if any failed, raises once at the end naming them.
+        """
 
     def renew(self) -> None:
         """certbot renew --quiet — intended for cron usage."""
 ```
+
+#### `DomainRouteProvider`
+
+```python
+class DomainRouteProvider:
+    def __init__(self, bench: Bench): ...
+
+    def generate_dns_records(self, site_name: str, domain: str) -> dict:
+        """
+        Step 1 of attaching a domain: validate it's free (not on this site,
+        another site, this bench's admin domain, or a sibling bench), then
+        return {"cname": {...}, "a": {...}} record options.
+        """
+
+    def register(self, site_name: str, domain: str) -> None:
+        """Step 2: re-validate, verify DNS actually points here, then append to site_config.json domains."""
+
+    def deregister(self, site_name: str, domain: str) -> None:
+        """Remove domain from site_config.json domains. Raises if it is the current primary."""
+
+    def domains(self, site_name: str) -> List[str]: ...
+    def primary(self, site_name: str) -> Optional[str]: ...
+
+    def set_primary(self, site_name: str, domain: Optional[str]) -> None:
+        """Write or clear site_config.json's host_name."""
+
+    @staticmethod
+    def wildcard_domains(site_name: str = "") -> List[str]:
+        """
+        Wildcard domain patterns (e.g. "*.example.com") this host's
+        bench-domain-provider extension offers, or [] if none/not installed.
+        Host-level — works even before a bench/site exists.
+        """
+```
+
+If a `bench-domain-provider` executable is on `PATH`, every method above except `wildcard_domains` (a static, host-level query) delegates to it instead of touching `site_config.json`:
+
+| Invocation | stdout (JSON) on success |
+|---|---|
+| `bench-domain-provider generate-dns-records <domain>` | `{"cname": {...}, "a": {...}}`, or blank/`{}` if no DNS record is needed |
+| `bench-domain-provider register <domain>` | ignored; blank is fine |
+| `bench-domain-provider deregister <domain>` | ignored; blank is fine |
+| `bench-domain-provider wildcard-domains` | a JSON list of patterns, or blank for none |
+
+The target site is passed via `$BENCH_SITE`; `register`/`deregister`/`generate-dns-records` also get `$BENCH_NAME`/`$BENCH_PATH` for the current bench (`wildcard-domains` doesn't — it's host-level). All three are optional for the extension to use. On failure, the extension exits non-zero and writes a message to stderr, which becomes the error shown to the user.
 
 ### New commands
 
@@ -555,6 +626,10 @@ bench_cli/
     │   ├── nginx_config.py
     │   ├── gunicorn_config.py
     │   └── letsencrypt_config.py
+    │
+    ├── core/
+    │   ├── ...
+    │   └── domain_controller.py     # DomainRouteProvider
     │
     ├── managers/
     │   ├── ...
@@ -616,8 +691,13 @@ Idempotent — re-running after certs are obtained upgrades each site's block to
 5.  For each site with ssl: true:
     a.  Run certbot certonly --webroot for site.name + domains
     b.  Skip if cert already exists and expires in > 30 days
-6.  If admin.domain is set: run certbot certonly for that domain
-7.  Regenerate nginx config with ssl_ready=True and reload
+    c.  On certbot failure for this site, print a warning and move on to the
+        next site instead of aborting
+6.  If admin.domain is set: run certbot certonly for that domain (same failure handling)
+7.  If any domain from steps 5–6 failed, raise one error naming them all
+    — sites that succeeded already have valid certs on disk; rerun the
+    command to apply ssl_ready=True for them
+8.  Regenerate nginx config with ssl_ready=True and reload (skipped if step 7 raised)
 ```
 
 Certbot's built-in renewal timer (`certbot.timer` systemd unit, installed with certbot) handles future renewals automatically. The `--deploy-hook` ensures nginx reloads after each renewal.
@@ -631,6 +711,7 @@ Orchestrates the full production setup in the correct dependency order.
 - `bench init` has been run.
 - DNS records are configured (required before the letsencrypt step).
 - Running on a Linux server (Ubuntu). Exits with an error on macOS.
+- `--admin-domain` (or `admin.domain` in `bench.toml`) doesn't clash with a sibling bench or this bench's own sites, and matches one of this bench's wildcard domains if any are configured.
 
 **Steps:**
 
