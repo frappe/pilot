@@ -218,6 +218,31 @@ def _bench_name(bench_root: Path) -> str:
     return tomllib.loads((bench_root / "bench.toml").read_text())["bench"]["name"]
 
 
+def _redis_ports(bench_root: Path) -> list[int]:
+    import tomllib
+
+    r = tomllib.loads((bench_root / "bench.toml").read_text()).get("redis", {})
+    return [p for p in (r.get("cache_port"), r.get("queue_port")) if p]
+
+
+def _stop_external_redis(bench_root: Path) -> None:
+    """Free the bench's redis ports so production's systemd-managed redis can
+    bind them. CI pre-starts a plain daemonized redis on these ports for the
+    non-production tests; left running it makes the systemd redis units
+    crash-loop on a port clash and fail the whole deploy."""
+    for port in _redis_ports(bench_root):
+        _run("redis-cli", "-p", str(port), "shutdown", "nosave")
+
+
+def _start_external_redis(bench_root: Path) -> None:
+    """Restore a plain daemonized redis on the bench ports for tests that run
+    after production is torn down (remove production stops the systemd redis)."""
+    for conf in ("redis_cache.conf", "redis_queue.conf"):
+        path = bench_root / "config" / conf
+        if path.exists():
+            _run("redis-server", str(path), "--daemonize", "yes")
+
+
 # ---------------------------------------------------------------------------
 # Module fixture: deploy production with self-signed SSL, tear it all down after
 # ---------------------------------------------------------------------------
@@ -234,6 +259,7 @@ def production(bench_root: Path, bench_bin: str):
     # Second site stays HTTP-only inside the same TLS-enabled bench. No cert is
     # installed for it, so nginx must serve it over plain HTTP, not HTTPS.
     _set_site_ssl(bench_root, SITE_NO_SSL, False)
+    _stop_external_redis(bench_root)
 
     result = _run(
         bench_bin, "setup", "production",
@@ -256,6 +282,7 @@ def production(bench_root: Path, bench_bin: str):
     _set_site_ssl(bench_root, SITE, False)
     for domain in ALL_DOMAINS:
         _remove_cert(domain)
+    _start_external_redis(bench_root)
 
 
 # ---------------------------------------------------------------------------
@@ -495,6 +522,7 @@ class TestProductionSSL:
 def http_only_production(bench_root: Path, bench_bin: str):
     _set_admin_tls(bench_root, False)
     _set_admin_password(bench_root, ADMIN_PASSWORD)
+    _stop_external_redis(bench_root)
 
     result = _run(
         bench_bin, "setup", "production", "--admin-domain", ADMIN_DOMAIN,
@@ -508,6 +536,7 @@ def http_only_production(bench_root: Path, bench_bin: str):
 
     _run(bench_bin, "remove", "production", cwd=bench_root)
     _set_admin_tls(bench_root, True)  # restore default for other classes
+    _start_external_redis(bench_root)
 
 
 class TestProductionNoTLS:
@@ -542,6 +571,7 @@ def systemd_production(bench_root: Path, bench_bin: str):
     _set_admin_tls(bench_root, True)
     _set_admin_password(bench_root, ADMIN_PASSWORD)
     _set_site_ssl(bench_root, SITE, True)
+    _stop_external_redis(bench_root)
 
     result = _run(
         bench_bin, "setup", "production", "--process-manager", "systemd",
@@ -557,6 +587,7 @@ def systemd_production(bench_root: Path, bench_bin: str):
     _set_site_ssl(bench_root, SITE, False)
     _remove_cert(SITE)
     _remove_cert(ADMIN_DOMAIN)
+    _start_external_redis(bench_root)
 
 
 class TestProcessManagerMigration:
