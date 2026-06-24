@@ -78,7 +78,7 @@ def stream_task_output(task_id: str):
     return Response(
         stream_with_context(generate()),
         mimetype="text/event-stream",
-        headers={"X-Accel-Buffering": "no"},
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
     )
 
 
