@@ -38,6 +38,9 @@ from pathlib import Path
 import pytest
 
 SITE = "site1.localhost"
+# A second site in the same (TLS-enabled) bench that is intentionally NOT
+# SSL-enabled, so we cover a mixed bench: one https site + one http-only site.
+SITE_NO_SSL = "site2.localhost"
 RENAMED_SITE = "renamed.localhost"
 ADMIN_DOMAIN = "bench.localhost"
 ADMIN_DOMAIN_2 = "bench-admin2.localhost"
@@ -112,6 +115,8 @@ def _remove_cert(domain: str) -> None:
 
 def _set_site_ssl(bench_root: Path, site: str, enabled: bool) -> None:
     cfg = bench_root / "sites" / site / "site_config.json"
+    if not cfg.parent.is_dir():
+        return  # site not present in this bench — nothing to toggle
     data = json.loads(cfg.read_text()) if cfg.exists() else {}
     data["ssl"] = enabled
     cfg.write_text(json.dumps(data, indent=1))
@@ -200,12 +205,16 @@ def _nginx_conf_dir(bench_root: Path) -> Path:
 
 @pytest.fixture(scope="module")
 def production(bench_root: Path, bench_bin: str):
-    """Bring the bench up in production with TLS on site1.localhost + admin,
-    backed by self-signed certs. Yields the bench root, then removes the
+    """Bring the bench up in production with TLS on site1.localhost + admin
+    (backed by self-signed certs) and site2.localhost left HTTP-only, so one
+    deploy covers a mixed bench. Yields the bench root, then removes the
     deployment, restores the site, and deletes the certs."""
     for domain in ALL_DOMAINS:
         _install_self_signed_cert(domain)
     _set_site_ssl(bench_root, SITE, True)
+    # Second site stays HTTP-only inside the same TLS-enabled bench. No cert is
+    # installed for it, so nginx must serve it over plain HTTP, not HTTPS.
+    _set_site_ssl(bench_root, SITE_NO_SSL, False)
 
     result = _run(
         bench_bin, "setup", "production",
@@ -313,6 +322,33 @@ class TestProductionSSL:
         )
         assert status == "200", f"/api/login returned {status}: {body!r}"
         assert json.loads(body).get("ok") is True, f"login not ok: {body!r}"
+
+    # ── mixed bench: a second, non-SSL site alongside the https one ──────────
+
+    def test_plain_site_vhost_has_no_ssl(self, production: Path) -> None:
+        """The non-SSL site shares the TLS-enabled bench but must get an
+        HTTP-only vhost: no ssl listener, no cert, no https redirect."""
+        if not _site_dir(production, SITE_NO_SSL).is_dir():
+            pytest.skip(f"{SITE_NO_SSL} not present in this bench")
+        conf = (_nginx_conf_dir(production) / "sites" / f"{SITE_NO_SSL}.conf").read_text()
+        assert "ssl_certificate" not in conf, f"plain site got SSL config:\n{conf}"
+        assert f"listen {HTTPS_PORT} ssl" not in conf, conf
+        assert "return 301 https" not in conf, conf
+
+    def test_plain_site_served_over_http(self, production: Path) -> None:
+        """The non-SSL site answers a real Frappe request over plain HTTP."""
+        if not _site_dir(production, SITE_NO_SSL).is_dir():
+            pytest.skip(f"{SITE_NO_SSL} not present in this bench")
+        status, body = _request(SITE_NO_SSL, "/api/method/frappe.ping", scheme="http")
+        assert status == "200", f"http frappe.ping returned {status}: {body!r}"
+        assert "pong" in body, f"plain site not serving frappe: {body!r}"
+
+    def test_plain_site_not_redirected_to_https(self, production: Path) -> None:
+        """HTTP on the non-SSL site is served directly, not bounced to https."""
+        if not _site_dir(production, SITE_NO_SSL).is_dir():
+            pytest.skip(f"{SITE_NO_SSL} not present in this bench")
+        code, target = _http_redirect(SITE_NO_SSL)
+        assert code not in ("301", "308"), f"plain site unexpectedly redirected ({code} -> {target})"
 
     def test_rename_site_refreshes_production(self, production: Path, bench_bin: str) -> None:
         """rename-site moves the dummy site to a new hostname and, because the
