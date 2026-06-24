@@ -25,9 +25,14 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y mariadb-server redis-server git
+          sudo apt-get install -y mariadb-server redis-server git nginx openssl
           sudo systemctl start mariadb redis-server
           sudo mysql -e "SET PASSWORD FOR root@localhost = PASSWORD('admin'); FLUSH PRIVILEGES;"
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Install yarn and bench
         run: |
@@ -83,3 +88,6 @@ jobs:
         run: pytest tests/integration/ -v
         env:
           BENCH_TEST_ROOT: ${{ github.workspace }}/benches/ci-bench
+          # Opt in to the destructive production + self-signed SSL e2e
+          # (installs services, rewrites the machine's nginx config).
+          BENCH_E2E_PRODUCTION: "1"
