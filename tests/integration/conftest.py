@@ -17,6 +17,11 @@ def pytest_configure(config):
         "markers",
         "integration: requires a fully initialised Frappe bench (run bench init first)",
     )
+    config.addinivalue_line(
+        "markers",
+        "production: deploys to production and manages its own redis — run "
+        "separately from tests that rely on an externally-started redis.",
+    )
 
 
 @pytest.fixture(scope="session")

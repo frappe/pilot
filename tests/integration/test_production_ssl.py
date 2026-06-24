@@ -55,7 +55,7 @@ LETSENCRYPT_LIVE = Path("/etc/letsencrypt/live")
 ALL_DOMAINS = (SITE, RENAMED_SITE, ADMIN_DOMAIN, ADMIN_DOMAIN_2)
 
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.production]
 
 
 # ---------------------------------------------------------------------------
@@ -509,8 +509,9 @@ class TestProductionSSL:
         link = _bench_name(production) + ".conf"
         assert not (Path("/etc/nginx/conf.d") / link).exists(), "nginx vhost left behind"
 
-        # Site no longer served over HTTPS once nginx is reloaded without it.
-        assert _https_status(current_site) == "000", "site still served after remove"
+        # Site is no longer served by the app once its vhost is gone (catch-all
+        # rejects the TLS handshake -> 000, or no upstream -> 502; never 200).
+        assert _https_status(current_site) != "200", "site still served after remove"
 
 
 # ---------------------------------------------------------------------------

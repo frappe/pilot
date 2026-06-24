@@ -84,8 +84,21 @@ jobs:
       - name: bench build
         run: bench build
 
-      - name: Run integration tests
-        run: pytest tests/integration/ -v
+      # Non-production tests rely on the redis started above. Production tests
+      # manage their own redis, so they run separately after that redis is
+      # stopped to avoid a port clash.
+      - name: Run integration tests (non-production)
+        run: pytest tests/integration/ -v -m "not production"
+        env:
+          BENCH_TEST_ROOT: ${{ github.workspace }}/benches/ci-bench
+
+      - name: Stop manually-started redis
+        run: |
+          redis-cli -p 13000 shutdown nosave || true
+          redis-cli -p 11000 shutdown nosave || true
+
+      - name: Run production e2e tests
+        run: pytest tests/integration/ -v -m "production"
         env:
           BENCH_TEST_ROOT: ${{ github.workspace }}/benches/ci-bench
           # Opt in to the destructive production + self-signed SSL e2e
