@@ -194,12 +194,13 @@ class InitCommand(Command):
             pkg.update()
 
         mariadb_manager = MariaDBManager(self.bench.config.mariadb)
+        freshly_installed = not mariadb_manager.is_installed()
+        mariadb_manager.install()
+
         if mariadb_manager.is_dedicated:
             # Install the package only; the instance is provisioned after volume
             # setup (see _do_run) so a ZFS-backed datadir, if any, is mounted
             # before mariadb-install-db runs against it.
-            freshly_installed = not mariadb_manager.is_installed()
-            mariadb_manager.install()
             if freshly_installed and is_linux():
                 # apt auto-starts the shared mariadb service on port 3306 after
                 # installation. Stop and disable it so the dedicated instance can
@@ -207,10 +208,17 @@ class InitCommand(Command):
                 mariadb_manager.stop_shared()
 
         else:
-            freshly_installed = not mariadb_manager.is_installed()
-            mariadb_manager.install()
-            mariadb_manager.start()
-            if freshly_installed:
+            port_config_written = mariadb_manager.configure_shared_port()
+            if port_config_written:
+                # Config was written (or updated) — restart to apply the new port.
+                # systemctl/rc-service restart also starts a stopped service.
+                mariadb_manager.restart()
+            else:
+                mariadb_manager.start()
+            if freshly_installed or mariadb_manager.is_unsecured():
+                # Either the binary was just installed, or it was installed earlier
+                # for a dedicated instance but the shared datadir is still unsecured
+                # (root uses unix-socket auth with no password).
                 mariadb_manager.secure_installation()
             elif not mariadb_manager.check_credentials():
                 raise RuntimeError(

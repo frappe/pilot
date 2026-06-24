@@ -19,22 +19,21 @@ class InstallAppTask(BaseTask):
 
     def run(self) -> None:
         sites_dir = self.bench_root / "sites"
+        app = self.bench.app(self.app)
 
         print(f"Installing {self.app} into {self.site}...")
         sys.stdout.flush()
         result = subprocess.run(
-            [*self.bench.frappe_call, "frappe", "--site", self.site, "install-app", self.app],
+            [*self.bench.frappe_call, "frappe", "--site", self.site, "install-app", app.config.name],
             cwd=str(sites_dir),
         )
         if result.returncode != 0:
             sys.exit(result.returncode)
 
-        app = next((a for a in self.bench.apps() if a.config.name == self.app), None)
-        if app:
-            print(f"\nBuilding assets for {self.app}...")
-            sys.stdout.flush()
-            from bench_cli.managers.python_env_manager import PythonEnvManager
-            PythonEnvManager(self.bench).build_assets_for_app(app)
+        print(f"\nBuilding assets for {self.app}...")
+        sys.stdout.flush()
+        from bench_cli.managers.python_env_manager import PythonEnvManager
+        PythonEnvManager(self.bench).build_assets_for_app(app)
 
 
 if __name__ == "__main__":

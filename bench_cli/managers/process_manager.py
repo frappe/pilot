@@ -168,7 +168,7 @@ class ProcessManager:
         # runner; a bound port is the truth (not whether the runner pid is alive).
         return _tcp_port_open(self.bench.config.admin.port)
 
-    def reload_web(self) -> None:
+    def reload_workers(self, web_only: bool = False) -> None:
         pass
 
     # ── Procfile runner ─────────────────────────────────────────────────────

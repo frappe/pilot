@@ -113,6 +113,12 @@ class MariaDBManager:
         else:
             run_command(service_command("start", self.service_unit()))
 
+    def restart(self) -> None:
+        if is_macos():
+            run_command(["brew", "services", "restart", self._brew_package()])
+        else:
+            run_command(service_command("restart", self.service_unit()))
+
     def stop(self) -> None:
         if is_macos():
             run_command(["brew", "services", "stop", self._brew_package()])
@@ -215,6 +221,29 @@ class MariaDBManager:
             input=script.stdout,
             check=True,
         )
+
+    def configure_shared_port(self) -> bool:
+        """Write a drop-in config so the shared mariadb service listens on the
+        configured port.  Returns True if a config was written (the caller must
+        restart the service to apply it).  No-op when port is the default 3306,
+        when this is a dedicated instance, or on macOS (Homebrew config paths vary), or when
+        the shared port override already exists."""
+        conf_dir = "/etc/my.cnf.d" if is_alpine() else _CONF_DIR
+        conf_path = f"{conf_dir}/99-bench-shared-port.cnf"
+
+        if self.is_dedicated or self.config.port == 3306 or is_macos() or Path(conf_path).exists():
+            return False
+        content = f"[mariadbd]\nport = {self.config.port}\n"
+        import os
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".cnf", delete=False) as f:
+            f.write(content)
+            tmp = f.name
+        try:
+            run_command(["sudo", "install", "-m", "644", tmp, conf_path])
+        finally:
+            os.unlink(tmp)
+        return True
 
     def provision_instance(self, staging_dir: Path) -> None:
         """Create, configure, start and secure this bench's MariaDB instance
@@ -381,6 +410,17 @@ class MariaDBManager:
             if self.service_is_active() and Path(socket).exists():
                 return
             time.sleep(0.5)
+
+    def is_unsecured(self) -> bool:
+        """True if the admin account has no password and is reachable via
+        unix-socket auth (i.e. a fresh, not-yet-secured install).  Uses the
+        same privileged connection path as _run_sql_as_superuser — no MYSQL_PWD."""
+        cmd = ["mariadb"] if is_macos() else _privileged(["mariadb"])
+        if self.is_dedicated:
+            cmd.append(f"--socket={self.instance_socket()}")
+        cmd += ["-u", self.config.admin_user, "--batch", "--skip-column-names", "-e", "SELECT 1"]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        return result.returncode == 0
 
     def check_credentials(self, password: str | None = None) -> bool:
         """True if the admin user can connect with the given password (default:

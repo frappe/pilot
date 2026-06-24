@@ -7,6 +7,7 @@ from bench_cli.config.site_config import SiteConfig
 from bench_cli.utils import run_command
 
 if TYPE_CHECKING:
+    from bench_cli.core.app import App
     from bench_cli.core.bench import Bench
 
 
@@ -67,20 +68,20 @@ class Site:
 
         run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
 
-    def install_app(self, app_name: str) -> None:
+    def install_app(self, app: "App") -> None:
         run_command(
-            self._frappe_call("frappe", "--site", self.config.name, "install-app", app_name),
+            self._frappe_call("frappe", "--site", self.config.name, "install-app", app.config.name),
             cwd=self.bench.sites_path,
             stream_output=True,
         )
-        self.bench.restart()
+        self.bench.reload_workers(raises=True)
 
-    def uninstall_app(self, app_name: str, force: bool = False) -> None:
-        cmd = self._frappe_call("frappe", "--site", self.config.name, "uninstall-app", app_name, "--yes", "--no-backup")
+    def uninstall_app(self, app: "App", force: bool = False) -> None:
+        cmd = self._frappe_call("frappe", "--site", self.config.name, "uninstall-app", app.config.name, "--yes", "--no-backup")
         if force:
             cmd.append("--force")
         run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
-        self.bench.restart()
+        self.bench.reload_workers(raises=True)
 
     def list_apps(self) -> list[str]:
         import subprocess
@@ -93,7 +94,7 @@ class Site:
         )
         if result.returncode != 0:
             return []
-        return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+        return [line.split()[0] for line in result.stdout.splitlines() if line.strip()]
 
     def migrate(self) -> None:
         run_command(

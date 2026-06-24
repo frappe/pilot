@@ -129,6 +129,36 @@ class App:
             ]
         )
 
+    @property
+    def module_name(self) -> str:
+        """Return the importable Python package name for the app.
+
+        The authoritative source is pyproject.toml's ``[project] name`` (PEP 621),
+        which for Frappe apps is the importable module (e.g. 'india_compliance'
+        even when the repo/folder is 'india-compliance'). Fall back to scanning
+        for the subdir containing hooks.py, then to the conventional hyphen->
+        underscore mapping, for older apps that ship only setup.py.
+        """
+        pyproject = self.path / "pyproject.toml"
+        if pyproject.exists():
+            import tomllib
+
+            try:
+                name = tomllib.loads(pyproject.read_text()).get("project", {}).get("name")
+            except (tomllib.TOMLDecodeError, OSError):
+                name = None
+            if name:
+                return name.replace("-", "_")
+
+        conventional = self.config.name.replace("-", "_")
+        if (self.path / conventional / "hooks.py").exists():
+            return conventional
+        if self.path.is_dir():
+            for child in self.path.iterdir():
+                if child.is_dir() and (child / "hooks.py").exists():
+                    return child.name
+        return conventional
+
     def build_assets(self) -> None:
         if not (self.path / "package.json").exists():
             return

@@ -29,24 +29,23 @@ class AddAndInstallAppTask(BaseTask):
 
     def run(self) -> None:
         _step("fetch", f"Fetch {self.name}")
-        GetAppCommand(self.bench, self.repo, self.branch).run()
+        cmd = GetAppCommand(self.bench, self.repo, self.branch)
+        cmd.run()
 
         sites_dir = self.bench_root / "sites"
         for site in self.sites:
             safe_key = site.replace(".", "_").replace("-", "_")
             _step(f"install_{safe_key}", f"Install on {site}")
             result = subprocess.run(
-                [*self.bench.frappe_call, "frappe", "--site", site, "install-app", self.name],
+                [*self.bench.frappe_call, "frappe", "--site", site, "install-app", cmd.app.config.name],
                 cwd=str(sites_dir),
             )
             if result.returncode != 0:
                 sys.exit(result.returncode)
 
-        app = next((a for a in self.bench.apps() if a.config.name == self.name), None)
-        if app:
-            _step("build", f"Build assets for {self.name}")
-            from bench_cli.managers.python_env_manager import PythonEnvManager
-            PythonEnvManager(self.bench).build_assets_for_app(app)
+        _step("build", f"Build assets for {self.name}")
+        from bench_cli.managers.python_env_manager import PythonEnvManager
+        PythonEnvManager(self.bench).build_assets_for_app(cmd.app)
 
         _step("done")
 

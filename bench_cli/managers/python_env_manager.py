@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from bench_cli.exceptions import BenchError
 from bench_cli.platform import get_package_manager, is_alpine, is_macos, which
-from bench_cli.utils import get_yarn_bin, run_command
+from bench_cli.utils import get_yarn_bin, git_has_local_changes, run_command
 
 if TYPE_CHECKING:
     from bench_cli.core.app import App
@@ -142,6 +142,9 @@ class PythonEnvManager:
                 )
 
     def build_assets(self) -> None:
+        for app in self.bench.apps():
+            if (app.path / "package.json").exists():
+                self._ensure_yarn_install(app.path)
         run_command(
             [*self.bench.frappe_call, "frappe", "build", "--force"],
             cwd=self.bench.sites_path,
@@ -153,21 +156,15 @@ class PythonEnvManager:
         app_public_dir = app.path / app.config.name / "public"
         dist_dir = app_public_dir / "dist"
 
-        if self._try_download_prebuilt_assets(app, app_public_dir, dist_dir):
-            return
-
-        if self._has_prebuilt_assets(dist_dir):
-            self._setup_prebuilt_assets(app.config.name, app_public_dir, dist_dir)
-            return
+        if not git_has_local_changes(app.path):
+            if self._try_download_prebuilt_assets(app, app_public_dir, dist_dir):
+                return
+            if self._has_prebuilt_assets(dist_dir):
+                self._setup_prebuilt_assets(app.config.name, app_public_dir, dist_dir)
+                return
 
         if (app.path / "package.json").exists():
-            print(f"  Installing JS dependencies for {app.config.name}...")
-            sys.stdout.flush()
-            run_command(
-                [get_yarn_bin(), "install", "--frozen-lockfile"],
-                cwd=app.path,
-                stream_output=True,
-            )
+            self._ensure_yarn_install(app.path)
 
         print(f"  Building assets for {app.config.name}...")
         sys.stdout.flush()
@@ -187,6 +184,24 @@ class PythonEnvManager:
                     cwd=app.path / frontend_dir,
                     stream_output=True,
                 )
+
+    def _ensure_yarn_install(self, path: Path) -> None:
+        """Run yarn install only when node_modules is absent or yarn.lock has changed.
+        Fresh clone — node_modules/ is gitignored and doesn't exist, so integrity.exists() is False → falls through to yarn install. ✓
+        After yarn install — integrity file is written now, which is always newer than yarn.lock (which was set to the clone time) → skips on subsequent calls. ✓
+        After git pull that changes yarn.lock — git sets the mtime of checked-out files to the time of the checkout operation, so yarn.lock gets a fresh mtime newer than the old integrity file → runs yarn install. ✓"""
+        integrity = path / "node_modules" / ".yarn-integrity"
+        lock = path / "yarn.lock"
+        if integrity.exists() and (not lock.exists() or lock.stat().st_mtime <= integrity.stat().st_mtime):
+            return
+        app_name = path.name
+        print(f"  Installing JS dependencies for {app_name}...")
+        sys.stdout.flush()
+        run_command(
+            [get_yarn_bin(), "install", "--frozen-lockfile"],
+            cwd=path,
+            stream_output=True,
+        )
 
     def _try_download_prebuilt_assets(self, app: "App", app_public_dir: Path, dist_dir: Path) -> bool:
         branch = self._app_branch(app)

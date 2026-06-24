@@ -795,7 +795,7 @@ onMounted(() => {
                   <div class="flex min-w-0 flex-col gap-y-0.5">
                     <p class="text-sm font-medium leading-snug text-ink-gray-9">{{ titleMap[app] || app }}</p>
                     <div v-if="appDetailMap[app]" class="flex items-center gap-1.5">
-                      <span v-if="appDetailMap[app].is_dirty"
+                      <span v-if="appDetailMap[app].has_local_changes"
                         class="inline-flex items-center rounded px-0.5 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-300">
                         Modified
                       </span>
