@@ -70,7 +70,7 @@ class UpdateCommand(Command):
             self._step("migrate", "Migrating sites")
             self._migrate_sites()
             self._step("restart", "Restarting services")
-            self._reload_web()
+            self.bench.reload_workers()
         except MigrateError:
             self._step_failed()
             traceback.print_exc()  # print at the point of failure, before any rollback steps
@@ -79,7 +79,7 @@ class UpdateCommand(Command):
                 self._step("post", "Rolling back to snapshot")
                 self._rollback_preserving_log()
                 self._step("restart", "Restarting services after rollback")
-                self._reload_web()
+                self.bench.reload_workers()
             raise
         finally:
             if volume_enabled:
@@ -211,10 +211,3 @@ class UpdateCommand(Command):
             except CommandError as e:
                 raise MigrateError(f"Migration failed for {site.config.name}") from e
 
-    def _reload_web(self) -> None:
-        from bench_cli.managers.process_manager import ProcessManagerFactory
-
-        try:
-            ProcessManagerFactory.create(self.bench).reload_web()
-        except Exception as e:
-            print(f"Warning: Failed to reload web service: {e}")

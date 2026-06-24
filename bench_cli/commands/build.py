@@ -35,4 +35,4 @@ class BuildCommand(Command):
         else:
             for app in self.bench.apps():
                 manager.build_assets_for_app(app)
-        ProcessManagerFactory.create(self.bench).reload_web()
+        ProcessManagerFactory.create(self.bench).reload_workers(web_only=True)

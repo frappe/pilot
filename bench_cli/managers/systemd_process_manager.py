@@ -250,18 +250,24 @@ class SystemdProcessManager(ProcessManager):
                 return True
         return False
 
-    def reload_web(self) -> None:
+    def reload_workers(self, web_only: bool = False) -> None:
         cache_port = self.bench.config.redis.cache_port
         subprocess.run(
             ["redis-cli", "-p", str(cache_port), "del", "assets_json"],
             capture_output=True,
         )
         if self.is_running():
-            print("Restarting web worker to pick up new assets...")
-            run_command(
-                self._systemctl("restart", self._unit_name("web")),
-                env=self._systemctl_env(),
-            )
+            if web_only:
+                run_command(
+                    self._systemctl("restart", self._unit_name("web")),
+                    env=self._systemctl_env(),
+                )
+            else:
+                print("Restarting workers...")
+                run_command(
+                    self._systemctl("restart", self._target_name()),
+                    env=self._systemctl_env(),
+                )
 
     def _render_unit(self, pd: ProcessDefinition) -> str:
         cmd = pd.command

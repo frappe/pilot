@@ -144,12 +144,17 @@ class OpenRCProcessManager(ProcessManager):
     def admin_is_running(self) -> bool:
         return any(service_running(s) for s in self._admin_service_names())
 
-    def reload_web(self) -> None:
+    def reload_workers(self, web_only: bool = False) -> None:
         cache_port = self.bench.config.redis.cache_port
         subprocess.run(["redis-cli", "-p", str(cache_port), "del", "assets_json"], capture_output=True)
         if self.is_running():
-            print("Restarting web worker to pick up new assets...")
-            run_command(service_command("restart", self._service_name("web")))
+            if web_only:
+                print("Restarting web worker to pick up new assets...")
+                run_command(service_command("restart", self._service_name("web")))
+            else:
+                print("Restarting workers...")
+                for service in self._workload_service_names():
+                    run_command(service_command("restart", service))
 
     # ── Rendering ─────────────────────────────────────────────────────────────
 

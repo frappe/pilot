@@ -128,12 +128,14 @@ class SupervisorProcessManager(ProcessManager):
         )
         return "RUNNING" in result.stdout
 
-    def reload_web(self) -> None:
+    def reload_workers(self, web_only: bool = False) -> None:
         cache_port = self.bench.config.redis.cache_port
         subprocess.run(["redis-cli", "-p", str(cache_port), "del", "assets_json"], capture_output=True)
         if self.is_running():
-            print("Restarting web worker to pick up new assets...")
-            run_command([*self._supervisorctl(), "restart", f"{self.bench.config.name}:{self.bench.config.name}-web"])
+            if web_only:
+                run_command([*self._supervisorctl(), "restart", f"{self.bench.config.name}:{self.bench.config.name}-web"])
+            else:
+                run_command([*self._supervisorctl(), "restart", f"{self.workload_group}:*"])
 
     def _render_supervisord_conf(self) -> str:
         name = self.bench.config.name
@@ -192,7 +194,7 @@ class SupervisorProcessManager(ProcessManager):
             if not m:
                 break
             env_vars.append(f'{m.group(1)}="{m.group(2)}"')
-            cmd = cmd[m.end():]
+            cmd = cmd[m.end() :]
         for key, value in pd.env.items():
             env_vars.append(f'{key}="{value}"')
 
@@ -200,7 +202,7 @@ class SupervisorProcessManager(ProcessManager):
         m2 = re.match(r"^cd\s+(\S+)\s*&&\s*", cmd)
         if m2:
             directory = m2.group(1)
-            cmd = cmd[m2.end():]
+            cmd = cmd[m2.end() :]
 
         lines = [
             f"[program:{self.bench.config.name}-{safe_name}]",
