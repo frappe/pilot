@@ -11,6 +11,7 @@ export function useTaskStream({ guardHiddenTab = false } = {}) {
   const rawLines = ref([])  // raw text (for callers that need to parse markers)
   const streaming = ref(false)
   let es = null
+  let retryTimer = null
 
   function scrollToBottom() {
     if (guardHiddenTab && document.hidden) return
@@ -60,7 +61,7 @@ export function useTaskStream({ guardHiddenTab = false } = {}) {
         if (es) { es.close(); es = null }
         if (retries < MAX_RETRIES) {
           retries++
-          setTimeout(open, 1000 * retries)
+          retryTimer = setTimeout(open, 1000 * retries)
         } else {
           streaming.value = false
           onError?.()
@@ -72,6 +73,8 @@ export function useTaskStream({ guardHiddenTab = false } = {}) {
   }
 
   function stop() {
+    clearTimeout(retryTimer)
+    retryTimer = null
     if (es) { es.close(); es = null }
     streaming.value = false
   }
