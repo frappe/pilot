@@ -338,10 +338,14 @@ def test_catchall_default_server(tmp_path: Path) -> None:
     from pathlib import Path as _P
 
     bench = _make_bench(tmp_path, _BASE_DATA)
-    conf = NginxManager(bench)._render_catchall(80, _P("/usr/share/nginx/bench-error-pages"))
+    conf = NginxManager(bench)._render_catchall(80, 443, _P("/usr/share/nginx/bench-error-pages"))
 
     assert "listen 80 default_server;" in conf
     assert "server_name _;" in conf
     assert "error_page 404 /_errors/404.html;" in conf
     assert "return 404;" in conf
     assert "alias /usr/share/nginx/bench-error-pages/;" in conf
+    # A 443 default_server is required so https requests for an http-only bench
+    # are rejected instead of falling through to the first TLS vhost.
+    assert "listen 443 ssl http2 default_server;" in conf
+    assert "ssl_reject_handshake on;" in conf

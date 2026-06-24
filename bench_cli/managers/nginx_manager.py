@@ -177,7 +177,13 @@ class NginxManager:
             staged.unlink()
 
         staged = staging / "_catchall.conf"
-        staged.write_text(self._render_catchall(self.bench.config.nginx.http_port, _SHARED_ERROR_DIR))
+        staged.write_text(
+            self._render_catchall(
+                self.bench.config.nginx.http_port,
+                self.bench.config.nginx.https_port,
+                _SHARED_ERROR_DIR,
+            )
+        )
         run_command(_privileged(["cp", str(staged), str(_catchall_conf())]))
         staged.unlink()
 
@@ -187,7 +193,7 @@ class NginxManager:
             if default_site.exists() or default_site.is_symlink():
                 run_command(_privileged(["rm", "-f", str(default_site)]))
 
-    def _render_catchall(self, http_port: int, error_dir: Path) -> str:
+    def _render_catchall(self, http_port: int, https_port: int, error_dir: Path) -> str:
         directives = "".join(f"    error_page {code} /_errors/{code}.html;\n" for code in _ERROR_PAGES)
         return (
             "server {\n"
@@ -202,6 +208,17 @@ class NginxManager:
             + "    location / {\n"
             + "        return 404;\n"
             + "    }\n"
+            "}\n\n"
+            # Without a default_server on the TLS port, an HTTPS request for a
+            # host with no matching server block (e.g. an http-only bench reached
+            # over https) silently falls through to the first 443 vhost defined,
+            # serving the wrong bench's cert and content. ssl_reject_handshake
+            # drops such handshakes outright (needs no certificate).
+            "server {\n"
+            f"    listen {https_port} ssl http2 default_server;\n"
+            f"    listen [::]:{https_port} ssl http2 default_server;\n"
+            "    server_name _;\n\n"
+            "    ssl_reject_handshake on;\n"
             "}\n"
         )
 
