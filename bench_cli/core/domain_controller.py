@@ -82,7 +82,6 @@ class DomainRouteProvider:
         """Wildcard domain patterns (e.g. '*.example.com') the provider extension
         offers, or [] if none. Host-level — no bench/site needs to exist yet."""
 
-        return ["*.ip-168-144-118-36.swiftwave.xyz"]
         exe = which(_PROVIDER_BIN)
         if not exe:
             return []

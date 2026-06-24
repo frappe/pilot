@@ -97,11 +97,24 @@ class LetsEncryptManager:
         # With TLS disabled a central proxy fronts the bench; obtain nothing.
         if not self.bench.config.admin.tls:
             return
+        from bench_cli.exceptions import CommandError
+
+        failed = []
         for site in self.bench.sites():
             if site.config.ssl and _is_public_domain(site.config.name):
-                self.obtain(site.config)
+                try:
+                    self.obtain(site.config)
+                except CommandError as exc:
+                    print(f"Could not obtain a certificate for '{site.config.name}', skipping: {exc}")
+                    failed.append(site.config.name)
         if _is_public_domain(self.bench.config.admin.domain):
-            self.obtain_admin()
+            try:
+                self.obtain_admin()
+            except CommandError as exc:
+                print(f"Could not obtain a certificate for '{self.bench.config.admin.domain}', skipping: {exc}")
+                failed.append(self.bench.config.admin.domain)
+        if failed:
+            raise CommandError(f"Certificate issuance failed for: {', '.join(failed)}.")
 
     def obtain_admin(self) -> None:
         from bench_cli.managers.nginx_manager import NginxManager
