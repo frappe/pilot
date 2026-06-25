@@ -16,6 +16,7 @@ class DropSiteCommand:
     def run(self) -> None:
         from bench_cli.utils import run_command
 
+        self._deregister_domains()
         cmd = [*self.bench.frappe_call, "frappe", "drop-site", "--force", self.name]
         if self.bench.config.mariadb.root_password:
             cmd += ["--db-root-password", self.bench.config.mariadb.root_password]
@@ -25,6 +26,19 @@ class DropSiteCommand:
         self._remove_from_bench_toml()
         print(f"\nSite '{self.name}' dropped.")
         self._reload_nginx()
+
+    def _deregister_domains(self) -> None:
+        """Release the site's custom domains at the provider before dropping. A
+        provider failure halts the drop so domains aren't orphaned at the edge.
+        Primary is cleared first so deregister's primary guard doesn't block it."""
+        from bench_cli.core.domain_controller import DomainRouteProvider
+
+        if not (self.bench.sites_path / self.name / "site_config.json").exists():
+            return
+        routes = DomainRouteProvider(self.bench)
+        routes.set_primary(self.name, None)
+        for domain in routes.domains(self.name):
+            routes.deregister(self.name, domain)
 
     def _remove_from_bench_toml(self) -> None:
         from bench_cli.utils import write_toml
