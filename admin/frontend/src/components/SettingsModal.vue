@@ -262,18 +262,18 @@ watch(() => props.modelValue, (val) => {
 <template>
   <Dialog v-model="show" :options="{ size: '3xl' }">
     <template #body>
-      <div class="flex h-[calc(100vh-8rem)] bg-surface-menu-bar" @pointerdown.stop>
-        <!-- Left sidebar - full height, same bg as outer, no border -->
-        <div class="flex flex-col m-1 w-48 shrink-0 rounded-l-lg bg-surface-menu-bar overflow-y-auto">
-          <h3 class="px-3 py-3 font-semibold text-ink-gray-9 sticky top-0 bg-surface-menu-bar">
+      <div class="flex flex-col sm:flex-row h-[calc(100vh-8rem)] bg-surface-menu-bar" @pointerdown.stop>
+        <!-- Left sidebar: horizontal scrollable tabs on mobile, full-height rail from sm up -->
+        <div class="flex shrink-0 flex-col overflow-y-auto border-b border-outline-gray-1 bg-surface-menu-bar sm:m-1 sm:w-48 sm:rounded-l-lg sm:border-b-0">
+          <h3 class="hidden px-3 py-3 font-semibold text-ink-gray-9 sticky top-0 bg-surface-menu-bar sm:block">
             Settings
           </h3>
-          <nav class="space-y-0.5 px-1">
+          <nav class="flex gap-1 overflow-x-auto p-1 sm:flex-col sm:gap-0 sm:space-y-0.5 sm:overflow-visible">
             <button
               v-for="tab in TABS"
               :key="tab.key"
               @click="activeTab = tab.key"
-              class="flex h-7.5 w-full cursor-pointer items-center rounded px-2 py-[7px] text-sm text-ink-gray-8 duration-300 ease-in-out focus:outline-none"
+              class="flex h-7.5 shrink-0 cursor-pointer items-center rounded px-2 py-[7px] text-sm text-ink-gray-8 duration-300 ease-in-out focus:outline-none sm:w-full"
               :class="activeTab === tab.key
                 ? 'bg-surface-selected shadow-sm'
                 : 'hover:bg-surface-gray-2'"
@@ -337,7 +337,7 @@ watch(() => props.modelValue, (val) => {
 
               <!-- Bench -->
               <div v-else-if="activeTab === 'bench'" class="flex flex-col gap-4">
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <FormControl label="Name" :modelValue="form.bench.name" disabled />
                   <FormControl label="Python Version" :modelValue="form.bench.python" disabled />
                   <FormControl type="number" label="HTTP Port" v-model="form.bench.http_port" />
@@ -347,7 +347,7 @@ watch(() => props.modelValue, (val) => {
 
               <!-- Appearance -->
               <div v-else-if="activeTab === 'appearance'" class="flex flex-col gap-4">
-                <Select label="Theme" :options="THEME_OPTIONS" v-model="theme" class="w-48" />
+                <Select label="Theme" :options="THEME_OPTIONS" v-model="theme" class="w-full sm:w-48" />
               </div>
 
               <!-- MariaDB -->
@@ -355,18 +355,18 @@ watch(() => props.modelValue, (val) => {
                 <p class="rounded-md bg-surface-gray-2 px-3 py-2 text-xs text-ink-gray-5">
                   MariaDB connection settings are set during bench initialization and cannot be changed here.
                 </p>
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <FormControl label="Host" :modelValue="form.mariadb.host" disabled />
                   <FormControl type="number" label="Port" :modelValue="form.mariadb.port" disabled />
                   <FormControl label="Admin User" :modelValue="form.mariadb.admin_user" disabled />
                   <FormControl label="Version" :modelValue="form.mariadb.version" disabled />
-                  <FormControl class="col-span-2" label="Socket Path" :modelValue="form.mariadb.socket_path" disabled />
+                  <FormControl class="sm:col-span-2" label="Socket Path" :modelValue="form.mariadb.socket_path" disabled />
                 </div>
               </div>
 
               <!-- Redis -->
               <div v-else-if="activeTab === 'redis'" class="flex flex-col gap-4">
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <FormControl type="number" label="Cache Port" v-model="form.redis.cache_port" />
                   <FormControl type="number" label="Queue Port" v-model="form.redis.queue_port" />
                   <FormControl label="Version" v-model="form.redis.version" disabled placeholder="not installed" />
@@ -403,7 +403,7 @@ watch(() => props.modelValue, (val) => {
 
               <!-- ZFS Volume -->
               <div v-else-if="activeTab === 'volume'" class="flex flex-col gap-4">
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <FormControl label="Pool Name" :modelValue="form.volume.pool" disabled />
                   <FormControl
                     v-if="form.volume.backing === 'image'"
@@ -413,7 +413,7 @@ watch(() => props.modelValue, (val) => {
                   />
                   <FormControl v-else label="Block Device" :modelValue="form.volume.device" disabled />
                 </div>
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <FormControl label="Reservation" v-model="form.volume.reservation" />
                   <FormControl label="Quota" v-model="form.volume.quota" />
                 </div>

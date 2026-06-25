@@ -141,35 +141,65 @@ onMounted(loadSnapshots)
 
     <ErrorMessage v-if="loadError" :message="loadError" />
     <LoadingText v-else-if="loading" />
-    <ListView
-      v-else
-      :columns="columns"
-      :rows="rows"
-      row-key="tag"
-      :options="{ selectable: false, showTooltip: false }"
-    >
-      <template #cell="{ column, row }">
-        <Button
-          v-if="column.key === '_rollback'"
-          variant="ghost"
-          size="sm"
-          @click="openRollbackDialog(row)"
+    <template v-else>
+      <!-- Mobile: stacked cards so the row actions stay reachable without horizontal scroll -->
+      <div class="flex flex-col gap-2 md:hidden">
+        <p v-if="!rows.length" class="py-8 text-center text-sm text-ink-gray-4">No snapshots yet.</p>
+        <div
+          v-for="row in rows"
+          :key="row.tag"
+          class="rounded-lg border border-outline-gray-1 px-4 py-3"
         >
-          Rollback
-        </Button>
-        <Button
-          v-else-if="column.key === '_delete'"
-          variant="ghost"
-          theme="red"
-          size="sm"
-          :loading="deletingTag === row.tag"
-          @click="deleteSnapshot(row)"
+          <div class="flex items-center justify-between gap-2">
+            <span class="truncate font-medium text-ink-gray-8">{{ row.tag }}</span>
+            <span class="shrink-0 text-xs text-ink-gray-4">{{ row.formattedSize }}</span>
+          </div>
+          <div class="mt-0.5 text-xs text-ink-gray-4">{{ row.formattedDate }}</div>
+          <div class="mt-2 flex gap-2">
+            <Button variant="ghost" size="sm" @click="openRollbackDialog(row)">Rollback</Button>
+            <Button
+              variant="ghost"
+              theme="red"
+              size="sm"
+              :loading="deletingTag === row.tag"
+              @click="deleteSnapshot(row)"
+            >Delete</Button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Desktop: full table -->
+      <div class="hidden md:block">
+        <ListView
+          :columns="columns"
+          :rows="rows"
+          row-key="tag"
+          :options="{ selectable: false, showTooltip: false }"
         >
-          Delete
-        </Button>
-        <span v-else class="block truncate">{{ row[column.key] }}</span>
-      </template>
-    </ListView>
+          <template #cell="{ column, row }">
+            <Button
+              v-if="column.key === '_rollback'"
+              variant="ghost"
+              size="sm"
+              @click="openRollbackDialog(row)"
+            >
+              Rollback
+            </Button>
+            <Button
+              v-else-if="column.key === '_delete'"
+              variant="ghost"
+              theme="red"
+              size="sm"
+              :loading="deletingTag === row.tag"
+              @click="deleteSnapshot(row)"
+            >
+              Delete
+            </Button>
+            <span v-else class="block truncate">{{ row[column.key] }}</span>
+          </template>
+        </ListView>
+      </div>
+    </template>
   </div>
 
   <Dialog v-model="showRollbackDialog" :options="{ title: 'Rollback Snapshot', size: 'md' }">

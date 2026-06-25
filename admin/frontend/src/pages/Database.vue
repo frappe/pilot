@@ -172,29 +172,61 @@ onUnmounted(() => clearInterval(processTimer))
         </div>
         <ErrorMessage v-if="processesError" :message="processesError" />
         <LoadingText v-else-if="processesLoading" />
-        <ListView
-          v-else
-          :columns="processColumns"
-          :rows="processRows"
-          row-key="id"
-          :options="{ selectable: false, showTooltip: false }"
-        >
-          <template #cell="{ column, item }">
-            <Button
-              v-if="column.key === '_actions'"
-              variant="ghost"
-              theme="red"
-              size="sm"
-              :loading="killing.has(item)"
-              @click.stop="killProcess(item)"
-            >Kill</Button>
-            <span
-              v-else-if="column.key === 'time'"
-              :class="item > 30 ? 'font-semibold text-ink-red-4' : item > 5 ? 'text-ink-amber-3' : ''"
-            >{{ item }}</span>
-            <span v-else class="truncate max-w-xs block">{{ item }}</span>
-          </template>
-        </ListView>
+        <template v-else>
+          <!-- Mobile: stacked cards so the Kill action stays reachable without horizontal scroll -->
+          <div class="flex flex-col gap-2 md:hidden">
+            <p v-if="!processRows.length" class="py-8 text-center text-sm text-ink-gray-4">No active connections.</p>
+            <div
+              v-for="row in processRows"
+              :key="row.id"
+              class="rounded-lg border border-outline-gray-1 px-4 py-3"
+            >
+              <div class="flex items-center justify-between gap-2">
+                <span class="truncate font-medium text-ink-gray-8">#{{ row.id }} · {{ row.user }}</span>
+                <Button
+                  variant="ghost"
+                  theme="red"
+                  size="sm"
+                  :loading="killing.has(row.id)"
+                  @click="killProcess(row.id)"
+                >Kill</Button>
+              </div>
+              <div class="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-ink-gray-5">
+                <span>{{ row.db || '—' }}</span>
+                <span>{{ row.command }}</span>
+                <span :class="row.time > 30 ? 'font-semibold text-ink-red-4' : row.time > 5 ? 'text-ink-amber-3' : ''">{{ row.time }}s</span>
+                <span v-if="row.state">{{ row.state }}</span>
+              </div>
+              <p v-if="row.info" class="mt-1.5 line-clamp-3 break-words font-mono text-xs text-ink-gray-6">{{ row.info }}</p>
+            </div>
+          </div>
+
+          <!-- Desktop: full table -->
+          <div class="hidden md:block">
+            <ListView
+              :columns="processColumns"
+              :rows="processRows"
+              row-key="id"
+              :options="{ selectable: false, showTooltip: false }"
+            >
+              <template #cell="{ column, item }">
+                <Button
+                  v-if="column.key === '_actions'"
+                  variant="ghost"
+                  theme="red"
+                  size="sm"
+                  :loading="killing.has(item)"
+                  @click.stop="killProcess(item)"
+                >Kill</Button>
+                <span
+                  v-else-if="column.key === 'time'"
+                  :class="item > 30 ? 'font-semibold text-ink-red-4' : item > 5 ? 'text-ink-amber-3' : ''"
+                >{{ item }}</span>
+                <span v-else class="truncate max-w-xs block">{{ item }}</span>
+              </template>
+            </ListView>
+          </div>
+        </template>
       </div>
 
       <!-- Binary Logs -->

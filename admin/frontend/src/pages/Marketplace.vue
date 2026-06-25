@@ -160,15 +160,15 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="flex gap-6">
-    <!-- Category sidebar -->
-    <nav class="w-44 shrink-0 sticky top-0 h-fit flex flex-col gap-0.5 pt-0.5">
+  <div class="flex flex-col gap-4 md:flex-row md:gap-6">
+    <!-- Category sidebar: horizontal scroll on mobile, fixed column from md up -->
+    <nav class="flex gap-1 overflow-x-auto pb-1 md:w-44 md:shrink-0 md:sticky md:top-0 md:h-fit md:flex-col md:gap-0.5 md:overflow-visible md:pb-0 md:pt-0.5">
       <button
         v-for="cat in CATEGORIES"
         :key="cat"
         @click="selectedCategory = cat"
         :class="[
-          'flex w-full items-center justify-between rounded px-2.5 py-1.5 text-left text-sm transition-colors',
+          'flex shrink-0 items-center gap-1.5 rounded px-2.5 py-1.5 text-left text-sm transition-colors md:w-full md:justify-between',
           selectedCategory === cat
             ? 'bg-surface-gray-3 font-medium text-ink-gray-9'
             : 'text-ink-gray-6 hover:bg-surface-gray-2 hover:text-ink-gray-8',
@@ -203,7 +203,7 @@ onMounted(load)
           </p>
 
           <!-- App card -->
-          <div class="flex items-start gap-4 rounded-lg border border-outline-gray-1 bg-surface-white px-4 py-3 shadow-sm">
+          <div class="flex items-center gap-4 rounded-lg border border-outline-gray-1 bg-surface-white px-4 py-3 shadow-sm">
             <!-- Logo -->
             <div
               class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg overflow-hidden"
@@ -218,7 +218,7 @@ onMounted(load)
               <div class="flex items-center gap-2 flex-wrap">
                 <span class="font-medium text-ink-gray-9">{{ app.title }}</span>
                 <Badge v-if="isFrappe(app)" label="Frappe" theme="gray" size="sm" />
-                <div class="flex gap-1">
+                <div class="flex flex-wrap gap-1">
                   <Badge
                     v-for="b in (app.branches ?? []).slice(0, 3)"
                     :key="b"
@@ -236,7 +236,7 @@ onMounted(load)
             <!-- Action -->
             <div class="flex shrink-0 items-center gap-2">
               <Badge v-if="installedNames.has(app.name)" label="Installed" theme="green" />
-              <Button v-if="app.repo" variant="outline" size="sm" @click="openInstall(app)">Add</Button>
+              <Button v-else-if="app.repo" variant="outline" size="sm" @click="openInstall(app)">Add</Button>
             </div>
           </div>
         </template>

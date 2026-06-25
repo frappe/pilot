@@ -238,7 +238,8 @@ class MariaDBManager:
         when this is a dedicated instance, or on macOS (Homebrew config paths vary), or when
         the shared port override already exists."""
         conf_dir = "/etc/my.cnf.d" if is_alpine() else _CONF_DIR
-        conf_path = f"{conf_dir}/99-bench-shared-port.cnf"
+        # Load shared before we load dedicated (allowing dedicated to override)
+        conf_path = f"{conf_dir}/98-bench-shared-port.cnf"
 
         if self.is_dedicated or self.config.port == 3306 or is_macos() or Path(conf_path).exists():
             return False

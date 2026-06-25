@@ -13,8 +13,9 @@ h4 { font-size: 0.875rem; line-height: 1.4; }
   z-index: 50;
 }
 
-/* Dropdown menus are portaled to <body>; keep them above the dialog overlay so
-   in-dialog dropdowns (e.g. the bench actions menu) don't render behind it. */
+/* Dropdown menus teleport to <body> without a z-index; lift them above both the
+   dialog overlay (z-50, so in-dialog menus like bench actions aren't hidden) and
+   the mobile sidebar drawer (z-30, so the sidebar's Bench menu stays usable). */
 .dropdown-content {
   z-index: 51;
 }

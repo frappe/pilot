@@ -48,26 +48,15 @@ class GetAppCommand(Command):
         print(f"\n'{self.name}' installed successfully.")
 
     def _clone(self) -> None:
-        existing = self._find_existing_clone()
-        if existing is not None:
-            # Re-point at the existing clone (repo-name or already-normalized
-            # module-name folder) so we don't clone a second copy.
-            self._set_app(existing.name)
-            print(f"'{self.name}' already cloned at {self.app.path}, skipping clone.")
+        # is_cloned resolves the normalized (module-name) folder too, so a re-run
+        # finds an existing clone however its folder was named.
+        if self.app.is_cloned:
+            print(f"'{self.name}' already cloned, skipping clone.")
             sys.stdout.flush()
             return
         print(f"Cloning {self.name}...")
         sys.stdout.flush()
         self.app.clone()
-
-    def _find_existing_clone(self):
-        # The app may already be cloned under the repo name (india-compliance)
-        # or its normalized module name (india_compliance).
-        for candidate in (self.name, self.name.replace("-", "_")):
-            path = self.bench.apps_path / candidate
-            if (path / ".git").exists():
-                return path
-        return None
 
     def _normalize_folder(self) -> None:
         """Frappe identifies an app by its directory name and assumes that name
@@ -75,18 +64,14 @@ class GetAppCommand(Command):
         imports the package all by that one name). Rename the clone to the module
         name (e.g. india-compliance -> india_compliance) so every frappe code
         path agrees — matching what legacy bench does at clone time."""
-        from bench_cli.exceptions import BenchError
-
         module = self.app.module_name
         if module == self.app.config.name:
             return
         target = self.bench.apps_path / module
-        if target.exists():
-            raise BenchError(
-                f"Cannot normalize '{self.app.config.name}' to '{module}': "
-                f"{target} already exists."
-            )
-        self.app.path.rename(target)
+        # Rename a fresh clone into place; a prior run may have already normalized
+        # it, in which case we just adopt the existing module-name folder.
+        if not target.exists():
+            self.app.path.rename(target)
         self._set_app(module)
 
     def _set_app(self, name: str) -> None:

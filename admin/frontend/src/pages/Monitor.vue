@@ -134,10 +134,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="flex flex-col gap-6">
+  <div class="flex flex-col gap-4 sm:gap-6">
 
     <!-- System Stats -->
-    <div v-if="stats" class="rounded-lg border border-outline-gray-1 bg-surface-white px-6 py-5 shadow-sm">
+    <div v-if="stats" class="py-1 sm:rounded-lg sm:border sm:border-outline-gray-1 sm:bg-surface-white sm:px-6 sm:py-5 sm:shadow-sm">
       <div class="mb-4 flex items-center justify-between">
         <h2 class="font-semibold text-ink-gray-9">System</h2>
         <span class="flex items-center gap-1.5 text-xs text-ink-gray-4">
@@ -147,7 +147,7 @@ onUnmounted(() => {
       </div>
 
       <div class="flex flex-col gap-6">
-        <div class="grid grid-cols-3 gap-6">
+        <div class="grid grid-cols-1 gap-6 sm:grid-cols-3">
           <div>
             <div class="mb-2 flex items-baseline justify-between">
               <span class="text-sm font-medium text-ink-gray-7">CPU</span>
@@ -180,7 +180,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div v-if="stats.volume?.enabled" class="grid grid-cols-3 gap-6">
+        <div v-if="stats.volume?.enabled" class="grid grid-cols-1 gap-6 sm:grid-cols-3">
           <div v-for="dataset in stats.volume.datasets" :key="dataset.name">
             <div class="mb-2 flex items-baseline justify-between">
               <span class="text-sm font-medium capitalize text-ink-gray-7">{{ datasetLabel(dataset.name) }}</span>
@@ -200,7 +200,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div v-else-if="stats.paths?.length" class="grid grid-cols-3 gap-6">
+        <div v-else-if="stats.paths?.length" class="grid grid-cols-1 gap-6 sm:grid-cols-3">
           <div v-for="pathInfo in stats.paths" :key="pathInfo.path">
             <div class="mb-2 flex items-baseline justify-between">
               <span class="text-sm font-medium text-ink-gray-7">{{ pathInfo.label }}</span>
@@ -215,7 +215,7 @@ onUnmounted(() => {
     </div>
 
     <!-- Processes -->
-    <div class="rounded-lg border border-outline-gray-1 bg-surface-white px-6 py-5 shadow-sm">
+    <div class="py-1 sm:rounded-lg sm:border sm:border-outline-gray-1 sm:bg-surface-white sm:px-6 sm:py-5 sm:shadow-sm">
       <div class="mb-4 flex items-center justify-between">
         <h2 class="font-semibold text-ink-gray-9">Processes</h2>
         <div class="flex items-center gap-2">
