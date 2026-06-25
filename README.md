@@ -156,6 +156,7 @@ count = 1
 [admin]
 port = 8002
 password = "your-admin-password"   # required — admin refuses to start without this
+jwt_secret = "..."                 # auto-generated — signs admin session tokens (don't set by hand)
 domain = "admin.example.com"       # optional — serve admin behind this domain via nginx
 tls = false                        # server-wide HTTPS opt-in (Let's Encrypt); false = plain HTTP
 
@@ -206,6 +207,7 @@ Each bench lives on a single dataset (`<pool>/<bench>`) holding both its files a
 | `bench upgrade` | Pull latest bench-cli and download the admin frontend |
 | `bench setup config` | Regenerate Procfile and config files from bench.toml |
 | `bench build-admin` | Rebuild admin frontend assets from source |
+| `bench generate-session` | Issue a 5-minute, single-use admin sign-in link (`--full-path` for the URL) |
 | `bench setup nginx` | Generate and install nginx config |
 | `bench setup letsencrypt` | Obtain SSL certificates |
 | `bench setup production` | Full production setup — `--process-manager`, `--admin-domain`, `--tls` |
@@ -264,6 +266,7 @@ email = "ops@example.com"
 [admin]
 port = 8002
 password = "your-admin-password"
+jwt_secret = "..."             # auto-generated — signs admin session tokens (don't set by hand)
 domain = "admin.example.com"   # required in production — admin is served behind this domain
 tls = true                     # server-wide HTTPS via Let's Encrypt (omit/false = plain HTTP)
 ```
