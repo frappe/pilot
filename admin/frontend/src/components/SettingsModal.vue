@@ -36,8 +36,6 @@ const BASE_TABS = [
   { key: 'updates', label: 'Updates' },
 ]
 const isLinux = ref(false)
-// The host's native production manager: 'openrc' on Alpine, 'systemd' elsewhere.
-const nativeProcessManager = ref('systemd')
 const TABS = computed(() => {
   let tabs = isLinux.value
     ? [...BASE_TABS, { key: 'volume', label: 'ZFS Volume' }]
@@ -55,14 +53,6 @@ const saving = ref(false)
 const saveError = ref('')
 const saveSuccess = ref('')
 
-// Native manager (systemd/OpenRC) per host, plus the cross-platform supervisor.
-const PM_LABELS = { systemd: 'Systemd', openrc: 'OpenRC', supervisor: 'Supervisor' }
-const processManagerOptions = computed(() => [
-  { label: 'None (development)', value: 'none' },
-  { label: PM_LABELS[nativeProcessManager.value] || nativeProcessManager.value, value: nativeProcessManager.value },
-  { label: 'Supervisor', value: 'supervisor' },
-])
-
 const form = ref(null)
 
 async function load() {
@@ -73,7 +63,6 @@ async function load() {
     if (!res.ok) throw new Error(`${res.status}`)
     const data = await res.json()
     isLinux.value = data.is_linux === true
-    nativeProcessManager.value = data.native_process_manager || 'systemd'
     if (Array.isArray(data.workers))
       data.workers = data.workers.map(g => ({ queues: (g.queues || []).join(', '), count: g.count }))
     form.value = data
@@ -348,9 +337,6 @@ watch(() => props.modelValue, (val) => {
 
               <!-- Bench -->
               <div v-else-if="activeTab === 'bench'" class="flex flex-col gap-4">
-                <h4 class="font-semibold text-ink-gray-8">Process Manager</h4>
-                <Select :options="processManagerOptions" v-model="form.production.process_manager" class="w-64" />
-                <div class="border-t border-outline-gray-1" />
                 <div class="grid grid-cols-2 gap-4">
                   <FormControl label="Name" :modelValue="form.bench.name" disabled />
                   <FormControl label="Python Version" :modelValue="form.bench.python" disabled />
