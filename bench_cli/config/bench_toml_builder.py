@@ -21,7 +21,12 @@ FLAT_KEYS = {
     "mariadb_instance": "mariadb.instance",
     "mariadb_socket_path": "mariadb.socket_path",
     "mariadb_data_dir": "mariadb.data_dir",
-    "mariadb_port": "mariadb.port",
+    # NB: mariadb.port is deliberately NOT a flat key. Like the other ports
+    # (http/admin/redis) it is offset-managed via _PORT_FIELDS. Exposing it as a
+    # flat key made read_settings() round-trip the already-offset value, which
+    # render() then offset a *second* time — so every wizard /save compounded the
+    # offset onto mariadb.port alone (e.g. 3306→3312→3318), drifting it off-grid
+    # and colliding with sibling instances.
     "admin_enabled": "admin.enabled",
     "admin_password": "admin.password",
     "admin_domain": "admin.domain",

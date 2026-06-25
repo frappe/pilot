@@ -1,0 +1,68 @@
+name: E2E (Admin UI)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Heavy (bench init clones the framework); allow manual runs too.
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y mariadb-server redis-server git nginx openssl
+          sudo systemctl start mariadb redis-server
+          # The setup wizard validates "shared system MariaDB" against this.
+          sudo mysql -e "SET PASSWORD FOR root@localhost = PASSWORD('admin'); FLUSH PRIVILEGES;"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install yarn, bench and e2e deps
+        run: |
+          npm install -g yarn
+          pip install -e ".[test,admin,e2e]"
+
+      - name: Install admin frontend deps
+        # The harness rebuilds the admin UI from source around the bench
+        # lifecycle (bench init re-downloads the prebuilt release and would
+        # otherwise clobber this branch's code), so it just needs node_modules.
+        working-directory: admin/frontend
+        run: npm install
+
+      - name: Install Playwright browser
+        run: playwright install --with-deps chromium
+
+      - name: Run e2e tests
+        working-directory: tests/e2e
+        run: pytest
+        env:
+          # Use the repo launcher (the harness default, <repo>/bench): `bench`
+          # resolves its benches dir from its own package location, so only the
+          # repo launcher writes to <repo>/benches where the harness reads.
+          E2E_MARIADB_PASSWORD: admin
+
+      - name: Upload Playwright traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-traces
+          path: tests/e2e/test-results
+          retention-days: 7

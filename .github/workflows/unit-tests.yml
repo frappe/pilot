@@ -29,4 +29,6 @@ jobs:
         run: pip install -e ".[test,admin]"
 
       - name: Run unit tests with coverage
-        run: pytest tests/ --ignore=tests/integration --cov=bench_cli --cov-report=term-missing -q
+        # e2e (Playwright, browser-driven) runs in its own workflow and needs a
+        # live bench + browser, so keep it out of the unit run alongside integration.
+        run: pytest tests/ --ignore=tests/integration --ignore=tests/e2e --cov=bench_cli --cov-report=term-missing -q
