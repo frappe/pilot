@@ -290,6 +290,8 @@ def _read_defaults(bench_root: Path) -> dict:
         except Exception:
             pass
 
+    result.pop("admin_password", None)
+
     result.update(_volume_suggestions(toml_path))
 
     try:
