@@ -333,7 +333,7 @@ def create_app(bench_root: Path) -> Flask:
         )
 
     @app.route("/api/login", methods=["POST"])
-    @rate_limit(10, 60)
+    @rate_limit(5, 60, user_ip=True)
     def api_login():
         try:
             config = BenchConfig.from_file(bench_root / "bench.toml")

@@ -157,7 +157,7 @@ def test_sid_is_single_use(tmp_path: Path) -> None:
 
 def test_login_rate_limited_after_limit(tmp_path: Path) -> None:
     client = _client(tmp_path)
-    for _ in range(10):
+    for _ in range(5):
         assert client.post("/api/login", json={"password": "wrong"}).status_code == 401
     assert client.post("/api/login", json={"password": "wrong"}).status_code == 429
 
