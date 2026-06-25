@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import shutil
-import socket
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -182,45 +181,15 @@ class DropBenchCommand(Command):
 
     @staticmethod
     def _normalize_db_host(host: str) -> str:
-        """Canonicalize any address pointing at this machine to '127.0.0.1', so a
-        sibling reaching the same server via localhost, the box's hostname, or an
-        interface IP still collides on the tcp identity key."""
-        host = (host or "").strip()
-        if host in ("", "localhost", "127.0.0.1"):
-            return "127.0.0.1"
-        try:
-            ips = {info[4][0] for info in socket.getaddrinfo(host, None)}
-        except OSError:
-            return host
-        if any(ip.startswith("127.") or ip == "::1" for ip in ips) or (ips & DropBenchCommand._local_machine_ips()):
-            return "127.0.0.1"
-        return host
-
-    @staticmethod
-    def _local_machine_ips() -> set[str]:
-        import subprocess
-
-        ips: set[str] = set()
-        try:
-            ips |= {info[4][0] for info in socket.getaddrinfo(socket.gethostname(), None)}
-        except OSError:
-            pass
-        # Enumerate every configured interface address from the OS. Unlike the
-        # 8.8.8.8 probe below this needs no connectivity, so a sibling reaching
-        # this DB through an interface IP is still recognised on offline/firewalled
-        # hosts — where missing it would wrongly tear down a shared database.
-        try:
-            out = subprocess.run(["hostname", "-I"], capture_output=True, text=True, timeout=2)
-            ips |= set(out.stdout.split())
-        except (OSError, subprocess.SubprocessError):
-            pass
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
-                probe.connect(("8.8.8.8", 80))
-                ips.add(probe.getsockname()[0])
-        except OSError:
-            pass
-        return ips
+        """Fold the literal loopback aliases to one key. Sharing is decided from the
+        declared config of the benches we manage — instance, datadir, socket, and
+        host:port — never by probing the network to classify an address. The DB a
+        dedicated instance owns is identified by the datadir/instance/socket it
+        physically holds, which siblings carry in their own config; a DB created by
+        some external, unmanaged process is out of scope. Network probing was both
+        unreliable (offline/firewalled/cloud hosts) and unnecessary."""
+        host = (host or "").strip().lower()
+        return "127.0.0.1" if host in ("", "localhost", "127.0.0.1", "::1") else host
 
     def _delete_bench_dir(self) -> None:
         path = self.bench.path
