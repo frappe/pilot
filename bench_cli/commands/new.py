@@ -20,7 +20,8 @@ class NewCommand(Command):
         parser.add_argument(
             "--admin-domain",
             default="",
-            help="Admin domain for this bench (defaults to <name>-admin.localhost).",
+            help="Admin domain for this bench. Optional for development; "
+                 "required by 'bench setup production' (pass it there if omitted here).",
         )
 
     @classmethod
@@ -60,9 +61,12 @@ class NewCommand(Command):
         offset = self._pick_port_offset(self.target_directory)
         print("Writing bench.toml")
         admin_tls = self.admin_tls if self.admin_tls is not None else self._sibling_admin_tls()
+        # admin.domain is left empty unless given: development serves the admin on
+        # localhost, and 'bench setup production' requires a real domain (via its
+        # --admin-domain flag or here), erroring rather than deploying a placeholder.
         settings = {
             "admin_password": secrets.token_hex(nbytes=5),
-            "admin_domain": self.admin_domain or f"{self.name}-admin.localhost",
+            "admin_domain": self.admin_domain,
             "admin_tls": admin_tls,
         }
         if self.process_manager:
@@ -92,7 +96,7 @@ class NewCommand(Command):
         print(f"\nBench '{self.name}' created at {self.target_directory}")
         print("\nNext step:")
         print("  bench start")
-        print(f"  Open http://localhost:{admin_port} — the setup wizard guides you through the rest,")
+        print(f"  Then open http://localhost:{admin_port} — the setup wizard takes it from there.")
 
     def _sibling_letsencrypt_email(self) -> str:
         """The Let's Encrypt email from any sibling bench that has one, so a new
