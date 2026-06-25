@@ -61,17 +61,18 @@ class DomainRouteProvider:
         return records
 
     def register(self, site_name: str, domain: str) -> None:
-        """Step 2: validate + verify DNS — skipped if the provider already did
-        it for us — then persist. Persistence always happens (except registering
-        the site's own name as the provider's pick needs no domains-list entry)."""
-        ran, _ = self._ask_provider("register", domain)
-        if ran:
-            domain = normalize_host(domain)
-        else:
-            domain = self._validate_new(site_name, domain)
-            self._verify(site_name, domain)
+        """Step 2: validate the domain is free (always, so a provider can't
+        register a hostname already claimed in this or a sibling bench), verify
+        DNS unless a provider handled it, then persist. The site's own name needs
+        no domains-list entry, so it returns early without persisting."""
+        domain = normalize_host(domain)
         if domain == normalize_host(site_name):
+            self._ask_provider("register", domain)
             return
+        self._validate_new(site_name, domain)
+        ran, _ = self._ask_provider("register", domain)
+        if not ran:
+            self._verify(site_name, domain)
         config = self._read(site_name)
         config.setdefault("domains", []).append(domain)
         self._write(site_name, config)
