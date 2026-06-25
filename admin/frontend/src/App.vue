@@ -30,12 +30,17 @@ async function loadStatus() {
   }
 }
 
-function consumeSidParam() {
+async function consumeSidParam() {
   const params = new URLSearchParams(window.location.search)
   const sid = params.get('sid')
   if (!sid) return
-  const secure = window.location.protocol === 'https:' ? '; Secure' : ''
-  document.cookie = `sid=${encodeURIComponent(sid)}; path=/; max-age=604800; SameSite=Lax${secure}`
+  try {
+    await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sid }),
+    })
+  } catch {}
   params.delete('sid')
   const query = params.toString()
   window.history.replaceState({}, document.title, window.location.pathname + (query ? `?${query}` : '') + window.location.hash)
@@ -43,7 +48,7 @@ function consumeSidParam() {
 
 onMounted(async () => {
   initializeTheme()
-  consumeSidParam()
+  await consumeSidParam()
   try {
     await loadStatus()
   } catch {

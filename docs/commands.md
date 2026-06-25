@@ -491,7 +491,7 @@ See [docs/admin.md](admin.md) for the full interface specification.
 
 ## `bench generate-session`
 
-Issues a 7-day signed token that signs you into the admin UI without typing the password — handy for opening the panel from a server shell.
+Issues a 1-day signed token that signs you into the admin UI without typing the password — handy for opening the panel from a server shell.
 
 ```bash
 bench generate-session              # prints the token

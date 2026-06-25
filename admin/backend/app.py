@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import http.client
 import os
 import re
@@ -206,6 +207,10 @@ def create_app(bench_root: Path) -> Flask:
 
         return verify_token(request.cookies.get("sid", ""), config.admin.jwt_secret)
 
+    def _set_sid_cookie(resp, sid: str, config: BenchConfig):
+        resp.set_cookie("sid", sid, max_age=24 * 3600, httponly=True,
+                        secure=config.production.enabled and config.admin.tls, samesite="Lax")
+
     def _check_password(config: BenchConfig):
         if not config.admin.password:
             return jsonify({"error": "No admin password configured in bench.toml", "enabled": False}), 503
@@ -275,7 +280,16 @@ def create_app(bench_root: Path) -> Flask:
         if not config.admin.password:
             return jsonify({"ok": False, "error": "No admin password configured in bench.toml"}), 503
         data = request.get_json(silent=True) or {}
-        if data.get("password") == config.admin.password:
+        sid = data.get("sid")
+        if sid:
+            from bench_cli.commands.generate_session import verify_token
+
+            if not verify_token(sid, config.admin.jwt_secret):
+                return jsonify({"ok": False, "error": "Invalid or expired session token"}), 401
+            resp = jsonify({"ok": True})
+            _set_sid_cookie(resp, sid, config)
+            return resp
+        if hmac.compare_digest(str(data.get("password", "")), config.admin.password):
             session["authenticated"] = True
             return jsonify({"ok": True})
         return jsonify({"ok": False, "error": "Incorrect password"}), 401
@@ -283,7 +297,9 @@ def create_app(bench_root: Path) -> Flask:
     @app.route("/api/logout", methods=["POST"])
     def api_logout():
         session.clear()
-        return jsonify({"ok": True})
+        resp = jsonify({"ok": True})
+        resp.delete_cookie("sid")
+        return resp
 
     @app.route("/api/benches/")
     def api_benches():

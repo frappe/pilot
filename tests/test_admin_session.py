@@ -128,6 +128,22 @@ def test_invalid_jwt_cookie_stays_unauthenticated(tmp_path: Path) -> None:
     assert client.get("/api/benches/").status_code == 401
 
 
+def test_login_with_sid_sets_httponly_cookie(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    resp = client.post("/api/login", json={"sid": issue_token("k3y")})
+    assert resp.status_code == 200
+    cookie = next(h for k, h in resp.headers if k == "Set-Cookie" and h.startswith("sid="))
+    assert "HttpOnly" in cookie
+    assert client.get("/api/benches/").status_code != 401
+
+
+def test_login_with_invalid_sid_rejected(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    resp = client.post("/api/login", json={"sid": issue_token("wrong-secret")})
+    assert resp.status_code == 401
+    assert client.get("/api/benches/").status_code == 401
+
+
 def test_setup_endpoint_requires_auth_once_password_set(tmp_path: Path) -> None:
     client = _client(tmp_path)
     assert client.post("/api/setup/validate-mariadb", json={}).status_code == 401

@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from bench_cli.core.bench import Bench
 
 _HEADER = {"alg": "HS256", "typ": "JWT"}
-DEFAULT_TTL = 7 * 24 * 3600
+DEFAULT_TTL = 24 * 3600
 
 
 def _b64(raw: bytes) -> str:
@@ -60,7 +60,7 @@ def verify_token(token: str, secret: str) -> bool:
 
 class GenerateSessionCommand(Command):
     name = "generate-session"
-    help = "Issue a 7-day admin session token (use --full-path for a sign-in URL)."
+    help = "Issue a 1-day admin session token (use --full-path for a sign-in URL)."
 
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
