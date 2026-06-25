@@ -9,6 +9,7 @@ import LucideDownload from '~icons/lucide/download'
 import LucideRadio from '~icons/lucide/radio'
 import LucideChevronUp from '~icons/lucide/chevron-up'
 import LucideChevronDown from '~icons/lucide/chevron-down'
+import LucideArrowLeft from '~icons/lucide/arrow-left'
 
 const route = useRoute()
 const router = useRouter()
@@ -146,7 +147,9 @@ onMounted(async () => {
   await loadLogs()
   if (selectedFile.value) {
     loadContent()
-  } else if (logs.value.length) {
+  } else if (logs.value.length && window.innerWidth >= 768) {
+    // Desktop shows both panes, so preselect the first log. On mobile (< md)
+    // only one pane is visible at a time — leave the list showing instead.
     selectedFile.value = logs.value[0].filename
   }
 })
@@ -179,8 +182,11 @@ function escapeRegExp(text) {
 <template>
   <div class="-mx-6 -my-6 flex h-full overflow-hidden">
 
-    <!-- Left sidebar: log list -->
-    <div class="w-52 shrink-0 border-r border-outline-gray-1 flex flex-col overflow-y-auto bg-surface-gray-1">
+    <!-- Left sidebar: log list — full width on mobile, hidden once a file is picked -->
+    <div
+      class="w-full shrink-0 border-r border-outline-gray-1 flex-col overflow-y-auto bg-surface-gray-1 md:w-52 md:flex"
+      :class="selectedFile ? 'hidden' : 'flex'"
+    >
       <LoadingText v-if="logsLoading" class="p-4" />
       <ErrorMessage v-else-if="logsError" :message="logsError" class="p-3" />
       <button
@@ -198,8 +204,11 @@ function escapeRegExp(text) {
       </button>
     </div>
 
-    <!-- Right panel: viewer -->
-    <div class="flex-1 overflow-hidden flex flex-col">
+    <!-- Right panel: viewer — full width on mobile, hidden until a file is picked -->
+    <div
+      class="flex-1 overflow-hidden flex-col md:flex"
+      :class="selectedFile ? 'flex' : 'hidden'"
+    >
 
       <!-- Empty state -->
       <div v-if="!selectedFile" class="flex-1 flex items-center justify-center">
@@ -209,6 +218,9 @@ function escapeRegExp(text) {
       <template v-else>
         <!-- Toolbar -->
         <div class="shrink-0 flex flex-wrap items-center gap-2 border-b border-outline-gray-1 px-5 py-2.5">
+          <Button variant="ghost" class="md:hidden" tooltip="Back to logs" @click="selectedFile = ''">
+            <template #icon><LucideArrowLeft class="h-4 w-4" /></template>
+          </Button>
           <div class="w-32 shrink-0">
             <FormControl
               type="select"

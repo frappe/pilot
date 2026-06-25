@@ -147,7 +147,7 @@ onUnmounted(() => {
       </div>
 
       <div class="flex flex-col gap-6">
-        <div class="grid grid-cols-3 gap-6">
+        <div class="grid grid-cols-1 gap-6 sm:grid-cols-3">
           <div>
             <div class="mb-2 flex items-baseline justify-between">
               <span class="text-sm font-medium text-ink-gray-7">CPU</span>
@@ -180,7 +180,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div v-if="stats.volume?.enabled" class="grid grid-cols-3 gap-6">
+        <div v-if="stats.volume?.enabled" class="grid grid-cols-1 gap-6 sm:grid-cols-3">
           <div v-for="dataset in stats.volume.datasets" :key="dataset.name">
             <div class="mb-2 flex items-baseline justify-between">
               <span class="text-sm font-medium capitalize text-ink-gray-7">{{ datasetLabel(dataset.name) }}</span>
@@ -200,7 +200,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div v-else-if="stats.paths?.length" class="grid grid-cols-3 gap-6">
+        <div v-else-if="stats.paths?.length" class="grid grid-cols-1 gap-6 sm:grid-cols-3">
           <div v-for="pathInfo in stats.paths" :key="pathInfo.path">
             <div class="mb-2 flex items-baseline justify-between">
               <span class="text-sm font-medium text-ink-gray-7">{{ pathInfo.label }}</span>

@@ -612,10 +612,10 @@ onMounted(() => {
       <div class="overflow-hidden rounded-lg border border-outline-gray-1">
         <!-- Site header -->
         <div class="flex items-start justify-between gap-4 px-5 py-4">
-          <div class="flex flex-col gap-1.5">
+          <div class="flex min-w-0 flex-col gap-1.5">
             <div class="flex items-center gap-2">
-              <h1 class="flex items-center gap-1.5 font-semibold text-ink-gray-9">
-                {{ siteName }}
+              <h1 class="flex min-w-0 items-center gap-1.5 font-semibold text-ink-gray-9">
+                <span class="break-all">{{ siteName }}</span>
                 <span class="group relative inline-flex h-2 w-2 shrink-0 rounded-full"
                   :class="!site.exists ? 'bg-ink-gray-3' : site.broken ? 'bg-surface-red-4' : 'bg-surface-green-3'">
                   <span

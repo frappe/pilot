@@ -92,7 +92,7 @@ onUnmounted(() => clearInterval(pollTimer))
 </script>
 
 <template>
-  <div>
+  <div class="h-full">
     <Sidebar :header="header" :sections="sections" disableCollapse>
       <template #sidebar-item="{ item }">
         <SidebarItem :label="item.label" :icon="item.icon" :to="item.to" :isActive="isActive(item.to)">

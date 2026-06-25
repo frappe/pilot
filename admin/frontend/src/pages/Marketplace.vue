@@ -160,15 +160,15 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="flex gap-6">
-    <!-- Category sidebar -->
-    <nav class="w-44 shrink-0 sticky top-0 h-fit flex flex-col gap-0.5 pt-0.5">
+  <div class="flex flex-col gap-4 md:flex-row md:gap-6">
+    <!-- Category sidebar: horizontal scroll on mobile, fixed column from md up -->
+    <nav class="flex gap-1 overflow-x-auto pb-1 md:w-44 md:shrink-0 md:sticky md:top-0 md:h-fit md:flex-col md:gap-0.5 md:overflow-visible md:pb-0 md:pt-0.5">
       <button
         v-for="cat in CATEGORIES"
         :key="cat"
         @click="selectedCategory = cat"
         :class="[
-          'flex w-full items-center justify-between rounded px-2.5 py-1.5 text-left text-sm transition-colors',
+          'flex shrink-0 items-center gap-1.5 rounded px-2.5 py-1.5 text-left text-sm transition-colors md:w-full md:justify-between',
           selectedCategory === cat
             ? 'bg-surface-gray-3 font-medium text-ink-gray-9'
             : 'text-ink-gray-6 hover:bg-surface-gray-2 hover:text-ink-gray-8',

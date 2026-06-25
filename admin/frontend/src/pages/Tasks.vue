@@ -10,6 +10,7 @@ import LucideLoader2 from '~icons/lucide/loader-2'
 import LucideX from '~icons/lucide/x'
 import LucideChevronDown from '~icons/lucide/chevron-down'
 import LucideChevronUp from '~icons/lucide/chevron-up'
+import LucideArrowLeft from '~icons/lucide/arrow-left'
 
 const route = useRoute()
 const router = useRouter()
@@ -227,7 +228,9 @@ onMounted(async () => {
   await loadTasks()
   if (selectedTaskId.value) {
     loadDetail(selectedTaskId.value)
-  } else if (tasks.value.length) {
+  } else if (tasks.value.length && window.innerWidth >= 768) {
+    // Desktop shows both panes, so preselect the first task. On mobile (< md)
+    // only one pane is visible at a time — leave the list showing instead.
     selectedTaskId.value = tasks.value[0].task_id
   }
   pollTimer = setInterval(loadTasks, 5000)
@@ -242,8 +245,11 @@ onUnmounted(() => {
 <template>
   <div class="-mx-6 -my-6 flex h-full overflow-hidden">
 
-    <!-- Left sidebar: task list -->
-    <div class="w-64 shrink-0 border-r border-outline-gray-1 flex flex-col overflow-hidden bg-surface-gray-1">
+    <!-- Left sidebar: task list — full width on mobile, hidden once a task is picked -->
+    <div
+      class="w-full shrink-0 border-r border-outline-gray-1 flex-col overflow-hidden bg-surface-gray-1 md:w-64 md:flex"
+      :class="selectedTaskId ? 'hidden' : 'flex'"
+    >
       <div class="shrink-0 border-b border-outline-gray-1 px-3 py-2">
         <FormControl
           type="select"
@@ -278,8 +284,11 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Right panel: detail -->
-    <div class="flex-1 overflow-hidden flex flex-col">
+    <!-- Right panel: detail — full width on mobile, hidden until a task is picked -->
+    <div
+      class="flex-1 overflow-hidden flex-col md:flex"
+      :class="selectedTaskId ? 'flex' : 'hidden'"
+    >
 
       <div v-if="!selectedTaskId" class="flex-1 flex items-center justify-center">
         <span class="text-sm text-ink-gray-4">Select a task</span>
@@ -291,6 +300,9 @@ onUnmounted(() => {
 
           <!-- Header -->
           <div class="shrink-0 border-b border-outline-gray-1 px-5 py-3 flex flex-wrap items-center gap-3">
+            <Button variant="ghost" size="sm" class="md:hidden" tooltip="Back to tasks" @click="selectedTaskId = ''">
+              <template #icon><LucideArrowLeft class="h-4 w-4" /></template>
+            </Button>
             <Badge
               :label="streaming ? 'running…' : task.status"
               :theme="TASK_COLOR[task.status] || 'gray'"
