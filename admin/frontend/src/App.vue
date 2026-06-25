@@ -30,8 +30,20 @@ async function loadStatus() {
   }
 }
 
+function consumeSidParam() {
+  const params = new URLSearchParams(window.location.search)
+  const sid = params.get('sid')
+  if (!sid) return
+  const secure = window.location.protocol === 'https:' ? '; Secure' : ''
+  document.cookie = `sid=${encodeURIComponent(sid)}; path=/; max-age=604800; SameSite=Lax${secure}`
+  params.delete('sid')
+  const query = params.toString()
+  window.history.replaceState({}, document.title, window.location.pathname + (query ? `?${query}` : '') + window.location.hash)
+}
+
 onMounted(async () => {
   initializeTheme()
+  consumeSidParam()
   try {
     await loadStatus()
   } catch {

@@ -87,6 +87,8 @@ def bench_config_to_toml(config: BenchConfig) -> str:
     parts.append(f"timeout = {a.timeout}")
     parts.append(f"enabled = {'true' if a.enabled else 'false'}")
     parts.append(f'password = "{a.password}"')
+    if a.jwt_secret:
+        parts.append(f'jwt_secret = "{a.jwt_secret}"')
     parts.append(f'domain = "{a.domain}"')
     parts.append(f"tls = {'true' if a.tls else 'false'}")
     parts.append("")

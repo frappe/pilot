@@ -7,6 +7,7 @@ class AdminConfig:
     timeout: int = 180  # seconds
     enabled: bool = False
     password: str = ""
+    jwt_secret: str = ""
     domain: str = ""
     # Bench-wide TLS termination, opt-in. False (default): nginx serves sites and
     # the admin over plain HTTP on the http port and obtains no certs — the bench

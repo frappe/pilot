@@ -199,10 +199,17 @@ def create_app(bench_root: Path) -> Flask:
             return jsonify({"error": "Admin is disabled", "enabled": False}), 503
         return None
 
+    def _is_authenticated(config: BenchConfig) -> bool:
+        if session.get("authenticated"):
+            return True
+        from bench_cli.commands.generate_session import verify_token
+
+        return verify_token(request.cookies.get("sid", ""), config.admin.jwt_secret)
+
     def _check_password(config: BenchConfig):
         if not config.admin.password:
             return jsonify({"error": "No admin password configured in bench.toml", "enabled": False}), 503
-        if not session.get("authenticated"):
+        if not _is_authenticated(config):
             return jsonify({"error": "Authentication required"}), 401
         return None
 
@@ -210,13 +217,14 @@ def create_app(bench_root: Path) -> Flask:
     def _guard():
         if not request.path.startswith("/api") or request.path in _OPEN_PATHS:
             return None
-        if request.path.startswith("/api/setup/"):
-            return None
+        is_setup = request.path.startswith("/api/setup/")
         try:
             config = _load_config()
-            return _check_enabled(config) or _check_password(config)
         except Exception as exc:
-            return jsonify({"error": str(exc), "enabled": False}), 503
+            return None if is_setup else (jsonify({"error": str(exc), "enabled": False}), 503)
+        if is_setup and not config.admin.password:
+            return None
+        return _check_enabled(config) or _check_password(config)
 
     @app.route("/api/ping")
     def api_ping():
@@ -254,7 +262,7 @@ def create_app(bench_root: Path) -> Flask:
                 "name": config.name,
                 "production": config.production.enabled,
                 "native_process_manager": native_process_manager(),
-                "authenticated": bool(session.get("authenticated")),
+                "authenticated": _is_authenticated(config),
             }
         )
 
