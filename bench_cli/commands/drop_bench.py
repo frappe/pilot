@@ -40,6 +40,7 @@ class DropBenchCommand(Command):
         full_db_teardown = dedicated and not self._mariadb_shared_with_other_bench()
 
         self._remove_production()
+        self._release_admin_domain()
         if full_db_teardown:
             self._stop_mariadb()
         self._remove_volume(destroy_dataset=full_db_teardown)
@@ -49,6 +50,15 @@ class DropBenchCommand(Command):
             print("Keeping MariaDB instance — another bench shares it.")
         self._delete_bench_dir()
         print(f"\nBench '{name}' dropped.")
+
+    def _release_admin_domain(self) -> None:
+        """Release the admin domain that setup-production registered with the domain
+        provider, so dropping the bench leaves no dead route at the edge."""
+        from bench_cli.core.domain_controller import DomainRouteProvider
+
+        domain = self.bench.config.admin.domain
+        if domain:
+            DomainRouteProvider(self.bench).release(domain)
 
     def _validate_no_sites(self, name: str) -> None:
         sites = self.bench.sites()

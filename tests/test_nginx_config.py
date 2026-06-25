@@ -226,6 +226,34 @@ def test_server_name_includes_all_domains(tmp_path: Path) -> None:
     assert "www.site1.example.com" in config_text
 
 
+def test_no_canonical_redirect_without_explicit_primary(tmp_path: Path) -> None:
+    # Without an explicit primary, site.primary falls back to the (internal) site
+    # name; a 301 there would strand public traffic on an unreachable host.
+    bench = _make_bench(tmp_path, _BASE_DATA)
+    manager = NginxManager(bench)
+    site = SiteConfig(name="site.localhost", apps=["frappe"], domains=["www.example.com"])
+
+    config_text = manager._generate_site_config(site, ssl_ready=False)
+
+    assert "return 301 $scheme://" not in config_text
+
+
+def test_canonical_redirect_with_explicit_primary(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, _BASE_DATA)
+    manager = NginxManager(bench)
+    site = SiteConfig(
+        name="site.localhost",
+        apps=["frappe"],
+        domains=["www.example.com"],
+        primary_domain="www.example.com",
+    )
+
+    config_text = manager._generate_site_config(site, ssl_ready=False)
+
+    assert 'if ($host != "www.example.com")' in config_text
+    assert "return 301 $scheme://www.example.com$request_uri;" in config_text
+
+
 def test_proxy_headers_present(tmp_path: Path) -> None:
     bench = _make_bench(tmp_path, _BASE_DATA)
     manager = NginxManager(bench)

@@ -412,8 +412,11 @@ class NginxManager:
     def _render_proxy_location(self, bench_name: str, site: "SiteConfig") -> str:
         # Send every non-primary host to the canonical (primary) domain. Scoped to
         # location / so /.well-known/acme-challenge/ (its own location) still works.
+        # Only when a primary was explicitly chosen — otherwise site.primary falls
+        # back to the (possibly internal) site name and would 301 public traffic to
+        # an unreachable host.
         redirect = ""
-        if len(site.all_domains) > 1:
+        if len(site.all_domains) > 1 and site.primary_domain:
             redirect = (
                 f'        if ($host != "{site.primary}") {{\n'
                 f"            return 301 $scheme://{site.primary}$request_uri;\n"
