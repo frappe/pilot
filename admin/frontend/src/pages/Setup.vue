@@ -545,14 +545,14 @@ function backToConfig() {
         </div>
 
         <div v-else-if="step === 'done'" class="flex flex-col gap-4 py-2">
-          <p class="text-sm text-ink-gray-7">Your bench is ready. Head back to your terminal and pick how to run it:</p>
+          <p class="text-sm text-ink-gray-7">Your bench is ready. Run one of these in your terminal:</p>
           <div>
             <p class="text-xs font-medium text-ink-gray-6">Develop locally</p>
             <code class="mt-1 block rounded bg-surface-gray-2 px-2 py-1.5 font-mono text-sm text-ink-gray-8 select-all">bench start</code>
           </div>
           <div>
-            <p class="text-xs font-medium text-ink-gray-6">…or deploy to production</p>
-            <code class="mt-1 block rounded bg-surface-gray-2 px-2 py-1.5 font-mono text-sm text-ink-gray-8 select-all">bench setup production --admin-domain &lt;your-domain&gt; --tls</code>
+            <p class="text-xs font-medium text-ink-gray-6">Deploy to production</p>
+            <code class="mt-1 block rounded bg-surface-gray-2 px-2 py-1.5 font-mono text-sm text-ink-gray-8 select-all">bench setup production --admin-domain &lt;your-domain&gt; --tls --letsencrypt-email &lt;you@example.com&gt;</code>
           </div>
           <p class="text-xs text-ink-gray-5">
             <code class="font-mono">bench start</code> reloads this page automatically once the bench is back.
