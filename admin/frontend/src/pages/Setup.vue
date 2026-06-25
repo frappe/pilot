@@ -3,7 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { Button, FormControl, FormLabel, Password, Slider, ErrorMessage, FeatherIcon } from 'frappe-ui'
 import TaskStream from '../components/TaskStream.vue'
 
-const emit = defineEmits(['done'])
+const emit = defineEmits(['done', 'awaiting-terminal'])
 
 // Starts as 'loading' so a reload resolves the resume phase from the backend
 // before rendering — otherwise the wizard flashes step 1 (passwords) on every
@@ -13,9 +13,6 @@ const error = ref('')
 const loading = ref(false)
 const benchName = ref('')
 const isLinux = ref(true)
-// The host's native production manager: 'openrc' on Alpine, 'systemd' elsewhere.
-// Set from the backend so the wizard offers the right default per platform.
-const nativeProcessManager = ref('systemd')
 const dedicatedWillInstall = ref(false)  // true when a new dedicated instance will be created
 const sharedWillInstall = ref(false)     // true when the system/shared MariaDB isn't installed yet
 
@@ -31,14 +28,12 @@ const dbPasswordDescription = computed(() =>
 )
 
 // ── setup-task streaming state ─────────────────────────────────────────────
-// The whole wizard runs as one task (init + optional production deploy). It
-// streams `[N/M] description` lines, which name the current step. deployedProduction
-// records whether that run includes the production deploy, so onStreamDone knows
-// whether to redirect to the bench's domain or tell the user to `bench start`.
+// The wizard initializes the bench as one task, streaming `[N/M] description`
+// lines that name the current step. Production is a deliberate, separate step
+// the user runs from the terminal afterwards (`bench setup production`).
 const taskStream = ref(null)
 const streamUrl = ref('')
 const currentStep = ref('Starting…')
-const deployedProduction = ref(false)
 const showDetails = ref(false)
 
 const form = ref({
@@ -55,10 +50,6 @@ const form = ref({
   volume_image_size: '60G',
   volume_reservation: '15G',
   volume_quota: '60G',
-  production_process_manager: 'none',
-  admin_domain: '',
-  admin_tls: false,
-  letsencrypt_email: '',
 })
 
 // ── framework branch dropdown (fetched from the admin backend) ────────────
@@ -169,20 +160,6 @@ watch(dbWillInstall, (fresh) => {
 }, { immediate: true })
 watch(() => [form.value.volume_backing, form.value.volume_device, form.value.volume_image_size], applySmartSizes)
 
-// ── process manager ────────────────────────────────────────────────────────
-// The native manager (systemd/OpenRC) is the recommended option; supervisor is
-// the cross-platform alternative. macOS has no production managers at all.
-const PM_LABELS = { systemd: 'Systemd', openrc: 'OpenRC', supervisor: 'Supervisor' }
-const processManagerOptions = computed(() => {
-  if (!isLinux.value) return [{ label: 'Development — run it yourself', value: 'none' }]
-  const native = nativeProcessManager.value
-  return [
-    { label: 'Development — run it yourself', value: 'none' },
-    { label: `${PM_LABELS[native] || native} — recommended`, value: native },
-    { label: 'Supervisor — alternative', value: 'supervisor' },
-  ]
-})
-
 // ── step flow ──────────────────────────────────────────────────────────────
 const configSteps = computed(() => {
   const steps = ['passwords', 'database', 'customize']
@@ -219,19 +196,14 @@ async function loadConfig() {
     const data = await res.json()
     benchName.value = data.bench_name || ''
     isLinux.value = data.is_linux !== false
-    nativeProcessManager.value = data.native_process_manager || 'systemd'
     availableDevices.value = data.available_devices || []
     rootfsFreeBytes.value = data.rootfs_free_bytes || 0
     for (const key of Object.keys(form.value)) {
       if (data[key] !== undefined) form.value[key] = data[key]
     }
     clampImageSize()
-    // Whether the saved config deploys to production. Read before the default
-    // below rewrites a 'none' selection, so a resumed run routes correctly.
-    deployedProduction.value = !!data.production_process_manager && data.production_process_manager !== 'none'
     if (isLinux.value) {
       form.value.dedicated_db = data.mariadb_instance ? 'dedicated' : 'shared'
-      if (form.value.production_process_manager === 'none') form.value.production_process_manager = nativeProcessManager.value
     }
     // One task, one resume rule: if it's still running, reattach to its stream.
     // Otherwise start at the first config step.
@@ -292,9 +264,10 @@ function onStreamDone(success) {
     return
   }
   step.value = 'done'
-  // Production deploys live behind their domain; dev benches need a `bench start`.
-  if (deployedProduction.value) finishAndRedirectToDomain()
-  else shutdownAndPoll()
+  // Hand off to the terminal: pause the reconnect overlay before shutting the
+  // wizard server down, so the done-screen instructions stay visible.
+  emit('awaiting-terminal')
+  shutdownAndPoll()
 }
 
 function failWith(message) {
@@ -387,14 +360,6 @@ function validateStorage() {
 
 async function initialize() {
   error.value = ''
-  if (form.value.production_process_manager !== 'none' && !form.value.admin_domain.trim()) {
-    error.value = 'Admin domain is required for a production process manager.'
-    return
-  }
-  if (form.value.admin_tls && !form.value.letsencrypt_email.trim()) {
-    error.value = 'An email address is required for Let\'s Encrypt.'
-    return
-  }
   const storageError = validateStorage()
   if (storageError) {
     error.value = storageError
@@ -403,8 +368,6 @@ async function initialize() {
   loading.value = true
   try {
     await saveConfig()
-    // The saved config decides whether this run deploys to production.
-    deployedProduction.value = form.value.production_process_manager !== 'none'
     const data = await postJson('/api/setup/start', {})
     if (!data.ok) throw new Error(data.error || 'Failed to start setup.')
     step.value = 'running'
@@ -414,16 +377,6 @@ async function initialize() {
   } finally {
     loading.value = false
   }
-}
-
-async function finishAndRedirectToDomain() {
-  try {
-    await postJson('/api/setup/finish', {})
-  } catch {}
-  // The admin now lives behind nginx at its domain, not the local wizard port.
-  const scheme = form.value.admin_tls === true ? 'https' : 'http'
-  const url = `${scheme}://${form.value.admin_domain.trim()}`
-  setTimeout(() => { window.location.href = url }, 2500)
 }
 
 async function shutdownAndPoll() {
@@ -521,38 +474,6 @@ function backToConfig() {
           />
           <FormControl label="Frappe repository" v-model="form.app_repo" />
           <FormControl
-            type="select"
-            label="Production process manager"
-            v-model="form.production_process_manager"
-            :options="processManagerOptions"
-          />
-          <div v-if="form.production_process_manager !== 'none'" class="flex flex-col gap-3">
-            <div>
-              <FormControl
-                type="text"
-                label="Admin domain"
-                v-model="form.admin_domain"
-                placeholder="my-admin.example.com"
-              />
-              <p class="mt-1 text-xs text-ink-gray-5">
-                After init the bench is deployed to production and reachable at this domain.
-              </p>
-            </div>
-            <FormControl
-              type="checkbox"
-              label="Set up HTTPS with Let's Encrypt"
-              v-model="form.admin_tls"
-            />
-            <FormControl
-              v-if="form.admin_tls"
-              type="email"
-              label="Let's Encrypt email"
-              v-model="form.letsencrypt_email"
-              placeholder="you@example.com"
-              description="Used for certificate expiry notices. Sites on public domains will get HTTPS automatically."
-            />
-          </div>
-          <FormControl
             v-if="isLinux && form.dedicated_db === 'dedicated'"
             type="checkbox"
             label="Use volumes (snapshots & backups)"
@@ -596,8 +517,8 @@ function backToConfig() {
 
         <div v-else-if="isRunning" class="flex flex-col gap-4">
           <!-- A single status line, named by the task's current `[N/M] description`
-               step (init's steps, then "Deploying to production"). No progress bar.
-               The terminal stays collapsed unless something fails. -->
+               step (init's steps). No progress bar. The terminal stays collapsed
+               unless something fails. -->
           <p class="text-sm text-ink-gray-7">{{ currentStep }}</p>
           <button
             type="button"
@@ -623,15 +544,18 @@ function backToConfig() {
           <ErrorMessage v-if="error" :message="error" />
         </div>
 
-        <div v-else-if="step === 'done'" class="flex flex-col items-center gap-3 py-6 text-center">
-          <p class="text-sm text-ink-gray-7">Your bench is ready.</p>
-          <p v-if="deployedProduction" class="text-sm text-ink-gray-5">
-            Taking you to your bench…
-          </p>
-          <p v-else class="text-sm text-ink-gray-5">
-            Run
-            <code class="rounded bg-surface-gray-2 px-1 font-mono">bench start</code>
-            in your terminal to start your bench — this page will reload automatically once it's back.
+        <div v-else-if="step === 'done'" class="flex flex-col gap-4 py-2">
+          <p class="text-sm text-ink-gray-7">Your bench is ready. Run one of these in your terminal:</p>
+          <div>
+            <p class="text-xs font-medium text-ink-gray-6">Develop locally</p>
+            <code class="mt-1 block rounded bg-surface-gray-2 px-2 py-1.5 font-mono text-sm text-ink-gray-8 select-all">bench start</code>
+          </div>
+          <div>
+            <p class="text-xs font-medium text-ink-gray-6">Deploy to production</p>
+            <code class="mt-1 block rounded bg-surface-gray-2 px-2 py-1.5 font-mono text-sm text-ink-gray-8 select-all">bench setup production --admin-domain &lt;your-domain&gt; --tls --letsencrypt-email &lt;you@example.com&gt;</code>
+          </div>
+          <p class="text-xs text-ink-gray-5">
+            <code class="font-mono">bench start</code> reloads this page automatically once the bench is back.
           </p>
         </div>
       </div>

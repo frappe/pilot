@@ -52,18 +52,24 @@ def letsencrypt_active(bench: "Bench") -> bool:
     return bool(bench.config.letsencrypt.email) and bench.config.admin.tls
 
 
-def needs_letsencrypt(bench: "Bench") -> bool:
-    """True if any certificate is obtainable: an SSL site, or a public admin
-    domain. Requires letsencrypt.email to be configured."""
-    if not bench.config.letsencrypt.email:
-        return False
-    # admin.tls = False means a central proxy terminates TLS for the whole
-    # bench, so no certs are obtained here at all.
+def letsencrypt_email_required(bench: "Bench") -> bool:
+    """True if --tls would actually obtain a cert here — an SSL site or a public
+    admin domain — and so needs a contact email. Local domains (``*.localhost``)
+    never get certs, so no email is required for them.
+
+    admin.tls = False means a central proxy terminates TLS for the whole bench,
+    so no certs are obtained here at all.
+    """
     if not bench.config.admin.tls:
         return False
     if any(site.config.ssl and _is_public_domain(site.config.name) for site in bench.sites()):
         return True
     return _is_public_domain(bench.config.admin.domain)
+
+
+def needs_letsencrypt(bench: "Bench") -> bool:
+    """True if any certificate is obtainable. Requires letsencrypt.email to be set."""
+    return bool(bench.config.letsencrypt.email) and letsencrypt_email_required(bench)
 
 
 class LetsEncryptManager:

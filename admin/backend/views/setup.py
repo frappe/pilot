@@ -16,10 +16,9 @@ def wizard_marker_path(bench_root: Path) -> Path:
 
     Written when the wizard kicks off its setup task and cleared when setup
     finishes (and as a safety-net by /api/status once the bench is fully set up).
-    It keeps /api/status on the wizard during the run's in-between window — after
-    init the bench looks 'initialized' even though the production deploy hasn't
-    enabled it yet — without mistaking an independent `setup production` from
-    Settings or the CLI (which never writes it) for a wizard session.
+    It keeps /api/status on the wizard while init runs — env/bin/python can appear
+    partway through, making the bench look 'initialized' before the task is done —
+    so a reload returns to the wizard rather than a half-built dashboard.
     """
     return bench_root / ".wizard-active"
 
@@ -163,12 +162,11 @@ def _validate(data: dict) -> str | None:
 
 @setup_bp.route("/start", methods=["POST"])
 def start_setup():
-    """Run the whole wizard as one task: initialize the bench and, when a
-    production process manager was chosen, deploy it — see WizardSetupTask.
+    """Run the wizard as one task that initializes the bench — see WizardSetupTask.
 
     A single task means the wizard follows one continuous output stream and, on a
-    reload, simply reattaches to the one running task instead of guessing which of
-    two phases it was in.
+    reload, simply reattaches to the one running task. Production is a separate
+    step the user runs from the terminal afterwards (`bench setup production`).
     """
     from bench_cli.config.bench_config import BenchConfig
     from bench_cli.managers.volume_manager import VolumeManager

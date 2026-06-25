@@ -308,7 +308,8 @@ class BenchConfig:
             if self.production.enabled:
                 raise ConfigError(
                     f"admin.domain is required in production but is missing for bench '{self.name}'. "
-                    f"Set it in bench.toml (e.g. admin.example.com) or run 'bench setup production' to be prompted."
+                    f"Set it in bench.toml (e.g. admin.example.com) or pass "
+                    f"'bench setup production --admin-domain <domain>'."
                 )
             return
         if not _HOSTNAME_PATTERN.match(domain):

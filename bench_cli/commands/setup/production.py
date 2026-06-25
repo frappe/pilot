@@ -31,33 +31,44 @@ class SetupProductionCommand(Command):
         parser.add_argument(
             "--admin-domain",
             default=None,
-            help="Admin domain (defaults to admin.domain in bench.toml).",
+            help="Admin domain the deployment is reached at (required: pass it here "
+                 "or set admin.domain in bench.toml).",
         )
         parser.add_argument(
             "--tls",
             dest="admin_tls",
             action="store_true",
+            default=None,  # None = leave the bench.toml value untouched; only --tls turns it on
             help="Terminate TLS via Let's Encrypt for the admin and SSL-enabled sites. "
                  "Omit to serve plain HTTP (a central proxy may terminate TLS upstream).",
+        )
+        parser.add_argument(
+            "--letsencrypt-email",
+            dest="letsencrypt_email",
+            default=None,
+            help="Contact email for Let's Encrypt (required with --tls unless "
+                 "letsencrypt.email is already set in bench.toml).",
         )
 
     @classmethod
     def from_args(cls, args, bench):
         return cls(bench, process_manager=args.process_manager, admin_domain=args.admin_domain,
-                   admin_tls=args.admin_tls)
+                   admin_tls=args.admin_tls, letsencrypt_email=args.letsencrypt_email)
 
     def __init__(self, bench: "Bench", process_manager: Optional[str] = None, admin_domain: Optional[str] = None,
-                 admin_tls: Optional[bool] = None) -> None:
+                 admin_tls: Optional[bool] = None, letsencrypt_email: Optional[str] = None) -> None:
         self.bench = bench
         self._pm_arg = process_manager
         self._domain_arg = admin_domain
         self._tls_arg = admin_tls
+        self._email_arg = letsencrypt_email
         self._existing_admin_domain = bench.config.admin.domain
         self._registered_admin_domain: Optional[str] = None
 
     def run(self) -> None:
         self._require_linux()
         self._resolve_target()
+        self._require_production_inputs()
         self._check_admin_domain()
         self._register_admin_domain()
         try:
@@ -114,6 +125,27 @@ class SetupProductionCommand(Command):
             self.bench.config.admin.domain = self._domain_arg
         if self._tls_arg is not None:
             self.bench.config.admin.tls = self._tls_arg
+        if self._email_arg:
+            self.bench.config.letsencrypt.email = self._email_arg
+
+    def _require_production_inputs(self) -> None:
+        """Fail early and clearly on inputs the setup wizard no longer collects: an
+        admin domain (always) and a Let's Encrypt email (only when --tls would
+        actually obtain a cert). Better here than deep inside nginx/cert work, or
+        as a silently-skipped cert."""
+        from bench_cli.managers.letsencrypt_manager import letsencrypt_email_required
+
+        if not self.bench.config.admin.domain:
+            raise BenchError(
+                "An admin domain is required to deploy to production. "
+                "Pass --admin-domain <domain> (e.g. --admin-domain admin.example.com), "
+                "or set admin.domain in bench.toml."
+            )
+        if letsencrypt_email_required(self.bench) and not self.bench.config.letsencrypt.email:
+            raise BenchError(
+                "A contact email is required with --tls for Let's Encrypt. "
+                "Pass --letsencrypt-email <email>, or set letsencrypt.email in bench.toml."
+            )
 
     def _installed_manager(self) -> Optional[str]:
         """Which process manager already has a deployment on disk, if any —

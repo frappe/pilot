@@ -131,6 +131,37 @@ def test_resolve_target_applies_admin_domain(tmp_path: Path) -> None:
     assert bench.config.admin.domain == "admin-new.example.com"
 
 
+def test_resolve_target_applies_letsencrypt_email(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path)
+    cmd = SetupProductionCommand(bench, process_manager="systemd", letsencrypt_email="me@example.com")
+    cmd._resolve_target()
+    assert bench.config.letsencrypt.email == "me@example.com"
+
+
+def test_require_production_inputs_needs_admin_domain(tmp_path: Path) -> None:
+    # Fresh, undeployed bench: empty domain, no process manager yet (so it loads).
+    bench = _make_bench(tmp_path, admin_domain="", process_manager="")
+    cmd = SetupProductionCommand(bench, process_manager="systemd")
+    cmd._resolve_target()
+    with pytest.raises(BenchError, match="admin domain is required"):
+        cmd._require_production_inputs()
+
+
+def test_require_production_inputs_needs_email_for_tls(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, admin_domain="admin.example.com", tls=True, email="")
+    cmd = SetupProductionCommand(bench, process_manager="systemd")
+    cmd._resolve_target()
+    with pytest.raises(BenchError, match="contact email is required"):
+        cmd._require_production_inputs()
+
+
+def test_require_production_inputs_passes_with_domain_and_email(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, admin_domain="admin.example.com", tls=True, email="me@example.com")
+    cmd = SetupProductionCommand(bench, process_manager="systemd")
+    cmd._resolve_target()
+    cmd._require_production_inputs()  # no raise
+
+
 def test_persist_production_state_writes_enabled_and_drops_nginx(tmp_path: Path) -> None:
     bench = _make_bench(tmp_path, process_manager="supervisor")
     # legacy nginx key present in toml

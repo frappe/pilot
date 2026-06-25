@@ -14,6 +14,9 @@ const adminError = ref('')
 const authenticated = ref(false)
 const benchName = ref('')
 const wizardMode = ref(false)
+// Setup sets this once it has shut the wizard server down and is guiding the user
+// back to the terminal, so the reconnect overlay doesn't bury that instruction.
+const awaitingTerminal = ref(false)
 
 async function loadStatus() {
   const response = await fetch('/api/status')
@@ -46,9 +49,9 @@ function onSetupDone() {
 </script>
 
 <template>
-  <ConnectionGuard />
+  <ConnectionGuard :paused="awaitingTerminal" />
   <div v-if="loading" class="flex h-screen items-center justify-center bg-surface-gray-2" />
-  <Setup v-else-if="wizardMode" @done="onSetupDone" />
+  <Setup v-else-if="wizardMode" @done="onSetupDone" @awaiting-terminal="awaitingTerminal = true" />
   <div v-else-if="adminError" class="flex h-screen items-center justify-center p-8">
     <Alert theme="red" title="Admin Unavailable" :description="adminError" />
   </div>
