@@ -43,18 +43,32 @@ credentials) is your own concern — read it from a file or env you control.
 
 ## `generate-dns-records <site> <domain>` — pre-flight
 
-Validate the domain and tell the user which DNS records to set. **Not** the gate — just
-early feedback.
+Validate the domain and tell the user which DNS records to set. **Read-only:** never touch
+the proxy/DNS here — only report records. The actual provisioning happens in `register`.
 
 - **stdout:** a JSON object with two record sets — `cname` and `a`, one per validation
-  method — or blank/`{}` if no records are needed (e.g. it's a subdomain under a wildcard
-  you already route). Either set may be empty; the UI shows each non-empty set as an option:
+  method — or blank/`{}` if no records are needed. Either set may be empty; the UI shows
+  each non-empty set as an option, listing every record in it:
   ```json
   {
     "cname": [{ "type": "CNAME", "host": "app.example.com", "value": "site.bench.example.com" }],
     "a":     [{ "type": "A",     "host": "app.example.com", "value": "203.0.113.10" }]
   }
   ```
+- A set is the **complete recipe** for that path, so add extra records to it when you need
+  more than the route record — e.g. a `TXT` ownership/key-validation record the user must
+  set alongside the CNAME or A:
+  ```json
+  {
+    "cname": [
+      { "type": "CNAME", "host": "app.example.com",      "value": "site.bench.example.com" },
+      { "type": "TXT",   "host": "_bench.app.example.com", "value": "bench-verify=abc123" }
+    ]
+  }
+  ```
+- **Return blank/`{}`** when the user needs to do nothing — a subdomain under a wildcard you
+  already route, or a domain you provision **fully automatically** in `register` (proxy +
+  DNS, no manual step).
 - **Exit:** `0` to proceed, non-zero to abort (stderr shown).
 - Prefer to **fail open** on an outage here — the real gate is `register`.
 
