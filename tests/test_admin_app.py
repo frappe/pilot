@@ -160,12 +160,15 @@ def test_api_benches_new_routes_wizard_at_domain_when_production(tmp_path: Path)
          patch("bench_cli.managers.nginx_manager.NginxManager.generate_config") as mock_gen, \
          patch("bench_cli.managers.nginx_manager.NginxManager.install_config"), \
          patch("bench_cli.managers.nginx_manager.NginxManager.reload"), \
+         patch("bench_cli.core.domain_controller.DomainRouteProvider.register") as mock_register, \
          patch("subprocess.Popen") as mock_popen:
         resp = client.post("/api/benches/new", json=_new_payload("fresh"))
 
     data = resp.get_json()
     assert data["wizard_at_domain"] is True
     assert data["domain"] == "fresh-admin.example.com"
+    # The admin domain is registered with the provider so it resolves for the wizard.
+    mock_register.assert_called_once_with("fresh-admin.example.com", "fresh-admin.example.com")
     # The new bench's OWN admin is brought up (no standalone wizard server) and
     # nginx routes its domain to it.
     mock_admin.assert_called_once()

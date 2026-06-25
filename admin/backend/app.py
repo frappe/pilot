@@ -440,6 +440,11 @@ def create_app(bench_root: Path) -> Flask:
                 from bench_cli.managers.nginx_manager import NginxManager
 
                 bench = Bench(BenchConfig.from_file(new_dir / "bench.toml"), new_dir)
+                # Register the admin domain with the domain provider (if any) before
+                # routing it, so it resolves to this server — the wizard is reached
+                # at this domain. The wizard's later `setup production` sees the
+                # domain unchanged and won't re-register it.
+                DomainRouteProvider(bench).register(admin_domain, admin_domain)
                 # Not deployed yet (production.enabled is false at this point), so
                 # pick the manager by the configured process_manager rather than
                 # via the factory, which gates on enabled.
