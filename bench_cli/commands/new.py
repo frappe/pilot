@@ -65,6 +65,7 @@ class NewCommand(Command):
         # localhost, and 'bench setup production' requires a real domain (via its
         # --admin-domain flag or here), erroring rather than deploying a placeholder.
         settings = {
+            "admin_enabled": True,
             "admin_password": secrets.token_hex(nbytes=5),
             "admin_domain": self.admin_domain,
             "admin_tls": admin_tls,
