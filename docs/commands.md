@@ -489,6 +489,19 @@ See [docs/admin.md](admin.md) for the full interface specification.
 
 ---
 
+## `bench generate-session`
+
+Issues a 7-day signed token that signs you into the admin UI without typing the password — handy for opening the panel from a server shell.
+
+```bash
+bench generate-session              # prints the token
+bench generate-session --full-path  # prints the full admin URL with ?sid=<token>
+```
+
+Open the `--full-path` URL in a browser: the frontend stores the token in the `sid` cookie and sends it with every request. The token is an HS256 JWT signed with `admin.jwt_secret` in `bench.toml` (generated on first run). Requires `admin.password` to be set. Treat the URL as a credential — anyone with it has admin access until the token expires.
+
+---
+
 ## `bench setup nginx`
 
 See [docs/production.md](production.md) for the full step-by-step.
