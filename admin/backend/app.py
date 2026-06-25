@@ -445,6 +445,11 @@ def create_app(bench_root: Path) -> Flask:
                 # at this domain. The wizard's later `setup production` sees the
                 # domain unchanged and won't re-register it.
                 DomainRouteProvider(bench).register(admin_domain, admin_domain)
+                # When a provider just created the DNS record, give it a head start
+                # to propagate so the redirect doesn't land before it resolves; the
+                # UI keeps polling readiness after this.
+                if patterns:
+                    _wait_for_dns(admin_domain, timeout=20)
                 # Not deployed yet (production.enabled is false at this point), so
                 # pick the manager by the configured process_manager rather than
                 # via the factory, which gates on enabled.
@@ -488,6 +493,18 @@ def create_app(bench_root: Path) -> Flask:
         return jsonify({"name": name, "port": new_port, "wizard_at_domain": False,
                         "domain": admin.get("domain", "")})
 
+    def _dns_resolves(host: str) -> bool:
+        try:
+            socket.getaddrinfo(host, None)
+            return True
+        except OSError:
+            return False
+
+    def _wait_for_dns(host: str, timeout: int) -> None:
+        deadline = time.monotonic() + timeout
+        while not _dns_resolves(host) and time.monotonic() < deadline:
+            time.sleep(1)
+
     def _current_is_production() -> bool:
         # Read the flag straight from toml (no full validation) so a slightly
         # incomplete current config can't block creating a new bench.
@@ -501,6 +518,10 @@ def create_app(bench_root: Path) -> Flask:
 
     @app.route("/api/benches/ready")
     def api_benches_ready():
+        # A production bench is reached at its admin domain: ready once DNS resolves.
+        domain = (request.args.get("domain") or "").strip()
+        if domain:
+            return jsonify({"ready": _dns_resolves(domain)})
         try:
             port = int(request.args.get("port", ""))
         except ValueError:

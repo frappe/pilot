@@ -105,6 +105,26 @@ async function waitUntilLive(port, target, attempt = 0) {
   setTimeout(() => waitUntilLive(port, target, attempt + 1), 1000)
 }
 
+// Poll until the new admin domain's DNS record resolves, then redirect to its
+// wizard. DNS propagation can lag the record's creation by a while.
+async function waitForDomain(domain, attempt = 0) {
+  status.value = 'Waiting for DNS to propagate…'
+  try {
+    const response = await fetch(`/api/benches/ready?domain=${encodeURIComponent(domain)}`)
+    if (response.ok && (await response.json()).ready) {
+      status.value = 'Redirecting you to setup…'
+      window.location.href = `http://${domain}`
+      return
+    }
+  } catch { }
+  if (attempt >= 120) {
+    error.value = `DNS for ${domain} did not propagate in time. Open it once it resolves.`
+    creating.value = false
+    return
+  }
+  setTimeout(() => waitForDomain(domain, attempt + 1), 2000)
+}
+
 async function createBench() {
   const benchName = name.value.trim()
   if (!benchName) return
@@ -133,10 +153,10 @@ async function createBench() {
     }
     status.value = 'Bench created — opening setup…'
     if (data.wizard_at_domain && data.domain) {
-      // The bench's own (socket-activated) admin serves the wizard at its
-      // domain. nginx needs a moment to apply the new routing — redirecting
-      // too soon lands on the default site page — so give it a few seconds.
-      setTimeout(() => { window.location.href = `http://${data.domain}` }, 3000)
+      // The bench's own (socket-activated) admin serves the wizard at its domain.
+      // Wait for the new DNS record to resolve before redirecting — landing too
+      // soon fails to reach the host.
+      waitForDomain(data.domain)
     } else {
       // Dev parent: standalone wizard on this host's raw port.
       waitUntilLive(data.port, `${window.location.protocol}//${window.location.hostname}:${data.port}`)
