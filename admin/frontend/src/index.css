@@ -13,3 +13,9 @@ h4 { font-size: 0.875rem; line-height: 1.4; }
   z-index: 50;
 }
 
+/* Frappe UI dropdown menus teleport to <body> without a z-index; lift them above
+   the mobile sidebar drawer (z-30) so the sidebar's Bench menu stays usable on mobile. */
+.dropdown-content {
+  z-index: 40;
+}
+
