@@ -53,6 +53,9 @@ jobs:
 
       - name: Install common system dependencies
         run: |
+          # Runners preconfigure Microsoft apt repos that intermittently 403;
+          # they aren't needed here and otherwise fail the whole apt-get update.
+          sudo rm -f /etc/apt/sources.list.d/microsoft*.list /etc/apt/sources.list.d/azure*.list
           sudo apt-get update -y
           sudo apt-get install -y redis-server git nginx openssl
           sudo systemctl start redis-server
