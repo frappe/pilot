@@ -26,18 +26,24 @@ def complete_dev_wizard(
     admin_password: str,
     mariadb_password: str,
     db_mode: str = "shared",
+    volumes: bool = False,
     framework_branch: str | None = None,
 ) -> None:
-    """Complete the wizard for a development bench (repo defaults, no volumes).
-    The wizard only configures a dev bench — production is a separate
-    `bench setup production` step — so there are no domain/TLS/process-manager
-    prompts to drive here.
+    """Complete the wizard for a development bench. The wizard only configures a
+    dev bench — production is a separate `bench setup production` step — so there
+    are no domain/TLS/process-manager prompts to drive here.
 
     db_mode:
         'shared'    — validate against an existing system MariaDB (CI default).
-        'dedicated' — provision a fresh per-bench MariaDB instance (no ZFS). Use
-                      this where there is no shared server on the standard port.
+        'dedicated' — provision a fresh per-bench MariaDB instance.
+    volumes:
+        When True (dedicated only), enable ZFS volumes — the production setup —
+        which adds the storage step. We pick image backing (a disk-image-backed
+        pool, no spare block device needed) at the smallest allocation so CI
+        stays fast.
     """
+    if volumes and db_mode != "dedicated":
+        raise ValueError("volumes (ZFS) require db_mode='dedicated'")
     # The wizard mounts in a 'loading' state, then resolves to the first step.
     expect(page.get_by_text("Step 1 of", exact=False)).to_be_visible(timeout=30_000)
 
@@ -61,11 +67,17 @@ def complete_dev_wizard(
     # ── Step 3: Customize ───────────────────────────────────────────────────────
     # The wizard always provisions a development bench (no production/process-manager
     # choice — that's a separate `bench setup production` step run from the terminal
-    # afterwards). We keep the repo default and leave "Use volumes" unchecked, so on
-    # the last config step "Set up bench" runs init directly.
+    # afterwards). We keep the repo default; "Use volumes" is dedicated-only.
     expect(page.get_by_text("Customize your bench")).to_be_visible(timeout=30_000)
     if framework_branch:
         _choose_select(page, "Frappe branch", framework_branch)
+
+    if volumes:
+        # Checking this adds a 'storage' step, so the footer button becomes "Next"
+        # instead of "Set up bench".
+        page.get_by_role("checkbox", name="Use volumes").check()
+        page.get_by_role("button", name="Next").click()
+        _configure_image_storage(page)
 
     page.get_by_role("button", name="Set up bench").click()
 
@@ -104,6 +116,17 @@ def _wizard_error_text(page: Page) -> str:
         if joined:
             return joined[-2000:]
     return "the wizard reported a failure (see the task output below)."
+
+
+def _configure_image_storage(page: Page) -> None:
+    """Drive the 'storage' step for image-backed ZFS: store on "this machine's
+    disk" (a disk-image pool — no spare block device needed) and pull the
+    allocation slider to its minimum so the preallocated image stays small and
+    CI stays fast."""
+    expect(page.get_by_text("Store data on")).to_be_visible(timeout=30_000)
+    _choose_select(page, "Store data on", "This machine")
+    # The image-size Slider is an ARIA slider; Home sets it to the minimum.
+    page.get_by_role("slider").press("Home")
 
 
 def _choose_select(page: Page, label: str, option_name: str) -> None:

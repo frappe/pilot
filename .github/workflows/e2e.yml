@@ -12,6 +12,24 @@ jobs:
   e2e:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    name: e2e (${{ matrix.variant }})
+    strategy:
+      # Variants run as independent jobs in parallel, so adding ZFS doesn't add
+      # wall-clock time. Don't cancel the other variant if one fails.
+      fail-fast: false
+      matrix:
+        include:
+          # Dev bench on the shared system MariaDB; exercises app install/uninstall.
+          - variant: shared
+            db_mode: shared
+            volumes: "0"
+            extra_app: "1"
+          # The production shape: a dedicated per-bench MariaDB instance with ZFS
+          # volumes. Skips the extra-app step (covered by `shared`) to stay quick.
+          - variant: dedicated-zfs
+            db_mode: dedicated
+            volumes: "1"
+            extra_app: "0"
 
     steps:
       - uses: actions/checkout@v4
@@ -32,37 +50,63 @@ jobs:
           # The setup wizard validates "shared system MariaDB" against this.
           sudo mysql -e "SET PASSWORD FOR root@localhost = PASSWORD('admin'); FLUSH PRIVILEGES;"
 
+      - name: Install ZFS
+        if: matrix.volumes == '1'
+        # The dedicated+ZFS variant provisions a disk-image-backed pool, so it
+        # needs the ZFS userland + kernel module.
+        run: |
+          sudo apt-get install -y zfsutils-linux
+          sudo modprobe zfs
+          zpool list || true
+
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
 
       - name: Install yarn, bench and e2e deps
         run: |
           npm install -g yarn
           pip install -e ".[test,admin,e2e]"
 
+      - name: Cache admin frontend node_modules
+        uses: actions/cache@v4
+        with:
+          path: admin/frontend/node_modules
+          key: admin-npm-${{ runner.os }}-${{ hashFiles('admin/frontend/package-lock.json') }}
+
       - name: Install admin frontend deps
-        # The harness rebuilds the admin UI from source around the bench
-        # lifecycle (bench init re-downloads the prebuilt release and would
-        # otherwise clobber this branch's code), so it just needs node_modules.
+        # The harness builds the admin UI from source (E2E_BUILD_ADMIN below)
+        # around the bench lifecycle, so it just needs node_modules.
         working-directory: admin/frontend
         run: npm install
+
+      - name: Cache Playwright browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
 
       - name: Install Playwright browser
         run: playwright install --with-deps chromium
 
       - name: Run e2e tests
         working-directory: tests/e2e
+        # BENCH_BIN is intentionally unset so the harness uses the repo launcher
+        # (<repo>/bench), which writes to <repo>/benches where the harness reads.
         run: pytest
         env:
-          # Use the repo launcher (the harness default, <repo>/bench): `bench`
-          # resolves its benches dir from its own package location, so only the
-          # repo launcher writes to <repo>/benches where the harness reads.
           E2E_MARIADB_PASSWORD: admin
+          # CI validates this branch's frontend, so build the admin UI from source.
+          E2E_BUILD_ADMIN: "1"
+          E2E_DB_MODE: ${{ matrix.db_mode }}
+          E2E_VOLUMES: ${{ matrix.volumes }}
+          E2E_EXTRA_APP: ${{ matrix.extra_app }}
 
       - name: Upload Playwright traces
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-traces
+          name: e2e-traces-${{ matrix.variant }}
           path: tests/e2e/test-results
           retention-days: 7
