@@ -5,7 +5,7 @@ import zlib
 from dataclasses import dataclass
 from pathlib import Path
 
-from bench_cli.utils import git_has_local_changes
+from pilot.utils import git_has_local_changes
 
 
 @dataclass

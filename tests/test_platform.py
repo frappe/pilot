@@ -1,9 +1,9 @@
-"""Tests for bench_cli.platform helpers."""
+"""Tests for pilot.platform helpers."""
 from __future__ import annotations
 
 from pathlib import Path
 
-from bench_cli import platform
+from pilot import platform
 
 
 def test_which_searches_sbin_when_path_is_minimal(tmp_path: Path, monkeypatch) -> None:

@@ -9,7 +9,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
-from bench_cli.config.bench_toml_builder import BenchTomlBuilder
+from pilot.config.bench_toml_builder import BenchTomlBuilder
 
 
 def _write_bench_toml(bench_dir: Path, name: str, **settings) -> None:
@@ -24,7 +24,7 @@ def _write_raw_bench_toml(bench_dir: Path, name: str, admin_port: int) -> None:
 
 def _client(bench_root: Path, password: str = "secret"):
     from admin.backend.app import create_app
-    from bench_cli.commands.generate_session import ensure_jwt_secret, issue_token
+    from pilot.commands.generate_session import ensure_jwt_secret, issue_token
 
     _write_bench_toml(bench_root, bench_root.name, admin_enabled=True, admin_password=password)
     secret = ensure_jwt_secret(bench_root / "bench.toml")
@@ -176,18 +176,18 @@ def test_api_benches_new_routes_wizard_at_domain_when_production(tmp_path: Path)
         toml.replace("enabled = false\nuse_companion_manager",
                      'enabled = true\nprocess_manager = "systemd"\nuse_companion_manager')
     )
-    from bench_cli.commands.generate_session import ensure_jwt_secret, issue_token
+    from pilot.commands.generate_session import ensure_jwt_secret, issue_token
     secret = ensure_jwt_secret(current / "bench.toml")
     app = create_app(current)
     app.config["TESTING"] = True
     client = app.test_client()
     client.set_cookie("sid", issue_token(secret))
 
-    with patch("bench_cli.managers.systemd_process_manager.SystemdProcessManager.setup_admin") as mock_admin, \
-         patch("bench_cli.managers.nginx_manager.NginxManager.generate_config") as mock_gen, \
-         patch("bench_cli.managers.nginx_manager.NginxManager.install_config"), \
-         patch("bench_cli.managers.nginx_manager.NginxManager.reload"), \
-         patch("bench_cli.core.domain_controller.DomainRouteProvider.register") as mock_register, \
+    with patch("pilot.managers.systemd_process_manager.SystemdProcessManager.setup_admin") as mock_admin, \
+         patch("pilot.managers.nginx_manager.NginxManager.generate_config") as mock_gen, \
+         patch("pilot.managers.nginx_manager.NginxManager.install_config"), \
+         patch("pilot.managers.nginx_manager.NginxManager.reload"), \
+         patch("pilot.core.domain_controller.DomainRouteProvider.register") as mock_register, \
          patch("subprocess.Popen") as mock_popen:
         resp = client.post("/api/benches/new", json=_new_payload("fresh"))
 
@@ -418,7 +418,7 @@ def test_api_benches_control_rejects_dev_bench(tmp_path: Path) -> None:
     assert "production" in resp.get_json()["error"]
 
 
-def test_api_benches_control_runs_bench_cli_and_reports_success(tmp_path: Path) -> None:
+def test_api_benches_control_runs_pilot_and_reports_success(tmp_path: Path) -> None:
     benches_dir = tmp_path / "benches"
     client = _client(benches_dir / "current")
     _write_prod_bench_toml(benches_dir / "prod-bench", "prod-bench")
@@ -487,7 +487,7 @@ def test_api_benches_drop_rejects_unknown_bench(tmp_path: Path) -> None:
     assert resp.status_code == 404
 
 
-def test_api_benches_drop_runs_bench_cli(tmp_path: Path) -> None:
+def test_api_benches_drop_runs_pilot(tmp_path: Path) -> None:
     benches_dir = tmp_path / "benches"
     client = _client(benches_dir / "current")
     _write_prod_bench_toml(benches_dir / "prod-bench", "prod-bench")

@@ -16,7 +16,7 @@ Admin view
    ├─ TaskRunner.run(command, args)
    │    ├─ create tasks/<task-id>/ directory
    │    ├─ write meta.json
-   │    ├─ fork: python -m bench_cli.tasks.wrapper <task-dir>
+   │    ├─ fork: python -m pilot.tasks.wrapper <task-dir>
    │    │         └─ runs command
    │    │         └─ streams output → output.log
    │    │         └─ writes status on exit
@@ -70,8 +70,8 @@ Written as `running` by `TaskRunner` before the fork. Updated to `success`/`fail
 ## Package layout additions
 
 ```
-bench_cli/
-└── bench_cli/
+pilot/
+└── pilot/
     └── tasks/
         ├── __init__.py
         ├── task_runner.py    # TaskRunner — forks child, writes task directory
@@ -94,7 +94,7 @@ class TaskRunner:
         """
         Validate command against the whitelist.
         Create tasks/<task-id>/ and write meta.json and status='running'.
-        Fork: python -m bench_cli.tasks.wrapper <task-dir>
+        Fork: python -m pilot.tasks.wrapper <task-dir>
         Write pid file.
         Purge old tasks if total completed > TASK_RETENTION_LIMIT.
         Return task_id.
@@ -140,10 +140,10 @@ All paths in `command_argv` are absolute (resolved from `bench_root`) so the chi
 
 ## `wrapper.py` — the forked child
 
-Invoked as `python -m bench_cli.tasks.wrapper <task-dir>`. This module is the entire body of the child process; it has no imports outside the standard library.
+Invoked as `python -m pilot.tasks.wrapper <task-dir>`. This module is the entire body of the child process; it has no imports outside the standard library.
 
 ```python
-# bench_cli/tasks/wrapper.py
+# pilot/tasks/wrapper.py
 import json, subprocess, sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -313,12 +313,12 @@ Errors (`TaskNotFoundError`, `TaskNotRunningError`) render a plain error page.
 ## Updated admin package layout
 
 ```
-bench_cli/
-└── bench_cli/
+pilot/
+└── pilot/
     └── admin/
         ├── readers/
         │   ├── ...
-        │   └── (TaskReader lives in bench_cli/tasks/task_reader.py, not here)
+        │   └── (TaskReader lives in pilot/tasks/task_reader.py, not here)
         └── views/
             ├── dashboard.py
             ├── apps.py
@@ -334,7 +334,7 @@ bench_cli/
                 └── detail.html
 ```
 
-`TaskRunner` and `TaskReader` live in `bench_cli/tasks/`, not under `bench_cli/admin/`, because they are independent of Flask and could be used by other parts of the system (e.g., a future CLI `bench status` command).
+`TaskRunner` and `TaskReader` live in `pilot/tasks/`, not under `pilot/admin/`, because they are independent of Flask and could be used by other parts of the system (e.g., a future CLI `bench status` command).
 
 ---
 
@@ -355,8 +355,8 @@ bench_cli/
 ### Full package layout additions
 
 ```
-bench_cli/
-└── bench_cli/
+pilot/
+└── pilot/
     └── tasks/
         ├── __init__.py
         ├── models.py        # TaskInfo dataclass

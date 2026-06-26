@@ -436,10 +436,10 @@ class BenchConfig:
     letsencrypt: LetsEncryptConfig = field(default_factory=LetsEncryptConfig)
 ```
 
-### New files in `bench_cli/config/`
+### New files in `pilot/config/`
 
 ```
-bench_cli/config/
+pilot/config/
 ├── ...
 ├── nginx_config.py          # NginxConfig
 ├── gunicorn_config.py       # GunicornConfig
@@ -619,8 +619,8 @@ class SetupProductionCommand:
 ### Package layout additions
 
 ```
-bench_cli/
-└── bench_cli/
+pilot/
+└── pilot/
     ├── config/
     │   ├── ...
     │   ├── nginx_config.py

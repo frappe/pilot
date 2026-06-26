@@ -6,16 +6,16 @@ from unittest.mock import patch
 
 import pytest
 
-from bench_cli.config.app_config import AppConfig
-from bench_cli.config.bench_config import BenchConfig
-from bench_cli.config.gunicorn_config import GunicornConfig
-from bench_cli.config.mariadb_config import MariaDBConfig
-from bench_cli.config.redis_config import RedisConfig
-from bench_cli.config.worker_config import WorkerConfig, WorkerGroup
-from bench_cli.core.bench import Bench
-from bench_cli.exceptions import ConfigError
-from bench_cli.managers.gunicorn_manager import GunicornManager
-from bench_cli.managers.process_manager import ProcessManager
+from pilot.config.app_config import AppConfig
+from pilot.config.bench_config import BenchConfig
+from pilot.config.gunicorn_config import GunicornConfig
+from pilot.config.mariadb_config import MariaDBConfig
+from pilot.config.redis_config import RedisConfig
+from pilot.config.worker_config import WorkerConfig, WorkerGroup
+from pilot.core.bench import Bench
+from pilot.exceptions import ConfigError
+from pilot.managers.gunicorn_manager import GunicornManager
+from pilot.managers.process_manager import ProcessManager
 
 
 def make_bench(tmp_path: Path, gunicorn: GunicornConfig | None = None) -> Bench:
@@ -187,13 +187,13 @@ def test_generate_config_writes_gunicorn_config(tmp_path: Path) -> None:
 
 
 def test_supervisor_generate_config_writes_gunicorn_config(tmp_path: Path) -> None:
-    from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
+    from pilot.managers.supervisor_process_manager import SupervisorProcessManager
 
     bench = make_bench(tmp_path)
     bench.config_path.mkdir(parents=True, exist_ok=True)
     manager = SupervisorProcessManager(bench)
 
-    with patch("bench_cli.managers.admin_env_manager.AdminEnvManager"), \
+    with patch("pilot.managers.admin_env_manager.AdminEnvManager"), \
          patch.object(manager, "_prod_process_definitions", return_value=[]):
         manager.generate_config()
 
@@ -201,13 +201,13 @@ def test_supervisor_generate_config_writes_gunicorn_config(tmp_path: Path) -> No
 
 
 def test_systemd_generate_config_writes_gunicorn_config(tmp_path: Path) -> None:
-    from bench_cli.managers.systemd_process_manager import SystemdProcessManager
+    from pilot.managers.systemd_process_manager import SystemdProcessManager
 
     bench = make_bench(tmp_path)
     bench.config_path.mkdir(parents=True, exist_ok=True)
     manager = SystemdProcessManager(bench)
 
-    with patch("bench_cli.managers.admin_env_manager.AdminEnvManager"), \
+    with patch("pilot.managers.admin_env_manager.AdminEnvManager"), \
          patch.object(manager, "_prod_process_definitions", return_value=[]):
         manager.generate_config()
 
@@ -218,7 +218,7 @@ def test_systemd_generate_config_writes_gunicorn_config(tmp_path: Path) -> None:
 
 
 def test_nginx_upstream_uses_gunicorn_bind(tmp_path: Path) -> None:
-    from bench_cli.managers.nginx_manager import NginxManager
+    from pilot.managers.nginx_manager import NginxManager
 
     config = BenchConfig._from_dict({
         "bench": {"name": "test-bench", "python": "3.14", "http_port": 9000},
@@ -238,7 +238,7 @@ def test_nginx_upstream_uses_gunicorn_bind(tmp_path: Path) -> None:
 
 
 def test_toml_writer_includes_gunicorn_section(tmp_path: Path) -> None:
-    from bench_cli.config.toml_writer import bench_config_to_toml
+    from pilot.config.toml_writer import bench_config_to_toml
 
     bench = make_bench(tmp_path, GunicornConfig(workers=8, threads=16))
     toml = bench_config_to_toml(bench.config)
@@ -270,7 +270,7 @@ def test_production_config_parses_use_companion_manager(tmp_path: Path) -> None:
 
 
 def test_toml_writer_includes_use_companion_manager(tmp_path: Path) -> None:
-    from bench_cli.config.toml_writer import bench_config_to_toml
+    from pilot.config.toml_writer import bench_config_to_toml
 
     bench = make_bench(tmp_path)
     bench.config.production.use_companion_manager = True
@@ -390,7 +390,7 @@ def test_process_definitions_excludes_workers_and_socketio_in_companion_mode(tmp
 
 
 def test_supervisor_web_program_has_long_stopwaitsecs_in_companion_mode(tmp_path: Path) -> None:
-    from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
+    from pilot.managers.supervisor_process_manager import SupervisorProcessManager
 
     config = BenchConfig._from_dict({
         "bench": {"name": "test-bench", "python": "3.14"},
@@ -410,7 +410,7 @@ def test_supervisor_web_program_has_long_stopwaitsecs_in_companion_mode(tmp_path
 
 
 def test_systemd_web_service_has_long_timeout_in_companion_mode(tmp_path: Path) -> None:
-    from bench_cli.managers.systemd_process_manager import SystemdProcessManager
+    from pilot.managers.systemd_process_manager import SystemdProcessManager
 
     config = BenchConfig._from_dict({
         "bench": {"name": "test-bench", "python": "3.14"},
@@ -429,8 +429,8 @@ def test_systemd_web_service_has_long_timeout_in_companion_mode(tmp_path: Path) 
 
 
 def test_malloc_arena_max_in_units(tmp_path: Path) -> None:
-    from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
-    from bench_cli.managers.systemd_process_manager import SystemdProcessManager
+    from pilot.managers.supervisor_process_manager import SupervisorProcessManager
+    from pilot.managers.systemd_process_manager import SystemdProcessManager
 
     bench = make_bench(tmp_path, gunicorn=GunicornConfig())  # default arena 2
     systemd = SystemdProcessManager(bench)
@@ -486,7 +486,7 @@ def test_max_requests_validation(tmp_path: Path) -> None:
 
 
 def test_toml_writer_includes_max_requests(tmp_path: Path) -> None:
-    from bench_cli.config.toml_writer import bench_config_to_toml
+    from pilot.config.toml_writer import bench_config_to_toml
 
     bench = make_bench(tmp_path, GunicornConfig(max_requests=2000, max_requests_jitter=200))
     toml = bench_config_to_toml(bench.config)

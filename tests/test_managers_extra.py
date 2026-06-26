@@ -4,13 +4,13 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from bench_cli.config.app_config import AppConfig
-from bench_cli.config.bench_config import BenchConfig
-from bench_cli.config.mariadb_config import MariaDBConfig
-from bench_cli.config.redis_config import RedisConfig
-from bench_cli.config.worker_config import WorkerConfig, WorkerGroup
-from bench_cli.core.bench import Bench
-from bench_cli.managers.redis_manager import RedisManager
+from pilot.config.app_config import AppConfig
+from pilot.config.bench_config import BenchConfig
+from pilot.config.mariadb_config import MariaDBConfig
+from pilot.config.redis_config import RedisConfig
+from pilot.config.worker_config import WorkerConfig, WorkerGroup
+from pilot.core.bench import Bench
+from pilot.managers.redis_manager import RedisManager
 
 
 def make_bench(tmp_path: Path) -> Bench:
@@ -98,14 +98,14 @@ def test_redis_manager_is_installed_false() -> None:
 
 
 def _make_supervisor_manager(tmp_path: Path):
-    from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
+    from pilot.managers.supervisor_process_manager import SupervisorProcessManager
     bench = make_bench(tmp_path)
     (tmp_path / "config" / "supervisor").mkdir(parents=True, exist_ok=True)
     return SupervisorProcessManager(bench)
 
 
 def test_supervisor_render_program_extracts_cd_prefix(tmp_path: Path) -> None:
-    from bench_cli.managers.process_manager import ProcessDefinition
+    from pilot.managers.process_manager import ProcessDefinition
 
     mgr = _make_supervisor_manager(tmp_path)
     pd = ProcessDefinition(
@@ -120,7 +120,7 @@ def test_supervisor_render_program_extracts_cd_prefix(tmp_path: Path) -> None:
 
 
 def test_supervisor_render_program_extracts_env_vars(tmp_path: Path) -> None:
-    from bench_cli.managers.process_manager import ProcessDefinition
+    from pilot.managers.process_manager import ProcessDefinition
 
     mgr = _make_supervisor_manager(tmp_path)
     pd = ProcessDefinition(
@@ -136,7 +136,7 @@ def test_supervisor_render_program_extracts_env_vars(tmp_path: Path) -> None:
 
 
 def test_supervisor_render_program_no_prefix(tmp_path: Path) -> None:
-    from bench_cli.managers.process_manager import ProcessDefinition
+    from pilot.managers.process_manager import ProcessDefinition
 
     mgr = _make_supervisor_manager(tmp_path)
     pd = ProcessDefinition(
@@ -158,7 +158,7 @@ def test_supervisor_render_conf_has_group_section(tmp_path: Path) -> None:
 
 
 def test_supervisor_render_conf_separates_admin_group(tmp_path: Path) -> None:
-    from bench_cli.managers.process_manager import ProcessDefinition
+    from pilot.managers.process_manager import ProcessDefinition
 
     mgr = _make_supervisor_manager(tmp_path)
     fake_defs = [
@@ -184,7 +184,7 @@ def test_supervisor_render_conf_has_unix_http_server(tmp_path: Path) -> None:
 
 
 def test_supervisor_render_conf_program_names_in_group(tmp_path: Path) -> None:
-    from bench_cli.managers.process_manager import ProcessDefinition
+    from pilot.managers.process_manager import ProcessDefinition
 
     mgr = _make_supervisor_manager(tmp_path)
     fake_defs = [
@@ -214,14 +214,14 @@ def test_supervisor_pid_path(tmp_path: Path) -> None:
 
 def test_supervisor_generate_config_writes_file(tmp_path: Path) -> None:
     mgr = _make_supervisor_manager(tmp_path)
-    with patch("bench_cli.managers.supervisor_process_manager.AdminEnvManager"):
+    with patch("pilot.managers.supervisor_process_manager.AdminEnvManager"):
         with patch.object(mgr, "_render_supervisord_conf", return_value="[group:test-bench]\nprograms=\n\n"):
             mgr.generate_config()
     assert mgr.supervisor_conf_path.exists()
 
 
 def test_supervisor_render_conf_no_user_directive(tmp_path: Path) -> None:
-    from bench_cli.managers.process_manager import ProcessDefinition
+    from pilot.managers.process_manager import ProcessDefinition
 
     mgr = _make_supervisor_manager(tmp_path)
     fake_defs = [ProcessDefinition("web", "cmd_web", tmp_path / "logs" / "web.log")]
@@ -251,7 +251,7 @@ def test_supervisor_supervisorctl_uses_local_conf(tmp_path: Path) -> None:
 
 
 def _make_systemd_manager(tmp_path: Path):
-    from bench_cli.managers.systemd_process_manager import SystemdProcessManager
+    from pilot.managers.systemd_process_manager import SystemdProcessManager
     bench = make_bench(tmp_path)
     return SystemdProcessManager(bench)
 
@@ -284,7 +284,7 @@ def test_systemd_env_sets_xdg_runtime_dir(tmp_path: Path) -> None:
 
 
 def test_systemd_render_unit_extracts_cd_prefix(tmp_path: Path) -> None:
-    from bench_cli.managers.process_manager import ProcessDefinition
+    from pilot.managers.process_manager import ProcessDefinition
 
     mgr = _make_systemd_manager(tmp_path)
     pd = ProcessDefinition(
@@ -299,7 +299,7 @@ def test_systemd_render_unit_extracts_cd_prefix(tmp_path: Path) -> None:
 
 
 def test_systemd_render_unit_extracts_env_vars(tmp_path: Path) -> None:
-    from bench_cli.managers.process_manager import ProcessDefinition
+    from pilot.managers.process_manager import ProcessDefinition
 
     mgr = _make_systemd_manager(tmp_path)
     pd = ProcessDefinition(
@@ -314,7 +314,7 @@ def test_systemd_render_unit_extracts_env_vars(tmp_path: Path) -> None:
 
 
 def test_systemd_render_unit_no_user_directive(tmp_path: Path) -> None:
-    from bench_cli.managers.process_manager import ProcessDefinition
+    from pilot.managers.process_manager import ProcessDefinition
 
     mgr = _make_systemd_manager(tmp_path)
     pd = ProcessDefinition(
@@ -327,7 +327,7 @@ def test_systemd_render_unit_no_user_directive(tmp_path: Path) -> None:
 
 
 def test_systemd_render_unit_part_of_target(tmp_path: Path) -> None:
-    from bench_cli.managers.process_manager import ProcessDefinition
+    from pilot.managers.process_manager import ProcessDefinition
 
     mgr = _make_systemd_manager(tmp_path)
     pd = ProcessDefinition(name="web", command="/env/bin/python serve", log_file=tmp_path / "logs" / "web.log")
@@ -342,12 +342,12 @@ def test_systemd_render_target_wanted_by_default(tmp_path: Path) -> None:
 
 
 def test_systemd_generate_config_writes_unit_files(tmp_path: Path) -> None:
-    from bench_cli.managers.process_manager import ProcessDefinition
+    from pilot.managers.process_manager import ProcessDefinition
 
     mgr = _make_systemd_manager(tmp_path)
     mgr.systemd_conf_dir.mkdir(parents=True, exist_ok=True)
     fake_defs = [ProcessDefinition("web", "/env/bin/python serve", tmp_path / "logs" / "web.log")]
-    with patch("bench_cli.managers.admin_env_manager.AdminEnvManager"):
+    with patch("pilot.managers.admin_env_manager.AdminEnvManager"):
         with patch.object(mgr, "_prod_process_definitions", return_value=fake_defs):
             mgr.generate_config()
     assert (mgr.systemd_conf_dir / "test-bench-web.service").exists()
@@ -379,7 +379,7 @@ def test_systemd_admin_service_runs_gunicorn_with_idle_timeout(tmp_path: Path) -
 
 
 def test_systemd_target_excludes_admin(tmp_path: Path) -> None:
-    from bench_cli.managers.process_manager import ProcessDefinition
+    from pilot.managers.process_manager import ProcessDefinition
 
     mgr = _make_systemd_manager(tmp_path)
     defs = [
@@ -394,7 +394,7 @@ def test_systemd_target_excludes_admin(tmp_path: Path) -> None:
 
 
 def test_systemd_generate_config_writes_admin_socket(tmp_path: Path) -> None:
-    from bench_cli.managers.process_manager import ProcessDefinition
+    from pilot.managers.process_manager import ProcessDefinition
 
     mgr = _make_systemd_manager(tmp_path)
     mgr.systemd_conf_dir.mkdir(parents=True, exist_ok=True)
@@ -402,7 +402,7 @@ def test_systemd_generate_config_writes_admin_socket(tmp_path: Path) -> None:
         ProcessDefinition("web", "/env/bin/python serve", tmp_path / "logs" / "web.log"),
         ProcessDefinition("admin", "/env/bin/python -m admin", tmp_path / "logs" / "admin.log"),
     ]
-    with patch("bench_cli.managers.admin_env_manager.AdminEnvManager"):
+    with patch("pilot.managers.admin_env_manager.AdminEnvManager"):
         with patch.object(mgr, "_prod_process_definitions", return_value=fake_defs):
             mgr.generate_config()
     assert (mgr.systemd_conf_dir / "test-bench-admin.socket").exists()
@@ -505,7 +505,7 @@ def test_supervisor_is_running_false_when_no_running_in_output(tmp_path: Path) -
 def test_supervisor_multiqueue_worker_name_has_no_commas(tmp_path: Path) -> None:
     """A worker group serving several queues must not produce a comma in the
     program name — commas break supervisor's `programs=` CSV (regression)."""
-    from bench_cli.config.worker_config import WorkerConfig, WorkerGroup
+    from pilot.config.worker_config import WorkerConfig, WorkerGroup
 
     mgr = _make_supervisor_manager(tmp_path)
     mgr.bench.config.workers = WorkerConfig(groups=[WorkerGroup(queues=["default", "short", "long"], count=1)])

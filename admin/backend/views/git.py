@@ -4,7 +4,7 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request
 
-from bench_cli.core.git_providers import (
+from pilot.core.git_providers import (
     TOKEN_HELP_URLS,
     GitAuthError,
     GitCredentialStore,

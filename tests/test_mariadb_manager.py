@@ -3,8 +3,8 @@ from __future__ import annotations
 import subprocess
 from unittest.mock import patch
 
-from bench_cli.config.mariadb_config import MariaDBConfig
-from bench_cli.managers.mariadb_manager import MariaDBManager
+from pilot.config.mariadb_config import MariaDBConfig
+from pilot.managers.mariadb_manager import MariaDBManager
 
 
 def _manager(password: str = "root") -> MariaDBManager:
@@ -48,8 +48,8 @@ def test_data_dir_honors_explicit_value() -> None:
 
 def test_start_targets_instance_unit_when_dedicated() -> None:
     m = _dedicated("b1")
-    with patch("bench_cli.managers.mariadb_manager.is_macos", return_value=False), patch(
-        "bench_cli.managers.mariadb_manager.run_command"
+    with patch("pilot.managers.mariadb_manager.is_macos", return_value=False), patch(
+        "pilot.managers.mariadb_manager.run_command"
     ) as rc:
         m.start()
     rc.assert_called_once_with(["sudo", "systemctl", "start", "mariadb@b1"])
@@ -57,16 +57,16 @@ def test_start_targets_instance_unit_when_dedicated() -> None:
 
 def test_start_targets_shared_unit_when_legacy() -> None:
     m = _manager()
-    with patch("bench_cli.managers.mariadb_manager.is_macos", return_value=False), patch(
-        "bench_cli.managers.mariadb_manager.run_command"
+    with patch("pilot.managers.mariadb_manager.is_macos", return_value=False), patch(
+        "pilot.managers.mariadb_manager.run_command"
     ) as rc:
         m.start()
     rc.assert_called_once_with(["sudo", "systemctl", "start", "mariadb"])
 
 
 def test_run_sql_as_superuser_adds_socket_only_when_dedicated() -> None:
-    with patch("bench_cli.managers.mariadb_manager.is_macos", return_value=False), patch(
-        "bench_cli.managers.mariadb_manager.subprocess.run"
+    with patch("pilot.managers.mariadb_manager.is_macos", return_value=False), patch(
+        "pilot.managers.mariadb_manager.subprocess.run"
     ) as run:
         _dedicated("b1")._run_sql_as_superuser("SELECT 1;")
         dedicated_cmd = run.call_args[0][0]
@@ -88,7 +88,7 @@ def test_provision_instance_starts_before_securing(tmp_path) -> None:
     ), patch.object(m, "_wait_until_reachable", rec("wait")), patch.object(
         m, "secure_installation", rec("secure")
     ), patch(
-        "bench_cli.managers.mariadb_manager.run_command", lambda *a, **k: order.append(("rc", a[0]))
+        "pilot.managers.mariadb_manager.run_command", lambda *a, **k: order.append(("rc", a[0]))
     ):
         m.provision_instance(tmp_path)
 
@@ -107,7 +107,7 @@ def test_write_instance_config_targets_mariadb_conf_d_with_pidfile(tmp_path) -> 
     """Instance config lands in mariadb.conf.d/ (read after 50-server.cnf) with
     its own pid-file, so it isn't overridden by the base [mariadbd] group."""
     m = _dedicated("b1")
-    with patch("bench_cli.managers.mariadb_manager.run_command") as rc:
+    with patch("pilot.managers.mariadb_manager.run_command") as rc:
         m._write_instance_config(tmp_path)
 
     content = (tmp_path / "mariadb" / "99-bench-b1.cnf").read_text()
@@ -124,7 +124,7 @@ def test_write_instance_config_targets_mariadb_conf_d_with_pidfile(tmp_path) -> 
 def test_service_unit_alpine_uses_generated_openrc_name() -> None:
     """Alpine has no mariadb@.service template, so a dedicated instance runs a
     bench-generated `mariadb-<instance>` OpenRC service instead."""
-    with patch("bench_cli.managers.mariadb_manager.is_alpine", return_value=True):
+    with patch("pilot.managers.mariadb_manager.is_alpine", return_value=True):
         assert _dedicated("b1").service_unit() == "mariadb-b1"
         assert _manager().service_unit() == "mariadb"
 
@@ -135,14 +135,14 @@ def test_provision_instance_openrc_generates_init_script(tmp_path) -> None:
     and secures it."""
     m = _dedicated("b1")
     calls: list = []
-    with patch("bench_cli.managers.mariadb_manager.is_alpine", return_value=True), patch(
-        "bench_cli.platform.is_alpine", return_value=True
-    ), patch("bench_cli.platform.is_root", return_value=False), patch(
-        "bench_cli.managers.mariadb_manager.which", return_value="/usr/sbin/mariadbd"
+    with patch("pilot.managers.mariadb_manager.is_alpine", return_value=True), patch(
+        "pilot.platform.is_alpine", return_value=True
+    ), patch("pilot.platform.is_root", return_value=False), patch(
+        "pilot.managers.mariadb_manager.which", return_value="/usr/sbin/mariadbd"
     ), patch.object(m, "_wait_until_reachable"), patch.object(
         m, "secure_installation"
     ), patch(
-        "bench_cli.managers.mariadb_manager.run_command", lambda *a, **k: calls.append(a[0])
+        "pilot.managers.mariadb_manager.run_command", lambda *a, **k: calls.append(a[0])
     ):
         m.provision_instance(tmp_path)
 
@@ -169,7 +169,7 @@ def test_write_systemd_override_pins_escaped_group_suffix(tmp_path) -> None:
     looks for [mariadbd.my/bench] and ignores our [mariadbd.my-bench] group. The
     per-instance drop-in pins %i (literal) so dashed bench names work."""
     m = _dedicated("my-bench")
-    with patch("bench_cli.managers.mariadb_manager.run_command") as rc:
+    with patch("pilot.managers.mariadb_manager.run_command") as rc:
         m._write_systemd_override(tmp_path)
 
     content = (tmp_path / "mariadb" / "override-my-bench.conf").read_text()
@@ -227,7 +227,7 @@ def test_secure_installation_sets_password_and_hardens() -> None:
 
 def test_check_credentials_true_on_successful_connect() -> None:
     manager = _manager()
-    with patch("bench_cli.managers.mariadb_manager.subprocess.run") as run:
+    with patch("pilot.managers.mariadb_manager.subprocess.run") as run:
         run.return_value = subprocess.CompletedProcess([], 0)
         assert manager.check_credentials("pw") is True
     # Password is passed via MYSQL_PWD env, never argv.
@@ -238,7 +238,7 @@ def test_check_credentials_true_on_successful_connect() -> None:
 
 def test_check_credentials_false_on_error() -> None:
     manager = _manager()
-    with patch("bench_cli.managers.mariadb_manager.subprocess.run") as run:
+    with patch("pilot.managers.mariadb_manager.subprocess.run") as run:
         run.return_value = subprocess.CompletedProcess([], 1)
         assert manager.check_credentials("wrong") is False
 
@@ -259,29 +259,29 @@ def _post_validate(client, password: str):
 
 
 def test_validate_endpoint_will_install_when_not_installed(tmp_path) -> None:
-    with patch("bench_cli.managers.mariadb_manager.MariaDBManager.is_installed", return_value=False):
+    with patch("pilot.managers.mariadb_manager.MariaDBManager.is_installed", return_value=False):
         resp = _post_validate(_client(tmp_path), "anything")
     assert resp.get_json() == {"state": "will_install"}
 
 
 def test_validate_endpoint_valid(tmp_path) -> None:
-    with patch("bench_cli.managers.mariadb_manager.MariaDBManager.is_installed", return_value=True), patch(
-        "bench_cli.managers.mariadb_manager.MariaDBManager.check_credentials", return_value=True
+    with patch("pilot.managers.mariadb_manager.MariaDBManager.is_installed", return_value=True), patch(
+        "pilot.managers.mariadb_manager.MariaDBManager.check_credentials", return_value=True
     ):
         resp = _post_validate(_client(tmp_path), "correct")
     assert resp.get_json() == {"state": "valid"}
 
 
 def test_validate_endpoint_invalid(tmp_path) -> None:
-    with patch("bench_cli.managers.mariadb_manager.MariaDBManager.is_installed", return_value=True), patch(
-        "bench_cli.managers.mariadb_manager.MariaDBManager.check_credentials", return_value=False
+    with patch("pilot.managers.mariadb_manager.MariaDBManager.is_installed", return_value=True), patch(
+        "pilot.managers.mariadb_manager.MariaDBManager.check_credentials", return_value=False
     ):
         resp = _post_validate(_client(tmp_path), "wrong")
     assert resp.get_json() == {"state": "invalid"}
 
 
 def _write_dedicated_toml(tmp_path) -> None:
-    from bench_cli.config.bench_toml_builder import BenchTomlBuilder
+    from pilot.config.bench_toml_builder import BenchTomlBuilder
 
     settings = {"mariadb_instance": "b1", "mariadb_socket_path": "/run/mysqld/mysqld-b1.sock"}
     (tmp_path / "bench.toml").write_text(BenchTomlBuilder("b1", settings).render())
@@ -291,17 +291,17 @@ def test_validate_endpoint_dedicated_not_running_is_will_install(tmp_path) -> No
     """A dedicated instance that init hasn't provisioned yet must not be treated
     as a wrong password — init will create and secure it."""
     _write_dedicated_toml(tmp_path)
-    with patch("bench_cli.managers.mariadb_manager.MariaDBManager.is_installed", return_value=True), patch(
-        "bench_cli.managers.mariadb_manager.MariaDBManager.check_credentials", return_value=False
-    ), patch("bench_cli.managers.mariadb_manager.MariaDBManager.service_is_active", return_value=False):
+    with patch("pilot.managers.mariadb_manager.MariaDBManager.is_installed", return_value=True), patch(
+        "pilot.managers.mariadb_manager.MariaDBManager.check_credentials", return_value=False
+    ), patch("pilot.managers.mariadb_manager.MariaDBManager.service_is_active", return_value=False):
         resp = _post_validate(_client(tmp_path), "wrong")
     assert resp.get_json() == {"state": "will_install"}
 
 
 def test_validate_endpoint_dedicated_running_wrong_pw_is_invalid(tmp_path) -> None:
     _write_dedicated_toml(tmp_path)
-    with patch("bench_cli.managers.mariadb_manager.MariaDBManager.is_installed", return_value=True), patch(
-        "bench_cli.managers.mariadb_manager.MariaDBManager.check_credentials", return_value=False
-    ), patch("bench_cli.managers.mariadb_manager.MariaDBManager.service_is_active", return_value=True):
+    with patch("pilot.managers.mariadb_manager.MariaDBManager.is_installed", return_value=True), patch(
+        "pilot.managers.mariadb_manager.MariaDBManager.check_credentials", return_value=False
+    ), patch("pilot.managers.mariadb_manager.MariaDBManager.service_is_active", return_value=True):
         resp = _post_validate(_client(tmp_path), "wrong")
     assert resp.get_json() == {"state": "invalid"}

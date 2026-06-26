@@ -1,4 +1,4 @@
-"""Tests for bench_cli.cli — argument parsing helpers."""
+"""Tests for pilot.cli — argument parsing helpers."""
 from __future__ import annotations
 
 import subprocess
@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from bench_cli.cli import _strip_bench_flag, _is_frappe_passthrough
+from pilot.cli import _strip_bench_flag, _is_frappe_passthrough
 
 
 # ── _strip_bench_flag ─────────────────────────────────────────────────────────
@@ -81,32 +81,32 @@ def test_passthrough_empty_args() -> None:
 
 
 def test_discovery_does_not_import_heavy_layers() -> None:
-    """Command discovery imports every module under bench_cli/commands/, so command
+    """Command discovery imports every module under pilot/commands/, so command
     modules must keep their managers/core/config imports scoped to point of use.
     If any of those heavy layers loads at discovery time, CLI startup grows with
     every command added. Run in a clean interpreter so other tests' imports don't
     pollute sys.modules.
     """
-    # Patch __import__ to record the bench_cli call-site responsible for each
+    # Patch __import__ to record the pilot call-site responsible for each
     # heavy import: (leaked_module, importer_file, importer_line).
     code = """
 import builtins, sys, traceback
 _orig = builtins.__import__
 _leaks = []
-_HEAVY = ('bench_cli.managers', 'bench_cli.core', 'bench_cli.config')
+_HEAVY = ('pilot.managers', 'pilot.core', 'pilot.config')
 
 def _tracing_import(name, *args, **kwargs):
     already_loaded = name in sys.modules
     result = _orig(name, *args, **kwargs)
     if name.startswith(_HEAVY) and not already_loaded:
-        frames = [f for f in traceback.extract_stack()[:-1] if 'bench_cli' in (f.filename or '')]
+        frames = [f for f in traceback.extract_stack()[:-1] if 'pilot' in (f.filename or '')]
         if frames:
             f = frames[-1]
             _leaks.append(f"{name}  <-  {f.filename}:{f.lineno}")
     return result
 
 builtins.__import__ = _tracing_import
-import bench_cli.registry as r; r._discover()
+import pilot.registry as r; r._discover()
 builtins.__import__ = _orig
 print('\\n'.join(_leaks))
 """

@@ -9,7 +9,7 @@ from flask import (
     stream_with_context,
 )
 
-from bench_cli.exceptions import TaskNotFoundError, TaskNotRunningError
+from pilot.exceptions import TaskNotFoundError, TaskNotRunningError
 from admin.backend.tasks.manager.task_reader import TaskReader
 from admin.backend.tasks.manager.task_runner import TaskRunner
 

@@ -1,4 +1,4 @@
-from bench_cli.commands.setup.production import SetupProductionCommand
+from pilot.commands.setup.production import SetupProductionCommand
 from .base_task import BaseTask
 
 

@@ -1,7 +1,7 @@
 """Tests for the admin Settings HTTPS toggle (admin.tls + Let's Encrypt email)."""
 from __future__ import annotations
 
-from bench_cli.config.bench_config import BenchConfig
+from pilot.config.bench_config import BenchConfig
 
 from admin.backend.views.settings import ConfigPatcher, _build_settings_response
 

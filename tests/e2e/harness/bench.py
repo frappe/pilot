@@ -89,7 +89,7 @@ class Bench:
             raise RuntimeError(f'Bench "{self.name}" already exists at {self.dir} — clean it up first')
         self._run(["new", self.name])
         if not (self.dir / "bench.toml").exists():
-            # `bench` resolves its benches dir as <dir containing bench_cli>/benches.
+            # `bench` resolves its benches dir as <dir containing pilot>/benches.
             # The repo launcher (<repo>/bench, the default) puts it at <repo>/benches,
             # which is what this harness reads. A `bench` from a non-editable
             # `pip install` lives in site-packages and writes benches there instead,

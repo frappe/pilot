@@ -1,4 +1,4 @@
-from bench_cli.commands.setup.nginx import SetupNginxCommand
+from pilot.commands.setup.nginx import SetupNginxCommand
 from .base_task import BaseTask
 
 

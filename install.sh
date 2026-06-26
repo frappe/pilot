@@ -5,10 +5,10 @@ set -e
 # before bash exists. The Ubuntu one-liner still pipes to bash explicitly.
 
 # ── configuration ────────────────────────────────────────────────────────────
-INSTALL_URL="https://raw.githubusercontent.com/frappe/bench-cli/main/install.sh"
-REPO_URL="https://github.com/frappe/bench-cli"
+INSTALL_URL="https://raw.githubusercontent.com/frappe/pilot/main/install.sh"
+REPO_URL="https://github.com/frappe/pilot"
 BRANCH_NAME="main"
-BENCH_CLI_DIR="$HOME/bench-cli"
+PILOT_DIR="$HOME/pilot"
 DEFAULT_USER="frappe"
 
 # ── arguments / environment ──────────────────────────────────────────────────
@@ -179,15 +179,15 @@ authenticate_sudo
 write_sudoers "$(id -un)"
 
 # Clone or update the repo
-if [ -d "$BENCH_CLI_DIR" ]; then
-    echo "Updating bench-cli..."
-    git -C "$BENCH_CLI_DIR" pull
+if [ -d "$PILOT_DIR" ]; then
+    echo "Updating pilot..."
+    git -C "$PILOT_DIR" pull
 else
-    echo "Cloning bench-cli ($BRANCH_NAME branch)..."
-    git clone -b "$BRANCH_NAME" "$REPO_URL" "$BENCH_CLI_DIR"
+    echo "Cloning pilot ($BRANCH_NAME branch)..."
+    git clone -b "$BRANCH_NAME" "$REPO_URL" "$PILOT_DIR"
 fi
 
-chmod +x "$BENCH_CLI_DIR/bench"
+chmod +x "$PILOT_DIR/bench"
 
 # Install uv if not present
 if ! command -v uv >/dev/null 2>&1; then
@@ -224,8 +224,8 @@ fi
 # ── add bench to PATH ─────────────────────────────────────────────────────────
 add_to_path() {
     rc="$1"
-    line="export PATH=\"\$HOME/bench-cli:\$PATH\""
-    if ! grep -qF 'bench-cli' "$rc" 2>/dev/null; then
+    line="export PATH=\"\$HOME/pilot:\$PATH\""
+    if ! grep -qF 'pilot' "$rc" 2>/dev/null; then
         echo "$line" >> "$rc"
         echo "Added bench to PATH in $rc"
     fi
@@ -236,8 +236,8 @@ case "$SHELL" in
     */fish)
         FISH_CONFIG="$HOME/.config/fish/config.fish"
         mkdir -p "$(dirname "$FISH_CONFIG")"
-        if ! grep -qF 'bench-cli' "$FISH_CONFIG" 2>/dev/null; then
-            echo "fish_add_path \$HOME/bench-cli" >> "$FISH_CONFIG"
+        if ! grep -qF 'pilot' "$FISH_CONFIG" 2>/dev/null; then
+            echo "fish_add_path \$HOME/pilot" >> "$FISH_CONFIG"
             echo "Added bench to PATH in $FISH_CONFIG"
         fi
         ;;
@@ -256,7 +256,7 @@ case "$SHELL" in
         ;;
 esac
 
-export PATH="$BENCH_CLI_DIR:$PATH"
+export PATH="$PILOT_DIR:$PATH"
 
 # Best-effort: load the updated rc into this session. Shell-specific syntax (or a
 # zsh rc sourced under bash) may fail — that's fine, the PATH export above already
@@ -267,14 +267,14 @@ if [ -n "$RC_FILE" ] && [ -f "$RC_FILE" ]; then
 fi
 
 # ── admin venv ────────────────────────────────────────────────────────────────
-ADMIN_VENV="$BENCH_CLI_DIR/.admin-venv"
+ADMIN_VENV="$PILOT_DIR/.admin-venv"
 if [ ! -f "$ADMIN_VENV/bin/python" ]; then
     echo "Setting up admin environment..."
     uv venv "$ADMIN_VENV" --quiet
     if command -v python3 >/dev/null 2>&1; then
         ADMIN_DEPS=$(python3 -c "
 import tomllib, sys
-with open('$BENCH_CLI_DIR/pyproject.toml', 'rb') as f:
+with open('$PILOT_DIR/pyproject.toml', 'rb') as f:
     d = tomllib.load(f)
 deps = d.get('project', {}).get('optional-dependencies', {}).get('admin', [])
 print(' '.join(deps))
@@ -288,7 +288,7 @@ print(' '.join(deps))
 fi
 
 echo ""
-echo "bench installed to $BENCH_CLI_DIR"
+echo "bench installed to $PILOT_DIR"
 echo ""
 echo "Quick start:"
 echo "  bench new my-bench"

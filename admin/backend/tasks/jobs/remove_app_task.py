@@ -1,4 +1,4 @@
-from bench_cli.commands.remove_app import RemoveAppCommand
+from pilot.commands.remove_app import RemoveAppCommand
 from .base_task import BaseTask
 
 

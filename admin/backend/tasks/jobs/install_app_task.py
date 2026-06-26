@@ -32,7 +32,7 @@ class InstallAppTask(BaseTask):
 
         print(f"\nBuilding assets for {self.app}...")
         sys.stdout.flush()
-        from bench_cli.managers.python_env_manager import PythonEnvManager
+        from pilot.managers.python_env_manager import PythonEnvManager
         PythonEnvManager(self.bench).build_assets_for_app(app)
 
 

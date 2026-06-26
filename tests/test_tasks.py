@@ -11,7 +11,7 @@ import pytest
 
 from admin.backend.tasks.manager.task_runner import TaskRunner, TASK_RETENTION_LIMIT
 from admin.backend.tasks.manager.task_reader import TaskReader
-from bench_cli.exceptions import TaskNotFoundError, TaskNotRunningError
+from pilot.exceptions import TaskNotFoundError, TaskNotRunningError
 
 
 # ── TaskRunner._generate_task_id ────────────────────────────────────────────

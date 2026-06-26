@@ -9,7 +9,7 @@ updates_bp = Blueprint("updates", __name__)
 
 
 def _cli_root() -> Path:
-    import bench_cli as _pkg
+    import pilot as _pkg
     return Path(_pkg.__file__).parent.parent
 
 
@@ -18,8 +18,8 @@ def get_updates():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     do_fetch = request.args.get("fetch") == "1"
 
-    from bench_cli.config.bench_config import BenchConfig
-    from bench_cli.core.bench import Bench
+    from pilot.config.bench_config import BenchConfig
+    from pilot.core.bench import Bench
 
     config = BenchConfig.from_file(bench_root / "bench.toml")
     bench = Bench(config, bench_root)

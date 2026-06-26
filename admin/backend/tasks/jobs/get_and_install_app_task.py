@@ -1,7 +1,7 @@
 import time
 
-from bench_cli.commands.get_app import GetAppCommand
-from bench_cli.core.site import Site, SiteConfig
+from pilot.commands.get_app import GetAppCommand
+from pilot.core.site import Site, SiteConfig
 
 from .base_task import BaseTask
 

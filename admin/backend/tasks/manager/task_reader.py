@@ -7,7 +7,7 @@ from collections.abc import Generator
 from datetime import datetime, timezone
 from pathlib import Path
 
-from bench_cli.exceptions import TaskNotFoundError
+from pilot.exceptions import TaskNotFoundError
 from admin.backend.tasks.manager.models import TaskInfo
 
 _TASK_ID_PATTERN = re.compile(r"^\d{8}-\d{6}-[a-f0-9]{6}$")

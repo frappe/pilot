@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from bench_cli.config.bench_config import BenchConfig
-from bench_cli.core.bench import Bench
-from bench_cli.managers.nginx_manager import NginxManager
+from pilot.config.bench_config import BenchConfig
+from pilot.core.bench import Bench
+from pilot.managers.nginx_manager import NginxManager
 
 pytestmark = pytest.mark.integration
 

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import copy
 
-from bench_cli.admin_url import admin_url
-from bench_cli.config.bench_config import BenchConfig
+from pilot.admin_url import admin_url
+from pilot.config.bench_config import BenchConfig
 
 BASE = {
     "bench": {"name": "alpha", "python": "3.14"},

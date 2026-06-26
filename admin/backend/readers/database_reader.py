@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from bench_cli.config.mariadb_config import MariaDBConfig
+from pilot.config.mariadb_config import MariaDBConfig
 
 
 @dataclass

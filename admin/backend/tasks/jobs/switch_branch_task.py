@@ -2,8 +2,8 @@ import subprocess
 import sys
 import tomllib
 
-from bench_cli.managers.python_env_manager import PythonEnvManager
-from bench_cli.utils import write_toml
+from pilot.managers.python_env_manager import PythonEnvManager
+from pilot.utils import write_toml
 from .base_task import BaseTask
 
 

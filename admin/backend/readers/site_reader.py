@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from bench_cli.commands.list_site_apps import _query_via_db_cli
+from pilot.commands.list_site_apps import _query_via_db_cli
 
 
 @dataclass

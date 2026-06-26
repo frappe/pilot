@@ -6,7 +6,7 @@ from flask import Blueprint, Response, current_app, jsonify, request, stream_wit
 
 from admin.backend.tasks.manager.task_reader import TaskReader
 from admin.backend.tasks.manager.task_runner import TaskRunner
-from bench_cli.config.bench_toml_builder import FRAMEWORK_BRANCHES, BenchTomlBuilder, current_port_offset
+from pilot.config.bench_toml_builder import FRAMEWORK_BRANCHES, BenchTomlBuilder, current_port_offset
 
 setup_bp = Blueprint("setup", __name__)
 
@@ -75,7 +75,7 @@ def save_config():
 
 
 def _issue_setup_session(resp, toml_path: Path) -> None:
-    from bench_cli.commands.generate_session import ensure_jwt_secret, issue_token
+    from pilot.commands.generate_session import ensure_jwt_secret, issue_token
 
     resp.set_cookie("sid", issue_token(ensure_jwt_secret(toml_path)),
                     max_age=24 * 3600, httponly=True, samesite="Lax")
@@ -88,7 +88,7 @@ def validate_mariadb():
     Dedicated instance: not yet provisioned → bench init will create it → will_install.
     Shared instance: must validate against the running system MariaDB.
     """
-    from bench_cli.managers.mariadb_manager import MariaDBManager
+    from pilot.managers.mariadb_manager import MariaDBManager
 
     data = request.get_json(silent=True) or {}
     password = data.get("mariadb_password", "")
@@ -124,7 +124,7 @@ def _is_fresh_install(manager, dedicated: bool) -> bool:
 
 def _will_install_fresh(bench_root: Path, data: dict) -> bool:
     """Fresh-install check for the /save payload (shared if no instance name)."""
-    from bench_cli.managers.mariadb_manager import MariaDBManager
+    from pilot.managers.mariadb_manager import MariaDBManager
 
     dedicated = bool(data.get("mariadb_instance"))
     config = _mariadb_config(
@@ -143,7 +143,7 @@ def _mariadb_config(bench_root: Path, password: str, admin_user: str = "root", d
     already have a dedicated instance name set (written by `bench new`), which would
     make the manager try the dedicated socket that doesn't exist yet.
     """
-    from bench_cli.config.mariadb_config import MariaDBConfig
+    from pilot.config.mariadb_config import MariaDBConfig
 
     config = MariaDBConfig(root_password=password, admin_user=admin_user)
     if dedicated:
@@ -181,9 +181,9 @@ def start_setup():
     reload, simply reattaches to the one running task. Production is a separate
     step the user runs from the terminal afterwards (`bench setup production`).
     """
-    from bench_cli.config.bench_config import BenchConfig
-    from bench_cli.managers.volume_manager import VolumeManager
-    from bench_cli.platform import has_passwordless_sudo, is_linux
+    from pilot.config.bench_config import BenchConfig
+    from pilot.managers.volume_manager import VolumeManager
+    from pilot.platform import has_passwordless_sudo, is_linux
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
 
@@ -286,7 +286,7 @@ def stream_task(task_id: str):
 
 
 def _read_defaults(bench_root: Path) -> dict:
-    from bench_cli.platform import is_linux, native_process_manager
+    from pilot.platform import is_linux, native_process_manager
 
     result = {
         "bench_name": bench_root.name,
@@ -335,12 +335,12 @@ def _volume_suggestions(toml_path: Path) -> dict:
     Existing volume config is never overridden — only the discovered device
     list is returned so the UI can still offer a dropdown.
     """
-    from bench_cli.platform import is_linux
+    from pilot.platform import is_linux
 
     if not is_linux():
         return {"available_devices": []}
 
-    from bench_cli.managers.volume_manager import (
+    from pilot.managers.volume_manager import (
         compute_smart_defaults,
         list_device_choices,
         rootfs_free_bytes,

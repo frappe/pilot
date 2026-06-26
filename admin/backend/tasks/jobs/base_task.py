@@ -3,8 +3,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from bench_cli.config.bench_config import BenchConfig
-from bench_cli.core.bench import Bench
+from pilot.config.bench_config import BenchConfig
+from pilot.core.bench import Bench
 
 
 class BaseTask:

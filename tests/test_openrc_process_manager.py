@@ -4,8 +4,8 @@ import getpass
 from pathlib import Path
 from types import SimpleNamespace
 
-from bench_cli.managers.openrc_process_manager import OpenRCProcessManager
-from bench_cli.managers.process_manager import ProcessDefinition
+from pilot.managers.openrc_process_manager import OpenRCProcessManager
+from pilot.managers.process_manager import ProcessDefinition
 
 
 def _manager() -> OpenRCProcessManager:

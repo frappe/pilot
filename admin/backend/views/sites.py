@@ -52,7 +52,7 @@ def detail(name: str):
     except Exception:
         installable = []
 
-    from bench_cli.config.bench_config import BenchConfig
+    from pilot.config.bench_config import BenchConfig
 
     try:
         bench_config = BenchConfig.from_file(bench_root / "bench.toml")
@@ -110,8 +110,8 @@ def site_apps(name: str):
 @sites_bp.route("/wildcard-domains", methods=["GET"])
 def wildcard_domains():
     """Wildcard domain suffixes (no leading '*') new site names may be built from."""
-    from bench_cli.core.domain_controller import DomainRouteProvider
-    from bench_cli.utils import wildcard_suffix
+    from pilot.core.domain_controller import DomainRouteProvider
+    from pilot.utils import wildcard_suffix
 
     try:
         patterns = DomainRouteProvider.wildcard_domains()
@@ -256,7 +256,7 @@ def get_and_install_app(name: str):
     if not repo:
         return jsonify({"ok": False, "error": "Repo URL is required."})
     if not app:
-        from bench_cli.core.git_providers import GitProviderError, resolve_app_name_from_repo
+        from pilot.core.git_providers import GitProviderError, resolve_app_name_from_repo
 
         try:
             app = resolve_app_name_from_repo(bench_root, repo, branch)
@@ -352,7 +352,7 @@ def login_to_site(name: str):
     import http.client
     import urllib.parse
 
-    from bench_cli.config.bench_config import BenchConfig
+    from pilot.config.bench_config import BenchConfig
 
     try:
         bench_config = BenchConfig.from_file(bench_root / "bench.toml")
@@ -414,8 +414,8 @@ def enable_ssl(name: str):
     if not config_path.exists():
         return jsonify({"ok": False, "error": "Site not found."}), 404
 
-    from bench_cli.config.bench_config import BenchConfig
-    from bench_cli.config.toml_writer import bench_config_to_toml
+    from pilot.config.bench_config import BenchConfig
+    from pilot.config.toml_writer import bench_config_to_toml
 
     from ..validators import validate_email
 
@@ -464,9 +464,9 @@ def enable_ssl(name: str):
 
 
 def _domain_routes(bench_root: Path):
-    from bench_cli.config.bench_config import BenchConfig
-    from bench_cli.core.bench import Bench
-    from bench_cli.core.domain_controller import DomainRouteProvider
+    from pilot.config.bench_config import BenchConfig
+    from pilot.core.bench import Bench
+    from pilot.core.domain_controller import DomainRouteProvider
 
     bench = Bench(BenchConfig.from_file(bench_root / "bench.toml"), bench_root)
     return DomainRouteProvider(bench)
@@ -653,8 +653,8 @@ def delete_backup_schedule(name: str):
 def _new_site_name_error(bench_root: Path, name: str) -> str | None:
     """Validate a new-site name before any task starts, so the error lands in the UI
     instead of failing mid-run. Mirrors NewSiteCommand._validate."""
-    from bench_cli.config.bench_config import BenchConfig
-    from bench_cli.utils import host_owner, normalize_host
+    from pilot.config.bench_config import BenchConfig
+    from pilot.utils import host_owner, normalize_host
 
     if (bench_root / "sites" / name / "site_config.json").exists():
         return f"Site '{name}' already exists."
@@ -670,8 +670,8 @@ def _new_site_name_error(bench_root: Path, name: str) -> str | None:
     if admin_domain and normalize_host(name) == normalize_host(admin_domain):
         return f"Site '{name}' clashes with this bench's admin domain. An admin domain must not match a site domain."
 
-    from bench_cli.core.domain_controller import DomainRouteProvider
-    from bench_cli.utils import matches_wildcard
+    from pilot.core.domain_controller import DomainRouteProvider
+    from pilot.utils import matches_wildcard
 
     patterns = DomainRouteProvider.wildcard_domains()
     if patterns and not matches_wildcard(name, patterns):

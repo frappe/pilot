@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
-    from bench_cli.managers.systemd_process_manager import SystemdProcessManager
+    from pilot.managers.supervisor_process_manager import SupervisorProcessManager
+    from pilot.managers.systemd_process_manager import SystemdProcessManager
 
 
 @dataclass
@@ -138,8 +138,8 @@ class ProcessReader:
         self._bench_root = bench_root
 
     def read_all(self) -> list[ProcessInfo]:
-        from bench_cli.config.bench_config import BenchConfig
-        from bench_cli.core.bench import Bench
+        from pilot.config.bench_config import BenchConfig
+        from pilot.core.bench import Bench
 
         # If the bench config file is not present there is no point in look at procs
         config = BenchConfig.from_file(self._bench_root / "bench.toml")
@@ -148,15 +148,15 @@ class ProcessReader:
         # Alpine: only OpenRC is present, so probe it directly (the systemd /
         # supervisor probes would shell out to CLIs that aren't installed).
         if config.production.process_manager == "openrc":
-            from bench_cli.managers.openrc_process_manager import OpenRCProcessManager
+            from pilot.managers.openrc_process_manager import OpenRCProcessManager
 
             openrc = OpenRCProcessManager(bench)
             if openrc.is_running() or openrc.admin_is_running():
                 return self._read_from_openrc(openrc)
             return self._read_from_pids()
 
-        from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
-        from bench_cli.managers.systemd_process_manager import SystemdProcessManager
+        from pilot.managers.supervisor_process_manager import SupervisorProcessManager
+        from pilot.managers.systemd_process_manager import SystemdProcessManager
 
         systemd = SystemdProcessManager(bench)
         supervisor = SupervisorProcessManager(bench)
@@ -170,7 +170,7 @@ class ProcessReader:
     # ── OpenRC ─────────────────────────────────────────────────────────────────
 
     def _read_from_openrc(self, openrc) -> list[ProcessInfo]:
-        from bench_cli.platform import service_running
+        from pilot.platform import service_running
 
         infos: list[ProcessInfo] = []
         for pd in openrc._all_definitions():

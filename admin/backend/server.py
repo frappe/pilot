@@ -22,7 +22,7 @@ def main() -> None:
     args = parser.parse_args()
 
     from admin.backend.app import create_app
-    from bench_cli.config.bench_config import BenchConfig
+    from pilot.config.bench_config import BenchConfig
 
     bench_root = Path(args.bench_root)
     app = create_app(bench_root)

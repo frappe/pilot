@@ -4,7 +4,7 @@ from datetime import datetime
 
 from flask import Blueprint, current_app, jsonify
 
-from bench_cli.managers.snapshot_orchestrator import get_orchestrator
+from pilot.managers.snapshot_orchestrator import get_orchestrator
 
 from ..readers.snapshot_reader import SnapshotReader
 from ..readers.volume_reader import VolumeReader
@@ -13,14 +13,14 @@ volume_bp = Blueprint("volume", __name__)
 
 
 def _get_config(bench_root):
-    from bench_cli.config.bench_config import BenchConfig
+    from pilot.config.bench_config import BenchConfig
 
     return BenchConfig.from_file(bench_root / "bench.toml").volume
 
 
 def _get_volume_manager(bench_root):
-    from bench_cli.config.bench_config import BenchConfig
-    from bench_cli.managers.volume_manager import VolumeManager
+    from pilot.config.bench_config import BenchConfig
+    from pilot.managers.volume_manager import VolumeManager
 
     bench_config = BenchConfig.from_file(bench_root / "bench.toml")
     return VolumeManager(bench_config.volume)

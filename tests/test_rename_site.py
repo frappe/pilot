@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from bench_cli.commands.rename_site import RenameSiteCommand
-from bench_cli.config.app_config import AppConfig
-from bench_cli.config.bench_config import BenchConfig
-from bench_cli.config.mariadb_config import MariaDBConfig
-from bench_cli.config.redis_config import RedisConfig
-from bench_cli.config.worker_config import WorkerConfig, WorkerGroup
-from bench_cli.core.bench import Bench
-from bench_cli.exceptions import BenchError
+from pilot.commands.rename_site import RenameSiteCommand
+from pilot.config.app_config import AppConfig
+from pilot.config.bench_config import BenchConfig
+from pilot.config.mariadb_config import MariaDBConfig
+from pilot.config.redis_config import RedisConfig
+from pilot.config.worker_config import WorkerConfig, WorkerGroup
+from pilot.core.bench import Bench
+from pilot.exceptions import BenchError
 
 
 def _bench(root: Path, name: str, admin_domain: str = "") -> Bench:
@@ -89,7 +89,7 @@ def test_rename_followup_runs_setup_production_when_prod(tmp_path: Path, monkeyp
     bench.config.production.enabled = True
     calls = []
     monkeypatch.setattr(
-        "bench_cli.commands.setup.production.SetupProductionCommand.run", lambda self: calls.append("prod")
+        "pilot.commands.setup.production.SetupProductionCommand.run", lambda self: calls.append("prod")
     )
     RenameSiteCommand(bench, "old.localhost", "new.localhost")._run_followups(ssl_enabled=True)
     assert calls == ["prod"]  # prod path covers TLS; letsencrypt not run separately
@@ -99,7 +99,7 @@ def test_rename_followup_runs_letsencrypt_when_ssl_and_not_prod(tmp_path: Path, 
     bench = _bench(tmp_path, "b1")
     calls = []
     monkeypatch.setattr(
-        "bench_cli.commands.setup.letsencrypt.SetupLetsEncryptCommand.run", lambda self: calls.append("le")
+        "pilot.commands.setup.letsencrypt.SetupLetsEncryptCommand.run", lambda self: calls.append("le")
     )
     RenameSiteCommand(bench, "old.localhost", "new.localhost")._run_followups(ssl_enabled=True)
     assert calls == ["le"]
@@ -112,7 +112,7 @@ def test_rename_followup_advises_on_failure(tmp_path: Path, monkeypatch, capsys:
     def boom(self):
         raise BenchError("nginx exploded")
 
-    monkeypatch.setattr("bench_cli.commands.setup.production.SetupProductionCommand.run", boom)
+    monkeypatch.setattr("pilot.commands.setup.production.SetupProductionCommand.run", boom)
     RenameSiteCommand(bench, "old.localhost", "new.localhost")._run_followups(ssl_enabled=False)
     out = capsys.readouterr().out
     assert "did not complete" in out

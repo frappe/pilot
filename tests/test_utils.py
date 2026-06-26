@@ -1,4 +1,4 @@
-"""Tests for bench_cli.utils — write_toml serialiser."""
+"""Tests for pilot.utils — write_toml serialiser."""
 from __future__ import annotations
 
 import tomllib
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from bench_cli.utils import host_owner, normalize_host, write_toml
+from pilot.utils import host_owner, normalize_host, write_toml
 
 
 def _make_bench(benches: Path, name: str, *, admin_domain: str, sites: list[str] | None = None) -> Path:

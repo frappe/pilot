@@ -3,10 +3,10 @@ from pathlib import Path
 
 import pytest
 
-from bench_cli.config.bench_config import BenchConfig
-from bench_cli.config.production_config import ProductionConfig
-from bench_cli.config.toml_writer import bench_config_to_toml
-from bench_cli.exceptions import ConfigError
+from pilot.config.bench_config import BenchConfig
+from pilot.config.production_config import ProductionConfig
+from pilot.config.toml_writer import bench_config_to_toml
+from pilot.exceptions import ConfigError
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -481,7 +481,7 @@ def test_toml_writer_volume_device_backing() -> None:
 
 
 def test_admin_internal_port_is_port_plus_one() -> None:
-    from bench_cli.config.admin_config import AdminConfig
+    from pilot.config.admin_config import AdminConfig
 
     assert AdminConfig(port=8002).internal_port == 8003
     assert AdminConfig(port=9100).internal_port == 9101

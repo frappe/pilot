@@ -5,10 +5,10 @@
 ## Package layout
 
 ```
-bench_cli/
+pilot/
 ├── pyproject.toml               # installs the `bench` CLI entry point
 │
-└── bench_cli/                         # Python package
+└── pilot/                         # Python package
     ├── __init__.py
     ├── cli.py                   # thin entry point — global flags + Frappe passthrough
     ├── registry.py              # auto-discovers commands, builds parser, dispatches
@@ -115,7 +115,7 @@ bench-cli/
 
 ---
 
-## Config layer (`bench_cli/config/`)
+## Config layer (`pilot/config/`)
 
 Config classes are pure data holders. They are constructed by parsing `bench.toml` (via `tomllib` from the Python 3.11+ stdlib) and expose no side effects. They are the only objects that know the shape of the TOML file.
 
@@ -209,7 +209,7 @@ class WorkerConfig:
 
 ---
 
-## Core layer (`bench_cli/core/`)
+## Core layer (`pilot/core/`)
 
 Core objects represent things that exist (or will exist) on disk. They receive the relevant config and the parent `Bench` object so they can resolve paths without knowing where the bench root is.
 
@@ -300,7 +300,7 @@ class Site:
 
 ---
 
-## Managers layer (`bench_cli/managers/`)
+## Managers layer (`pilot/managers/`)
 
 Managers handle interactions with system services and tools. They do not know about Sites or Apps directly — they receive only what they need.
 
@@ -516,7 +516,7 @@ class ProcessDefinition:
 
 ---
 
-## Commands layer (`bench_cli/commands/`)
+## Commands layer (`pilot/commands/`)
 
 Each command class receives a `Bench` object. It orchestrates managers and core objects in the correct order. Commands are the only layer that produces user-visible console output.
 
@@ -597,8 +597,8 @@ inside the active bench (handled before argparse so flags like `--site` aren't c
 Create one file under `commands/` — nothing else:
 
 ```python
-# bench_cli/commands/list_apps.py
-from bench_cli.commands.base import Command
+# pilot/commands/list_apps.py
+from pilot.commands.base import Command
 
 
 class ListAppsCommand(Command):
@@ -632,7 +632,7 @@ Set `requires_bench = False` for commands that don't operate on a bench (e.g. `n
 
 ---
 
-## Platform detection (`bench_cli/platform.py`)
+## Platform detection (`pilot/platform.py`)
 
 All OS-specific branching lives in one module. Every other module imports from here rather than calling `platform.system()` or `shutil.which()` inline.
 
@@ -691,10 +691,10 @@ Factory function — returns `BrewPackageManager()` on macOS, `AptPackageManager
 
 ## Error handling
 
-- All config errors raise `bench_cli.exceptions.ConfigError`.
-- All command errors raise `bench_cli.exceptions.BenchError`.
+- All config errors raise `pilot.exceptions.ConfigError`.
+- All command errors raise `pilot.exceptions.BenchError`.
 - The CLI catches these at the top level and prints a clean error message without a traceback (unless `--verbose` is passed).
-- Subprocess failures (git, pip, mysql) raise `bench_cli.exceptions.CommandError` with the captured stderr.
+- Subprocess failures (git, pip, mysql) raise `pilot.exceptions.CommandError` with the captured stderr.
 
 ---
 

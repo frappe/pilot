@@ -2,16 +2,16 @@ from pathlib import Path
 
 import pytest
 
-from bench_cli.config.app_config import AppConfig
-from bench_cli.config.bench_config import BenchConfig
-from bench_cli.config.mariadb_config import MariaDBConfig
-from bench_cli.config.redis_config import RedisConfig
-from bench_cli.config.site_config import SiteConfig
-from bench_cli.config.worker_config import WorkerConfig, WorkerGroup
-from bench_cli.core.app import App
-from bench_cli.core.bench import Bench
-from bench_cli.core.site import Site
-from bench_cli.managers.process_manager import ProcessManager
+from pilot.config.app_config import AppConfig
+from pilot.config.bench_config import BenchConfig
+from pilot.config.mariadb_config import MariaDBConfig
+from pilot.config.redis_config import RedisConfig
+from pilot.config.site_config import SiteConfig
+from pilot.config.worker_config import WorkerConfig, WorkerGroup
+from pilot.core.app import App
+from pilot.core.bench import Bench
+from pilot.core.site import Site
+from pilot.managers.process_manager import ProcessManager
 
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -276,7 +276,7 @@ def test_honcho_start_writes_per_process_pid_files(tmp_path: Path) -> None:
     def fake_popen(cmd, **kwargs):
         return fake_proc
 
-    with patch("bench_cli.managers.process_manager.subprocess.Popen", side_effect=fake_popen):
+    with patch("pilot.managers.process_manager.subprocess.Popen", side_effect=fake_popen):
         with patch.object(process_manager, "_stop_all"):
             for pd in process_manager._process_definitions():
                 proc = fake_popen(pd.command)

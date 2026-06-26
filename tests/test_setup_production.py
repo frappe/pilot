@@ -10,11 +10,11 @@ from pathlib import Path
 
 import pytest
 
-from bench_cli.commands.setup.production import SetupProductionCommand
-from bench_cli.config.bench_config import BenchConfig
-from bench_cli.core.bench import Bench
-from bench_cli.exceptions import BenchError
-from bench_cli.managers.letsencrypt_manager import needs_letsencrypt
+from pilot.commands.setup.production import SetupProductionCommand
+from pilot.config.bench_config import BenchConfig
+from pilot.core.bench import Bench
+from pilot.exceptions import BenchError
+from pilot.managers.letsencrypt_manager import needs_letsencrypt
 
 
 def _make_bench(tmp_path: Path, name: str = "prod", *, admin_domain: str = "prod-admin.localhost",
@@ -64,7 +64,7 @@ def test_check_admin_domain_rejects_sibling_owned(tmp_path: Path) -> None:
 
 
 def test_check_admin_domain_grandfathers_existing_non_matching(tmp_path: Path, monkeypatch) -> None:
-    from bench_cli.core.domain_controller import DomainRouteProvider
+    from pilot.core.domain_controller import DomainRouteProvider
 
     monkeypatch.setattr(DomainRouteProvider, "wildcard_domains", staticmethod(lambda: ["*.node1.example.com"]))
     bench = _make_bench(tmp_path, admin_domain="node1.example.com")  # apex, can't match wildcard

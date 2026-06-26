@@ -10,7 +10,7 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
-from bench_cli.config.bench_toml_builder import BenchTomlBuilder, current_port_offset, default_ports
+from pilot.config.bench_toml_builder import BenchTomlBuilder, current_port_offset, default_ports
 
 # ── default_ports ────────────────────────────────────────────────────────────
 

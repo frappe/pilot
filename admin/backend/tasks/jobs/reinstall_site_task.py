@@ -1,4 +1,4 @@
-from bench_cli.utils import run_command
+from pilot.utils import run_command
 from .base_task import BaseTask
 
 

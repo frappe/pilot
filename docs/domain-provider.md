@@ -6,7 +6,7 @@ A **domain provider** is an optional external program that takes over custom-dom
 - **Not found** → bench-cli uses its built-in behaviour (DNS verification + writing into the site's `site_config.json`).
 - **Found** → the provider takes over. bench-cli calls it and reads only its **exit code** and **stdout**.
 
-Implement it in any language. The contract in code: [`bench_cli/core/domain_controller.py`](../bench_cli/core/domain_controller.py) (`DomainRouteProvider`).
+Implement it in any language. The contract in code: [`pilot/core/domain_controller.py`](../pilot/core/domain_controller.py) (`DomainRouteProvider`).
 
 ## Install
 

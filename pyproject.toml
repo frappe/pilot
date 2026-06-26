@@ -3,13 +3,13 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "bench-cli"
+name = "pilot"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = []
 
 [project.scripts]
-bench = "bench_cli.cli:main"
+bench = "pilot.cli:main"
 
 [project.optional-dependencies]
 admin = ["flask>=3.0", "psutil>=5.9", "pymysql>=1.1", "gunicorn>=21.2"]

@@ -150,7 +150,7 @@ def _http_redirect(domain: str) -> tuple[str, str]:
 def _set_admin_password(bench_root: Path, password: str) -> None:
     import tomllib
 
-    from bench_cli.utils import write_toml
+    from pilot.utils import write_toml
 
     toml_path = bench_root / "bench.toml"
     data = tomllib.loads(toml_path.read_text())
@@ -161,7 +161,7 @@ def _set_admin_password(bench_root: Path, password: str) -> None:
 def _set_admin_tls(bench_root: Path, enabled: bool) -> None:
     import tomllib
 
-    from bench_cli.utils import write_toml
+    from pilot.utils import write_toml
 
     toml_path = bench_root / "bench.toml"
     data = tomllib.loads(toml_path.read_text())

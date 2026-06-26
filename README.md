@@ -224,12 +224,12 @@ With multiple benches: `bench -b my-bench start`
 ## Extending the CLI
 
 Commands are **self-registering** — adding one means creating a single file under
-`bench_cli/commands/`. No edits to `cli.py` or any central list. Subclass `Command`,
+`pilot/commands/`. No edits to `cli.py` or any central list. Subclass `Command`,
 declare its name/help/arguments, and a registry auto-discovers it:
 
 ```python
-# bench_cli/commands/hello.py
-from bench_cli.commands.base import Command
+# pilot/commands/hello.py
+from pilot.commands.base import Command
 
 
 class HelloCommand(Command):
@@ -383,7 +383,7 @@ pip install -e ".[test]"
 pytest tests/ --ignore=tests/integration
 
 # Run with coverage
-pytest tests/ --ignore=tests/integration --cov=bench_cli --cov-report=term-missing
+pytest tests/ --ignore=tests/integration --cov=pilot --cov-report=term-missing
 ```
 
 Unit tests run against mocked filesystems — no MariaDB, Redis, or network required.

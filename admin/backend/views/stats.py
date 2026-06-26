@@ -8,7 +8,7 @@ from pathlib import Path
 import psutil
 from flask import Blueprint, current_app, jsonify
 
-from bench_cli.config.bench_config import BenchConfig
+from pilot.config.bench_config import BenchConfig
 from ..readers.volume_reader import VolumeReader
 
 stats_bp = Blueprint("stats", __name__)
@@ -24,7 +24,7 @@ def _directory_size(path: str) -> int:
 
 
 def _path_sizes(bench_root: Path, config: BenchConfig) -> list[dict]:
-    from bench_cli.managers.mariadb_manager import MariaDBManager
+    from pilot.managers.mariadb_manager import MariaDBManager
 
     benches_dir = str(bench_root)
     mariadb = MariaDBManager(config.mariadb)

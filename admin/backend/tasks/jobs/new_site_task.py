@@ -1,4 +1,4 @@
-from bench_cli.commands.new_site import NewSiteCommand
+from pilot.commands.new_site import NewSiteCommand
 from .base_task import BaseTask
 
 

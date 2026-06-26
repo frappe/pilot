@@ -1,4 +1,4 @@
-from bench_cli.commands.setup.letsencrypt import SetupLetsEncryptCommand
+from pilot.commands.setup.letsencrypt import SetupLetsEncryptCommand
 from .base_task import BaseTask
 
 

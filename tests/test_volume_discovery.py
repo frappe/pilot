@@ -4,10 +4,10 @@ from types import SimpleNamespace
 
 import pytest
 
-import bench_cli.managers.volume_manager as volume_manager
-from bench_cli.config.volume_config import VolumeConfig
-from bench_cli.exceptions import VolumeError
-from bench_cli.managers.volume_manager import (
+import pilot.managers.volume_manager as volume_manager
+from pilot.config.volume_config import VolumeConfig
+from pilot.exceptions import VolumeError
+from pilot.managers.volume_manager import (
     DatasetInfo,
     DiskInfo,
     PoolInfo,
@@ -267,8 +267,8 @@ def test_existing_pools_empty_when_zfs_missing(monkeypatch) -> None:
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from bench_cli.exceptions import VolumeError
-from bench_cli.managers.volume_manager import VolumeManager
+from pilot.exceptions import VolumeError
+from pilot.managers.volume_manager import VolumeManager
 
 
 def _fake_run_factory(calls, pool_exists=True, dataset_exists=False, is_mountpoint=False):

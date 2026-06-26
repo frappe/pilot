@@ -28,10 +28,10 @@ from .views.sites import sites_bp
 from .views.tasks import tasks_bp
 from .views.updates import updates_bp
 from .views.volume import volume_bp
-from bench_cli.commands.admin import _cli_root
-from bench_cli.commands.new import NewCommand
-from bench_cli.config.bench_config import BenchConfig
-from bench_cli.exceptions import BenchError, ConfigError
+from pilot.commands.admin import _cli_root
+from pilot.commands.new import NewCommand
+from pilot.config.bench_config import BenchConfig
+from pilot.exceptions import BenchError, ConfigError
 
 _STATIC_DIR = Path(__file__).parent / "static"
 _OPEN_PATHS = {"/api/status", "/api/login", "/api/logout", "/api/ping"}
@@ -119,9 +119,9 @@ def _workload_running(bench_dir: Path, toml_path: Path) -> bool | None:
     """Whether a production bench's workload is currently running — used to
     gate start/stop/restart controls for other benches in the switcher. None
     if the check itself fails (e.g. process manager CLI not installed)."""
-    from bench_cli.config.bench_config import BenchConfig
-    from bench_cli.core.bench import Bench
-    from bench_cli.managers.process_manager import ProcessManagerFactory
+    from pilot.config.bench_config import BenchConfig
+    from pilot.core.bench import Bench
+    from pilot.managers.process_manager import ProcessManagerFactory
 
     try:
         bench = Bench(BenchConfig.from_file(toml_path), bench_dir)
@@ -135,9 +135,9 @@ def _admin_running(bench_dir: Path, toml_path: Path) -> bool | None:
     so a listening socket counts even while the workload is stopped. Lets the UI
     show 'Admin active' instead of 'Stopped' for a provisioned-but-not-started
     bench. None if the check fails."""
-    from bench_cli.config.bench_config import BenchConfig
-    from bench_cli.core.bench import Bench
-    from bench_cli.managers.process_manager import ProcessManagerFactory
+    from pilot.config.bench_config import BenchConfig
+    from pilot.core.bench import Bench
+    from pilot.managers.process_manager import ProcessManagerFactory
 
     try:
         bench = Bench(BenchConfig.from_file(toml_path), bench_dir)
@@ -149,9 +149,9 @@ def _admin_running(bench_dir: Path, toml_path: Path) -> bool | None:
 def _admin_cert_exists(bench_dir: Path, toml_path: Path) -> bool:
     """Whether the admin domain's TLS cert is in place — gates whether nginx
     serves the admin over https yet. False on any failure (treat as plain http)."""
-    from bench_cli.config.bench_config import BenchConfig
-    from bench_cli.core.bench import Bench
-    from bench_cli.managers.nginx_manager import NginxManager
+    from pilot.config.bench_config import BenchConfig
+    from pilot.core.bench import Bench
+    from pilot.managers.nginx_manager import NginxManager
 
     try:
         bench = Bench(BenchConfig.from_file(toml_path), bench_dir)
@@ -171,7 +171,7 @@ def _site_count(bench_dir: Path) -> int:
 
 def _persist_toml(bench_dir: Path, updates: dict) -> None:
     """Merge ``updates`` into a bench's bench.toml in place, preserving other keys."""
-    from bench_cli.utils import write_toml
+    from pilot.utils import write_toml
 
     toml_path = bench_dir / "bench.toml"
     data = tomllib.loads(toml_path.read_text())
@@ -264,7 +264,7 @@ def create_app(bench_root: Path) -> Flask:
         return None
 
     def _is_authenticated(config: BenchConfig) -> bool:
-        from bench_cli.commands.generate_session import verify_token
+        from pilot.commands.generate_session import verify_token
 
         return verify_token(request.cookies.get("sid", ""), config.admin.jwt_secret)
 
@@ -320,7 +320,7 @@ def create_app(bench_root: Path) -> Flask:
                 marker.unlink(missing_ok=True)
             else:
                 return jsonify(_wizard_status(bench_root))
-        from bench_cli.platform import native_process_manager
+        from pilot.platform import native_process_manager
 
         return jsonify(
             {
@@ -341,7 +341,7 @@ def create_app(bench_root: Path) -> Flask:
             return jsonify({"ok": False, "error": str(exc)}), 503
         if not config.admin.password:
             return jsonify({"ok": False, "error": "No admin password configured in bench.toml"}), 503
-        from bench_cli.commands.generate_session import decode_token, ensure_jwt_secret, issue_token
+        from pilot.commands.generate_session import decode_token, ensure_jwt_secret, issue_token
 
         data = request.get_json(silent=True) or {}
         sid = data.get("sid")
@@ -481,8 +481,8 @@ def create_app(bench_root: Path) -> Flask:
     @app.route("/api/benches/wildcard-domains", methods=["GET"])
     def api_benches_wildcard_domains():
         """Wildcard domain suffixes (no leading '*') new bench admin domains may be built from."""
-        from bench_cli.core.domain_controller import DomainRouteProvider
-        from bench_cli.utils import wildcard_suffix
+        from pilot.core.domain_controller import DomainRouteProvider
+        from pilot.utils import wildcard_suffix
 
         try:
             patterns = DomainRouteProvider.wildcard_domains()
@@ -492,15 +492,15 @@ def create_app(bench_root: Path) -> Flask:
 
     @app.route("/api/benches/new", methods=["POST"])
     def api_benches_new():
-        from bench_cli.utils import host_owner, normalize_host
+        from pilot.utils import host_owner, normalize_host
 
         data = request.get_json(silent=True) or {}
         name = (data.get("name") or "").strip()
         if not name or not _NAME_RE.match(name):
             return jsonify({"error": "Bench name must contain only letters, numbers, '-' and '_'"}), 400
 
-        from bench_cli.config.production_config import VALID_PROCESS_MANAGERS
-        from bench_cli.platform import is_alpine
+        from pilot.config.production_config import VALID_PROCESS_MANAGERS
+        from pilot.platform import is_alpine
 
         process_manager = (data.get("process_manager") or "").strip().lower()
         if process_manager == "supervisord":
@@ -526,8 +526,8 @@ def create_app(bench_root: Path) -> Flask:
         if normalize_host(admin_domain) == normalize_host(name):
             return jsonify({"error": "Admin domain must differ from the bench/site name."}), 400
 
-        from bench_cli.core.domain_controller import DomainRouteProvider
-        from bench_cli.utils import matches_wildcard
+        from pilot.core.domain_controller import DomainRouteProvider
+        from pilot.utils import matches_wildcard
 
         patterns = DomainRouteProvider.wildcard_domains()
         if patterns and not matches_wildcard(admin_domain, patterns):
@@ -557,9 +557,9 @@ def create_app(bench_root: Path) -> Flask:
         # wizard server — the bench's admin handles its own lifecycle.
         if _current_is_production():
             try:
-                from bench_cli.config.bench_config import BenchConfig
-                from bench_cli.core.bench import Bench
-                from bench_cli.managers.nginx_manager import NginxManager
+                from pilot.config.bench_config import BenchConfig
+                from pilot.core.bench import Bench
+                from pilot.managers.nginx_manager import NginxManager
 
                 bench = Bench(BenchConfig.from_file(new_dir / "bench.toml"), new_dir)
                 # Register the admin domain with the domain provider (if any) before
@@ -572,11 +572,11 @@ def create_app(bench_root: Path) -> Flask:
                 # via the factory, which gates on enabled.
                 configured_pm = bench.config.production.process_manager
                 if configured_pm == "systemd":
-                    from bench_cli.managers.systemd_process_manager import SystemdProcessManager as PM
+                    from pilot.managers.systemd_process_manager import SystemdProcessManager as PM
                 elif configured_pm == "openrc":
-                    from bench_cli.managers.openrc_process_manager import OpenRCProcessManager as PM
+                    from pilot.managers.openrc_process_manager import OpenRCProcessManager as PM
                 else:
-                    from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager as PM
+                    from pilot.managers.supervisor_process_manager import SupervisorProcessManager as PM
                 PM(bench).setup_admin()
                 nginx = NginxManager(bench)
                 nginx.generate_config()

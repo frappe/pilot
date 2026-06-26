@@ -4,9 +4,9 @@ import tomllib
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from bench_cli.commands.remove.production import RemoveProductionCommand
-from bench_cli.config.bench_config import BenchConfig
-from bench_cli.core.bench import Bench
+from pilot.commands.remove.production import RemoveProductionCommand
+from pilot.config.bench_config import BenchConfig
+from pilot.core.bench import Bench
 
 
 def _make_bench(tmp_path: Path, *, enabled: bool, pm: str = "systemd") -> Bench:
@@ -34,8 +34,8 @@ def test_remove_noop_when_not_enabled(tmp_path: Path, capsys) -> None:
 
 def test_remove_disables_keeps_domain(tmp_path: Path) -> None:
     bench = _make_bench(tmp_path, enabled=True, pm="systemd")
-    with patch("bench_cli.managers.systemd_process_manager.SystemdProcessManager") as Sys, \
-         patch("bench_cli.managers.nginx_manager.NginxManager") as Nginx:
+    with patch("pilot.managers.systemd_process_manager.SystemdProcessManager") as Sys, \
+         patch("pilot.managers.nginx_manager.NginxManager") as Nginx:
         Sys.return_value = MagicMock()
         Nginx.return_value = MagicMock()
         RemoveProductionCommand(bench).run()

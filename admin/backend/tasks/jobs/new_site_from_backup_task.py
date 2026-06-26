@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from bench_cli.commands.restore_site_from_backup import NewSiteFromBackupCommand
+from pilot.commands.restore_site_from_backup import NewSiteFromBackupCommand
 
 from .base_task import BaseTask
 

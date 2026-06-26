@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TypedDict
 
-from bench_cli.exceptions import TaskNotFoundError, TaskNotRunningError
+from pilot.exceptions import TaskNotFoundError, TaskNotRunningError
 
 TASK_RETENTION_LIMIT = 100
 

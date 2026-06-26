@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from bench_cli.commands.generate_session import decode_token, issue_login_token, issue_token, verify_token
-from bench_cli.config.bench_config import BenchConfig
-from bench_cli.config.bench_toml_builder import BenchTomlBuilder
-from bench_cli.core.bench import Bench
-from bench_cli.exceptions import BenchError
+from pilot.commands.generate_session import decode_token, issue_login_token, issue_token, verify_token
+from pilot.config.bench_config import BenchConfig
+from pilot.config.bench_toml_builder import BenchTomlBuilder
+from pilot.core.bench import Bench
+from pilot.exceptions import BenchError
 
 
 # ── JWT module ────────────────────────────────────────────────────────────────
@@ -60,7 +60,7 @@ def _load_bench(tmp_path: Path) -> Bench:
 
 
 def test_command_issues_verifiable_token_and_persists_secret(tmp_path, capsys) -> None:
-    from bench_cli.commands.generate_session import GenerateSessionCommand
+    from pilot.commands.generate_session import GenerateSessionCommand
 
     GenerateSessionCommand(_bench(tmp_path)).run()
     token = capsys.readouterr().out.strip()
@@ -69,7 +69,7 @@ def test_command_issues_verifiable_token_and_persists_secret(tmp_path, capsys) -
 
 
 def test_command_reuses_existing_secret(tmp_path) -> None:
-    from bench_cli.commands.generate_session import GenerateSessionCommand
+    from pilot.commands.generate_session import GenerateSessionCommand
 
     GenerateSessionCommand(_bench(tmp_path)).run()
     first = tomllib.loads((tmp_path / "bench.toml").read_text())["admin"]["jwt_secret"]
@@ -78,14 +78,14 @@ def test_command_reuses_existing_secret(tmp_path) -> None:
 
 
 def test_command_full_path_builds_url(tmp_path, capsys) -> None:
-    from bench_cli.commands.generate_session import GenerateSessionCommand
+    from pilot.commands.generate_session import GenerateSessionCommand
 
     GenerateSessionCommand(_bench(tmp_path), full_path=True).run()
     assert capsys.readouterr().out.strip().startswith("http://")
 
 
 def test_command_requires_password(tmp_path) -> None:
-    from bench_cli.commands.generate_session import GenerateSessionCommand
+    from pilot.commands.generate_session import GenerateSessionCommand
 
     with pytest.raises(BenchError):
         GenerateSessionCommand(_bench(tmp_path, password="")).run()
@@ -95,7 +95,7 @@ def test_command_requires_password(tmp_path) -> None:
 
 
 def _initialized_bench(bench_dir: Path, password: str, jwt_secret: str) -> None:
-    from bench_cli.config.toml_writer import bench_config_to_toml
+    from pilot.config.toml_writer import bench_config_to_toml
 
     bench_dir.mkdir(parents=True, exist_ok=True)
     toml_path = bench_dir / "bench.toml"

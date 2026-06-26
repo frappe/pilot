@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from bench_cli.commands.init import InitCommand
+from pilot.commands.init import InitCommand
 
 from .base_task import BaseTask
 

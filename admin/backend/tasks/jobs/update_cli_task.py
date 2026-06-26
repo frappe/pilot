@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 def _cli_root() -> Path:
-    import bench_cli as _pkg
+    import pilot as _pkg
     return Path(_pkg.__file__).parent.parent
 
 

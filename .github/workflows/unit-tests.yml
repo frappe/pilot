@@ -31,4 +31,4 @@ jobs:
       - name: Run unit tests with coverage
         # e2e (Playwright, browser-driven) runs in its own workflow and needs a
         # live bench + browser, so keep it out of the unit run alongside integration.
-        run: pytest tests/ --ignore=tests/integration --ignore=tests/e2e --cov=bench_cli --cov-report=term-missing -q
+        run: pytest tests/ --ignore=tests/integration --ignore=tests/e2e --cov=pilot --cov-report=term-missing -q

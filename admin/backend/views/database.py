@@ -14,7 +14,7 @@ def _get_database_reader(bench_root) -> DatabaseReader:
 
 
 def _get_mariadb_manager(bench_root):
-    from bench_cli.managers.mariadb_manager import MariaDBManager
+    from pilot.managers.mariadb_manager import MariaDBManager
 
     config = BenchReader(bench_root).config()
     return MariaDBManager(config.mariadb)

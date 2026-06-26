@@ -5,12 +5,12 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request
 
-from bench_cli.config.bench_config import BenchConfig
-from bench_cli.config.toml_writer import bench_config_to_toml
-from bench_cli.config.worker_config import WorkerGroup
-from bench_cli.managers.redis_manager import RedisManager
-from bench_cli.managers.volume_manager import VolumeManager
-from bench_cli.platform import is_linux, native_process_manager
+from pilot.config.bench_config import BenchConfig
+from pilot.config.toml_writer import bench_config_to_toml
+from pilot.config.worker_config import WorkerGroup
+from pilot.managers.redis_manager import RedisManager
+from pilot.managers.volume_manager import VolumeManager
+from pilot.platform import is_linux, native_process_manager
 
 settings_bp = Blueprint("settings", __name__)
 
@@ -137,8 +137,8 @@ class ConfigPatcher:
         if not production:
             return None
         if "process_manager" in production:
-            from bench_cli.config.production_config import VALID_PROCESS_MANAGERS
-            from bench_cli.platform import is_alpine
+            from pilot.config.production_config import VALID_PROCESS_MANAGERS
+            from pilot.platform import is_alpine
 
             process_manager = str(production["process_manager"])
             valid = ("none", *VALID_PROCESS_MANAGERS)
@@ -169,9 +169,9 @@ def _non_admin_supervisor_programs(conf: Path, bench_name: str) -> list[str]:
 
 
 def _regenerate_configs(bench_root: Path, config: BenchConfig) -> None:
-    from bench_cli.core.bench import Bench
-    from bench_cli.managers.process_manager import ProcessManagerFactory
-    from bench_cli.managers.redis_manager import RedisManager
+    from pilot.core.bench import Bench
+    from pilot.managers.process_manager import ProcessManagerFactory
+    from pilot.managers.redis_manager import RedisManager
 
     bench = Bench(config, bench_root)
     RedisManager(config.redis, bench).generate_configs()
@@ -217,11 +217,11 @@ def _restart_systemd(manager) -> tuple[bool, str | None]:
 
 
 def _do_restart(bench_root: Path, config: BenchConfig) -> tuple[bool, str | None]:
-    from bench_cli.core.bench import Bench
-    from bench_cli.managers.openrc_process_manager import OpenRCProcessManager
-    from bench_cli.managers.process_manager import ProcessManagerFactory
-    from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
-    from bench_cli.managers.systemd_process_manager import SystemdProcessManager
+    from pilot.core.bench import Bench
+    from pilot.managers.openrc_process_manager import OpenRCProcessManager
+    from pilot.managers.process_manager import ProcessManagerFactory
+    from pilot.managers.supervisor_process_manager import SupervisorProcessManager
+    from pilot.managers.systemd_process_manager import SystemdProcessManager
 
     bench = Bench(config, bench_root)
     manager = ProcessManagerFactory.detect_running(bench)

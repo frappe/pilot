@@ -1,8 +1,8 @@
 import sys
 from pathlib import Path
 
-from bench_cli.commands.update import UpdateCommand
-from bench_cli.exceptions import MigrateError
+from pilot.commands.update import UpdateCommand
+from pilot.exceptions import MigrateError
 from .base_task import BaseTask
 
 

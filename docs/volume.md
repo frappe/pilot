@@ -238,7 +238,7 @@ The quota and reservation can be updated at any time via the **ZFS Volume** tab 
 
 ## Error handling
 
-`VolumeManager` raises `bench_cli.exceptions.VolumeError` (a subclass of `BenchError`) for all ZFS command failures. The CLI catches this at the top level and prints the error along with the underlying command that failed.
+`VolumeManager` raises `pilot.exceptions.VolumeError` (a subclass of `BenchError`) for all ZFS command failures. The CLI catches this at the top level and prints the error along with the underlying command that failed.
 
 ---
 

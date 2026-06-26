@@ -1,4 +1,4 @@
-from bench_cli.commands.get_app import GetAppCommand
+from pilot.commands.get_app import GetAppCommand
 from .base_task import BaseTask
 
 

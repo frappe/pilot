@@ -3,9 +3,9 @@ import json
 import os
 from pathlib import Path
 
-from bench_cli.commands.drop_site import DropSiteCommand
-from bench_cli.config.bench_config import BenchConfig
-from bench_cli.core.bench import Bench
+from pilot.commands.drop_site import DropSiteCommand
+from pilot.config.bench_config import BenchConfig
+from pilot.core.bench import Bench
 
 _BENCH_DATA: dict = {
     "bench": {"name": "test-bench", "python": "3.14"},
