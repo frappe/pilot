@@ -21,7 +21,7 @@ sites_bp = Blueprint("sites", __name__)
 
 # Confidential / system-managed site_config keys. These are never sent to the
 # admin UI and cannot be edited through it — they are preserved as-is on disk.
-PROTECTED_CONFIG_KEYS = frozenset({"db_name", "db_password", "db_socket", "db_type", "db_user", "installed_apps", "ssl", "domains", "host_name"})
+PROTECTED_CONFIG_KEYS = frozenset({"db_name", "db_password", "db_socket", "db_type", "db_user", "installed_apps", "ssl", "domains", "host_name", "pilot_endpoint", "pilot_auth_token"})
 
 
 @sites_bp.route("/")
