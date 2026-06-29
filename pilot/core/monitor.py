@@ -210,7 +210,8 @@ class Monitor:
     @property
     def log_path(self) -> Path:
         from pilot.config.monitor_config import MonitorConfig
-
+        # In case of benches that have not configured the monitoring path
+        # We still want to log at the default monitoring path
         return self.bench.config.monitor.log_path or MonitorConfig.default_log_path(self.bench.config.name)
 
     @property

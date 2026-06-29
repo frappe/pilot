@@ -162,6 +162,66 @@ def test_require_production_inputs_passes_with_domain_and_email(tmp_path: Path) 
     cmd._require_production_inputs()  # no raise
 
 
+# ── monitor log path resolution ───────────────────────────────────────────────
+
+
+def test_resolve_monitor_log_path_without_volume(tmp_path: Path) -> None:
+    from pilot.core.monitor import resolve_monitor_log_path
+
+    bench = _make_bench(tmp_path)
+    result = resolve_monitor_log_path(bench.config)
+    assert result.name == f"{bench.config.name}-stats.log"
+
+
+def test_resolve_monitor_log_path_with_volume(tmp_path: Path, monkeypatch) -> None:
+    from pilot.core.monitor import resolve_monitor_log_path
+    from pilot.managers.volume_manager import VolumeManager
+
+    bench = _make_bench(tmp_path)
+    bench.config.volume.enabled = True
+    bench.config.volume.pool = "bench-pool"
+
+    fake_mountpoint = tmp_path / "mnt" / "logs"
+    monkeypatch.setattr(VolumeManager, "create_dataset", lambda self, dataset: None)
+    monkeypatch.setattr(VolumeManager, "get_mountpoint", lambda self, dataset: fake_mountpoint)
+
+    result = resolve_monitor_log_path(bench.config)
+
+    assert result == fake_mountpoint / f"{bench.config.name}-stats.log"
+
+
+def test_setup_monitoring_persists_log_path_to_toml(tmp_path: Path, monkeypatch) -> None:
+    import tomllib
+    from pilot.core.monitor import ConfigureMonitor
+
+    bench = _make_bench(tmp_path, process_manager="systemd")
+    bench.config.production.enabled = True
+    cmd = SetupProductionCommand(bench)
+
+    monkeypatch.setattr(ConfigureMonitor, "install", lambda self: None)
+
+    cmd._setup_monitoring()
+
+    data = tomllib.loads((bench.path / "bench.toml").read_text())
+    assert "monitor" in data
+    assert data["monitor"]["log_path"].endswith(f"{bench.config.name}-stats.log")
+
+
+def test_setup_monitoring_log_path_is_path_on_config(tmp_path: Path, monkeypatch) -> None:
+    from pilot.core.monitor import ConfigureMonitor
+
+    bench = _make_bench(tmp_path, process_manager="systemd")
+    bench.config.production.enabled = True
+    cmd = SetupProductionCommand(bench)
+
+    monkeypatch.setattr(ConfigureMonitor, "install", lambda self: None)
+
+    cmd._setup_monitoring()
+
+    assert isinstance(bench.config.monitor.log_path, Path)
+    assert bench.config.monitor.log_path.name == f"{bench.config.name}-stats.log"
+
+
 def test_persist_production_state_writes_enabled_and_drops_nginx(tmp_path: Path) -> None:
     bench = _make_bench(tmp_path, process_manager="supervisor")
     # legacy nginx key present in toml

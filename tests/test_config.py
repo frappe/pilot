@@ -572,3 +572,80 @@ def test_invalid_db_type_rejected() -> None:
     with pytest.raises(ConfigError) as exc_info:
         load_from_dict(data)
     assert "bench.db_type" in str(exc_info.value)
+
+
+# ── MonitorConfig ─────────────────────────────────────────────────────────────
+
+
+def test_monitor_defaults_when_section_absent() -> None:
+    config = BenchConfig._from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
+    assert config.monitor.log_path is None
+    assert config.monitor.system_log_path.name == "bench-system-stats.log"
+    assert config.monitor.system_log_max_size == "500M"
+    assert config.monitor.application_log_max_size == "500M"
+
+
+def test_monitor_log_path_parsed_as_path() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["monitor"] = {"log_path": "/var/log/my-bench-stats.log"}
+    config = BenchConfig._from_dict(data)
+    from pathlib import Path
+    assert config.monitor.log_path == Path("/var/log/my-bench-stats.log")
+
+
+def test_monitor_log_path_absent_gives_none() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["monitor"] = {"system_log_max_size": "200M"}
+    config = BenchConfig._from_dict(data)
+    assert config.monitor.log_path is None
+
+
+def test_monitor_custom_sizes_roundtrip() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = {"enabled": True, "process_manager": "systemd"}
+    data["admin"] = {"domain": "admin.example.com"}
+    data["monitor"] = {"system_log_max_size": "200M", "application_log_max_size": "100M"}
+    config = BenchConfig._from_dict(data)
+    assert config.monitor.system_log_max_size == "200M"
+    assert config.monitor.application_log_max_size == "100M"
+    toml = bench_config_to_toml(config)
+    assert 'system_log_max_size = "200M"' in toml
+    assert 'application_log_max_size = "100M"' in toml
+
+
+def test_toml_writer_monitor_section_omitted_when_production_disabled() -> None:
+    config = BenchConfig._from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
+    assert not config.production.enabled
+    assert "[monitor]" not in bench_config_to_toml(config)
+
+
+def test_toml_writer_monitor_section_emitted_when_production_enabled() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = {"enabled": True, "process_manager": "systemd"}
+    data["admin"] = {"domain": "admin.example.com"}
+    config = BenchConfig._from_dict(data)
+    toml = bench_config_to_toml(config)
+    assert "[monitor]" in toml
+    assert "system_log_path" in toml
+    assert "authority_file_path" in toml
+
+
+def test_toml_writer_monitor_log_path_omitted_when_none() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = {"enabled": True, "process_manager": "systemd"}
+    data["admin"] = {"domain": "admin.example.com"}
+    config = BenchConfig._from_dict(data)
+    assert config.monitor.log_path is None
+    monitor_section = bench_config_to_toml(config).split("[monitor]")[1].split("[")[0]
+    assert "\nlog_path =" not in monitor_section
+
+
+def test_toml_writer_monitor_log_path_written_when_set() -> None:
+    from pathlib import Path
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = {"enabled": True, "process_manager": "systemd"}
+    data["admin"] = {"domain": "admin.example.com"}
+    config = BenchConfig._from_dict(data)
+    config.monitor.log_path = Path("/var/log/test-bench-stats.log")
+    toml = bench_config_to_toml(config)
+    assert 'log_path = "/var/log/test-bench-stats.log"' in toml

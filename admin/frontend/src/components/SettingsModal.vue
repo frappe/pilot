@@ -1,13 +1,11 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import { Button, FormControl, ErrorMessage, LoadingText, Select, Badge, useTheme, Dialog, TextInput } from 'frappe-ui'
 import LucideX from '~icons/lucide/x'
 import { useTaskProgress } from '../composables/useTaskProgress.js'
 
 const props = defineProps({ modelValue: Boolean })
 const emit = defineEmits(['update:modelValue'])
-const router = useRouter()
 const { watchTask } = useTaskProgress()
 
 const show = computed({
@@ -32,6 +30,7 @@ const BASE_TABS = [
   { key: 'appearance', label: 'Appearance' },
   { key: 'redis', label: 'Redis' },
   { key: 'workers', label: 'Workers' },
+  { key: 'monitoring', label: 'Monitoring' },
   { key: 'updates', label: 'Updates' },
 ]
 const isLinux = ref(false)
@@ -69,8 +68,9 @@ async function load() {
     if (Array.isArray(data.workers))
       data.workers = data.workers.map(g => ({ queues: (g.queues || []).join(', '), count: g.count }))
     // root_password is write-only — keep it blank so an untouched save preserves it
-    // Degrade gracefully if an older backend omits the postgres block.
+    // Degrade gracefully if an older backend omits the postgres or monitor blocks.
     data.postgres = { host: 'localhost', port: 5432, admin_user: 'postgres', password_set: false, ...(data.postgres || {}), root_password: '' }
+    data.monitor = { system_log_path: '', log_path: '', system_log_max_size: '500M', application_log_max_size: '500M', ...(data.monitor || {}) }
     form.value = data
     originalProcessManager.value = data.production?.process_manager ?? 'none'
   } catch (e) {
@@ -422,6 +422,58 @@ watch(() => props.modelValue, (val) => {
                 </div>
               </div>
 
+              <!-- Monitoring -->
+              <div v-else-if="activeTab === 'monitoring'" class="flex flex-col gap-4">
+                <template v-if="form.production?.process_manager === 'none'">
+                  <div class="flex flex-col gap-2 rounded-lg border border-outline-gray-1 bg-surface-gray-1 px-4 py-5">
+                    <p class="text-sm font-medium text-ink-gray-7">Monitoring is only active in production</p>
+                    <p class="text-xs text-ink-gray-5">Deploy this bench to production to enable system and application monitoring.</p>
+                    <div class="mt-2">
+                      <p class="text-xs font-medium text-ink-gray-6">Deploy to production</p>
+                      <code class="mt-1 block rounded bg-surface-gray-2 px-2 py-1.5 font-mono text-sm text-ink-gray-8 select-all">bench setup production --admin-domain &lt;your-domain&gt; --tls --letsencrypt-email &lt;you@example.com&gt;</code>
+                    </div>
+                  </div>
+                </template>
+                <template v-else>
+                  <p class="rounded-md bg-surface-gray-2 px-3 py-2 text-xs text-ink-gray-5">
+                    Log paths are set automatically during <span class="font-mono">bench setup production</span>.
+                    Override them here if needed. Max sizes accept values like <span class="font-mono">500M</span> or <span class="font-mono">1G</span>.
+                  </p>
+                  <div class="flex flex-col gap-3">
+                    <p class="text-sm font-medium text-ink-gray-7">System Log</p>
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <FormControl
+                        class="sm:col-span-2"
+                        label="Path"
+                        v-model="form.monitor.system_log_path"
+                        placeholder="/var/log/bench-system-stats.log"
+                      />
+                      <FormControl
+                        label="Max Size"
+                        v-model="form.monitor.system_log_max_size"
+                        placeholder="500M"
+                      />
+                    </div>
+                  </div>
+                  <div class="flex flex-col gap-3">
+                    <p class="text-sm font-medium text-ink-gray-7">Application Log</p>
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <FormControl
+                        class="sm:col-span-2"
+                        label="Path"
+                        v-model="form.monitor.log_path"
+                        :placeholder="`/var/log/${form.bench.name}-stats.log (default)`"
+                      />
+                      <FormControl
+                        label="Max Size"
+                        v-model="form.monitor.application_log_max_size"
+                        placeholder="500M"
+                      />
+                    </div>
+                  </div>
+                </template>
+              </div>
+
               <!-- ZFS Volume -->
               <div v-else-if="activeTab === 'volume'" class="flex flex-col gap-4">
                 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -470,7 +522,7 @@ watch(() => props.modelValue, (val) => {
           </div>
 
           <!-- Footer -->
-          <div v-if="activeTab !== 'appearance' && activeTab !== 'updates' && activeTab !== 'apps'" class="flex items-center justify-end gap-3 px-6 py-3 border-t border-outline-gray-1 flex-shrink-0">
+          <div v-if="activeTab !== 'appearance' && activeTab !== 'updates' && activeTab !== 'apps' && !(activeTab === 'monitoring' && form?.production?.process_manager === 'none')" class="flex items-center justify-end gap-3 px-6 py-3 border-t border-outline-gray-1 flex-shrink-0">
             <ErrorMessage :message="saveError" />
             <span v-if="saveSuccess" class="text-sm text-ink-green-2 font-medium">{{ saveSuccess }}</span>
             <Button @click="show = false">Cancel</Button>

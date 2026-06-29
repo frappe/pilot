@@ -65,6 +65,7 @@ class ConfigPatcher:
         self._apply_workers()
         self._apply_volume()
         self._apply_admin()
+        self._apply_monitor()
         if error := self._apply_production():
             return error
         try:
@@ -148,6 +149,22 @@ class ConfigPatcher:
         letsencrypt = self.data.get("letsencrypt") or {}
         if "email" in letsencrypt:
             self.config.letsencrypt.email = str(letsencrypt["email"]).strip()
+
+    def _apply_monitor(self) -> None:
+        monitor = self.data.get("monitor") or {}
+        if not monitor:
+            return
+        from pathlib import Path as _Path
+        mon = self.config.monitor
+        if "system_log_path" in monitor and str(monitor["system_log_path"]).strip():
+            mon.system_log_path = _Path(str(monitor["system_log_path"]).strip())
+        if "log_path" in monitor:
+            val = str(monitor["log_path"]).strip()
+            mon.log_path = _Path(val) if val else None
+        if "system_log_max_size" in monitor and str(monitor["system_log_max_size"]).strip():
+            mon.system_log_max_size = str(monitor["system_log_max_size"]).strip()
+        if "application_log_max_size" in monitor and str(monitor["application_log_max_size"]).strip():
+            mon.application_log_max_size = str(monitor["application_log_max_size"]).strip()
 
     def _apply_production(self) -> str | None:
         production = self.data.get("production") or {}
@@ -286,6 +303,12 @@ def _build_settings_response(config: BenchConfig) -> dict:
             "image_path": volume.image_path if volume.backing == "image" else "",
             "reservation": volume.dataset.reservation,
             "quota": volume.dataset.quota,
+        },
+        "monitor": {
+            "system_log_path": str(config.monitor.system_log_path),
+            "log_path": str(config.monitor.log_path) if config.monitor.log_path else "",
+            "system_log_max_size": config.monitor.system_log_max_size,
+            "application_log_max_size": config.monitor.application_log_max_size,
         },
     }
 
