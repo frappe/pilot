@@ -278,6 +278,14 @@ class Monitor:
         lines = Path(f"/proc/{pid}/status").read_text().splitlines()
         return {k: v.strip() for k, v in (line.split(":", 1) for line in lines if ":" in line)}
 
+    def _read_pss(self, pid: int) -> int:
+        lines = Path(f"/proc/{pid}/smaps_rollup").read_text().splitlines()
+        for line in lines:
+            if line.casefold().startswith("pss:"):
+                parts = line.split(":", 1)[1].split()
+                if parts:
+                    return int(parts[0])
+
     def _io_bytes(self, pid: int) -> tuple[int, int]:
         lines = Path(f"/proc/{pid}/io").read_text().splitlines()
         data = {k: int(v) for k, v in (line.split(": ", 1) for line in lines if ": " in line)}
@@ -291,13 +299,15 @@ class Monitor:
 
     def _process_metrics(self, service: str, pid: int) -> dict:
         status = self._read_status(pid)
+        # Pss takes are of the shared memory pages giving a more accurate representation
+        pss_memeory = self._read_pss(pid)
         read_bytes, write_bytes = self._io_bytes(pid)
         return {
             "service": service,
             "pid": pid,
             "state": status.get("State", "?").split()[0],
             "cpu_percent": self._cpu_percent(pid),
-            "memory_rss_mb": round(int(status.get("VmRSS", "0 kB").split()[0]) / 1024, 2),
+            "memory_rss_mb": round(pss_memeory / 1024, 2),
             "read_bytes": read_bytes,
             "write_bytes": write_bytes,
             "open_fds": self._open_fds(pid),
@@ -351,7 +361,9 @@ class Monitor:
     def _zfs_pool_usage(self, pool: str) -> dict:
         result = subprocess.run(
             ["zpool", "list", "-H", "-p", "-o", "size,allocated,free", pool],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         )
         size, allocated, free = (int(x) for x in result.stdout.strip().split())
         return {
