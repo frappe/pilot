@@ -9,12 +9,12 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
-from pilot.config.bench_toml_builder import BenchTomlBuilder
+from pilot.config.toml_store import BenchTomlStore
 
 
 def _write_bench_toml(bench_dir: Path, name: str, **settings) -> None:
     bench_dir.mkdir(parents=True, exist_ok=True)
-    (bench_dir / "bench.toml").write_text(BenchTomlBuilder(name, settings).render())
+    BenchTomlStore.for_bench(bench_dir).write_flat(name, settings)
 
 
 def _write_raw_bench_toml(bench_dir: Path, name: str, admin_port: int) -> None:

@@ -8,7 +8,7 @@ import pytest
 
 from pilot.commands.generate_session import decode_token, issue_login_token, issue_token, verify_token
 from pilot.config.bench_config import BenchConfig
-from pilot.config.bench_toml_builder import BenchTomlBuilder
+from pilot.config.toml_store import BenchTomlStore
 from pilot.core.bench import Bench
 from pilot.exceptions import BenchError
 
@@ -50,8 +50,7 @@ def test_login_token_carries_jti() -> None:
 
 
 def _bench(tmp_path: Path, password: str = "secret") -> Bench:
-    toml_path = tmp_path / "bench.toml"
-    toml_path.write_text(BenchTomlBuilder(tmp_path.name, {"admin_password": password}).render())
+    BenchTomlStore.for_bench(tmp_path).write_flat(tmp_path.name, {"admin_password": password})
     return _load_bench(tmp_path)
 
 
@@ -95,11 +94,11 @@ def test_command_requires_password(tmp_path) -> None:
 
 
 def _initialized_bench(bench_dir: Path, password: str, jwt_secret: str) -> None:
-    from pilot.config.toml_writer import bench_config_to_toml
+    from pilot.config.serializer import to_toml as bench_config_to_toml
 
     bench_dir.mkdir(parents=True, exist_ok=True)
     toml_path = bench_dir / "bench.toml"
-    toml_path.write_text(BenchTomlBuilder(bench_dir.name, {"admin_enabled": True, "admin_password": password}).render())
+    BenchTomlStore(toml_path).write_flat(bench_dir.name, {"admin_enabled": True, "admin_password": password})
     config = BenchConfig.from_file(toml_path)
     config.admin.jwt_secret = jwt_secret
     toml_path.write_text(bench_config_to_toml(config))
@@ -141,7 +140,7 @@ def test_status_reports_bench_db_type(tmp_path: Path) -> None:
 
 def test_status_reports_postgres_engine(tmp_path: Path) -> None:
     from admin.backend.app import create_app
-    from pilot.config.toml_writer import bench_config_to_toml
+    from pilot.config.serializer import to_toml as bench_config_to_toml
 
     bench_root = tmp_path / "benches" / "pg"
     _initialized_bench(bench_root, "secret", "k3y")

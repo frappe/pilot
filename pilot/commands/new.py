@@ -52,7 +52,7 @@ class NewCommand(Command):
         self.db_type = db_type
 
     def run(self) -> None:
-        from pilot.config.bench_toml_builder import default_ports
+        from pilot.config.serializer import default_ports
         from pilot.config.toml_store import BenchTomlStore
 
         bench_toml = self.target_directory / "bench.toml"
@@ -138,7 +138,7 @@ class NewCommand(Command):
         """Smallest offset (added to every base port) that collides with
         neither another bench's bench.toml nor a port that's actually live
         right now — covers both stale configs and orphaned processes."""
-        from pilot.config.bench_toml_builder import default_ports
+        from pilot.config.serializer import default_ports
 
         bases = default_ports()
         base_http_port = bases["http_port"]

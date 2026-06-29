@@ -6,7 +6,7 @@ from flask import Blueprint, Response, current_app, jsonify, request, stream_wit
 
 from admin.backend.tasks.manager.task_reader import TaskReader
 from admin.backend.tasks.manager.task_runner import TaskRunner
-from pilot.config.bench_toml_builder import FRAMEWORK_BRANCHES, BenchTomlBuilder, current_port_offset
+from pilot.config.serializer import FRAMEWORK_BRANCHES, WIZARD_DEFAULTS
 from pilot.config.toml_store import BenchTomlStore
 
 setup_bp = Blueprint("setup", __name__)
@@ -66,7 +66,7 @@ def save_config():
 
     settings = {**existing, **data, "admin_enabled": True}
     _assign_postgres_port(bench_root, settings)
-    store.write_flat(_current_name(bench_root), settings, port_offset=current_port_offset(toml_path))
+    store.write_flat(_current_name(bench_root), settings, port_offset=store.port_offset())
 
     resp = jsonify({"ok": True})
     # Setting the password closes the open setup phase; hand back a session so the
@@ -341,7 +341,7 @@ def _read_defaults(bench_root: Path) -> dict:
         "is_linux": is_linux(),
         "is_alpine": is_alpine(),
         "native_process_manager": native_process_manager(),
-        **BenchTomlBuilder.DEFAULTS,
+        **WIZARD_DEFAULTS,
     }
     toml_path = bench_root / "bench.toml"
     if toml_path.exists():

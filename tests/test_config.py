@@ -5,7 +5,7 @@ import pytest
 
 from pilot.config.bench_config import BenchConfig
 from pilot.config.production_config import ProductionConfig
-from pilot.config.toml_writer import bench_config_to_toml
+from pilot.config.serializer import to_toml as bench_config_to_toml
 from pilot.exceptions import ConfigError
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"

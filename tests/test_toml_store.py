@@ -6,15 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from pilot.config.bench_toml_builder import BenchTomlBuilder
 from pilot.config.toml_store import BenchTomlStore
 from pilot.exceptions import ConfigError
 
 
 def _write_bench(bench_dir: Path, name: str = "test") -> BenchTomlStore:
     bench_dir.mkdir(parents=True, exist_ok=True)
-    (bench_dir / "bench.toml").write_text(BenchTomlBuilder(name).render())
-    return BenchTomlStore.for_bench(bench_dir)
+    store = BenchTomlStore.for_bench(bench_dir)
+    store.write_flat(name, {})
+    return store
 
 
 def test_for_bench_resolves_toml_path(tmp_path: Path) -> None:
@@ -23,7 +23,7 @@ def test_for_bench_resolves_toml_path(tmp_path: Path) -> None:
 
 
 def test_accepts_directory_or_file(tmp_path: Path) -> None:
-    (tmp_path / "bench.toml").write_text(BenchTomlBuilder("x").render())
+    BenchTomlStore.for_bench(tmp_path).write_flat("x", {})
     assert BenchTomlStore(tmp_path).path == BenchTomlStore(tmp_path / "bench.toml").path
 
 
@@ -77,7 +77,7 @@ def test_write_flat_serialises_settings(tmp_path: Path) -> None:
     assert config.python_version == "3.13"
 
 
-def test_write_flat_matches_builder(tmp_path: Path) -> None:
+def test_write_flat_round_trips_via_read_flat(tmp_path: Path) -> None:
     store = BenchTomlStore.for_bench(tmp_path)
-    store.write_flat("b", {"python": "3.12"}, port_offset=5)
-    assert store.read_flat() == BenchTomlBuilder.read_settings(store.path)
+    store.write_flat("b", {"python": "3.12"})
+    assert store.read_flat()["python"] == "3.12"

@@ -238,7 +238,7 @@ def test_nginx_upstream_uses_gunicorn_bind(tmp_path: Path) -> None:
 
 
 def test_toml_writer_includes_gunicorn_section(tmp_path: Path) -> None:
-    from pilot.config.toml_writer import bench_config_to_toml
+    from pilot.config.serializer import to_toml as bench_config_to_toml
 
     bench = make_bench(tmp_path, GunicornConfig(workers=8, threads=16))
     toml = bench_config_to_toml(bench.config)
@@ -270,7 +270,7 @@ def test_production_config_parses_use_companion_manager(tmp_path: Path) -> None:
 
 
 def test_toml_writer_includes_use_companion_manager(tmp_path: Path) -> None:
-    from pilot.config.toml_writer import bench_config_to_toml
+    from pilot.config.serializer import to_toml as bench_config_to_toml
 
     bench = make_bench(tmp_path)
     bench.config.production.use_companion_manager = True
@@ -486,7 +486,7 @@ def test_max_requests_validation(tmp_path: Path) -> None:
 
 
 def test_toml_writer_includes_max_requests(tmp_path: Path) -> None:
-    from pilot.config.toml_writer import bench_config_to_toml
+    from pilot.config.serializer import to_toml as bench_config_to_toml
 
     bench = make_bench(tmp_path, GunicornConfig(max_requests=2000, max_requests_jitter=200))
     toml = bench_config_to_toml(bench.config)

@@ -4,7 +4,7 @@ import tomllib
 from pathlib import Path
 
 from pilot.config.bench_config import BenchConfig
-from pilot.config.toml_writer import bench_config_to_toml
+from pilot.config.serializer import build, default_ports, flatten, to_toml
 from pilot.utils import write_toml
 
 
@@ -12,7 +12,7 @@ class BenchTomlStore:
     """Single entry point for reading and writing a bench's ``bench.toml``.
 
     Wraps the parsing (``tomllib``/``BenchConfig``) and serialisation
-    (``bench_config_to_toml``/``write_toml``) primitives so that every caller
+    (``serializer.to_toml``/``write_toml``) primitives so that every caller
     funnels through one object instead of touching the file directly.
     """
 
@@ -42,18 +42,25 @@ class BenchTomlStore:
 
     def read_flat(self) -> dict:
         """Wizard's flat-key settings dict (parse-only)."""
-        from pilot.config.bench_toml_builder import BenchTomlBuilder
+        return flatten(self.read(validate=False))
 
-        return BenchTomlBuilder.read_settings(self.path)
+    def port_offset(self) -> int:
+        """Port offset already baked into this bench.toml, from its http_port.
+        Pass back into write_flat() so a rewrite keeps every port on its grid."""
+        if not self.exists():
+            return 0
+        try:
+            base = default_ports()["http_port"]
+            return self.read_raw().get("bench", {}).get("http_port", base) - base
+        except Exception:
+            return 0
 
     def write(self, config: BenchConfig) -> None:
-        self.path.write_text(bench_config_to_toml(config))
+        self.path.write_text(to_toml(config))
 
     def write_flat(self, name: str, settings: dict, port_offset: int = 0) -> None:
         """Serialise the wizard's flat-key settings dict to bench.toml."""
-        from pilot.config.bench_toml_builder import BenchTomlBuilder
-
-        self.write(BenchTomlBuilder(name, settings, port_offset=port_offset).build())
+        self.write(build(name, settings, port_offset=port_offset))
 
     def write_raw(self, data: dict) -> None:
         write_toml(self.path, data)

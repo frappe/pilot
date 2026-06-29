@@ -281,10 +281,10 @@ def test_validate_endpoint_invalid(tmp_path) -> None:
 
 
 def _write_dedicated_toml(tmp_path) -> None:
-    from pilot.config.bench_toml_builder import BenchTomlBuilder
+    from pilot.config.toml_store import BenchTomlStore
 
     settings = {"mariadb_instance": "b1", "mariadb_socket_path": "/run/mysqld/mysqld-b1.sock"}
-    (tmp_path / "bench.toml").write_text(BenchTomlBuilder("b1", settings).render())
+    BenchTomlStore.for_bench(tmp_path).write_flat("b1", settings)
 
 
 def test_validate_endpoint_dedicated_not_running_is_will_install(tmp_path) -> None:
