@@ -2,16 +2,25 @@
 from __future__ import annotations
 
 import json
+import os
+import pickle
 import re
+import signal
+import subprocess
 import sys
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from admin.backend.tasks.callbacks import new_site_failure_callback
 from admin.backend.tasks.manager.task_runner import TaskRunner, TASK_RETENTION_LIMIT
 from admin.backend.tasks.manager.task_reader import TaskReader
 from pilot.exceptions import TaskNotFoundError, TaskNotRunningError
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 # ── TaskRunner._generate_task_id ────────────────────────────────────────────
@@ -65,6 +74,32 @@ def test_build_argv_new_site_carries_no_db_type(tmp_path: Path) -> None:
     assert argv[1:3] == ["-m", "admin.backend.tasks.jobs.new_site_task"]
     assert "site1.localhost" in argv
     assert "--db-type" not in argv
+
+
+def test_run_records_pre_existing_apps_for_app_fetch(tmp_path: Path) -> None:
+    (tmp_path / "apps").mkdir()
+    (tmp_path / "apps" / "frappe").mkdir()
+    runner = TaskRunner(tmp_path)
+    mock_proc = MagicMock()
+    mock_proc.pid = 4242
+
+    with patch("admin.backend.tasks.manager.task_runner.subprocess.Popen", return_value=mock_proc):
+        task_id = runner.run("get-app", {"name": "erpnext", "repo": "https://x/erpnext"})
+
+    meta = json.loads((tmp_path / "tasks" / task_id / "meta.json").read_text())
+    assert meta["pre_existing_apps"] == ["frappe"]
+
+
+def test_run_omits_pre_existing_apps_for_non_app_command(tmp_path: Path) -> None:
+    runner = TaskRunner(tmp_path)
+    mock_proc = MagicMock()
+    mock_proc.pid = 4242
+
+    with patch("admin.backend.tasks.manager.task_runner.subprocess.Popen", return_value=mock_proc):
+        task_id = runner.run("build", {})
+
+    meta = json.loads((tmp_path / "tasks" / task_id / "meta.json").read_text())
+    assert "pre_existing_apps" not in meta
 
 
 def test_build_argv_get_app(tmp_path: Path) -> None:
@@ -350,3 +385,69 @@ def test_task_retention_limit(tmp_path: Path) -> None:
         and (entry / "status").read_text().strip() != "running"
     ]
     assert len(remaining_completed) == TASK_RETENTION_LIMIT
+
+
+# ── wrapper: on_failure runs on failure AND on cancel (SIGTERM) ───────────────
+
+
+def _build_run_task_dir(bench_root: Path, command_argv: list[str], site_to_clean: str) -> Path:
+    """A task dir the real wrapper can execute, with new_site_failure_callback
+    wired as on_failure (it removes sites/<site_to_clean>, our proof it ran)."""
+    (bench_root / "sites" / site_to_clean).mkdir(parents=True)
+    (bench_root / "sites" / site_to_clean / "site_config.json").write_text("{}")
+
+    task_dir = bench_root / "tasks" / "20260521-000000-aabbcc"
+    task_dir.mkdir(parents=True)
+    meta = {
+        "task_id": task_dir.name,
+        "command": "new-site",
+        "args": {"name": site_to_clean},
+        "command_argv": command_argv,
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "finished_at": None,
+        "exit_code": None,
+        "bench_root": str(bench_root),
+    }
+    (task_dir / "meta.json").write_text(json.dumps(meta))
+    (task_dir / "status").write_text("running")
+    (task_dir / "on_failure.bin").write_bytes(pickle.dumps(new_site_failure_callback))
+    return task_dir
+
+
+def _spawn_wrapper(task_dir: Path) -> subprocess.Popen:
+    return subprocess.Popen(
+        [sys.executable, "-m", "admin.backend.tasks.manager.wrapper", str(task_dir)],
+        cwd=str(_REPO_ROOT),
+    )
+
+
+def test_wrapper_runs_on_failure_callback_when_command_fails(tmp_path: Path) -> None:
+    task_dir = _build_run_task_dir(
+        tmp_path, [sys.executable, "-c", "import sys; sys.exit(3)"], "broken.localhost"
+    )
+    proc = _spawn_wrapper(task_dir)
+    proc.wait(timeout=30)
+
+    assert (task_dir / "status").read_text() == "failed"
+    assert json.loads((task_dir / "meta.json").read_text())["exit_code"] == 3
+    assert not (tmp_path / "sites" / "broken.localhost").exists()  # cleanup ran
+
+
+def test_wrapper_cancel_runs_cleanup_and_marks_killed(tmp_path: Path) -> None:
+    task_dir = _build_run_task_dir(
+        tmp_path,
+        [sys.executable, "-c", "import time; print('ready', flush=True); time.sleep(30)"],
+        "broken.localhost",
+    )
+    proc = _spawn_wrapper(task_dir)
+
+    log = task_dir / "output.log"
+    deadline = time.time() + 15
+    while time.time() < deadline and b"ready" not in (log.read_bytes() if log.exists() else b""):
+        time.sleep(0.05)
+
+    proc.send_signal(signal.SIGTERM)  # the cancel
+    proc.wait(timeout=30)
+
+    assert (task_dir / "status").read_text() == "killed"
+    assert not (tmp_path / "sites" / "broken.localhost").exists()  # cleanup ran on cancel

@@ -8,6 +8,7 @@ This module uses only the standard library — no cli imports.
 
 import json
 import pickle
+import signal
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -37,17 +38,32 @@ def main() -> None:
     sites_dir = bench_root / "sites"
     cwd = str(sites_dir) if sites_dir.is_dir() else str(bench_root)
 
+    cancelled = {"flag": False}
+
     with open(task_dir / "output.log", "wb") as log_file:
-        result = subprocess.run(
+        process = subprocess.Popen(
             meta["command_argv"],
             cwd=cwd,
             stdout=log_file,
             stderr=subprocess.STDOUT,
         )
 
-    if result.returncode == 0 and on_success_bin.exists():
+        def _on_term(_signum, _frame) -> None:
+            # Cancel (TaskRunner.kill) SIGTERMs this wrapper. Forward it to the
+            # command so it stops too, then fall through to run on_failure cleanup.
+            # ponytail: SIGTERM only; if a command ignores it the kill escalates
+            # to SIGKILL upstream, which we can't clean after — acceptable for now.
+            cancelled["flag"] = True
+            process.terminate()
+
+        signal.signal(signal.SIGTERM, _on_term)
+        returncode = process.wait()
+
+    succeeded = returncode == 0 and not cancelled["flag"]
+
+    if succeeded and on_success_bin.exists():
         callback_handler(on_success_bin, task_dir / "output.log", meta=meta)
-    elif result.returncode != 0 and on_failure_bin.exists():
+    elif not succeeded and on_failure_bin.exists():
         callback_handler(on_failure_bin, task_dir / "output.log", meta=meta)
 
     for leftover in (on_success_bin, on_failure_bin):
@@ -55,9 +71,9 @@ def main() -> None:
             leftover.unlink()
 
     meta["finished_at"] = datetime.now(timezone.utc).isoformat()
-    meta["exit_code"] = result.returncode
+    meta["exit_code"] = returncode
     (task_dir / "meta.json").write_text(json.dumps(meta, indent=2))
-    status = "success" if result.returncode == 0 else "failed"
+    status = "success" if succeeded else "killed" if cancelled["flag"] else "failed"
     (task_dir / "status").write_text(status)
 
 

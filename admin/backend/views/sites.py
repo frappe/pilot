@@ -7,7 +7,7 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request, send_file
 
-from admin.backend.tasks.callbacks import new_site_failure_callback, ssl_setup_failure_callback
+from admin.backend.tasks.callbacks import app_fetch_failure_callback, new_site_failure_callback, ssl_setup_failure_callback
 from ..validators import validate_cron_expression, validate_site_name
 from admin.backend.tasks.manager.task_runner import TaskRunner
 
@@ -177,7 +177,11 @@ def create_from_upload():
         args["private_files"] = str(priv_path)
 
     try:
-        task_id = TaskRunner(bench_root).run("new-site-from-backup", args)
+        task_id = TaskRunner(bench_root).run(
+            "new-site-from-backup",
+            args,
+            callbacks={"on_failure": new_site_failure_callback},
+        )
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
     return jsonify({"ok": True, "task_id": task_id})
@@ -268,7 +272,11 @@ def get_and_install_app(name: str):
         task_args = {"site": name, "app": app, "repo": repo}
         if branch:
             task_args["branch"] = branch
-        task_id = TaskRunner(bench_root).run("get-and-install-app", task_args)
+        task_id = TaskRunner(bench_root).run(
+            "get-and-install-app",
+            task_args,
+            callbacks={"on_failure": app_fetch_failure_callback},
+        )
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
     return jsonify({"ok": True, "task_id": task_id})
