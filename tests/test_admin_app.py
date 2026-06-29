@@ -90,7 +90,7 @@ def test_api_benches_includes_production_metadata(tmp_path: Path) -> None:
             f'[production]\nenabled = true\nprocess_manager = "systemd"\n'
         )
         # https only once the cert is in place; pretend it is for this assertion.
-        with patch("admin.backend.app._admin_cert_exists", return_value=True):
+        with patch("admin.backend.views.benches.admin_cert_exists", return_value=True):
             resp = client.get("/api/benches/")
 
     entry = next(b for b in resp.get_json() if b["name"] == "prod-bench")
@@ -113,7 +113,7 @@ def test_api_benches_admin_url_is_http_until_cert_exists(tmp_path: Path) -> None
             f'[admin]\nport = {live_port}\ndomain = "admin-prod.example.com"\ntls = true\n\n'
             f'[production]\nenabled = true\nprocess_manager = "systemd"\n'
         )
-        with patch("admin.backend.app._admin_cert_exists", return_value=False):
+        with patch("admin.backend.views.benches.admin_cert_exists", return_value=False):
             resp = client.get("/api/benches/")
 
     entry = next(b for b in resp.get_json() if b["name"] == "prod-bench")
@@ -379,7 +379,7 @@ def test_api_benches_ready_false_when_nginx_down_at_domain(tmp_path: Path) -> No
     assert resp.get_json() == {"ready": False}
 
 
-# ── POST /api/benches/<name>/<action> ────────────────────────────────────────
+# ── POST /api/benches/<name>/actions/<action_name> ────────────────────────────
 
 
 def _write_prod_bench_toml(bench_dir: Path, name: str) -> None:
@@ -395,7 +395,7 @@ def test_api_benches_control_rejects_unknown_action(tmp_path: Path) -> None:
     client = _client(benches_dir / "current")
     _write_prod_bench_toml(benches_dir / "prod-bench", "prod-bench")
 
-    resp = client.post("/api/benches/prod-bench/wiggle")
+    resp = client.post("/api/benches/prod-bench/actions/wiggle")
 
     assert resp.status_code == 400
     assert resp.get_json()["ok"] is False
@@ -404,7 +404,7 @@ def test_api_benches_control_rejects_unknown_action(tmp_path: Path) -> None:
 def test_api_benches_control_rejects_unknown_bench(tmp_path: Path) -> None:
     client = _client(tmp_path / "benches" / "current")
 
-    resp = client.post("/api/benches/does-not-exist/start")
+    resp = client.post("/api/benches/does-not-exist/actions/start")
 
     assert resp.status_code == 404
     assert resp.get_json()["ok"] is False
@@ -415,7 +415,7 @@ def test_api_benches_control_rejects_dev_bench(tmp_path: Path) -> None:
     client = _client(benches_dir / "current")
     _write_bench_toml(benches_dir / "dev-bench", "dev-bench")
 
-    resp = client.post("/api/benches/dev-bench/start")
+    resp = client.post("/api/benches/dev-bench/actions/start")
 
     assert resp.status_code == 400
     assert "production" in resp.get_json()["error"]
@@ -426,11 +426,11 @@ def test_api_benches_control_runs_pilot_and_reports_success(tmp_path: Path) -> N
     client = _client(benches_dir / "current")
     _write_prod_bench_toml(benches_dir / "prod-bench", "prod-bench")
 
-    with patch("admin.backend.app.subprocess.run") as mock_run:
+    with patch("admin.backend.views.benches.subprocess.run") as mock_run:
         mock_run.return_value.returncode = 0
         mock_run.return_value.stdout = ""
         mock_run.return_value.stderr = ""
-        resp = client.post("/api/benches/prod-bench/restart")
+        resp = client.post("/api/benches/prod-bench/actions/restart")
 
     assert resp.get_json() == {"ok": True}
     argv = mock_run.call_args.args[0]
@@ -442,11 +442,11 @@ def test_api_benches_control_reports_failure(tmp_path: Path) -> None:
     client = _client(benches_dir / "current")
     _write_prod_bench_toml(benches_dir / "prod-bench", "prod-bench")
 
-    with patch("admin.backend.app.subprocess.run") as mock_run:
+    with patch("admin.backend.views.benches.subprocess.run") as mock_run:
         mock_run.return_value.returncode = 1
         mock_run.return_value.stdout = ""
         mock_run.return_value.stderr = "boom"
-        resp = client.post("/api/benches/prod-bench/stop")
+        resp = client.post("/api/benches/prod-bench/actions/stop")
 
     assert resp.status_code == 500
     assert resp.get_json() == {"ok": False, "error": "boom"}
@@ -473,7 +473,7 @@ def test_api_benches_drop_rejects_bench_with_sites(tmp_path: Path) -> None:
     (bench_dir / "sites" / "a.localhost").mkdir(parents=True)
     (bench_dir / "sites" / "a.localhost" / "site_config.json").write_text("{}")
 
-    with patch("admin.backend.app.subprocess.run") as mock_run:
+    with patch("admin.backend.views.benches.subprocess.run") as mock_run:
         resp = client.delete("/api/benches/prod-bench")
 
     assert resp.status_code == 400
@@ -495,7 +495,7 @@ def test_api_benches_drop_runs_pilot(tmp_path: Path) -> None:
     client = _client(benches_dir / "current")
     _write_prod_bench_toml(benches_dir / "prod-bench", "prod-bench")
 
-    with patch("admin.backend.app.subprocess.run") as mock_run:
+    with patch("admin.backend.views.benches.subprocess.run") as mock_run:
         mock_run.return_value.returncode = 0
         mock_run.return_value.stdout = ""
         mock_run.return_value.stderr = ""

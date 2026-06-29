@@ -502,6 +502,25 @@ Open the `--full-path` URL in a browser within **5 minutes**: the frontend excha
 
 ---
 
+## `bench issue-site-token`
+
+Issues a scoped JWT for programmatic site-to-bench API calls. The token carries `scope: "site"` and is restricted to the named site — it cannot access other sites or bench-level endpoints.
+
+```bash
+bench -b bench1 issue-site-token "site-name"
+bench -b bench1 issue-site-token "site-name" --ttl 3600   # custom TTL in seconds (default: 86400)
+```
+
+Use the token as a Bearer token in the `Authorization` header:
+
+```bash
+curl -H "Authorization: Bearer <token>" https://admin.example.com/api/sites/site-name
+```
+
+Requires `admin.jwt_secret` to be set in `bench.toml`. See [docs/admin.md](admin.md) for scoped authentication details.
+
+---
+
 ## `bench set-admin-password`
 
 Sets the admin UI password in `bench.toml`. With `--password` omitted it prompts twice (securely, no echo) and confirms they match; the password is never printed or logged.

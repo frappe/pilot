@@ -49,6 +49,7 @@ class NewSiteCommand(Command):
         print(f"Creating site '{self.name}'...")
         sys.stdout.flush()
         site.create()
+        self._write_pilot_communication_config()
         self.bench.write_common_site_config()
         print(f"\nSite '{self.name}' created successfully.")
         self.build_missing_assets()
@@ -65,6 +66,21 @@ class NewSiteCommand(Command):
         from pilot.core.domain_controller import DomainRouteProvider
 
         DomainRouteProvider(self.bench).register(self.name, self.name)
+
+    def _write_pilot_communication_config(self) -> None:
+        import json
+
+        from pilot.admin_url import admin_url
+        from pilot.commands.generate_session import ensure_jwt_secret, issue_site_token
+
+        config_path = self.bench.sites_path / self.name / "site_config.json"
+        if not config_path.exists():
+            return
+        config = json.loads(config_path.read_text())
+        secret = ensure_jwt_secret(self.bench.path / "bench.toml")
+        config["pilot_endpoint"] = admin_url(self.bench.config)
+        config["pilot_auth_token"] = issue_site_token(secret, self.name, ttl=365 * 24 * 3600)
+        config_path.write_text(json.dumps(config, indent=1))
 
     def build_missing_assets(self):
         from pilot.managers.python_env_manager import PythonEnvManager

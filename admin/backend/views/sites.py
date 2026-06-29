@@ -7,6 +7,7 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request, send_file
 
+from admin.backend.auth import require_scope
 from admin.backend.tasks.callbacks import new_site_failure_callback, ssl_setup_failure_callback
 from ..validators import validate_cron_expression, validate_site_name
 from admin.backend.tasks.manager.task_runner import TaskRunner
@@ -14,11 +15,13 @@ from admin.backend.tasks.manager.task_runner import TaskRunner
 from ..readers.app_reader import AppReader
 from ..readers.site_reader import SiteReader
 
+site_name = lambda kw: kw["name"]
+
 sites_bp = Blueprint("sites", __name__)
 
 # Confidential / system-managed site_config keys. These are never sent to the
 # admin UI and cannot be edited through it — they are preserved as-is on disk.
-PROTECTED_CONFIG_KEYS = frozenset({"db_name", "db_password", "db_socket", "db_type", "db_user", "installed_apps", "ssl", "domains", "host_name"})
+PROTECTED_CONFIG_KEYS = frozenset({"db_name", "db_password", "db_socket", "db_type", "db_user", "installed_apps", "ssl", "domains", "host_name", "pilot_endpoint", "pilot_auth_token"})
 
 
 @sites_bp.route("/")
@@ -38,6 +41,7 @@ def index():
 
 
 @sites_bp.route("/<name>")
+@require_scope(site_name)
 def detail(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
@@ -71,6 +75,7 @@ def detail(name: str):
 
 
 @sites_bp.route("/<name>/apps")
+@require_scope(site_name)
 def site_apps(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
@@ -184,6 +189,7 @@ def create_from_upload():
 
 
 @sites_bp.route("/<name>/drop", methods=["POST"])
+@require_scope(site_name)
 def drop_site(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
@@ -194,6 +200,7 @@ def drop_site(name: str):
 
 
 @sites_bp.route("/<name>/reinstall", methods=["POST"])
+@require_scope(site_name)
 def reinstall_site(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     if not (bench_root / "sites" / name / "site_config.json").exists():
@@ -208,6 +215,7 @@ def reinstall_site(name: str):
 
 
 @sites_bp.route("/<name>/force-drop", methods=["POST"])
+@require_scope(site_name)
 def force_drop_site(name: str):
     import shutil
 
@@ -223,6 +231,7 @@ def force_drop_site(name: str):
 
 
 @sites_bp.route("/<name>/backup", methods=["POST"])
+@require_scope(site_name)
 def backup_site(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
@@ -233,6 +242,7 @@ def backup_site(name: str):
 
 
 @sites_bp.route("/<name>/install-app", methods=["POST"])
+@require_scope(site_name)
 def install_app(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     data = request.get_json(silent=True) or {}
@@ -247,6 +257,7 @@ def install_app(name: str):
 
 
 @sites_bp.route("/<name>/get-and-install-app", methods=["POST"])
+@require_scope(site_name)
 def get_and_install_app(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     data = request.get_json(silent=True) or {}
@@ -275,6 +286,7 @@ def get_and_install_app(name: str):
 
 
 @sites_bp.route("/<name>/uninstall-app", methods=["POST"])
+@require_scope(site_name)
 def uninstall_app(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     data = request.get_json(silent=True) or {}
@@ -289,6 +301,7 @@ def uninstall_app(name: str):
 
 
 @sites_bp.route("/<name>/force-uninstall-app", methods=["POST"])
+@require_scope(site_name)
 def force_uninstall_app(name: str):
     import os
     import subprocess as _sp
@@ -339,6 +352,7 @@ def force_uninstall_app(name: str):
 
 
 @sites_bp.route("/<name>/login", methods=["POST"])
+@require_scope(site_name)
 def login_to_site(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     if not (bench_root / "sites" / name / "site_config.json").exists():
@@ -408,6 +422,7 @@ def login_to_site(name: str):
 
 
 @sites_bp.route("/<name>/enable-ssl", methods=["POST"])
+@require_scope(site_name)
 def enable_ssl(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     config_path = bench_root / "sites" / name / "site_config.json"
@@ -481,6 +496,7 @@ def _apply_domains(bench_root: Path, name: str) -> str:
 
 
 @sites_bp.route("/<name>/domains", methods=["GET"])
+@require_scope(site_name)
 def list_domains(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
@@ -491,6 +507,7 @@ def list_domains(name: str):
 
 
 @sites_bp.route("/<name>/domains/dns-records", methods=["POST"])
+@require_scope(site_name)
 def domain_dns_records(name: str):
     """Step 1 of attaching a domain: validate it, return CNAME/A record options."""
     bench_root = Path(current_app.config["BENCH_ROOT"])
@@ -505,6 +522,7 @@ def domain_dns_records(name: str):
 
 
 @sites_bp.route("/<name>/domains", methods=["POST"])
+@require_scope(site_name)
 def add_domain(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     domain = ((request.get_json(silent=True) or {}).get("domain") or "").strip()
@@ -518,6 +536,7 @@ def add_domain(name: str):
 
 
 @sites_bp.route("/<name>/domains", methods=["DELETE"])
+@require_scope(site_name)
 def remove_domain(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     domain = ((request.get_json(silent=True) or {}).get("domain") or "").strip()
@@ -529,6 +548,7 @@ def remove_domain(name: str):
 
 
 @sites_bp.route("/<name>/domains/primary", methods=["POST"])
+@require_scope(site_name)
 def set_primary_domain(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     domain = ((request.get_json(silent=True) or {}).get("domain") or "").strip() or None
@@ -541,6 +561,7 @@ def set_primary_domain(name: str):
 
 
 @sites_bp.route("/<name>/config", methods=["PATCH"])
+@require_scope(site_name)
 def update_config(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     config_path = bench_root / "sites" / name / "site_config.json"
@@ -566,6 +587,7 @@ def update_config(name: str):
 
 
 @sites_bp.route("/<name>/backups")
+@require_scope(site_name)
 def list_backups(name: str):
     from ..readers.backup_reader import BackupReader
 
@@ -595,6 +617,7 @@ def list_backups(name: str):
 
 
 @sites_bp.route("/<name>/backups/download")
+@require_scope(site_name)
 def download_backup(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     filename = request.args.get("filename", "")
@@ -610,6 +633,7 @@ def download_backup(name: str):
 
 
 @sites_bp.route("/<name>/backup-schedule", methods=["GET"])
+@require_scope(site_name)
 def get_backup_schedule(name: str):
     from ..cron_manager import CronManager
 
@@ -622,6 +646,7 @@ def get_backup_schedule(name: str):
 
 
 @sites_bp.route("/<name>/backup-schedule", methods=["POST"])
+@require_scope(site_name)
 def set_backup_schedule(name: str):
     from ..cron_manager import CronManager
 
@@ -639,6 +664,7 @@ def set_backup_schedule(name: str):
 
 
 @sites_bp.route("/<name>/backup-schedule", methods=["DELETE"])
+@require_scope(site_name)
 def delete_backup_schedule(name: str):
     from ..cron_manager import CronManager
 

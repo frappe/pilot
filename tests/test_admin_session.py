@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from pilot.commands.generate_session import decode_token, issue_login_token, issue_token, verify_token
+from pilot.commands.generate_session import decode_token, has_scope, issue_login_token, issue_site_token, issue_token, verify_token
 from pilot.config.bench_config import BenchConfig
 from pilot.config.bench_toml_builder import BenchTomlBuilder
 from pilot.core.bench import Bench
@@ -198,3 +198,223 @@ def test_setup_endpoint_open_before_password_set(tmp_path: Path) -> None:
     app = create_app(tmp_path)  # no bench.toml → first-time setup
     app.config["TESTING"] = True
     assert app.test_client().post("/api/setup/validate-mariadb", json={}).status_code != 401
+
+
+# ── scoped JWT ────────────────────────────────────────────────────────────────
+
+
+def test_issue_token_defaults_to_bench_scope() -> None:
+    claims = decode_token(issue_token("k3y"), "k3y")
+    assert claims["scope"] == "bench"
+    assert "site" not in claims
+
+
+def test_issue_token_with_site_scope() -> None:
+    claims = decode_token(issue_token("k3y", scope="site", site="example.com"), "k3y")
+    assert claims["scope"] == "site"
+    assert claims["site"] == "example.com"
+
+
+def test_has_scope_bench_token_allows_any_site() -> None:
+    claims = decode_token(issue_token("k3y"), "k3y")
+    assert has_scope(claims, "example.com")
+    assert has_scope(claims, "other.com")
+
+
+def test_has_scope_site_token_allows_matching_site() -> None:
+    claims = decode_token(issue_token("k3y", scope="site", site="example.com"), "k3y")
+    assert has_scope(claims, "example.com")
+
+
+def test_has_scope_site_token_rejects_different_site() -> None:
+    claims = decode_token(issue_token("k3y", scope="site", site="example.com"), "k3y")
+    assert not has_scope(claims, "other.com")
+
+
+def test_has_scope_none_claims_rejected() -> None:
+    assert not has_scope(None, "example.com")
+
+
+def test_issue_site_token_creates_scoped_token() -> None:
+    claims = decode_token(issue_site_token("k3y", "example.com"), "k3y")
+    assert claims["scope"] == "site"
+    assert claims["site"] == "example.com"
+
+
+def test_issue_site_token_requires_site() -> None:
+    with pytest.raises(ValueError):
+        issue_site_token("k3y", "")
+
+
+def test_issue_site_token_custom_ttl() -> None:
+    claims = decode_token(issue_site_token("k3y", "example.com", ttl=3600), "k3y")
+    assert claims["site"] == "example.com"
+    assert claims["exp"] - claims["iat"] == 3600
+
+
+def test_require_scope_allows_unscoped_token(tmp_path: Path) -> None:
+    from flask import jsonify
+    from admin.backend.app import create_app
+    from admin.backend.auth import require_scope
+
+    bench_root = tmp_path / "benches" / "current"
+    _initialized_bench(bench_root, "secret", "k3y")
+    app = create_app(bench_root)
+    app.config["TESTING"] = True
+
+    @app.route("/api/test-scoped")
+    @require_scope("example.com")
+    def scoped_view():
+        return jsonify({"ok": True})
+
+    client = app.test_client()
+    client.set_cookie("sid", issue_token("k3y"))
+    assert client.get("/api/test-scoped").status_code == 200
+
+
+def test_require_scope_allows_matching_scoped_token(tmp_path: Path) -> None:
+    from flask import jsonify
+    from admin.backend.app import create_app
+    from admin.backend.auth import require_scope
+
+    bench_root = tmp_path / "benches" / "current"
+    _initialized_bench(bench_root, "secret", "k3y")
+    app = create_app(bench_root)
+    app.config["TESTING"] = True
+
+    @app.route("/api/test-scoped")
+    @require_scope("example.com")
+    def scoped_view():
+        return jsonify({"ok": True})
+
+    client = app.test_client()
+    client.set_cookie("sid", issue_token("k3y", scope="site", site="example.com"))
+    assert client.get("/api/test-scoped").status_code == 200
+
+
+def test_require_scope_rejects_mismatched_scoped_token(tmp_path: Path) -> None:
+    from flask import jsonify
+    from admin.backend.app import create_app
+    from admin.backend.auth import require_scope
+
+    bench_root = tmp_path / "benches" / "current"
+    _initialized_bench(bench_root, "secret", "k3y")
+    app = create_app(bench_root)
+    app.config["TESTING"] = True
+
+    @app.route("/api/test-scoped")
+    @require_scope("example.com")
+    def scoped_view():
+        return jsonify({"ok": True})
+
+    client = app.test_client()
+    client.set_cookie("sid", issue_token("k3y", scope="site", site="other.com"))
+    assert client.get("/api/test-scoped").status_code == 403
+
+
+def test_current_site_scope_returns_site_from_claims(tmp_path: Path) -> None:
+    from flask import jsonify
+    from admin.backend.app import create_app
+    from admin.backend.auth import current_site_scope
+
+    bench_root = tmp_path / "benches" / "current"
+    _initialized_bench(bench_root, "secret", "k3y")
+    app = create_app(bench_root)
+    app.config["TESTING"] = True
+
+    @app.route("/api/test-scope")
+    def scope_view():
+        return jsonify({"site": current_site_scope()})
+
+    client = app.test_client()
+    client.set_cookie("sid", issue_token("k3y", scope="site", site="example.com"))
+    assert client.get("/api/test-scope").get_json()["site"] == "example.com"
+
+
+def test_current_site_scope_returns_none_for_unscoped(tmp_path: Path) -> None:
+    from flask import jsonify
+    from admin.backend.app import create_app
+    from admin.backend.auth import current_site_scope
+
+    bench_root = tmp_path / "benches" / "current"
+    _initialized_bench(bench_root, "secret", "k3y")
+    app = create_app(bench_root)
+    app.config["TESTING"] = True
+
+    @app.route("/api/test-scope")
+    def scope_view():
+        return jsonify({"site": current_site_scope()})
+
+    client = app.test_client()
+    client.set_cookie("sid", issue_token("k3y"))
+    assert client.get("/api/test-scope").get_json()["site"] is None
+
+
+def test_bearer_token_authenticates(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    token = issue_token("k3y")
+    resp = client.get("/api/benches/", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code != 401
+
+
+def test_bearer_token_with_site_scope(tmp_path: Path) -> None:
+    from flask import jsonify
+    from admin.backend.app import create_app
+    from admin.backend.auth import require_scope
+
+    bench_root = tmp_path / "benches" / "current"
+    _initialized_bench(bench_root, "secret", "k3y")
+    app = create_app(bench_root)
+    app.config["TESTING"] = True
+
+    @app.route("/api/test-scoped")
+    @require_scope("example.com")
+    def scoped_view():
+        return jsonify({"ok": True})
+
+    client = app.test_client()
+    token = issue_site_token("k3y", "example.com")
+    resp = client.get("/api/test-scoped", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+
+
+def test_bearer_token_wrong_site_rejected(tmp_path: Path) -> None:
+    from flask import jsonify
+    from admin.backend.app import create_app
+    from admin.backend.auth import require_scope
+
+    bench_root = tmp_path / "benches" / "current"
+    _initialized_bench(bench_root, "secret", "k3y")
+    app = create_app(bench_root)
+    app.config["TESTING"] = True
+
+    @app.route("/api/test-scoped")
+    @require_scope("example.com")
+    def scoped_view():
+        return jsonify({"ok": True})
+
+    client = app.test_client()
+    token = issue_site_token("k3y", "other.com")
+    resp = client.get("/api/test-scoped", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 403
+
+
+def test_require_scope_with_callable(tmp_path: Path) -> None:
+    from flask import jsonify
+    from admin.backend.app import create_app
+    from admin.backend.auth import require_scope
+
+    bench_root = tmp_path / "benches" / "current"
+    _initialized_bench(bench_root, "secret", "k3y")
+    app = create_app(bench_root)
+    app.config["TESTING"] = True
+
+    @app.route("/api/sites/<name>/action")
+    @require_scope(lambda kw: kw["name"])
+    def scoped_view(name):
+        return jsonify({"ok": True, "site": name})
+
+    client = app.test_client()
+    client.set_cookie("sid", issue_token("k3y", scope="site", site="example.com"))
+    assert client.get("/api/sites/example.com/action").status_code == 200
+    assert client.get("/api/sites/other.com/action").status_code == 403

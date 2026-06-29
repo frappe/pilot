@@ -519,10 +519,47 @@ Views catch `ConfigError`, `FileNotFoundError`, and database connection errors a
 - **Password is mandatory.** The admin refuses all requests with HTTP 503 if `[admin] password` is not set in `bench.toml`. There is no way to bypass authentication.
 - Sessions are Flask cookie-based. The session key is a random 32-byte hex string generated at startup — sessions are invalidated on process restart.
 - `bench generate-admin-session` issues a 5-minute, single-use `?sid=` token that the frontend exchanges for a 1-day `HttpOnly` session cookie — an alternative to password login, signed with `admin.jwt_secret` in `bench.toml`. See [docs/commands.md](commands.md#bench-generate-admin-session).
+- `bench issue-site-token` issues a scoped JWT (`scope: "site"`) for programmatic site-to-bench API calls. The token is restricted to the named site and cannot access other sites or bench-level endpoints. Use it as `Authorization: Bearer <token>`. See [docs/commands.md](commands.md#bench-issue-site-token).
+
 - `LogReader.read_tail` and `stream_tail` validate that the requested filename contains no path separators and resolves to a file inside `logs/`. Any traversal attempt returns HTTP 400.
 - Command execution uses `TaskRunner._build_argv`, which only accepts whitelisted commands. No user-supplied string is passed to a shell.
 - `task_id` values are validated against `^\d{8}-\d{6}-[0-9a-f]{6}$` before being used as directory names.
 - Root MariaDB credentials come from `bench.toml` — the admin must be run by a user who can read that file.
+
+---
+
+### Site-to-bench API
+
+When a site is created through the admin UI, the bench automatically writes two keys into the site's `site_config.json`:
+
+- `pilot_endpoint` — the admin URL of the bench (e.g. `https://admin.example.com`)
+- `pilot_auth_token` — a scoped JWT (`scope: "site"`) valid for 365 days, restricted to that site
+
+The site can use these to call the bench admin API directly — no user login required. For example, from a Frappe hook or background job:
+
+```python
+import frappe
+
+endpoint = frappe.get_site_config().get("pilot_endpoint")
+token = frappe.get_site_config().get("pilot_auth_token")
+headers = {"Authorization": f"Bearer {token}"}
+
+# Install an app on this site
+requests.post(f"{endpoint}/api/sites/{frappe.local.site}/install-app",
+              json={"app_name": "my-app"}, headers=headers)
+
+# Enable SSL
+requests.post(f"{endpoint}/api/sites/{frappe.local.site}/enable-ssl",
+              json={}, headers=headers)
+
+# Set backup schedule
+requests.post(f"{endpoint}/api/sites/{frappe.local.site}/backup-schedule",
+              json={"cron": "0 2 * * *"}, headers=headers)
+```
+
+The token is scoped — it can only act on its own site. Any attempt to access a different site or bench-level endpoints (e.g. `/api/benches`) returns 403.
+
+Both keys are in `PROTECTED_CONFIG_KEYS` — they are never exposed in the admin UI and are preserved across config edits.
 
 ---
 
