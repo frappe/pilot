@@ -33,13 +33,22 @@ def _sign(signing_input: str, secret: str) -> bytes:
     return hmac.new(secret.encode(), signing_input.encode(), hashlib.sha256).digest()
 
 
-def issue_token(secret: str, ttl: int = DEFAULT_TTL, issued_at: float | None = None, jti: str | None = None) -> str:
+def issue_token(
+    secret: str,
+    ttl: int = DEFAULT_TTL,
+    issued_at: float | None = None,
+    jti: str | None = None,
+    scope: str = "bench",
+    site: str | None = None,
+) -> str:
     if not secret:
         raise ValueError("JWT secret is not configured.")
     now = int(issued_at or time.time())
-    payload = {"sub": "admin", "iat": now, "exp": now + ttl}
+    payload = {"sub": "admin", "iat": now, "exp": now + ttl, "scope": scope}
     if jti:
         payload["jti"] = jti
+    if site:
+        payload["site"] = site
     body = ".".join(
         _b64(json.dumps(part, separators=(",", ":")).encode()) for part in (_HEADER, payload)
     )
@@ -66,9 +75,27 @@ def verify_token(token: str, secret: str) -> bool:
     return decode_token(token, secret) is not None
 
 
+def has_scope(claims: dict | None, site: str) -> bool:
+    if not claims:
+        return False
+    token_scope = claims.get("scope")
+    if token_scope == "bench":
+        return True
+    if token_scope == "site":
+        return claims.get("site") == site
+    return False
+
+
 def issue_login_token(secret: str) -> str:
     """A short-lived, single-use token for the ?sid= sign-in link."""
-    return issue_token(secret, ttl=LOGIN_TTL, jti=secrets.token_urlsafe(8))
+    return issue_token(secret, ttl=LOGIN_TTL, jti=secrets.token_urlsafe(8), scope="bench")
+
+
+def issue_site_token(secret: str, site: str, ttl: int = DEFAULT_TTL) -> str:
+    """A token scoped to a single site for site-to-bench API calls."""
+    if not site:
+        raise ValueError("Site name is required.")
+    return issue_token(secret, ttl=ttl, scope="site", site=site)
 
 
 def ensure_jwt_secret(toml_path) -> str:

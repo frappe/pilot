@@ -147,7 +147,7 @@ async function control(bench, action) {
   controlLoading.value = bench.name
   controlError.value = ''
   try {
-    const res = await fetch(`/api/benches/${bench.name}/${action}`, { method: 'POST' })
+    const res = await fetch(`/api/benches/${bench.name}/actions/${action}`, { method: 'POST' })
     const d = await res.json()
     if (!d.ok) { controlError.value = d.error; return }
     await loadBenches()
