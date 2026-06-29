@@ -8,6 +8,7 @@ import json
 import os
 import re
 import subprocess
+import time
 import typing
 from datetime import datetime
 from pathlib import Path
@@ -54,6 +55,9 @@ WantedBy=default.target
 
 SUPERVISOR_PROCESS_PATTERN = re.compile(r"^(?P<service>\S+)\s+RUNNING\s+pid\s+(?P<pid>\d+)", re.MULTILINE)
 SYSTEMD_PID_PATTERN = re.compile(r"^MainPID=(?P<pid>\d+)", re.MULTILINE)
+
+# Gap between the two /proc samples used to turn cumulative CPU counters into a rate.
+CPU_SAMPLE_INTERVAL = 1.0
 
 
 class ConfigureMonitor:
@@ -184,7 +188,7 @@ class ToMonitor:
     def to_monitor(self):
         prod_config = self.bench.config.production
         if not prod_config.enabled:
-            return []
+            return {}
 
         manager_mapping = {"systemd": self.systemd_processes, "supervisor": self.supervisord_processes}
 
@@ -197,9 +201,50 @@ class Monitor:
 
     def __init__(self, bench: "Bench"):
         self.bench = bench
-        self._cpu_snapshots: dict[int, tuple[int, int]] = {}
-        self._system_cpu_snapshot: tuple[int, int] | None = None
+        self._system_cpu: float = 0.0
+        self._proc_cpu: dict[int, float] = {}
+        self._targets: dict[str, int] | None = None
+        self._cpu_before: tuple[int, int, dict[int, int]] | None = None
         self.setup()
+
+    def monitored_targets(self) -> dict[str, int]:
+        # `to_monitor()` shells out to systemctl/supervisorctl, so cache it: both
+        # the CPU sampling and the application metrics reuse the same result.
+        if self._targets is None:
+            self._targets = ToMonitor(self.bench).to_monitor()
+        return self._targets
+
+    def sample_cpu(self) -> None:
+        """Take the 'before' /proc reading. `main()` samples every bench, sleeps
+        once, then computes — so N benches share a single sleep, not one each.
+        CPU fields are cumulative, so this baseline is what makes them a rate."""
+        idle, total = self._cpu_totals()
+        pids = [pid for pid in self.monitored_targets().values() if Path(f"/proc/{pid}").exists()]
+        self._cpu_before = (idle, total, {pid: self._proc_ticks(pid) for pid in pids})
+
+    def compute_cpu(self) -> None:
+        idle_before, total_before, proc_before = self._cpu_before
+        idle_after, total_after = self._cpu_totals()
+        delta_total = total_after - total_before
+        idle_share = (idle_after - idle_before) / delta_total if delta_total > 0 else 1.0
+        self._system_cpu = round((1 - idle_share) * 100, 2)
+        self._proc_cpu = {pid: self._proc_usage(before, pid, delta_total) for pid, before in proc_before.items()}
+
+    def _proc_usage(self, ticks_before: int, pid: int, delta_total: int) -> float:
+        try:
+            delta = self._proc_ticks(pid) - ticks_before
+        except FileNotFoundError:
+            return 0.0
+        return round(delta / delta_total * 100, 2) if delta_total > 0 else 0.0
+
+    def _cpu_totals(self) -> tuple[int, int]:
+        ticks = [int(x) for x in Path("/proc/stat").read_text().splitlines()[0].split()[1:]]
+        idle = ticks[3] + (ticks[4] if len(ticks) > 4 else 0)
+        return idle, sum(ticks)
+
+    def _proc_ticks(self, pid: int) -> int:
+        fields = Path(f"/proc/{pid}/stat").read_text().split()
+        return int(fields[13]) + int(fields[14])
 
     @property
     def log_path(self) -> Path:
@@ -258,21 +303,8 @@ class Monitor:
         subprocess.run(["sudo", "chown", f"{os.getuid()}:{os.getgid()}", str(log_dir)], check=True)
         self.setup_log_rotation()
 
-    def _total_cpu_ticks(self) -> int:
-        line = Path("/proc/stat").read_text().splitlines()[0]
-        return sum(int(x) for x in line.split()[1:])
-
     def _cpu_percent(self, pid: int) -> float:
-        fields = Path(f"/proc/{pid}/stat").read_text().split()
-        cpu_ticks = int(fields[13]) + int(fields[14])
-        total_ticks = self._total_cpu_ticks()
-        prev = self._cpu_snapshots.get(pid)
-        self._cpu_snapshots[pid] = (cpu_ticks, total_ticks)
-        if prev is None:
-            return 0.0
-        delta_cpu = cpu_ticks - prev[0]
-        delta_total = total_ticks - prev[1]
-        return round(delta_cpu / delta_total * 100, 2) if delta_total > 0 else 0.0
+        return self._proc_cpu.get(pid, 0.0)
 
     def _read_status(self, pid: int) -> dict[str, str]:
         lines = Path(f"/proc/{pid}/status").read_text().splitlines()
@@ -285,6 +317,7 @@ class Monitor:
                 parts = line.split(":", 1)[1].split()
                 if parts:
                     return int(parts[0])
+        return 0
 
     def _io_bytes(self, pid: int) -> tuple[int, int]:
         lines = Path(f"/proc/{pid}/io").read_text().splitlines()
@@ -318,17 +351,7 @@ class Monitor:
         return float(parts[0]), float(parts[1]), float(parts[2])
 
     def _system_cpu_percent(self) -> float:
-        fields = Path("/proc/stat").read_text().splitlines()[0].split()[1:]
-        ticks = [int(x) for x in fields]
-        idle = ticks[3] + (ticks[4] if len(ticks) > 4 else 0)
-        total = sum(ticks)
-        prev = self._system_cpu_snapshot
-        self._system_cpu_snapshot = (idle, total)
-        if prev is None:
-            return 0.0
-        delta_idle = idle - prev[0]
-        delta_total = total - prev[1]
-        return round((1 - delta_idle / delta_total) * 100, 2) if delta_total > 0 else 0.0
+        return self._system_cpu
 
     def _memory_usage(self) -> dict:
         data = {}
@@ -416,29 +439,37 @@ class Monitor:
     def collect_system_metrics(self) -> None:
         if not self.is_system_log_authority:
             return
-        metrics = {
-            "load_avg": self._load_average(),
-            "cpu_percent": self._system_cpu_percent(),
-            "memory": self._memory_usage(),
-            "storage": self._storage_usage(),
-        }
-        stats = json.loads(self.system_log_path.read_text()) if self.system_log_path.exists() else {}
-        stats[datetime.now().isoformat()] = metrics
-        self.system_log_path.write_text(json.dumps(stats, indent=2))
+        self._append(
+            self.system_log_path,
+            {
+                "time": datetime.now().isoformat(),
+                "load_avg": self._load_average(),
+                "cpu_percent": self._system_cpu_percent(),
+                "memory": self._memory_usage(),
+                "storage": self._storage_usage(),
+            },
+        )
 
     def collect_application_metrics(self) -> None:
         processes = []
 
-        for service, pid in ToMonitor(self.bench).to_monitor().items():
+        for service, pid in self.monitored_targets().items():
             if not Path(f"/proc/{pid}").exists():
                 processes.append({"service": service, "pid": pid, "missing": True})
                 continue
             processes.append(self._process_metrics(service, pid))
 
-        metrics = {"bench": self.bench.config.name, "processes": processes}
-        stats = json.loads(self.log_path.read_text()) if self.log_path.exists() else {}
-        stats[datetime.now().isoformat()] = metrics
-        self.log_path.write_text(json.dumps(stats, indent=2))
+        self._append(
+            self.log_path,
+            {"time": datetime.now().isoformat(), "bench": self.bench.config.name, "processes": processes},
+        )
+
+    @staticmethod
+    def _append(path: Path, record: dict) -> None:
+        # One compact JSON line per sample (JSON Lines). O(1) append — never reads
+        # or rewrites the whole file, so cost and disk use don't grow with history.
+        with path.open("a") as log_file:
+            log_file.write(json.dumps(record) + "\n")
 
 
 def resolve_monitor_log_path(bench_config: "BenchConfig"):
@@ -455,17 +486,32 @@ def resolve_monitor_log_path(bench_config: "BenchConfig"):
     return MonitorConfig.default_log_path(bench_name)
 
 
-def main() -> None:
+def _production_monitors() -> list[Monitor]:
     from pilot.core.bench import Bench
 
     # Sentinel path yields all benches in the benches/ directory
     sentinel = cli_root() / "benches" / ".monitor-placeholder"
-    for bench_path, bench_config in iter_sibling_benches(sentinel):
-        # Only monitor production enabled benches at all times
-        if bench_config.production.enabled:
-            monitor = Monitor(bench=Bench(bench_config, bench_path))
-            monitor.collect_application_metrics()
-            monitor.collect_system_metrics()
+    return [
+        Monitor(bench=Bench(bench_config, bench_path))
+        for bench_path, bench_config in iter_sibling_benches(
+            sentinel,
+        )
+        if bench_config.production.enabled
+    ]
+
+
+def main() -> None:
+    monitors = _production_monitors()
+    # Sample every bench, sleep once, then compute: the single sleep is shared
+    # across all N benches instead of paying CPU_SAMPLE_INTERVAL per bench.
+    # systemd's OnUnitInactiveSec timer serialises runs, so none can overlap.
+    for monitor in monitors:
+        monitor.sample_cpu()
+    time.sleep(CPU_SAMPLE_INTERVAL)
+    for monitor in monitors:
+        monitor.compute_cpu()
+        monitor.collect_application_metrics()
+        monitor.collect_system_metrics()
 
 
 if __name__ == "__main__":

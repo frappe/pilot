@@ -13,7 +13,7 @@ class MonitorHistoryReader:
     """Renders time-series from the monitor log files for a selected window.
 
     System metrics live in a shared log; application metrics in a per-bench log.
-    Each file is a JSON object keyed by ISO timestamp.
+    Each file is JSON Lines: one record per line, each carrying a `time` field.
     """
 
     def __init__(self, bench_root: Path, window: str) -> None:
@@ -38,12 +38,11 @@ class MonitorHistoryReader:
         }
 
     def _system(self, path: Path) -> dict:
-        raw = self._load(path)
-        rows = self._within_window(raw)
+        rows = self._read_window(path)
         storage = self._latest_storage(rows)
         pool = storage["zfs"]["pool"] if storage and storage["zfs"] else None
         return {
-            "earliest": self._earliest(raw),
+            "earliest": self._earliest(path),
             "points": [self._system_point(when, metrics, pool) for when, metrics in rows],
             "storage": storage,
         }
@@ -51,17 +50,18 @@ class MonitorHistoryReader:
     def _system_point(self, when: datetime, metrics: dict, pool: str | None) -> dict:
         storage = metrics.get("storage") or {}
         disk, zfs = storage.get("disk"), storage.get("zfs")
+        load = metrics["load_avg"]
         point = {
             "time": self._ms(when),
-            "CPU": metrics.get("cpu_percent", 0),
-            "Memory": metrics.get("memory", {}).get("percent", 0),
-            "Load1": self._load_at(metrics, 0),
-            "Load5": self._load_at(metrics, 1),
-            "Load15": self._load_at(metrics, 2),
-            DISK_SERIES: disk.get("percent") if disk else None,
+            "CPU": metrics["cpu_percent"],
+            "Memory": metrics["memory"]["percent"],
+            "Load1": load[0],
+            "Load5": load[1],
+            "Load15": load[2],
+            DISK_SERIES: disk["percent"] if disk else None,
         }
         if pool:
-            point[pool] = zfs.get("percent") if zfs else None
+            point[pool] = zfs["percent"] if zfs else None
         return point
 
     @classmethod
@@ -82,22 +82,24 @@ class MonitorHistoryReader:
         return {"pool": zfs.get("pool"), **cls._slim(zfs)} if zfs else None
 
     def _application(self, path: Path, bench_name: str) -> dict:
-        raw = self._load(path)
-        rows = self._within_window(raw)
+        rows = self._read_window(path)
         return {
-            "earliest": self._earliest(raw),
+            "earliest": self._earliest(path),
             "services": self._service_names(rows, bench_name),
             "cpu": [self._service_row(when, metrics, bench_name, "cpu_percent") for when, metrics in rows],
             "memory": [self._service_row(when, metrics, bench_name, "memory_rss_mb") for when, metrics in rows],
         }
 
-    def _within_window(self, raw: dict) -> list[tuple[datetime, dict]]:
+    def _read_window(self, path: Path) -> list[tuple[datetime, dict]]:
+        # Records are appended in time order, so read newest-first and stop at the
+        # first one older than the window — we never read past the cutoff.
         rows = []
-        for timestamp, metrics in raw.items():
-            when = self._parse(timestamp)
-            if when and when >= self._cutoff:
-                rows.append((when, metrics))
-        rows.sort(key=lambda row: row[0])
+        for record in self._iter_records_reversed(path):
+            when = datetime.fromisoformat(record["time"])
+            if when < self._cutoff:
+                break
+            rows.append((when, record))
+        rows.reverse()
         return self._downsample(rows)
 
     def _service_names(self, rows: list, bench_name: str) -> list[str]:
@@ -121,25 +123,34 @@ class MonitorHistoryReader:
         return service.removeprefix(f"{bench_name}-").removesuffix(".service")
 
     @staticmethod
-    def _load_at(metrics: dict, index: int) -> float:
-        load = metrics.get("load_avg") or []
-        return load[index] if index < len(load) else 0
-
-    @staticmethod
-    def _load(path: Path) -> dict:
+    def _iter_records_reversed(path: Path, block_size: int = 65536):
+        """Yield records newest-first, reading the file in blocks from the end so a
+        short window never touches the whole file."""
         if not path.exists():
-            return {}
-        try:
-            return json.loads(path.read_text())
-        except (ValueError, OSError):
-            return {}
+            return
+        with path.open("rb") as handle:
+            handle.seek(0, 2)
+            position = handle.tell()
+            remainder = b""
+            while position > 0:
+                size = min(block_size, position)
+                position -= size
+                handle.seek(position)
+                lines = (handle.read(size) + remainder).split(b"\n")
+                remainder = lines[0]  # first piece may be incomplete; carry it back
+                for line in reversed(lines[1:]):
+                    if line:
+                        yield json.loads(line)
+            if remainder:
+                yield json.loads(remainder)
 
-    @staticmethod
-    def _parse(timestamp: str) -> datetime | None:
-        try:
-            return datetime.fromisoformat(timestamp)
-        except ValueError:
+    @classmethod
+    def _earliest(cls, path: Path) -> int | None:
+        if not path.exists():
             return None
+        with path.open() as handle:
+            first = handle.readline()
+        return cls._ms(datetime.fromisoformat(json.loads(first)["time"])) if first.strip() else None
 
     @staticmethod
     def _downsample(rows: list) -> list:
@@ -147,12 +158,6 @@ class MonitorHistoryReader:
             return rows
         step = len(rows) // MAX_POINTS + 1
         return rows[::step]
-
-    @classmethod
-    def _earliest(cls, raw: dict) -> int | None:
-        keys = sorted(raw.keys())
-        when = cls._parse(keys[0]) if keys else None
-        return cls._ms(when) if when else None
 
     @staticmethod
     def _ms(when: datetime) -> int:

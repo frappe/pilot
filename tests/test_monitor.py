@@ -135,7 +135,7 @@ def test_collect_system_metrics_writes_to_system_log_file(tmp_path: Path) -> Non
     monitor.collect_system_metrics()
 
     assert system_log_file.exists()
-    entry = next(iter(json.loads(system_log_file.read_text()).values()))
+    entry = json.loads(system_log_file.read_text().splitlines()[-1])
     assert entry["load_avg"] == [0.5, 0.4, 0.3]
     assert entry["cpu_percent"] == 12.5
     assert entry["memory"]["percent"] == 50.0
@@ -177,7 +177,7 @@ def test_collect_system_metrics_includes_storage(tmp_path: Path) -> None:
 
     monitor.collect_system_metrics()
 
-    entry = next(iter(json.loads(system_log_file.read_text()).values()))
+    entry = json.loads(system_log_file.read_text().splitlines()[-1])
     assert "storage" in entry
     assert "disk" in entry["storage"]
     assert entry["storage"]["disk"]["percent"] == 40.0
