@@ -12,6 +12,7 @@ def bench_config_to_toml(config: BenchConfig) -> str:
     parts.append(f"http_port = {config.http_port}")
     parts.append(f"socketio_port = {config.socketio_port}")
     parts.append(f'socketio_backend = "{config.socketio_backend}"')
+    parts.append(f'db_type = "{config.db_type}"')
     if config.default_branch:
         parts.append(f'default_branch = "{config.default_branch}"')
     parts.append("")
@@ -39,6 +40,18 @@ def bench_config_to_toml(config: BenchConfig) -> str:
         parts.append(f'instance = "{m.instance}"')
     if m.data_dir:
         parts.append(f'data_dir = "{m.data_dir}"')
+    parts.append("")
+
+    pg = config.postgres
+    parts.append("[postgres]")
+    parts.append(f'host = "{pg.host}"')
+    parts.append(f"port = {pg.port}")
+    parts.append(f'root_password = "{pg.root_password}"')
+    parts.append(f'admin_user = "{pg.admin_user}"')
+    if pg.version:
+        parts.append(f'version = "{pg.version}"')
+    if pg.instance:
+        parts.append(f'instance = "{pg.instance}"')
     parts.append("")
 
     r = config.redis

@@ -287,3 +287,124 @@ def test_honcho_start_writes_per_process_pid_files(tmp_path: Path) -> None:
         pid_file = bench.pids_path / f"{name}.pid"
         assert pid_file.exists(), f"Missing PID file for process '{name}'"
         assert pid_file.read_text().strip() == "12345"
+
+
+# ── Site.create() database engine selection ───────────────────────────────────
+
+
+# ── Site create/restore/reinstall use the bench's single engine ───────────────
+
+
+def _capture_site_cmd(monkeypatch) -> dict:
+    captured: dict = {}
+    monkeypatch.setattr("pilot.core.site.run_command", lambda cmd, **kw: captured.setdefault("cmd", cmd))
+    return captured
+
+
+def _postgres_bench(tmp_path: Path, **postgres):
+    bench = make_bench(tmp_path)
+    bench.config.db_type = "postgres"
+    for key, value in postgres.items():
+        setattr(bench.config.postgres, key, value)
+    return bench
+
+
+def test_site_create_postgres_builds_db_args(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    bench = _postgres_bench(tmp_path, root_password="pgsecret", port=5433)
+    captured = _capture_site_cmd(monkeypatch)
+
+    Site(SiteConfig(name="pg.localhost", apps=["frappe"]), bench).create()
+
+    cmd = captured["cmd"]
+    assert cmd[cmd.index("--db-type") + 1] == "postgres"
+    assert cmd[cmd.index("--db-host") + 1] == "localhost"
+    assert cmd[cmd.index("--db-port") + 1] == "5433"
+    assert cmd[cmd.index("--db-root-username") + 1] == "postgres"
+    assert cmd[cmd.index("--db-root-password") + 1] == "pgsecret"
+    assert "--db-socket" not in cmd
+
+
+def test_site_create_mariadb_when_bench_is_mariadb(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    bench = make_bench(tmp_path)  # bench db_type defaults to mariadb
+    captured = _capture_site_cmd(monkeypatch)
+    monkeypatch.setattr("pilot.managers.mariadb_manager.MariaDBManager._detect_socket", lambda self: "")
+
+    Site(SiteConfig(name="mdb.localhost", apps=["frappe"]), bench).create()
+
+    cmd = captured["cmd"]
+    # mariadb is frappe's default engine — no --db-type flag is passed
+    assert "--db-type" not in cmd
+    assert cmd[cmd.index("--db-root-username") + 1] == "root"
+    assert "--db-host" in cmd
+
+
+def test_site_restore_uses_postgres_root_creds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    bench = _postgres_bench(tmp_path, root_password="pgpw")
+    captured = _capture_site_cmd(monkeypatch)
+
+    Site(SiteConfig(name="pg.localhost", apps=[]), bench).restore("/tmp/db.sql.gz")
+
+    cmd = captured["cmd"]
+    assert "restore" in cmd
+    assert "--db-type" not in cmd  # restore reads the engine from the site's config
+    assert cmd[cmd.index("--db-root-username") + 1] == "postgres"
+    assert cmd[cmd.index("--db-root-password") + 1] == "pgpw"
+
+
+def test_site_restore_uses_mariadb_root_creds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    bench = make_bench(tmp_path)  # mariadb bench, root_password="root"
+    captured = _capture_site_cmd(monkeypatch)
+
+    Site(SiteConfig(name="m.localhost", apps=[]), bench).restore(
+        "/tmp/db.sql.gz", public_files="/tmp/pub.tar", private_files="/tmp/priv.tar"
+    )
+
+    cmd = captured["cmd"]
+    assert "--db-type" not in cmd
+    assert cmd[cmd.index("--db-root-username") + 1] == "root"
+    assert cmd[cmd.index("--with-public-files") + 1] == "/tmp/pub.tar"
+    assert cmd[cmd.index("--with-private-files") + 1] == "/tmp/priv.tar"
+
+
+def test_site_reinstall_postgres_root_creds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    bench = _postgres_bench(tmp_path, root_password="pgpw")
+    captured = _capture_site_cmd(monkeypatch)
+
+    Site(SiteConfig(name="pg.localhost", apps=[]), bench).reinstall("secret")
+
+    cmd = captured["cmd"]
+    assert "reinstall" in cmd and "--yes" in cmd
+    assert cmd[cmd.index("--admin-password") + 1] == "secret"
+    assert cmd[cmd.index("--db-root-username") + 1] == "postgres"
+    assert cmd[cmd.index("--db-root-password") + 1] == "pgpw"
+
+
+def test_site_reinstall_mariadb_root_creds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    bench = make_bench(tmp_path)
+    captured = _capture_site_cmd(monkeypatch)
+
+    Site(SiteConfig(name="m.localhost", apps=[]), bench).reinstall("secret")
+
+    cmd = captured["cmd"]
+    assert cmd[cmd.index("--db-root-username") + 1] == "root"
+
+
+def test_site_create_postgres_empty_password_uses_placeholder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    bench = _postgres_bench(tmp_path, root_password="")  # trust/peer auth — no password
+    captured = _capture_site_cmd(monkeypatch)
+
+    Site(SiteConfig(name="pg.localhost", apps=[]), bench).create()
+
+    cmd = captured["cmd"]
+    # frappe prompts on an empty password (hanging the task); a placeholder avoids it.
+    assert cmd[cmd.index("--db-root-password") + 1] == "trust_auth"
+
+
+def test_bench_db_root_args_postgres(tmp_path: Path) -> None:
+    bench = _postgres_bench(tmp_path, root_password="pgpw")
+    assert bench.db_root_args() == ["--db-root-username", "postgres", "--db-root-password", "pgpw"]
+
+
+def test_bench_db_root_args_mariadb(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    assert bench.db_root_args() == ["--db-root-username", "root", "--db-root-password", "root"]

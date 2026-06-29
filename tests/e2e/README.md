@@ -18,7 +18,7 @@ completion. Built on **pytest + pytest-playwright** (sync API).
 |------|---------|
 | `harness/bench.py`  | `Bench` class: wraps `bench new` / `bench start` (wizard + full), stop, destroy (via `bench drop`). Reads the admin port from `bench.toml`; the admin password is harness-chosen (the wizard sets it). |
 | `harness/tasks.py`  | Capture a UI action's `task_id` and poll `/api/tasks/:id` to success. |
-| `flows/wizard.py`   | `complete_dev_wizard()` — drives `Setup.vue` (shared/dedicated MariaDB, optional ZFS volumes, dev mode). |
+| `flows/wizard.py`   | `complete_dev_wizard()` — drives `Setup.vue` for the chosen engine (`db_type="mariadb"`/`"postgres"`), shared/dedicated MariaDB, optional ZFS volumes, dev mode. |
 | `flows/admin.py`    | `login`, `create_site`, `install_custom_app`, `uninstall_app`, `drop_site` + API-based assertions. |
 | `conftest.py`       | `bench` + `page` fixtures (module-scoped) and the serial-skip wiring. |
 | `specs/test_bench_lifecycle.py` | The one serial lifecycle; the variant (shared / dedicated / dedicated+ZFS) is selected by env. |
@@ -29,8 +29,8 @@ the remaining steps once one fails.
 
 ## Running locally
 
-Prerequisites: a running system MariaDB (root password below), Redis, and
-`bench` on `PATH` (or set `BENCH_BIN`).
+Prerequisites: a running system MariaDB (root password below) or PostgreSQL,
+Redis, and `bench` on `PATH` (or set `BENCH_BIN`).
 
 ```bash
 pip install -e ".[admin,e2e]"      # from the repo root
@@ -46,6 +46,9 @@ E2E_DB_MODE=dedicated E2E_MARIADB_PASSWORD=admin pytest
 # The production shape — dedicated MariaDB + ZFS volumes (needs zfsutils-linux +
 # passwordless sudo). Uses an image-backed pool, so no spare block device needed:
 E2E_DB_MODE=dedicated E2E_VOLUMES=1 E2E_MARIADB_PASSWORD=admin pytest
+
+# PostgreSQL bench (shared server; the superuser password below must already be set):
+E2E_DB_TYPE=postgres E2E_POSTGRES_PASSWORD=admin pytest
 ```
 
 > ZFS note: `create_pool` reuses an existing pool named `bench-pool` if one is
@@ -71,9 +74,11 @@ Useful env vars:
 | Variable | Default | Meaning |
 |----------|---------|---------|
 | `BENCH_BIN` | `<repo>/bench` | CLI entry point. |
-| `E2E_DB_MODE` | `shared` | `shared` validates against system MariaDB; `dedicated` provisions a per-bench instance. |
+| `E2E_DB_TYPE` | `mariadb` | Bench database engine: `mariadb` or `postgres`. |
+| `E2E_DB_MODE` | `shared` | MariaDB only: `shared` validates against system MariaDB; `dedicated` provisions a per-bench instance. |
 | `E2E_VOLUMES` | off | `1` enables ZFS volumes (dedicated only) — the production setup. Uses an image-backed pool. |
 | `E2E_MARIADB_PASSWORD` | `admin` | Existing system MariaDB root password. |
+| `E2E_POSTGRES_PASSWORD` | `admin` | PostgreSQL superuser password (used when `E2E_DB_TYPE=postgres`). |
 | `E2E_EXTRA_APP` | `1` | `0` skips the install/uninstall app steps (keeps a run quick). |
 | `E2E_EXTRA_APP_NAME` / `_REPO` / `_BRANCH` | `blog` / `frappe/blog` / `develop` | The extra app installed/uninstalled. Point at `erpnext`, `india-compliance`, etc. to widen coverage. |
 | `E2E_KEEP_ON_FAILURE` | (set) | On failure the bench is kept for inspection; set to `0` to always clean up. |
@@ -89,10 +94,11 @@ names must start with `e2e-` (the harness refuses to delete anything else).
 The lifecycle is one env-driven spec; CI (`.github/workflows/e2e.yml`) runs it as
 a **matrix** of parallel jobs:
 
-| Variant | `E2E_DB_MODE` | `E2E_VOLUMES` | `E2E_EXTRA_APP` |
-|---------|---------------|---------------|----------------|
-| `shared` | `shared` | `0` | `1` |
-| `dedicated-zfs` | `dedicated` | `1` | `0` |
+| Variant | `E2E_DB_TYPE` | `E2E_DB_MODE` | `E2E_VOLUMES` | `E2E_EXTRA_APP` |
+|---------|---------------|---------------|---------------|----------------|
+| `shared` | `mariadb` | `shared` | `0` | `1` |
+| `dedicated-zfs` | `mariadb` | `dedicated` | `1` | `0` |
+| `postgres` | `postgres` | `shared` | `0` | `1` |
 
 To add another variant, add a row to the matrix `include` (and any system deps
 its `if:` step needs). To widen what a variant exercises, flip the env knobs

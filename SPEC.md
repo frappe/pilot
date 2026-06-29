@@ -7,7 +7,7 @@ bench is a command-line tool for setting up and managing a Frappe development en
 ## Core ideas
 
 - **One config file** (`bench.toml`) describes the infrastructure: Python version, database, Redis, workers. Apps and sites are managed via commands and discovered from the filesystem.
-- **No Docker.** Services (MariaDB, Redis) are installed directly on the host via apt (Ubuntu) or Homebrew (macOS).
+- **No Docker.** Services (MariaDB, PostgreSQL, Redis) are installed directly on the host via apt (Ubuntu) or Homebrew (macOS). Each bench picks one database engine (`bench.db_type`: MariaDB or PostgreSQL); `bench init` installs and provisions only that one.
 - **Zero Python dependencies.** The CLI uses only the Python 3.11+ standard library (`tomllib`, `argparse`, `subprocess`, `threading`, `signal`). No click, no yaml, no psutil.
 - **uv for Python environments.** `uv venv` and `uv pip install` manage virtualenvs. uv is auto-installed on first use.
 - **Plain Python OOP.** Classes map directly to real-world concepts (Bench, App, Site, Manager). No clever metaprogramming.

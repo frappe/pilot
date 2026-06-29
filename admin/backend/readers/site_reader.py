@@ -13,6 +13,7 @@ class SiteInfo:
     exists: bool
     db_name: str
     db_host: str
+    db_type: str
     installed_apps: list[str]
     site_config: dict
     broken: bool = False
@@ -64,6 +65,8 @@ class SiteReader:
             exists=exists,
             db_name=site_config.get("db_name", ""),
             db_host=site_config.get("db_host") or "localhost",
+            # frappe omits db_type for older MariaDB sites; default accordingly.
+            db_type=site_config.get("db_type") or "mariadb",
             installed_apps=installed_apps,
             site_config=site_config,
             broken=broken,

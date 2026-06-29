@@ -22,8 +22,8 @@ class RunCommand(Command):
         parser.add_argument(
             "--admin-dev",
             action="store_true",
-            help="Develop the admin UI: live-rebuild it and run the Vite dev server. "
-                 "By default the admin backend just serves the prebuilt UI from dist.",
+            help="Develop the admin UI: run the Vite dev server with hot reload. "
+                 "By default the backend serves dist, rebuilding it from source when it changed.",
         )
 
     @classmethod
@@ -92,17 +92,52 @@ class RunCommand(Command):
         manager.start()
 
     def _ensure_admin_dist(self) -> None:
-        # Build the admin UI from source if present, else download a prebuilt copy.
+        # Serve the admin UI from dist. In a source checkout, (re)build from source
+        # when dist is missing or the frontend source changed since the last build,
+        # so `bench start` reflects local UI edits without a manual `build-admin`.
+        # A non-source install (no admin/frontend) just downloads the prebuilt copy.
         from pilot.commands.admin import BuildAdminCommand, _cli_root, download_admin_frontend
 
         cli_root = _cli_root()
-        if (cli_root / "admin" / "backend" / "static" / "dist" / "assets").exists():
+        dist = cli_root / "admin" / "backend" / "static" / "dist"
+        frontend = cli_root / "admin" / "frontend"
+        has_source = (frontend / "package.json").exists()
+
+        if not (dist / "assets").exists():
+            print("Admin UI not built yet; building it now...")
+            if has_source:
+                BuildAdminCommand(force_build=True).run()
+            else:
+                download_admin_frontend(cli_root)
             return
-        print("Admin UI not built yet; building it now...")
-        if (cli_root / "admin" / "frontend" / "package.json").exists():
-            BuildAdminCommand(force_build=True).run()
-        else:
-            download_admin_frontend(cli_root)
+
+        if has_source and self._admin_source_is_newer(frontend, dist):
+            self._rebuild_admin(BuildAdminCommand)
+
+    @staticmethod
+    def _rebuild_admin(build_command) -> None:
+        from pilot.exceptions import BenchError
+
+        print("Admin UI source changed since last build; rebuilding...")
+        try:
+            build_command(force_build=True).run()
+        except BenchError as error:
+            # Never block startup on a build failure (e.g. Node too old) — keep
+            # serving the existing dist and surface why.
+            print(f"  Could not rebuild the admin UI ({error}); serving the existing build.")
+
+    @staticmethod
+    def _admin_source_is_newer(frontend, dist) -> bool:
+        """True when any frontend source file is newer than the built bundle."""
+        built_at = (dist / "index.html").stat().st_mtime
+        for name in ("src", "index.html", "package.json", "vite.config.js"):
+            path = frontend / name
+            if path.is_dir():
+                if any(f.stat().st_mtime > built_at for f in path.rglob("*") if f.is_file()):
+                    return True
+            elif path.exists() and path.stat().st_mtime > built_at:
+                return True
+        return False
 
     def _start_wizard(self) -> None:
         from pilot.commands.admin import download_admin_frontend, _cli_root

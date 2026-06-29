@@ -18,8 +18,7 @@ class DropSiteCommand:
 
         provider_domains = self._provider_domains()
         cmd = [*self.bench.frappe_call, "frappe", "drop-site", "--force", self.name]
-        if self.bench.config.mariadb.root_password:
-            cmd += ["--db-root-password", self.bench.config.mariadb.root_password]
+        cmd += self.bench.db_root_args()
         print(f"Dropping site '{self.name}'...")
         sys.stdout.flush()
         run_command(cmd, cwd=self.bench.sites_path, stream_output=True)

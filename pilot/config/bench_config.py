@@ -10,6 +10,7 @@ from pilot.config.gunicorn_config import GunicornConfig
 from pilot.config.letsencrypt_config import LetsEncryptConfig
 from pilot.config.mariadb_config import MariaDBConfig
 from pilot.config.nginx_config import NginxConfig
+from pilot.config.postgres_config import PostgresConfig
 from pilot.config.production_config import ProductionConfig
 from pilot.config.redis_config import RedisConfig
 from pilot.config.volume_config import DatasetConfig, ImageConfig, VolumeConfig
@@ -38,10 +39,13 @@ class BenchConfig:
     mariadb: MariaDBConfig
     redis: RedisConfig
     workers: WorkerConfig
+    postgres: PostgresConfig = field(default_factory=PostgresConfig)
     apps: List[AppConfig] = field(default_factory=list)
     http_port: int = 8000
     socketio_port: int = 9000
     socketio_backend: str = "node"
+    # The single database engine for this bench's sites: "mariadb" or "postgres".
+    db_type: str = "mariadb"
     default_branch: str = ""
     production: ProductionConfig = field(default_factory=ProductionConfig)
     nginx: NginxConfig = field(default_factory=NginxConfig)
@@ -71,6 +75,7 @@ class BenchConfig:
             for a in data.get("apps", [])
         ]
         mariadb = MariaDBConfig(**data.get("mariadb", {}))
+        postgres = PostgresConfig(**data.get("postgres", {}))
         redis = cls._parse_redis(data.get("redis", {}))
         workers = cls._parse_workers(data.get("workers", []))
         production = cls._parse_production(data.get("production"))
@@ -87,9 +92,11 @@ class BenchConfig:
             http_port=bench_data.get("http_port", 8000),
             socketio_port=bench_data.get("socketio_port", 9000),
             socketio_backend=bench_data.get("socketio_backend", "node"),
+            db_type=bench_data.get("db_type", "mariadb"),
             default_branch=bench_data.get("default_branch", ""),
             apps=apps,
             mariadb=mariadb,
+            postgres=postgres,
             redis=redis,
             workers=workers,
             production=production,
@@ -212,12 +219,14 @@ class BenchConfig:
         self._validate_app_names_unique()
         self._validate_ports()
         self._validate_socketio_backend()
+        self._validate_db_type()
         self._validate_redis_ports()
         self._validate_worker_counts()
         self._validate_letsencrypt_email()
         self._validate_gunicorn()
         self._validate_mariadb_version()
         self._validate_mariadb_instance()
+        self._validate_postgres_instance()
         self._validate_redis_version()
         self._validate_production()
         self._validate_admin_domain()
@@ -252,6 +261,7 @@ class BenchConfig:
             "bench.http_port": self.http_port,
             "bench.socketio_port": self.socketio_port,
             "mariadb.port": self.mariadb.port,
+            "postgres.port": self.postgres.port,
         }
         for name, port in ports.items():
             if not (_PORT_MIN <= port <= _PORT_MAX):
@@ -260,6 +270,10 @@ class BenchConfig:
     def _validate_socketio_backend(self) -> None:
         if self.socketio_backend not in ("python", "node"):
             raise ConfigError(f"bench.socketio_backend '{self.socketio_backend}' is invalid. Must be 'python' or 'node'.")
+
+    def _validate_db_type(self) -> None:
+        if self.db_type not in ("mariadb", "postgres"):
+            raise ConfigError(f"bench.db_type '{self.db_type}' is invalid. Must be 'mariadb' or 'postgres'.")
 
     def _validate_redis_ports(self) -> None:
         ports = [self.redis.cache_port, self.redis.queue_port]
@@ -351,6 +365,14 @@ class BenchConfig:
             )
         if self.mariadb.data_dir and not Path(self.mariadb.data_dir).is_absolute():
             raise ConfigError(f"mariadb.data_dir '{self.mariadb.data_dir}' must be an absolute path.")
+
+    def _validate_postgres_instance(self) -> None:
+        instance = self.postgres.instance
+        if instance and not _BENCH_NAME_PATTERN.match(instance):
+            raise ConfigError(
+                f"postgres.instance '{instance}' is invalid. Must start with a letter and contain only "
+                "letters, digits, underscores, or hyphens."
+            )
 
     def _validate_redis_version(self) -> None:
         if self.redis.version and not _VERSION_PATTERN.match(self.redis.version):

@@ -30,20 +30,20 @@ const BASE_TABS = [
   { key: 'bench', label: 'Bench' },
   { key: 'apps', label: 'Apps' },
   { key: 'appearance', label: 'Appearance' },
-  { key: 'mariadb', label: 'MariaDB' },
   { key: 'redis', label: 'Redis' },
   { key: 'workers', label: 'Workers' },
   { key: 'updates', label: 'Updates' },
 ]
 const isLinux = ref(false)
 const TABS = computed(() => {
-  let tabs = isLinux.value
-    ? [...BASE_TABS, { key: 'volume', label: 'ZFS Volume' }]
-    : BASE_TABS
-
-    return tabs
-}
-)
+  // A bench runs a single engine — show only that engine's tab (after Appearance).
+  const dbTab = form.value?.bench?.db_type === 'postgres'
+    ? { key: 'postgres', label: 'PostgreSQL' }
+    : { key: 'mariadb', label: 'MariaDB' }
+  const tabs = [...BASE_TABS.slice(0, 3), dbTab, ...BASE_TABS.slice(3)]
+  if (isLinux.value) tabs.push({ key: 'volume', label: 'ZFS Volume' })
+  return tabs
+})
 
 const activeTab = ref('bench')
 
@@ -55,6 +55,8 @@ const saveSuccess = ref('')
 
 const form = ref(null)
 
+const dbEngineLabel = computed(() => (form.value?.bench?.db_type === 'postgres' ? 'PostgreSQL' : 'MariaDB'))
+
 async function load() {
   loading.value = true
   loadError.value = ''
@@ -65,6 +67,9 @@ async function load() {
     isLinux.value = data.is_linux === true
     if (Array.isArray(data.workers))
       data.workers = data.workers.map(g => ({ queues: (g.queues || []).join(', '), count: g.count }))
+    // root_password is write-only — keep it blank so an untouched save preserves it
+    // Degrade gracefully if an older backend omits the postgres block.
+    data.postgres = { host: 'localhost', port: 5432, admin_user: 'postgres', password_set: false, ...(data.postgres || {}), root_password: '' }
     form.value = data
   } catch (e) {
     loadError.value = e.message
@@ -340,6 +345,7 @@ watch(() => props.modelValue, (val) => {
                 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <FormControl label="Name" :modelValue="form.bench.name" disabled />
                   <FormControl label="Python Version" :modelValue="form.bench.python" disabled />
+                  <FormControl label="Database" :modelValue="dbEngineLabel" disabled />
                   <FormControl type="number" label="HTTP Port" v-model="form.bench.http_port" />
                   <FormControl type="number" label="SocketIO Port" v-model="form.bench.socketio_port" />
                 </div>
@@ -361,6 +367,18 @@ watch(() => props.modelValue, (val) => {
                   <FormControl label="Admin User" :modelValue="form.mariadb.admin_user" disabled />
                   <FormControl label="Version" :modelValue="form.mariadb.version" disabled />
                   <FormControl class="sm:col-span-2" label="Socket Path" :modelValue="form.mariadb.socket_path" disabled />
+                </div>
+              </div>
+
+              <!-- PostgreSQL -->
+              <div v-else-if="activeTab === 'postgres'" class="flex flex-col gap-4">
+                <p class="rounded-md bg-surface-gray-2 px-3 py-2 text-xs text-ink-gray-5">
+                  PostgreSQL connection settings are set during bench initialization and cannot be changed here.
+                </p>
+                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <FormControl label="Host" :modelValue="form.postgres.host" disabled />
+                  <FormControl type="number" label="Port" :modelValue="form.postgres.port" disabled />
+                  <FormControl label="Admin User" :modelValue="form.postgres.admin_user" disabled />
                 </div>
               </div>
 

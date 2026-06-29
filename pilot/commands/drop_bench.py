@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 class DropBenchCommand(Command):
     name = "drop"
-    help = "Delete a bench (must have no sites), tearing down its production services, nginx, MariaDB instance and ZFS dataset."
+    help = "Delete a bench (must have no sites), tearing down its production services, nginx, dedicated database instance and ZFS dataset."
     # Deleting whichever bench happens to be active by default would be too easy
     # to trigger by accident, so require an explicit -b/--bench (or running from
     # inside the bench dir).
@@ -33,13 +33,20 @@ class DropBenchCommand(Command):
         self._validate_no_sites(name)
         self._confirm(name)
 
+        self._remove_production()
+        self._release_admin_domain()
+        if self.bench.config.db_type == "postgres":
+            self._teardown_postgres()
+        else:
+            self._teardown_mariadb()
+        self._delete_bench_dir()
+        print(f"\nBench '{name}' dropped.")
+
+    def _teardown_mariadb(self) -> None:
         # A dedicated MariaDB instance (and the ZFS dataset its data sits on) is
         # only ours to destroy when no other bench connects to it.
         dedicated = bool(self.bench.config.mariadb.instance)
         full_db_teardown = dedicated and not self._mariadb_shared_with_other_bench()
-
-        self._remove_production()
-        self._release_admin_domain()
         if full_db_teardown:
             self._stop_mariadb()
         self._remove_volume(destroy_dataset=full_db_teardown)
@@ -47,8 +54,16 @@ class DropBenchCommand(Command):
             self._remove_mariadb_instance()
         elif dedicated:
             print("Keeping MariaDB instance — another bench shares it.")
-        self._delete_bench_dir()
-        print(f"\nBench '{name}' dropped.")
+
+    def _teardown_postgres(self) -> None:
+        # PostgreSQL benches use no ZFS volume; only a dedicated cluster needs
+        # teardown, and only when no other bench connects to it.
+        if not self.bench.config.postgres.instance:
+            return
+        if self._postgres_shared_with_other_bench():
+            print("Keeping PostgreSQL cluster — another bench shares it.")
+            return
+        self._remove_postgres_instance()
 
     def _release_admin_domain(self) -> None:
         """Release the admin domain that setup-production registered with the domain
@@ -71,7 +86,7 @@ class DropBenchCommand(Command):
     def _confirm(self, name: str) -> None:
         if self.skip_confirm:
             return
-        answer = input(f"Permanently delete bench '{name}' and its MariaDB instance? [y/N] ")
+        answer = input(f"Permanently delete bench '{name}' and its database? [y/N] ")
         if answer.strip().lower() not in ("y", "yes"):
             raise BenchError("Aborted.")
 
@@ -140,6 +155,35 @@ class DropBenchCommand(Command):
             MariaDBManager(self.bench.config.mariadb).remove_instance()
         except Exception as exc:  # never block the drop on a best-effort cleanup
             print(f"  (mariadb cleanup skipped: {exc})")
+
+    def _remove_postgres_instance(self) -> None:
+        from pilot.managers.postgres_manager import PostgresManager
+
+        print("Removing PostgreSQL cluster...")
+        sys.stdout.flush()
+        try:
+            PostgresManager(self.bench.config.postgres).remove_instance()
+        except Exception as exc:  # never block the drop on a best-effort cleanup
+            print(f"  (postgres cleanup skipped: {exc})")
+
+    def _postgres_shared_with_other_bench(self) -> bool:
+        """True if another bench connects to this bench's PostgreSQL cluster (same
+        cluster name or host:port), so removing it would break that bench."""
+        from pilot.utils import iter_sibling_benches
+
+        mine = self.bench.config.postgres
+        if not mine.instance:
+            return False
+        mine_keys = self._postgres_identity(mine)
+        for _, cfg in iter_sibling_benches(self.bench.path):
+            other = getattr(cfg, "postgres", None)
+            if other and other.instance and (mine_keys & self._postgres_identity(other)):
+                return True
+        return False
+
+    @staticmethod
+    def _postgres_identity(cfg) -> set:
+        return {("instance", cfg.instance), ("tcp", DropBenchCommand._normalize_db_host(cfg.host), cfg.port)}
 
     def _mariadb_shared_with_other_bench(self) -> bool:
         """True if another bench connects to this bench's MariaDB — whether by

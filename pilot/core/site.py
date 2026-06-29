@@ -29,33 +29,37 @@ class Site:
         return [*self.bench.frappe_call, *args]
 
     def create(self) -> None:
+        cmd = self._frappe_call("frappe", "--site", self.config.name, "new-site", self.config.name)
+        cmd += ["--admin-password", self.config.admin_password]
+        cmd += self._postgres_db_args() if self.bench.config.db_type == "postgres" else self._mariadb_db_args()
+        run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
+
+    def _mariadb_db_args(self) -> list[str]:
         from pilot.managers.mariadb_manager import MariaDBManager
 
         mariadb = self.bench.config.mariadb
         socket_path = MariaDBManager(mariadb)._detect_socket()
-
-        cmd = self._frappe_call(
-            "frappe",
-            "--site",
-            self.config.name,
-            "new-site",
-            self.config.name,
-            "--db-root-username",
-            mariadb.admin_user,
-            "--admin-password",
-            self.config.admin_password,
-        )
+        args = ["--db-root-username", mariadb.admin_user]
         if socket_path:
-            cmd += ["--db-socket", socket_path]
+            args += ["--db-socket", socket_path]
             # unix_socket auth ignores the password; pass a non-empty placeholder
             # so frappe doesn't fall back to an interactive getpass() prompt
-            cmd += ["--db-root-password", mariadb.root_password or "socket_auth"]
+            args += ["--db-root-password", mariadb.root_password or "socket_auth"]
         else:
-            cmd += ["--db-host", mariadb.host, "--db-port", str(mariadb.port)]
+            args += ["--db-host", mariadb.host, "--db-port", str(mariadb.port)]
             if mariadb.root_password:
-                cmd += ["--db-root-password", mariadb.root_password]
+                args += ["--db-root-password", mariadb.root_password]
+        return args
 
-        run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
+    def _postgres_db_args(self) -> list[str]:
+        postgres = self.bench.config.postgres
+        return [
+            "--db-type", "postgres",
+            "--db-host", postgres.host,
+            "--db-port", str(postgres.port),
+            "--db-root-username", postgres.admin_user,
+            "--db-root-password", self.bench.postgres_root_password(),
+        ]
 
     def restore(self, db_file: str, public_files: str | None = None, private_files: str | None = None) -> None:
         cmd = self._frappe_call("frappe", "--site", self.config.name, "restore", db_file)
@@ -63,9 +67,14 @@ class Site:
             cmd += ["--with-public-files", public_files]
         if private_files:
             cmd += ["--with-private-files", private_files]
+        # restore reads the engine from the site's config (frappe.init); it only
+        # needs the matching root credentials, not a --db-type flag.
+        cmd += self.bench.db_root_args()
+        run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
 
-        cmd += ["--db-root-username", self.bench.config.mariadb.admin_user, "--db-root-password", self.bench.config.mariadb.root_password]
-
+    def reinstall(self, admin_password: str = "admin") -> None:
+        cmd = self._frappe_call("frappe", "--site", self.config.name, "reinstall", "--yes", "--admin-password", admin_password)
+        cmd += self.bench.db_root_args()
         run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
 
     def install_app(self, app: "App") -> None:

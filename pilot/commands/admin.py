@@ -7,6 +7,10 @@ from pilot.commands.base import Command
 from pilot.exceptions import BenchError
 
 _ADMIN_RELEASE_URL = "https://github.com/frappe/bench-cli/releases/download/latest-build/admin-frontend.tar.gz"
+# The frontend toolchain (unplugin via frappe-ui/vite) uses import.meta.dirname,
+# which only exists in Node 20.11+. Older Node fails the build with an opaque
+# "paths[0] ... undefined" error, so we check up-front.
+_MIN_NODE = (20, 11)
 
 
 def _cli_root() -> Path:
@@ -72,6 +76,7 @@ class BuildAdminCommand(Command):
         else:
             print("Download failed, building from source...")
         frontend = self._find_frontend()
+        self._check_node_version()
         print(f"Building admin frontend at {frontend}...")
         if not (frontend / "node_modules").exists():
             print("Running npm install...")
@@ -85,3 +90,26 @@ class BuildAdminCommand(Command):
         if (candidate / "package.json").exists():
             return candidate
         raise BenchError("admin/frontend not found. This command requires the bench-cli source directory with admin/frontend/.")
+
+    def _check_node_version(self) -> None:
+        import subprocess
+
+        try:
+            output = subprocess.run(["node", "--version"], capture_output=True, text=True, check=True).stdout.strip()
+        except (FileNotFoundError, subprocess.CalledProcessError) as error:
+            raise BenchError(
+                "Node.js is required to build the admin frontend but was not found. "
+                "Install Node.js >= 20.11, or run `bench build-admin` (without --force) to download the pre-built frontend."
+            ) from error
+        parts = output.lstrip("v").split(".")
+        try:
+            version = (int(parts[0]), int(parts[1]))
+        except (IndexError, ValueError):
+            return  # unparseable — let the build run and surface its own error
+        if version < _MIN_NODE:
+            major, minor = _MIN_NODE
+            raise BenchError(
+                f"Building the admin frontend requires Node.js >= {major}.{minor}, but found {output}. "
+                "Switch to a newer Node (e.g. `nvm use 20`) and retry, or run `bench build-admin` "
+                "without --force to download the pre-built frontend instead."
+            )

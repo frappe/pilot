@@ -13,6 +13,7 @@ Apps and sites are **not** tracked in `bench.toml` after `bench init` — they a
 [bench]
 name = "my-bench"       # used in process names and log prefixes
 python = "3.14"         # Python version to use for the virtualenv
+db_type = "mariadb"     # database engine for this bench's sites: "mariadb" or "postgres"
 
 # ── Framework app (cloned during bench init) ──────────────────────────────────
 [[apps]]
@@ -30,6 +31,17 @@ admin_user = "root"      # MariaDB user bench connects as for admin ops; change 
 # instance = "my-bench"  # set by `bench new` on Linux — gives this bench its own mariadb@<instance>; clear for shared
 # socket_path = "/run/mysqld/mysqld-my-bench.sock"  # per-instance socket (auto-derived from instance name)
 # data_dir = "/var/lib/mysql-my-bench"              # per-instance datadir (auto-derived; used as bind-mount target with ZFS)
+
+# ── PostgreSQL (used when bench.db_type = "postgres"; installed by init) ──────
+# `bench new` generates the password. On systemd Linux a postgres bench gets its
+# own cluster; on Alpine/macOS it shares the system server (port 5432).
+[postgres]
+host = "localhost"
+port = 5432
+root_password = ""       # superuser password bench sets and new-site connects with
+admin_user = "postgres"  # PostgreSQL superuser bench provisions and connects as
+# version = "16"         # major version for the Homebrew formula on macOS
+# instance = "my-bench"  # set by `bench new` on systemd Linux — own cluster on its own port; clear for shared
 
 # ── Redis ─────────────────────────────────────────────────────────────────────
 [redis]
@@ -101,6 +113,7 @@ quota = "60G"           # hard cap — lower it to fit more benches in the pool
 |-------|------|----------|---------|-------------|
 | `name` | string | yes | — | Human-readable bench name. Used in process labels and log file names. Must match `^[a-zA-Z][a-zA-Z0-9_-]*$`. |
 | `python` | string | yes | — | Python version string (e.g. `"3.14"`). Must be available on the system or installable via `deadsnakes/ppa`. |
+| `db_type` | string | no | `mariadb` | Database engine for **all** sites on this bench: `"mariadb"` or `"postgres"`. Chosen at `bench new` (`--database`), in the setup wizard, or the admin New Bench dialog. `bench init` installs and provisions only this engine. |
 
 ### `[[apps]]`
 
@@ -130,6 +143,21 @@ Declares the framework app (frappe) to clone during `bench init`. After init, ad
 | `data_dir` | string | no | `/var/lib/mysql-<instance>` | Datadir for the dedicated instance — a **sibling** of `/var/lib/mysql`, never nested inside it. Must be an absolute path. When `[volume]` is enabled, the dataset's `mariadb/` subdir is bind-mounted here. Ignored in shared mode. |
 
 > **Dedicated vs shared.** On Linux, `bench new` defaults to a dedicated instance, which is required to use ZFS volumes and snapshots. Choose shared (clear `instance` in the setup wizard) to connect to the pre-existing system MariaDB — useful when you already manage MariaDB separately or don't need per-bench snapshots. See [Per-bench MariaDB instances](architecture.md#per-bench-mariadb-instances) for the mechanics.
+
+### `[postgres]`
+
+Used when the bench's engine is PostgreSQL (`[bench] db_type = "postgres"`). `bench init` installs PostgreSQL (apt/Homebrew/apk) and provisions it: it ensures the `admin_user` superuser exists and sets its password to `root_password`. The engine is chosen per bench, not per site — every site on a PostgreSQL bench uses PostgreSQL (and a MariaDB bench never installs PostgreSQL). `bench new` generates `root_password` automatically.
+
+**Dedicated vs shared.** On systemd Linux, `bench new` defaults to a dedicated cluster (`pg_createcluster`) with its own `instance` and `port`; clear `instance` (setup wizard) for the shared system server on 5432. Alpine and macOS always use the shared server.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `host` | string | no | `localhost` | PostgreSQL server host. |
+| `port` | int | no | `5432` | Server port. Shared benches use 5432; a dedicated cluster gets its own port. |
+| `root_password` | string | no | — | Superuser password bench sets during provisioning and new-site connects with. `bench new` generates one; if empty, provisioning skips superuser setup and you must set it before creating Postgres sites. |
+| `admin_user` | string | no | `postgres` | PostgreSQL superuser bench provisions and connects as. |
+| `version` | string | no | `16` | Major version: selects the Homebrew formula (`postgresql@<version>`) on macOS and the cluster version for a dedicated Linux cluster. Defaults to the installed server's version on Linux. |
+| `instance` | string | no | — | Set on systemd Linux for a dedicated cluster; empty means the shared system server. |
 
 ### `[redis]`
 

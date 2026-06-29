@@ -114,6 +114,60 @@ def test_new_command_second_bench_gets_next_offset(tmp_path: Path, monkeypatch: 
     assert data["admin"]["port"] == 7001
 
 
+def test_new_command_postgres_bench(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A `--database postgres` bench records db_type, generates a postgres
+    password, and gets no dedicated MariaDB instance."""
+    from pilot.commands.new import NewCommand
+
+    monkeypatch.setattr("builtins.input", lambda _: "")
+    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    monkeypatch.setattr("pilot.commands.new.is_linux", lambda: True)
+    # Shared server (no dedicated cluster) for a deterministic shape across hosts.
+    monkeypatch.setattr("pilot.managers.postgres_manager.supports_dedicated_postgres", lambda: False)
+    benches_dir = tmp_path / "benches"
+    NewCommand(benches_dir / "pg", "pg", db_type="postgres").run()
+
+    with open(benches_dir / "pg" / "bench.toml", "rb") as f:
+        data = tomllib.load(f)
+    assert data["bench"]["db_type"] == "postgres"
+    assert data["postgres"]["root_password"]  # generated for provisioning
+    assert not data["mariadb"].get("instance")  # shared, no dedicated instance
+    assert not data["postgres"].get("instance")  # shared server
+
+
+def test_new_command_dedicated_postgres_cluster(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Where supported (systemd Linux), a postgres bench defaults to its own
+    cluster with an assigned, non-shared port."""
+    from pilot.commands.new import NewCommand
+
+    monkeypatch.setattr("builtins.input", lambda _: "")
+    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    monkeypatch.setattr("pilot.commands.new.is_linux", lambda: True)
+    monkeypatch.setattr("pilot.managers.postgres_manager.supports_dedicated_postgres", lambda: True)
+    monkeypatch.setattr("pilot.managers.postgres_manager.pick_dedicated_postgres_port", lambda path: 5439)
+    benches_dir = tmp_path / "benches"
+    NewCommand(benches_dir / "pg", "pg", db_type="postgres").run()
+
+    with open(benches_dir / "pg" / "bench.toml", "rb") as f:
+        data = tomllib.load(f)
+    assert data["postgres"]["instance"] == "pg"
+    assert data["postgres"]["port"] == 5439
+
+
+def test_new_command_mariadb_bench_has_no_postgres_password(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from pilot.commands.new import NewCommand
+
+    monkeypatch.setattr("builtins.input", lambda _: "")
+    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    monkeypatch.setattr("pilot.commands.new.is_linux", lambda: False)
+    NewCommand(tmp_path / "benches" / "m", "m").run()
+
+    with open(tmp_path / "benches" / "m" / "bench.toml", "rb") as f:
+        data = tomllib.load(f)
+    assert data["bench"]["db_type"] == "mariadb"
+    assert not data["postgres"]["root_password"]  # not provisioned for mariadb benches
+
+
 def test_new_command_writes_dedicated_mariadb_instance(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """New benches default to their own MariaDB instance with an isolated
     socket/datadir and an offset port."""
@@ -984,3 +1038,97 @@ def test_drop_bench_skips_volume_when_not_using_zfs(tmp_path: Path, monkeypatch:
     DropBenchCommand(bench, skip_confirm=True)._remove_volume(destroy_dataset=True)
 
     assert called["made"] is False
+
+
+# ── BuildAdminCommand node-version guard ──────────────────────────────────────
+
+
+def test_build_admin_rejects_old_node(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pilot.commands.admin import BuildAdminCommand
+
+    monkeypatch.setattr("subprocess.run", lambda *a, **k: MagicMock(stdout="v18.20.8\n"))
+    with pytest.raises(BenchError, match="Node.js"):
+        BuildAdminCommand(force_build=True)._check_node_version()
+
+
+def test_build_admin_accepts_supported_node(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pilot.commands.admin import BuildAdminCommand
+
+    monkeypatch.setattr("subprocess.run", lambda *a, **k: MagicMock(stdout="v20.11.0\n"))
+    BuildAdminCommand(force_build=True)._check_node_version()  # no raise
+
+
+def test_build_admin_errors_when_node_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pilot.commands.admin import BuildAdminCommand
+
+    def _missing(*a, **k):
+        raise FileNotFoundError("node")
+
+    monkeypatch.setattr("subprocess.run", _missing)
+    with pytest.raises(BenchError, match="Node.js is required"):
+        BuildAdminCommand(force_build=True)._check_node_version()
+
+
+# ── bench start: rebuild the admin UI when source changed ─────────────────────
+
+
+def _admin_source_checkout(tmp_path: Path, src_mtime: int, built_mtime: int) -> Path:
+    """A source checkout layout with a built dist; mtimes set to compare staleness."""
+    import os
+
+    cli_root = tmp_path / "repo"
+    frontend = cli_root / "admin" / "frontend"
+    (frontend / "src").mkdir(parents=True)
+    package_json = frontend / "package.json"
+    package_json.write_text("{}")
+    dist = cli_root / "admin" / "backend" / "static" / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("built")
+    src_file = frontend / "src" / "App.vue"
+    src_file.write_text("x")
+    # Every source file shares src_mtime so the build mtime alone decides staleness.
+    for source in (package_json, src_file):
+        os.utime(source, (src_mtime, src_mtime))
+    os.utime(dist / "index.html", (built_mtime, built_mtime))
+    return cli_root
+
+
+def test_admin_source_is_newer_detects_edits(tmp_path: Path) -> None:
+    from pilot.commands.start import RunCommand
+
+    cli_root = _admin_source_checkout(tmp_path, src_mtime=100, built_mtime=1)
+    frontend = cli_root / "admin" / "frontend"
+    dist = cli_root / "admin" / "backend" / "static" / "dist"
+    assert RunCommand._admin_source_is_newer(frontend, dist) is True
+
+    import os
+    os.utime(dist / "index.html", (200, 200))  # built after the edit
+    assert RunCommand._admin_source_is_newer(frontend, dist) is False
+
+
+def test_start_rebuilds_admin_when_source_changed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from pilot.commands import admin as admin_mod
+    from pilot.commands.start import RunCommand
+
+    cli_root = _admin_source_checkout(tmp_path, src_mtime=100, built_mtime=1)
+    build = MagicMock()
+    monkeypatch.setattr(admin_mod, "_cli_root", lambda: cli_root)
+    monkeypatch.setattr(admin_mod, "BuildAdminCommand", build)
+
+    RunCommand(make_bench(tmp_path))._ensure_admin_dist()
+
+    build.assert_called_once_with(force_build=True)
+
+
+def test_start_skips_admin_rebuild_when_fresh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from pilot.commands import admin as admin_mod
+    from pilot.commands.start import RunCommand
+
+    cli_root = _admin_source_checkout(tmp_path, src_mtime=1, built_mtime=100)
+    build = MagicMock()
+    monkeypatch.setattr(admin_mod, "_cli_root", lambda: cli_root)
+    monkeypatch.setattr(admin_mod, "BuildAdminCommand", build)
+
+    RunCommand(make_bench(tmp_path))._ensure_admin_dist()
+
+    build.assert_not_called()

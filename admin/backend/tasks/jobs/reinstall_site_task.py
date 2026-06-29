@@ -1,4 +1,8 @@
-from pilot.utils import run_command
+import sys
+
+from pilot.config.site_config import SiteConfig
+from pilot.core.site import Site
+
 from .base_task import BaseTask
 
 
@@ -17,13 +21,9 @@ class ReinstallSiteTask(BaseTask):
 
     def run(self) -> None:
         print(f"Reinstalling site '{self.site}'...")
-        import sys
         sys.stdout.flush()
-        cmd = [*self.bench.frappe_call, "frappe", "--site", self.site, "reinstall", "--yes",
-               "--admin-password", self.admin_password]
-        if self.bench.config.mariadb.root_password:
-            cmd += ["--mariadb-root-password", self.bench.config.mariadb.root_password]
-        run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
+        site = Site(SiteConfig(name=self.site, apps=[]), self.bench)
+        site.reinstall(self.admin_password)
         print(f"\nSite '{self.site}' reinstalled.")
 
 

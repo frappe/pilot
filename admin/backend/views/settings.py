@@ -22,6 +22,8 @@ _RESTART_KEYS = {
     ("mariadb", "port"),
     ("mariadb", "admin_user"),
     ("mariadb", "socket_path"),
+    # postgres is intentionally absent: its connection is read fresh by the
+    # new-site subprocess, so no running process needs restarting on a change.
     ("redis", "cache_port"),
     ("redis", "queue_port"),
     ("workers", "groups"),
@@ -58,6 +60,7 @@ class ConfigPatcher:
     def apply(self) -> str | None:
         self._apply_bench()
         self._apply_mariadb()
+        self._apply_postgres()
         self._apply_redis()
         self._apply_workers()
         self._apply_volume()
@@ -88,6 +91,20 @@ class ConfigPatcher:
         mariadb_config.port = int(mariadb.get("port", mariadb_config.port))
         mariadb_config.admin_user = str(mariadb.get("admin_user", mariadb_config.admin_user))
         mariadb_config.socket_path = str(mariadb.get("socket_path", mariadb_config.socket_path))
+
+    def _apply_postgres(self) -> None:
+        postgres = self.data.get("postgres") or {}
+        if not postgres:
+            return
+        postgres_config = self.config.postgres
+        postgres_config.host = str(postgres.get("host", postgres_config.host))
+        postgres_config.port = int(postgres.get("port", postgres_config.port))
+        postgres_config.admin_user = str(postgres.get("admin_user", postgres_config.admin_user))
+        # Password is write-only: never sent to the UI, so update it only when a
+        # non-empty value is supplied; otherwise keep the stored one.
+        password = str(postgres.get("root_password", "")).strip()
+        if password:
+            postgres_config.root_password = password
 
     def _apply_redis(self) -> None:
         redis = self.data.get("redis") or {}
@@ -242,13 +259,19 @@ def _build_settings_response(config: BenchConfig) -> dict:
     return {
         "is_linux": is_linux(),
         "native_process_manager": native_process_manager(),
-        "bench": {"name": config.name, "python": config.python_version, "http_port": config.http_port, "socketio_port": config.socketio_port, "default_branch": config.default_branch},
+        "bench": {"name": config.name, "python": config.python_version, "http_port": config.http_port, "socketio_port": config.socketio_port, "default_branch": config.default_branch, "db_type": config.db_type},
         "mariadb": {
             "host": config.mariadb.host,
             "port": config.mariadb.port,
             "admin_user": config.mariadb.admin_user,
             "socket_path": config.mariadb.socket_path,
             "version": config.mariadb.version or "",
+        },
+        "postgres": {
+            "host": config.postgres.host,
+            "port": config.postgres.port,
+            "admin_user": config.postgres.admin_user,
+            "password_set": bool(config.postgres.root_password),
         },
         "redis": {"cache_port": config.redis.cache_port, "queue_port": config.redis.queue_port, "version": RedisManager.installed_version() or config.redis.version or ""},
         "workers": _worker_groups_payload(config),

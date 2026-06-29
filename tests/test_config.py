@@ -201,6 +201,68 @@ def test_mariadb_instance_omitted_from_toml_when_shared() -> None:
     assert "data_dir =" not in toml
 
 
+# ── PostgreSQL ────────────────────────────────────────────────────────────────
+
+
+def test_postgres_defaults_when_section_absent() -> None:
+    config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
+    assert config.postgres.host == "localhost"
+    assert config.postgres.port == 5432
+    assert config.postgres.admin_user == "postgres"
+    assert config.postgres.root_password == ""
+
+
+def test_postgres_section_roundtrip() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["postgres"] = {"host": "db.internal", "port": 5433, "admin_user": "pgroot", "root_password": "secret"}
+    config = load_from_dict(data)
+    assert config.postgres.host == "db.internal"
+    assert config.postgres.port == 5433
+    toml = bench_config_to_toml(config)
+    assert "[postgres]" in toml
+    assert 'host = "db.internal"' in toml
+    assert "port = 5433" in toml
+    assert 'admin_user = "pgroot"' in toml
+    assert 'root_password = "secret"' in toml
+
+
+def test_invalid_postgres_port_rejected() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["postgres"] = {"port": 0}
+    with pytest.raises(ConfigError) as exc_info:
+        load_from_dict(data)
+    assert "postgres.port" in str(exc_info.value)
+
+
+def test_postgres_instance_defaults_to_shared() -> None:
+    config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
+    assert config.postgres.instance == ""
+
+
+def test_postgres_instance_roundtrip() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["postgres"] = {"instance": "my-bench", "port": 5433, "root_password": "secret"}
+    config = load_from_dict(data)
+    assert config.postgres.instance == "my-bench"
+    toml = bench_config_to_toml(config)
+    assert 'instance = "my-bench"' in toml
+
+
+def test_postgres_instance_omitted_from_toml_when_shared() -> None:
+    config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
+    pg_section = bench_config_to_toml(config).split("[postgres]")[1].split("[")[0]
+    assert "instance =" not in pg_section
+
+
+def test_invalid_postgres_instance_name() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["postgres"] = {"instance": "1bad name"}
+    config = BenchConfig._from_dict(data)
+    with pytest.raises(ConfigError) as exc_info:
+        config.validate()
+    assert "postgres.instance" in str(exc_info.value)
+
+
 def test_invalid_mariadb_instance_name() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
     data["mariadb"]["instance"] = "1bad name"
@@ -485,3 +547,27 @@ def test_admin_internal_port_is_port_plus_one() -> None:
 
     assert AdminConfig(port=8002).internal_port == 8003
     assert AdminConfig(port=9100).internal_port == 9101
+
+
+# ── Bench-level database engine ───────────────────────────────────────────────
+
+
+def test_db_type_defaults_to_mariadb() -> None:
+    config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
+    assert config.db_type == "mariadb"
+
+
+def test_db_type_postgres_roundtrip() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["bench"]["db_type"] = "postgres"
+    config = load_from_dict(data)
+    assert config.db_type == "postgres"
+    assert 'db_type = "postgres"' in bench_config_to_toml(config)
+
+
+def test_invalid_db_type_rejected() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["bench"]["db_type"] = "sqlite"
+    with pytest.raises(ConfigError) as exc_info:
+        load_from_dict(data)
+    assert "bench.db_type" in str(exc_info.value)

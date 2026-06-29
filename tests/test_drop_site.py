@@ -95,3 +95,35 @@ def test_no_op_for_missing_site(tmp_path: Path, monkeypatch) -> None:
     cmd = DropSiteCommand(_make_bench(tmp_path), "ghost")
     cmd._release_domains(cmd._provider_domains())
     assert not log.exists()
+
+
+def _capture_drop_cmd(tmp_path: Path, monkeypatch, bench: Bench) -> dict:
+    (bench.path / "bench.toml").write_text('[bench]\nname = "test-bench"\n')
+    _write_site(bench, "mysite", {})
+    captured: dict = {}
+    monkeypatch.setattr("pilot.utils.run_command", lambda cmd, **kw: captured.setdefault("cmd", cmd))
+    DropSiteCommand(bench, "mysite").run()
+    return captured
+
+
+def test_drop_uses_postgres_root_creds(tmp_path: Path, monkeypatch) -> None:
+    # The drop connects to the server as root to drop the database, so it must pass
+    # the bench engine's credentials — postgres password auth fails without them.
+    _install_provider(tmp_path, monkeypatch)
+    bench = _make_bench(tmp_path)
+    bench.config.db_type = "postgres"
+    bench.config.postgres.root_password = "pgpw"
+
+    cmd = _capture_drop_cmd(tmp_path, monkeypatch, bench)["cmd"]
+    assert "drop-site" in cmd
+    assert cmd[cmd.index("--db-root-username") + 1] == "postgres"
+    assert cmd[cmd.index("--db-root-password") + 1] == "pgpw"
+
+
+def test_drop_uses_mariadb_root_creds(tmp_path: Path, monkeypatch) -> None:
+    _install_provider(tmp_path, monkeypatch)
+    bench = _make_bench(tmp_path)  # mariadb, root_password "root"
+
+    cmd = _capture_drop_cmd(tmp_path, monkeypatch, bench)["cmd"]
+    assert cmd[cmd.index("--db-root-username") + 1] == "root"
+    assert cmd[cmd.index("--db-root-password") + 1] == "root"

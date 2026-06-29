@@ -132,6 +132,29 @@ def test_invalid_jwt_cookie_stays_unauthenticated(tmp_path: Path) -> None:
     assert client.get("/api/benches/").status_code == 401
 
 
+def test_status_reports_bench_db_type(tmp_path: Path) -> None:
+    # The engine is a bench-wide property; the admin reads it from /api/status to
+    # show one bench-level badge instead of a per-site one.
+    client = _client(tmp_path)
+    assert client.get("/api/status").get_json()["db_type"] == "mariadb"
+
+
+def test_status_reports_postgres_engine(tmp_path: Path) -> None:
+    from admin.backend.app import create_app
+    from pilot.config.toml_writer import bench_config_to_toml
+
+    bench_root = tmp_path / "benches" / "pg"
+    _initialized_bench(bench_root, "secret", "k3y")
+    toml_path = bench_root / "bench.toml"
+    config = BenchConfig.from_file(toml_path)
+    config.db_type = "postgres"
+    toml_path.write_text(bench_config_to_toml(config))
+
+    app = create_app(bench_root)
+    app.config["TESTING"] = True
+    assert app.test_client().get("/api/status").get_json()["db_type"] == "postgres"
+
+
 def test_login_with_sid_sets_httponly_cookie(tmp_path: Path) -> None:
     client = _client(tmp_path)
     resp = client.post("/api/login", json={"sid": issue_login_token("k3y")})

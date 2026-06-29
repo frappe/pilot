@@ -501,3 +501,22 @@ def test_api_benches_drop_runs_pilot(tmp_path: Path) -> None:
     assert resp.get_json() == {"ok": True}
     argv = mock_run.call_args.args[0]
     assert argv[-4:] == ["--yes", "-b", "prod-bench", "drop"]
+
+# ── POST /api/sites/create — engine is bench-level, not per-site ──────────────
+
+
+def test_create_site_does_not_carry_db_type(tmp_path: Path) -> None:
+    # The engine is fixed per bench, so site creation never passes a db_type.
+    client = _client(tmp_path / "benches" / "current")
+    captured: dict = {}
+
+    def fake_run(self, command, args, callbacks=None):
+        captured["args"] = args
+        return "task_123"
+
+    with patch("admin.backend.views.sites._new_site_name_error", return_value=None), \
+         patch("admin.backend.views.sites.TaskRunner.run", new=fake_run):
+        resp = client.post("/api/sites/create", json={"name": "s.localhost"})
+
+    assert resp.get_json()["ok"] is True
+    assert "db_type" not in captured["args"]

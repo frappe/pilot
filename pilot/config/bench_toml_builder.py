@@ -16,6 +16,7 @@ FLAT_KEYS = {
     "bench_name": "name",
     "python": "python_version",
     "socketio_backend": "socketio_backend",
+    "db_type": "db_type",
     "mariadb_password": "mariadb.root_password",
     "mariadb_admin_user": "mariadb.admin_user",
     "mariadb_instance": "mariadb.instance",
@@ -27,6 +28,12 @@ FLAT_KEYS = {
     # render() then offset a *second* time — so every wizard /save compounded the
     # offset onto mariadb.port alone (e.g. 3306→3312→3318), drifting it off-grid
     # and colliding with sibling instances.
+    # postgres.port is safe as a flat key — it's a shared server, never offset
+    # (not in _PORT_FIELDS), so it doesn't hit the double-offset issue above.
+    "postgres_password": "postgres.root_password",
+    "postgres_admin_user": "postgres.admin_user",
+    "postgres_port": "postgres.port",
+    "postgres_instance": "postgres.instance",
     "admin_enabled": "admin.enabled",
     "admin_password": "admin.password",
     "admin_domain": "admin.domain",

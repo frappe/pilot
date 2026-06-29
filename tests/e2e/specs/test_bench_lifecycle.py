@@ -5,7 +5,8 @@
 
 One spec, several variants — selected by env so CI can run them as a matrix:
 
-    E2E_DB_MODE   shared | dedicated     (default: shared)
+    E2E_DB_TYPE   mariadb | postgres      (default: mariadb)
+    E2E_DB_MODE   shared | dedicated      (default: shared; MariaDB only)
     E2E_VOLUMES   1 to enable ZFS volumes (dedicated only — the production setup)
     E2E_EXTRA_APP 0 to skip the install/uninstall app steps (keeps a run quick)
 
@@ -40,14 +41,16 @@ def _truthy(name: str, default: str = "") -> bool:
 
 
 # ── variant (override via env to match the CI matrix) ─────────────────────────
-DB_MODE = os.environ.get("E2E_DB_MODE", "shared")  # 'shared' | 'dedicated'
+DB_TYPE = os.environ.get("E2E_DB_TYPE", "mariadb")  # 'mariadb' | 'postgres'
+DB_MODE = os.environ.get("E2E_DB_MODE", "shared")  # 'shared' | 'dedicated' (MariaDB only)
 VOLUMES = _truthy("E2E_VOLUMES")  # ZFS — dedicated only, mirrors production
 # Distinct name per variant so local runs of different variants don't collide.
-BENCH_NAME = f"e2e-{DB_MODE}{'-zfs' if VOLUMES else ''}"  # consumed by the `bench` fixture
+BENCH_NAME = f"e2e-postgres-{DB_MODE}" if DB_TYPE == "postgres" else f"e2e-{DB_MODE}{'-zfs' if VOLUMES else ''}"
 
 SITE = "site1.localhost"
 SITE_ADMIN_PASSWORD = "admin"
 MARIADB_PASSWORD = os.environ.get("E2E_MARIADB_PASSWORD", "admin")
+POSTGRES_PASSWORD = os.environ.get("E2E_POSTGRES_PASSWORD", "admin")
 
 # An extra app installed from a public repo. Defaults to a light, known-good
 # frappe app so CI stays fast; point it at erpnext / india-compliance to widen.
@@ -66,9 +69,11 @@ def test_completes_setup_wizard(bench, page):
         complete_dev_wizard(
             page,
             admin_password=bench.admin_password,
+            db_type=DB_TYPE,
             mariadb_password=MARIADB_PASSWORD,
             db_mode=DB_MODE,
             volumes=VOLUMES,
+            postgres_password=POSTGRES_PASSWORD,
         )
     except Exception as err:
         # Attach the failed setup task's output so the failure is diagnosable

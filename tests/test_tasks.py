@@ -58,6 +58,15 @@ def test_build_argv_uninstall_app(tmp_path: Path) -> None:
     assert argv == [python, "-m", "frappe.utils.bench_helper", "frappe", "--site", "mysite.localhost", "uninstall-app", "erpnext", "--yes", "--no-backup"]
 
 
+def test_build_argv_new_site_carries_no_db_type(tmp_path: Path) -> None:
+    # The engine is a bench-level setting now, so site tasks never pass --db-type.
+    runner = TaskRunner(tmp_path)
+    argv = runner._build_argv("new-site", {"name": "site1.localhost", "admin_password": "x"})
+    assert argv[1:3] == ["-m", "admin.backend.tasks.jobs.new_site_task"]
+    assert "site1.localhost" in argv
+    assert "--db-type" not in argv
+
+
 def test_build_argv_get_app(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     argv = runner._build_argv("get-app", {"name": "erpnext", "repo": "https://github.com/frappe/erpnext"})

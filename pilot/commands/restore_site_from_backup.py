@@ -29,6 +29,8 @@ class NewSiteFromBackupCommand:
         from pilot.config.site_config import SiteConfig
         from pilot.core.site import Site
 
+        # The site is created with (and restored into) the bench's single engine;
+        # the backup must have been taken from a bench of that same engine.
         NewSiteCommand(self.bench, self.name, [], self.admin_password).run()
         print(f"Restoring backup: {self.db_file}")
         sys.stdout.flush()

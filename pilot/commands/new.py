@@ -1,4 +1,5 @@
 import argparse
+import secrets
 import socket
 from pathlib import Path
 
@@ -22,6 +23,12 @@ class NewCommand(Command):
             help="Admin domain for this bench. Optional for development; "
                  "required by 'bench setup production' (pass it there if omitted here).",
         )
+        parser.add_argument(
+            "--database",
+            default="mariadb",
+            choices=["mariadb", "postgres"],
+            help="Database engine for this bench's sites (default: mariadb).",
+        )
 
     @classmethod
     def from_args(cls, args, bench):
@@ -31,16 +38,18 @@ class NewCommand(Command):
             cli_root() / "benches" / args.name,
             args.name,
             admin_domain=args.admin_domain,
+            db_type=args.database,
         )
 
     def __init__(self, target_directory: Path, name: str, process_manager: str = "",
-                 admin_domain: str = "", admin_tls: bool | None = None) -> None:
+                 admin_domain: str = "", admin_tls: bool | None = None, db_type: str = "mariadb") -> None:
         self.target_directory = target_directory
         self.name = name
         self.process_manager = process_manager
         self.admin_domain = admin_domain
         # None → inherit the server-wide value from a sibling bench (default False).
         self.admin_tls = admin_tls
+        self.db_type = db_type
 
     def run(self) -> None:
         from pilot.config.bench_toml_builder import BenchTomlBuilder, default_ports
@@ -67,7 +76,18 @@ class NewCommand(Command):
             "admin_enabled": True,
             "admin_domain": self.admin_domain,
             "admin_tls": admin_tls,
+            "db_type": self.db_type,
         }
+        if self.db_type == "postgres":
+            # bench provisions PostgreSQL during init; this becomes its superuser password.
+            settings["postgres_password"] = secrets.token_hex(nbytes=8)
+            # Default to a dedicated per-bench cluster where supported (systemd
+            # Linux); elsewhere (Alpine/macOS) sites use the shared server.
+            from pilot.managers.postgres_manager import pick_dedicated_postgres_port, supports_dedicated_postgres
+
+            if supports_dedicated_postgres():
+                settings["postgres_instance"] = self.name
+                settings["postgres_port"] = pick_dedicated_postgres_port(self.target_directory)
         if self.process_manager:
             settings["production_process_manager"] = self.process_manager
         # The Let's Encrypt account email is a server-wide setting; inherit it
@@ -76,12 +96,12 @@ class NewCommand(Command):
         sibling_email = self._sibling_letsencrypt_email()
         if sibling_email:
             settings["letsencrypt_email"] = sibling_email
-        # New benches get their own MariaDB instance with an isolated
-        # socket/datadir; mariadb.port is offset automatically via _PORT_FIELDS.
-        # Linux uses a per-bench instance (systemd mariadb@<name>, or a generated
-        # OpenRC mariadb-<name> on Alpine). macOS (Homebrew) has no per-instance
-        # mechanism, so it stays on the shared server.
-        if is_linux():
+        # MariaDB benches get their own instance with an isolated socket/datadir;
+        # mariadb.port is offset automatically via _PORT_FIELDS. Linux uses a
+        # per-bench instance (systemd mariadb@<name>, or a generated OpenRC
+        # mariadb-<name> on Alpine). macOS (Homebrew) and PostgreSQL benches have
+        # no per-instance mechanism, so they stay on the shared server.
+        if self.db_type == "mariadb" and is_linux():
             settings.update(
                 {
                     "mariadb_instance": self.name,

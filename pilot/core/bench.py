@@ -51,6 +51,22 @@ class Bench:
         """Command prefix to invoke frappe's bench helper via the venv Python."""
         return [str(self.python), "-m", "frappe.utils.bench_helper"]
 
+    def db_root_args(self) -> list[str]:
+        """Root username/password for site teardown/restore/reinstall, keyed to the
+        bench's engine (every site on a bench shares one engine)."""
+        if self.config.db_type == "postgres":
+            pg = self.config.postgres
+            return ["--db-root-username", pg.admin_user, "--db-root-password", self.postgres_root_password()]
+        mariadb = self.config.mariadb
+        return ["--db-root-username", mariadb.admin_user, "--db-root-password", mariadb.root_password]
+
+    def postgres_root_password(self) -> str:
+        # frappe's postgres setup falls back to an interactive getpass() — which
+        # hangs the background task — when the password is empty. Pass a non-empty
+        # placeholder instead: trust/peer auth ignores it, while a password-auth
+        # server returns a clear authentication error.
+        return self.config.postgres.root_password or "trust_auth"
+
     def app(self, name: str) -> "App":
         """Return an App for a cloned app folder by name or module name.
         Accepts either the folder name or the module name for parity with original bench commands.

@@ -63,6 +63,7 @@ def save_config():
             pass
 
     settings = {**existing, **data, "admin_enabled": True}
+    _assign_postgres_port(bench_root, settings)
     content = BenchTomlBuilder(_current_name(bench_root), settings, port_offset=current_port_offset(toml_path)).render()
     toml_path.write_text(content)
 
@@ -108,6 +109,30 @@ def validate_mariadb():
     if manager.check_credentials(password):
         return jsonify({"state": "valid"})
 
+    return jsonify({"state": "invalid"})
+
+
+@setup_bp.route("/validate-postgres", methods=["POST"])
+def validate_postgres():
+    """Tell the wizard whether the entered PostgreSQL credentials will work.
+
+    A dedicated cluster (or a server not yet installed) is created and secured by
+    init, so its password is whatever the user enters now → will_install. An
+    existing shared server validates the live credentials.
+    """
+    from pilot.config.postgres_config import PostgresConfig
+    from pilot.managers.postgres_manager import PostgresManager
+
+    data = request.get_json(silent=True) or {}
+    password = data.get("postgres_password", "")
+    admin_user = data.get("postgres_admin_user") or "postgres"
+    dedicated = bool(data.get("dedicated"))
+
+    manager = PostgresManager(PostgresConfig(root_password=password, admin_user=admin_user))
+    if dedicated or not manager.is_installed():
+        return jsonify({"state": "will_install"})
+    if manager.check_credentials(password):
+        return jsonify({"state": "valid"})
     return jsonify({"state": "invalid"})
 
 
@@ -158,10 +183,32 @@ def _mariadb_config(bench_root: Path, password: str, admin_user: str = "root", d
     return config
 
 
+def _assign_postgres_port(bench_root: Path, settings: dict) -> None:
+    """A dedicated PostgreSQL cluster gets its own port; the shared server is 5432.
+    Idempotent: keep an already-assigned dedicated port across re-saves."""
+    if settings.get("db_type") != "postgres":
+        return
+    from pilot.managers.postgres_manager import pick_dedicated_postgres_port
+
+    if settings.get("postgres_instance"):
+        port = settings.get("postgres_port")
+        if not port or int(port) == 5432:
+            settings["postgres_port"] = pick_dedicated_postgres_port(bench_root)
+    else:
+        settings["postgres_port"] = 5432
+
+
 def _validate(data: dict) -> str | None:
-    for field in ("mariadb_password", "admin_password"):
-        if not data.get(field):
-            return f"{field} is required"
+    if not data.get("admin_password"):
+        return "admin_password is required"
+    # Each engine needs its superuser password: frappe connects over TCP, where a
+    # blank password fails password auth and would only surface at first site
+    # creation. init sets this password on a fresh install.
+    db_type = data.get("db_type", "mariadb")
+    if db_type == "mariadb" and not data.get("mariadb_password"):
+        return "mariadb_password is required"
+    if db_type == "postgres" and not data.get("postgres_password"):
+        return "postgres_password is required"
     if data.get("volume_enabled", True):
         if not data.get("volume_pool"):
             return "volume_pool is required"
@@ -286,11 +333,12 @@ def stream_task(task_id: str):
 
 
 def _read_defaults(bench_root: Path) -> dict:
-    from pilot.platform import is_linux, native_process_manager
+    from pilot.platform import is_alpine, is_linux, native_process_manager
 
     result = {
         "bench_name": bench_root.name,
         "is_linux": is_linux(),
+        "is_alpine": is_alpine(),
         "native_process_manager": native_process_manager(),
         **BenchTomlBuilder.DEFAULTS,
     }

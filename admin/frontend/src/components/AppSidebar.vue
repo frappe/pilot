@@ -102,7 +102,6 @@ onUnmounted(() => clearInterval(pollTimer))
           </template>
         </SidebarItem>
       </template>
-      <template #footer-items />
     </Sidebar>
   </div>
 </template>
