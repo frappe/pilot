@@ -251,7 +251,7 @@ class Monitor:
 
     def setup(self) -> None:
         if not is_linux():
-            BenchError("Monitoring is only supported on linux based machines.")
+            raise BenchError("Monitoring is only supported on linux based machines.")
 
         log_dir = self.log_path.parent
         log_dir.mkdir(parents=True, exist_ok=True)
