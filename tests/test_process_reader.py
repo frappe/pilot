@@ -245,8 +245,8 @@ def _patch_managers(systemd_running: bool, supervisor_running: bool):
     return (
         patch("bench_cli.config.bench_config.BenchConfig.from_file"),
         patch("bench_cli.core.bench.Bench"),
-        patch("bench_cli.managers.systemd_process_manager.SystemdProcessManager", return_value=mock_systemd),
-        patch("bench_cli.managers.supervisor_process_manager.SupervisorProcessManager", return_value=mock_supervisor),
+        patch("bench_cli.managers.process_managers.systemd.SystemdProcessManager", return_value=mock_systemd),
+        patch("bench_cli.managers.process_managers.supervisor.SupervisorProcessManager", return_value=mock_supervisor),
         mock_systemd,
         mock_supervisor,
     )

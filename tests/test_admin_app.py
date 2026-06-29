@@ -183,8 +183,8 @@ def test_api_benches_new_routes_wizard_at_domain_when_production(tmp_path: Path)
     client = app.test_client()
     client.set_cookie("sid", issue_token(secret))
 
-    with patch("bench_cli.managers.systemd_process_manager.SystemdProcessManager.setup_admin") as mock_admin, \
-         patch("bench_cli.managers.nginx_manager.NginxManager.generate_config") as mock_gen, \
+    with patch("bench_cli.managers.process_managers.systemd.SystemdProcessManager.start_admin") as mock_admin, \
+         patch("bench_cli.managers.nginx_manager.NginxManager.write_config") as mock_gen, \
          patch("bench_cli.managers.nginx_manager.NginxManager.install_config"), \
          patch("bench_cli.managers.nginx_manager.NginxManager.reload"), \
          patch("bench_cli.core.domain_controller.DomainRouteProvider.register") as mock_register, \

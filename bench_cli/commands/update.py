@@ -88,9 +88,9 @@ class UpdateCommand(Command):
         self._step("done", "Done")
 
     def _warn_if_running(self) -> None:
-        from bench_cli.managers.process_manager import ProcessManagerFactory
+        from bench_cli.managers.process_manager import ProcessManager
 
-        if not ProcessManagerFactory.create(self.bench).is_running():
+        if not ProcessManager.for_bench(self.bench).is_running():
             return
         print("Warning: bench processes appear to be running. Updating while running may cause instability.")
         if not self.skip_confirm:

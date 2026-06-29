@@ -90,13 +90,13 @@ class ListCommand(Command):
         when only the (socket-activated) admin control plane is up — e.g. a bench
         provisioned but not yet set up — and 'stopped' otherwise. A dev bench is
         'running' iff its foreground admin is reachable."""
-        from bench_cli.managers.process_manager import ProcessManagerFactory
+        from bench_cli.managers.process_manager import ProcessManager
 
         try:
             if not production:
-                manager = ProcessManagerFactory.detect_running(bench)
+                manager = ProcessManager.detect_running(bench)
                 return "running" if manager.admin_is_running() else "stopped"
-            manager = ProcessManagerFactory.create(bench)
+            manager = ProcessManager.for_bench(bench)
             if manager.is_running():
                 return "running"
             return "admin" if manager.admin_is_running() else "stopped"

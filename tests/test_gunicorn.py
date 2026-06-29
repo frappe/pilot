@@ -180,14 +180,14 @@ def test_generate_config_writes_gunicorn_config(tmp_path: Path) -> None:
     manager = ProcessManager(bench)
 
     with patch.object(manager, "_ensure_gunicorn_config", wraps=manager._ensure_gunicorn_config) as mock_ensure:
-        manager.generate_config()
+        manager.write_config()
         mock_ensure.assert_called_once()
 
     assert (bench.config_path / "gunicorn.conf.py").exists()
 
 
 def test_supervisor_generate_config_writes_gunicorn_config(tmp_path: Path) -> None:
-    from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
+    from bench_cli.managers.process_managers.supervisor import SupervisorProcessManager
 
     bench = make_bench(tmp_path)
     bench.config_path.mkdir(parents=True, exist_ok=True)
@@ -195,13 +195,13 @@ def test_supervisor_generate_config_writes_gunicorn_config(tmp_path: Path) -> No
 
     with patch("bench_cli.managers.admin_env_manager.AdminEnvManager"), \
          patch.object(manager, "_prod_process_definitions", return_value=[]):
-        manager.generate_config()
+        manager.write_config()
 
     assert (bench.config_path / "gunicorn.conf.py").exists()
 
 
 def test_systemd_generate_config_writes_gunicorn_config(tmp_path: Path) -> None:
-    from bench_cli.managers.systemd_process_manager import SystemdProcessManager
+    from bench_cli.managers.process_managers.systemd import SystemdProcessManager
 
     bench = make_bench(tmp_path)
     bench.config_path.mkdir(parents=True, exist_ok=True)
@@ -209,7 +209,7 @@ def test_systemd_generate_config_writes_gunicorn_config(tmp_path: Path) -> None:
 
     with patch("bench_cli.managers.admin_env_manager.AdminEnvManager"), \
          patch.object(manager, "_prod_process_definitions", return_value=[]):
-        manager.generate_config()
+        manager.write_config()
 
     assert (bench.config_path / "gunicorn.conf.py").exists()
 
@@ -390,7 +390,7 @@ def test_process_definitions_excludes_workers_and_socketio_in_companion_mode(tmp
 
 
 def test_supervisor_web_program_has_long_stopwaitsecs_in_companion_mode(tmp_path: Path) -> None:
-    from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
+    from bench_cli.managers.process_managers.supervisor import SupervisorProcessManager, SupervisorRenderer
 
     config = BenchConfig._from_dict({
         "bench": {"name": "test-bench", "python": "3.14"},
@@ -404,13 +404,13 @@ def test_supervisor_web_program_has_long_stopwaitsecs_in_companion_mode(tmp_path
     manager = SupervisorProcessManager(bench)
 
     web_pd = next(pd for pd in manager._prod_process_definitions() if pd.name == "web")
-    program = manager._render_program(web_pd, "web")
+    program = SupervisorRenderer("test-bench", bench.logs_path).render(web_pd)
 
     assert "stopwaitsecs=1600" in program
 
 
 def test_systemd_web_service_has_long_timeout_in_companion_mode(tmp_path: Path) -> None:
-    from bench_cli.managers.systemd_process_manager import SystemdProcessManager
+    from bench_cli.managers.process_managers.systemd import SystemdProcessManager, SystemdRenderer
 
     config = BenchConfig._from_dict({
         "bench": {"name": "test-bench", "python": "3.14"},
@@ -423,26 +423,26 @@ def test_systemd_web_service_has_long_timeout_in_companion_mode(tmp_path: Path) 
     manager = SystemdProcessManager(bench)
 
     web_pd = next(pd for pd in manager._prod_process_definitions() if pd.name == "web")
-    unit = manager._render_unit(web_pd)
+    unit = SystemdRenderer("test-bench").render(web_pd)
 
     assert "TimeoutStopSec=1600" in unit
 
 
 def test_malloc_arena_max_in_units(tmp_path: Path) -> None:
-    from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
-    from bench_cli.managers.systemd_process_manager import SystemdProcessManager
+    from bench_cli.managers.process_managers.supervisor import SupervisorProcessManager, SupervisorRenderer
+    from bench_cli.managers.process_managers.systemd import SystemdProcessManager, SystemdRenderer
 
     bench = make_bench(tmp_path, gunicorn=GunicornConfig())  # default arena 2
     systemd = SystemdProcessManager(bench)
     web = next(pd for pd in systemd._prod_process_definitions() if pd.name == "web")
-    assert "Environment=MALLOC_ARENA_MAX=2" in systemd._render_unit(web)
-    assert 'MALLOC_ARENA_MAX="2"' in SupervisorProcessManager(bench)._render_program(web, "web")
+    assert "Environment=MALLOC_ARENA_MAX=2" in SystemdRenderer("test-bench").render(web)
+    assert 'MALLOC_ARENA_MAX="2"' in SupervisorRenderer("test-bench", bench.logs_path).render(web)
 
     # 0 disables the cap (no env emitted).
     bench0 = make_bench(tmp_path, gunicorn=GunicornConfig(malloc_arena_max=0))
     systemd0 = SystemdProcessManager(bench0)
     web0 = next(pd for pd in systemd0._prod_process_definitions() if pd.name == "web")
-    assert "MALLOC_ARENA_MAX" not in systemd0._render_unit(web0)
+    assert "MALLOC_ARENA_MAX" not in SystemdRenderer("test-bench").render(web0)
 
 
 def test_malloc_arena_max_validation(tmp_path: Path) -> None:

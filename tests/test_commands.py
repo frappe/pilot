@@ -695,7 +695,7 @@ def test_restart_production_incomplete_prints_repair(tmp_path: Path, capsys: pyt
     bench = make_bench(tmp_path)
     bench.config.production.enabled = True
     bench.config.production.process_manager = "systemd"
-    with patch("bench_cli.managers.process_manager.ProcessManagerFactory.create") as create:
+    with patch("bench_cli.managers.process_manager.ProcessManager.for_bench") as create:
         mgr = MagicMock()
         mgr.is_configured.return_value = False
         create.return_value = mgr
@@ -711,12 +711,12 @@ def test_restart_production_restarts_when_configured(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     bench.config.production.enabled = True
     bench.config.production.process_manager = "supervisor"
-    with patch("bench_cli.managers.process_manager.ProcessManagerFactory.create") as create:
+    with patch("bench_cli.managers.process_manager.ProcessManager.for_bench") as create:
         mgr = MagicMock()
         mgr.is_configured.return_value = True
         create.return_value = mgr
         RestartCommand(bench).run()
-    mgr.generate_config.assert_called_once()
+    mgr.write_config.assert_called_once()
     mgr.restart.assert_called_once()
 
 
@@ -743,10 +743,10 @@ def test_ls_lists_benches_with_mode_and_address(tmp_path: Path, capsys: pytest.C
 
 def test_ls_state_admin_active_when_workload_down_but_admin_up(tmp_path: Path) -> None:
     from bench_cli.commands.ls import ListCommand
-    from bench_cli.managers.process_manager import ProcessManagerFactory
+    from bench_cli.managers.process_manager import ProcessManager
 
     bench = make_bench(tmp_path)
-    with patch.object(ProcessManagerFactory, "create") as create:
+    with patch.object(ProcessManager, "for_bench") as create:
         manager = create.return_value
         manager.is_running.return_value = False
         manager.admin_is_running.return_value = True
@@ -801,10 +801,10 @@ def test_start_production_uninitialized_brings_up_admin(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     bench.config.production.process_manager = "systemd"
     bench.config.admin.domain = "admin.example.com"
-    with patch("bench_cli.managers.systemd_process_manager.SystemdProcessManager.setup_admin") as setup_admin, \
+    with patch("bench_cli.managers.process_managers.systemd.SystemdProcessManager.start_admin") as start_admin, \
          patch.object(RunCommand, "_start_wizard") as wizard:
         RunCommand(bench).run()
-    setup_admin.assert_called_once()
+    start_admin.assert_called_once()
     wizard.assert_not_called()
 
 
@@ -814,8 +814,8 @@ def test_start_production_initialized_starts_manager(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     bench.config.production.process_manager = "systemd"
     _mark_initialized(bench)
-    with patch("bench_cli.managers.systemd_process_manager.SystemdProcessManager.is_configured", return_value=True), \
-         patch("bench_cli.managers.systemd_process_manager.SystemdProcessManager.start") as start:
+    with patch("bench_cli.managers.process_managers.systemd.SystemdProcessManager.is_configured", return_value=True), \
+         patch("bench_cli.managers.process_managers.systemd.SystemdProcessManager.start") as start:
         RunCommand(bench).run()
     start.assert_called_once()
 

@@ -26,7 +26,7 @@ class BuildCommand(Command):
         self.force = force
 
     def run(self) -> None:
-        from bench_cli.managers.process_manager import ProcessManagerFactory
+        from bench_cli.managers.process_manager import ProcessManager
         from bench_cli.managers.python_env_manager import PythonEnvManager
 
         manager = PythonEnvManager(self.bench)
@@ -35,4 +35,4 @@ class BuildCommand(Command):
         else:
             for app in self.bench.apps():
                 manager.build_assets_for_app(app)
-        ProcessManagerFactory.create(self.bench).reload_workers(web_only=True)
+        ProcessManager.for_bench(self.bench).reload_workers(web_only=True)

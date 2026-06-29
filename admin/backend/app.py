@@ -121,11 +121,11 @@ def _workload_running(bench_dir: Path, toml_path: Path) -> bool | None:
     if the check itself fails (e.g. process manager CLI not installed)."""
     from bench_cli.config.bench_config import BenchConfig
     from bench_cli.core.bench import Bench
-    from bench_cli.managers.process_manager import ProcessManagerFactory
+    from bench_cli.managers.process_manager import ProcessManager
 
     try:
         bench = Bench(BenchConfig.from_file(toml_path), bench_dir)
-        return ProcessManagerFactory.create(bench).is_running()
+        return ProcessManager.for_bench(bench).is_running()
     except Exception:
         return None
 
@@ -137,11 +137,11 @@ def _admin_running(bench_dir: Path, toml_path: Path) -> bool | None:
     bench. None if the check fails."""
     from bench_cli.config.bench_config import BenchConfig
     from bench_cli.core.bench import Bench
-    from bench_cli.managers.process_manager import ProcessManagerFactory
+    from bench_cli.managers.process_manager import ProcessManager
 
     try:
         bench = Bench(BenchConfig.from_file(toml_path), bench_dir)
-        return ProcessManagerFactory.create(bench).admin_is_running()
+        return ProcessManager.for_bench(bench).admin_is_running()
     except Exception:
         return None
 
@@ -572,16 +572,16 @@ def create_app(bench_root: Path) -> Flask:
                 # via the factory, which gates on enabled.
                 configured_pm = bench.config.production.process_manager
                 if configured_pm == "systemd":
-                    from bench_cli.managers.systemd_process_manager import SystemdProcessManager as PM
+                    from bench_cli.managers.process_managers.systemd import SystemdProcessManager as PM
                 elif configured_pm == "openrc":
-                    from bench_cli.managers.openrc_process_manager import OpenRCProcessManager as PM
+                    from bench_cli.managers.process_managers.openrc import OpenRCProcessManager as PM
                 else:
-                    from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager as PM
-                PM(bench).setup_admin()
+                    from bench_cli.managers.process_managers.supervisor import SupervisorProcessManager as PM
+                PM(bench).start_admin()
                 nginx = NginxManager(bench)
-                nginx.generate_config()
+                nginx.write_config()
                 nginx.install_config()
-                nginx.reload()
+                nginx.reload_manager_config()
                 # The admin now runs under the chosen process manager, so record
                 # the bench as production — otherwise `bench status`/`stop` fall
                 # back to the foreground (Procfile) manager and misreport it. The

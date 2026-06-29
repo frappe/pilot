@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
-    from bench_cli.managers.systemd_process_manager import SystemdProcessManager
+    from bench_cli.managers.process_managers.supervisor import SupervisorProcessManager
+    from bench_cli.managers.process_managers.systemd import SystemdProcessManager
 
 
 @dataclass
@@ -148,15 +148,15 @@ class ProcessReader:
         # Alpine: only OpenRC is present, so probe it directly (the systemd /
         # supervisor probes would shell out to CLIs that aren't installed).
         if config.production.process_manager == "openrc":
-            from bench_cli.managers.openrc_process_manager import OpenRCProcessManager
+            from bench_cli.managers.process_managers.openrc import OpenRCProcessManager
 
             openrc = OpenRCProcessManager(bench)
             if openrc.is_running() or openrc.admin_is_running():
                 return self._read_from_openrc(openrc)
             return self._read_from_pids()
 
-        from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
-        from bench_cli.managers.systemd_process_manager import SystemdProcessManager
+        from bench_cli.managers.process_managers.supervisor import SupervisorProcessManager
+        from bench_cli.managers.process_managers.systemd import SystemdProcessManager
 
         systemd = SystemdProcessManager(bench)
         supervisor = SupervisorProcessManager(bench)

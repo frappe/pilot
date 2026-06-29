@@ -170,12 +170,12 @@ def _non_admin_supervisor_programs(conf: Path, bench_name: str) -> list[str]:
 
 def _regenerate_configs(bench_root: Path, config: BenchConfig) -> None:
     from bench_cli.core.bench import Bench
-    from bench_cli.managers.process_manager import ProcessManagerFactory
+    from bench_cli.managers.process_manager import ProcessManager
     from bench_cli.managers.redis_manager import RedisManager
 
     bench = Bench(config, bench_root)
     RedisManager(config.redis, bench).generate_configs()
-    ProcessManagerFactory.create(bench).generate_config()
+    ProcessManager.for_bench(bench).write_config()
 
 
 def _restart_supervisor(manager, bench_name: str) -> tuple[bool, str | None]:
@@ -218,13 +218,13 @@ def _restart_systemd(manager) -> tuple[bool, str | None]:
 
 def _do_restart(bench_root: Path, config: BenchConfig) -> tuple[bool, str | None]:
     from bench_cli.core.bench import Bench
-    from bench_cli.managers.openrc_process_manager import OpenRCProcessManager
-    from bench_cli.managers.process_manager import ProcessManagerFactory
-    from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
-    from bench_cli.managers.systemd_process_manager import SystemdProcessManager
+    from bench_cli.managers.process_managers.openrc import OpenRCProcessManager
+    from bench_cli.managers.process_manager import ProcessManager
+    from bench_cli.managers.process_managers.supervisor import SupervisorProcessManager
+    from bench_cli.managers.process_managers.systemd import SystemdProcessManager
 
     bench = Bench(config, bench_root)
-    manager = ProcessManagerFactory.detect_running(bench)
+    manager = ProcessManager.detect_running(bench)
     if isinstance(manager, SupervisorProcessManager):
         return _restart_supervisor(manager, config.name)
     if isinstance(manager, SystemdProcessManager):

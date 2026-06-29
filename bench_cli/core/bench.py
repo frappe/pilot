@@ -166,10 +166,10 @@ class Bench:
         RestartCommand(self).run()
 
     def reload_workers(self, web_only: bool = False, raises: bool = False):
-        from bench_cli.managers.process_manager import ProcessManagerFactory
+        from bench_cli.managers.process_manager import ProcessManager
 
         try:
-            ProcessManagerFactory.create(self).reload_workers(web_only)
+            ProcessManager.for_bench(self).reload_workers(web_only)
         except Exception as e:
             print(f"Failed to reload workers: {e}")
             if raises:

@@ -220,7 +220,7 @@ def test_honcho_generate_config_writes_procfile(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     bench.create_directories()
     process_manager = ProcessManager(bench)
-    process_manager.generate_config()
+    process_manager.write_config()
 
     procfile = tmp_path / "config" / "Procfile"
     assert procfile.exists()
@@ -233,13 +233,13 @@ def test_honcho_generate_config_writes_procfile(tmp_path: Path) -> None:
 
 def test_honcho_generate_config_writes_redis_configs(tmp_path: Path) -> None:
     # The generated Procfile runs `redis-server config/redis_{cache,queue}.conf`,
-    # so generate_config must (re)create those files. Regression: an upgraded
+    # so write_config must (re)create those files. Regression: an upgraded
     # bench whose config dir predates the split redis layout used to fail to
     # start with "can't open config file".
     bench = make_bench(tmp_path)
     bench.create_directories()
     process_manager = ProcessManager(bench)
-    process_manager.generate_config()
+    process_manager.write_config()
 
     assert (tmp_path / "config" / "redis_cache.conf").exists()
     assert (tmp_path / "config" / "redis_queue.conf").exists()
@@ -249,7 +249,7 @@ def test_honcho_generate_config_procfile_format(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     bench.create_directories()
     process_manager = ProcessManager(bench)
-    process_manager.generate_config()
+    process_manager.write_config()
 
     procfile = tmp_path / "config" / "Procfile"
     content = procfile.read_text()
@@ -265,7 +265,7 @@ def test_honcho_start_writes_per_process_pid_files(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     bench.create_directories()
     process_manager = ProcessManager(bench)
-    process_manager.generate_config()
+    process_manager.write_config()
 
     fake_proc = MagicMock()
     fake_proc.pid = 12345
