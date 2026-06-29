@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pilot.config.bench_config import BenchConfig
+from pilot.config.toml_store import BenchTomlStore
 
 
 @dataclass
@@ -19,7 +20,7 @@ class BenchReader:
         self._bench_root = bench_root
 
     def config(self) -> BenchConfig:
-        return BenchConfig.from_file(self._bench_root / "bench.toml")
+        return BenchTomlStore.for_bench(self._bench_root).read()
 
     def summary(self) -> BenchSummary:
         config = self.config()

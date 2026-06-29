@@ -18,10 +18,10 @@ def get_updates():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     do_fetch = request.args.get("fetch") == "1"
 
-    from pilot.config.bench_config import BenchConfig
+    from pilot.config.toml_store import BenchTomlStore
     from pilot.core.bench import Bench
 
-    config = BenchConfig.from_file(bench_root / "bench.toml")
+    config = BenchTomlStore.for_bench(bench_root).read()
     bench = Bench(config, bench_root)
 
     apps_info = []

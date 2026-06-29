@@ -72,9 +72,9 @@ def find_bench_root(require_explicit: bool = False) -> Path:
 
 
 def load_bench(require_explicit: bool = False) -> "Bench":
-    from pilot.config.bench_config import BenchConfig
+    from pilot.config.toml_store import BenchTomlStore
     from pilot.core.bench import Bench
 
     bench_root = find_bench_root(require_explicit=require_explicit)
-    config = BenchConfig.from_file(bench_root / "bench.toml")
+    config = BenchTomlStore.for_bench(bench_root).read()
     return Bench(config, bench_root)

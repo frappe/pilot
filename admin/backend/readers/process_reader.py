@@ -138,11 +138,11 @@ class ProcessReader:
         self._bench_root = bench_root
 
     def read_all(self) -> list[ProcessInfo]:
-        from pilot.config.bench_config import BenchConfig
+        from pilot.config.toml_store import BenchTomlStore
         from pilot.core.bench import Bench
 
         # If the bench config file is not present there is no point in look at procs
-        config = BenchConfig.from_file(self._bench_root / "bench.toml")
+        config = BenchTomlStore.for_bench(self._bench_root).read()
         bench = Bench(config, self._bench_root)
 
         # Alpine: only OpenRC is present, so probe it directly (the systemd /

@@ -66,3 +66,18 @@ def test_write_round_trips_config(tmp_path: Path) -> None:
     config.http_port = 8123
     store.write(config)
     assert store.read().http_port == 8123
+
+
+def test_write_flat_serialises_settings(tmp_path: Path) -> None:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    store = BenchTomlStore.for_bench(tmp_path)
+    store.write_flat("flatwrite", {"python": "3.13"})
+    config = store.read()
+    assert config.name == "flatwrite"
+    assert config.python_version == "3.13"
+
+
+def test_write_flat_matches_builder(tmp_path: Path) -> None:
+    store = BenchTomlStore.for_bench(tmp_path)
+    store.write_flat("b", {"python": "3.12"}, port_offset=5)
+    assert store.read_flat() == BenchTomlBuilder.read_settings(store.path)

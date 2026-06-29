@@ -13,16 +13,16 @@ volume_bp = Blueprint("volume", __name__)
 
 
 def _get_config(bench_root):
-    from pilot.config.bench_config import BenchConfig
+    from pilot.config.toml_store import BenchTomlStore
 
-    return BenchConfig.from_file(bench_root / "bench.toml").volume
+    return BenchTomlStore.for_bench(bench_root).read().volume
 
 
 def _get_volume_manager(bench_root):
-    from pilot.config.bench_config import BenchConfig
+    from pilot.config.toml_store import BenchTomlStore
     from pilot.managers.volume_manager import VolumeManager
 
-    bench_config = BenchConfig.from_file(bench_root / "bench.toml")
+    bench_config = BenchTomlStore.for_bench(bench_root).read()
     return VolumeManager(bench_config.volume)
 
 

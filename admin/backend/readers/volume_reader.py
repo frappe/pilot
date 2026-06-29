@@ -27,10 +27,10 @@ class VolumeReader:
         self._bench_root = bench_root
 
     def read(self) -> VolumeInfo:
-        from pilot.config.bench_config import BenchConfig
+        from pilot.config.toml_store import BenchTomlStore
         from pilot.platform import is_linux
 
-        config = BenchConfig.from_file(self._bench_root / "bench.toml").volume
+        config = BenchTomlStore.for_bench(self._bench_root).read().volume
         # A bench can opt out of ZFS (shared-DB benches set volume.enabled =
         # false). Since pools are shared across benches, never infer "enabled"
         # from the pool merely existing — honour the bench's own config first.

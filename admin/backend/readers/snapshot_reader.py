@@ -25,11 +25,11 @@ class SnapshotReader:
         self._bench_root = bench_root
 
     def read(self) -> SnapshotStatus:
-        from pilot.config.bench_config import BenchConfig
+        from pilot.config.toml_store import BenchTomlStore
         from pilot.managers.volume_manager import VolumeManager
         from pilot.platform import is_linux
 
-        bench_config = BenchConfig.from_file(self._bench_root / "bench.toml")
+        bench_config = BenchTomlStore.for_bench(self._bench_root).read()
         volume_config = bench_config.volume
 
         if not is_linux():

@@ -119,12 +119,11 @@ def _workload_running(bench_dir: Path, toml_path: Path) -> bool | None:
     """Whether a production bench's workload is currently running — used to
     gate start/stop/restart controls for other benches in the switcher. None
     if the check itself fails (e.g. process manager CLI not installed)."""
-    from pilot.config.bench_config import BenchConfig
     from pilot.core.bench import Bench
     from pilot.managers.process_manager import ProcessManagerFactory
 
     try:
-        bench = Bench(BenchConfig.from_file(toml_path), bench_dir)
+        bench = Bench(BenchTomlStore(toml_path).read(), bench_dir)
         return ProcessManagerFactory.create(bench).is_running()
     except Exception:
         return None
@@ -135,12 +134,11 @@ def _admin_running(bench_dir: Path, toml_path: Path) -> bool | None:
     so a listening socket counts even while the workload is stopped. Lets the UI
     show 'Admin active' instead of 'Stopped' for a provisioned-but-not-started
     bench. None if the check fails."""
-    from pilot.config.bench_config import BenchConfig
     from pilot.core.bench import Bench
     from pilot.managers.process_manager import ProcessManagerFactory
 
     try:
-        bench = Bench(BenchConfig.from_file(toml_path), bench_dir)
+        bench = Bench(BenchTomlStore(toml_path).read(), bench_dir)
         return ProcessManagerFactory.create(bench).admin_is_running()
     except Exception:
         return None
@@ -149,12 +147,11 @@ def _admin_running(bench_dir: Path, toml_path: Path) -> bool | None:
 def _admin_cert_exists(bench_dir: Path, toml_path: Path) -> bool:
     """Whether the admin domain's TLS cert is in place — gates whether nginx
     serves the admin over https yet. False on any failure (treat as plain http)."""
-    from pilot.config.bench_config import BenchConfig
     from pilot.core.bench import Bench
     from pilot.managers.nginx_manager import NginxManager
 
     try:
-        bench = Bench(BenchConfig.from_file(toml_path), bench_dir)
+        bench = Bench(BenchTomlStore(toml_path).read(), bench_dir)
         return NginxManager(bench).admin_cert_exists()
     except Exception:
         return False
@@ -253,7 +250,7 @@ def create_app(bench_root: Path) -> Flask:
     used_logins = _UsedTokens()
 
     def _load_config():
-        return BenchConfig.from_file(bench_root / "bench.toml")
+        return BenchTomlStore.for_bench(bench_root).read()
 
     def _check_enabled(config: BenchConfig):
         if not config.admin.enabled:
@@ -301,7 +298,7 @@ def create_app(bench_root: Path) -> Flask:
     def api_status():
         initialized = (bench_root / "env" / "bin" / "python").exists()
         try:
-            config = BenchConfig.from_file(bench_root / "bench.toml")
+            config = BenchTomlStore.for_bench(bench_root).read()
         except Exception as exc:
             return jsonify({"enabled": False, "error": str(exc)}), 503
         if not initialized or not config.admin.password:
@@ -334,7 +331,7 @@ def create_app(bench_root: Path) -> Flask:
     @rate_limit(5, 60, user_ip=True)
     def api_login():
         try:
-            config = BenchConfig.from_file(bench_root / "bench.toml")
+            config = BenchTomlStore.for_bench(bench_root).read()
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 503
         if not config.admin.password:
@@ -560,7 +557,7 @@ def create_app(bench_root: Path) -> Flask:
                 from pilot.core.bench import Bench
                 from pilot.managers.nginx_manager import NginxManager
 
-                bench = Bench(BenchConfig.from_file(new_dir / "bench.toml"), new_dir)
+                bench = Bench(BenchTomlStore.for_bench(new_dir).read(), new_dir)
                 # Register the admin domain with the domain provider (if any) before
                 # routing it, so it resolves to this server — the wizard is reached
                 # at this domain. The wizard's later `setup production` sees the

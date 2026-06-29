@@ -49,5 +49,11 @@ class BenchTomlStore:
     def write(self, config: BenchConfig) -> None:
         self.path.write_text(bench_config_to_toml(config))
 
+    def write_flat(self, name: str, settings: dict, port_offset: int = 0) -> None:
+        """Serialise the wizard's flat-key settings dict to bench.toml."""
+        from pilot.config.bench_toml_builder import BenchTomlBuilder
+
+        self.write(BenchTomlBuilder(name, settings, port_offset=port_offset).build())
+
     def write_raw(self, data: dict) -> None:
         write_toml(self.path, data)

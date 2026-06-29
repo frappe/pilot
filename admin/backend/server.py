@@ -22,7 +22,7 @@ def main() -> None:
     args = parser.parse_args()
 
     from admin.backend.app import create_app
-    from pilot.config.bench_config import BenchConfig
+    from pilot.config.toml_store import BenchTomlStore
 
     bench_root = Path(args.bench_root)
     app = create_app(bench_root)
@@ -31,7 +31,7 @@ def main() -> None:
     skip_watchdog = args.no_timeout or args.dev
     if not skip_watchdog:
         try:
-            cfg = BenchConfig.from_file(bench_root / "bench.toml")
+            cfg = BenchTomlStore.for_bench(bench_root).read()
             skip_watchdog = cfg.admin.enabled
         except Exception:
             pass

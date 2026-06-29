@@ -53,12 +53,12 @@ class SnapshotOrchestrator:
 
 
 def get_orchestrator(bench_root):
-    from pilot.config.bench_config import BenchConfig
+    from pilot.config.toml_store import BenchTomlStore
     from pilot.core.bench import Bench
     from pilot.managers.mariadb_manager import MariaDBManager
     from pilot.managers.volume_manager import VolumeManager
 
-    bench_config = BenchConfig.from_file(bench_root / "bench.toml")
+    bench_config = BenchTomlStore.for_bench(bench_root).read()
     volume = VolumeManager(bench_config.volume)
     mariadb = MariaDBManager(bench_config.mariadb)
     bench = Bench(bench_config, bench_root)

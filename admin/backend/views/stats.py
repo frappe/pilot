@@ -9,6 +9,7 @@ import psutil
 from flask import Blueprint, current_app, jsonify
 
 from pilot.config.bench_config import BenchConfig
+from pilot.config.toml_store import BenchTomlStore
 from ..readers.volume_reader import VolumeReader
 
 stats_bp = Blueprint("stats", __name__)
@@ -38,7 +39,7 @@ def _path_sizes(bench_root: Path, config: BenchConfig) -> list[dict]:
 @stats_bp.route("/stats")
 def stats():
     bench_root = current_app.config["BENCH_ROOT"]
-    config = BenchConfig.from_file(bench_root / "bench.toml")
+    config = BenchTomlStore.for_bench(bench_root).read()
     mem = psutil.virtual_memory()
     disk = psutil.disk_usage("/")
     volume = VolumeReader(bench_root).read()

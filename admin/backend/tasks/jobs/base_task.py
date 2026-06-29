@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from pilot.config.bench_config import BenchConfig
+from pilot.config.toml_store import BenchTomlStore
 from pilot.core.bench import Bench
 
 
@@ -22,7 +22,7 @@ class BaseTask:
     def main(cls) -> None:
         args = cls._parser().parse_args()
         bench_root = Path(args.bench_root)
-        bench = Bench(BenchConfig.from_file(bench_root / "bench.toml"), bench_root)
+        bench = Bench(BenchTomlStore.for_bench(bench_root).read(), bench_root)
         cls(bench, bench_root, args).run()
 
     def run(self) -> None:
