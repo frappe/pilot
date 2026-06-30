@@ -2,6 +2,7 @@
 import { useRoute, useRouter } from 'vue-router'
 import { Sidebar, SidebarItem, useTheme } from 'frappe-ui'
 import { sidebarSections } from '@/navigation'
+import { request } from '@/api/client'
 const { setTheme } = useTheme()
 
 const route = useRoute()
@@ -14,12 +15,12 @@ function isActive(to) {
 }
 
 async function logout() {
-  await fetch('/api/logout', { method: 'POST' })
+  await request.post('logout')
   window.location.reload()
 }
 
 const header = {
-  title: 'My Server',
+  title: 'Pilot',
   menuItems: [
     {
       label: 'Central',

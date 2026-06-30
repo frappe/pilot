@@ -8,6 +8,7 @@ const routes = [
     component: () => import('./pages/Setup.vue'),
     meta: { title: 'Setup' },
   },
+  { path: '/', redirect: '/sites' },
   ...navigationRoutes(),
 ]
 
