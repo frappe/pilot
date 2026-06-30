@@ -79,22 +79,12 @@ class App:
             raise BenchError(f"Commit '{commit}' not found in {self.config.repo}.")
 
     def clone(self) -> None:
-        branch = self.config.branch or self._detect_default_branch()
-        if self.is_commit_hash(branch):
-            self._clone_rev(branch)
-
+        target = self.config.branch or self._detect_default_branch()
+        if self.is_commit_hash(target):
+            self._clone_rev(target)
         else:
             run_command(
-                [
-                    "git",
-                    "clone",
-                    self._remote_url,
-                    "--branch",
-                    branch,
-                    "--depth",
-                    "1",
-                    str(self.path),
-                ],
+                ["git", "clone", self._remote_url, "--branch", target, "--depth", "1", str(self.path)],
                 stream_output=True,
             )
 

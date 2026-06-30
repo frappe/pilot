@@ -15,7 +15,9 @@ export function useAppRegistry() {
 
   async function loadRegistry() {
     try {
-      registry.value = await fetch('/api/apps/registry').then(r => r.json())
+      const res = await fetch('/api/apps/marketplace')
+      if (!res.ok) throw new Error(`${res.status}`)
+      registry.value = await res.json()
     } catch { registry.value = [] }
   }
 

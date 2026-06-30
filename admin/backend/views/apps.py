@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import subprocess
 from dataclasses import asdict
 from pathlib import Path
@@ -8,12 +7,10 @@ from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request
 
 from ..readers.app_reader import AppReader
-from ..validators import first_error, validate_app_name, validate_branch_name, validate_repo_url
+from ..validators import validate_app_name, validate_repo_url
 from admin.backend.tasks.manager.task_runner import TaskRunner
 
 apps_bp = Blueprint("apps", __name__)
-
-_REGISTRY_PATH = Path(__file__).parent.parent.parent.parent / "registry" / "apps.json"
 
 
 @apps_bp.route("/")
@@ -26,12 +23,19 @@ def index():
     return jsonify([asdict(a) for a in apps])
 
 
-@apps_bp.route("/registry")
-def registry():
+@apps_bp.route("/marketplace")
+def marketplace():
+    bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
-        return jsonify(json.loads(_REGISTRY_PATH.read_text()))
-    except Exception:
-        return jsonify([])
+        from pilot.core.bench import Bench
+        from pilot.core.marketplace import Marketplace
+        from pilot.config.toml_store import BenchTomlStore
+
+        bench = Bench(BenchTomlStore.for_bench(bench_root).read(), bench_root)
+        apps = Marketplace(bench).read_all_apps()
+        return jsonify([a.to_dict() for a in apps])
+    except Exception as error:
+        return jsonify({"error": str(error)}), 500
 
 
 @apps_bp.route("/add", methods=["POST"])
@@ -40,20 +44,16 @@ def add():
     data = request.get_json(silent=True) or {}
 
     name = (data.get("name") or "").strip()
-    repo = (data.get("repo") or "").strip()
-    branch = (data.get("branch") or "").strip()
-
-    err = first_error(validate_app_name(name), validate_repo_url(repo), validate_branch_name(branch))
+    err = validate_app_name(name)
     if err:
         return jsonify({"ok": False, "error": err})
 
-    # Check app isn't already cloned
     if (bench_root / "apps" / name / ".git").exists():
         return jsonify({"ok": False, "error": f"'{name}' is already installed."})
 
     try:
         task_id = TaskRunner(bench_root).run(
-            "get-app", {"name": name, "repo": repo, "branch": branch}
+            "get-app", {"name": name, "marketplace_app": name}
         )
     except Exception as e:
         return jsonify({"ok": False, "error": f"Could not start get-app: {e}"})
@@ -67,11 +67,9 @@ def add_and_install():
     data = request.get_json(silent=True) or {}
 
     name = (data.get("name") or "").strip()
-    repo = (data.get("repo") or "").strip()
-    branch = (data.get("branch") or "").strip()
     sites = data.get("sites") or []
 
-    err = first_error(validate_app_name(name), validate_repo_url(repo), validate_branch_name(branch))
+    err = validate_app_name(name)
     if err:
         return jsonify({"ok": False, "error": err})
 
@@ -82,7 +80,7 @@ def add_and_install():
         return jsonify({"ok": False, "error": f"'{name}' is already installed."})
 
     try:
-        task_args = {"name": name, "repo": repo, "branch": branch, "sites": sites}
+        task_args = {"name": name, "marketplace_app": name, "sites": sites}
         task_id = TaskRunner(bench_root).run("add-and-install-app", task_args)
     except Exception as e:
         return jsonify({"ok": False, "error": f"Could not start add-and-install: {e}"})
