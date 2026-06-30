@@ -17,7 +17,7 @@ from pilot.core.bench import Bench
 from pilot.core.site import Site
 
 
-def _restore_cmd(tmp_path: Path, db_type: str) -> list[str]:
+def _restore_cmd(tmp_path: Path, db_type: str, force: bool = False) -> list[str]:
     bench_dir = tmp_path / "benches" / "b1"
     bench_dir.mkdir(parents=True, exist_ok=True)
     config = BenchConfig(
@@ -32,18 +32,24 @@ def _restore_cmd(tmp_path: Path, db_type: str) -> list[str]:
     )
     site = Site(SiteConfig(name="s.localhost", apps=[]), Bench(config, bench_dir))
     with patch("pilot.core.site.run_command") as rc:
-        site.restore("/tmp/backup.sql.gz")
+        site.restore("/tmp/backup.sql.gz", force=force)
     return rc.call_args.args[0]
 
 
-def test_restore_passes_source_mariadb_on_postgres_bench(tmp_path: Path) -> None:
-    cmd = _restore_cmd(tmp_path, "postgres")
+def test_restore_passes_source_mariadb_on_postgres_conversion(tmp_path: Path) -> None:
+    cmd = _restore_cmd(tmp_path, "postgres", force=True)
     assert "--source-mariadb-host" in cmd
     assert cmd[cmd.index("--source-mariadb-host") + 1] == "mariahost"
     assert cmd[cmd.index("--source-mariadb-port") + 1] == "3308"
     assert cmd[cmd.index("--source-mariadb-root-username") + 1] == "root"
 
 
+def test_restore_omits_source_mariadb_without_force(tmp_path: Path) -> None:
+    # a plain postgres->postgres restore must not expose MariaDB creds in the process list
+    cmd = _restore_cmd(tmp_path, "postgres", force=False)
+    assert "--source-mariadb-host" not in cmd
+
+
 def test_restore_omits_source_mariadb_on_mariadb_bench(tmp_path: Path) -> None:
-    cmd = _restore_cmd(tmp_path, "mariadb")
+    cmd = _restore_cmd(tmp_path, "mariadb", force=True)
     assert "--source-mariadb-host" not in cmd

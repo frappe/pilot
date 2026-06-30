@@ -83,10 +83,11 @@ class Site:
             cmd += ["--with-private-files", private_files]
         if force:
             cmd.append("--force")
-        # A MariaDB backup restored onto a PostgreSQL site is converted via pgloader,
-        # which stages the dump in this bench's MariaDB server; frappe ignores these
-        # args for PostgreSQL backups.
-        if self.bench.config.db_type == "postgres":
+        # Converting a MariaDB backup onto a PostgreSQL site needs this bench's MariaDB
+        # server (pgloader stages the dump there); only conversion restores set force.
+        # Gate on it so a plain postgres->postgres restore doesn't expose the MariaDB
+        # root password in the process list.
+        if self.bench.config.db_type == "postgres" and force:
             cmd += self.bench.source_mariadb_args()
         # restore reads the engine from the site's config (frappe.init); it only
         # needs the matching root credentials, not a --db-type flag.
