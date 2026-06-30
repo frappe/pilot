@@ -1,4 +1,5 @@
 """Tests for admin.backend.tasks — TaskRunner and TaskReader."""
+
 from __future__ import annotations
 
 import json
@@ -52,6 +53,18 @@ def test_build_argv_install_app(tmp_path: Path) -> None:
     assert str(tmp_path) in argv
     assert "mysite.localhost" in argv
     assert "erpnext" in argv
+
+
+def test_build_argv_new_site_from_backup_adds_force_on_convert(tmp_path: Path) -> None:
+    runner = TaskRunner(tmp_path)
+    argv = runner._build_argv("new-site-from-backup", {"name": "s.localhost", "db_file": "/b.sql.gz", "convert": True})
+    assert "--force" in argv
+
+
+def test_build_argv_new_site_from_backup_no_force_by_default(tmp_path: Path) -> None:
+    runner = TaskRunner(tmp_path)
+    argv = runner._build_argv("new-site-from-backup", {"name": "s.localhost", "db_file": "/b.sql.gz"})
+    assert "--force" not in argv
 
 
 def test_build_argv_uninstall_app(tmp_path: Path) -> None:
@@ -258,21 +271,25 @@ def test_read_output_returns_all_lines_when_fewer_than_limit(tmp_path: Path) -> 
 
 def test_collapse_cr_no_cr() -> None:
     from admin.backend.tasks.manager.task_reader import _collapse_cr
+
     assert _collapse_cr("hello world") == "hello world"
 
 
 def test_collapse_cr_takes_last_segment() -> None:
     from admin.backend.tasks.manager.task_reader import _collapse_cr
+
     assert _collapse_cr("[50%]\r[60%]\r[70%]") == "[70%]"
 
 
 def test_collapse_cr_leading_cr() -> None:
     from admin.backend.tasks.manager.task_reader import _collapse_cr
+
     assert _collapse_cr("\rUpdating [93%]") == "Updating [93%]"
 
 
 def test_collapse_cr_trailing_cr_ignored() -> None:
     from admin.backend.tasks.manager.task_reader import _collapse_cr
+
     assert _collapse_cr("[100%]\r") == "[100%]"
 
 
@@ -280,6 +297,7 @@ def test_collapse_cr_crlf_keeps_text() -> None:
     # dpkg/apt emit CRLF line endings without a TTY; the \r must not blank the
     # line out (this is what produced a wall of empty rows in the setup wizard).
     from admin.backend.tasks.manager.task_reader import _collapse_cr
+
     assert _collapse_cr("Unpacking package\r") == "Unpacking package"
 
 
@@ -287,11 +305,13 @@ def test_collapse_cr_cleared_progress_padding() -> None:
     # apt clears a progress line by overwriting it with spaces after a \r; the
     # padding must collapse away to the last real segment, not leak spaces.
     from admin.backend.tasks.manager.task_reader import _collapse_cr
+
     assert _collapse_cr("Fetching\r        ") == "Fetching"
 
 
 def test_collapse_cr_all_whitespace_segments() -> None:
     from admin.backend.tasks.manager.task_reader import _collapse_cr
+
     assert _collapse_cr("   \r   ") == ""
 
 
@@ -367,10 +387,5 @@ def test_task_retention_limit(tmp_path: Path) -> None:
     assert not oldest_dir.exists()
 
     # Completed tasks on disk should now equal TASK_RETENTION_LIMIT
-    remaining_completed = [
-        entry
-        for entry in tasks_dir.iterdir()
-        if entry.is_dir() and (entry / "status").exists()
-        and (entry / "status").read_text().strip() != "running"
-    ]
+    remaining_completed = [entry for entry in tasks_dir.iterdir() if entry.is_dir() and (entry / "status").exists() and (entry / "status").read_text().strip() != "running"]
     assert len(remaining_completed) == TASK_RETENTION_LIMIT

@@ -60,22 +60,34 @@ class Site:
     def _postgres_db_args(self) -> list[str]:
         postgres = self.bench.config.postgres
         return [
-            "--db-type", "postgres",
-            "--db-host", postgres.host,
-            "--db-port", str(postgres.port),
-            "--db-root-username", postgres.admin_user,
-            "--db-root-password", self.bench.postgres_root_password(),
+            "--db-type",
+            "postgres",
+            "--db-host",
+            postgres.host,
+            "--db-port",
+            str(postgres.port),
+            "--db-root-username",
+            postgres.admin_user,
+            "--db-root-password",
+            self.bench.postgres_root_password(),
         ]
 
     def _sqlite_db_args(self) -> list[str]:
         return ["--db-type", "sqlite"]
 
-    def restore(self, db_file: str, public_files: str | None = None, private_files: str | None = None) -> None:
+    def restore(self, db_file: str, public_files: str | None = None, private_files: str | None = None, force: bool = False) -> None:
         cmd = self._frappe_call("frappe", "--site", self.config.name, "restore", db_file)
         if public_files:
             cmd += ["--with-public-files", public_files]
         if private_files:
             cmd += ["--with-private-files", private_files]
+        if force:
+            cmd.append("--force")
+        # A MariaDB backup restored onto a PostgreSQL site is converted via pgloader,
+        # which stages the dump in this bench's MariaDB server; frappe ignores these
+        # args for PostgreSQL backups.
+        if self.bench.config.db_type == "postgres":
+            cmd += self.bench.source_mariadb_args()
         # restore reads the engine from the site's config (frappe.init); it only
         # needs the matching root credentials, not a --db-type flag.
         cmd += self.bench.db_root_args()

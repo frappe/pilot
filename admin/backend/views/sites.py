@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import secrets
+import shutil
 import subprocess
 from dataclasses import asdict
 from pathlib import Path
@@ -13,7 +14,11 @@ from admin.backend.tasks.callbacks import new_site_failure_callback, ssl_setup_f
 from ..validators import validate_cron_expression, validate_site_name
 from admin.backend.tasks.manager.task_runner import TaskRunner
 
+from pilot.config.bench_config import BenchConfig
+from pilot.platform import is_linux, is_x86_64
+
 from ..readers.app_reader import AppReader
+from ..readers.backup_reader import dump_engine
 from ..readers.site_reader import SiteReader
 
 site_name = lambda kw: kw["name"]
@@ -195,11 +200,60 @@ def create_from_upload():
         priv_upload.save(str(priv_path))
         args["private_files"] = str(priv_path)
 
+    # A MariaDB backup uploaded for a PostgreSQL site must be converted with pgloader.
+    config = BenchConfig.from_file(bench_root / "bench.toml")
+    if config.db_type == "postgres" and dump_engine(db_path) == "mariadb":
+        # pgloader only runs on x86_64 Linux — block early rather than fail mid-restore.
+        if not (is_linux() and is_x86_64()):
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": (
+                        "This is a MariaDB backup; restoring it onto a PostgreSQL site needs pgloader, "
+                        "which only runs on x86_64 Linux. Convert it on an x86_64 Linux host first, then "
+                        "upload the resulting PostgreSQL backup."
+                    ),
+                }
+            )
+        # Have the user confirm the conversion (experimental, not guaranteed). The saved
+        # paths are returned so the confirm can resume without re-uploading.
+        if request.form.get("convert") != "true":
+            return jsonify(
+                {
+                    "ok": False,
+                    "needs_conversion_confirm": True,
+                    "message": (
+                        "You have uploaded a MariaDB backup for a PostgreSQL site restore. "
+                        "It will be converted with pgloader before restoring.\n\n"
+                        "• This does not work on ARM / Apple Silicon.\n"
+                        "• PostgreSQL support is experimental, so a successful conversion is not guaranteed."
+                    ),
+                    "name": name,
+                    "db_file": str(db_path),
+                    "public_files": args.get("public_files"),
+                    "private_files": args.get("private_files"),
+                }
+            )
+
     try:
         task_id = TaskRunner(bench_root).run("new-site-from-backup", args)
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
     return jsonify({"ok": True, "task_id": task_id})
+
+
+@sites_bp.route("/discard-upload", methods=["POST"])
+def discard_upload():
+    """Delete an uploaded backup that won't be restored (e.g. the user cancelled the
+    MariaDB→PostgreSQL conversion prompt), so it doesn't linger in tmp/uploads."""
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    db_file = (request.get_json(silent=True) or {}).get("db_file") or ""
+    uploads_root = (bench_root / "tmp" / "uploads").resolve()
+    token_dir = Path(db_file).resolve().parent
+    # Only ever remove a token directory directly under this bench's upload staging area.
+    if token_dir.parent == uploads_root:
+        shutil.rmtree(token_dir, ignore_errors=True)
+    return jsonify({"ok": True})
 
 
 @sites_bp.route("/<name>/drop", methods=["POST"])

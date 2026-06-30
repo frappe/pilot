@@ -16,6 +16,7 @@ class NewSiteFromBackupCommand:
         admin_password: str = "admin",
         public_files: str | None = None,
         private_files: str | None = None,
+        force: bool = False,
     ) -> None:
         self.bench = bench
         self.name = name
@@ -23,16 +24,18 @@ class NewSiteFromBackupCommand:
         self.admin_password = admin_password
         self.public_files = public_files
         self.private_files = private_files
+        self.force = force
 
     def run(self) -> None:
         from pilot.commands.new_site import NewSiteCommand
         from pilot.config.site_config import SiteConfig
         from pilot.core.site import Site
 
-        # The site is created with (and restored into) the bench's single engine;
-        # the backup must have been taken from a bench of that same engine.
+        # The site is created with (and restored into) the bench's single engine. A
+        # MariaDB backup on a PostgreSQL bench is converted by frappe during restore;
+        # force=True skips the interactive conversion confirm (already confirmed upstream).
         NewSiteCommand(self.bench, self.name, [], self.admin_password).run()
         print(f"Restoring backup: {self.db_file}")
         sys.stdout.flush()
         site = Site(SiteConfig(name=self.name, apps=[]), self.bench)
-        site.restore(self.db_file, self.public_files, self.private_files)
+        site.restore(self.db_file, self.public_files, self.private_files, force=self.force)

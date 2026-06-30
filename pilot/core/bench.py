@@ -72,6 +72,22 @@ class Bench:
         mariadb = self.config.mariadb
         return ["--db-root-username", mariadb.admin_user, "--db-root-password", mariadb.root_password]
 
+    def source_mariadb_args(self) -> list[str]:
+        """This bench's MariaDB connection, passed to frappe restore so a MariaDB backup
+        on a PostgreSQL site can be staged there for pgloader conversion. frappe ignores
+        these unless the backup being restored is actually a MariaDB dump."""
+        mariadb = self.config.mariadb
+        return [
+            "--source-mariadb-host",
+            mariadb.host,
+            "--source-mariadb-port",
+            str(mariadb.port),
+            "--source-mariadb-root-username",
+            mariadb.admin_user,
+            "--source-mariadb-root-password",
+            mariadb.root_password,
+        ]
+
     def postgres_root_password(self) -> str:
         # frappe's postgres setup falls back to an interactive getpass() — which
         # hangs the background task — when the password is empty. Pass a non-empty

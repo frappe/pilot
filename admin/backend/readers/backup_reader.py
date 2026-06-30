@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -18,6 +19,29 @@ _REMOTE_FILE_KINDS = {
     "private_files": "private-file",
     "site_config": "site_config",
 }
+
+_MARIADB_MARKERS = ("MariaDB dump", "MySQL dump", "/*!40101", "CREATE TABLE `")
+_POSTGRES_MARKERS = ("PostgreSQL database dump", 'CREATE TABLE "', "CREATE TABLE public.", "COPY public.")
+
+
+def dump_engine(path: str | Path) -> str:
+    """Return the engine ("mariadb" or "postgres") a SQL backup was produced by.
+
+    Mirrors frappe.installer.get_dump_db_type: mysqldump quotes identifiers with
+    backticks and emits `MariaDB dump`; pg_dump uses double quotes and `COPY public.`.
+    """
+    path = str(path)
+    try:
+        opener = gzip.open if path.endswith(".gz") else open
+        with opener(path, "rb") as f:
+            header = f.read(2048).decode(errors="ignore")
+    except OSError:
+        return "mariadb"
+    if any(marker in header for marker in _MARIADB_MARKERS):
+        return "mariadb"
+    if any(marker in header for marker in _POSTGRES_MARKERS):
+        return "postgres"
+    return "mariadb" if "`" in header else "postgres"
 
 
 @dataclass

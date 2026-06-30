@@ -14,6 +14,7 @@ from pilot.platform import (
     is_alpine,
     is_linux,
     is_macos,
+    is_x86_64,
     service_command,
     service_enable_command,
     service_running,
@@ -119,6 +120,19 @@ class PostgresManager:
             return
         get_package_manager().install("postgresql", "postgresql-client")
 
+    def _install_conversion_tools(self) -> None:
+        """Install pgloader (+ MariaDB client) used to convert MariaDB backups to PostgreSQL.
+
+        pgloader only runs on x86_64 Linux, so it's skipped elsewhere — conversion errors
+        clearly there. Best-effort: a missing pgloader package must not fail provisioning.
+        """
+        if which("pgloader") or not (is_linux() and is_x86_64()):
+            return
+        try:
+            get_package_manager().install("pgloader", "mariadb-client")
+        except subprocess.CalledProcessError:
+            print("  Warning: could not install pgloader; MariaDB→PostgreSQL conversion will be unavailable.")
+
     def alpine_packages(self) -> list[str]:
         major = self._alpine_major()
         return [f"postgresql{major}", f"postgresql{major}-client"]
@@ -219,6 +233,7 @@ class PostgresManager:
     def provision(self) -> None:
         """Install, start, enable and secure the server. Idempotent — safe to re-run."""
         self.install()
+        self._install_conversion_tools()
         if self.is_dedicated:
             self._provision_instance()
         else:
@@ -236,10 +251,17 @@ class PostgresManager:
         if not supports_dedicated_postgres():
             raise RuntimeError("Dedicated PostgreSQL clusters require systemd (postgresql-common); use the shared server instead.")
         if not self._cluster_row():
-            run_command(_privileged([
-                "pg_createcluster", self._detected_version(), self.config.instance,
-                "-p", str(self.config.port),
-            ]))
+            run_command(
+                _privileged(
+                    [
+                        "pg_createcluster",
+                        self._detected_version(),
+                        self.config.instance,
+                        "-p",
+                        str(self.config.port),
+                    ]
+                )
+            )
         # Start directly (not via systemd's templated unit — see _ctlcluster).
         if not self.is_running():
             self.start()
@@ -259,10 +281,7 @@ class PostgresManager:
         """Ensure the admin role exists with the configured password so frappe can
         connect over TCP. Idempotent: a no-op once credentials work."""
         if not self.config.root_password:
-            print(
-                "  postgres.root_password is empty — skipping superuser setup. "
-                "Set it in Settings before creating PostgreSQL sites."
-            )
+            print("  postgres.root_password is empty — skipping superuser setup. Set it in Settings before creating PostgreSQL sites.")
             return
         if self.check_credentials():
             return
