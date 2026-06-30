@@ -3,7 +3,6 @@ import sys
 import time
 
 from pilot.commands.get_app import GetAppCommand
-from pilot.core.site import Site, SiteConfig
 from pilot.exceptions import BenchError
 
 from .base_task import BaseTask
@@ -60,6 +59,8 @@ class AddAndInstallAppTask(BaseTask):
         _step("done")
 
     def _install_on_sites(self, cmds: list) -> None:
+        from pilot.managers.python_env_manager import PythonEnvManager
+
         sites_dir = self.bench_root / "sites"
         for site in self.sites:
             safe_key = site.replace(".", "_").replace("-", "_")
@@ -71,6 +72,10 @@ class AddAndInstallAppTask(BaseTask):
                 )
                 if result.returncode != 0:
                     sys.exit(result.returncode)
+        env = PythonEnvManager(self.bench)
+        for cmd in cmds:
+            _step("build", f"Build assets for {cmd.app.config.name}")
+            env.build_assets_for_app(cmd.app)
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request
 
 from ..readers.app_reader import AppReader
-from ..validators import validate_app_name
+from ..validators import validate_app_name, validate_repo_url
 from admin.backend.tasks.manager.task_runner import TaskRunner
 
 apps_bp = Blueprint("apps", __name__)
