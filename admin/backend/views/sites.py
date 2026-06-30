@@ -270,22 +270,22 @@ def get_and_install_app(name: str):
     data = request.get_json(silent=True) or {}
     app = (data.get("app") or "").strip()
     repo = (data.get("repo") or "").strip()
-    branch = (data.get("branch") or "").strip()
+    target = (data.get("target") or data.get("branch") or "").strip()
     if not repo:
         return jsonify({"ok": False, "error": "Repo URL is required."})
     if not app:
         from pilot.core.git_providers import GitProviderError, resolve_app_name_from_repo
 
         try:
-            app = resolve_app_name_from_repo(bench_root, repo, branch)
+            app = resolve_app_name_from_repo(bench_root, repo, target)
         except GitProviderError as e:
             return jsonify({"ok": False, "error": f"Could not determine app name: {e}"})
         except Exception as e:
             return jsonify({"ok": False, "error": f"Could not read pyproject.toml: {e}"})
     try:
         task_args = {"site": name, "app": app, "repo": repo}
-        if branch:
-            task_args["branch"] = branch
+        if target:
+            task_args["branch"] = target
         task_id = TaskRunner(bench_root).run("get-and-install-app", task_args)
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})

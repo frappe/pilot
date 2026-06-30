@@ -28,7 +28,6 @@ const mode = ref('browse')
 const search = ref('')
 const category = ref('All')
 const pending = ref(null)
-const pendingBranch = ref('')
 const loading = ref(false)
 const error = ref('')
 
@@ -49,6 +48,7 @@ const extraInstallable = computed(() => props.installable.filter(name => !regist
 
 const sortedRegistry = computed(() =>
   [...props.registry].sort((a, b) => {
+    if (a.is_installable !== b.is_installable) return a.is_installable ? -1 : 1
     const af = isFrappe(a), bf = isFrappe(b)
     if (af !== bf) return af ? -1 : 1
     return (a.title || a.name).localeCompare(b.title || b.name)
@@ -65,10 +65,6 @@ const filteredRegistry = computed(() => {
   return apps
 })
 
-const branchOptions = computed(() =>
-  (pending.value?.branches ?? []).map(b => ({ label: b, value: b }))
-)
-
 const dialogTitle = computed(() => {
   if (mode.value === 'confirm' && pending.value) return pending.value.title || pending.value.name
   if (mode.value === 'custom') return 'Install Custom App'
@@ -82,7 +78,6 @@ function reset() {
   search.value = ''
   category.value = 'All'
   pending.value = null
-  pendingBranch.value = ''
   customRepo.value = ''
   customBranch.value = ''
   customTab.value = 'public'
@@ -96,8 +91,6 @@ function onOpen(open) {
 }
 
 function selectApp(app) {
-  const branches = app.branches ?? (app.branch ? [app.branch] : [])
-  pendingBranch.value = branches[0] ?? ''
   pending.value = app
   error.value = ''
   mode.value = 'confirm'
@@ -303,7 +296,7 @@ function confirmInstall() {
     postInstall(`/api/sites/${props.siteName}/get-and-install-app`, {
       app: pending.value.name,
       repo: pending.value.repo,
-      branch: pendingBranch.value,
+      target: pending.value.target,
     })
   }
 }
@@ -340,11 +333,10 @@ function confirmCustomInstall() {
                 <p v-if="pending.description" class="text-sm text-ink-gray-5 line-clamp-2">{{ pending.description }}</p>
               </div>
             </div>
-            <FormControl v-if="branchOptions.length > 1" label="Branch" type="select"
-              v-model="pendingBranch" :options="branchOptions" />
-            <p v-else-if="pendingBranch" class="text-sm text-ink-gray-6">
-              Branch: <span class="font-medium text-ink-gray-9">{{ pendingBranch }}</span>
-            </p>
+            <div v-if="pending.target" class="flex gap-4 text-sm text-ink-gray-6">
+              <span>Version: <span class="font-medium text-ink-gray-9">{{ pending.version }}</span></span>
+              <span>{{ pending.target_type }}: <span class="font-medium text-ink-gray-9">{{ pending.target }}</span></span>
+            </div>
             <ErrorMessage v-if="error" :message="error" />
             <div class="flex items-center justify-between gap-2">
               <Button variant="ghost" @click="backToBrowse">← Back</Button>
@@ -521,7 +513,10 @@ function confirmCustomInstall() {
               <p v-else-if="!filteredRegistry.length && !extraInstallable.length" class="py-8 text-center text-sm text-ink-gray-4">No apps found.</p>
               <template v-else>
                 <div v-for="app in filteredRegistry" :key="app.name"
-                  class="flex items-center gap-3 rounded-lg border border-outline-gray-1 px-3 py-2.5">
+                  class="flex items-center gap-3 rounded-lg border px-3 py-2.5"
+                  :class="app.is_installable
+                    ? 'border-outline-gray-1'
+                    : 'border-outline-gray-1 bg-surface-gray-1 opacity-60'">
                   <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md overflow-hidden"
                     :style="app.logo_url ? {} : { background: hashColor(app.name) }">
                     <img v-if="app.logo_url" :src="app.logo_url" :alt="app.title" class="h-full w-full object-contain" />
@@ -530,10 +525,13 @@ function confirmCustomInstall() {
                   <div class="flex-1 min-w-0">
                     <p class="text-sm font-medium text-ink-gray-9">{{ app.title || app.name }}</p>
                     <p v-if="app.description" class="text-xs text-ink-gray-5 truncate">{{ app.description }}</p>
+                    <p v-if="!app.is_installable && app.required_version" class="text-xs text-ink-gray-4">
+                      Requires Frappe {{ app.required_version }}
+                    </p>
                   </div>
                   <div class="shrink-0">
                     <Badge v-if="installedSet.has(app.name)" label="Installed" theme="green" size="sm" />
-                    <Button v-else-if="app.repo" variant="outline" size="sm" @click="selectApp(app)">Add</Button>
+                    <Button v-else-if="app.is_installable && app.repo" variant="outline" size="sm" @click="selectApp(app)">Add</Button>
                   </div>
                 </div>
                 <template v-if="!search && category === 'All' && extraInstallable.length">

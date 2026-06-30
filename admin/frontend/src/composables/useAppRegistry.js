@@ -15,7 +15,7 @@ export function useAppRegistry() {
 
   async function loadRegistry() {
     try {
-      registry.value = await fetch('/api/apps/registry').then(r => r.json())
+      registry.value = await fetch('/api/apps/marketplace').then(r => r.json())
     } catch { registry.value = [] }
   }
 

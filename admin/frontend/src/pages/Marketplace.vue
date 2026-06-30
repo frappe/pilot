@@ -1,10 +1,8 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { Button, Badge, Checkbox, Dialog, FormControl, LoadingText, ErrorMessage, TextInput } from 'frappe-ui'
+import { Button, Badge, Checkbox, Dialog, LoadingText, ErrorMessage, TextInput } from 'frappe-ui'
 import { useTaskProgress } from '../composables/useTaskProgress.js'
 
-const router = useRouter()
 const { watchTask } = useTaskProgress()
 const registry = ref([])
 const installedNames = ref(new Set())
@@ -36,6 +34,7 @@ function isFrappe(app) {
 
 const sortedRegistry = computed(() =>
   [...registry.value].sort((a, b) => {
+    if (a.is_installable !== b.is_installable) return a.is_installable ? -1 : 1
     const af = isFrappe(a), bf = isFrappe(b)
     if (af !== bf) return af ? -1 : 1
     const as = a.stars ?? -1, bs = b.stars ?? -1
@@ -75,7 +74,7 @@ async function load() {
   error.value = ''
   try {
     const [regRes, appsRes] = await Promise.all([
-      fetch('/api/apps/registry'),
+      fetch('/api/apps/marketplace'),
       fetch('/api/apps/'),
     ])
     registry.value = await regRes.json()
@@ -91,7 +90,6 @@ async function load() {
 // Install dialog
 const showInstall = ref(false)
 const installApp = ref(null)
-const installBranch = ref('')
 const installing = ref(false)
 const installError = ref('')
 const sites = ref([])
@@ -100,7 +98,6 @@ const selectedSites = ref([])
 
 async function openInstall(app) {
   installApp.value = app
-  installBranch.value = app.branches?.[0] ?? app.branch ?? ''
   installing.value = false
   installError.value = ''
   selectedSites.value = []
@@ -119,29 +116,17 @@ async function doInstall() {
   installing.value = true
   installError.value = ''
   try {
-    let res
-    if (selectedSites.value.length) {
-      res = await fetch('/api/apps/add-and-install', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: installApp.value.name,
-          repo: installApp.value.repo,
-          branch: installBranch.value,
-          sites: selectedSites.value,
-        }),
-      })
-    } else {
-      res = await fetch('/api/apps/add', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: installApp.value.name,
-          repo: installApp.value.repo,
-          branch: installBranch.value,
-        }),
-      })
-    }
+    const endpoint = selectedSites.value.length ? '/api/apps/add-and-install' : '/api/apps/add'
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: installApp.value.name,
+        repo: installApp.value.repo,
+        target: installApp.value.target,
+        sites: selectedSites.value,
+      }),
+    })
     const d = await res.json()
     if (d.ok) { showInstall.value = false; watchTask(d.task_id) }
     else installError.value = d.error
@@ -151,10 +136,6 @@ async function doInstall() {
     installing.value = false
   }
 }
-
-const branchOptions = computed(() =>
-  (installApp.value?.branches ?? []).map(b => ({ label: b, value: b }))
-)
 
 onMounted(load)
 </script>
@@ -203,7 +184,12 @@ onMounted(load)
           </p>
 
           <!-- App card -->
-          <div class="flex items-center gap-4 rounded-lg border border-outline-gray-1 bg-surface-white px-4 py-3 shadow-sm">
+          <div
+            class="flex items-center gap-4 rounded-lg border px-4 py-3 shadow-sm"
+            :class="app.is_installable
+              ? 'border-outline-gray-1 bg-surface-white'
+              : 'border-outline-gray-1 bg-surface-gray-1 opacity-60'"
+          >
             <!-- Logo -->
             <div
               class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg overflow-hidden"
@@ -218,25 +204,21 @@ onMounted(load)
               <div class="flex items-center gap-2 flex-wrap">
                 <span class="font-medium text-ink-gray-9">{{ app.title }}</span>
                 <Badge v-if="isFrappe(app)" label="Frappe" theme="gray" size="sm" />
-                <div class="flex flex-wrap gap-1">
-                  <Badge
-                    v-for="b in (app.branches ?? []).slice(0, 3)"
-                    :key="b"
-                    :label="b"
-                    theme="gray"
-                    size="sm"
-                  />
-                </div>
+                <Badge v-if="app.target" :label="app.target" theme="gray" size="sm" />
+                <Badge v-if="app.version" :label="`v${app.version}`" theme="blue" size="sm" />
               </div>
               <p v-if="app.description" class="mt-0.5 text-sm leading-relaxed text-ink-gray-5 line-clamp-2">
                 {{ app.description }}
+              </p>
+              <p v-if="!app.is_installable && app.required_version" class="mt-0.5 text-xs text-ink-gray-4">
+                Requires Frappe {{ app.required_version }}
               </p>
             </div>
 
             <!-- Action -->
             <div class="flex shrink-0 items-center gap-2">
               <Badge v-if="installedNames.has(app.name)" label="Installed" theme="green" />
-              <Button v-else-if="app.repo" variant="outline" size="sm" @click="openInstall(app)">Add</Button>
+              <Button v-else-if="app.is_installable && app.repo" variant="outline" size="sm" @click="openInstall(app)">Add</Button>
             </div>
           </div>
         </template>
@@ -251,14 +233,10 @@ onMounted(load)
     <Dialog v-model="showInstall" :options="{ title: `Add ${installApp?.title}` }">
       <template #body-content>
         <div class="flex flex-col gap-4">
-          <FormControl
-            v-if="branchOptions.length > 1"
-            label="Branch"
-            type="select"
-            v-model="installBranch"
-            :options="branchOptions"
-          />
-          <p v-else class="text-sm text-ink-gray-6">Branch: <span class="font-medium text-ink-gray-9">{{ installBranch }}</span></p>
+          <div class="flex gap-4 text-sm text-ink-gray-6">
+            <span>Version: <span class="font-medium text-ink-gray-9">{{ installApp?.version }}</span></span>
+            <span>{{ installApp?.target_type }}: <span class="font-medium text-ink-gray-9">{{ installApp?.target }}</span></span>
+          </div>
 
           <!-- Site selection -->
           <div class="flex flex-col gap-2">
