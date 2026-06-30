@@ -205,6 +205,8 @@ def create_from_upload():
     if config.db_type == "postgres" and dump_engine(db_path) == "mariadb":
         # pgloader only runs on x86_64 Linux — block early rather than fail mid-restore.
         if not (is_linux() and is_x86_64()):
+            # Dead end (no resume), so discard the staged upload instead of leaking it.
+            shutil.rmtree(upload_dir, ignore_errors=True)
             return jsonify(
                 {
                     "ok": False,

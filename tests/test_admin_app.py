@@ -578,6 +578,8 @@ def test_upload_mariadb_to_postgres_blocked_off_x86_linux(tmp_path: Path) -> Non
     assert "needs_conversion_confirm" not in payload
     assert "x86_64" in payload["error"]
     run.assert_not_called()
+    uploads = tmp_path / "benches" / "current" / "tmp" / "uploads"
+    assert list(uploads.iterdir()) == []  # dead-end upload is cleaned up, not leaked
 
 
 def test_discard_upload_removes_staged_dir(tmp_path: Path) -> None:
