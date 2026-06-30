@@ -196,6 +196,8 @@ class TaskRunner:
                 argv += ["--public-files", args["public_files"]]
             if args.get("private_files"):
                 argv += ["--private-files", args["private_files"]]
+            if args.get("convert"):
+                argv += ["--force"]
             return argv
         if command == "update-cli":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.update_cli_task", str(self._bench_root)]

@@ -57,6 +57,9 @@ const selectedBackupTs = ref('')
 const uploadDb = ref(null)
 const uploadPublic = ref(null)
 const uploadPrivate = ref(null)
+const showConvertConfirm = ref(false)
+const convertInfo = ref(null)
+const converting = ref(false)
 
 function siteStatus(s) {
   return !s.exists ? 'offline' : s.broken ? 'broken' : 'online'
@@ -134,12 +137,56 @@ async function createSite() {
     // Navigate only after the dialog's leave transition completes (see
     // onCreateClosed); closing and routing in the same tick unmounts this page
     // mid-transition and orphans the teleported dialog overlay.
-    if (d.ok) { pendingTaskId.value = d.task_id; showCreate.value = false }
+    if (d.needs_conversion_confirm) { convertInfo.value = d; showConvertConfirm.value = true }
+    else if (d.ok) { pendingTaskId.value = d.task_id; showCreate.value = false }
     else createError.value = d.error
   } catch (e) {
     createError.value = e.message
   } finally {
     creating.value = false
+  }
+}
+
+async function confirmConvert() {
+  converting.value = true
+  createError.value = ''
+  try {
+    const info = convertInfo.value
+    const body = { command: 'new-site-from-backup', name: info.name, db_file: info.db_file, convert: true }
+    if (adminPassword.value.trim()) body.admin_password = adminPassword.value.trim()
+    if (info.public_files) body.public_files = info.public_files
+    if (info.private_files) body.private_files = info.private_files
+    const res = await fetch('/api/tasks/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    const d = await res.json()
+    if (d.ok) {
+      showConvertConfirm.value = false
+      pendingTaskId.value = d.task_id
+      showCreate.value = false
+    } else {
+      createError.value = d.error
+      showConvertConfirm.value = false
+    }
+  } catch (e) {
+    createError.value = e.message
+    showConvertConfirm.value = false
+  } finally {
+    converting.value = false
+  }
+}
+
+async function cancelConvert() {
+  const path = convertInfo.value?.db_file
+  showConvertConfirm.value = false
+  convertInfo.value = null
+  // Best-effort: remove the uploaded backup we staged but won't restore.
+  if (path) {
+    try {
+      await fetch('/api/sites/discard-upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ db_file: path }),
+      })
+    } catch (e) { /* ignore */ }
   }
 }
 
@@ -170,6 +217,8 @@ function openCreate() {
   uploadDb.value = null
   uploadPublic.value = null
   uploadPrivate.value = null
+  showConvertConfirm.value = false
+  convertInfo.value = null
 }
 
 // App update indicator
@@ -358,6 +407,19 @@ onMounted(() => { loadSites(); loadRegistry(); checkAppUpdates() })
           <div class="flex justify-end gap-2">
             <Button variant="ghost" @click="showCreate = false">Cancel</Button>
             <Button variant="solid" :loading="creating" @click="createSite">Create Site</Button>
+          </div>
+        </div>
+      </template>
+    </Dialog>
+
+    <Dialog v-model="showConvertConfirm" :options="{ title: 'Convert MariaDB backup?' }">
+      <template #body-content>
+        <div class="flex flex-col gap-4">
+          <p class="whitespace-pre-line text-base text-ink-gray-7">{{ convertInfo?.message }}</p>
+          <ErrorMessage v-if="createError" :message="createError" />
+          <div class="flex justify-end gap-2">
+            <Button variant="ghost" @click="cancelConvert">Cancel</Button>
+            <Button variant="solid" theme="red" :loading="converting" @click="confirmConvert">Convert &amp; Restore</Button>
           </div>
         </div>
       </template>

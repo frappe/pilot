@@ -22,11 +22,11 @@ def _write_raw_bench_toml(bench_dir: Path, name: str, admin_port: int) -> None:
     (bench_dir / "bench.toml").write_text(f'[bench]\nname = "{name}"\n\n[admin]\nport = {admin_port}\n')
 
 
-def _client(bench_root: Path, password: str = "secret"):
+def _client(bench_root: Path, password: str = "secret", **settings):
     from admin.backend.app import create_app
     from pilot.commands.generate_session import ensure_jwt_secret, issue_token
 
-    _write_bench_toml(bench_root, bench_root.name, admin_enabled=True, admin_password=password)
+    _write_bench_toml(bench_root, bench_root.name, admin_enabled=True, admin_password=password, **settings)
     secret = ensure_jwt_secret(bench_root / "bench.toml")
     app = create_app(bench_root)
     app.config["TESTING"] = True
@@ -85,9 +85,7 @@ def test_api_benches_includes_production_metadata(tmp_path: Path) -> None:
         prod_dir = benches_dir / "prod-bench"
         prod_dir.mkdir(parents=True, exist_ok=True)
         (prod_dir / "bench.toml").write_text(
-            f'[bench]\nname = "prod-bench"\n\n'
-            f'[admin]\nport = {live_port}\ndomain = "admin-prod.example.com"\ntls = true\n\n'
-            f'[production]\nenabled = true\nprocess_manager = "systemd"\n'
+            f'[bench]\nname = "prod-bench"\n\n[admin]\nport = {live_port}\ndomain = "admin-prod.example.com"\ntls = true\n\n[production]\nenabled = true\nprocess_manager = "systemd"\n'
         )
         # https only once the cert is in place; pretend it is for this assertion.
         with patch("admin.backend.views.benches.admin_cert_exists", return_value=True):
@@ -109,9 +107,7 @@ def test_api_benches_admin_url_is_http_until_cert_exists(tmp_path: Path) -> None
         prod_dir = benches_dir / "prod-bench"
         prod_dir.mkdir(parents=True, exist_ok=True)
         (prod_dir / "bench.toml").write_text(
-            f'[bench]\nname = "prod-bench"\n\n'
-            f'[admin]\nport = {live_port}\ndomain = "admin-prod.example.com"\ntls = true\n\n'
-            f'[production]\nenabled = true\nprocess_manager = "systemd"\n'
+            f'[bench]\nname = "prod-bench"\n\n[admin]\nport = {live_port}\ndomain = "admin-prod.example.com"\ntls = true\n\n[production]\nenabled = true\nprocess_manager = "systemd"\n'
         )
         with patch("admin.backend.views.benches.admin_cert_exists", return_value=False):
             resp = client.get("/api/benches/")
@@ -169,15 +165,13 @@ def test_api_benches_new_routes_wizard_at_domain_when_production(tmp_path: Path)
     # own domain (HTTP) — not auto-provisioned to a password-protected login.
     benches_dir = tmp_path / "benches"
     current = benches_dir / "current"
-    _write_bench_toml(current, "current", admin_enabled=True, admin_password="secret",
-                      admin_domain="current-admin.example.com", admin_tls=True)
+    _write_bench_toml(current, "current", admin_enabled=True, admin_password="secret", admin_domain="current-admin.example.com", admin_tls=True)
     from admin.backend.app import create_app
+
     toml = (current / "bench.toml").read_text()
-    (current / "bench.toml").write_text(
-        toml.replace("enabled = false\nuse_companion_manager",
-                     'enabled = true\nprocess_manager = "systemd"\nuse_companion_manager')
-    )
+    (current / "bench.toml").write_text(toml.replace("enabled = false\nuse_companion_manager", 'enabled = true\nprocess_manager = "systemd"\nuse_companion_manager'))
     from pilot.commands.generate_session import ensure_jwt_secret, issue_token
+
     secret = ensure_jwt_secret(current / "bench.toml")
     app = create_app(current)
     app.config["TESTING"] = True
@@ -246,9 +240,7 @@ def test_api_benches_new_rejects_duplicate_admin_domain(tmp_path: Path) -> None:
     client = _client(benches_dir / "current")
     other = benches_dir / "other"
     (other / "sites").mkdir(parents=True, exist_ok=True)
-    (other / "bench.toml").write_text(
-        '[bench]\nname = "other"\n\n[admin]\ndomain = "shared-admin.example.com"\n'
-    )
+    (other / "bench.toml").write_text('[bench]\nname = "other"\n\n[admin]\ndomain = "shared-admin.example.com"\n')
 
     resp = client.post("/api/benches/new", json=_new_payload("fresh", admin_domain="shared-admin.example.com"))
 
@@ -384,10 +376,7 @@ def test_api_benches_ready_false_when_nginx_down_at_domain(tmp_path: Path) -> No
 
 def _write_prod_bench_toml(bench_dir: Path, name: str) -> None:
     bench_dir.mkdir(parents=True, exist_ok=True)
-    (bench_dir / "bench.toml").write_text(
-        f'[bench]\nname = "{name}"\n\n[admin]\nport = 9999\n\n'
-        f'[production]\nenabled = true\nprocess_manager = "systemd"\n'
-    )
+    (bench_dir / "bench.toml").write_text(f'[bench]\nname = "{name}"\n\n[admin]\nport = 9999\n\n[production]\nenabled = true\nprocess_manager = "systemd"\n')
 
 
 def test_api_benches_control_rejects_unknown_action(tmp_path: Path) -> None:
@@ -505,6 +494,7 @@ def test_api_benches_drop_runs_pilot(tmp_path: Path) -> None:
     argv = mock_run.call_args.args[0]
     assert argv[-4:] == ["--yes", "-b", "prod-bench", "drop"]
 
+
 # ── POST /api/sites/create — engine is bench-level, not per-site ──────────────
 
 
@@ -517,9 +507,88 @@ def test_create_site_does_not_carry_db_type(tmp_path: Path) -> None:
         captured["args"] = args
         return "task_123"
 
-    with patch("admin.backend.views.sites._new_site_name_error", return_value=None), \
-         patch("admin.backend.views.sites.TaskRunner.run", new=fake_run):
+    with patch("admin.backend.views.sites._new_site_name_error", return_value=None), patch("admin.backend.views.sites.TaskRunner.run", new=fake_run):
         resp = client.post("/api/sites/create", json={"name": "s.localhost"})
 
     assert resp.get_json()["ok"] is True
     assert "db_type" not in captured["args"]
+
+
+# ── upload a MariaDB backup onto a PostgreSQL bench — prompt before converting ──
+
+
+def _upload_mariadb_dump(client, name: str = "new.localhost"):
+    import gzip
+    import io
+
+    buf = io.BytesIO()
+    with gzip.GzipFile(fileobj=buf, mode="wb") as gz:
+        gz.write(b"-- MariaDB dump 10.19\nCREATE TABLE `tabUser` (\n")
+    buf.seek(0)
+    return client.post(
+        "/api/sites/create-from-upload",
+        data={"name": name, "admin_password": "admin", "db_file": (buf, "backup.sql.gz")},
+        content_type="multipart/form-data",
+    )
+
+
+def test_upload_mariadb_to_postgres_prompts_for_conversion(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current", db_type="postgres")
+    with (
+        patch("admin.backend.views.sites._new_site_name_error", return_value=None),
+        patch("admin.backend.views.sites.is_linux", return_value=True),
+        patch("admin.backend.views.sites.is_x86_64", return_value=True),
+        patch("admin.backend.views.sites.TaskRunner.run") as run,
+    ):
+        resp = _upload_mariadb_dump(client)
+
+    payload = resp.get_json()
+    assert payload["needs_conversion_confirm"] is True
+    assert "pgloader" in payload["message"]
+    assert payload["db_file"]
+    run.assert_not_called()  # restore must wait for the user to confirm
+
+
+def test_upload_mariadb_to_postgres_blocked_off_x86_linux(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current", db_type="postgres")
+    with (
+        patch("admin.backend.views.sites._new_site_name_error", return_value=None),
+        patch("admin.backend.views.sites.is_linux", return_value=True),
+        patch("admin.backend.views.sites.is_x86_64", return_value=False),
+        patch("admin.backend.views.sites.TaskRunner.run") as run,
+    ):
+        resp = _upload_mariadb_dump(client)
+
+    payload = resp.get_json()
+    assert payload["ok"] is False
+    assert "needs_conversion_confirm" not in payload
+    assert "x86_64" in payload["error"]
+    run.assert_not_called()
+
+
+def test_discard_upload_removes_staged_dir(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    upload_dir = bench_root / "tmp" / "uploads" / "tok123"
+    upload_dir.mkdir(parents=True)
+    db_file = upload_dir / "backup.sql.gz"
+    db_file.write_text("x")
+
+    resp = client.post("/api/sites/discard-upload", json={"db_file": str(db_file)})
+
+    assert resp.get_json()["ok"] is True
+    assert not upload_dir.exists()
+
+
+def test_discard_upload_ignores_paths_outside_uploads(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    outside = bench_root / "important"
+    outside.mkdir(parents=True)
+    keep = outside / "f.txt"
+    keep.write_text("keep")
+
+    resp = client.post("/api/sites/discard-upload", json={"db_file": str(keep)})
+
+    assert resp.get_json()["ok"] is True
+    assert keep.exists()  # not under tmp/uploads — left untouched

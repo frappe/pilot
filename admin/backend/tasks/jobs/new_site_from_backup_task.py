@@ -14,6 +14,7 @@ class NewSiteFromBackupTask(BaseTask):
         p.add_argument("--admin-password", default="admin")
         p.add_argument("--public-files", default=None)
         p.add_argument("--private-files", default=None)
+        p.add_argument("--force", action="store_true")
         return p
 
     def __init__(self, bench, bench_root, args):
@@ -23,6 +24,7 @@ class NewSiteFromBackupTask(BaseTask):
         self.admin_password = args.admin_password
         self.public_files = args.public_files
         self.private_files = args.private_files
+        self.force = args.force
 
     def run(self) -> None:
         NewSiteFromBackupCommand(
@@ -32,6 +34,7 @@ class NewSiteFromBackupTask(BaseTask):
             admin_password=self.admin_password,
             public_files=self.public_files,
             private_files=self.private_files,
+            force=self.force,
         ).run()
 
 
