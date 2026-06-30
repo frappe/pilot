@@ -125,7 +125,7 @@ class Marketplace:
 
     def read_all_apps(self) -> list[Resolver]:
         results = []
-        current = Version("16.0.0")
+        current = Version(self.frappe_version)
         for app in self.registry:
             # Checks if the current version is supported in the apps version specifier targets
             # preloaded while parsing the registry. If two branches support the same frappe version
