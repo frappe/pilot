@@ -337,7 +337,9 @@ function confirmCustomInstall() {
               <span>Version: <span class="font-medium text-ink-gray-9">{{ pending.version }}</span></span>
               <span>{{ pending.target_type }}: <span class="font-medium text-ink-gray-9">{{ pending.target }}</span></span>
             </div>
-            <ErrorMessage v-if="error" :message="error" />
+            <div v-if="error" class="rounded-md border border-outline-red-1 bg-surface-red-1 px-3 py-2.5">
+              <p v-for="(line, i) in error.split('\n')" :key="i" class="text-sm text-ink-red-3">{{ line }}</p>
+            </div>
             <div class="flex items-center justify-between gap-2">
               <Button variant="ghost" @click="backToBrowse">← Back</Button>
               <div class="flex gap-2">
@@ -378,7 +380,9 @@ function confirmCustomInstall() {
                 placeholder="https://github.com/frappe/crm" />
               <FormControl label="Branch" type="text" v-model="customBranch"
                 placeholder="Leave blank for the repository default" />
-              <ErrorMessage v-if="error" :message="error" />
+              <div v-if="error" class="rounded-md border border-outline-red-1 bg-surface-red-1 px-3 py-2.5">
+              <p v-for="(line, i) in error.split('\n')" :key="i" class="text-sm text-ink-red-3">{{ line }}</p>
+            </div>
               <div class="flex items-center justify-between">
                 <Button variant="ghost" @click="backToBrowse">← Back</Button>
                 <div class="flex gap-2">
@@ -462,7 +466,10 @@ function confirmCustomInstall() {
                   </div>
                 </div>
 
-                <ErrorMessage v-if="error || gitError" :message="error || gitError" />
+                <div v-if="error" class="rounded-md border border-outline-red-1 bg-surface-red-1 px-3 py-2.5">
+                  <p v-for="(line, i) in error.split('\n')" :key="i" class="text-sm text-ink-red-3">{{ line }}</p>
+                </div>
+                <ErrorMessage v-else-if="gitError" :message="gitError" />
                 <div class="flex items-center justify-between">
                   <Button variant="ghost" @click="backToBrowse">← Back</Button>
                   <div class="flex gap-2">
@@ -550,7 +557,9 @@ function confirmCustomInstall() {
                 </template>
               </template>
             </div>
-            <ErrorMessage v-if="error" :message="error" />
+            <div v-if="error" class="rounded-md border border-outline-red-1 bg-surface-red-1 px-3 py-2.5">
+              <p v-for="(line, i) in error.split('\n')" :key="i" class="text-sm text-ink-red-3">{{ line }}</p>
+            </div>
             <!-- Custom repository entry point -->
             <button type="button" @click="openCustom"
               class="flex items-center justify-center gap-2 rounded-lg border border-dashed border-outline-gray-2 px-3 py-2.5 text-sm font-medium text-ink-gray-6 transition-colors hover:border-outline-gray-3 hover:text-ink-gray-8">

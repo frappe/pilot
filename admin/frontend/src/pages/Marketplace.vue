@@ -165,7 +165,11 @@ onMounted(load)
       <TextInput v-model="search" placeholder="Search apps…" class="mb-1" />
 
       <LoadingText v-if="loading" />
-      <ErrorMessage v-else-if="error" :message="error" />
+      <div v-else-if="error" class="flex flex-col items-center gap-3 py-10 text-center">
+        <p class="text-sm font-medium text-ink-red-3">Failed to load marketplace</p>
+        <p class="text-xs text-ink-gray-5">{{ error }}</p>
+        <Button variant="outline" size="sm" @click="load">Retry</Button>
+      </div>
 
       <template v-else>
         <template v-for="(app, i) in filteredRegistry" :key="app.name">
@@ -258,7 +262,9 @@ onMounted(load)
             </div>
           </div>
 
-          <ErrorMessage v-if="installError" :message="installError" />
+          <div v-if="installError" class="rounded-md border border-outline-red-1 bg-surface-red-1 px-3 py-2.5">
+            <p v-for="(line, i) in installError.split('\n')" :key="i" class="text-sm text-ink-red-3">{{ line }}</p>
+          </div>
           <div class="flex justify-end gap-2">
             <Button variant="ghost" @click="showInstall = false">Cancel</Button>
             <Button variant="solid" :loading="installing" @click="doInstall">Add App</Button>
