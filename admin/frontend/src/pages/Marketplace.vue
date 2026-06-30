@@ -77,6 +77,8 @@ async function load() {
       fetch('/api/apps/marketplace'),
       fetch('/api/apps/'),
     ])
+    if (!regRes.ok) throw new Error(`Marketplace unavailable (${regRes.status})`)
+    if (!appsRes.ok) throw new Error(`Apps unavailable (${appsRes.status})`)
     registry.value = await regRes.json()
     const apps = await appsRes.json()
     installedNames.value = new Set(apps.map(a => a.name))

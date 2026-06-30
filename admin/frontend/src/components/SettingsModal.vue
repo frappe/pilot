@@ -272,7 +272,7 @@ async function loadBenchApps() {
   try {
     const [appsRes, regRes] = await Promise.all([
       fetch('/api/apps/'),
-      fetch('/api/apps/registry'),
+      fetch('/api/apps/marketplace'),
     ])
     const appsData = await appsRes.json()
     const regData = await regRes.json()
