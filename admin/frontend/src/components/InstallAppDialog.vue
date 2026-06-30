@@ -330,7 +330,7 @@ function confirmCustomInstall() {
               </div>
               <div class="min-w-0">
                 <p class="font-medium text-ink-gray-9">{{ pending.title || pending.name }}</p>
-                <p v-if="pending.description" class="text-sm text-ink-gray-5 line-clamp-2">{{ pending.description }}</p>
+                <p v-if="pending.description" class="text-sm leading-snug text-ink-gray-5 line-clamp-2">{{ pending.description }}</p>
               </div>
             </div>
             <div v-if="pending.target" class="flex gap-4 text-sm text-ink-gray-6">

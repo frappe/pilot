@@ -55,7 +55,7 @@ class Resolver:
             "description": self.description,
             "logo_url": self.logo_url,
             "category": self.category,
-            "stars": self.stars or 0,
+            "stars": self.stars,
         }
 
     def _resolve(
@@ -149,7 +149,7 @@ class Marketplace:
             description=app.get("description", ""),
             logo_url=app.get("logo_url", ""),
             category=app.get("category", ""),
-            stars=app.get("stars", 0),
+            stars=app.get("stars") or 0,
             is_installable=is_installable,
         )
 
