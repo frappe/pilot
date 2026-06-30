@@ -17,7 +17,8 @@
     </div>
 
     <div
-      class="flex flex-1 justify-between items-center gap-2 py-4 border-b border-outline-gray-2 min-w-0"
+      class="flex flex-1 justify-between items-center gap-2 min-w-0"
+      :class="showDivider ? 'py-4 border-b border-outline-gray-2' : 'py-2'"
     >
       <div class="min-w-0">
         <div class="flex items-center gap-1.5">
@@ -29,11 +30,13 @@
         </div>
       </div>
 
-      <Badge v-if="app.installed" label="Installed" theme="green" />
-      <span v-else-if="!app.compatible" class="text-ink-gray-4 text-xs shrink-0">
-        Needs Version {{ app.needs }}
-      </span>
-      <Button v-else variant="subtle" @click="$emit('install', app)">Install</Button>
+      <slot name="actions">
+        <Badge v-if="app.installed" label="Installed" theme="green" />
+        <span v-else-if="!app.compatible" class="text-ink-gray-4 text-xs shrink-0">
+          Needs Version {{ app.needs }}
+        </span>
+        <Button v-else variant="subtle" @click="$emit('install', app)">Install</Button>
+      </slot>
     </div>
   </div>
 </template>
@@ -45,6 +48,7 @@ import { logoColor } from '@/composables/useMarketplace'
 
 const props = defineProps({
   app: { type: Object, required: true },
+  showDivider: { type: Boolean, default: true },
 })
 defineEmits(['install'])
 

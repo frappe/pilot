@@ -8,7 +8,8 @@
         />
         <span v-else class="size-4 lucide-refresh-cw" />
       </template>
-      {{ updatesAvailable ? 'Update available' : 'Check for updates' }}
+      <span class="hidden sm:inline">{{ updatesAvailable ? 'Update available' : 'Check for updates' }}</span>
+      <span class="sm:hidden">Updates</span>
     </Button>
   </Teleport>
   <Button v-else variant="outline" :loading="checking" @click="onClick">

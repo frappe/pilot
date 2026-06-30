@@ -12,7 +12,9 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AppIcon: typeof import('./src/components/AppIcon.vue')['default']
+    Apps: typeof import('./src/components/sites/Apps.vue')['default']
     AppSidebar: typeof import('./src/components/AppSidebar.vue')['default']
+    Backups: typeof import('./src/components/sites/Backups.vue')['default']
     MarketplaceAppCard: typeof import('./src/components/MarketplaceAppCard.vue')['default']
     NewSiteDialog: typeof import('./src/components/NewSiteDialog.vue')['default']
     ReconnectOverlay: typeof import('./src/components/ReconnectOverlay.vue')['default']

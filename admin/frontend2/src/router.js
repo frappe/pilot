@@ -18,10 +18,10 @@ const routes = [
   },
   { path: '/', redirect: '/sites' },
   {
-    path: '/sites/:name',
+    path: '/sites/:name/:tab?',
     name: 'SiteDetail',
     component: () => import('./pages/SiteDetail.vue'),
-    meta: { title: 'Site', group: 'Sites' },
+    meta: { group: 'Sites' },
   },
   ...navigationRoutes(),
 ]
@@ -43,5 +43,7 @@ router.beforeEach(async (to) => {
 })
 
 router.afterEach((to) => {
-  document.title = to.meta?.title ? `${to.meta.title} - Pilot` : 'Pilot'
+  if (to.name !== 'SiteDetail') {
+    document.title = to.meta?.title ? `${to.meta.title} - Pilot` : 'Pilot'
+  }
 })

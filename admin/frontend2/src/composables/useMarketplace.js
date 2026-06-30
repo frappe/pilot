@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue'
 import { appsApi } from '@/api/apps'
 import { settingsApi } from '@/api/settings'
+import { parseBranchVersion } from '@/utils/format'
 
 const COLORS = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed']
 
@@ -19,20 +20,13 @@ function parseBenchBranch(branch) {
   const version = parseVersion(branch)
   if (version !== null) return { version, label: `v${version}` }
   if (branch === 'develop') return { version: null, label: 'Nightly' }
-  return { version: null, label: normalizeBranchLabel(branch) || null }
+  return { version: null, label: parseBranchVersion(branch) || null }
 }
 
 export function isFrappeApp(app) {
   return Boolean(app.repo?.includes('github.com/frappe/'))
 }
 
-function normalizeBranchLabel(branch) {
-  if (!branch) return ''
-  if (branch === 'develop') return 'Nightly'
-  const match = /^version-(\d+)/.exec(branch)
-  if (match) return `v${match[1]}`
-  return branch
-}
 
 function sortApps(a, b) {
   if (a.installed !== b.installed) return a.installed ? -1 : 1
@@ -45,12 +39,12 @@ function sortApps(a, b) {
 // Maps an app's branches to how it relates to the current bench version.
 function compatibility(app, benchVersion) {
   const versions = (app.branches ?? []).map(parseVersion).filter((v) => v !== null)
-  if (benchVersion === null) return { compatible: true, label: normalizeBranchLabel(app.branch) }
+  if (benchVersion === null) return { compatible: true, label: parseBranchVersion(app.branch) }
 
   const supported = versions.filter((v) => v <= benchVersion)
   if (supported.length) return { compatible: true, label: `v${Math.max(...supported)}` }
   if (versions.length) return { compatible: false, needs: Math.min(...versions) }
-  return { compatible: true, label: normalizeBranchLabel(app.branch) || 'latest' }
+  return { compatible: true, label: parseBranchVersion(app.branch) || 'latest' }
 }
 
 export function useMarketplace() {
