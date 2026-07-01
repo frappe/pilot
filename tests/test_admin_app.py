@@ -147,8 +147,7 @@ def test_api_benches_new_creates_bench(tmp_path: Path) -> None:
     benches_dir = tmp_path / "benches"
     client = _client(benches_dir / "current")
 
-    with patch("subprocess.Popen") as mock_popen, \
-         patch("pilot.core.domain_controller.DomainRouteProvider.wildcard_domains", return_value=[]):
+    with patch("subprocess.Popen") as mock_popen, patch("pilot.core.domain_controller.DomainRouteProvider.wildcard_domains", return_value=[]):
         resp = client.post("/api/benches/new", json=_new_payload("fresh"))
 
     assert resp.get_json()["name"] == "fresh"
