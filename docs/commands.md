@@ -413,7 +413,9 @@ bench update [--yes] [--apps <app> ...]
 [done]    Done
 ```
 
-Each step emits a `##[step:KEY,TIMESTAMP] Label` marker that the admin UI uses to display a live progress timeline with per-step status and duration.
+Each step emits a `STEP KEY,TIMESTAMP Label` line that the admin UI uses to display a live progress timeline with per-step status and duration.
+
+On disk, the task runner wraps every output line (steps included) in an RFC 5424 syslog envelope, e.g. `<14>1 2026-07-01T12:34:56.789012+00:00 host update 1234 - - STEP fetch,1793620496.789 Fetch latest code`, so `output.log` can be shipped as-is to a generic log ingestion service. The admin API/UI strips this envelope back off before display — end users only ever see the plain message.
 
 ### ZFS snapshot and automatic rollback
 
