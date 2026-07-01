@@ -17,6 +17,7 @@
         <div class="flex-1 p-6 overflow-y-auto">
           <h3 class="pb-4 font-semibold text-ink-gray-9 text-lg">{{ activeSectionLabel }}</h3>
           <Workers v-if="activeSection === 'workers'" />
+          <Firewall v-else-if="activeSection === 'firewall'" />
           <SystemInfo v-else-if="activeSection === 'system-info'" />
         </div>
       </div>
@@ -27,6 +28,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { Dialog } from 'frappe-ui'
+import Firewall from '@/components/settings/Firewall.vue'
 import SystemInfo from '@/components/settings/SystemInfo.vue'
 import Workers from '@/components/settings/Workers.vue'
 
@@ -34,6 +36,7 @@ const open = defineModel()
 
 const sections = [
   { id: 'workers', label: 'Workers', icon: 'lucide-server' },
+  { id: 'firewall', label: 'Firewall', icon: 'lucide-shield' },
   { id: 'system-info', label: 'System Info', icon: 'lucide-info' },
 ]
 const activeSection = ref(sections[0].id)

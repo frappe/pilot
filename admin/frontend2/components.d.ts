@@ -22,6 +22,7 @@ declare module 'vue' {
     Config: typeof import('./src/components/sites/Config.vue')['default']
     Danger: typeof import('./src/components/sites/settings/Danger.vue')['default']
     Domains: typeof import('./src/components/sites/settings/Domains.vue')['default']
+    Firewall: typeof import('./src/components/settings/Firewall.vue')['default']
     General: typeof import('./src/components/sites/settings/General.vue')['default']
     InstallAppDialog: typeof import('./src/components/InstallAppDialog.vue')['default']
     LogView: typeof import('./src/components/LogView.vue')['default']
