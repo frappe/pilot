@@ -75,6 +75,7 @@ def get_and_install():
 
     if not isinstance(sites, list):
         return jsonify({"ok": False, "error": "sites must be a list."})
+    sites = list(dict.fromkeys(sites))  # de-dupe, preserve order: a repeated site would install twice
 
     if (bench_root / "apps" / name / ".git").exists():
         return jsonify({"ok": False, "error": f"'{name}' is already installed."})
