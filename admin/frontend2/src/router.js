@@ -23,6 +23,12 @@ const routes = [
     component: () => import('./pages/SiteDetail.vue'),
     meta: { group: 'Sites' },
   },
+  {
+    path: '/tasks/:taskId',
+    name: 'TaskDetail',
+    component: () => import('./pages/TaskDetail.vue'),
+    meta: { group: 'Insights' },
+  },
   ...navigationRoutes(),
 ]
 

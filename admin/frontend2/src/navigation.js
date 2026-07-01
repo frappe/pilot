@@ -23,7 +23,11 @@ export const navigation = {
         icon: 'lucide-scroll-text',
         component: Placeholder,
       },
-      Tasks: { path: '/tasks', icon: 'lucide-list-checks', component: Placeholder },
+      Tasks: {
+        path: '/tasks',
+        icon: 'lucide-list-checks',
+        component: () => import('./pages/Tasks.vue'),
+      },
     },
   },
   'Dev tools': {
