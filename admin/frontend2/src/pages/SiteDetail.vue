@@ -30,7 +30,7 @@
           </div>
         </div>
         <div class="flex items-center gap-2 shrink-0">
-          <Button size="sm" class="hidden sm:flex" @click="router.push('/marketplace')">
+          <Button size="sm" class="hidden sm:flex" @click="goToMarketplace">
             <template #prefix><span class="size-4 lucide-plus" /></template>
             Install app
           </Button>
@@ -126,8 +126,12 @@ function openSite() {
   window.open(`https://${site.value.name}`, '_blank')
 }
 
+function goToMarketplace() {
+  router.push({ path: '/marketplace', query: { site: siteName } })
+}
+
 const menuOptions = computed(() => [
-  ...(isMobile.value ? [{ label: 'Install app', icon: 'lucide-plus', onClick: () => router.push('/marketplace') }] : []),
+  ...(isMobile.value ? [{ label: 'Install app', icon: 'lucide-plus', onClick: goToMarketplace }] : []),
   { label: 'Login as admin', icon: 'lucide-log-in', onClick: login },
   { label: 'Back up now', icon: 'lucide-database-backup', onClick: () => { } },
   { label: 'Deactivate site', icon: 'lucide-power', onClick: () => { } },

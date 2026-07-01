@@ -17,6 +17,7 @@ export const sitesApi = {
   apps: {
     list: (name) => request.get(`sites/${encodeURIComponent(name)}/apps`).json(),
     install: (name, app) => request.post(`sites/${encodeURIComponent(name)}/install-app`, { json: { app } }).json(),
+    getAndInstall: (name, payload) => request.post(`sites/${encodeURIComponent(name)}/get-and-install-app`, { json: payload }).json(),
     uninstall: (name, app) => request.post(`sites/${encodeURIComponent(name)}/uninstall-app`, { json: { app } }).json(),
     forceUninstall: (name, app) => request.post(`sites/${encodeURIComponent(name)}/force-uninstall-app`, { json: { app } }).json(),
   },

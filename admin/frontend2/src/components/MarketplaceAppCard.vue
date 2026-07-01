@@ -31,7 +31,9 @@
       </div>
 
       <slot name="actions">
-        <Badge v-if="app.installed" label="Installed" theme="green" />
+        <span v-if="app.installed" class="flex items-center gap-1 shrink-0 text-ink-gray-5 text-p-sm">
+          <span class="size-4 text-ink-green-6 lucide-check"></span> Installed
+        </span>
         <span v-else-if="!app.compatible" class="text-ink-gray-4 text-xs shrink-0">
           Needs Version {{ app.needs }}
         </span>
@@ -43,7 +45,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { Badge, Button } from 'frappe-ui'
+import { Button } from 'frappe-ui'
 import { logoColor } from '@/composables/useMarketplace'
 
 const props = defineProps({

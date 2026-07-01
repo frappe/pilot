@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue'
 import { appsApi } from '@/api/apps'
 import { settingsApi } from '@/api/settings'
+import { sitesApi } from '@/api/sites'
 import { parseBranchVersion } from '@/utils/format'
 
 const COLORS = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed']
@@ -39,17 +40,22 @@ function sortApps(a, b) {
 // Maps an app's branches to how it relates to the current bench version.
 function compatibility(app, benchVersion) {
   const versions = (app.branches ?? []).map(parseVersion).filter((v) => v !== null)
-  if (benchVersion === null) return { compatible: true, label: parseBranchVersion(app.branch) }
+  if (benchVersion === null) {
+    return { compatible: true, label: parseBranchVersion(app.branch), branch: app.branch }
+  }
 
   const supported = versions.filter((v) => v <= benchVersion)
-  if (supported.length) return { compatible: true, label: `v${Math.max(...supported)}` }
+  if (supported.length) {
+    const best = Math.max(...supported)
+    const branch = app.branches.find((b) => parseVersion(b) === best)
+    return { compatible: true, label: `v${best}`, branch }
+  }
   if (versions.length) return { compatible: false, needs: Math.min(...versions) }
-  return { compatible: true, label: parseBranchVersion(app.branch) || 'latest' }
+  return { compatible: true, label: parseBranchVersion(app.branch) || 'latest', branch: app.branch }
 }
 
-export function useMarketplace() {
+export function useMarketplace(initialSiteName = '') {
   const registry = ref([])
-  const installedNames = ref(new Set())
   const benchName = ref('')
   const benchVersion = ref(null)
   const benchVersionLabel = ref(null)
@@ -59,29 +65,42 @@ export function useMarketplace() {
   const search = ref('')
   const selectedCategory = ref('All categories')
 
+  const sites = ref([])
+  const currentSiteName = ref('')
+
   async function load() {
     loading.value = true
     error.value = ''
     try {
-      const [registryData, installed, settings] = await Promise.all([
+      const [registryData, installed, settings, siteList] = await Promise.all([
         appsApi.registry(),
         appsApi.installed(),
         settingsApi.get(),
+        sitesApi.list(),
       ])
       registry.value = registryData
-      installedNames.value = new Set(installed.map((app) => app.name))
       benchName.value = settings.bench?.name || 'this bench'
       const benchBranch =
         parseBenchBranch(settings.bench?.default_branch) ||
         parseBenchBranch(installed.find((app) => app.name === 'frappe')?.branch)
       benchVersion.value = benchBranch.version
       benchVersionLabel.value = benchBranch.label
+
+      sites.value = siteList.filter((site) => site.exists && !site.broken)
+      if (currentSiteName.value) {
+        if (!sites.value.some((site) => site.name === currentSiteName.value)) currentSiteName.value = ''
+      } else if (initialSiteName) {
+        currentSiteName.value = sites.value.find((site) => site.name === initialSiteName)?.name || ''
+      }
     } catch (caught) {
       error.value = caught.message || 'Failed to load marketplace'
     } finally {
       loading.value = false
     }
   }
+
+  const currentSite = computed(() => sites.value.find((site) => site.name === currentSiteName.value) || null)
+  const installedOnCurrentSite = computed(() => new Set(currentSite.value?.installed_apps || []))
 
   const categories = computed(() => {
     const unique = [...new Set(registry.value.map((app) => app.category).filter(Boolean))].sort()
@@ -103,7 +122,7 @@ export function useMarketplace() {
       )
       .map((app) => ({
         ...app,
-        installed: installedNames.value.has(app.name),
+        installed: installedOnCurrentSite.value.has(app.name),
         ...compatibility(app, benchVersion.value),
       }))
   })
@@ -125,5 +144,7 @@ export function useMarketplace() {
     frappeApps,
     communityApps,
     load,
+    sites,
+    currentSiteName,
   }
 }
