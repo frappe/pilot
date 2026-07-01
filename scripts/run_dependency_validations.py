@@ -31,10 +31,16 @@ class DependencyValidator(Validator):
         for name, spec in self.dependencies.items():
             app = self.marketplace.get(name)
             if app is None:
-                self.fail(f"Dependency '{name}' is not in the marketplace")
+                self.fail(
+                    f"Dependency '{name}' is not in the marketplace — submit and merge it "
+                    f"in its own PR first, then open this one."
+                )
                 continue
             if not self._has_compatible_version(app, spec):
-                self.fail(f"No marketplace version of '{name}' satisfies '{spec}'")
+                self.fail(
+                    f"No marketplace version of '{name}' satisfies '{spec}' — update '{name}' "
+                    f"to a compatible version in a separate PR first."
+                )
 
     def _has_compatible_version(self, app: dict, spec: str) -> bool:
         specifier = SpecifierSet(spec)
