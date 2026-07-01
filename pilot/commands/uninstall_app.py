@@ -5,6 +5,7 @@ import sys
 from typing import TYPE_CHECKING
 
 from pilot.commands.base import Command
+from pilot.commands.remove_app import RemoveAppCommand
 from pilot.exceptions import BenchError
 
 if TYPE_CHECKING:
@@ -13,7 +14,7 @@ if TYPE_CHECKING:
 
 class UninstallAppCommand(Command):
     name = "uninstall-app"
-    help = "Uninstall one or more apps from a site."
+    help = "Uninstall one or more apps from a site, also remove app from bench if not installed on any site"
 
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
@@ -33,6 +34,16 @@ class UninstallAppCommand(Command):
         self.app_names = app_names
         self.site = Site(SiteConfig(name=site_name, apps=[]), bench)
 
+    def remove_app_if_not_on_any_site(self, app_name: str):
+        """In case the app is not installed on any site we can trigger bench remove-app"""
+        for site in self.bench.sites():
+            if app_name in site.list_apps():
+                return
+
+        # This does run a redundant check of app installed on any site but will exist quick.
+        print(f"\nApp {app_name} is not installed on any site removing from bench.")
+        RemoveAppCommand(self.bench, app_name=app_name, skip_confirm=True).run()
+
     def run(self) -> None:
         if not self.site.exists:
             raise BenchError(f"Site '{self.site_name}' does not exist.")
@@ -41,10 +52,9 @@ class UninstallAppCommand(Command):
         for app_name in self.app_names:
             app = self.bench.app(app_name)
             if installed and app.config.name not in installed:
-                raise BenchError(
-                    f"App '{app_name}' is not installed on site '{self.site_name}'."
-                )
+                raise BenchError(f"App '{app_name}' is not installed on site '{self.site_name}'.")
             print(f"Uninstalling '{app_name}' from site '{self.site_name}'...")
             sys.stdout.flush()
             self.site.uninstall_app(app)
             print(f"'{app_name}' uninstalled from '{self.site_name}'.")
+            self.remove_app_if_not_on_any_site(app_name)

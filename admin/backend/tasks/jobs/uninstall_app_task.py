@@ -1,5 +1,4 @@
-import subprocess
-import sys
+from pilot.commands.uninstall_app import UninstallAppCommand
 
 from .base_task import BaseTask
 
@@ -19,11 +18,7 @@ class UninstallAppTask(BaseTask):
 
     def run(self) -> None:
         self._step("uninstall", f"Uninstall {self.app} from {self.site}")
-        result = subprocess.run(
-            [*self.bench.frappe_call, "frappe", "--site", self.site, "uninstall-app", self.app, "--yes", "--no-backup"]
-        )
-        if result.returncode != 0:
-            sys.exit(result.returncode)
+        UninstallAppCommand(self.bench, self.site, [self.app]).run()
         self._step("done")
 
 
