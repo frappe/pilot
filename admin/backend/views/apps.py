@@ -9,6 +9,7 @@ from flask import Blueprint, current_app, jsonify, request
 
 from ..readers.app_reader import AppReader
 from ..validators import first_error, validate_app_name, validate_branch_name, validate_repo_url
+from admin.backend.tasks.callbacks import app_fetch_failure_callback
 from admin.backend.tasks.manager.task_runner import TaskRunner
 
 apps_bp = Blueprint("apps", __name__)
@@ -53,7 +54,9 @@ def add():
 
     try:
         task_id = TaskRunner(bench_root).run(
-            "get-app", {"name": name, "repo": repo, "branch": branch}
+            "get-app",
+            {"name": name, "repo": repo, "branch": branch},
+            callbacks={"on_failure": app_fetch_failure_callback},
         )
     except Exception as e:
         return jsonify({"ok": False, "error": f"Could not start get-app: {e}"})
@@ -83,7 +86,11 @@ def add_and_install():
 
     try:
         task_args = {"name": name, "repo": repo, "branch": branch, "sites": sites}
-        task_id = TaskRunner(bench_root).run("add-and-install-app", task_args)
+        task_id = TaskRunner(bench_root).run(
+            "add-and-install-app",
+            task_args,
+            callbacks={"on_failure": app_fetch_failure_callback},
+        )
     except Exception as e:
         return jsonify({"ok": False, "error": f"Could not start add-and-install: {e}"})
 

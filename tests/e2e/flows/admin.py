@@ -26,7 +26,8 @@ def login(page: Page, base_url: str, password: str) -> None:
     expect(page.get_by_role("button", name="Create Site")).to_be_visible(timeout=30_000)
 
 
-def create_site(page: Page, base_url: str, site_name: str, admin_password: str) -> None:
+def start_site_create(page: Page, base_url: str, site_name: str, admin_password: str) -> str:
+    """Kick off a site create and return its task_id without waiting."""
     page.goto(f"{base_url}/")
     page.get_by_role("button", name="Create Site").click()
 
@@ -34,18 +35,20 @@ def create_site(page: Page, base_url: str, site_name: str, admin_password: str) 
     dialog.get_by_label("Site Name").fill(site_name)
     dialog.get_by_label("Admin Password").fill(admin_password)
 
-    task_id = run_task_action(
+    return run_task_action(
         page,
         "/api/sites/create",
         lambda: dialog.get_by_role("button", name="Create Site").click(),
     )
+
+
+def create_site(page: Page, base_url: str, site_name: str, admin_password: str) -> None:
+    task_id = start_site_create(page, base_url, site_name, admin_password)
     wait_for_task(page.request, base_url, task_id)
 
 
-def install_custom_app(page: Page, base_url: str, site_name: str, repo: str, branch: str) -> None:
-    """Install an app from a public git repository via the custom-app flow. Using
-    an explicit repo/branch keeps the test independent of marketplace registry
-    contents."""
+def start_custom_app_install(page: Page, base_url: str, site_name: str, repo: str, branch: str) -> str:
+    """Kick off a custom-app install and return its task_id without waiting."""
     _open_site_tab(page, base_url, site_name, "apps")
     page.get_by_role("button", name="Install App").click()
 
@@ -54,11 +57,18 @@ def install_custom_app(page: Page, base_url: str, site_name: str, repo: str, bra
     dialog.get_by_label("Repository URL").fill(repo)
     dialog.get_by_label("Branch").fill(branch)
 
-    task_id = run_task_action(
+    return run_task_action(
         page,
         "/api/sites/",
         lambda: dialog.get_by_role("button", name="Install", exact=True).click(),
     )
+
+
+def install_custom_app(page: Page, base_url: str, site_name: str, repo: str, branch: str) -> None:
+    """Install an app from a public git repository via the custom-app flow. Using
+    an explicit repo/branch keeps the test independent of marketplace registry
+    contents."""
+    task_id = start_custom_app_install(page, base_url, site_name, repo, branch)
     wait_for_task(page.request, base_url, task_id)
 
 
@@ -116,6 +126,12 @@ def site_exists(page: Page, base_url: str, site_name: str) -> bool:
     if not res.ok:
         return False
     return any(s.get("name") == site_name for s in res.json())
+
+
+def bench_app_names(page: Page, base_url: str) -> list[str]:
+    res = page.request.get(f"{base_url}/api/apps/")
+    expect(res).to_be_ok()
+    return [a.get("name") for a in res.json()]
 
 
 def _open_site_tab(page: Page, base_url: str, site_name: str, tab: str) -> None:
