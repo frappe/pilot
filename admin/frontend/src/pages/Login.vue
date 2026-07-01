@@ -41,7 +41,7 @@ async function login() {
   <div class="flex h-screen flex-col items-center justify-center bg-surface-gray-2">
     <div class="w-full max-w-sm rounded-xl border border-outline-gray-2 bg-surface-white p-5 shadow-sm">
       <h1 class="mb-4 text-center font-medium text-ink-gray-7">
-        {{ benchName || 'Bench Admin' }}
+        {{ benchName || 'Pilot' }}
       </h1>
       <div class="flex flex-col gap-4">
         <TextInput
@@ -61,6 +61,6 @@ async function login() {
       </p>
     </div>
 
-    <p class="absolute bottom-6 text-xs text-ink-gray-3">Frappe Bench Administrator</p>
+    <p class="absolute bottom-6 text-xs text-ink-gray-3">Pilot</p>
   </div>
 </template>

@@ -18,8 +18,8 @@ const emit = defineEmits(['logout', 'open-settings', 'change-bench'])
 const route = useRoute()
 
 const header = {
-  title: 'Bench',
-  logo: '/logos/frappe-icon.png',
+  title: 'Pilot',
+  logo: '/logos/pilot-plane.svg',
   menuItems: [
     { label: 'Settings', icon: LucideSettings, onClick: () => emit('open-settings') },
     { label: 'Manage Benches', icon: LucideRepeat, onClick: () => emit('change-bench') },
