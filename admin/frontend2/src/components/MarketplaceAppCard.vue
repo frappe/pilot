@@ -24,20 +24,37 @@
         <span v-if="app.installed" class="flex items-center gap-1 text-ink-gray-5 text-p-sm shrink-0">
           <span class="size-4 text-ink-green-6 lucide-check"></span> Installed
         </span>
-        <Tooltip v-else-if="!app.compatible" :text="app.needs ? `Requires Frappe ${app.needs}` : 'No compatible version available yet'">
-          <span class="flex items-center gap-1 text-ink-gray-4 text-xs shrink-0">
-            <span class="size-3.5 lucide-triangle-alert"></span> Incompatible
-          </span>
-        </Tooltip>
+        <button v-else-if="!app.compatible" type="button"
+          class="flex items-center gap-1 text-ink-gray-4 text-xs shrink-0" @click="showIncompatible = true">
+          <span class="size-3.5 lucide-triangle-alert"></span> Incompatible
+        </button>
         <Button v-else variant="subtle" @click="$emit('install', app)">Install</Button>
       </slot>
     </div>
+
+    <Dialog v-model="showIncompatible" :options="{ title: 'Incompatible App', size: 'sm' }">
+      <template #body-content>
+        <p class="text-ink-gray-7 text-sm">
+          <strong>{{ app.title }}</strong> is not compatible with this bench's frappe version.
+        </p>
+        <div class="flex flex-col gap-1.5 mt-3 text-sm">
+          <div class="flex justify-between">
+            <span class="text-ink-gray-5">Current version</span>
+            <span class="font-medium text-ink-gray-8">{{ app.frappe_version || 'Unknown' }}</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-ink-gray-5">Required version</span>
+            <span class="font-medium text-ink-gray-8">{{ app.needs || 'Not Specified' }}</span>
+          </div>
+        </div>
+      </template>
+    </Dialog>
   </div>
 </template>
 
 <script setup>
 import { computed, ref } from 'vue'
-import { Button, Tooltip } from 'frappe-ui'
+import { Button, Dialog } from 'frappe-ui'
 import { logoColor } from '@/composables/useMarketplace'
 
 const props = defineProps({
@@ -47,6 +64,7 @@ const props = defineProps({
 defineEmits(['install'])
 
 const imageFailed = ref(false)
+const showIncompatible = ref(false)
 
 const logoStyle = computed(() => {
   if (props.app.logo_url && !imageFailed.value) return {}

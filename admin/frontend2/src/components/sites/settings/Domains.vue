@@ -14,7 +14,7 @@
                 :class="site?.ssl ? 'lucide-lock text-ink-green-6' : 'lucide-lock-open'" />
             </Tooltip>
             <div class="flex items-center gap-2 min-w-0">
-              <p class="font-medium text-ink-gray-8 text-sm break-all">{{ row.domain }}</p>
+              <p class="font-medium text-ink-gray-8 text-sm truncate">{{ row.domain }}</p>
               <Badge v-if="row.isPrimary" label="Primary" theme="green" size="sm" class="shrink-0" />
               <Badge v-else-if="row.isSite" label="Included" size="sm" class="shrink-0" />
             </div>
