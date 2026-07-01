@@ -37,7 +37,8 @@ class UninstallAppCommand(Command):
     def remove_app_if_not_on_any_site(self, app_name: str):
         """In case the app is not installed on any site we can trigger bench remove-app"""
         for site in self.bench.sites():
-            if app_name in site.list_apps():
+            installed_apps = site.list_apps()
+            if len(installed_apps) == 0 or app_name in installed_apps:
                 return
 
         # This does run a redundant check of app installed on any site but will exit quick.
