@@ -1,14 +1,15 @@
 import { computed } from 'vue'
 
-const STEP_RE = /^##\[step:(\w+),([\d.]+)\]\s*(.*)/
-const STEP_FAILED_RE = /^##\[step-failed:(\w+),([\d.]+)\]/
+const STEP_RE = /^STEP\s(\w+),([\d.]+)\s*(.*)/
+const STEP_FAILED_RE = /^STEP-FAILED\s(\w+),([\d.]+)/
 
-export const STEP_MARKER_RE = /^##\[step(-failed)?:/
+export const STEP_MARKER_RE = /^STEP(-FAILED)?\s/
 
 /**
- * Parses ##[step:KEY,TIMESTAMP] and ##[step-failed:KEY,TIMESTAMP] markers out
- * of a raw line stream into structured sections with status, timing, and
- * line-range metadata.
+ * Parses "STEP KEY,TIMESTAMP label" and "STEP-FAILED KEY,TIMESTAMP" markers
+ * out of a raw line stream into structured sections with status, timing, and
+ * line-range metadata. The backend (TaskReader) already strips the on-disk
+ * syslog envelope before these lines reach the UI, so they're plain text here.
  *
  * @param {import('vue').Ref<string[]>} rawLines
  * @param {import('vue').Ref<boolean>}  streaming
