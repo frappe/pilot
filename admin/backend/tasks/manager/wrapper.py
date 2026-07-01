@@ -21,38 +21,58 @@ _HOSTNAME = socket.gethostname()
 _PRI = 14
 
 
-def _syslog_prefix(tag: str, pid: int) -> str:
-    """RFC 5424 envelope, nil MSGID/STRUCTURED-DATA: '<PRI>1 TIMESTAMP HOST APP-NAME PROCID - - '.
-
-    This is the on-disk storage format (real syslog, so a log-shipping agent
-    can ingest output.log as-is); TaskReader strips it back off before the
-    message ever reaches the API or UI — end users only ever see plain text.
-    """
-    ts = datetime.now(timezone.utc).isoformat(timespec="microseconds")
-    return f"<{_PRI}>1 {ts} {_HOSTNAME} {tag} {pid} - - "
+def _syslog_prefix_parts(tag: str, pid: int) -> tuple[bytes, bytes]:
+    """Envelope split around the only field that changes per line (TIMESTAMP),
+    so callers format just a timestamp instead of rebuilding the whole prefix."""
+    head = f"<{_PRI}>1 ".encode()
+    tail = f" {_HOSTNAME} {tag} {pid} - - ".encode()
+    return head, tail
 
 
 def run_with_syslog_output(command_argv: list[str], cwd: str, tag: str, log_path: Path) -> int:
     """Run command_argv, writing its merged stdout/stderr to log_path with a
     syslog envelope on every line. \\r-terminated progress redraws get their
     own envelope too, so TaskReader's existing \\r-collapse logic still picks
-    the final redraw of a line."""
+    the final redraw of a line.
+
+    Delimiters are located with bytes.find() (C-speed scan) rather than a
+    Python for-loop over every byte, so long delimiter-free runs (e.g. a
+    single long `frappe build` log line) cost one slice-copy instead of one
+    interpreter iteration per byte.
+    """
     process = subprocess.Popen(command_argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     fd = process.stdout.fileno()
+    head, tail = _syslog_prefix_parts(tag, process.pid)
+
+    def write_prefix(log_file) -> None:
+        ts = datetime.now(timezone.utc).isoformat(timespec="microseconds").encode()
+        log_file.write(head)
+        log_file.write(ts)
+        log_file.write(tail)
 
     with open(log_path, "wb") as log_file:
-        buf = b""
-        while chunk := os.read(fd, 8192):
-            for byte in chunk:
-                ch = bytes([byte])
-                if ch in (b"\n", b"\r"):
-                    log_file.write(_syslog_prefix(tag, process.pid).encode() + buf + ch)
-                    buf = b""
-                else:
-                    buf += ch
+        buf = bytearray()
+        while chunk := os.read(fd, 65536):
+            start = 0
+            chunk_len = len(chunk)
+            while start < chunk_len:
+                nl = chunk.find(b"\n", start)
+                cr = chunk.find(b"\r", start)
+                if nl == -1 and cr == -1:
+                    buf += chunk[start:]
+                    break
+                idx = nl if cr == -1 or (nl != -1 and nl < cr) else cr
+                write_prefix(log_file)
+                log_file.write(buf)
+                log_file.write(chunk[start:idx])
+                log_file.write(chunk[idx:idx + 1])
+                buf.clear()
+                start = idx + 1
             log_file.flush()
         if buf:
-            log_file.write(_syslog_prefix(tag, process.pid).encode() + buf + b"\n")
+            write_prefix(log_file)
+            log_file.write(buf)
+            log_file.write(b"\n")
 
     process.stdout.close()
     return process.wait()
@@ -61,7 +81,9 @@ def run_with_syslog_output(command_argv: list[str], cwd: str, tag: str, log_path
 def callback_handler(callback_bin_path: Path, output_log: Path, meta: dict) -> None:
     callback = pickle.loads(callback_bin_path.read_bytes())
     callback_bin_path.unlink()
-    prefix = _syslog_prefix(meta["command"], os.getpid())
+    head, tail = _syslog_prefix_parts(meta["command"], os.getpid())
+    ts = datetime.now(timezone.utc).isoformat(timespec="microseconds").encode()
+    prefix = (head + ts + tail).decode()
     with open(output_log, "a") as log_file:
         try:
             callback(meta)
