@@ -37,6 +37,7 @@ declare module 'vue' {
     TaskSteps: typeof import('./src/components/TaskSteps.vue')['default']
     TaskStream: typeof import('./src/components/TaskStream.vue')['default']
     TerminalOutput: typeof import('./src/components/TerminalOutput.vue')['default']
+    UpdateAppsDialog: typeof import('./src/components/UpdateAppsDialog.vue')['default']
     UpdatesAvailableButton: typeof import('./src/components/UpdatesAvailableButton.vue')['default']
   }
 }

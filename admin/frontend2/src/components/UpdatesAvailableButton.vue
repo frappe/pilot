@@ -23,34 +23,14 @@
     {{ updatesAvailable ? 'Update available' : 'Check for updates' }}
   </Button>
 
-  <Dialog v-model="showDialog" :options="{ title: 'Bench Update', size: 'md' }">
-    <template #body-content>
-      <p class="text-sm text-ink-gray-6">
-        <template v-if="updatesAvailable">
-          App updates are available for this bench.
-        </template>
-        <template v-else-if="checked">Your bench is up to date.</template>
-        <template v-else>Checking for updates…</template>
-      </p>
-      <div class="mt-5 flex justify-end gap-2 border-t border-outline-gray-1 pt-4">
-        <Button variant="ghost" @click="showDialog = false">Close</Button>
-        <Button
-          v-if="updatesAvailable"
-          variant="solid"
-          :loading="checking"
-          @click="check"
-        >
-          Update Now
-        </Button>
-      </div>
-    </template>
-  </Dialog>
+  <UpdateAppsDialog v-model="showDialog" />
 </template>
 
 <script setup>
 import { onMounted, ref } from 'vue'
-import { Button, Dialog } from 'frappe-ui'
+import { Button } from 'frappe-ui'
 import { useAppUpdates } from '@/composables/useAppUpdates'
+import UpdateAppsDialog from '@/components/UpdateAppsDialog.vue'
 
 defineProps({
   teleport: { type: Boolean, default: true },

@@ -8,7 +8,7 @@
       :src="logoUrl"
       :alt="name"
       class="size-full object-contain"
-      @error="hasError = true"
+      @error="onError"
     />
     <span v-else class="text-sm font-bold text-white">
       {{ initial }}
@@ -18,7 +18,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { useAppRegistry } from '@/composables/useAppRegistry'
+import { FRAPPE_LOGO_URL, isFrappeFramework, useAppRegistry } from '@/composables/useAppRegistry'
 
 const props = defineProps({
   name: { type: String, required: true },
@@ -27,6 +27,15 @@ const props = defineProps({
 const { logoMap, hashColor } = useAppRegistry()
 const hasError = ref(false)
 
-const logoUrl = computed(() => (hasError.value ? null : logoMap.value[props.name]))
+const isFrappe = computed(() => isFrappeFramework(props.name))
+
+const logoUrl = computed(() => {
+  if (isFrappe.value) return FRAPPE_LOGO_URL
+  return hasError.value ? null : logoMap.value[props.name]
+})
 const initial = computed(() => props.name[0]?.toUpperCase() || '')
+
+function onError() {
+  if (!isFrappe.value) hasError.value = true
+}
 </script>

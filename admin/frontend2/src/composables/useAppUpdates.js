@@ -1,8 +1,8 @@
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { appsApi } from '@/api/apps'
 import { tasksApi } from '@/api/tasks'
 
-const updatesAvailable = ref(false)
+const updates = ref({})
 const checking = ref(false)
 const checked = ref(false)
 
@@ -21,8 +21,7 @@ export function useAppUpdates() {
 
         if (task.status === 'running') continue
         if (task.status === 'success' && output?.length) {
-          const result = JSON.parse(output[output.length - 1])
-          updatesAvailable.value = Object.values(result).some(Boolean)
+          updates.value = JSON.parse(output[output.length - 1])
         }
         break
       }
@@ -34,8 +33,12 @@ export function useAppUpdates() {
     }
   }
 
+  const appsWithUpdates = computed(() => Object.keys(updates.value).filter((name) => updates.value[name]))
+  const updatesAvailable = computed(() => appsWithUpdates.value.length > 0)
+
   return {
     updatesAvailable,
+    appsWithUpdates,
     checking,
     checked,
     check,

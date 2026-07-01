@@ -71,7 +71,7 @@ const metadata = computed(() => {
   const items = [
     { label: 'Started', value: fmtDateTime(task.value.started_at) },
     { label: 'Finished', value: task.value.finished_at ? fmtDateTime(task.value.finished_at) : '—' },
-    { label: 'Duration', value: fmtDuration(task.value.duration_seconds) || 'Running…' },
+    { label: 'Duration', value: fmtDuration(task.value.duration_seconds) || '—' },
   ]
   const site = siteLabel(task.value)
   if (site !== 'Server-level') items.unshift({ label: 'Site', value: site })

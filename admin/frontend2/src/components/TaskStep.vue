@@ -13,7 +13,7 @@
       </span>
       <span class="text-ink-gray-5 text-xs shrink-0">
         <template v-if="duration">{{ duration }}</template>
-        <span v-else-if="status === 'running'" class="animate-pulse">running…</span>
+        <span v-else-if="status === 'running'" class="animate-pulse">running</span>
       </span>
       <span v-if="hasOutput" class="size-4 text-ink-gray-4 transition-transform shrink-0 lucide-chevron-down"
         :class="{ 'rotate-180': expanded }" />
