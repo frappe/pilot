@@ -4,7 +4,7 @@ import sys
 from .base_task import BaseTask
 
 
-class InstallAppTask(BaseTask):
+class UninstallAppTask(BaseTask):
     @classmethod
     def _parser(cls):
         p = super()._parser()
@@ -18,22 +18,14 @@ class InstallAppTask(BaseTask):
         self.app = args.app
 
     def run(self) -> None:
-        sites_dir = self.bench_root / "sites"
-        app = self.bench.app(self.app)
-
-        self._step("install", f"Install {self.app} into {self.site}")
+        self._step("uninstall", f"Uninstall {self.app} from {self.site}")
         result = subprocess.run(
-            [*self.bench.frappe_call, "frappe", "--site", self.site, "install-app", app.config.name],
-            cwd=str(sites_dir),
+            [*self.bench.frappe_call, "frappe", "--site", self.site, "uninstall-app", self.app, "--yes", "--no-backup"]
         )
         if result.returncode != 0:
             sys.exit(result.returncode)
-
-        self._step("assets", f"Build assets for {self.app}")
-        from pilot.managers.python_env_manager import PythonEnvManager
-        PythonEnvManager(self.bench).build_assets_for_app(app)
         self._step("done")
 
 
 if __name__ == "__main__":
-    InstallAppTask.main()
+    UninstallAppTask.main()

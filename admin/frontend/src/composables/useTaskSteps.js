@@ -1,14 +1,19 @@
 import { computed } from 'vue'
 
-const STEP_RE = /^##\[step:(\w+),([\d.]+)\]\s*(.*)/
-const STEP_FAILED_RE = /^##\[step-failed:(\w+),([\d.]+)\]/
+// [\w-]+, not \w+: step keys may contain hyphens (e.g. "clear-cache"), and
+// \w+ alone would silently fail to match, which reads as "no step" rather
+// than a parse error — the STEP_MARKER_RE filter would still hide the raw
+// line, so the fold would just vanish with no visible symptom.
+const STEP_RE = /^STEP\s([\w-]+),([\d.]+)\s*(.*)/
+const STEP_FAILED_RE = /^STEP-FAILED\s([\w-]+),([\d.]+)/
 
-export const STEP_MARKER_RE = /^##\[step(-failed)?:/
+export const STEP_MARKER_RE = /^STEP(-FAILED)?\s/
 
 /**
- * Parses ##[step:KEY,TIMESTAMP] and ##[step-failed:KEY,TIMESTAMP] markers out
- * of a raw line stream into structured sections with status, timing, and
- * line-range metadata.
+ * Parses "STEP KEY,TIMESTAMP label" and "STEP-FAILED KEY,TIMESTAMP" markers
+ * out of a raw line stream into structured sections with status, timing, and
+ * line-range metadata. The backend (TaskReader) already strips the on-disk
+ * syslog envelope before these lines reach the UI, so they're plain text here.
  *
  * @param {import('vue').Ref<string[]>} rawLines
  * @param {import('vue').Ref<boolean>}  streaming

@@ -118,7 +118,7 @@ async function doInstall() {
   installing.value = true
   installError.value = ''
   try {
-    const endpoint = selectedSites.value.length ? '/api/apps/add-and-install' : '/api/apps/add'
+    const endpoint = selectedSites.value.length ? '/api/apps/get-and-install' : '/api/apps/add'
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -257,7 +257,9 @@ onMounted(load)
               >
                 <Checkbox
                   :modelValue="selectedSites.includes(s.name)"
-                  @update:modelValue="val => val ? selectedSites.push(s.name) : selectedSites.splice(selectedSites.indexOf(s.name), 1)"
+                  @update:modelValue="val => val
+                    ? (selectedSites.includes(s.name) || selectedSites.push(s.name))
+                    : selectedSites.splice(selectedSites.indexOf(s.name), 1)"
                 />
                 <span class="text-sm font-medium select-none text-ink-gray-8">{{ s.name }}</span>
               </label>

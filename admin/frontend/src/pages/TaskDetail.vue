@@ -85,7 +85,7 @@ async function load() {
 
 // Auto-expand the step whose output is currently arriving.
 function onStreamLine(raw) {
-  const m = raw.match(/^##\[step:(\w+),/)
+  const m = raw.match(/^STEP\s([\w-]+),/)
   if (m && m[1] !== 'done') expandedSteps.value = new Set([m[1]])
 }
 

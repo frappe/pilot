@@ -61,8 +61,8 @@ def add():
     return jsonify({"ok": True, "task_id": task_id})
 
 
-@apps_bp.route("/add-and-install", methods=["POST"])
-def add_and_install():
+@apps_bp.route("/get-and-install", methods=["POST"])
+def get_and_install():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     data = request.get_json(silent=True) or {}
 
@@ -75,15 +75,16 @@ def add_and_install():
 
     if not isinstance(sites, list):
         return jsonify({"ok": False, "error": "sites must be a list."})
+    sites = list(dict.fromkeys(sites))  # de-dupe, preserve order: a repeated site would install twice
 
     if (bench_root / "apps" / name / ".git").exists():
         return jsonify({"ok": False, "error": f"'{name}' is already installed."})
 
     try:
         task_args = {"name": name, "marketplace_app": name, "sites": sites}
-        task_id = TaskRunner(bench_root).run("add-and-install-app", task_args)
+        task_id = TaskRunner(bench_root).run("get-and-install-app", task_args)
     except Exception as e:
-        return jsonify({"ok": False, "error": f"Could not start add-and-install: {e}"})
+        return jsonify({"ok": False, "error": f"Could not start get-and-install: {e}"})
 
     return jsonify({"ok": True, "task_id": task_id})
 

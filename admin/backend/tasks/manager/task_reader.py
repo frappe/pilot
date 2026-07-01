@@ -4,14 +4,18 @@ import os
 import re
 import time
 from collections.abc import Generator
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
-from pilot.exceptions import TaskNotFoundError
 from admin.backend.tasks.manager.models import TaskInfo
+from pilot.exceptions import TaskNotFoundError
 
 _TASK_ID_PATTERN = re.compile(r"^\d{8}-\d{6}-[a-f0-9]{6}$")
 _POLL_INTERVAL = 0.5
+
+# Matches the RFC 5424 envelope the wrapper stamps onto output.log:
+# <PRI>VERSION TIMESTAMP HOST APP-NAME PROCID MSGID STRUCTURED-DATA MESSAGE
+_SYSLOG_RE = re.compile(r"^<\d+>\d+ \S+ \S+ \S+ \S+ \S+ \S+ (.*)$")
 
 
 def _collapse_cr(line: str) -> str:
@@ -20,6 +24,20 @@ def _collapse_cr(line: str) -> str:
         return line
     parts = line.split('\r')
     return next((p for p in reversed(parts) if p.strip()), '')
+
+
+def _strip_syslog_envelope(segment: str) -> str:
+    match = _SYSLOG_RE.match(segment)
+    return match.group(1) if match else segment
+
+
+def _display_line(raw_line: str) -> str:
+    """Turn a stored (syslog-enveloped) line into what the API/UI should see:
+    the envelope stripped off every \r-redraw segment, then collapsed like a
+    terminal would. output.log itself keeps the full syslog format so a log
+    shipper can ingest it as-is — callers here never see the envelope."""
+    stripped = '\r'.join(_strip_syslog_envelope(seg) for seg in raw_line.split('\r'))
+    return _collapse_cr(stripped)
 
 
 class TaskReader:
@@ -59,7 +77,7 @@ class TaskReader:
             return []
         with open(output_path, "r", errors="replace", newline='') as f:
             text = f.read()
-        all_lines = [_collapse_cr(l) for l in text.split("\n")]
+        all_lines = [_display_line(l) for l in text.split("\n")]
         while all_lines and not all_lines[-1]:
             all_lines.pop()
         if lines is None:
@@ -73,11 +91,12 @@ class TaskReader:
         output_path.touch()
         with open(output_path, "r", errors="replace", newline='') as log_file:
             log_file.seek(0, 2)  # seek to end
-            # Raw current line, carriage returns and all. We only resolve \r at
-            # emit time via _collapse_cr, so the live stream matches read_output
-            # and the frontend exactly: a CRLF keeps its text, while a progress
-            # line cleared with \r + padding collapses to its last real segment
-            # instead of leaking a row of spaces.
+            # Raw current line, envelope and carriage returns and all. We only
+            # strip the syslog envelope and resolve \r at emit time via
+            # _display_line, so the live stream matches read_output and the
+            # frontend exactly: a CRLF keeps its text, a progress line cleared
+            # with \r + padding collapses to its last real segment instead of
+            # leaking a row of spaces, and the UI never sees the raw envelope.
             cur = ''
 
             while True:
@@ -85,12 +104,12 @@ class TaskReader:
                 if chunk:
                     for ch in chunk:
                         if ch == '\n':
-                            yield _collapse_cr(cur)  # commit
+                            yield _display_line(cur)  # commit
                             cur = ''
                         else:
                             cur += ch
                     if cur:
-                        yield f"__CR__:{_collapse_cr(cur)}"  # partial: overwrite
+                        yield f"__CR__:{_display_line(cur)}"  # partial: overwrite
                     continue
 
                 status_path = self._bench_root / "tasks" / task_id / "status"
@@ -100,7 +119,7 @@ class TaskReader:
 
                 if effective != "running":
                     if cur:
-                        yield _collapse_cr(cur)  # commit trailing partial line
+                        yield _display_line(cur)  # commit trailing partial line
 
                     meta_path = self._bench_root / "tasks" / task_id / "meta.json"
                     exit_code: int | None = None

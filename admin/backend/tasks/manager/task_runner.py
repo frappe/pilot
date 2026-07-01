@@ -28,8 +28,9 @@ _WHITELIST: dict[str, list[str]] = {
     "delete-backup": ["site", "filenames"],
     "build": [],  # optional: app
     "update": [],
-    "get-and-install-app": ["site", "app"],
-    "add-and-install-app": ["name"],
+    # Either "site" (single-site flow) or "sites" (bench-wide flow) is required;
+    # both callers validate their own shape before calling TaskRunner.run().
+    "get-and-install-app": [],
     "switch-branch": ["name", "branch"],
     "setup-nginx": [],
     "setup-production": [],
@@ -116,25 +117,22 @@ class TaskRunner:
             if key not in args:
                 raise ValueError(f"Command {command!r} requires arg {key!r}")
 
-        python = str(self._bench_root / "env" / "bin" / "python")
-        frappe_call = [python, "-m", "frappe.utils.bench_helper"]
-
         if command == "migrate":
-            return [*frappe_call, "frappe", "--site", args["site"], "migrate"]
+            return [sys.executable, "-m", "admin.backend.tasks.jobs.migrate_task", str(self._bench_root), args["site"]]
         if command == "clear-cache":
-            return [*frappe_call, "frappe", "--site", args["site"], "clear-cache"]
+            return [sys.executable, "-m", "admin.backend.tasks.jobs.clear_cache_task", str(self._bench_root), args["site"]]
         if command == "uninstall-app":
-            return [*frappe_call, "frappe", "--site", args["site"], "uninstall-app", args["app"], "--yes", "--no-backup"]
+            return [sys.executable, "-m", "admin.backend.tasks.jobs.uninstall_app_task", str(self._bench_root), args["site"], args["app"]]
         if command == "backup-site":
-            command = [*frappe_call, "frappe", "--site", args["site"], "backup"]
+            argv = [sys.executable, "-m", "admin.backend.tasks.jobs.backup_site_task", str(self._bench_root), args["site"]]
             if args.get("with_files"):
-                command += ["--with-files"]
-            return command
+                argv += ["--with-files"]
+            return argv
         if command == "build":
-            cmd = [*frappe_call, "frappe", "build"]
+            argv = [sys.executable, "-m", "admin.backend.tasks.jobs.build_task", str(self._bench_root)]
             if args.get("app"):
-                cmd += ["--app", args["app"]]
-            return cmd
+                argv += ["--app", args["app"]]
+            return argv
         if command == "update":
             argv = [sys.executable, "-m", "admin.backend.tasks.jobs.update_task", str(self._bench_root)]
             if task_dir:
@@ -171,24 +169,16 @@ class TaskRunner:
         if command == "install-app":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.install_app_task", str(self._bench_root), args["site"], args["app"]]
         if command == "get-and-install-app":
-            argv = [sys.executable, "-m", "admin.backend.tasks.jobs.get_and_install_app_task", str(self._bench_root), args["site"], args["app"]]
+            argv = [sys.executable, "-m", "admin.backend.tasks.jobs.get_and_install_app_task", str(self._bench_root)]
             if args.get("marketplace_app"):
                 argv += ["--marketplace-app", args["marketplace_app"]]
             else:
                 argv += ["--repo", args["repo"]]
                 if args.get("branch"):
                     argv += ["--branch", args["branch"]]
-            return argv
-        if command == "add-and-install-app":
-            argv = [sys.executable, "-m", "admin.backend.tasks.jobs.add_and_install_app_task", str(self._bench_root)]
-            if args.get("marketplace_app"):
-                argv += ["--marketplace-app", args["marketplace_app"]]
-            else:
-                argv += ["--repo", args["repo"]]
-                if args.get("branch"):
-                    argv += ["--branch", args["branch"]]
-            if args.get("sites"):
-                argv += ["--sites"] + list(args["sites"])
+            sites = args["sites"] if "sites" in args else ([args["site"]] if args.get("site") else [])
+            if sites:
+                argv += ["--sites", *sites]
             return argv
         if command == "switch-branch":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.switch_branch_task", str(self._bench_root), args["name"], args["branch"]]

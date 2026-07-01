@@ -25,8 +25,7 @@ class SwitchBranchTask(BaseTask):
             print(f"Error: '{self.name}' is not cloned at {app_path}")
             sys.exit(1)
 
-        print(f"Fetching all remote branches for {self.name}...")
-        sys.stdout.flush()
+        self._step("fetch", f"Fetch remote branches for {self.name}")
         subprocess.run(["git", "-C", str(app_path), "fetch", "origin", "+refs/heads/*:refs/remotes/origin/*"], check=False)
         subprocess.run(["git", "-C", str(app_path), "merge", "--abort"], capture_output=True, check=False)
         subprocess.run(["git", "-C", str(app_path), "rebase", "--abort"], capture_output=True, check=False)
@@ -36,8 +35,7 @@ class SwitchBranchTask(BaseTask):
         )
         stashed = "No local changes" not in stash.stdout
 
-        print(f"Switching to branch '{self.branch}'...")
-        sys.stdout.flush()
+        self._step("checkout", f"Switch to branch '{self.branch}'")
         result = subprocess.run(
             ["git", "-C", str(app_path), "checkout", "-B", self.branch, f"origin/{self.branch}"],
             check=False,
@@ -50,8 +48,7 @@ class SwitchBranchTask(BaseTask):
 
         uv = PythonEnvManager(self.bench)._ensure_uv()
         python_bin = str(self.bench_root / "env" / "bin" / "python")
-        print(f"Reinstalling {self.name}...")
-        sys.stdout.flush()
+        self._step("install", f"Reinstall {self.name}")
         subprocess.run([uv, "pip", "install", "--python", python_bin, "-e", str(app_path)], check=False)
 
         store = BenchTomlStore.for_bench(self.bench_root)
@@ -62,17 +59,15 @@ class SwitchBranchTask(BaseTask):
                 break
         store.write_raw(raw)
         print(f"Updated bench.toml: {self.name} -> {self.branch}")
-        sys.stdout.flush()
 
         if (app_path / "package.json").exists():
-            print(f"\nInstalling JS dependencies for {self.name}...")
-            sys.stdout.flush()
+            self._step("js", f"Install JS dependencies for {self.name}")
             subprocess.run(["yarn", "install"], cwd=str(app_path), check=False)
 
-        print("\nBuilding assets...")
-        sys.stdout.flush()
+        self._step("assets", "Build assets")
         subprocess.run([*self.bench.frappe_call, "frappe", "build", "--force"], cwd=str(self.bench.sites_path), check=False)
-        print(f"\n'{self.name}' switched to '{self.branch}' successfully.")
+        print(f"'{self.name}' switched to '{self.branch}' successfully.")
+        self._step("done")
 
 
 if __name__ == "__main__":
