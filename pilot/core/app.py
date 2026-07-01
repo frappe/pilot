@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from pilot.config.app_config import AppConfig
 from pilot.exceptions import BenchError, CommandError
-from pilot.utils import run_command
+from pilot.utils import installed_app_version, run_command
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -19,6 +19,11 @@ class App:
     @property
     def path(self) -> Path:
         return self.bench.apps_path / self.config.name
+
+    @property
+    def installed_version(self) -> str:
+        """The version pip installed for this app, read from dist-info metadata."""
+        return installed_app_version(self.bench.env_path, self.config.name)
 
     @property
     def is_cloned(self) -> bool:
