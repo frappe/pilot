@@ -128,6 +128,28 @@ def get_monitor_history():
         return jsonify({"error": str(error)}), 500
 
 
+@stats_bp.route("/system-info")
+def system_info():
+    from pilot.platform import kernel_version, os_version
+    from ..readers.runtime_reader import RuntimeVersionReader
+
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    config = BenchTomlStore.for_bench(bench_root).read()
+    mem = psutil.virtual_memory()
+    swap = psutil.swap_memory()
+    return jsonify(
+        {
+            "disk_total": psutil.disk_usage("/").total,
+            "cpu_count": os.cpu_count(),
+            "memory_total": mem.total,
+            "swap_total": swap.total,
+            "kernel_version": kernel_version(),
+            "os_version": os_version(),
+            "runtime": RuntimeVersionReader(bench_root, config).read(),
+        }
+    )
+
+
 @stats_bp.route("/stats")
 def stats():
     bench_root = current_app.config["BENCH_ROOT"]

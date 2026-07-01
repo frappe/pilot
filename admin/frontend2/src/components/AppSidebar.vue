@@ -1,13 +1,19 @@
 <script setup>
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Sidebar, SidebarItem, useTheme } from 'frappe-ui'
 import { sidebarSections } from '@/navigation'
 import { authApi } from '@/api/auth'
+import { useIsMobile } from '@/composables/useIsMobile'
+import SettingsDialog from '@/components/SettingsDialog.vue'
 const { setTheme } = useTheme()
 
 const route = useRoute()
 const router = useRouter()
 const sections = sidebarSections()
+const isMobile = useIsMobile()
+
+const showSettings = ref(false)
 
 function isActive(to) {
   const target = router.resolve(to)
@@ -19,21 +25,25 @@ async function logout() {
   window.location.reload()
 }
 
-const header = {
+// The Settings dialog's sidebar + content layout doesn't adapt to small
+// screens, so the entry point is hidden on mobile rather than shipping a
+// broken dialog.
+const header = computed(() => ({
   title: 'Pilot',
   menuItems: [
     {
       label: 'Central',
       icon: 'lucide-cloud',
     },
-    {
-      label: 'Settings',
-      icon: 'lucide-settings',
-    },
-    {
-      label: 'System Info',
-      icon: 'lucide-info',
-    },
+    ...(isMobile.value
+      ? []
+      : [
+          {
+            label: 'Settings',
+            icon: 'lucide-settings',
+            onClick: () => (showSettings.value = true),
+          },
+        ]),
     {
       label: 'Theme',
       icon: 'lucide-sun-moon',
@@ -45,7 +55,7 @@ const header = {
     },
     { label: 'Logout', icon: 'lucide-log-out', onClick: logout },
   ],
-}
+}))
 </script>
 
 <template>
@@ -73,4 +83,5 @@ const header = {
       </svg>
     </template>
   </Sidebar>
+  <SettingsDialog v-model="showSettings" />
 </template>
