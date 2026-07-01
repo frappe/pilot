@@ -389,7 +389,10 @@ def test_api_benches_ready_false_when_nginx_down_at_domain(tmp_path: Path) -> No
 
 def _write_prod_bench_toml(bench_dir: Path, name: str) -> None:
     bench_dir.mkdir(parents=True, exist_ok=True)
-    (bench_dir / "bench.toml").write_text(f'[bench]\nname = "{name}"\n\n[admin]\nport = 9999\n\n[production]\nenabled = true\nprocess_manager = "systemd"\n')
+    (bench_dir / "bench.toml").write_text(
+        f'[bench]\nname = "{name}"\n\n[admin]\nport = 9999\n\n'
+        f'[production]\nenabled = true\nprocess_manager = "systemd"\n'
+    )
 
 
 def test_api_benches_control_rejects_unknown_action(tmp_path: Path) -> None:
