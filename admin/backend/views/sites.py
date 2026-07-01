@@ -14,7 +14,6 @@ from admin.backend.tasks.callbacks import new_site_failure_callback, ssl_setup_f
 from ..validators import validate_cron_expression, validate_site_name
 from admin.backend.tasks.manager.task_runner import TaskRunner
 
-from pilot.config.bench_config import BenchConfig
 from pilot.platform import is_linux, is_x86_64
 
 from ..readers.app_reader import AppReader
@@ -194,7 +193,9 @@ def create_from_upload():
         args["private_files"] = str(priv_path)
 
     # A MariaDB backup uploaded for a PostgreSQL site must be converted with pgloader.
-    config = BenchConfig.from_file(bench_root / "bench.toml")
+    from pilot.config.toml_store import BenchTomlStore
+
+    config = BenchTomlStore.for_bench(bench_root).read()
     if config.db_type == "postgres" and dump_engine(db_path) == "mariadb":
         # pgloader only runs on x86_64 Linux — block early rather than fail mid-restore.
         if not (is_linux() and is_x86_64()):
@@ -424,7 +425,10 @@ def _get_site_sid(bench_root: Path, site: str, user: str = "Administrator") -> t
 
     result = subprocess.run(
         [str(bench_bin), "-b", bench_name, "--site", site, "browse", "--user", user],
-        capture_output=True, text=True, timeout=30, cwd=str(benches_dir),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        cwd=str(benches_dir),
     )
     output = (result.stdout or "") + (result.stderr or "")
     if m := re.search(r"sid=([a-zA-Z0-9]+)", output):

@@ -147,8 +147,7 @@ def test_api_benches_new_creates_bench(tmp_path: Path) -> None:
     benches_dir = tmp_path / "benches"
     client = _client(benches_dir / "current")
 
-    with patch("subprocess.Popen") as mock_popen, \
-         patch("pilot.core.domain_controller.DomainRouteProvider.wildcard_domains", return_value=[]):
+    with patch("subprocess.Popen") as mock_popen, patch("pilot.core.domain_controller.DomainRouteProvider.wildcard_domains", return_value=[]):
         resp = client.post("/api/benches/new", json=_new_payload("fresh"))
 
     assert resp.get_json()["name"] == "fresh"
@@ -178,13 +177,15 @@ def test_api_benches_new_routes_wizard_at_domain_when_production(tmp_path: Path)
     client = app.test_client()
     client.set_cookie("sid", issue_token(secret))
 
-    with patch("pilot.managers.process_managers.systemd.SystemdProcessManager.start_admin") as mock_admin, \
-         patch("pilot.managers.nginx_manager.NginxManager.generate_config") as mock_gen, \
-         patch("pilot.managers.nginx_manager.NginxManager.install_config"), \
-         patch("pilot.managers.nginx_manager.NginxManager.reload"), \
-         patch("pilot.core.domain_controller.DomainRouteProvider.register") as mock_register, \
-         patch("pilot.core.domain_controller.DomainRouteProvider.wildcard_domains", return_value=[]), \
-         patch("subprocess.Popen") as mock_popen:
+    with (
+        patch("pilot.managers.process_managers.systemd.SystemdProcessManager.start_admin") as mock_admin,
+        patch("pilot.managers.nginx_manager.NginxManager.generate_config") as mock_gen,
+        patch("pilot.managers.nginx_manager.NginxManager.install_config"),
+        patch("pilot.managers.nginx_manager.NginxManager.reload"),
+        patch("pilot.core.domain_controller.DomainRouteProvider.register") as mock_register,
+        patch("pilot.core.domain_controller.DomainRouteProvider.wildcard_domains", return_value=[]),
+        patch("subprocess.Popen") as mock_popen,
+    ):
         resp = client.post("/api/benches/new", json=_new_payload("fresh"))
 
     data = resp.get_json()
