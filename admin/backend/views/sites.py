@@ -212,10 +212,8 @@ def reinstall_site(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     if not (bench_root / "sites" / name / "site_config.json").exists():
         return jsonify({"ok": False, "error": "Site not found."}), 404
-    data = request.get_json(silent=True) or {}
-    admin_password = (data.get("admin_password") or "admin").strip() or "admin"
     try:
-        task_id = TaskRunner(bench_root).run("reinstall-site", {"site": name, "admin_password": admin_password})
+        task_id = TaskRunner(bench_root).run("reinstall-site", {"site": name, "admin_password": "admin"})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
     return jsonify({"ok": True, "task_id": task_id})

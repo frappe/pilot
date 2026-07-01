@@ -9,7 +9,7 @@ export const sitesApi = {
   config: (name, config) => request.patch(`sites/${encodeURIComponent(name)}/config`, { json: config }).json(),
   enableSsl: (name, email) => request.post(`sites/${encodeURIComponent(name)}/enable-ssl`, { json: email ? { email } : {} }).json(),
   clearCache: (name) => request.post(`sites/${encodeURIComponent(name)}/clear-cache`).json(),
-  reinstall: (name, adminPassword) => request.post(`sites/${encodeURIComponent(name)}/reinstall`, { json: { admin_password: adminPassword } }).json(),
+  reinstall: (name) => request.post(`sites/${encodeURIComponent(name)}/reinstall`).json(),
   drop: (name) => request.post(`sites/${encodeURIComponent(name)}/drop`).json(),
   forceDrop: (name) => request.post(`sites/${encodeURIComponent(name)}/force-drop`).json(),
 

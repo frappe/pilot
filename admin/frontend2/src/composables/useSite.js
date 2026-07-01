@@ -88,8 +88,8 @@ export function useSite(name) {
     return sitesApi.drop(name)
   }
 
-  async function reinstall(adminPassword) {
-    return sitesApi.reinstall(name, adminPassword)
+  async function reinstall() {
+    return sitesApi.reinstall(name)
   }
 
   async function installApp(app) {
