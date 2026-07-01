@@ -32,17 +32,22 @@ class AdminEnvManager:
 
     def ensure(self) -> None:
         """Create the admin venv and install admin dependencies if not already done."""
-        self._ensure_venv()
+        if self._ensure_venv():
+            self.install_python_deps()
         self._ensure_frontend_deps()
 
-    def _ensure_venv(self) -> None:
+    def _ensure_venv(self) -> bool:
         if self.python.exists():
-            return
+            return False
         print("Setting up admin environment (one-time)...")
         print("  Creating virtual environment...", end=" ", flush=True)
         subprocess.run([self.uv, "venv", str(self.venv_path)], check=True)
         print("done")
+        return True
 
+    def install_python_deps(self) -> None:
+        """Install any missing admin Python dependencies into the admin venv."""
+        self._ensure_venv()
         deps = self._read_admin_deps()
         if not deps:
             print("  No admin dependencies specified, skipping installation.")

@@ -572,6 +572,20 @@ def test_requirements_installs_js_for_app_with_package_json(tmp_path: Path) -> N
 # ── UpdateCommand ─────────────────────────────────────────────────────────────
 
 
+def test_upgrade_command_installs_admin_python_deps() -> None:
+    from bench_cli.commands.upgrade import UpgradeCommand
+
+    with patch("bench_cli.commands.admin._cli_root", return_value=Path("/tmp/bench-cli")), \
+         patch("bench_cli.utils.run_command") as mock_run_command, \
+         patch("bench_cli.commands.admin.download_admin_frontend", return_value=True), \
+         patch("bench_cli.managers.admin_env_manager.AdminEnvManager") as mock_admin_env:
+        UpgradeCommand().run()
+
+    mock_run_command.assert_called_once_with(["git", "-C", "/tmp/bench-cli", "pull"], stream_output=True)
+    mock_admin_env.assert_called_once_with(Path("/tmp/bench-cli"))
+    mock_admin_env.return_value.install_python_deps.assert_called_once_with()
+
+
 def test_update_command_runs_all_steps(tmp_path: Path) -> None:
     from bench_cli.commands.update import UpdateCommand
 
