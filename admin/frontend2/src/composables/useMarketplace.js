@@ -28,30 +28,12 @@ export function isFrappeApp(app) {
   return Boolean(app.repo?.includes('github.com/frappe/'))
 }
 
-
 function sortApps(a, b) {
   if (a.installed !== b.installed) return a.installed ? -1 : 1
   const as = a.stars ?? -1
   const bs = b.stars ?? -1
   if (as !== bs) return bs - as
   return (a.title || a.name).localeCompare(b.title || b.name)
-}
-
-// Maps an app's branches to how it relates to the current bench version.
-function compatibility(app, benchVersion) {
-  const versions = (app.branches ?? []).map(parseVersion).filter((v) => v !== null)
-  if (benchVersion === null) {
-    return { compatible: true, label: parseBranchVersion(app.branch), branch: app.branch }
-  }
-
-  const supported = versions.filter((v) => v <= benchVersion)
-  if (supported.length) {
-    const best = Math.max(...supported)
-    const branch = app.branches.find((b) => parseVersion(b) === best)
-    return { compatible: true, label: `v${best}`, branch }
-  }
-  if (versions.length) return { compatible: false, needs: Math.min(...versions) }
-  return { compatible: true, label: parseBranchVersion(app.branch) || 'latest', branch: app.branch }
 }
 
 export function useMarketplace(initialSiteName = '') {
@@ -73,12 +55,12 @@ export function useMarketplace(initialSiteName = '') {
     error.value = ''
     try {
       const [registryData, installed, settings, siteList] = await Promise.all([
-        appsApi.registry(),
+        appsApi.marketplace(),
         appsApi.installed(),
         settingsApi.get(),
         sitesApi.list(),
       ])
-      registry.value = registryData
+      registry.value = registryData.filter((app) => app.name !== 'frappe')
       benchName.value = settings.bench?.name || 'this bench'
       const benchBranch =
         parseBenchBranch(settings.bench?.default_branch) ||
@@ -123,7 +105,9 @@ export function useMarketplace(initialSiteName = '') {
       .map((app) => ({
         ...app,
         installed: installedOnCurrentSite.value.has(app.name),
-        ...compatibility(app, benchVersion.value),
+        compatible: app.is_installable,
+        needs: app.required_version,
+        label: app.version ? `v${app.version}` : '',
       }))
   })
 

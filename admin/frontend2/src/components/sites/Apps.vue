@@ -9,13 +9,14 @@
     <div v-else class="gap-x-6 grid grid-cols-1 sm:grid-cols-2">
       <MarketplaceAppCard v-for="app in appObjects" :key="app.name" :app="app" :show-divider="true">
         <template #actions>
-          <Dropdown :options="menuOptions(app.name)" placement="bottom-end">
+          <Dropdown v-if="menuOptions(app).length" :options="menuOptions(app)" placement="bottom-end">
             <template #default="{ open }">
               <Button variant="ghost" size="sm" :active="open">
                 <span class="size-4 lucide-ellipsis" />
               </Button>
             </template>
           </Dropdown>
+          <span v-else class="size-7 shrink-0" />
         </template>
       </MarketplaceAppCard>
     </div>
@@ -52,7 +53,7 @@ const props = defineProps({
 const router = useRouter()
 
 const { apps, installedApps, appsLoading, loadApps, uninstallApp } = useSite(props.siteName)
-const { titleMap, descriptionMap, logoMap, load: loadRegistry } = useAppRegistry()
+const { titleMap, descriptionMap, logoMap, documentationMap, websiteMap, load: loadRegistry } = useAppRegistry()
 
 const appDetailMap = computed(() => Object.fromEntries(apps.value.map((a) => [a.name, a])))
 
@@ -63,6 +64,8 @@ const appObjects = computed(() =>
     label: appDetailMap.value[name]?.version || '',
     description: descriptionMap.value[name] || '',
     logo_url: logoMap.value[name] || null,
+    documentation: documentationMap.value[name] || '',
+    website: websiteMap.value[name] || '',
   })),
 )
 
@@ -71,14 +74,23 @@ const uninstallTarget = ref('')
 const uninstalling = ref(false)
 const uninstallError = ref('')
 
-function menuOptions(appName) {
+function openLink(url) {
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
+function menuOptions(app) {
   return [
-    { label: 'Documentation', icon: 'lucide-book-open', onClick: () => { } },
-    ...(appName !== 'frappe' ? [{
+    ...(app.website
+      ? [{ label: 'Website', icon: 'lucide-globe', onClick: () => openLink(app.website) }]
+      : []),
+    ...(app.documentation
+      ? [{ label: 'Documentation', icon: 'lucide-book-open', onClick: () => openLink(app.documentation) }]
+      : []),
+    ...(app.name !== 'frappe' ? [{
       label: 'Uninstall',
       icon: 'lucide-trash-2',
       theme: 'red',
-      onClick: () => { uninstallTarget.value = appName; uninstallError.value = ''; showUninstall.value = true },
+      onClick: () => { uninstallTarget.value = app.name; uninstallError.value = ''; showUninstall.value = true },
     }] : []),
   ]
 }

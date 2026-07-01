@@ -16,7 +16,7 @@ export function useAppRegistry() {
   async function load() {
     if (loaded.value) return
     try {
-      registry.value = await appsApi.registry()
+      registry.value = await appsApi.marketplace()
       loaded.value = true
     } catch {
       registry.value = []
@@ -43,6 +43,22 @@ export function useAppRegistry() {
     ),
   )
 
+  const documentationMap = computed(() =>
+    Object.fromEntries(
+      registry.value
+        .filter((app) => app.documentation)
+        .map((app) => [app.name, app.documentation]),
+    ),
+  )
+
+  const websiteMap = computed(() =>
+    Object.fromEntries(
+      registry.value
+        .filter((app) => app.website)
+        .map((app) => [app.name, app.website]),
+    ),
+  )
+
   return {
     registry,
     loaded,
@@ -50,6 +66,8 @@ export function useAppRegistry() {
     logoMap,
     titleMap,
     descriptionMap,
+    documentationMap,
+    websiteMap,
     hashColor,
   }
 }

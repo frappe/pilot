@@ -38,6 +38,8 @@ class Resolver:
     logo_url: str = ""
     category: str = ""
     stars: int | None = 0
+    documentation: str = ""
+    website: str = ""
     _registry: dict[str, list["Resolver"]] = field(default_factory=dict, init=False, repr=False)
 
     def to_dict(self) -> dict:
@@ -56,6 +58,8 @@ class Resolver:
             "logo_url": self.logo_url,
             "category": self.category,
             "stars": self.stars,
+            "documentation": self.documentation,
+            "website": self.website,
         }
 
     def _resolve(
@@ -150,6 +154,8 @@ class Marketplace:
             logo_url=app.get("logo_url", ""),
             category=app.get("category", ""),
             stars=app.get("stars") or 0,
+            documentation=app.get("documentation", ""),
+            website=app.get("website", ""),
             is_installable=is_installable,
         )
 
