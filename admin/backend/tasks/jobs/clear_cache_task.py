@@ -16,7 +16,7 @@ class ClearCacheTask(BaseTask):
         self.site = args.site
 
     def run(self) -> None:
-        self._step("clear-cache", f"Clear cache for {self.site}")
+        self._step("clear_cache", f"Clear cache for {self.site}")
         result = subprocess.run([*self.bench.frappe_call, "frappe", "--site", self.site, "clear-cache"])
         if result.returncode != 0:
             sys.exit(result.returncode)
