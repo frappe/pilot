@@ -15,8 +15,12 @@
           </div>
         </div>
         <div class="flex-1 p-6 overflow-y-auto">
-          <h3 class="pb-4 font-semibold text-ink-gray-9 text-lg">{{ activeSectionLabel }}</h3>
-          <Workers v-if="activeSection === 'workers'" />
+          <div class="flex justify-between items-center pb-4">
+            <h3 class="font-semibold text-ink-gray-9 text-lg">{{ activeSectionLabel }}</h3>
+            <Button v-if="activeSection === 'workers'" variant="subtle" icon-left="lucide-plus"
+              @click="workersRef?.addGroup()">Add</Button>
+          </div>
+          <Workers v-if="activeSection === 'workers'" ref="workersRef" />
           <Firewall v-else-if="activeSection === 'firewall'" />
           <SystemInfo v-else-if="activeSection === 'system-info'" />
         </div>
@@ -27,7 +31,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { Dialog } from 'frappe-ui'
+import { Dialog, Button } from 'frappe-ui'
 import Firewall from '@/components/settings/Firewall.vue'
 import SystemInfo from '@/components/settings/SystemInfo.vue'
 import Workers from '@/components/settings/Workers.vue'
@@ -40,5 +44,6 @@ const sections = [
   { id: 'system-info', label: 'System Info', icon: 'lucide-info' },
 ]
 const activeSection = ref(sections[0].id)
+const workersRef = ref(null)
 const activeSectionLabel = computed(() => sections.find((s) => s.id === activeSection.value)?.label)
 </script>

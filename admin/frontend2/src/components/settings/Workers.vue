@@ -4,13 +4,13 @@
   </div>
   <div v-else class="space-y-4">
     <div v-for="(group, index) in groups" :key="index" class="flex items-end gap-3">
+      <div class="space-y-1.5 w-28">
+        <p v-if="index === 0" class="font-medium text-ink-gray-7 text-sm">No of Workers</p>
+        <TextInput v-model="group.count" type="number" min="1" class="w-full" />
+      </div>
       <div class="flex-1 space-y-1.5">
         <p v-if="index === 0" class="font-medium text-ink-gray-7 text-sm">Queues</p>
         <TextInput v-model="group.queues" placeholder="default, short, long" class="w-full" />
-      </div>
-      <div class="space-y-1.5 w-20">
-        <p v-if="index === 0" class="font-medium text-ink-gray-7 text-sm">Count</p>
-        <TextInput v-model="group.count" type="number" min="1" class="w-full" />
       </div>
       <Button variant="subtle" icon="lucide-x" :disabled="groups.length === 1" @click="removeGroup(index)" />
     </div>
@@ -18,9 +18,8 @@
 
     <ErrorMessage v-if="error" :message="error" />
 
-    <div class="flex justify-between gap-2">
-      <Button variant="subtle" @click="addGroup">Add group</Button>
-      <Button variant="solid" :loading="saving" @click="save">Update Workers</Button>
+    <div class="flex justify-end gap-2">
+      <Button variant="solid" :loading="saving" @click="save">Save Changes</Button>
     </div>
   </div>
 </template>
@@ -46,6 +45,8 @@ function addGroup() {
 function removeGroup(index) {
   groups.value.splice(index, 1)
 }
+
+defineExpose({ addGroup })
 
 function queueList(value) {
   return String(value || '')
