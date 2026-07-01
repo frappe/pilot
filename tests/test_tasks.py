@@ -67,6 +67,15 @@ def test_build_argv_new_site_from_backup_no_force_by_default(tmp_path: Path) -> 
     assert "--force" not in argv
 
 
+def test_build_argv_admin_password_uses_equals_form(tmp_path: Path) -> None:
+    # a token_urlsafe password can start with '-'; the '=' form stops argparse
+    # from reading it as a flag ("expected one argument").
+    runner = TaskRunner(tmp_path)
+    argv = runner._build_argv("new-site", {"name": "s.localhost", "admin_password": "-xY_z"})
+    assert "--admin-password=-xY_z" in argv
+    assert "--admin-password" not in argv
+
+
 def test_build_argv_uninstall_app(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     argv = runner._build_argv("uninstall-app", {"site": "mysite.localhost", "app": "erpnext"})
