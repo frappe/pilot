@@ -29,8 +29,12 @@
           <Button v-if="appNames.length" variant="solid" :loading="updating" :disabled="!selected.size"
             @click="runUpdate">
             {{
-              selected.size == 0 ? 'Update' : (appNames.length == selected.size ? 'Update all' : `Update ${selected.size}
-            apps`)
+              selected.size == 0 ? 'Update' : (
+                appNames.length == selected.size ? 'Update all' :
+                  (
+                    selected.size == 1 ? 'Update 1 app' : `Update ${selected.size} apps`
+                  )
+              )
             }}
           </Button>
         </div>

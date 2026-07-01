@@ -70,7 +70,12 @@ export function useTaskStream({ guardHiddenTab = false } = {}) {
         close()
         if (retries < MAX_RETRIES) {
           retries += 1
-          retryTimer = setTimeout(open, 1000 * retries)
+          retryTimer = setTimeout(() => {
+            // avoid duplicating lines the backend will replay
+            rawLines.value = []
+            lines.value = []
+            open()
+          }, 1000 * retries)
         } else {
           streaming.value = false
           onError?.()
