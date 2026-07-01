@@ -5,9 +5,6 @@ Exits non-zero if any finding is blocking, so CI can fail the PR.
 
 Blocking logic: a finding blocks if its rule metadata sets is_blocking: true,
 or its Semgrep severity maps to Critical/Major (ERROR/CRITICAL/HIGH).
-
-Run:
-    python3 scripts/run_semgrep.py <repo-url> <target> <target_type>
 """
 
 from __future__ import annotations
@@ -15,11 +12,10 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from clone_utils import clone_app
+from validator import Validator
 
 RULES_DIR = Path(__file__).parent / "semgrep-rules"
 
@@ -62,36 +58,20 @@ def print_finding(finding: dict) -> None:
     print(f"    {message}")
 
 
-def run_semgrep(target_dir: Path, label: str) -> bool:
-    findings = scan_target(target_dir)
-    blocking_findings = [f for f in findings if is_blocking(f)]
+class SemgrepValidator(Validator):
+    name = "semgrep scan"
 
-    print(f"Scanned {label}: {len(findings)} finding(s), {len(blocking_findings)} blocking.\n")
-    for finding in findings:
-        print_finding(finding)
+    def __init__(self, clone_dir: Path, label: str):
+        super().__init__()
+        self.clone_dir = clone_dir
+        self.label = label
 
-    if blocking_findings:
-        print(f"\nFAILED: {len(blocking_findings)} blocking issue(s) must be fixed before this can be merged.")
-        return False
-
-    print("\nPASSED.")
-    return True
-
-
-def main() -> None:
-    if len(sys.argv) != 4:
-        print("Usage: run_semgrep.py <repo-url> <target> <target_type>", file=sys.stderr)
-        sys.exit(1)
-
-    repo, target, target_type = sys.argv[1], sys.argv[2], sys.argv[3]
-    with tempfile.TemporaryDirectory() as tmp:
-        clone_dir = Path(tmp) / "app"
-        clone_app(repo, target, target_type, clone_dir)
-        passed = run_semgrep(clone_dir, f"{repo}@{target}")
-
-    if not passed:
-        sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()
+    def validate(self) -> None:
+        findings = scan_target(self.clone_dir)
+        blocking = [f for f in findings if is_blocking(f)]
+        print(f"  Scanned {self.label}: {len(findings)} finding(s), {len(blocking)} blocking.")
+        for finding in findings:
+            print_finding(finding)
+        for finding in blocking:
+            severity = finding.get("extra", {}).get("severity")
+            self.fail(f"[{severity}] {finding['path']} ({finding['check_id']})")

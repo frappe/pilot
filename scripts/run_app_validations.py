@@ -10,9 +10,6 @@ Checks:
   5. Versioning is dynamic and __version__ is declared in the app's __init__.py
   6. At least one author email is present in pyproject.toml
   7. frappe-dependencies keys (minus frappe) match required_apps in hooks.py
-
-Run:
-    python3 scripts/validate_marketplace_app.py <repo-url> <target> <target_type>
 """
 
 from __future__ import annotations
@@ -29,6 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from clone_utils import clone_app
+from validator import Validator
 
 
 def parse_github_slug(repo_url: str) -> tuple[str, str]:
@@ -66,34 +64,17 @@ def parse_required_apps(hooks_file: Path) -> set[str]:
     return set()
 
 
-class AppValidator:
-    def __init__(self, repo_url: str, target: str, target_type: str):
+class AppValidator(Validator):
+    name = "app quality"
+
+    def __init__(self, repo_url: str, clone_dir: Path):
+        super().__init__()
         self.repo_url = repo_url
-        self.target = target
-        self.target_type = target_type
-        self.errors: list[str] = []
-        self.clone_dir: Path | None = None
-
-    def fail(self, message: str) -> None:
-        self.errors.append(message)
-        print(f"  FAIL: {message}")
-
-    def run(self) -> bool:
-        with tempfile.TemporaryDirectory() as tmp:
-            clone_dir = Path(tmp) / "app"
-            try:
-                clone_app(self.repo_url, self.target, self.target_type, clone_dir)
-            except RuntimeError as exc:
-                self._check_github()
-                self.fail(str(exc))
-                return False
-            return self.run_on_dir(clone_dir)
-
-    def run_on_dir(self, clone_dir: Path) -> bool:
-        self._check_github()
         self.clone_dir = clone_dir
+
+    def validate(self) -> None:
+        self._check_github()
         self._check_cloned_app()
-        return len(self.errors) == 0
 
     def _check_github(self) -> None:
         try:
@@ -162,19 +143,22 @@ class AppValidator:
 
 def main() -> None:
     if len(sys.argv) != 4:
-        print("Usage: validate_marketplace_app.py <repo-url> <target> <target_type>", file=sys.stderr)
+        print("Usage: run_app_validations.py <repo-url> <target> <target_type>", file=sys.stderr)
         sys.exit(1)
 
     repo_url, target, target_type = sys.argv[1], sys.argv[2], sys.argv[3]
     print(f"\n=== Validating {repo_url}@{target} ({target_type}) ===", flush=True)
 
-    validator = AppValidator(repo_url, target, target_type)
-    passed = validator.run()
+    with tempfile.TemporaryDirectory() as tmp:
+        clone_dir = Path(tmp) / "app"
+        try:
+            clone_app(repo_url, target, target_type, clone_dir)
+        except RuntimeError as exc:
+            print(f"  FAIL: {exc}")
+            sys.exit(1)
+        passed = AppValidator(repo_url, clone_dir).run()
 
-    if passed:
-        print("PASSED.")
-    else:
-        print(f"\nFAILED: {len(validator.errors)} issue(s) found.")
+    if not passed:
         sys.exit(1)
 
 

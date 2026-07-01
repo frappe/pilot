@@ -210,19 +210,6 @@ class AppReader:
         return self._read_packed_ref(git_dir, f"refs/remotes/origin/{branch}")
 
     def _pip_version(self, name: str) -> str:
-        lib_dir = self._bench_root / "env" / "lib"
-        if not lib_dir.is_dir():
-            return ""
-        norm = name.replace("-", "_")
-        for python_dir in lib_dir.iterdir():
-            pkgs = python_dir / "site-packages"
-            if not pkgs.is_dir():
-                continue
-            for dist_info in pkgs.glob(f"{norm}-*.dist-info"):
-                metadata = dist_info / "METADATA"
-                if not metadata.exists():
-                    continue
-                for line in metadata.read_text(errors="replace").splitlines():
-                    if line.startswith("Version:"):
-                        return line.split(":", 1)[1].strip()
-        return ""
+        from pilot.utils import installed_app_version
+
+        return installed_app_version(self._bench_root / "env", name)
