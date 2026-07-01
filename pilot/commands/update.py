@@ -47,11 +47,11 @@ class UpdateCommand(Command):
 
     def _step(self, key: str, label: str) -> None:
         self._current_step = key
-        print(f"##[step:{key},{time.time():.3f}] {label}", flush=True)
+        print(f"STEP {key},{time.time():.3f} {label}", flush=True)
 
     def _step_failed(self) -> None:
         if self._current_step:
-            print(f"##[step-failed:{self._current_step},{time.time():.3f}]", flush=True)
+            print(f"STEP-FAILED {self._current_step},{time.time():.3f}", flush=True)
 
     def run(self) -> None:
         self._warn_if_running()

@@ -1,15 +1,10 @@
 import subprocess
 import sys
-import time
 
 from pilot.commands.get_app import GetAppCommand
 from pilot.exceptions import BenchError
 
 from .base_task import BaseTask
-
-
-def _step(key: str, label: str = "") -> None:
-    print(f"##[step:{key},{time.time():.3f}] {label}", flush=True)
 
 
 class AddAndInstallAppTask(BaseTask):
@@ -36,11 +31,11 @@ class AddAndInstallAppTask(BaseTask):
             self._install_custom()
 
     def _install_custom(self) -> None:
-        _step("fetch", f"Fetch {self.repo}")
+        self._step("fetch", f"Fetch {self.repo}")
         cmd = GetAppCommand(self.bench, self.repo, self.branch)
         cmd.run()
         self._install_on_sites([cmd])
-        _step("done")
+        self._step("done")
 
     def _install_from_marketplace(self) -> None:
         from pilot.core.marketplace import Marketplace
@@ -51,12 +46,12 @@ class AddAndInstallAppTask(BaseTask):
             raise BenchError(f"'{self.marketplace_app}' not found in marketplace.")
         cmds = []
         for dep in resolver.resolve():
-            _step("fetch", f"Fetch {dep.app}")
+            self._step("fetch", f"Fetch {dep.app}")
             cmd = GetAppCommand(self.bench, dep.repo, dep.target)
             cmd.run()
             cmds.append(cmd)
         self._install_on_sites(cmds)
-        _step("done")
+        self._step("done")
 
     def _install_on_sites(self, cmds: list) -> None:
         from pilot.managers.python_env_manager import PythonEnvManager
@@ -65,7 +60,7 @@ class AddAndInstallAppTask(BaseTask):
         for site in self.sites:
             safe_key = site.replace(".", "_").replace("-", "_")
             for cmd in cmds:
-                _step(f"install_{safe_key}_{cmd.app.config.name}", f"Install {cmd.app.config.name} on {site}")
+                self._step(f"install_{safe_key}_{cmd.app.config.name}", f"Install {cmd.app.config.name} on {site}")
                 result = subprocess.run(
                     [*self.bench.frappe_call, "frappe", "--site", site, "install-app", cmd.app.config.name],
                     cwd=str(sites_dir),
@@ -74,7 +69,7 @@ class AddAndInstallAppTask(BaseTask):
                     sys.exit(result.returncode)
         env = PythonEnvManager(self.bench)
         for cmd in cmds:
-            _step("build", f"Build assets for {cmd.app.config.name}")
+            self._step("build", f"Build assets for {cmd.app.config.name}")
             env.build_assets_for_app(cmd.app)
 
 

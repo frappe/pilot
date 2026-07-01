@@ -22,7 +22,9 @@ class GetAppTask(BaseTask):
         if self.marketplace_app:
             self._install_from_marketplace()
         else:
+            self._step("fetch", f"Fetch {self.repo}")
             GetAppCommand(self.bench, self.repo, self.branch).run()
+        self._step("done")
 
     def _install_from_marketplace(self) -> None:
         from pilot.core.marketplace import Marketplace
@@ -32,6 +34,7 @@ class GetAppTask(BaseTask):
         if not resolver:
             raise BenchError(f"'{self.marketplace_app}' not found in marketplace.")
         for dep in resolver.resolve():
+            self._step("fetch", f"Fetch {dep.app}")
             GetAppCommand(self.bench, dep.repo, dep.target).run()
 
 

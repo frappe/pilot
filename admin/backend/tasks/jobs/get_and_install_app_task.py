@@ -1,14 +1,8 @@
-import time
-
 from pilot.commands.get_app import GetAppCommand
 from pilot.core.site import Site, SiteConfig
 from pilot.exceptions import BenchError
 
 from .base_task import BaseTask
-
-
-def _step(key: str, label: str = "") -> None:
-    print(f"##[step:{key},{time.time():.3f}] {label}", flush=True)
 
 
 class GetAndInstallAppTask(BaseTask):
@@ -34,12 +28,12 @@ class GetAndInstallAppTask(BaseTask):
         if self.marketplace_app:
             self._install_from_marketplace()
         else:
-            _step("fetch", f"Fetch {self.app}")
+            self._step("fetch", f"Fetch {self.app}")
             cmd = GetAppCommand(self.bench, self.repo, self.branch)
             cmd.run()
-            _step("install", f"Install on {self.site}")
+            self._step("install", f"Install on {self.site}")
             Site(SiteConfig(name=self.site, apps=[]), self.bench).install_app(cmd.app)
-            _step("done")
+            self._step("done")
 
     def _install_from_marketplace(self) -> None:
         from pilot.core.marketplace import Marketplace
@@ -50,12 +44,12 @@ class GetAndInstallAppTask(BaseTask):
             raise BenchError(f"'{self.marketplace_app}' not found in marketplace.")
         site = Site(SiteConfig(name=self.site, apps=[]), self.bench)
         for dep in resolver.resolve():
-            _step("fetch", f"Fetch {dep.app}")
+            self._step("fetch", f"Fetch {dep.app}")
             cmd = GetAppCommand(self.bench, dep.repo, dep.target)
             cmd.run()
-            _step("install", f"Install {dep.app} on {self.site}")
+            self._step("install", f"Install {dep.app} on {self.site}")
             site.install_app(cmd.app)
-        _step("done")
+        self._step("done")
 
 
 if __name__ == "__main__":

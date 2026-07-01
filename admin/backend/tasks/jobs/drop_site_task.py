@@ -14,7 +14,9 @@ class DropSiteTask(BaseTask):
         self.name = args.name
 
     def run(self) -> None:
+        self._step("drop", f"Drop site {self.name}")
         DropSiteCommand(self.bench, self.name).run()
+        self._step("done")
 
 
 if __name__ == "__main__":

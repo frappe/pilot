@@ -17,6 +17,7 @@ class DeleteBackupTask(BaseTask):
         self.filenames = args.filenames
 
     def run(self) -> None:
+        self._step("delete", f"Delete {len(self.filenames)} backup(s) for {self.site}")
         backup_dir = self.bench_root / "sites" / self.site / "private" / "backups"
         for filename in self.filenames:
             path = backup_dir / filename
@@ -25,6 +26,7 @@ class DeleteBackupTask(BaseTask):
                 print(f"Deleted: {filename}")
             else:
                 print(f"Not found (skipping): {filename}")
+        self._step("done")
 
 
 if __name__ == "__main__":

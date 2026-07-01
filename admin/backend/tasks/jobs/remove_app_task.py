@@ -14,7 +14,9 @@ class RemoveAppTask(BaseTask):
         self.name = args.name
 
     def run(self) -> None:
+        self._step("remove", f"Remove {self.name}")
         RemoveAppCommand(self.bench, self.name, skip_confirm=True, force=True).run()
+        self._step("done")
 
 
 if __name__ == "__main__":

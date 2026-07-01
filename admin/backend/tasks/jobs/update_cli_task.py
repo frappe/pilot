@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -10,11 +11,18 @@ def _cli_root() -> Path:
     return Path(_pkg.__file__).parent.parent
 
 
+def _step(key: str, label: str = "") -> None:
+    print(f"STEP {key},{time.time():.3f} {label}", flush=True)
+
+
+def _step_failed(key: str) -> None:
+    print(f"STEP-FAILED {key},{time.time():.3f}", flush=True)
+
+
 if __name__ == "__main__":
     # bench_root is passed by the task runner but not needed here
     cli_root = _cli_root()
-    print(f"Updating bench-cli at {cli_root}...")
-    sys.stdout.flush()
+    _step("update", f"Update bench-cli at {cli_root}")
 
     result = subprocess.run(
         ["git", "-C", str(cli_root), "pull"],
@@ -22,4 +30,7 @@ if __name__ == "__main__":
         stderr=sys.stderr,
         text=True,
     )
-    sys.exit(result.returncode)
+    if result.returncode != 0:
+        _step_failed("update")
+        sys.exit(result.returncode)
+    _step("done")
