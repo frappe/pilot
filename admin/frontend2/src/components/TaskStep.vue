@@ -18,13 +18,13 @@
       <span v-if="hasOutput" class="size-4 text-ink-gray-4 transition-transform shrink-0 lucide-chevron-down"
         :class="{ 'rotate-180': expanded }" />
     </div>
-    <TaskLogView v-if="expanded && hasOutput" :lines="lines" :streaming="streaming" :rounded="false" />
+    <LogView v-if="expanded && hasOutput" :lines="lines" :streaming="streaming" :rounded="false" />
   </div>
 </template>
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import TaskLogView from './TaskLogView.vue'
+import LogView from './LogView.vue'
 
 const props = defineProps({
   label: { type: String, required: true },

@@ -23,6 +23,7 @@ declare module 'vue' {
     Domains: typeof import('./src/components/sites/settings/Domains.vue')['default']
     General: typeof import('./src/components/sites/settings/General.vue')['default']
     InstallAppDialog: typeof import('./src/components/InstallAppDialog.vue')['default']
+    LogView: typeof import('./src/components/LogView.vue')['default']
     MarketplaceAppCard: typeof import('./src/components/MarketplaceAppCard.vue')['default']
     NewSiteDialog: typeof import('./src/components/NewSiteDialog.vue')['default']
     ReconnectOverlay: typeof import('./src/components/ReconnectOverlay.vue')['default']

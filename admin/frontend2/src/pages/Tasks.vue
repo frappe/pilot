@@ -6,7 +6,7 @@
     <div class="flex justify-between items-center gap-3">
       <div>
         <h1 class="font-semibold text-ink-gray-9 text-xl">Tasks</h1>
-        <p class="mt-1 text-ink-gray-5 text-p-base">Background jobs — backups, deploys, migrations and more.</p>
+        <p class="mt-1 text-ink-gray-5 text-p-base">Background jobs - backups, deploys, migrations and more.</p>
       </div>
       <Button variant="subtle" size="sm" :loading="loading" icon-left="lucide-refresh-cw" @click="load(statusFilter)">
         Refresh
@@ -26,8 +26,7 @@
     </div>
 
     <div v-else-if="tasks.length" class="bg-surface-elevation-1 mt-4 divide-outline-gray-1 divide-y overflow-hidden">
-      <RouterLink v-for="task in tasks" :key="task.task_id"
-        :to="taskDetailRoute(task.task_id)"
+      <RouterLink v-for="task in tasks" :key="task.task_id" :to="taskDetailRoute(task.task_id)"
         class="flex items-center gap-3 hover:bg-surface-gray-1 py-3 no-underline transition-colors">
         <!-- Status icon -->
         <span class="place-items-center grid rounded-full size-8 shrink-0" :class="statusConfig(task).iconBg">
@@ -39,7 +38,7 @@
           <p class="mt-0.5 text-ink-gray-5 text-p-sm truncate">
             {{ siteLabel(task) }} · {{ relativeTime(task.started_at) }}
             <template v-if="fmtDuration(task.duration_seconds)"> · took {{ fmtDuration(task.duration_seconds)
-            }}</template>
+              }}</template>
           </p>
         </div>
 

@@ -4,12 +4,12 @@
       :duration="stepDuration(section)" :lines="sectionLines(section)" :has-output="sectionHasOutput(section)"
       :streaming="streaming && section.status === 'running'" />
   </div>
-  <TaskLogView v-else :lines="processedLines" :streaming="streaming" :empty-text="emptyText" />
+  <LogView v-else :lines="processedLines" :streaming="streaming" :empty-text="emptyText" />
 </template>
 
 <script setup>
 import { computed, toRef } from 'vue'
-import TaskLogView from './TaskLogView.vue'
+import LogView from './LogView.vue'
 import TaskStep from './TaskStep.vue'
 import { STEP_MARKER_RE, useTaskSteps } from '@/composables/useTaskSteps'
 import { processLine } from '@/utils/ansi'

@@ -65,7 +65,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch, watchEffect } from 'vue'
+import { computed, onMounted, ref, watch, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Badge, Button, Dropdown, ErrorMessage, LoadingText, TabButtons, toast } from 'frappe-ui'
 import UpdatesAvailableButton from '@/components/UpdatesAvailableButton.vue'
@@ -76,6 +76,7 @@ import SiteSettings from '@/components/sites/Settings.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useSite } from '@/composables/useSite'
 import { useBench } from '@/composables/useBench'
+import { useIsMobile } from '@/composables/useIsMobile'
 import { openTaskDetailPage } from '@/utils/taskRoute'
 
 const route = useRoute()
@@ -120,8 +121,7 @@ watchEffect(() => {
   if (site.value) document.title = `${site.value.name} | ${tabLabel.value}`
 })
 
-const isMobile = ref(window.innerWidth < 640)
-const onResize = () => { isMobile.value = window.innerWidth < 640 }
+const isMobile = useIsMobile()
 
 function openSite() {
   window.open(`https://${site.value.name}`, '_blank')
@@ -158,10 +158,7 @@ const menuOptions = computed(() => [
 onMounted(() => {
   load()
   loadBench()
-  window.addEventListener('resize', onResize)
 })
-
-onUnmounted(() => window.removeEventListener('resize', onResize))
 </script>
 
 <style scoped>

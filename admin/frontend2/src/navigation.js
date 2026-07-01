@@ -21,7 +21,7 @@ export const navigation = {
       Logs: {
         path: '/dev-tools/logs',
         icon: 'lucide-scroll-text',
-        component: Placeholder,
+        component: () => import('./pages/Logs.vue'),
       },
       Tasks: {
         path: '/tasks',
