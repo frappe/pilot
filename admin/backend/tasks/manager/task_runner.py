@@ -152,7 +152,7 @@ class TaskRunner:
         if command == "new-site":
             argv = [sys.executable, "-m", "admin.backend.tasks.jobs.new_site_task", str(self._bench_root), args["name"]]
             if args.get("admin_password"):
-                argv += ["--admin-password", args["admin_password"]]
+                argv += [f"--admin-password={args['admin_password']}"]
             if args.get("db_type"):
                 argv += ["--db-type", args["db_type"]]
             return argv
@@ -160,7 +160,7 @@ class TaskRunner:
             return [sys.executable, "-m", "admin.backend.tasks.jobs.drop_site_task", str(self._bench_root), args["site"]]
         if command == "reinstall-site":
             argv = [sys.executable, "-m", "admin.backend.tasks.jobs.reinstall_site_task", str(self._bench_root), args["site"]]
-            argv += ["--admin-password", args["admin_password"]]
+            argv += [f"--admin-password={args['admin_password']}"]
             return argv
         if command == "delete-backup":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.delete_backup_task", str(self._bench_root), args["site"], *args["filenames"]]
@@ -191,7 +191,7 @@ class TaskRunner:
         if command == "new-site-from-backup":
             argv = [sys.executable, "-m", "admin.backend.tasks.jobs.new_site_from_backup_task", str(self._bench_root), args["name"], args["db_file"]]
             if args.get("admin_password"):
-                argv += ["--admin-password", args["admin_password"]]
+                argv += [f"--admin-password={args['admin_password']}"]
             if args.get("public_files"):
                 argv += ["--public-files", args["public_files"]]
             if args.get("private_files"):
