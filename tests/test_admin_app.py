@@ -533,7 +533,7 @@ def test_create_site_does_not_carry_db_type(tmp_path: Path) -> None:
 # ── upload a MariaDB backup onto a PostgreSQL bench — prompt before converting ──
 
 
-def _upload_mariadb_dump(client, name: str = "new.localhost"):
+def _upload_mariadb_dump(client, name: str = "new.localhost", convert: bool = False):
     import gzip
     import io
 
@@ -541,11 +541,10 @@ def _upload_mariadb_dump(client, name: str = "new.localhost"):
     with gzip.GzipFile(fileobj=buf, mode="wb") as gz:
         gz.write(b"-- MariaDB dump 10.19\nCREATE TABLE `tabUser` (\n")
     buf.seek(0)
-    return client.post(
-        "/api/sites/create-from-upload",
-        data={"name": name, "admin_password": "admin", "db_file": (buf, "backup.sql.gz")},
-        content_type="multipart/form-data",
-    )
+    data = {"name": name, "admin_password": "admin", "db_file": (buf, "backup.sql.gz")}
+    if convert:
+        data["convert"] = "true"
+    return client.post("/api/sites/create-from-upload", data=data, content_type="multipart/form-data")
 
 
 def test_upload_mariadb_to_postgres_prompts_for_conversion(tmp_path: Path) -> None:
@@ -563,6 +562,21 @@ def test_upload_mariadb_to_postgres_prompts_for_conversion(tmp_path: Path) -> No
     assert "pgloader" in payload["message"]
     assert payload["db_file"]
     run.assert_not_called()  # restore must wait for the user to confirm
+
+
+def test_upload_mariadb_to_postgres_convert_confirmed_forces(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current", db_type="postgres")
+    with (
+        patch("admin.backend.views.sites._new_site_name_error", return_value=None),
+        patch("admin.backend.views.sites.is_linux", return_value=True),
+        patch("admin.backend.views.sites.is_x86_64", return_value=True),
+        patch("admin.backend.views.sites.TaskRunner.run", return_value="tid") as run,
+    ):
+        resp = _upload_mariadb_dump(client, convert=True)
+
+    assert resp.get_json()["ok"] is True
+    # convert must reach the task so _build_argv adds --force (which drives the conversion)
+    assert run.call_args.args[1]["convert"] is True
 
 
 def test_upload_mariadb_to_postgres_blocked_off_x86_linux(tmp_path: Path) -> None:

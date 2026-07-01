@@ -237,6 +237,9 @@ def create_from_upload():
                     "private_files": args.get("private_files"),
                 }
             )
+        # Conversion confirmed: mark it so the task adds --force, which the restore
+        # needs to stage the MariaDB dump for pgloader.
+        args["convert"] = True
 
     try:
         task_id = TaskRunner(bench_root).run("new-site-from-backup", args)
