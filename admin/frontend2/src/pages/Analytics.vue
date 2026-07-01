@@ -65,11 +65,6 @@
           <p class="font-medium text-ink-gray-7 text-sm">No data for the last {{ windowLabel }}</p>
           <p class="text-ink-gray-5 text-xs">Monitoring hasn't collected metrics in this range yet.</p>
         </div>
-        <div v-else-if="isPartial(system.earliest)"
-          class="flex items-start gap-2 bg-surface-amber-1 mb-4 px-3 py-2 rounded-md text-ink-amber-3 text-xs">
-          <span class="font-medium">Partial data:</span>
-          <span>only the last {{ humanizeSince(system.earliest) }} is available</span>
-        </div>
       </template>
 
       <!-- Charts -->
@@ -99,11 +94,6 @@
         class="sm:bg-surface-white sm:shadow-sm sm:px-6 py-1 sm:py-5 sm:border sm:rounded-lg sm:border-outline-gray-1">
         <h2 class="mb-4 font-semibold text-ink-gray-9">Application Processes</h2>
         <div class="flex flex-col gap-4">
-          <div v-if="isPartial(application.earliest)"
-            class="flex items-start gap-2 bg-surface-amber-1 px-3 py-2 rounded-md text-ink-amber-3 text-xs">
-            <span class="font-medium">Partial data:</span>
-            <span>only the last {{ humanizeSince(application.earliest) }} is available</span>
-          </div>
           <ChartCard :title="appCpuConfig.title">
             <AxisChart :config="appCpuConfig.config" class="p-0" />
           </ChartCard>
@@ -145,6 +135,7 @@ const windowOptions = computed(() => WINDOWS.map(w => ({ label: w.label, onClick
 function setWindow(key) {
   activeWindow.value = key
   if (key === 'live') {
+    liveNow.value = Date.now()
     seedLiveHistory()
     loadStats()
   } else {
@@ -169,12 +160,15 @@ const MEMORY_COLORS = {
 const stats = ref(null)
 const liveHistory = ref([])
 const MAX_LIVE = 60
+const LIVE_WINDOW_MS = 900 * 1000
+const liveNow = ref(Date.now())
 
 async function loadStats() {
   if (isHistorical.value) return
   try {
     const s = await monitorApi.stats()
     stats.value = s
+    liveNow.value = Date.now()
     const cpu = s.cpu_breakdown || {}
     const mem = s.memory_breakdown || {}
     const [load1, load5, load15] = s.load_avg || []
@@ -199,10 +193,11 @@ async function loadStats() {
 async function seedLiveHistory() {
   if (isHistorical.value || liveHistory.value.length) return
   try {
-    const d = await monitorApi.history('1h')
+    const d = await monitorApi.history('30m')
     if (d.error) throw new Error(d.error)
     if (d.system?.points?.length) {
       liveHistory.value = d.system.points
+      liveNow.value = d.now ?? Date.now()
     }
   } catch { }
 }
@@ -282,10 +277,15 @@ const fixedXAxis = computed(() => ({
   timeGrain: TIME_GRAIN[activeWindow.value],
   echartOptions: { min: axisMin.value, max: axisMax.value, splitLine: GRID },
 }))
-const liveXAxis = { key: 'time', type: 'time', timeGrain: 'second', echartOptions: { splitLine: GRID } }
+const liveXAxis = computed(() => ({
+  key: 'time',
+  type: 'time',
+  timeGrain: 'second',
+  echartOptions: { min: liveNow.value - LIVE_WINDOW_MS, max: liveNow.value, splitLine: GRID },
+}))
 
 const currentPoints = computed(() => isHistorical.value ? system.value.points : liveHistory.value)
-const currentXAxis = computed(() => isHistorical.value ? fixedXAxis.value : liveXAxis)
+const currentXAxis = computed(() => isHistorical.value ? fixedXAxis.value : liveXAxis.value)
 
 const cpuChartConfig = computed(() => ({
   title: 'CPU',
