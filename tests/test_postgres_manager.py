@@ -49,9 +49,40 @@ def test_install_uses_apt_packages_on_linux() -> None:
 
 def test_install_uses_brew_formula_on_macos() -> None:
     m, pkg = _mgr(version="16"), MagicMock()
-    with patch.object(m, "is_installed", return_value=False), patch(f"{MODULE}.is_macos", return_value=True), patch.object(m, "_installed_brew_formula", return_value=None), patch(f"{MODULE}.get_package_manager", return_value=pkg):
+    with (
+        patch.object(m, "is_installed", return_value=False),
+        patch(f"{MODULE}.is_macos", return_value=True),
+        patch.object(m, "_installed_brew_formula", return_value=None),
+        patch(f"{MODULE}.get_package_manager", return_value=pkg),
+    ):
         m.install()
     pkg.install.assert_called_once_with("postgresql@16")
+
+
+def test_conversion_tools_installed_on_x86_linux() -> None:
+    m, pkg = _mgr(), MagicMock()
+    with (
+        patch(f"{MODULE}.which", return_value=None),
+        patch(f"{MODULE}.is_linux", return_value=True),
+        patch(f"{MODULE}.is_x86_64", return_value=True),
+        patch(f"{MODULE}.get_package_manager", return_value=pkg),
+    ):
+        m._install_conversion_tools()
+    pkg.install.assert_called_once_with("pgloader", "mariadb-client")
+
+
+def test_conversion_tools_skipped_when_pgloader_present() -> None:
+    m = _mgr()
+    with patch(f"{MODULE}.which", return_value="/usr/bin/pgloader"), patch(f"{MODULE}.get_package_manager") as gpm:
+        m._install_conversion_tools()
+    gpm.assert_not_called()
+
+
+def test_conversion_tools_skipped_off_x86_linux() -> None:
+    m = _mgr()
+    with patch(f"{MODULE}.which", return_value=None), patch(f"{MODULE}.is_linux", return_value=True), patch(f"{MODULE}.is_x86_64", return_value=False), patch(f"{MODULE}.get_package_manager") as gpm:
+        m._install_conversion_tools()
+    gpm.assert_not_called()
 
 
 # ── secure ────────────────────────────────────────────────────────────────────
@@ -137,7 +168,16 @@ def test_start_targets_brew_on_macos() -> None:
 
 def test_provision_orchestrates_steps() -> None:
     m = _mgr(root_password="pw")
-    with patch(f"{MODULE}.is_alpine", return_value=False), patch.object(m, "install") as ins, patch.object(m, "enable") as en, patch.object(m, "is_running", return_value=False), patch.object(m, "start") as st, patch.object(m, "_wait_until_reachable"), patch.object(m, "secure") as sec:
+    with (
+        patch(f"{MODULE}.is_alpine", return_value=False),
+        patch.object(m, "install") as ins,
+        patch.object(m, "_install_conversion_tools"),
+        patch.object(m, "enable") as en,
+        patch.object(m, "is_running", return_value=False),
+        patch.object(m, "start") as st,
+        patch.object(m, "_wait_until_reachable"),
+        patch.object(m, "secure") as sec,
+    ):
         m.provision()
     ins.assert_called_once()
     en.assert_called_once()
@@ -150,9 +190,13 @@ def test_provision_orchestrates_steps() -> None:
 
 def test_install_uses_versioned_packages_on_alpine() -> None:
     m, pkg = _mgr(), MagicMock()
-    with patch.object(m, "is_installed", return_value=False), patch(f"{MODULE}.is_macos", return_value=False), \
-         patch(f"{MODULE}.is_alpine", return_value=True), patch.object(m, "_alpine_major", return_value="17"), \
-         patch(f"{MODULE}.get_package_manager", return_value=pkg):
+    with (
+        patch.object(m, "is_installed", return_value=False),
+        patch(f"{MODULE}.is_macos", return_value=False),
+        patch(f"{MODULE}.is_alpine", return_value=True),
+        patch.object(m, "_alpine_major", return_value="17"),
+        patch(f"{MODULE}.get_package_manager", return_value=pkg),
+    ):
         m.install()
     pkg.install.assert_called_once_with("postgresql17", "postgresql17-client")
 
@@ -198,18 +242,22 @@ def test_pick_dedicated_postgres_port_skips_shared_and_siblings(tmp_path) -> Non
 
 def test_provision_routes_to_instance_when_dedicated() -> None:
     m = _dedicated("b1", root_password="pw")
-    with patch.object(m, "install"), patch.object(m, "_provision_instance") as prov, \
-         patch.object(m, "_wait_until_reachable"), patch.object(m, "secure"):
+    with patch.object(m, "install"), patch.object(m, "_install_conversion_tools"), patch.object(m, "_provision_instance") as prov, patch.object(m, "_wait_until_reachable"), patch.object(m, "secure"):
         m.provision()
     prov.assert_called_once()
 
 
 def test_provision_instance_creates_then_starts_cluster() -> None:
     m = _dedicated("b1", port=5440)
-    with patch(f"{MODULE}.supports_dedicated_postgres", return_value=True), \
-         patch.object(m, "_cluster_row", return_value=[]), patch.object(m, "_detected_version", return_value="16"), \
-         patch.object(m, "is_running", return_value=False), patch.object(m, "start") as start, \
-         patch.object(m, "enable"), patch(f"{MODULE}.run_command") as rc:
+    with (
+        patch(f"{MODULE}.supports_dedicated_postgres", return_value=True),
+        patch.object(m, "_cluster_row", return_value=[]),
+        patch.object(m, "_detected_version", return_value="16"),
+        patch.object(m, "is_running", return_value=False),
+        patch.object(m, "start") as start,
+        patch.object(m, "enable"),
+        patch(f"{MODULE}.run_command") as rc,
+    ):
         m._provision_instance()
     args = rc.call_args[0][0]
     assert "pg_createcluster" in args and "16" in args and "b1" in args
@@ -237,8 +285,7 @@ def test_provision_instance_rejects_when_unsupported() -> None:
 
 def test_remove_instance_drops_cluster() -> None:
     m = _dedicated("b1")
-    with patch(f"{MODULE}.supports_dedicated_postgres", return_value=True), \
-         patch.object(m, "_cluster_version", return_value="16"), patch(f"{MODULE}.run_command") as rc:
+    with patch(f"{MODULE}.supports_dedicated_postgres", return_value=True), patch.object(m, "_cluster_version", return_value="16"), patch(f"{MODULE}.run_command") as rc:
         m.remove_instance()
     args = rc.call_args[0][0]
     assert "pg_dropcluster" in args and "16" in args and "b1" in args and "--stop" in args

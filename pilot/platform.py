@@ -35,6 +35,10 @@ def is_linux() -> bool:
     return detect() == Platform.LINUX
 
 
+def is_x86_64() -> bool:
+    return platform.machine().lower() in ("x86_64", "amd64")
+
+
 def is_alpine() -> bool:
     """Return True on Alpine Linux (apk package manager, OpenRC, musl libc)."""
     if not is_linux():
