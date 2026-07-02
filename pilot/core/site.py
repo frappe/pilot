@@ -99,7 +99,35 @@ class Site:
         if force:
             cmd.append("--force")
         run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
+        # frappe's uninstall-app may not update installed_apps in site_config.json
+        # on postgres benches; patch it directly so SiteReader returns fresh data
+        # and workers reload without trying to import the removed app.
+        self._remove_from_site_config_installed_apps(app.config.name)
         self.bench.reload_workers(raises=True)
+
+    def _remove_from_site_config_installed_apps(self, app_name: str) -> None:
+        import json
+        import os
+
+        site_config_path = self.path / "site_config.json"
+        if not site_config_path.exists():
+            return
+        try:
+            config = json.loads(site_config_path.read_text())
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"Warning: could not read {site_config_path}: {exc}")
+            return
+        apps = config.get("installed_apps")
+        if not isinstance(apps, list) or app_name not in apps:
+            return
+        config["installed_apps"] = [a for a in apps if a != app_name]
+        tmp = site_config_path.with_suffix(".json.tmp")
+        try:
+            tmp.write_text(json.dumps(config, indent=1) + "\n")
+            os.replace(tmp, site_config_path)
+        except OSError as exc:
+            print(f"Warning: could not update {site_config_path}: {exc}")
+            tmp.unlink(missing_ok=True)
 
     def list_apps(self) -> list[str]:
         import subprocess
