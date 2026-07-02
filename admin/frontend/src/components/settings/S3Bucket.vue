@@ -6,13 +6,15 @@
     <Alert v-if="!connected" theme="blue" title="Why connect S3?" :dismissible="false">
       <template #description>
         <p class="text-ink-gray-6 text-p-sm">
-          Connecting an S3-compatible bucket lets you send offsite backups and disk snapshots. Enter an access key, secret
-          key, bucket name, and pick a provider and region below — a new bucket with this name will be provisioned if not present.
+          Connecting an S3-compatible bucket lets you send offsite backups and disk snapshots. Enter an access key,
+          secret
+          key, bucket name, and pick a provider and region below — a new bucket with this name will be provisioned if
+          not present.
         </p>
       </template>
     </Alert>
 
-    <div v-if="connected" class="flex sm:flex-row sm:justify-between sm:items-center flex-col gap-3">
+    <div v-if="connected" class="flex sm:flex-row flex-col sm:justify-between sm:items-center gap-3">
       <div>
         <p class="font-medium text-ink-gray-8 text-sm">Connected to {{ bucket }}</p>
         <p class="text-ink-gray-5 text-p-sm">{{ providerLabel }} · Access key {{ accessKey }}</p>
@@ -22,12 +24,12 @@
     </div>
 
     <div class="space-y-4">
-      <FormControl label="Access Key" type="text" v-model="accessKey" placeholder="AKIA…" />
-      <FormControl label="Secret Key" type="password" v-model="secretKey"
-        :placeholder="secretKeySet ? '••••••••' : 'Secret access key'" />
-      <FormControl label="Bucket" type="text" v-model="bucket" placeholder="storage-bucket" />
       <Select label="Provider" v-model="provider" :options="providerOptions" class="w-full" />
       <Select label="Region" v-model="region" :options="regionOptions" class="w-full" />
+      <FormControl label="Bucket" type="text" v-model="bucket" placeholder="storage-bucket" />
+      <FormControl label="Access Key" type="text" v-model="accessKey" placeholder="AKIA…" />
+      <FormControl label="Secret Key" type="password" v-model="secretKey"
+        :placeholder="secretKeySet ? '••••••••' : 'Secret key'" />
       <ErrorMessage v-if="error" :message="error" />
       <div class="flex justify-end">
         <Button variant="solid" :loading="saving" @click="save">
