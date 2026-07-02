@@ -11,6 +11,7 @@ from pilot.commands.base import Command
 from pilot.exceptions import CommandError, MigrateError
 
 if TYPE_CHECKING:
+    from pilot.core.app import App, RevisionPin
     from pilot.core.bench import Bench
 
 
@@ -103,6 +104,7 @@ class UpdateCommand(Command):
 
     def _snapshot(self):
         from datetime import datetime
+
         from pilot.managers.snapshot_orchestrator import get_orchestrator
 
         self.tag = datetime.now().strftime("%Y%m%d-%H%M%S")  # Dynamically set tag for rollbacks
@@ -170,15 +172,41 @@ class UpdateCommand(Command):
                 pass
 
     def _update_apps(self) -> None:
+        from pilot.core.marketplace import Marketplace
+
+        marketplace_by_name = {entry["name"]: entry for entry in Marketplace.registry()}
+
         for app in self.bench.apps():
             if self._apps_filter is not None and app.config.name not in self._apps_filter:
                 continue
             print(f"Updating {app.config.name}...")
             try:
-                app.update()
+                app.update(pin=self._marketplace_pin(app, marketplace_by_name))
             except CommandError as e:
                 print(f"  Error updating {app.config.name}: {e}", file=sys.stderr)
                 raise MigrateError(f"Failed to update {app.config.name}")
+
+    @staticmethod
+    def _marketplace_pin(app: "App", marketplace_by_name: dict) -> "RevisionPin | None":
+        """The marketplace's currently advertised revision pin for this app, if any.
+
+        Matched by the app's installed version against the registry entry's
+        targets — this is the marketplace's next intended pin, not
+        necessarily the one the app was originally installed at. None for a
+        branch target, an app not in the marketplace, or a repo mismatch
+        (e.g. a fork) — those keep following the tracked branch.
+        """
+        entry = marketplace_by_name.get(app.config.name)
+        if not entry or app.config.repo != entry.get("repo"):
+            return None
+        version = app.installed_version
+        target = next((t for t in entry.get("targets", []) if t["version"] == version), None)
+        if target is None:
+            return None
+
+        from pilot.core.app import RevisionPin
+
+        return RevisionPin.from_marketplace_target(target)
 
     def _reinstall_apps(self) -> None:
         from pilot.managers.python_env_manager import PythonEnvManager
