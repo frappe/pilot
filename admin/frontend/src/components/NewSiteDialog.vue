@@ -27,7 +27,7 @@
             </div>
             <!-- Example site name -->
             <p class="mt-1.5 text-ink-gray-5 text-p-sm"> Web address:
-              <span class="font-medium text-ink-gray-7">site.frappe.cloud</span>
+              <span class="font-medium text-ink-gray-7">{{ newSiteName || `mysite${selectedSuffix}` }}</span>
             </p>
           </div>
         </div>
@@ -189,7 +189,7 @@ function toggleApp(name) {
 
 async function loadWildcardDomains() {
   try {
-    const { domains } = await sitesApi.wildcardDomains()
+    const { domains } = await sitesApi.domains.wildcardList()
     wildcardDomains.value = domains || []
     selectedSuffix.value = wildcardDomains.value[0] || ''
   } catch {
@@ -232,7 +232,7 @@ async function submit() {
     })
     if (result.ok) {
       open.value = false
-      emit('created', name)
+      emit('created', result.task_id)
     } else {
       error.value = result.error || 'Could not create site.'
     }

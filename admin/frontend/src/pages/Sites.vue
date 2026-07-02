@@ -125,7 +125,7 @@
   </Teleport>
 
   <NewSiteDialog v-model="showCreate" :sites="sites"
-    @created="(name) => router.push({ name: 'SiteDetail', params: { name } })" />
+    @created="(taskId) => openTaskDetailPage(router, taskId)" />
 </template>
 
 <script setup>
