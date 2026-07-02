@@ -49,7 +49,7 @@ admin/backend/static/dist/
 *.timestamp-*
 .env
 .env.local
-
+.vite/
 
 # Agent Skills
 .agents

@@ -11,6 +11,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    ActionMenu: typeof import('./src/components/ActionMenu.vue')['default']
     Actions: typeof import('./src/components/sites/settings/Actions.vue')['default']
     AddAppFromGithubDialog: typeof import('./src/components/AddAppFromGithubDialog.vue')['default']
     AddDomainDialog: typeof import('./src/components/sites/settings/domains/AddDomainDialog.vue')['default']
