@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """
-Find targets in registry/apps_v2.json whose code reference changed between
-two revisions, so only those need a fresh scan — not the whole registry.
+Find targets in registry/apps_v2.json that changed between two revisions,
+so only those need a fresh scan — not the whole registry.
 
-A target is changed if the app is new, its repo changed, the target is new,
-or the target's ref (branch/tag/commit) changed. Pure metadata edits do not
-trigger a re-scan.
+Only the targets that actually changed are emitted, so callers re-scan
+the minimum. Targets are diffed as a list with difflib rather than matched
+up by "version", since a target's version is not guaranteed unique within
+an app (e.g. multiple branches can share the same version); the added and
+replaced targets on the new side are the changed ones.
+
+If the app is new or its repo changed, the code location itself moved, so
+every target is emitted even when the entries are textually identical.
 
 Output: JSON list of {name, repo, target_type, target} items.
 
@@ -15,6 +20,7 @@ Run:
 
 from __future__ import annotations
 
+import difflib
 import json
 import sys
 from pathlib import Path
@@ -25,22 +31,33 @@ def load_apps(path: Path) -> dict[str, dict]:
     return {app["name"]: app for app in apps}
 
 
-def targets_by_version(app: dict) -> dict[str, dict]:
-    return {t["version"]: t for t in app.get("targets", [])}
+def target_lines(targets: list[dict]) -> list[str]:
+    return [json.dumps(t, sort_keys=True) for t in targets]
+
+
+def changed_targets(old_app: dict, app: dict) -> list[dict]:
+    new_targets = app.get("targets", [])
+    matcher = difflib.SequenceMatcher(
+        a=target_lines(old_app.get("targets", [])),
+        b=target_lines(new_targets),
+        autojunk=False,
+    )
+    changed = []
+    for tag, _, _, start, end in matcher.get_opcodes():
+        if tag in ("replace", "insert"):
+            changed.extend(new_targets[start:end])
+    return changed
 
 
 def find_changed_targets(old_apps: dict[str, dict], new_apps: dict[str, dict]) -> list[dict]:
     changed = []
     for name, app in new_apps.items():
         old_app = old_apps.get(name)
-        repo_changed = old_app is None or old_app.get("repo") != app.get("repo")
-        old_targets = targets_by_version(old_app) if old_app else {}
-
-        for version, target in targets_by_version(app).items():
-            old_target = old_targets.get(version)
-            target_changed = old_target is None or old_target.get("target") != target.get("target")
-            if repo_changed or target_changed:
-                changed.append({"name": name, "repo": app["repo"], **target})
+        if old_app is None or old_app.get("repo") != app.get("repo"):
+            targets = app.get("targets", [])
+        else:
+            targets = changed_targets(old_app, app)
+        changed.extend({"name": name, "repo": app["repo"], **t} for t in targets)
 
     return changed
 

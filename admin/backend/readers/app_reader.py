@@ -41,42 +41,6 @@ class AppReader:
     def read_one(self, app_name: str) -> AppInfo:
         return self._read_app(app_name)
 
-    def check_remote_updates(self, app_names: list[str]) -> dict[str, bool]:
-        """Run git ls-remote concurrently for each app. Returns {app_name: has_update}.
-
-        ls-remote only exchanges ref pointers with the remote — no object download —
-        so it completes in ~1-2s per app regardless of repo size.
-        """
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
-        def _check(name: str) -> tuple[str, bool]:
-            app_path = self._bench_root / "apps" / name
-            git_dir = app_path / ".git"
-            if not git_dir.exists():
-                return name, False
-            branch = self._git_branch(git_dir)
-            if not branch:
-                return name, False
-            result = subprocess.run(
-                ["git", "ls-remote", "origin", f"refs/heads/{branch}"],
-                cwd=str(app_path), capture_output=True, text=True, timeout=15,
-            )
-            for line in result.stdout.splitlines():
-                parts = line.split("\t", 1)
-                if len(parts) == 2:
-                    remote_sha = parts[0].strip()
-                    local_sha = self._git_full_sha(git_dir)
-                    return name, bool(remote_sha and local_sha and remote_sha != local_sha)
-            return name, False
-
-        updates: dict[str, bool] = {}
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            futures = {pool.submit(_check, name): name for name in app_names}
-            for fut in as_completed(futures):
-                name, has_update = fut.result()
-                updates[name] = has_update
-        return updates
-
     def list_commits(self, app_name: str, depth: int = 10) -> list[dict]:
         """Shallow-fetch the remote branch tip and return new commits not in HEAD.
 
@@ -232,19 +196,6 @@ class AppReader:
         return self._read_packed_ref(git_dir, f"refs/remotes/origin/{branch}")
 
     def _pip_version(self, name: str) -> str:
-        lib_dir = self._bench_root / "env" / "lib"
-        if not lib_dir.is_dir():
-            return ""
-        norm = name.replace("-", "_")
-        for python_dir in lib_dir.iterdir():
-            pkgs = python_dir / "site-packages"
-            if not pkgs.is_dir():
-                continue
-            for dist_info in pkgs.glob(f"{norm}-*.dist-info"):
-                metadata = dist_info / "METADATA"
-                if not metadata.exists():
-                    continue
-                for line in metadata.read_text(errors="replace").splitlines():
-                    if line.startswith("Version:"):
-                        return line.split(":", 1)[1].strip()
-        return ""
+        from pilot.utils import installed_app_version
+
+        return installed_app_version(self._bench_root / "env", name)

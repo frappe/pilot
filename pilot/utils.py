@@ -146,6 +146,26 @@ def write_toml(path: Path, data: dict) -> None:
     path.write_text(out.getvalue())
 
 
+def installed_app_version(env_path: Path, name: str) -> str:
+    """Version of an installed app read from its dist-info METADATA — no subprocess."""
+    lib_dir = env_path / "lib"
+    if not lib_dir.is_dir():
+        return ""
+    normalized = name.replace("-", "_")
+    for python_dir in lib_dir.iterdir():
+        site_packages = python_dir / "site-packages"
+        if not site_packages.is_dir():
+            continue
+        for dist_info in site_packages.glob(f"{normalized}-*.dist-info"):
+            metadata = dist_info / "METADATA"
+            if not metadata.exists():
+                continue
+            for line in metadata.read_text(errors="replace").splitlines():
+                if line.startswith("Version:"):
+                    return line.split(":", 1)[1].strip()
+    return ""
+
+
 def git_has_local_changes(path: Path) -> bool:
     """True if the repo at *path* has uncommitted edits or commits not yet on upstream."""
     import subprocess

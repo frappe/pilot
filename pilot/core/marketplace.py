@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Literal
 
 from packaging.specifiers import SpecifierSet
+from functools import lru_cache
 from packaging.version import Version
 
 from pilot.exceptions import BenchError
@@ -123,8 +124,8 @@ class Marketplace:
 
     def __post_init__(self):
         self.frappe_version = self.get_current_frappe_version()
-        raw = json.loads(_REGISTRY_V2_PATH.read_text())
-        self.registry = self._parse_registry(raw)
+        # Snapshot at construction so callers reading _REGISTRY_V2_PATH (incl. tests) see it.
+        self._registry = self._parse_registry(json.loads(_REGISTRY_V2_PATH.read_text()))
 
     def get_current_frappe_version(self) -> str:
         """We need the current framework version to correctly suggest apps for installation"""
@@ -132,7 +133,14 @@ class Marketplace:
         result = run_command(cmd)
         return result.stdout.strip().decode()
 
-    def _parse_registry(self, raw: list[dict]) -> list[dict]:
+    @staticmethod
+    @lru_cache(maxsize=1)
+    def registry() -> list[dict]:
+        """Parsed registry for callers that don't have a Marketplace/bench (e.g. tasks). Cached once."""
+        return Marketplace._parse_registry(json.loads(_REGISTRY_V2_PATH.read_text()))
+
+    @staticmethod
+    def _parse_registry(raw: list[dict]) -> list[dict]:
         for app in raw:
             for target in app.get("targets", []):
                 # Loads in the >=17.0.0-dev,<18.0.0 version specifier for each target
@@ -164,7 +172,7 @@ class Marketplace:
         dependency_lookup: dict[str, list[Resolver]] = {}
         current_frappe = Version(self.frappe_version)
 
-        for app in self.registry:
+        for app in self._registry:
             targets = app.get("targets", [])
             compatible_targets = [t for t in targets if current_frappe in t["_spec"]]
             best_match = compatible_targets[0] if compatible_targets else None
