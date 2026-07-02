@@ -212,10 +212,8 @@ def reinstall_site(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     if not (bench_root / "sites" / name / "site_config.json").exists():
         return jsonify({"ok": False, "error": "Site not found."}), 404
-    data = request.get_json(silent=True) or {}
-    admin_password = (data.get("admin_password") or "admin").strip() or "admin"
     try:
-        task_id = TaskRunner(bench_root).run("reinstall-site", {"site": name, "admin_password": admin_password})
+        task_id = TaskRunner(bench_root).run("reinstall-site", {"site": name, "admin_password": "admin"})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
     return jsonify({"ok": True, "task_id": task_id})
@@ -243,6 +241,28 @@ def backup_site(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
         task_id = TaskRunner(bench_root).run("backup-site", {"site": name, "with_files": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+    return jsonify({"ok": True, "task_id": task_id})
+
+
+@sites_bp.route("/<name>/clear-cache", methods=["POST"])
+@require_scope(site_name)
+def clear_cache(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    try:
+        task_id = TaskRunner(bench_root).run("clear-cache", {"site": name})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+    return jsonify({"ok": True, "task_id": task_id})
+
+
+@sites_bp.route("/<name>/migrate", methods=["POST"])
+@require_scope(site_name)
+def migrate_site(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    try:
+        task_id = TaskRunner(bench_root).run("migrate", {"site": name})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
     return jsonify({"ok": True, "task_id": task_id})
@@ -279,7 +299,7 @@ def get_and_install_app(name: str):
             return jsonify({"ok": False, "error": "Repo URL is required."})
         from pilot.core.git_providers import GitProviderError, resolve_app_name_from_repo
         try:
-            app = resolve_app_name_from_repo(bench_root, repo, target)
+            app = resolve_app_name_from_repo(bench_root, repo, target)["name"]
         except GitProviderError as e:
             return jsonify({"ok": False, "error": f"Could not determine app name: {e}"})
         except Exception as e:

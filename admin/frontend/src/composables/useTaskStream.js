@@ -1,16 +1,14 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { processLine } from '../utils/ansi.js'
 
-// guardHiddenTab: skip scrolling while the browser tab is hidden and re-scroll
-// on visibility change. Needed when the TerminalOutput sits behind a v-if (Setup)
-// — calling scrollTop against an unpainted layout causes a blank-area jump.
-// Leave it off when the terminal is always mounted (TaskDetail).
+const MAX_RETRIES = 5
+
 export function useTaskStream({ guardHiddenTab = false } = {}) {
   const terminal = ref(null)
-  const lines = ref([])     // processed (ANSI → HTML-safe spans)
-  const rawLines = ref([])  // raw text (for callers that need to parse markers)
+  const lines = ref([])
+  const rawLines = ref([])
   const streaming = ref(false)
-  let es = null
+  let source = null
   let retryTimer = null
 
   function scrollToBottom() {
@@ -18,50 +16,66 @@ export function useTaskStream({ guardHiddenTab = false } = {}) {
     terminal.value?.scrollToBottom()
   }
 
-  // start() does NOT clear lines — caller clears if needed (Setup resets on each
-  // run; TaskDetail appends to lines already loaded by its REST fetch).
-  const MAX_RETRIES = 5
+  function push(raw, { overwrite } = {}) {
+    if (overwrite) {
+      rawLines.value[rawLines.value.length - 1] = raw
+      lines.value[lines.value.length - 1] = processLine(raw)
+    } else {
+      rawLines.value.push(raw)
+      lines.value.push(processLine(raw))
+    }
+    scrollToBottom()
+  }
+
+  function close() {
+    if (source) {
+      source.close()
+      source = null
+    }
+  }
 
   function start(url, { onDone, onLine, onError } = {}) {
-    if (es) { es.close(); es = null }
+    close()
     streaming.value = true
     let volatile = false
     let retries = 0
 
     function open() {
-      es = new EventSource(url)
-      es.onmessage = (e) => {
+      source = new EventSource(url)
+
+      source.onmessage = (event) => {
         retries = 0
-        const raw = e.data
-        if (volatile) { rawLines.value.pop(); lines.value.pop(); volatile = false }
-        rawLines.value.push(raw)
-        lines.value.push(processLine(raw))
-        onLine?.(raw)
-        scrollToBottom()
-      }
-      es.addEventListener('overwrite', (e) => {
-        retries = 0
-        const raw = e.data
         if (volatile) {
-          rawLines.value[rawLines.value.length - 1] = raw
-          lines.value[lines.value.length - 1] = processLine(raw)
-        } else {
-          rawLines.value.push(raw)
-          lines.value.push(processLine(raw))
-          volatile = true
+          rawLines.value.pop()
+          lines.value.pop()
+          volatile = false
         }
-        scrollToBottom()
+        push(event.data)
+        onLine?.(event.data)
+      }
+
+      source.addEventListener('overwrite', (event) => {
+        retries = 0
+        push(event.data, { overwrite: volatile })
+        volatile = true
       })
-      es.addEventListener('done', (e) => {
+
+      source.addEventListener('done', (event) => {
         streaming.value = false
-        es.close(); es = null
-        onDone?.(parseInt(e.data) === 0)
+        close()
+        onDone?.(parseInt(event.data) === 0)
       })
-      es.onerror = () => {
-        if (es) { es.close(); es = null }
+
+      source.onerror = () => {
+        close()
         if (retries < MAX_RETRIES) {
-          retries++
-          retryTimer = setTimeout(open, 1000 * retries)
+          retries += 1
+          retryTimer = setTimeout(() => {
+            // avoid duplicating lines the backend will replay
+            rawLines.value = []
+            lines.value = []
+            open()
+          }, 1000 * retries)
         } else {
           streaming.value = false
           onError?.()
@@ -75,7 +89,7 @@ export function useTaskStream({ guardHiddenTab = false } = {}) {
   function stop() {
     clearTimeout(retryTimer)
     retryTimer = null
-    if (es) { es.close(); es = null }
+    close()
     streaming.value = false
   }
 

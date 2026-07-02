@@ -46,6 +46,7 @@ def _stock_default_sites() -> list[Path]:
 # Custom pages for nginx-generated errors (downed upstream, missing static
 # file). App responses pass through unchanged — proxy_intercept_errors is off.
 _ERROR_PAGES = {
+    403: ("Access blocked", "Your network doesn’t have access to this server."),
     404: ("Page not found", "The page you’re looking for doesn’t exist."),
     502: ("Temporarily unavailable", "The server isn’t responding right now. Please try again in a moment."),
     503: ("Service unavailable", "The service is temporarily unavailable. Please try again shortly."),
@@ -135,6 +136,20 @@ class NginxManager:
             + "".join(f"    allow              {ip};\n" for ip in proxies)
             + "    deny               all;\n\n"
         )
+
+    def _render_firewall(self) -> str:
+        """Per-vhost IP allow/block list (ngx_http_access_module, first-match-wins).
+
+        Active rules are emitted in order, then a terminal ``deny all;`` only when
+        the default policy is deny (allowlist mode); default allow needs no
+        terminal line. Empty when the firewall is disabled — nginx serves all."""
+        firewall = self.bench.config.firewall
+        if not firewall.enabled:
+            return ""
+        lines = [f"    {rule.action} {rule.ip};\n" for rule in firewall.rules]
+        if firewall.default == "deny":
+            lines.append("    deny all;\n")
+        return "".join(lines) + "\n" if lines else ""
 
     def _xff_header(self) -> str:
         """Behind trusted proxies, pass their X-Forwarded-For through unchanged
@@ -275,6 +290,7 @@ class NginxManager:
             directives
             + "    location ^~ /_errors/ {\n"
             + "        internal;\n"
+            + "        allow all;\n"  # a firewall-denied client must still get its 403 page
             + f"        alias {self._error_pages_dir()}/;\n"
             + "    }\n\n"
         )
@@ -306,6 +322,7 @@ class NginxManager:
             f"    listen [::]:{http_port};\n"
             f"    server_name {server_name};\n\n"
             + self._render_proxy_trust()
+            + self._render_firewall()
             + f"    root {bench_root}/sites;\n"
             f"    client_max_body_size {max_body};\n\n"
             + self._render_acme_location()
@@ -327,6 +344,7 @@ class NginxManager:
             f"    listen [::]:{http_port};\n"
             f"    server_name {server_name};\n\n"
             + self._render_proxy_trust()
+            + self._render_firewall()
             + self._render_acme_location()
             + f"    location / {{\n"
             f"        return 301 https://$host$request_uri;\n"
@@ -365,6 +383,7 @@ class NginxManager:
             f"    listen [::]:{https_port} ssl http2;\n"
             f"    server_name {server_name};\n\n"
             + self._render_proxy_trust()
+            + self._render_firewall()
             + ssl_directives
             + f"    root {bench_root}/sites;\n"
             f"    client_max_body_size {max_body};\n\n"
@@ -444,6 +463,7 @@ class NginxManager:
         domain = admin.domain
 
         acme_block = self._render_acme_location()
+        firewall_block = self._render_firewall()
         proxy_block = self._render_error_pages() + self._render_admin_proxy_location()
 
         # admin.tls = False: a central proxy terminates TLS, so nginx serves the
@@ -456,6 +476,7 @@ class NginxManager:
                 f"    listen [::]:{http_port};\n"
                 f"    server_name {domain};\n\n"
                 + self._render_proxy_trust()
+                + firewall_block
                 + acme_block
                 + proxy_block
                 + f"}}\n"
@@ -468,6 +489,7 @@ class NginxManager:
                 f"    listen [::]:{http_port};\n"
                 f"    server_name {domain};\n\n"
                 + self._render_proxy_trust()
+                + firewall_block
                 + acme_block
                 + proxy_block
                 + f"}}\n"
@@ -491,6 +513,7 @@ class NginxManager:
             f"    listen [::]:{http_port};\n"
             f"    server_name {domain};\n\n"
             + self._render_proxy_trust()
+            + firewall_block
             + acme_block
             + f"    location / {{\n"
             f"        return 301 https://$host$request_uri;\n"
@@ -501,6 +524,7 @@ class NginxManager:
             f"    listen [::]:{https_port} ssl http2;\n"
             f"    server_name {domain};\n\n"
             + self._render_proxy_trust()
+            + firewall_block
             + ssl_directives
             + proxy_block
             + f"}}\n"

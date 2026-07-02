@@ -547,6 +547,24 @@ def test_site_reinstall_mariadb_root_creds(tmp_path: Path, monkeypatch: pytest.M
     assert cmd[cmd.index("--db-root-username") + 1] == "root"
 
 
+def test_site_migrate_skip_failing_adds_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    bench = make_bench(tmp_path)
+    captured = _capture_site_cmd(monkeypatch)
+
+    Site(SiteConfig(name="m.localhost", apps=[]), bench).migrate(skip_failing=True)
+
+    assert "--skip-failing" in captured["cmd"]
+
+
+def test_site_migrate_without_skip_failing_omits_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    bench = make_bench(tmp_path)
+    captured = _capture_site_cmd(monkeypatch)
+
+    Site(SiteConfig(name="m.localhost", apps=[]), bench).migrate()
+
+    assert "--skip-failing" not in captured["cmd"]
+
+
 def test_site_create_postgres_empty_password_uses_placeholder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     bench = _postgres_bench(tmp_path, root_password="")  # trust/peer auth — no password
     captured = _capture_site_cmd(monkeypatch)

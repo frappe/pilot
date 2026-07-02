@@ -44,8 +44,12 @@ htmlcov/
 
 # Admin
 admin/frontend/node_modules/
+admin/frontend2/node_modules/
 admin/backend/static/dist/
 *.timestamp-*
+.env
+.env.local
+.vite/
 
 # Agent Skills
 .agents

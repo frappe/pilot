@@ -25,7 +25,10 @@ export function useTaskSteps(rawLines, streaming, task) {
     const failedKeys = new Set()
     rawLines.value.forEach((line, idx) => {
       const m = line.match(STEP_RE)
-      if (m) { markers.push({ key: m[1], ts: parseFloat(m[2]) * 1000, label: m[3].trim(), idx }); return }
+      if (m) {
+        markers.push({ key: m[1], ts: parseFloat(m[2]) * 1000, label: m[3].trim(), idx })
+        return
+      }
       const f = line.match(STEP_FAILED_RE)
       if (f) failedKeys.add(f[1])
     })
@@ -60,7 +63,7 @@ export function useTaskSteps(rawLines, streaming, task) {
 
   const progressPct = computed(() => {
     if (!hasSteps.value) return null
-    const done = stepSections.value.filter(s => s.status === 'done').length
+    const done = stepSections.value.filter((s) => s.status === 'done').length
     return Math.round((done / stepSections.value.length) * 100)
   })
 

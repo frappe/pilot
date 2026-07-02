@@ -65,7 +65,7 @@ def test_to_dict_contains_all_expected_keys():
     r = make_resolver()
     keys = {"name", "repo", "target_type", "target", "version", "frappe_version",
              "required_version", "dependencies", "is_installable",
-             "title", "description", "logo_url", "category", "stars"}
+             "title", "description", "logo_url", "category", "stars", "documentation", "website"}
     assert keys == set(r.to_dict().keys())
 
 

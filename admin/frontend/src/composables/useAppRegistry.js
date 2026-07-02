@@ -1,25 +1,80 @@
 import { ref, computed } from 'vue'
+import { appsApi } from '@/api/apps'
 
 const COLORS = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed']
+export const FRAPPE_LOGO_URL = 'https://raw.githubusercontent.com/frappe/frappe/refs/heads/develop/.github/framework-logo-new.svg'
+
+const registry = ref([])
+const loaded = ref(false)
+
+export function isFrappeFramework(name) {
+  const lower = name?.toLowerCase()
+  return lower === 'frappe' || lower === 'frappe framework'
+}
 
 export function hashColor(name) {
-  let h = 0
-  for (const c of name) h = (h * 31 + c.charCodeAt(0)) | 0
-  return COLORS[Math.abs(h) % COLORS.length]
+  let hash = 0
+  for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) | 0
+  return COLORS[Math.abs(hash) % COLORS.length]
 }
 
 export function useAppRegistry() {
-  const registry = ref([])
-  const logoMap = computed(() => Object.fromEntries(registry.value.map(a => [a.name, a.logo_url])))
-  const titleMap = computed(() => Object.fromEntries(registry.value.map(a => [a.name, a.title])))
-
-  async function loadRegistry() {
+  async function load() {
+    if (loaded.value) return
     try {
-      const res = await fetch('/api/apps/marketplace')
-      if (!res.ok) throw new Error(`${res.status}`)
-      registry.value = await res.json()
-    } catch { registry.value = [] }
+      registry.value = await appsApi.marketplace()
+      loaded.value = true
+    } catch {
+      registry.value = []
+    }
   }
 
-  return { registry, logoMap, titleMap, loadRegistry }
+  const logoMap = computed(() => ({
+    frappe: FRAPPE_LOGO_URL,
+    ...Object.fromEntries(
+      registry.value
+        .filter((app) => app.logo_url)
+        .map((app) => [app.name, app.logo_url]),
+    ),
+  }))
+
+  const titleMap = computed(() =>
+    Object.fromEntries(
+      registry.value.map((app) => [app.name, app.title || app.name]),
+    ),
+  )
+
+  const descriptionMap = computed(() =>
+    Object.fromEntries(
+      registry.value.map((app) => [app.name, app.description || '']),
+    ),
+  )
+
+  const documentationMap = computed(() =>
+    Object.fromEntries(
+      registry.value
+        .filter((app) => app.documentation)
+        .map((app) => [app.name, app.documentation]),
+    ),
+  )
+
+  const websiteMap = computed(() =>
+    Object.fromEntries(
+      registry.value
+        .filter((app) => app.website)
+        .map((app) => [app.name, app.website]),
+    ),
+  )
+
+  return {
+    registry,
+    loaded,
+    load,
+    logoMap,
+    titleMap,
+    descriptionMap,
+    documentationMap,
+    websiteMap,
+    hashColor,
+  }
 }

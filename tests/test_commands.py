@@ -801,6 +801,23 @@ def test_update_command_migrate_sites_raises_on_failure(tmp_path: Path) -> None:
             cmd._migrate_sites()
 
 
+def test_update_command_migrate_sites_passes_skip_failing_patches(tmp_path: Path) -> None:
+    from pilot.commands.update import UpdateCommand
+
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    site_dir = bench.sites_path / "site1.localhost"
+    site_dir.mkdir()
+    (site_dir / "site_config.json").write_text("{}")
+
+    cmd = UpdateCommand(bench, skip_confirm=True, skip_failing_patches=True)
+
+    with patch("pilot.core.site.Site.migrate") as mock_migrate:
+        cmd._migrate_sites()
+
+    mock_migrate.assert_called_once_with(skip_failing=True)
+
+
 # ── DropSiteCommand ───────────────────────────────────────────────────────────
 
 

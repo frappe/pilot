@@ -6,6 +6,10 @@ const ANSI_FG = {
   94: '#89b4fa', 95: '#cba6f7', 96: '#89dceb', 97: '#ffffff',
 }
 
+export function escapeHtml(text) {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
 export function ansiToHtml(text) {
   let html = ''
   let openSpans = 0
@@ -22,7 +26,7 @@ export function ansiToHtml(text) {
         }
       }
     } else if (!part.startsWith('\x1b[')) {
-      html += part.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      html += escapeHtml(part)
     }
   }
   return html + '</span>'.repeat(openSpans)

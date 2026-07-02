@@ -1,16 +1,35 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { navigationRoutes } from './navigation'
+import { useSession } from './composables/useSession'
+import { safeRedirect } from './utils/redirect'
 
 const routes = [
-  { path: '/', component: () => import('./pages/Sites.vue'), meta: { title: 'Sites' } },
-  { path: '/sites/:name', component: () => import('./pages/SiteDetail.vue'), meta: { title: 'Sites' } },
-  { path: '/marketplace', component: () => import('./pages/Marketplace.vue'), meta: { title: 'Marketplace' } },
-  { path: '/monitor', component: () => import('./pages/Monitor.vue'), meta: { title: 'Monitor' } },
-  { path: '/logs', component: () => import('./pages/Logs.vue'), meta: { title: 'Logs' } },
-  { path: '/tasks', component: () => import('./pages/Tasks.vue'), meta: { title: 'Tasks' } },
-  { path: '/tasks/:id', component: () => import('./pages/TaskDetail.vue'), meta: { title: 'Tasks' } },
-  { path: '/database', component: () => import('./pages/Database.vue'), meta: { title: 'Database' } },
-  { path: '/database/binlogs/:name', component: () => import('./pages/BinlogDetail.vue'), meta: { title: 'Binlogs' } },
-  { path: '/snapshots', component: () => import('./pages/Snapshots.vue'), meta: { title: 'Snapshots' } },
+  {
+    path: '/setup',
+    name: 'Setup',
+    component: () => import('./pages/Setup.vue'),
+    meta: { title: 'Setup', fullScreen: true },
+  },
+  {
+    path: '/login',
+    name: 'Login',
+    component: () => import('./pages/Login.vue'),
+    meta: { title: 'Login', fullScreen: true },
+  },
+  { path: '/', redirect: '/sites' },
+  {
+    path: '/sites/:name/:tab?',
+    name: 'SiteDetail',
+    component: () => import('./pages/SiteDetail.vue'),
+    meta: { group: 'Sites' },
+  },
+  {
+    path: '/insights/tasks/:taskId',
+    name: 'TaskDetail',
+    component: () => import('./pages/TaskDetail.vue'),
+    meta: { group: 'Insights' },
+  },
+  ...navigationRoutes(),
 ]
 
 export const router = createRouter({
@@ -18,8 +37,19 @@ export const router = createRouter({
   routes,
 })
 
+router.beforeEach(async (to) => {
+  const { session, ensureSession } = useSession()
+  await ensureSession()
+  if (session.wizard) return to.name === 'Setup' ? true : { name: 'Setup' }
+  if (!session.authenticated && to.name !== 'Login')
+    return { name: 'Login', query: { redirect: to.fullPath } }
+  if (session.authenticated && to.name === 'Login')
+    return { path: safeRedirect(to.query.redirect) }
+  return true
+})
+
 router.afterEach((to) => {
-  document.title = to.meta?.title
-    ? `${to.meta.title} - Pilot`
-    : 'Pilot'
+  if (to.name !== 'SiteDetail') {
+    document.title = to.meta?.title ? `${to.meta.title} - Pilot` : 'Pilot'
+  }
 })

@@ -59,6 +59,17 @@ SYSTEMD_PID_PATTERN = re.compile(r"^MainPID=(?P<pid>\d+)", re.MULTILINE)
 # Gap between the two /proc samples used to turn cumulative CPU counters into a rate.
 CPU_SAMPLE_INTERVAL = 1.0
 
+# Order of the cumulative tick columns in the first line of /proc/stat.
+CPU_STAT_FIELDS = ("user", "nice", "system", "idle", "iowait", "irq", "softirq", "steal")
+
+# Loopback carries no real traffic; counting it would understate the share of
+# actual network I/O in the total.
+NET_IFACE_EXCLUDE = {"lo"}
+
+# Whole-disk devices only, so partitions (sda1, nvme0n1p1, ...) aren't double-counted.
+DISK_DEVICE_PATTERN = re.compile(r"^(sd[a-z]+|vd[a-z]+|xvd[a-z]+|nvme\d+n\d+)$")
+SECTOR_BYTES = 512
+
 
 class ConfigureMonitor:
     """Installs a single system-wide `systemd --user` unit that monitors all benches."""
@@ -202,9 +213,13 @@ class Monitor:
     def __init__(self, bench: "Bench"):
         self.bench = bench
         self._system_cpu: float = 0.0
+        self._cpu_breakdown: dict[str, float] = {}
         self._proc_cpu: dict[int, float] = {}
+        self._network: dict[str, float] = {}
+        self._disk_io: dict[str, float] = {}
         self._targets: dict[str, int] | None = None
-        self._cpu_before: tuple[int, int, dict[int, int]] | None = None
+        self._cpu_before: tuple[dict[str, int], dict[int, int]] | None = None
+        self._io_before: tuple[dict[str, int], dict[str, int]] | None = None
         self.setup()
 
     def monitored_targets(self) -> dict[str, int]:
@@ -218,16 +233,29 @@ class Monitor:
         """Take the 'before' /proc reading. `main()` samples every bench, sleeps
         once, then computes — so N benches share a single sleep, not one each.
         CPU fields are cumulative, so this baseline is what makes them a rate."""
-        idle, total = self._cpu_totals()
         pids = [pid for pid in self.monitored_targets().values() if Path(f"/proc/{pid}").exists()]
-        self._cpu_before = (idle, total, {pid: self._proc_ticks(pid) for pid in pids})
+        self._cpu_before = (self._cpu_fields(), {pid: self._proc_ticks(pid) for pid in pids})
 
     def compute_cpu(self) -> None:
-        idle_before, total_before, proc_before = self._cpu_before
-        idle_after, total_after = self._cpu_totals()
-        delta_total = total_after - total_before
-        idle_share = (idle_after - idle_before) / delta_total if delta_total > 0 else 1.0
-        self._system_cpu = round((1 - idle_share) * 100, 2)
+        fields_before, proc_before = self._cpu_before
+        fields_after = self._cpu_fields()
+        delta = {key: fields_after[key] - fields_before[key] for key in fields_after}
+        delta_total = sum(delta.values())
+
+        if delta_total > 0:
+            pct = lambda ticks: round(ticks / delta_total * 100, 2)  # noqa: E731
+            self._cpu_breakdown = {
+                "user": pct(delta["user"] + delta["nice"]),
+                "system": pct(delta["system"]),
+                "iowait": pct(delta["iowait"]),
+                "irq": pct(delta["irq"] + delta["softirq"]),
+                "other": pct(delta["steal"]),
+                "idle": pct(delta["idle"]),
+            }
+        else:
+            # No measurable tick delta — report fully idle rather than fully busy.
+            self._cpu_breakdown = {"user": 0.0, "system": 0.0, "iowait": 0.0, "irq": 0.0, "other": 0.0, "idle": 100.0}
+        self._system_cpu = round(100 - self._cpu_breakdown["idle"], 2)
         self._proc_cpu = {pid: self._proc_usage(before, pid, delta_total) for pid, before in proc_before.items()}
 
     def _proc_usage(self, ticks_before: int, pid: int, delta_total: int) -> float:
@@ -237,10 +265,49 @@ class Monitor:
             return 0.0
         return round(delta / delta_total * 100, 2) if delta_total > 0 else 0.0
 
-    def _cpu_totals(self) -> tuple[int, int]:
-        ticks = [int(x) for x in Path("/proc/stat").read_text().splitlines()[0].split()[1:]]
-        idle = ticks[3] + (ticks[4] if len(ticks) > 4 else 0)
-        return idle, sum(ticks)
+    def _cpu_fields(self) -> dict[str, int]:
+        """First line of /proc/stat: cumulative tick counts per CPU state."""
+        values = [int(x) for x in Path("/proc/stat").read_text().splitlines()[0].split()[1:]]
+        return dict(zip(CPU_STAT_FIELDS, values, strict=False))
+
+    def sample_io(self) -> None:
+        """Take the 'before' reading for network and disk throughput, sharing the
+        same before/sleep/after window as `sample_cpu()`/`compute_cpu()`."""
+        self._io_before = (self._net_fields(), self._disk_io_fields())
+
+    def compute_io(self) -> None:
+        net_before, disk_before = self._io_before
+        net_after, disk_after = self._net_fields(), self._disk_io_fields()
+        self._network = {
+            "rx_bytes_per_sec": round((net_after["rx_bytes"] - net_before["rx_bytes"]) / CPU_SAMPLE_INTERVAL, 2),
+            "tx_bytes_per_sec": round((net_after["tx_bytes"] - net_before["tx_bytes"]) / CPU_SAMPLE_INTERVAL, 2),
+        }
+        self._disk_io = {
+            "read_bytes_per_sec": round((disk_after["read_bytes"] - disk_before["read_bytes"]) / CPU_SAMPLE_INTERVAL, 2),
+            "write_bytes_per_sec": round((disk_after["write_bytes"] - disk_before["write_bytes"]) / CPU_SAMPLE_INTERVAL, 2),
+        }
+
+    def _net_fields(self) -> dict[str, int]:
+        """/proc/net/dev: cumulative rx/tx bytes, summed across real interfaces."""
+        rx = tx = 0
+        for line in Path("/proc/net/dev").read_text().splitlines()[2:]:
+            iface, rest = line.split(":", 1)
+            if iface.strip() in NET_IFACE_EXCLUDE:
+                continue
+            values = rest.split()
+            rx += int(values[0])
+            tx += int(values[8])
+        return {"rx_bytes": rx, "tx_bytes": tx}
+
+    def _disk_io_fields(self) -> dict[str, int]:
+        """/proc/diskstats: cumulative sectors read/written, summed across disks."""
+        read_sectors = write_sectors = 0
+        for line in Path("/proc/diskstats").read_text().splitlines():
+            fields = line.split()
+            if len(fields) >= 10 and DISK_DEVICE_PATTERN.match(fields[2]):
+                read_sectors += int(fields[5])
+                write_sectors += int(fields[9])
+        return {"read_bytes": read_sectors * SECTOR_BYTES, "write_bytes": write_sectors * SECTOR_BYTES}
 
     def _proc_ticks(self, pid: int) -> int:
         fields = Path(f"/proc/{pid}/stat").read_text().split()
@@ -353,6 +420,15 @@ class Monitor:
     def _system_cpu_percent(self) -> float:
         return self._system_cpu
 
+    def _system_cpu_breakdown(self) -> dict:
+        return self._cpu_breakdown
+
+    def _system_network(self) -> dict:
+        return self._network
+
+    def _system_disk_io(self) -> dict:
+        return self._disk_io
+
     def _memory_usage(self) -> dict:
         data = {}
         for line in Path("/proc/meminfo").read_text().splitlines():
@@ -360,12 +436,16 @@ class Monitor:
                 key, val = line.split(":", 1)
                 data[key.strip()] = int(val.strip().split()[0])
         total_mb = round(data.get("MemTotal", 0) / 1024, 2)
-        available_mb = round(data.get("MemAvailable", 0) / 1024, 2)
-        used_mb = round(total_mb - available_mb, 2)
+        free_mb = round(data.get("MemFree", 0) / 1024, 2)
+        cached_mb = round((data.get("Cached", 0) + data.get("Buffers", 0)) / 1024, 2)
+        used_mb = round(max(total_mb - free_mb - cached_mb, 0), 2)
+        swap_used_mb = round(max(data.get("SwapTotal", 0) - data.get("SwapFree", 0), 0) / 1024, 2)
         return {
             "total_mb": total_mb,
             "used_mb": used_mb,
-            "available_mb": available_mb,
+            "cached_mb": cached_mb,
+            "free_mb": free_mb,
+            "swap_used_mb": swap_used_mb,
             "percent": round(used_mb / total_mb * 100, 2) if total_mb else 0.0,
         }
 
@@ -445,8 +525,11 @@ class Monitor:
                 "time": datetime.now().isoformat(),
                 "load_avg": self._load_average(),
                 "cpu_percent": self._system_cpu_percent(),
+                "cpu_breakdown": self._system_cpu_breakdown(),
                 "memory": self._memory_usage(),
                 "storage": self._storage_usage(),
+                "network": self._system_network(),
+                "disk_io": self._system_disk_io(),
             },
         )
 
@@ -507,9 +590,11 @@ def main() -> None:
     # systemd's OnUnitInactiveSec timer serialises runs, so none can overlap.
     for monitor in monitors:
         monitor.sample_cpu()
+        monitor.sample_io()
     time.sleep(CPU_SAMPLE_INTERVAL)
     for monitor in monitors:
         monitor.compute_cpu()
+        monitor.compute_io()
         monitor.collect_application_metrics()
         monitor.collect_system_metrics()
 
