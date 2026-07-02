@@ -23,7 +23,9 @@ def dump_engine(path: str | Path) -> str:
         opener = gzip.open if path.endswith(".gz") else open
         with opener(path, "rb") as f:
             header = f.read(2048).decode(errors="ignore")
-    except OSError:
+    except Exception:
+        # Unreadable / corrupt / truncated upload: fall back so the caller returns a
+        # clean error, not a 500 (zlib.error and EOFError from gzip aren't OSErrors).
         return "mariadb"
     if any(marker in header for marker in _MARIADB_MARKERS):
         return "mariadb"

@@ -29,3 +29,13 @@ def test_dump_engine_detects_plain_sql(tmp_path: Path) -> None:
     path = tmp_path / "m.sql"
     path.write_text(_MARIADB)
     assert dump_engine(path) == "mariadb"
+
+
+def test_dump_engine_falls_back_on_decompression_error(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    # zlib.error / EOFError from a corrupt/truncated gzip aren't OSError; dump_engine
+    # must swallow them and fall back rather than 500 the upload handler.
+    path = _gz(tmp_path / "c.sql.gz", _MARIADB)
+    with patch("admin.backend.readers.backup_reader.gzip.open", side_effect=EOFError("truncated")):
+        assert dump_engine(path) == "mariadb"
