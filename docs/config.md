@@ -14,6 +14,9 @@ Apps and sites are **not** tracked in `bench.toml` after `bench init` — they a
 name = "my-bench"       # used in process names and log prefixes
 python = "3.14"         # Python version to use for the virtualenv
 db_type = "mariadb"     # database engine for this bench's sites: "mariadb" or "postgres"
+watch_apps_js = false   # set true to start the frappe JS asset watcher with bench start in dev mode
+reload_python = false   # set true to autoreload the dev web process on Python changes
+watch_admin_js = false  # set true to run the admin UI Vite dev server with bench start
 
 # ── Framework app (cloned during bench init) ──────────────────────────────────
 [[apps]]
@@ -114,6 +117,9 @@ quota = "60G"           # hard cap — lower it to fit more benches in the pool
 | `name` | string | yes | — | Human-readable bench name. Used in process labels and log file names. Must match `^[a-zA-Z][a-zA-Z0-9_-]*$`. |
 | `python` | string | yes | — | Python version string (e.g. `"3.14"`). Must be available on the system or installable via `deadsnakes/ppa`. |
 | `db_type` | string | no | `mariadb` | Database engine for **all** sites on this bench: `"mariadb"` or `"postgres"`. Chosen at `bench new` (`--database`), in the setup wizard, or the admin New Bench dialog. `bench init` installs and provisions only this engine. |
+| `watch_apps_js` | bool | no | `false` | In development mode, add a `watch` process to `bench start` that runs Frappe's JS asset watcher. |
+| `reload_python` | bool | no | `false` | In development mode, allow the web process to autoreload on Python changes by omitting `frappe serve --noreload`. |
+| `watch_admin_js` | bool | no | `false` | In development mode, run the admin UI Vite dev server with hot reload instead of serving rebuilt static admin assets. |
 
 ### `[[apps]]`
 
@@ -294,6 +300,9 @@ bench validates `bench.toml` before executing any command. Violations produce a 
 [bench]
 name = "dev"
 python = "3.14"
+watch_apps_js = false
+reload_python = false
+watch_admin_js = false
 
 [[apps]]
 name = "frappe"

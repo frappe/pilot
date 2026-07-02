@@ -78,7 +78,7 @@ class BuildAdminCommand(Command):
         frontend = self._find_frontend()
         self._check_node_version()
         print(f"Building admin frontend at {frontend}...")
-        if not (frontend / "node_modules").exists():
+        if self._needs_npm_install(frontend):
             print("Running npm install...")
             run_command(["npm", "install"], cwd=frontend, stream_output=True)
         print("Running npm build")
@@ -90,6 +90,17 @@ class BuildAdminCommand(Command):
         if (candidate / "package.json").exists():
             return candidate
         raise BenchError("admin/frontend not found. This command requires the bench-cli source directory with admin/frontend/.")
+
+    def _needs_npm_install(self, frontend: Path) -> bool:
+        install_state = frontend / "node_modules" / ".package-lock.json"
+        if not install_state.exists():
+            return True
+
+        installed_at = install_state.stat().st_mtime
+        for manifest in (frontend / "package.json", frontend / "package-lock.json"):
+            if manifest.exists() and manifest.stat().st_mtime > installed_at:
+                return True
+        return False
 
     def _check_node_version(self) -> None:
         import subprocess

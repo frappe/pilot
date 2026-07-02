@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 import os
 import subprocess
 from typing import TYPE_CHECKING
@@ -17,21 +16,11 @@ class RunCommand(Command):
     supports_all_benches = True
 
     @classmethod
-    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
-        parser.add_argument(
-            "--admin-dev",
-            action="store_true",
-            help="Develop the admin UI: run the Vite dev server with hot reload. "
-                 "By default the backend serves dist, rebuilding it from source when it changed.",
-        )
-
-    @classmethod
     def from_args(cls, args, bench):
-        return cls(bench, admin_dev=args.admin_dev)
+        return cls(bench)
 
-    def __init__(self, bench: "Bench", admin_dev: bool = False) -> None:
+    def __init__(self, bench: "Bench") -> None:
         self.bench = bench
-        self.admin_dev = admin_dev
 
     def run(self) -> None:
         from pilot.managers.process_manager import ProcessManager
@@ -50,10 +39,12 @@ class RunCommand(Command):
             if not initialized:
                 self._start_wizard()
                 return
-            # In --admin-dev the Vite watcher rebuilds dist itself.
-            if not self.admin_dev:
+            manager = ProcessManager(self.bench)
+            self._rebuild_config(manager)
+            # In admin dev mode the Vite watcher rebuilds dist itself.
+            if not manager.watch_admin_js:
                 self._ensure_admin_dist()
-            ProcessManager(self.bench, admin_dev=self.admin_dev).start()
+            manager.start()
             return
 
         # Production bench (systemd/supervisor/openrc): the admin always runs
@@ -83,12 +74,17 @@ class RunCommand(Command):
             print("Finish setup there; the bench starts serving once it's initialized.")
             return
 
+        self._rebuild_config(manager)
         if not manager.is_configured():
             from pilot.commands.restart import _incomplete_message
 
             print(_incomplete_message(self.bench))
             return
         manager.start()
+
+    def _rebuild_config(self, manager) -> None:
+        manager.write_config()
+        self.bench.write_common_site_config()
 
     def _ensure_admin_dist(self) -> None:
         # Serve the admin UI from dist. In a source checkout, (re)build from source
