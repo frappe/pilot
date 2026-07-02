@@ -1,14 +1,19 @@
 import { computed } from 'vue'
 
-const STEP_RE = /^##\[step:(\w+),([\d.]+)\]\s*(.*)/
-const STEP_FAILED_RE = /^##\[step-failed:(\w+),([\d.]+)\]/
+// [\w-]+, not \w+: step keys may contain hyphens (e.g. "clear-cache"), and
+// \w+ alone would silently fail to match, which reads as "no step" rather
+// than a parse error — the STEP_MARKER_RE filter would still hide the raw
+// line, so the fold would just vanish with no visible symptom.
+const STEP_RE = /^STEP\s([\w-]+),([\d.]+)\s*(.*)/
+const STEP_FAILED_RE = /^STEP-FAILED\s([\w-]+),([\d.]+)/
 
-export const STEP_MARKER_RE = /^##\[step(-failed)?:/
+export const STEP_MARKER_RE = /^STEP(-FAILED)?\s/
 
 /**
- * Parses ##[step:KEY,TIMESTAMP] and ##[step-failed:KEY,TIMESTAMP] markers out
- * of a raw line stream into structured sections with status, timing, and
- * line-range metadata.
+ * Parses "STEP KEY,TIMESTAMP label" and "STEP-FAILED KEY,TIMESTAMP" markers
+ * out of a raw line stream into structured sections with status, timing, and
+ * line-range metadata. The backend (TaskReader) already strips the on-disk
+ * syslog envelope before these lines reach the UI, so they're plain text here.
  *
  * @param {import('vue').Ref<string[]>} rawLines
  * @param {import('vue').Ref<boolean>}  streaming
@@ -20,7 +25,10 @@ export function useTaskSteps(rawLines, streaming, task) {
     const failedKeys = new Set()
     rawLines.value.forEach((line, idx) => {
       const m = line.match(STEP_RE)
-      if (m) { markers.push({ key: m[1], ts: parseFloat(m[2]) * 1000, label: m[3].trim(), idx }); return }
+      if (m) {
+        markers.push({ key: m[1], ts: parseFloat(m[2]) * 1000, label: m[3].trim(), idx })
+        return
+      }
       const f = line.match(STEP_FAILED_RE)
       if (f) failedKeys.add(f[1])
     })
@@ -55,7 +63,7 @@ export function useTaskSteps(rawLines, streaming, task) {
 
   const progressPct = computed(() => {
     if (!hasSteps.value) return null
-    const done = stepSections.value.filter(s => s.status === 'done').length
+    const done = stepSections.value.filter((s) => s.status === 'done').length
     return Math.round((done / stepSections.value.length) * 100)
   })
 

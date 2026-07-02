@@ -29,16 +29,19 @@ def test_generate_task_id_format() -> None:
 def test_build_argv_migrate(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     argv = runner._build_argv("migrate", {"site": "mysite.localhost"})
-    python = str(tmp_path / "env" / "bin" / "python")
-    assert argv == [python, "-m", "frappe.utils.bench_helper", "frappe", "--site", "mysite.localhost", "migrate"]
-    assert Path(argv[0]).is_absolute()
+    assert argv[0] == sys.executable
+    assert argv[1:3] == ["-m", "admin.backend.tasks.jobs.migrate_task"]
+    assert str(tmp_path) in argv
+    assert "mysite.localhost" in argv
 
 
 def test_build_argv_clear_cache(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     argv = runner._build_argv("clear-cache", {"site": "mysite.localhost"})
-    python = str(tmp_path / "env" / "bin" / "python")
-    assert argv == [python, "-m", "frappe.utils.bench_helper", "frappe", "--site", "mysite.localhost", "clear-cache"]
+    assert argv[0] == sys.executable
+    assert argv[1:3] == ["-m", "admin.backend.tasks.jobs.clear_cache_task"]
+    assert str(tmp_path) in argv
+    assert "mysite.localhost" in argv
 
 
 def test_build_argv_install_app(tmp_path: Path) -> None:
@@ -76,8 +79,11 @@ def test_build_argv_admin_password_uses_equals_form(tmp_path: Path) -> None:
 def test_build_argv_uninstall_app(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     argv = runner._build_argv("uninstall-app", {"site": "mysite.localhost", "app": "erpnext"})
-    python = str(tmp_path / "env" / "bin" / "python")
-    assert argv == [python, "-m", "frappe.utils.bench_helper", "frappe", "--site", "mysite.localhost", "uninstall-app", "erpnext", "--yes", "--no-backup"]
+    assert argv[0] == sys.executable
+    assert argv[1:3] == ["-m", "admin.backend.tasks.jobs.uninstall_app_task"]
+    assert str(tmp_path) in argv
+    assert "mysite.localhost" in argv
+    assert "erpnext" in argv
 
 
 def test_build_argv_new_site_carries_no_db_type(tmp_path: Path) -> None:
@@ -108,16 +114,19 @@ def test_build_argv_get_app_with_branch(tmp_path: Path) -> None:
 def test_build_argv_build_no_app(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     argv = runner._build_argv("build", {})
-    python = str(tmp_path / "env" / "bin" / "python")
-    assert argv == [python, "-m", "frappe.utils.bench_helper", "frappe", "build"]
-    assert Path(argv[0]).is_absolute()
+    assert argv[0] == sys.executable
+    assert argv[1:3] == ["-m", "admin.backend.tasks.jobs.build_task"]
+    assert str(tmp_path) in argv
+    assert "--app" not in argv
 
 
 def test_build_argv_build_with_app(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     argv = runner._build_argv("build", {"app": "erpnext"})
-    python = str(tmp_path / "env" / "bin" / "python")
-    assert argv == [python, "-m", "frappe.utils.bench_helper", "frappe", "build", "--app", "erpnext"]
+    assert argv[0] == sys.executable
+    assert argv[1:3] == ["-m", "admin.backend.tasks.jobs.build_task"]
+    assert "--app" in argv
+    assert "erpnext" in argv
 
 
 def test_build_argv_update(tmp_path: Path) -> None:
@@ -126,6 +135,18 @@ def test_build_argv_update(tmp_path: Path) -> None:
     assert argv[0] == sys.executable
     assert argv[1:3] == ["-m", "admin.backend.tasks.jobs.update_task"]
     assert str(tmp_path) in argv
+
+
+def test_build_argv_update_skip_failing_patches(tmp_path: Path) -> None:
+    runner = TaskRunner(tmp_path)
+    argv = runner._build_argv("update", {"skip_failing_patches": True})
+    assert "--skip-failing-patches" in argv
+
+
+def test_build_argv_update_without_skip_failing_patches(tmp_path: Path) -> None:
+    runner = TaskRunner(tmp_path)
+    argv = runner._build_argv("update", {"skip_failing_patches": False})
+    assert "--skip-failing-patches" not in argv
 
 
 def test_build_argv_switch_branch(tmp_path: Path) -> None:
@@ -141,8 +162,11 @@ def test_build_argv_switch_branch(tmp_path: Path) -> None:
 def test_build_argv_backup_site(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     argv = runner._build_argv("backup-site", {"site": "mysite.localhost"})
-    python = str(tmp_path / "env" / "bin" / "python")
-    assert argv == [python, "-m", "frappe.utils.bench_helper", "frappe", "--site", "mysite.localhost", "backup"]
+    assert argv[0] == sys.executable
+    assert argv[1:3] == ["-m", "admin.backend.tasks.jobs.backup_site_task"]
+    assert str(tmp_path) in argv
+    assert "mysite.localhost" in argv
+    assert "--with-files" not in argv
 
 
 def test_build_argv_unknown_command_raises(tmp_path: Path) -> None:

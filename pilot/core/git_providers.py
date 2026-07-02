@@ -60,11 +60,12 @@ class GitCredentialStore:
         except (FileNotFoundError, ValueError):
             return None
 
-    def save(self, provider: str, token: str, *, expires_at: str | None = None) -> dict:
+    def save(self, provider: str, token: str, *, username: str = "", expires_at: str | None = None) -> dict:
         existing = self.load() or {}
         record = {
             "provider": provider,
             "token": token,
+            "username": username or existing.get("username", ""),
             "token_expires_at": expires_at or existing.get("token_expires_at"),
             "is_token_valid": True,
         }
@@ -132,6 +133,10 @@ class GitProvider(abc.ABC):
         does not support this operation.
         """
         raise GitProviderError(f"Fetching repository files is not supported for {self.name}.")
+
+    def get_default_branch(self, full_name: str) -> str:
+        """Return the repository's default branch name, or "" if unknown."""
+        return ""
 
     # -- shared helpers --------------------------------------------------------
 
@@ -202,8 +207,13 @@ class GitHubProvider(GitProvider):
         data, _ = self._get_json(url, self._headers())
         return [b["name"] for b in data]
 
+    def get_default_branch(self, full_name: str) -> str:
+        url = f"{self.api_base}/repos/{full_name}"
+        data, _ = self._get_json(url, self._headers())
+        return data.get("default_branch", "")
+
     def fetch_raw_file(self, repo_url: str, path: str, ref: str = "HEAD") -> str:
-        owner, repo = _parse_github_owner_repo(repo_url)
+        owner, repo = parse_github_owner_repo(repo_url)
         url = f"https://raw.githubusercontent.com/{owner}/{repo}/{ref}/{path}"
         headers = {"User-Agent": "bench"}
         if self.token:
@@ -293,7 +303,7 @@ def inject_https_token(repo_url: str, username: str, token: str) -> str:
     return f"https://{username}:{quoted}@{rest}"
 
 
-def _parse_github_owner_repo(repo_url: str) -> tuple[str, str]:
+def parse_github_owner_repo(repo_url: str) -> tuple[str, str]:
     """Extract (owner, repo) from a GitHub HTTPS URL.
 
     Accepts ``https://github.com/owner/repo`` and ``…/repo.git``.
@@ -307,8 +317,8 @@ def _parse_github_owner_repo(repo_url: str) -> tuple[str, str]:
     return parts[-2], parts[-1]
 
 
-def resolve_app_name_from_repo(bench_root: Path, repo_url: str, branch: str = "") -> str:
-    """Fetch *pyproject.toml* from *repo_url* and return ``project.name``.
+def resolve_app_name_from_repo(bench_root: Path, repo_url: str, branch: str = "") -> dict:
+    """Fetch *pyproject.toml* from *repo_url* and return its ``project`` name/description.
 
     Uses the stored credential when available so private repos work.
     Public repos are fetched anonymously when no token is on file.
@@ -333,12 +343,23 @@ def resolve_app_name_from_repo(bench_root: Path, repo_url: str, branch: str = ""
     except Exception as exc:
         raise GitProviderError(f"Could not parse pyproject.toml: {exc}") from exc
 
-    name = (data.get("project") or {}).get("name", "").strip()
+    project = data.get("project") or {}
+    name = project.get("name", "").strip()
     if not name:
         raise GitProviderError(
             "pyproject.toml does not contain a [project] name field."
         )
-    return name
+    description = (project.get("description") or "").strip()
+
+    # Every Frappe app ships a hooks.py at <module>/hooks.py — bench itself
+    # uses this file to recognize an app. A repo without one is just a
+    # regular Python package, not something Frappe can install.
+    try:
+        provider.fetch_raw_file(repo_url, f"{name}/hooks.py", ref)
+    except GitProviderError as exc:
+        raise GitProviderError(f"'{name}' doesn't look like a Frappe app (no {name}/hooks.py found).") from exc
+
+    return {"name": name, "description": description}
 
 
 def authenticated_url_for(bench_root: Path, repo_url: str) -> str:

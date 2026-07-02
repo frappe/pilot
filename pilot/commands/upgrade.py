@@ -37,6 +37,11 @@ class UpgradeCommand(Command):
         print("Pulling latest bench-cli...")
         run_command(["git", "-C", str(cli_root), "pull"], stream_output=True)
 
+        print("Installing admin Python dependencies...")
+        from pilot.managers.admin_env_manager import AdminEnvManager
+
+        AdminEnvManager(cli_root).install_python_deps()
+
         print("Downloading latest admin frontend...")
         if not download_admin_frontend(cli_root):
             print("  Download failed. Run 'bench build-admin' to build from source.")

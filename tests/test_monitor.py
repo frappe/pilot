@@ -242,6 +242,81 @@ def test_storage_usage_includes_zfs_when_sibling_has_volume(tmp_path: Path) -> N
     assert "disk" in result
 
 
+# ── CPU breakdown ─────────────────────────────────────────────────────────────
+
+
+def test_compute_cpu_breakdown_sums_to_100_percent(tmp_path: Path) -> None:
+    monitor = _make_monitor(_make_bench(tmp_path), tmp_path / ".auth")
+    readings = iter(
+        [
+            {"user": 100, "nice": 0, "system": 50, "idle": 800, "iowait": 20, "irq": 10, "softirq": 10, "steal": 10},
+            {"user": 150, "nice": 0, "system": 70, "idle": 900, "iowait": 25, "irq": 12, "softirq": 12, "steal": 11},
+        ]
+    )
+    monitor._cpu_fields = lambda: next(readings)  # type: ignore[method-assign]
+    monitor.sample_cpu()
+    monitor.compute_cpu()
+
+    breakdown = monitor._system_cpu_breakdown()
+    assert set(breakdown) == {"user", "system", "iowait", "irq", "other", "idle"}
+    assert abs(sum(breakdown.values()) - 100.0) < 0.5
+    assert monitor._system_cpu_percent() == round(100 - breakdown["idle"], 2)
+
+
+def test_compute_cpu_breakdown_zero_delta_reports_idle(tmp_path: Path) -> None:
+    """A stalled /proc/stat (identical before/after) must not divide by zero."""
+    monitor = _make_monitor(_make_bench(tmp_path), tmp_path / ".auth")
+    fields = {"user": 100, "nice": 0, "system": 50, "idle": 800, "iowait": 20, "irq": 10, "softirq": 10, "steal": 10}
+    monitor._cpu_fields = lambda: dict(fields)  # type: ignore[method-assign]
+    monitor.sample_cpu()
+    monitor.compute_cpu()
+
+    assert monitor._system_cpu_breakdown()["idle"] == 100.0
+    assert monitor._system_cpu_percent() == 0.0
+
+
+# ── memory breakdown ────────────────────────────────────────────────────────────
+
+
+def test_memory_usage_breakdown_sums_to_total(tmp_path: Path) -> None:
+    monitor = _make_monitor(_make_bench(tmp_path), tmp_path / ".auth")
+    result = monitor._memory_usage()
+
+    assert set(result) >= {"total_mb", "used_mb", "cached_mb", "free_mb", "swap_used_mb", "percent"}
+    assert abs(result["total_mb"] - result["used_mb"] - result["cached_mb"] - result["free_mb"]) < 1.0
+
+
+# ── network / disk I/O throughput ──────────────────────────────────────────────
+
+
+def test_compute_io_reports_bytes_per_sec(tmp_path: Path) -> None:
+    monitor = _make_monitor(_make_bench(tmp_path), tmp_path / ".auth")
+    net_readings = iter([{"rx_bytes": 1000, "tx_bytes": 200}, {"rx_bytes": 3000, "tx_bytes": 700}])
+    disk_readings = iter([{"read_bytes": 5000, "write_bytes": 1000}, {"read_bytes": 6000, "write_bytes": 1500}])
+    monitor._net_fields = lambda: next(net_readings)  # type: ignore[method-assign]
+    monitor._disk_io_fields = lambda: next(disk_readings)  # type: ignore[method-assign]
+
+    monitor.sample_io()
+    monitor.compute_io()
+
+    assert monitor._system_network() == {"rx_bytes_per_sec": 2000.0, "tx_bytes_per_sec": 500.0}
+    assert monitor._system_disk_io() == {"read_bytes_per_sec": 1000.0, "write_bytes_per_sec": 500.0}
+
+
+def test_disk_io_fields_ignores_partitions(tmp_path: Path) -> None:
+    monitor = _make_monitor(_make_bench(tmp_path), tmp_path / ".auth")
+    diskstats = tmp_path / "diskstats"
+    diskstats.write_text(
+        "   8       0 sda 100 0 2000 0 50 0 1000 0 0 0 0\n"
+        "   8       1 sda1 40 0 800 0 20 0 400 0 0 0 0\n"
+        "  259       0 nvme0n1 10 0 200 0 5 0 100 0 0 0 0\n"
+    )
+    with patch("pilot.core.monitor.Path", side_effect=lambda p: diskstats if p == "/proc/diskstats" else Path(p)):
+        result = monitor._disk_io_fields()
+
+    assert result == {"read_bytes": (2000 + 200) * 512, "write_bytes": (1000 + 100) * 512}
+
+
 def test_zfs_pool_usage_parses_zpool_output(tmp_path: Path) -> None:
     import subprocess as sp
 

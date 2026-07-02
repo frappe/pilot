@@ -626,6 +626,20 @@ def test_requirements_installs_js_for_app_with_package_json(tmp_path: Path) -> N
 # ── UpdateCommand ─────────────────────────────────────────────────────────────
 
 
+def test_upgrade_command_installs_admin_python_deps() -> None:
+    from pilot.commands.upgrade import UpgradeCommand
+
+    with patch("pilot.commands.admin._cli_root", return_value=Path("/tmp/pilot")), \
+         patch("pilot.utils.run_command") as mock_run_command, \
+         patch("pilot.commands.admin.download_admin_frontend", return_value=True), \
+         patch("pilot.managers.admin_env_manager.AdminEnvManager") as mock_admin_env:
+        UpgradeCommand().run()
+
+    mock_run_command.assert_called_once_with(["git", "-C", "/tmp/pilot", "pull"], stream_output=True)
+    mock_admin_env.assert_called_once_with(Path("/tmp/pilot"))
+    mock_admin_env.return_value.install_python_deps.assert_called_once_with()
+
+
 def test_update_command_runs_all_steps(tmp_path: Path) -> None:
     from pilot.commands.update import UpdateCommand
 
@@ -668,6 +682,108 @@ def test_update_command_update_apps_raises_on_command_error(tmp_path: Path) -> N
             cmd._update_apps()
 
 
+def test_update_command_marketplace_pin_matched_by_version(tmp_path: Path) -> None:
+    from pilot.commands.update import UpdateCommand
+    from pilot.core.app import RevisionPin
+
+    bench = make_bench(tmp_path)
+    cmd = UpdateCommand(bench, skip_confirm=True)
+    app = MagicMock()
+    app.config.name = "helpdesk"
+    app.config.repo = "https://github.com/frappe/helpdesk"
+    app.installed_version = "1.0.0"
+    registry = {
+        "helpdesk": {
+            "repo": "https://github.com/frappe/helpdesk",
+            "targets": [{"version": "1.0.0", "target_type": "tag", "target": "v1.0.0"}],
+        },
+    }
+
+    pin = cmd._marketplace_pin(app, registry)
+
+    assert pin == RevisionPin(kind="tag", ref="v1.0.0")
+
+
+def test_update_command_marketplace_pin_none_on_repo_mismatch(tmp_path: Path) -> None:
+    from pilot.commands.update import UpdateCommand
+
+    bench = make_bench(tmp_path)
+    cmd = UpdateCommand(bench, skip_confirm=True)
+    app = MagicMock()
+    app.config.name = "helpdesk"
+    app.config.repo = "https://github.com/someone/helpdesk"  # a fork
+    app.installed_version = "1.0.0"
+    registry = {
+        "helpdesk": {
+            "repo": "https://github.com/frappe/helpdesk",
+            "targets": [{"version": "1.0.0", "target_type": "tag", "target": "v1.0.0"}],
+        },
+    }
+
+    assert cmd._marketplace_pin(app, registry) is None
+
+
+def test_update_command_marketplace_pin_none_when_not_in_registry(tmp_path: Path) -> None:
+    from pilot.commands.update import UpdateCommand
+
+    bench = make_bench(tmp_path)
+    cmd = UpdateCommand(bench, skip_confirm=True)
+    app = MagicMock()
+    app.config.name = "frappe"
+    app.config.repo = "https://github.com/frappe/frappe"
+    app.installed_version = "16.0.0"
+
+    assert cmd._marketplace_pin(app, {}) is None
+
+
+def test_update_command_marketplace_pin_none_for_branch_target(tmp_path: Path) -> None:
+    from pilot.commands.update import UpdateCommand
+
+    bench = make_bench(tmp_path)
+    cmd = UpdateCommand(bench, skip_confirm=True)
+    app = MagicMock()
+    app.config.name = "hrms"
+    app.config.repo = "https://github.com/frappe/hrms"
+    app.installed_version = "3.0.0"
+    registry = {
+        "hrms": {
+            "repo": "https://github.com/frappe/hrms",
+            "targets": [{"version": "3.0.0", "target_type": "branch", "target": "main"}],
+        },
+    }
+
+    assert cmd._marketplace_pin(app, registry) is None
+
+
+def test_update_command_passes_marketplace_pin_to_app_update(tmp_path: Path) -> None:
+    import subprocess
+    from pilot.commands.update import UpdateCommand
+    from pilot.core.app import RevisionPin
+    from pilot.core.marketplace import Marketplace
+
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    app_dir = bench.apps_path / "helpdesk"
+    app_dir.mkdir()
+    subprocess.run(["git", "init", "-q", str(app_dir)], check=True)
+    subprocess.run(["git", "-C", str(app_dir), "remote", "add", "origin", "https://github.com/frappe/helpdesk"], check=True)
+
+    registry = [{
+        "name": "helpdesk",
+        "repo": "https://github.com/frappe/helpdesk",
+        "targets": [{"version": "1.0.0", "target_type": "tag", "target": "v2.0.0"}],
+    }]
+
+    cmd = UpdateCommand(bench, skip_confirm=True)
+
+    with patch.object(Marketplace, "registry", return_value=registry), \
+            patch("pilot.core.app.App.installed_version", new_callable=lambda: property(lambda self: "1.0.0")), \
+            patch("pilot.core.app.App.update") as mock_update:
+        cmd._update_apps()
+
+    mock_update.assert_called_once_with(pin=RevisionPin(kind="tag", ref="v2.0.0"))
+
+
 def test_update_command_migrate_sites_raises_on_failure(tmp_path: Path) -> None:
     from pilot.commands.update import UpdateCommand
     from pilot.exceptions import CommandError, MigrateError
@@ -683,6 +799,23 @@ def test_update_command_migrate_sites_raises_on_failure(tmp_path: Path) -> None:
     with patch("pilot.core.site.Site.migrate", side_effect=CommandError("migrate failed")):
         with pytest.raises(MigrateError):
             cmd._migrate_sites()
+
+
+def test_update_command_migrate_sites_passes_skip_failing_patches(tmp_path: Path) -> None:
+    from pilot.commands.update import UpdateCommand
+
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    site_dir = bench.sites_path / "site1.localhost"
+    site_dir.mkdir()
+    (site_dir / "site_config.json").write_text("{}")
+
+    cmd = UpdateCommand(bench, skip_confirm=True, skip_failing_patches=True)
+
+    with patch("pilot.core.site.Site.migrate") as mock_migrate:
+        cmd._migrate_sites()
+
+    mock_migrate.assert_called_once_with(skip_failing=True)
 
 
 # ── DropSiteCommand ───────────────────────────────────────────────────────────

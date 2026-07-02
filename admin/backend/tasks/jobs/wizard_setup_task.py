@@ -15,7 +15,9 @@ class WizardSetupTask(BaseTask):
     """
 
     def run(self) -> None:
+        self._step("init", "Initialize bench")
         InitCommand(self.bench).run()
+        self._step("done")
 
 
 if __name__ == "__main__":

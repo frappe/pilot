@@ -27,6 +27,7 @@ class NewSiteFromBackupTask(BaseTask):
         self.force = args.force
 
     def run(self) -> None:
+        self._step("restore", f"Restore site {self.name} from backup")
         NewSiteFromBackupCommand(
             self.bench,
             self.name,
@@ -36,6 +37,7 @@ class NewSiteFromBackupTask(BaseTask):
             private_files=self.private_files,
             force=self.force,
         ).run()
+        self._step("done")
 
 
 if __name__ == "__main__":

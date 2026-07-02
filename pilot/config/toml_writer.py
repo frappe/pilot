@@ -126,6 +126,19 @@ def bench_config_to_toml(config: BenchConfig) -> str:
         parts.append(f'quota = "{v.dataset.quota}"')
     parts.append("")
 
+    fw = config.firewall
+    if fw.enabled or fw.rules:
+        parts.append("[firewall]")
+        parts.append(f"enabled = {'true' if fw.enabled else 'false'}")
+        parts.append(f'default = "{fw.default}"')
+        parts.append("")
+        for rule in fw.rules:
+            parts.append("[[firewall.rules]]")
+            parts.append(f'ip = "{rule.ip}"')
+            parts.append(f'action = "{rule.action}"')
+            parts.append(f'description = "{rule.description}"')
+            parts.append("")
+
     # Only add monitoring section if production is enabled
     if p.enabled:
         mon = config.monitor

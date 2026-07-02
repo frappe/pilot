@@ -18,7 +18,9 @@ class NewSiteTask(BaseTask):
         self.db_type = args.db_type
 
     def run(self) -> None:
+        self._step("create", f"Create site {self.name}")
         NewSiteCommand(self.bench, self.name, [], self.admin_password, db_type=self.db_type).run()
+        self._step("done")
 
 
 if __name__ == "__main__":

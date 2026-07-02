@@ -45,20 +45,44 @@ class MonitorHistoryReader:
             "earliest": self._earliest(path),
             "points": [self._system_point(when, metrics, pool) for when, metrics in rows],
             "storage": storage,
+            "memory_total_mb": self._latest_memory_total(rows),
         }
+
+    @staticmethod
+    def _latest_memory_total(rows: list) -> float | None:
+        for _, metrics in reversed(rows):
+            total = (metrics.get("memory") or {}).get("total_mb")
+            if total is not None:
+                return total
+        return None
 
     def _system_point(self, when: datetime, metrics: dict, pool: str | None) -> dict:
         storage = metrics.get("storage") or {}
         disk, zfs = storage.get("disk"), storage.get("zfs")
         load = metrics["load_avg"]
+        cpu = metrics.get("cpu_breakdown") or {}
+        memory = metrics.get("memory") or {}
+        network = metrics.get("network") or {}
+        disk_io = metrics.get("disk_io") or {}
         point = {
             "time": self._ms(when),
-            "CPU": metrics["cpu_percent"],
-            "Memory": metrics["memory"]["percent"],
+            "Busy User": cpu.get("user"),
+            "Busy System": cpu.get("system"),
+            "Busy IOWait": cpu.get("iowait"),
+            "Busy IRQ": cpu.get("irq"),
+            "Busy Other": cpu.get("other"),
+            "Used": memory.get("used_mb"),
+            "Cached + Buffers": memory.get("cached_mb"),
+            "Free": memory.get("free_mb"),
+            "Swap Used": memory.get("swap_used_mb"),
             "Load1": load[0],
             "Load5": load[1],
             "Load15": load[2],
             DISK_SERIES: disk["percent"] if disk else None,
+            "Received": network.get("rx_bytes_per_sec"),
+            "Sent": network.get("tx_bytes_per_sec"),
+            "Read": disk_io.get("read_bytes_per_sec"),
+            "Write": disk_io.get("write_bytes_per_sec"),
         }
         if pool:
             point[pool] = zfs["percent"] if zfs else None

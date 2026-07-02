@@ -55,6 +55,29 @@ def is_alpine() -> bool:
     return False
 
 
+def os_version() -> str:
+    """Best-effort human-readable OS name and version.
+
+    e.g. 'Ubuntu 22.04.4 LTS', 'Debian GNU/Linux 12 (bookworm)', or 'macOS 14.5'.
+    Falls back to the bare platform/release string when nothing more specific
+    is available."""
+    if is_macos():
+        version = platform.mac_ver()[0]
+        return f"macOS {version}" if version else "macOS"
+    os_release = Path("/etc/os-release")
+    if os_release.exists():
+        for line in os_release.read_text().splitlines():
+            key, _, value = line.partition("=")
+            if key.strip() == "PRETTY_NAME" and value.strip().strip('"'):
+                return value.strip().strip('"')
+    return f"{platform.system()} {platform.release()}".strip()
+
+
+def kernel_version() -> str:
+    """Best-effort kernel version (e.g. '6.8.0-40-generic' or Darwin's '23.5.0')."""
+    return platform.release()
+
+
 def is_root() -> bool:
     return hasattr(os, "geteuid") and os.geteuid() == 0
 

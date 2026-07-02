@@ -1,280 +1,93 @@
+<template>
+  <UpdatesAvailableButton />
+
+  <div v-if="loading" class="flex justify-center py-12">
+    <LoadingText />
+  </div>
+  <div v-else-if="error" class="py-12">
+    <ErrorMessage :message="error" />
+  </div>
+  <div v-else-if="task" class="mx-auto max-w-3xl">
+    <!-- Header -->
+    <div class="flex justify-between items-center gap-3">
+      <div class="flex items-center gap-2 min-w-0">
+        <Button variant="subtle" size="sm" class="shrink-0" icon="lucide-arrow-left" @click="router.push({ name: 'Tasks' })" />
+        <h1 class="flex-1 min-w-0 font-semibold text-ink-gray-9 text-xl truncate">{{ commandLabel(task.command) }}</h1>
+        <Badge class="shrink-0" :label="statusConfig(task).label" :theme="statusConfig(task).theme" variant="subtle" size="md" />
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <Button variant="subtle" size="sm" :loading="loading" icon="lucide-refresh-cw" @click="load" />
+        <Button v-if="task.status === 'running'" variant="subtle" size="sm" theme="red" icon-left="lucide-x"
+          @click="killTask">
+          Cancel
+        </Button>
+      </div>
+    </div>
+
+    <!-- Metadata -->
+    <div class="gap-4 grid grid-cols-2 bg-surface-elevation-1 mt-4 px-0 py-4 rounded-xl"
+      :class="metadata.length > 3 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'">
+      <div v-for="item in metadata" :key="item.label">
+        <p class="text-ink-gray-4 text-xs">{{ item.label }}</p>
+        <p class="mt-1 text-ink-gray-8 text-sm truncate">{{ item.value }}</p>
+      </div>
+    </div>
+
+    <!-- Steps -->
+    <div class="mt-4">
+      <TaskStream v-if="task.status === 'running'" :url="tasksApi.streamUrl(taskId)"
+        v-slot="{ rawLines: streamedLines, streaming }" @done="load">
+        <TaskSteps :raw-lines="streamedLines" :streaming="streaming" :task-status="task.status" />
+      </TaskStream>
+      <TaskSteps v-else :raw-lines="rawLines" :task-status="task.status" />
+    </div>
+  </div>
+
+  <ErrorMessage v-if="actionError" :message="actionError" class="mt-3" />
+</template>
+
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Button, Badge, Dialog, LoadingText, ErrorMessage } from 'frappe-ui'
-import TerminalOutput from '../components/TerminalOutput.vue'
-import TaskStream from '../components/TaskStream.vue'
-import { useTaskSteps, STEP_MARKER_RE } from '../composables/useTaskSteps.js'
-import { processLine } from '../utils/ansi.js'
-import LucideDownload from '~icons/lucide/download'
-import LucideCheck from '~icons/lucide/check'
-import LucideLoader2 from '~icons/lucide/loader-2'
-import LucideX from '~icons/lucide/x'
-import LucideChevronDown from '~icons/lucide/chevron-down'
-import LucideChevronUp from '~icons/lucide/chevron-up'
+import { Badge, Button, ErrorMessage, LoadingText } from 'frappe-ui'
+import UpdatesAvailableButton from '@/components/UpdatesAvailableButton.vue'
+import { tasksApi } from '@/api/tasks'
+import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
+import { useTaskDetail } from '@/composables/useTaskDetail'
+import { commandLabel, fmtDateTime, fmtDuration, siteLabel, statusConfig } from '@/utils/taskFormat'
 
 const route = useRoute()
 const router = useRouter()
-const taskId = route.params.id
+const taskId = route.params.taskId
 
-// TaskStream owns the SSE connection and output; we read its reactive state for
-// the step parsing below. streamUrl stays empty until the REST load decides the
-// task is still running (autoStart connects once it's set).
-const taskStream = ref(null)
-const streamUrl = ref('')
-const rawLines = computed(() => taskStream.value?.rawLines ?? [])
-const streaming = computed(() => taskStream.value?.streaming ?? false)
-const task = ref(null)
-const initialOutput = ref([])
-const loading = ref(true)
-const error = ref('')
-const showKill = ref(false)
-const actionLoading = ref('')
+const { setBreadcrumbs } = useBreadcrumbs()
+const { task, rawLines, loading, error, load } = useTaskDetail(taskId)
+
+setBreadcrumbs([{ label: 'Tasks', route: { name: 'Tasks' } }, { label: taskId }])
+
 const actionError = ref('')
-const expandedSteps = ref(new Set())
 
-const TASK_COLOR = { success: 'green', failed: 'red', running: 'blue', killed: 'gray' }
-
-function fmtDate(iso) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })
-}
-
-function fmtDuration(s) {
-  if (s == null) return '—'
-  if (s < 60) return `${Math.round(s)}s`
-  if (s < 3600) return `${Math.round(s / 60)}m`
-  return `${Math.round(s / 3600)}h`
-}
-
-const { stepSections, hasSteps, stepDuration } = useTaskSteps(rawLines, streaming, task)
-
-function sectionLines(section) {
-  return rawLines.value
-    .slice(section.lineStart, section.lineEnd)
-    .filter(l => !l.match(STEP_MARKER_RE))
-    .map(processLine)
-}
-
-function sectionHasOutput(section) {
-  return rawLines.value
-    .slice(section.lineStart, section.lineEnd)
-    .some(l => l.trim() && !l.match(STEP_MARKER_RE))
-}
-
-function toggleStep(key) {
-  const next = new Set(expandedSteps.value)
-  if (next.has(key)) next.delete(key)
-  else next.add(key)
-  expandedSteps.value = next
-}
-
-async function load() {
-  try {
-    const res = await fetch(`/api/tasks/${taskId}`)
-    if (!res.ok) throw new Error(`${res.status}`)
-    const d = await res.json()
-    task.value = d.task
-    initialOutput.value = d.output  // seeds TaskStream on mount; streaming appends from here
-  } catch (e) {
-    error.value = e.message
-  } finally {
-    loading.value = false
-  }
-}
-
-// Auto-expand the step whose output is currently arriving.
-function onStreamLine(raw) {
-  const m = raw.match(/^##\[step:(\w+),/)
-  if (m && m[1] !== 'done') expandedSteps.value = new Set([m[1]])
-}
-
-function onStreamDone(success) {
-  if (!success && stepSections.value.length) {
-    const failed = stepSections.value.find(s => s.status === 'failed')
-      ?? stepSections.value[stepSections.value.length - 1]
-    expandedSteps.value = new Set([failed.key])
-  }
-  load()
-}
+const metadata = computed(() => {
+  const items = [
+    { label: 'Started', value: fmtDateTime(task.value.started_at) },
+    { label: 'Finished', value: task.value.finished_at ? fmtDateTime(task.value.finished_at) : '—' },
+    { label: 'Duration', value: fmtDuration(task.value.duration_seconds) || '—' },
+  ]
+  const site = siteLabel(task.value)
+  if (site !== 'Server-level') items.unshift({ label: 'Site', value: site })
+  return items
+})
 
 async function killTask() {
-  showKill.value = false
   actionError.value = ''
-  actionLoading.value = 'kill'
   try {
-    const res = await fetch(`/api/tasks/${taskId}/kill`, { method: 'POST' })
-    const d = await res.json()
-    if (!d.ok) actionError.value = d.error
+    const result = await tasksApi.kill(taskId)
+    if (!result.ok) actionError.value = result.error || 'Failed to kill task'
     else load()
-  } catch (e) {
-    actionError.value = e.message
-  } finally {
-    actionLoading.value = ''
+  } catch (caught) {
+    actionError.value = caught.message || 'Failed to kill task'
   }
 }
 
-async function rerunTask() {
-  actionError.value = ''
-  actionLoading.value = 'rerun'
-  try {
-    const res = await fetch(`/api/tasks/${taskId}/rerun`, { method: 'POST' })
-    const d = await res.json()
-    if (d.ok) router.push(`/tasks/${d.task_id}`)
-    else actionError.value = d.error
-  } catch (e) {
-    actionError.value = e.message
-  } finally {
-    actionLoading.value = ''
-  }
-}
-
-onMounted(async () => {
-  await load()
-  // Setting the url makes TaskStream connect (autoStart); it seeds from
-  // initialOutput first, then appends the live tail (reset disabled).
-  if (task.value?.status === 'running') streamUrl.value = `/api/tasks/${taskId}/stream`
-})
+onMounted(load)
 </script>
-
-<template>
-  <div class="flex flex-col gap-4">
-    <LoadingText v-if="loading" />
-    <ErrorMessage v-else-if="error" :message="error" />
-
-    <template v-else-if="task">
-      <ErrorMessage v-if="actionError" :message="actionError" />
-
-      <!-- Header -->
-      <div class="flex flex-wrap items-center gap-3">
-        <Badge
-          :label="streaming ? 'running…' : task.status"
-          :theme="TASK_COLOR[task.status] || 'gray'"
-        />
-        <span class="font-mono text-sm font-medium">{{ task.command }}</span>
-        <span
-          v-if="Object.keys(task.args).length"
-          class="font-mono text-sm text-ink-gray-5"
-        >
-          {{ Object.entries(task.args).map(([k, v]) => `${k}=${v}`).join(' ') }}
-        </span>
-        <span class="text-sm text-ink-gray-5">{{ fmtDate(task.started_at) }}</span>
-        <span v-if="task.duration_seconds != null" class="text-sm text-ink-gray-5">
-          {{ fmtDuration(task.duration_seconds) }}
-        </span>
-        <div class="ml-auto flex gap-2">
-          <a :href="`/api/tasks/${taskId}/output/download`" class="ml-auto">
-            <Button variant="ghost" :prefix-icon="LucideDownload">Download</Button>
-          </a>
-          <Button
-            v-if="task.status === 'running'"
-            variant="outline"
-            theme="red"
-            size="sm"
-            :loading="actionLoading === 'kill'"
-            @click="showKill = true"
-          >Kill</Button>
-          <Button
-            v-else
-            variant="outline"
-            size="sm"
-            :loading="actionLoading === 'rerun'"
-            @click="rerunTask"
-          >Re-run</Button>
-        </div>
-      </div>
-
-      <!-- TaskStream owns the SSE connection + output; we render either a
-           step-grouped view or a plain terminal from its reactive state. -->
-      <TaskStream
-        ref="taskStream"
-        :url="streamUrl"
-        :reset="false"
-        :initial-lines="initialOutput"
-        @line="onStreamLine"
-        @done="onStreamDone"
-        @error="load"
-      >
-        <template #default="{ lines, setTerminal }">
-          <!-- Multi-step view -->
-          <div v-if="hasSteps" class="flex flex-col gap-1.5">
-            <div v-for="section in stepSections" :key="section.key">
-              <!-- Step header row -->
-              <div
-                class="flex items-center gap-3 rounded-lg border border-outline-gray-1 bg-surface-white px-4 py-2.5 transition-colors"
-                :class="sectionHasOutput(section) ? 'cursor-pointer hover:bg-surface-gray-1' : ''"
-                @click="sectionHasOutput(section) && toggleStep(section.key)"
-              >
-                <!-- Status icon -->
-                <div
-                  class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
-                  :class="{
-                    'bg-surface-green-2 text-ink-green-2': section.status === 'done',
-                    'bg-ink-gray-9 text-surface-white': section.status === 'running',
-                    'bg-surface-red-1 text-ink-red-4': section.status === 'failed',
-                    'bg-ink-gray-1': section.status === 'pending',
-                  }"
-                >
-                  <LucideCheck v-if="section.status === 'done'" class="h-3.5 w-3.5" />
-                  <LucideLoader2 v-else-if="section.status === 'running'" class="h-3.5 w-3.5 animate-spin" />
-                  <LucideX v-else-if="section.status === 'failed'" class="h-3.5 w-3.5" />
-                  <span v-else class="h-1.5 w-1.5 rounded-full bg-ink-gray-3" />
-                </div>
-
-                <span
-                  class="flex-1 text-sm"
-                  :class="section.status === 'pending' ? 'text-ink-gray-4' : 'font-medium text-ink-gray-9'"
-                >{{ section.label }}</span>
-
-                <span class="text-xs text-ink-gray-5">
-                  <template v-if="stepDuration(section)">{{ stepDuration(section) }}</template>
-                  <span v-else-if="section.status === 'running'" class="animate-pulse">running…</span>
-                </span>
-
-                <LucideChevronUp
-                  v-if="sectionHasOutput(section) && expandedSteps.has(section.key)"
-                  class="h-4 w-4 shrink-0 text-ink-gray-4"
-                />
-                <LucideChevronDown
-                  v-else-if="sectionHasOutput(section)"
-                  class="h-4 w-4 shrink-0 text-ink-gray-4"
-                />
-              </div>
-
-              <!-- Collapsible output -->
-              <div v-if="expandedSteps.has(section.key)" class="mt-0.5 overflow-hidden rounded-b-lg">
-                <TerminalOutput
-                  :lines="sectionLines(section)"
-                  :streaming="streaming && section.status === 'running'"
-                  max-height="40vh"
-                  empty-text="No output for this step."
-                />
-              </div>
-            </div>
-          </div>
-
-          <!-- Plain terminal (tasks without steps) -->
-          <TerminalOutput
-            v-else
-            :ref="setTerminal"
-            :lines="lines"
-            :streaming="streaming"
-            :line-numbers="true"
-            empty-text="No output yet…"
-            max-height="calc(100vh - 200px)"
-          />
-        </template>
-      </TaskStream>
-    </template>
-
-    <Dialog v-model="showKill" :options="{ title: 'Kill Task', size: 'sm' }">
-      <template #body-content>
-        <p class="text-ink-gray-5">Send SIGTERM to the running process?</p>
-        <div class="mt-4 flex justify-end gap-2">
-          <Button variant="ghost" @click="showKill = false">Cancel</Button>
-          <Button variant="solid" theme="red" @click="killTask">Kill</Button>
-        </div>
-      </template>
-    </Dialog>
-  </div>
-</template>

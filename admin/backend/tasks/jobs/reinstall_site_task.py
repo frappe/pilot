@@ -1,5 +1,3 @@
-import sys
-
 from pilot.config.site_config import SiteConfig
 from pilot.core.site import Site
 
@@ -20,11 +18,10 @@ class ReinstallSiteTask(BaseTask):
         self.admin_password = args.admin_password
 
     def run(self) -> None:
-        print(f"Reinstalling site '{self.site}'...")
-        sys.stdout.flush()
+        self._step("reinstall", f"Reinstall site {self.site}")
         site = Site(SiteConfig(name=self.site, apps=[]), self.bench)
         site.reinstall(self.admin_password)
-        print(f"\nSite '{self.site}' reinstalled.")
+        self._step("done")
 
 
 if __name__ == "__main__":
