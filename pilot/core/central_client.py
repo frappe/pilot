@@ -17,9 +17,9 @@ class CentralClientError(Exception):
 class CentralClient:
     """Calls Central's HTTP API on behalf of this bench's pilot.
 
-    Reads ``central_endpoint`` + ``central_auth_token`` from the bench's
-    common_site_config (written by ``bench set-central-config`` at deploy) and
-    authenticates with the ``X-Pilot-Token`` header — the reverse of the
+    Reads ``central.endpoint`` + ``central.auth_token`` from ``bench.toml`` (written
+    by ``bench set-central-config`` at deploy) and authenticates with the
+    ``X-Pilot-Token`` header — the reverse of the
     site→bench ``pilot_auth_token`` (PR #133).
     """
 
@@ -34,15 +34,24 @@ class CentralClient:
         return self._get("/api/method/central.api.pilot.heartbeat")
 
     def _credentials(self) -> tuple[str, str]:
+        endpoint, token = self._bench_toml_credentials()
+        if not (endpoint and token):
+            endpoint, token = self._legacy_common_site_config_credentials()
+        if not endpoint or not token:
+            raise CentralClientError("central.endpoint / central.auth_token not set in bench.toml")
+        return endpoint.rstrip("/"), token
+
+    def _bench_toml_credentials(self) -> tuple[str | None, str | None]:
+        central = self.bench.config.central
+        return central.endpoint, central.auth_token
+
+    def _legacy_common_site_config_credentials(self) -> tuple[str | None, str | None]:
         path = self.bench.sites_path / "common_site_config.json"
         try:
             config = json.loads(path.read_text())
-        except (FileNotFoundError, ValueError) as exc:
-            raise CentralClientError(f"Cannot read {path}: {exc}") from exc
-        endpoint, token = config.get("central_endpoint"), config.get("central_auth_token")
-        if not endpoint or not token:
-            raise CentralClientError("central_endpoint / central_auth_token not set in common_site_config")
-        return endpoint.rstrip("/"), token
+        except (FileNotFoundError, ValueError):
+            return None, None
+        return config.get("central_endpoint"), config.get("central_auth_token")
 
     def _get(self, path: str) -> dict[str, Any]:
         endpoint, token = self._credentials()

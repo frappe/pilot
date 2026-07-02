@@ -6,6 +6,7 @@ from typing import List
 
 from pilot.config.admin_config import AdminConfig
 from pilot.config.app_config import AppConfig
+from pilot.config.central_config import CentralConfig
 from pilot.config.gunicorn_config import GunicornConfig
 from pilot.config.letsencrypt_config import LetsEncryptConfig
 from pilot.config.mariadb_config import MariaDBConfig
@@ -53,6 +54,7 @@ class BenchConfig:
     letsencrypt: LetsEncryptConfig = field(default_factory=LetsEncryptConfig)
     admin: AdminConfig = field(default_factory=AdminConfig)
     volume: VolumeConfig = field(default_factory=VolumeConfig)
+    central: CentralConfig = field(default_factory=CentralConfig)
 
     @classmethod
     def from_file(cls, path: Path) -> "BenchConfig":
@@ -84,6 +86,7 @@ class BenchConfig:
         letsencrypt = cls._parse_letsencrypt(data.get("letsencrypt", {}))
         admin = cls._parse_admin(data.get("admin", {}))
         volume = cls._parse_volume(data.get("volume"))
+        central = cls._parse_central(data.get("central", {}))
         # One dataset per bench, named after the bench unless explicitly set.
         if not volume.name:
             volume.name = bench_data.get("name", "")
@@ -106,6 +109,7 @@ class BenchConfig:
             letsencrypt=letsencrypt,
             admin=admin,
             volume=volume,
+            central=central,
         )
 
     @staticmethod
@@ -199,6 +203,13 @@ class BenchConfig:
             jwt_secret=data.get("jwt_secret", ""),
             domain=data.get("domain", ""),
             tls=data.get("tls", False),
+        )
+
+    @staticmethod
+    def _parse_central(data: dict) -> CentralConfig:
+        return CentralConfig(
+            endpoint=data.get("endpoint", ""),
+            auth_token=data.get("auth_token", ""),
         )
 
     @staticmethod

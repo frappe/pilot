@@ -167,6 +167,17 @@ def test_redis_version_defaults_to_none() -> None:
     assert config.redis.version is None
 
 
+def test_central_config_round_trips_through_typed_writer() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["central"] = {"endpoint": "https://central.test", "auth_token": "tok-123"}
+    config = load_from_dict(data)
+    toml = bench_config_to_toml(config)
+
+    assert "[central]" in toml
+    assert 'endpoint = "https://central.test"' in toml
+    assert 'auth_token = "tok-123"' in toml
+
+
 def test_invalid_mariadb_version() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
     data["mariadb"]["version"] = "invalid"

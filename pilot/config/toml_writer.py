@@ -106,6 +106,13 @@ def bench_config_to_toml(config: BenchConfig) -> str:
     parts.append(f"tls = {'true' if a.tls else 'false'}")
     parts.append("")
 
+    c = config.central
+    if c.endpoint or c.auth_token:
+        parts.append("[central]")
+        parts.append(f'endpoint = "{c.endpoint}"')
+        parts.append(f'auth_token = "{c.auth_token}"')
+        parts.append("")
+
     v = config.volume
     parts.append("[volume]")
     parts.append(f"enabled = {'true' if v.enabled else 'false'}")

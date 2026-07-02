@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 from typing import TYPE_CHECKING
 
 from pilot.commands.base import Command
@@ -14,10 +13,10 @@ if TYPE_CHECKING:
 class SetCentralConfigCommand(Command):
     """Persist the Central callback endpoint + pilot auth token that Atlas hands the
     bench at deploy, so pilot→Central calls can authenticate. Merges into
-    common_site_config (bench-wide) without disturbing the other keys."""
+    bench.toml (bench-owned config) without disturbing the other sections."""
 
     name = "set-central-config"
-    help = "Store the Central endpoint + pilot auth token in common_site_config."
+    help = "Store the Central endpoint + pilot auth token in bench.toml."
 
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
@@ -34,14 +33,18 @@ class SetCentralConfigCommand(Command):
         self.token = token
 
     def run(self) -> None:
-        config_path = self.bench.sites_path / "common_site_config.json"
+        from pilot.config.toml_store import BenchTomlStore
+
+        store = BenchTomlStore.for_bench(self.bench.path)
         try:
-            config = json.loads(config_path.read_text())
+            config = store.read_raw()
         except FileNotFoundError as exc:
-            raise BenchError(f"{config_path} not found — is this a bench?") from exc
+            raise BenchError(f"{store.path} not found — is this a bench?") from exc
         except ValueError as exc:
-            raise BenchError(f"{config_path} contains invalid JSON: {exc}") from exc
-        config["central_endpoint"] = self.endpoint
-        config["central_auth_token"] = self.token
-        config_path.write_text(json.dumps(config, indent=2) + "\n")
-        print("Central config written to common_site_config.json")
+            raise BenchError(f"{store.path} contains invalid TOML: {exc}") from exc
+        config.setdefault("central", {})["endpoint"] = self.endpoint
+        config["central"]["auth_token"] = self.token
+        store.write_raw(config)
+        self.bench.config.central.endpoint = self.endpoint
+        self.bench.config.central.auth_token = self.token
+        print("Central config written to bench.toml")
