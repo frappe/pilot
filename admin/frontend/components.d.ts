@@ -23,6 +23,7 @@ declare module 'vue' {
     ChartCard: typeof import('./src/components/ChartCard.vue')['default']
     ChooseSiteDialog: typeof import('./src/components/ChooseSiteDialog.vue')['default']
     Config: typeof import('./src/components/sites/Config.vue')['default']
+    CronScheduleControl: typeof import('./src/components/CronScheduleControl.vue')['default']
     Danger: typeof import('./src/components/sites/settings/Danger.vue')['default']
     Domains: typeof import('./src/components/sites/settings/Domains.vue')['default']
     Firewall: typeof import('./src/components/settings/Firewall.vue')['default']
