@@ -7,8 +7,10 @@ from flask import Blueprint, current_app, jsonify, request
 
 from pilot.config.bench_config import BenchConfig
 from pilot.config.firewall_config import FirewallRule
+from pilot.config.s3_config import S3Config
 from pilot.config.toml_store import BenchTomlStore
 from pilot.config.worker_config import WorkerGroup
+from pilot.core.bench import Bench
 from pilot.managers.redis_manager import RedisManager
 from pilot.managers.volume_manager import VolumeManager
 from pilot.platform import is_linux, native_process_manager
@@ -45,11 +47,27 @@ def _firewall_payload(config: BenchConfig) -> dict:
     return {
         "enabled": fw.enabled,
         "default": fw.default,
-        "rules": [
-            {"ip": r.ip, "action": r.action, "description": r.description}
-            for r in fw.rules
-        ],
+        "rules": [{"ip": r.ip, "action": r.action, "description": r.description} for r in fw.rules],
     }
+
+
+def _s3_payload(config: BenchConfig):
+    return {
+        "access_key": config.s3.access_key,
+        "secret_key_set": bool(config.s3.secret_key),
+        "bucket": config.s3.bucket,
+        "provider": config.s3.provider,
+        "region": config.s3.region,
+    }
+
+
+def _s3_provider_options() -> list[dict]:
+    from pilot.integrations.s3.base import PROVIDER_LABELS, SUPPORTED_REGIONS
+
+    return [
+        {"value": provider, "label": PROVIDER_LABELS[provider], "regions": regions}
+        for provider, regions in SUPPORTED_REGIONS.items()
+    ]
 
 
 def _restart_trigger_values(config: BenchConfig) -> dict:
@@ -80,6 +98,8 @@ class ConfigPatcher:
         self._apply_volume()
         self._apply_admin()
         self._apply_monitor()
+        if error := self._apply_s3():
+            return error
         if error := self._apply_production():
             return error
         try:
@@ -160,11 +180,13 @@ class ConfigPatcher:
                 ip = str(entry.get("ip", "")).strip()
                 if not ip:
                     continue
-                rules.append(FirewallRule(
-                    ip=ip,
-                    action=str(entry.get("action", "deny")),
-                    description=str(entry.get("description", "")).strip(),
-                ))
+                rules.append(
+                    FirewallRule(
+                        ip=ip,
+                        action=str(entry.get("action", "deny")),
+                        description=str(entry.get("description", "")).strip(),
+                    )
+                )
             fw.rules = rules
 
     def _apply_volume(self) -> None:
@@ -186,11 +208,49 @@ class ConfigPatcher:
         if "email" in letsencrypt:
             self.config.letsencrypt.email = str(letsencrypt["email"]).strip()
 
+    def _apply_s3(self) -> str | None:
+        s3 = self.data.get("s3") or {}
+        if not s3:
+            return None
+        if s3.get("disconnect"):
+            self.config.s3 = S3Config()
+            return None
+        s3_config = self.config.s3
+        if "access_key" in s3:
+            s3_config.access_key = str(s3["access_key"]).strip()
+        # Secret key is write-only: never sent to the UI, so update it only when
+        # a non-empty value is supplied; otherwise keep the stored one.
+        secret_key = str(s3.get("secret_key", "")).strip()
+        if secret_key:
+            s3_config.secret_key = secret_key
+        if "bucket" in s3:
+            s3_config.bucket = str(s3["bucket"]).strip()
+        if "provider" in s3:
+            s3_config.provider = str(s3["provider"]).strip()
+        if "region" in s3:
+            s3_config.region = str(s3["region"]).strip()
+
+        if not (s3_config.access_key or s3_config.secret_key or s3_config.bucket or s3_config.provider or s3_config.region):
+            return None
+
+        if not (s3_config.access_key and s3_config.secret_key and s3_config.bucket and s3_config.provider and s3_config.region):
+            return "s3.access_key, s3.secret_key, s3.bucket, s3.provider, and s3.region are all required."
+
+        from pilot.integrations.s3.base import SUPPORTED_REGIONS
+
+        if s3_config.provider not in SUPPORTED_REGIONS:
+            return f"s3.provider must be one of: {', '.join(SUPPORTED_REGIONS)}"
+        if s3_config.region not in SUPPORTED_REGIONS[s3_config.provider]:
+            return f"s3.region '{s3_config.region}' is not valid for provider '{s3_config.provider}'."
+
+        return None
+
     def _apply_monitor(self) -> None:
         monitor = self.data.get("monitor") or {}
         if not monitor:
             return
         from pathlib import Path as _Path
+
         mon = self.config.monitor
         if "system_log_path" in monitor and str(monitor["system_log_path"]).strip():
             mon.system_log_path = _Path(str(monitor["system_log_path"]).strip())
@@ -302,8 +362,8 @@ def _restart_systemd(manager) -> tuple[bool, str | None]:
 
 def _do_restart(bench_root: Path, config: BenchConfig) -> tuple[bool, str | None]:
     from pilot.core.bench import Bench
-    from pilot.managers.process_managers.openrc import OpenRCProcessManager
     from pilot.managers.process_manager import ProcessManager
+    from pilot.managers.process_managers.openrc import OpenRCProcessManager
     from pilot.managers.process_managers.supervisor import SupervisorProcessManager
     from pilot.managers.process_managers.systemd import SystemdProcessManager
 
@@ -326,7 +386,14 @@ def _build_settings_response(config: BenchConfig) -> dict:
     return {
         "is_linux": is_linux(),
         "native_process_manager": native_process_manager(),
-        "bench": {"name": config.name, "python": config.python_version, "http_port": config.http_port, "socketio_port": config.socketio_port, "default_branch": config.default_branch, "db_type": config.db_type},
+        "bench": {
+            "name": config.name,
+            "python": config.python_version,
+            "http_port": config.http_port,
+            "socketio_port": config.socketio_port,
+            "default_branch": config.default_branch,
+            "db_type": config.db_type,
+        },
         "mariadb": {
             "host": config.mariadb.host,
             "port": config.mariadb.port,
@@ -346,7 +413,10 @@ def _build_settings_response(config: BenchConfig) -> dict:
         "production": {"process_manager": config.production.process_manager or "none"},
         "admin": {"domain": config.admin.domain, "tls": config.admin.tls},
         "letsencrypt": {"email": config.letsencrypt.email},
+        "s3": _s3_payload(config),
+        "s3_providers": _s3_provider_options(),
         "volume": {
+            "enabled": volume.enabled,
             "pool": volume.pool,
             "backing": volume.backing,
             "device": volume.device,
@@ -399,6 +469,7 @@ def update_settings():
     volume_manager = VolumeManager(config.volume)
     old_restart = _restart_trigger_values(config)
     old_firewall = _firewall_payload(config)
+    old_s3_config = _s3_payload(config)
 
     if error := ConfigPatcher(config, data).apply():
         return jsonify({"ok": False, "error": error}), 400
@@ -433,10 +504,17 @@ def update_settings():
         except Exception as error:
             nginx_error = str(error)
 
-    return jsonify({
-        "ok": True,
-        "restarted": restarted,
-        "restart_error": restart_error,
-        "zfs_error": zfs_error,
-        "nginx_error": nginx_error,
-    })
+    # Sync common site config with the patched s3 settings
+    if _s3_payload(config) != old_s3_config:
+        bench = Bench(BenchConfig.from_file(bench_root / "bench.toml"), bench_root)
+        bench.sync_s3_credentials(config.s3)
+
+    return jsonify(
+        {
+            "ok": True,
+            "restarted": restarted,
+            "restart_error": restart_error,
+            "zfs_error": zfs_error,
+            "nginx_error": nginx_error,
+        }
+    )

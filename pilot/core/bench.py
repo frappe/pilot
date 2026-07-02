@@ -9,6 +9,7 @@ from pilot.config.bench_config import BenchConfig
 from pilot.exceptions import BenchError
 
 if TYPE_CHECKING:
+    from pilot.config.s3_config import S3Config
     from pilot.core.app import App
     from pilot.core.site import Site
 
@@ -157,6 +158,16 @@ class Bench:
         config = json.loads(config_path.read_text())
         config["maintenance_mode"] = 1 if enabled else 0
         config_path.write_text(json.dumps(config, indent=2))
+
+    def sync_s3_credentials(self, s3_config: S3Config):
+        config_path = self.sites_path / "common_site_config.json"
+        config = json.loads(config_path.read_text())
+        config["s3_access_key"] = s3_config.access_key
+        config["s3_bucket"] = s3_config.bucket
+        config["s3_secret_key"] = s3_config.secret_key
+        config["s3_provider"] = s3_config.provider
+        config["s3_region"] = s3_config.region
+        config_path.write_text(json.dumps(config, indent=2) + "\n")
 
     def write_common_site_config(self) -> None:
         r = self.config.redis

@@ -65,7 +65,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch, watchEffect } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Badge, Button, Dropdown, ErrorMessage, LoadingText, TabButtons, toast } from 'frappe-ui'
 import UpdatesAvailableButton from '@/components/UpdatesAvailableButton.vue'
@@ -92,8 +92,8 @@ setBreadcrumbs([
   { label: siteName },
 ])
 
-const STATUS_THEMES = { online: 'green', broken: 'red', offline: 'orange' }
-const STATUS_LABELS = { online: 'Live', broken: 'Broken', offline: 'Paused' }
+const STATUS_THEMES = { online: 'green', broken: 'red', offline: 'orange', provisioning: 'blue' }
+const STATUS_LABELS = { online: 'Live', broken: 'Broken', offline: 'Paused', provisioning: 'Creating...' }
 
 const statusLabel = computed(() => STATUS_LABELS[status.value] ?? status.value)
 const statusBadgeTheme = computed(() => STATUS_THEMES[status.value] ?? 'gray')
@@ -154,6 +154,19 @@ const menuOptions = computed(() => [
   { label: 'Login as admin', icon: 'lucide-log-in', onClick: loginAsAdmin },
   { label: 'Back up now', icon: 'lucide-archive', onClick: backupNow },
 ])
+
+// Provisioning is a transient state (a new-site/reinstall task still running);
+// poll until it clears instead of leaving the badge stuck on "Creating...".
+let provisioningPoll = null
+watch(status, (value) => {
+  if (value === 'provisioning' && !provisioningPoll) {
+    provisioningPoll = setInterval(load, 3000)
+  } else if (value !== 'provisioning' && provisioningPoll) {
+    clearInterval(provisioningPoll)
+    provisioningPoll = null
+  }
+})
+onUnmounted(() => { if (provisioningPoll) clearInterval(provisioningPoll) })
 
 onMounted(() => {
   load()

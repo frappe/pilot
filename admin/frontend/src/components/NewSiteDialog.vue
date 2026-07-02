@@ -118,7 +118,7 @@ defineProps({
   sites: { type: Array, default: () => [] },
 })
 
-const emit = defineEmits(['created'])
+const emit = defineEmits(['started'])
 const open = defineModel()
 
 const { registry, load: loadRegistry } = useAppRegistry()
@@ -232,7 +232,7 @@ async function submit() {
     })
     if (result.ok) {
       open.value = false
-      emit('created', name)
+      emit('started', result.task_id)
     } else {
       error.value = result.error || 'Could not create site.'
     }

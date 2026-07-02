@@ -32,6 +32,8 @@
           <Workers v-if="currentSection === 'workers'" ref="workersRef" />
           <Firewall v-else-if="currentSection === 'firewall'" />
           <Git v-else-if="currentSection === 'github'" />
+          <S3 v-else-if="currentSection === 's3'" />
+          <Snapshots v-else-if="currentSection === 'snapshots'" />
           <SystemInfo v-else-if="currentSection === 'system-info'" />
         </div>
       </div>
@@ -40,23 +42,42 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { Dialog, Button } from 'frappe-ui'
 import Firewall from '@/components/settings/Firewall.vue'
 import Git from '@/components/settings/Git.vue'
+import S3 from '@/components/settings/S3.vue'
+import Snapshots from '@/components/settings/Snapshots.vue'
 import SystemInfo from '@/components/settings/SystemInfo.vue'
 import Workers from '@/components/settings/Workers.vue'
+import { settingsApi } from '@/api/settings'
 
 const open = defineModel()
 
-const sections = [
+const zfsEnabled = ref(false)
+
+const sections = computed(() => [
   { id: 'github', label: 'Git Settings', icon: 'lucide-git-branch' },
   { id: 'workers', label: 'Workers', icon: 'lucide-server-cog' },
   { id: 'firewall', label: 'Firewall', icon: 'lucide-shield' },
+  { id: 's3', label: 'S3', icon: 'lucide-cloud' },
+  ...(zfsEnabled.value ? [{ id: 'snapshots', label: 'Snapshots', icon: 'lucide-camera' }] : []),
   { id: 'system-info', label: 'System Info', icon: 'lucide-info' },
-]
+])
 const activeSection = ref(null)
 const workersRef = ref(null)
-const currentSection = computed(() => activeSection.value ?? sections[0].id)
-const activeSectionLabel = computed(() => sections.find((s) => s.id === currentSection.value)?.label)
+const currentSection = computed(() => activeSection.value ?? sections.value[0].id)
+const activeSectionLabel = computed(() => sections.value.find((s) => s.id === currentSection.value)?.label)
+
+async function loadZfsEnabled() {
+  try {
+    const data = await settingsApi.get()
+    zfsEnabled.value = !!data.volume?.enabled
+  } catch {
+    zfsEnabled.value = false
+  }
+}
+
+watch(open, (value) => { if (value) loadZfsEnabled() })
+onMounted(() => { if (open.value) loadZfsEnabled() })
 </script>

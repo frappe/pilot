@@ -96,6 +96,8 @@ class UpdateCommand(Command):
             raise
         finally:
             if volume_enabled:
+                self._step("post", "Removing snapshot")
+                self._remove_snapshot()
                 self.bench.set_maintenance_mode(False)
 
         self._step("done", "Done")
@@ -183,6 +185,17 @@ class UpdateCommand(Command):
             except Exception:
                 pass
 
+    def _remove_snapshot(self):
+        """Remove snapshot taken before migrate"""
+        from pilot.managers.volume_manager import VolumeManager
+
+        try:
+            volume_manager = VolumeManager(self.bench.config.volume)
+            volume_manager.destroy_snapshot(self.bench.config.volume.dataset_path, self.tag)
+            print(f"Removed migration snapshot {self.tag}")
+        except Exception as e:
+            print(f" Unable to remove snapshot: {e}")
+
     def _update_apps(self) -> None:
         from pilot.core.marketplace import Marketplace
 
@@ -250,4 +263,3 @@ class UpdateCommand(Command):
                 site.migrate(skip_failing=self._skip_failing_patches)
             except CommandError as e:
                 raise MigrateError(f"Migration failed for {site.config.name}") from e
-

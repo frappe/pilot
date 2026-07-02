@@ -32,7 +32,8 @@ export const sitesApi = {
   },
 
   backups: {
-    list: (name) => request.get(`sites/${encodeURIComponent(name)}/backups`).json(),
+    list: (name, limit) =>
+      request.get(`sites/${encodeURIComponent(name)}/backups`, { searchParams: limit ? { limit } : {} }).json(),
     create: (name) => request.post(`sites/${encodeURIComponent(name)}/backup`).json(),
     download: (name, filename) => `/api/sites/${encodeURIComponent(name)}/backups/download?filename=${encodeURIComponent(filename)}`,
     schedule: {

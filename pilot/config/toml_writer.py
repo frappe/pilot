@@ -146,6 +146,16 @@ def bench_config_to_toml(config: BenchConfig) -> str:
             parts.append(f'description = "{rule.description}"')
             parts.append("")
 
+    s3 = config.s3
+    if s3.access_key or s3.secret_key or s3.bucket or s3.provider or s3.region:
+        parts.append("[s3]")
+        parts.append(f'access_key = "{s3.access_key}"')
+        parts.append(f'secret_key = "{s3.secret_key}"')
+        parts.append(f'bucket = "{s3.bucket}"')
+        parts.append(f'provider = "{s3.provider}"')
+        parts.append(f'region = "{s3.region}"')
+        parts.append("")
+
     # Only add monitoring section if production is enabled
     if p.enabled:
         mon = config.monitor

@@ -161,8 +161,14 @@ async function confirmDrop() {
   dropping.value = true
   dropError.value = ''
   try {
-    await sitesApi.forceDrop(props.siteName)
-    router.push('/sites')
+    const data = await sitesApi.drop(props.siteName)
+    if (data.ok) {
+      showDrop.value = false
+      openTaskDetailPage(router, data.task_id)
+    } else {
+      dropError.value = data.error || 'Failed to drop site.'
+      dropping.value = false
+    }
   } catch (e) {
     dropError.value = e.message || 'Failed to drop site.'
     dropping.value = false

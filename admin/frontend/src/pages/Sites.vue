@@ -124,8 +124,7 @@
     </Button>
   </Teleport>
 
-  <NewSiteDialog v-model="showCreate" :sites="sites"
-    @created="(name) => router.push({ name: 'SiteDetail', params: { name } })" />
+  <NewSiteDialog v-model="showCreate" :sites="sites" @started="(taskId) => openTaskDetailPage(router, taskId)" />
 </template>
 
 <script setup>
@@ -168,6 +167,7 @@ const SITE_STATUS = {
   online: { label: 'Active', theme: 'green' },
   broken: { label: 'Broken', theme: 'red' },
   offline: { label: 'Paused', theme: 'orange' },
+  provisioning: { label: 'Creating...', theme: 'blue' },
 }
 
 const statusOptions = [
@@ -175,9 +175,13 @@ const statusOptions = [
   { label: 'Active', value: 'online' },
   { label: 'Broken', value: 'broken' },
   { label: 'Paused', value: 'offline' },
+  { label: 'Creating...', value: 'provisioning' },
 ]
 
 function siteStatus(site) {
+  // Provisioning wins over "offline": the site dir/site_config.json may not
+  // exist yet in the earliest moments of a new-site/reinstall task.
+  if (site.provisioning) return 'provisioning'
   if (!site.exists) return 'offline'
   if (site.broken) return 'broken'
   return 'online'

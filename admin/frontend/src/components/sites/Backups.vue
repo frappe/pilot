@@ -59,9 +59,15 @@
               </template>
             </Dropdown>
           </div>
+          <div v-else-if="column.key === 'offsite'" class="flex justify-center">
+            <span v-if="row.set.is_offsite" class="size-4 text-ink-green-6 lucide-circle-check" title="Backed up offsite" />
+            <span v-else class="text-ink-gray-4">—</span>
+          </div>
           <ListRowItem v-else :column="column" :row="row" :item="item" :align="column.align" />
         </template>
       </ListView>
+      <ListFooter v-if="backups.length" class="mt-2 px-1" :model-value="backupsLimit" :options="footerOptions"
+        @update:model-value="setBackupsPageLength" @load-more="loadMoreBackups" />
     </div>
   </div>
 
@@ -125,7 +131,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Button, Dialog, Dropdown, ErrorMessage, ListView, ListRowItem, LoadingText, Select } from 'frappe-ui'
+import { Button, Dialog, Dropdown, ErrorMessage, ListFooter, ListView, ListRowItem, LoadingText, Select } from 'frappe-ui'
 import { sitesApi } from '@/api/sites'
 import { useSite } from '@/composables/useSite'
 import { openTaskDetailPage } from '@/utils/taskRoute'
@@ -133,7 +139,17 @@ import { openTaskDetailPage } from '@/utils/taskRoute'
 const props = defineProps({ siteName: { type: String, required: true } })
 const router = useRouter()
 
-const { backups, backupsLoading, loadBackups } = useSite(props.siteName)
+const { backups, backupsLoading, backupsHasMore, backupsLimit, loadBackups, loadMoreBackups, setBackupsPageLength } =
+  useSite(props.siteName)
+
+const footerOptions = computed(() => ({
+  rowCount: backups.value.length,
+  // ListFooter shows "Load More" only when rowCount < totalCount; we don't know
+  // the true total (S3 metadata is read lazily), so nudge it past rowCount
+  // whenever the backend signals there may be another page.
+  totalCount: backupsHasMore.value ? backups.value.length + 1 : backups.value.length,
+  pageLengthOptions: [20, 50, 100],
+}))
 
 const FREQ_OPTIONS = [
   { label: 'Daily', value: 'daily' },
@@ -306,6 +322,7 @@ const columns = [
   { label: 'Database', key: 'database', align: 'center', width: 1 },
   { label: 'Public', key: 'public', align: 'center', width: 1 },
   { label: 'Private', key: 'private', align: 'center', width: 1 },
+  { label: 'Offsite', key: 'offsite', align: 'center', width: 1 },
   { label: '', key: 'actions', align: 'right', width: '3rem' },
 ]
 
@@ -330,7 +347,8 @@ function menuOptions(set) {
     ['site_config', 'Download Config'],
   ]
   return [
-    ...kinds.filter(([k]) => fileOf(set, k)).map(([k, label]) => ({
+    // Remote-only files have no local path; there's nothing to serve for download for now.
+    ...kinds.filter(([k]) => fileOf(set, k)?.path).map(([k, label]) => ({
       label, icon: 'lucide-download',
       onClick: () => { window.location.href = sitesApi.backups.download(props.siteName, fileOf(set, k).filename) },
     })),
