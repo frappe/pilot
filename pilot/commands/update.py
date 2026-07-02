@@ -26,10 +26,20 @@ class UpdateCommand(Command):
             metavar="APP",
             help="Limit git pull + reinstall to these apps (default: all).",
         )
+        parser.add_argument(
+            "--skip-failing-patches",
+            action="store_true",
+            help="Skip patches that fail to run during site migration.",
+        )
 
     @classmethod
     def from_args(cls, args, bench):
-        return cls(bench, skip_confirm=args.yes, apps=set(args.apps) if args.apps else None)
+        return cls(
+            bench,
+            skip_confirm=args.yes,
+            apps=set(args.apps) if args.apps else None,
+            skip_failing_patches=args.skip_failing_patches,
+        )
 
     def __init__(
         self,
@@ -37,11 +47,13 @@ class UpdateCommand(Command):
         skip_confirm: bool = False,
         apps: set | None = None,
         task_log: Path | None = None,
+        skip_failing_patches: bool = False,
     ) -> None:
         self.bench = bench
         self.skip_confirm = skip_confirm
         self._apps_filter = apps  # None = all apps
         self._task_log = task_log
+        self._skip_failing_patches = skip_failing_patches
         self.tag: str | None = None
         self._current_step: str | None = None
 
@@ -207,7 +219,7 @@ class UpdateCommand(Command):
         for site in self.bench.sites():
             print(f"Migrating {site.config.name}...")
             try:
-                site.migrate()
+                site.migrate(skip_failing=self._skip_failing_patches)
             except CommandError as e:
                 raise MigrateError(f"Migration failed for {site.config.name}") from e
 

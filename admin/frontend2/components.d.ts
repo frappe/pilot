@@ -27,7 +27,7 @@ declare module 'vue' {
     Domains: typeof import('./src/components/sites/settings/Domains.vue')['default']
     Firewall: typeof import('./src/components/settings/Firewall.vue')['default']
     General: typeof import('./src/components/sites/settings/General.vue')['default']
-    GitHub: typeof import('./src/components/settings/GitHub.vue')['default']
+    Git: typeof import('./src/components/settings/Git.vue')['default']
     InstallAppDialog: typeof import('./src/components/InstallAppDialog.vue')['default']
     LogView: typeof import('./src/components/LogView.vue')['default']
     MarketplaceAppCard: typeof import('./src/components/MarketplaceAppCard.vue')['default']

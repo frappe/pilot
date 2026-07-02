@@ -8,19 +8,27 @@
         <p v-else-if="!appNames.length" class="py-6 text-ink-gray-5 text-sm text-center">
           Your bench is up to date.
         </p>
-        <div v-else class="flex flex-col gap-2 max-h-80 overflow-y-auto">
-          <button v-for="name in appNames" :key="name" type="button"
-            class="flex items-center gap-3 p-3 border rounded-lg text-left transition-colors" :class="selected.has(name)
-              ? 'border-outline-gray-4 bg-surface-gray-1 '
-              : 'border-outline-gray-2 hover:bg-surface-gray-1'" @click="toggle(name)">
-            <AppIcon :name="name" />
-            <span class="flex-1 min-w-0">
-              <p class="font-medium text-ink-gray-8 text-sm truncate">{{ titleMap[name] || name }}</p>
-              <p class="text-ink-gray-5 text-p-sm truncate">Update available</p>
-            </span>
-            <span v-if="selected.has(name)" class="size-4 text-ink-gray-8 shrink-0 lucide-check" />
-          </button>
-        </div>
+        <template v-else>
+          <div class="flex flex-col gap-1 max-h-80 overflow-y-auto">
+            <button v-for="name in appNames" :key="name" type="button"
+              class="flex items-center gap-3 p-2 rounded-lg text-left transition-colors hover:bg-surface-gray-1"
+              @click="toggle(name)">
+              <AppIcon :name="name" class="shrink-0 size-8 rounded-lg" />
+              <span class="flex-1 min-w-0">
+                <p class="font-medium text-ink-gray-8 text-sm truncate">{{ titleMap[name] || name }}</p>
+                <p class="text-ink-gray-5 text-p-sm truncate">Update available</p>
+              </span>
+              <Checkbox :model-value="selected.has(name)" class="pointer-events-none shrink-0" />
+            </button>
+          </div>
+
+          <div class="flex flex-col gap-2 pt-2 border-t border-outline-gray-1">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <Checkbox v-model="skipFailingPatches" />
+              <span class="text-ink-gray-7 text-sm">Skip failing patches</span>
+            </label>
+          </div>
+        </template>
 
         <ErrorMessage v-if="error" :message="error" />
 
@@ -46,7 +54,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Button, Dialog, ErrorMessage, LoadingText } from 'frappe-ui'
+import { Button, Checkbox, Dialog, ErrorMessage, LoadingText } from 'frappe-ui'
 import { tasksApi } from '@/api/tasks'
 import AppIcon from '@/components/AppIcon.vue'
 import { useAppRegistry } from '@/composables/useAppRegistry'
@@ -70,6 +78,7 @@ const appNames = computed(() => {
 })
 
 const selected = ref(new Set())
+const skipFailingPatches = ref(false)
 const updating = ref(false)
 const error = ref('')
 
@@ -87,7 +96,10 @@ async function runUpdate() {
   updating.value = true
   error.value = ''
   try {
-    const res = await tasksApi.run('update', { apps: [...selected.value] })
+    const res = await tasksApi.run('update', {
+      apps: [...selected.value],
+      skip_failing_patches: skipFailingPatches.value,
+    })
     if (res.ok) {
       open.value = false
       openTaskDetailPage(router, res.task_id)

@@ -114,9 +114,8 @@ class Site:
             return []
         return [line.split()[0] for line in result.stdout.splitlines() if line.strip()]
 
-    def migrate(self) -> None:
-        run_command(
-            self._frappe_call("frappe", "--site", self.config.name, "migrate"),
-            cwd=self.bench.sites_path,
-            stream_output=True,
-        )
+    def migrate(self, skip_failing: bool = False) -> None:
+        cmd = self._frappe_call("frappe", "--site", self.config.name, "migrate")
+        if skip_failing:
+            cmd.append("--skip-failing")
+        run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
