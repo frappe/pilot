@@ -50,10 +50,19 @@ class BenchTomlStore:
         self.path.write_text(bench_config_to_toml(config))
 
     def write_flat(self, name: str, settings: dict, port_offset: int = 0) -> None:
-        """Serialise the wizard's flat-key settings dict to bench.toml."""
+        """Serialise the wizard's flat-key settings dict to bench.toml.
+
+        production.enabled has no flat key (it's flipped only by `bench setup
+        production`, never by editing config) so BenchTomlBuilder always builds
+        it as the dataclass default (False). Preserve whatever's already on
+        disk, or a wizard/settings save on an already-production bench would
+        silently demote it back to "development"."""
         from pilot.config.bench_toml_builder import BenchTomlBuilder
 
-        self.write(BenchTomlBuilder(name, settings, port_offset=port_offset).build())
+        config = BenchTomlBuilder(name, settings, port_offset=port_offset).build()
+        if self.path.exists():
+            config.production.enabled = self.read_raw().get("production", {}).get("enabled", False)
+        self.write(config)
 
     def write_raw(self, data: dict) -> None:
         write_toml(self.path, data)

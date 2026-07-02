@@ -81,3 +81,26 @@ def test_write_flat_matches_builder(tmp_path: Path) -> None:
     store = BenchTomlStore.for_bench(tmp_path)
     store.write_flat("b", {"python": "3.12"}, port_offset=5)
     assert store.read_flat() == BenchTomlBuilder.read_settings(store.path)
+
+
+def test_write_flat_preserves_production_enabled(tmp_path: Path) -> None:
+    """production.enabled has no flat key, so BenchTomlBuilder.build() always
+    reconstructs it as the dataclass default (False). A wizard/settings save
+    (write_flat) on a bench already brought up to production must not silently
+    demote it back to "development" — that's a regression, not a real change."""
+    store = BenchTomlStore.for_bench(tmp_path)
+    store.write_flat("prod-bench", {"production_process_manager": "systemd", "admin_domain": "admin.example.com"})
+    raw = store.read_raw()
+    raw["production"]["enabled"] = True
+    store.write_raw(raw)
+
+    store.write_flat("prod-bench", {
+        "production_process_manager": "systemd",
+        "admin_domain": "admin.example.com",
+        "admin_password": "secret",
+    })
+
+    config = store.read()
+    assert config.production.enabled is True
+    assert config.production.process_manager == "systemd"
+    assert config.admin.password == "secret"
