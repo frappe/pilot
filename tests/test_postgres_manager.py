@@ -242,7 +242,7 @@ def test_pick_dedicated_postgres_port_skips_shared_and_siblings(tmp_path) -> Non
 
 def test_provision_routes_to_instance_when_dedicated() -> None:
     m = _dedicated("b1", root_password="pw")
-    with patch.object(m, "install"), patch.object(m, "_provision_instance") as prov, patch.object(m, "_wait_until_reachable"), patch.object(m, "secure"):
+    with patch.object(m, "install"), patch.object(m, "_install_conversion_tools"), patch.object(m, "_provision_instance") as prov, patch.object(m, "_wait_until_reachable"), patch.object(m, "secure"):
         m.provision()
     prov.assert_called_once()
 
