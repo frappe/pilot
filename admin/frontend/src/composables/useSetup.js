@@ -339,7 +339,7 @@ export function useSetup() {
         const response = await setupApi.status()
         if (!response.ok) continue
         const status = await response.json()
-        if (status.wizard !== true) return window.location.reload()
+        if (status.wizard !== true) return (window.location.href = '/sites')
       } catch {}
     }
   }
