@@ -74,9 +74,9 @@
   <!-- Rollback confirmation -->
   <Dialog v-model="showRollback" :options="{ title: 'Rollback snapshot', size: 'sm' }">
     <template #body-content>
-      <p class="text-ink-gray-7 text-sm">
-        Roll back to <strong>{{ rollbackTarget?.tag }}</strong>? Every change made since this snapshot was taken
-        will be lost. This cannot be undone.
+      <p class="text-ink-gray-7 text-p-sm">
+        Roll back to <span class="font-semibold text-ink-gray-8 break-all">{{ rollbackTarget?.tag }}</span>?
+        Every change made since this snapshot was taken will be lost. This cannot be undone.
       </p>
       <div class="flex justify-end gap-2 mt-4">
         <Button variant="ghost" @click="showRollback = false">Cancel</Button>
@@ -88,8 +88,9 @@
   <!-- Delete confirmation -->
   <Dialog v-model="showDelete" :options="{ title: 'Delete snapshot', size: 'sm' }">
     <template #body-content>
-      <p class="text-ink-gray-7 text-sm">
-        Delete <strong>{{ deleteTarget?.tag }}</strong>? This cannot be undone.
+      <p class="text-ink-gray-7 text-p-sm">
+        Delete <span class="font-semibold text-ink-gray-8 break-all">{{ deleteTarget?.tag }}</span>?
+        This cannot be undone.
       </p>
       <div class="flex justify-end gap-2 mt-4">
         <Button variant="ghost" @click="showDelete = false">Cancel</Button>
