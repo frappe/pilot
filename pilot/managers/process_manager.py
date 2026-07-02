@@ -64,9 +64,9 @@ class ProcessDefinition:
 
 
 class ProcessManager:
-    def __init__(self, bench: "Bench", admin_dev: bool = False) -> None:
+    def __init__(self, bench: "Bench", watch_admin_js: bool | None = None) -> None:
         self.bench = bench
-        self.admin_dev = admin_dev
+        self.watch_admin_js = bench.config.watch_admin_js if watch_admin_js is None else watch_admin_js
         self._procs: dict[str, subprocess.Popen] = {}
         self._stopping = False
 
@@ -274,14 +274,16 @@ class ProcessManager:
 
     def _process_definitions(self) -> list[ProcessDefinition]:
         defs = [self._to_dev(pd) for pd in self._prod_process_definitions()]
-        if self.admin_dev:
+        if self.bench.config.watch_apps_js:
+            defs.append(self._watch_definition())
+        if self.watch_admin_js:
             defs.append(self._admin_frontend_dev_definition())
         return defs
 
     def _to_dev(self, pd: ProcessDefinition) -> ProcessDefinition:
         """Map a production process definition to its dev-mode variant."""
-        if pd.name == "admin" and self.admin_dev:
-            return self._admin_dev_definition()
+        if pd.name == "admin" and self.watch_admin_js:
+            return self._watch_admin_definition()
         if pd.name == "web":
             return self._web_definition(dev=True)
         return pd
@@ -297,9 +299,10 @@ class ProcessManager:
         python = self.bench.env_path / "bin" / "python"
         if dev:
             port = self.bench.config.http_port
+            reload_flag = "" if self.bench.config.reload_python else " --noreload"
             return ProcessDefinition(
                 name="web",
-                command=f"{python} -m frappe.utils.bench_helper frappe serve --port {port} --noreload",
+                command=f"{python} -m frappe.utils.bench_helper frappe serve --port {port}{reload_flag}",
                 log_file=self.bench.logs_path / "web.log",
                 env={"DEV_SERVER": "1"},
                 working_dir=sites,
@@ -331,6 +334,15 @@ class ProcessManager:
             log_file=self.bench.logs_path / "socketio.log",
             env=backend_env,
             working_dir=working_dir,
+        )
+
+    def _watch_definition(self) -> ProcessDefinition:
+        python = self.bench.env_path / "bin" / "python"
+        return ProcessDefinition(
+            name="watch",
+            command=f"{python} -m frappe.utils.bench_helper frappe watch",
+            log_file=self.bench.logs_path / "watch.log",
+            working_dir=self.bench.sites_path,
         )
 
     def _worker_pool_definition(self, queues: str, num_workers: int) -> ProcessDefinition:
@@ -370,7 +382,7 @@ class ProcessManager:
     def _admin_definition(self) -> ProcessDefinition:
         return self._build_admin_definition("--no-timeout")
 
-    def _admin_dev_definition(self) -> ProcessDefinition:
+    def _watch_admin_definition(self) -> ProcessDefinition:
         return self._build_admin_definition("--dev")
 
     def _build_admin_definition(self, mode_flag: str) -> ProcessDefinition:

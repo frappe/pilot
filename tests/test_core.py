@@ -333,13 +333,25 @@ def test_process_definitions_returns_correct_count(tmp_path: Path) -> None:
     process_manager = ProcessManager(bench)
     definitions = process_manager._process_definitions()
     assert len(definitions) == 9
+    assert "watch" not in [pd.name for pd in definitions]
     assert "admin-ui" not in [pd.name for pd in definitions]
 
 
-def test_process_definitions_admin_dev_adds_vite_ui(tmp_path: Path) -> None:
+def test_process_definitions_watch_admin_js_adds_vite_ui(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
-    definitions = ProcessManager(bench, admin_dev=True)._process_definitions()
+    definitions = ProcessManager(bench, watch_admin_js=True)._process_definitions()
     assert "admin-ui" in [pd.name for pd in definitions]
+    assert len(definitions) == 10
+
+
+def test_process_definitions_can_enable_app_watch(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.config.watch_apps_js = True
+    definitions = ProcessManager(bench)._process_definitions()
+    assert "watch" in [pd.name for pd in definitions]
+    watch = next(pd for pd in definitions if pd.name == "watch")
+    assert "frappe watch" in watch.command
+    assert watch.working_dir == bench.sites_path
     assert len(definitions) == 10
 
 
@@ -371,6 +383,21 @@ def test_process_definitions_order_starts_with_web(tmp_path: Path) -> None:
     assert definitions[0].name == "web"
 
 
+def test_dev_web_disables_python_reloader_by_default(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    web = ProcessManager(bench)._process_definitions()[0]
+    assert web.name == "web"
+    assert "--noreload" in web.command
+
+
+def test_dev_web_can_enable_python_reloader(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.config.reload_python = True
+    web = ProcessManager(bench)._process_definitions()[0]
+    assert web.name == "web"
+    assert "--noreload" not in web.command
+
+
 # ── ProcessManager tests ───────────────────────────────────────────────
 
 
@@ -386,6 +413,7 @@ def test_honcho_generate_config_writes_procfile(tmp_path: Path) -> None:
     assert "web:" in content
     assert "socketio:" in content
     assert "worker_default_1:" in content
+    assert "watch:" not in content
     assert "redis_cache:" in content
 
 

@@ -45,6 +45,9 @@ class BenchConfig:
     http_port: int = 8000
     socketio_port: int = 9000
     socketio_backend: str = "node"
+    watch_apps_js: bool = False
+    reload_python: bool = False
+    watch_admin_js: bool = False
     # The single database engine for this bench's sites: "mariadb" or "postgres".
     db_type: str = "mariadb"
     default_branch: str = ""
@@ -99,6 +102,9 @@ class BenchConfig:
             http_port=bench_data.get("http_port", 8000),
             socketio_port=bench_data.get("socketio_port", 9000),
             socketio_backend=bench_data.get("socketio_backend", "node"),
+            watch_apps_js=bench_data.get("watch_apps_js", False),
+            reload_python=bench_data.get("reload_python", False),
+            watch_admin_js=bench_data.get("watch_admin_js", False),
             db_type=bench_data.get("db_type", "mariadb"),
             default_branch=bench_data.get("default_branch", ""),
             apps=apps,
