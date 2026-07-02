@@ -20,7 +20,7 @@
       <!-- Status filter -->
       <FormControl v-model="statusFilter" type="select" :options="statusOptions" class="max-w-24 sm:max-w-32" />
       <!-- List view type -->
-      <TabButtons v-model="view" :options="viewOptions" />
+      <TabButtons v-model="view" :options="viewOptions" class="hidden sm:block" />
     </div>
 
     <div v-if="loading" class="flex justify-center mt-16">
