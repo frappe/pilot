@@ -4,8 +4,9 @@
       <template #prefix>
         <span
           v-if="updatesAvailable"
-          class="size-2 rounded-full bg-amber-500"
+          class="size-4 lucide-circle-arrow-up"
         />
+        
         <span v-else class="size-4 lucide-refresh-cw" />
       </template>
       <span class="hidden sm:inline">{{ updatesAvailable ? 'Update available' : 'Check for updates' }}</span>
@@ -16,7 +17,7 @@
     <template #prefix>
       <span
         v-if="updatesAvailable"
-        class="size-2 rounded-full bg-amber-500"
+        class="size-4 lucide-circle-arrow-up"
       />
       <span v-else class="size-4 lucide-refresh-cw" />
     </template>

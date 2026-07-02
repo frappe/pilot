@@ -1,12 +1,7 @@
 <template>
-  <Dialog v-model="open" :options="dialogOptions">
-    <template #body-content>
-      <template v-if="mode === 'repo'">
-        <CustomAppRepoForm :existing-apps="existingApps" :submitting="installing" @submit="onCustomRepoChosen" />
-        <ErrorMessage v-if="error" :message="error" class="mt-3" />
-      </template>
-
-      <template v-else>
+  <Dialog v-model="open" :title="`Install ${appLabel}`" size="md">
+    <template #default>
+      <div class="space-y-5">
         <p v-if="presetSite" class="text-ink-gray-7 text-sm">
           Install <strong>{{ appLabel }}</strong> on <strong>{{ presetSite.name }}</strong>?
           <span v-if="presetInstalled" class="block mt-1 text-ink-gray-5">Already installed on this site.</span>
@@ -46,16 +41,16 @@
           </p>
         </div>
 
-        <ErrorMessage v-if="error" :message="error" class="mt-3" />
+        <ErrorMessage v-if="error" :message="error" />
 
-        <div class="flex justify-end gap-2 mt-5">
-          <Button v-if="custom" variant="ghost" class="mr-auto" @click="mode = 'repo'">← Back</Button>
+        <div class="flex justify-end gap-2">
           <Button variant="subtle" @click="open = false">Cancel</Button>
-          <Button variant="solid" :disabled="!selection || presetInstalled" :loading="installing" @click="confirmInstall">
+          <Button variant="solid" :disabled="!selection || presetInstalled" :loading="installing"
+            @click="confirmInstall">
             Install
           </Button>
         </div>
-      </template>
+      </div>
     </template>
   </Dialog>
 </template>
@@ -64,8 +59,6 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, Dialog, ErrorMessage } from 'frappe-ui'
-import CustomAppRepoForm from '@/components/CustomAppRepoForm.vue'
-import { appsApi } from '@/api/apps'
 import { sitesApi } from '@/api/sites'
 import { openTaskDetailPage } from '@/utils/taskRoute'
 
@@ -73,24 +66,15 @@ const props = defineProps({
   app: { type: Object, default: null },
   sites: { type: Array, default: () => [] },
   siteName: { type: String, default: '' },
-  custom: { type: Boolean, default: false },
-  existingApps: { type: Array, default: () => [] },
 })
 const open = defineModel('open')
 const router = useRouter()
 
-const mode = ref('sites') // 'repo' (custom app entry) | 'sites' (target picker)
 const selection = ref(null)
 const installing = ref(false)
 const error = ref('')
-const customRepo = ref('')
-const customBranch = ref('')
 
-const dialogOptions = computed(() => ({
-  title: mode.value === 'repo' ? 'Add app from GitHub' : `Install ${appLabel.value}`,
-  size: mode.value === 'repo' ? 'lg' : 'md',
-}))
-const appLabel = computed(() => props.app?.title || customRepo.value || 'App')
+const appLabel = computed(() => props.app?.title || props.app?.name || '')
 
 const presetSite = computed(() => props.sites.find((s) => s.name === props.siteName) || null)
 const presetInstalled = computed(() => Boolean(presetSite.value && isInstalled(presetSite.value)))
@@ -99,31 +83,7 @@ watch(open, (isOpen) => {
   if (!isOpen) return
   selection.value = props.siteName || null
   error.value = ''
-  mode.value = props.custom ? 'repo' : 'sites'
 })
-
-async function onCustomRepoChosen({ name, repo, branch, exists }) {
-  customRepo.value = repo
-  customBranch.value = branch
-  error.value = ''
-
-  if (!exists) {
-    mode.value = 'sites'
-    return
-  }
-
-  installing.value = true
-  try {
-    const result = await appsApi.updateSource(name, { repo, branch })
-    if (!result.ok) throw new Error(result.error || `Could not update ${name}.`)
-    open.value = false
-    openTaskDetailPage(router, result.task_id)
-  } catch (caught) {
-    error.value = caught.message || 'Could not start update.'
-  } finally {
-    installing.value = false
-  }
-}
 
 const installableSites = computed(() => props.sites.filter((s) => !isInstalled(s)))
 
@@ -143,10 +103,13 @@ function rowClass(value) {
 }
 
 async function startInstall(site) {
-  const payload = props.custom
-    ? { repo: customRepo.value, branch: customBranch.value }
-    : { app: props.app.name, repo: props.app.repo, branch: props.app.branch || '' }
-  const result = await sitesApi.apps.getAndInstall(site.name, payload)
+  const result = props.app.inBench
+    ? await sitesApi.apps.install(site.name, props.app.name)
+    : await sitesApi.apps.getAndInstall(site.name, {
+        app: props.app.name,
+        repo: props.app.repo,
+        branch: props.app.branch || '',
+      })
   if (!result.ok) throw new Error(result.error || `Could not install on ${site.name}.`)
   return result.task_id
 }

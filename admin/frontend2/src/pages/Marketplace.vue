@@ -69,20 +69,30 @@
         </div>
       </section>
 
-      <p v-if="!frappeApps.length && !communityApps.length" class="mt-8 text-ink-gray-5 text-sm text-center">
+      <section v-if="otherBenchApps.length" class="mt-8">
+        <p class="font-medium text-ink-gray-5 text-xs uppercase tracking-wide">Other apps in this bench</p>
+        <div class="gap-x-10 grid grid-cols-1 md:grid-cols-2 mt-2">
+          <MarketplaceAppCard v-for="app in otherBenchApps" :key="app.name" :app="app" @install="onInstall" />
+        </div>
+      </section>
+
+      <p v-if="!frappeApps.length && !communityApps.length && !otherBenchApps.length"
+        class="mt-8 text-ink-gray-5 text-sm text-center">
         No apps found.
       </p>
 
       <p class="mt-10 text-ink-gray-5 text-sm">
         Building your own?
-        <Button variant="ghost" class="!px-1 !text-ink-gray-7" @click="onInstallCustom">Install from GitHub</Button>
+        <Button variant="ghost" class="!px-1 !text-ink-gray-7" @click="showAddFromGithub = true">
+          Install from GitHub
+        </Button>
       </p>
     </template>
   </div>
 
   <ChooseSiteDialog v-model:open="showChooseSite" v-model:site="currentSiteName" :sites="sites" />
-  <InstallAppDialog v-model:open="showInstallApp" :app="installTarget" :sites="sites" :site-name="currentSiteName"
-    :custom="installTarget === null" :existing-apps="benchApps" />
+  <InstallAppDialog v-model:open="showInstallApp" :app="installTarget" :sites="sites" :site-name="currentSiteName" />
+  <AddAppFromGithubDialog v-model:open="showAddFromGithub" />
 </template>
 
 <script setup>
@@ -90,6 +100,7 @@ import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { Button, ErrorMessage, FormControl, LoadingText } from 'frappe-ui'
 import LucideSearch from '~icons/lucide/search'
+import AddAppFromGithubDialog from '@/components/AddAppFromGithubDialog.vue'
 import ChooseSiteDialog from '@/components/ChooseSiteDialog.vue'
 import InstallAppDialog from '@/components/InstallAppDialog.vue'
 import MarketplaceAppCard from '@/components/MarketplaceAppCard.vue'
@@ -112,20 +123,16 @@ const {
   load,
   sites,
   currentSiteName,
-  benchApps,
+  otherBenchApps,
 } = useMarketplace(route.query.site)
 
 const showChooseSite = ref(false)
 const showInstallApp = ref(false)
+const showAddFromGithub = ref(false)
 const installTarget = ref(null)
 
 function onInstall(app) {
   installTarget.value = app
-  showInstallApp.value = true
-}
-
-function onInstallCustom() {
-  installTarget.value = null
   showInstallApp.value = true
 }
 

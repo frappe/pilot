@@ -118,6 +118,13 @@ export function useMarketplace(initialSiteName = '') {
     matchingApps.value.filter((app) => !isFrappeApp(app)).sort(sortApps),
   )
 
+  const registryNames = computed(() => new Set(registry.value.map((app) => app.name)))
+  const otherBenchApps = computed(() =>
+    benchApps.value
+      .filter((name) => name !== 'frappe' && !registryNames.value.has(name))
+      .map((name) => ({ name, title: name, compatible: true, inBench: true })),
+  )
+
   return {
     loading,
     error,
@@ -133,5 +140,6 @@ export function useMarketplace(initialSiteName = '') {
     sites,
     currentSiteName,
     benchApps,
+    otherBenchApps,
   }
 }

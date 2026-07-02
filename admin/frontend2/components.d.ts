@@ -13,6 +13,7 @@ declare module 'vue' {
   export interface GlobalComponents {
     ActionMenu: typeof import('./src/components/ActionMenu.vue')['default']
     Actions: typeof import('./src/components/sites/settings/Actions.vue')['default']
+    AddAppFromGithubDialog: typeof import('./src/components/AddAppFromGithubDialog.vue')['default']
     AddDomainDialog: typeof import('./src/components/sites/settings/domains/AddDomainDialog.vue')['default']
     AppIcon: typeof import('./src/components/AppIcon.vue')['default']
     Apps: typeof import('./src/components/sites/Apps.vue')['default']
@@ -22,7 +23,6 @@ declare module 'vue' {
     ChartCard: typeof import('./src/components/ChartCard.vue')['default']
     ChooseSiteDialog: typeof import('./src/components/ChooseSiteDialog.vue')['default']
     Config: typeof import('./src/components/sites/Config.vue')['default']
-    CustomAppRepoForm: typeof import('./src/components/CustomAppRepoForm.vue')['default']
     Danger: typeof import('./src/components/sites/settings/Danger.vue')['default']
     Domains: typeof import('./src/components/sites/settings/Domains.vue')['default']
     Firewall: typeof import('./src/components/settings/Firewall.vue')['default']
