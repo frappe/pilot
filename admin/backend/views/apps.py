@@ -44,17 +44,24 @@ def add():
     data = request.get_json(silent=True) or {}
 
     name = (data.get("name") or "").strip()
-    err = validate_app_name(name)
-    if err:
-        return jsonify({"ok": False, "error": err})
+    repo = (data.get("repo") or "").strip()
+    branch = (data.get("branch") or "").strip()
 
-    if (bench_root / "apps" / name / ".git").exists():
-        return jsonify({"ok": False, "error": f"'{name}' is already installed."})
+    if repo:
+        err = validate_repo_url(repo)
+        if err:
+            return jsonify({"ok": False, "error": err})
+        task_args = {"name": name or repo, "repo": repo, "branch": branch}
+    else:
+        err = validate_app_name(name)
+        if err:
+            return jsonify({"ok": False, "error": err})
+        if (bench_root / "apps" / name / ".git").exists():
+            return jsonify({"ok": False, "error": f"'{name}' is already installed."})
+        task_args = {"name": name, "marketplace_app": name}
 
     try:
-        task_id = TaskRunner(bench_root).run(
-            "get-app", {"name": name, "marketplace_app": name}
-        )
+        task_id = TaskRunner(bench_root).run("get-app", task_args)
     except Exception as e:
         return jsonify({"ok": False, "error": f"Could not start get-app: {e}"})
 

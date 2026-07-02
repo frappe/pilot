@@ -90,7 +90,7 @@ class TaskReader:
 
         output_path.touch()
         with open(output_path, "r", errors="replace", newline='') as log_file:
-            log_file.seek(0, 2)  # seek to end
+            # No seek: replay from the start so a fresh connection gets history too.
             # Raw current line, envelope and carriage returns and all. We only
             # strip the syslog envelope and resolve \r at emit time via
             # _display_line, so the live stream matches read_output and the

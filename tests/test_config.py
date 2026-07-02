@@ -668,3 +668,78 @@ def test_toml_writer_monitor_log_path_written_when_set() -> None:
     config.monitor.log_path = Path("/var/log/test-bench-stats.log")
     toml = bench_config_to_toml(config)
     assert 'log_path = "/var/log/test-bench-stats.log"' in toml
+
+
+# ── Firewall ────────────────────────────────────────────────────────────────
+
+
+def test_firewall_defaults_to_off_and_open() -> None:
+    config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
+    assert config.firewall.enabled is False
+    assert config.firewall.default == "allow"
+    assert config.firewall.rules == []
+
+
+def test_firewall_parses_rules() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["firewall"] = {
+        "enabled": True,
+        "default": "deny",
+        "rules": [
+            {"ip": "203.0.113.4", "action": "deny", "description": "bad"},
+            {"ip": "2001:db8::/32", "action": "allow"},
+        ],
+    }
+    config = load_from_dict(data)
+    assert config.firewall.enabled is True
+    assert config.firewall.default == "deny"
+    assert [(r.ip, r.action) for r in config.firewall.rules] == [
+        ("203.0.113.4", "deny"),
+        ("2001:db8::/32", "allow"),
+    ]
+
+
+def test_firewall_accepts_ipv4_ipv6_and_cidr() -> None:
+    for ip in ("203.0.113.4", "10.0.0.0/8", "2001:db8::1", "2001:db8::/32", "::1"):
+        data = copy.deepcopy(MINIMAL_VALID_DATA)
+        data["firewall"] = {"rules": [{"ip": ip, "action": "deny"}]}
+        load_from_dict(data)  # must not raise
+
+
+def test_firewall_rejects_bad_ip() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["firewall"] = {"rules": [{"ip": "not-an-ip", "action": "deny"}]}
+    with pytest.raises(ConfigError):
+        load_from_dict(data)
+
+
+def test_firewall_rejects_bad_action_and_default() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["firewall"] = {"rules": [{"ip": "203.0.113.4", "action": "drop"}]}
+    with pytest.raises(ConfigError):
+        load_from_dict(data)
+    data["firewall"] = {"default": "maybe", "rules": []}
+    with pytest.raises(ConfigError):
+        load_from_dict(data)
+
+
+def test_firewall_toml_round_trip() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["firewall"] = {
+        "enabled": True,
+        "default": "deny",
+        "rules": [{"ip": "203.0.113.4", "action": "deny", "description": "note"}],
+    }
+    config = load_from_dict(data)
+    import tomllib
+    reparsed = BenchConfig._from_dict(tomllib.loads(bench_config_to_toml(config)))
+    reparsed.validate()
+    assert reparsed.firewall.enabled is True
+    assert reparsed.firewall.default == "deny"
+    assert reparsed.firewall.rules[0].ip == "203.0.113.4"
+    assert reparsed.firewall.rules[0].description == "note"
+
+
+def test_firewall_section_omitted_when_off_and_empty() -> None:
+    config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
+    assert "[firewall]" not in bench_config_to_toml(config)

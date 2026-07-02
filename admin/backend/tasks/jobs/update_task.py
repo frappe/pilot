@@ -12,12 +12,14 @@ class UpdateTask(BaseTask):
         p = super()._parser()
         p.add_argument("--apps", nargs="*", default=None)
         p.add_argument("--task-log", default=None)
+        p.add_argument("--skip-failing-patches", action="store_true")
         return p
 
     def __init__(self, bench, bench_root, args):
         super().__init__(bench, bench_root, args)
         self._apps_filter = set(args.apps) if args.apps else None
         self._task_log = Path(args.task_log) if getattr(args, "task_log", None) else None
+        self._skip_failing_patches = args.skip_failing_patches
 
     def run(self) -> None:
         try:
@@ -26,6 +28,7 @@ class UpdateTask(BaseTask):
                 skip_confirm=True,
                 apps=self._apps_filter,
                 task_log=self._task_log,
+                skip_failing_patches=self._skip_failing_patches,
             ).run()
         except MigrateError:
             sys.exit(1)

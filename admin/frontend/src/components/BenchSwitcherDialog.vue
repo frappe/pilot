@@ -1,9 +1,10 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { Dialog, Button, Badge, Dropdown, ListView, ErrorMessage } from 'frappe-ui'
+import { Dialog, Button, Badge, ListView, ErrorMessage } from 'frappe-ui'
+import { useBenches } from '@/composables/useBenches'
+import ActionMenu from '@/components/ActionMenu.vue'
 import LucidePlus from '~icons/lucide/plus'
 import LucideRefreshCw from '~icons/lucide/refresh-cw'
-import LucideMoreVertical from '~icons/lucide/more-vertical'
 import LucideExternalLink from '~icons/lucide/external-link'
 import LucidePlay from '~icons/lucide/play'
 import LucideSquare from '~icons/lucide/square'
@@ -19,12 +20,9 @@ const show = computed({
   set: (val) => emit('update:modelValue', val),
 })
 
-const benches = ref([])
-const loading = ref(false)
+const { benches, loading, controlLoading, error: controlError, load: loadBenches, control: controlBench, drop: dropBenchByName } = useBenches()
 const currentPort = window.location.port
 const currentHost = window.location.hostname
-const controlLoading = ref('')
-const controlError = ref('')
 
 const benchToDrop = ref(null)
 const dropping = ref(false)
@@ -120,42 +118,17 @@ function menuOptions(bench) {
     const running = bench.workload_running
     const current = isCurrentBench(bench)
     if (running !== true && !current)
-      opts.push({ label: 'Start', icon: LucidePlay, onClick: () => control(bench, 'start') })
+      opts.push({ label: 'Start', icon: LucidePlay, onClick: () => controlBench(bench.name, 'start') })
     if (running !== false)
-      opts.push({ label: 'Restart', icon: LucideRotateCw, onClick: () => control(bench, 'restart') })
+      opts.push({ label: 'Restart', icon: LucideRotateCw, onClick: () => controlBench(bench.name, 'restart') })
     // Stopping the bench you're currently using would kill this very session.
     if (running !== false && !current)
-      opts.push({ label: 'Stop', icon: LucideSquare, theme: 'red', onClick: () => control(bench, 'stop') })
+      opts.push({ label: 'Stop', icon: LucideSquare, theme: 'red', onClick: () => controlBench(bench.name, 'stop') })
   }
   // Only an empty bench can be dropped, and never the one you're using.
   if (!isCurrentBench(bench) && (bench.site_count ?? 0) === 0)
     opts.push({ label: 'Drop bench', icon: LucideTrash2, theme: 'red', onClick: () => confirmDrop(bench) })
   return opts
-}
-
-async function loadBenches() {
-  loading.value = true
-  try {
-    const response = await fetch('/api/benches/')
-    if (response.ok) benches.value = await response.json()
-  } catch { } finally {
-    loading.value = false
-  }
-}
-
-async function control(bench, action) {
-  controlLoading.value = bench.name
-  controlError.value = ''
-  try {
-    const res = await fetch(`/api/benches/${bench.name}/actions/${action}`, { method: 'POST' })
-    const d = await res.json()
-    if (!d.ok) { controlError.value = d.error; return }
-    await loadBenches()
-  } catch (e) {
-    controlError.value = e.message
-  } finally {
-    if (controlLoading.value === bench.name) controlLoading.value = ''
-  }
 }
 
 function confirmDrop(bench) {
@@ -167,15 +140,8 @@ async function dropBench() {
   const bench = benchToDrop.value
   if (!bench) return
   dropping.value = true
-  controlError.value = ''
   try {
-    const res = await fetch(`/api/benches/${bench.name}`, { method: 'DELETE' })
-    const d = await res.json()
-    if (!d.ok) { controlError.value = d.error; return }
-    benchToDrop.value = null
-    await loadBenches()
-  } catch (e) {
-    controlError.value = e.message
+    if (await dropBenchByName(bench.name)) benchToDrop.value = null
   } finally {
     dropping.value = false
   }
@@ -195,15 +161,15 @@ watch(show, (open) => {
   <Dialog v-model="show" title="Manage Benches" size="3xl" :showCloseButton="true">
     <template #default>
       <div class="flex flex-col" @pointerdown.stop>
-        <div class="mb-4 flex items-center justify-end gap-1">
+        <div class="flex justify-end items-center gap-1 mb-4">
           <Button variant="ghost" size="sm" :loading="loading" @click="loadBenches" title="Refresh">
             <template #icon>
-              <LucideRefreshCw class="h-4 w-4" />
+              <LucideRefreshCw class="w-4 h-4" />
             </template>
           </Button>
-          <Button variant="outline" size="sm" @click="newBench">
+          <Button variant="subtle" size="sm" @click="newBench">
             <template #prefix>
-              <LucidePlus class="h-4 w-4" />
+              <LucidePlus class="w-4 h-4" />
             </template>
             New Bench
           </Button>
@@ -211,43 +177,33 @@ watch(show, (open) => {
 
         <ErrorMessage v-if="controlError" :message="controlError" class="mb-2" />
 
-        <div v-if="loading && !benches.length" class="py-10 text-center text-sm text-ink-gray-5">Loading…</div>
-        <div v-else-if="!benches.length" class="py-10 text-center text-sm text-ink-gray-4">
+        <div v-if="loading && !benches.length" class="py-10 text-ink-gray-5 text-sm text-center">Loading…</div>
+        <div v-else-if="!benches.length" class="py-10 text-ink-gray-4 text-sm text-center">
           No benches found.
         </div>
         <ListView v-else :columns="columns" :rows="rows" row-key="name"
           :options="{ selectable: false, showTooltip: false, rowHeight: 48 }">
           <template #cell="{ column, row, item }">
-            <!-- Bench name + Current marker. Running state lives in the Status
-                 column, so the name stays flush-left under its header. -->
-            <div v-if="column.key === 'name'" class="flex w-full min-w-0 items-center gap-2 text-left">
-              <span class="truncate text-sm font-medium text-ink-gray-9">{{ row.name }}</span>
+            <div v-if="column.key === 'name'" class="flex items-center gap-2 w-full min-w-0 text-left">
+              <span class="font-medium text-ink-gray-9 text-sm truncate">{{ row.name }}</span>
               <Badge v-if="isCurrentBench(row.bench)" theme="green" size="sm" label="Current" />
             </div>
 
             <!-- Status badge -->
-            <div v-else-if="column.key === 'status'" class="flex w-full justify-center">
+            <div v-else-if="column.key === 'status'" class="flex justify-center w-full">
               <Badge :theme="statusTheme(row.bench)" :label="row.status" />
             </div>
 
             <!-- Per-bench actions -->
-            <div v-else-if="column.key === 'actions'" class="flex w-full justify-end">
-              <span v-if="controlLoading === row.name" class="flex h-7 w-7 items-center justify-center">
-                <LucideLoader2 class="h-4 w-4 animate-spin text-ink-gray-5" />
+            <div v-else-if="column.key === 'actions'" class="flex justify-end w-full">
+              <span v-if="controlLoading === row.name" class="flex justify-center items-center w-7 h-7">
+                <LucideLoader2 class="w-4 h-4 text-ink-gray-5 animate-spin" />
               </span>
-              <Dropdown v-else-if="menuOptions(row.bench).length" :options="menuOptions(row.bench)" placement="left">
-                <template #default="{ open }">
-                  <Button variant="ghost" size="sm" :active="open">
-                    <template #icon>
-                      <LucideMoreVertical class="h-4 w-4" />
-                    </template>
-                  </Button>
-                </template>
-              </Dropdown>
+              <ActionMenu v-else-if="menuOptions(row.bench).length" :options="menuOptions(row.bench)" />
             </div>
 
             <!-- Mode / Manager -->
-            <div v-else class="w-full truncate text-sm text-ink-gray-6">{{ item }}</div>
+            <div v-else class="w-full text-ink-gray-6 text-sm truncate">{{ item }}</div>
           </template>
         </ListView>
       </div>
@@ -257,7 +213,7 @@ watch(show, (open) => {
   <Dialog v-model="showDropConfirm" :options="{ title: 'Drop Bench', size: 'sm' }">
     <template #default>
       <div class="flex flex-col gap-4" @pointerdown.stop>
-        <div class="flex flex-col gap-2 text-sm leading-relaxed text-ink-gray-7">
+        <div class="flex flex-col gap-2 text-ink-gray-7 text-sm leading-relaxed">
           <p>Permanently delete <strong class="text-ink-gray-9">{{ benchToDrop?.name }}</strong>?</p>
           <p>
             This tears down its production services, nginx config and MariaDB instance, then

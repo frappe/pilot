@@ -405,7 +405,7 @@ def test_generate_config_writes_error_page_files(tmp_path: Path) -> None:
     NginxManager(bench).generate_config(ssl_ready=False)
 
     error_dir = bench.config_path / "nginx" / "error_pages"
-    assert sorted(p.name for p in error_dir.iterdir()) == ["404.html", "502.html", "503.html"]
+    assert sorted(p.name for p in error_dir.iterdir()) == ["403.html", "404.html", "502.html", "503.html"]
     assert "404" in (error_dir / "404.html").read_text()
     # admin vhost also serves the custom pages
     admin_conf = (bench.config_path / "nginx" / "sites" / "_admin.conf").read_text()
@@ -427,3 +427,48 @@ def test_catchall_default_server(tmp_path: Path) -> None:
     # are rejected instead of falling through to the first TLS vhost.
     assert "listen 443 ssl http2 default_server;" in conf
     assert "ssl_reject_handshake on;" in conf
+
+
+# ── Firewall ────────────────────────────────────────────────────────────────
+
+def _firewall_data(enabled: bool, default: str, rules: list) -> dict:
+    data = copy.deepcopy(_BASE_DATA)
+    data["firewall"] = {"enabled": enabled, "default": default, "rules": rules}
+    return data
+
+
+def test_firewall_master_switch_off_renders_nothing(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, _firewall_data(False, "deny", [{"ip": "1.2.3.4", "action": "deny"}]))
+    assert NginxManager(bench)._render_firewall() == ""
+
+
+def test_firewall_blocklist_emits_only_deny(tmp_path: Path) -> None:
+    rules = [{"ip": "203.0.113.4", "action": "deny"}]
+    bench = _make_bench(tmp_path, _firewall_data(True, "allow", rules))
+    out = NginxManager(bench)._render_firewall()
+    assert "deny 203.0.113.4;" in out
+    assert "deny all;" not in out   # default allow => no terminal deny
+
+
+def test_firewall_allowlist_emits_allow_then_deny_all(tmp_path: Path) -> None:
+    rules = [{"ip": "203.0.113.4", "action": "allow"}]
+    bench = _make_bench(tmp_path, _firewall_data(True, "deny", rules))
+    out = NginxManager(bench)._render_firewall()
+    assert out.index("allow 203.0.113.4;") < out.index("deny all;")
+
+
+def test_firewall_appears_in_site_and_admin_blocks(tmp_path: Path) -> None:
+    data = _firewall_data(True, "allow", [{"ip": "203.0.113.4", "action": "deny"}])
+    data["admin"] = {"domain": "admin.example.com"}
+    bench = _make_bench(tmp_path, data)
+    manager = NginxManager(bench)
+    assert "deny 203.0.113.4;" in manager._generate_site_config(_BASE_SITE, ssl_ready=False)
+    assert "deny 203.0.113.4;" in manager._generate_admin_config(ssl_ready=False)
+
+
+def test_error_pages_include_403_and_errors_allow_all(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, _BASE_DATA)
+    manager = NginxManager(bench)
+    block = manager._render_error_pages()
+    assert "error_page 403 /_errors/403.html;" in block
+    assert "allow all;" in block  # blocked client can still fetch its 403 page

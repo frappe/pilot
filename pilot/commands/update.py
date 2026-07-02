@@ -11,6 +11,7 @@ from pilot.commands.base import Command
 from pilot.exceptions import CommandError, MigrateError
 
 if TYPE_CHECKING:
+    from pilot.core.app import App, RevisionPin
     from pilot.core.bench import Bench
 
 
@@ -26,10 +27,20 @@ class UpdateCommand(Command):
             metavar="APP",
             help="Limit git pull + reinstall to these apps (default: all).",
         )
+        parser.add_argument(
+            "--skip-failing-patches",
+            action="store_true",
+            help="Skip patches that fail to run during site migration.",
+        )
 
     @classmethod
     def from_args(cls, args, bench):
-        return cls(bench, skip_confirm=args.yes, apps=set(args.apps) if args.apps else None)
+        return cls(
+            bench,
+            skip_confirm=args.yes,
+            apps=set(args.apps) if args.apps else None,
+            skip_failing_patches=args.skip_failing_patches,
+        )
 
     def __init__(
         self,
@@ -37,11 +48,13 @@ class UpdateCommand(Command):
         skip_confirm: bool = False,
         apps: set | None = None,
         task_log: Path | None = None,
+        skip_failing_patches: bool = False,
     ) -> None:
         self.bench = bench
         self.skip_confirm = skip_confirm
         self._apps_filter = apps  # None = all apps
         self._task_log = task_log
+        self._skip_failing_patches = skip_failing_patches
         self.tag: str | None = None
         self._current_step: str | None = None
 
@@ -103,6 +116,7 @@ class UpdateCommand(Command):
 
     def _snapshot(self):
         from datetime import datetime
+
         from pilot.managers.snapshot_orchestrator import get_orchestrator
 
         self.tag = datetime.now().strftime("%Y%m%d-%H%M%S")  # Dynamically set tag for rollbacks
@@ -170,15 +184,41 @@ class UpdateCommand(Command):
                 pass
 
     def _update_apps(self) -> None:
+        from pilot.core.marketplace import Marketplace
+
+        marketplace_by_name = {entry["name"]: entry for entry in Marketplace.registry()}
+
         for app in self.bench.apps():
             if self._apps_filter is not None and app.config.name not in self._apps_filter:
                 continue
             print(f"Updating {app.config.name}...")
             try:
-                app.update()
+                app.update(pin=self._marketplace_pin(app, marketplace_by_name))
             except CommandError as e:
                 print(f"  Error updating {app.config.name}: {e}", file=sys.stderr)
                 raise MigrateError(f"Failed to update {app.config.name}")
+
+    @staticmethod
+    def _marketplace_pin(app: "App", marketplace_by_name: dict) -> "RevisionPin | None":
+        """The marketplace's currently advertised revision pin for this app, if any.
+
+        Matched by the app's installed version against the registry entry's
+        targets — this is the marketplace's next intended pin, not
+        necessarily the one the app was originally installed at. None for a
+        branch target, an app not in the marketplace, or a repo mismatch
+        (e.g. a fork) — those keep following the tracked branch.
+        """
+        entry = marketplace_by_name.get(app.config.name)
+        if not entry or app.config.repo != entry.get("repo"):
+            return None
+        version = app.installed_version
+        target = next((t for t in entry.get("targets", []) if t["version"] == version), None)
+        if target is None:
+            return None
+
+        from pilot.core.app import RevisionPin
+
+        return RevisionPin.from_marketplace_target(target)
 
     def _reinstall_apps(self) -> None:
         from pilot.managers.python_env_manager import PythonEnvManager
@@ -207,7 +247,7 @@ class UpdateCommand(Command):
         for site in self.bench.sites():
             print(f"Migrating {site.config.name}...")
             try:
-                site.migrate()
+                site.migrate(skip_failing=self._skip_failing_patches)
             except CommandError as e:
                 raise MigrateError(f"Migration failed for {site.config.name}") from e
 

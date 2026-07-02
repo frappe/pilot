@@ -115,6 +115,18 @@ def test_build_argv_update(tmp_path: Path) -> None:
     assert str(tmp_path) in argv
 
 
+def test_build_argv_update_skip_failing_patches(tmp_path: Path) -> None:
+    runner = TaskRunner(tmp_path)
+    argv = runner._build_argv("update", {"skip_failing_patches": True})
+    assert "--skip-failing-patches" in argv
+
+
+def test_build_argv_update_without_skip_failing_patches(tmp_path: Path) -> None:
+    runner = TaskRunner(tmp_path)
+    argv = runner._build_argv("update", {"skip_failing_patches": False})
+    assert "--skip-failing-patches" not in argv
+
+
 def test_build_argv_switch_branch(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     argv = runner._build_argv("switch-branch", {"name": "gameplan", "branch": "develop"})

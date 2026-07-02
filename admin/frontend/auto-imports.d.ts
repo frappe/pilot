@@ -6,5 +6,5 @@
 // biome-ignore lint: disable
 export {}
 declare global {
-  const LucideRefreshCcw: typeof import('~icons/lucide/refresh-ccw')['default']
+
 }

@@ -1,0 +1,115 @@
+<template>
+  <Dialog v-model="open" :options="{ title: 'Updates', size: 'md' }">
+    <template #body-content>
+      <div class="flex flex-col gap-4">
+        <div v-if="checking" class="flex justify-center py-8">
+          <LoadingText />
+        </div>
+        <p v-else-if="!appNames.length" class="py-6 text-ink-gray-5 text-sm text-center">
+          Your bench is up to date.
+        </p>
+        <template v-else>
+          <div class="flex flex-col gap-1 max-h-80 overflow-y-auto">
+            <button v-for="name in appNames" :key="name" type="button"
+              class="flex items-center gap-3 p-2 rounded-lg text-left transition-colors hover:bg-surface-gray-1"
+              @click="toggle(name)">
+              <AppIcon :name="name" class="shrink-0 size-8 rounded-lg" />
+              <span class="flex-1 min-w-0">
+                <p class="font-medium text-ink-gray-8 text-sm truncate">{{ titleMap[name] || name }}</p>
+                <p class="text-ink-gray-5 text-p-sm truncate">Update available</p>
+              </span>
+              <Checkbox :model-value="selected.has(name)" class="pointer-events-none shrink-0" />
+            </button>
+          </div>
+
+          <div class="flex flex-col gap-2 pt-2 border-t border-outline-gray-1">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <Checkbox v-model="skipFailingPatches" />
+              <span class="text-ink-gray-7 text-sm">Skip failing patches</span>
+            </label>
+          </div>
+        </template>
+
+        <ErrorMessage v-if="error" :message="error" />
+
+        <div class="flex justify-end gap-2 pt-4 border-t border-outline-gray-1">
+          <Button variant="ghost" @click="open = false">Cancel</Button>
+          <Button v-if="appNames.length" variant="solid" :loading="updating" :disabled="!selected.size"
+            @click="runUpdate">
+            {{
+              selected.size == 0 ? 'Update' : (
+                appNames.length == selected.size ? 'Update all' :
+                  (
+                    selected.size == 1 ? 'Update 1 app' : `Update ${selected.size} apps`
+                  )
+              )
+            }}
+          </Button>
+        </div>
+      </div>
+    </template>
+  </Dialog>
+</template>
+
+<script setup>
+import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { Button, Checkbox, Dialog, ErrorMessage, LoadingText } from 'frappe-ui'
+import { tasksApi } from '@/api/tasks'
+import AppIcon from '@/components/AppIcon.vue'
+import { useAppRegistry } from '@/composables/useAppRegistry'
+import { useAppUpdates } from '@/composables/useAppUpdates'
+import { openTaskDetailPage } from '@/utils/taskRoute'
+
+const open = defineModel()
+const router = useRouter()
+
+const { appsWithUpdates, checking } = useAppUpdates()
+const { titleMap, load: loadRegistry } = useAppRegistry()
+
+const appNames = computed(() => {
+  const names = [...appsWithUpdates.value]
+  const frappeIndex = names.indexOf('frappe')
+  if (frappeIndex > 0) {
+    names.splice(frappeIndex, 1)
+    names.unshift('frappe')
+  }
+  return names
+})
+
+const selected = ref(new Set())
+const skipFailingPatches = ref(false)
+const updating = ref(false)
+const error = ref('')
+
+watch(open, (isOpen) => { if (isOpen) loadRegistry() })
+watch(appNames, (names) => { selected.value = new Set(names) }, { immediate: true })
+
+function toggle(name) {
+  const next = new Set(selected.value)
+  next.has(name) ? next.delete(name) : next.add(name)
+  selected.value = next
+}
+
+async function runUpdate() {
+  if (!selected.value.size) return
+  updating.value = true
+  error.value = ''
+  try {
+    const res = await tasksApi.run('update', {
+      apps: [...selected.value],
+      skip_failing_patches: skipFailingPatches.value,
+    })
+    if (res.ok) {
+      open.value = false
+      openTaskDetailPage(router, res.task_id)
+    } else {
+      error.value = res.error || 'Failed to start update.'
+    }
+  } catch (e) {
+    error.value = e.message || 'Failed to start update.'
+  } finally {
+    updating.value = false
+  }
+}
+</script>

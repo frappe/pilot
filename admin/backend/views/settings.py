@@ -6,6 +6,7 @@ from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request
 
 from pilot.config.bench_config import BenchConfig
+from pilot.config.firewall_config import FirewallRule
 from pilot.config.toml_store import BenchTomlStore
 from pilot.config.worker_config import WorkerGroup
 from pilot.managers.redis_manager import RedisManager
@@ -39,6 +40,18 @@ def _worker_groups_payload(config: BenchConfig) -> list[dict]:
     return [{"queues": list(g.queues), "count": g.count} for g in config.workers.groups]
 
 
+def _firewall_payload(config: BenchConfig) -> dict:
+    fw = config.firewall
+    return {
+        "enabled": fw.enabled,
+        "default": fw.default,
+        "rules": [
+            {"ip": r.ip, "action": r.action, "description": r.description}
+            for r in fw.rules
+        ],
+    }
+
+
 def _restart_trigger_values(config: BenchConfig) -> dict:
     return {
         "bench": {"python": config.python_version, "http_port": config.http_port, "socketio_port": config.socketio_port},
@@ -63,6 +76,7 @@ class ConfigPatcher:
         self._apply_postgres()
         self._apply_redis()
         self._apply_workers()
+        self._apply_firewall()
         self._apply_volume()
         self._apply_admin()
         self._apply_monitor()
@@ -130,6 +144,28 @@ class ConfigPatcher:
             groups.append(WorkerGroup(queues=queues, count=int(entry.get("count", 1))))
         if groups:
             self.config.workers.groups = groups
+
+    def _apply_firewall(self) -> None:
+        firewall = self.data.get("firewall")
+        if firewall is None:
+            return
+        fw = self.config.firewall
+        if "enabled" in firewall:
+            fw.enabled = bool(firewall["enabled"])
+        if "default" in firewall:
+            fw.default = str(firewall["default"])
+        if "rules" in firewall:
+            rules = []
+            for entry in firewall["rules"] or []:
+                ip = str(entry.get("ip", "")).strip()
+                if not ip:
+                    continue
+                rules.append(FirewallRule(
+                    ip=ip,
+                    action=str(entry.get("action", "deny")),
+                    description=str(entry.get("description", "")).strip(),
+                ))
+            fw.rules = rules
 
     def _apply_volume(self) -> None:
         volume = self.data.get("volume") or {}
@@ -212,6 +248,20 @@ def _regenerate_configs(bench_root: Path, config: BenchConfig) -> None:
     ProcessManager.for_bench(bench).write_config()
 
 
+def _regenerate_nginx(bench_root: Path, config: BenchConfig) -> None:
+    """Rewrite this bench's nginx vhosts from config and reload — the nginx slice
+    of `setup production`, with no process-manager/workload restart. Applies the
+    firewall allow/deny rules live."""
+    from pilot.core.bench import Bench
+    from pilot.managers.nginx_manager import NginxManager
+
+    bench = Bench(config, bench_root)
+    manager = NginxManager(bench)
+    manager.generate_config(ssl_ready=True)
+    manager.install_config()
+    manager.reload()
+
+
 def _restart_supervisor(manager, bench_name: str) -> tuple[bool, str | None]:
     if not manager.is_alive():
         return False, None
@@ -292,6 +342,7 @@ def _build_settings_response(config: BenchConfig) -> dict:
         },
         "redis": {"cache_port": config.redis.cache_port, "queue_port": config.redis.queue_port, "version": RedisManager.installed_version() or config.redis.version or ""},
         "workers": _worker_groups_payload(config),
+        "firewall": _firewall_payload(config),
         "production": {"process_manager": config.production.process_manager or "none"},
         "admin": {"domain": config.admin.domain, "tls": config.admin.tls},
         "letsencrypt": {"email": config.letsencrypt.email},
@@ -326,6 +377,15 @@ def get_settings():
     return jsonify(_build_settings_response(config))
 
 
+@settings_bp.route("/my-ip")
+def my_ip():
+    """The requesting client's IP, so the UI can tell the operator which address to
+    allow-list before blocking by default. nginx passes the real client address
+    (IPv4 or IPv6) as X-Real-IP."""
+    ip = request.headers.get("X-Real-IP") or request.remote_addr or ""
+    return jsonify({"ip": ip})
+
+
 @settings_bp.route("/", methods=["PATCH"])
 def update_settings():
     bench_root = Path(current_app.config["BENCH_ROOT"])
@@ -338,6 +398,7 @@ def update_settings():
 
     volume_manager = VolumeManager(config.volume)
     old_restart = _restart_trigger_values(config)
+    old_firewall = _firewall_payload(config)
 
     if error := ConfigPatcher(config, data).apply():
         return jsonify({"ok": False, "error": error}), 400
@@ -363,4 +424,19 @@ def update_settings():
             return jsonify({"ok": False, "error": f"Failed to regenerate configs: {error}"}), 500
         restarted, restart_error = _do_restart(bench_root, config)
 
-    return jsonify({"ok": True, "restarted": restarted, "restart_error": restart_error, "zfs_error": zfs_error})
+    # Firewall rules only affect nginx: regenerate + reload the vhosts (no
+    # workload restart). Only meaningful once the bench is in production.
+    nginx_error = None
+    if config.production.enabled and _firewall_payload(config) != old_firewall:
+        try:
+            _regenerate_nginx(bench_root, config)
+        except Exception as error:
+            nginx_error = str(error)
+
+    return jsonify({
+        "ok": True,
+        "restarted": restarted,
+        "restart_error": restart_error,
+        "zfs_error": zfs_error,
+        "nginx_error": nginx_error,
+    })

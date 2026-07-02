@@ -7,6 +7,7 @@ from typing import List
 from pilot.config.admin_config import AdminConfig
 from pilot.config.app_config import AppConfig
 from pilot.config.central_config import CentralConfig
+from pilot.config.firewall_config import FirewallConfig, FirewallRule
 from pilot.config.gunicorn_config import GunicornConfig
 from pilot.config.letsencrypt_config import LetsEncryptConfig
 from pilot.config.mariadb_config import MariaDBConfig
@@ -55,6 +56,7 @@ class BenchConfig:
     admin: AdminConfig = field(default_factory=AdminConfig)
     volume: VolumeConfig = field(default_factory=VolumeConfig)
     central: CentralConfig = field(default_factory=CentralConfig)
+    firewall: FirewallConfig = field(default_factory=FirewallConfig)
 
     @classmethod
     def from_file(cls, path: Path) -> "BenchConfig":
@@ -87,6 +89,7 @@ class BenchConfig:
         admin = cls._parse_admin(data.get("admin", {}))
         volume = cls._parse_volume(data.get("volume"))
         central = cls._parse_central(data.get("central", {}))
+        firewall = cls._parse_firewall(data.get("firewall"))
         # One dataset per bench, named after the bench unless explicitly set.
         if not volume.name:
             volume.name = bench_data.get("name", "")
@@ -110,6 +113,7 @@ class BenchConfig:
             admin=admin,
             volume=volume,
             central=central,
+            firewall=firewall,
         )
 
     @staticmethod
@@ -241,6 +245,24 @@ class BenchConfig:
             ),
         )
 
+    @staticmethod
+    def _parse_firewall(data: dict | None) -> FirewallConfig:
+        if not data:
+            return FirewallConfig()
+        rules = [
+            FirewallRule(
+                ip=str(rule.get("ip", "")),
+                action=str(rule.get("action", "deny")),
+                description=str(rule.get("description", "")),
+            )
+            for rule in data.get("rules", [])
+        ]
+        return FirewallConfig(
+            enabled=bool(data.get("enabled", False)),
+            default=str(data.get("default", "allow")),
+            rules=rules,
+        )
+
     def validate(self) -> None:
         self._validate_required_fields()
         self._validate_bench_name()
@@ -258,6 +280,7 @@ class BenchConfig:
         self._validate_redis_version()
         self._validate_production()
         self._validate_admin_domain()
+        self._validate_firewall()
         if self.volume.enabled:
             self._validate_volume()
 
@@ -358,6 +381,22 @@ class BenchConfig:
             return
         if not _HOSTNAME_PATTERN.match(domain):
             raise ConfigError(f"admin.domain '{domain}' is not a valid hostname (bench '{self.name}').")
+
+    def _validate_firewall(self) -> None:
+        import ipaddress
+
+        fw = self.firewall
+        if fw.default not in ("allow", "deny"):
+            raise ConfigError(f"firewall.default '{fw.default}' is invalid. Must be 'allow' or 'deny'.")
+        for i, rule in enumerate(fw.rules):
+            prefix = f"firewall.rules[{i}]"
+            if rule.action not in ("allow", "deny"):
+                raise ConfigError(f"{prefix}.action '{rule.action}' is invalid. Must be 'allow' or 'deny'.")
+            try:
+                # strict=False accepts a host address with a prefix (e.g. 10.0.0.5/8).
+                ipaddress.ip_network(rule.ip, strict=False)
+            except ValueError:
+                raise ConfigError(f"{prefix}.ip '{rule.ip}' is not a valid IPv4/IPv6 address or CIDR range.")
 
     def _validate_gunicorn(self) -> None:
         if not isinstance(self.gunicorn.workers, int) or self.gunicorn.workers < 1:
