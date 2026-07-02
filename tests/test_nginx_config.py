@@ -490,3 +490,23 @@ def test_install_config_rolls_back_symlink_when_reload_fails(tmp_path: Path) -> 
 
     mock_run.assert_called_once()
     assert mock_run.call_args[0][0][-2:] == ["unlink", str(symlink_path)]
+
+
+def test_prune_dangling_symlinks_removes_only_broken_ones(tmp_path: Path) -> None:
+    """A bench dropped without going through its own teardown (e.g. its
+    directory deleted directly) leaves its vhost symlink dangling; that alone
+    fails nginx -t for every bench sharing the config dir, so install_config
+    must sweep it away regardless of which bench it belonged to."""
+    nginx_dir = tmp_path / "conf.d"
+    nginx_dir.mkdir()
+    target = tmp_path / "real-target.conf"
+    target.write_text("server {}\n")
+    (nginx_dir / "alive-bench.conf").symlink_to(target)
+    (nginx_dir / "dropped-bench.conf").symlink_to(tmp_path / "deleted-bench" / "include.conf")
+    (nginx_dir / "00-bench-default.conf").write_text("server {}\n")
+
+    with patch("pilot.managers.nginx_manager.run_command") as mock_run:
+        NginxManager._prune_dangling_symlinks(nginx_dir)
+
+    mock_run.assert_called_once()
+    assert mock_run.call_args[0][0][-2:] == ["unlink", str(nginx_dir / "dropped-bench.conf")]

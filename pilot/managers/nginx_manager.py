@@ -554,12 +554,27 @@ class NginxManager:
         symlink_path = nginx_dir / f"{self.bench.config.name}.conf"
         source_path = self.bench.config_path / "nginx" / "include.conf"
 
+        self._prune_dangling_symlinks(nginx_dir)
         if symlink_path.exists() or symlink_path.is_symlink():
             run_command(_privileged(["unlink", str(symlink_path)]))
         run_command(_privileged(["ln", "-s", str(source_path), str(symlink_path)]))
         self._set_worker_user()
         self.install_default_server()
         self._reload_or_rollback(symlink_path)
+
+    @staticmethod
+    def _prune_dangling_symlinks(nginx_dir: Path) -> None:
+        """Remove any bench's vhost symlink whose target no longer exists.
+
+        A bench dropped without going through its own teardown (e.g. its
+        directory deleted directly) leaves its symlink here dangling; nginx -t
+        then fails to open it and blocks every bench sharing this config dir,
+        not just the one that was removed."""
+        if not nginx_dir.is_dir():
+            return
+        for entry in nginx_dir.iterdir():
+            if entry.is_symlink() and not entry.exists():
+                run_command(_privileged(["unlink", str(entry)]))
 
     def _reload_or_rollback(self, symlink_path: Path) -> None:
         """A bad config for this one bench must not take nginx down for every
