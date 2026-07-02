@@ -3,26 +3,29 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-_MARKER_PREFIX = "# bench-backup:"
+_MARKER_PREFIX = "# bench-cron:"
 
 
 class CronManager:
+    """One cron entry per (bench, job_key) in the system crontab. Callers own
+    naming their job_key (e.g. a site name for site backups, a fixed key for a
+    bench-wide job like snapshots) and building the shell command to run."""
+
     def __init__(self, bench_root: Path) -> None:
         self._bench_root = bench_root
 
-    def get_schedule(self, site: str) -> str | None:
+    def get_schedule(self, job_key: str) -> str | None:
         lines = self._read_crontab()
         try:
-            i = lines.index(self._marker(site))
+            i = lines.index(self._marker(job_key))
             parts = lines[i + 1].split()
             return " ".join(parts[:5]) if len(parts) >= 5 else None
         except (ValueError, IndexError):
             return None
 
-    def set_schedule(self, site: str, cron_expr: str) -> None:
+    def set_schedule(self, job_key: str, cron_expr: str, command: str) -> None:
         lines = self._read_crontab()
-        marker = self._marker(site)
-        command = self._build_command(site)
+        marker = self._marker(job_key)
         try:
             i = lines.index(marker)
             lines[i + 1] = f"{cron_expr} {command}"
@@ -30,9 +33,9 @@ class CronManager:
             lines += [marker, f"{cron_expr} {command}"]
         self._write_crontab(lines)
 
-    def remove_schedule(self, site: str) -> None:
+    def remove_schedule(self, job_key: str) -> None:
         lines = self._read_crontab()
-        marker = self._marker(site)
+        marker = self._marker(job_key)
         try:
             i = lines.index(marker)
             del lines[i : i + 2]
@@ -40,14 +43,8 @@ class CronManager:
             pass
         self._write_crontab(lines)
 
-    def _marker(self, site: str) -> str:
-        return f"{_MARKER_PREFIX}{self._bench_root}:{site}"
-
-    def _build_command(self, site: str) -> str:
-        python = self._bench_root / "env" / "bin" / "python"
-        sites_dir = self._bench_root / "sites"
-        log_file = self._bench_root / "logs" / f"backup-{site}.log"
-        return f"cd {sites_dir} && {python} -m frappe.utils.bench_helper frappe --site {site} backup --with-files >> {log_file} 2>&1"
+    def _marker(self, job_key: str) -> str:
+        return f"{_MARKER_PREFIX}{self._bench_root}:{job_key}"
 
     def _read_crontab(self) -> list[str]:
         result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)

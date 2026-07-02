@@ -298,6 +298,7 @@ def get_and_install_app(name: str):
         if not repo:
             return jsonify({"ok": False, "error": "Repo URL is required."})
         from pilot.core.git_providers import GitProviderError, resolve_app_name_from_repo
+
         try:
             app = resolve_app_name_from_repo(bench_root, repo, target)["name"]
         except GitProviderError as e:
@@ -391,7 +392,10 @@ def _get_site_sid(bench_root: Path, site: str, user: str = "Administrator") -> t
 
     result = subprocess.run(
         [str(bench_bin), "-b", bench_name, "--site", site, "browse", "--user", user],
-        capture_output=True, text=True, timeout=30, cwd=str(benches_dir),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        cwd=str(benches_dir),
     )
     output = (result.stdout or "") + (result.stderr or "")
     if m := re.search(r"sid=([a-zA-Z0-9]+)", output):
@@ -653,6 +657,13 @@ def download_backup(name: str):
     return send_file(target, as_attachment=True, download_name=filename)
 
 
+def _backup_cron_command(bench_root: Path, site: str) -> str:
+    python = bench_root / "env" / "bin" / "python"
+    sites_dir = bench_root / "sites"
+    log_file = bench_root / "logs" / f"backup-{site}.log"
+    return f"cd {sites_dir} && {python} -m frappe.utils.bench_helper frappe --site {site} backup --with-files >> {log_file} 2>&1"
+
+
 @sites_bp.route("/<name>/backup-schedule", methods=["GET"])
 @require_scope(site_name)
 def get_backup_schedule(name: str):
@@ -678,7 +689,7 @@ def set_backup_schedule(name: str):
     if err:
         return jsonify({"ok": False, "error": err})
     try:
-        CronManager(bench_root).set_schedule(name, schedule)
+        CronManager(bench_root).set_schedule(name, schedule, _backup_cron_command(bench_root, name))
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
     return jsonify({"ok": True})

@@ -2,14 +2,19 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from flask import Blueprint, current_app, jsonify
+from flask import Blueprint, current_app, jsonify, request
 
 from pilot.managers.snapshot_orchestrator import get_orchestrator
 
 from ..readers.snapshot_reader import SnapshotReader
 from ..readers.volume_reader import VolumeReader
+from ..validators import validate_cron_expression
 
 volume_bp = Blueprint("volume", __name__)
+
+# Not a legal site name (site names allow only letters/numbers/hyphens/dots),
+# so this can never collide with a per-site backup job key in the same crontab.
+_SNAPSHOT_CRON_JOB_KEY = "__bench_snapshot__"
 
 
 def _get_config(bench_root):
@@ -121,4 +126,53 @@ def destroy_snapshot(tag: str):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+    return jsonify({"ok": True})
+
+
+def _snapshot_cron_command(bench_root) -> str:
+    from pilot.loader import cli_root
+
+    bench_script = cli_root() / "bench"
+    log_file = bench_root / "logs" / "snapshot.log"
+    return f"{bench_script} -b {bench_root.name} volume snapshot >> {log_file} 2>&1"
+
+
+@volume_bp.route("/snapshot-schedule")
+def get_snapshot_schedule():
+    from ..cron_manager import CronManager
+
+    bench_root = current_app.config["BENCH_ROOT"]
+    try:
+        schedule = CronManager(bench_root).get_schedule(_SNAPSHOT_CRON_JOB_KEY)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify({"schedule": schedule})
+
+
+@volume_bp.route("/snapshot-schedule", methods=["POST"])
+def set_snapshot_schedule():
+    from ..cron_manager import CronManager
+
+    bench_root = current_app.config["BENCH_ROOT"]
+    data = request.get_json(silent=True) or {}
+    schedule = (data.get("schedule") or "").strip()
+    err = validate_cron_expression(schedule)
+    if err:
+        return jsonify({"ok": False, "error": err})
+    try:
+        CronManager(bench_root).set_schedule(_SNAPSHOT_CRON_JOB_KEY, schedule, _snapshot_cron_command(bench_root))
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+    return jsonify({"ok": True})
+
+
+@volume_bp.route("/snapshot-schedule", methods=["DELETE"])
+def delete_snapshot_schedule():
+    from ..cron_manager import CronManager
+
+    bench_root = current_app.config["BENCH_ROOT"]
+    try:
+        CronManager(bench_root).remove_schedule(_SNAPSHOT_CRON_JOB_KEY)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
     return jsonify({"ok": True})
