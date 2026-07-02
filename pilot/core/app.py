@@ -49,6 +49,48 @@ class App:
         )
         return result.stdout.strip() if result.returncode == 0 else ""
 
+    def is_on_revision(self, target: dict) -> bool:
+        """Whether this app is currently checked out at a marketplace target's pinned revision.
+
+        Only tag/commit targets pin a fixed revision; a branch target has no
+        single revision to be "on", so it's always False.
+        """
+        target_type, ref = target["target_type"], target["target"]
+        if target_type == "tag":
+            return self.installed_tag == ref
+        if target_type == "commit":
+            return bool(self.installed_hash) and self.installed_hash.startswith(ref)
+        return False
+
+    def has_remote_update(self) -> bool:
+        """Whether the tracked branch has commits on origin not yet pulled locally.
+
+        Runs `git ls-remote` — ref pointers only, no object download — so it
+        completes in ~1-2s regardless of repo size. An app not on a branch
+        (detached HEAD, e.g. a tag/commit checkout) has no moving remote tip
+        to compare against, so this always reports no update; use
+        `is_on_revision` against the marketplace target instead.
+        """
+        import subprocess
+
+        branch = self.config.branch
+        if not branch:
+            return False
+        result = subprocess.run(
+            ["git", "ls-remote", "origin", f"refs/heads/{branch}"],
+            cwd=str(self.path),
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        for line in result.stdout.splitlines():
+            parts = line.split("\t", 1)
+            if len(parts) == 2:
+                remote_sha = parts[0].strip()
+                local_sha = self.installed_hash
+                return bool(remote_sha and local_sha and remote_sha != local_sha)
+        return False
+
     @property
     def is_cloned(self) -> bool:
         # The clone may live under the configured name or, after get-app
@@ -139,7 +181,19 @@ class App:
             return 1
         return max(1, cpus // 2)
 
-    def update(self) -> None:
+    def update(self, target: dict | None = None) -> None:
+        """Pull the latest code.
+
+        If `target` is a marketplace tag/commit pin, the app is moved to
+        exactly that advertised revision — not the branch tip or the repo's
+        overall latest tag/commit. Marketplace entries only ever advance, so
+        no ancestry check is needed here; the registry is the source of truth.
+        Otherwise this pulls the tracked branch's tip, as before.
+        """
+        if target and target.get("target_type") in ("tag", "commit"):
+            self._checkout_pinned_target(target)
+            return
+
         cmd = ["git", "-c", f"pack.threads={self._pack_threads()}", "-C", str(self.path), "fetch", "origin", self.config.branch]
         if self._is_shallow:
             cmd.append("--depth=1")
@@ -154,6 +208,10 @@ class App:
                 f"origin/{self.config.branch}",
             ]
         )
+
+    def _checkout_pinned_target(self, target: dict) -> None:
+        run_command(["git", "-C", str(self.path), "fetch", "--depth", "1", "origin", target["target"]])
+        run_command(["git", "-C", str(self.path), "checkout", "FETCH_HEAD"])
 
     @property
     def module_name(self) -> str:

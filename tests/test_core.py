@@ -62,6 +62,160 @@ def test_app_is_cloned_returns_true_when_git_directory_exists(tmp_path: Path) ->
     assert app.is_cloned is True
 
 
+def _init_git_repo(path: Path) -> None:
+    import subprocess
+
+    subprocess.run(["git", "init", "-q", str(path)], check=True)
+    subprocess.run(["git", "-C", str(path), "config", "user.email", "t@t.com"], check=True)
+    subprocess.run(["git", "-C", str(path), "config", "user.name", "t"], check=True)
+
+
+def _commit(path: Path, message: str) -> None:
+    import subprocess
+
+    (path / "f").write_text(message)
+    subprocess.run(["git", "-C", str(path), "add", "f"], check=True)
+    subprocess.run(["git", "-C", str(path), "commit", "-q", "-m", message], check=True)
+
+
+def _tag(path: Path, tag: str) -> None:
+    import subprocess
+
+    subprocess.run(["git", "-C", str(path), "tag", tag], check=True)
+
+
+def test_app_is_on_revision_tag_matches(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    app = App(AppConfig(name="myapp", repo="r", branch=""), bench)
+    app.path.mkdir(parents=True)
+    _init_git_repo(app.path)
+    _commit(app.path, "c1")
+    _tag(app.path, "v1.0.0")
+
+    assert app.is_on_revision({"target_type": "tag", "target": "v1.0.0"}) is True
+
+
+def test_app_is_on_revision_tag_mismatch(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    app = App(AppConfig(name="myapp", repo="r", branch=""), bench)
+    app.path.mkdir(parents=True)
+    _init_git_repo(app.path)
+    _commit(app.path, "c1")
+    _tag(app.path, "v1.0.0")
+
+    # Marketplace has since moved to a newer tag the app hasn't been updated to.
+    assert app.is_on_revision({"target_type": "tag", "target": "v2.0.0"}) is False
+
+
+def test_app_is_on_revision_no_tag_at_head(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    app = App(AppConfig(name="myapp", repo="r", branch=""), bench)
+    app.path.mkdir(parents=True)
+    _init_git_repo(app.path)
+    _commit(app.path, "c1")  # HEAD has no tag
+
+    assert app.is_on_revision({"target_type": "tag", "target": "v1.0.0"}) is False
+
+
+def test_app_is_on_revision_commit_prefix_matches(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    app = App(AppConfig(name="myapp", repo="r", branch=""), bench)
+    app.path.mkdir(parents=True)
+    _init_git_repo(app.path)
+    _commit(app.path, "c1")
+    full_sha = app.installed_hash
+
+    # Registry may store an abbreviated hash; a full HEAD sha starting with it counts.
+    assert app.is_on_revision({"target_type": "commit", "target": full_sha[:8]}) is True
+
+
+def test_app_is_on_revision_commit_mismatch(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    app = App(AppConfig(name="myapp", repo="r", branch=""), bench)
+    app.path.mkdir(parents=True)
+    _init_git_repo(app.path)
+    _commit(app.path, "c1")
+
+    assert app.is_on_revision({"target_type": "commit", "target": "0" * 40}) is False
+
+
+def test_app_is_on_revision_branch_target_always_false(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    app = App(AppConfig(name="myapp", repo="r", branch="main"), bench)
+    app.path.mkdir(parents=True)
+    _init_git_repo(app.path)
+    _commit(app.path, "c1")
+
+    # A branch has no single fixed revision to be "on" — always updatable.
+    assert app.is_on_revision({"target_type": "branch", "target": "main"}) is False
+
+
+def test_app_has_remote_update_false_without_tracked_branch(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    app = App(AppConfig(name="myapp", repo="r", branch=""), bench)
+    app.path.mkdir(parents=True)
+    _init_git_repo(app.path)
+    _commit(app.path, "c1")
+
+    # No configured remote at all — must not crash, and detached HEAD has
+    # no branch tip to compare against.
+    assert app.has_remote_update() is False
+
+
+def _clone_at_tag(remote: Path, clone_dir: Path, tag: str, shallow: bool = True) -> None:
+    import subprocess
+
+    subprocess.run(["git", "clone", "-q", str(remote), str(clone_dir)], check=True)
+    if shallow:
+        subprocess.run(["git", "-C", str(clone_dir), "fetch", "-q", "origin", tag, "--depth", "1"], check=True)
+    subprocess.run(["git", "-C", str(clone_dir), "checkout", "-q", tag], check=True)
+
+
+def test_app_update_with_tag_target_checks_out_advertised_tag_not_latest(tmp_path: Path) -> None:
+    remote = tmp_path / "remote"
+    remote.mkdir()
+    _init_git_repo(remote)
+    _commit(remote, "c1")
+    _tag(remote, "v1.0.0")
+    _commit(remote, "c2")
+    _tag(remote, "v2.0.0")  # the repo's actual latest tag
+    _commit(remote, "c3")
+    _tag(remote, "v3.0.0")  # marketplace hasn't advertised this one yet
+
+    bench = make_bench(tmp_path)
+    app = App(AppConfig(name="myapp", repo="r", branch=""), bench)
+    _clone_at_tag(remote, app.path, "v1.0.0")
+
+    # Marketplace's next advertised pin is v2.0.0 — not the repo's true latest (v3.0.0).
+    app.update(target={"target_type": "tag", "target": "v2.0.0"})
+
+    assert app.is_on_revision({"target_type": "tag", "target": "v2.0.0"}) is True
+    assert app.is_on_revision({"target_type": "tag", "target": "v3.0.0"}) is False
+
+
+def test_app_update_with_commit_target_checks_out_advertised_commit(tmp_path: Path) -> None:
+    remote = tmp_path / "remote"
+    remote.mkdir()
+    _init_git_repo(remote)
+    _commit(remote, "c1")
+    _tag(remote, "v1.0.0")
+    _commit(remote, "c2")
+
+    bench = make_bench(tmp_path)
+    app = App(AppConfig(name="myapp", repo="r", branch=""), bench)
+    _clone_at_tag(remote, app.path, "v1.0.0")
+
+    import subprocess
+
+    target_sha = subprocess.run(
+        ["git", "-C", str(remote), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+    app.update(target={"target_type": "commit", "target": target_sha})
+
+    assert app.installed_hash == target_sha
+
+
 def test_app_path_is_under_apps_directory(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     app_config = AppConfig(name="frappe", repo="https://example.com", branch="main")
