@@ -56,8 +56,18 @@ def _s3_payload(config: BenchConfig):
         "access_key": config.s3.access_key,
         "secret_key_set": bool(config.s3.secret_key),
         "bucket": config.s3.bucket,
-        "endpoint_url": config.s3.endpoint_url,
+        "provider": config.s3.provider,
+        "region": config.s3.region,
     }
+
+
+def _s3_provider_options() -> list[dict]:
+    from pilot.integrations.s3.base import PROVIDER_LABELS, SUPPORTED_REGIONS
+
+    return [
+        {"value": provider, "label": PROVIDER_LABELS[provider], "regions": regions}
+        for provider, regions in SUPPORTED_REGIONS.items()
+    ]
 
 
 def _restart_trigger_values(config: BenchConfig) -> dict:
@@ -215,12 +225,23 @@ class ConfigPatcher:
             s3_config.secret_key = secret_key
         if "bucket" in s3:
             s3_config.bucket = str(s3["bucket"]).strip()
-        if "endpoint_url" in s3:
-            s3_config.endpoint_url = str(s3["endpoint_url"]).strip()
+        if "provider" in s3:
+            s3_config.provider = str(s3["provider"]).strip()
+        if "region" in s3:
+            s3_config.region = str(s3["region"]).strip()
 
-        if s3_config.access_key or s3_config.secret_key or s3_config.bucket or s3_config.endpoint_url:
-            if not (s3_config.access_key and s3_config.secret_key and s3_config.bucket and s3_config.endpoint_url):
-                return "s3.access_key, s3.secret_key, s3.bucket, and s3.endpoint_url are all required."
+        if not (s3_config.access_key or s3_config.secret_key or s3_config.bucket or s3_config.provider or s3_config.region):
+            return None
+
+        if not (s3_config.access_key and s3_config.secret_key and s3_config.bucket and s3_config.provider and s3_config.region):
+            return "s3.access_key, s3.secret_key, s3.bucket, s3.provider, and s3.region are all required."
+
+        from pilot.integrations.s3.base import SUPPORTED_REGIONS
+
+        if s3_config.provider not in SUPPORTED_REGIONS:
+            return f"s3.provider must be one of: {', '.join(SUPPORTED_REGIONS)}"
+        if s3_config.region not in SUPPORTED_REGIONS[s3_config.provider]:
+            return f"s3.region '{s3_config.region}' is not valid for provider '{s3_config.provider}'."
 
         return None
 
@@ -393,6 +414,7 @@ def _build_settings_response(config: BenchConfig) -> dict:
         "admin": {"domain": config.admin.domain, "tls": config.admin.tls},
         "letsencrypt": {"email": config.letsencrypt.email},
         "s3": _s3_payload(config),
+        "s3_providers": _s3_provider_options(),
         "volume": {
             "pool": volume.pool,
             "backing": volume.backing,

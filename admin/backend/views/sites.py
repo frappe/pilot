@@ -602,14 +602,18 @@ def update_config(name: str):
     return jsonify({"ok": True})
 
 
+_DEFAULT_BACKUPS_PAGE_SIZE = 20
+
+
 @sites_bp.route("/<name>/backups")
 @require_scope(site_name)
 def list_backups(name: str):
     from ..readers.backup_reader import BackupReader
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
+    limit = request.args.get("limit", _DEFAULT_BACKUPS_PAGE_SIZE, type=int)
     try:
-        sets = BackupReader(bench_root, name).read_all()
+        sets = BackupReader(bench_root, name).read_all(limit=limit)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     return jsonify(
@@ -617,6 +621,7 @@ def list_backups(name: str):
             {
                 "timestamp": s.timestamp,
                 "created_at": s.created_at.isoformat(),
+                "is_offsite": s.is_offsite,
                 "files": [
                     {
                         "filename": f.filename,
