@@ -1,7 +1,7 @@
 <template>
   <Dialog v-model="open" title="Add app from GitHub" size="lg">
     <template #default>
-      <div class="space-y-5">
+      <div class="space-y-4">
         <TabButtons v-model="tab" :options="tabOptions" type="underline" size="md" />
 
         <template v-if="tab === 'public'">
