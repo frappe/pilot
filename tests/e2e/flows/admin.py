@@ -23,12 +23,12 @@ def login(page: Page, base_url: str, password: str) -> None:
     page.get_by_placeholder("Password").fill(password)
     page.get_by_role("button", name="Login").click()
     # Landed on the Sites page once the header action is mounted.
-    expect(page.get_by_role("button", name="Create Site")).to_be_visible(timeout=30_000)
+    expect(page.get_by_role("button", name="New site")).to_be_visible(timeout=30_000)
 
 
 def create_site(page: Page, base_url: str, site_name: str, db_type: str = "") -> None:
     page.goto(f"{base_url}/")
-    page.get_by_role("button", name="Create Site").click()
+    page.get_by_role("button", name="New site").click()
 
     dialog = page.get_by_role("dialog")
     dialog.get_by_label("Site Name").fill(site_name)
