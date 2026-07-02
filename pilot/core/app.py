@@ -229,8 +229,23 @@ class App:
         )
 
     def _checkout_pinned_target(self, pin: RevisionPin) -> None:
-        run_command(["git", "-C", str(self.path), "fetch", "--depth", "1", "origin", pin.ref])
-        run_command(["git", "-C", str(self.path), "checkout", "FETCH_HEAD"])
+        if pin.kind == "tag":
+            run_command(["git", "-C", str(self.path), "fetch", "--depth", "1", "origin", pin.ref])
+            run_command(["git", "-C", str(self.path), "checkout", "FETCH_HEAD"])
+        else:
+            self._checkout_pinned_commit(pin.ref)
+
+    def _checkout_pinned_commit(self, sha: str) -> None:
+        """Check out a specific commit SHA."""
+        try:
+            run_command(["git", "-C", str(self.path), "fetch", "--depth", "1", "origin", sha])
+            run_command(["git", "-C", str(self.path), "checkout", "FETCH_HEAD"])
+            return
+        except CommandError:
+            pass
+        unshallow_flag = ["--unshallow"] if self._is_shallow else []
+        run_command(["git", "-C", str(self.path), "fetch", *unshallow_flag, "origin", self.config.branch])
+        run_command(["git", "-C", str(self.path), "checkout", sha])
 
     @property
     def module_name(self) -> str:
