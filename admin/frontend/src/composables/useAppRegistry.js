@@ -30,12 +30,12 @@ export function useAppRegistry() {
   }
 
   const logoMap = computed(() => ({
-    frappe: FRAPPE_LOGO_URL,
     ...Object.fromEntries(
       registry.value
         .filter((app) => app.logo_url)
         .map((app) => [app.name, app.logo_url]),
     ),
+    frappe: FRAPPE_LOGO_URL,
   }))
 
   const titleMap = computed(() =>

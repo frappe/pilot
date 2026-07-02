@@ -92,6 +92,8 @@ def site_apps(name: str):
             result.append(
                 {
                     "name": app_name,
+                    "title": info.title,
+                    "description": info.description,
                     "branch": info.branch,
                     "commit": info.current_commit,
                     "version": info.installed_version,
@@ -103,6 +105,8 @@ def site_apps(name: str):
             result.append(
                 {
                     "name": app_name,
+                    "title": app_name,
+                    "description": "",
                     "branch": "",
                     "commit": "",
                     "version": "",
@@ -134,6 +138,7 @@ def create():
     name = (data.get("name") or "").strip()
     admin_password = secrets.token_urlsafe(16)
     db_type = (data.get("db_type") or "").strip()
+    apps = [app.strip() for app in data.get("apps") or [] if isinstance(app, str) and app.strip()]
     if db_type and db_type not in ("mariadb", "postgres", "sqlite"):
         return jsonify({"ok": False, "error": f"Invalid db_type '{db_type}'."})
     err = validate_site_name(name) or _new_site_name_error(bench_root, name)
@@ -143,6 +148,8 @@ def create():
     task_args: dict = {"name": name, "admin_password": admin_password}
     if db_type:
         task_args["db_type"] = db_type
+    if apps:
+        task_args["apps"] = apps
     try:
         task_id = TaskRunner(bench_root).run(
             "new-site",

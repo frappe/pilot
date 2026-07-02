@@ -4,17 +4,22 @@ import { useRoute } from 'vue-router'
 import { Breadcrumbs } from 'frappe-ui'
 import AppSidebar from '@/components/AppSidebar.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
+import { useIsMobile } from '@/composables/useIsMobile'
 
 const route = useRoute()
 const { items, resetBreadcrumbs } = useBreadcrumbs()
+const isMobile = useIsMobile()
 
 watch(() => route.name, resetBreadcrumbs)
 
 const breadcrumbs = computed(() => {
-  if (items.value) return items.value
-  const { title = '', group } = route.meta
-  return group ? [{ label: group }, { label: title }] : [{ label: title }]
+  const all = items.value || breadcrumbsFromRouteMeta(route.meta)
+  return isMobile.value ? all.slice(-1) : all
 })
+
+function breadcrumbsFromRouteMeta({ title = '', group }) {
+  return group ? [{ label: group }, { label: title }] : [{ label: title }]
+}
 </script>
 
 <template>

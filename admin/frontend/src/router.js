@@ -41,6 +41,7 @@ router.beforeEach(async (to) => {
   const { session, ensureSession } = useSession()
   await ensureSession()
   if (session.wizard) return to.name === 'Setup' ? true : { name: 'Setup' }
+  if (to.name === 'Setup') return { path: '/' }
   if (!session.authenticated && to.name !== 'Login')
     return { name: 'Login', query: { redirect: to.fullPath } }
   if (session.authenticated && to.name === 'Login')

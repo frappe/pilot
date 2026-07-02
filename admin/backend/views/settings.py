@@ -319,7 +319,6 @@ def _regenerate_nginx(bench_root: Path, config: BenchConfig) -> None:
     manager = NginxManager(bench)
     manager.generate_config(ssl_ready=True)
     manager.install_config()
-    manager.reload()
 
 
 def _restart_supervisor(manager, bench_name: str) -> tuple[bool, str | None]:

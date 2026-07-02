@@ -28,7 +28,6 @@
           </Alert>
           <template v-else>
             <div class="flex items-center gap-2 bg-surface-gray-1 px-3 py-2 border rounded-lg border-outline-gray-2">
-              <span class="size-3.5 text-ink-green-6 lucide-circle-check shrink-0"></span>
               <span class="text-ink-gray-7 text-p-sm">
                 Connected as <span class="font-medium text-ink-gray-9">{{ gitStatus.username }}</span>
               </span>

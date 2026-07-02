@@ -26,7 +26,6 @@ class SetupNginxCommand(Command):
         self._ensure_nginx_config_directory()
         self.nginx_manager.generate_config(ssl_ready=True)
         self.nginx_manager.install_config()
-        self.nginx_manager.reload()
         self._print_site_urls()
 
     def _validate_nginx_enabled(self) -> None:

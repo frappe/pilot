@@ -222,6 +222,38 @@ def test_setup_monitoring_log_path_is_path_on_config(tmp_path: Path, monkeypatch
     assert bench.config.monitor.log_path.name == f"{bench.config.name}-stats.log"
 
 
+# ── best-effort TLS (wizard hand-off) ───────────────────────────────────────
+
+
+def test_setup_letsencrypt_reraises_by_default(tmp_path: Path, monkeypatch) -> None:
+    from pilot.commands.setup import letsencrypt as letsencrypt_module
+
+    bench = _make_bench(tmp_path, admin_domain="admin.example.com", email="x@y.com")
+    monkeypatch.setattr(letsencrypt_module.SetupLetsEncryptCommand, "run",
+                         lambda self: (_ for _ in ()).throw(RuntimeError("dns not ready")))
+    cmd = SetupProductionCommand(bench)
+
+    with pytest.raises(RuntimeError, match="dns not ready"):
+        cmd._setup_letsencrypt_if_needed()
+
+
+def test_setup_letsencrypt_swallows_when_best_effort(tmp_path: Path, monkeypatch, capsys) -> None:
+    """The wizard's automatic hand-off (unlike an explicit CLI --tls request)
+    shouldn't roll back an otherwise-working deployment just because a cert
+    can't issue yet - e.g. DNS for a domain created moments ago hasn't
+    propagated. The bench should stay live on HTTP instead."""
+    from pilot.commands.setup import letsencrypt as letsencrypt_module
+
+    bench = _make_bench(tmp_path, admin_domain="admin.example.com", email="x@y.com")
+    monkeypatch.setattr(letsencrypt_module.SetupLetsEncryptCommand, "run",
+                         lambda self: (_ for _ in ()).throw(RuntimeError("dns not ready")))
+    cmd = SetupProductionCommand(bench, best_effort_tls=True)
+
+    cmd._setup_letsencrypt_if_needed()  # must not raise
+
+    assert "dns not ready" in capsys.readouterr().err
+
+
 def test_persist_production_state_writes_enabled_and_drops_nginx(tmp_path: Path) -> None:
     bench = _make_bench(tmp_path, process_manager="supervisor")
     # legacy nginx key present in toml

@@ -2,6 +2,22 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useSetupHandoff } from './useSetupHandoff'
 import { useVolumeStorage } from './useVolumeStorage'
 import { setupApi } from '../api/setup'
+import { meetsPasswordRequirements } from '../utils/passwordStrength'
+import { generateRandomPassword } from '../utils/randomPassword'
+
+// Static dropdown options
+const DB_TYPE_OPTIONS = [
+  { label: 'MariaDB', value: 'mariadb' },
+  { label: 'PostgreSQL', value: 'postgres' },
+]
+const DEPLOYMENT_OPTIONS = [
+  { label: 'Dedicated Instance (Recommended)', value: 'dedicated' },
+  { label: 'Shared Instance', value: 'shared' },
+]
+const STORAGE_OPTIONS = [
+  { label: "This machine's disk", value: 'image' },
+  { label: 'An attached disk', value: 'device' },
+]
 
 const STEP_TITLES = {
   passwords: 'Admin password',
@@ -16,37 +32,17 @@ const STEP_SUBTITLES = {
   storage: 'Choose where your bench keeps its data',
 }
 
-function defaultForm() {
-  return {
-    admin_password: '',
-    db_type: 'mariadb',
-    mariadb_password: '',
-    mariadb_admin_user: 'root',
-    dedicated_db: 'dedicated',
-    postgres_password: '',
-    postgres_admin_user: 'postgres',
-    app_repo: 'https://github.com/frappe/frappe',
-    app_branch: 'develop',
-    volume_enabled: false,
-    volume_pool: 'bench-pool',
-    volume_backing: 'image',
-    volume_device: '',
-    volume_image_size: '60G',
-    volume_reservation: '15G',
-    volume_quota: '60G',
-  }
-}
-
 export function useSetup() {
   const { awaitingTerminal } = useSetupHandoff()
 
-  const form = ref(defaultForm())
+  // Wizard state
   const currentStep = ref('loading')
   const errorMessage = ref('')
   const isSubmitting = ref(false)
   const benchName = ref('')
   const isLinux = ref(true)
   const isAlpine = ref(false)
+  const isProductionHandoff = ref(false)
   const dedicatedMariadbWillInstall = ref(false)
   const sharedMariadbWillInstall = ref(false)
   const postgresWillInstall = ref(false)
@@ -57,41 +53,75 @@ export function useSetup() {
   const streamStatus = ref('Starting…')
   const showStreamDetails = ref(false)
 
-  const volume = useVolumeStorage(form)
+  // User inputs
+  const adminPassword = ref('')
+  const dbType = ref('mariadb')
+  const deploymentMode = ref('dedicated')
+  const dbUser = ref('')
+  const dbPassword = ref('')
+  const appRepo = ref('https://github.com/frappe/frappe')
+  const appBranch = ref('develop')
+  const volumeEnabled = ref(false)
+  const volumeBacking = ref('image')
+  const volumeDevice = ref('')
+  const volumeImageSize = ref('60G')
 
+  const volume = useVolumeStorage(volumeBacking, volumeDevice, volumeImageSize)
+
+  // Derived database state
   const mariadbWillInstall = computed(() =>
-    isLinux.value && form.value.dedicated_db === 'dedicated'
+    isLinux.value && deploymentMode.value === 'dedicated'
       ? dedicatedMariadbWillInstall.value
       : sharedMariadbWillInstall.value,
   )
-  const mariadbPasswordDescription = computed(() =>
-    mariadbWillInstall.value
-      ? 'MariaDB will be installed and its root password set to this value.'
-      : undefined,
-  )
-  const postgresPasswordDescription = computed(() =>
-    postgresWillInstall.value
-      ? 'PostgreSQL will be installed and its superuser password set to this value.'
-      : undefined,
-  )
+  const isAdminPasswordValid = computed(() => meetsPasswordRequirements(adminPassword.value))
   const isPostgresDedicated = computed(
-    () => isLinux.value && !isAlpine.value && form.value.dedicated_db === 'dedicated',
+    () => isLinux.value && !isAlpine.value && deploymentMode.value === 'dedicated',
   )
 
+  // Database step: MariaDB and PostgreSQL share one set of fields
+  const showDeploymentMode = computed(() => {
+    if (dbType.value === 'mariadb') return isLinux.value
+    return isLinux.value && !isAlpine.value
+  })
+  const showRootUsername = computed(() => {
+    if (dbType.value === 'mariadb') {
+      return (!isLinux.value || deploymentMode.value === 'shared') && !mariadbWillInstall.value
+    }
+    return !isPostgresDedicated.value
+  })
+  const rootUserPlaceholder = computed(() => (dbType.value === 'mariadb' ? 'root' : 'postgres'))
+  // The username the API receives: what the user typed, or the engine default
+  // whenever the field is hidden (dedicated instances and fresh installs).
+  const resolvedDbUser = computed(() =>
+    showRootUsername.value && dbUser.value ? dbUser.value : rootUserPlaceholder.value,
+  )
+  const rootPasswordDescription = computed(() => {
+    if (dbType.value === 'mariadb') {
+      return mariadbWillInstall.value
+        ? 'MariaDB will be installed and its root password set to this value.'
+        : undefined
+    }
+    return postgresWillInstall.value
+      ? 'PostgreSQL will be installed and its superuser password set to this value.'
+      : undefined
+  })
+
   const branchOptions = computed(() => {
-    const selected = form.value.app_branch
+    const selected = appBranch.value
     const isKnown = availableBranches.value.includes(selected)
     const options = availableBranches.value.map((branch) => ({ label: branch, value: branch }))
     return selected && !isKnown ? [{ label: selected, value: selected }, ...options] : options
   })
 
+  // Steps
   const stepSequence = computed(() => {
     const steps = ['passwords', 'database', 'customize']
     const usesVolumes =
       isLinux.value &&
-      form.value.db_type === 'mariadb' &&
-      form.value.dedicated_db === 'dedicated' &&
-      form.value.volume_enabled
+      dbType.value === 'mariadb' &&
+      deploymentMode.value === 'dedicated' &&
+      volumeEnabled.value
     if (usesVolumes) steps.push('storage')
     return steps
   })
@@ -102,40 +132,62 @@ export function useSetup() {
   const modalWidthClass = computed(() =>
     isInstalling.value && showStreamDetails.value ? 'max-w-2xl' : 'max-w-lg',
   )
-  const stepTitle = computed(() => STEP_TITLES[currentStep.value] || benchName.value)
+  const isDone = computed(() => currentStep.value === 'done')
+  const stepTitle = computed(() => {
+    if (isDone.value && isProductionHandoff.value) return 'Finishing setup'
+    return STEP_TITLES[currentStep.value] || benchName.value
+  })
   const stepSubtitle = computed(() => STEP_SUBTITLES[currentStep.value] || null)
 
+  // A dedicated instance is ours to provision, so give it a generated password.
+  // A shared instance keeps its own, so the field is cleared for re-entry.
   watch(
-    () => form.value.dedicated_db,
+    deploymentMode,
     (mode) => {
-      if (mode === 'shared') form.value.volume_enabled = false
-      if (mode === 'dedicated') form.value.mariadb_admin_user = 'root'
+      if (mode === 'shared') dbPassword.value = ''
+      else if (!dbPassword.value) dbPassword.value = generateRandomPassword()
     },
-  )
-  watch(
-    mariadbWillInstall,
-    (willInstall) => {
-      if (willInstall) form.value.mariadb_admin_user = 'root'
-    },
-    { immediate: true },
+    { immediate: true, flush: 'post' },
   )
 
+  // Loading
   async function loadConfig() {
     try {
       const config = await setupApi.config()
       benchName.value = config.bench_name || ''
       isLinux.value = config.is_linux !== false
       isAlpine.value = config.is_alpine === true
+      // Bench arrived with production already chosen (the admin UI's "New Bench"
+      // flow) — the wizard's task will bring up production itself, so the 'done'
+      // step shouldn't tell the user to run `bench setup production` by hand.
+      // The flattened config renders an unset manager as the literal string
+      // "none" (see BenchTomlBuilder._flatten), not an empty value.
+      const processManager = config.production_process_manager
+      isProductionHandoff.value = Boolean(processManager) && processManager !== 'none'
       volume.availableDevices.value = config.available_devices || []
       volume.rootfsFreeBytes.value = config.rootfs_free_bytes || 0
-      for (const key of Object.keys(form.value)) {
-        if (config[key] !== undefined) form.value[key] = config[key]
+
+      if (config.admin_password) adminPassword.value = config.admin_password
+      if (config.db_type) dbType.value = config.db_type
+      if (config.app_repo) appRepo.value = config.app_repo
+      if (config.app_branch) appBranch.value = config.app_branch
+      if (config.volume_enabled !== undefined) volumeEnabled.value = config.volume_enabled
+      if (config.volume_backing) volumeBacking.value = config.volume_backing
+      if (config.volume_device) volumeDevice.value = config.volume_device
+      if (config.volume_image_size) volumeImageSize.value = config.volume_image_size
+      if (config.db_type === 'postgres') {
+        if (config.postgres_admin_user) dbUser.value = config.postgres_admin_user
+        if (config.postgres_password) dbPassword.value = config.postgres_password
+      } else {
+        if (config.mariadb_admin_user) dbUser.value = config.mariadb_admin_user
+        if (config.mariadb_password) dbPassword.value = config.mariadb_password
       }
+
       volume.clampImageSize()
       if (isLinux.value) {
         const instance =
           config.db_type === 'postgres' ? config.postgres_instance : config.mariadb_instance
-        form.value.dedicated_db = instance ? 'dedicated' : 'shared'
+        deploymentMode.value = instance ? 'dedicated' : 'shared'
       }
       if (config.running_setup_task_id) startStream(config.running_setup_task_id)
       else currentStep.value = 'passwords'
@@ -165,6 +217,7 @@ export function useSetup() {
     } catch {}
   }
 
+  // Stream
   function startStream(taskId) {
     streamStatus.value = 'Starting…'
     streamUrl.value = setupApi.streamUrl(taskId)
@@ -196,19 +249,22 @@ export function useSetup() {
     if (showStreamDetails.value) terminal.value?.scrollToBottom()
   }
 
-  async function validatePasswordStep() {
-    if (!form.value.admin_password) return 'Admin password is required'
+  // Validation
+  function validatePasswordStep() {
+    if (!adminPassword.value) return 'Admin password is required'
+    if (!meetsPasswordRequirements(adminPassword.value))
+      return 'Password does not meet all requirements'
     return null
   }
 
   async function validateMariadbStep() {
-    if (!form.value.mariadb_password) return 'MariaDB password is required'
-    const dedicated = isLinux.value && form.value.dedicated_db === 'dedicated'
+    if (!dbPassword.value) return 'MariaDB password is required'
+    const dedicated = isLinux.value && deploymentMode.value === 'dedicated'
     isSubmitting.value = true
     try {
       const { state } = await setupApi.validateMariadb({
-        mariadb_password: form.value.mariadb_password,
-        mariadb_admin_user: form.value.mariadb_admin_user,
+        mariadb_password: dbPassword.value,
+        mariadb_admin_user: resolvedDbUser.value,
         dedicated_db: dedicated,
       })
       if (dedicated) dedicatedMariadbWillInstall.value = state === 'will_install'
@@ -222,12 +278,12 @@ export function useSetup() {
   }
 
   async function validatePostgresStep() {
-    if (!form.value.postgres_password) return 'PostgreSQL password is required'
+    if (!dbPassword.value) return 'PostgreSQL password is required'
     isSubmitting.value = true
     try {
       const { state } = await setupApi.validatePostgres({
-        postgres_password: form.value.postgres_password,
-        postgres_admin_user: form.value.postgres_admin_user,
+        postgres_password: dbPassword.value,
+        postgres_admin_user: resolvedDbUser.value,
         dedicated: isPostgresDedicated.value,
       })
       postgresWillInstall.value = state === 'will_install'
@@ -240,23 +296,19 @@ export function useSetup() {
   }
 
   function validateStorageStep() {
-    if (!isLinux.value || !form.value.volume_enabled) return null
-    if (form.value.volume_backing === 'device' && !form.value.volume_device)
+    if (!isLinux.value || !volumeEnabled.value) return null
+    if (volumeBacking.value === 'device' && !volumeDevice.value)
       return 'Please choose an attached disk.'
     return null
   }
 
-  async function validateDatabaseStep() {
-    return form.value.db_type === 'postgres'
-      ? validatePostgresStep()
-      : validateMariadbStep()
+  function validateDatabaseStep() {
+    return dbType.value === 'postgres' ? validatePostgresStep() : validateMariadbStep()
   }
 
+  // Navigation
   async function goToNextStep() {
-    const validators = {
-      passwords: validatePasswordStep,
-      database: validateDatabaseStep,
-    }
+    const validators = { passwords: validatePasswordStep, database: validateDatabaseStep }
     const message = await validators[currentStep.value]?.()
     if (message) {
       errorMessage.value = message
@@ -277,39 +329,64 @@ export function useSetup() {
     currentStep.value = stepSequence.value.at(-1)
   }
 
-  function buildDatabasePayload() {
-    const { db_type, dedicated_db } = form.value
-    if (db_type === 'postgres') {
+  // Save: the payload is assembled from the current dropdown values
+  function buildPayload() {
+    const base = {
+      admin_password: adminPassword.value,
+      db_type: dbType.value,
+      app_repo: appRepo.value,
+      app_branch: appBranch.value,
+      volume_pool: 'bench-pool',
+      volume_backing: volumeBacking.value,
+      volume_device: volumeDevice.value,
+      volume_image_size: volumeImageSize.value,
+      ...volume.volumeSizes.value,
+    }
+    if (dbType.value === 'postgres') {
       return {
+        ...base,
+        postgres_password: dbPassword.value,
+        postgres_admin_user: resolvedDbUser.value,
+        postgres_instance: isPostgresDedicated.value ? benchName.value : '',
+        mariadb_password: '',
+        mariadb_admin_user: 'root',
         mariadb_instance: '',
         mariadb_socket_path: '',
         mariadb_data_dir: '',
         volume_enabled: false,
-        postgres_instance: isPostgresDedicated.value ? benchName.value : '',
       }
     }
-    if (!isLinux.value) return {}
-    if (dedicated_db === 'dedicated') {
+    const mariadb = {
+      ...base,
+      mariadb_password: dbPassword.value,
+      mariadb_admin_user: resolvedDbUser.value,
+      postgres_password: '',
+      postgres_admin_user: 'postgres',
+    }
+    if (!isLinux.value) return { ...mariadb, volume_enabled: false }
+    if (deploymentMode.value === 'dedicated') {
       return {
-        postgres_instance: '',
+        ...mariadb,
+        mariadb_admin_user: 'root',
         mariadb_instance: benchName.value,
         mariadb_socket_path: `/run/mysqld/mysqld-${benchName.value}.sock`,
         mariadb_data_dir: `/var/lib/mysql-${benchName.value}`,
-        mariadb_admin_user: 'root',
+        postgres_instance: '',
+        volume_enabled: volumeEnabled.value,
       }
     }
     return {
-      postgres_instance: '',
+      ...mariadb,
       mariadb_instance: '',
       mariadb_socket_path: '',
       mariadb_data_dir: '',
+      postgres_instance: '',
       volume_enabled: false,
     }
   }
 
   async function saveConfig() {
-    const { dedicated_db, ...rest } = form.value
-    const result = await setupApi.save({ ...rest, ...buildDatabasePayload() })
+    const result = await setupApi.save(buildPayload())
     if (!result.ok) throw new Error(result.error || 'Failed to save configuration.')
   }
 
@@ -347,19 +424,35 @@ export function useSetup() {
   onMounted(loadConfig)
 
   return {
-    form,
     currentStep,
     errorMessage,
     isSubmitting,
     isLinux,
     isAlpine,
+    isProductionHandoff,
+    isDone,
     terminal,
     streamUrl,
     streamStatus,
     showStreamDetails,
-    mariadbWillInstall,
-    mariadbPasswordDescription,
-    postgresPasswordDescription,
+    isAdminPasswordValid,
+    adminPassword,
+    dbType,
+    deploymentMode,
+    dbUser,
+    dbPassword,
+    appRepo,
+    appBranch,
+    volumeEnabled,
+    volumeBacking,
+    volumeDevice,
+    showDeploymentMode,
+    showRootUsername,
+    rootUserPlaceholder,
+    rootPasswordDescription,
+    dbTypeOptions: DB_TYPE_OPTIONS,
+    deploymentOptions: DEPLOYMENT_OPTIONS,
+    storageOptions: STORAGE_OPTIONS,
     branchOptions,
     deviceOptions: volume.deviceOptions,
     showDeviceDropdown: volume.showDeviceDropdown,

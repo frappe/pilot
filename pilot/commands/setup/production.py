@@ -63,12 +63,19 @@ class SetupProductionCommand(Command):
         admin_domain: Optional[str] = None,
         admin_tls: Optional[bool] = None,
         letsencrypt_email: Optional[str] = None,
+        best_effort_tls: bool = False,
     ) -> None:
         self.bench = bench
         self._pm_arg = process_manager
         self._domain_arg = admin_domain
         self._tls_arg = admin_tls
         self._email_arg = letsencrypt_email
+        # CLI callers want a hard failure when the TLS they explicitly asked for
+        # doesn't work. The wizard's automatic hand-off doesn't - a cert that
+        # can't issue yet (e.g. DNS still propagating for a domain created
+        # moments ago) shouldn't roll back an otherwise-working deployment;
+        # the bench just stays reachable over HTTP until a retry succeeds.
+        self._best_effort_tls = best_effort_tls
         self._existing_admin_domain = bench.config.admin.domain
         self._registered_admin_domain: Optional[str] = None
 
@@ -356,7 +363,16 @@ class SetupProductionCommand(Command):
             return
         from pilot.commands.setup.letsencrypt import SetupLetsEncryptCommand
 
-        SetupLetsEncryptCommand(self.bench).run()
+        try:
+            SetupLetsEncryptCommand(self.bench).run()
+        except Exception as exc:
+            if not self._best_effort_tls:
+                raise
+            print(
+                f"Warning: could not obtain a TLS certificate for {self.bench.config.admin.domain} "
+                f"yet ({exc}). Continuing on HTTP - retry once its DNS resolves.",
+                file=sys.stderr,
+            )
 
     def _build_admin_for_production(self) -> None:
         from pilot.commands.admin import BuildAdminCommand

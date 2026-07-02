@@ -46,6 +46,7 @@ import MarketplaceAppCard from '@/components/MarketplaceAppCard.vue'
 import { useSite } from '@/composables/useSite'
 import { useAppRegistry } from '@/composables/useAppRegistry'
 import { openTaskDetailPage } from '@/utils/taskRoute'
+import { toSentenceCase } from '@/utils/format'
 
 const props = defineProps({
   siteName: { type: String, required: true },
@@ -60,9 +61,9 @@ const appDetailMap = computed(() => Object.fromEntries(apps.value.map((a) => [a.
 const appObjects = computed(() =>
   installedApps.value.map((name) => ({
     name,
-    title: titleMap.value[name] || name,
+    title: titleMap.value[name] || toSentenceCase(appDetailMap.value[name]?.title) || name,
     label: appDetailMap.value[name]?.version || '',
-    description: descriptionMap.value[name] || '',
+    description: descriptionMap.value[name] || appDetailMap.value[name]?.description || '',
     logo_url: logoMap.value[name] || null,
     documentation: documentationMap.value[name] || '',
     website: websiteMap.value[name] || '',

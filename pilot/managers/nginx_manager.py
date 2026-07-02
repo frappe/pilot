@@ -464,7 +464,12 @@ class NginxManager:
 
         acme_block = self._render_acme_location()
         firewall_block = self._render_firewall()
-        proxy_block = self._render_error_pages() + self._render_admin_proxy_location()
+        proxy_block = (
+            self._render_error_pages()
+            + self._render_open_cors_location("/api/ping")
+            + self._render_open_cors_location("/api/status")
+            + self._render_admin_proxy_location()
+        )
 
         # admin.tls = False: a central proxy terminates TLS, so nginx serves the
         # admin over plain HTTP on :80 and never redirects to HTTPS, even if a
@@ -530,6 +535,24 @@ class NginxManager:
             + f"}}\n"
         )
 
+    def _render_open_cors_location(self, path: str) -> str:
+        """/api/ping and /api/status are probed cross-origin (e.g. ReconnectOverlay
+        detecting which scheme now serves a bench after a restart), so nginx answers
+        them with a wide-open CORS header regardless of what the admin process sends."""
+        return (
+            f"    location = {path} {{\n"
+            f"        proxy_pass         http://127.0.0.1:{self._admin_proxy_port()};\n"
+            f"        proxy_read_timeout 120;\n"
+            f"        proxy_redirect     off;\n"
+            f"        proxy_set_header   Host               $host;\n"
+            f"        proxy_set_header   X-Real-IP          $remote_addr;\n"
+            f"        proxy_set_header   X-Forwarded-For    {self._xff_header()};\n"
+            f"        proxy_set_header   X-Forwarded-Proto  $scheme;\n"
+            f"        proxy_hide_header  Access-Control-Allow-Origin;\n"
+            f"        add_header         Access-Control-Allow-Origin * always;\n"
+            f"    }}\n"
+        )
+
     def _render_admin_proxy_location(self) -> str:
         return (
             f"    location / {{\n"
@@ -554,11 +577,37 @@ class NginxManager:
         symlink_path = nginx_dir / f"{self.bench.config.name}.conf"
         source_path = self.bench.config_path / "nginx" / "include.conf"
 
+        self._prune_dangling_symlinks(nginx_dir)
         if symlink_path.exists() or symlink_path.is_symlink():
             run_command(_privileged(["unlink", str(symlink_path)]))
         run_command(_privileged(["ln", "-s", str(source_path), str(symlink_path)]))
         self._set_worker_user()
         self.install_default_server()
+        self._reload_or_rollback(symlink_path)
+
+    @staticmethod
+    def _prune_dangling_symlinks(nginx_dir: Path) -> None:
+        """Remove any bench's vhost symlink whose target no longer exists.
+
+        A bench dropped without going through its own teardown (e.g. its
+        directory deleted directly) leaves its symlink here dangling; nginx -t
+        then fails to open it and blocks every bench sharing this config dir,
+        not just the one that was removed."""
+        if not nginx_dir.is_dir():
+            return
+        for entry in nginx_dir.iterdir():
+            if entry.is_symlink() and not entry.exists():
+                run_command(_privileged(["unlink", str(entry)]))
+
+    def _reload_or_rollback(self, symlink_path: Path) -> None:
+        """A bad config for this one bench must not take nginx down for every
+        other bench on the box — undo the symlink we just installed and let the
+        caller see the original failure."""
+        try:
+            self.reload()
+        except Exception:
+            run_command(_privileged(["unlink", str(symlink_path)]))
+            raise
 
     def _set_worker_user(self) -> None:
         """Run nginx workers as the bench owner. Idempotent."""

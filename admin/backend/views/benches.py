@@ -12,7 +12,6 @@ from admin.backend.bench_helpers import (
     admin_cert_exists,
     admin_running,
     current_is_production,
-    persist_toml,
     port_open,
     site_count,
     wizard_responds,
@@ -199,7 +198,9 @@ def new():
     if patterns and not matches_wildcard(admin_domain, patterns):
         return jsonify({"error": f"Admin domain must match one of: {', '.join(patterns)}."}), 400
 
-    admin_tls = bool(data.get("admin_tls", False))
+    # None (client never sends this) lets NewCommand inherit the sibling
+    # production bench's TLS choice instead of forcing HTTP-only.
+    admin_tls = bool(data["admin_tls"]) if "admin_tls" in data else None
 
     try:
         NewCommand(new_dir, name, process_manager=process_manager,
@@ -215,7 +216,6 @@ def new():
 
     if current_is_production(bench_root):
         try:
-            from pilot.config.bench_config import BenchConfig
             from pilot.core.bench import Bench
             from pilot.managers.nginx_manager import NginxManager
 
@@ -228,19 +228,23 @@ def new():
                 from pilot.managers.process_managers.openrc import OpenRCProcessManager as PM
             else:
                 from pilot.managers.process_managers.supervisor import SupervisorProcessManager as PM
-            PM(bench).start_admin()
+            pm = PM(bench)
+            pm.start_admin()
+            # Just enough to make the wizard reachable at its domain (over plain
+            # HTTP). The workload, TLS, and marking production.enabled all need
+            # the venv/framework app the wizard's init step installs, so
+            # WizardSetupTask finishes the rest via SetupProductionCommand once
+            # that's done - duplicating those steps here risks running them
+            # before the bench can actually support them (see git history).
             nginx = NginxManager(bench)
             nginx.generate_config()
             nginx.install_config()
-            nginx.reload()
-            persist_toml(new_dir, {"production": {"enabled": True}})
-            serves_https = bool(bench.config.admin.tls and nginx.admin_cert_exists())
             server_ip = DomainRouteProvider._server_ip()
         except Exception as exc:
             return jsonify({"error": f"Failed to bring up the new bench: {exc}"}), 500
         return jsonify({"name": name, "port": new_port, "wizard_at_domain": True,
                         "domain": admin_cfg.get("domain", ""),
-                        "scheme": "https" if serves_https else "http",
+                        "scheme": "http",
                         "server_ip": server_ip})
 
     spawn_env = {

@@ -1,249 +1,146 @@
 <template>
-  <div class="flex h-screen items-center justify-center bg-surface-base p-4">
-    <div
-      class="flex w-full flex-col rounded-xl border border-outline-gray-2 bg-surface-base shadow-sm"
-      :class="modalWidthClass"
-      style="max-height: calc(100vh - 2rem)"
-    >
-      <div class="border-b border-outline-gray-2 px-5 py-4">
-        <p v-if="isConfiguring" class="mb-1 text-xs text-ink-gray-4">
+  <div class="flex justify-center items-center p-4 h-screen">
+    <div class="flex flex-col bg-surface-base shadow-sm border rounded-xl border-outline-gray-2 w-full"
+      :class="modalWidthClass" style="max-height: calc(100vh - 2rem)">
+
+      <!-- Header -->
+      <div class="px-5 py-4 border-b border-outline-gray-2">
+        <p v-show="isConfiguring" class="mb-1 text-ink-gray-4 text-xs">
           Step {{ stepNumber }} of {{ stepSequence.length }}
         </p>
-        <h1 class="font-medium text-ink-gray-7">{{ stepTitle }}</h1>
-        <p v-if="stepSubtitle" class="mt-0.5 text-sm text-ink-gray-4">{{ stepSubtitle }}</p>
+        <h1 class="font-semibold text-ink-gray-9 text-lg">{{ stepTitle }}</h1>
+        <p v-show="stepSubtitle" class="mt-0.5 text-ink-gray-5 text-p-base">{{ stepSubtitle }}</p>
       </div>
 
-      <div class="flex-1 overflow-y-auto p-5">
-        <div v-if="currentStep === 'loading'" class="flex items-center justify-center py-10">
-          <FeatherIcon name="loader" class="h-5 w-5 animate-spin text-ink-gray-4" />
+      <div class="flex-1 p-5 overflow-y-auto">
+
+        <!-- Loading -->
+        <div v-show="currentStep === 'loading'" class="flex justify-center items-center py-10">
+          <LoadingText />
         </div>
 
-        <div v-else-if="currentStep === 'passwords'" class="flex flex-col gap-4">
-          <Password
-            label="Admin password"
-            v-model="form.admin_password"
-            placeholder="Choose a password"
-            @keydown.enter="goToNextStep"
-          />
-          <ErrorMessage v-if="errorMessage" :message="errorMessage" />
-        </div>
-
-        <div v-else-if="currentStep === 'database'" class="flex flex-col gap-4">
-          <FormControl
-            type="select"
-            label="Database engine"
-            v-model="form.db_type"
-            :options="[
-              { label: 'MariaDB', value: 'mariadb' },
-              { label: 'PostgreSQL', value: 'postgres' },
-            ]"
-          />
-
-          <template v-if="form.db_type === 'mariadb'">
-            <FormControl
-              v-if="isLinux"
-              type="select"
-              label="MariaDB setup"
-              v-model="form.dedicated_db"
-              :options="[
-                { label: 'Dedicated instance (recommended)', value: 'dedicated' },
-                { label: 'Shared system MariaDB', value: 'shared' },
-              ]"
-            />
-            <FormControl
-              v-if="(!isLinux || form.dedicated_db === 'shared') && !mariadbWillInstall"
-              label="MariaDB admin user"
-              v-model="form.mariadb_admin_user"
-            />
-            <Password
-              label="MariaDB root password"
-              v-model="form.mariadb_password"
-              placeholder="password"
-              :description="mariadbPasswordDescription"
-              @keydown.enter="goToNextStep"
-            />
-          </template>
-
-          <template v-else>
-            <FormControl
-              v-if="isLinux && !isAlpine"
-              type="select"
-              label="PostgreSQL setup"
-              v-model="form.dedicated_db"
-              :options="[
-                { label: 'Dedicated cluster (recommended)', value: 'dedicated' },
-                { label: 'Shared system PostgreSQL', value: 'shared' },
-              ]"
-            />
-            <FormControl label="PostgreSQL superuser" v-model="form.postgres_admin_user" />
-            <Password
-              label="PostgreSQL password"
-              v-model="form.postgres_password"
-              placeholder="password"
-              :description="postgresPasswordDescription"
-              @keydown.enter="goToNextStep"
-            />
-          </template>
-          <ErrorMessage v-if="errorMessage" :message="errorMessage" />
-        </div>
-
-        <div v-else-if="currentStep === 'customize'" class="flex flex-col gap-4">
-          <FormControl
-            type="select"
-            label="Frappe branch"
-            v-model="form.app_branch"
-            :options="branchOptions"
-          />
-          <FormControl label="Frappe repository" v-model="form.app_repo" />
-          <FormControl
-            v-if="isLinux && form.dedicated_db === 'dedicated'"
-            type="checkbox"
-            label="Use volumes (snapshots & backups)"
-            v-model="form.volume_enabled"
-          />
-          <ErrorMessage v-if="errorMessage" :message="errorMessage" />
-        </div>
-
-        <div v-else-if="currentStep === 'storage'" class="flex flex-col gap-4">
-          <FormControl
-            type="select"
-            label="Store data on"
-            v-model="form.volume_backing"
-            :options="[
-              { label: 'This machine\'s disk', value: 'image' },
-              { label: 'An attached disk', value: 'device' },
-            ]"
-          />
-          <FormControl
-            v-if="form.volume_backing === 'device' && showDeviceDropdown"
-            type="select"
-            label="Attached disk"
-            v-model="form.volume_device"
-            :options="deviceOptions"
-          />
-          <FormControl
-            v-else-if="form.volume_backing === 'device'"
-            label="Attached disk"
-            v-model="form.volume_device"
-            placeholder="/dev/sdb"
-          />
-          <div v-else class="space-y-1.5">
-            <div class="flex items-baseline justify-between">
-              <FormLabel label="Space to allocate" />
-              <span class="text-sm text-ink-gray-5"
-                >{{ imageSizeGiB }} GB of {{ freeGiB }} GB free</span
-              >
-            </div>
-            <Slider
-              v-model="imageSliderModel"
-              :min="imageSizeMinGiB"
-              :max="imageSizeMaxGiB"
-              :step="1"
-            />
+        <!-- Admin password -->
+        <div v-show="currentStep === 'passwords'" class="flex flex-col gap-4">
+          <div class="flex flex-col gap-2">
+            <Password label="Admin password" v-model="adminPassword" placeholder="Choose a password"
+              @keydown.enter="goToNextStep" />
+            <PasswordStrengthMeter :password="adminPassword" />
           </div>
-          <ErrorMessage v-if="errorMessage" :message="errorMessage" />
+          <ErrorMessage v-show="errorMessage" :message="errorMessage" />
         </div>
 
-        <div v-else-if="isInstalling" class="flex flex-col gap-4">
-          <p class="text-sm text-ink-gray-7">{{ streamStatus }}</p>
-          <button
-            type="button"
-            class="flex items-center gap-1 self-start text-sm text-ink-gray-5 hover:text-ink-gray-7"
-            @click="toggleStreamDetails"
-          >
-            <FeatherIcon
-              :name="showStreamDetails ? 'chevron-down' : 'chevron-right'"
-              class="h-4 w-4"
-            />
+        <!-- Database -->
+        <div v-show="currentStep === 'database'" class="flex flex-col gap-4">
+          <Select label="Database engine" v-model="dbType" :options="dbTypeOptions" />
+          <Select v-show="showDeploymentMode" label="Deployment mode" v-model="deploymentMode"
+            :options="deploymentOptions" />
+          <TextInput v-show="showRootUsername" label="Root username" v-model="dbUser"
+            :placeholder="rootUserPlaceholder" />
+          <div>
+            <Password label="Root user password" v-model="dbPassword" placeholder="password" autocomplete="off"
+              data-lpignore="true" data-1p-ignore data-bwignore @keydown.enter="goToNextStep" />
+            <p v-show="rootPasswordDescription" class="mt-1.5 text-ink-gray-6 text-p-sm">{{ rootPasswordDescription }}
+            </p>
+          </div>
+          <ErrorMessage v-show="errorMessage" :message="errorMessage" />
+        </div>
+
+        <!-- Customize -->
+        <div v-show="currentStep === 'customize'" class="flex flex-col gap-4">
+          <Select label="Frappe branch" v-model="appBranch" :options="branchOptions" />
+          <TextInput label="Frappe repository" v-model="appRepo" />
+          <Checkbox v-show="isLinux && deploymentMode === 'dedicated'" label="Use volumes (snapshots & backups)"
+            v-model="volumeEnabled" />
+          <ErrorMessage v-show="errorMessage" :message="errorMessage" />
+        </div>
+
+        <!-- Storage -->
+        <div v-show="currentStep === 'storage'" class="flex flex-col gap-4">
+          <Select label="Store data on" v-model="volumeBacking" :options="storageOptions" />
+          <Select v-show="volumeBacking === 'device' && showDeviceDropdown" label="Attached disk" v-model="volumeDevice"
+            :options="deviceOptions" />
+          <TextInput v-show="volumeBacking === 'device' && !showDeviceDropdown" label="Attached disk"
+            v-model="volumeDevice" placeholder="/dev/sdb" />
+          <div v-show="volumeBacking !== 'device'" class="space-y-1.5">
+            <div class="flex justify-between items-baseline">
+              <p class="text-ink-gray-7 text-p-sm-medium">Space to allocate</p>
+              <p class="text-ink-gray-5 text-p-sm">{{ imageSizeGiB }} GB of {{ freeGiB }} GB</p>
+            </div>
+            <Slider v-model="imageSliderModel" :min="imageSizeMinGiB" :max="imageSizeMaxGiB" :step="1" />
+          </div>
+          <ErrorMessage v-show="errorMessage" :message="errorMessage" />
+        </div>
+
+        <!-- Installing -->
+        <div v-show="isInstalling" class="flex flex-col gap-4">
+          <p class="text-ink-gray-7 text-sm">{{ streamStatus }}</p>
+          <button type="button" class="flex items-center self-start gap-1 text-ink-gray-5 hover:text-ink-gray-7 text-sm"
+            @click="toggleStreamDetails">
+            <FeatherIcon :name="showStreamDetails ? 'chevron-down' : 'chevron-right'" class="w-4 h-4" />
             {{ showStreamDetails ? 'Hide details' : 'Show details' }}
           </button>
           <div v-show="showStreamDetails">
-            <TaskStream
-              ref="terminal"
-              :url="streamUrl"
-              :guard-hidden-tab="true"
-              @line="updateStreamStatus"
-              @done="onStreamDone"
-              @error="failInstall('Lost connection to the setup process.')"
-            />
+            <TaskStream ref="terminal" :url="streamUrl" :guard-hidden-tab="true" @line="updateStreamStatus"
+              @done="onStreamDone" @error="failInstall('Lost connection to the setup process.')" />
           </div>
-          <ErrorMessage v-if="errorMessage" :message="errorMessage" />
+          <ErrorMessage v-show="errorMessage" :message="errorMessage" />
         </div>
 
-        <div v-else-if="currentStep === 'done'" class="flex flex-col gap-4 py-2">
-          <p class="text-sm text-ink-gray-7">
+        <!-- Done: production hand-off already ran the production setup, so just wait for it to come up -->
+        <div v-show="isDone && isProductionHandoff" class="flex flex-col justify-center items-center gap-3 py-10">
+          <LoadingText />
+          <p class="text-ink-gray-6 text-sm text-center">
+            Finishing production setup. This page will reload automatically once your bench is live.
+          </p>
+        </div>
+
+        <!-- Done: plain dev bench, production is a deliberate step the user runs later -->
+        <div v-show="isDone && !isProductionHandoff" class="flex flex-col gap-4 py-2">
+          <p class="text-ink-gray-7 text-sm">
             Your bench is ready. Run one of these in your terminal:
           </p>
           <div>
-            <p class="text-xs font-medium text-ink-gray-6">Develop locally</p>
-            <code
-              class="mt-1 block rounded bg-surface-gray-2 px-2 py-1.5 font-mono text-sm text-ink-gray-8 select-all"
-              >bench start</code
-            >
+            <p class="font-medium text-ink-gray-6 text-xs">Develop locally</p>
+            <code class="block bg-surface-gray-2 mt-1 px-2 py-1.5 rounded font-mono text-ink-gray-8 text-sm select-all">bench
+      start</code>
           </div>
           <div>
-            <p class="text-xs font-medium text-ink-gray-6">Deploy to production</p>
-            <code
-              class="mt-1 block rounded bg-surface-gray-2 px-2 py-1.5 font-mono text-sm text-ink-gray-8 select-all"
-              >bench setup production --admin-domain &lt;your-domain&gt; --tls --letsencrypt-email
-              &lt;you@example.com&gt;</code
-            >
+            <p class="font-medium text-ink-gray-6 text-xs">Deploy to production</p>
+            <code class="block bg-surface-gray-2 mt-1 px-2 py-1.5 rounded font-mono text-ink-gray-8 text-sm select-all">bench
+      setup production --admin-domain &lt;your-domain&gt; --tls --letsencrypt-email
+      &lt;you@example.com&gt;</code>
           </div>
-          <p class="text-xs text-ink-gray-5">
+          <p class="text-ink-gray-5 text-xs">
             <code class="font-mono">bench start</code> reloads this page automatically once the
             bench is back.
           </p>
         </div>
       </div>
 
-      <div
-        v-if="
-          (!isInstalling && currentStep !== 'done' && currentStep !== 'loading') ||
-          (isInstalling && errorMessage)
-        "
-        class="flex gap-2 border-t border-outline-gray-2 px-5 py-4"
-      >
-        <Button
-          v-if="isInstalling && errorMessage"
-          variant="subtle"
-          class="w-full"
-          @click="backToConfiguration"
-        >
+      <!-- Footer -->
+      <div v-show="isConfiguring || (isInstalling && errorMessage)" class="flex gap-2 px-5 py-4">
+        <Button v-show="isInstalling && errorMessage" variant="subtle" class="w-full" @click="backToConfiguration">
           Back to configuration
         </Button>
-        <template v-else>
-          <Button v-if="stepNumber > 1" variant="subtle" class="flex-1" @click="goToPreviousStep">
-            Back
-          </Button>
-          <Button
-            v-if="currentStep === 'passwords'"
-            variant="solid"
-            class="w-full"
-            @click="goToNextStep"
-          >
-            Next
-          </Button>
-          <Button
-            v-else-if="currentStep === 'database'"
-            variant="solid"
-            :loading="isSubmitting"
-            class="flex-1"
-            @click="goToNextStep"
-          >
-            Next
-          </Button>
-          <Button
-            v-else-if="!isLastConfigStep"
-            variant="solid"
-            class="flex-1"
-            @click="goToNextStep"
-          >
-            Next
-          </Button>
-          <Button v-else variant="solid" :loading="isSubmitting" class="flex-1" @click="startSetup">
-            Set up bench
-          </Button>
-        </template>
+        <Button v-show="isConfiguring && stepNumber > 1" variant="subtle" class="flex-1" @click="goToPreviousStep">
+          Back
+        </Button>
+        <Button v-show="isConfiguring && currentStep === 'passwords'" variant="solid" class="w-full"
+          :disabled="!isAdminPasswordValid" @click="goToNextStep">
+          Next
+        </Button>
+        <Button v-show="isConfiguring && currentStep === 'database'" variant="solid" :loading="isSubmitting"
+          class="flex-1" @click="goToNextStep">
+          Next
+        </Button>
+        <Button v-show="isConfiguring && currentStep !== 'passwords' && currentStep !== 'database' && !isLastConfigStep"
+          variant="solid" class="flex-1" @click="goToNextStep">
+          Next
+        </Button>
+        <Button v-show="isConfiguring && currentStep !== 'passwords' && currentStep !== 'database' && isLastConfigStep"
+          variant="solid" :loading="isSubmitting" class="flex-1" @click="startSetup">
+          Set up bench
+        </Button>
       </div>
     </div>
   </div>
@@ -252,30 +149,50 @@
 <script setup>
 import {
   Button,
-  FormControl,
+  Select,
+  TextInput,
+  Checkbox,
   FormLabel,
   Password,
   Slider,
   ErrorMessage,
   FeatherIcon,
+  LoadingText,
 } from 'frappe-ui'
 import TaskStream from '../components/TaskStream.vue'
+import PasswordStrengthMeter from '../components/PasswordStrengthMeter.vue'
 import { useSetup } from '../composables/useSetup'
 
 const {
-  form,
   currentStep,
   errorMessage,
   isSubmitting,
   isLinux,
   isAlpine,
+  isProductionHandoff,
+  isDone,
   terminal,
   streamUrl,
   streamStatus,
   showStreamDetails,
-  mariadbWillInstall,
-  mariadbPasswordDescription,
-  postgresPasswordDescription,
+  isAdminPasswordValid,
+  adminPassword,
+  dbType,
+  deploymentMode,
+  dbUser,
+  dbPassword,
+  appRepo,
+  appBranch,
+  volumeEnabled,
+  volumeBacking,
+  volumeDevice,
+  showDeploymentMode,
+  showRootUsername,
+  rootUserPlaceholder,
+  rootPasswordDescription,
+  dbTypeOptions,
+  deploymentOptions,
+  storageOptions,
   branchOptions,
   deviceOptions,
   showDeviceDropdown,

@@ -32,7 +32,7 @@
           <Workers v-if="currentSection === 'workers'" ref="workersRef" />
           <Firewall v-else-if="currentSection === 'firewall'" />
           <Git v-else-if="currentSection === 'github'" />
-          <S3 v-else-if="currentSection === 's3'" />
+          <S3Bucket v-else-if="currentSection === 's3-bucket'" />
           <Snapshots v-else-if="currentSection === 'snapshots'" />
           <SystemInfo v-else-if="currentSection === 'system-info'" />
         </div>
@@ -46,7 +46,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { Dialog, Button } from 'frappe-ui'
 import Firewall from '@/components/settings/Firewall.vue'
 import Git from '@/components/settings/Git.vue'
-import S3 from '@/components/settings/S3.vue'
+import S3Bucket from '@/components/settings/S3Bucket.vue'
 import Snapshots from '@/components/settings/Snapshots.vue'
 import SystemInfo from '@/components/settings/SystemInfo.vue'
 import Workers from '@/components/settings/Workers.vue'
@@ -58,9 +58,9 @@ const zfsEnabled = ref(false)
 
 const sections = computed(() => [
   { id: 'github', label: 'Git Settings', icon: 'lucide-git-branch' },
+  { id: 's3-bucket', label: 'S3 Bucket', icon: 'lucide-archive' },
   { id: 'workers', label: 'Workers', icon: 'lucide-server-cog' },
   { id: 'firewall', label: 'Firewall', icon: 'lucide-shield' },
-  { id: 's3', label: 'S3', icon: 'lucide-cloud' },
   ...(zfsEnabled.value ? [{ id: 'snapshots', label: 'Snapshots', icon: 'lucide-camera' }] : []),
   { id: 'system-info', label: 'System Info', icon: 'lucide-info' },
 ])

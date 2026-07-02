@@ -162,6 +162,8 @@ class TaskRunner:
                 argv += ["--admin-password", args["admin_password"]]
             if args.get("db_type"):
                 argv += ["--db-type", args["db_type"]]
+            if args.get("apps"):
+                argv += ["--apps"] + list(args["apps"])
             return argv
         if command == "drop-site":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.drop_site_task", str(self._bench_root), args["site"]]

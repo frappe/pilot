@@ -27,7 +27,7 @@
             </div>
             <!-- Example site name -->
             <p class="mt-1.5 text-ink-gray-5 text-p-sm"> Web address:
-              <span class="font-medium text-ink-gray-7">site.frappe.cloud</span>
+              <span class="font-medium text-ink-gray-7">{{ newSiteName || `mysite${selectedSuffix}` }}</span>
             </p>
           </div>
         </div>
@@ -132,7 +132,7 @@ const creating = ref(false)
 const error = ref('')
 
 const benchDbType = ref('')
-const dbType = ref('')
+const dbType = ref('mariadb')
 
 const selectedApps = ref([])
 const appSearch = ref('')
@@ -189,7 +189,7 @@ function toggleApp(name) {
 
 async function loadWildcardDomains() {
   try {
-    const { domains } = await sitesApi.wildcardDomains()
+    const { domains } = await sitesApi.domains.wildcardList()
     wildcardDomains.value = domains || []
     selectedSuffix.value = wildcardDomains.value[0] || ''
   } catch {

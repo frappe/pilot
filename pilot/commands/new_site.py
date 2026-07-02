@@ -11,6 +11,7 @@ from pilot.exceptions import BenchError
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
+    from pilot.core.site import Site
 
 
 class NewSiteCommand(Command):
@@ -50,6 +51,7 @@ class NewSiteCommand(Command):
         print(f"Creating site '{self.name}'...")
         sys.stdout.flush()
         site.create(db_type=self.db_type)
+        self._install_apps(site)
         self._write_pilot_communication_config()
         self.bench.write_common_site_config()
         print(f"\nSite '{self.name}' created successfully.")
@@ -67,6 +69,16 @@ class NewSiteCommand(Command):
         from pilot.core.domain_controller import DomainRouteProvider
 
         DomainRouteProvider(self.bench).register(self.name, self.name)
+
+    def _install_apps(self, site: "Site") -> None:
+        """`new-site` only installs the framework app; install the rest explicitly."""
+        framework = self.bench.config.framework_app.name
+        for app_name in self.apps:
+            if app_name == framework:
+                continue
+            print(f"Installing app '{app_name}'...")
+            sys.stdout.flush()
+            site.install_app(self.bench.app(app_name))
 
     def _write_pilot_communication_config(self) -> None:
         import json

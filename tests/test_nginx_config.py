@@ -1,12 +1,14 @@
 """Tests for NginxManager config generation — no real nginx required."""
 import copy
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from pilot.config.bench_config import BenchConfig
 from pilot.config.site_config import SiteConfig
 from pilot.core.bench import Bench
+from pilot.exceptions import CommandError
 from pilot.managers.nginx_manager import NginxManager
 
 
@@ -472,3 +474,39 @@ def test_error_pages_include_403_and_errors_allow_all(tmp_path: Path) -> None:
     block = manager._render_error_pages()
     assert "error_page 403 /_errors/403.html;" in block
     assert "allow all;" in block  # blocked client can still fetch its 403 page
+
+
+def test_install_config_rolls_back_symlink_when_reload_fails(tmp_path: Path) -> None:
+    """A broken config for one bench must not leave a dangling symlink behind —
+    that breaks the shared nginx.conf test for every other bench on the box."""
+    bench = _make_bench(tmp_path, _BASE_DATA)
+    manager = NginxManager(bench)
+    symlink_path = tmp_path / "test-bench.conf"
+
+    with patch.object(manager, "reload", side_effect=CommandError("nginx -t failed", returncode=1)), \
+         patch("pilot.managers.nginx_manager.run_command") as mock_run:
+        with pytest.raises(CommandError):
+            manager._reload_or_rollback(symlink_path)
+
+    mock_run.assert_called_once()
+    assert mock_run.call_args[0][0][-2:] == ["unlink", str(symlink_path)]
+
+
+def test_prune_dangling_symlinks_removes_only_broken_ones(tmp_path: Path) -> None:
+    """A bench dropped without going through its own teardown (e.g. its
+    directory deleted directly) leaves its vhost symlink dangling; that alone
+    fails nginx -t for every bench sharing the config dir, so install_config
+    must sweep it away regardless of which bench it belonged to."""
+    nginx_dir = tmp_path / "conf.d"
+    nginx_dir.mkdir()
+    target = tmp_path / "real-target.conf"
+    target.write_text("server {}\n")
+    (nginx_dir / "alive-bench.conf").symlink_to(target)
+    (nginx_dir / "dropped-bench.conf").symlink_to(tmp_path / "deleted-bench" / "include.conf")
+    (nginx_dir / "00-bench-default.conf").write_text("server {}\n")
+
+    with patch("pilot.managers.nginx_manager.run_command") as mock_run:
+        NginxManager._prune_dangling_symlinks(nginx_dir)
+
+    mock_run.assert_called_once()
+    assert mock_run.call_args[0][0][-2:] == ["unlink", str(nginx_dir / "dropped-bench.conf")]

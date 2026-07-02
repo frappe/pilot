@@ -20,7 +20,7 @@
       <!-- Status filter -->
       <FormControl v-model="statusFilter" type="select" :options="statusOptions" class="max-w-24 sm:max-w-32" />
       <!-- List view type -->
-      <TabButtons v-model="view" :options="viewOptions" />
+      <TabButtons v-model="view" :options="viewOptions" class="hidden sm:block" />
     </div>
 
     <div v-if="loading" class="flex justify-center mt-16">
@@ -35,7 +35,7 @@
       <div v-if="view === 'grid'" class="gap-3 grid grid-cols-1 md:grid-cols-2">
         <!-- Site Card -->
         <div v-for="site in filteredSites" :key="site.name"
-          class="flex items-center gap-3 bg-surface-elevation-1 hover:bg-surface-gray-1 p-4 border rounded-xl border-outline-gray-2 hover:border-outline-gray-3 transition-colors">
+          class="flex items-center gap-3 bg-surface-elevation-1 hover:bg-surface-gray-1 p-2 sm:p-4 border rounded-xl border-outline-gray-2 hover:border-outline-gray-3 transition-colors">
           <RouterLink :to="{ name: 'SiteDetail', params: { name: site.name } }"
             class="flex flex-1 items-center gap-3 min-w-0 no-underline">
             <!-- Icon -->

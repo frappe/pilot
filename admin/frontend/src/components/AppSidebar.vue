@@ -8,6 +8,7 @@ import { useIsMobile } from '@/composables/useIsMobile'
 import SettingsDialog from '@/components/SettingsDialog.vue'
 import BenchSwitcherDialog from '@/components/BenchSwitcherDialog.vue'
 import NewBenchDialog from '@/components/NewBenchDialog.vue'
+import PilotLogo from '@/components/PilotLogo.vue'
 const { setTheme } = useTheme()
 
 const route = useRoute()
@@ -70,22 +71,7 @@ const header = computed(() => ({
         :class="isActive(item.to) ? '!text-ink-gray-9' : '!text-ink-gray-7'" />
     </template>
     <template #header-logo>
-      <svg width="32" height="32" viewBox="0 0 118 118" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <g clip-path="url(#clip0_2001_9)">
-          <path
-            d="M93.9278 0H23.1013C10.3428 0 0 10.3428 0 23.1013V93.9278C0 106.686 10.3428 117.029 23.1013 117.029H93.9278C106.686 117.029 117.029 106.686 117.029 93.9278V23.1013C117.029 10.3428 106.686 0 93.9278 0Z"
-            fill="#4C5A67" />
-          <path d="M27 47.1855L90.4535 37.6794L54.0932 90.5437L55.6271 59.4414L27 47.1855Z" stroke="white"
-            stroke-width="8.92551" stroke-linecap="round" stroke-linejoin="round" />
-          <path d="M55.6273 59.4422L79.5424 44.4661" stroke="white" stroke-width="8.92551" stroke-linecap="round"
-            stroke-linejoin="round" />
-        </g>
-        <defs>
-          <clipPath id="clip0_2001_9">
-            <rect width="118" height="118" fill="white" />
-          </clipPath>
-        </defs>
-      </svg>
+      <PilotLogo class="size-8" />
     </template>
   </Sidebar>
   <SettingsDialog v-model="showSettings" />

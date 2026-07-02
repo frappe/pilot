@@ -19,13 +19,13 @@ function deviceLabel(device) {
   return `${device.path} (${sizeGiB} GB${note})`
 }
 
-export function useVolumeStorage(form) {
+export function useVolumeStorage(backing, device, imageSize) {
   const availableDevices = ref([])
   const rootfsFreeBytes = ref(0)
   const customDevice = ref(false)
 
   const deviceOptions = computed(() => [
-    ...availableDevices.value.map((device) => ({ label: deviceLabel(device), value: device.path })),
+    ...availableDevices.value.map((d) => ({ label: deviceLabel(d), value: d.path })),
     { label: 'Other disk…', value: CUSTOM_DEVICE },
   ])
   const showDeviceDropdown = computed(
@@ -35,9 +35,7 @@ export function useVolumeStorage(form) {
   const freeGiB = computed(() => Math.floor(rootfsFreeBytes.value / GIB))
   const imageSizeMaxGiB = computed(() => Math.max(5, freeGiB.value || 100))
   const imageSizeMinGiB = computed(() => Math.min(5, imageSizeMaxGiB.value))
-  const imageSizeGiB = computed(
-    () => parseInt(form.value.volume_image_size) || imageSizeMinGiB.value,
-  )
+  const imageSizeGiB = computed(() => parseInt(imageSize.value) || imageSizeMinGiB.value)
 
   function clamp(value) {
     return Math.min(imageSizeMaxGiB.value, Math.max(imageSizeMinGiB.value, value))
@@ -46,39 +44,33 @@ export function useVolumeStorage(form) {
   const imageSliderModel = computed({
     get: () => [clamp(imageSizeGiB.value)],
     set: ([value]) => {
-      form.value.volume_image_size = `${value}G`
+      imageSize.value = `${value}G`
     },
   })
 
   function clampImageSize() {
-    form.value.volume_image_size = `${clamp(imageSizeGiB.value)}G`
+    imageSize.value = `${clamp(imageSizeGiB.value)}G`
   }
 
+  // Reservation and quota are derived from the backing size at request time.
   function backingSizeBytes() {
-    if (form.value.volume_backing !== 'device') return parseSize(form.value.volume_image_size)
-    const device = availableDevices.value.find((d) => d.path === form.value.volume_device)
-    return device ? device.size_bytes : null
+    if (backing.value !== 'device') return parseSize(imageSize.value)
+    const found = availableDevices.value.find((d) => d.path === device.value)
+    return found ? found.size_bytes : null
   }
 
-  function applySmartSizes() {
+  const volumeSizes = computed(() => {
     const bytes = backingSizeBytes()
-    if (!bytes) return
-    form.value.volume_quota = toWholeGiB(bytes)
-    form.value.volume_reservation = toWholeGiB(bytes * 0.15)
-  }
+    if (!bytes) return { volume_reservation: '15G', volume_quota: '60G' }
+    return { volume_reservation: toWholeGiB(bytes * 0.15), volume_quota: toWholeGiB(bytes) }
+  })
 
-  watch(
-    () => form.value.volume_device,
-    (value) => {
-      if (value !== CUSTOM_DEVICE) return
-      customDevice.value = true
-      form.value.volume_device = ''
-    },
-  )
-  watch(
-    () => [form.value.volume_backing, form.value.volume_device, form.value.volume_image_size],
-    applySmartSizes,
-  )
+  // The "Other disk…" sentinel switches the picker to a free-text field.
+  watch(device, (value) => {
+    if (value !== CUSTOM_DEVICE) return
+    customDevice.value = true
+    device.value = ''
+  })
 
   return {
     availableDevices,
@@ -90,6 +82,7 @@ export function useVolumeStorage(form) {
     imageSizeMinGiB,
     imageSizeMaxGiB,
     imageSliderModel,
+    volumeSizes,
     clampImageSize,
   }
 }

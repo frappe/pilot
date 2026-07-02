@@ -150,8 +150,14 @@ class NewCommand(Command):
             except Exception:
                 continue
 
+        admin_internal_port = bases["admin.port"] + 1
+
         offset = 0
-        while offset in used or any(self._port_is_live(base + offset) for base in bases.values()):
+        while (
+            offset in used
+            or any(self._port_is_live(base + offset) for base in bases.values())
+            or self._port_is_live(admin_internal_port + offset)
+        ):
             offset += 1
         return offset
 

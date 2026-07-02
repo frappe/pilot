@@ -1,27 +1,18 @@
 <template>
-  <Teleport v-if="teleport" defer to="#header-actions">
-    <Button variant="outline" :loading="checking" @click="onClick">
+  <Teleport v-if="teleport && updatesAvailable" defer to="#header-actions">
+    <Button variant="outline" class="order-first" @click="onClick">
       <template #prefix>
-        <span
-          v-if="updatesAvailable"
-          class="size-4 lucide-circle-arrow-up"
-        />
-        
-        <span v-else class="size-4 lucide-refresh-cw" />
+        <span class="size-4 lucide-circle-arrow-up" />
       </template>
-      <span class="hidden sm:inline">{{ updatesAvailable ? 'Update available' : 'Check for updates' }}</span>
+      <span class="hidden sm:inline">Update available</span>
       <span class="sm:hidden">Updates</span>
     </Button>
   </Teleport>
-  <Button v-else variant="outline" :loading="checking" @click="onClick">
+  <Button v-else-if="updatesAvailable" variant="outline" @click="onClick">
     <template #prefix>
-      <span
-        v-if="updatesAvailable"
-        class="size-4 lucide-circle-arrow-up"
-      />
-      <span v-else class="size-4 lucide-refresh-cw" />
+      <span class="size-4 lucide-circle-arrow-up" />
     </template>
-    {{ updatesAvailable ? 'Update available' : 'Check for updates' }}
+    Update available
   </Button>
 
   <UpdateAppsDialog v-model="showDialog" />
@@ -37,7 +28,7 @@ defineProps({
   teleport: { type: Boolean, default: true },
 })
 
-const { updatesAvailable, checking, checked, check } = useAppUpdates()
+const { updatesAvailable, checked, check } = useAppUpdates()
 const showDialog = ref(false)
 
 function onClick() {

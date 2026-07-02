@@ -333,20 +333,30 @@ def stream_task(task_id: str):
     return Response(stream_with_context(generate()), mimetype="text/event-stream")
 
 
+_PASSWORD_KEYS = ("mariadb_password", "postgres_password")
+
+
 def _read_defaults(bench_root: Path) -> dict:
     from pilot.platform import is_alpine, is_linux, native_process_manager
+
+    # This is a read endpoint the wizard polls before login — it must never echo
+    # a DB password back, default or real, whether or not bench.toml has one set.
+    defaults = {k: v for k, v in BenchTomlBuilder.DEFAULTS.items() if k not in _PASSWORD_KEYS}
 
     result = {
         "bench_name": bench_root.name,
         "is_linux": is_linux(),
         "is_alpine": is_alpine(),
         "native_process_manager": native_process_manager(),
-        **BenchTomlBuilder.DEFAULTS,
+        **defaults,
     }
     toml_path = bench_root / "bench.toml"
     if toml_path.exists():
         try:
-            result.update(BenchTomlStore(toml_path).read_flat())
+            settings = BenchTomlStore(toml_path).read_flat()
+            for key in _PASSWORD_KEYS:
+                settings.pop(key, None)
+            result.update(settings)
             if not result.get("bench_name"):
                 result["bench_name"] = bench_root.name
         except Exception:

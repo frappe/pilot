@@ -8,4 +8,5 @@ import { router } from './router.js'
 const app = createApp(App)
 app.use(router)
 app.use(FrappeUI, { resources: false, call: false, socketio: false })
-app.mount('#app')
+
+router.isReady().then(() => app.mount('#app'))

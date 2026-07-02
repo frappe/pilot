@@ -75,7 +75,7 @@
       <!-- Charts grid -->
       <div v-if="showCharts" class="gap-4 grid grid-cols-1 sm:grid-cols-2 mb-6">
         <ChartCard v-for="chart in charts" :key="chart.title" :title="chart.title">
-          <AxisChart :config="chart.config" />
+          <AxisChart :config="chart.config" class="w-full min-w-0 h-full min-h-[300px] px-2 sm:px-4 py-2" />
         </ChartCard>
       </div>
     </template>

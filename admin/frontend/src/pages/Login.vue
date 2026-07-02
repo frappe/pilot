@@ -1,40 +1,67 @@
 <template>
-  <div class="flex h-screen flex-col items-center justify-center bg-surface-base">
-    <div
-      class="w-full max-w-sm rounded-xl border border-outline-gray-2 bg-surface-base p-5 shadow-sm"
-    >
-      <h1 class="mb-4 text-center font-medium text-ink-gray-7">
-        {{ session.benchName || 'Pilot' }}
-      </h1>
+  <div class="flex flex-col sm:justify-center items-center bg-surface-base p-4 sm:p-15 h-screen">
+    <div class="flex flex-col items-start gap-5 p-6 w-full max-w-[371px]">
       <div class="flex flex-col gap-4">
-        <TextInput
-          v-model="password"
-          type="password"
-          placeholder="Password"
-          @keydown.enter="login"
-        />
+        <PilotLogo class="size-8" />
+        <div class="flex flex-col gap-1">
+          <h1 class="font-semibold text-ink-gray-9 text-lg">Sign In</h1>
+          <p class="text-ink-gray-5 text-p-base">Welcome! Please sign in to continue.</p>
+        </div>
+      </div>
+      <div class="flex flex-col gap-3 w-full">
+        <TextInput v-model="password" label="Password" :type="showPassword ? 'text' : 'password'"
+          placeholder="Enter password" autofocus @keydown.enter="login">
+          <template #prefix>
+            <LucideLock class="size-4 text-ink-gray-5" />
+          </template>
+          <template #suffix>
+            <button type="button" tabindex="-1" class="text-ink-gray-5 hover:text-ink-gray-7"
+              @click="showPassword = !showPassword">
+              <LucideEyeOff v-if="showPassword" class="size-4" />
+              <LucideEye v-else class="size-4" />
+            </button>
+          </template>
+        </TextInput>
+        <button type="button" class="self-end text-ink-gray-6 text-p-sm hover:text-ink-gray-8 hover:underline"
+          @click="showForgotPassword = true">
+          Forgot password?
+        </button>
         <ErrorMessage v-if="errorMessage" :message="errorMessage" />
         <Button variant="solid" :loading="isSubmitting" class="w-full" @click="login">
-          Login
+          Continue
         </Button>
       </div>
-      <p class="mt-4 text-center text-xs text-ink-gray-4">
-        Enter the password configured in
-        <code class="rounded bg-surface-gray-2 px-1 font-mono">bench.toml</code>
-      </p>
     </div>
 
-    <p class="absolute bottom-6 text-xs text-ink-gray-3">Frappe Bench Administrator</p>
+    <p class="bottom-6 absolute text-ink-gray-3 text-xs">Frappe Bench Administrator</p>
+
+    <Dialog v-model="showForgotPassword" :options="{ title: 'Reset password' }" :position="isMobile ? 'top' : 'center'">
+      <template #body-content>
+        <ol class="space-y-2 pl-4 text-ink-gray-7 text-p-base list-decimal">
+          <li>SSH into the server.</li>
+          <li>
+            Run
+            <code
+              class="bg-surface-gray-2 px-1 py-0.5 rounded font-mono text-ink-gray-8">bench -b {{ session.benchName }} set-admin-password</code>
+          </li>
+        </ol>
+      </template>
+    </Dialog>
   </div>
 </template>
 
 <script setup>
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Button, TextInput, ErrorMessage } from 'frappe-ui'
+import { Button, Dialog, TextInput, ErrorMessage } from 'frappe-ui'
+import LucideLock from '~icons/lucide/lock'
+import LucideEye from '~icons/lucide/eye'
+import LucideEyeOff from '~icons/lucide/eye-off'
+import PilotLogo from '@/components/PilotLogo.vue'
 import { authApi } from '../api/auth'
 import { useSession } from '../composables/useSession'
 import { safeRedirect } from '../utils/redirect'
+import { useIsMobile } from '../composables/useIsMobile'
 
 const route = useRoute()
 const router = useRouter()
@@ -42,6 +69,9 @@ const { session, loadSession } = useSession()
 const password = ref('')
 const errorMessage = ref('')
 const isSubmitting = ref(false)
+const showPassword = ref(false)
+const showForgotPassword = ref(false)
+const isMobile = useIsMobile()
 
 async function login() {
   if (!password.value) return

@@ -267,6 +267,29 @@ def test_new_command_skips_offset_with_live_port(tmp_path: Path, monkeypatch: py
     assert data["bench"]["http_port"] == 8001
 
 
+def test_new_command_skips_offset_with_live_admin_internal_port(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """admin.internal_port (admin.port + 1) is where systemd actually binds a
+    socket-activated admin — a sibling live there must be avoided even though
+    it isn't one of the stored port fields checked directly."""
+    from pilot.commands.new import NewCommand
+
+    monkeypatch.setattr("builtins.input", lambda _: "")
+    # 7001 is admin.port(7000) + 1 at offset 0 — without the internal-port
+    # check, offset 0 would be wrongly accepted since nothing else probes it.
+    # (It also collides with the plain admin.port base check one offset later,
+    # at offset 1, which is why the picker lands on offset 2, not 1.)
+    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: port == 7001))
+
+    target = tmp_path / "benches" / "my-bench"
+    NewCommand(target, "my-bench").run()
+
+    with open(target / "bench.toml", "rb") as f:
+        data = tomllib.load(f)
+    # The concrete regression guard: offset 0 (http_port 8000) must not be
+    # chosen, since its admin.internal_port (7001) is already live.
+    assert data["bench"]["http_port"] == 8002
+
+
 # ── NewSiteCommand ────────────────────────────────────────────────────────────
 
 
