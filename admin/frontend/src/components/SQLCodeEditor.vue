@@ -11,7 +11,7 @@
 <script setup>
 import { computed, shallowRef, watch } from 'vue'
 import { Codemirror } from 'vue-codemirror'
-import { MySQL, sql } from '@codemirror/lang-sql'
+import { MariaSQL, PostgreSQL, SQLite as SQLiteDialect, sql } from '@codemirror/lang-sql'
 import { autocompletion } from '@codemirror/autocomplete'
 import { history, historyKeymap, defaultKeymap, indentWithTab } from '@codemirror/commands'
 import {
@@ -23,6 +23,7 @@ import { Compartment, Prec } from '@codemirror/state'
 const props = defineProps({
   modelValue: { type: String, default: '' },
   schema: { type: Array, default: () => [] },
+  dbType: { type: String, default: 'mariadb' },
 })
 
 const emit = defineEmits(['update:modelValue', 'run'])
@@ -46,14 +47,21 @@ const cmSchema = computed(() => {
   return s
 })
 
+const dialects = { mariadb: MariaSQL, postgres: PostgreSQL, sqlite: SQLiteDialect }
+const cmDialect = computed(() => dialects[props.dbType] || MariaSQL)
+
 const sqlCompartment = new Compartment()
 
-watch(cmSchema, (schema) => {
+function reconfigureSql() {
   if (!view.value) return
   view.value.dispatch({
-    effects: sqlCompartment.reconfigure(sql({ dialect: MySQL, upperCaseKeywords: true, schema })),
+    effects: sqlCompartment.reconfigure(
+      sql({ dialect: cmDialect.value, upperCaseKeywords: true, schema: cmSchema.value }),
+    ),
   })
-})
+}
+
+watch([cmSchema, cmDialect], reconfigureSql)
 
 function getSelectedOrAll(v) {
   const { from, to } = v.state.selection.main
@@ -137,7 +145,7 @@ const extensions = [
   keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
   placeholder('SELECT name, creation FROM `tabUser` ORDER BY creation DESC LIMIT 5;'),
   autocompletion({ activateOnTyping: true, closeOnBlur: false, maxRenderedOptions: 10, icons: false }),
-  sqlCompartment.of(sql({ dialect: MySQL, upperCaseKeywords: true })),
+  sqlCompartment.of(sql({ dialect: cmDialect.value, upperCaseKeywords: true })),
   runKeymap,
 ]
 

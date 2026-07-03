@@ -17,7 +17,7 @@
     <!-- Editor card -->
     <div class="border rounded-lg border-outline-gray-2 overflow-hidden transition-colors">
       <div class="h-44 sm:h-[220px]">
-        <SQLCodeEditor ref="editorRef" v-model="query" :schema="schema" @run="runQuery" />
+        <SQLCodeEditor ref="editorRef" v-model="query" :schema="schema" :db-type="selectedSiteDbType" @run="runQuery" />
       </div>
       <div
         class="flex flex-wrap justify-between items-center gap-2 bg-surface-base px-2 py-2 border-t border-outline-gray-2">
@@ -167,8 +167,12 @@ const editorRef = ref(null)
 
 const siteOptions = computed(() => [
   { label: 'Select site', value: '' },
-  ...sites.value.map((s) => ({ label: s, value: s })),
+  ...sites.value.map((s) => ({ label: s.name, value: s.name })),
 ])
+
+const selectedSiteDbType = computed(
+  () => sites.value.find((s) => s.name === selectedSite.value)?.db_type || 'mariadb',
+)
 
 const modeOptions = [
   { label: 'Read-only', value: 'readonly' },
@@ -236,9 +240,16 @@ function confirmRunQuery() {
   executeQuery(pendingQuery.value)
 }
 
+// MariaDB quotes identifiers with backticks; Postgres and SQLite use the
+// standard double-quote (MariaDB treats double quotes as a string literal
+// unless ANSI_QUOTES is set, so backticks aren't a safe cross-engine default).
+function quoteIdentifier(name, dbType) {
+  return dbType === 'mariadb' ? `\`${name}\`` : `"${name}"`
+}
+
 function previewTable(tableName) {
   modeStr.value = 'readonly'
-  query.value = `SELECT * FROM \`${tableName}\` LIMIT 100;`
+  query.value = `SELECT * FROM ${quoteIdentifier(tableName, selectedSiteDbType.value)} LIMIT 100;`
   executeQuery(query.value)
 }
 

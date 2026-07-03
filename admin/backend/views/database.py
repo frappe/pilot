@@ -141,14 +141,23 @@ def slow_queries():
 
 @database_bp.route("/playground/sites")
 def playground_sites():
+    import json
+
     bench_root: Path = current_app.config["BENCH_ROOT"]
     sites_path = bench_root / "sites"
     if not sites_path.is_dir():
         return jsonify([])
-    sites = sorted(
-        d.name for d in sites_path.iterdir()
+    site_dirs = sorted(
+        d for d in sites_path.iterdir()
         if d.is_dir() and (d / "site_config.json").exists()
     )
+    sites = []
+    for d in site_dirs:
+        try:
+            cfg = json.loads((d / "site_config.json").read_text())
+        except (OSError, ValueError):
+            cfg = {}
+        sites.append({"name": d.name, "db_type": cfg.get("db_type", "mariadb")})
     return jsonify(sites)
 
 
