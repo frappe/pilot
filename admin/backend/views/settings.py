@@ -487,6 +487,14 @@ def update_settings():
         bench = Bench(BenchConfig.from_file(bench_root / "bench.toml"), bench_root)
         bench.sync_s3_credentials(config.s3)
 
+        if config.s3.access_key:
+            from pilot.integrations.s3.base import S3, S3IntegrationError
+
+            try:
+                S3.from_config(config.s3)
+            except S3IntegrationError as error:
+                return jsonify({"ok": False, "error": str(error)}), 400
+
     return jsonify(
         {
             "ok": True,

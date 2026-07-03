@@ -93,16 +93,7 @@ class OffsiteSnapshot:
 
     @classmethod
     def from_config(cls, config: S3Config) -> "OffsiteSnapshot":
-        if not config.is_configured:
-            raise S3IntegrationError("S3 integration is not configured via settings")
-        client = S3(
-            config.access_key,
-            config.secret_key,
-            region_name=config.region,
-            provider=config.provider,
-            bucket_name=config.bucket,
-        )
-        client.create_bucket_if_not_present(config.bucket)
+        client = S3.from_config(config)
         return cls(client, config.bucket)
 
     def upload(self, bench_name: str, timestamp: str, dataset: str) -> None:

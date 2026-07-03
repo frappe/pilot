@@ -8,6 +8,8 @@ from boto3.s3.transfer import TransferConfig
 from botocore.client import BaseClient, Config
 from botocore.exceptions import ClientError, EndpointConnectionError
 
+from pilot.config.s3_config import S3Config
+
 # Non-seekable streams (e.g. a subprocess's stdin pipe) still get parallel
 # range GETs: s3transfer buffers out-of-order parts and writes them in order.
 _STREAM_TRANSFER = TransferConfig(multipart_chunksize=64 * 1024 * 1024, max_concurrency=8)
@@ -76,6 +78,21 @@ class S3:
             region_name=self.region_name,
             config=Config(signature_version="s3v4", s3={"addressing_style": addressing_style}),
         )
+
+    @classmethod
+    def from_config(cls, config: S3Config) -> "S3":
+        """Connect using bench.toml's [s3] section, creating the bucket on first use."""
+        if not config.is_configured:
+            raise S3IntegrationError("S3 integration is not configured via settings")
+        client = cls(
+            config.access_key,
+            config.secret_key,
+            region_name=config.region,
+            provider=config.provider,
+            bucket_name=config.bucket,
+        )
+        client.create_bucket_if_not_present(config.bucket)
+        return client
 
     def create_bucket_if_not_present(self, bucket_name: str) -> None:
         try:

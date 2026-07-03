@@ -3,7 +3,7 @@
     <span class="size-5 text-ink-gray-4 animate-spin lucide-loader-circle"></span>
   </div>
   <div v-else class="space-y-6">
-    <Teleport v-if="snapshotsEnabled" to="#settings-header-actions">
+    <Teleport to="#settings-header-actions">
       <div class="flex items-center gap-2">
         <CronScheduleControl ref="cronControlRef" noun="snapshots"
           disable-body="Automatic snapshots will stop. Existing snapshots are kept."
@@ -13,15 +13,6 @@
           @click="createSnapshot">Snapshot</Button>
       </div>
     </Teleport>
-
-    <Alert v-if="!snapshotsEnabled" title="ZFS not ready" theme="yellow" :dismissible="false">
-      <template #description>
-        <span class="text-ink-gray-6 text-p-sm">
-          ZFS storage is enabled in settings but the pool isn't ready yet. Snapshots will be available once the
-          bench has finished setting up its dataset.
-        </span>
-      </template>
-    </Alert>
 
     <div class="space-y-2">
       <div v-if="!snapshots.length"
@@ -106,7 +97,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Alert, Button, Dialog, Dropdown, ErrorMessage, ListRowItem, ListView, toast } from 'frappe-ui'
+import { Button, Dialog, Dropdown, ErrorMessage, ListRowItem, ListView, toast } from 'frappe-ui'
 import CronScheduleControl from '@/components/CronScheduleControl.vue'
 import { settingsApi } from '@/api/settings'
 import { volumeApi } from '@/api/volume'
@@ -129,7 +120,6 @@ const columns = [
 ]
 
 const loading = ref(true)
-const snapshotsEnabled = ref(false)
 const snapshots = ref([])
 const creating = ref(false)
 const snapshotError = ref('')
@@ -202,14 +192,11 @@ async function loadSnapshots() {
   try {
     const data = await volumeApi.snapshots.list()
     if (data.error) {
-      snapshotsEnabled.value = false
       snapshots.value = []
       return
     }
-    snapshotsEnabled.value = !!data.snapshots_enabled
     snapshots.value = data.snapshots || []
   } catch (e) {
-    snapshotsEnabled.value = false
     snapshotError.value = e.message || 'Failed to load snapshots.'
   }
 }
