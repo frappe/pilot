@@ -110,6 +110,24 @@ class MariaDB(Database):
         finally:
             conn.close()
 
+    def get_schema(self) -> list[dict]:
+        conn = self._connect()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SHOW TABLES")
+                tables = [list(r.values())[0] for r in cursor.fetchall()]
+                cursor.execute(
+                    "SELECT TABLE_NAME AS tbl, COLUMN_NAME AS col, COLUMN_TYPE AS typ "
+                    "FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() "
+                    "ORDER BY TABLE_NAME, ORDINAL_POSITION"
+                )
+                columns_by_table: dict[str, list[dict]] = {}
+                for r in cursor.fetchall():
+                    columns_by_table.setdefault(r["tbl"], []).append({"name": r["col"], "type": r["typ"]})
+            return [{"name": t, "columns": columns_by_table.get(t, [])} for t in tables]
+        finally:
+            conn.close()
+
 
 class PostgreSQL(Database):
     def __init__(self, host: str, port: int, user: str, password: str, database: str) -> None:
@@ -183,6 +201,25 @@ class PostgreSQL(Database):
         finally:
             conn.close()
 
+    def get_schema(self) -> list[dict]:
+        conn = self._connect()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename"
+                )
+                tables = [r[0] for r in cursor.fetchall()]
+                cursor.execute(
+                    "SELECT table_name, column_name, data_type FROM information_schema.columns "
+                    "WHERE table_schema = 'public' ORDER BY table_name, ordinal_position"
+                )
+                columns_by_table: dict[str, list[dict]] = {}
+                for table_name, column_name, data_type in cursor.fetchall():
+                    columns_by_table.setdefault(table_name, []).append({"name": column_name, "type": data_type})
+            return [{"name": t, "columns": columns_by_table.get(t, [])} for t in tables]
+        finally:
+            conn.close()
+
 
 class SQLite(Database):
     def __init__(self, db_path: str) -> None:
@@ -239,6 +276,21 @@ class SQLite(Database):
         try:
             cursor = conn.execute(f'PRAGMA table_info("{safe}")')
             return [{"name": r["name"], "type": r["type"]} for r in cursor.fetchall()]
+        finally:
+            conn.close()
+
+    def get_schema(self) -> list[dict]:
+        conn = self._connect()
+        try:
+            cursor = conn.execute(
+                "SELECT m.name AS tbl, p.name AS col, p.type AS typ "
+                "FROM sqlite_master m JOIN pragma_table_info(m.name) p "
+                "WHERE m.type = 'table' ORDER BY m.name, p.cid"
+            )
+            columns_by_table: dict[str, list[dict]] = {}
+            for r in cursor.fetchall():
+                columns_by_table.setdefault(r["tbl"], []).append({"name": r["col"], "type": r["typ"]})
+            return [{"name": t, "columns": cols} for t, cols in columns_by_table.items()]
         finally:
             conn.close()
 

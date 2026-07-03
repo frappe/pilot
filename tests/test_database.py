@@ -125,6 +125,29 @@ def test_sqlite_get_schema(tmp_path: Path) -> None:
     assert any(c["name"] == "id" for c in schema[0]["columns"])
 
 
+def test_sqlite_get_schema_groups_columns_per_table_in_one_connection(tmp_path: Path) -> None:
+    # get_schema() used to open one connection per table (via get_table_columns);
+    # a real Frappe site has hundreds of tables, so that meant hundreds of
+    # connections per schema fetch. Assert it's back down to a single connection,
+    # and that columns still land under the right table.
+    db_path = str(tmp_path / "test.db")
+    import sqlite3
+    conn = sqlite3.connect(db_path)
+    conn.execute("CREATE TABLE alpha (id INTEGER, name TEXT)")
+    conn.execute("CREATE TABLE beta (id INTEGER, amount REAL)")
+    conn.commit()
+    conn.close()
+
+    db = SQLite(db_path)
+    with patch.object(SQLite, "_connect", wraps=db._connect) as spy:
+        schema = db.get_schema()
+        assert spy.call_count == 1
+
+    by_name = {t["name"]: t["columns"] for t in schema}
+    assert {c["name"] for c in by_name["alpha"]} == {"id", "name"}
+    assert {c["name"] for c in by_name["beta"]} == {"id", "amount"}
+
+
 def test_sqlite_execute_raises_on_bad_query(tmp_path: Path) -> None:
     db = SQLite(str(tmp_path / "x.db"))
     with pytest.raises(RuntimeError):
@@ -161,6 +184,55 @@ def test_sqlite_read_only_blocks_dml(tmp_path: Path) -> None:
 
     result = db.execute("SELECT * FROM t")
     assert result.rows == [[1]]
+
+
+# ── get_schema single-connection bulk fetch (mocked) ──────────────────────────
+
+
+def test_mariadb_get_schema_uses_one_connection() -> None:
+    db = MariaDB(host="h", port=3306, user="u", password="p", database="d")
+    fake_cursor = MagicMock()
+    fake_cursor.fetchall.side_effect = [
+        [{"Tables_in_d": "alpha"}, {"Tables_in_d": "beta"}],
+        [
+            {"tbl": "alpha", "col": "id", "typ": "int(11)"},
+            {"tbl": "alpha", "col": "name", "typ": "varchar(140)"},
+            {"tbl": "beta", "col": "id", "typ": "int(11)"},
+        ],
+    ]
+    fake_conn = MagicMock()
+    fake_conn.cursor.return_value.__enter__.return_value = fake_cursor
+
+    with patch.object(MariaDB, "_connect", return_value=fake_conn) as connect:
+        schema = db.get_schema()
+        assert connect.call_count == 1
+
+    by_name = {t["name"]: t["columns"] for t in schema}
+    assert [c["name"] for c in by_name["alpha"]] == ["id", "name"]
+    assert [c["name"] for c in by_name["beta"]] == ["id"]
+
+
+def test_postgres_get_schema_uses_one_connection() -> None:
+    db = PostgreSQL(host="h", port=5432, user="u", password="p", database="d")
+    fake_cursor = MagicMock()
+    fake_cursor.fetchall.side_effect = [
+        [("alpha",), ("beta",)],
+        [
+            ("alpha", "id", "integer"),
+            ("alpha", "name", "character varying"),
+            ("beta", "id", "integer"),
+        ],
+    ]
+    fake_conn = MagicMock()
+    fake_conn.cursor.return_value.__enter__.return_value = fake_cursor
+
+    with patch.object(PostgreSQL, "_connect", return_value=fake_conn) as connect:
+        schema = db.get_schema()
+        assert connect.call_count == 1
+
+    by_name = {t["name"]: t["columns"] for t in schema}
+    assert [c["name"] for c in by_name["alpha"]] == ["id", "name"]
+    assert [c["name"] for c in by_name["beta"]] == ["id"]
 
 
 # ── make_database ─────────────────────────────────────────────────────────────
