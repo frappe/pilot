@@ -46,8 +46,8 @@
             </Dropdown>
           </div>
           <div v-else-if="column.key === 'offsite'" class="flex justify-center">
-            <span v-if="row.snap.is_offsite" class="size-4 text-ink-green-6 lucide-circle-check" title="Backed up offsite" />
-            <span v-else class="text-ink-gray-4">—</span>
+            <span v-if="row.snap.is_offsite" class="size-4 text-ink-gray-6 lucide-check" title="Backed up offsite" />
+            <span v-else class="size-4 text-ink-gray-4 lucide-x" title="Not backed up offsite" />
           </div>
           <ListRowItem v-else :column="column" :row="row" :item="item" :align="column.align" />
         </template>
@@ -71,10 +71,6 @@
     </template>
   </Dialog>
 
-  <!-- Restoring an offsite snapshot requires the bench to be stopped, so it
-       can only run from the CLI (this admin server stops with the bench).
-       One command covers every case — downloading it first if needed, then
-       promoting it to live — so there's nothing to do here but show it. -->
   <Dialog v-model="showCliRestore" :options="{ title: 'Restore from the command line', size: 'sm' }">
     <template #body-content>
       <p class="text-ink-gray-7 text-p-sm">
@@ -110,8 +106,9 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Alert, Button, Dialog, Dropdown, ErrorMessage, ListRowItem, ListView, TextInput, toast } from 'frappe-ui'
+import { Alert, Button, Dialog, Dropdown, ErrorMessage, ListRowItem, ListView, toast } from 'frappe-ui'
 import CronScheduleControl from '@/components/CronScheduleControl.vue'
+import { settingsApi } from '@/api/settings'
 import { volumeApi } from '@/api/volume'
 import { openTaskDetailPage } from '@/utils/taskRoute'
 
@@ -161,14 +158,6 @@ const deleting = ref(false)
 const fmt = (iso) => new Date(iso).toLocaleString()
 const fmtSize = (b) => !b ? '—' : b < 1024 ** 3 ? `${(b / 1024 ** 2).toFixed(1)} MB` : `${(b / 1024 ** 3).toFixed(1)} GB`
 
-const columns = [
-  { label: 'Tag', key: 'tag', align: 'left', width: 2 },
-  { label: 'Created', key: 'created', align: 'left', width: 2 },
-  { label: 'Size', key: 'size', align: 'left', width: 1 },
-  { label: 'Offsite', key: 'offsite', align: 'center', width: 1 },
-  { label: '', key: 'actions', align: 'right', width: 2 },
-]
-
 const rows = computed(() => snapshots.value.map((snap) => ({
   tag: snap.tag,
   created: fmt(snap.created_at),
@@ -179,7 +168,7 @@ const rows = computed(() => snapshots.value.map((snap) => ({
 function menuOptions(snap) {
   return [
     ...((snap.is_local || snap.is_offsite || snap.is_downloaded) && !snap.is_uploading ? [{
-      label: 'Rollback', icon: 'lucide-history',
+      label: 'Restore snapshot', icon: 'lucide-history',
       onClick: () => openRollback(snap),
     }] : []),
     ...(!snap.is_uploading ? [{
@@ -203,12 +192,9 @@ function openDelete(snap) {
   showDelete.value = true
 }
 
-async function loadVolumeSettings() {
+async function loadBenchName() {
   const data = await settingsApi.get()
   benchName.value = data.bench?.name || ''
-  const volume = data.volume || {}
-  reservation.value = volume.reservation || ''
-  quota.value = volume.quota || ''
 }
 
 async function loadSnapshots() {
@@ -238,9 +224,6 @@ async function createSnapshot() {
       return
     }
     if (result.task_id) {
-      // S3 is configured: the offsite upload runs as a background task —
-      // close Settings and send the user there instead of leaving them
-      // watching this list.
       emit('close')
       openTaskDetailPage(router, result.task_id)
       return
@@ -291,6 +274,7 @@ async function confirmDelete() {
 }
 
 onMounted(async () => {
+  loadBenchName()
   try {
     await loadSnapshots()
   } finally {
