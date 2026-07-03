@@ -6,10 +6,10 @@
     <div class="flex justify-between items-center">
       <div class="flex flex-col items-start">
         <h1 class="font-semibold text-ink-gray-9 text-base sm:text-xl">Marketplace</h1>
-        <p class="mt-1 text-ink-gray-5 text-p-sm sm:hidden">
+        <p class="sm:hidden mt-1 text-ink-gray-5 text-p-sm">
           Apps built by developers worldwide, ready to install.
         </p>
-        <p class="mt-1 text-ink-gray-5 text-p-base hidden sm:block">
+        <p class="hidden sm:block mt-1 text-ink-gray-5 text-p-base">
           Apps built by developers worldwide, ready to install on {{ benchName }}'s sites.
         </p>
       </div>
@@ -60,7 +60,7 @@
     <template v-else>
       <section v-if="otherBenchApps.length" class="mt-6">
         <div class="flex justify-between items-center">
-          <p class="font-semibold text-ink-gray-9 text-base">Your Apps</p>
+          <p class="font-semibold text-ink-gray-9 text-base">Custom Apps</p>
           <Button variant="subtle" size="sm" @click="showAddFromGithub = true">Add from GitHub</Button>
         </div>
         <div class="gap-x-10 grid grid-cols-1 md:grid-cols-2 mt-2">

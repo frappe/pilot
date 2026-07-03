@@ -11,9 +11,9 @@
         <template v-else>
           <div class="flex flex-col gap-1 max-h-80 overflow-y-auto">
             <button v-for="name in appNames" :key="name" type="button"
-              class="flex items-center gap-3 p-2 rounded-lg text-left transition-colors hover:bg-surface-gray-1"
+              class="flex items-center gap-3 hover:bg-surface-gray-1 p-2 rounded-lg text-left transition-colors"
               @click="toggle(name)">
-              <AppIcon :name="name" class="shrink-0 size-8 rounded-lg" />
+              <AppIcon :name="name" class="rounded-lg size-8 shrink-0" />
               <span class="flex-1 min-w-0">
                 <p class="font-medium text-ink-gray-8 text-sm truncate">{{ titleMap[name] || name }}</p>
                 <p class="text-ink-gray-5 text-p-sm truncate">Update available</p>
@@ -22,7 +22,7 @@
             </button>
           </div>
 
-          <div class="flex flex-col gap-2 pt-2 border-t border-outline-gray-1">
+          <div class="flex flex-col gap-2 pt-2">
             <label class="flex items-center gap-2 cursor-pointer">
               <Checkbox v-model="skipFailingPatches" />
               <span class="text-ink-gray-7 text-sm">Skip failing patches</span>

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from flask import Blueprint, current_app, jsonify, request
 
 from ..readers.bench_reader import BenchReader
@@ -132,3 +134,74 @@ def slow_queries():
             for q in queries
         ]
     )
+
+
+# ── SQL playground ────────────────────────────────────────────────────────────
+
+
+@database_bp.route("/playground/sites")
+def playground_sites():
+    import json
+
+    bench_root: Path = current_app.config["BENCH_ROOT"]
+    sites_path = bench_root / "sites"
+    if not sites_path.is_dir():
+        return jsonify([])
+    site_dirs = sorted(
+        d for d in sites_path.iterdir()
+        if d.is_dir() and (d / "site_config.json").exists()
+    )
+    sites = []
+    for d in site_dirs:
+        try:
+            cfg = json.loads((d / "site_config.json").read_text())
+        except (OSError, ValueError):
+            cfg = {}
+        sites.append({"name": d.name, "db_type": cfg.get("db_type", "mariadb")})
+    return jsonify(sites)
+
+
+@database_bp.route("/playground/schema")
+def playground_schema():
+    bench_root: Path = current_app.config["BENCH_ROOT"]
+    site = request.args.get("site", "")
+    if not site:
+        return jsonify({"error": "site is required"}), 400
+    try:
+        from pilot.core.database import make_site_database
+        return jsonify(make_site_database(bench_root, site).get_schema())
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@database_bp.route("/playground/execute", methods=["POST"])
+def playground_execute():
+    bench_root: Path = current_app.config["BENCH_ROOT"]
+    data = request.get_json(silent=True) or {}
+    site = data.get("site", "")
+    query = (data.get("query") or "").strip()
+    read_only = bool(data.get("read_only", True))
+    if not site:
+        return jsonify({"error": "site is required"}), 400
+    if not query:
+        return jsonify({"error": "query is required"}), 400
+    try:
+        from pilot.core.database import make_site_database
+        db = make_site_database(bench_root, site)
+        result = db.execute(query, read_only=read_only)
+        return jsonify({
+            "columns": result.columns,
+            "rows": result.rows,
+            "row_count": len(result.rows),
+            "duration_ms": result.duration_ms,
+            "truncated": result.truncated,
+            "affected_rows": result.affected_rows,
+        })
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500

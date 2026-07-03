@@ -11,6 +11,7 @@ from pilot.exceptions import BenchError
 if TYPE_CHECKING:
     from pilot.config.s3_config import S3Config
     from pilot.core.app import App
+    from pilot.core.database import Database
     from pilot.core.site import Site
 
 
@@ -18,6 +19,14 @@ class Bench:
     def __init__(self, config: BenchConfig, path: Path) -> None:
         self.config = config
         self.path = path
+        self._db: "Database | None" = None
+
+    @property
+    def db(self) -> "Database":
+        if self._db is None:
+            from pilot.core.database import make_database
+            self._db = make_database(self.config)
+        return self._db
 
     @property
     def apps_path(self) -> Path:

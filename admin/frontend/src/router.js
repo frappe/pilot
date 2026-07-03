@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { navigationRoutes } from './navigation'
 import { useSession } from './composables/useSession'
 import { safeRedirect } from './utils/redirect'
+import { authApi } from './api/auth'
 
 const routes = [
   {
@@ -38,6 +39,20 @@ export const router = createRouter({
 })
 
 router.beforeEach(async (to) => {
+  // A `?sid=<token>` on the URL is a one-time sign-in link (see
+  // `pilot generate-session`). Exchange it for a real session cookie and
+  // re-navigate to the same place with the token stripped, instead of
+  // dragging it along into a /login redirect. Errors (expired/already-used
+  // link) are swallowed — the next pass through this guard will see no
+  // session cookie and fall through to the normal /login redirect below.
+  if (to.query.sid) {
+    try {
+      await authApi.loginWithSid(to.query.sid)
+    } catch { /* fall through to the unauthenticated redirect below */ }
+    const { sid: _sid, ...query } = to.query
+    return { path: to.path, query, replace: true }
+  }
+
   const { session, ensureSession } = useSession()
   await ensureSession()
   if (session.wizard) return to.name === 'Setup' ? true : { name: 'Setup' }

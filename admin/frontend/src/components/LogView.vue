@@ -35,31 +35,3 @@ function scrollToBottom() {
 
 defineExpose({ scrollToBottom })
 </script>
-
-<style scoped>
-.hover-scrollbar {
-  scrollbar-color: transparent transparent;
-}
-
-.hover-scrollbar:hover {
-  scrollbar-color: var(--outline-gray-3) transparent;
-}
-
-.hover-scrollbar::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-.hover-scrollbar::-webkit-scrollbar-thumb {
-  background-color: transparent;
-  border-radius: 9999px;
-}
-
-.hover-scrollbar:hover::-webkit-scrollbar-thumb {
-  background-color: var(--outline-gray-3);
-}
-
-.hover-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-</style>

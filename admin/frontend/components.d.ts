@@ -45,6 +45,8 @@ declare module 'vue' {
     SettingsDialog: typeof import('./src/components/SettingsDialog.vue')['default']
     SimpleTable: typeof import('./src/components/SimpleTable.vue')['default']
     Snapshots: typeof import('./src/components/settings/Snapshots.vue')['default']
+    SQLCodeEditor: typeof import('./src/components/SQLCodeEditor.vue')['default']
+    SQLSchemaDialog: typeof import('./src/components/SQLSchemaDialog.vue')['default']
     SystemInfo: typeof import('./src/components/settings/SystemInfo.vue')['default']
     TaskStep: typeof import('./src/components/TaskStep.vue')['default']
     TaskSteps: typeof import('./src/components/TaskSteps.vue')['default']

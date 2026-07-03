@@ -10,3 +10,31 @@
   z-index: 51;
 }
 
+/* Thin scrollbar that's invisible until hovered, for scroll containers where a
+   persistent scrollbar would add visual noise (log viewers, data tables). */
+.hover-scrollbar {
+  scrollbar-color: transparent transparent;
+}
+
+.hover-scrollbar:hover {
+  scrollbar-color: var(--outline-gray-3) transparent;
+}
+
+.hover-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.hover-scrollbar::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 9999px;
+}
+
+.hover-scrollbar:hover::-webkit-scrollbar-thumb {
+  background-color: var(--outline-gray-3);
+}
+
+.hover-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
