@@ -256,7 +256,17 @@ class VolumeRestoreSnapshotCommand(Command):
         self.tag = tag
 
     def run(self) -> None:
+        from pilot.managers.volume_manager import VolumeManager
+
         print(f"Restoring {self.config.dataset_path} to snapshot {self.tag}...")
         print("Sites will be put into maintenance mode and MariaDB stopped during restore.")
-        _build_orchestrator(self.bench).rollback_snapshot(self.tag)
+        orchestrator = _build_orchestrator(self.bench)
+        manager = VolumeManager(self.config)
+        is_local = any(snap.snapshot_tag == self.tag for snap in manager.list_snapshots(self.config.dataset_path))
+        if is_local:
+            orchestrator.rollback_snapshot(self.tag)
+        else:
+            # A downloaded offsite snapshot lives in a separate dataset —
+            # promote it to live instead of `zfs rollback`.
+            orchestrator.restore_downloaded_snapshot(self.tag)
         print(f"Restored {self.config.dataset_path}@{self.tag}.")
