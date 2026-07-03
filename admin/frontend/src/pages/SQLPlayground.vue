@@ -341,7 +341,7 @@ watch(perPage, () => { page.value = 1 })
 onMounted(async () => {
   try {
     sites.value = await databaseApi.sites()
-    if (!selectedSite.value && sites.value.length === 1) selectedSite.value = sites.value[0]
+    if (!selectedSite.value && sites.value.length === 1) selectedSite.value = sites.value[0].name
   } catch { }
 })
 </script>
