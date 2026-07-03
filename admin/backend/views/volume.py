@@ -119,19 +119,17 @@ def create_snapshot():
 @volume_bp.route("/snapshots/<tag>/rollback", methods=["POST"])
 def rollback_snapshot(tag: str):
     bench_root = current_app.config["BENCH_ROOT"]
+    config = _get_config(bench_root)
+    manager = _get_volume_manager(bench_root)
+    is_local = any(snap.snapshot_tag == tag for snap in manager.list_snapshots(config.dataset_path))
+    if not is_local:
+        # CLI-only: `bench volume restore-snapshot <tag>`.
+        return jsonify(
+            {"error": "Offsite snapshots can only be restored from the CLI: bench volume restore-snapshot <tag>."},
+        ), 400
+
     try:
-        orchestrator = get_orchestrator(bench_root)
-        config = _get_config(bench_root)
-        manager = _get_volume_manager(bench_root)
-        is_local = any(snap.snapshot_tag == tag for snap in manager.list_snapshots(config.dataset_path))
-        if is_local:
-            orchestrator.rollback_snapshot(tag)
-        else:
-            # Not a real snapshot of the live dataset — `zfs rollback` can't
-            # reach it, and restoring it needs the bench stopped anyway (see
-            # `restore_downloaded_snapshot`), so this always fails here; the
-            # UI instead points the user at `bench volume restore-snapshot`.
-            orchestrator.restore_downloaded_snapshot(tag)
+        get_orchestrator(bench_root).rollback_snapshot(tag)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
