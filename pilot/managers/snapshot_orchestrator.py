@@ -70,8 +70,8 @@ class SnapshotOrchestrator:
         if not self._volume.dataset_exists(restored):
             raise VolumeError(f"No downloaded snapshot found for '{tag}'. Download it first.")
 
+        self._ensure_bench_stopped()
         self._bench.set_maintenance_mode(True)
-        workers_stopped = self._stop_workers()
         try:
             self._mariadb.stop()
             try:
@@ -79,28 +79,19 @@ class SnapshotOrchestrator:
             finally:
                 self._mariadb.start()
         finally:
-            if workers_stopped:
-                self._restart_workers()
             self._bench.set_maintenance_mode(False)
 
-    def _stop_workers(self) -> bool:
-        """Stop the bench workload — production services or a dev `bench
-        start` — so nothing holds files open on the dataset during the swap:
-        open file descriptors keep the old dataset busy and block its cleanup."""
-        from pilot.exceptions import BenchError
+    def _ensure_bench_stopped(self) -> None:
+        """The swap unmounts the bench path; running workers hold files open
+        on it, which makes the unmount fail and the old dataset undeletable."""
+        from pilot.managers.volume_manager import VolumeError
         from pilot.managers.process_manager import ProcessManager
 
-        try:
-            ProcessManager.detect_running(self._bench).stop()
-        except BenchError:
-            return False
-        return True
-
-    def _restart_workers(self) -> None:
-        if self._bench.config.production.enabled:
-            self._bench.restart()
-        else:
-            print("Bench was stopped for the restore — start it again with `bench start`.")
+        if ProcessManager.detect_running(self._bench).is_running():
+            raise VolumeError(
+                "The bench must be stopped before restoring a downloaded snapshot.\n"
+                "Run `bench stop`, then retry, and `bench start` afterwards."
+            )
 
     def _swap_dataset(self, restored: str, tag: str) -> None:
         from datetime import datetime
@@ -109,14 +100,10 @@ class SnapshotOrchestrator:
         mariadb_datadir = Path(self._mariadb.data_dir())
         bench_path = self._bench.path
 
-        # Bind mounts reference the mount they were created against, not the
-        # dataset name — they go stale the moment the underlying dataset is
-        # renamed out from under them, so drop them before touching ZFS.
-        # Strictly, no lazy fallback: a busy unmount means processes still
-        # hold files on the old dataset, which would make its destroy fail
-        # later and strand a full orphan copy. Abort before changing anything.
-        self._unmount(bench_path)
-        self._unmount(mariadb_datadir)
+        # Bind mounts go stale once the dataset under them is renamed, so
+        # drop them first. The bench is stopped, so these can't be busy.
+        self._volume.unmount(bench_path)
+        self._volume.unmount(mariadb_datadir)
 
         aside = f"{live}-before-restore-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
         
@@ -133,9 +120,6 @@ class SnapshotOrchestrator:
 
         self._volume.destroy_dataset(aside)
         self._volume.destroy_snapshot(live, tag)
-
-    def _unmount(self, path: Path) -> None:
-        self._volume.unmount(path)
 
 
 def get_orchestrator(bench_root):
