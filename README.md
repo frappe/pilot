@@ -222,6 +222,47 @@ Each bench lives on a single dataset (`<pool>/<bench>`) holding both its files a
 
 With multiple benches: `bench -b my-bench start`
 
+## Developing Frappe Apps with Pilot
+
+Use a source checkout when working on Pilot itself:
+
+```bash
+git clone https://github.com/frappe/pilot ~/pilot
+cd ~/pilot
+export PATH="$PWD:$PATH"
+```
+
+The `bench` script at the repository root runs the code from this checkout, so
+changes to Python files are picked up the next time you run a command.
+
+Create a local bench and start it in development mode:
+
+```bash
+bench new dev-bench
+bench start              # first run opens the setup wizard
+```
+
+For a tighter development loop, enable the dev watchers in
+`benches/dev-bench/bench.toml`:
+
+```toml
+[bench]
+watch_apps_js = true     # run Frappe's JS asset watcher with bench start
+reload_python = true     # reload the dev web (frappe) process when Python files change
+watch_admin_js = true    # run the admin UI Vite dev server (if you are building the Pilot Admin UI)
+```
+
+Then run the bench normally:
+
+```bash
+bench -b dev-bench start
+```
+
+In this mode `bench start` regenerates the Procfile/common site config first,
+starts Redis, web, workers, socket.io, the admin backend, and any enabled watch
+processes in the foreground. Use `bench -b dev-bench stop` from another terminal
+to stop a running bench.
+
 ## Extending the CLI
 
 Commands are **self-registering** — adding one means creating a single file under
