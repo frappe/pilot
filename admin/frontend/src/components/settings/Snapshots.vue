@@ -98,6 +98,25 @@
     </template>
   </Dialog>
 
+  <!-- Downloaded snapshot: restore requires the bench to be stopped, so it
+       can only run from the CLI (this admin server stops with the bench). -->
+  <Dialog v-model="showCliRestore" :options="{ title: 'Restore from the command line', size: 'sm' }">
+    <template #body-content>
+      <p class="text-ink-gray-7 text-p-sm">
+        Restoring the downloaded snapshot
+        <span class="font-semibold text-ink-gray-8 break-all">{{ rollbackTarget?.tag }}</span>
+        requires the bench to be stopped, so it can't run from here. Run this on the server:
+      </p>
+      <code class="mt-2 block rounded bg-surface-gray-2 px-2 py-1.5 font-mono text-sm text-ink-gray-8 select-all whitespace-pre overflow-x-auto"
+        >{{ cliRestoreCommands }}</code
+      >
+      <div class="flex justify-end gap-2 mt-4">
+        <Button variant="subtle" icon-left="copy" @click="copyCliRestoreCommands">Copy</Button>
+        <Button variant="solid" @click="showCliRestore = false">Done</Button>
+      </div>
+    </template>
+  </Dialog>
+
   <!-- Delete confirmation -->
   <Dialog v-model="showDelete" :options="{ title: 'Delete snapshot', size: 'sm' }">
     <template #body-content>
@@ -114,7 +133,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Alert, Button, Dialog, ErrorMessage, TextInput, toast } from 'frappe-ui'
 import CronScheduleControl from '@/components/CronScheduleControl.vue'
@@ -141,6 +160,19 @@ const creating = ref(false)
 const snapshotError = ref('')
 
 const showRollback = ref(false)
+const showCliRestore = ref(false)
+const benchName = ref('')
+
+const cliRestoreCommands = computed(() => {
+  const flag = benchName.value ? ` -b ${benchName.value}` : ''
+  const tag = rollbackTarget.value?.tag || '<tag>'
+  return `bench${flag} stop\nbench${flag} volume restore-snapshot ${tag}\nbench${flag} start`
+})
+
+async function copyCliRestoreCommands() {
+  await navigator.clipboard.writeText(cliRestoreCommands.value)
+  toast.success('Copied to clipboard')
+}
 const rollbackTarget = ref(null)
 const rollingBack = ref(false)
 
@@ -155,6 +187,10 @@ const fmtSize = (b) => !b ? '—' : b < 1024 ** 3 ? `${(b / 1024 ** 2).toFixed(1
 
 function openRollback(snap) {
   rollbackTarget.value = snap
+  if (snap.is_downloaded && !snap.is_local) {
+    showCliRestore.value = true
+    return
+  }
   showRollback.value = true
 }
 
@@ -165,6 +201,7 @@ function openDelete(snap) {
 
 async function loadVolumeSettings() {
   const data = await settingsApi.get()
+  benchName.value = data.bench?.name || ''
   const volume = data.volume || {}
   reservation.value = volume.reservation || ''
   quota.value = volume.quota || ''
