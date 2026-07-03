@@ -78,6 +78,63 @@ def test_config_without_apps_is_valid() -> None:
     assert config.apps == []
 
 
+def test_watch_apps_js_defaults_to_disabled() -> None:
+    config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
+    assert config.watch_apps_js is False
+
+
+def test_watch_apps_js_can_be_enabled() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["bench"]["watch_apps_js"] = True
+    config = load_from_dict(data)
+    assert config.watch_apps_js is True
+
+
+def test_toml_writer_includes_watch_apps_js() -> None:
+    config = BenchConfig._from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
+    config.watch_apps_js = True
+    toml = bench_config_to_toml(config)
+    assert "watch_apps_js = true" in toml
+
+
+def test_reload_python_defaults_to_disabled() -> None:
+    config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
+    assert config.reload_python is False
+
+
+def test_reload_python_can_be_enabled() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["bench"]["reload_python"] = True
+    config = load_from_dict(data)
+    assert config.reload_python is True
+
+
+def test_toml_writer_includes_reload_python() -> None:
+    config = BenchConfig._from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
+    config.reload_python = True
+    toml = bench_config_to_toml(config)
+    assert "reload_python = true" in toml
+
+
+def test_watch_admin_js_defaults_to_disabled() -> None:
+    config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
+    assert config.watch_admin_js is False
+
+
+def test_watch_admin_js_can_be_enabled() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["bench"]["watch_admin_js"] = True
+    config = load_from_dict(data)
+    assert config.watch_admin_js is True
+
+
+def test_toml_writer_includes_watch_admin_js() -> None:
+    config = BenchConfig._from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
+    config.watch_admin_js = True
+    toml = bench_config_to_toml(config)
+    assert "watch_admin_js = true" in toml
+
+
 # ── Validation rule tests ─────────────────────────────────────────────────────
 
 

@@ -986,9 +986,11 @@ def test_start_dev_uninitialized_runs_wizard(tmp_path: Path) -> None:
 
     bench = make_bench(tmp_path)  # no process manager → dev
     with patch.object(RunCommand, "_start_wizard") as wizard, \
+         patch.object(RunCommand, "_rebuild_config") as rebuild, \
          patch("pilot.managers.process_manager.ProcessManager.stop"):
         RunCommand(bench).run()
     wizard.assert_called_once()
+    rebuild.assert_not_called()
 
 
 def test_start_dev_initialized_stops_then_starts(tmp_path: Path) -> None:
@@ -997,10 +999,27 @@ def test_start_dev_initialized_stops_then_starts(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)  # dev
     _mark_initialized(bench)
     with patch("pilot.managers.process_manager.ProcessManager.stop") as stop, \
+         patch.object(RunCommand, "_rebuild_config") as rebuild, \
          patch("pilot.managers.process_manager.ProcessManager.start") as start:
         RunCommand(bench).run()
     stop.assert_called_once()
+    rebuild.assert_called_once()
     start.assert_called_once()
+
+
+def test_start_dev_watch_admin_js_from_config_skips_static_admin_build(tmp_path: Path) -> None:
+    from pilot.commands.start import RunCommand
+
+    bench = make_bench(tmp_path)
+    bench.config.watch_admin_js = True
+    _mark_initialized(bench)
+    with patch("pilot.managers.process_manager.ProcessManager.stop"), \
+         patch.object(RunCommand, "_rebuild_config"), \
+         patch.object(RunCommand, "_ensure_admin_dist") as ensure_admin_dist, \
+         patch("pilot.managers.process_manager.ProcessManager.start"):
+        RunCommand(bench).run()
+
+    ensure_admin_dist.assert_not_called()
 
 
 def test_start_production_uninitialized_brings_up_admin(tmp_path: Path) -> None:
@@ -1012,9 +1031,11 @@ def test_start_production_uninitialized_brings_up_admin(tmp_path: Path) -> None:
     bench.config.production.process_manager = "systemd"
     bench.config.admin.domain = "admin.example.com"
     with patch("pilot.managers.process_managers.systemd.SystemdProcessManager.start_admin") as start_admin, \
+         patch.object(RunCommand, "_rebuild_config") as rebuild, \
          patch.object(RunCommand, "_start_wizard") as wizard:
         RunCommand(bench).run()
     start_admin.assert_called_once()
+    rebuild.assert_not_called()
     wizard.assert_not_called()
 
 
@@ -1025,9 +1046,23 @@ def test_start_production_initialized_starts_manager(tmp_path: Path) -> None:
     bench.config.production.process_manager = "systemd"
     _mark_initialized(bench)
     with patch("pilot.managers.process_managers.systemd.SystemdProcessManager.is_configured", return_value=True), \
+         patch.object(RunCommand, "_rebuild_config") as rebuild, \
          patch("pilot.managers.process_managers.systemd.SystemdProcessManager.start") as start:
         RunCommand(bench).run()
+    rebuild.assert_called_once()
     start.assert_called_once()
+
+
+def test_start_rebuild_config_writes_process_and_common_site_config(tmp_path: Path) -> None:
+    from pilot.commands.start import RunCommand
+
+    bench = make_bench(tmp_path)
+    manager = MagicMock()
+    with patch.object(bench, "write_common_site_config") as common_site:
+        RunCommand(bench)._rebuild_config(manager)
+
+    manager.write_config.assert_called_once()
+    common_site.assert_called_once()
 
 
 # ── snapshot orchestrator (single global dataset) ─────────────────────────────
@@ -1223,6 +1258,54 @@ def test_build_admin_errors_when_node_missing(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr("subprocess.run", _missing)
     with pytest.raises(BenchError, match="Node.js is required"):
         BuildAdminCommand(force_build=True)._check_node_version()
+
+
+def test_build_admin_installs_when_node_modules_missing(tmp_path: Path) -> None:
+    from pilot.commands.admin import BuildAdminCommand
+
+    (tmp_path / "package.json").write_text("{}")
+
+    assert BuildAdminCommand(force_build=True)._needs_npm_install(tmp_path) is True
+
+
+def test_build_admin_installs_when_manifest_is_newer_than_installed_deps(tmp_path: Path) -> None:
+    import os
+
+    from pilot.commands.admin import BuildAdminCommand
+
+    node_modules = tmp_path / "node_modules"
+    node_modules.mkdir()
+    install_state = node_modules / ".package-lock.json"
+    install_state.write_text("{}")
+    package_json = tmp_path / "package.json"
+    package_json.write_text("{}")
+    package_lock = tmp_path / "package-lock.json"
+    package_lock.write_text("{}")
+    os.utime(install_state, (100, 100))
+    os.utime(package_json, (200, 200))
+    os.utime(package_lock, (100, 100))
+
+    assert BuildAdminCommand(force_build=True)._needs_npm_install(tmp_path) is True
+
+
+def test_build_admin_skips_install_when_installed_deps_are_current(tmp_path: Path) -> None:
+    import os
+
+    from pilot.commands.admin import BuildAdminCommand
+
+    package_json = tmp_path / "package.json"
+    package_json.write_text("{}")
+    package_lock = tmp_path / "package-lock.json"
+    package_lock.write_text("{}")
+    node_modules = tmp_path / "node_modules"
+    node_modules.mkdir()
+    install_state = node_modules / ".package-lock.json"
+    install_state.write_text("{}")
+    os.utime(package_json, (100, 100))
+    os.utime(package_lock, (100, 100))
+    os.utime(install_state, (200, 200))
+
+    assert BuildAdminCommand(force_build=True)._needs_npm_install(tmp_path) is False
 
 
 # ── bench start: rebuild the admin UI when source changed ─────────────────────

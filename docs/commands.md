@@ -308,19 +308,24 @@ Starts all bench processes using the built-in Procfile runner.
 ### Steps
 
 ```
-1.  Check Procfile exists
-2.  Start processes
+1.  Check bench initialization
+2.  Regenerate runtime config
+3.  Start processes
 ```
 
-#### Step 1 — Check Procfile exists
+#### Step 1 — Check bench initialization
 
-If `config/Procfile` is missing, print a message telling the user to run `bench init` first and exit with code 1.
+If the bench is not initialized yet, start the setup wizard instead of the normal workload. For initialized benches, generated config files are rebuilt before processes launch.
 
-#### Step 2 — Start processes
+#### Step 2 — Regenerate runtime config
+
+`bench start` rewrites the process-manager config from `bench.toml` before launching, and refreshes `sites/common_site_config.json`. This means changes such as `[bench] watch_apps_js`, `[bench] reload_python`, or `[bench] watch_admin_js` are picked up on the next start without running `bench setup config` separately.
+
+#### Step 3 — Start processes
 
 `ProcessManager.start()` reads `config/Procfile` and spawns each process with `subprocess.Popen`. A dedicated thread per process streams output to stdout with a color-coded `[<name>]` prefix — each process name gets a distinct ANSI color so concurrent output is easy to read. Per-process PID files are written to `pids/<name>.pid`.
 
-The `admin:` entry in the Procfile means the admin UI is always available at `http://localhost:8002` while the bench is running.
+The `admin:` entry in the Procfile means the admin UI is always available at `http://localhost:8002` while the bench is running. In development mode, set `[bench] watch_apps_js = true` in `bench.toml` to also start a `watch:` process for Frappe JS assets, `[bench] reload_python = true` to let the dev web process autoreload on Python changes, or `[bench] watch_admin_js = true` to run the admin UI Vite dev server.
 
 `bench start` **blocks** — it stays in the foreground until `SIGINT` (Ctrl-C). On `SIGINT`, all child processes receive `SIGTERM` and are waited on before the parent exits.
 
