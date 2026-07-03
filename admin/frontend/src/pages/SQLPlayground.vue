@@ -1,10 +1,8 @@
 <template>
-  <!-- Site selector + schema refresh on the right of the header -->
+  <!-- Site selector on the right of the header -->
   <Teleport defer to="#header-actions">
     <FormControl type="select" v-model="selectedSite" :options="siteOptions"
       class="w-28 sm:w-44 max-w-[140px] sm:max-w-[180px]" />
-    <Button variant="ghost" size="sm" tooltip="Refresh schema" :disabled="!selectedSite" :loading="schemaLoading"
-      icon="lucide-refresh-ccw" @click="refreshSchema" />
   </Teleport>
 
   <!-- No site selected -->
@@ -162,7 +160,6 @@ const error = ref('')
 const showSql = ref(false)
 const showSchema = ref(false)
 const schema = ref([])
-const schemaLoading = ref(false)
 const editorRef = ref(null)
 
 const siteOptions = computed(() => [
@@ -304,14 +301,11 @@ function exportCsv() {
 
 async function refreshSchema() {
   if (!selectedSite.value) return
-  schemaLoading.value = true
   try {
     const data = await databaseApi.schema(selectedSite.value)
     if (!data.error) schema.value = data
   } catch {
     // keep last known schema on failure
-  } finally {
-    schemaLoading.value = false
   }
 }
 
