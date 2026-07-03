@@ -163,12 +163,14 @@ class GitHubProvider(GitProvider):
     api_base = "https://api.github.com"
 
     def _headers(self) -> dict:
-        return {
-            "Authorization": f"Bearer {self.token}",
+        headers = {
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
             "User-Agent": "bench-cli",
         }
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        return headers
 
     def validate(self) -> dict:
         data, _ = self._get_json(f"{self.api_base}/user", self._headers())

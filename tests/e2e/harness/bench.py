@@ -55,7 +55,9 @@ class Bench:
         # `bench new` no longer pre-generates an admin password (it's set in the
         # wizard's first step and persisted to bench.toml by /api/setup/save).
         # So the harness chooses it, the wizard enters it, and login reuses it.
-        self._admin_password = admin_password or secrets.token_urlsafe(12)
+        # A bare token_urlsafe() isn't guaranteed to satisfy the wizard's password
+        # policy (upper + lower + digit + symbol) — fixed affixes guarantee it.
+        self._admin_password = admin_password or f"Aa1!{secrets.token_urlsafe(12)}"
         self._proc: subprocess.Popen | None = None
         self._info: dict | None = None
 

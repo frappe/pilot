@@ -21,7 +21,7 @@ def login(page: Page, base_url: str, password: str) -> None:
     page.context.clear_cookies()
     page.goto(f"{base_url}/")
     page.get_by_placeholder("Password").fill(password)
-    page.get_by_role("button", name="Login").click()
+    page.get_by_role("button", name="Continue").click()
     # Landed on the Sites page once the header action is mounted.
     expect(page.get_by_role("button", name="New site")).to_be_visible(timeout=30_000)
 
@@ -31,7 +31,7 @@ def create_site(page: Page, base_url: str, site_name: str, db_type: str = "") ->
     page.get_by_role("button", name="New site").click()
 
     dialog = page.get_by_role("dialog")
-    dialog.get_by_label("Site Name").fill(site_name)
+    dialog.get_by_label("Site name").fill(site_name)
     if db_type == "sqlite":
         dialog.get_by_role("button", name="SQLite").click()
 
@@ -44,23 +44,60 @@ def create_site(page: Page, base_url: str, site_name: str, db_type: str = "") ->
 
 
 def install_custom_app(page: Page, base_url: str, site_name: str, repo: str, branch: str) -> None:
-    """Install an app from a public git repository via the custom-app flow. Using
-    an explicit repo/branch keeps the test independent of marketplace registry
-    contents."""
-    _open_site_tab(page, base_url, site_name, "apps")
-    page.get_by_role("button", name="Install App").click()
+    """Install an app from a public git repository. Using an explicit repo/branch
+    keeps the test independent of marketplace registry contents.
+
+    Adding a repo to the bench and installing it onto a site are two separate
+    background tasks in the marketplace flow (AddAppFromGithubDialog.vue then
+    InstallAppDialog.vue), so this drives both in turn.
+    """
+    page.goto(f"{base_url}/marketplace?site={site_name}")
+    # "Add from GitHub" only renders once a custom app already exists on the
+    # bench; the always-present entry point for the first one is this link.
+    page.get_by_role("button", name="Building your own? Install from GitHub").click()
 
     dialog = page.get_by_role("dialog")
-    dialog.get_by_role("button", name="Install a custom app").click()
     dialog.get_by_label("Repository URL").fill(repo)
-    dialog.get_by_label("Branch").fill(branch)
+    dialog.get_by_role("button", name="Fetch branches").click()
 
-    task_id = run_task_action(
+    branch_box = dialog.get_by_role("combobox", name="Branch")
+    expect(branch_box).to_be_visible(timeout=30_000)
+    branch_box.click()
+    # The option list is portalled to <body>, outside the dialog's DOM subtree
+    # (same as the wizard's Select), so it must be page-scoped, not dialog-scoped.
+    page.get_by_role("option", name=branch, exact=True).click()
+
+    # Selecting a branch resolves the app name in the background; "Add App"
+    # only enables once that succeeds. Capture the resolved name (it may differ
+    # from the repo URL) so the marketplace card can be found afterwards.
+    add_button = dialog.get_by_role("button", name="Add App")
+    expect(add_button).to_be_enabled(timeout=30_000)
+    # A leading icon sits before this text node, so its content is " Found
+    # <name>" (not anchored at the start) - match unanchored and split instead.
+    found_text = dialog.get_by_text(re.compile(r"Found \S")).inner_text()
+    app_name = found_text.split("Found ", 1)[1].strip()
+
+    add_task_id = run_task_action(page, "/api/apps/add", lambda: add_button.click())
+    wait_for_task(page.request, base_url, add_task_id)
+
+    # Adding lands on the task's detail page; the newly-cloned app now shows up
+    # under "Custom Apps" back on the marketplace, ready to install.
+    page.goto(f"{base_url}/marketplace?site={site_name}")
+    card = (
+        page.locator("div")
+        .filter(has_text=re.compile(rf"\b{re.escape(app_name)}\b", re.IGNORECASE))
+        .filter(has=page.get_by_role("button", name="Install"))
+        .last
+    )
+    card.get_by_role("button", name="Install").click()
+
+    install_dialog = page.get_by_role("dialog")
+    install_task_id = run_task_action(
         page,
         "/api/sites/",
-        lambda: dialog.get_by_role("button", name="Install", exact=True).click(),
+        lambda: install_dialog.get_by_role("button", name="Install", exact=True).click(),
     )
-    wait_for_task(page.request, base_url, task_id)
+    wait_for_task(page.request, base_url, install_task_id)
 
 
 def uninstall_app(page: Page, base_url: str, site_name: str, app_name: str) -> None:
@@ -88,15 +125,17 @@ def uninstall_app(page: Page, base_url: str, site_name: str, app_name: str) -> N
 
 
 def drop_site(page: Page, base_url: str, site_name: str) -> None:
-    _open_site_tab(page, base_url, site_name, "actions")
-    page.get_by_role("button", name="Drop Site").click()
+    # Drop lives in the site's Danger section, part of the "settings" tab (there
+    # is no standalone "actions" tab anymore).
+    _open_site_tab(page, base_url, site_name, "settings")
+    page.get_by_role("button", name="Drop site").click()
 
     dialog = page.get_by_role("dialog")
-    dialog.get_by_label("Type the site name to confirm").fill(site_name)
+    dialog.get_by_label(f"Type {site_name} to confirm").fill(site_name)
     task_id = run_task_action(
         page,
         "/api/sites/",
-        lambda: dialog.get_by_role("button", name="Drop Site").click(),
+        lambda: dialog.get_by_role("button", name="Delete site").click(),
     )
     wait_for_task(page.request, base_url, task_id)
 
@@ -120,7 +159,7 @@ def site_exists(page: Page, base_url: str, site_name: str) -> bool:
 
 
 def _open_site_tab(page: Page, base_url: str, site_name: str, tab: str) -> None:
-    # The tab is selected from the URL hash on mount, so navigating is the most
-    # deterministic way to land on it.
-    page.goto(f"{base_url}/sites/{site_name}#{tab}")
+    # The tab is a router path param (/sites/:name/:tab?), not a URL hash, so
+    # navigating straight to it is the most deterministic way to land there.
+    page.goto(f"{base_url}/sites/{site_name}/{tab}")
     expect(page.get_by_text(site_name, exact=False).first).to_be_visible(timeout=30_000)

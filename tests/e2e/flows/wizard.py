@@ -60,26 +60,23 @@ def complete_dev_wizard(
     page.get_by_role("button", name="Next").click()
 
     # ── Step 2: Database ────────────────────────────────────────────────────────
+    # MariaDB and PostgreSQL share one set of fields: an engine-agnostic
+    # "Deployment mode" select and generic "Root username" / "Root user password"
+    # fields (Setup.vue's showDeploymentMode/showRootUsername).
     _choose_select(page, "Database engine", "PostgreSQL" if db_type == "postgres" else "MariaDB")
-    if db_type == "postgres":
-        # The dedicated/shared choice only renders where supported (systemd Linux).
-        if page.get_by_role("combobox", name="PostgreSQL setup").is_visible():
-            _choose_select(
-                page,
-                "PostgreSQL setup",
-                "Dedicated cluster" if db_mode == "dedicated" else "Shared system PostgreSQL",
-            )
-        page.get_by_label("PostgreSQL superuser").fill(postgres_admin_user)
-        page.get_by_label("PostgreSQL password").fill(postgres_password)
-    else:
-        # The shared/dedicated choice only renders on Linux.
-        if page.get_by_role("combobox", name="MariaDB setup").is_visible():
-            _choose_select(
-                page,
-                "MariaDB setup",
-                "Dedicated instance" if db_mode == "dedicated" else "Shared system MariaDB",
-            )
-        page.get_by_label("MariaDB root password").fill(mariadb_password)
+    # The dedicated/shared choice only renders where supported (Linux; PostgreSQL
+    # additionally needs systemd, i.e. not Alpine).
+    if page.get_by_role("combobox", name="Deployment mode").is_visible():
+        _choose_select(
+            page,
+            "Deployment mode",
+            "Dedicated Instance" if db_mode == "dedicated" else "Shared Instance",
+        )
+    # Root username only renders when it isn't implied (dedicated instances and
+    # fresh installs default to root/postgres).
+    if page.get_by_label("Root username").is_visible():
+        page.get_by_label("Root username").fill(postgres_admin_user if db_type == "postgres" else "root")
+    page.get_by_label("Root user password").fill(postgres_password if db_type == "postgres" else mariadb_password)
     page.get_by_role("button", name="Next").click()
     # A wrong password surfaces inline and keeps us on this step.
     expect(page.get_by_text("Incorrect MariaDB credentials.")).to_be_hidden()

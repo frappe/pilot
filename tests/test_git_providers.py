@@ -8,10 +8,19 @@ import pytest
 
 from pilot.core.git_providers import (
     GitCredentialStore,
+    GitHubProvider,
     GitProviderError,
     parse_github_owner_repo,
     resolve_app_name_from_repo,
 )
+
+
+def test_github_provider_omits_auth_header_without_token() -> None:
+    assert "Authorization" not in GitHubProvider(token="")._headers()
+
+
+def test_github_provider_sends_auth_header_with_token() -> None:
+    assert GitHubProvider(token="ghp_token")._headers()["Authorization"] == "Bearer ghp_token"
 
 
 def test_credential_store_round_trip(tmp_path: Path) -> None:
