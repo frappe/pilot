@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pilot.config.s3_config import S3Config
-from pilot.integrations.s3.base import S3, S3IntegrationError
+from pilot.integrations.s3.base import S3
 
 FILE_TYPE_SUFFIXES = {
     "-database.sql.gz": "database",
@@ -116,16 +116,7 @@ class OffsiteBackup:
     @classmethod
     def from_config(cls, config: S3Config) -> "OffsiteBackup":
         """Connect using bench.toml's [s3] section, creating the bucket on first use."""
-        if not config.is_configured:
-            raise S3IntegrationError("S3 integration is not configured via settings")
-        client = S3(
-            config.access_key,
-            config.secret_key,
-            region_name=config.region,
-            provider=config.provider,
-            bucket_name=config.bucket,
-        )
-        client.create_bucket_if_not_present(config.bucket)
+        client = S3.from_config(config)
         return cls(client, config.bucket)
 
     def upload(self, site_name: str, timestamp: str, backup_path: Path, remove_local: bool = True) -> None:

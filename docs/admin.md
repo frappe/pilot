@@ -410,8 +410,7 @@ Returns the full settings payload as JSON. The frontend uses this to populate th
   "volume": {
     "enabled": true,
     "pool": "bench-pool",
-    "device": "/dev/sdb",
-    "snapshots_enabled": true
+    "device": "/dev/sdb"
   }
 }
 ```

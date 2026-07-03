@@ -460,6 +460,17 @@ def update_settings():
     if error := ConfigPatcher(config, data).apply():
         return jsonify({"ok": False, "error": error}), 400
 
+    # Verify the bucket is reachable before anything is persisted, so a
+    # rejected S3 config leaves the stored config (and synced credentials)
+    # unchanged.
+    if _s3_payload(config) != old_s3_config and config.s3.access_key:
+        from pilot.integrations.s3.base import S3, S3IntegrationError
+
+        try:
+            S3.from_config(config.s3)
+        except S3IntegrationError as error:
+            return jsonify({"ok": False, "error": str(error)}), 400
+
     try:
         store.write(config)
     except Exception as error:

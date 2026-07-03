@@ -40,12 +40,11 @@ def status():
         return jsonify({"error": str(e)}), 500
 
     if not info.enabled:
-        return jsonify({"enabled": False, "snapshots_enabled": False})
+        return jsonify({"enabled": False})
 
     return jsonify(
         {
             "enabled": True,
-            "snapshots_enabled": True,
             "pool": info.pool,
             "pool_health": info.pool_health,
             "datasets": [
@@ -74,7 +73,6 @@ def list_snapshots():
 
     return jsonify(
         {
-            "snapshots_enabled": status.snapshots_enabled,
             "snapshots": [
                 {
                     "dataset": s.dataset,

@@ -31,7 +31,6 @@ class SnapshotEntry:
 @dataclass
 class SnapshotStatus:
     volume_enabled: bool
-    snapshots_enabled: bool
     snapshots: list[SnapshotEntry] = field(default_factory=list)
 
 
@@ -52,7 +51,7 @@ class SnapshotReader:
         volume_config = self._bench_config.volume
 
         if not is_linux():
-            return SnapshotStatus(volume_enabled=False, snapshots_enabled=False)
+            return SnapshotStatus(volume_enabled=False)
 
         manager = VolumeManager(volume_config)
         dataset = volume_config.dataset_path
@@ -67,7 +66,6 @@ class SnapshotReader:
         ordered = sorted(entries.values(), key=lambda entry: entry.tag, reverse=True)
         return SnapshotStatus(
             volume_enabled=True,
-            snapshots_enabled=True,
             snapshots=ordered[:limit] if limit is not None else ordered,
         )
 
