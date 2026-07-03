@@ -6,8 +6,9 @@
     <Teleport v-if="snapshotsEnabled" to="#settings-header-actions">
       <div class="flex items-center gap-2">
         <CronScheduleControl ref="cronControlRef" noun="snapshots"
-          disable-body="Automatic snapshots will stop. Existing snapshots are kept." :fetch-schedule="fetchSnapshotSchedule"
-          :set-schedule="setSnapshotSchedule" :remove-schedule="removeSnapshotSchedule" titleless />
+          disable-body="Automatic snapshots will stop. Existing snapshots are kept."
+          :fetch-schedule="fetchSnapshotSchedule" :set-schedule="setSnapshotSchedule"
+          :remove-schedule="removeSnapshotSchedule" titleless />
         <Button class="hidden sm:inline-flex" variant="subtle" icon-left="camera" :loading="creating"
           @click="createSnapshot">Snapshot</Button>
       </div>
@@ -65,7 +66,7 @@
       </p>
       <div class="flex justify-end gap-2 mt-4">
         <Button variant="ghost" @click="showRollback = false">Cancel</Button>
-        <Button variant="solid" theme="red" :loading="rollingBack" @click="confirmRollback">Restore Snapshot</Button>
+        <Button variant="solid" theme="red" :loading="rollingBack" @click="confirmRollback">Restore snapshot</Button>
       </div>
     </template>
   </Dialog>
@@ -130,7 +131,7 @@ const rows = computed(() => snapshots.value.map((snap) => ({
 
 function menuOptions(snap) {
   return [
-    { label: 'Restore Snapshot', icon: 'lucide-history', onClick: () => openRollback(snap) },
+    { label: 'Restore snapshot', icon: 'lucide-history', onClick: () => openRollback(snap) },
     { label: 'Delete snapshot', icon: 'lucide-trash-2', theme: 'red', onClick: () => openDelete(snap) },
   ]
 }
