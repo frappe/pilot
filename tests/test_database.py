@@ -131,6 +131,38 @@ def test_sqlite_execute_raises_on_bad_query(tmp_path: Path) -> None:
         db.execute("SELECT * FROM nonexistent_table")
 
 
+def test_sqlite_read_only_blocks_ddl(tmp_path: Path) -> None:
+    db_path = str(tmp_path / "test.db")
+    db = SQLite(db_path)
+    import sqlite3
+    conn = sqlite3.connect(db_path)
+    conn.execute("CREATE TABLE keep_me (id INTEGER)")
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(RuntimeError):
+        db.execute("DROP TABLE keep_me", read_only=True)
+
+    assert "keep_me" in db.get_tables()
+
+
+def test_sqlite_read_only_blocks_dml(tmp_path: Path) -> None:
+    db_path = str(tmp_path / "test.db")
+    db = SQLite(db_path)
+    import sqlite3
+    conn = sqlite3.connect(db_path)
+    conn.execute("CREATE TABLE t (v INTEGER)")
+    conn.execute("INSERT INTO t VALUES (1)")
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(RuntimeError):
+        db.execute("INSERT INTO t VALUES (2)", read_only=True)
+
+    result = db.execute("SELECT * FROM t")
+    assert result.rows == [[1]]
+
+
 # ── make_database ─────────────────────────────────────────────────────────────
 
 
@@ -203,6 +235,31 @@ def test_make_site_database_defaults_to_mariadb(tmp_path: Path) -> None:
 def test_make_site_database_raises_for_missing_site(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError, match="ghost"):
         make_site_database(tmp_path, "ghost")
+
+
+@pytest.mark.parametrize("site_name", [
+    "../secret-site",
+    "../../etc/passwd",
+    "foo/../../secret-site",
+    "foo/bar",
+    "foo\\bar",
+    "..",
+    "",
+])
+def test_make_site_database_rejects_path_traversal(tmp_path: Path, site_name: str) -> None:
+    # A sibling directory outside of tmp_path/sites that a traversal attempt
+    # could otherwise reach.
+    secret_dir = tmp_path.parent / "secret-site"
+    secret_dir.mkdir(exist_ok=True)
+    (secret_dir / "site_config.json").write_text(json.dumps({
+        "db_type": "mariadb", "db_name": "d", "db_user": "u", "db_password": "p",
+    }))
+    try:
+        with pytest.raises(FileNotFoundError):
+            make_site_database(tmp_path, site_name)
+    finally:
+        (secret_dir / "site_config.json").unlink()
+        secret_dir.rmdir()
 
 
 # ── Bench.db lazy property ────────────────────────────────────────────────────

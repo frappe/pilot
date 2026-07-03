@@ -199,6 +199,8 @@ class SQLite(Database):
         conn = self._connect()
         start = time.monotonic()
         try:
+            if read_only:
+                conn.execute("PRAGMA query_only = 1")
             cursor = conn.execute(query)
             if cursor.description:
                 columns = [d[0] for d in cursor.description]
@@ -262,6 +264,12 @@ def make_database(config: "BenchConfig") -> Database:
 
 def make_site_database(bench_root: Path | str, site_name: str) -> Database:
     """Site-specific database connection from site_config.json."""
+    # site_name is attacker-controlled (comes straight from request params). Reject
+    # anything that isn't a single path segment so it can't escape the sites
+    # directory (e.g. "../../etc" or "foo/../../secrets") and read arbitrary
+    # site_config.json files (which hold DB credentials) elsewhere on disk.
+    if not site_name or "/" in site_name or "\\" in site_name or site_name in (".", ".."):
+        raise FileNotFoundError(f"Site '{site_name}' not found")
     cfg_path = Path(bench_root) / "sites" / site_name / "site_config.json"
     if not cfg_path.exists():
         raise FileNotFoundError(f"Site '{site_name}' not found")
