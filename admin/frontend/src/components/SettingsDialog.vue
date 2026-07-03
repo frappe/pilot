@@ -11,7 +11,7 @@
             @click="close" />
           <div class="flex flex-col gap-2 sm:gap-0.5 pt-2 sm:pt-0">
             <Button v-for="section in sections" :key="section.id" :variant="isMobile ? 'subtle' : 'ghost'"
-              :size="isMobile ? 'md' : 'sm'" class="!justify-start border w-full"
+              :size="isMobile ? 'md' : 'sm'" class="!justify-start border sm:border-0 w-full"
               :class="currentSection === section.id ? 'sm:!bg-surface-gray-3 sm:!text-ink-gray-9 !text-ink-gray-6' : '!text-ink-gray-6'"
               @click="activeSection = section.id">
               <template #prefix>
