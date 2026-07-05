@@ -128,7 +128,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watchEffect } from 'vue'
+import { computed, onMounted, ref, watch, watchEffect } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Badge,
@@ -152,7 +152,7 @@ import { useI18n } from '@/i18n'
 const router = useRouter()
 const { setBreadcrumbs } = useBreadcrumbs()
 const { sites, loading, error, load } = useSites()
-const { t } = useI18n()
+const { locale, t } = useI18n()
 
 watchEffect(() => setBreadcrumbs([{ label: t('navigation.sites'), route: { name: 'Sites' } }]))
 
@@ -225,11 +225,16 @@ async function loginAsAdmin(site) {
 }
 
 function openSite(site) {
-  toast.promise(loginAsAdmin(site), {
+  const loginPromise = loginAsAdmin(site)
+  const toastId = toast.promise(loginPromise, {
     loading: t('sites.loggingIn'),
-    success: t('sites.loggedIn'),
-    error: t('sites.loginFailed'),
+    success: () => t('sites.loggedIn'),
+    error: () => t('sites.loginFailed'),
   })
+  const stopUpdatingToast = watch(locale, () => {
+    toast.loading(t('sites.loggingIn'), { id: toastId })
+  })
+  loginPromise.then(stopUpdatingToast, stopUpdatingToast)
 }
 
 async function backupNow(site) {
