@@ -4,13 +4,13 @@
       <div class="flex flex-col gap-4">
         <PilotLogo class="size-8" />
         <div class="flex flex-col gap-1">
-          <h1 class="font-semibold text-ink-gray-9 text-lg">Sign In</h1>
-          <p class="text-ink-gray-5 text-p-base">Welcome! Please sign in to continue.</p>
+          <h1 class="font-semibold text-ink-gray-9 text-lg">{{ t('login.title') }}</h1>
+          <p class="text-ink-gray-5 text-p-base">{{ t('login.welcome') }}</p>
         </div>
       </div>
       <div class="flex flex-col gap-3 w-full">
-        <TextInput v-model="password" label="Password" :type="showPassword ? 'text' : 'password'"
-          placeholder="Enter password" autofocus @keydown.enter="login">
+        <TextInput v-model="password" :label="t('login.password')" :type="showPassword ? 'text' : 'password'"
+          :placeholder="t('login.passwordPlaceholder')" autofocus @keydown.enter="login">
           <template #prefix>
             <LucideLock class="size-4 text-ink-gray-5" />
           </template>
@@ -24,23 +24,23 @@
         </TextInput>
         <button type="button" class="self-end text-ink-gray-6 text-p-sm hover:text-ink-gray-8 hover:underline"
           @click="showForgotPassword = true">
-          Forgot password?
+          {{ t('login.forgotPassword') }}
         </button>
         <ErrorMessage v-if="errorMessage" :message="errorMessage" />
         <Button variant="solid" :loading="isSubmitting" class="w-full" @click="login">
-          Continue
+          {{ t('login.continue') }}
         </Button>
       </div>
     </div>
 
-    <p class="bottom-6 absolute text-ink-gray-3 text-xs">Frappe Bench Administrator</p>
+    <p class="bottom-6 absolute text-ink-gray-3 text-xs">{{ t('login.administrator') }}</p>
 
-    <Dialog v-model="showForgotPassword" :options="{ title: 'Reset password' }" :position="isMobile ? 'top' : 'center'">
+    <Dialog v-model="showForgotPassword" :options="{ title: t('login.resetPassword') }" :position="isMobile ? 'top' : 'center'">
       <template #body-content>
         <ol class="space-y-2 pl-4 text-ink-gray-7 text-p-base list-decimal">
-          <li>SSH into the server.</li>
+          <li>{{ t('login.sshInstruction') }}</li>
           <li>
-            Run
+            {{ t('login.runInstruction') }}
             <code
               class="bg-surface-gray-2 px-1 py-0.5 rounded font-mono text-ink-gray-8">bench -b {{ session.benchName }} set-admin-password</code>
           </li>
@@ -62,6 +62,7 @@ import { authApi } from '../api/auth'
 import { useSession } from '../composables/useSession'
 import { safeRedirect } from '../utils/redirect'
 import { useIsMobile } from '../composables/useIsMobile'
+import { useI18n } from '@/i18n'
 
 const route = useRoute()
 const router = useRouter()
@@ -72,6 +73,7 @@ const isSubmitting = ref(false)
 const showPassword = ref(false)
 const showForgotPassword = ref(false)
 const isMobile = useIsMobile()
+const { t } = useI18n()
 
 async function login() {
   if (!password.value) return
@@ -80,14 +82,14 @@ async function login() {
   try {
     const result = await authApi.login(password.value)
     if (!result.ok) {
-      errorMessage.value = result.error || 'Login failed'
+      errorMessage.value = result.error || t('login.failed')
       return
     }
     await loadSession()
     router.replace(safeRedirect(route.query.redirect))
   } catch (e) {
     console.error(e)
-    errorMessage.value = 'Could not reach the server'
+    errorMessage.value = t('login.unreachable')
   } finally {
     isSubmitting.value = false
   }

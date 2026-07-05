@@ -3,32 +3,33 @@ import { navigationRoutes } from './navigation'
 import { useSession } from './composables/useSession'
 import { safeRedirect } from './utils/redirect'
 import { authApi } from './api/auth'
+import { useI18n } from './i18n'
 
 const routes = [
   {
     path: '/setup',
     name: 'Setup',
     component: () => import('./pages/Setup.vue'),
-    meta: { title: 'Setup', fullScreen: true },
+    meta: { titleKey: 'navigation.setup', fullScreen: true },
   },
   {
     path: '/login',
     name: 'Login',
     component: () => import('./pages/Login.vue'),
-    meta: { title: 'Login', fullScreen: true },
+    meta: { titleKey: 'navigation.login', fullScreen: true },
   },
   { path: '/', redirect: '/sites' },
   {
     path: '/sites/:name/:tab?',
     name: 'SiteDetail',
     component: () => import('./pages/SiteDetail.vue'),
-    meta: { group: 'Sites' },
+    meta: { groupKey: 'navigation.sites' },
   },
   {
     path: '/insights/tasks/:taskId',
     name: 'TaskDetail',
     component: () => import('./pages/TaskDetail.vue'),
-    meta: { group: 'Insights' },
+    meta: { groupKey: 'navigation.insights' },
   },
   ...navigationRoutes(),
 ]
@@ -66,6 +67,7 @@ router.beforeEach(async (to) => {
 
 router.afterEach((to) => {
   if (to.name !== 'SiteDetail') {
-    document.title = to.meta?.title ? `${to.meta.title} - Pilot` : 'Pilot'
+    const { t } = useI18n()
+    document.title = to.meta?.titleKey ? `${t(to.meta.titleKey)} - Pilot` : 'Pilot'
   }
 })
