@@ -30,6 +30,7 @@ declare module 'vue' {
     General: typeof import('./src/components/sites/settings/General.vue')['default']
     Git: typeof import('./src/components/settings/Git.vue')['default']
     InstallAppDialog: typeof import('./src/components/InstallAppDialog.vue')['default']
+    LanguageSwitcher: typeof import('./src/components/LanguageSwitcher.vue')['default']
     LogView: typeof import('./src/components/LogView.vue')['default']
     MarketplaceAppCard: typeof import('./src/components/MarketplaceAppCard.vue')['default']
     NewBenchDialog: typeof import('./src/components/NewBenchDialog.vue')['default']

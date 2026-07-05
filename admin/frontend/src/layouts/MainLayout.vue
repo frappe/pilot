@@ -5,10 +5,12 @@ import { Breadcrumbs } from 'frappe-ui'
 import AppSidebar from '@/components/AppSidebar.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useIsMobile } from '@/composables/useIsMobile'
+import { useI18n } from '@/i18n'
 
 const route = useRoute()
 const { items, resetBreadcrumbs } = useBreadcrumbs()
 const isMobile = useIsMobile()
+const { t } = useI18n()
 
 watch(() => route.name, resetBreadcrumbs)
 
@@ -17,8 +19,8 @@ const breadcrumbs = computed(() => {
   return isMobile.value ? all.slice(-1) : all
 })
 
-function breadcrumbsFromRouteMeta({ title = '', group }) {
-  return group ? [{ label: group }, { label: title }] : [{ label: title }]
+function breadcrumbsFromRouteMeta({ titleKey = '', groupKey }) {
+  return groupKey ? [{ label: t(groupKey) }, { label: t(titleKey) }] : [{ label: t(titleKey) }]
 }
 </script>
 

@@ -5,14 +5,14 @@
     <!-- Header -->
     <div class="flex justify-between items-center">
       <h1 class="font-medium text-ink-gray-8 text-base">
-        Your sites <span class="font-normal text-ink-gray-5">({{ filteredSites.length }})</span>
+        {{ t('sites.title') }} <span class="font-normal text-ink-gray-5">({{ filteredSites.length }})</span>
       </h1>
     </div>
 
     <!-- Bar -->
     <div class="flex items-center gap-2 mt-4">
       <!-- Search text bar -->
-      <FormControl v-model="search" type="text" placeholder="Search" class="flex-1">
+      <FormControl v-model="search" type="text" :placeholder="t('sites.search')" class="flex-1">
         <template #prefix>
           <span class="size-4 text-ink-gray-5 lucide-search" />
         </template>
@@ -111,7 +111,7 @@
     </div>
 
     <!-- No s -->
-    <p v-else class="mt-16 text-ink-gray-5 text-sm text-center">No sites found.</p>
+    <p v-else class="mt-16 text-ink-gray-5 text-sm text-center">{{ t('sites.empty') }}</p>
   </div>
 
   <!-- New Site Button -->
@@ -120,7 +120,7 @@
       <template #prefix>
         <span class="size-4 lucide-plus" />
       </template>
-      New site
+      {{ t('sites.newSite') }}
     </Button>
   </Teleport>
 
@@ -128,7 +128,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch, watchEffect } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Badge,
@@ -147,12 +147,14 @@ import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useSites } from '@/composables/useSites'
 import { sitesApi } from '@/api/sites'
 import { openTaskDetailPage } from '@/utils/taskRoute'
+import { useI18n } from '@/i18n'
 
 const router = useRouter()
 const { setBreadcrumbs } = useBreadcrumbs()
 const { sites, loading, error, load } = useSites()
+const { locale, t } = useI18n()
 
-setBreadcrumbs([{ label: 'Sites', route: { name: 'Sites' } }])
+watchEffect(() => setBreadcrumbs([{ label: t('navigation.sites'), route: { name: 'Sites' } }]))
 
 const search = ref('')
 const statusFilter = ref('all')
@@ -164,19 +166,16 @@ const viewOptions = [
 ]
 
 const SITE_STATUS = {
-  online: { label: 'Active', theme: 'green' },
-  broken: { label: 'Broken', theme: 'red' },
-  offline: { label: 'Paused', theme: 'orange' },
-  provisioning: { label: 'Creating', theme: 'blue' },
+  online: { labelKey: 'sites.active', theme: 'green' },
+  broken: { labelKey: 'sites.broken', theme: 'red' },
+  offline: { labelKey: 'sites.paused', theme: 'orange' },
+  provisioning: { labelKey: 'sites.creating', theme: 'blue' },
 }
 
-const statusOptions = [
-  { label: 'Status', value: 'all' },
-  { label: 'Active', value: 'online' },
-  { label: 'Broken', value: 'broken' },
-  { label: 'Paused', value: 'offline' },
-  { label: 'Creating', value: 'provisioning' },
-]
+const statusOptions = computed(() => [
+  { label: t('sites.status'), value: 'all' },
+  ...Object.entries(SITE_STATUS).map(([value, status]) => ({ label: t(status.labelKey), value })),
+])
 
 function siteStatus(site) {
   // Provisioning wins over "offline": the site dir/site_config.json may not
@@ -187,12 +186,12 @@ function siteStatus(site) {
   return 'online'
 }
 
-const statusLabel = (site) => SITE_STATUS[siteStatus(site)].label
+const statusLabel = (site) => t(SITE_STATUS[siteStatus(site)].labelKey)
 const statusTheme = (site) => SITE_STATUS[siteStatus(site)].theme
 
 function appsLabel(site) {
   const count = site.installed_apps?.length || 0
-  return count === 1 ? '1 app' : `${count} apps`
+  return t('sites.appCount', { count })
 }
 
 const filteredSites = computed(() => {
@@ -204,12 +203,12 @@ const filteredSites = computed(() => {
   })
 })
 
-const listColumns = [
-  { label: 'Site', key: 'site', align: 'left', width: 3 },
-  { label: 'Status', key: 'status', align: 'left', width: 1.5 },
-  { label: 'Apps', key: 'apps', align: 'left', width: 1.5 },
+const listColumns = computed(() => [
+  { label: t('sites.site'), key: 'site', align: 'left', width: 3 },
+  { label: t('sites.status'), key: 'status', align: 'left', width: 1.5 },
+  { label: t('sites.apps'), key: 'apps', align: 'left', width: 1.5 },
   { label: '', key: 'actions', align: 'right', width: '3rem' },
-]
+])
 
 const listRows = computed(() =>
   filteredSites.value.map((site) => ({
@@ -226,27 +225,32 @@ async function loginAsAdmin(site) {
 }
 
 function openSite(site) {
-  toast.promise(loginAsAdmin(site), {
-    loading: 'Logging in as admin',
-    success: 'Logged in as admin',
-    error: 'Could not log in as admin',
+  const loginPromise = loginAsAdmin(site)
+  const toastId = toast.promise(loginPromise, {
+    loading: t('sites.loggingIn'),
+    success: () => t('sites.loggedIn'),
+    error: () => t('sites.loginFailed'),
   })
+  const stopUpdatingToast = watch(locale, () => {
+    toast.loading(t('sites.loggingIn'), { id: toastId })
+  })
+  loginPromise.then(stopUpdatingToast, stopUpdatingToast)
 }
 
 async function backupNow(site) {
   try {
     const result = await sitesApi.backups.create(site.name)
     if (result.ok) openTaskDetailPage(router, result.task_id)
-    else toast.error(result.error || 'Could not start backup')
+    else toast.error(result.error || t('sites.backupFailed'))
   } catch (caught) {
-    toast.error(caught.message || 'Could not start backup')
+    toast.error(caught.message || t('sites.backupFailed'))
   }
 }
 
 function siteMenuOptions(site) {
   return [
-    { label: 'Open site', icon: 'lucide-external-link', onClick: () => openSite(site) },
-    { label: 'Back up now', icon: 'lucide-archive', onClick: () => backupNow(site) },
+    { label: t('sites.openSite'), icon: 'lucide-external-link', onClick: () => openSite(site) },
+    { label: t('sites.backupNow'), icon: 'lucide-archive', onClick: () => backupNow(site) },
   ]
 }
 
