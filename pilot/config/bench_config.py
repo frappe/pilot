@@ -281,6 +281,7 @@ class BenchConfig:
         self._validate_gunicorn()
         self._validate_mariadb_version()
         self._validate_mariadb_instance()
+        self._validate_mariadb_memory()
         self._validate_postgres_instance()
         self._validate_redis_version()
         self._validate_production()
@@ -431,6 +432,13 @@ class BenchConfig:
             )
         if self.mariadb.data_dir and not Path(self.mariadb.data_dir).is_absolute():
             raise ConfigError(f"mariadb.data_dir '{self.mariadb.data_dir}' must be an absolute path.")
+
+    def _validate_mariadb_memory(self) -> None:
+        value = self.mariadb.innodb_buffer_pool_size_mb
+        if not isinstance(value, int) or value < 0:
+            raise ConfigError(
+                f"mariadb.innodb_buffer_pool_size_mb must be a non-negative integer, got '{value}'."
+            )
 
     def _validate_postgres_instance(self) -> None:
         instance = self.postgres.instance

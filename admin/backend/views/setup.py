@@ -8,6 +8,7 @@ from admin.backend.tasks.manager.task_reader import TaskReader
 from admin.backend.tasks.manager.task_runner import TaskRunner
 from pilot.config.bench_toml_builder import FRAMEWORK_BRANCHES, BenchTomlBuilder, current_port_offset
 from pilot.config.toml_store import BenchTomlStore
+from pilot.core.mariadb_memory import memory_plan_for_bench, validate_innodb_buffer_pool_size
 
 setup_bp = Blueprint("setup", __name__)
 
@@ -40,18 +41,9 @@ def save_config():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     data = request.get_json(silent=True) or {}
 
-    error = _validate(data)
+    error = _validate(data, bench_root)
     if error:
         return jsonify({"ok": False, "error": error}), 400
-
-    # A fresh install can only secure the pre-existing 'root' account
-    # (secure_installation runs ALTER USER 'root'@'localhost' — an arbitrary name
-    # is never created), so reject a custom root user for fresh installs. An
-    # existing DB can legitimately use a custom superuser.
-    admin_user = data.get("mariadb_admin_user") or "root"
-    if admin_user != "root" and _will_install_fresh(bench_root, data):
-        return jsonify({"ok": False, "error":
-            "A fresh MariaDB install only has the 'root' superuser; set the MariaDB root user to 'root'."}), 400
 
     # Preserve any settings the wizard didn't send (e.g. python version, fields
     # not shown in the current step). Incoming data wins on conflicts.
@@ -65,7 +57,18 @@ def save_config():
             pass
 
     settings = {**existing, **data, "admin_enabled": True}
+    _assign_mariadb_instance(bench_root, settings)
     _assign_postgres_port(bench_root, settings)
+
+    # A fresh install can only secure the pre-existing 'root' account
+    # (secure_installation runs ALTER USER 'root'@'localhost' — an arbitrary name
+    # is never created), so reject a custom root user for fresh installs. An
+    # existing DB can legitimately use a custom superuser.
+    admin_user = settings.get("mariadb_admin_user") or "root"
+    if admin_user != "root" and _will_install_fresh(bench_root, settings):
+        return jsonify({"ok": False, "error":
+            "A fresh MariaDB install only has the 'root' superuser; set the MariaDB root user to 'root'."}), 400
+
     store.write_flat(_current_name(bench_root), settings, port_offset=current_port_offset(toml_path))
 
     resp = jsonify({"ok": True})
@@ -199,7 +202,22 @@ def _assign_postgres_port(bench_root: Path, settings: dict) -> None:
         settings["postgres_port"] = 5432
 
 
-def _validate(data: dict) -> str | None:
+def _assign_mariadb_instance(bench_root: Path, settings: dict) -> None:
+    """Linux MariaDB benches are dedicated by default; keep hidden instance
+    fields intact when the setup wizard rewrites bench.toml."""
+    if settings.get("db_type", "mariadb") != "mariadb":
+        return
+    from pilot.platform import is_linux
+
+    if not is_linux():
+        return
+    instance = settings.get("mariadb_instance") or settings.get("bench_name") or bench_root.name
+    settings["mariadb_instance"] = instance
+    settings["mariadb_socket_path"] = settings.get("mariadb_socket_path") or f"/run/mysqld/mysqld-{instance}.sock"
+    settings["mariadb_data_dir"] = settings.get("mariadb_data_dir") or f"/var/lib/mysql-{instance}"
+
+
+def _validate(data: dict, bench_root: Path | None = None) -> str | None:
     if not data.get("admin_password"):
         return "admin_password is required"
     # Each server-based engine needs its superuser password: frappe connects over
@@ -208,6 +226,15 @@ def _validate(data: dict) -> str | None:
     db_type = data.get("db_type", "mariadb")
     if db_type == "mariadb" and not data.get("mariadb_password"):
         return "mariadb_password is required"
+    if db_type == "mariadb" and bench_root is not None:
+        try:
+            value = int(data.get("mariadb_innodb_buffer_pool_size_mb") or 0)
+        except (TypeError, ValueError):
+            return "mariadb_innodb_buffer_pool_size_mb must be a whole number of MB"
+        if value <= 0:
+            return "mariadb_innodb_buffer_pool_size_mb is required"
+        if error := validate_innodb_buffer_pool_size(bench_root, value):
+            return error
     if db_type == "postgres" and not data.get("postgres_password"):
         return "postgres_password is required"
     if data.get("volume_enabled", True):
@@ -350,6 +377,16 @@ def _read_defaults(bench_root: Path) -> dict:
         "native_process_manager": native_process_manager(),
         **defaults,
     }
+    plan = memory_plan_for_bench(bench_root)
+    result["mariadb_memory"] = {
+        "total_mb": plan.total_mb,
+        "ram_for_mariadb_mb": plan.ram_for_mariadb_mb,
+        "allocated_to_other_benches_mb": plan.allocated_to_other_benches_mb,
+        "min_mb": plan.min_mb,
+        "max_mb": plan.max_mb,
+        "recommended_mb": plan.recommended_mb,
+    }
+    result["mariadb_innodb_buffer_pool_size_mb"] = plan.recommended_mb
     toml_path = bench_root / "bench.toml"
     if toml_path.exists():
         try:
@@ -357,6 +394,8 @@ def _read_defaults(bench_root: Path) -> dict:
             for key in _PASSWORD_KEYS:
                 settings.pop(key, None)
             result.update(settings)
+            if not result.get("mariadb_innodb_buffer_pool_size_mb"):
+                result["mariadb_innodb_buffer_pool_size_mb"] = plan.recommended_mb
             if not result.get("bench_name"):
                 result["bench_name"] = bench_root.name
         except Exception:
