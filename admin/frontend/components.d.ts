@@ -31,6 +31,7 @@ declare module 'vue' {
     Git: typeof import('./src/components/settings/Git.vue')['default']
     InstallAppDialog: typeof import('./src/components/InstallAppDialog.vue')['default']
     LogView: typeof import('./src/components/LogView.vue')['default']
+    MariaDB: typeof import('./src/components/settings/MariaDB.vue')['default']
     MarketplaceAppCard: typeof import('./src/components/MarketplaceAppCard.vue')['default']
     NewBenchDialog: typeof import('./src/components/NewBenchDialog.vue')['default']
     NewSiteDialog: typeof import('./src/components/NewSiteDialog.vue')['default']
