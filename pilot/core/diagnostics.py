@@ -215,14 +215,31 @@ class DiagnosticRunner:
             return False
 
     def _linux_memory(self) -> dict[str, int]:
-        path = Path("/proc/meminfo")
+        path = self._meminfo_path()
         if not path.exists():
             return {}
-        fields = {}
-        for line in path.read_text().splitlines():
+        fields: dict[str, int] = {}
+        try:
+            lines = path.read_text().splitlines()
+        except OSError:
+            return {}
+        for line in lines:
+            if ":" not in line:
+                continue
             key, value = line.split(":", 1)
-            fields[key] = int(value.strip().split()[0])
-        return {"available": fields.get("MemAvailable", 0)}
+            parts = value.strip().split()
+            if not parts:
+                continue
+            try:
+                fields[key] = int(parts[0])
+            except ValueError:
+                continue
+        if "MemAvailable" not in fields:
+            return {}
+        return {"available": fields["MemAvailable"]}
+
+    def _meminfo_path(self) -> Path:
+        return Path("/proc/meminfo")
 
     def _tcp_open(self, host: str, port: int) -> bool:
         try:

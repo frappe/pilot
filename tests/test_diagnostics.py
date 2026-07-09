@@ -130,6 +130,24 @@ def test_diagnostics_cpu_load_warns_under_pressure(tmp_path: Path, monkeypatch) 
     assert check.status == "warn"
 
 
+def test_diagnostics_memory_parser_ignores_malformed_lines(tmp_path: Path, monkeypatch) -> None:
+    bench = make_initialized_bench(tmp_path)
+    meminfo = tmp_path / "meminfo"
+    meminfo.write_text("broken\nMemTotal:\nMemFree: nope kB\nMemAvailable: 2048 kB\n")
+    monkeypatch.setattr(DiagnosticRunner, "_meminfo_path", lambda self: meminfo)
+
+    assert DiagnosticRunner(bench)._linux_memory() == {"available": 2048}
+
+
+def test_diagnostics_memory_parser_skips_without_available_memory(tmp_path: Path, monkeypatch) -> None:
+    bench = make_initialized_bench(tmp_path)
+    meminfo = tmp_path / "meminfo"
+    meminfo.write_text("MemTotal: 4096 kB\n")
+    monkeypatch.setattr(DiagnosticRunner, "_meminfo_path", lambda self: meminfo)
+
+    assert DiagnosticRunner(bench)._memory_check().status == "skip"
+
+
 def test_diagnostic_report_json(tmp_path: Path) -> None:
     bench = make_initialized_bench(tmp_path)
     check = DiagnosticRunner(bench)._path_check("bench", "bench.toml", bench.path / "bench.toml", "")
