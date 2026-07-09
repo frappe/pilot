@@ -185,9 +185,11 @@ class DiagnosticRunner:
         return DiagnosticCheck(group, name, "fail", f"{host}:{port} is not reachable")
 
     def _socket_check(self, group: str, name: str, path: Path) -> DiagnosticCheck:
-        if path.exists():
-            return DiagnosticCheck(group, name, "ok", str(path))
-        return DiagnosticCheck(group, name, "fail", f"missing: {path}", "Start the database service.")
+        if not path.exists():
+            return DiagnosticCheck(group, name, "fail", f"missing: {path}", "Start the database service.")
+        if self._unix_socket_open(path):
+            return DiagnosticCheck(group, name, "ok", f"{path} is reachable")
+        return DiagnosticCheck(group, name, "fail", f"{path} is not accepting connections", "Restart the database service.")
 
     def _executable_check(self, group: str, name: str, executable: str, hint: str) -> DiagnosticCheck:
         path = shutil.which(executable)
@@ -248,6 +250,18 @@ class DiagnosticRunner:
         try:
             with socket.create_connection((host, port), timeout=0.5):
                 return True
+        except OSError:
+            return False
+
+    def _unix_socket_open(self, path: Path) -> bool:
+        try:
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            sock.settimeout(0.5)
+            try:
+                sock.connect(str(path))
+                return True
+            finally:
+                sock.close()
         except OSError:
             return False
 

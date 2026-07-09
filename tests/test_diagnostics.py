@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import socket
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -110,6 +111,34 @@ def test_diagnostics_warns_when_no_sites_exist(tmp_path: Path) -> None:
 
     assert checks[0].status == "warn"
     assert "no sites" in checks[0].detail
+
+
+def test_diagnostics_socket_check_requires_connectivity(tmp_path: Path, monkeypatch) -> None:
+    bench = make_initialized_bench(tmp_path)
+    socket_path = tmp_path / "mariadb.sock"
+    socket_path.write_text("")
+    monkeypatch.setattr(DiagnosticRunner, "_unix_socket_open", lambda self, path: False)
+
+    check = DiagnosticRunner(bench)._socket_check("database", "mariadb socket", socket_path)
+
+    assert check.status == "fail"
+    assert "not accepting connections" in check.detail
+
+
+def test_diagnostics_socket_check_accepts_reachable_socket(tmp_path: Path) -> None:
+    bench = make_initialized_bench(tmp_path)
+    socket_path = Path("diag-test.sock").resolve()
+    socket_path.unlink(missing_ok=True)
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(str(socket_path))
+    server.listen(1)
+    try:
+        check = DiagnosticRunner(bench)._socket_check("database", "mariadb socket", socket_path)
+    finally:
+        server.close()
+        socket_path.unlink(missing_ok=True)
+
+    assert check.status == "ok"
 
 
 def test_diagnostics_checks_chromium_dependency(tmp_path: Path, monkeypatch) -> None:
