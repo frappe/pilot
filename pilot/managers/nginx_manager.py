@@ -111,8 +111,8 @@ class NginxManager:
         return self._proxy_servers_cache
 
     def _render_acme_location(self) -> str:
-        """ACME HTTP-01 challenge location. `allow all;` overrides any server-level
-        proxy-only deny so certbot's validation reaches the challenge files."""
+        """ACME HTTP-01 challenge location. `allow all;` overrides any firewall
+        deny so certbot's validation reaches the challenge files."""
         webroot = self.bench.config.letsencrypt.webroot_path
         return (
             f"    location /.well-known/acme-challenge/ {{\n"
@@ -123,18 +123,21 @@ class NginxManager:
         )
 
     def _render_proxy_trust(self) -> str:
-        """When edge proxies front this bench, trust only them: accept connections
-        from those IPs alone, and read the real client IP from the X-Forwarded-For
-        they set. Empty (no restriction) when the bench is directly exposed."""
+        """When edge proxies front this bench, read the real client IP from the
+        X-Forwarded-For they set. Only these proxy IPs are trusted to supply it, so
+        a direct client cannot spoof XFF. Empty when the bench is directly exposed.
+
+        No allow/deny is emitted here: real_ip rewrites $remote_addr to the client
+        IP before the access phase runs, so an allow-proxy/deny-all list would test
+        the client (never a proxy) and 403 every request. Client IP filtering is the
+        firewall's job (_render_firewall), and it now sees the real client IP."""
         proxies = self._proxy_servers
         if not proxies:
             return ""
         return (
             "".join(f"    set_real_ip_from   {ip};\n" for ip in proxies)
             + "    real_ip_header     X-Forwarded-For;\n"
-            + "    real_ip_recursive  on;\n"
-            + "".join(f"    allow              {ip};\n" for ip in proxies)
-            + "    deny               all;\n\n"
+            + "    real_ip_recursive  on;\n\n"
         )
 
     def _render_firewall(self) -> str:

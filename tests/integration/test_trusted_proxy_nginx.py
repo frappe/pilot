@@ -95,11 +95,13 @@ def test_generated_trusted_proxy_config_passes_nginx_t(tmp_path: Path, monkeypat
     site_conf = (nginx_dir / "sites" / "site1.localhost.conf").read_text()
     for ip in _PROXIES:
         assert f"set_real_ip_from   {ip};" in site_conf
-        assert f"allow              {ip};" in site_conf
     assert "real_ip_header     X-Forwarded-For;" in site_conf
-    assert "deny               all;" in site_conf
+    # No allow/deny from proxy trust: real_ip rewrites $remote_addr to the client
+    # before the access phase, so a proxy allowlist would 403 every request.
+    assert "allow              " not in site_conf
+    assert "deny               all;" not in site_conf
     assert "X-Forwarded-For    $http_x_forwarded_for" in site_conf
-    # The ACME challenge must override the proxy-only deny, else cert issuance fails.
+    # The ACME challenge stays open regardless of any firewall deny.
     acme = site_conf.split("location /.well-known/acme-challenge/", 1)[1]
     assert "allow all;" in acme.split("}", 1)[0]
 
