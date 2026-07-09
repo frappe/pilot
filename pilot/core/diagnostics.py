@@ -129,14 +129,17 @@ class DiagnosticRunner:
         workers = [p for p in self.bench.pids_path.glob("worker*.pid")] if self.bench.pids_path.exists() else []
         if workers:
             live = sum(1 for path in workers if self._pid_alive(path))
-            status = "ok" if live else "fail"
+            status = "ok" if live == len(workers) else "warn" if live else "fail"
             return [DiagnosticCheck("workers", "worker pids", status, f"{live}/{len(workers)} worker pid files are live")]
         if self.bench.config.production.use_companion_manager:
             return [DiagnosticCheck("workers", "workers", "skip", "workers run inside the companion web process")]
         return [DiagnosticCheck("workers", "worker pids", "warn", "no worker pid files found", "Start the bench and re-run diagnostics.")]
 
     def _disk_check(self) -> DiagnosticCheck:
-        usage = shutil.disk_usage(self.bench.path)
+        try:
+            usage = shutil.disk_usage(self.bench.path)
+        except OSError as exc:
+            return DiagnosticCheck("resources", "disk", "fail", f"could not read disk usage: {exc}")
         free_gb = usage.free / 1024**3
         used_pct = (usage.used / usage.total) * 100 if usage.total else 0
         detail = f"{free_gb:.1f} GB free, {used_pct:.0f}% used at {self.bench.path}"

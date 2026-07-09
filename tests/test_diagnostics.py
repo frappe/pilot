@@ -79,6 +79,18 @@ def test_diagnostics_worker_pid_check(tmp_path: Path, monkeypatch) -> None:
     assert checks[0].detail == "1/1 worker pid files are live"
 
 
+def test_diagnostics_worker_pid_check_warns_for_partial_failure(tmp_path: Path, monkeypatch) -> None:
+    bench = make_initialized_bench(tmp_path)
+    (bench.pids_path / "worker_default_1.pid").write_text("123")
+    (bench.pids_path / "worker_default_2.pid").write_text("456")
+    monkeypatch.setattr(DiagnosticRunner, "_pid_alive", lambda self, path: path.name.endswith("_1.pid"))
+
+    check = DiagnosticRunner(bench)._worker_checks()[0]
+
+    assert check.status == "warn"
+    assert check.detail == "1/2 worker pid files are live"
+
+
 def test_diagnostics_validates_site_configs(tmp_path: Path) -> None:
     bench = make_initialized_bench(tmp_path)
     site = bench.sites_path / "site.localhost"
@@ -128,6 +140,20 @@ def test_diagnostics_cpu_load_warns_under_pressure(tmp_path: Path, monkeypatch) 
     check = DiagnosticRunner(bench)._cpu_check()
 
     assert check.status == "warn"
+
+
+def test_diagnostics_disk_check_reports_usage_errors(tmp_path: Path, monkeypatch) -> None:
+    bench = make_initialized_bench(tmp_path)
+
+    def fail(path):
+        raise OSError("not mounted")
+
+    monkeypatch.setattr("shutil.disk_usage", fail)
+
+    check = DiagnosticRunner(bench)._disk_check()
+
+    assert check.status == "fail"
+    assert "not mounted" in check.detail
 
 
 def test_diagnostics_memory_parser_ignores_malformed_lines(tmp_path: Path, monkeypatch) -> None:
