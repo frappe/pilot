@@ -29,6 +29,7 @@ initializeI18n()
 watch(
   [() => route.meta?.labelKey, currentLanguage],
   () => {
+    if (route.name === 'SiteDetail') return
     const title = route.meta?.labelKey ? t(route.meta.labelKey, route.meta.title) : route.meta?.title
     document.title = title ? `${title} - Pilot` : 'Pilot'
   },

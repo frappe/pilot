@@ -3,7 +3,6 @@ import { navigationRoutes } from './navigation'
 import { useSession } from './composables/useSession'
 import { safeRedirect } from './utils/redirect'
 import { authApi } from './api/auth'
-import { translate } from './i18n'
 
 const routes = [
   {
@@ -63,11 +62,4 @@ router.beforeEach(async (to) => {
   if (session.authenticated && to.name === 'Login')
     return { path: safeRedirect(to.query.redirect) }
   return true
-})
-
-router.afterEach((to) => {
-  if (to.name !== 'SiteDetail') {
-    const title = to.meta?.labelKey ? translate(to.meta.labelKey, to.meta.title) : to.meta?.title
-    document.title = title ? `${title} - Pilot` : 'Pilot'
-  }
 })
