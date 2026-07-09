@@ -2,28 +2,34 @@
 
 export const navigation = {
   Sites: {
+    labelKey: 'navigation.sites',
     path: '/sites',
     icon: 'lucide-layout-grid',
     component: () => import('./pages/Sites.vue'),
   },
   Marketplace: {
+    labelKey: 'navigation.marketplace',
     path: '/marketplace',
     icon: 'lucide-store',
     component: () => import('./pages/Marketplace.vue'),
   },
   Insights: {
+    labelKey: 'navigation.insights',
     children: {
       Analytics: {
+        labelKey: 'navigation.analytics',
         path: '/insights/analytics',
         icon: 'lucide-chart-line',
         component: () => import('./pages/Analytics.vue'),
       },
       Logs: {
+        labelKey: 'navigation.logs',
         path: '/insights/logs',
         icon: 'lucide-scroll-text',
         component: () => import('./pages/Logs.vue'),
       },
       Tasks: {
+        labelKey: 'navigation.tasks',
         path: '/insights/tasks',
         icon: 'lucide-list-checks',
         component: () => import('./pages/Tasks.vue'),
@@ -31,6 +37,7 @@ export const navigation = {
     },
   },
   'Dev tools': {
+    labelKey: 'navigation.devTools',
     children: {
       // 'DB analyzer': {
       //   path: '/database/analyzer',
@@ -38,6 +45,7 @@ export const navigation = {
       //   component: Placeholder,
       // },
       'SQL playground': {
+        labelKey: 'navigation.sqlPlayground',
         path: '/database/sql-playground',
         icon: 'lucide-terminal',
         component: () => import('./pages/SQLPlayground.vue'),
@@ -46,30 +54,35 @@ export const navigation = {
   },
 }
 
-export function navigationRoutes(tree = navigation, group = '') {
+export function navigationRoutes(tree = navigation, group = '', groupKey = '') {
   return Object.entries(tree).flatMap(([title, node]) =>
     node.children
-      ? navigationRoutes(node.children, title)
-      : [{ path: node.path, name: title, component: node.component, meta: { title, group } }],
+      ? navigationRoutes(node.children, title, node.labelKey)
+      : [{
+          path: node.path,
+          name: title,
+          component: node.component,
+          meta: { title, group, groupKey, labelKey: node.labelKey },
+        }],
   )
 }
 
-export function sidebarSections(tree = navigation) {
+export function sidebarSections(t = (key, fallback) => fallback, tree = navigation) {
   const sections = []
   const looseItems = []
   for (const [title, node] of Object.entries(tree)) {
     if (node.children) {
       sections.push({
-        label: title,
+        label: t(node.labelKey, title),
         collapsible: node.collapsible ?? false,
         items: Object.entries(node.children).map(([label, child]) => ({
-          label,
+          label: t(child.labelKey, label),
           icon: child.icon,
           to: child.path,
         })),
       })
     } else {
-      looseItems.push({ label: title, icon: node.icon, to: node.path })
+      looseItems.push({ label: t(node.labelKey, title), icon: node.icon, to: node.path })
     }
   }
   if (looseItems.length) sections.unshift({ items: looseItems })

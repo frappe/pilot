@@ -9,12 +9,14 @@ import SettingsDialog from '@/components/SettingsDialog.vue'
 import BenchSwitcherDialog from '@/components/BenchSwitcherDialog.vue'
 import NewBenchDialog from '@/components/NewBenchDialog.vue'
 import PilotLogo from '@/components/PilotLogo.vue'
+import { useI18n } from '@/i18n'
 const { setTheme } = useTheme()
 
 const route = useRoute()
 const router = useRouter()
-const sections = sidebarSections()
 const isMobile = useIsMobile()
+const { currentLanguage, languages, setLanguage, t } = useI18n()
+const sections = computed(() => sidebarSections(t))
 
 const showSettings = ref(false)
 const showBenches = ref(false)
@@ -34,32 +36,41 @@ async function logout() {
 // screens, so the entry point is hidden on mobile rather than shipping a
 // broken dialog.
 const header = computed(() => ({
-  title: 'Pilot',
+  title: t('app.name'),
   menuItems: [
     {
-      label: 'Central',
+      label: t('layout.central'),
       icon: 'lucide-cloud',
     },
     {
-      label: 'Settings',
+      label: t('layout.settings'),
       icon: 'lucide-settings',
       onClick: () => (showSettings.value = true),
     },
     {
-      label: 'Switch Bench',
+      label: t('layout.switchBench'),
       icon: 'lucide-repeat',
       onClick: () => (showBenches.value = true),
     },
     {
-      label: 'Theme',
+      label: t('common.theme'),
       icon: 'lucide-sun-moon',
       submenu: [
-        { label: 'Light', icon: 'lucide-sun', onClick: () => setTheme('light') },
-        { label: 'Dark', icon: 'lucide-moon', onClick: () => setTheme('dark') },
-        { label: 'System', icon: 'lucide-monitor', onClick: () => setTheme('system') },
+        { label: t('common.theme.light'), icon: 'lucide-sun', onClick: () => setTheme('light') },
+        { label: t('common.theme.dark'), icon: 'lucide-moon', onClick: () => setTheme('dark') },
+        { label: t('common.system'), icon: 'lucide-monitor', onClick: () => setTheme('system') },
       ],
     },
-    { label: 'Logout', icon: 'lucide-log-out', onClick: logout },
+    {
+      label: t('common.language'),
+      icon: 'lucide-languages',
+      submenu: languages.map((language) => ({
+        label: language.label,
+        icon: currentLanguage.value === language.value ? 'lucide-check' : 'lucide-circle',
+        onClick: () => setLanguage(language.value),
+      })),
+    },
+    { label: t('layout.logout'), icon: 'lucide-log-out', onClick: logout },
   ],
 }))
 </script>

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "node src/i18n/index.test.mjs",
     "build": "vite build",
     "preview": "vite preview"
   },
