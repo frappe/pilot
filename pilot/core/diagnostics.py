@@ -69,7 +69,11 @@ class DiagnosticRunner:
     def _site_checks(self) -> list[DiagnosticCheck]:
         if not self.bench.sites_path.exists():
             return [DiagnosticCheck("sites", "sites", "fail", f"missing: {self.bench.sites_path}", "Run bench init.")]
-        site_dirs = [p for p in sorted(self.bench.sites_path.iterdir()) if (p / "site_config.json").exists()]
+        try:
+            entries = sorted(self.bench.sites_path.iterdir())
+        except OSError as exc:
+            return [DiagnosticCheck("sites", "sites", "fail", f"could not read sites directory: {exc}")]
+        site_dirs = [p for p in entries if (p / "site_config.json").exists()]
         if not site_dirs:
             return [DiagnosticCheck("sites", "sites", "warn", "no sites found", "Create one with bench new-site <name>.")]
         checks = [DiagnosticCheck("sites", "site count", "ok", f"{len(site_dirs)} site(s) found")]

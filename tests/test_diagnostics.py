@@ -113,6 +113,23 @@ def test_diagnostics_warns_when_no_sites_exist(tmp_path: Path) -> None:
     assert "no sites" in checks[0].detail
 
 
+def test_diagnostics_site_checks_report_directory_errors(tmp_path: Path, monkeypatch) -> None:
+    bench = make_initialized_bench(tmp_path)
+    original_iterdir = Path.iterdir
+
+    def fail(path):
+        if path == bench.sites_path:
+            raise OSError("permission denied")
+        return original_iterdir(path)
+
+    monkeypatch.setattr(Path, "iterdir", fail)
+
+    check = DiagnosticRunner(bench)._site_checks()[0]
+
+    assert check.status == "fail"
+    assert "permission denied" in check.detail
+
+
 def test_diagnostics_socket_check_requires_connectivity(tmp_path: Path, monkeypatch) -> None:
     bench = make_initialized_bench(tmp_path)
     socket_path = tmp_path / "mariadb.sock"
