@@ -27,3 +27,7 @@ class VolumeError(BenchError):
 
 class MigrateError(BenchError):
     pass
+
+
+class AppValidationError(BenchError):
+    pass

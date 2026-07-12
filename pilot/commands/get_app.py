@@ -41,8 +41,8 @@ class GetAppCommand(Command):
     def run(self) -> None:
         self._clone()
         self._normalize_folder()
-        self._install()
         self._validate()
+        self._install()
         self._register()
         self._build()
         print(f"\n'{self.name}' installed successfully.")
@@ -97,28 +97,17 @@ class GetAppCommand(Command):
             apps_txt.write_text("\n".join(existing + [self.name]) + "\n")
 
     def _validate(self) -> None:
-        import subprocess
+        import shutil
 
-        from pilot.exceptions import BenchError
+        from pilot.core.app_validator import Validator
+        from pilot.exceptions import AppValidationError
 
-        python = str(self.bench.env_path / "bin" / "python")
-        result = subprocess.run(
-            [python, "-c", f"import {self.name}"],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            # Roll back: remove from apps dir so a broken app doesn't crash workers.
-            import shutil
-
+        try:
+            Validator(self.app).validate()
+        except AppValidationError:
+            # Roll back: remove the clone so a broken app is never pip-installed.
             shutil.rmtree(self.app.path, ignore_errors=True)
-            raise BenchError(
-                f"App '{self.name}' installed but its Python package "
-                f"could not be imported.\n"
-                f"  This usually means the app's package name does not match\n"
-                f"  its declared name (check pyproject.toml / hooks.py app_name).\n"
-                f"  Error: {result.stderr.strip()}"
-            )
+            raise
 
     def _build(self) -> None:
         from pilot.managers.python_env_manager import PythonEnvManager
