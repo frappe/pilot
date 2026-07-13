@@ -332,6 +332,25 @@ Lists every bench found under `benches/`, with its runtime status (running/stopp
 
 ---
 
+## `bench diagnostics`
+
+Runs read-only health checks for the active bench.
+
+```bash
+bench diagnostics
+bench diagnostics --json
+```
+
+Checks cover bench structure, generated config files, site config JSON, core
+runtime dependencies, CPU load, disk space, Linux memory, process state, Redis
+ports, database reachability, workers, and Chromium availability for PDF
+generation. The command does not install packages, start services, modify
+configuration, or run migrations.
+
+The Admin backend exposes the same report at `GET /api/diagnostics/`.
+
+---
+
 ## `bench stop`
 
 Stops a running bench. `ProcessManagerFactory.detect_running()` picks the right manager (dev runner, systemd, or supervisor), then stops the workload and the admin service. Does **not** rely on `pids/bench.pid` — a dev bench with no PID file is stopped by killing the port-bound processes. Works across terminal sessions.

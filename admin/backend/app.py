@@ -14,6 +14,7 @@ from .views.apps import apps_bp
 from .views.benches import benches_bp
 from .views.dashboard import dashboard_bp
 from .views.database import database_bp
+from .views.diagnostics import diagnostics_bp
 from .views.git import git_bp
 from .views.logs import logs_bp
 from .views.processes import processes_bp
@@ -223,6 +224,7 @@ def create_app(bench_root: Path) -> Flask:
     app.register_blueprint(processes_bp, url_prefix="/api/processes")
     app.register_blueprint(logs_bp, url_prefix="/api/logs")
     app.register_blueprint(database_bp, url_prefix="/api/database")
+    app.register_blueprint(diagnostics_bp, url_prefix="/api/diagnostics")
     app.register_blueprint(tasks_bp, url_prefix="/api/tasks")
     app.register_blueprint(settings_bp, url_prefix="/api/settings")
     app.register_blueprint(updates_bp, url_prefix="/api/updates")
