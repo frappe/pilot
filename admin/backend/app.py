@@ -20,6 +20,7 @@ from .views.processes import processes_bp
 from .views.settings import settings_bp
 from .views.setup import setup_bp, wizard_marker_path
 from .views.sites import sites_bp
+from .views.ssh_keys import ssh_keys_bp
 from .views.stats import stats_bp
 from .views.tasks import tasks_bp
 from .views.updates import updates_bp
@@ -226,6 +227,7 @@ def create_app(bench_root: Path) -> Flask:
     app.register_blueprint(settings_bp, url_prefix="/api/settings")
     app.register_blueprint(updates_bp, url_prefix="/api/updates")
     app.register_blueprint(git_bp, url_prefix="/api/git")
+    app.register_blueprint(ssh_keys_bp, url_prefix="/api/ssh-keys")
     app.register_blueprint(stats_bp, url_prefix="/api")
 
     app.register_error_handler(ConfigError, _handle_config_error)
