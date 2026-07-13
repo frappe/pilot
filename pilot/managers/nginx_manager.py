@@ -145,13 +145,16 @@ class NginxManager:
     def _render_firewall(self) -> str:
         """Per-vhost IP allow/block list (ngx_http_access_module, first-match-wins).
 
-        Active rules are emitted in order, then a terminal ``deny all;`` only when
-        the default policy is deny (allowlist mode); default allow needs no
-        terminal line. Empty when the firewall is disabled — nginx serves all."""
+        Trusted proxies are allowed first so the firewall can never block them: a
+        request without X-Forwarded-For leaves $remote_addr as the proxy IP, which an
+        allowlist (or a stray deny rule) would otherwise reject. Then the configured
+        rules run against $remote_addr — the real client IP behind a proxy. A terminal
+        ``deny all;`` follows only in allowlist mode. Empty when the firewall is off."""
         firewall = self.bench.config.firewall
         if not firewall.enabled:
             return ""
-        lines = [f"    {rule.action} {rule.ip};\n" for rule in firewall.rules]
+        lines = [f"    allow {ip};\n" for ip in self._proxy_servers]
+        lines += [f"    {rule.action} {rule.ip};\n" for rule in firewall.rules]
         if firewall.default == "deny":
             lines.append("    deny all;\n")
         return "".join(lines) + "\n" if lines else ""

@@ -462,6 +462,18 @@ def test_firewall_allowlist_emits_allow_then_deny_all(tmp_path: Path) -> None:
     assert out.index("allow 203.0.113.4;") < out.index("deny all;")
 
 
+def test_firewall_never_blocks_trusted_proxy(tmp_path: Path) -> None:
+    # Even an allowlist and an explicit deny on the proxy IP must not block it:
+    # allow wins as access rules are first-match.
+    rules = [{"ip": "203.0.113.5", "action": "deny"}]
+    bench = _make_bench(tmp_path, _firewall_data(True, "deny", rules))
+    manager = NginxManager(bench)
+    manager._proxy_servers_cache = ["203.0.113.5"]
+    out = manager._render_firewall()
+    assert out.index("allow 203.0.113.5;") < out.index("deny 203.0.113.5;")
+    assert out.index("allow 203.0.113.5;") < out.index("deny all;")
+
+
 def test_firewall_appears_in_site_and_admin_blocks(tmp_path: Path) -> None:
     data = _firewall_data(True, "allow", [{"ip": "203.0.113.4", "action": "deny"}])
     data["admin"] = {"domain": "admin.example.com"}
