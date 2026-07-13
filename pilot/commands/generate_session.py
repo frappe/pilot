@@ -75,19 +75,6 @@ def verify_token(token: str, secret: str) -> bool:
     return decode_token(token, secret) is not None
 
 
-def decode_session_token(token: str, config) -> dict | None:
-    """Validate a session token against the local HS256 secret and, failing
-    that, the trusted remote JWKS keys. Returns the token's claims or None."""
-    claims = decode_token(token, config.admin.jwt_secret)
-    if claims is not None:
-        return claims
-    if config.admin.jwks_url:
-        from pilot.commands.jwks import verify_jwks_token
-
-        return verify_jwks_token(token, config.admin.jwks_url)
-    return None
-
-
 def has_scope(claims: dict | None, site: str) -> bool:
     if not claims:
         return False

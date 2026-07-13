@@ -412,7 +412,7 @@ print(' '.join(deps))
 " 2>/dev/null)
     fi
     if [ -z "$ADMIN_DEPS" ]; then
-        ADMIN_DEPS="flask>=3.0 psutil>=5.9 pymysql>=1.1 gunicorn>=21.2"
+        ADMIN_DEPS="flask>=3.0 psutil>=5.9 pymysql>=1.1 gunicorn>=21.2 pyjwt[crypto]>=2.8"
     fi
     # shellcheck disable=SC2086 # ADMIN_DEPS is a space-separated list
     uv pip install --python "$ADMIN_VENV/bin/python" --quiet $ADMIN_DEPS

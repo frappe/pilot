@@ -104,7 +104,7 @@ def create_app(bench_root: Path) -> Flask:
         return None
 
     def _is_authenticated(config: BenchConfig) -> bool:
-        from pilot.commands.generate_session import decode_session_token
+        from .auth import decode_session_token
 
         token = _extract_token()
         if not token:
@@ -188,7 +188,8 @@ def create_app(bench_root: Path) -> Flask:
             return jsonify({"ok": False, "error": str(exc)}), 503
         if not config.admin.password:
             return jsonify({"ok": False, "error": "No admin password configured in bench.toml"}), 503
-        from pilot.commands.generate_session import decode_session_token, ensure_jwt_secret, issue_token
+        from .auth import decode_session_token
+        from pilot.commands.generate_session import ensure_jwt_secret, issue_token
 
         data = request.get_json(silent=True) or {}
         sid = data.get("sid")
