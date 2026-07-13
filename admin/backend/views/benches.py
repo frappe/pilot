@@ -37,7 +37,7 @@ def guard_bench_management():
     try:
         config = BenchTomlStore.for_bench(bench_root).read_raw()
     except Exception:
-        return None
+        return jsonify({"error": "Bench management is disabled on this server."}), 403
     if not config.get("admin", {}).get("allow_bench_management", True):
         return jsonify({"error": "Bench management is disabled on this server."}), 403
 
