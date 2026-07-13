@@ -97,11 +97,14 @@ class NewCommand(Command):
         sibling_email = self._sibling_letsencrypt_email()
         if sibling_email:
             settings["letsencrypt_email"] = sibling_email
-        # The remote JWKS issuer is server-wide too: carry it forward so the
-        # control plane can authenticate to a freshly created bench right away.
-        sibling_jwks_url = self._sibling_admin_jwks_url()
-        if sibling_jwks_url:
-            settings["admin_jwks_url"] = sibling_jwks_url
+        # The remote JWKS issuer is server-wide too: carry its URL and audience
+        # forward so the control plane can authenticate to a freshly created
+        # bench right away.
+        sibling_admin = self._sibling_jwks_admin()
+        if sibling_admin:
+            settings["admin_jwks_url"] = sibling_admin.jwks_url
+            if sibling_admin.jwks_audience:
+                settings["admin_jwks_audience"] = sibling_admin.jwks_audience
         # MariaDB benches get their own instance with an isolated socket/datadir;
         # mariadb.port is offset automatically via _PORT_FIELDS. Linux uses a
         # per-bench instance (systemd mariadb@<name>, or a generated OpenRC
@@ -132,14 +135,13 @@ class NewCommand(Command):
                 return email
         return ""
 
-    def _sibling_admin_jwks_url(self) -> str:
-        """The remote JWKS endpoint from any sibling bench that has one, so a
-        new bench trusts the same issuer without reconfiguring it."""
+    def _sibling_jwks_admin(self):
+        """The admin config of the first sibling that trusts a remote JWKS
+        issuer, so a new bench inherits the same jwks_url and audience."""
         for _, config in iter_sibling_benches(self.target_directory):
-            jwks_url = getattr(config.admin, "jwks_url", "")
-            if jwks_url:
-                return jwks_url
-        return ""
+            if getattr(config.admin, "jwks_url", ""):
+                return config.admin
+        return None
 
     def _sibling_admin_tls(self) -> bool:
         """Carry forward the server-wide TLS choice from a sibling bench; default

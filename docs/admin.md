@@ -604,7 +604,7 @@ The signed JWT must use an **asymmetric** algorithm and carry an expiry:
 - **Header:** e.g. `{"alg": "RS256", "typ": "JWT", "kid": "2026-07-rsa-1"}`. Accepted `alg` values: `RS256/384/512`, `PS256/384/512`, `ES256/384/512`, `EdDSA`. Symmetric `HS*` and `none` are rejected, so a published public key can never be replayed as an HMAC secret.
 - **Payload:** a numeric `exp` (Unix seconds) is **required** and enforced. Claims: `scope` (`"bench"` default, or `"site"` with a `site` claim to confine it); `jti` (**required** for `?sid=` login — makes it single-use); `aud` (**required** when `admin.jwks_audience` is set — see below).
 
-By default only the signature and `exp` are verified. To bind tokens to a specific bench — important when several benches share one issuer, since a new bench inherits the sibling's `jwks_url` — set `admin.jwks_audience` and have the issuer put that value in the token's `aud` claim. A token whose `aud` doesn't match (or is absent) is then rejected. `jwks_audience` is **not** inherited by sibling benches, so give each bench its own value.
+By default only the signature and `exp` are verified. To require an audience, set `admin.jwks_audience` and have the issuer put that value in the token's `aud` claim; a token whose `aud` doesn't match (or is absent) is then rejected. Both `jwks_url` and `jwks_audience` are inherited from a sibling when a new bench is created, so the whole fleet trusts the same control plane out of the box. Note that a shared audience binds tokens to the control plane, not to an individual bench — if you need per-bench isolation, give each bench a distinct `jwks_audience`.
 
 ### Operational notes
 

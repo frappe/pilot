@@ -42,6 +42,7 @@ FLAT_KEYS = {
     "admin_domain": "admin.domain",
     "admin_tls": "admin.tls",
     "admin_jwks_url": "admin.jwks_url",
+    "admin_jwks_audience": "admin.jwks_audience",
     "admin_allow_bench_management": "admin.allow_bench_management",
     "letsencrypt_email": "letsencrypt.email",
     "production_process_manager": "production.process_manager",

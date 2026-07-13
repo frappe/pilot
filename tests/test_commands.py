@@ -114,9 +114,9 @@ def test_new_command_second_bench_gets_next_offset(tmp_path: Path, monkeypatch: 
     assert data["admin"]["port"] == 7001
 
 
-def test_new_command_inherits_sibling_jwks_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The remote JWKS issuer is server-wide, so a new bench carries it forward
-    from a sibling that already trusts one."""
+def test_new_command_inherits_sibling_jwks_url_and_audience(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The remote JWKS issuer is server-wide, so a new bench carries both the
+    URL and the audience forward from a sibling that already trusts one."""
     from pilot.commands.new import NewCommand
     from pilot.config.toml_store import BenchTomlStore
 
@@ -126,12 +126,16 @@ def test_new_command_inherits_sibling_jwks_url(tmp_path: Path, monkeypatch: pyte
     NewCommand(benches_dir / "first", "first").run()
     store = BenchTomlStore.for_bench(benches_dir / "first")
     data = store.read_raw()
-    data.setdefault("admin", {})["jwks_url"] = "https://issuer.example.com/jwks.json"
+    admin = data.setdefault("admin", {})
+    admin["jwks_url"] = "https://issuer.example.com/jwks.json"
+    admin["jwks_audience"] = "bench-fleet"
     store.write_raw(data)
 
     NewCommand(benches_dir / "second", "second").run()
     with open(benches_dir / "second" / "bench.toml", "rb") as f:
-        assert tomllib.load(f)["admin"]["jwks_url"] == "https://issuer.example.com/jwks.json"
+        inherited = tomllib.load(f)["admin"]
+    assert inherited["jwks_url"] == "https://issuer.example.com/jwks.json"
+    assert inherited["jwks_audience"] == "bench-fleet"
 
 
 def test_new_command_first_bench_has_no_jwks_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
