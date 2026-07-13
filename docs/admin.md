@@ -341,6 +341,8 @@ Backed by `DomainRouteProvider` (see [docs/production.md](production.md#custom-d
 
 In the Create Site dialog, the Site Name field is a plain text box when no wildcard domains are configured; with one, it's a prefix field plus a fixed suffix label; with several, a prefix field plus a dropdown to pick the suffix. The New Bench dialog's Admin domain field works the same way.
 
+Setting `admin.allow_bench_management = false` in `bench.toml` hides the bench switcher and New Bench dialog and makes every `/api/benches/*` route return 403. Benches are then managed only from the CLI.
+
 ### `GET /processes` — Process status
 
 `ProcessReader.read_all()`. Shows name, status, PID, uptime, link to its log file.

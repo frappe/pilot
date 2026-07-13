@@ -29,6 +29,20 @@ _ADMIN_DOMAIN_RE = re.compile(
     r"^(?=.{1,253}$)[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
 )
 
+@benches_bp.before_request
+def guard_bench_management():
+    """The multi-bench UI and its API are gated by admin.allow_bench_management.
+    When off, every route here 403s — the CLI is the way to manage benches then."""
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    try:
+        config = BenchTomlStore.for_bench(bench_root).read_raw()
+    except Exception:
+        return None
+    if not config.get("admin", {}).get("allow_bench_management", True):
+        return jsonify({"error": "Bench management is disabled on this server."}), 403
+
+
+
 
 @benches_bp.route("/")
 def get_all():

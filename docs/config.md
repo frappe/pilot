@@ -94,6 +94,7 @@ webroot_path = "/var/www/letsencrypt"
 port = 8002             # port the admin UI listens on
 password = "secret"     # required — admin refuses to start without this
 domain = ""             # optional — serve admin over HTTPS via nginx (production)
+allow_bench_management = true  # set false to hide the bench switcher/manager UI and disable /api/benches/*
 ```
 
 ---
@@ -243,6 +244,7 @@ Omit this section entirely for development benches. The section is only read by 
 | `password` | string | yes | — | Password for the admin UI. The process refuses all requests with HTTP 503 if this is empty. |
 | `domain` | string | no | `""` | Hostname to serve the admin UI in production (e.g. `admin.example.com`). When set, `bench setup production` generates an nginx proxy block (and obtains a certificate if `tls = true`). |
 | `tls` | bool | no | `false` | Server-wide HTTPS opt-in. When `true`, the admin and SSL-enabled sites are served over HTTPS with Let's Encrypt; HTTP is redirected. When `false`, everything is served over plain HTTP (a central proxy may terminate TLS upstream). |
+| `allow_bench_management` | bool | no | `true` | When `false`, hides the multi-bench UI (bench switcher and New Bench dialog) and returns 403 for every `/api/benches/*` route. The CLI (`bench new`, `bench drop`, …) is unaffected. `bench.toml`-only, no UI toggle; intended for single-tenant/cloud deploys. |
 
 ---
 

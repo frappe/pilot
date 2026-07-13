@@ -209,6 +209,7 @@ class BenchConfig:
             jwt_secret=data.get("jwt_secret", ""),
             domain=data.get("domain", ""),
             tls=data.get("tls", False),
+            allow_bench_management=data.get("allow_bench_management", True),
         )
 
     @staticmethod

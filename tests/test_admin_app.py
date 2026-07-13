@@ -22,11 +22,11 @@ def _write_raw_bench_toml(bench_dir: Path, name: str, admin_port: int) -> None:
     (bench_dir / "bench.toml").write_text(f'[bench]\nname = "{name}"\n\n[admin]\nport = {admin_port}\n')
 
 
-def _client(bench_root: Path, password: str = "secret"):
+def _client(bench_root: Path, password: str = "secret", **extra_settings):
     from admin.backend.app import create_app
     from pilot.commands.generate_session import ensure_jwt_secret, issue_token
 
-    _write_bench_toml(bench_root, bench_root.name, admin_enabled=True, admin_password=password)
+    _write_bench_toml(bench_root, bench_root.name, admin_enabled=True, admin_password=password, **extra_settings)
     secret = ensure_jwt_secret(bench_root / "bench.toml")
     app = create_app(bench_root)
     app.config["TESTING"] = True
@@ -223,6 +223,35 @@ def test_api_benches_new_routes_wizard_at_domain_when_production(tmp_path: Path)
     # actually finish — a half-built deployment must never look "done" to the switcher.
     assert "enabled = false" in fresh_toml.split("[production]")[1].split("[")[0]
     assert 'process_manager = "systemd"' in fresh_toml.split("[production]")[1].split("[")[0]
+
+
+def test_api_benches_new_rejects_when_management_disabled(tmp_path: Path) -> None:
+    benches_dir = tmp_path / "benches"
+    client = _client(benches_dir / "current", admin_allow_bench_management=False)
+
+    resp = client.post("/api/benches/new", json=_new_payload("fresh"))
+
+    assert resp.status_code == 403
+    assert not (benches_dir / "fresh").exists()
+
+
+def test_api_benches_list_rejects_when_management_disabled(tmp_path: Path) -> None:
+    benches_dir = tmp_path / "benches"
+    client = _client(benches_dir / "current", admin_allow_bench_management=False)
+
+    resp = client.get("/api/benches/")
+
+    assert resp.status_code == 403
+
+
+def test_api_benches_drop_rejects_when_management_disabled(tmp_path: Path) -> None:
+    benches_dir = tmp_path / "benches"
+    client = _client(benches_dir / "current", admin_allow_bench_management=False)
+    _write_bench_toml(benches_dir / "other", "other", admin_port=8100)
+
+    resp = client.delete("/api/benches/other")
+
+    assert resp.status_code == 403
 
 
 def test_api_benches_new_rejects_invalid_name(tmp_path: Path) -> None:

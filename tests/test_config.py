@@ -510,6 +510,20 @@ def test_admin_tls_roundtrip() -> None:
     assert "tls = false" in bench_config_to_toml(config)
 
 
+def test_admin_allow_bench_management_defaults_to_true() -> None:
+    config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
+    assert config.admin.allow_bench_management is True
+    assert "allow_bench_management = true" in bench_config_to_toml(config)
+
+
+def test_admin_allow_bench_management_can_be_disabled() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["admin"] = {"domain": "admin.example.com", "allow_bench_management": False}
+    config = load_from_dict(data)
+    assert config.admin.allow_bench_management is False
+    assert "allow_bench_management = false" in bench_config_to_toml(config)
+
+
 def test_admin_internal_port_is_port_plus_one() -> None:
     from pilot.config.admin_config import AdminConfig
 

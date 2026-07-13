@@ -107,6 +107,7 @@ def bench_config_to_toml(config: BenchConfig) -> str:
         parts.append(f'jwt_secret = "{a.jwt_secret}"')
     parts.append(f'domain = "{a.domain}"')
     parts.append(f"tls = {'true' if a.tls else 'false'}")
+    parts.append(f"allow_bench_management = {'true' if a.allow_bench_management else 'false'}")
     parts.append("")
 
     c = config.central

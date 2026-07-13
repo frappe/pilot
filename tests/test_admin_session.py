@@ -155,6 +155,27 @@ def test_status_reports_postgres_engine(tmp_path: Path) -> None:
     assert app.test_client().get("/api/status").get_json()["db_type"] == "postgres"
 
 
+def test_status_reports_allow_bench_management_default_true(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    assert client.get("/api/status").get_json()["allow_bench_management"] is True
+
+
+def test_status_reports_allow_bench_management_when_disabled(tmp_path: Path) -> None:
+    from admin.backend.app import create_app
+    from pilot.config.toml_writer import bench_config_to_toml
+
+    bench_root = tmp_path / "benches" / "current"
+    _initialized_bench(bench_root, "secret", "k3y")
+    toml_path = bench_root / "bench.toml"
+    config = BenchConfig.from_file(toml_path)
+    config.admin.allow_bench_management = False
+    toml_path.write_text(bench_config_to_toml(config))
+
+    app = create_app(bench_root)
+    app.config["TESTING"] = True
+    assert app.test_client().get("/api/status").get_json()["allow_bench_management"] is False
+
+
 def test_login_with_sid_sets_httponly_cookie(tmp_path: Path) -> None:
     client = _client(tmp_path)
     resp = client.post("/api/login", json={"sid": issue_login_token("k3y")})

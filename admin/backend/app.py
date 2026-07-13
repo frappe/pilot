@@ -175,6 +175,7 @@ def create_app(bench_root: Path) -> Flask:
             "db_type": config.db_type,
             "production": config.production.enabled,
             "native_process_manager": native_process_manager(),
+            "allow_bench_management": config.admin.allow_bench_management,
             "authenticated": _is_authenticated(config),
         })
 
