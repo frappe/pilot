@@ -59,6 +59,8 @@ export function useSetup() {
   const deploymentMode = ref('dedicated')
   const dbUser = ref('')
   const dbPassword = ref('')
+  const mariadbBufferPoolSizeMb = ref(0)
+  const mariadbMemory = ref({ min_mb: 1, max_mb: 1, recommended_mb: 1 })
   const appRepo = ref('https://github.com/frappe/frappe')
   const appBranch = ref('develop')
   const volumeEnabled = ref(false)
@@ -105,6 +107,11 @@ export function useSetup() {
     return postgresWillInstall.value
       ? 'PostgreSQL will be installed and its superuser password set to this value.'
       : undefined
+  })
+  const showMariadbMemory = computed(() => dbType.value === 'mariadb')
+  const mariadbMemoryDescription = computed(() => {
+    const memory = mariadbMemory.value || {}
+    return `Recommended ${memory.recommended_mb || 0} MB · available ${memory.max_mb || 0} MB`
   })
 
   const branchOptions = computed(() => {
@@ -169,6 +176,10 @@ export function useSetup() {
 
       if (config.admin_password) adminPassword.value = config.admin_password
       if (config.db_type) dbType.value = config.db_type
+      if (config.mariadb_memory) mariadbMemory.value = config.mariadb_memory
+      if (config.mariadb_innodb_buffer_pool_size_mb) {
+        mariadbBufferPoolSizeMb.value = config.mariadb_innodb_buffer_pool_size_mb
+      }
       if (config.app_repo) appRepo.value = config.app_repo
       if (config.app_branch) appBranch.value = config.app_branch
       if (config.volume_enabled !== undefined) volumeEnabled.value = config.volume_enabled
@@ -259,6 +270,11 @@ export function useSetup() {
 
   async function validateMariadbStep() {
     if (!dbPassword.value) return 'MariaDB password is required'
+    const bufferPool = Number(mariadbBufferPoolSizeMb.value)
+    const memory = mariadbMemory.value || {}
+    if (!Number.isInteger(bufferPool)) return 'MariaDB buffer pool size must be a whole number of MB'
+    if (bufferPool < memory.min_mb) return `MariaDB buffer pool size must be at least ${memory.min_mb} MB`
+    if (bufferPool > memory.max_mb) return `MariaDB buffer pool size cannot exceed ${memory.max_mb} MB`
     const dedicated = isLinux.value && deploymentMode.value === 'dedicated'
     isSubmitting.value = true
     try {
@@ -359,6 +375,7 @@ export function useSetup() {
       ...base,
       mariadb_password: dbPassword.value,
       mariadb_admin_user: resolvedDbUser.value,
+      mariadb_innodb_buffer_pool_size_mb: Number(mariadbBufferPoolSizeMb.value),
       postgres_password: '',
       postgres_admin_user: 'postgres',
     }
@@ -440,6 +457,9 @@ export function useSetup() {
     deploymentMode,
     dbUser,
     dbPassword,
+    mariadbBufferPoolSizeMb,
+    showMariadbMemory,
+    mariadbMemoryDescription,
     appRepo,
     appBranch,
     volumeEnabled,

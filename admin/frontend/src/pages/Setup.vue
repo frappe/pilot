@@ -42,6 +42,11 @@
             <p v-show="rootPasswordDescription" class="mt-1.5 text-ink-gray-6 text-p-sm">{{ rootPasswordDescription }}
             </p>
           </div>
+          <div v-show="showMariadbMemory">
+            <TextInput label="InnoDB buffer pool size (MB)" v-model="mariadbBufferPoolSizeMb" type="number" min="1"
+              @keydown.enter="goToNextStep" />
+            <p class="mt-1.5 text-ink-gray-6 text-p-sm">{{ mariadbMemoryDescription }}</p>
+          </div>
           <ErrorMessage v-show="errorMessage" :message="errorMessage" />
         </div>
 
@@ -181,6 +186,9 @@ const {
   deploymentMode,
   dbUser,
   dbPassword,
+  mariadbBufferPoolSizeMb,
+  showMariadbMemory,
+  mariadbMemoryDescription,
   appRepo,
   appBranch,
   volumeEnabled,

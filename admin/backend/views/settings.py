@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import subprocess
 from pathlib import Path
 
@@ -11,6 +12,8 @@ from pilot.config.s3_config import S3Config
 from pilot.config.toml_store import BenchTomlStore
 from pilot.config.worker_config import WorkerGroup
 from pilot.core.bench import Bench
+from pilot.core.mariadb_memory import memory_plan_for_bench, validate_innodb_buffer_pool_size
+from pilot.managers.mariadb_manager import MariaDBManager
 from pilot.managers.redis_manager import RedisManager
 from pilot.platform import is_linux, native_process_manager
 
@@ -69,6 +72,18 @@ def _s3_provider_options() -> list[dict]:
     ]
 
 
+def _mariadb_memory_payload(bench_root: Path, config: BenchConfig) -> dict:
+    plan = memory_plan_for_bench(bench_root)
+    return {
+        "innodb_buffer_pool_size_mb": config.mariadb.innodb_buffer_pool_size_mb or plan.recommended_mb,
+        "total_mb": plan.total_mb,
+        "ram_for_mariadb_mb": plan.ram_for_mariadb_mb,
+        "min_mb": plan.min_mb,
+        "max_mb": plan.max_mb,
+        "recommended_mb": plan.recommended_mb,
+    }
+
+
 def _restart_trigger_values(config: BenchConfig) -> dict:
     return {
         "bench": {"python": config.python_version, "http_port": config.http_port, "socketio_port": config.socketio_port},
@@ -124,6 +139,8 @@ class ConfigPatcher:
         mariadb_config.port = int(mariadb.get("port", mariadb_config.port))
         mariadb_config.admin_user = str(mariadb.get("admin_user", mariadb_config.admin_user))
         mariadb_config.socket_path = str(mariadb.get("socket_path", mariadb_config.socket_path))
+        if "innodb_buffer_pool_size_mb" in mariadb:
+            mariadb_config.innodb_buffer_pool_size_mb = int(mariadb["innodb_buffer_pool_size_mb"])
 
     def _apply_postgres(self) -> None:
         postgres = self.data.get("postgres") or {}
@@ -370,7 +387,7 @@ def _do_restart(bench_root: Path, config: BenchConfig) -> tuple[bool, str | None
 # ── Response ──────────────────────────────────────────────────────────────────
 
 
-def _build_settings_response(config: BenchConfig) -> dict:
+def _build_settings_response(bench_root: Path, config: BenchConfig) -> dict:
     volume = config.volume
     return {
         "is_linux": is_linux(),
@@ -389,6 +406,7 @@ def _build_settings_response(config: BenchConfig) -> dict:
             "admin_user": config.mariadb.admin_user,
             "socket_path": config.mariadb.socket_path,
             "version": config.mariadb.version or "",
+            "memory": _mariadb_memory_payload(bench_root, config),
         },
         "postgres": {
             "host": config.postgres.host,
@@ -431,7 +449,7 @@ def get_settings():
         config = BenchTomlStore.for_bench(bench_root).read()
     except Exception as error:
         return jsonify({"error": str(error)}), 500
-    return jsonify(_build_settings_response(config))
+    return jsonify(_build_settings_response(bench_root, config))
 
 
 @settings_bp.route("/my-ip")
@@ -449,16 +467,21 @@ def update_settings():
     data = request.get_json(silent=True) or {}
     store = BenchTomlStore.for_bench(bench_root)
     try:
-        config = store.read()
+        old_config = store.read()
+        config = copy.deepcopy(old_config)
     except Exception as error:
         return jsonify({"ok": False, "error": str(error)}), 500
 
-    old_restart = _restart_trigger_values(config)
-    old_firewall = _firewall_payload(config)
-    old_s3_config = _s3_payload(config)
+    old_restart = _restart_trigger_values(old_config)
+    old_firewall = _firewall_payload(old_config)
+    old_s3_config = _s3_payload(old_config)
+    old_innodb_buffer_pool_size_mb = old_config.mariadb.innodb_buffer_pool_size_mb
 
     if error := ConfigPatcher(config, data).apply():
         return jsonify({"ok": False, "error": error}), 400
+    if "mariadb" in data and "innodb_buffer_pool_size_mb" in (data.get("mariadb") or {}):
+        if error := validate_innodb_buffer_pool_size(bench_root, config.mariadb.innodb_buffer_pool_size_mb):
+            return jsonify({"ok": False, "error": error}), 400
 
     # Verify the bucket is reachable before anything is persisted, so a
     # rejected S3 config leaves the stored config (and synced credentials)
@@ -471,9 +494,25 @@ def update_settings():
         except S3IntegrationError as error:
             return jsonify({"ok": False, "error": str(error)}), 400
 
+    mariadb_restarted = False
+    if config.mariadb.innodb_buffer_pool_size_mb != old_innodb_buffer_pool_size_mb:
+        try:
+            MariaDBManager(config.mariadb).apply_runtime_config(bench_root / "config")
+            mariadb_restarted = True
+        except Exception as error:
+            return jsonify({"ok": False, "error": f"Failed to apply MariaDB settings: {error}"}), 500
+
     try:
         store.write(config)
     except Exception as error:
+        if mariadb_restarted:
+            try:
+                MariaDBManager(old_config.mariadb).apply_runtime_config(bench_root / "config")
+            except Exception as rollback_error:
+                return jsonify({
+                    "ok": False,
+                    "error": f"Failed to write config: {error}; rollback also failed: {rollback_error}",
+                }), 500
         return jsonify({"ok": False, "error": f"Failed to write config: {error}"}), 500
 
     restarted, restart_error = False, None
@@ -503,6 +542,8 @@ def update_settings():
             "ok": True,
             "restarted": restarted,
             "restart_error": restart_error,
+            "mariadb_restarted": mariadb_restarted,
+            "mariadb_restart_error": None,
             "nginx_error": nginx_error,
         }
     )

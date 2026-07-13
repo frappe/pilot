@@ -32,6 +32,7 @@
               @click="workersRef?.addGroup()">Add</Button>
           </div>
           <Workers v-if="currentSection === 'workers'" ref="workersRef" />
+          <MariaDB v-else-if="currentSection === 'mariadb'" />
           <Firewall v-else-if="currentSection === 'firewall'" />
           <Git v-else-if="currentSection === 'github'" />
           <S3Bucket v-else-if="currentSection === 's3-bucket'" />
@@ -49,6 +50,7 @@ import { Dialog, Button } from 'frappe-ui'
 import Firewall from '@/components/settings/Firewall.vue'
 import Git from '@/components/settings/Git.vue'
 import S3Bucket from '@/components/settings/S3Bucket.vue'
+import MariaDB from '@/components/settings/MariaDB.vue'
 import Snapshots from '@/components/settings/Snapshots.vue'
 import SystemInfo from '@/components/settings/SystemInfo.vue'
 import Workers from '@/components/settings/Workers.vue'
@@ -64,6 +66,7 @@ const sections = computed(() => [
   { id: 'github', label: 'Git Settings', icon: 'lucide-git-branch' },
   { id: 's3-bucket', label: 'S3 Bucket', icon: 'lucide-archive' },
   { id: 'workers', label: 'Workers', icon: 'lucide-server-cog' },
+  { id: 'mariadb', label: 'MariaDB', icon: 'lucide-database' },
   ...(zfsEnabled.value ? [{ id: 'snapshots', label: 'Snapshots', icon: 'lucide-camera' }] : []),
   { id: 'firewall', label: 'Firewall', icon: 'lucide-shield' },
   { id: 'system-info', label: 'System Info', icon: 'lucide-info' },

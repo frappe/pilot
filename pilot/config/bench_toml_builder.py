@@ -25,6 +25,7 @@ FLAT_KEYS = {
     "mariadb_instance": "mariadb.instance",
     "mariadb_socket_path": "mariadb.socket_path",
     "mariadb_data_dir": "mariadb.data_dir",
+    "mariadb_innodb_buffer_pool_size_mb": "mariadb.innodb_buffer_pool_size_mb",
     # NB: mariadb.port is deliberately NOT a flat key. Like the other ports
     # (http/admin/redis) it is offset-managed via _PORT_FIELDS. Exposing it as a
     # flat key made read_settings() round-trip the already-offset value, which

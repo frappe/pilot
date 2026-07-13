@@ -43,6 +43,8 @@ def bench_config_to_toml(config: BenchConfig) -> str:
         parts.append(f'instance = "{m.instance}"')
     if m.data_dir:
         parts.append(f'data_dir = "{m.data_dir}"')
+    if m.innodb_buffer_pool_size_mb:
+        parts.append(f"innodb_buffer_pool_size_mb = {m.innodb_buffer_pool_size_mb}")
     parts.append("")
 
     pg = config.postgres
