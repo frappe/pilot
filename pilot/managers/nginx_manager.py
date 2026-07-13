@@ -111,8 +111,8 @@ class NginxManager:
         return self._proxy_servers_cache
 
     def _render_acme_location(self) -> str:
-        """ACME HTTP-01 challenge location. `allow all;` overrides any server-level
-        proxy-only deny so certbot's validation reaches the challenge files."""
+        """ACME HTTP-01 challenge location. `allow all;` overrides any firewall
+        deny so certbot's validation reaches the challenge files."""
         webroot = self.bench.config.letsencrypt.webroot_path
         return (
             f"    location /.well-known/acme-challenge/ {{\n"
@@ -123,30 +123,47 @@ class NginxManager:
         )
 
     def _render_proxy_trust(self) -> str:
-        """When edge proxies front this bench, trust only them: accept connections
-        from those IPs alone, and read the real client IP from the X-Forwarded-For
-        they set. Empty (no restriction) when the bench is directly exposed."""
+        """When edge proxies front this bench, accept TCP connections from those IPs
+        alone and read the real client IP from the X-Forwarded-For they set. Empty
+        (no restriction, XFF untrusted) when the bench is directly exposed.
+
+        The connection filter tests $realip_remote_addr — the actual TCP peer, which
+        real_ip preserves — not $remote_addr, which real_ip has already rewritten to
+        the (never-a-proxy) client IP by the access phase. Client-IP filtering stays
+        the firewall's job (_render_firewall), which sees that rewritten client IP.
+
+        The gate runs in the rewrite phase, before location matching, so it exempts
+        the ACME challenge path explicitly — certbot must still reach it on a direct
+        hit (e.g. during setup, before the proxy is in front). The exemption tests
+        $request_uri, not $uri, so it survives the internal redirect to the error
+        page (try_files =404) that a missing challenge file triggers."""
         proxies = self._proxy_servers
         if not proxies:
             return ""
+        peers = "|".join(re.escape(ip) for ip in proxies)
         return (
             "".join(f"    set_real_ip_from   {ip};\n" for ip in proxies)
             + "    real_ip_header     X-Forwarded-For;\n"
             + "    real_ip_recursive  on;\n"
-            + "".join(f"    allow              {ip};\n" for ip in proxies)
-            + "    deny               all;\n\n"
+            + "    set $bench_from_proxy 0;\n"
+            + f'    if ($realip_remote_addr ~ "^({peers})$") {{ set $bench_from_proxy 1; }}\n'
+            + '    if ($request_uri ~ "^/\\.well-known/acme-challenge/") { set $bench_from_proxy 1; }\n'
+            + "    if ($bench_from_proxy = 0) { return 403; }\n\n"
         )
 
     def _render_firewall(self) -> str:
         """Per-vhost IP allow/block list (ngx_http_access_module, first-match-wins).
 
-        Active rules are emitted in order, then a terminal ``deny all;`` only when
-        the default policy is deny (allowlist mode); default allow needs no
-        terminal line. Empty when the firewall is disabled — nginx serves all."""
+        Trusted proxies are allowed first so the firewall can never block them: a
+        request without X-Forwarded-For leaves $remote_addr as the proxy IP, which an
+        allowlist (or a stray deny rule) would otherwise reject. Then the configured
+        rules run against $remote_addr — the real client IP behind a proxy. A terminal
+        ``deny all;`` follows only in allowlist mode. Empty when the firewall is off."""
         firewall = self.bench.config.firewall
         if not firewall.enabled:
             return ""
-        lines = [f"    {rule.action} {rule.ip};\n" for rule in firewall.rules]
+        lines = [f"    allow {ip};\n" for ip in self._proxy_servers]
+        lines += [f"    {rule.action} {rule.ip};\n" for rule in firewall.rules]
         if firewall.default == "deny":
             lines.append("    deny all;\n")
         return "".join(lines) + "\n" if lines else ""
