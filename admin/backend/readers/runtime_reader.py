@@ -16,7 +16,7 @@ class RuntimeVersionReader:
 
     Anything not installed (or not detectable) is left out of the result
     rather than reported as an error, since not every host runs every
-    service (e.g. postgres or zfs may be absent)."""
+    service (e.g. postgres may be absent)."""
 
     def __init__(self, bench_root: Path, config: BenchConfig) -> None:
         self._bench_root = bench_root
@@ -29,7 +29,6 @@ class RuntimeVersionReader:
             "MariaDB": self._flag_version("mariadbd", ["--version"], r"Ver ([\d.]+)") or self._config.mariadb.version or "",
             "PostgreSQL": self._flag_version("psql", ["--version"], r"(\d+\.\d+)"),
             "Redis": RedisManager.installed_version() or self._config.redis.version or "",
-            "ZFS": self._flag_version("zfs", ["--version"], r"zfs-([\d.]+)"),
             "Nginx": self._nginx_version(),
             "Frappe": self._frappe_version(),
             "Pilot": self._bench_admin_commit(),

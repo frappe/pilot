@@ -39,12 +39,10 @@ class MonitorHistoryReader:
 
     def _system(self, path: Path) -> dict:
         rows = self._read_window(path)
-        storage = self._latest_storage(rows)
-        pool = storage["zfs"]["pool"] if storage and storage["zfs"] else None
         return {
             "earliest": self._earliest(path),
-            "points": [self._system_point(when, metrics, pool) for when, metrics in rows],
-            "storage": storage,
+            "points": [self._system_point(when, metrics) for when, metrics in rows],
+            "storage": self._latest_storage(rows),
             "memory_total_mb": self._latest_memory_total(rows),
         }
 
@@ -56,9 +54,9 @@ class MonitorHistoryReader:
                 return total
         return None
 
-    def _system_point(self, when: datetime, metrics: dict, pool: str | None) -> dict:
+    def _system_point(self, when: datetime, metrics: dict) -> dict:
         storage = metrics.get("storage") or {}
-        disk, zfs = storage.get("disk"), storage.get("zfs")
+        disk = storage.get("disk")
         load = metrics["load_avg"]
         cpu = metrics.get("cpu_breakdown") or {}
         memory = metrics.get("memory") or {}
@@ -84,26 +82,19 @@ class MonitorHistoryReader:
             "Read": disk_io.get("read_bytes_per_sec"),
             "Write": disk_io.get("write_bytes_per_sec"),
         }
-        if pool:
-            point[pool] = zfs["percent"] if zfs else None
         return point
 
     @classmethod
     def _latest_storage(cls, rows: list) -> dict | None:
-        # `disk` is always recorded; `zfs` only when the bench is volume-backed.
         for _, metrics in reversed(rows):
             storage = metrics.get("storage")
             if storage and storage.get("disk"):
-                return {"disk": cls._slim(storage["disk"]), "zfs": cls._slim_zfs(storage.get("zfs"))}
+                return {"disk": cls._slim(storage["disk"])}
         return None
 
     @staticmethod
     def _slim(entry: dict) -> dict:
         return {"used_mb": entry.get("used_mb"), "total_mb": entry.get("total_mb"), "percent": entry.get("percent")}
-
-    @classmethod
-    def _slim_zfs(cls, zfs: dict | None) -> dict | None:
-        return {"pool": zfs.get("pool"), **cls._slim(zfs)} if zfs else None
 
     def _application(self, path: Path, bench_name: str) -> dict:
         rows = self._read_window(path)

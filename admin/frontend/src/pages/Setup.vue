@@ -49,25 +49,6 @@
         <div v-show="currentStep === 'customize'" class="flex flex-col gap-4">
           <Select label="Frappe branch" v-model="appBranch" :options="branchOptions" />
           <TextInput label="Frappe repository" v-model="appRepo" />
-          <Checkbox v-show="isLinux && deploymentMode === 'dedicated'" label="Use volumes (snapshots & backups)"
-            v-model="volumeEnabled" />
-          <ErrorMessage v-show="errorMessage" :message="errorMessage" />
-        </div>
-
-        <!-- Storage -->
-        <div v-show="currentStep === 'storage'" class="flex flex-col gap-4">
-          <Select label="Store data on" v-model="volumeBacking" :options="storageOptions" />
-          <Select v-show="volumeBacking === 'device' && showDeviceDropdown" label="Attached disk" v-model="volumeDevice"
-            :options="deviceOptions" />
-          <TextInput v-show="volumeBacking === 'device' && !showDeviceDropdown" label="Attached disk"
-            v-model="volumeDevice" placeholder="/dev/sdb" />
-          <div v-show="volumeBacking !== 'device'" class="space-y-1.5">
-            <div class="flex justify-between items-baseline">
-              <p class="text-ink-gray-7 text-p-sm-medium">Space to allocate</p>
-              <p class="text-ink-gray-5 text-p-sm">{{ imageSizeGiB }} GB of {{ freeGiB }} GB</p>
-            </div>
-            <Slider v-model="imageSliderModel" :min="imageSizeMinGiB" :max="imageSizeMaxGiB" :step="1" />
-          </div>
           <ErrorMessage v-show="errorMessage" :message="errorMessage" />
         </div>
 
@@ -151,10 +132,8 @@ import {
   Button,
   Select,
   TextInput,
-  Checkbox,
   FormLabel,
   Password,
-  Slider,
   ErrorMessage,
   FeatherIcon,
   LoadingText,
@@ -183,24 +162,13 @@ const {
   dbPassword,
   appRepo,
   appBranch,
-  volumeEnabled,
-  volumeBacking,
-  volumeDevice,
   showDeploymentMode,
   showRootUsername,
   rootUserPlaceholder,
   rootPasswordDescription,
   dbTypeOptions,
   deploymentOptions,
-  storageOptions,
   branchOptions,
-  deviceOptions,
-  showDeviceDropdown,
-  freeGiB,
-  imageSizeGiB,
-  imageSizeMinGiB,
-  imageSizeMaxGiB,
-  imageSliderModel,
   stepSequence,
   stepNumber,
   isConfiguring,

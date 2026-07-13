@@ -116,22 +116,6 @@ def bench_config_to_toml(config: BenchConfig) -> str:
         parts.append(f'auth_token = "{c.auth_token}"')
         parts.append("")
 
-    v = config.volume
-    parts.append("[volume]")
-    parts.append(f"enabled = {'true' if v.enabled else 'false'}")
-    if v.enabled:
-        parts.append(f'pool = "{v.pool}"')
-        parts.append(f'backing = "{v.backing}"')
-        if v.backing == "image":
-            parts.append("")
-            parts.append("[volume.image]")
-            parts.append(f'size = "{v.image.size}"')
-            parts.append(f'path = "{v.image_path}"')
-        elif v.backing == "device":
-            parts.append(f'device = "{v.device}"')
-        # backing = "auto" carries no device/image fields — resolved during bench init
-    parts.append("")
-
     fw = config.firewall
     if fw.enabled or fw.rules:
         parts.append("[firewall]")

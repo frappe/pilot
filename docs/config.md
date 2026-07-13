@@ -33,7 +33,7 @@ admin_user = "root"      # MariaDB user bench connects as for admin ops; change 
 # version = "11.8"       # optional — defaults to MariaDB 11.8 LTS (vendor repo on Linux)
 # instance = "my-bench"  # set by `bench new` on Linux — gives this bench its own mariadb@<instance>; clear for shared
 # socket_path = "/run/mysqld/mysqld-my-bench.sock"  # per-instance socket (auto-derived from instance name)
-# data_dir = "/var/lib/mysql-my-bench"              # per-instance datadir (auto-derived; used as bind-mount target with ZFS)
+# data_dir = "/var/lib/mysql-my-bench"              # per-instance datadir (auto-derived)
 
 # ── PostgreSQL (used when bench.db_type = "postgres"; installed by init) ──────
 # `bench new` generates the password. On systemd Linux a postgres bench gets its
@@ -94,12 +94,6 @@ webroot_path = "/var/www/letsencrypt"
 port = 8002             # port the admin UI listens on
 password = "secret"     # required — admin refuses to start without this
 domain = ""             # optional — serve admin over HTTPS via nginx (production)
-
-# ── ZFS Volume (Linux only, optional) ────────────────────────────────────────
-[volume]
-enabled = false         # set to true to activate ZFS volume management
-pool = "bench-pool"     # shared ZFS pool (created if absent, reused if present)
-device = "/dev/sdb"     # block device for the pool (ignored if pool already exists)
 ```
 
 ---
@@ -142,9 +136,9 @@ Declares the framework app (frappe) to clone during `bench init`. After init, ad
 | `version` | string | no | `11.8` | MariaDB version to install (e.g. `"11.8"`, `"11.4"`). On Linux, bench adds MariaDB's official APT repository pinned to this version and installs `mariadb-server` from it; on macOS it selects the `mariadb@<version>` Homebrew formula. Omit to install the default **11.8 LTS** series. |
 | `socket_path` | string | no | — | Unix socket to connect through. For a dedicated instance this is the per-instance socket (e.g. `/run/mysqld/mysqld-<instance>.sock`). |
 | `instance` | string | no | — | **Dedicated vs shared MariaDB.** When empty, the bench connects to the shared system MariaDB (`mariadb.service`, port 3306). When set, the bench gets its own MariaDB instance with an isolated datadir, socket, and port — a `mariadb@<instance>` systemd unit on most Linux, or a generated `mariadb-<instance>` OpenRC service on Alpine. `bench new` sets this to the bench name by default on Linux (both systemd and Alpine); the setup wizard lets you clear it to use the shared server instead. macOS always uses the shared server. |
-| `data_dir` | string | no | `/var/lib/mysql-<instance>` | Datadir for the dedicated instance — a **sibling** of `/var/lib/mysql`, never nested inside it. Must be an absolute path. When `[volume]` is enabled, the dataset's `mariadb/` subdir is bind-mounted here. Ignored in shared mode. |
+| `data_dir` | string | no | `/var/lib/mysql-<instance>` | Datadir for the dedicated instance — a **sibling** of `/var/lib/mysql`, never nested inside it. Must be an absolute path. Ignored in shared mode. |
 
-> **Dedicated vs shared.** On Linux, `bench new` defaults to a dedicated instance, which is required to use ZFS volumes and snapshots. Choose shared (clear `instance` in the setup wizard) to connect to the pre-existing system MariaDB — useful when you already manage MariaDB separately or don't need per-bench snapshots. See [Per-bench MariaDB instances](architecture.md#per-bench-mariadb-instances) for the mechanics.
+> **Dedicated vs shared.** On Linux, `bench new` defaults to a dedicated instance, giving the bench its own isolated MariaDB server. Choose shared (clear `instance` in the setup wizard) to connect to the pre-existing system MariaDB — useful when you already manage MariaDB separately. See [Per-bench MariaDB instances](architecture.md#per-bench-mariadb-instances) for the mechanics.
 
 ### `[postgres]`
 
@@ -250,19 +244,6 @@ Omit this section entirely for development benches. The section is only read by 
 | `domain` | string | no | `""` | Hostname to serve the admin UI in production (e.g. `admin.example.com`). When set, `bench setup production` generates an nginx proxy block (and obtains a certificate if `tls = true`). |
 | `tls` | bool | no | `false` | Server-wide HTTPS opt-in. When `true`, the admin and SSL-enabled sites are served over HTTPS with Let's Encrypt; HTTP is redirected. When `false`, everything is served over plain HTTP (a central proxy may terminate TLS upstream). |
 
-### `[volume]`
-
-Volume management is opt-in and Linux-only. All `[volume.*]` sections are ignored unless `volume.enabled = true`.
-
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `enabled` | bool | no | `false` | Activate ZFS volume management. |
-| `pool` | string | yes (if enabled) | — | Shared ZFS pool name. Created on `device` during `bench init` if it does not exist, reused otherwise — many benches can share one pool. |
-| `name` | string | no | bench name | Dataset leaf; the bench's dataset is `<pool>/<name>`. Defaults to the bench name. |
-| `device` | string | yes (if enabled) | — | Block device path (e.g. `/dev/sdb`). Used only if the pool does not yet exist. |
-
-The bench's single dataset (`<pool>/<bench>`) holds both the bench files and its MariaDB data, exposed at their conventional paths via bind mounts. A snapshot/rollback covers both.
-
 ---
 
 ## Validation rules
@@ -279,7 +260,6 @@ bench validates `bench.toml` before executing any command. Violations produce a 
 8. `gunicorn.workers`, `gunicorn.threads`, and `gunicorn.timeout` must be positive integers; `gunicorn.worker_class` must be a non-empty string; `gunicorn.malloc_arena_max`, `gunicorn.max_requests`, and `gunicorn.max_requests_jitter` must be non-negative integers.
 9. `mariadb.version` and `redis.version`, when present, must match `^\d+(\.\d+)*$` (e.g. `"10.6"`, `"7"`, `"7.0"`).
 10. `mariadb.instance`, when present, must match `^[a-zA-Z][a-zA-Z0-9_-]*$`; `mariadb.data_dir`, when present, must be an absolute path.
-11. When `volume.enabled = true`: `pool` must be non-empty; `device` is required for device backing; `image.size` is required for image backing and must match a valid ZFS size pattern (e.g. `"10G"`, `"500M"`, `"1T"`).
 
 ---
 

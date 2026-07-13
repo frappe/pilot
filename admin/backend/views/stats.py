@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import subprocess
 import time
-from dataclasses import asdict
 from functools import lru_cache
 from pathlib import Path
 
@@ -12,7 +11,6 @@ from flask import Blueprint, current_app, jsonify, request
 
 from pilot.config.bench_config import BenchConfig
 from pilot.config.toml_store import BenchTomlStore
-from ..readers.volume_reader import VolumeReader
 
 stats_bp = Blueprint("stats", __name__)
 
@@ -157,8 +155,7 @@ def stats():
     mem = psutil.virtual_memory()
     swap = psutil.swap_memory()
     disk = psutil.disk_usage("/")
-    volume = VolumeReader(bench_root).read()
-    paths = _path_sizes(bench_root, config) if not volume.enabled else []
+    paths = _path_sizes(bench_root, config)
     return jsonify(
         {
             "cpu_percent": psutil.cpu_percent(),
@@ -173,7 +170,6 @@ def stats():
             "disk_used": disk.used,
             "disk_total": disk.total,
             **_io_rates(),
-            "volume": asdict(volume),
             "paths": paths,
         }
     )

@@ -24,7 +24,7 @@ class Command:
     name: ClassVar[str]
     #: One-line help shown in `bench --help`.
     help: ClassVar[str] = ""
-    #: Parent group for subcommands, e.g. "setup" or "volume" (None = top level).
+    #: Parent group for subcommands, e.g. "setup" (None = top level).
     group: ClassVar[Optional[str]] = None
     #: If True, the registry loads the active Bench and passes it to from_args.
     requires_bench: ClassVar[bool] = True

@@ -20,7 +20,7 @@ def test_validate_requires_postgres_password() -> None:
 
 
 def test_validate_accepts_postgres_password() -> None:
-    data = {"admin_password": "x", "db_type": "postgres", "postgres_password": "pw", "volume_enabled": False}
+    data = {"admin_password": "x", "db_type": "postgres", "postgres_password": "pw"}
     assert _validate(data) is None
 
 

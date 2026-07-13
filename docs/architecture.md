@@ -364,11 +364,10 @@ server: `mariadb.instance = <bench-name>`, run as the systemd template unit
 The shared server already gives each *site* its own database and user, so the
 motivation is isolation at the **server** level:
 
-- **Independent snapshots & rollback.** ZFS snapshots and rollbacks operate on a
-  bench's own datadir. With one shared datadir under `/var/lib/mysql`, rolling
-  one bench's database back to a snapshot would roll back *every* bench's data.
-  A datadir per instance (`/var/lib/mysql-<instance>`) makes snapshot/restore
-  truly per-bench — the reason the datadir is a sibling path, never nested.
+- **Isolated data.** With one shared datadir under `/var/lib/mysql`, all
+  benches' data lives together. A datadir per instance
+  (`/var/lib/mysql-<instance>`) keeps each bench's data separable — the reason
+  the datadir is a sibling path, never nested.
 - **Blast-radius containment.** A runaway query, a crash, a corrupted table, or a
   `DROP`/restore in one bench cannot affect another. Resource limits
   (buffer pool, connections) are per server.
@@ -395,17 +394,15 @@ so the shared mode stays fully supported for small or single-bench hosts.
    `pid-file`. Read any earlier, the instance's `pid-file` would be silently
    overridden back to the shared default and collide.
 2. **Datadir.** A mysql-owned datadir is created at `/var/lib/mysql-<instance>`
-   (a sibling of `/var/lib/mysql`, never nested — see above). When the bench's
-   `[volume]` is enabled, its ZFS `mariadb` dataset is mounted here first, so
-   the database lives on ZFS; otherwise it is a plain directory.
+   (a sibling of `/var/lib/mysql`, never nested — see above), as a plain
+   directory.
 3. **Start & secure.** `systemctl enable --now mariadb@<instance>` starts the
    server (its `ExecStartPre` runs `mariadb-install-db` to initialise the
    datadir), then the root password from `bench.toml` is set the same way a
    fresh shared install is secured.
 
-During `bench init` the instance is provisioned **after** volume setup so a
-ZFS-backed datadir is mounted before initialisation; sites then connect to the
-instance over its socket, and the admin UI over its port.
+Sites then connect to the instance over its socket, and the admin UI over its
+port.
 
 ### Platform support
 
@@ -560,7 +557,7 @@ commands); the registry builds an instance through `from_args`.
 class Command:
     name: ClassVar[str]                  # CLI name, e.g. "remove-app"
     help: ClassVar[str] = ""
-    group: ClassVar[str | None] = None   # subcommand group: "setup" | "volume" | None
+    group: ClassVar[str | None] = None   # subcommand group: "setup" | None
     requires_bench: ClassVar[bool] = True # registry loads the Bench and passes it in
 
     def __init__(self, bench=None): ...
@@ -626,7 +623,7 @@ class RemoveAppCommand(Command):
         return cls(bench, args.app, skip_confirm=args.yes)
 ```
 
-Set `group = "setup"` (or `"volume"`) on the class to nest it as `bench setup <name>`.
+Set `group = "setup"` on the class to nest it as `bench setup <name>`.
 Set `requires_bench = False` for commands that don't operate on a bench (e.g. `new`,
 `build-admin`).
 

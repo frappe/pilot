@@ -118,7 +118,7 @@ bench start              # not yet initialized → launches the setup wizard
 
 1. **Admin password** — password for the bench admin UI
 2. **Database** — choose between a dedicated MariaDB instance (default, recommended) or the shared system MariaDB; set the MariaDB root user (default `root`) and password
-3. **Customize** — Frappe branch/repo; optionally enable ZFS volumes (dedicated DB only)
+3. **Customize** — Frappe branch/repo
 
 It then runs the full initialization with a live progress view.
 
@@ -179,18 +179,9 @@ timeout = 120
 malloc_arena_max = 2                 # cap glibc malloc arenas to reduce RSS; 0 = unset
 max_requests = 0                     # recycle the web worker after N requests to release heap; 0 = disabled
 max_requests_jitter = 0              # random +/- spread on max_requests so workers don't all recycle at once
-
-[volume]
-pool = "bench-pool"              # shared pool, reused if it exists; one dataset per bench
-backing = "auto"                 # discover an unused disk, or fall back to a disk image
-# backing = "device"             # explicit: dedicated disk
-# device = "/dev/sdb"
-# backing = "image"              # explicit: preallocated file on the root filesystem
-# [volume.image]
-# size = "60G"                   # file created at /var/lib/bench-zfs/bench-pool.img
 ```
 
-Each bench lives on a single dataset (`<pool>/<bench>`) holding both its files and its MariaDB data via bind mounts, so snapshots/rollbacks are atomic across both. Apps and sites are tracked by the filesystem — no need to list them in `bench.toml`. See [docs/volume.md](docs/volume.md) for the full ZFS volume guide.
+Apps and sites are tracked by the filesystem — no need to list them in `bench.toml`.
 
 ## Commands
 
@@ -206,7 +197,7 @@ Each bench lives on a single dataset (`<pool>/<bench>`) holding both its files a
 | `bench new-site <name>` | Create a site |
 | `bench rename-site <old> <new>` | Rename a site (checks the hostname is free across all benches) |
 | `bench build` | Download pre-built assets (use `--force` to rebuild from source) |
-| `bench update [--apps ..]` | git pull → reinstall deps → rebuild assets → migrate all sites; fails fast on the first error; on ZFS benches takes a snapshot first and auto-rolls back on failure |
+| `bench update [--apps ..]` | git pull → reinstall deps → rebuild assets → migrate all sites; fails fast on the first error |
 | `bench upgrade` | Pull latest pilot and download the admin frontend |
 | `bench setup config` | Regenerate Procfile and config files from bench.toml |
 | `bench build-admin` | Rebuild admin frontend assets from source |
@@ -217,11 +208,6 @@ Each bench lives on a single dataset (`<pool>/<bench>`) holding both its files a
 | `bench setup letsencrypt` | Obtain SSL certificates |
 | `bench setup production` | Full production setup — `--process-manager`, `--admin-domain`, `--tls` |
 | `bench remove production` | Tear down production, return to dev (keeps certs/logs/domain) |
-| `bench volume status` | Show ZFS pool and dataset usage |
-| `bench volume snapshot` | Snapshot the bench (files + database) |
-| `bench volume list-snapshots` | List snapshots |
-| `bench volume destroy-snapshot <tag>` | Destroy a named snapshot |
-| `bench volume restore-snapshot <tag>` | Roll the bench back to a snapshot |
 
 With multiple benches: `bench -b my-bench start`
 
@@ -288,7 +274,7 @@ class HelloCommand(Command):
 
 That's the whole change — `bench hello` now works. Commands that take arguments add an
 `add_arguments(parser)` classmethod and a `from_args(args, bench)` factory; set
-`group = "setup"` (or `"volume"`) to nest under a subcommand group. See
+`group = "setup"` to nest under a subcommand group. See
 [docs/architecture.md](docs/architecture.md#cli-entry-point-and-command-registry).
 
 ## Production
@@ -350,7 +336,7 @@ The built-in admin UI runs on port 8002 (configurable via `[admin] port`).
 | Logs | Tail and search log files with live streaming |
 | Tasks | Multi-step task view with collapsible output per step; task history |
 | Database | MariaDB process list, slow queries, binary log viewer |
-| Settings | Tabbed — Bench ports, MariaDB (read-only), Redis ports, Workers, Nginx, HTTPS toggle (`admin.tls` + Let's Encrypt), Production process manager, ZFS Volume (Linux); saves to `bench.toml` and restarts affected processes automatically |
+| Settings | Tabbed — Bench ports, MariaDB (read-only), Redis ports, Workers, Nginx, HTTPS toggle (`admin.tls` + Let's Encrypt), Production process manager; saves to `bench.toml` and restarts affected processes automatically |
 | Updates | Check for pilot updates and apply in one click |
 
 All forms validate input before submission — site names are checked for valid hostname format, repository URLs for valid git URL format, branch names for legal characters, cron expressions for valid 5-field syntax, and port numbers for the 1–65535 range.

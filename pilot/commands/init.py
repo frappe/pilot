@@ -66,7 +66,6 @@ class InitCommand(Command):
 
         self._check_passwordless_sudo()
 
-        volume_enabled = is_linux() and self.bench.config.volume.enabled
         # A dedicated MariaDB instance is only provisioned for MariaDB benches;
         # PostgreSQL benches run against the shared server (no per-bench instance).
         dedicated_db = is_linux() and self.bench.config.db_type == "mariadb" and bool(self.bench.config.mariadb.instance)
@@ -85,8 +84,6 @@ class InitCommand(Command):
             ("Ensure admin password", self._ensure_admin_password),
             ("Install system packages", self._install_system_packages),
         ]
-        if volume_enabled:
-            steps.append(("Set up ZFS volumes", self._setup_volume))
         if dedicated_db:
             steps.append(("Provision MariaDB instance", self._provision_mariadb_instance))
         steps += [
@@ -172,17 +169,9 @@ class InitCommand(Command):
             print("  Pre-built download failed — building from source (requires Node.js)...")
             BuildAdminCommand().run()
 
-    def _setup_volume(self) -> None:
-        from pilot.commands.volume import VolumeSetupCommand
-
-        VolumeSetupCommand(self.bench.config.volume, self.bench.path, bench_config=self.bench.config).run()
-
     def _provision_mariadb_instance(self) -> None:
         from pilot.managers.mariadb_manager import MariaDBManager
 
-        # Runs after _setup_volume: if volume is enabled, the bench's mariadb
-        # dataset is already mounted at the instance datadir, so install-db
-        # writes straight onto ZFS; otherwise the datadir is a plain directory.
         MariaDBManager(self.bench.config.mariadb).provision_instance(self.bench.config_path)
 
     # Build/runtime deps for compiling frappe's Python and Node wheels on Alpine.
@@ -251,9 +240,8 @@ class InitCommand(Command):
         mariadb_manager.install()
 
         if mariadb_manager.is_dedicated:
-            # Install the package only; the instance is provisioned after volume
-            # setup (see _do_run) so a ZFS-backed datadir, if any, is mounted
-            # before mariadb-install-db runs against it.
+            # Install the package only; the instance is provisioned separately
+            # (see _do_run / _provision_mariadb_instance).
             if freshly_installed and is_linux():
                 # apt auto-starts the shared mariadb service on port 3306; stop and
                 # disable it so the dedicated instance can claim its port.

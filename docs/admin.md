@@ -61,8 +61,7 @@ admin/
     │   ├── database.py          # GET /database/binlogs, /database/slow-queries
     │   ├── tasks.py             # GET /tasks, /tasks/<id>, POST /tasks/run, /tasks/<id>/kill
     │   ├── settings.py          # GET /api/settings/, PATCH /api/settings/
-    │   ├── updates.py           # GET /api/updates/, POST /api/updates/apply
-    │   └── volume.py            # GET /api/volume/snapshots, POST /api/volume/snapshot
+    │   └── updates.py           # GET /api/updates/, POST /api/updates/apply
     │
     └── tasks/
         ├── manager/             # Task infrastructure
@@ -406,16 +405,9 @@ Returns the full settings payload as JSON. The frontend uses this to populate th
   "workers": [{ "queues": ["default", "short", "long"], "count": 1 }],
   "nginx": { "http_port": 80, "https_port": 443, "config_dir": "/etc/nginx/conf.d", "worker_processes": "auto", "client_max_body_size": "50m" },
   "letsencrypt": { "email": "", "webroot_path": "/var/www/letsencrypt" },
-  "production": { "process_manager": "none", "nginx": false },
-  "volume": {
-    "enabled": true,
-    "pool": "bench-pool",
-    "device": "/dev/sdb"
-  }
+  "production": { "process_manager": "none", "nginx": false }
 }
 ```
-
-`is_linux` gates the ZFS Volume tab in the frontend — the tab is only shown on Linux.
 
 ### `PATCH /api/settings/` — Update settings
 
@@ -464,11 +456,8 @@ The frontend presents settings as a tabbed modal dialog. Tabs are:
 | **Let's Encrypt** | Email, Webroot Path | — |
 | **Production** | Process Manager (none/supervisor + the host's native manager: systemd, or OpenRC on Alpine) | — |
 | **Updates** | — | Current version, update availability badge; Update button |
-| **ZFS Volume** *(Linux only, dedicated DB only)* | — | Pool Name, Block Device |
 
 MariaDB fields are read-only because the host, port, credentials, and socket path are set once during `bench init` and cannot be meaningfully changed by editing `bench.toml` after the fact — the database server itself is not reconfigured.
-
-The **ZFS Volume** tab and the **Snapshots** page in the sidebar are only shown for benches that use a dedicated MariaDB instance with `volume.enabled = true`. Shared-DB benches hide both.
 
 The Process Manager dropdown lets you switch between `none`, `supervisor`, and the host's native manager — `systemd` on most Linux, `openrc` on Alpine (the backend reports `native_process_manager` so the UI never offers an unavailable option). A change here writes to `bench.toml` and triggers a process restart.
 
@@ -597,11 +586,8 @@ Returns the current `bench.toml` values pre-populated in the wizard form, plus e
 {
   "bench_name": "my-bench",
   "is_linux": true,
-  "available_devices": [{ "path": "/dev/sdb", "size_bytes": 107374182400 }],
-  "rootfs_free_bytes": 42949672960,
   "mariadb_instance": "my-bench",
   "mariadb_admin_user": "root",
-  "volume_enabled": false,
   ...
 }
 ```

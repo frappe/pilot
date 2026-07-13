@@ -210,14 +210,6 @@ def _validate(data: dict) -> str | None:
         return "mariadb_password is required"
     if db_type == "postgres" and not data.get("postgres_password"):
         return "postgres_password is required"
-    if data.get("volume_enabled", True):
-        if not data.get("volume_pool"):
-            return "volume_pool is required"
-        backing = data.get("volume_backing", "auto")
-        if backing == "device" and not data.get("volume_device"):
-            return "volume_device is required when volume backing is a block device"
-        if backing == "image" and not data.get("volume_image_size"):
-            return "volume_image_size is required when volume backing is a disk image"
     return None
 
 
@@ -230,7 +222,6 @@ def start_setup():
     step the user runs from the terminal afterwards (`bench setup production`).
     """
     from pilot.config.bench_config import BenchConfig
-    from pilot.managers.volume_manager import VolumeManager
     from pilot.platform import has_passwordless_sudo, is_linux
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
@@ -241,16 +232,13 @@ def start_setup():
         return jsonify({"ok": False, "error": "Passwordless sudo is not configured. "
                         "Run install.sh (or add /etc/sudoers.d/<user> NOPASSWD) and retry."}), 400
 
-    # Pre-flight validation so config/volume errors surface in the wizard instead
-    # of failing deep inside the task.
+    # Pre-flight validation so config errors surface in the wizard instead of
+    # failing deep inside the task.
     try:
         config = BenchTomlStore.for_bench(bench_root).read()
         config.validate()
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
-    if config.volume.enabled:
-        if error := VolumeManager(config.volume).validate_image_fits_filesystem():
-            return jsonify({"ok": False, "error": error}), 400
 
     try:
         # Reattach to an in-flight run rather than starting a second one (e.g. the
@@ -364,8 +352,6 @@ def _read_defaults(bench_root: Path) -> dict:
 
     result.pop("admin_password", None)
 
-    result.update(_volume_suggestions(toml_path))
-
     try:
         task = _running_setup_task(bench_root)
         result["running_setup_task_id"] = task.task_id if task else None
@@ -383,37 +369,6 @@ def _running_setup_task(bench_root: Path):
          if t.command == "wizard-setup" and t.status == "running"),
         None,
     )
-
-
-def _volume_suggestions(toml_path: Path) -> dict:
-    """Smart volume defaults for the wizard.
-
-    Fresh setups (no [volume] table yet) get discovery-driven defaults:
-    device backing on the largest unused disk, or image backing sized from
-    rootfs free space. Existing volume config is never overridden — only the
-    discovered device list is returned so the UI can still offer a dropdown.
-    """
-    from pilot.platform import is_linux
-
-    if not is_linux():
-        return {"available_devices": []}
-
-    from pilot.managers.volume_manager import (
-        compute_smart_defaults,
-        list_device_choices,
-        rootfs_free_bytes,
-    )
-
-    slider_bounds = {"rootfs_free_bytes": rootfs_free_bytes()}
-
-    try:
-        has_volume_config = "volume" in BenchTomlStore(toml_path).read_raw()
-    except Exception:
-        has_volume_config = False
-
-    if has_volume_config:
-        return {"available_devices": list_device_choices(), **slider_bounds}
-    return {**compute_smart_defaults(), **slider_bounds}
 
 
 def _current_name(bench_root: Path) -> str:
