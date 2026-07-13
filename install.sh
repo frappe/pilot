@@ -17,27 +17,21 @@ DEFAULT_USER="frappe"
 
 # ── arguments / environment ──────────────────────────────────────────────────
 BENCH_USER="${BENCH_USER:-$DEFAULT_USER}"
-# Non-interactive support: -y/--yes (or BENCH_YES=1) never prompts; the sudo
-# password may be supplied with --sudo-password or the SUDO_PASS env var.
-NONINTERACTIVE="${BENCH_YES:-0}"
+# Only relevant to the rare case of running this script directly as a
+# pre-existing non-root sudo user with a base tool missing (bootstrap_needed):
+# that fallback still shells out to sudo, and unattended runs (e.g. CI) can't
+# answer its password prompt.
 SUDO_PASS="${SUDO_PASS:-}"
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --user) BENCH_USER="$2"; shift 2 ;;
         --user=*) BENCH_USER="${1#*=}"; shift ;;
-        -y|--yes) NONINTERACTIVE=1; shift ;;
         --sudo-password|--sudo-pass) SUDO_PASS="$2"; shift 2 ;;
         --sudo-password=*|--sudo-pass=*) SUDO_PASS="${1#*=}"; shift ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
-
-# If a sudo password was supplied, we can run unattended.
-[ -n "$SUDO_PASS" ] && NONINTERACTIVE=1
-
-# A tty is required to prompt; without one we must run non-interactively.
-[ -e /dev/tty ] || NONINTERACTIVE=1
 
 # ── distro detection ──────────────────────────────────────────────────────────
 detect_distro() {
@@ -199,140 +193,9 @@ disable_system_db_services() {
     esac
 }
 
-bootstrap() {
-    case "$DISTRO" in
-        macos|unknown) return 0 ;;
-    esac
-    # Root always bootstraps (idempotent, and bare containers need it before
-    # useradd); a normal user only when a base tool is actually missing.
-    if [ "$(id -u)" -ne 0 ]; then
-        bootstrap_needed || return 0
-        if ! command -v sudo >/dev/null 2>&1; then
-            # A non-root user can't install packages without sudo. Re-run as
-            # root first — that path installs sudo and prepares the bench user.
-            echo "sudo is not installed and you are not root, so base packages cannot"
-            echo "be installed. Re-run this installer as root first, then as the bench"
-            echo "user:"
-            echo ""
-            echo "   wget -qO- $INSTALL_URL | sh   # as root"
-            exit 1
-        fi
-    fi
-    echo "$DISTRO detected — installing base dependencies..."
-    pkg_update
-    bootstrap_packages
-    install_database_engines
-    disable_system_db_services
-}
-
-bootstrap
-
-# The group conventionally granted admin rights, so the bench user can
-# authenticate sudo interactively later (e.g. `bench setup production`,
-# or this script's own one-off Node.js install below). bench itself never
-# relies on a standing passwordless grant.
-admin_group() {
-    case "$DISTRO" in
-        debian|ubuntu|unknown) echo sudo ;;
-        *) echo wheel ;;
-    esac
-}
-
-# ── Path A: running as root → create the bench user, then stop ───────────────
-# We do NOT switch users on the fly. We prepare the account and ask the operator
-# to re-run the installer as that user.
-if [ "$(id -u)" -eq 0 ]; then
-    echo "Running as root. Preparing the '$BENCH_USER' user for bench..."
-
-    if ! id "$BENCH_USER" >/dev/null 2>&1; then
-        echo "Creating user '$BENCH_USER'..."
-        useradd -m -s /bin/bash "$BENCH_USER"
-        usermod -aG "$(admin_group)" "$BENCH_USER" 2>/dev/null || true
-    fi
-
-    echo ""
-    echo "========================================================================"
-    echo " User '$BENCH_USER' is ready — base tools and database engines are"
-    echo " installed system-wide, so day-to-day bench commands never need root."
-    echo ""
-    echo " bench must NOT be installed as root. Switch to '$BENCH_USER' and run"
-    echo " the installer again:"
-    echo ""
-    echo "   su - $BENCH_USER"
-    echo "   curl -fsSL $INSTALL_URL | bash"
-    echo "========================================================================"
-    exit 0
-fi
-
-# ── Path B: running as a normal user → configure sudo, then install ──────────
-# Establish a usable sudo credential. Order of preference:
-#   1. passwordless sudo already configured        → nothing to do
-#   2. SUDO_PASS provided (unattended)             → validate it
-#   3. interactive terminal                        → prompt, with retries
-# We read the prompt from /dev/tty so it still works when the script is piped
-# (curl ... | bash), where stdin is the script rather than the keyboard.
-authenticate_sudo() {
-    if sudo -n true 2>/dev/null; then
-        return 0  # passwordless sudo already configured
-    fi
-
-    if [ -n "$SUDO_PASS" ]; then
-        if echo "$SUDO_PASS" | sudo -S -v 2>/dev/null; then
-            return 0
-        fi
-        echo "sudo authentication failed with the supplied password."
-        exit 1
-    fi
-
-    if [ "$NONINTERACTIVE" = "1" ]; then
-        echo "Passwordless sudo is required but not configured, and no password"
-        echo "was supplied. Re-run with --sudo-password or configure sudo first."
-        exit 1
-    fi
-
-    pass=""
-    while true; do
-        printf "[sudo] password for %s: " "$(id -un)" > /dev/tty
-        # `read -s` is a bashism; toggle echo via stty so this works under ash too.
-        stty -echo < /dev/tty 2>/dev/null || true
-        read -r pass < /dev/tty
-        stty echo < /dev/tty 2>/dev/null || true
-        echo > /dev/tty
-        if echo "$pass" | sudo -S -v 2>/dev/null; then
-            SUDO_PASS="$pass"
-            return 0
-        fi
-        echo "Sorry, try again." > /dev/tty
-    done
-}
-
-if ! command -v sudo >/dev/null 2>&1; then
-    echo "sudo is required but not installed — aborting."
-    exit 1
-fi
-
-echo "Setting up your environment (installing Node.js needs a one-off sudo prompt)..."
-authenticate_sudo
-
-# ── clone or update the repo ──────────────────────────────────────────────────
-if [ -d "$PILOT_DIR" ]; then
-    echo "Updating pilot..."
-    git -C "$PILOT_DIR" pull
-else
-    echo "Cloning pilot ($BRANCH_NAME branch)..."
-    git clone -b "$BRANCH_NAME" "$REPO_URL" "$PILOT_DIR"
-fi
-
-chmod +x "$PILOT_DIR/bench"
-
-# ── uv ────────────────────────────────────────────────────────────────────────
-if ! command -v uv >/dev/null 2>&1; then
-    echo "Installing uv..."
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    export PATH="$HOME/.local/bin:$PATH"
-fi
-
 # ── Node.js ───────────────────────────────────────────────────────────────────
+# System-wide, root/bootstrap only — same reasoning as the database engines:
+# installed once up front so the bench user never needs privileges of its own.
 # NodeSource pins Node 24 on the deb/rpm distros; the rolling distros (Arch,
 # Alpine) ship a current Node in their own repos — and NodeSource has no musl
 # builds anyway.
@@ -366,7 +229,96 @@ install_node() {
     esac
 }
 
-install_node
+bootstrap() {
+    case "$DISTRO" in
+        macos|unknown) return 0 ;;
+    esac
+    # Root always bootstraps (idempotent, and bare containers need it before
+    # useradd); a normal user only when a base tool is actually missing.
+    if [ "$(id -u)" -ne 0 ]; then
+        bootstrap_needed || return 0
+        if ! command -v sudo >/dev/null 2>&1; then
+            # A non-root user can't install packages without sudo. Re-run as
+            # root first — that path installs sudo and prepares the bench user.
+            echo "sudo is not installed and you are not root, so base packages cannot"
+            echo "be installed. Re-run this installer as root first, then as the bench"
+            echo "user:"
+            echo ""
+            echo "   wget -qO- $INSTALL_URL | sh   # as root"
+            exit 1
+        fi
+    fi
+    echo "$DISTRO detected — installing base dependencies..."
+    pkg_update
+    bootstrap_packages
+    install_database_engines
+    disable_system_db_services
+    install_node
+}
+
+bootstrap
+
+# The group conventionally granted admin rights, so the bench user can
+# authenticate sudo interactively later if they ever need it (e.g. `bench
+# setup production`). Nothing in this installer's own bench-user path needs
+# sudo — base tools, database engines and Node.js are all installed
+# system-wide above, before the bench user is ever created.
+admin_group() {
+    case "$DISTRO" in
+        debian|ubuntu|unknown) echo sudo ;;
+        *) echo wheel ;;
+    esac
+}
+
+# ── Path A: running as root → create the bench user, then stop ───────────────
+# We do NOT switch users on the fly. We prepare the account and ask the operator
+# to re-run the installer as that user.
+if [ "$(id -u)" -eq 0 ]; then
+    echo "Running as root. Preparing the '$BENCH_USER' user for bench..."
+
+    if ! id "$BENCH_USER" >/dev/null 2>&1; then
+        echo "Creating user '$BENCH_USER'..."
+        useradd -m -s /bin/bash "$BENCH_USER"
+        usermod -aG "$(admin_group)" "$BENCH_USER" 2>/dev/null || true
+    fi
+
+    echo ""
+    echo "========================================================================"
+    echo " User '$BENCH_USER' is ready — base tools and database engines are"
+    echo " installed system-wide, so day-to-day bench commands never need root."
+    echo ""
+    echo " bench must NOT be installed as root. Switch to '$BENCH_USER' and run"
+    echo " the installer again:"
+    echo ""
+    echo "   su - $BENCH_USER"
+    echo "   curl -fsSL $INSTALL_URL | bash"
+    echo "========================================================================"
+    exit 0
+fi
+
+# ── Path B: running as a normal user → clone and install ─────────────────────
+# All system-wide, privileged setup (base tools, database engines, Node.js)
+# already happened in bootstrap() above — as root, or earlier in this same
+# run if a base tool was missing — so nothing below here needs sudo.
+echo "Setting up your environment..."
+
+# ── clone or update the repo ──────────────────────────────────────────────────
+if [ -d "$PILOT_DIR" ]; then
+    echo "Updating pilot..."
+    git -C "$PILOT_DIR" pull
+else
+    echo "Cloning pilot ($BRANCH_NAME branch)..."
+    git clone -b "$BRANCH_NAME" "$REPO_URL" "$PILOT_DIR"
+fi
+
+chmod +x "$PILOT_DIR/bench"
+
+# ── uv ────────────────────────────────────────────────────────────────────────
+if ! command -v uv >/dev/null 2>&1; then
+    echo "Installing uv..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="$HOME/.local/bin:$PATH"
+fi
 
 # ── timezone data ─────────────────────────────────────────────────────────────
 # Required by Python's zoneinfo module on systems without system tzdata.
