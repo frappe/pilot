@@ -164,6 +164,7 @@ count = 1
 port = 8002
 password = "your-admin-password"   # required — admin refuses to start without this
 jwt_secret = "..."                 # auto-generated — signs admin session tokens (don't set by hand)
+jwks_url = ""                      # optional — trust session tokens from a remote issuer publishing keys here
 domain = "admin.example.com"       # optional — serve admin behind this domain via nginx
 tls = false                        # server-wide HTTPS opt-in (Let's Encrypt); false = plain HTTP
 
@@ -340,6 +341,8 @@ The built-in admin UI runs on port 8002 (configurable via `[admin] port`).
 | Updates | Check for pilot updates and apply in one click |
 
 All forms validate input before submission — site names are checked for valid hostname format, repository URLs for valid git URL format, branch names for legal characters, cron expressions for valid 5-field syntax, and port numbers for the 1–65535 range.
+
+**Remote access.** Beyond the password and `bench generate-admin-session` sign-in link, an external control plane can log in and drive the whole API by signing JWTs with a key published at `[admin] jwks_url` — no shared secret. See [Remote login via JWKS](docs/admin.md#remote-login-via-jwks).
 
 ## Directory layout
 

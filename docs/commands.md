@@ -482,6 +482,8 @@ bench generate-admin-session --full-path  # prints the full admin URL with ?sid=
 
 Open the `--full-path` URL in a browser within **5 minutes**: the frontend exchanges the `?sid=` token for a 1-day `HttpOnly` session cookie, and the sign-in token is consumed (single-use). Both are HS256 JWTs signed with `admin.jwt_secret` in `bench.toml` (generated on first run). Requires `admin.password` to be set.
 
+A remote control plane can mint its own `?sid=` tokens (and Bearer tokens) instead of using this command, by signing them with a key published at `admin.jwks_url` — see [Remote login via JWKS](admin.md#remote-login-via-jwks).
+
 ---
 
 ## `bench issue-site-token`

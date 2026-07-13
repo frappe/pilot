@@ -502,6 +502,7 @@ Views catch `ConfigError`, `FileNotFoundError`, and database connection errors a
 - Sessions are Flask cookie-based. The session key is a random 32-byte hex string generated at startup — sessions are invalidated on process restart.
 - `bench generate-admin-session` issues a 5-minute, single-use `?sid=` token that the frontend exchanges for a 1-day `HttpOnly` session cookie — an alternative to password login, signed with `admin.jwt_secret` in `bench.toml`. See [docs/commands.md](commands.md#bench-generate-admin-session).
 - `bench issue-site-token` issues a scoped JWT (`scope: "site"`) for programmatic site-to-bench API calls. The token is restricted to the named site and cannot access other sites or bench-level endpoints. Use it as `Authorization: Bearer <token>`. See [docs/commands.md](commands.md#bench-issue-site-token).
+- Setting `admin.jwks_url` lets a remote issuer mint session tokens with its own private key — the bench trusts them by fetching the matching public keys, with no shared secret. See [Remote login via JWKS](#remote-login-via-jwks).
 
 - `LogReader.read_tail` and `stream_tail` validate that the requested filename contains no path separators and resolves to a file inside `logs/`. Any traversal attempt returns HTTP 400.
 - Command execution uses `TaskRunner._build_argv`, which only accepts whitelisted commands. No user-supplied string is passed to a shell.
@@ -542,6 +543,67 @@ requests.post(f"{endpoint}/api/sites/{frappe.local.site}/backup-schedule",
 The token is scoped — it can only act on its own site. Any attempt to access a different site or bench-level endpoints (e.g. `/api/benches`) returns 403.
 
 Both keys are in `PROTECTED_CONFIG_KEYS` — they are never exposed in the admin UI and are preserved across config edits.
+
+---
+
+## Remote login via JWKS
+
+The tokens above are signed with the bench's own `admin.jwt_secret` (HS256), so only something that can read `bench.toml` can mint them. To let an **external control plane** authenticate without sharing that secret, set `admin.jwks_url` to a [JWKS](https://datatracker.ietf.org/doc/html/rfc7517) endpoint the issuer publishes:
+
+```toml
+[admin]
+jwks_url = "https://control-plane.example.com/.well-known/jwks.json"
+```
+
+The issuer holds a private key and signs JWTs; the bench fetches the matching **public** keys from that URL and verifies incoming tokens against them. No secret is shared, and a new bench created from the UI or CLI inherits `jwks_url` from a sibling, so the same issuer is trusted everywhere.
+
+A JWKS-signed token is accepted anywhere the local token is:
+
+- **Log in to the admin UI** — hand it to the browser as `…/?sid=<jwt>`. The frontend exchanges it for a 1-day `HttpOnly` session cookie.
+- **Drive the API** — send it as `Authorization: Bearer <jwt>` to any `/api/*` route: run tasks, manage sites, and call `POST /api/sites/<name>/login` to obtain a Frappe **Administrator** login URL for that site.
+
+Scope claims work exactly as for local tokens: a `scope: "site"` token is confined to its `site`; a bench-scoped token (the default) can reach every endpoint.
+
+### JWKS endpoint format
+
+`admin.jwks_url` must return a JSON document with a `keys` array of **RSA** public keys (JWK format, [RFC 7517](https://datatracker.ietf.org/doc/html/rfc7517) / [RFC 7518 §6.3](https://datatracker.ietf.org/doc/html/rfc7518#section-6.3)):
+
+```json
+{
+  "keys": [
+    {
+      "kty": "RSA",
+      "use": "sig",
+      "kid": "2026-07-key-1",
+      "alg": "RS256",
+      "n": "0vx7ag…<base64url modulus>…Q7yRw",
+      "e": "AQAB"
+    }
+  ]
+}
+```
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `kty` | yes | Must be `"RSA"`. Non-RSA keys (e.g. `"EC"`) are ignored. |
+| `n` | yes | Modulus, base64url (unpadded). |
+| `e` | yes | Public exponent, base64url — almost always `"AQAB"` (65537). |
+| `kid` | recommended | Key ID. Match it in the JWT header so the right key is picked on rotation. If omitted, keys are tried in order. |
+| `alg` / `use` | optional | Advisory; the token header's `alg` is what's enforced. |
+
+The signed JWT itself must be RSA-signed and carry an expiry:
+
+- **Header:** `{"alg": "RS256", "typ": "JWT", "kid": "2026-07-key-1"}` — `alg` must be `RS256`, `RS384`, or `RS512` (EC/`ES256` and `none` are rejected). `kid` should match a key above.
+- **Payload:** a numeric `exp` (Unix seconds) is **required** and enforced. Optional claims: `scope` (`"bench"` default, or `"site"` with a `site` claim to confine it) and `jti` (if present, the `?sid=` login treats the token as single-use).
+
+Only the signature and `exp` are checked — issuer/audience (`iss`/`aud`) are not validated in this phase.
+
+### Operational notes
+
+- **Keys only, no EC.** Verification is pure-stdlib RSA PKCS#1 v1.5, so the endpoint must publish RSA keys. There is no external crypto dependency.
+- **Caching & rotation.** Fetched keys are cached for 5 minutes. On a `kid` miss the bench refetches once, so publishing a new key and signing with it works without waiting for the cache to expire — keep the old key in the document until its last token expires.
+- **Fails closed.** An unreachable endpoint, malformed JWKS, unknown `kid`, wrong algorithm, bad signature, or expired token all result in rejection (HTTP 401/403), never a fallback to unauthenticated access.
+- **HTTPS.** Serve the JWKS endpoint over HTTPS — its integrity is the root of trust for every remote login.
 
 ---
 
