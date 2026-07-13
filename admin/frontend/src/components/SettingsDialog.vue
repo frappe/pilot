@@ -30,11 +30,14 @@
             <div id="settings-header-actions" class="contents"></div>
             <Button v-if="currentSection === 'workers'" variant="subtle" icon-left="lucide-plus"
               @click="workersRef?.addGroup()">Add</Button>
+            <Button v-else-if="currentSection === 'ssh-keys'" variant="subtle" icon-left="lucide-plus"
+              @click="sshKeysRef?.openAdd()">Add</Button>
           </div>
           <Workers v-if="currentSection === 'workers'" ref="workersRef" />
           <Firewall v-else-if="currentSection === 'firewall'" />
           <Git v-else-if="currentSection === 'github'" />
           <S3Bucket v-else-if="currentSection === 's3-bucket'" />
+          <SshKeys v-else-if="currentSection === 'ssh-keys'" ref="sshKeysRef" />
           <SystemInfo v-else-if="currentSection === 'system-info'" />
         </div>
       </div>
@@ -48,6 +51,7 @@ import { Dialog, Button } from 'frappe-ui'
 import Firewall from '@/components/settings/Firewall.vue'
 import Git from '@/components/settings/Git.vue'
 import S3Bucket from '@/components/settings/S3Bucket.vue'
+import SshKeys from '@/components/settings/SshKeys.vue'
 import SystemInfo from '@/components/settings/SystemInfo.vue'
 import Workers from '@/components/settings/Workers.vue'
 import { useIsMobile } from '@/composables/useIsMobile'
@@ -61,10 +65,12 @@ const sections = computed(() => [
   { id: 's3-bucket', label: 'S3 Bucket', icon: 'lucide-archive' },
   { id: 'workers', label: 'Workers', icon: 'lucide-server-cog' },
   { id: 'firewall', label: 'Firewall', icon: 'lucide-shield' },
+  { id: 'ssh-keys', label: 'SSH Keys', icon: 'lucide-key-round' },
   { id: 'system-info', label: 'System Info', icon: 'lucide-info' },
 ])
 const activeSection = ref(null)
 const workersRef = ref(null)
+const sshKeysRef = ref(null)
 const currentSection = computed(() => activeSection.value ?? sections.value[0].id)
 const activeSectionLabel = computed(() => sections.value.find((s) => s.id === currentSection.value)?.label)
 </script>
