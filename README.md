@@ -21,9 +21,14 @@ A zero-dependency CLI for managing [Frappe](https://frappeframework.com) environ
 
 ## Requirements
 
-**Ubuntu 22.04+** — Python 3.11+, a user with `sudo` access  
-**Alpine 3.20+** — apk + OpenRC; `install.sh` bootstraps everything. Production runs under OpenRC (`process_manager = "openrc"`) instead of systemd  
+**Debian 12+ / Ubuntu 22.04+** — Python 3.11+, a user with `sudo` access  
+**Fedora 40+** — dnf + systemd; redis is provided by valkey  
+**Arch Linux** — pacman + systemd; redis is provided by valkey  
+**Alpine 3.20+** — apk + OpenRC; production runs under OpenRC (`process_manager = "openrc"`) instead of systemd  
 **macOS** — Python 3.11+, [Homebrew](https://brew.sh) (dev only — no `sudo` setup)
+
+Derivatives that set `ID_LIKE` in `/etc/os-release` (Linux Mint, EndeavourOS, …)
+are detected as their parent distro.
 
 ## Install
 
@@ -31,8 +36,10 @@ A zero-dependency CLI for managing [Frappe](https://frappeframework.com) environ
 curl -fsSL https://raw.githubusercontent.com/frappe/pilot/main/install.sh | bash
 ```
 
-On bare Alpine (no curl/bash preinstalled) bootstrap with busybox `wget` + `sh`
-instead — the installer apk-installs git, curl, bash, sudo and the build deps itself:
+On a bare box (no curl/bash preinstalled — e.g. a fresh Alpine or a distro
+container) bootstrap with `wget` + `sh` instead — the installer uses the
+distro's package manager to install git, curl, bash, sudo and the build deps
+itself:
 
 ```sh
 wget -qO- https://raw.githubusercontent.com/frappe/pilot/main/install.sh | sh

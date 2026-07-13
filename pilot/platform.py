@@ -2,7 +2,6 @@ import os
 import platform
 import shutil
 import subprocess
-from abc import ABC, abstractmethod
 from enum import Enum
 from pathlib import Path
 
@@ -35,20 +34,50 @@ def is_linux() -> bool:
     return detect() == Platform.LINUX
 
 
+class Distro(Enum):
+    DEBIAN = "debian"
+    UBUNTU = "ubuntu"
+    FEDORA = "fedora"
+    ARCH = "arch"
+    ALPINE = "alpine"
+    UNKNOWN = "unknown"
+
+
+_OS_RELEASE = Path("/etc/os-release")
+
+
+def _read_os_release() -> dict[str, str]:
+    if not _OS_RELEASE.exists():
+        return {}
+    fields = {}
+    for line in _OS_RELEASE.read_text().splitlines():
+        key, _, value = line.partition("=")
+        fields[key.strip()] = value.strip().strip('"')
+    return fields
+
+
+def detect_distro() -> Distro:
+    """Identify the Linux distribution from /etc/os-release.
+
+    Falls back to ID_LIKE so derivatives map onto their parent (e.g. Linux
+    Mint -> UBUNTU, EndeavourOS -> ARCH)."""
+    if not is_linux():
+        return Distro.UNKNOWN
+    fields = _read_os_release()
+    known = {distro.value for distro in Distro}
+    if fields.get("ID") in known:
+        return Distro(fields["ID"])
+    for token in fields.get("ID_LIKE", "").split():
+        if token in known:
+            return Distro(token)
+    return Distro.UNKNOWN
+
+
 def is_alpine() -> bool:
     """Return True on Alpine Linux (apk package manager, OpenRC, musl libc)."""
     if not is_linux():
         return False
-    if Path("/etc/alpine-release").exists():
-        return True
-    os_release = Path("/etc/os-release")
-    if not os_release.exists():
-        return False
-    for line in os_release.read_text().splitlines():
-        key, _, value = line.partition("=")
-        if key.strip() == "ID" and value.strip().strip('"') == "alpine":
-            return True
-    return False
+    return Path("/etc/alpine-release").exists() or detect_distro() == Distro.ALPINE
 
 
 def os_version() -> str:
@@ -60,12 +89,9 @@ def os_version() -> str:
     if is_macos():
         version = platform.mac_ver()[0]
         return f"macOS {version}" if version else "macOS"
-    os_release = Path("/etc/os-release")
-    if os_release.exists():
-        for line in os_release.read_text().splitlines():
-            key, _, value = line.partition("=")
-            if key.strip() == "PRETTY_NAME" and value.strip().strip('"'):
-                return value.strip().strip('"')
+    pretty_name = _read_os_release().get("PRETTY_NAME")
+    if pretty_name:
+        return pretty_name
     return f"{platform.system()} {platform.release()}".strip()
 
 
@@ -161,98 +187,3 @@ def default_nginx_config_dir() -> Path:
     return Path("/etc/nginx/conf.d")
 
 
-class SystemPackageManager(ABC):
-    # Maps the canonical (Debian/apt) package name used at call sites to the name
-    # this package manager understands. Names absent from the map pass through.
-    package_aliases: dict[str, str] = {}
-
-    def _resolve(self, *packages: str) -> list[str]:
-        return [self.package_aliases.get(package, package) for package in packages]
-
-    @abstractmethod
-    def install(self, *packages: str) -> None:
-        """Install one or more system packages."""
-
-    @abstractmethod
-    def is_installed(self, package: str) -> bool:
-        """Return True if the package is already installed."""
-
-    @abstractmethod
-    def update(self) -> None:
-        """Update package manager"""
-
-
-class AptPackageManager(SystemPackageManager):
-    def install(self, *packages: str) -> None:
-        subprocess.run(
-            ["sudo", "apt-get", "install", "-y", *packages],
-            env={"DEBIAN_FRONTEND": "noninteractive"},
-            check=True,
-        )
-
-    def is_installed(self, package: str) -> bool:
-        result = subprocess.run(
-            ["dpkg", "-l", package],
-            capture_output=True,
-        )
-        return result.returncode == 0
-
-    def update(self):
-        subprocess.run(["sudo", "apt-get", "-y", "update"])
-
-
-class ApkPackageManager(SystemPackageManager):
-    # Alpine package names differ from Debian's; map the canonical names used at
-    # call sites onto their apk equivalents.
-    package_aliases = {
-        "build-essential": "build-base",
-        "pkg-config": "pkgconf",
-        "libmariadb-dev": "mariadb-dev",
-        "mariadb-server": "mariadb",
-        "mariadb-client": "mariadb-client",
-        "redis-server": "redis",
-        "supervisor": "supervisor",
-    }
-
-    def install(self, *packages: str) -> None:
-        subprocess.run(
-            _privileged(["apk", "add", "--no-cache", *self._resolve(*packages)]),
-            check=True,
-        )
-
-    def is_installed(self, package: str) -> bool:
-        resolved = self._resolve(package)[0]
-        result = subprocess.run(
-            ["apk", "info", "-e", resolved],
-            capture_output=True,
-        )
-        return result.returncode == 0
-
-    def update(self):
-        subprocess.run(_privileged(["apk", "update"]))
-
-
-class BrewPackageManager(SystemPackageManager):
-    def install(self, *packages: str) -> None:
-        subprocess.run(
-            ["brew", "install", *packages],
-            check=True,
-        )
-
-    def is_installed(self, package: str) -> bool:
-        result = subprocess.run(
-            ["brew", "list", "--versions", package],
-            capture_output=True,
-        )
-        return bool(result.stdout.strip())
-
-    def update(self):
-        return super().update()
-
-
-def get_package_manager() -> SystemPackageManager:
-    if is_macos():
-        return BrewPackageManager()
-    if is_alpine():
-        return ApkPackageManager()
-    return AptPackageManager()

@@ -189,7 +189,8 @@ class InitCommand(Command):
     def _install_system_packages(self) -> None:
         from pilot.managers.python_env_manager import PythonEnvManager
         from pilot.managers.redis_manager import RedisManager
-        from pilot.platform import get_package_manager, is_linux
+        from pilot.package_managers import get_package_manager
+        from pilot.platform import is_linux
 
         pkg = get_package_manager()
         if is_linux():

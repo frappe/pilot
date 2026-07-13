@@ -8,10 +8,10 @@ from string import Template
 from typing import TYPE_CHECKING
 
 from pilot.managers.gunicorn_manager import GunicornManager
+from pilot.package_managers import get_package_manager
 from pilot.platform import (
     _privileged,
     default_nginx_config_dir,
-    get_package_manager,
     is_alpine,
     is_linux,
     service_command,

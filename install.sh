@@ -1,13 +1,17 @@
 #!/bin/sh
 set -e
 
-# POSIX sh (not bash) so a bare Alpine box can bootstrap via `wget -qO- ... | sh`
-# before bash exists. The Ubuntu one-liner still pipes to bash explicitly.
+# POSIX sh (not bash) so a bare box can bootstrap via `wget -qO- ... | sh`
+# before bash exists. The provisioned-host one-liner still pipes to bash.
+#
+# Supported distros: Debian, Ubuntu, Fedora, Arch, Alpine (and their
+# derivatives via ID_LIKE). Unknown distros fall back to apt when available.
 
 # ── configuration ────────────────────────────────────────────────────────────
 INSTALL_URL="https://raw.githubusercontent.com/frappe/pilot/main/install.sh"
-REPO_URL="https://github.com/frappe/pilot"
-BRANCH_NAME="main"
+# Overridable so smoke tests can install from a local checkout.
+REPO_URL="${PILOT_REPO_URL:-https://github.com/frappe/pilot}"
+BRANCH_NAME="${PILOT_BRANCH:-main}"
 PILOT_DIR="$HOME/pilot"
 DEFAULT_USER="frappe"
 
@@ -35,30 +39,35 @@ done
 # A tty is required to prompt; without one we must run non-interactively.
 [ -e /dev/tty ] || NONINTERACTIVE=1
 
-# ── Alpine bootstrap ──────────────────────────────────────────────────────────
-# Bare Alpine ships almost nothing and uses apk + musl. Install the tools the
-# rest of this script and bench need before they're first used: git/curl/bash,
-# sudo + shadow (so the user-setup path's useradd/usermod/visudo work), a Python,
-# and the base build deps for compiling the admin venv (psutil) and frappe wheels.
-if [ -f /etc/alpine-release ] && command -v apk >/dev/null 2>&1; then
-    echo "Alpine detected — installing base dependencies via apk..."
-    if [ "$(id -u)" -eq 0 ]; then
-        APK_SUDO=""
-    elif command -v sudo >/dev/null 2>&1; then
-        APK_SUDO="sudo"
-    else
-        # Bare Alpine ships no sudo, and a non-root user can't run apk. Re-run as
-        # root first — that path installs sudo and prepares the bench user — then
-        # run the installer again as that user.
-        echo "sudo is not installed and you are not root, so apk packages cannot be"
-        echo "installed. Re-run this installer as root first, then as the bench user:"
-        echo ""
-        echo "   wget -qO- $INSTALL_URL | sh   # as root"
-        exit 1
+# ── distro detection ──────────────────────────────────────────────────────────
+detect_distro() {
+    if [ "$(uname)" = "Darwin" ]; then
+        echo macos
+        return
     fi
-    $APK_SUDO apk add --no-cache \
-        git curl bash sudo shadow python3 python3-dev build-base linux-headers tzdata
-fi
+    if [ ! -r /etc/os-release ]; then
+        echo unknown
+        return
+    fi
+    # os-release is sh syntax by spec; source it in subshells so its variables
+    # never leak into ours.
+    # shellcheck disable=SC1091
+    distro_id=$(. /etc/os-release; echo "$ID")
+    # shellcheck disable=SC1091
+    distro_like=$(. /etc/os-release; echo "${ID_LIKE:-}")
+    case "$distro_id" in
+        debian|ubuntu|fedora|arch|alpine) echo "$distro_id"; return ;;
+    esac
+    # Derivatives advertise their parent in ID_LIKE (e.g. Mint -> ubuntu).
+    for token in $distro_like; do
+        case "$token" in
+            debian|ubuntu|fedora|arch) echo "$token"; return ;;
+        esac
+    done
+    echo unknown
+}
+
+DISTRO="$(detect_distro)"
 
 # ── sudo wrapper ──────────────────────────────────────────────────────────────
 # Injects SUDO_PASS when provided so the script works unattended; otherwise
@@ -72,6 +81,94 @@ run_sudo() {
         sudo "$@"
     fi
 }
+
+# ── package manager primitives ────────────────────────────────────────────────
+# Unknown distros fall back to apt, mirroring the runtime in pilot/platform.py.
+pkg_update() {
+    case "$DISTRO" in
+        fedora) run_sudo dnf -y makecache ;;
+        arch)   run_sudo pacman -Sy --noconfirm --disable-download-timeout ;;
+        alpine) run_sudo apk update ;;
+        *)      run_sudo apt-get update ;;
+    esac
+}
+
+pkg_install() {
+    case "$DISTRO" in
+        # --allowerasing: containers ship curl-minimal, which conflicts with curl.
+        fedora) run_sudo dnf install -y --allowerasing "$@" ;;
+        # -Sy: sync the package database first; stale Arch mirrors 404 otherwise.
+        # The download timeout aborts large transfers on slow links; disable it.
+        arch)   run_sudo pacman -Sy --noconfirm --needed --disable-download-timeout "$@" ;;
+        alpine) run_sudo apk add --no-cache "$@" ;;
+        *)      run_sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "$@" ;;
+    esac
+}
+
+pkg_installed() {
+    case "$DISTRO" in
+        fedora) rpm -q "$1" >/dev/null 2>&1 ;;
+        arch)   pacman -Qi "$1" >/dev/null 2>&1 ;;
+        alpine) apk info -e "$1" >/dev/null 2>&1 ;;
+        *)      dpkg -l "$1" 2>/dev/null | grep -q '^ii' ;;
+    esac
+}
+
+# ── base dependency bootstrap ─────────────────────────────────────────────────
+# Bare images of most distros ship almost nothing. Install the tools the rest
+# of this script and bench need before they're first used: git/curl/bash, sudo
+# + user tooling (so the user-setup path's useradd/usermod/visudo work), a
+# Python, and the base build deps for compiling the admin venv (psutil) and
+# frappe wheels.
+bootstrap_needed() {
+    # Build deps are otherwise installed by bench at runtime, but Alpine needs
+    # them up front to compile the admin venv (musl wheels are not universal).
+    tools="git curl bash sudo python3"
+    [ "$DISTRO" = "alpine" ] && tools="$tools cc"
+    for tool in $tools; do
+        command -v "$tool" >/dev/null 2>&1 || return 0
+    done
+    return 1
+}
+
+bootstrap_packages() {
+    case "$DISTRO" in
+        debian|ubuntu)
+            pkg_install git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata ;;
+        fedora)
+            pkg_install git curl bash sudo shadow-utils python3 python3-devel gcc gcc-c++ make tzdata ;;
+        arch)
+            pkg_install git curl bash sudo python base-devel tzdata ;;
+        alpine)
+            pkg_install git curl bash sudo shadow python3 python3-dev build-base linux-headers tzdata ;;
+    esac
+}
+
+bootstrap() {
+    case "$DISTRO" in
+        macos|unknown) return 0 ;;
+    esac
+    # Root always bootstraps (idempotent, and bare containers need it before
+    # useradd); a normal user only when a base tool is actually missing.
+    if [ "$(id -u)" -ne 0 ]; then
+        bootstrap_needed || return 0
+        if ! command -v sudo >/dev/null 2>&1; then
+            # A non-root user can't install packages without sudo. Re-run as
+            # root first — that path installs sudo and prepares the bench user.
+            echo "sudo is not installed and you are not root, so base packages cannot"
+            echo "be installed. Re-run this installer as root first, then as the bench"
+            echo "user:"
+            echo ""
+            echo "   wget -qO- $INSTALL_URL | sh   # as root"
+            exit 1
+        fi
+    fi
+    echo "$DISTRO detected — installing base dependencies..."
+    pkg_update
+    bootstrap_packages
+}
+
+bootstrap
 
 # ── passwordless sudo configuration ──────────────────────────────────────────
 # Writes /etc/sudoers.d/<user> granting passwordless sudo. Validated with visudo
@@ -94,6 +191,15 @@ write_sudoers() {
     rm -f "$tmp"
 }
 
+# The group conventionally granted admin rights (only cosmetic here — actual
+# access comes from the sudoers.d file above).
+admin_group() {
+    case "$DISTRO" in
+        debian|ubuntu|unknown) echo sudo ;;
+        *) echo wheel ;;
+    esac
+}
+
 # ── Path A: running as root → create the bench user, then stop ───────────────
 # We do NOT switch users on the fly. We prepare the account and ask the operator
 # to re-run the installer as that user.
@@ -103,7 +209,7 @@ if [ "$(id -u)" -eq 0 ]; then
     if ! id "$BENCH_USER" >/dev/null 2>&1; then
         echo "Creating user '$BENCH_USER'..."
         useradd -m -s /bin/bash "$BENCH_USER"
-        usermod -aG sudo "$BENCH_USER" 2>/dev/null || true
+        usermod -aG "$(admin_group)" "$BENCH_USER" 2>/dev/null || true
     fi
 
     write_sudoers "$BENCH_USER"
@@ -169,7 +275,7 @@ if ! command -v sudo >/dev/null 2>&1; then
 fi
 
 echo "Bench needs passwordless sudo to install packages and manage services."
-if [ "$(uname)" = "Darwin" ]; then
+if [ "$DISTRO" = "macos" ]; then
     echo ""
     echo "NOTE: this will grant the current user '$(id -un)' passwordless sudo"
     echo "      access by writing /etc/sudoers.d/$(id -un)."
@@ -178,7 +284,7 @@ fi
 authenticate_sudo
 write_sudoers "$(id -un)"
 
-# Clone or update the repo
+# ── clone or update the repo ──────────────────────────────────────────────────
 if [ -d "$PILOT_DIR" ]; then
     echo "Updating pilot..."
     git -C "$PILOT_DIR" pull
@@ -189,37 +295,62 @@ fi
 
 chmod +x "$PILOT_DIR/bench"
 
-# Install uv if not present
+# ── uv ────────────────────────────────────────────────────────────────────────
 if ! command -v uv >/dev/null 2>&1; then
     echo "Installing uv..."
     curl -LsSf https://astral.sh/uv/install.sh | sh
     export PATH="$HOME/.local/bin:$PATH"
 fi
 
-# Install Node.js
-if ! command -v node >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
-    echo "Installing Node.js..."
+# ── Node.js ───────────────────────────────────────────────────────────────────
+# NodeSource pins Node 24 on the deb/rpm distros; the rolling distros (Arch,
+# Alpine) ship a current Node in their own repos — and NodeSource has no musl
+# builds anyway.
+install_node_nodesource() {
+    kind="$1"; shift
     NODE_SETUP_TMP="$(mktemp)"
-    curl -fsSL https://deb.nodesource.com/setup_24.x -o "$NODE_SETUP_TMP"
+    curl -fsSL "https://${kind}.nodesource.com/setup_24.x" -o "$NODE_SETUP_TMP"
     run_sudo bash "$NODE_SETUP_TMP"
     rm -f "$NODE_SETUP_TMP"
-    run_sudo apt-get install -y nodejs
-fi
+    run_sudo "$@"
+}
 
-# Install timezone data (required by Python's zoneinfo module on systems without system tzdata)
-if [ "$(uname)" != "Darwin" ]; then
-    if command -v apt-get >/dev/null 2>&1; then
-        if ! dpkg -l tzdata 2>/dev/null | grep -q '^ii'; then
-            echo "Installing timezone data..."
-            DEBIAN_FRONTEND=noninteractive run_sudo apt-get install -y tzdata
-        fi
-    elif command -v apk >/dev/null 2>&1; then
-        if ! apk info -e tzdata >/dev/null 2>&1; then
-            echo "Installing timezone data..."
-            run_sudo apk add --no-cache tzdata
-        fi
-    fi
-fi
+install_node() {
+    command -v node >/dev/null 2>&1 && return 0
+    case "$DISTRO" in
+        debian|ubuntu)
+            echo "Installing Node.js..."
+            install_node_nodesource deb apt-get install -y nodejs ;;
+        fedora)
+            echo "Installing Node.js..."
+            install_node_nodesource rpm dnf install -y nodejs ;;
+        arch)   echo "Installing Node.js..."; pkg_install nodejs npm ;;
+        alpine) echo "Installing Node.js..."; pkg_install nodejs npm ;;
+        *)
+            # Same fallback as before this script knew about distros: NodeSource
+            # when apt exists, otherwise leave Node to the operator.
+            if command -v apt-get >/dev/null 2>&1; then
+                echo "Installing Node.js..."
+                install_node_nodesource deb apt-get install -y nodejs
+            fi ;;
+    esac
+}
+
+install_node
+
+# ── timezone data ─────────────────────────────────────────────────────────────
+# Required by Python's zoneinfo module on systems without system tzdata.
+ensure_tzdata() {
+    case "$DISTRO" in
+        macos) return 0 ;;
+        unknown) command -v apt-get >/dev/null 2>&1 || return 0 ;;
+    esac
+    pkg_installed tzdata && return 0
+    echo "Installing timezone data..."
+    pkg_install tzdata
+}
+
+ensure_tzdata
 
 # ── add bench to PATH ─────────────────────────────────────────────────────────
 add_to_path() {
@@ -283,6 +414,7 @@ print(' '.join(deps))
     if [ -z "$ADMIN_DEPS" ]; then
         ADMIN_DEPS="flask>=3.0 psutil>=5.9 pymysql>=1.1 gunicorn>=21.2"
     fi
+    # shellcheck disable=SC2086 # ADMIN_DEPS is a space-separated list
     uv pip install --python "$ADMIN_VENV/bin/python" --quiet $ADMIN_DEPS
     echo "Admin environment ready."
 fi

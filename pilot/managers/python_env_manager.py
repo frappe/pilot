@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.exceptions import BenchError
-from pilot.platform import get_package_manager, is_alpine, is_macos, which
+from pilot.package_managers import get_package_manager
+from pilot.platform import Distro, detect_distro, is_macos, which
 from pilot.utils import get_yarn_bin, git_has_local_changes, run_command
 
 if TYPE_CHECKING:
@@ -114,15 +115,30 @@ class PythonEnvManager:
 
     def install_node(self) -> None:
         if not which("node"):
-            if is_macos():
-                run_command(["brew", "install", "node"])
-            elif is_alpine():
-                # nodesource ships no musl builds; use Alpine's own packages.
-                get_package_manager().install("nodejs", "npm")
-            else:
-                self._install_node_linux()
+            self._install_node()
         if not which("yarn"):
             self._install_yarn()
+
+    def _install_node(self) -> None:
+        if is_macos():
+            run_command(["brew", "install", "node"])
+            return
+        distro = detect_distro()
+        if distro in (Distro.DEBIAN, Distro.UBUNTU, Distro.UNKNOWN):
+            self._install_node_nodesource("deb", ["apt-get", "install", "-y", "nodejs"])
+        elif distro == Distro.FEDORA:
+            self._install_node_nodesource("rpm", ["dnf", "install", "-y", "nodejs"])
+        else:
+            # Arch/Alpine repos ship current Node; nodesource has no builds
+            # for them (and none at all for musl).
+            get_package_manager().install("nodejs", "npm")
+
+    def _install_node_nodesource(self, kind: str, install_argv: list[str]) -> None:
+        run_command(
+            ["bash", "-c", f"curl -fsSL https://{kind}.nodesource.com/setup_24.x | sudo -E bash -"],
+            stream_output=True,
+        )
+        run_command(["sudo", *install_argv], stream_output=True)
 
     def _install_yarn(self) -> None:
         if is_macos():
@@ -363,9 +379,3 @@ class PythonEnvManager:
 
         raise BenchError("uv was installed but cannot be found. Add ~/.local/bin to your PATH and re-run.")
 
-    def _install_node_linux(self) -> None:
-        run_command(
-            ["bash", "-c", "curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -"],
-            stream_output=True,
-        )
-        run_command(["sudo", "apt-get", "install", "-y", "nodejs"], stream_output=True)

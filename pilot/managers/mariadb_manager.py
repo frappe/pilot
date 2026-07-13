@@ -5,9 +5,11 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from pilot.config.mariadb_config import MariaDBConfig
+from pilot.package_managers import get_package_manager
 from pilot.platform import (
+    Distro,
     _privileged,
-    get_package_manager,
+    detect_distro,
     is_alpine,
     is_macos,
     service_command,
@@ -85,7 +87,10 @@ class MariaDBManager:
         if is_macos():
             package_manager.install(self._brew_package())
             return
-        self._setup_apt_repo()
+        # MariaDB's repo-setup script only supports apt; other distros ship a
+        # recent enough MariaDB in their own repos.
+        if detect_distro() in (Distro.DEBIAN, Distro.UBUNTU, Distro.UNKNOWN):
+            self._setup_apt_repo()
         package_manager.update()
         package_manager.install("mariadb-server", "mariadb-client")
 
