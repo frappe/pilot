@@ -9,13 +9,13 @@ const routes = [
     path: '/setup',
     name: 'Setup',
     component: () => import('./pages/Setup.vue'),
-    meta: { title: 'Setup', fullScreen: true },
+    meta: { title: 'Setup', labelKey: 'navigation.setup', fullScreen: true },
   },
   {
     path: '/login',
     name: 'Login',
     component: () => import('./pages/Login.vue'),
-    meta: { title: 'Login', fullScreen: true },
+    meta: { title: 'Login', labelKey: 'login.signIn', fullScreen: true },
   },
   { path: '/', redirect: '/sites' },
   {
@@ -62,10 +62,4 @@ router.beforeEach(async (to) => {
   if (session.authenticated && to.name === 'Login')
     return { path: safeRedirect(to.query.redirect) }
   return true
-})
-
-router.afterEach((to) => {
-  if (to.name !== 'SiteDetail') {
-    document.title = to.meta?.title ? `${to.meta.title} - Pilot` : 'Pilot'
-  }
 })
