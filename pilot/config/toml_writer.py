@@ -144,6 +144,16 @@ def bench_config_to_toml(config: BenchConfig) -> str:
         parts.append(f'region = "{s3.region}"')
         parts.append("")
 
+    b = config.backup
+    parts.append("[backup]")
+    parts.append(f'scheme = "{b.scheme}"')
+    parts.append(f"keep_last = {b.keep_last}")
+    parts.append(f"keep_daily = {b.keep_daily}")
+    parts.append(f"keep_weekly = {b.keep_weekly}")
+    parts.append(f"keep_monthly = {b.keep_monthly}")
+    parts.append(f"keep_yearly = {b.keep_yearly}")
+    parts.append("")
+
     # Only add monitoring section if production is enabled
     if p.enabled:
         mon = config.monitor

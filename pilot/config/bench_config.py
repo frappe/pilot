@@ -6,6 +6,7 @@ from typing import List
 
 from pilot.config.admin_config import AdminConfig
 from pilot.config.app_config import AppConfig
+from pilot.config.backup_config import VALID_SCHEMES, BackupConfig
 from pilot.config.central_config import CentralConfig
 from pilot.config.firewall_config import FirewallConfig, FirewallRule
 from pilot.config.gunicorn_config import GunicornConfig
@@ -59,6 +60,7 @@ class BenchConfig:
     central: CentralConfig = field(default_factory=CentralConfig)
     firewall: FirewallConfig = field(default_factory=FirewallConfig)
     s3: S3Config = field(default_factory=S3Config)
+    backup: BackupConfig = field(default_factory=BackupConfig)
 
     @classmethod
     def from_file(cls, path: Path) -> "BenchConfig":
@@ -92,6 +94,7 @@ class BenchConfig:
         central = cls._parse_central(data.get("central", {}))
         firewall = cls._parse_firewall(data.get("firewall"))
         s3 = S3Config(**data.get("s3", {}))
+        backup = BackupConfig(**data.get("backup", {}))
         return cls(
             name=bench_data.get("name", ""),
             python_version=bench_data.get("python", ""),
@@ -116,6 +119,7 @@ class BenchConfig:
             central=central,
             firewall=firewall,
             s3=s3,
+            backup=backup,
         )
 
     @staticmethod
@@ -257,6 +261,7 @@ class BenchConfig:
         self._validate_production()
         self._validate_admin_domain()
         self._validate_firewall()
+        self._validate_backup()
 
     def _validate_required_fields(self) -> None:
         if not self.name:
@@ -371,6 +376,14 @@ class BenchConfig:
                 ipaddress.ip_network(rule.ip, strict=False)
             except ValueError:
                 raise ConfigError(f"{prefix}.ip '{rule.ip}' is not a valid IPv4/IPv6 address or CIDR range.")
+
+    def _validate_backup(self) -> None:
+        b = self.backup
+        if b.scheme not in VALID_SCHEMES:
+            raise ConfigError(f"backup.scheme '{b.scheme}' is invalid. Must be one of {', '.join(VALID_SCHEMES)}.")
+        for name, value in b.counts.items():
+            if not isinstance(value, int) or value < 0:
+                raise ConfigError(f"backup.{name} must be a non-negative integer, got '{value}'.")
 
     def _validate_gunicorn(self) -> None:
         if not isinstance(self.gunicorn.workers, int) or self.gunicorn.workers < 1:
