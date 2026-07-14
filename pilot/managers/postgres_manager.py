@@ -43,20 +43,34 @@ class PostgresManager(UserOwnedDBManager):
     def is_installed(self) -> bool:
         return bool(which("psql") or which("postgres") or which("initdb"))
 
-    def _macos_provisioned_marker(self) -> Path:
-        # macOS has no systemd --user unit file (is_provisioned()'s normal
-        # signal) to prove this server has already been through provision()
-        # once — Homebrew owns install/start, not us. Without our own marker,
-        # is_provisioned() would always read False here, making
-        # _is_fresh_install() think every bench is the first one and skip
-        # password validation, letting a second bench silently reset an
-        # already-secured server's password.
-        return _STATE_DIR / ".provisioned"
-
     def is_provisioned(self) -> bool:
         if is_macos():
-            return self._macos_provisioned_marker().exists()
+            # No systemd --user unit exists here (Homebrew owns install/start,
+            # not us), so there's nothing of ours to check — a marker file we
+            # invented could drift from reality (e.g. get deleted) without the
+            # server itself changing. Ask the server directly instead: it's
+            # only "fresh" if it's both up and still passwordless.
+            return self.is_running() and not self.is_unsecured()
         return super().is_provisioned()
+
+    def is_unsecured(self) -> bool:
+        """True if the admin role has no password yet and is reachable via
+        local peer auth (i.e. a fresh, not-yet-secured install)."""
+        cmd = [
+            self._psql() or "psql",
+            "-p",
+            str(self.config.port),
+            "-U",
+            self.config.admin_user,
+            "-d",
+            "postgres",
+            "-tAc",
+            "SELECT 1",
+        ]
+        if not is_macos():
+            cmd[1:1] = ["-h", str(self.socket_dir())]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        return result.returncode == 0
 
     # ── provisioning ─────────────────────────────────────────────────────────
 
@@ -72,10 +86,6 @@ class PostgresManager(UserOwnedDBManager):
             self._provision_user_owned()
         self._wait_until_reachable()
         self.secure()
-        if is_macos():
-            marker = self._macos_provisioned_marker()
-            marker.parent.mkdir(parents=True, exist_ok=True)
-            marker.touch()
 
     def _provision_user_owned(self) -> None:
         if not self.is_provisioned():

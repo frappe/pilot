@@ -144,28 +144,31 @@ def test_provision_orchestrates_steps_on_linux() -> None:
     sec.assert_called_once()
 
 
-def test_is_provisioned_on_macos_uses_marker_not_unit_file(tmp_path) -> None:
-    """No systemd --user unit ever exists on macOS — is_provisioned() must not
-    always read False there, or a second bench's wizard validation would
-    think the server is fresh and silently reset an already-secured password."""
+def test_is_provisioned_on_macos_checks_live_server_not_a_marker_file() -> None:
+    """No systemd --user unit ever exists on macOS — is_provisioned() must
+    reflect the server's actual live state (running + already secured), not
+    a marker file that could drift from reality (e.g. get deleted)."""
     m = _mgr()
+    with patch(f"{MODULE}.is_macos", return_value=True), patch.object(m, "is_running", return_value=False):
+        assert m.is_provisioned() is False  # not running yet
     with patch(f"{MODULE}.is_macos", return_value=True), \
-         patch.object(m, "_macos_provisioned_marker", return_value=tmp_path / ".provisioned"):
-        assert m.is_provisioned() is False
-        (tmp_path / ".provisioned").touch()
-        assert m.is_provisioned() is True
+         patch.object(m, "is_running", return_value=True), \
+         patch.object(m, "is_unsecured", return_value=True):
+        assert m.is_provisioned() is False  # up but still passwordless
+    with patch(f"{MODULE}.is_macos", return_value=True), \
+         patch.object(m, "is_running", return_value=True), \
+         patch.object(m, "is_unsecured", return_value=False):
+        assert m.is_provisioned() is True  # up and already secured
 
 
-def test_provision_macos_writes_marker_after_securing(tmp_path) -> None:
-    m = _mgr(root_password="pw")
-    marker = tmp_path / "state" / ".provisioned"
-    with patch(f"{MODULE}.is_macos", return_value=True), \
-         patch.object(m, "install"), patch.object(m, "is_running", return_value=True), \
-         patch.object(m, "_wait_until_reachable"), patch.object(m, "secure") as sec, \
-         patch.object(m, "_macos_provisioned_marker", return_value=marker):
-        m.provision()
-    sec.assert_called_once()
-    assert marker.exists()
+def test_is_unsecured_targets_own_socket_dir_on_linux() -> None:
+    m = _mgr(port=5440)
+    with patch.object(m, "_psql", return_value="/usr/bin/psql"), \
+         patch(f"{MODULE}.is_macos", return_value=False), \
+         patch(f"{MODULE}.subprocess.run") as run:
+        m.is_unsecured()
+    cmd = run.call_args[0][0]
+    assert cmd[cmd.index("-h") + 1] == str(m.socket_dir())
 
 
 def test_provision_user_owned_initialises_and_installs_unit_when_fresh(tmp_path) -> None:

@@ -39,19 +39,14 @@ class MariaDBManager(UserOwnedDBManager):
         # which() searches sbin too; mysqld/mariadbd live in /usr/sbin.
         return bool(which("mysqld") or which("mariadbd"))
 
-    def _macos_provisioned_marker(self) -> Path:
-        # macOS has no systemd --user unit file (is_provisioned()'s normal
-        # signal) to prove this server has already been through provision()
-        # once — Homebrew owns install/start, not us. Without our own marker,
-        # is_provisioned() would always read False here, making
-        # _is_fresh_install() think every bench is the first one and skip
-        # password validation, letting a second bench silently reset an
-        # already-secured server's password.
-        return _STATE_DIR / ".provisioned"
-
     def is_provisioned(self) -> bool:
         if is_macos():
-            return self._macos_provisioned_marker().exists()
+            # No systemd --user unit exists here (Homebrew owns install/start,
+            # not us), so there's nothing of ours to check — a marker file we
+            # invented could drift from reality (e.g. get deleted) without the
+            # server itself changing. Ask the server directly instead: it's
+            # only "fresh" if it's both up and still passwordless.
+            return self.is_running() and not self.is_unsecured()
         return super().is_provisioned()
 
     def _provision_macos(self):
@@ -59,9 +54,6 @@ class MariaDBManager(UserOwnedDBManager):
             self.start()
         self._wait_until_reachable()
         self.secure_installation()
-        marker = self._macos_provisioned_marker()
-        marker.parent.mkdir(parents=True, exist_ok=True)
-        marker.touch()
 
     def provision(self) -> None:
         """Ensure the shared MariaDB server is installed, running and secured.
