@@ -204,6 +204,24 @@ def test_new_command_mariadb_port_is_not_offset_between_benches(tmp_path: Path, 
     assert data["bench"]["http_port"] == 8001  # other ports still offset
 
 
+def test_new_command_mariadb_port_ignores_live_scan_on_macos(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """On macOS, MariaDBManager just starts Homebrew's single shared service
+    (`brew services start`, no --port override) — the actual server always
+    binds to its own default regardless of config. Scanning for a "free" port
+    there would record a value nothing will ever actually bind to."""
+    from pilot.commands.new import NewCommand
+
+    monkeypatch.setattr("builtins.input", lambda _: "")
+    # 3306 reads as live, which would normally push the picker to 3307+.
+    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: port == 3306))
+    with patch("pilot.platform.is_macos", return_value=True):
+        NewCommand(tmp_path / "benches" / "m", "m").run()
+
+    with open(tmp_path / "benches" / "m" / "bench.toml", "rb") as f:
+        data = tomllib.load(f)
+    assert data["mariadb"]["port"] == 3306
+
+
 def test_new_command_second_mariadb_bench_inherits_password(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Every bench for this OS user shares one MariaDB server, so a second
     bench must reuse the password that already secured it — not the bare

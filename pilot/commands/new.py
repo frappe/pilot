@@ -136,10 +136,20 @@ class NewCommand(Command):
         """Smallest port at/above the default 3306 that isn't already live —
         used only when no sibling has picked one yet, so the very first
         MariaDB bench on a host doesn't collide with a system-wide MariaDB
-        already listening on 3306."""
+        already listening on 3306.
+
+        macOS never creates a bindable-anywhere instance of its own —
+        MariaDBManager just starts Homebrew's single shared service via
+        `brew services`, which always uses its own default port and ignores
+        this config entirely. Scanning for a "free" port there would just
+        record a value the real server will never actually bind to.
+        """
         from pilot.config.mariadb_config import MariaDBConfig
+        from pilot.platform import is_macos
 
         port = MariaDBConfig().port
+        if is_macos():
+            return port
         while self._port_is_live(port):
             port += 1
         return port
