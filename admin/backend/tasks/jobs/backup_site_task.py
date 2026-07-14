@@ -36,6 +36,8 @@ class BackupSiteTask(BaseTask):
         for path in self._backups_path().glob("*"):
             timestamp = path.name.split("-", 1)[0]
             groups.setdefault(timestamp, []).append(path)
+        if not groups:
+            return "", []
         latest_timestamp = max(groups)
         return latest_timestamp, groups[latest_timestamp]
 
@@ -52,6 +54,10 @@ class BackupSiteTask(BaseTask):
             sys.exit(result.returncode)
 
         timestamp, backup_files = self._latest_backup()
+        if not backup_files:
+            print("Backup command exited 0 but produced no files.")
+            self._record(status="failed", timestamp="", files={}, offsite=False, pruned=[])
+            sys.exit(1)
         files = {path.name: path.stat().st_size for path in backup_files}
         offsite = self._upload(timestamp, backup_files)
         pruned = self._prune()
