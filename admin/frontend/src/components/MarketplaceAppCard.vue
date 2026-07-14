@@ -21,7 +21,7 @@
 
       <slot name="actions">
         <Tooltip v-if="app.installed" text="Installed">
-          <span class="place-items-center grid size-7 shrink-0" aria-label="Installed">
+          <span class="place-items-center grid size-7 shrink-0" role="img" aria-label="Installed">
             <span class="size-4 text-ink-green-6 lucide-check"></span>
           </span>
         </Tooltip>
