@@ -84,7 +84,7 @@ import BackupConfigDialog from '@/components/sites/BackupConfigDialog.vue'
 import { sitesApi } from '@/api/sites'
 import { useSite } from '@/composables/useSite'
 import { openTaskDetailPage } from '@/utils/taskRoute'
-import { cronToLabel, retentionSummary } from '@/utils/backup'
+import { cronToLabel } from '@/utils/backup'
 
 const props = defineProps({ siteName: { type: String, required: true } })
 const router = useRouter()
@@ -108,11 +108,9 @@ const configRef = ref(null)
 const config = ref(null)
 const enabled = computed(() => !!config.value?.schedule)
 
-const scheduleSummary = computed(() => {
-  if (!enabled.value) return 'Off. Manual backups are kept until you delete them.'
-  const summary = retentionSummary(config.value.retention)
-  return summary ? `${cronToLabel(config.value.schedule)} · ${summary}.` : `${cronToLabel(config.value.schedule)}.`
-})
+const scheduleSummary = computed(() =>
+  enabled.value ? `${cronToLabel(config.value.schedule)}.` : 'Manual backups are kept until you delete them.',
+)
 
 async function loadConfig() {
   try {

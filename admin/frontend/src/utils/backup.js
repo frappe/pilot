@@ -17,9 +17,3 @@ export function cronToLabel(cron) {
   if (dow !== '*') return `Weekly on ${WEEKDAYS[parseInt(dow)] || 'Sunday'}, ${time}`
   return `Daily at ${time}`
 }
-
-export function retentionSummary(retention) {
-  if (!retention) return ''
-  if (retention.scheme === 'fifo') return `keeping newest ${retention.keep_last}`
-  return `keeping ${retention.keep_daily} daily · ${retention.keep_weekly} weekly · ${retention.keep_monthly} monthly · ${retention.keep_yearly} yearly`
-}

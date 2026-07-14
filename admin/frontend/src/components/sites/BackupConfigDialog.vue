@@ -1,52 +1,39 @@
 <template>
   <Dialog v-model="show" :options="{ title: 'Configure automated backups', size: 'lg' }">
     <template #body-content>
-      <div class="space-y-4">
-        <div class="gap-3 grid grid-cols-2">
-          <div class="space-y-1.5">
-            <p class="font-medium text-ink-gray-7 text-sm">Frequency</p>
-            <Select v-model="frequency" :options="FREQ_OPTIONS" />
-          </div>
-          <div class="space-y-1.5">
-            <p class="font-medium text-ink-gray-7 text-sm">Time</p>
-            <Select v-model.number="hour" :options="hourOptions" />
-          </div>
-          <div v-if="frequency === 'weekly'" class="space-y-1.5">
-            <p class="font-medium text-ink-gray-7 text-sm">Day of week</p>
-            <Select v-model.number="weekday" :options="weekdayOptions" />
-          </div>
-          <div v-if="frequency === 'monthly'" class="space-y-1.5">
-            <p class="font-medium text-ink-gray-7 text-sm">Day of month</p>
-            <Select v-model.number="monthDay" :options="monthDayOptions" />
-          </div>
-        </div>
+      <div class="space-y-5">
+        <Checkbox v-model="isEnabled" label="Enable automated backups" />
 
-        <div class="space-y-1.5 pt-2 border-t border-outline-gray-1">
-          <p class="font-medium text-ink-gray-7 text-sm">Retention</p>
-          <Select v-model="scheme" :options="SCHEME_OPTIONS" />
-          <p class="text-ink-gray-5 text-p-sm">{{ schemeHint }}</p>
-        </div>
+        <template v-if="isEnabled">
+          <div class="gap-4 grid grid-cols-1" :class="frequency === 'daily' ? 'sm:grid-cols-2' : 'sm:grid-cols-3'">
+            <Select label="Frequency" v-model="frequency" :options="FREQ_OPTIONS" />
+            <Select v-if="frequency === 'weekly'" label="Day of week" v-model.number="weekday" :options="weekdayOptions" />
+            <Select v-if="frequency === 'monthly'" label="Day of month" v-model.number="monthDay" :options="monthDayOptions" />
+            <Select label="Time" v-model.number="hour" :options="hourOptions" />
+          </div>
 
-        <FormControl v-if="scheme === 'fifo'" label="Backups to keep" type="number" min="0" v-model.number="keepLast" />
-        <div v-else class="gap-3 grid grid-cols-2">
-          <FormControl label="Daily" type="number" min="0" v-model.number="keepDaily" />
-          <FormControl label="Weekly" type="number" min="0" v-model.number="keepWeekly" />
-          <FormControl label="Monthly" type="number" min="0" v-model.number="keepMonthly" />
-          <FormControl label="Yearly" type="number" min="0" v-model.number="keepYearly" />
-        </div>
+          <div class="space-y-4 pt-5 border-t border-outline-gray-1">
+            <div class="space-y-1.5">
+              <Select label="Retention" v-model="scheme" :options="SCHEME_OPTIONS" />
+              <p class="text-ink-gray-5 text-p-sm">{{ schemeHint }}</p>
+            </div>
+
+            <FormControl v-if="scheme === 'fifo'" label="Backups to keep" type="number" min="0" v-model.number="keepLast" />
+            <div v-else class="gap-4 grid grid-cols-2 sm:grid-cols-4">
+              <FormControl label="Daily" type="number" min="0" v-model.number="keepDaily" />
+              <FormControl label="Weekly" type="number" min="0" v-model.number="keepWeekly" />
+              <FormControl label="Monthly" type="number" min="0" v-model.number="keepMonthly" />
+              <FormControl label="Yearly" type="number" min="0" v-model.number="keepYearly" />
+            </div>
+          </div>
+        </template>
 
         <ErrorMessage v-if="error" :message="error" />
       </div>
 
-      <div class="flex justify-between items-center gap-2 mt-6">
-        <Button v-if="enabled" variant="ghost" theme="red" :loading="disabling" @click="disable">
-          Turn off
-        </Button>
-        <span v-else />
-        <div class="flex gap-2">
-          <Button variant="ghost" @click="show = false">Cancel</Button>
-          <Button variant="solid" :loading="saving" @click="save">{{ enabled ? 'Save' : 'Enable' }}</Button>
-        </div>
+      <div class="flex justify-end gap-2 mt-6">
+        <Button variant="ghost" @click="show = false">Cancel</Button>
+        <Button variant="solid" :loading="saving" @click="save">Save</Button>
       </div>
     </template>
   </Dialog>
@@ -54,7 +41,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { Button, Dialog, ErrorMessage, FormControl, Select } from 'frappe-ui'
+import { Button, Checkbox, Dialog, ErrorMessage, FormControl, Select } from 'frappe-ui'
 import { sitesApi } from '@/api/sites'
 import { formatHour } from '@/utils/backup'
 
@@ -72,13 +59,13 @@ const SCHEME_OPTIONS = [
 ]
 const weekdayOptions = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
   .map((label, value) => ({ label, value }))
-const monthDayOptions = Array.from({ length: 31 }, (_, i) => ({ label: `${i + 1}`, value: i + 1 }))
+// Cap at 28 so the chosen day exists in every month.
+const monthDayOptions = Array.from({ length: 28 }, (_, i) => ({ label: `${i + 1}`, value: i + 1 }))
 const hourOptions = Array.from({ length: 24 }, (_, h) => ({ label: formatHour(h), value: h }))
 
 const show = ref(false)
-const enabled = ref(false)
+const isEnabled = ref(false)
 const saving = ref(false)
-const disabling = ref(false)
 const error = ref('')
 
 const frequency = ref('daily')
@@ -126,25 +113,20 @@ function applyRetention(retention) {
 async function open() {
   error.value = ''
   const data = await sitesApi.backups.schedule.get(props.siteName)
-  enabled.value = !!data.schedule
+  isEnabled.value = !!data.schedule
   applySchedule(data.schedule)
   applyRetention(data.retention)
   show.value = true
 }
 
+// Save both enables/updates (checkbox on) and turns off (checkbox off).
 async function save() {
   saving.value = true
   error.value = ''
   try {
-    const retention = {
-      scheme: scheme.value,
-      keep_last: keepLast.value,
-      keep_daily: keepDaily.value,
-      keep_weekly: keepWeekly.value,
-      keep_monthly: keepMonthly.value,
-      keep_yearly: keepYearly.value,
-    }
-    const result = await sitesApi.backups.schedule.set(props.siteName, { schedule: cron.value, retention })
+    const result = isEnabled.value
+      ? await sitesApi.backups.schedule.set(props.siteName, { schedule: cron.value, retention: retentionPayload() })
+      : await sitesApi.backups.schedule.remove(props.siteName)
     if (!result.ok) { error.value = result.error || 'Could not save.'; return }
     show.value = false
     emit('saved')
@@ -155,18 +137,14 @@ async function save() {
   }
 }
 
-async function disable() {
-  disabling.value = true
-  error.value = ''
-  try {
-    const result = await sitesApi.backups.schedule.remove(props.siteName)
-    if (!result.ok) { error.value = result.error || 'Could not turn off.'; return }
-    show.value = false
-    emit('saved')
-  } catch (e) {
-    error.value = e.message || 'Could not turn off.'
-  } finally {
-    disabling.value = false
+function retentionPayload() {
+  return {
+    scheme: scheme.value,
+    keep_last: keepLast.value,
+    keep_daily: keepDaily.value,
+    keep_weekly: keepWeekly.value,
+    keep_monthly: keepMonthly.value,
+    keep_yearly: keepYearly.value,
   }
 }
 
