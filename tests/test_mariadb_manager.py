@@ -68,6 +68,30 @@ def test_provision_initialises_and_installs_unit_when_fresh(tmp_path) -> None:
     assert any("mariadb-install-db" in argv for argv in argv_calls)
 
 
+def test_is_provisioned_on_macos_uses_marker_not_unit_file(tmp_path) -> None:
+    """No systemd --user unit ever exists on macOS — is_provisioned() must not
+    always read False there, or a second bench's wizard validation would
+    think the server is fresh and silently reset an already-secured password."""
+    m = _manager()
+    with patch(f"{MODULE}.is_macos", return_value=True), \
+         patch.object(m, "_macos_provisioned_marker", return_value=tmp_path / ".provisioned"):
+        assert m.is_provisioned() is False
+        (tmp_path / ".provisioned").touch()
+        assert m.is_provisioned() is True
+
+
+def test_provision_macos_writes_marker_after_securing(tmp_path) -> None:
+    m = _manager()
+    marker = tmp_path / "state" / ".provisioned"
+    with patch(f"{MODULE}.is_macos", return_value=True), \
+         patch.object(m, "install"), patch.object(m, "is_running", return_value=True), \
+         patch.object(m, "_wait_until_reachable"), patch.object(m, "secure_installation") as secure, \
+         patch.object(m, "_macos_provisioned_marker", return_value=marker):
+        m.provision()
+    secure.assert_called_once()
+    assert marker.exists()
+
+
 def test_provision_reuses_already_provisioned_server() -> None:
     m = _manager()
     with patch(f"{MODULE}.is_macos", return_value=False), \
@@ -228,6 +252,21 @@ def test_validate_endpoint_valid(tmp_path) -> None:
 def test_validate_endpoint_invalid(tmp_path) -> None:
     with patch(f"{MODULE}.MariaDBManager.is_installed", return_value=True), \
          patch(f"{MODULE}.MariaDBManager.is_provisioned", return_value=True), \
+         patch(f"{MODULE}.MariaDBManager.check_credentials", return_value=False):
+        resp = _post_validate(_client(tmp_path), "wrong")
+    assert resp.get_json() == {"state": "invalid"}
+
+
+def test_validate_endpoint_on_macos_checks_password_for_already_secured_server(tmp_path) -> None:
+    """Regression: on macOS there's no unit file, so is_provisioned() must use
+    its own marker (not always read False) — otherwise a second bench's wizard
+    would think the server is fresh and let a wrong password through, which
+    bench init then uses to silently reset the first bench's real password."""
+    marker = tmp_path / ".provisioned"
+    marker.touch()
+    with patch(f"{MODULE}.is_macos", return_value=True), \
+         patch(f"{MODULE}.MariaDBManager.is_installed", return_value=True), \
+         patch(f"{MODULE}.MariaDBManager._macos_provisioned_marker", return_value=marker), \
          patch(f"{MODULE}.MariaDBManager.check_credentials", return_value=False):
         resp = _post_validate(_client(tmp_path), "wrong")
     assert resp.get_json() == {"state": "invalid"}

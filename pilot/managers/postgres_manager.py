@@ -43,6 +43,21 @@ class PostgresManager(UserOwnedDBManager):
     def is_installed(self) -> bool:
         return bool(which("psql") or which("postgres") or which("initdb"))
 
+    def _macos_provisioned_marker(self) -> Path:
+        # macOS has no systemd --user unit file (is_provisioned()'s normal
+        # signal) to prove this server has already been through provision()
+        # once — Homebrew owns install/start, not us. Without our own marker,
+        # is_provisioned() would always read False here, making
+        # _is_fresh_install() think every bench is the first one and skip
+        # password validation, letting a second bench silently reset an
+        # already-secured server's password.
+        return _STATE_DIR / ".provisioned"
+
+    def is_provisioned(self) -> bool:
+        if is_macos():
+            return self._macos_provisioned_marker().exists()
+        return super().is_provisioned()
+
     # ── provisioning ─────────────────────────────────────────────────────────
 
     def provision(self) -> None:
@@ -57,6 +72,10 @@ class PostgresManager(UserOwnedDBManager):
             self._provision_user_owned()
         self._wait_until_reachable()
         self.secure()
+        if is_macos():
+            marker = self._macos_provisioned_marker()
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.touch()
 
     def _provision_user_owned(self) -> None:
         if not self.is_provisioned():

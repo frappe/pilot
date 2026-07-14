@@ -144,6 +144,30 @@ def test_provision_orchestrates_steps_on_linux() -> None:
     sec.assert_called_once()
 
 
+def test_is_provisioned_on_macos_uses_marker_not_unit_file(tmp_path) -> None:
+    """No systemd --user unit ever exists on macOS — is_provisioned() must not
+    always read False there, or a second bench's wizard validation would
+    think the server is fresh and silently reset an already-secured password."""
+    m = _mgr()
+    with patch(f"{MODULE}.is_macos", return_value=True), \
+         patch.object(m, "_macos_provisioned_marker", return_value=tmp_path / ".provisioned"):
+        assert m.is_provisioned() is False
+        (tmp_path / ".provisioned").touch()
+        assert m.is_provisioned() is True
+
+
+def test_provision_macos_writes_marker_after_securing(tmp_path) -> None:
+    m = _mgr(root_password="pw")
+    marker = tmp_path / "state" / ".provisioned"
+    with patch(f"{MODULE}.is_macos", return_value=True), \
+         patch.object(m, "install"), patch.object(m, "is_running", return_value=True), \
+         patch.object(m, "_wait_until_reachable"), patch.object(m, "secure") as sec, \
+         patch.object(m, "_macos_provisioned_marker", return_value=marker):
+        m.provision()
+    sec.assert_called_once()
+    assert marker.exists()
+
+
 def test_provision_user_owned_initialises_and_installs_unit_when_fresh(tmp_path) -> None:
     m = _mgr(port=5440)
     with patch.object(m, "data_dir", return_value=tmp_path / "data"), \

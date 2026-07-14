@@ -86,41 +86,21 @@ class NewCommand(Command):
             "db_type": self.db_type,
         }
         if self.db_type == "mariadb":
-            # Every bench for this OS user shares one MariaDB server (see
-            # MariaDBManager), so a new bench must inherit whichever port a
-            # sibling already established for it. If none exists yet, pick a
-            # free port up front — 3306 is often already taken by a
-            # system-wide MariaDB, and MariaDBManager refuses to bind an
-            # occupied port.
             settings["mariadb_port"] = self._sibling_mariadb_port() or self._pick_mariadb_port()
-            # Every bench for this OS user shares one MariaDB server, so a new
-            # bench must inherit the password that already secured it — a fresh
-            # random one here would lock it out of a server a sibling provisioned.
-            # No sibling means this is the first bench: generate a random
-            # password rather than falling back to a guessable default.
             settings["mariadb_password"] = self._sibling_mariadb_password() or secrets.token_hex(
                 nbytes=8
             )
         if self.db_type == "postgres":
-            # Every bench for this OS user shares one PostgreSQL server, so a new
-            # bench must inherit the password that already secured it — a fresh
-            # random one here would lock it out of a server a sibling provisioned.
             settings["postgres_password"] = self._sibling_postgres_password() or secrets.token_hex(
                 nbytes=8
             )
         if self.process_manager:
             settings["production_process_manager"] = self.process_manager
-        # The Let's Encrypt account email is a server-wide setting; inherit it
-        # from a sibling bench so a new production bench can issue certs without
-        # re-entering it.
+
         sibling_email = self._sibling_letsencrypt_email()
         if sibling_email:
             settings["letsencrypt_email"] = sibling_email
-        # Every bench for this OS user shares the same MariaDB/PostgreSQL server
-        # (see MariaDBManager/PostgresManager) — no per-bench instance to set up.
-        # The remote JWKS issuer is server-wide too: carry its URL and audience
-        # forward so the control plane can authenticate to a freshly created
-        # bench right away.
+
         sibling_admin = self._sibling_jwks_admin()
         if sibling_admin:
             settings["admin_jwks_url"] = sibling_admin.jwks_url

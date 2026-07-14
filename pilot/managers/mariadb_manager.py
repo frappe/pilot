@@ -39,11 +39,29 @@ class MariaDBManager(UserOwnedDBManager):
         # which() searches sbin too; mysqld/mariadbd live in /usr/sbin.
         return bool(which("mysqld") or which("mariadbd"))
 
+    def _macos_provisioned_marker(self) -> Path:
+        # macOS has no systemd --user unit file (is_provisioned()'s normal
+        # signal) to prove this server has already been through provision()
+        # once — Homebrew owns install/start, not us. Without our own marker,
+        # is_provisioned() would always read False here, making
+        # _is_fresh_install() think every bench is the first one and skip
+        # password validation, letting a second bench silently reset an
+        # already-secured server's password.
+        return _STATE_DIR / ".provisioned"
+
+    def is_provisioned(self) -> bool:
+        if is_macos():
+            return self._macos_provisioned_marker().exists()
+        return super().is_provisioned()
+
     def _provision_macos(self):
         if not self.is_running():
             self.start()
         self._wait_until_reachable()
         self.secure_installation()
+        marker = self._macos_provisioned_marker()
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.touch()
 
     def provision(self) -> None:
         """Ensure the shared MariaDB server is installed, running and secured.
@@ -114,16 +132,10 @@ class MariaDBManager(UserOwnedDBManager):
         unix-socket auth (i.e. a fresh, not-yet-secured install). The bench
         user owns this server outright, so no privilege escalation is needed
         to connect as its admin account."""
-        cmd = [
-            "mariadb",
-            f"--socket={self.socket_path()}",
-            "-u",
-            self.config.admin_user,
-            "--batch",
-            "--skip-column-names",
-            "-e",
-            "SELECT 1",
-        ]
+        cmd = ["mariadb"]
+        if not is_macos():
+            cmd.append(f"--socket={self.socket_path()}")
+        cmd += ["-u", self.config.admin_user, "--batch", "--skip-column-names", "-e", "SELECT 1"]
         result = subprocess.run(cmd, capture_output=True, text=True)
         return result.returncode == 0
 
