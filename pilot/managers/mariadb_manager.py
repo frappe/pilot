@@ -1,24 +1,26 @@
 import os
-import socket
 import subprocess
 import time
 from contextlib import contextmanager
 from pathlib import Path
 
 from pilot.config.mariadb_config import MariaDBConfig
-from pilot.package_managers import get_package_manager
+from pilot.managers.user_owned_db_manager import UserOwnedDBManager
 from pilot.platform import is_macos, which
 from pilot.utils import run_command
-
-DEFAULT_VERSION = "11.8"
 
 # One MariaDB server per bench user, shared by every bench they own — rootless,
 # running as a single systemd --user unit. Fixed locations, no per-bench units.
 _STATE_DIR = Path.home() / ".local" / "share" / "pilot" / "mariadb"
-_UNIT_NAME = "pilot-mariadb.service"
 
 
-class MariaDBManager:
+class MariaDBManager(UserOwnedDBManager):
+    _UNIT_NAME = "pilot-mariadb.service"
+    _DISPLAY_NAME = "MariaDB"
+    _SYSTEM_PACKAGE = "mariadb-server"
+    _BREW_FORMULA_BASE = "mariadb"
+    _DEFAULT_VERSION = "11.8"
+
     def __init__(self, config: MariaDBConfig) -> None:
         self.config = config
 
@@ -36,53 +38,6 @@ class MariaDBManager:
     def is_installed(self) -> bool:
         # which() searches sbin too; mysqld/mariadbd live in /usr/sbin.
         return bool(which("mysqld") or which("mariadbd"))
-
-    def install(self) -> None:
-        if self.is_installed():
-            return
-        if is_macos():
-            get_package_manager().install(self._brew_package())
-            return
-        raise RuntimeError(
-            "MariaDB is not installed. Re-run install.sh as root to install it "
-            "(it provisions mariadb-server for every supported distro), or "
-            "install 'mariadb-server' yourself."
-        )
-
-    def unit_path(self) -> Path:
-        return self._user_unit_dir() / _UNIT_NAME
-
-    def is_provisioned(self) -> bool:
-        """The unit file existing is the single source of truth: once it's
-        there, this server has already been set up (by this bench or a
-        sibling) — reuse it rather than re-initialising."""
-        return self.unit_path().exists()
-
-    def is_running(self) -> bool:
-        if is_macos():
-            return self._brew_service_running()
-        result = subprocess.run(
-            self._systemctl("is-active", _UNIT_NAME), env=self._systemctl_env(), capture_output=True
-        )
-        return result.returncode == 0
-
-    def start(self) -> None:
-        if is_macos():
-            run_command(["brew", "services", "start", self._brew_package()])
-        else:
-            run_command(self._systemctl("start", _UNIT_NAME), env=self._systemctl_env())
-
-    def restart(self) -> None:
-        if is_macos():
-            run_command(["brew", "services", "restart", self._brew_package()])
-        else:
-            run_command(self._systemctl("restart", _UNIT_NAME), env=self._systemctl_env())
-
-    def stop(self) -> None:
-        if is_macos():
-            run_command(["brew", "services", "stop", self._brew_package()])
-        else:
-            run_command(self._systemctl("stop", _UNIT_NAME), env=self._systemctl_env())
 
     def _provision_macos(self):
         if not self.is_running():
@@ -102,10 +57,10 @@ class MariaDBManager:
         if not self.is_provisioned():
             self._initialize_data_dir()
             self._install_unit()
-            run_command(self._systemctl("enable", "--now", _UNIT_NAME), env=self._systemctl_env())
+            run_command(self._systemctl("enable", "--now", self._UNIT_NAME), env=self._systemctl_env())
 
         elif not self.is_running():
-            run_command(self._systemctl("start", _UNIT_NAME), env=self._systemctl_env())
+            run_command(self._systemctl("start", self._UNIT_NAME), env=self._systemctl_env())
 
         self._wait_until_reachable()
         self.secure_installation()
@@ -131,50 +86,6 @@ class MariaDBManager:
         unit_dir.mkdir(parents=True, exist_ok=True)
         self.unit_path().write_text(content)
         run_command(self._systemctl("daemon-reload"), env=self._systemctl_env())
-
-    def _user_unit_dir(self) -> Path:
-        return Path.home() / ".config" / "systemd" / "user"
-
-    def _systemctl(self, *args: str) -> list[str]:
-        return ["systemctl", "--user", *args]
-
-    def _systemctl_env(self) -> dict:
-        # A login session normally sets XDG_RUNTIME_DIR; environments without
-        # one (CI runners, su -c) need it set explicitly for `systemctl --user`
-        # to find the right user manager. Mirrors process_managers/systemd.py.
-        env = dict(os.environ)
-        if not env.get("XDG_RUNTIME_DIR"):
-            env["XDG_RUNTIME_DIR"] = f"/run/user/{os.getuid()}"
-        return env
-
-    def _version(self) -> str:
-        return DEFAULT_VERSION
-
-    def _brew_package(self) -> str:
-        return self._installed_brew_formula() or f"mariadb@{self._version()}"
-
-    def _installed_brew_formula(self) -> str | None:
-        """Return the mariadb formula Homebrew already manages (e.g. 'mariadb@10.6').
-
-        When bench.toml doesn't pin a version, start/stop must target whatever
-        brew actually installed — assuming plain 'mariadb' fails when only a
-        versioned formula like mariadb@10.6 is present.
-        """
-        result = subprocess.run(["brew", "list", "--formula"], capture_output=True, text=True)
-        if result.returncode != 0:
-            return None
-        formulae = result.stdout.split()
-        if "mariadb" in formulae:
-            return "mariadb"
-        return next((f for f in formulae if f.startswith("mariadb@")), None)
-
-    def _brew_service_running(self) -> bool:
-        result = subprocess.run(["brew", "services", "list"], capture_output=True, text=True)
-        for line in result.stdout.splitlines():
-            parts = line.split()
-            if parts and parts[0] == self._brew_package() and "started" in parts:
-                return True
-        return False
 
     def _wait_until_reachable(self, timeout: float = 30.0) -> None:
         """Poll until the server is active and its socket exists, so securing

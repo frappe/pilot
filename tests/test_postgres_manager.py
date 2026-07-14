@@ -8,6 +8,7 @@ from pilot.config.postgres_config import PostgresConfig
 from pilot.managers.postgres_manager import PostgresManager
 
 MODULE = "pilot.managers.postgres_manager"
+BASE_MODULE = "pilot.managers.user_owned_db_manager"
 
 
 def _mgr(**kwargs) -> PostgresManager:
@@ -26,7 +27,7 @@ def test_is_installed_checks_binaries() -> None:
 
 def test_install_skips_when_present() -> None:
     m = _mgr()
-    with patch.object(m, "is_installed", return_value=True), patch(f"{MODULE}.get_package_manager") as gpm:
+    with patch.object(m, "is_installed", return_value=True), patch(f"{BASE_MODULE}.get_package_manager") as gpm:
         m.install()
     gpm.assert_not_called()
 
@@ -34,15 +35,15 @@ def test_install_skips_when_present() -> None:
 def test_install_raises_when_missing_on_linux() -> None:
     m = _mgr()
     with patch.object(m, "is_installed", return_value=False), \
-         patch(f"{MODULE}.is_macos", return_value=False):
+         patch(f"{BASE_MODULE}.is_macos", return_value=False):
         with pytest.raises(RuntimeError, match="install.sh"):
             m.install()
 
 
 def test_install_uses_brew_formula_on_macos() -> None:
     m, pkg = _mgr(), MagicMock()
-    with patch.object(m, "is_installed", return_value=False), patch(f"{MODULE}.is_macos", return_value=True), \
-         patch.object(m, "_installed_brew_formula", return_value=None), patch(f"{MODULE}.get_package_manager", return_value=pkg):
+    with patch.object(m, "is_installed", return_value=False), patch(f"{BASE_MODULE}.is_macos", return_value=True), \
+         patch.object(m, "_installed_brew_formula", return_value=None), patch(f"{BASE_MODULE}.get_package_manager", return_value=pkg):
         m.install()
     pkg.install.assert_called_once_with("postgresql@16")
 
@@ -116,15 +117,15 @@ def test_check_credentials_false_without_psql() -> None:
 
 def test_start_targets_systemctl_user_on_linux() -> None:
     m = _mgr()
-    with patch(f"{MODULE}.is_macos", return_value=False), \
-         patch(f"{MODULE}.run_command") as rc:
+    with patch(f"{BASE_MODULE}.is_macos", return_value=False), \
+         patch(f"{BASE_MODULE}.run_command") as rc:
         m.start()
     assert rc.call_args.args[0] == ["systemctl", "--user", "start", "pilot-postgres.service"]
 
 
 def test_start_targets_brew_on_macos() -> None:
     m = _mgr()
-    with patch(f"{MODULE}.is_macos", return_value=True), patch.object(m, "_installed_brew_formula", return_value="postgresql@16"), patch(f"{MODULE}.run_command") as rc:
+    with patch(f"{BASE_MODULE}.is_macos", return_value=True), patch.object(m, "_installed_brew_formula", return_value="postgresql@16"), patch(f"{BASE_MODULE}.run_command") as rc:
         m.start()
     rc.assert_called_once_with(["brew", "services", "start", "postgresql@16"])
 
@@ -197,3 +198,47 @@ def test_run_sql_as_superuser_uses_local_psql() -> None:
     assert cmd[0] == "/usr/bin/psql"
     assert "sudo" not in cmd
     assert cmd[cmd.index("-p") + 1] == "5440"
+
+
+def test_run_sql_as_superuser_targets_own_socket_dir_on_linux() -> None:
+    m = _mgr(port=5440)
+    with patch.object(m, "_psql", return_value="/usr/bin/psql"), \
+         patch(f"{MODULE}.is_macos", return_value=False), \
+         patch(f"{MODULE}.subprocess.run") as run:
+        m._run_sql_as_superuser("SELECT 1;")
+    cmd = run.call_args[0][0]
+    assert cmd[cmd.index("-h") + 1] == str(m.socket_dir())
+
+
+def test_run_sql_as_superuser_uses_default_socket_on_macos() -> None:
+    m = _mgr(port=5440)
+    with patch.object(m, "_psql", return_value="/usr/bin/psql"), \
+         patch(f"{MODULE}.is_macos", return_value=True), \
+         patch(f"{MODULE}.subprocess.run") as run:
+        m._run_sql_as_superuser("SELECT 1;")
+    cmd = run.call_args[0][0]
+    assert "-h" not in cmd
+
+
+def test_install_unit_pins_unix_socket_directories_to_owned_dir(tmp_path) -> None:
+    m = _mgr(port=5440)
+    with patch.object(m, "unit_path", return_value=tmp_path / "pilot-postgres.service"), \
+         patch.object(m, "_user_unit_dir", return_value=tmp_path), \
+         patch(f"{MODULE}.which", return_value="/usr/lib/postgresql/bin/postgres"), \
+         patch(f"{MODULE}.run_command"):
+        m._install_unit()
+    content = (tmp_path / "pilot-postgres.service").read_text()
+    assert f"unix_socket_directories={m.socket_dir()}" in content
+
+
+def test_provision_user_owned_creates_socket_dir(tmp_path) -> None:
+    m = _mgr(port=5440)
+    with patch.object(m, "data_dir", return_value=tmp_path / "data"), \
+         patch.object(m, "socket_dir", return_value=tmp_path / "run"), \
+         patch.object(m, "is_provisioned", return_value=False), \
+         patch.object(m, "_ensure_port_available"), \
+         patch.object(m, "is_running", return_value=False), \
+         patch.object(m, "_install_unit"), \
+         patch(f"{MODULE}.run_command"):
+        m._provision_user_owned()
+    assert (tmp_path / "run").is_dir()

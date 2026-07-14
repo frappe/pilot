@@ -7,23 +7,26 @@ import time
 from pathlib import Path
 
 from pilot.config.postgres_config import PostgresConfig
-from pilot.package_managers import get_package_manager
+from pilot.managers.user_owned_db_manager import UserOwnedDBManager
 from pilot.platform import is_macos, which
 from pilot.utils import run_command
-
-DEFAULT_VERSION = "16"
 
 # One PostgreSQL server per bench user, shared by every bench they own —
 # rootless, running as a single systemd --user unit. Fixed locations, no
 # per-bench units.
 _STATE_DIR = Path.home() / ".local" / "share" / "pilot" / "postgres"
-_UNIT_NAME = "pilot-postgres.service"
 
 
-class PostgresManager:
+class PostgresManager(UserOwnedDBManager):
     """Manage the single, per-bench-user PostgreSQL server. Every bench for a
     given OS user connects to the same running server (isolated per-database),
     provisioned once by whichever bench inits first."""
+
+    _UNIT_NAME = "pilot-postgres.service"
+    _DISPLAY_NAME = "PostgreSQL"
+    _SYSTEM_PACKAGE = "postgresql"
+    _BREW_FORMULA_BASE = "postgresql"
+    _DEFAULT_VERSION = "16"
 
     def __init__(self, config: PostgresConfig) -> None:
         self.config = config
@@ -31,91 +34,14 @@ class PostgresManager:
     def data_dir(self) -> Path:
         return _STATE_DIR / "data"
 
-    # ── install ──────────────────────────────────────────────────────────────
+    def socket_dir(self) -> Path:
+        # Postgres' compiled-in default (often /var/run/postgresql) is owned by
+        # the 'postgres' OS user/group, not the bench user — pin a directory
+        # we actually own so both the server and psql can use it.
+        return _STATE_DIR / "run"
 
     def is_installed(self) -> bool:
         return bool(which("psql") or which("postgres") or which("initdb"))
-
-    def install(self) -> None:
-        if self.is_installed():
-            return
-        if is_macos():
-            get_package_manager().install(self._brew_package())
-            return
-        raise RuntimeError(
-            "PostgreSQL is not installed. Re-run install.sh as root to install "
-            "it (it provisions postgresql for every supported distro), or "
-            "install 'postgresql' yourself."
-        )
-
-    def _brew_package(self) -> str:
-        return self._installed_brew_formula() or f"postgresql@{DEFAULT_VERSION}"
-
-    def _installed_brew_formula(self) -> str | None:
-        """The postgresql formula Homebrew already manages, so start/stop target
-        whatever is installed rather than assuming a version."""
-        result = subprocess.run(["brew", "list", "--formula"], capture_output=True, text=True)
-        if result.returncode != 0:
-            return None
-        formulae = result.stdout.split()
-        if "postgresql" in formulae:
-            return "postgresql"
-        return next((f for f in formulae if f.startswith("postgresql@")), None)
-
-    # ── service control ──────────────────────────────────────────────────────
-
-    def unit_path(self) -> Path:
-        return self._user_unit_dir() / _UNIT_NAME
-
-    def is_provisioned(self) -> bool:
-        """The unit file existing is the single source of truth: once it's
-        there, this server has already been set up (by this bench or a
-        sibling) — reuse it rather than re-initialising."""
-        return self.unit_path().exists()
-
-    def is_running(self) -> bool:
-        if is_macos():
-            return self._brew_service_running()
-        result = subprocess.run(self._systemctl("is-active", _UNIT_NAME), env=self._systemctl_env(), capture_output=True)
-        return result.returncode == 0
-
-    def start(self) -> None:
-        if is_macos():
-            run_command(["brew", "services", "start", self._brew_package()])
-        else:
-            run_command(self._systemctl("start", _UNIT_NAME), env=self._systemctl_env())
-
-    def restart(self) -> None:
-        if is_macos():
-            run_command(["brew", "services", "restart", self._brew_package()])
-        else:
-            run_command(self._systemctl("restart", _UNIT_NAME), env=self._systemctl_env())
-
-    def stop(self) -> None:
-        if is_macos():
-            run_command(["brew", "services", "stop", self._brew_package()])
-        else:
-            run_command(self._systemctl("stop", _UNIT_NAME), env=self._systemctl_env())
-
-    def _brew_service_running(self) -> bool:
-        result = subprocess.run(["brew", "services", "list"], capture_output=True, text=True)
-        for line in result.stdout.splitlines():
-            parts = line.split()
-            if parts and parts[0] == self._brew_package() and "started" in parts:
-                return True
-        return False
-
-    def _systemctl(self, *args: str) -> list[str]:
-        return ["systemctl", "--user", *args]
-
-    def _systemctl_env(self) -> dict:
-        # A login session normally sets XDG_RUNTIME_DIR; environments without
-        # one (CI runners, su -c) need it set explicitly for `systemctl --user`
-        # to find the right user manager. Mirrors process_managers/systemd.py.
-        env = dict(os.environ)
-        if not env.get("XDG_RUNTIME_DIR"):
-            env["XDG_RUNTIME_DIR"] = f"/run/user/{os.getuid()}"
-        return env
 
     # ── provisioning ─────────────────────────────────────────────────────────
 
@@ -136,14 +62,15 @@ class PostgresManager:
         if not self.is_provisioned():
             self._ensure_port_available()
             self.data_dir().parent.mkdir(parents=True, exist_ok=True)
+            self.socket_dir().mkdir(parents=True, exist_ok=True)
             # No --username: the bootstrap superuser matches whoever runs
             # initdb (the bench user), authenticated via unix-socket peer
             # auth — no sudo, no OS-level 'postgres' account involved.
             run_command(["initdb", "-D", str(self.data_dir())])
             self._install_unit()
-            run_command(self._systemctl("enable", "--now", _UNIT_NAME), env=self._systemctl_env())
+            run_command(self._systemctl("enable", "--now", self._UNIT_NAME), env=self._systemctl_env())
         elif not self.is_running():
-            run_command(self._systemctl("start", _UNIT_NAME), env=self._systemctl_env())
+            run_command(self._systemctl("start", self._UNIT_NAME), env=self._systemctl_env())
 
     def _ensure_port_available(self) -> None:
         """Only checked before this server has ever been provisioned — once
@@ -168,7 +95,7 @@ class PostgresManager:
             "[Service]\n"
             "Type=simple\n"
             f"ExecStart={postgres} -D {self.data_dir()} -p {self.config.port} "
-            "-c listen_addresses=127.0.0.1\n"
+            f"-c listen_addresses=127.0.0.1 -c unix_socket_directories={self.socket_dir()}\n"
             "Restart=on-failure\n\n"
             "[Install]\n"
             "WantedBy=default.target\n"
@@ -177,9 +104,6 @@ class PostgresManager:
         unit_dir.mkdir(parents=True, exist_ok=True)
         self.unit_path().write_text(content)
         run_command(self._systemctl("daemon-reload"), env=self._systemctl_env())
-
-    def _user_unit_dir(self) -> Path:
-        return Path.home() / ".config" / "systemd" / "user"
 
     def secure(self) -> None:
         """Ensure the admin role exists with the configured password so frappe can
@@ -227,8 +151,14 @@ class PostgresManager:
 
     def _run_sql_as_superuser(self, sql: str) -> None:
         # Unix-socket peer auth: the bootstrap superuser is whoever ran initdb
-        # (the bench user itself, no sudo needed). -p targets this server's port.
+        # (the bench user itself, no sudo needed). -p targets this server's
+        # port. On Linux we pin -h to our own socket_dir(), since the
+        # compiled-in default is owned by the 'postgres' OS user, not us; on
+        # macOS, Homebrew already points postgres at a user-owned socket, so
+        # the default (no -h) is used as-is.
         cmd = [self._psql() or "psql", "-p", str(self.config.port), "-v", "ON_ERROR_STOP=1", "-d", "postgres"]
+        if not is_macos():
+            cmd[1:1] = ["-h", str(self.socket_dir())]
         subprocess.run(cmd, input=sql, text=True, check=True)
 
     def _wait_until_reachable(self, timeout: float = 30.0) -> None:

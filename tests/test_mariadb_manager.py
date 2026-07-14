@@ -9,6 +9,7 @@ from pilot.config.mariadb_config import MariaDBConfig
 from pilot.managers.mariadb_manager import MariaDBManager
 
 MODULE = "pilot.managers.mariadb_manager"
+BASE_MODULE = "pilot.managers.user_owned_db_manager"
 
 
 def _manager(password: str = "root") -> MariaDBManager:
@@ -32,7 +33,7 @@ def test_socket_path_honors_explicit_value() -> None:
 def test_install_raises_when_missing_on_linux() -> None:
     m = _manager()
     with patch.object(m, "is_installed", return_value=False), \
-         patch(f"{MODULE}.is_macos", return_value=False):
+         patch(f"{BASE_MODULE}.is_macos", return_value=False):
         with pytest.raises(RuntimeError, match="install.sh"):
             m.install()
 
@@ -42,8 +43,8 @@ def test_install_raises_when_missing_on_linux() -> None:
 
 def test_start_targets_systemctl_user_on_linux() -> None:
     m = _manager()
-    with patch(f"{MODULE}.is_macos", return_value=False), \
-         patch(f"{MODULE}.run_command") as rc:
+    with patch(f"{BASE_MODULE}.is_macos", return_value=False), \
+         patch(f"{BASE_MODULE}.run_command") as rc:
         m.start()
     assert rc.call_args.args[0] == ["systemctl", "--user", "start", "pilot-mariadb.service"]
 
