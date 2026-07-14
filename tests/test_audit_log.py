@@ -56,6 +56,25 @@ def test_reads_newest_week_first_across_files(tmp_path) -> None:
     assert [e["site"] for e in AuditLog(_bench(tmp_path)).entries()] == ["new", "old"]
 
 
+def test_reversed_lines_across_chunk_boundaries(tmp_path) -> None:
+    """The back-to-front chunk reader must reassemble lines split across chunks."""
+    path = tmp_path / "audit_2026_01.jsonl"
+    lines = [f"line-{i:03d}" for i in range(50)]
+    path.write_text("\n".join(lines) + "\n")
+
+    assert list(AuditLog._reversed_lines(path, chunk_size=8)) == list(reversed(lines))
+
+
+def test_large_log_reads_newest_first_and_limit(tmp_path) -> None:
+    bench = _bench(tmp_path)
+    log = AuditLog(bench)
+    for i in range(500):
+        log.append("backup", {"site": f"s{i}", "seq": i})
+
+    newest = log.entries(limit=3)
+    assert [e["seq"] for e in newest] == [499, 498, 497]
+
+
 def test_missing_and_corrupt_lines_are_tolerated(tmp_path) -> None:
     bench = _bench(tmp_path)
     assert AuditLog(bench).entries() == []

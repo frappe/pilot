@@ -446,6 +446,7 @@ def get_settings():
 
 
 _DEFAULT_AUDIT_LIMIT = 200
+_AUDIT_SCAN_CAP = 2000  # newest entries scanned to build filters; bounds work per request
 
 
 def _audit_log(bench_root: Path):
@@ -470,23 +471,24 @@ def audit_types():
 @settings_bp.route("/audit/log")
 def audit_log():
     """Audit entries of one type, newest first, optionally filtered by status/site.
-    Also returns the status/site values seen for that type so the UI can build filters."""
+    Filter options and matches both come from the newest ``_AUDIT_SCAN_CAP`` entries,
+    so one bounded scan serves the whole request and the filters stay consistent with
+    what's shown."""
     bench_root = Path(current_app.config["BENCH_ROOT"])
     entry_type = request.args.get("type") or None
     status = request.args.get("status") or None
     site = request.args.get("site") or None
     limit = request.args.get("limit", _DEFAULT_AUDIT_LIMIT, type=int)
     try:
-        log = _audit_log(bench_root)
-        entries = log.entries(entry_type=entry_type, status=status, site=site, limit=limit)
-        of_type = log.entries(entry_type=entry_type)
+        recent = _audit_log(bench_root).entries(entry_type=entry_type, limit=_AUDIT_SCAN_CAP)
     except Exception as error:
         return jsonify({"error": str(error)}), 500
+    matched = [e for e in recent if (site is None or e.get("site") == site) and (status is None or e.get("status") == status)]
     return jsonify(
         {
-            "entries": entries,
-            "sites": sorted({e.get("site") for e in of_type if e.get("site")}),
-            "statuses": sorted({e.get("status") for e in of_type if e.get("status")}),
+            "entries": matched[:limit],
+            "sites": sorted({e.get("site") for e in recent if e.get("site")}),
+            "statuses": sorted({e.get("status") for e in recent if e.get("status")}),
         }
     )
 

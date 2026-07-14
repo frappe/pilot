@@ -21,7 +21,8 @@ class AuditLog:
             handle.write(json.dumps(record) + "\n")
 
     def entries(self, entry_type=None, site=None, status=None, limit=None) -> list[dict]:
-        """Matching records across all weekly files, newest first."""
+        """Matching records across all weekly files, newest first. Reads lazily, so
+        a small ``limit`` never touches files (or lines) beyond what it returns."""
         matched = []
         for record in self._read_newest_first():
             if self._matches(record, entry_type, site, status):
@@ -42,11 +43,31 @@ class AuditLog:
 
     def _read_newest_first(self):
         for path in self._weekly_files():
-            for line in reversed(path.read_text().splitlines()):
+            for line in self._reversed_lines(path):
                 try:
                     yield json.loads(line)
                 except json.JSONDecodeError:
                     continue
+
+    @staticmethod
+    def _reversed_lines(path, chunk_size: int = 65536):
+        """Yield a file's non-empty lines last-first, reading it back-to-front in
+        chunks so an entire (potentially large) weekly file is never held in memory."""
+        with path.open("rb") as handle:
+            handle.seek(0, 2)
+            pointer = handle.tell()
+            tail = b""
+            while pointer > 0:
+                step = min(chunk_size, pointer)
+                pointer -= step
+                handle.seek(pointer)
+                lines = (handle.read(step) + tail).split(b"\n")
+                tail = lines.pop(0)  # may be a partial line completed by the next (earlier) chunk
+                for line in reversed(lines):
+                    if line:
+                        yield line.decode()
+            if tail:
+                yield tail.decode()
 
     @staticmethod
     def _matches(record: dict, entry_type, site, status) -> bool:
