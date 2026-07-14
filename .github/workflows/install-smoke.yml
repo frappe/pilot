@@ -1,0 +1,40 @@
+name: Install Script Smoke Tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - install.sh
+      - scripts/smoke_install.sh
+      - .github/workflows/install-smoke.yml
+  workflow_dispatch:
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint install.sh
+        run: shellcheck -s sh install.sh
+
+      - name: Lint smoke test script
+        run: shellcheck scripts/smoke_install.sh
+
+  smoke:
+    needs: shellcheck
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - debian:bookworm
+          - ubuntu:24.04
+          - fedora:latest
+          - archlinux:latest
+          - alpine:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run install.sh inside ${{ matrix.image }}
+        run: ./scripts/smoke_install.sh "${{ matrix.image }}"

@@ -4,7 +4,8 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pilot.platform import _privileged, get_package_manager, is_alpine
+from pilot.package_managers import get_package_manager
+from pilot.platform import _privileged, is_alpine
 from pilot.utils import run_command
 
 if TYPE_CHECKING:

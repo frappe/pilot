@@ -11,6 +11,6 @@ Guidelines for writing good code for a developer
 9. Use Frappe UI, espresso design system for UI styling.
 10. Always write tests, and make sure they work.
 11. Build the minimum working app, then iterate towards your goals.
-12. Keep the verbosity less in new changes (inline comments, docstrings erc). 
+12. Keep the verbosity less in new changes (inline comments, docstrings etc). 
     Explain only what's absolutely needed in inline comments.
     Actual changes explanation can be part of commit message. 

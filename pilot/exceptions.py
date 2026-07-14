@@ -21,9 +21,9 @@ class TaskNotRunningError(BenchError):
     pass
 
 
-class VolumeError(BenchError):
+class MigrateError(BenchError):
     pass
 
 
-class MigrateError(BenchError):
+class AppValidationError(BenchError):
     pass

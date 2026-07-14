@@ -21,9 +21,14 @@ A zero-dependency CLI for managing [Frappe](https://frappeframework.com) environ
 
 ## Requirements
 
-**Ubuntu 22.04+** — Python 3.11+, a user with `sudo` access  
-**Alpine 3.20+** — apk + OpenRC; `install.sh` bootstraps everything. Production runs under OpenRC (`process_manager = "openrc"`) instead of systemd  
+**Debian 12+ / Ubuntu 22.04+** — Python 3.11+, a user with `sudo` access  
+**Fedora 40+** — dnf + systemd; redis is provided by valkey  
+**Arch Linux** — pacman + systemd; redis is provided by valkey  
+**Alpine 3.20+** — apk + OpenRC; production runs under OpenRC (`process_manager = "openrc"`) instead of systemd  
 **macOS** — Python 3.11+, [Homebrew](https://brew.sh) (dev only — no `sudo` setup)
+
+Derivatives that set `ID_LIKE` in `/etc/os-release` (Linux Mint, EndeavourOS, …)
+are detected as their parent distro.
 
 ## Install
 
@@ -31,8 +36,10 @@ A zero-dependency CLI for managing [Frappe](https://frappeframework.com) environ
 curl -fsSL https://raw.githubusercontent.com/frappe/pilot/main/install.sh | bash
 ```
 
-On bare Alpine (no curl/bash preinstalled) bootstrap with busybox `wget` + `sh`
-instead — the installer apk-installs git, curl, bash, sudo and the build deps itself:
+On a bare box (no curl/bash preinstalled — e.g. a fresh Alpine or a distro
+container) bootstrap with `wget` + `sh` instead — the installer uses the
+distro's package manager to install git, curl, bash, sudo and the build deps
+itself:
 
 ```sh
 wget -qO- https://raw.githubusercontent.com/frappe/pilot/main/install.sh | sh
@@ -111,7 +118,7 @@ bench start              # not yet initialized → launches the setup wizard
 
 1. **Admin password** — password for the bench admin UI
 2. **Database** — choose between a dedicated MariaDB instance (default, recommended) or the shared system MariaDB; set the MariaDB root user (default `root`) and password
-3. **Customize** — Frappe branch/repo; optionally enable ZFS volumes (dedicated DB only)
+3. **Customize** — Frappe branch/repo
 
 It then runs the full initialization with a live progress view.
 
@@ -157,6 +164,7 @@ count = 1
 port = 8002
 password = "your-admin-password"   # required — admin refuses to start without this
 jwt_secret = "..."                 # auto-generated — signs admin session tokens (don't set by hand)
+jwks_url = ""                      # optional — trust session tokens from a remote issuer publishing keys here
 domain = "admin.example.com"       # optional — serve admin behind this domain via nginx
 tls = false                        # server-wide HTTPS opt-in (Let's Encrypt); false = plain HTTP
 
@@ -172,18 +180,9 @@ timeout = 120
 malloc_arena_max = 2                 # cap glibc malloc arenas to reduce RSS; 0 = unset
 max_requests = 0                     # recycle the web worker after N requests to release heap; 0 = disabled
 max_requests_jitter = 0              # random +/- spread on max_requests so workers don't all recycle at once
-
-[volume]
-pool = "bench-pool"              # shared pool, reused if it exists; one dataset per bench
-backing = "auto"                 # discover an unused disk, or fall back to a disk image
-# backing = "device"             # explicit: dedicated disk
-# device = "/dev/sdb"
-# backing = "image"              # explicit: preallocated file on the root filesystem
-# [volume.image]
-# size = "60G"                   # file created at /var/lib/bench-zfs/bench-pool.img
 ```
 
-Each bench lives on a single dataset (`<pool>/<bench>`) holding both its files and its MariaDB data via bind mounts, so snapshots/rollbacks are atomic across both. Apps and sites are tracked by the filesystem — no need to list them in `bench.toml`. See [docs/volume.md](docs/volume.md) for the full ZFS volume guide.
+Apps and sites are tracked by the filesystem — no need to list them in `bench.toml`.
 
 ## Commands
 
@@ -199,7 +198,7 @@ Each bench lives on a single dataset (`<pool>/<bench>`) holding both its files a
 | `bench new-site <name>` | Create a site |
 | `bench rename-site <old> <new>` | Rename a site (checks the hostname is free across all benches) |
 | `bench build` | Download pre-built assets (use `--force` to rebuild from source) |
-| `bench update [--apps ..]` | git pull → reinstall deps → rebuild assets → migrate all sites; fails fast on the first error; on ZFS benches takes a snapshot first and auto-rolls back on failure |
+| `bench update [--apps ..]` | git pull → reinstall deps → rebuild assets → migrate all sites; fails fast on the first error |
 | `bench upgrade` | Pull latest pilot and download the admin frontend |
 | `bench setup config` | Regenerate Procfile and config files from bench.toml |
 | `bench build-admin` | Rebuild admin frontend assets from source |
@@ -210,11 +209,6 @@ Each bench lives on a single dataset (`<pool>/<bench>`) holding both its files a
 | `bench setup letsencrypt` | Obtain SSL certificates |
 | `bench setup production` | Full production setup — `--process-manager`, `--admin-domain`, `--tls` |
 | `bench remove production` | Tear down production, return to dev (keeps certs/logs/domain) |
-| `bench volume status` | Show ZFS pool and dataset usage |
-| `bench volume snapshot` | Snapshot the bench (files + database) |
-| `bench volume list-snapshots` | List snapshots |
-| `bench volume destroy-snapshot <tag>` | Destroy a named snapshot |
-| `bench volume restore-snapshot <tag>` | Roll the bench back to a snapshot |
 
 With multiple benches: `bench -b my-bench start`
 
@@ -281,7 +275,7 @@ class HelloCommand(Command):
 
 That's the whole change — `bench hello` now works. Commands that take arguments add an
 `add_arguments(parser)` classmethod and a `from_args(args, bench)` factory; set
-`group = "setup"` (or `"volume"`) to nest under a subcommand group. See
+`group = "setup"` to nest under a subcommand group. See
 [docs/architecture.md](docs/architecture.md#cli-entry-point-and-command-registry).
 
 ## Production
@@ -343,10 +337,12 @@ The built-in admin UI runs on port 8002 (configurable via `[admin] port`).
 | Logs | Tail and search log files with live streaming |
 | Tasks | Multi-step task view with collapsible output per step; task history |
 | Database | MariaDB process list, slow queries, binary log viewer |
-| Settings | Tabbed — Bench ports, MariaDB (read-only), Redis ports, Workers, Nginx, HTTPS toggle (`admin.tls` + Let's Encrypt), Production process manager, ZFS Volume (Linux); saves to `bench.toml` and restarts affected processes automatically |
+| Settings | Tabbed — Bench ports, MariaDB (read-only), Redis ports, Workers, Nginx, HTTPS toggle (`admin.tls` + Let's Encrypt), Production process manager; saves to `bench.toml` and restarts affected processes automatically |
 | Updates | Check for pilot updates and apply in one click |
 
 All forms validate input before submission — site names are checked for valid hostname format, repository URLs for valid git URL format, branch names for legal characters, cron expressions for valid 5-field syntax, and port numbers for the 1–65535 range.
+
+**Remote access.** Beyond the password and `bench generate-admin-session` sign-in link, an external control plane can log in and drive the whole API by signing JWTs with a key published at `[admin] jwks_url` — no shared secret. See [Remote login via JWKS](docs/admin.md#remote-login-via-jwks).
 
 ## Directory layout
 

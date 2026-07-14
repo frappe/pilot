@@ -5,10 +5,19 @@ import subprocess
 from typing import TYPE_CHECKING
 
 from pilot.config.redis_config import RedisConfig
-from pilot.platform import get_package_manager, is_macos, which
+from pilot.package_managers import get_package_manager
+from pilot.platform import is_macos, which
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
+
+
+def redis_server_binary() -> str | None:
+    """Path to the redis server binary, or None if not installed.
+
+    Fedora and Arch ship valkey (a redis fork) whose binary keeps redis'
+    CLI and version-output format."""
+    return which("redis-server") or which("valkey-server")
 
 
 class RedisManager:
@@ -17,16 +26,17 @@ class RedisManager:
         self.bench = bench
 
     def is_installed(self) -> bool:
-        return which("redis-server") is not None
+        return redis_server_binary() is not None
 
     @staticmethod
     def installed_version() -> str:
         """Return the installed redis-server version (e.g. '7.0.11'), or '' if unavailable."""
-        if which("redis-server") is None:
+        binary = redis_server_binary()
+        if binary is None:
             return ""
         try:
             result = subprocess.run(
-                ["redis-server", "--version"],
+                [binary, "--version"],
                 capture_output=True,
                 text=True,
                 timeout=5,

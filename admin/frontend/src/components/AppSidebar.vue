@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Sidebar, SidebarItem, useTheme } from 'frappe-ui'
 import { sidebarSections } from '@/navigation'
 import { authApi } from '@/api/auth'
+import { useSession } from '@/composables/useSession'
 import { useIsMobile } from '@/composables/useIsMobile'
 import SettingsDialog from '@/components/SettingsDialog.vue'
 import BenchSwitcherDialog from '@/components/BenchSwitcherDialog.vue'
@@ -15,6 +16,7 @@ const route = useRoute()
 const router = useRouter()
 const sections = sidebarSections()
 const isMobile = useIsMobile()
+const { session } = useSession()
 
 const showSettings = ref(false)
 const showBenches = ref(false)
@@ -45,11 +47,12 @@ const header = computed(() => ({
       icon: 'lucide-settings',
       onClick: () => (showSettings.value = true),
     },
-    {
+    // Managing other benches is gated server-wide by admin.allow_bench_management.
+    ...(session.allowBenchManagement ? [{
       label: 'Switch Bench',
       icon: 'lucide-repeat',
       onClick: () => (showBenches.value = true),
-    },
+    }] : []),
     {
       label: 'Theme',
       icon: 'lucide-sun-moon',
@@ -75,6 +78,8 @@ const header = computed(() => ({
     </template>
   </Sidebar>
   <SettingsDialog v-model="showSettings" />
-  <BenchSwitcherDialog v-model="showBenches" @new-bench="showNewBench = true" />
-  <NewBenchDialog v-model="showNewBench" />
+  <template v-if="session.allowBenchManagement">
+    <BenchSwitcherDialog v-model="showBenches" @new-bench="showNewBench = true" />
+    <NewBenchDialog v-model="showNewBench" />
+  </template>
 </template>

@@ -26,7 +26,6 @@ _WHITELIST: dict[str, list[str]] = {
     "drop-site": ["site"],
     "backup-site": ["site"],
     "delete-backup": ["site", "filenames"],
-    "offsite-snapshot": ["dataset", "tag"],
     "build": [],  # optional: app
     "update": [],
     # Either "site" (single-site flow) or "sites" (bench-wide flow) is required;
@@ -57,7 +56,7 @@ class TaskRunner:
         task_id = self._generate_task_id()
         task_dir = self._task_dir(task_id)
         task_dir.mkdir(parents=True)
-        command_argv = self._build_argv(command, args, task_dir)
+        command_argv = self._build_argv(command, args)
 
         meta = {
             "task_id": task_id,
@@ -109,7 +108,7 @@ class TaskRunner:
     def _task_dir(self, task_id: str) -> Path:
         return self._bench_root / "tasks" / task_id
 
-    def _build_argv(self, command: str, args: dict, task_dir: Path | None = None) -> list[str]:
+    def _build_argv(self, command: str, args: dict) -> list[str]:
         if command not in _WHITELIST:
             raise ValueError(f"Unknown command: {command!r}. Allowed: {sorted(_WHITELIST)}")
 
@@ -129,8 +128,6 @@ class TaskRunner:
             if args.get("with_files"):
                 argv += ["--with-files"]
             return argv
-        if command == "offsite-snapshot":
-            return [sys.executable, "-m", "admin.backend.tasks.jobs.offsite_snapshot_task", str(self._bench_root), args["dataset"], args["tag"]]
         if command == "build":
             argv = [sys.executable, "-m", "admin.backend.tasks.jobs.build_task", str(self._bench_root)]
             if args.get("app"):
@@ -138,8 +135,6 @@ class TaskRunner:
             return argv
         if command == "update":
             argv = [sys.executable, "-m", "admin.backend.tasks.jobs.update_task", str(self._bench_root)]
-            if task_dir:
-                argv += ["--task-log", str(task_dir / "output.log")]
             if args.get("apps"):
                 argv += ["--apps"] + list(args["apps"])
             if args.get("skip_failing_patches"):

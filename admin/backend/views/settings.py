@@ -371,7 +371,6 @@ def _do_restart(bench_root: Path, config: BenchConfig) -> tuple[bool, str | None
 
 
 def _build_settings_response(config: BenchConfig) -> dict:
-    volume = config.volume
     return {
         "is_linux": is_linux(),
         "native_process_manager": native_process_manager(),
@@ -404,14 +403,6 @@ def _build_settings_response(config: BenchConfig) -> dict:
         "letsencrypt": {"email": config.letsencrypt.email},
         "s3": _s3_payload(config),
         "s3_providers": _s3_provider_options(),
-        "volume": {
-            "enabled": volume.enabled,
-            "pool": volume.pool,
-            "backing": volume.backing,
-            "device": volume.device,
-            "image_size": volume.image.size,
-            "image_path": volume.image_path if volume.backing == "image" else "",
-        },
         "monitor": {
             "system_log_path": str(config.monitor.system_log_path),
             "log_path": str(config.monitor.log_path) if config.monitor.log_path else "",

@@ -3,8 +3,6 @@ from __future__ import annotations
 import sys
 import time
 import traceback
-from contextlib import redirect_stderr, redirect_stdout
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.commands.base import Command
@@ -47,15 +45,12 @@ class UpdateCommand(Command):
         bench: "Bench",
         skip_confirm: bool = False,
         apps: set | None = None,
-        task_log: Path | None = None,
         skip_failing_patches: bool = False,
     ) -> None:
         self.bench = bench
         self.skip_confirm = skip_confirm
         self._apps_filter = apps  # None = all apps
-        self._task_log = task_log
         self._skip_failing_patches = skip_failing_patches
-        self.tag: str | None = None
         self._current_step: str | None = None
 
     def _step(self, key: str, label: str) -> None:
@@ -68,11 +63,6 @@ class UpdateCommand(Command):
 
     def run(self) -> None:
         self._warn_if_running()
-        volume_enabled = self.bench.config.volume.enabled
-        if volume_enabled:
-            self.bench.set_maintenance_mode(True)
-            self._step("pre", "Taking a snapshot")
-            self._snapshot()
         try:
             self._step("fetch", "Fetching latest code")
             self._update_apps()
@@ -88,17 +78,7 @@ class UpdateCommand(Command):
             self._step_failed()
             traceback.print_exc()  # print at the point of failure, before any rollback steps
             sys.stdout.flush()
-            if volume_enabled and self.tag:
-                self._step("post", "Rolling back to snapshot")
-                self._rollback_preserving_log()
-                self._step("restart", "Restarting services after rollback")
-                self.bench.reload_workers()
             raise
-        finally:
-            if volume_enabled:
-                self._step("post", "Removing snapshot")
-                self._remove_snapshot()
-                self.bench.set_maintenance_mode(False)
 
         self._step("done", "Done")
 
@@ -115,86 +95,6 @@ class UpdateCommand(Command):
                 raise MigrateError("Aborted.")
             if answer not in ("y", "yes"):
                 raise MigrateError("Aborted.")
-
-    def _snapshot(self):
-        from datetime import datetime
-
-        from pilot.managers.snapshot_orchestrator import get_orchestrator
-
-        self.tag = datetime.now().strftime("%Y%m%d-%H%M%S")  # Dynamically set tag for rollbacks
-        try:
-            orchestrator = get_orchestrator(self.bench.path)
-            orchestrator.create_snapshot(self.tag)
-            print(f"Bench snapshot {self.tag} taken")
-        except Exception as e:
-            print(f" Unable to take snapshot for automatic rollbacks: {e}")
-
-    def _rollback(self):
-        from pilot.managers.snapshot_orchestrator import get_orchestrator
-
-        try:
-            orchestrator = get_orchestrator(self.bench.path)
-            orchestrator.rollback_snapshot(self.tag)
-            print(f"Successfully rolled back to {self.tag}")
-        except Exception as e:
-            print(f" Unable to rollback to snapshot: {e}")
-
-    def _rollback_preserving_log(self) -> None:
-        """Roll back while keeping the full task log across the pool revert.
-
-        Rollback reverts the volume — including this task's output.log — to the
-        pre-update snapshot, which would erase everything logged so far. To keep
-        the complete log we:
-          1. copy the current log to a /tmp file (outside the pool),
-          2. send the rollback step's own output to that /tmp file so it survives
-             the revert,
-          3. after the revert, rewrite the preserved log into a fresh output.log
-             and resume logging there.
-        """
-        if not self._task_log:
-            self._rollback()
-            return
-
-        tmp = Path("/tmp") / f"bench-update-rollback-{self.tag}.log"
-
-        # 1. Preserve everything logged up to and including the "post" step.
-        try:
-            sys.stdout.flush()
-            sys.stderr.flush()
-            tmp.write_bytes(self._task_log.read_bytes())
-        except Exception:
-            tmp = None  # fall back to plain rollback if we can't preserve
-
-        # 2. Run the rollback, capturing its output into /tmp so it survives the revert.
-        if tmp is not None:
-            with open(tmp, "a") as sink, redirect_stdout(sink), redirect_stderr(sink):
-                self._rollback()
-        else:
-            self._rollback()
-
-        # 3. Rewrite the full preserved log into a fresh output.log and resume there.
-        if tmp is not None:
-            try:
-                self._task_log.parent.mkdir(parents=True, exist_ok=True)
-                restored = open(self._task_log, "w", encoding="utf-8")
-                restored.write(tmp.read_text(encoding="utf-8", errors="replace"))
-                restored.flush()
-                sys.stdout = restored
-                sys.stderr = restored
-                tmp.unlink(missing_ok=True)
-            except Exception:
-                pass
-
-    def _remove_snapshot(self):
-        """Remove snapshot taken before migrate"""
-        from pilot.managers.volume_manager import VolumeManager
-
-        try:
-            volume_manager = VolumeManager(self.bench.config.volume)
-            volume_manager.destroy_snapshot(self.bench.config.volume.dataset_path, self.tag)
-            print(f"Removed migration snapshot {self.tag}")
-        except Exception as e:
-            print(f" Unable to remove snapshot: {e}")
 
     def _update_apps(self) -> None:
         from pilot.core.marketplace import Marketplace

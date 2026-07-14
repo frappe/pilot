@@ -61,8 +61,7 @@ admin/
     │   ├── database.py          # GET /database/binlogs, /database/slow-queries
     │   ├── tasks.py             # GET /tasks, /tasks/<id>, POST /tasks/run, /tasks/<id>/kill
     │   ├── settings.py          # GET /api/settings/, PATCH /api/settings/
-    │   ├── updates.py           # GET /api/updates/, POST /api/updates/apply
-    │   └── volume.py            # GET /api/volume/snapshots, POST /api/volume/snapshot
+    │   └── updates.py           # GET /api/updates/, POST /api/updates/apply
     │
     └── tasks/
         ├── manager/             # Task infrastructure
@@ -342,6 +341,8 @@ Backed by `DomainRouteProvider` (see [docs/production.md](production.md#custom-d
 
 In the Create Site dialog, the Site Name field is a plain text box when no wildcard domains are configured; with one, it's a prefix field plus a fixed suffix label; with several, a prefix field plus a dropdown to pick the suffix. The New Bench dialog's Admin domain field works the same way.
 
+Setting `admin.allow_bench_management = false` in `bench.toml` hides the bench switcher and New Bench dialog and makes every `/api/benches/*` route return 403. Benches are then managed only from the CLI.
+
 ### `GET /processes` — Process status
 
 `ProcessReader.read_all()`. Shows name, status, PID, uptime, link to its log file.
@@ -406,16 +407,9 @@ Returns the full settings payload as JSON. The frontend uses this to populate th
   "workers": [{ "queues": ["default", "short", "long"], "count": 1 }],
   "nginx": { "http_port": 80, "https_port": 443, "config_dir": "/etc/nginx/conf.d", "worker_processes": "auto", "client_max_body_size": "50m" },
   "letsencrypt": { "email": "", "webroot_path": "/var/www/letsencrypt" },
-  "production": { "process_manager": "none", "nginx": false },
-  "volume": {
-    "enabled": true,
-    "pool": "bench-pool",
-    "device": "/dev/sdb"
-  }
+  "production": { "process_manager": "none", "nginx": false }
 }
 ```
-
-`is_linux` gates the ZFS Volume tab in the frontend — the tab is only shown on Linux.
 
 ### `PATCH /api/settings/` — Update settings
 
@@ -464,11 +458,8 @@ The frontend presents settings as a tabbed modal dialog. Tabs are:
 | **Let's Encrypt** | Email, Webroot Path | — |
 | **Production** | Process Manager (none/supervisor + the host's native manager: systemd, or OpenRC on Alpine) | — |
 | **Updates** | — | Current version, update availability badge; Update button |
-| **ZFS Volume** *(Linux only, dedicated DB only)* | — | Pool Name, Block Device |
 
 MariaDB fields are read-only because the host, port, credentials, and socket path are set once during `bench init` and cannot be meaningfully changed by editing `bench.toml` after the fact — the database server itself is not reconfigured.
-
-The **ZFS Volume** tab and the **Snapshots** page in the sidebar are only shown for benches that use a dedicated MariaDB instance with `volume.enabled = true`. Shared-DB benches hide both.
 
 The Process Manager dropdown lets you switch between `none`, `supervisor`, and the host's native manager — `systemd` on most Linux, `openrc` on Alpine (the backend reports `native_process_manager` so the UI never offers an unavailable option). A change here writes to `bench.toml` and triggers a process restart.
 
@@ -511,6 +502,7 @@ Views catch `ConfigError`, `FileNotFoundError`, and database connection errors a
 - Sessions are Flask cookie-based. The session key is a random 32-byte hex string generated at startup — sessions are invalidated on process restart.
 - `bench generate-admin-session` issues a 5-minute, single-use `?sid=` token that the frontend exchanges for a 1-day `HttpOnly` session cookie — an alternative to password login, signed with `admin.jwt_secret` in `bench.toml`. See [docs/commands.md](commands.md#bench-generate-admin-session).
 - `bench issue-site-token` issues a scoped JWT (`scope: "site"`) for programmatic site-to-bench API calls. The token is restricted to the named site and cannot access other sites or bench-level endpoints. Use it as `Authorization: Bearer <token>`. See [docs/commands.md](commands.md#bench-issue-site-token).
+- Setting `admin.jwks_url` lets a remote issuer mint session tokens with its own private key — the bench trusts them by fetching the matching public keys, with no shared secret. See [Remote login via JWKS](#remote-login-via-jwks).
 
 - `LogReader.read_tail` and `stream_tail` validate that the requested filename contains no path separators and resolves to a file inside `logs/`. Any traversal attempt returns HTTP 400.
 - Command execution uses `TaskRunner._build_argv`, which only accepts whitelisted commands. No user-supplied string is passed to a shell.
@@ -551,6 +543,75 @@ requests.post(f"{endpoint}/api/sites/{frappe.local.site}/backup-schedule",
 The token is scoped — it can only act on its own site. Any attempt to access a different site or bench-level endpoints (e.g. `/api/benches`) returns 403.
 
 Both keys are in `PROTECTED_CONFIG_KEYS` — they are never exposed in the admin UI and are preserved across config edits.
+
+---
+
+## Remote login via JWKS
+
+The tokens above are signed with the bench's own `admin.jwt_secret` (HS256), so only something that can read `bench.toml` can mint them. To let an **external control plane** authenticate without sharing that secret, set `admin.jwks_url` to a [JWKS](https://datatracker.ietf.org/doc/html/rfc7517) endpoint the issuer publishes:
+
+```toml
+[admin]
+jwks_url = "https://control-plane.example.com/.well-known/jwks.json"
+```
+
+The issuer holds a private key and signs JWTs; the bench fetches the matching **public** keys from that URL and verifies incoming tokens against them. No secret is shared, and a new bench created from the UI or CLI inherits `jwks_url` from a sibling, so the same issuer is trusted everywhere.
+
+A JWKS-signed token has two uses:
+
+- **Log in to the admin UI** — hand it to the browser as `…/?sid=<jwt>`. The frontend exchanges it for a 1-day `HttpOnly` session cookie. A sign-in token **must be bench-scoped and carry a unique `jti`**: the `jti` makes it single-use (it cannot be replayed for further sessions), and site-scoped tokens are refused here so they can never be escalated into a full admin session.
+- **Drive the API** — send it as `Authorization: Bearer <jwt>` to any `/api/*` route: run tasks, manage sites, and call `POST /api/sites/<name>/login` to obtain a Frappe **Administrator** login URL for that site. Bearer tokens don't need a `jti`.
+
+Scope claims work exactly as for local tokens: a `scope: "site"` token is confined to its `site` (Bearer use only); a bench-scoped token (the default) can reach every endpoint.
+
+### JWKS endpoint format
+
+`admin.jwks_url` must return a standard JSON Web Key Set ([RFC 7517](https://datatracker.ietf.org/doc/html/rfc7517)): a document with a `keys` array of public keys. RSA and EC keys are both accepted — most issuers publish one of these:
+
+```json
+{
+  "keys": [
+    {
+      "kty": "RSA",
+      "use": "sig",
+      "kid": "2026-07-rsa-1",
+      "alg": "RS256",
+      "n": "0vx7ag…<base64url modulus>…Q7yRw",
+      "e": "AQAB"
+    },
+    {
+      "kty": "EC",
+      "use": "sig",
+      "kid": "2026-07-ec-1",
+      "alg": "ES256",
+      "crv": "P-256",
+      "x": "f83OJ3D2…<base64url>",
+      "y": "x_FEzRu9…<base64url>"
+    }
+  ]
+}
+```
+
+| Key type | Required fields | Notes |
+|----------|-----------------|-------|
+| RSA (`kty: "RSA"`) | `n`, `e` | Modulus and exponent, base64url. `e` is almost always `"AQAB"` (65537). |
+| EC (`kty: "EC"`) | `crv`, `x`, `y` | Curve (`P-256`/`P-384`/`P-521`) and the public point coordinates, base64url. |
+
+`kid` is recommended on every key: match it in the JWT header so the right key is selected across rotations. `alg`/`use` are advisory — the token header's `alg` is what's enforced.
+
+The signed JWT must use an **asymmetric** algorithm and carry an expiry:
+
+- **Header:** e.g. `{"alg": "RS256", "typ": "JWT", "kid": "2026-07-rsa-1"}`. Accepted `alg` values: `RS256/384/512`, `PS256/384/512`, `ES256/384/512`, `EdDSA`. Symmetric `HS*` and `none` are rejected, so a published public key can never be replayed as an HMAC secret.
+- **Payload:** a numeric `exp` (Unix seconds) is **required** and enforced. Claims: `scope` (`"bench"` default, or `"site"` with a `site` claim to confine it); `jti` (**required** for `?sid=` login — makes it single-use); `aud` (**required** when `admin.jwks_audience` is set — see below).
+
+By default only the signature and `exp` are verified. To require an audience, set `admin.jwks_audience` and have the issuer put that value in the token's `aud` claim; a token whose `aud` doesn't match (or is absent) is then rejected. Both `jwks_url` and `jwks_audience` are inherited from a sibling when a new bench is created, so the whole fleet trusts the same control plane out of the box. Note that a shared audience binds tokens to the control plane, not to an individual bench — if you need per-bench isolation, give each bench a distinct `jwks_audience`.
+
+### Operational notes
+
+- **Runs in the admin venv.** Verification uses [PyJWT](https://pyjwt.readthedocs.io/) with the `cryptography` backend (declared in the `admin` extra), which is why RSA, EC, and EdDSA are all supported. The `pilot` core stays dependency-free — this code lives in `admin/backend/`.
+- **Caching & rotation.** The key set is cached with a 5-minute lifespan and refreshed only when that lifespan expires — an unknown `kid` never forces a per-request refetch (which an attacker could use to hammer the issuer). When rotating, publish the new key **before** you start signing with it, and keep the old key in the document until its last token expires; the new key is picked up within 5 minutes.
+- **Fails closed.** An unreachable endpoint, malformed JWKS, unknown `kid`, disallowed algorithm, bad signature, or expired token all result in rejection (HTTP 401/403), never a fallback to unauthenticated access.
+- **HTTPS.** Serve the JWKS endpoint over HTTPS — its integrity is the root of trust for every remote login.
 
 ---
 
@@ -597,11 +658,8 @@ Returns the current `bench.toml` values pre-populated in the wizard form, plus e
 {
   "bench_name": "my-bench",
   "is_linux": true,
-  "available_devices": [{ "path": "/dev/sdb", "size_bytes": 107374182400 }],
-  "rootfs_free_bytes": 42949672960,
   "mariadb_instance": "my-bench",
   "mariadb_admin_user": "root",
-  "volume_enabled": false,
   ...
 }
 ```

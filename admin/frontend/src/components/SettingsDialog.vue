@@ -30,12 +30,14 @@
             <div id="settings-header-actions" class="contents"></div>
             <Button v-if="currentSection === 'workers'" variant="subtle" icon-left="lucide-plus"
               @click="workersRef?.addGroup()">Add</Button>
+            <Button v-else-if="currentSection === 'ssh-keys'" variant="subtle" icon-left="lucide-plus"
+              @click="sshKeysRef?.openAdd()">Add</Button>
           </div>
           <Workers v-if="currentSection === 'workers'" ref="workersRef" />
           <Firewall v-else-if="currentSection === 'firewall'" />
           <Git v-else-if="currentSection === 'github'" />
           <S3Bucket v-else-if="currentSection === 's3-bucket'" />
-          <Snapshots v-else-if="currentSection === 'snapshots'" @close="open = false" />
+          <SshKeys v-else-if="currentSection === 'ssh-keys'" ref="sshKeysRef" />
           <SystemInfo v-else-if="currentSection === 'system-info'" />
         </div>
       </div>
@@ -44,44 +46,31 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { Dialog, Button } from 'frappe-ui'
 import Firewall from '@/components/settings/Firewall.vue'
 import Git from '@/components/settings/Git.vue'
 import S3Bucket from '@/components/settings/S3Bucket.vue'
-import Snapshots from '@/components/settings/Snapshots.vue'
+import SshKeys from '@/components/settings/SshKeys.vue'
 import SystemInfo from '@/components/settings/SystemInfo.vue'
 import Workers from '@/components/settings/Workers.vue'
-import { settingsApi } from '@/api/settings'
 import { useIsMobile } from '@/composables/useIsMobile'
 
 const open = defineModel()
 
-const zfsEnabled = ref(false)
 const isMobile = useIsMobile()
 
 const sections = computed(() => [
   { id: 'github', label: 'Git Settings', icon: 'lucide-git-branch' },
   { id: 's3-bucket', label: 'S3 Bucket', icon: 'lucide-archive' },
   { id: 'workers', label: 'Workers', icon: 'lucide-server-cog' },
-  ...(zfsEnabled.value ? [{ id: 'snapshots', label: 'Snapshots', icon: 'lucide-camera' }] : []),
   { id: 'firewall', label: 'Firewall', icon: 'lucide-shield' },
+  { id: 'ssh-keys', label: 'SSH Keys', icon: 'lucide-key-round' },
   { id: 'system-info', label: 'System Info', icon: 'lucide-info' },
 ])
 const activeSection = ref(null)
 const workersRef = ref(null)
+const sshKeysRef = ref(null)
 const currentSection = computed(() => activeSection.value ?? sections.value[0].id)
 const activeSectionLabel = computed(() => sections.value.find((s) => s.id === currentSection.value)?.label)
-
-async function loadZfsEnabled() {
-  try {
-    const data = await settingsApi.get()
-    zfsEnabled.value = !!data.volume?.enabled
-  } catch {
-    zfsEnabled.value = false
-  }
-}
-
-watch(open, (value) => { if (value) loadZfsEnabled() })
-onMounted(() => { if (open.value) loadZfsEnabled() })
 </script>

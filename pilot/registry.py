@@ -8,11 +8,10 @@ from pilot.commands.base import Command
 from pilot.exceptions import BenchError
 from pilot.loader import load_bench
 
-# Help text for command groups (e.g. `bench setup ...`, `bench volume ...`).
+# Help text for command groups (e.g. `bench setup ...`).
 GROUP_HELP = {
     "setup": "Production setup commands.",
     "remove": "Teardown commands.",
-    "volume": "ZFS volume management commands.",
 }
 
 _commands_cache: list[type[Command]] | None = None

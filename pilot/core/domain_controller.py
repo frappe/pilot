@@ -50,12 +50,15 @@ class DomainRouteProvider:
 
     def generate_dns_records(self, site_name: str, domain: str) -> dict:
         """Step 1 of attaching a domain: validate it's free, return {"cname": [...], "a": [...]}
-        record sets — one per validation method; either may be empty if that route isn't an option."""
+        record sets — one per validation method; either may be empty if that route isn't an option.
+
+        The local basic checks (free on this bench, not the admin domain) run even when a
+        provider handles the records — the provider layers its own global validation on top."""
+        self._read(site_name)
+        domain = self._validate_new(site_name, domain)
         ran, data = self._ask_provider("generate-dns-records", domain, site=site_name)
         if ran:
             return data or {}
-        self._read(site_name)
-        domain = self._validate_new(site_name, domain)
         records = {"cname": [{"type": "CNAME", "host": domain, "value": site_name}], "a": []}
         if ip := self._server_ip():
             records["a"] = [{"type": "A", "host": domain, "value": ip}]

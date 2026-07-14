@@ -5,6 +5,21 @@ import functools
 from flask import g, jsonify
 
 
+def decode_session_token(token: str, config) -> dict | None:
+    """Validate a session token against the local HS256 secret and, failing
+    that, the trusted remote JWKS keys. Returns the token's claims or None."""
+    from pilot.commands.generate_session import decode_token
+
+    claims = decode_token(token, config.admin.jwt_secret)
+    if claims is not None:
+        return claims
+    if config.admin.jwks_url:
+        from .jwks import verify_jwks_token
+
+        return verify_jwks_token(token, config.admin.jwks_url, config.admin.jwks_audience)
+    return None
+
+
 def require_scope(site):
     """Allow or reject the request based on the JWT ``scope`` claim."""
     from pilot.commands.generate_session import has_scope

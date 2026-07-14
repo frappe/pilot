@@ -461,36 +461,8 @@ class Monitor:
             "percent": round(used_bytes / total_bytes * 100, 2) if total_bytes else 0.0,
         }
 
-    def _zfs_pool_usage(self, pool: str) -> dict:
-        result = subprocess.run(
-            ["zpool", "list", "-H", "-p", "-o", "size,allocated,free", pool],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        size, allocated, free = (int(x) for x in result.stdout.strip().split())
-        return {
-            "pool": pool,
-            "total_mb": round(size / 1024**2, 2),
-            "used_mb": round(allocated / 1024**2, 2),
-            "free_mb": round(free / 1024**2, 2),
-            "percent": round(allocated / size * 100, 2) if size else 0.0,
-        }
-
-    def _find_zfs_pool(self) -> str | None:
-        if self.bench.config.volume.enabled:
-            return self.bench.config.volume.pool
-        for _, config in iter_sibling_benches(self.bench.path):
-            if config.volume.enabled:
-                return config.volume.pool
-        return None
-
     def _storage_usage(self) -> dict:
-        result: dict = {"disk": self._disk_usage(self.bench.path)}
-        pool = self._find_zfs_pool()
-        if pool:
-            result["zfs"] = self._zfs_pool_usage(pool)
-        return result
+        return {"disk": self._disk_usage(self.bench.path)}
 
     @property
     def is_system_log_authority(self):
@@ -558,15 +530,7 @@ class Monitor:
 def resolve_monitor_log_path(bench_config: "BenchConfig"):
     from pilot.config.monitor_config import MonitorConfig
 
-    bench_name = bench_config.name
-    if bench_config.volume.enabled:
-        from pilot.managers.volume_manager import VolumeManager
-
-        volume = bench_config.volume
-        VolumeManager(volume).create_dataset(f"{volume.pool}/logs")
-        mountpoint = VolumeManager(volume).get_mountpoint(f"{volume.pool}/logs")
-        return mountpoint / f"{bench_name}-stats.log"
-    return MonitorConfig.default_log_path(bench_name)
+    return MonitorConfig.default_log_path(bench_config.name)
 
 
 def _production_monitors() -> list[Monitor]:

@@ -17,14 +17,12 @@ from pilot.config.postgres_config import PostgresConfig
 from pilot.config.production_config import ProductionConfig
 from pilot.config.redis_config import RedisConfig
 from pilot.config.s3_config import S3Config
-from pilot.config.volume_config import ImageConfig, VolumeConfig
 from pilot.config.worker_config import WorkerConfig, WorkerGroup
 from pilot.exceptions import ConfigError
 
 _BENCH_NAME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]*$")
 _EMAIL_PATTERN = re.compile(r"^[^@]+@[^@]+\.[^@]+$")
 _VERSION_PATTERN = re.compile(r"^\d+(\.\d+)*$")
-_ZFS_SIZE_PATTERN = re.compile(r"^[1-9]\d*[KMGTkmgt]?$")
 # Lenient hostname: dotted labels of alphanumerics/hyphens. Allows dev names
 # like "admin1.localhost" and real domains like "admin.example.com".
 _HOSTNAME_PATTERN = re.compile(r"^(?=.{1,253}$)[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$")
@@ -58,7 +56,6 @@ class BenchConfig:
     gunicorn: GunicornConfig = field(default_factory=GunicornConfig)
     letsencrypt: LetsEncryptConfig = field(default_factory=LetsEncryptConfig)
     admin: AdminConfig = field(default_factory=AdminConfig)
-    volume: VolumeConfig = field(default_factory=VolumeConfig)
     central: CentralConfig = field(default_factory=CentralConfig)
     firewall: FirewallConfig = field(default_factory=FirewallConfig)
     s3: S3Config = field(default_factory=S3Config)
@@ -92,13 +89,9 @@ class BenchConfig:
         gunicorn = cls._parse_gunicorn(data.get("gunicorn", {}), bench_data.get("http_port", 8000))
         letsencrypt = cls._parse_letsencrypt(data.get("letsencrypt", {}))
         admin = cls._parse_admin(data.get("admin", {}))
-        volume = cls._parse_volume(data.get("volume"))
         central = cls._parse_central(data.get("central", {}))
         firewall = cls._parse_firewall(data.get("firewall"))
         s3 = S3Config(**data.get("s3", {}))
-        # One dataset per bench, named after the bench unless explicitly set.
-        if not volume.name:
-            volume.name = bench_data.get("name", "")
         return cls(
             name=bench_data.get("name", ""),
             python_version=bench_data.get("python", ""),
@@ -120,7 +113,6 @@ class BenchConfig:
             gunicorn=gunicorn,
             letsencrypt=letsencrypt,
             admin=admin,
-            volume=volume,
             central=central,
             firewall=firewall,
             s3=s3,
@@ -215,8 +207,11 @@ class BenchConfig:
             enabled=data.get("enabled", False),
             password=data.get("password", ""),
             jwt_secret=data.get("jwt_secret", ""),
+            jwks_url=data.get("jwks_url", ""),
+            jwks_audience=data.get("jwks_audience", ""),
             domain=data.get("domain", ""),
             tls=data.get("tls", False),
+            allow_bench_management=data.get("allow_bench_management", True),
         )
 
     @staticmethod
@@ -224,30 +219,6 @@ class BenchConfig:
         return CentralConfig(
             endpoint=data.get("endpoint", ""),
             auth_token=data.get("auth_token", ""),
-        )
-
-    @staticmethod
-    def _parse_volume(data: dict | None) -> VolumeConfig:
-        if data is None:
-            return VolumeConfig()
-        image_data = data.get("image", {})
-        # Older tomls predate `backing`: an explicit device implies device backing.
-        backing = data.get("backing") or ("device" if data.get("device") else "auto")
-        if "enabled" in data:
-            enabled = bool(data["enabled"])
-        else:
-            # Legacy: [volume] section without enabled key means it was enabled.
-            enabled = True
-        return VolumeConfig(
-            enabled=enabled,
-            pool=data.get("pool", "bench-pool"),
-            name=data.get("name", ""),
-            backing=backing,
-            device=data.get("device", ""),
-            image=ImageConfig(
-                size=image_data.get("size", ""),
-                path=image_data.get("path", ""),
-            ),
         )
 
     @staticmethod
@@ -286,8 +257,6 @@ class BenchConfig:
         self._validate_production()
         self._validate_admin_domain()
         self._validate_firewall()
-        if self.volume.enabled:
-            self._validate_volume()
 
     def _validate_required_fields(self) -> None:
         if not self.name:
@@ -442,37 +411,6 @@ class BenchConfig:
     def _validate_redis_version(self) -> None:
         if self.redis.version and not _VERSION_PATTERN.match(self.redis.version):
             raise ConfigError(f"redis.version '{self.redis.version}' is invalid. Must be a version string like '7' or '7.0'.")
-
-    def _validate_volume(self) -> None:
-        if not self.volume.enabled:
-            return
-        if not self.volume.pool:
-            raise ConfigError("volume.pool is required.")
-        self._validate_volume_backing()
-
-    def _validate_volume_backing(self) -> None:
-        backing = self.volume.backing
-        if backing not in ("device", "image", "auto"):
-            raise ConfigError(f"volume.backing '{backing}' is invalid. Must be 'device', 'image', or 'auto'.")
-        if backing == "auto":
-            # Resolved to a concrete backing (with smart sizes) during bench init.
-            return
-        if backing == "device":
-            if not self.volume.device:
-                raise ConfigError("volume.device is required when volume.backing = 'device'.")
-            return
-        if not self.volume.image.size:
-            raise ConfigError("volume.image.size is required when volume.backing = 'image'.")
-        self._validate_zfs_size("volume.image.size", self.volume.image.size)
-        if self.volume.image.path and not Path(self.volume.image.path).is_absolute():
-            raise ConfigError(f"volume.image.path '{self.volume.image.path}' must be an absolute path.")
-
-    @staticmethod
-    def _validate_zfs_size(field_name: str, value: str) -> None:
-        if not _ZFS_SIZE_PATTERN.match(value):
-            raise ConfigError(
-                f"{field_name} '{value}' is not a valid ZFS size. Must be a positive integer with an optional K/M/G/T suffix — examples: '10G', '512M', '1T'. Decimals and negatives are not allowed."
-            )
 
     @property
     def framework_app(self) -> AppConfig:

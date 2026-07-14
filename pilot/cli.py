@@ -1,7 +1,6 @@
 import sys
 
 from pilot.exceptions import BenchError
-from pilot.utils import run_command
 
 _OWN_GROUP_OPTIONS = frozenset(["--verbose", "--yes", "-y", "--bench", "-b", "--help", "-h"])
 
@@ -71,30 +70,6 @@ def _run_frappe(bench_name: str | None, frappe_args: list[str], verbose: bool = 
         sys.exit(1)
 
 
-def _reexec_under_admin_env_if_needed(cls) -> None:
-    """`bench volume ...` commands (snapshot/rollback/etc.) touch MariaDB via
-    pymysql, which lives only in the isolated admin venv (pilot's own env is
-    stdlib-only by design)."""
-    if cls is None or cls.group != "volume":
-        return
-
-    from pathlib import Path
-
-    from pilot.loader import cli_root
-    from pilot.managers.admin_env_manager import AdminEnvManager
-
-    manager = AdminEnvManager(cli_root())
-    admin_python = manager.python
-    # Are we already running in admin env?
-    if Path(sys.prefix).resolve() == admin_python.parent.parent.resolve():
-        return  # already running under the admin venv
-
-    manager.ensure()
-    bench_script = cli_root() / "bench"
-    result = run_command([str(admin_python), str(bench_script), *sys.argv[1:]], stream_output=True)
-    sys.exit(result.returncode)
-
-
 def main() -> None:
     from pilot import loader, registry
 
@@ -126,7 +101,6 @@ def main() -> None:
     verbose = getattr(args, "verbose", False)
     _t0 = time.monotonic()
     try:
-        _reexec_under_admin_env_if_needed(getattr(args, "_command_cls", None))
         if bench_name == "all":
             registry.dispatch_all(args, parser)
         else:

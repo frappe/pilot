@@ -1,0 +1,9 @@
+[project]
+name = "testapp"
+version = "0.0.1"
+description = "Minimal app used in bench-cli integration tests"
+dependencies = []
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"

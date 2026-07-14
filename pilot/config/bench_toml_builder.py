@@ -41,13 +41,10 @@ FLAT_KEYS = {
     "admin_password": "admin.password",
     "admin_domain": "admin.domain",
     "admin_tls": "admin.tls",
+    "admin_jwks_url": "admin.jwks_url",
+    "admin_jwks_audience": "admin.jwks_audience",
+    "admin_allow_bench_management": "admin.allow_bench_management",
     "letsencrypt_email": "letsencrypt.email",
-    "volume_enabled": "volume.enabled",
-    "volume_pool": "volume.pool",
-    "volume_backing": "volume.backing",
-    "volume_device": "volume.device",
-    "volume_image_size": "volume.image.size",
-    "volume_image_path": "volume.image.path",
     "production_process_manager": "production.process_manager",
 }
 
@@ -176,7 +173,6 @@ class BenchTomlBuilder:
     """
 
     DEFAULTS = {key: value for key, value in _flatten(_default_config()).items() if key != "bench_name"}
-    DEFAULTS["volume_image_size"] = DEFAULTS["volume_image_size"] or "60G"
 
     def __init__(self, name: str, settings: dict | None = None, port_offset: int = 0) -> None:
         self._name = name

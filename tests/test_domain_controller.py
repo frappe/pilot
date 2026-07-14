@@ -72,18 +72,35 @@ def _calls(log: Path) -> list[str]:
 
 def test_generate_dns_records_returns_provider_output(tmp_path: Path, monkeypatch) -> None:
     _install_provider(tmp_path, monkeypatch)
-    routes = DomainRouteProvider(_make_bench(tmp_path))
+    bench = _make_bench(tmp_path)
+    _write_site(bench, "mysite")
 
-    records = routes.generate_dns_records("mysite", "app.example.com")
+    records = DomainRouteProvider(bench).generate_dns_records("mysite", "app.example.com")
 
     assert records == {"cname": [{"type": "CNAME", "host": "app.example.com", "value": "edge.example.com"}], "a": []}
 
 
 def test_generate_dns_records_passes_site_then_domain(tmp_path: Path, monkeypatch) -> None:
     log = _install_provider(tmp_path, monkeypatch)
-    DomainRouteProvider(_make_bench(tmp_path)).generate_dns_records("mysite", "app.example.com")
+    bench = _make_bench(tmp_path)
+    _write_site(bench, "mysite")
+
+    DomainRouteProvider(bench).generate_dns_records("mysite", "app.example.com")
 
     assert _calls(log) == ["generate-dns-records mysite app.example.com"]
+
+
+def test_generate_dns_records_validates_locally_before_provider(tmp_path: Path, monkeypatch) -> None:
+    """The local basic checks run even with a provider installed: a domain already
+    taken by a sibling site is rejected here, before the provider is ever called."""
+    log = _install_provider(tmp_path, monkeypatch)
+    bench = _make_bench(tmp_path)
+    _write_site(bench, "mysite")
+    _write_site(bench, "other", {"domains": ["app.example.com"]})
+
+    with pytest.raises(BenchError, match="already used by site 'other'"):
+        DomainRouteProvider(bench).generate_dns_records("mysite", "app.example.com")
+    assert not log.exists()
 
 
 def test_register_passes_domain_only_and_persists(tmp_path: Path, monkeypatch) -> None:
@@ -149,13 +166,14 @@ def test_builtin_dns_records_without_provider(tmp_path: Path, monkeypatch) -> No
 
 # --- end to end: provider proxy IPs reach the nginx config -------------------
 
-def test_nginx_locks_down_to_provider_proxy_servers(tmp_path: Path, monkeypatch) -> None:
+def test_nginx_gates_tcp_peer_to_provider_proxy_servers(tmp_path: Path, monkeypatch) -> None:
     _install_provider(tmp_path, monkeypatch)
     config = NginxManager(_make_bench(tmp_path))._generate_site_config(
         SiteConfig(name="site1.example.com", apps=["frappe"]), ssl_ready=False
     )
 
     assert "set_real_ip_from   203.0.113.10;" in config
-    assert "allow              203.0.113.11;" in config
-    assert "deny               all;" in config
+    assert r'if ($realip_remote_addr ~ "^(203\.0\.113\.10|203\.0\.113\.11)$") { set $bench_from_proxy 1; }' in config
+    assert "if ($bench_from_proxy = 0) { return 403; }" in config
+    assert "deny               all;" not in config
     assert "X-Forwarded-For    $http_x_forwarded_for" in config

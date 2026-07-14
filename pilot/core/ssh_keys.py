@@ -1,0 +1,151 @@
+"""Stateless management of the bench user's ``~/.ssh/authorized_keys``.
+
+Reads, adds, and removes OpenSSH public keys directly on disk. The admin process
+runs as the target user, so no privilege escalation is needed. Mutations take an
+exclusive ``fcntl`` lock so concurrent admin requests can't clobber each other,
+and refuse to remove the final key (locking yourself out).
+"""
+
+from __future__ import annotations
+
+import base64
+import contextlib
+import fcntl
+import hashlib
+import os
+import struct
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+
+_KEY_TYPE_PREFIXES = ("ssh-", "ecdsa-sha2-", "sk-ssh-", "sk-ecdsa-sha2-")
+
+
+class SSHKeyError(Exception):
+    """A key was malformed, duplicated, missing, or the last one remaining."""
+
+
+@dataclass
+class SSHKey:
+    key_type: str
+    fingerprint: str
+    comment: str
+
+
+def _is_key_type(token: str) -> bool:
+    return token.startswith(_KEY_TYPE_PREFIXES)
+
+
+def _fingerprint(blob: str) -> str:
+    digest = hashlib.sha256(base64.b64decode(blob)).digest()
+    return "SHA256:" + base64.b64encode(digest).decode().rstrip("=")
+
+
+def _parse_line(line: str) -> tuple[str, str, str] | None:
+    """Return ``(key_type, base64_blob, comment)`` for a key line, else None for
+    blanks and ``#`` comments. Any leading options field is discarded."""
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        return None
+    parts = stripped.split()
+    for index, token in enumerate(parts):
+        if _is_key_type(token) and index + 1 < len(parts):
+            return token, parts[index + 1], " ".join(parts[index + 2 :])
+    return None
+
+
+def _validate(public_key: str) -> tuple[str, str, str]:
+    """Validate a pasted public key and return ``(key_type, blob, comment)``.
+
+    Confirms the base64 blob decodes and its embedded algorithm name (the first
+    length-prefixed field of the SSH wire format) matches the declared type.
+    """
+    parsed = _parse_line(public_key)
+    if parsed is None:
+        raise SSHKeyError("Not a valid SSH public key.")
+    key_type, blob, comment = parsed
+    try:
+        raw = base64.b64decode(blob, validate=True)
+        length = struct.unpack(">I", raw[:4])[0]
+        algorithm = raw[4 : 4 + length].decode()
+    except (ValueError, struct.error, UnicodeDecodeError):
+        raise SSHKeyError("The public key is malformed.")
+    if algorithm != key_type:
+        raise SSHKeyError("The key type does not match the key data.")
+    return key_type, blob, comment
+
+
+class AuthorizedKeysStore:
+    """Reads/writes ``authorized_keys`` under an exclusive advisory lock."""
+
+    def __init__(self, path: Path | None = None) -> None:
+        self.path = path or (Path.home() / ".ssh" / "authorized_keys")
+
+    def list(self) -> list[SSHKey]:
+        return [self._to_key(parsed) for parsed in self._parse_lines(self._read())]
+
+    def add(self, public_key: str) -> SSHKey:
+        key_type, blob, comment = _validate(public_key)
+        fingerprint = _fingerprint(blob)
+        with self._locked():
+            lines = self._read()
+            if any(_fingerprint(p[1]) == fingerprint for p in self._parse_lines(lines)):
+                raise SSHKeyError("That key is already authorized.")
+            line = " ".join(part for part in (key_type, blob, comment) if part)
+            self._write(lines + [line])
+        return SSHKey(key_type=key_type, fingerprint=fingerprint, comment=comment)
+
+    def remove(self, fingerprint: str) -> None:
+        with self._locked():
+            lines = self._read()
+            keys = self._parse_lines(lines)
+            if not any(_fingerprint(blob) == fingerprint for _, blob, _ in keys):
+                raise SSHKeyError("No authorized key matches that fingerprint.")
+            if len(keys) <= 1:
+                raise SSHKeyError("Refusing to remove the last authorized key.")
+            kept = [line for line in lines if self._line_fingerprint(line) != fingerprint]
+            self._write(kept)
+
+    def _to_key(self, parsed: tuple[str, str, str]) -> SSHKey:
+        key_type, blob, comment = parsed
+        return SSHKey(key_type=key_type, fingerprint=_fingerprint(blob), comment=comment)
+
+    def _parse_lines(self, lines: list[str]) -> list[tuple[str, str, str]]:
+        return [parsed for line in lines if (parsed := _parse_line(line))]
+
+    def _line_fingerprint(self, line: str) -> str | None:
+        parsed = _parse_line(line)
+        return _fingerprint(parsed[1]) if parsed else None
+
+    def _read(self) -> list[str]:
+        try:
+            return self.path.read_text().splitlines()
+        except FileNotFoundError:
+            return []
+
+    def _write(self, lines: list[str]) -> None:
+        self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        content = "\n".join(lines) + "\n" if lines else ""
+        fd, tmp = tempfile.mkstemp(dir=str(self.path.parent), prefix=".authorized_keys-")
+        try:
+            with os.fdopen(fd, "w") as handle:
+                handle.write(content)
+            os.chmod(tmp, 0o600)
+            os.replace(tmp, self.path)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
+            raise
+
+    @contextlib.contextmanager
+    def _locked(self):
+        # Lock the .ssh directory, not the file: an atomic write replaces the
+        # file's inode, so a lock on it wouldn't serialize the next writer.
+        self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        fd = os.open(self.path.parent, os.O_RDONLY)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            yield
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)

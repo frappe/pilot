@@ -372,9 +372,11 @@ class ProcessManager:
         ]
 
     def _redis_definition(self, name: str, config_filename: str) -> ProcessDefinition:
+        from pilot.managers.redis_manager import redis_server_binary
+
         return ProcessDefinition(
             name=name,
-            command=f"redis-server {self.bench.config_path}/{config_filename}",
+            command=f"{redis_server_binary() or 'redis-server'} {self.bench.config_path}/{config_filename}",
             log_file=self.bench.logs_path / f"{name}.log",
             stop_timeout=300,
         )

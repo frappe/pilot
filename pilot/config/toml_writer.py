@@ -105,8 +105,13 @@ def bench_config_to_toml(config: BenchConfig) -> str:
     parts.append(f'password = "{a.password}"')
     if a.jwt_secret:
         parts.append(f'jwt_secret = "{a.jwt_secret}"')
+    if a.jwks_url:
+        parts.append(f'jwks_url = "{a.jwks_url}"')
+    if a.jwks_audience:
+        parts.append(f'jwks_audience = "{a.jwks_audience}"')
     parts.append(f'domain = "{a.domain}"')
     parts.append(f"tls = {'true' if a.tls else 'false'}")
+    parts.append(f"allow_bench_management = {'true' if a.allow_bench_management else 'false'}")
     parts.append("")
 
     c = config.central
@@ -115,22 +120,6 @@ def bench_config_to_toml(config: BenchConfig) -> str:
         parts.append(f'endpoint = "{c.endpoint}"')
         parts.append(f'auth_token = "{c.auth_token}"')
         parts.append("")
-
-    v = config.volume
-    parts.append("[volume]")
-    parts.append(f"enabled = {'true' if v.enabled else 'false'}")
-    if v.enabled:
-        parts.append(f'pool = "{v.pool}"')
-        parts.append(f'backing = "{v.backing}"')
-        if v.backing == "image":
-            parts.append("")
-            parts.append("[volume.image]")
-            parts.append(f'size = "{v.image.size}"')
-            parts.append(f'path = "{v.image_path}"')
-        elif v.backing == "device":
-            parts.append(f'device = "{v.device}"')
-        # backing = "auto" carries no device/image fields — resolved during bench init
-    parts.append("")
 
     fw = config.firewall
     if fw.enabled or fw.rules:

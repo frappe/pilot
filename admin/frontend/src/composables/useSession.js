@@ -7,6 +7,7 @@ const session = reactive({
   wizard: false,
   enabled: true,
   benchName: '',
+  allowBenchManagement: true,
 })
 
 async function loadSession() {
@@ -16,6 +17,7 @@ async function loadSession() {
     session.wizard = status.wizard === true
     session.enabled = status.enabled !== false
     session.benchName = status.name || ''
+    session.allowBenchManagement = status.allow_bench_management !== false
   } catch {
     session.authenticated = false
   }

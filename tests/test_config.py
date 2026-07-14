@@ -510,100 +510,18 @@ def test_admin_tls_roundtrip() -> None:
     assert "tls = false" in bench_config_to_toml(config)
 
 
-# ── volume backing ────────────────────────────────────────────────────────────
+def test_admin_allow_bench_management_defaults_to_true() -> None:
+    config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
+    assert config.admin.allow_bench_management is True
+    assert "allow_bench_management = true" in bench_config_to_toml(config)
 
 
-def _data_with_volume(volume: dict) -> dict:
+def test_admin_allow_bench_management_can_be_disabled() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["volume"] = {"enabled": True, "pool": "bench-pool", **volume}
-    return data
-
-
-def test_volume_device_backing_valid() -> None:
-    config = load_from_dict(_data_with_volume({"device": "/dev/sdb"}))
-    assert config.volume.backing == "device"
-    assert config.volume.device == "/dev/sdb"
-
-
-def test_volume_device_backing_requires_device() -> None:
-    with pytest.raises(ConfigError, match="volume.device is required"):
-        load_from_dict(_data_with_volume({"backing": "device"}))
-
-
-def test_volume_backing_inferred_from_device() -> None:
-    config = load_from_dict(_data_with_volume({"device": "/dev/sdb"}))
-    assert config.volume.backing == "device"
-
-
-def test_volume_defaults_to_auto_backing() -> None:
-    data = copy.deepcopy(MINIMAL_VALID_DATA)
-    config = load_from_dict(data)  # no [volume] section at all
-    assert config.volume.pool == "bench-pool"
-    assert config.volume.backing == "auto"
-
-
-def test_volume_image_backing_valid() -> None:
-    config = load_from_dict(_data_with_volume({"backing": "image", "image": {"size": "60G"}}))
-    assert config.volume.image.size == "60G"
-    assert config.volume.image_path == "/var/lib/bench-zfs/bench-pool.img"
-
-
-def test_volume_image_backing_requires_size() -> None:
-    with pytest.raises(ConfigError, match="volume.image.size is required"):
-        load_from_dict(_data_with_volume({"backing": "image"}))
-
-
-def test_volume_image_path_must_be_absolute() -> None:
-    with pytest.raises(ConfigError, match="must be an absolute path"):
-        load_from_dict(_data_with_volume({"backing": "image", "image": {"size": "60G", "path": "relative/pool.img"}}))
-
-
-def test_volume_image_custom_path_used() -> None:
-    config = load_from_dict(_data_with_volume({"backing": "image", "image": {"size": "60G", "path": "/data/pool.img"}}))
-    assert config.volume.image_path == "/data/pool.img"
-
-
-def test_volume_auto_backing_requires_no_backing_fields() -> None:
-    config = load_from_dict(_data_with_volume({"backing": "auto"}))
-    assert config.volume.backing == "auto"
-
-
-def test_volume_invalid_backing_rejected() -> None:
-    with pytest.raises(ConfigError, match="Must be 'device', 'image', or 'auto'"):
-        load_from_dict(_data_with_volume({"backing": "loopback"}))
-
-
-def test_volume_skipped_when_not_configured() -> None:
-    data = copy.deepcopy(MINIMAL_VALID_DATA)  # no [volume] section
-    config = BenchConfig._from_dict(data)
-    config.validate()  # must not raise — ZFS validation is skipped when volume not configured
-    assert not config.volume.enabled
-
-
-def test_toml_writer_volume_disabled_emits_enabled_false() -> None:
-    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["admin"] = {"domain": "admin.example.com", "allow_bench_management": False}
     config = load_from_dict(data)
-    toml = bench_config_to_toml(config)
-    assert "[volume]" in toml
-    assert "enabled = false" in toml
-
-
-def test_toml_writer_volume_image_backing_round_trip() -> None:
-    config = load_from_dict(_data_with_volume({"backing": "image", "image": {"size": "60G", "path": "/data/pool.img"}}))
-    toml = bench_config_to_toml(config)
-    assert 'backing = "image"' in toml
-    assert '[volume.image]' in toml
-    assert 'size = "60G"' in toml
-    assert 'path = "/data/pool.img"' in toml
-    assert 'device = ' not in toml.split("[volume]")[1]
-
-
-def test_toml_writer_volume_device_backing() -> None:
-    config = load_from_dict(_data_with_volume({"device": "/dev/sdb"}))
-    toml = bench_config_to_toml(config)
-    assert 'backing = "device"' in toml
-    assert 'device = "/dev/sdb"' in toml
-    assert "[volume.image]" not in toml
+    assert config.admin.allow_bench_management is False
+    assert "allow_bench_management = false" in bench_config_to_toml(config)
 
 
 def test_admin_internal_port_is_port_plus_one() -> None:

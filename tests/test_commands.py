@@ -114,6 +114,41 @@ def test_new_command_second_bench_gets_next_offset(tmp_path: Path, monkeypatch: 
     assert data["admin"]["port"] == 7001
 
 
+def test_new_command_inherits_sibling_jwks_url_and_audience(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The remote JWKS issuer is server-wide, so a new bench carries both the
+    URL and the audience forward from a sibling that already trusts one."""
+    from pilot.commands.new import NewCommand
+    from pilot.config.toml_store import BenchTomlStore
+
+    monkeypatch.setattr("builtins.input", lambda _: "")
+    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    benches_dir = tmp_path / "benches"
+    NewCommand(benches_dir / "first", "first").run()
+    store = BenchTomlStore.for_bench(benches_dir / "first")
+    data = store.read_raw()
+    admin = data.setdefault("admin", {})
+    admin["jwks_url"] = "https://issuer.example.com/jwks.json"
+    admin["jwks_audience"] = "bench-fleet"
+    store.write_raw(data)
+
+    NewCommand(benches_dir / "second", "second").run()
+    with open(benches_dir / "second" / "bench.toml", "rb") as f:
+        inherited = tomllib.load(f)["admin"]
+    assert inherited["jwks_url"] == "https://issuer.example.com/jwks.json"
+    assert inherited["jwks_audience"] == "bench-fleet"
+
+
+def test_new_command_first_bench_has_no_jwks_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from pilot.commands.new import NewCommand
+
+    monkeypatch.setattr("builtins.input", lambda _: "")
+    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    target = tmp_path / "benches" / "only"
+    NewCommand(target, "only").run()
+    with open(target / "bench.toml", "rb") as f:
+        assert "jwks_url" not in tomllib.load(f).get("admin", {})
+
+
 def test_new_command_postgres_bench(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A `--database postgres` bench records db_type, generates a postgres
     password, and gets no dedicated MariaDB instance."""
@@ -203,52 +238,6 @@ def test_new_command_writes_dedicated_mariadb_instance_on_alpine(tmp_path: Path,
         data = tomllib.load(f)
     assert data["mariadb"]["instance"] == "alp"
     assert data["mariadb"]["socket_path"] == "/run/mysqld/mysqld-alp.sock"
-
-
-def test_volume_setup_binds_mariadb_to_instance_datadir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """For an instance bench, the dataset's mariadb subdir bind-mounts onto the
-    instance's sibling datadir (not the shared /var/lib/mysql)."""
-    from pilot.commands import volume as volume_cmd
-    from pilot.commands.volume import VolumeSetupCommand
-
-    data = {
-        "bench": {"name": "shop", "python": "3.14"},
-        "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "develop"}],
-        "mariadb": {
-            "root_password": "root",
-            "instance": "shop",
-            "data_dir": "/var/lib/mysql-shop",
-            "socket_path": "/run/mysqld/mysqld-shop.sock",
-        },
-        "redis": {"cache_port": 13000, "queue_port": 11000},
-        "volume": {"enabled": True, "pool": "shop-pool"},
-    }
-    config = BenchConfig._from_dict(data)
-    cmd = VolumeSetupCommand(config.volume, tmp_path / "shop", bench_config=config)
-
-    monkeypatch.setattr(volume_cmd, "run_command", MagicMock())
-    manager = MagicMock()
-    cmd._bind_mariadb(manager, Path("/shop-pool/shop"))
-
-    manager.bind_mount.assert_called_once()
-    source, target = manager.bind_mount.call_args[0]
-    assert source == Path("/shop-pool/shop/mariadb")
-    assert str(target) == "/var/lib/mysql-shop"
-    manager.persist_bind_mount.assert_called_once()
-
-
-def test_volume_config_dataset_path_is_per_bench() -> None:
-    """Each bench gets one dataset named after it inside the shared pool."""
-    data = {
-        "bench": {"name": "shop", "python": "3.14"},
-        "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "develop"}],
-        "mariadb": {"root_password": "root"},
-        "redis": {"cache_port": 13000, "queue_port": 11000},
-        "volume": {"enabled": True, "pool": "bench-pool"},
-    }
-    config = BenchConfig._from_dict(data)
-    assert config.volume.name == "shop"
-    assert config.volume.dataset_path == "bench-pool/shop"
 
 
 def test_new_command_skips_offset_with_live_port(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1065,194 +1054,6 @@ def test_start_rebuild_config_writes_process_and_common_site_config(tmp_path: Pa
     common_site.assert_called_once()
 
 
-# ── snapshot orchestrator (single global dataset) ─────────────────────────────
-
-
-def test_orchestrator_create_snapshot_quiesces_mariadb() -> None:
-    from pilot.managers.snapshot_orchestrator import SnapshotOrchestrator
-
-    volume = MagicMock()
-    volume.config.dataset_path = "bench-pool/shop"
-    mariadb = MagicMock()
-    SnapshotOrchestrator(volume, mariadb, None).create_snapshot("tag1")
-
-    mariadb.snapshot_lock.assert_called_once()
-    volume.snapshot.assert_called_once_with("bench-pool/shop", "tag1")
-
-
-def test_orchestrator_rollback_stops_mariadb_and_sets_maintenance() -> None:
-    from unittest.mock import call
-
-    from pilot.managers.snapshot_orchestrator import SnapshotOrchestrator
-
-    volume = MagicMock()
-    volume.config.dataset_path = "bench-pool/shop"
-    mariadb = MagicMock()
-    bench = MagicMock()
-    SnapshotOrchestrator(volume, mariadb, bench).rollback_snapshot("tag1")
-
-    mariadb.stop.assert_called_once()
-    mariadb.start.assert_called_once()
-    volume.rollback_snapshot.assert_called_once_with("bench-pool/shop", "tag1")
-    assert bench.set_maintenance_mode.call_args_list == [call(True), call(False)]
-
-
-def test_destroy_snapshot_command_also_removes_downloaded_dataset() -> None:
-    from unittest.mock import patch
-
-    from pilot.commands.volume import VolumeDestroySnapshotCommand
-    from pilot.config.volume_config import VolumeConfig
-
-    config = VolumeConfig(enabled=True, pool="bench-pool", name="shop")
-    with patch("pilot.managers.volume_manager.VolumeManager") as manager_cls:
-        manager = manager_cls.return_value
-        VolumeDestroySnapshotCommand(config, "tag1").run()
-
-    manager.destroy_snapshot.assert_called_once_with(config.dataset_path, "tag1")
-    manager.destroy_dataset.assert_called_once_with(f"{config.dataset_path}-restored-tag1")
-
-
-def _restore_mocks():
-    from unittest.mock import MagicMock
-
-    volume = MagicMock()
-    volume.config.dataset_path = "bench-pool/shop"
-    mariadb = MagicMock()
-    mariadb.data_dir.return_value = "/var/lib/mysql"
-    bench = MagicMock()
-    bench.path = Path("/home/frappe/bench-cli/benches/shop")
-    return volume, mariadb, bench
-
-
-def test_restore_downloaded_snapshot_swaps_and_destroys_old_dataset() -> None:
-    from unittest.mock import call
-
-    from pilot.managers.snapshot_orchestrator import SnapshotOrchestrator
-
-    volume, mariadb, bench = _restore_mocks()
-    with patch("pilot.managers.process_manager.ProcessManager.detect_running") as detect:
-        detect.return_value.is_running.return_value = False
-        SnapshotOrchestrator(volume, mariadb, bench).restore_downloaded_snapshot("tag1")
-
-    renames = volume.rename_dataset.call_args_list
-    assert renames[0].args[0] == "bench-pool/shop"
-    assert renames[1] == call("bench-pool/shop-restored-tag1", "bench-pool/shop")
-    volume.destroy_dataset.assert_called_once_with(renames[0].args[1])
-    volume.destroy_snapshot.assert_called_once_with("bench-pool/shop", "tag1")
-    mariadb.stop.assert_called_once()
-    mariadb.start.assert_called_once()
-    assert bench.set_maintenance_mode.call_args_list == [call(True), call(False)]
-
-
-def test_restore_downloaded_snapshot_refuses_while_bench_is_running() -> None:
-    import pytest
-
-    from pilot.exceptions import VolumeError
-    from pilot.managers.snapshot_orchestrator import SnapshotOrchestrator
-
-    volume, mariadb, bench = _restore_mocks()
-    with patch("pilot.managers.process_manager.ProcessManager.detect_running") as detect:
-        detect.return_value.is_running.return_value = True
-        with pytest.raises(VolumeError, match="bench stop"):
-            SnapshotOrchestrator(volume, mariadb, bench).restore_downloaded_snapshot("tag1")
-
-    volume.rename_dataset.assert_not_called()
-
-
-def test_restore_downloaded_snapshot_rolls_back_if_swap_fails() -> None:
-    from unittest.mock import call
-
-    import pytest
-
-    from pilot.managers.snapshot_orchestrator import SnapshotOrchestrator
-
-    volume, mariadb, bench = _restore_mocks()
-    volume.rename_dataset.side_effect = [None, RuntimeError("zfs rename failed"), None]
-    with patch("pilot.managers.process_manager.ProcessManager.detect_running") as detect:
-        detect.return_value.is_running.return_value = False
-        with pytest.raises(RuntimeError, match="zfs rename failed"):
-            SnapshotOrchestrator(volume, mariadb, bench).restore_downloaded_snapshot("tag1")
-
-    renames = volume.rename_dataset.call_args_list
-    aside = renames[0].args[1]
-    # Third rename call puts the original dataset back under its live name.
-    assert renames[2] == call(aside, "bench-pool/shop")
-    volume.destroy_dataset.assert_not_called()
-    volume.destroy_snapshot.assert_not_called()
-    # mariadb.start() still runs (via the outer finally) against a dataset
-    # that was put back, not one that no longer exists.
-    mariadb.start.assert_called_once()
-
-
-def test_restore_downloaded_snapshot_rolls_back_after_swap_succeeds() -> None:
-    from unittest.mock import call
-
-    import pytest
-
-    from pilot.managers.snapshot_orchestrator import SnapshotOrchestrator
-
-    volume, mariadb, bench = _restore_mocks()
-    # The rename to `live` succeeds this time — failure happens afterwards
-    # (e.g. bind-mounting), so `live` is occupied by the restored dataset
-    # when the rollback runs.
-    volume.bind_mount.side_effect = RuntimeError("bind mount failed")
-    with patch("pilot.managers.process_manager.ProcessManager.detect_running") as detect:
-        detect.return_value.is_running.return_value = False
-        with pytest.raises(RuntimeError, match="bind mount failed"):
-            SnapshotOrchestrator(volume, mariadb, bench).restore_downloaded_snapshot("tag1")
-
-    renames = volume.rename_dataset.call_args_list
-    aside = renames[0].args[1]
-    # Rollback must free the `live` name (move the restored dataset back to
-    # its own name) before renaming `aside` back onto it, otherwise the
-    # rename is refused because `live` already exists.
-    assert renames[2] == call("bench-pool/shop", "bench-pool/shop-restored-tag1")
-    assert renames[3] == call(aside, "bench-pool/shop")
-    volume.destroy_dataset.assert_not_called()
-    volume.destroy_snapshot.assert_not_called()
-    mariadb.start.assert_called_once()
-
-
-def test_restore_downloaded_snapshot_succeeds_despite_cleanup_failure() -> None:
-    from unittest.mock import call
-
-    from pilot.managers.snapshot_orchestrator import SnapshotOrchestrator
-
-    volume, mariadb, bench = _restore_mocks()
-    # The swap itself (both renames, mount, bind-mounts) fully succeeds —
-    # only destroying the now-unneeded old dataset fails.
-    volume.destroy_dataset.side_effect = RuntimeError("dataset is busy")
-    with patch("pilot.managers.process_manager.ProcessManager.detect_running") as detect:
-        detect.return_value.is_running.return_value = False
-        # Must not raise: the restore already succeeded, this is just cleanup.
-        SnapshotOrchestrator(volume, mariadb, bench).restore_downloaded_snapshot("tag1")
-
-    volume.destroy_snapshot.assert_called_once_with("bench-pool/shop", "tag1")
-    mariadb.start.assert_called_once()
-    assert bench.set_maintenance_mode.call_args_list == [call(True), call(False)]
-
-
-def test_restore_downloaded_snapshot_rebinds_mounts_if_initial_rename_fails() -> None:
-    import pytest
-
-    from pilot.managers.snapshot_orchestrator import SnapshotOrchestrator
-
-    volume, mariadb, bench = _restore_mocks()
-    # Fails before anything is renamed — `live` never stops being `live`.
-    volume.rename_dataset.side_effect = RuntimeError("zfs rename failed")
-    with patch("pilot.managers.process_manager.ProcessManager.detect_running") as detect:
-        detect.return_value.is_running.return_value = False
-        with pytest.raises(RuntimeError, match="zfs rename failed"):
-            SnapshotOrchestrator(volume, mariadb, bench).restore_downloaded_snapshot("tag1")
-
-    # The bind mounts dropped before the failed rename must be re-established
-    # against the still-current `live` dataset, so mariadb.start() (called by
-    # the caller's finally) has a mount to start against.
-    assert volume.bind_mount.call_count == 2
-    mariadb.start.assert_called_once()
-    volume.destroy_dataset.assert_not_called()
-
-
 # ── DropBenchCommand ────────────────────────────────────────────────────────
 
 
@@ -1265,6 +1066,47 @@ def _drop_config(name: str, instance: str = "") -> BenchConfig:
         redis=RedisConfig(cache_port=13000, queue_port=11000),
         workers=WorkerConfig(groups=[WorkerGroup(queues=["default"], count=1)]),
     )
+
+
+def test_unmount_legacy_bind_mount_noop_when_not_mounted(tmp_path: Path) -> None:
+    """A bench that was never volume-backed has nothing mounted at its dir, so
+    this must be a silent no-op — no sudo calls, no fstab rewrite."""
+    from pilot.commands.drop_bench import DropBenchCommand
+
+    target = tmp_path / "not-a-mountpoint"
+    target.mkdir()
+    with patch("pilot.commands.drop_bench.subprocess.run") as run:
+        DropBenchCommand._unmount_legacy_bind_mount(target)
+    run.assert_not_called()
+
+
+def test_unmount_legacy_bind_mount_unmounts_and_cleans_fstab(tmp_path: Path) -> None:
+    """A leftover ZFS-era bind mount must be unmounted and its fstab line
+    dropped, without depending on any ZFS/volume code being present."""
+    from pilot.commands.drop_bench import DropBenchCommand
+
+    target = tmp_path / "old-bench"
+    target.mkdir()
+    fstab = tmp_path / "fstab"
+    fstab.write_text(
+        "UUID=abc / ext4 defaults 0 1\n"
+        f"/bench-pool/old-bench {target} none bind,nofail 0 0\n"
+    )
+
+    calls: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        if args[:2] == ["sudo", "tee"]:
+            fstab.write_bytes(kwargs["input"])
+        return MagicMock(returncode=0)
+
+    with patch("pilot.commands.drop_bench.subprocess.run", side_effect=fake_run), \
+         patch.object(Path, "is_mount", return_value=True):
+        DropBenchCommand._unmount_legacy_bind_mount(target, fstab_path=fstab)
+
+    assert ["sudo", "umount", "-l", str(target)] in calls
+    assert fstab.read_text() == "UUID=abc / ext4 defaults 0 1\n"
 
 
 def test_drop_bench_refuses_when_sites_exist(tmp_path: Path) -> None:
@@ -1331,60 +1173,6 @@ def test_drop_bench_keeps_mariadb_when_sibling_shares_host_port(tmp_path: Path) 
     config.mariadb.port = 3307
     bench = Bench(config, benches / "one")
     assert DropBenchCommand(bench, skip_confirm=True)._mariadb_shared_with_other_bench() is True
-
-
-def test_drop_bench_destroys_zfs_dataset_on_full_teardown(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from pilot.commands.drop_bench import DropBenchCommand
-    from pilot.config.volume_config import VolumeConfig
-
-    config = _drop_config("one", instance="one")
-    config.volume = VolumeConfig(enabled=True, pool="bench-pool", name="one")
-    bench = Bench(config, tmp_path)
-
-    fake_mgr = MagicMock()
-    monkeypatch.setattr("pilot.platform.is_linux", lambda: True)
-    monkeypatch.setattr("pilot.managers.volume_manager.VolumeManager", lambda cfg: fake_mgr)
-
-    DropBenchCommand(bench, skip_confirm=True)._remove_volume(destroy_dataset=True)
-
-    fake_mgr.destroy_dataset.assert_called_once_with("bench-pool/one")
-    # Both the bench-files bind and the MariaDB datadir bind are unmounted.
-    assert fake_mgr.unmount.call_count == 2
-
-
-def test_drop_bench_keeps_zfs_dataset_when_db_shared(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from pilot.commands.drop_bench import DropBenchCommand
-    from pilot.config.volume_config import VolumeConfig
-
-    config = _drop_config("one", instance="one")
-    config.volume = VolumeConfig(enabled=True, pool="bench-pool", name="one")
-    bench = Bench(config, tmp_path)
-
-    fake_mgr = MagicMock()
-    monkeypatch.setattr("pilot.platform.is_linux", lambda: True)
-    monkeypatch.setattr("pilot.managers.volume_manager.VolumeManager", lambda cfg: fake_mgr)
-
-    DropBenchCommand(bench, skip_confirm=True)._remove_volume(destroy_dataset=False)
-
-    fake_mgr.destroy_dataset.assert_not_called()
-    # Only the bench-files bind is freed; the shared DB's datadir is left mounted.
-    fake_mgr.unmount.assert_called_once_with(tmp_path)
-
-
-def test_drop_bench_skips_volume_when_not_using_zfs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from pilot.commands.drop_bench import DropBenchCommand
-
-    bench = Bench(_drop_config("one", instance="one"), tmp_path)  # volume disabled by default
-    called = {"made": False}
-    monkeypatch.setattr("pilot.platform.is_linux", lambda: True)
-    monkeypatch.setattr(
-        "pilot.managers.volume_manager.VolumeManager",
-        lambda cfg: called.__setitem__("made", True),
-    )
-
-    DropBenchCommand(bench, skip_confirm=True)._remove_volume(destroy_dataset=True)
-
-    assert called["made"] is False
 
 
 # ── BuildAdminCommand node-version guard ──────────────────────────────────────

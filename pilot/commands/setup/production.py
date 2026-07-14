@@ -315,7 +315,7 @@ class SetupProductionCommand(Command):
     def _setup_supervisor(self) -> None:
         import subprocess
 
-        from pilot.platform import get_package_manager
+        from pilot.package_managers import get_package_manager
 
         pkg = get_package_manager()
         if not pkg.is_installed("supervisor"):

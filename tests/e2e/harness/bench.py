@@ -149,11 +149,10 @@ class Bench:
     def destroy(self) -> None:
         """Fully tear the bench down and leave no trace.
 
-        Prefer `bench drop`: it removes production services, the dedicated MariaDB
-        instance AND its ZFS dataset, then the bench dir — the only thing that
-        cleans up volumes. It refuses when sites remain (e.g. a run that failed
-        mid-lifecycle, or pre-clean of a leftover bench), so fall back to manual
-        cleanup whenever the dir survives.
+        Prefer `bench drop`: it removes production services and the dedicated
+        MariaDB instance, then the bench dir. It refuses when sites remain (e.g.
+        a run that failed mid-lifecycle, or pre-clean of a leftover bench), so
+        fall back to manual cleanup whenever the dir survives.
         """
         self.stop()
         self._drop_bench()
@@ -177,13 +176,13 @@ class Bench:
     def remove_dir(self) -> None:
         """Remove the bench directory. Guarded by the e2e- prefix.
 
-        A dedicated/ZFS bench's dir is itself a ZFS mountpoint (and may hold
-        root-owned files), so a plain rmtree fails with "device busy" and the
-        folder is left behind. Unmount + destroy any dataset mounted under it
-        first, then remove the dir (with privileges if needed)."""
+        A dedicated bench's dir may hold bind mounts (and root-owned files), so a
+        plain rmtree can fail with "device busy" and leave the folder behind.
+        Unmount anything mounted under it first, then remove the dir (with
+        privileges if needed)."""
         if not (self.name.startswith(E2E_PREFIX) and self.dir.exists()):
             return
-        # Guard every sudo/zfs/rm below: only ever an e2e- bench right under
+        # Guard every sudo/rm below: only ever an e2e- bench right under
         # benches/, never a nested or traversed path.
         if self.dir.parent != BENCHES_DIR:
             rmtree(self.dir, ignore_errors=True)
@@ -198,24 +197,11 @@ class Bench:
             )
 
     def _teardown_mounts_under(self, root: Path) -> None:
-        """Unmount every mountpoint at/under ``root`` (deepest first) and destroy
-        any ZFS dataset mounted there, so a dropped/failed ZFS bench leaves no
-        busy mountpoint or orphaned dataset. Best-effort.
-
-        Only destroys datasets whose name carries this bench's name and sits
-        inside a pool (``pool/<name>``), never a pool root — so the shared pool
-        and other benches' datasets are never touched."""
+        """Unmount every mountpoint at/under ``root`` (deepest first), so a
+        dropped/failed bench leaves no busy mountpoint. Best-effort."""
         quiet = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
-        for source, mountpoint, fstype in self._mounts_under(root):
-            if fstype == "zfs" and "/" in source and self.name in source:
-                # `zfs destroy` unmounts the dataset itself — a prior `umount -l`
-                # would leave ZFS thinking it's still mounted and the destroy
-                # fails, orphaning the dataset. Force-unmount only as a fallback.
-                if subprocess.run(["sudo", "zfs", "destroy", "-r", source], **quiet).returncode != 0:
-                    subprocess.run(["sudo", "zfs", "unmount", "-f", source], **quiet)
-                    subprocess.run(["sudo", "zfs", "destroy", "-r", source], **quiet)
-            else:
-                subprocess.run(["sudo", "umount", "-l", mountpoint], **quiet)
+        for _, mountpoint, _ in self._mounts_under(root):
+            subprocess.run(["sudo", "umount", "-l", mountpoint], **quiet)
 
     @staticmethod
     def _mounts_under(root: Path) -> list[tuple[str, str, str]]:

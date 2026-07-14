@@ -8,9 +8,9 @@ import time
 from pathlib import Path
 
 from pilot.config.postgres_config import PostgresConfig
+from pilot.package_managers import get_package_manager
 from pilot.platform import (
     _privileged,
-    get_package_manager,
     is_alpine,
     is_linux,
     is_macos,

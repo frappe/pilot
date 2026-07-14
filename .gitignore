@@ -4,6 +4,9 @@ benches/
 # Git provider PAT store (plaintext token — never commit)
 .bench.git.info
 
+# JWKS dev issuer (testing only — private key in plaintext)
+jwks-dev-server/
+
 # Python
 __pycache__/
 *.py[cod]

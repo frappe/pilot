@@ -165,29 +165,12 @@ def test_require_production_inputs_passes_with_domain_and_email(tmp_path: Path) 
 # ── monitor log path resolution ───────────────────────────────────────────────
 
 
-def test_resolve_monitor_log_path_without_volume(tmp_path: Path) -> None:
+def test_resolve_monitor_log_path_default(tmp_path: Path) -> None:
     from pilot.core.monitor import resolve_monitor_log_path
 
     bench = _make_bench(tmp_path)
     result = resolve_monitor_log_path(bench.config)
     assert result.name == f"{bench.config.name}-stats.log"
-
-
-def test_resolve_monitor_log_path_with_volume(tmp_path: Path, monkeypatch) -> None:
-    from pilot.core.monitor import resolve_monitor_log_path
-    from pilot.managers.volume_manager import VolumeManager
-
-    bench = _make_bench(tmp_path)
-    bench.config.volume.enabled = True
-    bench.config.volume.pool = "bench-pool"
-
-    fake_mountpoint = tmp_path / "mnt" / "logs"
-    monkeypatch.setattr(VolumeManager, "create_dataset", lambda self, dataset: None)
-    monkeypatch.setattr(VolumeManager, "get_mountpoint", lambda self, dataset: fake_mountpoint)
-
-    result = resolve_monitor_log_path(bench.config)
-
-    assert result == fake_mountpoint / f"{bench.config.name}-stats.log"
 
 
 def test_setup_monitoring_persists_log_path_to_toml(tmp_path: Path, monkeypatch) -> None:

@@ -1,6 +1,5 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useSetupHandoff } from './useSetupHandoff'
-import { useVolumeStorage } from './useVolumeStorage'
 import { setupApi } from '../api/setup'
 import { meetsPasswordRequirements } from '../utils/passwordStrength'
 import { generateRandomPassword } from '../utils/randomPassword'
@@ -14,22 +13,15 @@ const DEPLOYMENT_OPTIONS = [
   { label: 'Dedicated Instance (Recommended)', value: 'dedicated' },
   { label: 'Shared Instance', value: 'shared' },
 ]
-const STORAGE_OPTIONS = [
-  { label: "This machine's disk", value: 'image' },
-  { label: 'An attached disk', value: 'device' },
-]
-
 const STEP_TITLES = {
   passwords: 'Admin password',
   database: 'Database',
   customize: 'Customize your bench',
-  storage: 'Storage',
   running: 'Setting up your bench',
   done: 'Setup complete',
 }
 const STEP_SUBTITLES = {
   database: 'Choose and configure your database',
-  storage: 'Choose where your bench keeps its data',
 }
 
 export function useSetup() {
@@ -61,12 +53,6 @@ export function useSetup() {
   const dbPassword = ref('')
   const appRepo = ref('https://github.com/frappe/frappe')
   const appBranch = ref('develop')
-  const volumeEnabled = ref(false)
-  const volumeBacking = ref('image')
-  const volumeDevice = ref('')
-  const volumeImageSize = ref('60G')
-
-  const volume = useVolumeStorage(volumeBacking, volumeDevice, volumeImageSize)
 
   // Derived database state
   const mariadbWillInstall = computed(() =>
@@ -115,16 +101,7 @@ export function useSetup() {
   })
 
   // Steps
-  const stepSequence = computed(() => {
-    const steps = ['passwords', 'database', 'customize']
-    const usesVolumes =
-      isLinux.value &&
-      dbType.value === 'mariadb' &&
-      deploymentMode.value === 'dedicated' &&
-      volumeEnabled.value
-    if (usesVolumes) steps.push('storage')
-    return steps
-  })
+  const stepSequence = computed(() => ['passwords', 'database', 'customize'])
   const stepNumber = computed(() => stepSequence.value.indexOf(currentStep.value) + 1)
   const isConfiguring = computed(() => stepNumber.value > 0)
   const isInstalling = computed(() => currentStep.value === 'running')
@@ -164,17 +141,11 @@ export function useSetup() {
       // "none" (see BenchTomlBuilder._flatten), not an empty value.
       const processManager = config.production_process_manager
       isProductionHandoff.value = Boolean(processManager) && processManager !== 'none'
-      volume.availableDevices.value = config.available_devices || []
-      volume.rootfsFreeBytes.value = config.rootfs_free_bytes || 0
 
       if (config.admin_password) adminPassword.value = config.admin_password
       if (config.db_type) dbType.value = config.db_type
       if (config.app_repo) appRepo.value = config.app_repo
       if (config.app_branch) appBranch.value = config.app_branch
-      if (config.volume_enabled !== undefined) volumeEnabled.value = config.volume_enabled
-      if (config.volume_backing) volumeBacking.value = config.volume_backing
-      if (config.volume_device) volumeDevice.value = config.volume_device
-      if (config.volume_image_size) volumeImageSize.value = config.volume_image_size
       if (config.db_type === 'postgres') {
         if (config.postgres_admin_user) dbUser.value = config.postgres_admin_user
         if (config.postgres_password) dbPassword.value = config.postgres_password
@@ -183,7 +154,6 @@ export function useSetup() {
         if (config.mariadb_password) dbPassword.value = config.mariadb_password
       }
 
-      volume.clampImageSize()
       if (isLinux.value) {
         const instance =
           config.db_type === 'postgres' ? config.postgres_instance : config.mariadb_instance
@@ -295,13 +265,6 @@ export function useSetup() {
     return null
   }
 
-  function validateStorageStep() {
-    if (!isLinux.value || !volumeEnabled.value) return null
-    if (volumeBacking.value === 'device' && !volumeDevice.value)
-      return 'Please choose an attached disk.'
-    return null
-  }
-
   function validateDatabaseStep() {
     return dbType.value === 'postgres' ? validatePostgresStep() : validateMariadbStep()
   }
@@ -336,10 +299,6 @@ export function useSetup() {
       db_type: dbType.value,
       app_repo: appRepo.value,
       app_branch: appBranch.value,
-      volume_pool: 'bench-pool',
-      volume_backing: volumeBacking.value,
-      volume_device: volumeDevice.value,
-      volume_image_size: volumeImageSize.value,
     }
     if (dbType.value === 'postgres') {
       return {
@@ -352,7 +311,6 @@ export function useSetup() {
         mariadb_instance: '',
         mariadb_socket_path: '',
         mariadb_data_dir: '',
-        volume_enabled: false,
       }
     }
     const mariadb = {
@@ -362,7 +320,7 @@ export function useSetup() {
       postgres_password: '',
       postgres_admin_user: 'postgres',
     }
-    if (!isLinux.value) return { ...mariadb, volume_enabled: false }
+    if (!isLinux.value) return mariadb
     if (deploymentMode.value === 'dedicated') {
       return {
         ...mariadb,
@@ -371,7 +329,6 @@ export function useSetup() {
         mariadb_socket_path: `/run/mysqld/mysqld-${benchName.value}.sock`,
         mariadb_data_dir: `/var/lib/mysql-${benchName.value}`,
         postgres_instance: '',
-        volume_enabled: volumeEnabled.value,
       }
     }
     return {
@@ -380,7 +337,6 @@ export function useSetup() {
       mariadb_socket_path: '',
       mariadb_data_dir: '',
       postgres_instance: '',
-      volume_enabled: false,
     }
   }
 
@@ -390,8 +346,6 @@ export function useSetup() {
   }
 
   async function startSetup() {
-    errorMessage.value = validateStorageStep() || ''
-    if (errorMessage.value) return
     isSubmitting.value = true
     try {
       await saveConfig()
@@ -442,24 +396,13 @@ export function useSetup() {
     dbPassword,
     appRepo,
     appBranch,
-    volumeEnabled,
-    volumeBacking,
-    volumeDevice,
     showDeploymentMode,
     showRootUsername,
     rootUserPlaceholder,
     rootPasswordDescription,
     dbTypeOptions: DB_TYPE_OPTIONS,
     deploymentOptions: DEPLOYMENT_OPTIONS,
-    storageOptions: STORAGE_OPTIONS,
     branchOptions,
-    deviceOptions: volume.deviceOptions,
-    showDeviceDropdown: volume.showDeviceDropdown,
-    freeGiB: volume.freeGiB,
-    imageSizeGiB: volume.imageSizeGiB,
-    imageSizeMinGiB: volume.imageSizeMinGiB,
-    imageSizeMaxGiB: volume.imageSizeMaxGiB,
-    imageSliderModel: volume.imageSliderModel,
     stepSequence,
     stepNumber,
     isConfiguring,

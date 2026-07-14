@@ -8,15 +8,11 @@ class AdminConfig:
     enabled: bool = False
     password: str = ""
     jwt_secret: str = ""
+    jwks_url: str = ""  # trust session tokens minted by a remote issuer publishing keys here
+    jwks_audience: str = ""  # REQUIRED with jwks_url: remote tokens must carry a matching `aud` (per-bench binding); if empty, all remote tokens are rejected
     domain: str = ""
-    # Bench-wide TLS termination, opt-in. False (default): nginx serves sites and
-    # the admin over plain HTTP on the http port and obtains no certs — the bench
-    # is reachable as soon as production setup finishes, and a central proxy may
-    # terminate TLS upstream. True: nginx terminates TLS here via Let's Encrypt
-    # (HTTPS, with HTTP redirected to HTTPS for every TLS-enabled domain). Enable
-    # it explicitly with `bench setup letsencrypt` or the admin Settings toggle.
-    # It's a server-global choice carried forward to new benches.
     tls: bool = False
+    allow_bench_management: bool = True
 
     @property
     def internal_port(self) -> int:

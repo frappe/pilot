@@ -21,10 +21,10 @@ from .views.processes import processes_bp
 from .views.settings import settings_bp
 from .views.setup import setup_bp, wizard_marker_path
 from .views.sites import sites_bp
+from .views.ssh_keys import ssh_keys_bp
 from .views.stats import stats_bp
 from .views.tasks import tasks_bp
 from .views.updates import updates_bp
-from .views.volume import volume_bp
 from pilot.config.bench_config import BenchConfig
 from pilot.config.toml_store import BenchTomlStore
 from pilot.exceptions import ConfigError
@@ -106,12 +106,12 @@ def create_app(bench_root: Path) -> Flask:
         return None
 
     def _is_authenticated(config: BenchConfig) -> bool:
-        from pilot.commands.generate_session import decode_token
+        from .auth import decode_session_token
 
         token = _extract_token()
         if not token:
             return False
-        claims = decode_token(token, config.admin.jwt_secret)
+        claims = decode_session_token(token, config)
         if claims is None:
             return False
         g.jwt_claims = claims
@@ -177,6 +177,7 @@ def create_app(bench_root: Path) -> Flask:
             "db_type": config.db_type,
             "production": config.production.enabled,
             "native_process_manager": native_process_manager(),
+            "allow_bench_management": config.admin.allow_bench_management,
             "authenticated": _is_authenticated(config),
         })
 
@@ -189,14 +190,19 @@ def create_app(bench_root: Path) -> Flask:
             return jsonify({"ok": False, "error": str(exc)}), 503
         if not config.admin.password:
             return jsonify({"ok": False, "error": "No admin password configured in bench.toml"}), 503
-        from pilot.commands.generate_session import decode_token, ensure_jwt_secret, issue_token
+        from .auth import decode_session_token
+        from pilot.commands.generate_session import ensure_jwt_secret, issue_token
 
         data = request.get_json(silent=True) or {}
         sid = data.get("sid")
         if sid is not None:
-            payload = decode_token(sid, config.admin.jwt_secret)
+            payload = decode_session_token(sid, config)
             jti = payload.get("jti") if payload else None
-            if not jti or not used_logins.use(jti, payload["exp"]):
+            # A ?sid= sign-in must be a single-use (jti), bench-scoped token.
+            # Requiring a jti also blocks site-scoped API tokens (which carry
+            # none) from being exchanged for a full admin session, and stops a
+            # captured token from being replayed for fresh sessions.
+            if payload is None or not jti or payload.get("scope", "bench") != "bench" or not used_logins.use(jti, payload["exp"]):
                 return jsonify({"ok": False, "error": "Invalid or expired sign-in link"}), 401
         elif not hmac.compare_digest(str(data.get("password", "")), config.admin.password):
             return jsonify({"ok": False, "error": "Incorrect password"}), 401
@@ -222,8 +228,8 @@ def create_app(bench_root: Path) -> Flask:
     app.register_blueprint(tasks_bp, url_prefix="/api/tasks")
     app.register_blueprint(settings_bp, url_prefix="/api/settings")
     app.register_blueprint(updates_bp, url_prefix="/api/updates")
-    app.register_blueprint(volume_bp, url_prefix="/api/volume")
     app.register_blueprint(git_bp, url_prefix="/api/git")
+    app.register_blueprint(ssh_keys_bp, url_prefix="/api/ssh-keys")
     app.register_blueprint(stats_bp, url_prefix="/api")
 
     app.register_error_handler(ConfigError, _handle_config_error)
