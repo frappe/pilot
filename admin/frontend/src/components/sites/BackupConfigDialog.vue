@@ -112,11 +112,15 @@ function applyRetention(retention) {
 
 async function open() {
   error.value = ''
-  const data = await sitesApi.backups.schedule.get(props.siteName)
-  isEnabled.value = !!data.schedule
-  applySchedule(data.schedule)
-  applyRetention(data.retention)
   show.value = true
+  try {
+    const data = await sitesApi.backups.schedule.get(props.siteName)
+    isEnabled.value = !!data.schedule
+    applySchedule(data.schedule)
+    applyRetention(data.retention)
+  } catch (e) {
+    error.value = e.message || 'Could not load backup settings.'
+  }
 }
 
 // Save both enables/updates (checkbox on) and turns off (checkbox off).
