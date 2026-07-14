@@ -6,6 +6,7 @@ on:
     paths:
       - install.sh
       - scripts/smoke_install.sh
+      - scripts/smoke_install_macos.sh
       - .github/workflows/install-smoke.yml
   workflow_dispatch:
 
@@ -20,6 +21,9 @@ jobs:
 
       - name: Lint smoke test script
         run: shellcheck scripts/smoke_install.sh
+
+      - name: Lint macOS smoke test script
+        run: shellcheck scripts/smoke_install_macos.sh
 
   smoke:
     needs: shellcheck
@@ -37,3 +41,12 @@ jobs:
 
       - name: Run install.sh inside ${{ matrix.image }}
         run: ./scripts/smoke_install.sh "${{ matrix.image }}"
+
+  smoke-macos:
+    needs: shellcheck
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run install.sh on macOS
+        run: ./scripts/smoke_install_macos.sh
