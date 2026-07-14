@@ -22,7 +22,7 @@ sites_bp = Blueprint("sites", __name__)
 
 # Confidential / system-managed site_config keys. These are never sent to the
 # admin UI and cannot be edited through it — they are preserved as-is on disk.
-PROTECTED_CONFIG_KEYS = frozenset({"db_name", "db_password", "db_socket", "db_type", "db_user", "installed_apps", "ssl", "domains", "host_name", "pilot_endpoint", "pilot_auth_token"})
+PROTECTED_CONFIG_KEYS = frozenset({"db_name", "db_password", "db_socket", "db_type", "db_user", "installed_apps", "ssl", "domains", "host_name", "pilot_endpoint", "pilot_auth_token", "backup_retention"})
 
 
 @sites_bp.route("/")
@@ -696,32 +696,66 @@ def _backup_cron_command(bench_root: Path, site: str) -> str:
     return f"{sys.executable} -m admin.backend.tasks.jobs.backup_site_task {bench_root} {site} --with-files >> {log_file} 2>&1"
 
 
+def _retention_from_payload(block: dict | None):
+    """Build a validated BackupConfig from the UI payload, defaulting to GFS.
+    Returns the config, or an error string."""
+    from pilot.config.backup_config import VALID_SCHEMES, BackupConfig
+
+    block = block or {}
+    config = BackupConfig()
+    scheme = str(block.get("scheme", config.scheme)).strip()
+    if scheme not in VALID_SCHEMES:
+        return f"Retention scheme must be one of: {', '.join(VALID_SCHEMES)}."
+    config.scheme = scheme
+    for key in config.counts:
+        if key not in block:
+            continue
+        try:
+            value = int(block[key])
+        except (TypeError, ValueError):
+            return f"{key} must be a whole number."
+        if value < 0:
+            return f"{key} must be zero or more."
+        setattr(config, key, value)
+    return config
+
+
 @sites_bp.route("/<name>/backup-schedule", methods=["GET"])
 @require_scope(site_name)
 def get_backup_schedule(name: str):
+    from dataclasses import asdict
+
+    from pilot.config.site_backup_config import read_retention
+
     from ..cron_manager import CronManager
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
         schedule = CronManager(bench_root).get_schedule(name)
+        retention = read_retention(bench_root / "sites" / name / "site_config.json")
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-    return jsonify({"schedule": schedule})
+    return jsonify({"schedule": schedule, "retention": asdict(retention) if retention else None})
 
 
 @sites_bp.route("/<name>/backup-schedule", methods=["POST"])
 @require_scope(site_name)
 def set_backup_schedule(name: str):
+    from pilot.config.site_backup_config import write_retention
+
     from ..cron_manager import CronManager
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
     data = request.get_json(silent=True) or {}
     schedule = (data.get("schedule") or "").strip()
-    err = validate_cron_expression(schedule)
-    if err:
+    if err := validate_cron_expression(schedule):
         return jsonify({"ok": False, "error": err})
+    retention = _retention_from_payload(data.get("retention"))
+    if isinstance(retention, str):
+        return jsonify({"ok": False, "error": retention})
     try:
         CronManager(bench_root).set_schedule(name, schedule, _backup_cron_command(bench_root, name))
+        write_retention(bench_root / "sites" / name / "site_config.json", retention)
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
     return jsonify({"ok": True})
@@ -730,11 +764,14 @@ def set_backup_schedule(name: str):
 @sites_bp.route("/<name>/backup-schedule", methods=["DELETE"])
 @require_scope(site_name)
 def delete_backup_schedule(name: str):
+    from pilot.config.site_backup_config import clear_retention
+
     from ..cron_manager import CronManager
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
         CronManager(bench_root).remove_schedule(name)
+        clear_retention(bench_root / "sites" / name / "site_config.json")
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
     return jsonify({"ok": True})
