@@ -10,18 +10,13 @@ from pilot.core.central_client import CentralClientError, _message
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
-# First-boot enrollment. Atlas seeds only two things at VM-create: the Central endpoint
-# and a single-use bootstrap token (see Phase 6 delivery). On first boot the pilot
-# exchanges that token for its long-lived credential AND its JWKS trust config in one
-# call — so nothing else has to be injected, and a later change to the JWKS URL or
-# audience is picked up by re-enrolling rather than re-provisioning.
+# First-boot enrollment: the bench exchanges a single-use bootstrap token (seeded by Atlas
+# at VM-create) for its long-lived credential + JWKS config, in one call.
 
 ENROLL_METHOD = "central.api.pilot.enroll"
 
-# Canonical location a first-boot hook finds the create-time seed at. Atlas drops
-# {central_endpoint, bootstrap_token} here from VM metadata (cloud-init / MMDS); the golden
-# image's boot unit then runs a bare `bench enroll`, which auto-reads it. On tmpfs (`/run`)
-# so the single-use token never survives a reboot. Override with $PILOT_SEED_PATH.
+# Canonical path a bare `bench enroll` reads the seed from (VM metadata drops it here; on
+# tmpfs, so the single-use token doesn't survive a reboot). Override with $PILOT_SEED_PATH.
 DEFAULT_SEED_PATH = "/run/pilot/central-seed.json"
 
 
@@ -32,10 +27,8 @@ def default_seed_path() -> str:
 
 
 def seed_from_metadata(bench: "Bench", path: str) -> bool:
-    """Stage a seed that VM create-time metadata (cloud-init / Firecracker MMDS) dropped at
-    ``path`` as JSON ``{central_endpoint, bootstrap_token}``. Returns True if a usable seed
-    was found. This is the boot-free path: a first-boot hook runs ``bench enroll --seed-file
-    <path>`` so the pilot enrols from metadata, with no controller SSHing in post-boot."""
+    """Stage a seed (``{central_endpoint, bootstrap_token}`` JSON) that VM metadata dropped
+    at ``path``. Returns True if one was found — the boot-free enrollment entry point."""
     from pathlib import Path
 
     source = Path(path)
@@ -50,9 +43,8 @@ def seed_from_metadata(bench: "Bench", path: str) -> bool:
 
 
 def seed(bench: "Bench", endpoint: str, bootstrap_token: str) -> None:
-    """Write the create-time seed (Central endpoint + single-use bootstrap token) into
-    bench.toml ``[central]`` and refresh the in-memory config, so ``enroll_if_needed`` can
-    exchange it. This is what Atlas delivers at provision time."""
+    """Write the create-time seed into bench.toml ``[central]`` + the in-memory config, so
+    ``enroll_if_needed`` can exchange it."""
     from pilot.config.toml_store import BenchTomlStore
 
     store = BenchTomlStore.for_bench(bench.path)
@@ -67,12 +59,8 @@ def seed(bench: "Bench", endpoint: str, bootstrap_token: str) -> None:
 
 
 def enroll_if_needed(bench: "Bench") -> bool:
-    """Idempotent first-boot enrollment.
-
-    Does nothing if the bench already holds a Central ``auth_token``. Otherwise exchanges
-    the seeded bootstrap token for this pilot's long-lived credential + JWKS discovery and
-    persists both into bench.toml (the credential under ``[central]``, the JWKS trust
-    config under ``[admin]``). Returns True if it enrolled, False if already enrolled."""
+    """Idempotent: no-op if already enrolled, else exchange the seeded bootstrap token for
+    the credential + JWKS config and persist both into bench.toml. Returns True if enrolled."""
     central = bench.config.central
     if central.auth_token:
         return False

@@ -10,18 +10,12 @@ from pilot.core.central_client import CentralClient, CentralClientError
 
 site_name = lambda kw: kw["name"]
 
-# Transparent, allowlisted proxy for a site's calls to Central. The site reaches it at
-# `sites/<site>/central/<central.method.path>`; the pilot forwards the call to Central with
-# its X-Pilot-Token, so no team/asset ids travel from the site — Central resolves them from
-# the credential. The allowlist bounds what a site can reach to Central's pilot-facing
-# namespaces: the pilot stays a dumb but bounded forwarder, and Central independently
-# enforces @pilot_credential_auth on every method. Adding a Central method needs no change
-# here as long as it lives under an allowlisted namespace.
+# Transparent, allowlisted proxy: a site calls `sites/<site>/central/<method>` and the pilot
+# forwards it to Central with its X-Pilot-Token (Central resolves team/asset from the credential).
 central_proxy_bp = Blueprint("central_proxy", __name__)
 
-# A site may reach Central's billing facade (a namespace) and the heartbeat probe (exact).
-# `config`/`enroll` are deliberately excluded: those are the pilot's own boot-time calls to
-# Central, not something a site should trigger.
+# A site may reach only Central's billing facade + the heartbeat probe. config/enroll are
+# excluded — those are the pilot's own boot-time calls, not something a site should trigger.
 _ALLOWED_PREFIXES = ("central.billing.api.billing_api.",)
 _ALLOWED_EXACT = frozenset({"central.api.pilot.heartbeat"})
 

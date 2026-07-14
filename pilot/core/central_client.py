@@ -23,14 +23,8 @@ def _message(payload: Any) -> Any:
 
 
 class CentralClient:
-    """Calls Central's HTTP API on behalf of this bench's pilot.
-
-    Reads ``central.endpoint`` + ``central.auth_token`` from ``bench.toml`` and
-    authenticates with the ``X-Pilot-Token`` header — the reverse of the
-    site→bench ``pilot_auth_token``. This is a thin transport: individual Central
-    methods are not mirrored here; the admin proxy forwards them by path (see
-    ``admin/backend/views/central_proxy.py``).
-    """
+    """Thin transport for this bench's pilot→Central calls: reads endpoint + auth_token from
+    bench.toml and authenticates with X-Pilot-Token. Methods are forwarded by path, not mirrored."""
 
     TOKEN_HEADER = "X-Pilot-Token"
 
@@ -43,9 +37,8 @@ class CentralClient:
         return self._get("/api/method/central.api.pilot.heartbeat")
 
     def forward(self, method_path: str, http_method: str, data: dict[str, Any] | None = None) -> Any:
-        """Proxy an arbitrary Central pilot-API method with this bench's X-Pilot-Token and
-        return its result (Frappe's ``{"message": ...}`` envelope unwrapped). The caller
-        decides which methods are reachable — this makes no policy choice of its own."""
+        """Proxy an arbitrary Central pilot-API method with the X-Pilot-Token, returning its
+        result (the ``{"message": ...}`` envelope unwrapped). The caller decides what's reachable."""
         return _message(self._request(f"/api/method/{method_path}", method=http_method, data=data))
 
     def _credentials(self) -> tuple[str, str]:
