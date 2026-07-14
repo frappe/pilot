@@ -76,6 +76,26 @@ run_sudo() {
     fi
 }
 
+# Downloads a vendor bootstrap script (MariaDB repo setup, NodeSource) over a
+# pinned HTTPS/TLS floor and runs it as root. These vendors only publish
+# "curl | bash" installers with no checksum/signature to pin against, so the
+# content itself is trusted the same way their own docs instruct — but a
+# truncated transfer, non-HTTPS redirect, or empty/garbage response is caught
+# before anything runs as root.
+fetch_and_run_as_root() {
+    url="$1"; shift
+    tmp="$(mktemp)"
+    trap 'rm -f "$tmp"' EXIT
+    curl -fsSL --proto '=https' --tlsv1.2 "$url" -o "$tmp"
+    if [ ! -s "$tmp" ] || ! head -c 2 "$tmp" | grep -q '^#'; then
+        echo "Downloaded installer from $url looks invalid, aborting." >&2
+        exit 1
+    fi
+    run_sudo bash "$tmp" "$@"
+    rm -f "$tmp"
+    trap - EXIT
+}
+
 # ── package manager primitives ────────────────────────────────────────────────
 # Unknown distros fall back to apt, mirroring the runtime in pilot/platform.py.
 pkg_update() {
@@ -147,10 +167,7 @@ install_database_engines() {
             # Debian/Ubuntu ship an older MariaDB than 11.8 by default; pin
             # the official repo first, same version the runtime expects
             # (pilot/managers/mariadb_manager.py DEFAULT_VERSION).
-            MARIADB_SETUP_TMP="$(mktemp)"
-            curl -fsSL "$_MARIADB_REPO_SETUP_URL" -o "$MARIADB_SETUP_TMP"
-            run_sudo bash "$MARIADB_SETUP_TMP" --mariadb-server-version="mariadb-$_MARIADB_VERSION"
-            rm -f "$MARIADB_SETUP_TMP"
+            fetch_and_run_as_root "$_MARIADB_REPO_SETUP_URL" --mariadb-server-version="mariadb-$_MARIADB_VERSION"
             pkg_update
             pkg_install mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config
             ;;
@@ -182,10 +199,7 @@ disable_system_db_services() {
 # its own repos.
 install_node_nodesource() {
     kind="$1"; shift
-    NODE_SETUP_TMP="$(mktemp)"
-    curl -fsSL "https://${kind}.nodesource.com/setup_24.x" -o "$NODE_SETUP_TMP"
-    run_sudo bash "$NODE_SETUP_TMP"
-    rm -f "$NODE_SETUP_TMP"
+    fetch_and_run_as_root "https://${kind}.nodesource.com/setup_24.x"
     run_sudo "$@"
 }
 

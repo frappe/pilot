@@ -96,9 +96,11 @@ class NewCommand(Command):
             # Every bench for this OS user shares one MariaDB server, so a new
             # bench must inherit the password that already secured it — a fresh
             # random one here would lock it out of a server a sibling provisioned.
-            sibling_mariadb_password = self._sibling_mariadb_password()
-            if sibling_mariadb_password:
-                settings["mariadb_password"] = sibling_mariadb_password
+            # No sibling means this is the first bench: generate a random
+            # password rather than falling back to a guessable default.
+            settings["mariadb_password"] = self._sibling_mariadb_password() or secrets.token_hex(
+                nbytes=8
+            )
         if self.db_type == "postgres":
             # Every bench for this OS user shares one PostgreSQL server, so a new
             # bench must inherit the password that already secured it — a fresh

@@ -217,7 +217,9 @@ def test_new_command_second_mariadb_bench_inherits_password(tmp_path: Path, monk
     NewCommand(benches_dir / "m1", "m1").run()
     with open(benches_dir / "m1" / "bench.toml", "rb") as f:
         first = tomllib.load(f)
-    assert first["mariadb"]["root_password"]  # non-empty default for the first bench
+    # Random, not the old guessable hardcoded default.
+    assert first["mariadb"]["root_password"] != "root"
+    assert len(first["mariadb"]["root_password"]) == 16  # secrets.token_hex(nbytes=8)
 
     NewCommand(benches_dir / "m2", "m2").run()
     with open(benches_dir / "m2" / "bench.toml", "rb") as f:

@@ -125,13 +125,47 @@ def test_secure_installation_creates_and_grants() -> None:
     assert "FLUSH PRIVILEGES;" in sql
 
 
+def test_secure_installation_escapes_malicious_admin_user() -> None:
+    """admin_user can arrive from the unauthenticated setup wizard's
+    bench.toml — a quote/backslash in it must never break out of the SQL
+    string literal into a second statement."""
+    config = MariaDBConfig(root_password="pw", admin_user="root'; DROP TABLE mysql.user; --")
+    manager = MariaDBManager(config)
+    with patch.object(manager, "check_credentials", return_value=False), patch.object(
+        manager, "_run_sql_as_superuser"
+    ) as run_sql:
+        manager.secure_installation()
+    sql = run_sql.call_args[0][0]
+    # The attacker's quote must be escaped, not break out of the string literal.
+    assert "root\\'; DROP TABLE mysql.user; --" in sql
+    assert "CREATE USER IF NOT EXISTS 'root'" not in sql
+
+
 def test_run_sql_as_superuser_no_sudo() -> None:
     m = _manager()
-    with patch(f"{MODULE}.subprocess.run") as run:
+    with patch(f"{MODULE}.is_macos", return_value=False), patch(f"{MODULE}.subprocess.run") as run:
         m._run_sql_as_superuser("SELECT 1;")
     cmd = run.call_args[0][0]
     assert "sudo" not in cmd
     assert cmd[0] == "mariadb"
+
+
+def test_is_reachable_on_macos_ignores_local_socket_path() -> None:
+    """socket_path() (our own _STATE_DIR) is never created on macOS — only
+    is_running() is a meaningful signal there."""
+    m = _manager()
+    with patch.object(m, "is_running", return_value=True), patch(f"{MODULE}.is_macos", return_value=True):
+        assert m._is_reachable() is True
+
+
+def test_run_sql_as_superuser_omits_local_socket_on_macos() -> None:
+    """Homebrew's mariadb client owns socket resolution on macOS —
+    socket_path() (our own _STATE_DIR) is never created there."""
+    m = _manager()
+    with patch(f"{MODULE}.is_macos", return_value=True), patch(f"{MODULE}.subprocess.run") as run:
+        m._run_sql_as_superuser("SELECT 1;")
+    cmd = run.call_args[0][0]
+    assert cmd == ["mariadb"]
 
 
 # ── check_credentials ─────────────────────────────────────────────────────────

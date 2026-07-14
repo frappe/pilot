@@ -90,15 +90,24 @@ class MariaDBManager(UserOwnedDBManager):
         run_command(self._systemctl("daemon-reload"), env=self._systemctl_env())
 
     def _wait_until_reachable(self, timeout: float = 30.0) -> None:
-        """Poll until the server is active and its socket exists, so securing
-        doesn't race the daemon's startup. Falls through on timeout — the next
-        step surfaces a clear connection error."""
-        socket_path = self.socket_path()
+        """Poll until the server is active and reachable, so securing doesn't
+        race the daemon's startup. Falls through on timeout — the next step
+        surfaces a clear connection error."""
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            if self.is_running() and Path(socket_path).exists():
+            if self._is_reachable():
                 return
             time.sleep(0.5)
+
+    def _is_reachable(self) -> bool:
+        if not self.is_running():
+            return False
+        if is_macos():
+            # Homebrew owns the socket location here, not socket_path() (our
+            # own _STATE_DIR, only ever created for the Linux systemd unit) —
+            # is_running() is the only signal we have.
+            return True
+        return Path(self.socket_path()).exists()
 
     def is_unsecured(self) -> bool:
         """True if the admin account has no password and is reachable via
@@ -141,15 +150,18 @@ class MariaDBManager(UserOwnedDBManager):
         check_credentials() already succeeds."""
         if self.check_credentials():
             return
-        user = self.config.admin_user
+        # admin_user can arrive from the (unauthenticated) setup wizard's
+        # bench.toml, so it must be quoted exactly like a password — never
+        # interpolated raw into SQL.
+        user = self._sql_quote(self.config.admin_user)
         password = self._sql_quote(self.config.root_password)
         statements = [
             # CREATE...IF NOT EXISTS + ALTER covers both a fresh install (no
             # such account yet) and a server another bench already secured
             # with a different password.
-            f"CREATE USER IF NOT EXISTS '{user}'@'localhost' IDENTIFIED BY {password};",
-            f"ALTER USER '{user}'@'localhost' IDENTIFIED BY {password};",
-            f"GRANT ALL PRIVILEGES ON *.* TO '{user}'@'localhost' WITH GRANT OPTION;",
+            f"CREATE USER IF NOT EXISTS {user}@'localhost' IDENTIFIED BY {password};",
+            f"ALTER USER {user}@'localhost' IDENTIFIED BY {password};",
+            f"GRANT ALL PRIVILEGES ON *.* TO {user}@'localhost' WITH GRANT OPTION;",
             "DROP USER IF EXISTS ''@'localhost';",
             "DROP USER IF EXISTS ''@'%';",
             "DROP DATABASE IF EXISTS test;",
@@ -158,12 +170,17 @@ class MariaDBManager(UserOwnedDBManager):
         self._run_sql_as_superuser("\n".join(statements))
 
     def _run_sql_as_superuser(self, sql: str) -> None:
-        # No explicit -u: this runs as the bench user directly —
-        # mariadb-install-db (run earlier, also as the bench user) already
-        # granted that exact OS username full unix_socket-authenticated
-        # access, so no privilege escalation or pre-existing account is
-        # required to bootstrap from here.
-        cmd = ["mariadb", f"--socket={self.socket_path()}"]
+        cmd = ["mariadb"]
+        if not is_macos():
+            # No explicit -u: this runs as the bench user directly —
+            # mariadb-install-db (run earlier, also as the bench user) already
+            # granted that exact OS username full unix_socket-authenticated
+            # access, so no privilege escalation or pre-existing account is
+            # required to bootstrap from here.
+            cmd.append(f"--socket={self.socket_path()}")
+        # On macOS, Homebrew's mariadb client already defaults to the same
+        # socket its brew-managed server listens on; socket_path() (our own
+        # _STATE_DIR) is never used there, so the client's own default applies.
         subprocess.run(cmd, input=sql, text=True, check=True)
 
     @staticmethod
