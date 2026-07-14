@@ -57,6 +57,16 @@ def test_unparseable_timestamps_are_ignored() -> None:
     assert "not-a-timestamp" not in deletions
 
 
+def test_gfs_yearly_tier_keeps_one_run_per_year() -> None:
+    """Runs spanning a year boundary: the yearly tier keeps the latest of each year."""
+    runs = _daily_runs(400)  # ~13 months, Jan 2026 into Feb 2027
+    policy = BackupRetentionPolicy(BackupConfig(scheme="gfs", keep_daily=0, keep_weekly=0, keep_monthly=0, keep_yearly=2))
+    kept = sorted(set(runs) - set(policy.select_deletions(runs)))
+    latest_2026 = max(r for r in runs if r.startswith("2026"))
+    latest_2027 = max(r for r in runs if r.startswith("2027"))
+    assert kept == sorted({latest_2026, latest_2027})
+
+
 def test_backup_defaults_are_gfs() -> None:
     config = BackupConfig()
     assert config.scheme == "gfs"

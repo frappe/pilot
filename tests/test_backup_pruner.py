@@ -66,6 +66,26 @@ def test_offsite_failure_keeps_local_and_is_not_reported(tmp_path) -> None:
     assert (backups / "20260103_020000-site1-database.sql.gz").exists()  # newest, never pruned
 
 
+def test_prunes_with_gfs_scheme(tmp_path) -> None:
+    """The pruner honours a GFS policy read from site_config, not just FIFO."""
+    bench = _bench(tmp_path)
+    runs = [f"202601{day:02d}_020000" for day in range(1, 11)]  # 10 daily runs, Jan 1–10
+    backups = bench.sites_path / "site1" / "private" / "backups"
+    backups.mkdir(parents=True)
+    for ts in runs:
+        (backups / f"{ts}-site1-database.sql.gz").write_text("x")
+    site_config = {"backup_retention": {"scheme": "gfs", "keep_daily": 3, "keep_weekly": 0, "keep_monthly": 0, "keep_yearly": 0}}
+    (bench.sites_path / "site1" / "site_config.json").write_text(json.dumps(site_config))
+
+    pruner = BackupPruner(bench, "site1")
+    pruner._offsite = lambda: _FakeOffsite(runs)
+    pruned = pruner.prune()
+
+    assert set(pruned) == set(runs[:7])  # keeps the 3 newest days, prunes the rest
+    for ts in runs[7:]:
+        assert (backups / f"{ts}-site1-database.sql.gz").exists()
+
+
 def test_prunes_local_and_offsite_when_healthy(tmp_path) -> None:
     bench = _bench(tmp_path)
     backups = _setup_site(bench, "site1")
