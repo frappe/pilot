@@ -27,7 +27,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y mariadb-server redis-server git nginx openssl
+          sudo apt-get install -y mariadb-server libmariadb-dev redis-server git nginx openssl
           sudo systemctl start mariadb redis-server
           sudo mysql -e "SET PASSWORD FOR root@localhost = PASSWORD('admin'); FLUSH PRIVILEGES;"
 
