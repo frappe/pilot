@@ -1,4 +1,5 @@
 """Tests for pilot.cli — argument parsing helpers."""
+
 from __future__ import annotations
 
 import subprocess
@@ -6,7 +7,10 @@ import sys
 
 import pytest
 
-from pilot.cli import _strip_bench_flag, _is_frappe_passthrough
+import pilot.cli as cli
+import pilot.loader as loader
+import pilot.registry as registry
+from pilot.cli import _is_frappe_passthrough, _strip_bench_flag
 
 
 # ── _strip_bench_flag ─────────────────────────────────────────────────────────
@@ -114,3 +118,115 @@ print('\\n'.join(_leaks))
     assert result.returncode == 0, result.stderr
     leaked = result.stdout.strip()
     assert leaked == "", f"discovery imported heavy layers at import time:\n{leaked}"
+
+
+def test_command_discovery_matches_baseline() -> None:
+    commands = registry._discover()
+    identities = {(command.group, command.name) for command in commands}
+
+    assert len(commands) == 30
+    assert len(identities) == 30
+    assert registry.command_names() == {
+        "build",
+        "build-admin",
+        "drop",
+        "frappe",
+        "generate-admin-session",
+        "get-app",
+        "init",
+        "install-app",
+        "issue-site-token",
+        "list-apps",
+        "list-site-apps",
+        "ls",
+        "new",
+        "new-site",
+        "remove",
+        "remove-app",
+        "rename-site",
+        "restart",
+        "set-admin-password",
+        "set-central-config",
+        "setup",
+        "start",
+        "stop",
+        "uninstall-app",
+        "update",
+        "upgrade",
+    }
+    assert {name for group, name in identities if group == "remove"} == {"production"}
+    assert {name for group, name in identities if group == "setup"} == {
+        "config",
+        "letsencrypt",
+        "nginx",
+        "production",
+        "requirements",
+    }
+
+
+def test_main_dispatches_native_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    selected = []
+    dispatched = []
+    monkeypatch.setattr(sys, "argv", ["bench", "--bench", "demo", "restart"])
+    monkeypatch.setattr(loader, "set_active_bench", selected.append)
+    monkeypatch.setattr(registry, "dispatch", lambda args, parser: dispatched.append(args.command))
+
+    cli.main()
+
+    assert selected == ["demo"]
+    assert dispatched == ["restart"]
+
+
+def test_main_forwards_unknown_command_to_frappe(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = []
+    monkeypatch.setattr(
+        cli,
+        "_run_frappe",
+        lambda bench, args, verbose=False: calls.append((bench, args, verbose)),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["bench", "--bench", "demo", "--site", "site.localhost", "migrate"],
+    )
+
+    cli.main()
+
+    assert calls == [("demo", ["--site", "site.localhost", "migrate"], False)]
+
+
+def test_main_forwards_explicit_frappe_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = []
+    monkeypatch.setattr(
+        cli,
+        "_run_frappe",
+        lambda bench, args, verbose=False: calls.append((bench, args, verbose)),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["bench", "-b", "demo", "frappe", "--site", "site.localhost", "migrate", "--verbose"],
+    )
+
+    cli.main()
+
+    assert calls == [("demo", ["--site", "site.localhost", "migrate", "--verbose"], True)]
+
+
+def test_main_dispatches_all_benches_without_selecting_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selected = []
+    dispatched = []
+    monkeypatch.setattr(sys, "argv", ["bench", "-b", "all", "restart"])
+    monkeypatch.setattr(loader, "set_active_bench", selected.append)
+    monkeypatch.setattr(
+        registry,
+        "dispatch_all",
+        lambda args, parser: dispatched.append(args.command),
+    )
+
+    cli.main()
+
+    assert selected == []
+    assert dispatched == ["restart"]
