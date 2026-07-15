@@ -219,7 +219,7 @@ def test_effective_status_live_pid_returns_running(tmp_path: Path) -> None:
 
 def test_effective_status_non_running_passthrough(tmp_path: Path) -> None:
     reader = TaskReader(tmp_path)
-    for status in ("success", "failed", "killed"):
+    for status in ("queued", "success", "failed", "killed"):
         result = reader._effective_status("task-id", status, 12345)
         assert result == status
 
@@ -412,6 +412,6 @@ def test_task_retention_limit(tmp_path: Path) -> None:
         entry
         for entry in tasks_dir.iterdir()
         if entry.is_dir() and (entry / "status").exists()
-        and (entry / "status").read_text().strip() != "running"
+        and (entry / "status").read_text().strip() in {"success", "failed", "killed"}
     ]
     assert len(remaining_completed) == TASK_RETENTION_LIMIT

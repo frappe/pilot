@@ -17,6 +17,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from admin.backend.tasks.callbacks import run_callback
+from admin.backend.tasks.manager.task_state import (
+    TERMINAL_TASK_STATUSES,
+    TaskStatus,
+    parse_task_status,
+    validate_task_transition,
+)
 from pilot.secure_files import open_private, write_private_text
 
 _HOSTNAME = socket.gethostname()
@@ -162,6 +168,14 @@ def _load_redactions(task_dir: Path, bench_root: Path) -> list[str]:
 def main() -> None:
     task_dir = Path(sys.argv[1])
     meta = json.loads((task_dir / "meta.json").read_text())
+    current_status = parse_task_status((task_dir / "status").read_text().strip())
+    if current_status in TERMINAL_TASK_STATUSES:
+        return
+    if current_status == TaskStatus.QUEUED:
+        validate_task_transition(current_status, TaskStatus.RUNNING)
+        meta["started_at"] = datetime.now(timezone.utc).isoformat()
+        write_private_text(task_dir / "meta.json", json.dumps(meta, indent=2))
+        write_private_text(task_dir / "status", TaskStatus.RUNNING.value)
     callbacks_path = task_dir / "callbacks.json"
     callbacks = {}
     if callbacks_path.exists():
@@ -204,8 +218,9 @@ def main() -> None:
     meta["finished_at"] = datetime.now(timezone.utc).isoformat()
     meta["exit_code"] = exit_code
     write_private_text(task_dir / "meta.json", json.dumps(meta, indent=2))
-    status = "success" if exit_code == 0 else "failed"
-    write_private_text(task_dir / "status", status)
+    status = TaskStatus.SUCCESS if exit_code == 0 else TaskStatus.FAILED
+    validate_task_transition(TaskStatus.RUNNING, status)
+    write_private_text(task_dir / "status", status.value)
 
 
 if __name__ == "__main__":

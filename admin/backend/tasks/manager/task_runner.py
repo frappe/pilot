@@ -16,6 +16,12 @@ from admin.backend.tasks.manager.task_args import (
     reject_url_credentials,
     task_secret_args,
 )
+from admin.backend.tasks.manager.task_state import (
+    TERMINAL_TASK_STATUSES,
+    TaskStatus,
+    parse_task_status,
+    validate_task_transition,
+)
 from pilot.exceptions import TaskNotFoundError, TaskNotRunningError
 from pilot.secure_files import make_private_directory, open_private, write_private_text
 
@@ -77,18 +83,20 @@ class TaskRunner:
         command_argv = self._build_argv(command, args)
         secret_args = task_secret_args(command, args)
 
+        queued_at = datetime.now(timezone.utc).isoformat()
         meta = {
             "task_id": task_id,
             "command": command,
             "args": redact_task_args(args),
             "command_argv": command_argv,
-            "started_at": datetime.now(timezone.utc).isoformat(),
+            "queued_at": queued_at,
+            "started_at": None,
             "finished_at": None,
             "exit_code": None,
             "bench_root": str(self._bench_root),
         }
         write_private_text(task_dir / "meta.json", json.dumps(meta, indent=2))
-        write_private_text(task_dir / "status", "running")
+        write_private_text(task_dir / "status", TaskStatus.QUEUED.value)
 
         secret_path = task_dir / "secrets.json"
         if secret_args:
@@ -119,18 +127,24 @@ class TaskRunner:
         if not task_dir.exists():
             raise TaskNotFoundError(f"Task not found: {task_id}")
 
-        status = (task_dir / "status").read_text().strip()
-        if status != "running":
-            raise TaskNotRunningError(f"Task is not running: {task_id} (status={status})")
+        status = parse_task_status((task_dir / "status").read_text().strip())
+        if status not in {TaskStatus.QUEUED, TaskStatus.RUNNING}:
+            raise TaskNotRunningError(
+                f"Task is not active: {task_id} (status={status.value})"
+            )
 
-        pid_text = (task_dir / "pid").read_text().strip()
-        pid = int(pid_text)
+        validate_task_transition(status, TaskStatus.KILLED)
+        write_private_text(task_dir / "status", TaskStatus.KILLED.value)
+
+        pid_path = task_dir / "pid"
+        if not pid_path.exists():
+            return
+        pid = int(pid_path.read_text().strip())
         try:
             if os.getpgid(pid) == pid:
                 os.killpg(pid, signal.SIGTERM)
         except OSError:
             pass
-        write_private_text(task_dir / "status", "killed")
 
     def _task_dir(self, task_id: str) -> Path:
         return self._bench_root / "tasks" / task_id
@@ -242,7 +256,14 @@ class TaskRunner:
         if not tasks_dir.exists():
             return
 
-        completed = [entry for entry in tasks_dir.iterdir() if entry.is_dir() and (entry / "status").exists() and (entry / "status").read_text().strip() != "running"]
+        completed = [
+            entry
+            for entry in tasks_dir.iterdir()
+            if entry.is_dir()
+            and (entry / "status").exists()
+            and (entry / "status").read_text().strip()
+            in {status.value for status in TERMINAL_TASK_STATUSES}
+        ]
 
         if len(completed) <= TASK_RETENTION_LIMIT:
             return

@@ -46,6 +46,7 @@ def task_meta(bench_root: Path) -> dict:
         "command": "build",
         "args": {},
         "command_argv": [sys.executable, "-c", "print('done')"],
+        "queued_at": "2026-07-15T11:59:59+00:00",
         "started_at": "2026-07-15T12:00:00+00:00",
         "finished_at": None,
         "exit_code": None,
@@ -62,7 +63,7 @@ def test_run_persists_task_before_starting_wrapper(
 
     def start_process(argv: list[str], **kwargs):
         assert (task_dir / "meta.json").exists()
-        assert (task_dir / "status").read_text() == "running"
+        assert (task_dir / "status").read_text() == "queued"
         assert (task_dir / "callbacks.json").exists()
         assert not (task_dir / "pid").exists()
         assert argv == [
@@ -101,6 +102,7 @@ def test_run_persists_task_before_starting_wrapper(
         "command_argv",
         "exit_code",
         "finished_at",
+        "queued_at",
         "started_at",
         "task_id",
     }
@@ -108,6 +110,8 @@ def test_run_persists_task_before_starting_wrapper(
     assert meta["command"] == "build"
     assert meta["args"] == {}
     assert meta["bench_root"] == str(tmp_path)
+    assert meta["queued_at"] is not None
+    assert meta["started_at"] is None
     assert meta["finished_at"] is None
     assert meta["exit_code"] is None
     assert (task_dir / "pid").read_text() == "4321"
@@ -195,7 +199,9 @@ def test_base_task_loads_secret_arguments_from_handoff_file(
     assert args.admin_password == "from-file"
 
 
-@pytest.mark.parametrize("status", ["running", "success", "failed", "killed"])
+@pytest.mark.parametrize(
+    "status", ["queued", "running", "success", "failed", "killed"]
+)
 def test_task_reader_preserves_current_statuses(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -262,6 +268,16 @@ def test_kill_marks_task_killed_when_pid_is_stale(
         raise ProcessLookupError
 
     monkeypatch.setattr(os, "getpgid", missing_process)
+
+    TaskRunner(tmp_path).kill(TASK_ID)
+
+    assert (task_dir / "status").read_text() == "killed"
+
+
+def test_kill_cancels_queued_task_without_pid(tmp_path: Path) -> None:
+    task_dir = tmp_path / "tasks" / TASK_ID
+    task_dir.mkdir(parents=True)
+    (task_dir / "status").write_text("queued")
 
     TaskRunner(tmp_path).kill(TASK_ID)
 
@@ -348,6 +364,7 @@ def test_wrapper_loads_config_redactions_and_removes_secret_handoff(
     task_dir = tmp_path / "tasks" / TASK_ID
     task_dir.mkdir(parents=True)
     (task_dir / "meta.json").write_text(json.dumps(task_meta(tmp_path)))
+    (task_dir / "status").write_text("queued")
     (task_dir / "secrets.json").write_text(
         json.dumps({"admin_password": "task-password"})
     )
@@ -394,6 +411,7 @@ def test_wrapper_runs_matching_callback_and_finalizes_task(
     task_dir = tmp_path / "tasks" / TASK_ID
     task_dir.mkdir(parents=True)
     (task_dir / "meta.json").write_text(json.dumps(task_meta(tmp_path)))
+    (task_dir / "status").write_text("queued")
     (task_dir / "callbacks.json").write_text(
         json.dumps(
             {
@@ -455,6 +473,7 @@ def test_wrapper_deletes_legacy_pickle_without_loading_it(
     task_dir = tmp_path / "tasks" / TASK_ID
     task_dir.mkdir(parents=True)
     (task_dir / "meta.json").write_text(json.dumps(task_meta(tmp_path)))
+    (task_dir / "status").write_text("queued")
     legacy_path = task_dir / "on_success.bin"
     legacy_path.write_bytes(b"not-even-a-valid-pickle")
     monkeypatch.setattr(wrapper_module, "run_with_syslog_output", lambda *args: 0)

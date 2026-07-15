@@ -9,6 +9,7 @@ from pathlib import Path
 
 from admin.backend.tasks.manager.models import TaskInfo
 from admin.backend.tasks.manager.task_args import redact_task_args
+from admin.backend.tasks.manager.task_state import TaskStatus, parse_task_status
 from admin.backend.tasks.manager.events import (
     TaskStreamEvent,
     done_event,
@@ -64,7 +65,7 @@ class TaskReader:
                 except Exception:
                     continue
 
-        tasks.sort(key=lambda task: task.started_at, reverse=True)
+        tasks.sort(key=lambda task: task.queued_at, reverse=True)
         return tasks[:limit]
 
     def read_task(self, task_id: str) -> TaskInfo:
@@ -139,16 +140,22 @@ class TaskReader:
 
                 time.sleep(_POLL_INTERVAL)
 
-    def _effective_status(self, task_id: str, raw_status: str, pid: int | None) -> str:
-        if raw_status != "running":
-            return raw_status
+    def _effective_status(
+        self,
+        task_id: str,
+        raw_status: str,
+        pid: int | None,
+    ) -> TaskStatus:
+        status = parse_task_status(raw_status)
+        if status != TaskStatus.RUNNING:
+            return status
         if pid is None:
-            return "killed"
+            return TaskStatus.KILLED
         try:
             os.kill(pid, 0)
         except OSError:
-            return "killed"
-        return "running"
+            return TaskStatus.KILLED
+        return TaskStatus.RUNNING
 
 
 def _read_task_dir(reader: TaskReader, task_dir: Path) -> TaskInfo:
@@ -168,7 +175,13 @@ def _read_task_dir(reader: TaskReader, task_dir: Path) -> TaskInfo:
 
     effective_status = reader._effective_status(meta["task_id"], raw_status, pid)
 
-    started_at = datetime.fromisoformat(meta["started_at"])
+    queued_at_value = meta.get("queued_at") or meta.get("started_at")
+    queued_at = datetime.fromisoformat(queued_at_value)
+    started_at = (
+        datetime.fromisoformat(meta["started_at"])
+        if meta.get("started_at") is not None
+        else None
+    )
     finished_at = (
         datetime.fromisoformat(meta["finished_at"])
         if meta.get("finished_at") is not None
@@ -181,6 +194,7 @@ def _read_task_dir(reader: TaskReader, task_dir: Path) -> TaskInfo:
         args=redact_task_args(meta.get("args", {})),
         status=effective_status,
         pid=pid,
+        queued_at=queued_at,
         started_at=started_at,
         finished_at=finished_at,
         exit_code=meta.get("exit_code"),
