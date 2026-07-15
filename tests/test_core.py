@@ -11,6 +11,7 @@ from pilot.config.worker_config import WorkerConfig, WorkerGroup
 from pilot.core.app import App, RevisionPin
 from pilot.core.bench import Bench
 from pilot.core.site import Site
+from pilot.exceptions import BenchError
 from pilot.managers.process_manager import ProcessManager
 
 
@@ -499,7 +500,7 @@ def test_site_create_postgres_builds_db_args(tmp_path: Path, monkeypatch: pytest
     bench = _postgres_bench(tmp_path, root_password="pgsecret", port=5433)
     captured = _capture_site_cmd(monkeypatch)
 
-    Site(SiteConfig(name="pg.localhost", apps=["frappe"]), bench).create()
+    Site(SiteConfig(name="pg.localhost", apps=["frappe"], admin_password="secret"), bench).create()
 
     cmd = captured["cmd"]
     assert cmd[cmd.index("--db-type") + 1] == "postgres"
@@ -515,7 +516,7 @@ def test_site_create_mariadb_when_bench_is_mariadb(tmp_path: Path, monkeypatch: 
     captured = _capture_site_cmd(monkeypatch)
     monkeypatch.setattr("pilot.managers.mariadb_manager.MariaDBManager._detect_socket", lambda self: "")
 
-    Site(SiteConfig(name="mdb.localhost", apps=["frappe"]), bench).create()
+    Site(SiteConfig(name="mdb.localhost", apps=["frappe"], admin_password="secret"), bench).create()
 
     cmd = captured["cmd"]
     # mariadb is frappe's default engine — no --db-type flag is passed
@@ -575,6 +576,16 @@ def test_site_reinstall_mariadb_root_creds(tmp_path: Path, monkeypatch: pytest.M
     assert cmd[cmd.index("--db-root-username") + 1] == "root"
 
 
+def test_site_create_and_reinstall_reject_empty_admin_password(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    site = Site(SiteConfig(name="m.localhost", apps=[]), bench)
+
+    with pytest.raises(BenchError, match="must not be empty"):
+        site.create()
+    with pytest.raises(BenchError, match="must not be empty"):
+        site.reinstall("   ")
+
+
 def test_site_migrate_skip_failing_adds_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     bench = make_bench(tmp_path)
     captured = _capture_site_cmd(monkeypatch)
@@ -597,7 +608,7 @@ def test_site_create_postgres_empty_password_uses_placeholder(tmp_path: Path, mo
     bench = _postgres_bench(tmp_path, root_password="")  # trust/peer auth — no password
     captured = _capture_site_cmd(monkeypatch)
 
-    Site(SiteConfig(name="pg.localhost", apps=[]), bench).create()
+    Site(SiteConfig(name="pg.localhost", apps=[], admin_password="secret"), bench).create()
 
     cmd = captured["cmd"]
     # frappe prompts on an empty password (hanging the task); a placeholder avoids it.

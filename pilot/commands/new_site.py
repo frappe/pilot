@@ -41,7 +41,9 @@ class NewSiteCommand(Command):
             raise BenchError("Site Administrator password must not be empty.")
         return cls(bench, args.name, app_names, admin_password)
 
-    def __init__(self, bench: "Bench", name: str, apps: list[str], admin_password: str = "admin", db_type: str | None = None) -> None:
+    def __init__(self, bench: "Bench", name: str, apps: list[str], admin_password: str, db_type: str | None = None) -> None:
+        if not isinstance(admin_password, str) or not admin_password.strip():
+            raise BenchError("Site Administrator password must not be empty.")
         self.bench = bench
         self.name = name
         self.apps = apps

@@ -72,6 +72,24 @@ def test_build_argv_new_site_carries_no_db_type(tmp_path: Path) -> None:
     assert "--db-type" not in argv
 
 
+@pytest.mark.parametrize("command,args", [
+    ("new-site", {"name": "site.localhost"}),
+    ("new-site-from-backup", {"name": "site.localhost", "db_file": "/tmp/db.sql"}),
+    ("reinstall-site", {"site": "site.localhost"}),
+])
+def test_site_tasks_require_admin_password(tmp_path: Path, command: str, args: dict) -> None:
+    with pytest.raises(ValueError, match="admin_password"):
+        TaskRunner(tmp_path)._build_argv(command, args)
+
+
+@pytest.mark.parametrize("password", ["", "   ", None])
+def test_site_tasks_reject_empty_admin_password(tmp_path: Path, password) -> None:
+    with pytest.raises(ValueError, match="must not be empty"):
+        TaskRunner(tmp_path)._build_argv(
+            "new-site", {"name": "site.localhost", "admin_password": password}
+        )
+
+
 def test_build_argv_get_app(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     argv = runner._build_argv("get-app", {"name": "erpnext", "repo": "https://github.com/frappe/erpnext"})

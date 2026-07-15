@@ -286,10 +286,13 @@ def start_new_site():
     data = request.get_json(silent=True) or {}
     if not data.get("name"):
         return jsonify({"ok": False, "error": "Site name is required"}), 400
+    admin_password = data.get("admin_password")
+    if not isinstance(admin_password, str) or not admin_password.strip():
+        import secrets
 
-    args = {"name": data["name"]}
-    if data.get("admin_password"):
-        args["admin_password"] = data["admin_password"]
+        admin_password = secrets.token_urlsafe(16)
+
+    args = {"name": data["name"], "admin_password": admin_password}
     try:
         task_id = TaskRunner(bench_root).run("new-site", args)
         return jsonify({"ok": True, "task_id": task_id})

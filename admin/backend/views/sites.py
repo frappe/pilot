@@ -182,7 +182,9 @@ def create():
 def create_from_upload():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     name = (request.form.get("name") or "").strip()
-    admin_password = (request.form.get("admin_password") or "admin").strip() or "admin"
+    admin_password = request.form.get("admin_password")
+    if not isinstance(admin_password, str) or not admin_password.strip():
+        admin_password = secrets.token_urlsafe(16)
     err = validate_site_name(name) or _new_site_name_error(bench_root, name)
     if err:
         return jsonify({"ok": False, "error": err})
@@ -236,8 +238,14 @@ def reinstall_site(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     if not (bench_root / "sites" / name / "site_config.json").exists():
         return jsonify({"ok": False, "error": "Site not found."}), 404
+    data = request.get_json(silent=True) or {}
+    admin_password = data.get("admin_password")
+    if not isinstance(admin_password, str) or not admin_password.strip():
+        admin_password = secrets.token_urlsafe(16)
     try:
-        task_id = TaskRunner(bench_root).run("reinstall-site", {"site": name, "admin_password": "admin"})
+        task_id = TaskRunner(bench_root).run(
+            "reinstall-site", {"site": name, "admin_password": admin_password}
+        )
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
     return jsonify({"ok": True, "task_id": task_id})

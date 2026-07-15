@@ -28,7 +28,7 @@ _WHITELIST: dict[str, list[str]] = {
     "uninstall-app": ["site", "app"],
     "get-app": ["name"],
     "remove-app": ["name"],
-    "new-site": ["name"],
+    "new-site": ["name", "admin_password"],
     "drop-site": ["site"],
     "backup-site": ["site"],
     "delete-backup": ["site", "filenames"],
@@ -41,7 +41,7 @@ _WHITELIST: dict[str, list[str]] = {
     "setup-nginx": [],
     "setup-production": [],
     "setup-letsencrypt": [],
-    "new-site-from-backup": ["name", "db_file"],
+    "new-site-from-backup": ["name", "admin_password", "db_file"],
     "reinstall-site": ["site", "admin_password"],
     "wizard-setup": [],
     "update-cli": [],
@@ -144,6 +144,10 @@ class TaskRunner:
         for key in required:
             if key not in args:
                 raise ValueError(f"Command {command!r} requires arg {key!r}")
+        if "admin_password" in required:
+            password = args["admin_password"]
+            if not isinstance(password, str) or not password.strip():
+                raise ValueError("admin_password must not be empty")
 
         if command == "migrate":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.migrate_task", str(self._bench_root), args["site"]]

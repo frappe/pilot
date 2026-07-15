@@ -342,6 +342,13 @@ def test_new_site_reads_admin_password_from_file(
     assert command.admin_password == "file-password"
 
 
+def test_new_site_rejects_empty_admin_password(tmp_path: Path) -> None:
+    from pilot.commands.new_site import NewSiteCommand
+
+    with pytest.raises(BenchError, match="must not be empty"):
+        NewSiteCommand(make_bench(tmp_path), "site1.localhost", [], "   ")
+
+
 def test_set_admin_password_reads_password_from_file(tmp_path: Path) -> None:
     from pilot.commands.set_admin_password import SetAdminPasswordCommand
 
@@ -366,7 +373,7 @@ def test_new_site_raises_if_site_exists(tmp_path: Path) -> None:
     (site_dir / "site_config.json").write_text("{}")
 
     with pytest.raises(BenchError, match="already exists"):
-        NewSiteCommand(bench, "site1.localhost", ["frappe"])._validate()
+        NewSiteCommand(bench, "site1.localhost", ["frappe"], "secret")._validate()
 
 
 def test_new_site_raises_if_app_not_in_apps_txt(tmp_path: Path) -> None:
@@ -377,7 +384,7 @@ def test_new_site_raises_if_app_not_in_apps_txt(tmp_path: Path) -> None:
     (bench.sites_path / "apps.txt").write_text("frappe\n")
 
     with pytest.raises(BenchError, match="erpnext"):
-        NewSiteCommand(bench, "site1.localhost", ["erpnext"])._validate()
+        NewSiteCommand(bench, "site1.localhost", ["erpnext"], "secret")._validate()
 
 
 def test_new_site_validate_passes_when_all_ok(tmp_path: Path) -> None:
@@ -387,7 +394,7 @@ def test_new_site_validate_passes_when_all_ok(tmp_path: Path) -> None:
     bench.create_directories()
     (bench.sites_path / "apps.txt").write_text("frappe\n")
 
-    NewSiteCommand(bench, "site1.localhost", ["frappe"])._validate()  # no raise
+    NewSiteCommand(bench, "site1.localhost", ["frappe"], "secret")._validate()  # no raise
 
 
 def test_new_site_validate_passes_with_no_apps_requested(tmp_path: Path) -> None:
@@ -396,7 +403,7 @@ def test_new_site_validate_passes_with_no_apps_requested(tmp_path: Path) -> None
     bench = make_bench(tmp_path)
     bench.create_directories()
 
-    NewSiteCommand(bench, "site1.localhost", [])._validate()  # no raise
+    NewSiteCommand(bench, "site1.localhost", [], "secret")._validate()  # no raise
 
 
 # ── RemoveAppCommand ──────────────────────────────────────────────────────────

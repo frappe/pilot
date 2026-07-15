@@ -566,3 +566,49 @@ def test_create_site_does_not_carry_db_type(tmp_path: Path) -> None:
 
     assert resp.get_json()["ok"] is True
     assert "db_type" not in captured["args"]
+
+
+def test_reinstall_site_generates_new_admin_password(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    site_dir = bench_root / "sites" / "s.localhost"
+    site_dir.mkdir(parents=True)
+    (site_dir / "site_config.json").write_text("{}")
+
+    with patch("admin.backend.views.sites.TaskRunner.run", return_value="task-1") as run:
+        response = client.post("/api/sites/s.localhost/reinstall", json={})
+
+    assert response.get_json() == {"ok": True, "task_id": "task-1"}
+    args = run.call_args.args[1]
+    assert args["site"] == "s.localhost"
+    assert args["admin_password"] and args["admin_password"] != "admin"
+
+
+def test_reinstall_site_submits_new_admin_password_as_secret(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    site_dir = bench_root / "sites" / "s.localhost"
+    site_dir.mkdir(parents=True)
+    (site_dir / "site_config.json").write_text("{}")
+
+    with patch("admin.backend.views.sites.TaskRunner.run", return_value="task-1") as run:
+        response = client.post(
+            "/api/sites/s.localhost/reinstall", json={"admin_password": "new-secret"}
+        )
+
+    assert response.get_json() == {"ok": True, "task_id": "task-1"}
+    run.assert_called_once_with(
+        "reinstall-site", {"site": "s.localhost", "admin_password": "new-secret"}
+    )
+
+
+def test_setup_site_creation_generates_admin_password_when_omitted(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+
+    with patch("admin.backend.views.setup.TaskRunner.run", return_value="task-1") as run:
+        response = client.post("/api/setup/new-site", json={"name": "s.localhost"})
+
+    assert response.get_json() == {"ok": True, "task_id": "task-1"}
+    args = run.call_args.args[1]
+    assert args["name"] == "s.localhost"
+    assert args["admin_password"] and args["admin_password"] != "admin"

@@ -3,6 +3,8 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING
 
+from pilot.exceptions import BenchError
+
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
@@ -13,10 +15,12 @@ class NewSiteFromBackupCommand:
         bench: "Bench",
         name: str,
         db_file: str,
-        admin_password: str = "admin",
+        admin_password: str,
         public_files: str | None = None,
         private_files: str | None = None,
     ) -> None:
+        if not isinstance(admin_password, str) or not admin_password.strip():
+            raise BenchError("Site Administrator password must not be empty.")
         self.bench = bench
         self.name = name
         self.db_file = db_file

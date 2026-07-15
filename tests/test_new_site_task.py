@@ -30,7 +30,7 @@ def resolver(name: str, deps: dict[str, str] | None = None) -> Resolver:
 
 
 def make_task(bench_root: Path, apps: list[str]) -> NewSiteTask:
-    args = MagicMock(name="site1.localhost", admin_password="admin", db_type=None, apps=apps)
+    args = MagicMock(name="site1.localhost", admin_password="site-secret", db_type=None, apps=apps)
     args.name = "site1.localhost"
     bench = make_bench(bench_root)
     bench.create_directories()
