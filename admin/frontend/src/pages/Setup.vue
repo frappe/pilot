@@ -33,7 +33,7 @@
         <div v-show="currentStep === 'database'" class="flex flex-col gap-4">
           <Select label="Database engine" v-model="dbType" :options="dbTypeOptions" />
           <Switch v-model="useExternalDb" label="Connect to an existing database server"
-            description="e.g. Amazon RDS, or any server other than this machine. Leave off to let pilot set up and manage its own." />
+            description="Leave off to let pilot set up and manage its own user owned database server if not already present." />
           <div v-show="useExternalDb" class="flex gap-4">
             <TextInput class="flex-1" label="Host" v-model="dbHost" placeholder="db.example.com" />
             <TextInput class="w-28" label="Port" v-model="dbPort" :placeholder="dbPortPlaceholder" />
