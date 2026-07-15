@@ -1,5 +1,6 @@
 import sys
 
+from pilot.context import CliContext
 from pilot.exceptions import BenchError
 
 _OWN_GROUP_OPTIONS = frozenset(["--verbose", "--yes", "-y", "--bench", "-b", "--help", "-h"])
@@ -53,63 +54,69 @@ def _is_frappe_passthrough(args: list[str], own_commands: frozenset[str] | None 
     return False
 
 
-def _run_frappe(bench_name: str | None, frappe_args: list[str], verbose: bool = False) -> None:
+def _run_frappe(context: CliContext, frappe_args: list[str]) -> None:
     from pilot import loader
     from pilot.commands.frappe_cmd import FrappeCommand
 
-    loader.set_active_bench(bench_name)
     try:
-        FrappeCommand(loader.load_bench()).run_raw(["frappe", *frappe_args])
+        FrappeCommand(loader.load_bench(context)).run_raw(["frappe", *frappe_args])
     except BenchError as e:
         print(str(e), file=sys.stderr)
         sys.exit(1)
     except Exception as e:
-        if verbose:
+        if context.verbose:
             raise
         print(str(e), file=sys.stderr)
         sys.exit(1)
 
 
-def main() -> None:
-    from pilot import loader, registry
+def _build_context(bench_name: str | None, verbose: bool, assume_yes: bool) -> CliContext:
+    from pilot.loader import cli_root
 
-    # Make print() output appear immediately, even before subprocess output.
+    return CliContext(
+        installation_root=cli_root(),
+        bench_name=bench_name,
+        verbose=verbose,
+        assume_yes=assume_yes,
+    )
+
+
+def main() -> None:
+    from pilot import registry
+
     sys.stdout.reconfigure(line_buffering=True)
     args_list = sys.argv[1:]
-
-    # Forward unknown commands/options straight to Frappe bench.
-    if _is_frappe_passthrough(args_list):
-        bench_name, clean = _strip_bench_flag(args_list)
-        _run_frappe(bench_name, clean)
-        return
-
-    # Early-dispatch 'bench frappe <args...>' before argparse so that sub-options
-    # like --site don't get consumed by the top-level parser.
     bench_name, remaining = _strip_bench_flag(args_list)
-    if remaining and remaining[0] == "frappe":
-        _run_frappe(bench_name, remaining[1:], verbose="--verbose" in args_list)
+    context = _build_context(
+        bench_name,
+        verbose="--verbose" in args_list,
+        assume_yes="--yes" in args_list or "-y" in args_list,
+    )
+
+    if _is_frappe_passthrough(args_list):
+        _run_frappe(context, remaining)
         return
 
-    # Parse with the bench flag stripped so -b/--bench works after the subcommand too.
+    if remaining and remaining[0] == "frappe":
+        _run_frappe(context, remaining[1:])
+        return
+
     parser = registry.build_parser()
     args = parser.parse_args(remaining)
-    if bench_name != "all":
-        loader.set_active_bench(bench_name)
 
     import time
 
-    verbose = getattr(args, "verbose", False)
     _t0 = time.monotonic()
     try:
-        if bench_name == "all":
-            registry.dispatch_all(args, parser)
+        if context.all_benches:
+            registry.dispatch_all(args, parser, context)
         else:
-            registry.dispatch(args, parser)
+            registry.dispatch(args, parser, context)
     except BenchError as e:
         print(str(e), file=sys.stderr)
         sys.exit(1)
     except Exception as e:
-        if verbose:
+        if context.verbose:
             raise
         print(str(e), file=sys.stderr)
         sys.exit(1)

@@ -8,7 +8,6 @@ import sys
 import pytest
 
 import pilot.cli as cli
-import pilot.loader as loader
 import pilot.registry as registry
 from pilot.cli import _is_frappe_passthrough, _strip_bench_flag
 
@@ -165,24 +164,21 @@ def test_command_discovery_matches_baseline() -> None:
 
 
 def test_main_dispatches_native_command(monkeypatch: pytest.MonkeyPatch) -> None:
-    selected = []
     dispatched = []
     monkeypatch.setattr(sys, "argv", ["bench", "--bench", "demo", "restart"])
-    monkeypatch.setattr(loader, "set_active_bench", selected.append)
-    monkeypatch.setattr(registry, "dispatch", lambda args, parser: dispatched.append(args.command))
+    monkeypatch.setattr(
+        registry, "dispatch", lambda args, parser, context: dispatched.append((args.command, context.bench_name))
+    )
 
     cli.main()
 
-    assert selected == ["demo"]
-    assert dispatched == ["restart"]
+    assert dispatched == [("restart", "demo")]
 
 
 def test_main_forwards_unknown_command_to_frappe(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = []
     monkeypatch.setattr(
-        cli,
-        "_run_frappe",
-        lambda bench, args, verbose=False: calls.append((bench, args, verbose)),
+        cli, "_run_frappe", lambda context, args: calls.append((context.bench_name, args, context.verbose))
     )
     monkeypatch.setattr(
         sys,
@@ -198,9 +194,7 @@ def test_main_forwards_unknown_command_to_frappe(monkeypatch: pytest.MonkeyPatch
 def test_main_forwards_explicit_frappe_command(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = []
     monkeypatch.setattr(
-        cli,
-        "_run_frappe",
-        lambda bench, args, verbose=False: calls.append((bench, args, verbose)),
+        cli, "_run_frappe", lambda context, args: calls.append((context.bench_name, args, context.verbose))
     )
     monkeypatch.setattr(
         sys,
@@ -216,17 +210,12 @@ def test_main_forwards_explicit_frappe_command(monkeypatch: pytest.MonkeyPatch) 
 def test_main_dispatches_all_benches_without_selecting_one(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    selected = []
     dispatched = []
     monkeypatch.setattr(sys, "argv", ["bench", "-b", "all", "restart"])
-    monkeypatch.setattr(loader, "set_active_bench", selected.append)
     monkeypatch.setattr(
-        registry,
-        "dispatch_all",
-        lambda args, parser: dispatched.append(args.command),
+        registry, "dispatch_all", lambda args, parser, context: dispatched.append((args.command, context.bench_name))
     )
 
     cli.main()
 
-    assert selected == []
-    assert dispatched == ["restart"]
+    assert dispatched == [("restart", "all")]

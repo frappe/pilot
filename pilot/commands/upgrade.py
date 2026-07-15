@@ -1,32 +1,13 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from pilot.commands.base import Command
-
-if TYPE_CHECKING:
-    from pilot.core.bench import Bench
 
 
 class UpgradeCommand(Command):
     name = "upgrade"
     help = "Pull latest bench-cli and download the admin frontend."
     requires_bench = False
-
-    @classmethod
-    def from_args(cls, args, bench):
-        # Bench is optional: used only to restart processes in production.
-        if bench is None:
-            from pilot.loader import load_bench
-
-            try:
-                bench = load_bench()
-            except Exception:
-                bench = None
-        return cls(bench)
-
-    def __init__(self, bench: "Bench | None" = None) -> None:
-        self.bench = bench
+    optional_bench = True  # used only to restart processes in production
 
     def run(self) -> None:
         from pilot.commands.admin import download_admin_frontend
@@ -55,7 +36,6 @@ class UpgradeCommand(Command):
         if not self.bench:
             return
         try:
-            from pilot.managers.process_manager import ProcessManager
             from pilot.managers.process_manager import ProcessManager
 
             manager = ProcessManager.detect_running(self.bench)
