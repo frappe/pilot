@@ -92,6 +92,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         "apps": 6,
         "app-update-checks": 1,
         "app-updates": 1,
+        "audit-events": 1,
         "bench-readiness-checks": 1,
         "benches": 8,
         "dashboard": 1,
@@ -103,8 +104,9 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         "marketplace": 1,
         "monitor-history": 1,
         "monitor-status": 1,
+        "network": 1,
         "runtime": 4,
-        "settings": 4,
+        "settings": 2,
         "setup": 7,
         "site-login-handoffs": 1,
         "site-restores": 1,
@@ -201,6 +203,15 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         ("POST", "/api/v1/git/repository-resolutions"),
     } <= route_keys
     assert {
+        ("GET", "/api/v1/settings"),
+        ("PATCH", "/api/v1/settings"),
+        ("GET", "/api/v1/audit-events"),
+        ("GET", "/api/v1/network/client"),
+        ("GET", "/api/v1/ssh-keys"),
+        ("POST", "/api/v1/ssh-keys"),
+        ("DELETE", "/api/v1/ssh-keys/<fingerprint>"),
+    } <= route_keys
+    assert {
         ("GET", "/api/v1/setup/configuration"),
         ("PUT", "/api/v1/setup/configuration"),
         ("GET", "/api/v1/setup/framework-branches"),
@@ -268,5 +279,9 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
             "/api/v1/git/integration",
             "/api/v1/git/repos",
             "/api/v1/git/resolve",
+            "/api/v1/settings/",
+            "/api/v1/settings/audit/log",
+            "/api/v1/settings/my-ip",
+            "/api/v1/ssh-keys/",
         }
     }

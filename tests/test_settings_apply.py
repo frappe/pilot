@@ -38,7 +38,7 @@ def test_settings_report_config_generation_failure_after_save(tmp_path: Path) ->
         "admin.backend.views.settings._regenerate_configs",
         side_effect=RuntimeError("secret generator detail"),
     ):
-        response = client.patch("/api/v1/settings/", json=_worker_update())
+        response = client.patch("/api/v1/settings", json=_worker_update())
 
     assert response.status_code == 500
     assert response.get_json() == {
@@ -61,7 +61,7 @@ def test_settings_report_restart_failure_without_stderr(tmp_path: Path) -> None:
             side_effect=RuntimeError("secret supervisor stderr"),
         ),
     ):
-        response = client.patch("/api/v1/settings/", json=_worker_update())
+        response = client.patch("/api/v1/settings", json=_worker_update())
 
     assert response.status_code == 500
     assert response.get_json()["error"] == {
@@ -90,7 +90,7 @@ def test_settings_report_nginx_failure_without_exception_text(tmp_path: Path) ->
             side_effect=RuntimeError("secret nginx detail"),
         ),
     ):
-        response = client.patch("/api/v1/settings/", json=update)
+        response = client.patch("/api/v1/settings", json=update)
 
     assert response.status_code == 500
     assert response.get_json()["error"] == {
@@ -107,7 +107,7 @@ def test_settings_success_has_no_legacy_error_fields(tmp_path: Path) -> None:
         patch("admin.backend.views.settings._regenerate_configs"),
         patch("admin.backend.views.settings._do_restart", return_value=True),
     ):
-        response = client.patch("/api/v1/settings/", json=_worker_update())
+        response = client.patch("/api/v1/settings", json=_worker_update())
 
     assert response.status_code == 200
     assert response.get_json() == {"restarted": True}

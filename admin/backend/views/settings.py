@@ -18,6 +18,8 @@ from pilot.managers.redis_manager import RedisManager
 from pilot.platform import is_linux, native_process_manager
 
 settings_bp = Blueprint("settings", __name__)
+audit_bp = Blueprint("audit", __name__)
+network_bp = Blueprint("network", __name__)
 
 
 class _SettingsUpdateRejected(Exception):
@@ -482,7 +484,7 @@ def _build_settings_response(config: BenchConfig) -> dict:
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 
-@settings_bp.route("/")
+@settings_bp.get("")
 def get_settings():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
@@ -495,7 +497,7 @@ def get_settings():
 _AUDIT_LOG_LIMIT = 500  # newest entries returned; the log has no dedicated UI, it's viewed as raw JSON
 
 
-@settings_bp.route("/audit/log")
+@audit_bp.get("/audit-events")
 def audit_log():
     """The bench-wide audit log as JSON, newest first, for direct viewing in a
     browser. Optional ``type``/``status``/``site``/``limit`` query params filter it."""
@@ -516,7 +518,7 @@ def audit_log():
     return jsonify(entries)
 
 
-@settings_bp.route("/my-ip")
+@network_bp.get("/network/client")
 def my_ip():
     """The requesting client's IP, so the UI can tell the operator which address to
     allow-list before blocking by default. Forwarded addresses are accepted only
@@ -524,7 +526,7 @@ def my_ip():
     return jsonify({"ip": client_ip(default="")})
 
 
-@settings_bp.route("/", methods=["PATCH"])
+@settings_bp.patch("")
 def update_settings():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     data = request.get_json(silent=True)

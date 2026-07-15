@@ -56,7 +56,7 @@ def test_ssh_key_add_errors_have_distinct_statuses(
     with patch("admin.backend.views.ssh_keys.AuthorizedKeysStore") as store:
         store.return_value.add.side_effect = error
         response = client.post(
-            "/api/v1/ssh-keys/",
+            "/api/v1/ssh-keys",
             json={"public_key": "ssh-ed25519 AAAA"},
         )
 
@@ -80,10 +80,7 @@ def test_ssh_key_remove_errors_have_distinct_statuses(
     client = _client(tmp_path / "bench")
     with patch("admin.backend.views.ssh_keys.AuthorizedKeysStore") as store:
         store.return_value.remove.side_effect = error
-        response = client.delete(
-            "/api/v1/ssh-keys/",
-            json={"fingerprint": "SHA256:value"},
-        )
+        response = client.delete("/api/v1/ssh-keys/SHA256:value")
 
     assert response.status_code == status
     assert response.get_json()["error"]["code"] == code

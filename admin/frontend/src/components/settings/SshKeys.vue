@@ -118,7 +118,7 @@ async function add() {
   error.value = ''
   try {
     const result = await sshKeysApi.add(newKey.value.trim())
-    if (result.ok) {
+    if (result.fingerprint) {
       showAdd.value = false
       toast.success('Key added')
       await load()
@@ -140,13 +140,13 @@ function promptRemove(row) {
 async function confirmRemove() {
   removingBusy.value = true
   try {
-    const result = await sshKeysApi.remove(removing.value.fingerprint)
-    if (result.ok) {
+    const response = await sshKeysApi.remove(removing.value.fingerprint)
+    if (response.ok) {
       toast.success('Key removed')
       showRemove.value = false
       await load()
     } else {
-      toast.error(apiErrorMessage(result, 'Could not remove key.'))
+      toast.error(apiErrorMessage(await response.json(), 'Could not remove key.'))
     }
   } catch (e) {
     toast.error(e.message || 'Could not remove key.')

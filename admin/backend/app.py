@@ -27,7 +27,7 @@ from .views.database import database_bp
 from .views.git import git_bp
 from .views.logs import logs_bp
 from .views.processes import processes_bp
-from .views.settings import settings_bp
+from .views.settings import audit_bp, network_bp, settings_bp
 from .views.site_login import site_login_bp
 from .views.setup import setup_bp
 from .views.sites import site_restores_bp, sites_bp
@@ -161,6 +161,8 @@ def create_app(bench_root: Path) -> Flask:
     app.register_blueprint(tasks_bp, url_prefix=f"{API_V1_PREFIX}/tasks")
     app.register_blueprint(task_worker_bp, url_prefix=API_V1_PREFIX)
     app.register_blueprint(settings_bp, url_prefix=f"{API_V1_PREFIX}/settings")
+    app.register_blueprint(audit_bp, url_prefix=API_V1_PREFIX)
+    app.register_blueprint(network_bp, url_prefix=API_V1_PREFIX)
     app.register_blueprint(updates_bp, url_prefix=API_V1_PREFIX)
     app.register_blueprint(git_bp, url_prefix=f"{API_V1_PREFIX}/git")
     app.register_blueprint(ssh_keys_bp, url_prefix=f"{API_V1_PREFIX}/ssh-keys")
