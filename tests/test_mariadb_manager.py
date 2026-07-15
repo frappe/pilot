@@ -217,7 +217,7 @@ def test_check_credentials_false_on_error() -> None:
         assert manager.check_credentials("wrong") is False
 
 
-# ── /api/setup/validate-mariadb endpoint ──────────────────────────────────────
+# ── /api/v1/setup/validate-mariadb endpoint ──────────────────────────────────────
 
 
 def _client(tmp_path):
@@ -229,7 +229,7 @@ def _client(tmp_path):
 
 
 def _post_validate(client, password: str):
-    return client.post("/api/setup/validate-mariadb", json={"mariadb_password": password})
+    return client.post("/api/v1/setup/validate-mariadb", json={"mariadb_password": password})
 
 
 def test_validate_endpoint_will_install_when_not_installed(tmp_path) -> None:

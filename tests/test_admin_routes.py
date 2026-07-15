@@ -1,6 +1,7 @@
 from collections import Counter
 from pathlib import Path
 
+from admin.backend.api_contract import API_ROOT_PREFIX, API_V1_PREFIX
 from admin.backend.app import create_app
 from admin.backend.auth import AuthPolicy, endpoint_auth_policy
 
@@ -57,11 +58,21 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
             auth_policy(app, rule.endpoint),
         )
         for rule in app.url_map.iter_rules()
-        if rule.rule.startswith("/api")
+        if rule.rule.startswith(API_V1_PREFIX)
     ]
-    areas = [path.removeprefix("/api/").split("/", 1)[0] for _, path, _, _ in routes]
+    areas = [
+        path.removeprefix(f"{API_V1_PREFIX}/").split("/", 1)[0]
+        for _, path, _, _ in routes
+    ]
+    unversioned = [
+        rule.rule
+        for rule in app.url_map.iter_rules()
+        if rule.rule.startswith(f"{API_ROOT_PREFIX}/")
+        and not rule.rule.startswith(f"{API_V1_PREFIX}/")
+    ]
 
     assert len(routes) == 99
+    assert unversioned == []
     assert len({(method, path) for method, path, _, _ in routes}) == 99
     assert Counter(method for method, _, _, _ in routes) == {
         "DELETE": 6,

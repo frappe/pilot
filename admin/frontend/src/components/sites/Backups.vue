@@ -82,6 +82,7 @@ import { useRouter } from 'vue-router'
 import { Button, Dialog, Dropdown, ErrorMessage, ListFooter, ListView, ListRowItem, LoadingText } from 'frappe-ui'
 import BackupConfigDialog from '@/components/sites/BackupConfigDialog.vue'
 import { sitesApi } from '@/api/sites'
+import { tasksApi } from '@/api/tasks'
 import { useSite } from '@/composables/useSite'
 import { openTaskDetailPage } from '@/utils/taskRoute'
 import { cronToLabel } from '@/utils/backup'
@@ -217,12 +218,7 @@ async function confirmDelete() {
   deleteError.value = ''
   try {
     const filenames = deleteTarget.value.files.map((f) => f.filename)
-    const res = await fetch('/api/tasks/run', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ command: 'delete-backup', site: props.siteName, filenames }),
-    })
-    const data = await res.json()
+    const data = await tasksApi.run('delete-backup', { site: props.siteName, filenames })
     if (data.ok) {
       showDelete.value = false
       openTaskDetailPage(router, data.task_id)

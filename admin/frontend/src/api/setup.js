@@ -1,4 +1,4 @@
-import { request } from './client'
+import { apiUrl, request } from './client'
 
 export const setupApi = {
   config: () => request.get('setup/config').json(),
@@ -9,5 +9,5 @@ export const setupApi = {
   save: (json) => request.post('setup/save', { json }).json(),
   start: () => request.post('setup/start').json(),
   finish: () => request.post('setup/finish').json(),
-  streamUrl: (taskId) => `/api/setup/stream/${taskId}`,
+  streamUrl: (taskId) => apiUrl(`setup/stream/${taskId}`),
 }

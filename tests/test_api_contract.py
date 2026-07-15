@@ -12,7 +12,7 @@ def test_api_prefixes_define_one_version_boundary() -> None:
 
 
 def test_unknown_api_route_returns_json_404(tmp_path: Path) -> None:
-    response = create_app(tmp_path).test_client().get("/api/not-a-route")
+    response = create_app(tmp_path).test_client().get("/api/v1/not-a-route")
 
     assert response.status_code == 404
     assert response.content_type == "application/json"
@@ -26,7 +26,7 @@ def test_unknown_api_route_returns_json_404(tmp_path: Path) -> None:
 
 
 def test_wrong_api_method_returns_json_405(tmp_path: Path) -> None:
-    response = create_app(tmp_path).test_client().post("/api/ping")
+    response = create_app(tmp_path).test_client().post("/api/v1/ping")
 
     assert response.status_code == 405
     assert response.content_type == "application/json"
@@ -37,3 +37,10 @@ def test_wrong_api_method_returns_json_405(tmp_path: Path) -> None:
             "details": {},
         }
     }
+
+
+def test_unversioned_product_route_is_not_an_alias(tmp_path: Path) -> None:
+    response = create_app(tmp_path).test_client().get("/api/status")
+
+    assert response.status_code == 404
+    assert response.get_json()["error"]["code"] == "not_found"

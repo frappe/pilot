@@ -1,4 +1,4 @@
-"""Tests for GET /api/sites/<name>/apps resolving title/description per app."""
+"""Tests for GET /api/v1/sites/<name>/apps resolving title/description per app."""
 from __future__ import annotations
 
 import json
@@ -43,7 +43,7 @@ def test_site_apps_includes_title_and_description(tmp_path: Path) -> None:
     _make_app(bench_root, "suite", '[project]\nname = "suite"\ndescription = "A custom suite app"\n')
 
     client = _client(bench_root)
-    response = client.get("/api/sites/site1.localhost/apps")
+    response = client.get("/api/v1/sites/site1.localhost/apps")
 
     assert response.status_code == 200
     apps = {app["name"]: app for app in response.get_json()["apps"]}
@@ -56,7 +56,7 @@ def test_site_apps_falls_back_to_name_when_app_missing(tmp_path: Path) -> None:
     _make_site(bench_root, "site1.localhost", ["ghost"])
 
     client = _client(bench_root)
-    response = client.get("/api/sites/site1.localhost/apps")
+    response = client.get("/api/v1/sites/site1.localhost/apps")
 
     assert response.status_code == 200
     apps = {app["name"]: app for app in response.get_json()["apps"]}

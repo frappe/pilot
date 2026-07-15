@@ -160,7 +160,7 @@ def test_create_from_upload_passes_only_generated_paths_to_task(tmp_path: Path) 
 
     with patch("admin.backend.views.sites.TaskRunner.run", return_value="task-1") as run:
         response = client.post(
-            "/api/sites/create-from-upload",
+            "/api/v1/sites/create-from-upload",
             data={
                 "name": "new.localhost",
                 "admin_password": "site-secret",
@@ -189,7 +189,7 @@ def test_create_from_upload_generates_admin_password_when_omitted(tmp_path: Path
 
     with patch("admin.backend.views.sites.TaskRunner.run", return_value="task-1") as run:
         response = client.post(
-            "/api/sites/create-from-upload",
+            "/api/v1/sites/create-from-upload",
             data={
                 "name": "new.localhost",
                 "db_file": (io.BytesIO(b"-- backup\nCREATE TABLE tab (id int);"), "backup.sql"),

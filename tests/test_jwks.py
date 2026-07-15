@@ -169,53 +169,53 @@ def _client(tmp_path: Path):
 
 def test_jwks_bearer_token_authenticates(tmp_path: Path) -> None:
     client = _client(tmp_path)
-    resp = client.get("/api/benches/", headers={"Authorization": f"Bearer {_mint()}"})
+    resp = client.get("/api/v1/benches/", headers={"Authorization": f"Bearer {_mint()}"})
     assert resp.status_code != 401
 
 
 def test_jwks_ec_bearer_token_authenticates(tmp_path: Path) -> None:
     client = _client(tmp_path)
-    resp = client.get("/api/benches/", headers={"Authorization": f"Bearer {_mint(_EC, alg='ES256', kid='ec-key')}"})
+    resp = client.get("/api/v1/benches/", headers={"Authorization": f"Bearer {_mint(_EC, alg='ES256', kid='ec-key')}"})
     assert resp.status_code != 401
 
 
 def test_jwks_sid_login_with_jti_sets_cookie(tmp_path: Path) -> None:
     client = _client(tmp_path)
-    resp = client.post("/api/login", json={"sid": _mint(jti="login-1")})
+    resp = client.post("/api/v1/login", json={"sid": _mint(jti="login-1")})
     assert resp.status_code == 200
-    assert client.get("/api/benches/").status_code != 401
+    assert client.get("/api/v1/benches/").status_code != 401
 
 
 def test_jwks_sid_login_requires_jti(tmp_path: Path) -> None:
     # A token without a jti must not be exchangeable for a session (else it is
     # replayable until expiry).
     client = _client(tmp_path)
-    assert client.post("/api/login", json={"sid": _mint()}).status_code == 401
+    assert client.post("/api/v1/login", json={"sid": _mint()}).status_code == 401
 
 
 def test_jwks_sid_login_is_single_use(tmp_path: Path) -> None:
     client = _client(tmp_path)
     sid = _mint(jti="login-2")
-    assert client.post("/api/login", json={"sid": sid}).status_code == 200
-    assert client.post("/api/login", json={"sid": sid}).status_code == 401
+    assert client.post("/api/v1/login", json={"sid": sid}).status_code == 200
+    assert client.post("/api/v1/login", json={"sid": sid}).status_code == 401
 
 
 def test_jwks_sid_login_without_exp_does_not_crash(tmp_path: Path) -> None:
     client = _client(tmp_path)
     forever = jwt.encode({"sub": "admin", "scope": "bench", "jti": "noexp", "aud": AUDIENCE}, _RSA, algorithm="RS256", headers={"kid": "rsa-key"})
-    assert client.post("/api/login", json={"sid": forever}).status_code == 401
+    assert client.post("/api/v1/login", json={"sid": forever}).status_code == 401
 
 
 def test_jwks_site_scoped_token_cannot_bootstrap_session(tmp_path: Path) -> None:
     # A site-scoped token (even with a jti) must not escalate to a bench session.
     client = _client(tmp_path)
-    resp = client.post("/api/login", json={"sid": _mint(jti="login-3", scope="site", site="a.com")})
+    resp = client.post("/api/v1/login", json={"sid": _mint(jti="login-3", scope="site", site="a.com")})
     assert resp.status_code == 401
 
 
 def test_jwks_site_scoped_bearer_is_enforced(tmp_path: Path) -> None:
     client = _client(tmp_path)
-    ok = client.get("/api/sites/a.com/apps", headers={"Authorization": f"Bearer {_mint(scope='site', site='a.com')}"})
-    denied = client.get("/api/sites/a.com/apps", headers={"Authorization": f"Bearer {_mint(scope='site', site='other.com')}"})
+    ok = client.get("/api/v1/sites/a.com/apps", headers={"Authorization": f"Bearer {_mint(scope='site', site='a.com')}"})
+    denied = client.get("/api/v1/sites/a.com/apps", headers={"Authorization": f"Bearer {_mint(scope='site', site='other.com')}"})
     assert ok.status_code != 403
     assert denied.status_code == 403

@@ -28,8 +28,8 @@ def wizard_marker_path(bench_root: Path) -> Path:
     """Marker that the bench is going through first-time setup via the wizard.
 
     Written when the wizard kicks off its setup task and cleared when setup
-    finishes (and as a safety-net by /api/status once the bench is fully set up).
-    It keeps /api/status on the wizard while init runs — env/bin/python can appear
+    finishes (and as a safety-net by /api/v1/status once the bench is fully set up).
+    It keeps /api/v1/status on the wizard while init runs — env/bin/python can appear
     partway through, making the bench look 'initialized' before the task is done —
     so a reload returns to the wizard rather than a half-built dashboard.
     """

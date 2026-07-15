@@ -133,26 +133,26 @@ def _client(tmp_path: Path, jwt_secret: str = "k3y"):
 def test_valid_jwt_cookie_authenticates(tmp_path: Path) -> None:
     client = _client(tmp_path)
     client.set_cookie("sid", issue_token("k3y"))
-    assert client.get("/api/status").get_json()["authenticated"] is True
-    assert client.get("/api/benches/").status_code != 401
+    assert client.get("/api/v1/status").get_json()["authenticated"] is True
+    assert client.get("/api/v1/benches/").status_code != 401
 
 
 def test_invalid_jwt_cookie_stays_unauthenticated(tmp_path: Path) -> None:
     client = _client(tmp_path)
     client.set_cookie("sid", issue_token("wrong-secret"))
-    assert client.get("/api/status").get_json()["authenticated"] is False
-    assert client.get("/api/benches/").status_code == 401
+    assert client.get("/api/v1/status").get_json()["authenticated"] is False
+    assert client.get("/api/v1/benches/").status_code == 401
 
 
 def test_status_reports_bench_db_type(tmp_path: Path) -> None:
-    # The engine is a bench-wide property; the admin reads it from /api/status to
+    # The engine is a bench-wide property; the admin reads it from /api/v1/status to
     # show one bench-level badge instead of a per-site one.
     client = _client(tmp_path)
-    assert client.get("/api/status").get_json()["db_type"] == "mariadb"
+    assert client.get("/api/v1/status").get_json()["db_type"] == "mariadb"
 
 
 def test_status_reports_sanitized_task_activity(tmp_path: Path) -> None:
-    body = _client(tmp_path).get("/api/status").get_json()
+    body = _client(tmp_path).get("/api/v1/status").get_json()
 
     assert body["task_worker"] == {
         "active": False,
@@ -176,12 +176,12 @@ def test_status_reports_postgres_engine(tmp_path: Path) -> None:
 
     app = create_app(bench_root)
     app.config["TESTING"] = True
-    assert app.test_client().get("/api/status").get_json()["db_type"] == "postgres"
+    assert app.test_client().get("/api/v1/status").get_json()["db_type"] == "postgres"
 
 
 def test_status_reports_allow_bench_management_default_true(tmp_path: Path) -> None:
     client = _client(tmp_path)
-    assert client.get("/api/status").get_json()["allow_bench_management"] is True
+    assert client.get("/api/v1/status").get_json()["allow_bench_management"] is True
 
 
 def test_status_reports_allow_bench_management_when_disabled(tmp_path: Path) -> None:
@@ -197,24 +197,24 @@ def test_status_reports_allow_bench_management_when_disabled(tmp_path: Path) -> 
 
     app = create_app(bench_root)
     app.config["TESTING"] = True
-    assert app.test_client().get("/api/status").get_json()["allow_bench_management"] is False
+    assert app.test_client().get("/api/v1/status").get_json()["allow_bench_management"] is False
 
 
 def test_login_with_sid_sets_httponly_cookie(tmp_path: Path) -> None:
     client = _client(tmp_path)
-    resp = client.post("/api/login", json={"sid": issue_login_token("k3y")})
+    resp = client.post("/api/v1/login", json={"sid": issue_login_token("k3y")})
     assert resp.status_code == 200
     cookie = next(h for k, h in resp.headers if k == "Set-Cookie" and h.startswith("sid="))
     assert "HttpOnly" in cookie
     assert "Secure" not in cookie
-    assert client.get("/api/benches/").status_code != 401
+    assert client.get("/api/v1/benches/").status_code != 401
 
 
 def test_login_cookie_uses_explicit_secure_cookie_setting(tmp_path: Path) -> None:
     client = _client(tmp_path)
     client.application.config["SESSION_COOKIE_SECURE"] = True
 
-    response = client.post("/api/login", json={"sid": issue_login_token("k3y")})
+    response = client.post("/api/v1/login", json={"sid": issue_login_token("k3y")})
 
     cookie = next(
         value
@@ -253,37 +253,37 @@ def test_secure_cookie_setting_requires_tls_or_configured_proxy(monkeypatch) -> 
 
 def test_login_with_invalid_sid_rejected(tmp_path: Path) -> None:
     client = _client(tmp_path)
-    resp = client.post("/api/login", json={"sid": issue_login_token("wrong-secret")})
+    resp = client.post("/api/v1/login", json={"sid": issue_login_token("wrong-secret")})
     assert resp.status_code == 401
-    assert client.get("/api/benches/").status_code == 401
+    assert client.get("/api/v1/benches/").status_code == 401
 
 
 def test_sid_is_single_use(tmp_path: Path) -> None:
     client = _client(tmp_path)
     sid = issue_login_token("k3y")
-    assert client.post("/api/login", json={"sid": sid}).status_code == 200
-    assert client.post("/api/login", json={"sid": sid}).status_code == 401
+    assert client.post("/api/v1/login", json={"sid": sid}).status_code == 200
+    assert client.post("/api/v1/login", json={"sid": sid}).status_code == 401
 
 
 def test_login_rate_limited_after_limit(tmp_path: Path) -> None:
     client = _client(tmp_path)
     for _ in range(5):
-        assert client.post("/api/login", json={"password": "wrong"}).status_code == 401
-    assert client.post("/api/login", json={"password": "wrong"}).status_code == 429
+        assert client.post("/api/v1/login", json={"password": "wrong"}).status_code == 401
+    assert client.post("/api/v1/login", json={"password": "wrong"}).status_code == 429
 
 
 def test_login_rate_limit_ignores_spoofed_forwarded_ips(tmp_path: Path) -> None:
     client = _client(tmp_path)
     for index in range(5):
         response = client.post(
-            "/api/login",
+            "/api/v1/login",
             json={"password": "wrong"},
             headers={"X-Real-IP": f"203.0.113.{index + 1}"},
         )
         assert response.status_code == 401
 
     response = client.post(
-        "/api/login",
+        "/api/v1/login",
         json={"password": "wrong"},
         headers={"X-Real-IP": "203.0.113.99"},
     )
@@ -306,9 +306,9 @@ def test_forwarded_headers_are_trusted_only_behind_production_nginx() -> None:
 
 def test_setup_endpoint_requires_auth_once_password_set(tmp_path: Path) -> None:
     client = _client(tmp_path)
-    assert client.post("/api/setup/validate-mariadb", json={}).status_code == 401
+    assert client.post("/api/v1/setup/validate-mariadb", json={}).status_code == 401
     client.set_cookie("sid", issue_token("k3y"))
-    assert client.post("/api/setup/validate-mariadb", json={}).status_code != 401
+    assert client.post("/api/v1/setup/validate-mariadb", json={}).status_code != 401
 
 
 def test_setup_endpoint_open_before_password_set(tmp_path: Path) -> None:
@@ -316,7 +316,7 @@ def test_setup_endpoint_open_before_password_set(tmp_path: Path) -> None:
 
     app = create_app(tmp_path)  # no bench.toml → first-time setup
     app.config["TESTING"] = True
-    assert app.test_client().post("/api/setup/validate-mariadb", json={}).status_code != 401
+    assert app.test_client().post("/api/v1/setup/validate-mariadb", json={}).status_code != 401
 
 
 def test_setup_endpoint_fails_closed_when_config_is_corrupt(tmp_path: Path) -> None:
@@ -326,7 +326,7 @@ def test_setup_endpoint_fails_closed_when_config_is_corrupt(tmp_path: Path) -> N
     app = create_app(tmp_path)
     app.config["TESTING"] = True
 
-    response = app.test_client().post("/api/setup/validate-mariadb", json={})
+    response = app.test_client().post("/api/v1/setup/validate-mariadb", json={})
 
     assert response.status_code == 503
 
@@ -398,7 +398,7 @@ def test_non_bench_token_cannot_access_bench_route(
     client = _client(tmp_path)
     token = issue_token("k3y", scope=scope, site=site)
 
-    response = client.get("/api/tasks/", headers={"Authorization": f"Bearer {token}"})
+    response = client.get("/api/v1/tasks/", headers={"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 403
 
@@ -413,14 +413,14 @@ def test_require_scope_allows_unscoped_token(tmp_path: Path) -> None:
     app = create_app(bench_root)
     app.config["TESTING"] = True
 
-    @app.route("/api/test-scoped")
+    @app.route("/api/v1/test-scoped")
     @require_scope("example.com")
     def scoped_view():
         return jsonify({"ok": True})
 
     client = app.test_client()
     client.set_cookie("sid", issue_token("k3y"))
-    assert client.get("/api/test-scoped").status_code == 200
+    assert client.get("/api/v1/test-scoped").status_code == 200
 
 
 def test_require_scope_allows_matching_scoped_token(tmp_path: Path) -> None:
@@ -433,14 +433,14 @@ def test_require_scope_allows_matching_scoped_token(tmp_path: Path) -> None:
     app = create_app(bench_root)
     app.config["TESTING"] = True
 
-    @app.route("/api/test-scoped")
+    @app.route("/api/v1/test-scoped")
     @require_scope("example.com")
     def scoped_view():
         return jsonify({"ok": True})
 
     client = app.test_client()
     client.set_cookie("sid", issue_token("k3y", scope="site", site="example.com"))
-    assert client.get("/api/test-scoped").status_code == 200
+    assert client.get("/api/v1/test-scoped").status_code == 200
 
 
 def test_require_scope_rejects_mismatched_scoped_token(tmp_path: Path) -> None:
@@ -453,14 +453,14 @@ def test_require_scope_rejects_mismatched_scoped_token(tmp_path: Path) -> None:
     app = create_app(bench_root)
     app.config["TESTING"] = True
 
-    @app.route("/api/test-scoped")
+    @app.route("/api/v1/test-scoped")
     @require_scope("example.com")
     def scoped_view():
         return jsonify({"ok": True})
 
     client = app.test_client()
     client.set_cookie("sid", issue_token("k3y", scope="site", site="other.com"))
-    assert client.get("/api/test-scoped").status_code == 403
+    assert client.get("/api/v1/test-scoped").status_code == 403
 
 
 def test_current_site_scope_returns_site_from_claims(tmp_path: Path) -> None:
@@ -473,14 +473,14 @@ def test_current_site_scope_returns_site_from_claims(tmp_path: Path) -> None:
     app = create_app(bench_root)
     app.config["TESTING"] = True
 
-    @app.route("/api/test-scope")
+    @app.route("/api/v1/test-scope")
     @require_scope("example.com")
     def scope_view():
         return jsonify({"site": current_site_scope()})
 
     client = app.test_client()
     client.set_cookie("sid", issue_token("k3y", scope="site", site="example.com"))
-    assert client.get("/api/test-scope").get_json()["site"] == "example.com"
+    assert client.get("/api/v1/test-scope").get_json()["site"] == "example.com"
 
 
 def test_current_site_scope_returns_none_for_unscoped(tmp_path: Path) -> None:
@@ -493,19 +493,19 @@ def test_current_site_scope_returns_none_for_unscoped(tmp_path: Path) -> None:
     app = create_app(bench_root)
     app.config["TESTING"] = True
 
-    @app.route("/api/test-scope")
+    @app.route("/api/v1/test-scope")
     def scope_view():
         return jsonify({"site": current_site_scope()})
 
     client = app.test_client()
     client.set_cookie("sid", issue_token("k3y"))
-    assert client.get("/api/test-scope").get_json()["site"] is None
+    assert client.get("/api/v1/test-scope").get_json()["site"] is None
 
 
 def test_bearer_token_authenticates(tmp_path: Path) -> None:
     client = _client(tmp_path)
     token = issue_token("k3y")
-    resp = client.get("/api/benches/", headers={"Authorization": f"Bearer {token}"})
+    resp = client.get("/api/v1/benches/", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code != 401
 
 
@@ -519,14 +519,14 @@ def test_bearer_token_with_site_scope(tmp_path: Path) -> None:
     app = create_app(bench_root)
     app.config["TESTING"] = True
 
-    @app.route("/api/test-scoped")
+    @app.route("/api/v1/test-scoped")
     @require_scope("example.com")
     def scoped_view():
         return jsonify({"ok": True})
 
     client = app.test_client()
     token = issue_site_token("k3y", "example.com")
-    resp = client.get("/api/test-scoped", headers={"Authorization": f"Bearer {token}"})
+    resp = client.get("/api/v1/test-scoped", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200
 
 
@@ -540,14 +540,14 @@ def test_bearer_token_wrong_site_rejected(tmp_path: Path) -> None:
     app = create_app(bench_root)
     app.config["TESTING"] = True
 
-    @app.route("/api/test-scoped")
+    @app.route("/api/v1/test-scoped")
     @require_scope("example.com")
     def scoped_view():
         return jsonify({"ok": True})
 
     client = app.test_client()
     token = issue_site_token("k3y", "other.com")
-    resp = client.get("/api/test-scoped", headers={"Authorization": f"Bearer {token}"})
+    resp = client.get("/api/v1/test-scoped", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 403
 
 
@@ -561,12 +561,12 @@ def test_require_scope_with_callable(tmp_path: Path) -> None:
     app = create_app(bench_root)
     app.config["TESTING"] = True
 
-    @app.route("/api/sites/<name>/action")
+    @app.route("/api/v1/sites/<name>/action")
     @require_scope(lambda kw: kw["name"])
     def scoped_view(name):
         return jsonify({"ok": True, "site": name})
 
     client = app.test_client()
     client.set_cookie("sid", issue_token("k3y", scope="site", site="example.com"))
-    assert client.get("/api/sites/example.com/action").status_code == 200
-    assert client.get("/api/sites/other.com/action").status_code == 403
+    assert client.get("/api/v1/sites/example.com/action").status_code == 200
+    assert client.get("/api/v1/sites/other.com/action").status_code == 403

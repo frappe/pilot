@@ -53,7 +53,7 @@ class Bench:
         self.name = name
         self._extra_env = env or {}
         # `bench new` no longer pre-generates an admin password (it's set in the
-        # wizard's first step and persisted to bench.toml by /api/setup/save).
+        # wizard's first step and persisted to bench.toml by /api/v1/setup/save).
         # So the harness chooses it, the wizard enters it, and login reuses it.
         # A bare token_urlsafe() isn't guaranteed to satisfy the wizard's password
         # policy (upper + lower + digit + symbol) — fixed affixes guarantee it.
@@ -351,7 +351,7 @@ class Bench:
         self._proc = None
 
     def _wait_for_admin(self, expect_wizard: bool, timeout: float = 60 * 60) -> None:
-        """Poll /api/status until the admin answers in the expected mode."""
+        """Poll /api/v1/status until the admin answers in the expected mode."""
         deadline = time.time() + timeout
         while time.time() < deadline:
             if self._proc and self._proc.poll() is not None:
@@ -359,7 +359,7 @@ class Bench:
                     f"bench start exited early (code {self._proc.returncode}) before the admin came up"
                 )
             try:
-                with urlopen(f"{self.admin_url}/api/status", timeout=5) as res:
+                with urlopen(f"{self.admin_url}/api/v1/status", timeout=5) as res:
                     data = json.load(res)
                 if (data.get("wizard") is True) == expect_wizard:
                     return

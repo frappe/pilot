@@ -14,7 +14,7 @@ from pilot.exceptions import TaskConflictError
 def client(bench_root: Path):
     app = Flask(__name__)
     app.config["BENCH_ROOT"] = bench_root
-    app.register_blueprint(tasks_bp, url_prefix="/api/tasks")
+    app.register_blueprint(tasks_bp, url_prefix="/api/v1/tasks")
     return app.test_client()
 
 
@@ -24,7 +24,7 @@ def test_run_forwards_idempotency_key(tmp_path: Path) -> None:
         return_value="20260715-120000-aabbcc",
     ) as run:
         response = client(tmp_path).post(
-            "/api/tasks/run",
+            "/api/v1/tasks/run",
             json={"command": "build", "app": "frappe"},
             headers={"Idempotency-Key": "client-request-key"},
         )
@@ -43,7 +43,7 @@ def test_run_returns_conflict_for_incompatible_idempotency_key(tmp_path: Path) -
         side_effect=TaskConflictError("Idempotency key conflict"),
     ):
         response = client(tmp_path).post(
-            "/api/tasks/run",
+            "/api/v1/tasks/run",
             json={"command": "build"},
             headers={"Idempotency-Key": "client-request-key"},
         )
@@ -71,7 +71,7 @@ def test_task_detail_exposes_queue_position_and_safe_failure(tmp_path: Path) -> 
         }
     )
 
-    queued = client(tmp_path).get(f"/api/tasks/{task_id}").get_json()["task"]
+    queued = client(tmp_path).get(f"/api/v1/tasks/{task_id}").get_json()["task"]
     store.transition(
         task_id,
         TaskStatus.QUEUED,
@@ -88,7 +88,7 @@ def test_task_detail_exposes_queue_position_and_safe_failure(tmp_path: Path) -> 
             "failure": {"code": "unknown", "message": "secret text"},
         },
     )
-    failed = client(tmp_path).get(f"/api/tasks/{task_id}").get_json()["task"]
+    failed = client(tmp_path).get(f"/api/v1/tasks/{task_id}").get_json()["task"]
 
     assert queued["queue_position"] == 1
     assert queued["failure"] is None
@@ -118,7 +118,7 @@ def test_stream_keeps_status_updates_out_of_output_event_ids(tmp_path: Path) -> 
         return_value=events,
     ):
         response = client(tmp_path).get(
-            "/api/tasks/20260715-120000-aabbcc/stream"
+            "/api/v1/tasks/20260715-120000-aabbcc/stream"
         )
 
     blocks = response.get_data(as_text=True).strip().split("\n\n")

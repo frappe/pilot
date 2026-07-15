@@ -36,10 +36,10 @@ def wait_for_task(
     task_id: str,
     timeout: float = 30 * 60,
 ) -> None:
-    """Poll /api/tasks/:id until it succeeds; raise with the output tail on failure."""
+    """Poll /api/v1/tasks/:id until it succeeds; raise with the output tail on failure."""
     deadline = time.time() + timeout
     while time.time() < deadline:
-        res = request.get(f"{base_url}/api/tasks/{task_id}")
+        res = request.get(f"{base_url}/api/v1/tasks/{task_id}")
         if res.ok:
             data = res.json()
             status = data["task"]["status"]
@@ -66,6 +66,6 @@ def run_and_await_task(
 
 def expect_bench_online(request: APIRequestContext, base_url: str) -> None:
     """Sanity assert that the admin is reachable and out of wizard mode."""
-    res = request.get(f"{base_url}/api/status")
+    res = request.get(f"{base_url}/api/v1/status")
     expect(res).to_be_ok()
     assert res.json().get("wizard") is not True

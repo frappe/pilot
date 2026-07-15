@@ -6,7 +6,7 @@ from pathlib import Path
 
 from flask import Flask, g, jsonify, request, send_file
 
-from .api_contract import error_response, is_api_path
+from .api_contract import API_V1_PREFIX, error_response, is_api_path
 from .auth import AuthPolicy, allow_unauthenticated, endpoint_auth_policy
 from .rate_limit import rate_limit, UsedTokens
 from .uploads import MAX_RESTORE_UPLOAD_BYTES
@@ -169,14 +169,14 @@ def create_app(bench_root: Path) -> Flask:
             return None
         return _check_enabled(config) or _check_password(config)
 
-    @app.route("/api/ping")
+    @app.route(f"{API_V1_PREFIX}/ping")
     @allow_unauthenticated
     def api_ping():
         resp = jsonify({"ok": True})
         resp.headers["Access-Control-Allow-Origin"] = "*"
         return resp
 
-    @app.route("/api/status")
+    @app.route(f"{API_V1_PREFIX}/status")
     @allow_unauthenticated
     def api_status():
         initialized = (bench_root / "env" / "bin" / "python").exists()
@@ -208,7 +208,7 @@ def create_app(bench_root: Path) -> Flask:
             }
         )
 
-    @app.route("/api/login", methods=["POST"])
+    @app.route(f"{API_V1_PREFIX}/login", methods=["POST"])
     @allow_unauthenticated
     @rate_limit(5, 60, user_ip=True)
     def api_login():
@@ -245,27 +245,27 @@ def create_app(bench_root: Path) -> Flask:
         _set_sid_cookie(resp, issue_token(ensure_jwt_secret(bench_root / "bench.toml")))
         return resp
 
-    @app.route("/api/logout", methods=["POST"])
+    @app.route(f"{API_V1_PREFIX}/logout", methods=["POST"])
     @allow_unauthenticated
     def api_logout():
         resp = jsonify({"ok": True})
         resp.delete_cookie("sid")
         return resp
 
-    app.register_blueprint(setup_bp, url_prefix="/api/setup")
-    app.register_blueprint(dashboard_bp, url_prefix="/api")
-    app.register_blueprint(apps_bp, url_prefix="/api/apps")
-    app.register_blueprint(benches_bp, url_prefix="/api/benches")
-    app.register_blueprint(sites_bp, url_prefix="/api/sites")
-    app.register_blueprint(processes_bp, url_prefix="/api/processes")
-    app.register_blueprint(logs_bp, url_prefix="/api/logs")
-    app.register_blueprint(database_bp, url_prefix="/api/database")
-    app.register_blueprint(tasks_bp, url_prefix="/api/tasks")
-    app.register_blueprint(settings_bp, url_prefix="/api/settings")
-    app.register_blueprint(updates_bp, url_prefix="/api/updates")
-    app.register_blueprint(git_bp, url_prefix="/api/git")
-    app.register_blueprint(ssh_keys_bp, url_prefix="/api/ssh-keys")
-    app.register_blueprint(stats_bp, url_prefix="/api")
+    app.register_blueprint(setup_bp, url_prefix=f"{API_V1_PREFIX}/setup")
+    app.register_blueprint(dashboard_bp, url_prefix=API_V1_PREFIX)
+    app.register_blueprint(apps_bp, url_prefix=f"{API_V1_PREFIX}/apps")
+    app.register_blueprint(benches_bp, url_prefix=f"{API_V1_PREFIX}/benches")
+    app.register_blueprint(sites_bp, url_prefix=f"{API_V1_PREFIX}/sites")
+    app.register_blueprint(processes_bp, url_prefix=f"{API_V1_PREFIX}/processes")
+    app.register_blueprint(logs_bp, url_prefix=f"{API_V1_PREFIX}/logs")
+    app.register_blueprint(database_bp, url_prefix=f"{API_V1_PREFIX}/database")
+    app.register_blueprint(tasks_bp, url_prefix=f"{API_V1_PREFIX}/tasks")
+    app.register_blueprint(settings_bp, url_prefix=f"{API_V1_PREFIX}/settings")
+    app.register_blueprint(updates_bp, url_prefix=f"{API_V1_PREFIX}/updates")
+    app.register_blueprint(git_bp, url_prefix=f"{API_V1_PREFIX}/git")
+    app.register_blueprint(ssh_keys_bp, url_prefix=f"{API_V1_PREFIX}/ssh-keys")
+    app.register_blueprint(stats_bp, url_prefix=API_V1_PREFIX)
 
     app.register_error_handler(ConfigError, _handle_config_error)
     app.register_error_handler(FileNotFoundError, _handle_file_not_found)

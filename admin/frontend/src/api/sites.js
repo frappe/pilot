@@ -1,4 +1,4 @@
-import { request } from './client'
+import { apiUrl, request } from './client'
 
 export const sitesApi = {
   list: () => request.get('sites/').json(),
@@ -35,7 +35,7 @@ export const sitesApi = {
     list: (name, limit) =>
       request.get(`sites/${encodeURIComponent(name)}/backups`, { searchParams: limit ? { limit } : {} }).json(),
     create: (name) => request.post(`sites/${encodeURIComponent(name)}/backup`).json(),
-    download: (name, filename) => `/api/sites/${encodeURIComponent(name)}/backups/download?filename=${encodeURIComponent(filename)}`,
+    download: (name, filename) => apiUrl(`sites/${encodeURIComponent(name)}/backups/download?filename=${encodeURIComponent(filename)}`),
     offsiteUrls: (name, timestamp) =>
       request.get(`sites/${encodeURIComponent(name)}/backups/${encodeURIComponent(timestamp)}/offsite-urls`).json(),
     schedule: {

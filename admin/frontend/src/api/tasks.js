@@ -1,4 +1,4 @@
-import { request } from './client'
+import { apiUrl, request } from './client'
 
 export const tasksApi = {
   list: (status) => request.get('tasks/', status && status !== 'all' ? { searchParams: { status } } : {}).json(),
@@ -6,5 +6,5 @@ export const tasksApi = {
   run: (command, args = {}) => request.post('tasks/run', { json: { command, ...args } }).json(),
   cancel: (taskId) => request.post(`tasks/${taskId}/kill`).json(),
   rerun: (taskId) => request.post(`tasks/${taskId}/rerun`).json(),
-  streamUrl: (taskId) => `/api/tasks/${taskId}/stream`,
+  streamUrl: (taskId) => apiUrl(`tasks/${taskId}/stream`),
 }

@@ -477,8 +477,8 @@ class NginxManager:
         firewall_block = self._render_firewall()
         proxy_block = (
             self._render_error_pages()
-            + self._render_open_cors_location("/api/ping")
-            + self._render_open_cors_location("/api/status")
+            + self._render_open_cors_location("/api/v1/ping")
+            + self._render_open_cors_location("/api/v1/status")
             + self._render_admin_proxy_location()
         )
 
@@ -547,7 +547,7 @@ class NginxManager:
         )
 
     def _render_open_cors_location(self, path: str) -> str:
-        """/api/ping and /api/status are probed cross-origin (e.g. ReconnectOverlay
+        """The health and status routes are probed cross-origin (e.g. ReconnectOverlay
         detecting which scheme now serves a bench after a restart), so nginx answers
         them with a wide-open CORS header regardless of what the admin process sends."""
         return (

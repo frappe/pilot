@@ -10,6 +10,7 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { LoadingIndicator } from 'frappe-ui'
+import { apiUrl } from '@/api/client'
 
 const props = defineProps({ paused: { type: Boolean, default: false } })
 
@@ -34,13 +35,13 @@ async function tick() {
     return
   }
   if (!down.value) {
-    down.value = !(await pingOk(`${window.location.origin}/api/ping`))
+    down.value = !(await pingOk(apiUrl('ping', window.location.origin)))
   } else {
     const port = window.location.port ? `:${window.location.port}` : ''
     const authority = `${window.location.hostname}${port}`
     const [httpsOk, httpOk] = await Promise.all([
-      pingOk(`https://${authority}/api/ping`),
-      pingOk(`http://${authority}/api/ping`),
+      pingOk(apiUrl('ping', `https://${authority}`)),
+      pingOk(apiUrl('ping', `http://${authority}`)),
     ])
     const scheme = httpsOk ? 'https' : httpOk ? 'http' : null
     if (scheme) {

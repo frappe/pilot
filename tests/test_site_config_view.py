@@ -47,7 +47,7 @@ def test_site_detail_preserves_custom_keys_without_exposing_secrets(tmp_path) ->
         "future_provider_api_token": "unknown-secret",
     }))
 
-    response = client.get("/api/sites/s.localhost")
+    response = client.get("/api/v1/sites/s.localhost")
 
     assert response.status_code == 200
     assert response.get_json()["site"]["site_config"] == {

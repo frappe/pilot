@@ -79,7 +79,7 @@ def wizard_responds(bench_root: Path, domain: str, scheme: str = "http") -> bool
     """Whether a production bench's wizard answers at its admin domain."""
     conn = http.client.HTTPConnection("127.0.0.1", nginx_http_port(bench_root), timeout=3)
     try:
-        conn.request("GET", "/api/ping", headers={"Host": domain})
+        conn.request("GET", "/api/v1/ping", headers={"Host": domain})
         status = conn.getresponse().status
         return status == 200 or (scheme == "https" and status in (301, 308))
     except OSError:
