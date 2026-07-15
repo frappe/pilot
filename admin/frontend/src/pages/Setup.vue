@@ -117,7 +117,7 @@
         </Button>
         <Button v-show="isConfiguring && currentStep === 'database'" variant="solid" :loading="isSubmitting"
           class="flex-1" @click="goToNextStep">
-          Next
+          Verify credentials
         </Button>
         <Button v-show="isConfiguring && currentStep !== 'passwords' && currentStep !== 'database' && !isLastConfigStep"
           variant="solid" class="flex-1" @click="goToNextStep">

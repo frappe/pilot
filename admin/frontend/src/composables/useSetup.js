@@ -51,13 +51,16 @@ export function useSetup() {
   const _useExternalDb = ref(false)
   const dbHost = ref('')
   const dbPort = ref('')
-  // Clears the password/host/port on toggle; loadConfig bypasses this via _useExternalDb.
+  // Clears the password on toggle; loadConfig bypasses this via _useExternalDb.
   const useExternalDb = computed({
     get: () => _useExternalDb.value,
     set: (value) => {
       _useExternalDb.value = value
       dbPassword.value = ''
-      if (!value) {
+      if (value) {
+        dbHost.value = dbHost.value || '127.0.0.1'
+        dbPort.value = dbPort.value || dbPortPlaceholder.value
+      } else {
         dbHost.value = ''
         dbPort.value = ''
       }
@@ -83,10 +86,10 @@ export function useSetup() {
   )
   const rootPasswordDescription = computed(() => {
     const engine = dbType.value === 'mariadb' ? 'MariaDB' : 'PostgreSQL'
-    if (useExternalDb.value) return `Credentials for the existing ${engine} server.`
-    return dbWillInstall.value
-      ? `${engine} will be installed and its ${dbType.value === 'mariadb' ? 'root' : 'superuser'} password set to this value.`
-      : undefined
+    if (useExternalDb.value) return `Credentials for the existing ${engine} server at ${dbHost.value || 'the given host'}.`
+    if (dbWillInstall.value)
+      return `${engine} will be installed and its ${dbType.value === 'mariadb' ? 'root' : 'superuser'} password set to this value.`
+    return `Using the ${engine} server pilot already manages for this user — enter its existing password.`
   })
 
   const branchOptions = computed(() => {
@@ -145,16 +148,16 @@ export function useSetup() {
         if (config.postgres_password) dbPassword.value = config.postgres_password
         if (config.postgres_external) {
           _useExternalDb.value = true
-          dbHost.value = config.postgres_host || ''
-          dbPort.value = config.postgres_port ? String(config.postgres_port) : ''
+          dbHost.value = config.postgres_host || '127.0.0.1'
+          dbPort.value = config.postgres_port ? String(config.postgres_port) : '5432'
         }
       } else {
         if (config.mariadb_admin_user) dbUser.value = config.mariadb_admin_user
         if (config.mariadb_password) dbPassword.value = config.mariadb_password
         if (config.mariadb_external) {
           _useExternalDb.value = true
-          dbHost.value = config.mariadb_host || ''
-          dbPort.value = config.mariadb_port ? String(config.mariadb_port) : ''
+          dbHost.value = config.mariadb_host || '127.0.0.1'
+          dbPort.value = config.mariadb_port ? String(config.mariadb_port) : '3306'
         }
       }
 
