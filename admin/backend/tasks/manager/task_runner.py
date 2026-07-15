@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TypedDict
 
-from admin.backend.tasks.callbacks import validate_callback
+from admin.backend.tasks.callbacks import run_stored_callback, validate_callback
 from admin.backend.tasks.manager.task_args import (
     redact_task_args,
     reject_url_credentials,
@@ -60,6 +60,7 @@ class TaskCallback(TypedDict):
 class TaskCallbacks(TypedDict, total=False):
     on_success: TaskCallback | None
     on_failure: TaskCallback | None
+    on_cancel: TaskCallback | None
 
 
 class TaskRunner:
@@ -77,7 +78,7 @@ class TaskRunner:
     ) -> str:
         callback_payload = {}
         for trigger, spec in (callbacks or {}).items():
-            if trigger not in ("on_success", "on_failure"):
+            if trigger not in ("on_success", "on_failure", "on_cancel"):
                 raise ValueError(f"Unknown callback trigger: {trigger!r}")
             if spec is not None:
                 callback_payload[trigger] = validate_callback(spec)
@@ -138,6 +139,10 @@ class TaskRunner:
                 raise TaskNotRunningError(
                     f"Task is not active: {task_id} (status={current.value})"
                 )
+            try:
+                run_stored_callback(self._store.task_dir(task_id), "on_cancel")
+            except Exception:
+                pass
             self._store.remove_private_files(task_id, "secrets.json", "callbacks.json")
             return
         self._processes.cancel(task_id)

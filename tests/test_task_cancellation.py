@@ -15,6 +15,7 @@ from admin.backend.tasks.manager.task_process import TaskProcess, TaskProcessRec
 from admin.backend.tasks.manager.task_runner import TaskRunner
 from admin.backend.tasks.manager.task_state import TaskStatus
 from admin.backend.tasks.manager.task_store import TaskStore
+from admin.backend.tasks import callbacks as callback_module
 from pilot.exceptions import TaskNotRunningError
 
 TASK_ID = "20260715-120000-aabbcc"
@@ -101,6 +102,43 @@ def test_cancel_terminates_only_the_verified_task_group(tmp_path: Path) -> None:
     finally:
         stop_process_group(task)
         stop_process_group(unrelated)
+
+
+def test_cancel_queued_task_runs_cancel_callback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = tmp_path / "cancelled.marker"
+
+    def mark_cancelled(meta: dict, args: dict) -> None:
+        marker.write_text(meta["task_id"])
+
+    store = TaskStore(tmp_path)
+    store.create_queued(
+        {
+            "task_id": TASK_ID,
+            "command": "build",
+            "args": {},
+            "command_argv": [sys.executable, "-c", "pass"],
+            "queued_at": "2026-07-15T12:00:00+00:00",
+            "started_at": None,
+            "finished_at": None,
+            "exit_code": None,
+            "failure": None,
+            "bench_root": str(tmp_path),
+        },
+        {
+            "callbacks.json": (
+                '{"on_cancel":{"operation":"test-cancel","args":{}}}'
+            ),
+        },
+    )
+    monkeypatch.setitem(callback_module._OPERATIONS, "test-cancel", mark_cancelled)
+
+    TaskRunner(tmp_path).kill(TASK_ID)
+
+    assert marker.read_text() == TASK_ID
+    assert store.read_status(TASK_ID) == TaskStatus.KILLED
 
 
 def test_cancel_force_kills_a_term_resistant_task_group(tmp_path: Path) -> None:

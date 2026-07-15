@@ -233,8 +233,9 @@ def _run_task() -> None:
         store.remove_private_files(task_id, "secrets.json")
 
     cancelled = _cancel_requested or store.read_status(task_id) == TaskStatus.KILLED
-    selected = callbacks.get("on_success" if exit_code == 0 else "on_failure")
-    if selected and not cancelled:
+    trigger = "on_cancel" if cancelled else "on_success" if exit_code == 0 else "on_failure"
+    selected = callbacks.get(trigger)
+    if selected:
         callback_handler(selected, task_dir / "output.log", meta=meta, redactions=redactions)
 
     store.remove_private_files(

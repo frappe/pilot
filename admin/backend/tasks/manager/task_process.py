@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from admin.backend.tasks.callbacks import run_stored_callback
 from admin.backend.tasks.manager.process_identity import (
     ProcessIdentity,
     ProcessInspector,
@@ -147,7 +148,7 @@ class TaskProcess:
         if outcome == ProcessOwnership.UNKNOWN:
             raise TaskNotRunningError(f"Task process ownership changed: {task_id}")
 
-        self._store.remove_private_files(task_id, "secrets.json", "callbacks.json")
+        self._store.remove_private_files(task_id, "secrets.json")
         transitioned = self._store.transition(
             task_id,
             TaskStatus.RUNNING,
@@ -197,6 +198,7 @@ class TaskProcess:
                 "failure": {"code": "task_interrupted"},
             },
         )
+        self._run_stored_callback(task_id, "on_failure")
         self._store.remove_private_files(
             task_id,
             "process.json",
@@ -209,6 +211,7 @@ class TaskProcess:
         while time.monotonic() < deadline:
             ownership = self._inspector.inspect(record.identity, record.argv)
             if ownership in {ProcessOwnership.DEAD, ProcessOwnership.STALE}:
+                self._run_stored_callback(record.task_id, "on_cancel")
                 self._clear_process(record.task_id)
                 return
             if ownership == ProcessOwnership.UNKNOWN:
@@ -217,6 +220,7 @@ class TaskProcess:
 
         outcome = self._signal(record, signal.SIGKILL)
         if outcome in {ProcessOwnership.DEAD, ProcessOwnership.STALE}:
+            self._run_stored_callback(record.task_id, "on_cancel")
             self._clear_process(record.task_id)
             return
         if outcome == ProcessOwnership.UNKNOWN:
@@ -226,11 +230,18 @@ class TaskProcess:
         while time.monotonic() < deadline:
             ownership = self._inspector.inspect(record.identity, record.argv)
             if ownership in {ProcessOwnership.DEAD, ProcessOwnership.STALE}:
+                self._run_stored_callback(record.task_id, "on_cancel")
                 self._clear_process(record.task_id)
                 return
             if ownership == ProcessOwnership.UNKNOWN:
                 return
             time.sleep(_PROCESS_POLL_SECONDS)
+
+    def _run_stored_callback(self, task_id: str, trigger: str) -> None:
+        try:
+            run_stored_callback(self._store.task_dir(task_id), trigger)
+        except Exception:
+            pass
 
     def _signal(
         self,

@@ -69,3 +69,13 @@ def validate_callback(spec: dict) -> dict:
 def run_callback(spec: dict, meta: dict) -> None:
     callback = validate_callback(spec)
     _OPERATIONS[callback["operation"]](meta, callback["args"])
+
+
+def run_stored_callback(task_dir: Path, trigger: str) -> None:
+    callbacks_path = task_dir / "callbacks.json"
+    if not callbacks_path.exists():
+        return
+    callbacks = json.loads(callbacks_path.read_text())
+    callback = callbacks.get(trigger)
+    if callback:
+        run_callback(callback, json.loads((task_dir / "meta.json").read_text()))

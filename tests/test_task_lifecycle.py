@@ -434,7 +434,7 @@ def test_wrapper_runs_matching_callback_and_finalizes_task(
     assert "Callback successfully triggered" in (task_dir / "output.log").read_text()
 
 
-def test_wrapper_suppresses_callbacks_after_cancellation(
+def test_wrapper_runs_only_cancel_callback_after_cancellation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -447,11 +447,13 @@ def test_wrapper_suppresses_callbacks_after_cancellation(
             {
                 "on_success": {"operation": "test-success", "args": {}},
                 "on_failure": {"operation": "test-failure", "args": {}},
+                "on_cancel": {"operation": "test-cancel", "args": {}},
             }
         )
     )
     monkeypatch.setitem(callback_module._OPERATIONS, "test-success", write_success_marker)
     monkeypatch.setitem(callback_module._OPERATIONS, "test-failure", write_failure_marker)
+    monkeypatch.setitem(callback_module._OPERATIONS, "test-cancel", write_success_marker)
 
     def cancel_during_task(*args) -> int:
         (task_dir / "status").write_text("killed")
@@ -465,7 +467,7 @@ def test_wrapper_suppresses_callbacks_after_cancellation(
 
     assert (task_dir / "status").read_text() == "killed"
     assert not (task_dir / "callbacks.json").exists()
-    assert not (tmp_path / "success.marker").exists()
+    assert (tmp_path / "success.marker").exists()
     assert not (tmp_path / "failure.marker").exists()
 
 
