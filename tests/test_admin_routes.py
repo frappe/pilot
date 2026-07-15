@@ -11,12 +11,14 @@ SITE_SCOPED_ENDPOINTS = {
     "sites.backup_site",
     "sites.clear_cache",
     "sites.delete_backup_schedule",
+    "sites.backup_download_links",
     "sites.delete_site_app",
     "sites.detail",
     "sites.domain_dns_records",
-    "sites.download_backup",
+    "sites.download_backup_file",
     "sites.drop_site",
     "sites.enable_tls",
+    "sites.get_backup",
     "sites.get_backup_schedule",
     "sites.get_configuration",
     "sites.get_domain",
@@ -24,7 +26,6 @@ SITE_SCOPED_ENDPOINTS = {
     "sites.list_backups",
     "sites.list_domains",
     "sites.migrate_site",
-    "sites.offsite_backup_urls",
     "sites.reinstall_site",
     "sites.remove_domain",
     "sites.set_backup_schedule",
@@ -70,20 +71,20 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         and not rule.rule.startswith(f"{API_V1_PREFIX}/")
     ]
 
-    assert len(routes) == 104
+    assert len(routes) == 105
     assert unversioned == []
-    assert len({(method, path) for method, path, _, _ in routes}) == 104
+    assert len({(method, path) for method, path, _, _ in routes}) == 105
     assert Counter(method for method, _, _, _ in routes) == {
         "DELETE": 10,
-        "GET": 53,
+        "GET": 54,
         "PATCH": 3,
-        "POST": 37,
-        "PUT": 1,
+        "POST": 36,
+        "PUT": 2,
     }
     assert Counter(policy for _, _, _, policy in routes) == {
         "authenticated": 57,
         "authenticated+bench-management": 9,
-        "authenticated+site-scope": 25,
+        "authenticated+site-scope": 26,
         "open": 6,
         "setup-conditional": 7,
     }
@@ -104,7 +105,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         "setup": 7,
         "site-login-handoffs": 1,
         "site-restores": 1,
-        "sites": 28,
+        "sites": 29,
         "ssh-keys": 3,
         "stats": 1,
         "session": 3,
@@ -147,6 +148,14 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         ("PATCH", "/api/v1/sites/<name>/domains/<domain>"),
         ("DELETE", "/api/v1/sites/<name>/domains/<domain>"),
         ("GET", "/api/v1/sites/<name>/domains/<domain>/dns-records"),
+        ("GET", "/api/v1/sites/<name>/backups"),
+        ("POST", "/api/v1/sites/<name>/backups"),
+        ("GET", "/api/v1/sites/<name>/backups/<timestamp>"),
+        ("GET", "/api/v1/sites/<name>/backups/<timestamp>/files/<file_id>/content"),
+        ("GET", "/api/v1/sites/<name>/backups/<timestamp>/download-links"),
+        ("GET", "/api/v1/sites/<name>/backup-schedule"),
+        ("PUT", "/api/v1/sites/<name>/backup-schedule"),
+        ("DELETE", "/api/v1/sites/<name>/backup-schedule"),
     } <= route_keys
     assert {
         ("GET", "/api/v1/tasks"),
@@ -208,5 +217,8 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
             "/api/v1/sites/<name>/force-uninstall-app",
             "/api/v1/sites/<name>/domains/primary",
             "/api/v1/sites/<name>/domains/dns-records",
+            "/api/v1/sites/<name>/backup",
+            "/api/v1/sites/<name>/backups/download",
+            "/api/v1/sites/<name>/backups/<timestamp>/offsite-urls",
         }
     }

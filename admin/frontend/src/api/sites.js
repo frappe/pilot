@@ -44,14 +44,17 @@ export const sitesApi = {
   backups: {
     list: (name, limit) =>
       request.get(`sites/${encodeURIComponent(name)}/backups`, { searchParams: limit ? { limit } : {} }).json(),
-    create: (name) => request.post(`sites/${encodeURIComponent(name)}/backup`).json(),
-    download: (name, filename) => apiUrl(`sites/${encodeURIComponent(name)}/backups/download?filename=${encodeURIComponent(filename)}`),
-    offsiteUrls: (name, timestamp) =>
-      request.get(`sites/${encodeURIComponent(name)}/backups/${encodeURIComponent(timestamp)}/offsite-urls`).json(),
+    create: (name) => request.post(`sites/${encodeURIComponent(name)}/backups`).json(),
+    download: (name, timestamp, fileId) =>
+      apiUrl(
+        `sites/${encodeURIComponent(name)}/backups/${encodeURIComponent(timestamp)}/files/${encodeURIComponent(fileId)}/content`,
+      ),
+    downloadLinks: (name, timestamp) =>
+      request.get(`sites/${encodeURIComponent(name)}/backups/${encodeURIComponent(timestamp)}/download-links`).json(),
     schedule: {
       get: (name) => request.get(`sites/${encodeURIComponent(name)}/backup-schedule`).json(),
-      set: (name, payload) => request.post(`sites/${encodeURIComponent(name)}/backup-schedule`, { json: payload }).json(),
-      remove: (name) => request.delete(`sites/${encodeURIComponent(name)}/backup-schedule`).json(),
+      set: (name, payload) => request.put(`sites/${encodeURIComponent(name)}/backup-schedule`, { json: payload }).json(),
+      remove: (name) => request.delete(`sites/${encodeURIComponent(name)}/backup-schedule`),
     },
   },
 }

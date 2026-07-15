@@ -127,7 +127,7 @@ async function backupNow() {
   error.value = ''
   try {
     const result = await sitesApi.backups.create(props.siteName)
-    if (result.ok) openTaskDetailPage(router, result.task_id)
+    if (result.task_id) openTaskDetailPage(router, result.task_id)
     else error.value = apiErrorMessage(result, 'Backup failed.')
   } catch (e) {
     error.value = e.message || 'Backup failed.'
@@ -186,19 +186,19 @@ function menuOptions(set) {
 async function downloadFile(set, kind) {
   const file = fileOf(set, kind)
   if (file?.path) {
-    window.location.href = sitesApi.backups.download(props.siteName, file.filename)
+    window.location.href = sitesApi.backups.download(props.siteName, set.timestamp, file.filename)
     return
   }
   // Offsite-only file: fetch a direct, time-limited S3 link and open it —
   // this server never proxies or re-downloads the transfer.
   error.value = ''
   try {
-    const result = await sitesApi.backups.offsiteUrls(props.siteName, set.timestamp)
-    if (result.error) {
-      error.value = apiErrorMessage(result, 'Could not load offsite backup.')
+    const links = await sitesApi.backups.downloadLinks(props.siteName, set.timestamp)
+    if (links.error) {
+      error.value = apiErrorMessage(links, 'Could not load offsite backup.')
       return
     }
-    const url = result.urls[OFFSITE_KIND_KEYS[kind]]
+    const url = links[OFFSITE_KIND_KEYS[kind]]
     if (!url) {
       error.value = 'Backup file not found offsite.'
       return

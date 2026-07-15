@@ -19,7 +19,7 @@ from pilot.exceptions import (
 )
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
 
-from admin.backend.api_contract import error_response
+from admin.backend.api_contract import error_response, no_content_response
 from admin.backend.auth import require_scope
 from admin.backend.site_paths import site_config_path, site_exists
 from admin.backend.tasks.task_response import accepted_task_response
@@ -363,15 +363,17 @@ def reinstall_site(name: str):
     return accepted_task_response(bench_root, task_id)
 
 
-@sites_bp.route("/<name>/backup", methods=["POST"])
+@sites_bp.post("/<name>/backups")
 @require_scope(site_name)
 def backup_site(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
+    if not site_exists(bench_root, name):
+        return _site_not_found()
     try:
         task_id = TaskRunner(bench_root).run("backup-site", {"site": name, "with_files": True})
     except Exception as error:
         return _task_failure(error)
-    return jsonify({"ok": True, "task_id": task_id})
+    return accepted_task_response(bench_root, task_id)
 
 
 @sites_bp.post("/<name>/actions/clear-cache")
@@ -750,7 +752,7 @@ def update_configuration(name: str):
 _DEFAULT_BACKUPS_PAGE_SIZE = 20
 
 
-@sites_bp.route("/<name>/backups")
+@sites_bp.get("/<name>/backups")
 @require_scope(site_name)
 def list_backups(name: str):
     from ..readers.backup_reader import BackupReader
@@ -761,46 +763,60 @@ def list_backups(name: str):
         sets = BackupReader(bench_root, name).read_all(limit=limit)
     except Exception:
         return _internal_error("Could not read site backups.")
-    return jsonify(
-        [
-            {
-                "timestamp": s.timestamp,
-                "created_at": s.created_at.isoformat(),
-                "is_offsite": s.is_offsite,
-                "files": [
-                    {
-                        "filename": f.filename,
-                        "path": f.path,
-                        "size_bytes": f.size_bytes,
-                        "kind": f.kind,
-                    }
-                    for f in s.files
-                ],
-            }
-            for s in sets
-        ]
-    )
+    return jsonify([_backup_set_resource(s) for s in sets])
 
 
-@sites_bp.route("/<name>/backups/download")
+@sites_bp.get("/<name>/backups/<timestamp>")
 @require_scope(site_name)
-def download_backup(name: str):
+def get_backup(name: str, timestamp: str):
+    from ..readers.backup_reader import BackupReader
+
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    filename = request.args.get("filename", "")
-    if not filename or "/" in filename or "\\" in filename or filename.startswith("."):
+    try:
+        sets = BackupReader(bench_root, name).read_all()
+    except Exception:
+        return _internal_error("Could not read site backups.")
+    match = next((s for s in sets if s.timestamp == timestamp), None)
+    if match is None:
+        return error_response("backup_not_found", "Backup not found.", 404)
+    return jsonify(_backup_set_resource(match))
+
+
+def _backup_set_resource(s) -> dict:
+    return {
+        "timestamp": s.timestamp,
+        "created_at": s.created_at.isoformat(),
+        "is_offsite": s.is_offsite,
+        "files": [
+            {
+                "filename": f.filename,
+                "path": f.path,
+                "size_bytes": f.size_bytes,
+                "kind": f.kind,
+            }
+            for f in s.files
+        ],
+    }
+
+
+@sites_bp.get("/<name>/backups/<timestamp>/files/<file_id>/content")
+@require_scope(site_name)
+def download_backup_file(name: str, timestamp: str, file_id: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    if not file_id.startswith(timestamp) or "/" in file_id or "\\" in file_id or file_id.startswith("."):
         return error_response("invalid_filename", "Backup filename is invalid.", 422)
 
     backups_dir = (bench_root / "sites" / name / "private" / "backups").resolve()
-    target = (backups_dir / filename).resolve()
+    target = (backups_dir / file_id).resolve()
     if backups_dir not in target.parents or not target.is_file():
         return error_response("backup_not_found", "Backup file not found.", 404)
 
-    return send_file(target, as_attachment=True, download_name=filename)
+    return send_file(target, as_attachment=True, download_name=file_id)
 
 
-@sites_bp.route("/<name>/backups/<timestamp>/offsite-urls")
+@sites_bp.get("/<name>/backups/<timestamp>/download-links")
 @require_scope(site_name)
-def offsite_backup_urls(name: str, timestamp: str):
+def backup_download_links(name: str, timestamp: str):
     """Pre-signed S3 URLs for a backup run's files — the user downloads
     straight from the bucket, so this server never proxies the transfer."""
     from pilot.config.toml_store import BenchTomlStore
@@ -815,14 +831,14 @@ def offsite_backup_urls(name: str, timestamp: str):
             return error_response(
                 "backup_not_found", "Offsite backup not found.", 404
             )
-        urls = {
+        links = {
             kind: offsite_backup.presigned_url(name, timestamp, filename)
             for kind, filename in files.items()
         }
     except Exception:
         return _internal_error("Could not create offsite backup URLs.")
 
-    return jsonify({"ok": True, "urls": urls})
+    return jsonify(links)
 
 
 def _backup_cron_command(bench_root: Path, site: str) -> str:
@@ -856,7 +872,7 @@ def _retention_from_payload(block: dict | None):
     return config
 
 
-@sites_bp.route("/<name>/backup-schedule", methods=["GET"])
+@sites_bp.get("/<name>/backup-schedule")
 @require_scope(site_name)
 def get_backup_schedule(name: str):
     from dataclasses import asdict
@@ -874,7 +890,7 @@ def get_backup_schedule(name: str):
     return jsonify({"schedule": schedule, "retention": asdict(retention) if retention else None})
 
 
-@sites_bp.route("/<name>/backup-schedule", methods=["POST"])
+@sites_bp.put("/<name>/backup-schedule")
 @require_scope(site_name)
 def set_backup_schedule(name: str):
     from pilot.config.site_backup_config import write_retention
@@ -902,10 +918,10 @@ def set_backup_schedule(name: str):
         write_retention(bench_root / "sites" / name / "site_config.json", retention)
     except Exception:
         return _internal_error("Could not update the backup schedule.")
-    return jsonify({"ok": True})
+    return get_backup_schedule(name)
 
 
-@sites_bp.route("/<name>/backup-schedule", methods=["DELETE"])
+@sites_bp.delete("/<name>/backup-schedule")
 @require_scope(site_name)
 def delete_backup_schedule(name: str):
     from pilot.config.site_backup_config import clear_retention
@@ -918,7 +934,7 @@ def delete_backup_schedule(name: str):
         clear_retention(bench_root / "sites" / name / "site_config.json")
     except Exception:
         return _internal_error("Could not remove the backup schedule.")
-    return jsonify({"ok": True})
+    return no_content_response()
 
 
 def _site_resource(site: SiteInfo) -> dict:
