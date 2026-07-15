@@ -3,7 +3,13 @@ from __future__ import annotations
 
 import pytest
 
-from pilot.core.ssh_keys import AuthorizedKeysStore, SSHKeyError
+from pilot.core.ssh_keys import (
+    AuthorizedKeysStore,
+    InvalidSSHKeyError,
+    LastSSHKeyError,
+    SSHKeyAlreadyExistsError,
+    SSHKeyNotFoundError,
+)
 
 # Real keys; fingerprints cross-checked against `ssh-keygen -lf`.
 ED25519 = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILy2dBvqIXocjo05vcMZnMBRje9nYWi5k1e8Hy/GIl3A alice@example.com"
@@ -46,20 +52,20 @@ def test_add_creates_ssh_dir_and_file_with_restrictive_modes(store):
 
 
 def test_add_rejects_garbage(store):
-    with pytest.raises(SSHKeyError):
+    with pytest.raises(InvalidSSHKeyError):
         store.add("not a key")
 
 
 def test_add_rejects_type_blob_mismatch(store):
     # ed25519 type token with the rsa blob → embedded algorithm won't match.
     mangled = "ssh-ed25519 " + RSA.split()[1]
-    with pytest.raises(SSHKeyError):
+    with pytest.raises(InvalidSSHKeyError):
         store.add(mangled)
 
 
 def test_add_is_idempotent_on_duplicate(store):
     store.add(ED25519)
-    with pytest.raises(SSHKeyError):
+    with pytest.raises(SSHKeyAlreadyExistsError):
         store.add(ED25519)
     assert len(store.list()) == 1
 
@@ -84,7 +90,7 @@ def test_remove_preserves_comments_and_blank_lines(store):
 
 def test_remove_last_key_is_refused(store):
     store.add(ED25519)
-    with pytest.raises(SSHKeyError, match="last"):
+    with pytest.raises(LastSSHKeyError, match="last"):
         store.remove(ED25519_FP)
     assert len(store.list()) == 1
 
@@ -92,7 +98,7 @@ def test_remove_last_key_is_refused(store):
 def test_remove_unknown_fingerprint_raises(store):
     store.add(ED25519)
     store.add(RSA)
-    with pytest.raises(SSHKeyError, match="matches"):
+    with pytest.raises(SSHKeyNotFoundError, match="matches"):
         store.remove("SHA256:doesnotexist")
 
 

@@ -5,6 +5,8 @@ from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request
 
 from admin.backend.api_contract import error_response
+from pilot.exceptions import DatabaseProcessNotActiveError
+
 from ..readers.bench_reader import BenchReader
 from ..readers.database_reader import DatabaseReader
 
@@ -105,11 +107,17 @@ def kill_process(process_id: int):
     bench_root = current_app.config["BENCH_ROOT"]
     try:
         _get_mariadb_manager(bench_root).kill_process(process_id)
-    except Exception:
+    except DatabaseProcessNotActiveError:
         return error_response(
             "database_process_not_active",
             f"Database process {process_id} is no longer active.",
             409,
+        )
+    except Exception:
+        return error_response(
+            "database_process_kill_failed",
+            "Could not stop the database process.",
+            500,
         )
     return jsonify({"ok": True})
 
@@ -196,8 +204,16 @@ def playground_execute():
     if not isinstance(data, dict):
         return error_response("malformed_request", "Expected a JSON object.", 400)
     site = data.get("site", "")
-    query = (data.get("query") or "").strip()
-    read_only = bool(data.get("read_only", True))
+    query = data.get("query", "")
+    read_only = data.get("read_only", True)
+    if not isinstance(site, str):
+        return error_response("invalid_site", "Site must be a string.", 422)
+    if not isinstance(query, str):
+        return error_response("invalid_query", "Query must be a string.", 422)
+    if not isinstance(read_only, bool):
+        return error_response("invalid_read_only", "read_only must be a boolean.", 422)
+    site = site.strip()
+    query = query.strip()
     if not site:
         return error_response("invalid_site", "Site is required.", 422)
     if not query:
@@ -216,7 +232,5 @@ def playground_execute():
         })
     except FileNotFoundError:
         return error_response("site_not_found", "Site was not found.", 404)
-    except RuntimeError:
-        return error_response("query_rejected", "Query could not be executed.", 422)
     except Exception:
         return error_response("query_failed", "Could not execute query.", 500)

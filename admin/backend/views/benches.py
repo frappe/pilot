@@ -20,7 +20,7 @@ from admin.backend.bench_helpers import (
 from pilot.loader import cli_root
 from pilot.commands.new import NewCommand
 from pilot.config.toml_store import BenchTomlStore
-from pilot.exceptions import BenchError
+from pilot.exceptions import BenchAlreadyExistsError, BenchError
 
 from ..api_contract import error_response
 
@@ -274,8 +274,20 @@ def new():
     admin_tls = bool(data["admin_tls"]) if "admin_tls" in data else None
 
     try:
-        NewCommand(new_dir, name, process_manager=process_manager,
-                   admin_domain=admin_domain, admin_tls=admin_tls, db_type=db_type).run()
+        NewCommand(
+            new_dir,
+            name,
+            process_manager=process_manager,
+            admin_domain=admin_domain,
+            admin_tls=admin_tls,
+            db_type=db_type,
+        ).run()
+    except BenchAlreadyExistsError:
+        return error_response(
+            "bench_already_exists",
+            f"Bench '{name}' already exists.",
+            409,
+        )
     except BenchError as exc:
         return error_response("invalid_bench", str(exc), 422)
 

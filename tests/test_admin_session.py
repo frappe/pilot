@@ -340,7 +340,16 @@ def test_login_rate_limited_after_limit(tmp_path: Path) -> None:
     client = _client(tmp_path)
     for _ in range(5):
         assert client.post("/api/v1/session", json={"password": "wrong"}).status_code == 401
-    assert client.post("/api/v1/session", json={"password": "wrong"}).status_code == 429
+    response = client.post("/api/v1/session", json={"password": "wrong"})
+
+    assert response.status_code == 429
+    assert response.get_json() == {
+        "error": {
+            "code": "rate_limit_exceeded",
+            "details": {},
+            "message": "Too many attempts. Try again later.",
+        }
+    }
 
 
 def test_login_rate_limit_is_scoped_to_each_app(tmp_path: Path) -> None:

@@ -25,6 +25,22 @@ class SSHKeyError(Exception):
     """A key was malformed, duplicated, missing, or the last one remaining."""
 
 
+class InvalidSSHKeyError(SSHKeyError):
+    pass
+
+
+class SSHKeyAlreadyExistsError(SSHKeyError):
+    pass
+
+
+class SSHKeyNotFoundError(SSHKeyError):
+    pass
+
+
+class LastSSHKeyError(SSHKeyError):
+    pass
+
+
 @dataclass
 class SSHKey:
     key_type: str
@@ -62,16 +78,16 @@ def _validate(public_key: str) -> tuple[str, str, str]:
     """
     parsed = _parse_line(public_key)
     if parsed is None:
-        raise SSHKeyError("Not a valid SSH public key.")
+        raise InvalidSSHKeyError("Not a valid SSH public key.")
     key_type, blob, comment = parsed
     try:
         raw = base64.b64decode(blob, validate=True)
         length = struct.unpack(">I", raw[:4])[0]
         algorithm = raw[4 : 4 + length].decode()
     except (ValueError, struct.error, UnicodeDecodeError):
-        raise SSHKeyError("The public key is malformed.")
+        raise InvalidSSHKeyError("The public key is malformed.")
     if algorithm != key_type:
-        raise SSHKeyError("The key type does not match the key data.")
+        raise InvalidSSHKeyError("The key type does not match the key data.")
     return key_type, blob, comment
 
 
@@ -90,7 +106,7 @@ class AuthorizedKeysStore:
         with self._locked():
             lines = self._read()
             if any(_fingerprint(p[1]) == fingerprint for p in self._parse_lines(lines)):
-                raise SSHKeyError("That key is already authorized.")
+                raise SSHKeyAlreadyExistsError("That key is already authorized.")
             line = " ".join(part for part in (key_type, blob, comment) if part)
             self._write(lines + [line])
         return SSHKey(key_type=key_type, fingerprint=fingerprint, comment=comment)
@@ -100,9 +116,9 @@ class AuthorizedKeysStore:
             lines = self._read()
             keys = self._parse_lines(lines)
             if not any(_fingerprint(blob) == fingerprint for _, blob, _ in keys):
-                raise SSHKeyError("No authorized key matches that fingerprint.")
+                raise SSHKeyNotFoundError("No authorized key matches that fingerprint.")
             if len(keys) <= 1:
-                raise SSHKeyError("Refusing to remove the last authorized key.")
+                raise LastSSHKeyError("Refusing to remove the last authorized key.")
             kept = [line for line in lines if self._line_fingerprint(line) != fingerprint]
             self._write(kept)
 

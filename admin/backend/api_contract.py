@@ -109,6 +109,8 @@ def _handle_task_conflict(error: TaskConflictError):
 
 
 def _handle_config_unavailable(_error: ConfigError):
+    if not is_api_path(request.path):
+        return InternalServerError()
     return error_response(
         "configuration_unavailable",
         "Bench configuration is unavailable.",

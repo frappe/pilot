@@ -7,7 +7,7 @@ import sys
 import urllib.request
 from typing import TYPE_CHECKING
 
-from pilot.exceptions import BenchError
+from pilot.exceptions import BenchError, DomainConflictError, DomainProviderError
 from pilot.secure_files import write_private_text
 from pilot.platform import which
 from pilot.utils import host_owner, normalize_host
@@ -93,7 +93,9 @@ class DomainRouteProvider:
             return
         primary = self.primary(site_name)
         if primary and normalize_host(primary) == domain:
-            raise BenchError("Cannot remove the primary domain. Make another domain primary first.")
+            raise DomainConflictError(
+                "Cannot remove the primary domain. Make another domain primary first."
+            )
         self._ask_provider("deregister", domain)
         config = self._read(site_name)
         config["domains"] = [d for d in (config.get("domains") or []) if normalize_host(self._name(d)) != domain]
@@ -129,7 +131,9 @@ class DomainRouteProvider:
             return []
         result = subprocess.run([exe, verb], capture_output=True, text=True)
         if result.returncode != 0:
-            raise BenchError(result.stderr.strip() or f"{_PROVIDER_BIN} {verb} failed.")
+            raise DomainProviderError(
+                result.stderr.strip() or f"{_PROVIDER_BIN} {verb} failed."
+            )
         out = result.stdout.strip()
         return json.loads(out) if out else []
 
@@ -149,7 +153,7 @@ class DomainRouteProvider:
         domain = normalize_host(domain)
         candidates = {normalize_host(site_name)} | {normalize_host(d) for d in self._names(config)}
         if domain not in candidates:
-            raise BenchError(f"{domain} is not a domain of this site.")
+            raise DomainConflictError(f"{domain} is not a domain of this site.")
         scheme = "https" if config.get("ssl") else "http"
         config["host_name"] = f"{scheme}://{domain}"
         self._write(site_name, config)
@@ -174,7 +178,9 @@ class DomainRouteProvider:
         argv = [exe, action, *([site] if site else []), *([domain] if domain else [])]
         result = subprocess.run(argv, capture_output=True, text=True)
         if result.returncode != 0:
-            raise BenchError(result.stderr.strip() or f"{_PROVIDER_BIN} {action} failed.")
+            raise DomainProviderError(
+                result.stderr.strip() or f"{_PROVIDER_BIN} {action} failed."
+            )
         # Only data-returning actions emit JSON; register/deregister stdout is
         # ignored, so don't parse it (a status line would wrongly fail an applied route).
         if action in ("register", "deregister"):
@@ -186,29 +192,41 @@ class DomainRouteProvider:
         """Normalize domain and raise if it's already claimed in this bench or a sibling bench."""
         domain = normalize_host(domain)
         if not domain:
-            raise BenchError("A domain is required.")
+            raise DomainConflictError("A domain is required.")
         if domain == normalize_host(self.bench.config.admin.domain):
-            raise BenchError(f"{domain} is already used by this bench's admin domain.")
+            raise DomainConflictError(
+                f"{domain} is already used by this bench's admin domain."
+            )
         for site in self.bench.sites():
             if domain in (normalize_host(d) for d in site.config.all_domains):
                 if site.config.name == site_name:
-                    raise BenchError(f"{domain} is already attached to this site.")
-                raise BenchError(f"{domain} is already used by site '{site.config.name}' in this bench.")
+                    raise DomainConflictError(
+                        f"{domain} is already attached to this site."
+                    )
+                raise DomainConflictError(
+                    f"{domain} is already used by site '{site.config.name}' in this bench."
+                )
         owner = host_owner(self.bench.path, domain)
         if owner:
-            raise BenchError(f"{domain} is already used by bench '{owner}'. Hostnames must be unique across benches.")
+            raise DomainConflictError(
+                f"{domain} is already used by bench '{owner}'. Hostnames must be unique across benches."
+            )
         return domain
 
     def _verify(self, site_name: str, domain: str) -> None:
         """Raise unless domain resolves to this server (CNAME to the site, or matching A record)."""
         candidate = self._resolve(domain)
         if not candidate:
-            raise BenchError(f"{domain} doesn't resolve yet. Retry once DNS has updated.")
+            raise DomainConflictError(
+                f"{domain} doesn't resolve yet. Retry once DNS has updated."
+            )
         expected = self._resolve(site_name)
         if ip := self._server_ip():
             expected.add(ip)
         if not (candidate & expected):
-            raise BenchError(f"{domain} doesn't point here yet. Retry once DNS has updated.")
+            raise DomainConflictError(
+                f"{domain} doesn't point here yet. Retry once DNS has updated."
+            )
 
     @staticmethod
     def _server_ip() -> str:

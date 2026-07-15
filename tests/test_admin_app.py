@@ -60,6 +60,13 @@ def test_api_benches_requires_auth(tmp_path: Path) -> None:
 
     resp = client.get("/api/v1/benches/")
     assert resp.status_code == 401
+    assert resp.get_json() == {
+        "error": {
+            "code": "authentication_required",
+            "details": {},
+            "message": "Authentication is required.",
+        }
+    }
 
 
 def test_api_benches_lists_all_benches_with_reachability(tmp_path: Path) -> None:
@@ -232,6 +239,13 @@ def test_api_benches_new_rejects_when_management_disabled(tmp_path: Path) -> Non
     resp = client.post("/api/v1/benches/new", json=_new_payload("fresh"))
 
     assert resp.status_code == 403
+    assert resp.get_json() == {
+        "error": {
+            "code": "bench_management_forbidden",
+            "details": {},
+            "message": "Bench management is disabled on this server.",
+        }
+    }
     assert not (benches_dir / "fresh").exists()
 
 
@@ -306,7 +320,8 @@ def test_api_benches_new_rejects_duplicate_name(tmp_path: Path) -> None:
     with patch("pilot.core.domain_controller.DomainRouteProvider.wildcard_domains", return_value=[]):
         resp = client.post("/api/v1/benches/new", json=_new_payload("current"))
 
-    assert resp.status_code == 422
+    assert resp.status_code == 409
+    assert resp.get_json()["error"]["code"] == "bench_already_exists"
     assert "already exists" in resp.get_json()["error"]["message"]
 
 

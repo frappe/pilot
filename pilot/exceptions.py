@@ -2,6 +2,10 @@ class BenchError(Exception):
     pass
 
 
+class BenchAlreadyExistsError(BenchError):
+    pass
+
+
 class ConfigError(BenchError):
     pass
 
@@ -30,4 +34,16 @@ class MigrateError(BenchError):
 
 
 class AppValidationError(BenchError):
+    pass
+
+
+class DatabaseProcessNotActiveError(BenchError):
+    pass
+
+
+class DomainConflictError(BenchError):
+    pass
+
+
+class DomainProviderError(BenchError):
     pass

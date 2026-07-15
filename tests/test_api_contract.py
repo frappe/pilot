@@ -14,7 +14,12 @@ from admin.backend.api_contract import (
 )
 from admin.backend.app import create_app
 from admin.backend.auth import allow_unauthenticated
-from pilot.exceptions import ConfigError, TaskConflictError, TaskNotFoundError
+from pilot.exceptions import (
+    ConfigError,
+    TaskConflictError,
+    TaskNotFoundError,
+    TaskNotRunningError,
+)
 
 
 def test_api_prefixes_define_one_version_boundary() -> None:
@@ -105,6 +110,7 @@ def test_domain_errors_have_stable_public_mappings(tmp_path: Path) -> None:
     app = create_app(tmp_path)
     errors = {
         "missing": TaskNotFoundError("Task not found: task-one"),
+        "inactive": TaskNotRunningError("Task is not running: task-one"),
         "conflict": TaskConflictError("Idempotency key conflict"),
         "config": ConfigError("secret parser detail"),
     }
@@ -117,6 +123,7 @@ def test_domain_errors_have_stable_public_mappings(tmp_path: Path) -> None:
     client = app.test_client()
 
     missing = client.get("/api/v1/test-domain-error/missing")
+    inactive = client.get("/api/v1/test-domain-error/inactive")
     conflict = client.get("/api/v1/test-domain-error/conflict")
     config = client.get("/api/v1/test-domain-error/config")
     assert (missing.status_code, missing.get_json()["error"]["code"]) == (
@@ -126,6 +133,10 @@ def test_domain_errors_have_stable_public_mappings(tmp_path: Path) -> None:
     assert (conflict.status_code, conflict.get_json()["error"]["code"]) == (
         409,
         "task_conflict",
+    )
+    assert (inactive.status_code, inactive.get_json()["error"]["code"]) == (
+        409,
+        "task_not_active",
     )
     assert (config.status_code, config.get_json()["error"]) == (
         503,
@@ -173,7 +184,27 @@ def test_payload_too_large_is_a_json_api_error(tmp_path: Path) -> None:
     )
 
     assert response.status_code == 413
-    assert response.get_json()["error"]["code"] == "payload_too_large"
+    assert response.get_json() == {
+        "error": {
+            "code": "payload_too_large",
+            "details": {},
+            "message": "Request payload is too large.",
+        }
+    }
+
+
+def test_non_api_config_errors_keep_the_html_error_boundary(tmp_path: Path) -> None:
+    app = create_app(tmp_path)
+
+    @app.get("/test-config-error")
+    def test_config_error():
+        raise ConfigError("secret parser detail")
+
+    response = app.test_client().get("/test-config-error")
+
+    assert response.status_code == 500
+    assert response.content_type.startswith("text/html")
+    assert b"secret parser detail" not in response.data
 
 
 def test_unversioned_product_route_is_not_an_alias(tmp_path: Path) -> None:

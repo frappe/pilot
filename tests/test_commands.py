@@ -14,7 +14,7 @@ from pilot.config.mariadb_config import MariaDBConfig
 from pilot.config.redis_config import RedisConfig
 from pilot.config.worker_config import WorkerConfig, WorkerGroup
 from pilot.core.bench import Bench
-from pilot.exceptions import BenchError
+from pilot.exceptions import BenchAlreadyExistsError, BenchError
 
 
 def make_bench(tmp_path: Path) -> Bench:
@@ -55,7 +55,7 @@ def test_new_command_raises_if_bench_already_exists(tmp_path: Path) -> None:
     target.mkdir(parents=True)
     (target / "bench.toml").write_text("[bench]\n")
 
-    with pytest.raises(BenchError, match="already exists"):
+    with pytest.raises(BenchAlreadyExistsError, match="already exists"):
         NewCommand(target, "my-bench").run()
 
 

@@ -10,7 +10,13 @@ from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request, send_file
 
 from pilot.secure_files import write_private_text
-from pilot.exceptions import BenchError, TaskConflictError
+from pilot.exceptions import (
+    BenchError,
+    ConfigError,
+    DomainConflictError,
+    DomainProviderError,
+    TaskConflictError,
+)
 
 from admin.backend.api_contract import error_response
 from admin.backend.auth import require_scope
@@ -636,8 +642,8 @@ def list_domains(name: str):
     try:
         routes = _domain_routes(bench_root)
         return jsonify({"domains": routes.domains(name), "primary": routes.primary(name)})
-    except BenchError:
-        return _domain_conflict()
+    except BenchError as error:
+        return _domain_failure(error, "Could not read site domains.")
     except Exception:
         return _internal_error("Could not read site domains.")
 
@@ -660,8 +666,8 @@ def domain_dns_records(name: str):
         return error_response("invalid_domain", err, 422)
     try:
         records = _domain_routes(bench_root).generate_dns_records(name, domain)
-    except BenchError:
-        return _domain_conflict()
+    except BenchError as error:
+        return _domain_failure(error, "Could not generate DNS records.")
     except Exception:
         return _internal_error("Could not generate DNS records.")
     return jsonify({"ok": True, "records": records})
@@ -685,8 +691,8 @@ def add_domain(name: str):
     try:
         _domain_routes(bench_root).register(name, domain)
         task_id = _apply_domains(bench_root, name)
-    except BenchError:
-        return _domain_conflict()
+    except BenchError as error:
+        return _domain_failure(error, "Could not attach the domain.")
     except Exception:
         return _internal_error("Could not attach the domain.")
     return jsonify({"ok": True, "task_id": task_id})
@@ -710,8 +716,8 @@ def remove_domain(name: str):
     try:
         _domain_routes(bench_root).deregister(name, domain)
         task_id = _apply_domains(bench_root, name)
-    except BenchError:
-        return _domain_conflict()
+    except BenchError as error:
+        return _domain_failure(error, "Could not detach the domain.")
     except Exception:
         return _internal_error("Could not detach the domain.")
     return jsonify({"ok": True, "task_id": task_id})
@@ -735,8 +741,8 @@ def set_primary_domain(name: str):
     try:
         _domain_routes(bench_root).set_primary(name, domain)
         task_id = _apply_domains(bench_root, name)
-    except BenchError:
-        return _domain_conflict()
+    except BenchError as error:
+        return _domain_failure(error, "Could not change the primary domain.")
     except Exception:
         return _internal_error("Could not change the primary domain.")
     # nginx redirects non-primary hosts to the primary, so regenerate it.
@@ -993,6 +999,20 @@ def _domain_conflict():
     return error_response(
         "domain_conflict", "The domain conflicts with the current site state.", 409
     )
+
+
+def _domain_failure(error: BenchError, message: str):
+    if isinstance(error, ConfigError):
+        raise error
+    if isinstance(error, DomainConflictError):
+        return _domain_conflict()
+    if isinstance(error, DomainProviderError):
+        return error_response(
+            "domain_provider_unavailable",
+            "The domain provider is unavailable.",
+            503,
+        )
+    return _internal_error(message)
 
 
 def _site_name_failure(message: str):

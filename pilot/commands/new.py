@@ -4,7 +4,7 @@ import socket
 from pathlib import Path
 
 from pilot.commands.base import Command
-from pilot.exceptions import BenchError
+from pilot.exceptions import BenchAlreadyExistsError
 from pilot.utils import iter_sibling_benches
 
 
@@ -63,7 +63,7 @@ class NewCommand(Command):
 
         bench_toml = self.target_directory / "bench.toml"
         if bench_toml.exists():
-            raise BenchError(f"Bench '{self.name}' already exists.")
+            raise BenchAlreadyExistsError(f"Bench '{self.name}' already exists.")
 
         benches_dir = self.target_directory.parent
         if not benches_dir.exists():
