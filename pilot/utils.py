@@ -206,6 +206,9 @@ def run_command(
 
 
 def _start_process(argv: list[str], cwd: Path | None, env: dict | None, stream_output: bool) -> subprocess.Popen:
+    launch_id = os.environ.get("BENCH_TASK_LAUNCH_ID")
+    if env is not None and launch_id:
+        env = {**env, "BENCH_TASK_LAUNCH_ID": launch_id}
     return subprocess.Popen(
         argv,
         cwd=cwd,

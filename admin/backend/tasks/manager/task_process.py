@@ -241,17 +241,34 @@ class TaskProcess:
         if ownership != ProcessOwnership.OWNED:
             return ownership
 
-        pid_descriptor = self._open_pid_descriptor(record.identity.pid)
-        try:
-            ownership = self._inspector.inspect(record.identity, record.argv)
-            if ownership != ProcessOwnership.OWNED:
-                return ownership
-            os.killpg(record.identity.pgid, signum)
-            return ProcessOwnership.OWNED
-        except ProcessLookupError:
+        pids = self._inspector.owned_pids(record.identity)
+        if not pids:
             return ProcessOwnership.DEAD
+        signalled = False
+        try:
+            for pid in sorted(pids, key=lambda value: value == record.identity.pid):
+                signalled = self._signal_owned_pid(record.identity, pid, signum) or signalled
         except PermissionError:
             return ProcessOwnership.UNKNOWN
+        return ProcessOwnership.OWNED if signalled else ProcessOwnership.DEAD
+
+    def _signal_owned_pid(
+        self,
+        identity: ProcessIdentity,
+        pid: int,
+        signum: signal.Signals,
+    ) -> bool:
+        pid_descriptor = self._open_pid_descriptor(pid)
+        try:
+            if not self._inspector.owns_pid(identity, pid):
+                return False
+            if pid_descriptor is not None and hasattr(signal, "pidfd_send_signal"):
+                signal.pidfd_send_signal(pid_descriptor, signum)
+            else:
+                os.kill(pid, signum)
+            return True
+        except ProcessLookupError:
+            return False
         finally:
             if pid_descriptor is not None:
                 os.close(pid_descriptor)

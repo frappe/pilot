@@ -135,6 +135,39 @@ def test_cancel_force_kills_a_term_resistant_task_group(tmp_path: Path) -> None:
         stop_process_group(task)
 
 
+def test_cancel_kills_nested_command_session(tmp_path: Path) -> None:
+    child_pid_path = tmp_path / "nested-child.pid"
+    nested_code = (
+        "import os,signal,sys,time; from pathlib import Path; "
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+        "Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(60)"
+    )
+    task_code = (
+        "import sys; from pilot.utils import run_command; "
+        "run_command([sys.executable,'-c',sys.argv[1],sys.argv[2]])"
+    )
+    argv = [sys.executable, "-c", task_code, nested_code, str(child_pid_path)]
+    store = create_running_task(tmp_path)
+    task = start_owned_process(store, argv)
+
+    try:
+        deadline = time.monotonic() + 5
+        while not child_pid_path.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        child_pid = int(child_pid_path.read_text())
+
+        TaskProcess(tmp_path).cancel(TASK_ID, grace_seconds=0.1)
+        task.wait(timeout=5)
+
+        deadline = time.monotonic() + 5
+        while pid_is_running(child_pid) and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert not pid_is_running(child_pid)
+        assert store.read_status(TASK_ID) == TaskStatus.KILLED
+    finally:
+        stop_process_group(task)
+
+
 def test_cancel_does_not_signal_a_stale_process_identity(tmp_path: Path) -> None:
     store = create_running_task(tmp_path)
     argv = [sys.executable, "-c", "import time; time.sleep(60)"]

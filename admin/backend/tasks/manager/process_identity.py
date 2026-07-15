@@ -127,6 +127,37 @@ class ProcessInspector:
         except (PermissionError, OSError):
             return ProcessOwnership.UNKNOWN
 
+    def owned_pids(self, identity: ProcessIdentity) -> set[int]:
+        if identity.boot_id != self._read_boot_id():
+            return set()
+        owned = set()
+        for entry in _PROC_ROOT.iterdir():
+            if not entry.name.isdigit():
+                continue
+            pid = int(entry.name)
+            try:
+                snapshot = self._read_process(pid)
+                if (
+                    snapshot.state != "Z"
+                    and snapshot.uid == identity.uid
+                    and self._has_launch_id(pid, identity.launch_id)
+                ):
+                    owned.add(pid)
+            except (FileNotFoundError, ProcessLookupError, PermissionError, OSError, ValueError):
+                continue
+        return owned
+
+    def owns_pid(self, identity: ProcessIdentity, pid: int) -> bool:
+        try:
+            snapshot = self._read_process(pid)
+            return (
+                snapshot.state != "Z"
+                and snapshot.uid == identity.uid
+                and self._has_launch_id(pid, identity.launch_id)
+            )
+        except (FileNotFoundError, ProcessLookupError, PermissionError, OSError, ValueError):
+            return False
+
     def _inspect_group(self, identity: ProcessIdentity) -> ProcessOwnership:
         matching_group = False
         unknown = False
@@ -145,14 +176,17 @@ class ProcessInspector:
             except (PermissionError, OSError, ValueError):
                 unknown = True
                 continue
-            if snapshot.state == "Z" or snapshot.pgid != identity.pgid:
+            if snapshot.state == "Z":
                 continue
-            matching_group = True
-            try:
-                if self._has_launch_id(pid, identity.launch_id):
-                    return ProcessOwnership.OWNED
-            except (PermissionError, OSError):
-                unknown = True
+            if snapshot.uid == identity.uid:
+                try:
+                    if self._has_launch_id(pid, identity.launch_id):
+                        return ProcessOwnership.OWNED
+                except (PermissionError, OSError):
+                    if snapshot.pgid == identity.pgid:
+                        unknown = True
+            if snapshot.pgid == identity.pgid:
+                matching_group = True
         if unknown:
             return ProcessOwnership.UNKNOWN
         return ProcessOwnership.STALE if matching_group else ProcessOwnership.DEAD

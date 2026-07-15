@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import subprocess
 import time
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -52,3 +53,15 @@ def test_stream_output_still_returns_completed_process() -> None:
     result = run_command(["echo", "hello"], stream_output=True)
     assert result.returncode == 0
     assert result.stdout is None
+
+
+def test_explicit_child_environment_keeps_task_launch_identity(monkeypatch) -> None:
+    monkeypatch.setenv("BENCH_TASK_LAUNCH_ID", "task-launch")
+    process = MagicMock()
+
+    with patch("pilot.utils.subprocess.Popen", return_value=process) as popen:
+        from pilot.utils import _start_process
+
+        assert _start_process(["true"], None, {"PATH": "/bin"}, False) is process
+
+    assert popen.call_args.kwargs["env"]["BENCH_TASK_LAUNCH_ID"] == "task-launch"
