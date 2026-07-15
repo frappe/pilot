@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tomllib
 import typing
 
 from pilot.core.app_validator.base import module_path
@@ -16,12 +17,16 @@ class RepoStructureCheck:
         if not (app.path / "pyproject.toml").exists():
             raise AppValidationError(f"'{app.config.name}' has no pyproject.toml.")
 
+        try:
+            with open((app.path / "pyproject.toml"), "rb") as f:
+                tomllib.load(f)
+        except tomllib.TOMLDecodeError as exc:
+            raise AppValidationError(f"'{app.config.name}' has an invalid pyproject.toml: {exc}")
+
         path = module_path(app)
         if not path.is_dir():
             raise AppValidationError(
                 f"'{app.config.name}' has no '{app.module_name}' package directory."
             )
         if not (path / "hooks.py").exists():
-            raise AppValidationError(
-                f"'{app.config.name}' is missing {app.module_name}/hooks.py."
-            )
+            raise AppValidationError(f"'{app.config.name}' is missing {app.module_name}/hooks.py.")

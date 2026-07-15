@@ -69,34 +69,18 @@ class ImportCheck:
     def _runtime_imports(
         self, nodes: Iterable[ast.AST]
     ) -> Iterator[ast.Import | ast.ImportFrom]:
-        """Imports that must resolve at runtime — skips imports guarded by
-        try/except ImportError and `if TYPE_CHECKING:` blocks, which apps use
-        for genuinely optional dependencies."""
+        """Imports that must resolve at runtime — skips imports inside any
+        try/except block (apps use these for optional dependencies) and
+        `if TYPE_CHECKING:` blocks."""
         for node in nodes:
             if isinstance(node, (ast.Import, ast.ImportFrom)):
                 yield node
-            elif isinstance(node, ast.Try) and self._handles_import_error(node):
+            elif isinstance(node, ast.Try):
                 continue
             elif isinstance(node, ast.If) and self._is_type_checking(node.test):
                 yield from self._runtime_imports(node.orelse)
             else:
                 yield from self._runtime_imports(ast.iter_child_nodes(node))
-
-    @staticmethod
-    def _handles_import_error(node: ast.Try) -> bool:
-        # Only an explicit ImportError/ModuleNotFoundError handler marks an
-        # import as genuinely optional. A bare `except:` or `except Exception:`
-        # matches any try block that happens to contain an import, which would
-        # wrongly mask a real missing dependency elsewhere in that block.
-        catchers = {"ImportError", "ModuleNotFoundError"}
-        for handler in node.handlers:
-            if handler.type is None:
-                continue
-            names = {n.id for n in ast.walk(handler.type) if isinstance(n, ast.Name)}
-            names |= {n.attr for n in ast.walk(handler.type) if isinstance(n, ast.Attribute)}
-            if names & catchers:
-                return True
-        return False
 
     @staticmethod
     def _is_type_checking(test: ast.expr) -> bool:

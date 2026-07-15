@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import typing
 
+from pilot.core.app_validator.dependency_declarations import DependencyDeclarationsCheck
 from pilot.core.app_validator.imports import ImportCheck
 from pilot.core.app_validator.repo_structure import RepoStructureCheck
 from pilot.core.app_validator.syntax import SyntaxCheck
@@ -18,7 +19,12 @@ class Validator:
 
     def __init__(self, app: "App", checks: list["ValidationCheck"] | None = None) -> None:
         self.app = app
-        self.checks = checks or [RepoStructureCheck(), SyntaxCheck(), ImportCheck()]
+        self.checks = checks or [
+            RepoStructureCheck(),
+            SyntaxCheck(),
+            DependencyDeclarationsCheck(),
+            ImportCheck(),
+        ]
 
     def validate(self) -> None:
         for check in self.checks:
