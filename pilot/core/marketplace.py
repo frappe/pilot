@@ -7,11 +7,11 @@ When install is clicked instead of showing a dropdown of branches just install t
 import json
 import typing
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
 from packaging.specifiers import SpecifierSet
-from functools import lru_cache
 from packaging.version import Version
 
 from pilot.exceptions import BenchError
@@ -95,7 +95,7 @@ class Resolver:
             raise BenchError(
                 f"Dependency '{app}' has no version satisfying {required_spec!r} "
                 f"compatible with Frappe {self.frappe_version}.\n"
-                f"Needed by '{path[-2]}'."
+                f"Needed by '{path[-2]}' in the marketplace registry."
             )
 
         for dep, dep_spec in resolver.dependencies.items():
