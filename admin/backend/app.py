@@ -95,9 +95,10 @@ def create_app(bench_root: Path) -> Flask:
 
     _install_idle_watchdog(app)
     used_logins = UsedTokens()
+    config_store = BenchTomlStore.for_bench(bench_root)
 
     def _load_config():
-        return BenchTomlStore.for_bench(bench_root).read()
+        return config_store.read()
 
     def _check_enabled(config: BenchConfig):
         if not config.admin.enabled:
@@ -156,7 +157,9 @@ def create_app(bench_root: Path) -> Flask:
         try:
             config = _load_config()
         except Exception as exc:
-            return None if is_setup else (jsonify({"error": str(exc), "enabled": False}), 503)
+            if is_setup and not config_store.exists():
+                return None
+            return jsonify({"error": str(exc), "enabled": False}), 503
         if is_setup and not config.admin.password:
             return None
         return _check_enabled(config) or _check_password(config)

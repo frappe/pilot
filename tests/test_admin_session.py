@@ -232,6 +232,18 @@ def test_setup_endpoint_open_before_password_set(tmp_path: Path) -> None:
     assert app.test_client().post("/api/setup/validate-mariadb", json={}).status_code != 401
 
 
+def test_setup_endpoint_fails_closed_when_config_is_corrupt(tmp_path: Path) -> None:
+    from admin.backend.app import create_app
+
+    (tmp_path / "bench.toml").write_text("[bench\n")
+    app = create_app(tmp_path)
+    app.config["TESTING"] = True
+
+    response = app.test_client().post("/api/setup/validate-mariadb", json={})
+
+    assert response.status_code == 503
+
+
 # ── scoped JWT ────────────────────────────────────────────────────────────────
 
 
