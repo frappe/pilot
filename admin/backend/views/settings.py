@@ -494,28 +494,34 @@ def get_settings():
     return jsonify(_build_settings_response(config))
 
 
-_AUDIT_LOG_LIMIT = 500  # newest entries returned; the log has no dedicated UI, it's viewed as raw JSON
+_AUDIT_LOG_DEFAULT_LIMIT = 50
+_AUDIT_LOG_MAX_LIMIT = 500
 
 
 @audit_bp.get("/audit-events")
 def audit_log():
-    """The bench-wide audit log as JSON, newest first, for direct viewing in a
-    browser. Optional ``type``/``status``/``site``/``limit`` query params filter it."""
+    """The bench-wide audit log as JSON, newest first. The log has no dedicated
+    UI — it's viewed directly, paginated with ``limit``/``cursor`` query params,
+    and optionally filtered by ``type``/``status``/``site``."""
+    from admin.backend.api_contract import paginated_response, parse_pagination
     from pilot.core.audit_log import AuditLog
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    limit = request.args.get("limit", _AUDIT_LOG_LIMIT, type=int)
+    limit, offset = parse_pagination(_AUDIT_LOG_DEFAULT_LIMIT, _AUDIT_LOG_MAX_LIMIT)
     try:
         log = AuditLog(Bench(BenchTomlStore.for_bench(bench_root).read(), bench_root))
-        entries = log.entries(
-            entry_type=request.args.get("type") or None,
-            site=request.args.get("site") or None,
-            status=request.args.get("status") or None,
-            limit=limit,
-        )
+
+        def fetch_newest(count: int) -> list:
+            return log.entries(
+                entry_type=request.args.get("type") or None,
+                site=request.args.get("site") or None,
+                status=request.args.get("status") or None,
+                limit=count,
+            )
+
+        return paginated_response(fetch_newest, limit, offset)
     except Exception:
         return error_response("audit_unavailable", "Could not read audit events.", 500)
-    return jsonify(entries)
 
 
 @network_bp.get("/network/client")
