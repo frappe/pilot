@@ -300,7 +300,9 @@ export function useSetup() {
       app_branch: appBranch.value,
     }
     const external = useExternalDb.value
-    const host = external ? dbHost.value : ''
+    // 'localhost', not '', when off — an empty host breaks check_credentials'
+    // TCP fallback on systems where the local socket isn't detected.
+    const host = external ? dbHost.value : 'localhost'
     const port = external ? Number(dbPort.value) || undefined : undefined
     if (dbType.value === 'postgres') {
       return {
