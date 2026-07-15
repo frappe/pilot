@@ -589,20 +589,13 @@ def list_domains(name: str):
         return _internal_error("Could not read site domains.")
 
 
-@sites_bp.route("/<name>/domains/dns-records", methods=["POST"])
+@sites_bp.get("/<name>/domains/<domain>/dns-records")
 @require_scope(site_name)
-def domain_dns_records(name: str):
-    """Step 1 of attaching a domain: validate it, return CNAME/A record options."""
+def domain_dns_records(name: str, domain: str):
+    """Read-only guidance for attaching a domain: CNAME/A record options."""
     bench_root = Path(current_app.config["BENCH_ROOT"])
     if not site_exists(bench_root, name):
         return _site_not_found()
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return _malformed_body()
-    fields = _text_fields(data, "domain")
-    if fields is None:
-        return _invalid_fields()
-    domain = fields["domain"]
     if err := validate_site_name(domain):
         return error_response("invalid_domain", err, 422)
     try:
@@ -611,10 +604,10 @@ def domain_dns_records(name: str):
         return _domain_failure(error, "Could not generate DNS records.")
     except Exception:
         return _internal_error("Could not generate DNS records.")
-    return jsonify({"ok": True, "records": records})
+    return jsonify(records)
 
 
-@sites_bp.route("/<name>/domains", methods=["POST"])
+@sites_bp.post("/<name>/domains")
 @require_scope(site_name)
 def add_domain(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
@@ -636,22 +629,58 @@ def add_domain(name: str):
         return _domain_failure(error, "Could not attach the domain.")
     except Exception:
         return _internal_error("Could not attach the domain.")
-    return jsonify({"ok": True, "task_id": task_id})
+    return accepted_task_response(bench_root, task_id)
 
 
-@sites_bp.route("/<name>/domains", methods=["DELETE"])
+@sites_bp.get("/<name>/domains/<domain>")
 @require_scope(site_name)
-def remove_domain(name: str):
+def get_domain(name: str, domain: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     if not site_exists(bench_root, name):
         return _site_not_found()
+    if err := validate_site_name(domain):
+        return error_response("invalid_domain", err, 422)
+    try:
+        attached, is_primary = _domain_status(_domain_routes(bench_root), name, domain)
+    except BenchError as error:
+        return _domain_failure(error, "Could not read the domain.")
+    except Exception:
+        return _internal_error("Could not read the domain.")
+    if not attached:
+        return error_response("domain_not_found", "Domain not found.", 404)
+    return jsonify({"domain": domain, "is_primary": is_primary})
+
+
+@sites_bp.patch("/<name>/domains/<domain>")
+@require_scope(site_name)
+def update_domain(name: str, domain: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    if not site_exists(bench_root, name):
+        return _site_not_found()
+    if err := validate_site_name(domain):
+        return error_response("invalid_domain", err, 422)
     data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return _malformed_body()
-    fields = _text_fields(data, "domain")
-    if fields is None:
-        return _invalid_fields()
-    domain = fields["domain"]
+    if not isinstance(data, dict) or data.get("primary") is not True:
+        return error_response(
+            "invalid_fields", 'Only setting {"primary": true} is supported.', 422
+        )
+    try:
+        _domain_routes(bench_root).set_primary(name, domain)
+        task_id = _apply_domains(bench_root, name)
+    except BenchError as error:
+        return _domain_failure(error, "Could not change the primary domain.")
+    except Exception:
+        return _internal_error("Could not change the primary domain.")
+    # nginx redirects non-primary hosts to the primary, so regenerate it.
+    return accepted_task_response(bench_root, task_id)
+
+
+@sites_bp.delete("/<name>/domains/<domain>")
+@require_scope(site_name)
+def remove_domain(name: str, domain: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    if not site_exists(bench_root, name):
+        return _site_not_found()
     if err := validate_site_name(domain):
         return error_response("invalid_domain", err, 422)
     try:
@@ -661,33 +690,18 @@ def remove_domain(name: str):
         return _domain_failure(error, "Could not detach the domain.")
     except Exception:
         return _internal_error("Could not detach the domain.")
-    return jsonify({"ok": True, "task_id": task_id})
+    return accepted_task_response(bench_root, task_id)
 
 
-@sites_bp.route("/<name>/domains/primary", methods=["POST"])
-@require_scope(site_name)
-def set_primary_domain(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
-    if not site_exists(bench_root, name):
-        return _site_not_found()
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return _malformed_body()
-    fields = _text_fields(data, "domain")
-    if fields is None:
-        return _invalid_fields()
-    domain = fields["domain"] or None
-    if domain and (err := validate_site_name(domain)):
-        return error_response("invalid_domain", err, 422)
-    try:
-        _domain_routes(bench_root).set_primary(name, domain)
-        task_id = _apply_domains(bench_root, name)
-    except BenchError as error:
-        return _domain_failure(error, "Could not change the primary domain.")
-    except Exception:
-        return _internal_error("Could not change the primary domain.")
-    # nginx redirects non-primary hosts to the primary, so regenerate it.
-    return jsonify({"ok": True, "task_id": task_id})
+def _domain_status(routes, site_name: str, domain: str) -> tuple[bool, bool]:
+    from pilot.utils import normalize_host
+
+    normalized = normalize_host(domain)
+    primary = routes.primary(site_name)
+    if normalized == normalize_host(site_name):
+        return True, not primary or normalize_host(primary) == normalized
+    attached = normalized in {normalize_host(d) for d in routes.domains(site_name)}
+    return attached, bool(primary) and normalize_host(primary) == normalized
 
 
 @sites_bp.get("/<name>/configuration")

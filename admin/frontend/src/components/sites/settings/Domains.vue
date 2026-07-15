@@ -99,7 +99,7 @@ async function setPrimary(domain) {
   error.value = ''
   try {
     const data = await sitesApi.domains.setPrimary(props.siteName, domain)
-    if (!data.ok) { error.value = apiErrorMessage(data, 'Failed to set primary domain.'); return }
+    if (!data.task_id) { error.value = apiErrorMessage(data, 'Failed to set primary domain.'); return }
     await loadDomains()
   } catch (e) {
     error.value = e.message || 'Failed to set primary domain.'

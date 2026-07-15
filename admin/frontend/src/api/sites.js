@@ -30,9 +30,14 @@ export const sitesApi = {
   domains: {
     list: (name) => request.get(`sites/${encodeURIComponent(name)}/domains`).json(),
     add: (name, domain) => request.post(`sites/${encodeURIComponent(name)}/domains`, { json: { domain } }).json(),
-    remove: (name, domain) => request.delete(`sites/${encodeURIComponent(name)}/domains`, { json: { domain } }).json(),
-    setPrimary: (name, domain) => request.post(`sites/${encodeURIComponent(name)}/domains/primary`, { json: { domain } }).json(),
-    dnsRecords: (name, domain) => request.post(`sites/${encodeURIComponent(name)}/domains/dns-records`, { json: { domain } }).json(),
+    remove: (name, domain) =>
+      request.delete(`sites/${encodeURIComponent(name)}/domains/${encodeURIComponent(domain)}`).json(),
+    setPrimary: (name, domain) =>
+      request
+        .patch(`sites/${encodeURIComponent(name)}/domains/${encodeURIComponent(domain)}`, { json: { primary: true } })
+        .json(),
+    dnsRecords: (name, domain) =>
+      request.get(`sites/${encodeURIComponent(name)}/domains/${encodeURIComponent(domain)}/dns-records`).json(),
     wildcardList: () => request.get('sites/wildcard-domains').json(),
   },
 

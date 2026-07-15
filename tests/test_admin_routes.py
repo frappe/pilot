@@ -19,6 +19,7 @@ SITE_SCOPED_ENDPOINTS = {
     "sites.enable_tls",
     "sites.get_backup_schedule",
     "sites.get_configuration",
+    "sites.get_domain",
     "sites.install_site_app",
     "sites.list_backups",
     "sites.list_domains",
@@ -27,9 +28,9 @@ SITE_SCOPED_ENDPOINTS = {
     "sites.reinstall_site",
     "sites.remove_domain",
     "sites.set_backup_schedule",
-    "sites.set_primary_domain",
     "sites.site_apps",
     "sites.update_configuration",
+    "sites.update_domain",
     "site-login.create_login_link",
 }
 
@@ -69,20 +70,20 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         and not rule.rule.startswith(f"{API_V1_PREFIX}/")
     ]
 
-    assert len(routes) == 103
+    assert len(routes) == 104
     assert unversioned == []
-    assert len({(method, path) for method, path, _, _ in routes}) == 103
+    assert len({(method, path) for method, path, _, _ in routes}) == 104
     assert Counter(method for method, _, _, _ in routes) == {
         "DELETE": 10,
-        "GET": 51,
-        "PATCH": 2,
-        "POST": 39,
+        "GET": 53,
+        "PATCH": 3,
+        "POST": 37,
         "PUT": 1,
     }
     assert Counter(policy for _, _, _, policy in routes) == {
         "authenticated": 57,
         "authenticated+bench-management": 9,
-        "authenticated+site-scope": 24,
+        "authenticated+site-scope": 25,
         "open": 6,
         "setup-conditional": 7,
     }
@@ -103,7 +104,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         "setup": 7,
         "site-login-handoffs": 1,
         "site-restores": 1,
-        "sites": 27,
+        "sites": 28,
         "ssh-keys": 3,
         "stats": 1,
         "session": 3,
@@ -140,6 +141,12 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         ("GET", "/api/v1/sites/<name>/apps"),
         ("POST", "/api/v1/sites/<name>/apps"),
         ("DELETE", "/api/v1/sites/<name>/apps/<app>"),
+        ("GET", "/api/v1/sites/<name>/domains"),
+        ("POST", "/api/v1/sites/<name>/domains"),
+        ("GET", "/api/v1/sites/<name>/domains/<domain>"),
+        ("PATCH", "/api/v1/sites/<name>/domains/<domain>"),
+        ("DELETE", "/api/v1/sites/<name>/domains/<domain>"),
+        ("GET", "/api/v1/sites/<name>/domains/<domain>/dns-records"),
     } <= route_keys
     assert {
         ("GET", "/api/v1/tasks"),
@@ -199,5 +206,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
             "/api/v1/sites/<name>/get-and-install-app",
             "/api/v1/sites/<name>/uninstall-app",
             "/api/v1/sites/<name>/force-uninstall-app",
+            "/api/v1/sites/<name>/domains/primary",
+            "/api/v1/sites/<name>/domains/dns-records",
         }
     }

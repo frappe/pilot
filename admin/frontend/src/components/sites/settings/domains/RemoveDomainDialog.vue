@@ -38,7 +38,7 @@ async function confirmRemove() {
   removing.value = true
   try {
     const data = await sitesApi.domains.remove(props.siteName, props.domain)
-    if (!data.ok) { error.value = apiErrorMessage(data, 'Failed to remove domain.'); return }
+    if (!data.task_id) { error.value = apiErrorMessage(data, 'Failed to remove domain.'); return }
     show.value = false
     emit('removed')
   } catch (e) {

@@ -101,8 +101,8 @@ async function continueAdd() {
   continuing.value = true
   try {
     const data = await sitesApi.domains.dnsRecords(props.siteName, value)
-    if (!data.ok) { error.value = apiErrorMessage(data, 'Could not generate DNS records.'); return }
-    dnsRecordGroups.value = toRecordGroups(data.records)
+    if (data.error) { error.value = apiErrorMessage(data, 'Could not generate DNS records.'); return }
+    dnsRecordGroups.value = toRecordGroups(data)
     step.value = 'records'
   } catch (e) {
     error.value = e.message || 'Failed to validate domain.'
@@ -116,7 +116,7 @@ async function confirmAdd() {
   adding.value = true
   try {
     const data = await sitesApi.domains.add(props.siteName, domain.value.trim())
-    if (!data.ok) { error.value = apiErrorMessage(data, 'Failed to add domain.'); return }
+    if (!data.task_id) { error.value = apiErrorMessage(data, 'Failed to add domain.'); return }
     show.value = false
     emit('added')
   } catch (e) {
