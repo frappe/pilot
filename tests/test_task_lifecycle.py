@@ -88,6 +88,16 @@ def test_run_persists_task_before_starting_wrapper(
 
     meta = json.loads((task_dir / "meta.json").read_text())
     assert task_id == TASK_ID
+    assert set(meta) == {
+        "args",
+        "bench_root",
+        "command",
+        "command_argv",
+        "exit_code",
+        "finished_at",
+        "started_at",
+        "task_id",
+    }
     assert meta["task_id"] == TASK_ID
     assert meta["command"] == "build"
     assert meta["args"] == {}
@@ -96,6 +106,25 @@ def test_run_persists_task_before_starting_wrapper(
     assert meta["exit_code"] is None
     assert (task_dir / "pid").read_text() == "4321"
     assert pickle.loads((task_dir / "on_success.bin").read_bytes()) is successful_callback
+
+
+@pytest.mark.parametrize("status", ["running", "success", "failed", "killed"])
+def test_task_reader_preserves_current_statuses(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    status: str,
+) -> None:
+    task_dir = tmp_path / "tasks" / TASK_ID
+    task_dir.mkdir(parents=True)
+    (task_dir / "meta.json").write_text(json.dumps(task_meta(tmp_path)))
+    (task_dir / "status").write_text(status)
+    (task_dir / "pid").write_text("4321")
+    monkeypatch.setattr(os, "kill", lambda pid, sig: None)
+
+    task = TaskReader(tmp_path).read_task(TASK_ID)
+
+    assert task.status == status
+    assert task.pid == 4321
 
 
 def test_kill_signals_task_pid_and_marks_it_killed(
