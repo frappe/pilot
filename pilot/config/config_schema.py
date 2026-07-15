@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from collections.abc import Mapping
 from dataclasses import dataclass, field, fields
 
@@ -86,6 +87,39 @@ def unknown_config_paths(data: Mapping) -> list[str]:
     """Dotted paths of every bench.toml key the schema does not declare, e.g.
     ``mariadb.typo`` or an unknown top-level table ``whatever``."""
     return _scan(data, _ROOT, "")
+
+
+def preserve_unknown_config(original: Mapping, replacement: Mapping) -> dict:
+    """Keep fields outside the managed schema when replacing known config."""
+    return _preserve_unknown(original, replacement, _ROOT)
+
+
+def _preserve_unknown(original: Mapping, replacement: Mapping, table: _Table) -> dict:
+    result = copy.deepcopy(dict(replacement))
+    for key, value in original.items():
+        if key in table.tables and isinstance(value, Mapping):
+            current = result.get(key, {})
+            if isinstance(current, Mapping):
+                result[key] = _preserve_unknown(value, current, table.tables[key])
+        elif key in table.arrays and isinstance(value, list):
+            current = result.get(key, [])
+            if isinstance(current, list):
+                result[key] = _preserve_unknown_array(value, current, table.arrays[key])
+        elif key not in table.keys and key not in table.tables and key not in table.arrays:
+            result[key] = copy.deepcopy(value)
+    return result
+
+
+def _preserve_unknown_array(
+    original: list,
+    replacement: list,
+    table: _Table,
+) -> list:
+    result = copy.deepcopy(replacement)
+    for index, (old_entry, new_entry) in enumerate(zip(original, result)):
+        if isinstance(old_entry, Mapping) and isinstance(new_entry, Mapping):
+            result[index] = _preserve_unknown(old_entry, new_entry, table)
+    return result
 
 
 def _scan(data: Mapping, table: _Table, prefix: str) -> list[str]:

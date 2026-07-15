@@ -11,6 +11,7 @@ from pilot.internal.atomic_file import (
     replace_private_text_locked,
 )
 from pilot.config.bench_toml import dumps_config, load_config
+from pilot.config.config_schema import preserve_unknown_config
 from pilot.internal.toml import Toml
 from pilot.config.bench_config import BenchConfig
 
@@ -75,21 +76,25 @@ class BenchTomlStore:
                 replace_private_text_locked(self.path, content)
 
     def write_flat(self, name: str, settings: dict, port_offset: int = 0) -> None:
-        """Serialise the wizard's flat-key settings dict to bench.toml.
-
-        production.enabled has no flat key (it's flipped only by `bench setup
-        production`, never by editing config) so BenchTomlBuilder always builds
-        it as the dataclass default (False). Preserve whatever's already on
-        disk, or a wizard/settings save on an already-production bench would
-        silently demote it back to "development"."""
+        """Atomically apply flat settings without replacing other TOML fields."""
         from pilot.config.bench_toml_builder import BenchTomlBuilder
 
-        config = BenchTomlBuilder(name, settings, port_offset=port_offset).build()
         with exclusive_file_lock(self.path):
             if self.path.exists():
-                raw = Toml.loads(self.path.read_text(encoding="utf-8"))
-                config.production.enabled = raw.get("production", {}).get("enabled", False)
-            replace_private_text_locked(self.path, self._serialized_config(config))
+                original = Toml.loads(self.path.read_text(encoding="utf-8"))
+                config = BenchConfig._from_dict(original)
+                BenchTomlBuilder(name, settings).apply_to(config)
+                replacement = Toml.loads(self._serialized_config(config))
+                content = Toml.dumps(preserve_unknown_config(original, replacement))
+                self._validate_serialized(content)
+            else:
+                config = BenchTomlBuilder(
+                    name,
+                    settings,
+                    port_offset=port_offset,
+                ).build()
+                content = self._serialized_config(config)
+            replace_private_text_locked(self.path, content)
 
     def write_raw(self, data: dict) -> None:
         content = Toml.dumps(data)

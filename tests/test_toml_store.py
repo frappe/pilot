@@ -255,3 +255,72 @@ def test_write_flat_preserves_production_enabled(tmp_path: Path) -> None:
     assert config.production.enabled is True
     assert config.production.process_manager == "systemd"
     assert config.admin.password == "secret"
+
+
+def test_write_flat_preserves_user_defined_keys(tmp_path: Path) -> None:
+    store = BenchTomlStore(tmp_path / "bench.toml")
+    store.write_raw(
+        {
+            "bench": {"name": "custom", "python": "3.14", "custom_flag": True},
+            "mariadb": {"root_password": "secret"},
+            "custom": {"endpoint": "https://custom.example.com"},
+        }
+    )
+
+    store.write_flat("custom", {"python": "3.13"})
+
+    raw = store.read_raw()
+    assert raw["bench"]["python"] == "3.13"
+    assert raw["bench"]["custom_flag"] is True
+    assert raw["custom"] == {"endpoint": "https://custom.example.com"}
+
+
+def test_write_flat_preserves_unknown_array_fields(tmp_path: Path) -> None:
+    store = BenchTomlStore(tmp_path / "bench.toml")
+    store.write_raw(
+        {
+            "bench": {"name": "custom", "python": "3.14"},
+            "apps": [
+                {
+                    "name": "frappe",
+                    "repo": "https://github.com/frappe/frappe",
+                    "branch": "develop",
+                    "custom_source": "mirror",
+                }
+            ],
+            "mariadb": {"root_password": "secret"},
+        }
+    )
+
+    store.write_flat("custom", {"app_branch": "version-16"})
+
+    app = store.read_raw()["apps"][0]
+    assert app["branch"] == "version-16"
+    assert app["custom_source"] == "mirror"
+
+
+def test_write_flat_preserves_known_fields_outside_the_flat_update(tmp_path: Path) -> None:
+    store = BenchTomlStore(tmp_path / "bench.toml")
+    store.write_flat("custom", {"admin_password": "secret"})
+    raw = store.read_raw()
+    raw["gunicorn"]["workers"] = 1
+    store.write_raw(raw)
+
+    store.write_flat("custom", {"python": "3.13"})
+
+    assert store.read().gunicorn.workers == 1
+
+
+def test_write_flat_can_clear_a_managed_optional_key(tmp_path: Path) -> None:
+    store = BenchTomlStore(tmp_path / "bench.toml")
+    store.write_flat(
+        "custom",
+        {
+            "admin_jwks_url": "https://auth.example.com/.well-known/jwks.json",
+            "admin_password": "secret",
+        },
+    )
+
+    store.write_flat("custom", {"admin_jwks_url": ""})
+
+    assert "jwks_url" not in store.read_raw()["admin"]

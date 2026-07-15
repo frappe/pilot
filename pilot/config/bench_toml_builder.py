@@ -182,14 +182,17 @@ class BenchTomlBuilder:
 
     def build(self) -> BenchConfig:
         config = _default_config(self._name)
-        for key, value in self._settings.items():
-            _apply_setting(config, key, value)
+        self.apply_to(config)
         if self._port_offset:
             for field in _PORT_FIELDS:
                 _set_path(config, field, _get_path(config, field) + self._port_offset)
+        return config
+
+    def apply_to(self, config: BenchConfig) -> None:
+        for key, value in self._settings.items():
+            _apply_setting(config, key, value)
         if self._name:
             config.name = self._name
-        return config
 
     def render(self) -> str:
         return dumps_config(self.build())
