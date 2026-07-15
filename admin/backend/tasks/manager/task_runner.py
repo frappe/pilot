@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import secrets
@@ -68,7 +69,13 @@ class TaskRunner:
         self._bench_root = bench_root
         self._store = TaskStore(bench_root)
 
-    def run(self, command: str, args: dict, callbacks: TaskCallbacks | None = None) -> str:
+    def run(
+        self,
+        command: str,
+        args: dict,
+        callbacks: TaskCallbacks | None = None,
+        idempotency_key: str | None = None,
+    ) -> str:
         callback_payload = {}
         for trigger, spec in (callbacks or {}).items():
             if trigger not in ("on_success", "on_failure"):
@@ -96,7 +103,20 @@ class TaskRunner:
             private_files["secrets.json"] = json.dumps(secret_args)
         if callback_payload:
             private_files["callbacks.json"] = json.dumps(callback_payload, indent=2)
-        task_dir = self._store.create_queued(meta, private_files)
+        if idempotency_key is None:
+            task_dir = self._store.create_queued(meta, private_files)
+        else:
+            idempotency_digest = self._idempotency_digest(idempotency_key)
+            request_fingerprint = self._request_fingerprint(command, args)
+            creation = self._store.create_idempotent_queued(
+                meta,
+                private_files,
+                idempotency_digest,
+                request_fingerprint,
+            )
+            if not creation.created:
+                return creation.task_id
+            task_dir = creation.task_dir
         secret_path = task_dir / "secrets.json"
 
         process_kwargs = {
@@ -240,6 +260,21 @@ class TaskRunner:
     @staticmethod
     def _generate_task_id() -> str:
         return datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3)
+
+    @staticmethod
+    def _idempotency_digest(key: str) -> str:
+        if not isinstance(key, str) or not key or len(key) > 255:
+            raise ValueError("Idempotency-Key must contain between 1 and 255 characters")
+        return hashlib.sha256(key.encode()).hexdigest()
+
+    @staticmethod
+    def _request_fingerprint(command: str, args: dict) -> str:
+        request = json.dumps(
+            {"command": command, "args": redact_task_args(args)},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(request.encode()).hexdigest()
 
     def _purge_old_tasks(self) -> None:
         tasks_dir = self._bench_root / "tasks"

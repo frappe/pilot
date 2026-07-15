@@ -18,7 +18,7 @@ import admin.backend.tasks.callbacks as callback_module
 from admin.backend.tasks.manager.task_reader import TaskReader
 from admin.backend.tasks.manager.task_runner import TaskRunner
 from admin.backend.tasks.manager.wrapper import callback_handler, run_with_syslog_output
-from pilot.exceptions import TaskNotFoundError, TaskNotRunningError
+from pilot.exceptions import TaskConflictError, TaskNotFoundError, TaskNotRunningError
 
 
 TASK_ID = "20260715-120000-aabbcc"
@@ -135,6 +135,53 @@ def test_run_rejects_unknown_callback_operation(tmp_path: Path) -> None:
                 "on_success": {"operation": "import-anything", "args": {}},
                 "on_failure": None,
             },
+        )
+
+
+def test_run_reuses_active_task_for_same_idempotency_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task_ids = iter([TASK_ID, "20260715-120001-bbccdd"])
+    started = []
+
+    def start_process(*args, **kwargs):
+        started.append(args)
+        return SimpleNamespace(pid=4321)
+
+    monkeypatch.setattr(TaskRunner, "_generate_task_id", staticmethod(lambda: next(task_ids)))
+    monkeypatch.setattr(task_runner_module.subprocess, "Popen", start_process)
+    runner = TaskRunner(tmp_path)
+
+    first = runner.run("build", {}, idempotency_key="client-request-key")
+    duplicate = runner.run("build", {}, idempotency_key="client-request-key")
+
+    metadata_text = (tmp_path / "tasks" / TASK_ID / "meta.json").read_text()
+    assert duplicate == first == TASK_ID
+    assert len(started) == 1
+    assert "client-request-key" not in metadata_text
+    assert "idempotency_digest" in metadata_text
+
+
+def test_run_rejects_idempotency_key_reuse_for_different_request(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task_ids = iter([TASK_ID, "20260715-120001-bbccdd"])
+    monkeypatch.setattr(TaskRunner, "_generate_task_id", staticmethod(lambda: next(task_ids)))
+    monkeypatch.setattr(
+        task_runner_module.subprocess,
+        "Popen",
+        lambda *args, **kwargs: SimpleNamespace(pid=4321),
+    )
+    runner = TaskRunner(tmp_path)
+    runner.run("build", {}, idempotency_key="client-request-key")
+
+    with pytest.raises(TaskConflictError, match="another active task"):
+        runner.run(
+            "build",
+            {"app": "frappe"},
+            idempotency_key="client-request-key",
         )
 
 

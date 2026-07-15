@@ -9,7 +9,7 @@ import pytest
 import admin.backend.tasks.manager.task_store as task_store_module
 from admin.backend.tasks.manager.task_state import TaskStatus
 from admin.backend.tasks.manager.task_store import TaskStore
-from pilot.exceptions import TaskNotFoundError
+from pilot.exceptions import TaskConflictError, TaskNotFoundError
 
 TASK_ID = "20260715-120000-aabbcc"
 
@@ -126,3 +126,66 @@ def test_store_rejects_missing_and_unsafe_task_paths(tmp_path: Path) -> None:
         store.read_status(TASK_ID)
     with pytest.raises(TaskNotFoundError, match="Invalid task ID"):
         store.read_status("../outside")
+
+
+def test_active_idempotent_submission_returns_existing_task(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    first = store.create_idempotent_queued(
+        metadata(),
+        {},
+        idempotency_digest="key-digest",
+        request_fingerprint="request-digest",
+    )
+    duplicate_metadata = {**metadata(), "task_id": "20260715-120001-bbccdd"}
+
+    duplicate = store.create_idempotent_queued(
+        duplicate_metadata,
+        {},
+        idempotency_digest="key-digest",
+        request_fingerprint="request-digest",
+    )
+
+    assert first.created is True
+    assert duplicate.created is False
+    assert duplicate.task_id == TASK_ID
+    assert not store.task_dir(duplicate_metadata["task_id"]).exists()
+
+
+def test_active_idempotency_key_rejects_another_request(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    store.create_idempotent_queued(
+        metadata(),
+        {},
+        idempotency_digest="key-digest",
+        request_fingerprint="first-request",
+    )
+
+    with pytest.raises(TaskConflictError, match="another active task"):
+        store.create_idempotent_queued(
+            {**metadata(), "task_id": "20260715-120001-bbccdd"},
+            {},
+            idempotency_digest="key-digest",
+            request_fingerprint="different-request",
+        )
+
+
+def test_terminal_task_does_not_block_idempotent_retry(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    store.create_idempotent_queued(
+        metadata(),
+        {},
+        idempotency_digest="key-digest",
+        request_fingerprint="request-digest",
+    )
+    store.transition(TASK_ID, TaskStatus.QUEUED, TaskStatus.KILLED)
+    retry_id = "20260715-120001-bbccdd"
+
+    retry = store.create_idempotent_queued(
+        {**metadata(), "task_id": retry_id},
+        {},
+        idempotency_digest="key-digest",
+        request_fingerprint="request-digest",
+    )
+
+    assert retry.created is True
+    assert retry.task_id == retry_id

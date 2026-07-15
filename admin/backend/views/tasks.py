@@ -13,7 +13,7 @@ from admin.backend.tasks.manager.task_args import task_requires_secrets
 from admin.backend.tasks.manager.events import sse_message
 from admin.backend.tasks.manager.task_reader import TaskReader
 from admin.backend.tasks.manager.task_runner import TaskRunner
-from pilot.exceptions import TaskNotFoundError, TaskNotRunningError
+from pilot.exceptions import TaskConflictError, TaskNotFoundError, TaskNotRunningError
 
 tasks_bp = Blueprint("tasks", __name__)
 
@@ -95,7 +95,13 @@ def run_task():
     args = data
 
     try:
-        task_id = TaskRunner(bench_root).run(command, args)
+        task_id = TaskRunner(bench_root).run(
+            command,
+            args,
+            idempotency_key=request.headers.get("Idempotency-Key"),
+        )
+    except TaskConflictError as error:
+        return jsonify({"ok": False, "error": str(error)}), 409
     except ValueError as error:
         return jsonify({"ok": False, "error": str(error)}), 400
     except Exception as error:

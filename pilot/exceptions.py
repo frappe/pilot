@@ -21,6 +21,10 @@ class TaskNotRunningError(BenchError):
     pass
 
 
+class TaskConflictError(BenchError):
+    pass
+
+
 class MigrateError(BenchError):
     pass
 

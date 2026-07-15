@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from admin.backend.tasks.manager.task_state import (
+    ACTIVE_TASK_STATUSES,
     ALLOWED_TASK_TRANSITIONS,
     TERMINAL_TASK_STATUSES,
     TaskStatus,
@@ -24,6 +25,7 @@ def test_task_states_define_the_complete_lifecycle() -> None:
         TaskStatus.FAILED,
         TaskStatus.KILLED,
     }
+    assert ACTIVE_TASK_STATUSES == {TaskStatus.QUEUED, TaskStatus.RUNNING}
 
 
 def test_task_transitions_are_defined_for_every_state() -> None:
