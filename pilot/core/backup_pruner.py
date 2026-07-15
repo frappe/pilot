@@ -62,4 +62,4 @@ class BackupPruner:
     def _offsite(self) -> OffsiteBackup | None:
         if not self.bench.config.s3.is_configured:
             return None
-        return OffsiteBackup.from_config(self.bench.config.s3)
+        return OffsiteBackup.from_config(self.bench.config.s3, self.bench.path)

@@ -715,7 +715,7 @@ def offsite_backup_urls(name: str, timestamp: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     config = BenchTomlStore.for_bench(bench_root).read()
     try:
-        offsite_backup = OffsiteBackup.from_config(config.s3)
+        offsite_backup = OffsiteBackup.from_config(config.s3, bench_root)
         files = offsite_backup.get_backup(name, timestamp)
         if not files:
             return jsonify({"error": f"No offsite backup found for {timestamp}"}), 404

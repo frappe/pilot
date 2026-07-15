@@ -30,7 +30,7 @@ class DeleteBackupTask(BaseTask):
             return False
 
         try:
-            offsite_backup = OffsiteBackup.from_config(self.bench.config.s3)
+            offsite_backup = OffsiteBackup.from_config(self.bench.config.s3, self.bench_root)
             offsite_backup.delete(self.site, match.group(1), filename)
             print(f"Deleted from S3: {filename}")
             return True

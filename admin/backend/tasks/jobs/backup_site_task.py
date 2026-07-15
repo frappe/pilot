@@ -69,7 +69,7 @@ class BackupSiteTask(BaseTask):
             return False
         try:
             self._step("backup_upload", "Uploading backup to S3")
-            offsite_backup = OffsiteBackup.from_config(self.bench.config.s3)
+            offsite_backup = OffsiteBackup.from_config(self.bench.config.s3, self.bench_root)
             for backup_file in backup_files:
                 offsite_backup.upload(self.site, timestamp, backup_file)
             return True

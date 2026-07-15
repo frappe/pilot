@@ -61,7 +61,7 @@ class BackupReader:
         if not self.bench.config.s3.is_configured:
             return
 
-        offsite_backup = OffsiteBackup.from_config(self.bench.config.s3)
+        offsite_backup = OffsiteBackup.from_config(self.bench.config.s3, self.bench.path)
         for timestamp, files_by_type in offsite_backup.list_backups(self.site_name, limit=limit).items():
             backup_set = sets.setdefault(timestamp, BackupSet(timestamp, self._parse_timestamp(timestamp), []))
             backup_set.is_offsite = True
