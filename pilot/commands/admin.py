@@ -14,12 +14,6 @@ _ADMIN_RELEASE_URL = "https://github.com/frappe/bench-cli/releases/download/late
 _MIN_NODE = (20, 11)
 
 
-def _cli_root() -> Path:
-    import pilot as _pkg
-
-    return Path(_pkg.__file__).parent.parent
-
-
 def download_admin_frontend(cli_root: Path) -> bool:
     """Download and extract the pre-built admin frontend. Returns True on success."""
     import tempfile
@@ -67,9 +61,10 @@ class BuildAdminCommand(Command):
         self.force_build = force_build
 
     def run(self) -> None:
+        from pilot.loader import cli_root
         from pilot.utils import run_command
 
-        if not self.force_build and download_admin_frontend(_cli_root()):
+        if not self.force_build and download_admin_frontend(cli_root()):
             return
         if self.force_build:
             print("Skipping download, building from source...")
@@ -86,7 +81,9 @@ class BuildAdminCommand(Command):
         print("\nAdmin frontend rebuilt successfully.")
 
     def _find_frontend(self) -> Path:
-        candidate = _cli_root() / "admin" / "frontend"
+        from pilot.loader import cli_root
+
+        candidate = cli_root() / "admin" / "frontend"
         if (candidate / "package.json").exists():
             return candidate
         raise BenchError("admin/frontend not found. This command requires the bench-cli source directory with admin/frontend/.")

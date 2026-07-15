@@ -67,12 +67,11 @@ class RuntimeVersionReader:
         return result.stdout.decode().strip()
 
     def _bench_admin_commit(self) -> str:
-        import pilot as _pkg
+        from pilot.loader import cli_root
 
-        cli_root = Path(_pkg.__file__).parent.parent
         try:
             result = subprocess.run(
-                ["git", "-C", str(cli_root), "rev-parse", "--short", "HEAD"],
+                ["git", "-C", str(cli_root()), "rev-parse", "--short", "HEAD"],
                 capture_output=True,
                 text=True,
                 timeout=5,

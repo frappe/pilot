@@ -5,12 +5,9 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request
 
+from pilot.loader import cli_root
+
 updates_bp = Blueprint("updates", __name__)
-
-
-def _cli_root() -> Path:
-    import pilot as _pkg
-    return Path(_pkg.__file__).parent.parent
 
 
 @updates_bp.route("/")
@@ -101,19 +98,19 @@ def _log_subject(path: Path, ref: str) -> str:
 
 @updates_bp.route("/cli")
 def get_cli_update():
-    cli_root = _cli_root()
+    root = cli_root()
     do_fetch = request.args.get("fetch") == "1"
 
-    branch = _current_branch(cli_root)
+    branch = _current_branch(root)
     if do_fetch:
-        _git_fetch(cli_root, branch)
+        _git_fetch(root, branch)
 
     remote_ref = f"origin/{branch}"
-    behind = _count(cli_root, f"HEAD..{remote_ref}")
-    remote_commit = _log_subject(cli_root, remote_ref)
-    local_commit = _log_subject(cli_root, "HEAD")
+    behind = _count(root, f"HEAD..{remote_ref}")
+    remote_commit = _log_subject(root, remote_ref)
+    local_commit = _log_subject(root, "HEAD")
 
-    fetch_head = cli_root / ".git" / "FETCH_HEAD"
+    fetch_head = root / ".git" / "FETCH_HEAD"
     last_fetched = fetch_head.stat().st_mtime if fetch_head.exists() else None
 
     return jsonify({

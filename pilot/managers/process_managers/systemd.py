@@ -7,7 +7,8 @@ from typing import override
 
 from pilot.managers.admin_env_manager import AdminEnvManager
 from pilot.managers.gunicorn_manager import GunicornManager
-from pilot.managers.process_manager import ProcessDefinition, _cli_root
+from pilot.loader import cli_root
+from pilot.managers.process_manager import ProcessDefinition
 from pilot.managers.process_managers.base import ManagedProcessManager, UnitGroup, ServiceRenderer
 from pilot.utils import run_command
 
@@ -89,7 +90,7 @@ class SystemdProcessManager(ManagedProcessManager):
 
     @override
     def write_config(self) -> None:
-        AdminEnvManager(_cli_root()).ensure()
+        AdminEnvManager(cli_root()).ensure()
         self._ensure_redis_config()
         self._ensure_gunicorn_config()
         GunicornManager(self.bench).generate_admin_config()
@@ -238,8 +239,8 @@ class SystemdProcessManager(ManagedProcessManager):
         return ["systemctl", "--user", *args]
 
     def _admin_service_text(self) -> str:
-        cli_root = _cli_root()
-        gunicorn = AdminEnvManager(cli_root).gunicorn
+        root = cli_root()
+        gunicorn = AdminEnvManager(root).gunicorn
         admin_conf = GunicornManager(self.bench).admin_config_path
         pd = ProcessDefinition(
             name="admin",
@@ -247,11 +248,11 @@ class SystemdProcessManager(ManagedProcessManager):
             log_file=self.bench.logs_path / "admin.log",
             env={
                 "BENCH_ADMIN_ROOT": str(self.bench.path),
-                "PYTHONPATH": str(cli_root),
+                "PYTHONPATH": str(root),
                 "BENCH_ADMIN_IDLE_TIMEOUT": str(_ADMIN_IDLE_TIMEOUT),
                 "MALLOC_ARENA_MAX": "2",
             },
-            working_dir=cli_root,
+            working_dir=root,
         )
         return SystemdRenderer(self.bench.config.name).admin_service(pd, self._admin_socket_name())
 

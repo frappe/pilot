@@ -726,7 +726,7 @@ def test_requirements_installs_js_for_app_with_package_json(tmp_path: Path) -> N
 def test_upgrade_command_installs_admin_python_deps() -> None:
     from pilot.commands.upgrade import UpgradeCommand
 
-    with patch("pilot.commands.admin._cli_root", return_value=Path("/tmp/pilot")), \
+    with patch("pilot.loader.cli_root", return_value=Path("/tmp/pilot")), \
          patch("pilot.utils.run_command") as mock_run_command, \
          patch("pilot.commands.admin.download_admin_frontend", return_value=True), \
          patch("pilot.managers.admin_env_manager.AdminEnvManager") as mock_admin_env:
@@ -1343,7 +1343,7 @@ def test_start_rebuilds_admin_when_source_changed(tmp_path: Path, monkeypatch: p
 
     cli_root = _admin_source_checkout(tmp_path, src_mtime=100, built_mtime=1)
     build = MagicMock()
-    monkeypatch.setattr(admin_mod, "_cli_root", lambda: cli_root)
+    monkeypatch.setattr("pilot.loader.cli_root", lambda: cli_root)
     monkeypatch.setattr(admin_mod, "BuildAdminCommand", build)
 
     RunCommand(make_bench(tmp_path))._ensure_admin_dist()
@@ -1357,7 +1357,7 @@ def test_start_skips_admin_rebuild_when_fresh(tmp_path: Path, monkeypatch: pytes
 
     cli_root = _admin_source_checkout(tmp_path, src_mtime=1, built_mtime=100)
     build = MagicMock()
-    monkeypatch.setattr(admin_mod, "_cli_root", lambda: cli_root)
+    monkeypatch.setattr("pilot.loader.cli_root", lambda: cli_root)
     monkeypatch.setattr(admin_mod, "BuildAdminCommand", build)
 
     RunCommand(make_bench(tmp_path))._ensure_admin_dist()

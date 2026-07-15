@@ -87,11 +87,12 @@ class RunCommand(Command):
         # when dist is missing or the frontend source changed since the last build,
         # so `bench start` reflects local UI edits without a manual `build-admin`.
         # A non-source install (no admin/frontend) just downloads the prebuilt copy.
-        from pilot.commands.admin import BuildAdminCommand, _cli_root, download_admin_frontend
+        from pilot.commands.admin import BuildAdminCommand, download_admin_frontend
+        from pilot.loader import cli_root
 
-        cli_root = _cli_root()
-        dist = cli_root / "admin" / "backend" / "static" / "dist"
-        frontend = cli_root / "admin" / "frontend"
+        root = cli_root()
+        dist = root / "admin" / "backend" / "static" / "dist"
+        frontend = root / "admin" / "frontend"
         has_source = (frontend / "package.json").exists()
 
         if not (dist / "assets").exists():
@@ -99,7 +100,7 @@ class RunCommand(Command):
             if has_source:
                 BuildAdminCommand(force_build=True).run()
             else:
-                download_admin_frontend(cli_root)
+                download_admin_frontend(root)
             return
 
         if has_source and self._admin_source_is_newer(frontend, dist):
@@ -131,23 +132,24 @@ class RunCommand(Command):
         return False
 
     def _start_wizard(self) -> None:
-        from pilot.commands.admin import download_admin_frontend, _cli_root
+        from pilot.commands.admin import download_admin_frontend
+        from pilot.loader import cli_root
         from pilot.managers.admin_env_manager import AdminEnvManager
 
-        cli_root = _cli_root()
-        admin_mgr = AdminEnvManager(cli_root)
+        root = cli_root()
+        admin_mgr = AdminEnvManager(root)
         admin_mgr.ensure()
 
-        assets = cli_root / "admin" / "backend" / "static" / "dist" / "assets"
+        assets = root / "admin" / "backend" / "static" / "dist" / "assets"
         if not assets.exists():
             print("Downloading admin frontend...")
-            download_admin_frontend(cli_root)
+            download_admin_frontend(root)
 
         port = self._admin_port()
         print("\nBench not initialized. Starting setup wizard...")
         print(f"  Open http://localhost:{port} in your browser\n")
 
-        env = {**os.environ, "PYTHONPATH": str(cli_root)}
+        env = {**os.environ, "PYTHONPATH": str(root)}
         subprocess.run(
             [
                 str(admin_mgr.python),

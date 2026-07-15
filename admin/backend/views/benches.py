@@ -17,7 +17,7 @@ from admin.backend.bench_helpers import (
     wizard_responds,
     workload_running,
 )
-from pilot.commands.admin import _cli_root
+from pilot.loader import cli_root
 from pilot.commands.new import NewCommand
 from pilot.config.toml_store import BenchTomlStore
 from pilot.exceptions import BenchError
@@ -111,11 +111,11 @@ def run_action(name, action_name):
     if not target_config.get("production", {}).get("enabled"):
         return jsonify({"ok": False, "error": "Start/stop/restart from here is only supported for production benches."}), 400
 
-    cli_root = _cli_root()
+    root = cli_root()
     try:
         result = subprocess.run(
-            [str(cli_root / "bench"), "-b", name, action_name],
-            cwd=cli_root, capture_output=True, text=True, timeout=60,
+            [str(root / "bench"), "-b", name, action_name],
+            cwd=root, capture_output=True, text=True, timeout=60,
         )
     except subprocess.TimeoutExpired:
         return jsonify({"ok": False, "error": f"'{action_name}' timed out."}), 500
@@ -141,11 +141,11 @@ def drop(name):
     if sites:
         return jsonify({"ok": False, "error": f"Bench '{name}' has {sites} site(s). Drop them first."}), 400
 
-    cli_root = _cli_root()
+    root = cli_root()
     try:
         result = subprocess.run(
-            [str(cli_root / "bench"), "--yes", "-b", name, "drop"],
-            cwd=cli_root, capture_output=True, text=True, timeout=180,
+            [str(root / "bench"), "--yes", "-b", name, "drop"],
+            cwd=root, capture_output=True, text=True, timeout=180,
         )
     except subprocess.TimeoutExpired:
         return jsonify({"ok": False, "error": "Drop timed out."}), 500
@@ -222,7 +222,7 @@ def new():
     new_toml = BenchTomlStore.for_bench(new_dir).read_raw()
     new_port = new_toml["admin"]["port"]
 
-    cli_root = _cli_root()
+    root = cli_root()
     admin_cfg = new_toml.get("admin", {})
 
     if current_is_production(bench_root):
@@ -260,11 +260,11 @@ def new():
         k: v for k, v in os.environ.items()
         if not k.startswith("WERKZEUG_") and not k.startswith("BENCH_ADMIN_")
     }
-    spawn_env["PYTHONPATH"] = str(cli_root)
+    spawn_env["PYTHONPATH"] = str(root)
     subprocess.Popen(
-        [str(cli_root / ".admin-venv" / "bin" / "python"), "-m", "admin.backend.server",
+        [str(root / ".admin-venv" / "bin" / "python"), "-m", "admin.backend.server",
          "--bench-root", str(new_dir), "--port", str(new_port), "--timeout", "7200", "--wizard"],
-        cwd=str(cli_root), env=spawn_env,
+        cwd=str(root), env=spawn_env,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
     )
     return jsonify({"name": name, "port": new_port, "wizard_at_domain": False,

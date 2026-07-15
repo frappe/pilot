@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import override
 
 from pilot.managers.admin_env_manager import AdminEnvManager
-from pilot.managers.process_manager import ProcessDefinition, _cli_root
+from pilot.loader import cli_root
+from pilot.managers.process_manager import ProcessDefinition
 from pilot.managers.process_managers.base import ManagedProcessManager, UnitGroup, ServiceRenderer
 from pilot.utils import run_command
 
@@ -100,7 +101,7 @@ class SupervisorProcessManager(ManagedProcessManager):
 
     @override
     def write_config(self) -> None:
-        AdminEnvManager(_cli_root()).ensure()
+        AdminEnvManager(cli_root()).ensure()
         self._ensure_redis_config()
         self._ensure_gunicorn_config()
         self.supervisor_dir.mkdir(parents=True, exist_ok=True)

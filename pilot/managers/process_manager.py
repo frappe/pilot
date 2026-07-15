@@ -12,17 +12,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.exceptions import BenchError
+from pilot.loader import cli_root
 from pilot.managers.admin_env_manager import AdminEnvManager
 from pilot.managers.gunicorn_manager import GunicornManager
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
-
-
-def _cli_root() -> Path:
-    import pilot as _pkg
-
-    return Path(_pkg.__file__).parent.parent
 
 
 def _tcp_port_open(port: int, host: str = "127.0.0.1") -> bool:
@@ -104,7 +99,7 @@ class ProcessManager:
         return self.bench.pids_path / "bench.pid"
 
     def write_config(self) -> None:
-        AdminEnvManager(_cli_root()).ensure()
+        AdminEnvManager(cli_root()).ensure()
         self._ensure_redis_config()
         self._ensure_gunicorn_config()
         lines = [f"{pd.name}: {pd.command}\n" for pd in self._process_definitions()]
@@ -382,19 +377,18 @@ class ProcessManager:
         return self._build_admin_definition("--dev")
 
     def _build_admin_definition(self, mode_flag: str) -> ProcessDefinition:
-        cli_root = _cli_root()
-        python = AdminEnvManager(cli_root).python
+        root = cli_root()
+        python = AdminEnvManager(root).python
         cfg = self.bench.config.admin
         return ProcessDefinition(
             name="admin",
             command=f"{python} -m admin.backend.server --bench-root {self.bench.path} --port {cfg.port} --timeout {cfg.timeout} {mode_flag}",
             log_file=self.bench.logs_path / "admin.log",
-            env={"PYTHONPATH": str(cli_root)},
+            env={"PYTHONPATH": str(root)},
         )
 
     def _admin_frontend_dev_definition(self) -> ProcessDefinition:
-        cli_root = _cli_root()
-        frontend_dir = cli_root / "admin" / "frontend"
+        frontend_dir = cli_root() / "admin" / "frontend"
         cfg = self.bench.config.admin
         return ProcessDefinition(
             name="admin-ui",
