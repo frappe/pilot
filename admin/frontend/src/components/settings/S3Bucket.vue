@@ -109,7 +109,7 @@ async function save() {
         region: region.value,
       },
     })
-    if (result.ok) {
+    if (!result.error) {
       secretKey.value = ''
       toast.success('S3 settings saved')
       await load()
@@ -127,7 +127,7 @@ async function disconnect() {
   disconnecting.value = true
   try {
     const result = await settingsApi.update({ s3: { disconnect: true } })
-    if (result.ok) {
+    if (!result.error) {
       accessKey.value = ''
       secretKey.value = ''
       bucket.value = ''

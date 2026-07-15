@@ -73,12 +73,11 @@ async function save() {
   try {
     const payload = groups.value.map((group) => ({ queues: queueList(group.queues), count: Number(group.count) }))
     const result = await settingsApi.update({ workers: payload })
-    if (!result.ok) {
+    if (result.error) {
       error.value = apiErrorMessage(result, 'Failed to save.')
       return
     }
     toast.success(result.restarted ? 'Saved & restarted' : 'Saved')
-    if (result.restart_error) toast.error(result.restart_error)
   } catch (e) {
     error.value = e.message || 'Failed to save.'
   } finally {

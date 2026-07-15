@@ -24,6 +24,13 @@ class _SettingsUpdateRejected(Exception):
     pass
 
 
+class _SettingsApplyFailed(Exception):
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
 _RESTART_KEYS = {
     ("bench", "python"),
     ("bench", "http_port"),
@@ -286,6 +293,7 @@ def _non_admin_supervisor_programs(conf: Path, bench_name: str) -> list[str]:
         capture_output=True,
         text=True,
         timeout=30,
+        check=True,
     )
     return [line.split()[0] for line in result.stdout.splitlines() if line.strip() and not line.split()[0].endswith("-admin")]
 
@@ -313,31 +321,60 @@ def _regenerate_nginx(bench_root: Path, config: BenchConfig) -> None:
     manager.install_config()
 
 
-def _restart_supervisor(manager, bench_name: str) -> tuple[bool, str | None]:
+def _restart_supervisor(manager, bench_name: str) -> bool:
     if not manager.is_alive():
-        return False, None
-    subprocess.run([*manager._supervisorctl(), "reread"], capture_output=True, timeout=10)
-    subprocess.run([*manager._supervisorctl(), "update"], capture_output=True, timeout=10)
+        return False
+    subprocess.run(
+        [*manager._supervisorctl(), "reread"],
+        capture_output=True,
+        timeout=10,
+        check=True,
+    )
+    subprocess.run(
+        [*manager._supervisorctl(), "update"],
+        capture_output=True,
+        timeout=10,
+        check=True,
+    )
     programs = _non_admin_supervisor_programs(manager.supervisor_conf_path, bench_name)
     if not programs:
-        return False, None
-    result = subprocess.run([*manager._supervisorctl(), "restart", *programs], capture_output=True, text=True, timeout=30)
-    return (result.returncode == 0), (result.stderr or result.stdout if result.returncode != 0 else None)
+        return False
+    subprocess.run(
+        [*manager._supervisorctl(), "restart", *programs],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=True,
+    )
+    return True
 
 
-def _restart_systemd(manager) -> tuple[bool, str | None]:
+def _restart_systemd(manager) -> bool:
     if not manager.is_running():
-        return False, None
+        return False
     env = manager._systemctl_env()
-    subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True, env=env, timeout=10)
+    subprocess.run(
+        ["systemctl", "--user", "daemon-reload"],
+        capture_output=True,
+        env=env,
+        timeout=10,
+        check=True,
+    )
     non_admin_units = [manager._unit_name(pd.name) for pd in manager._prod_process_definitions() if pd.name != "admin"]
     if not non_admin_units:
-        return False, None
-    result = subprocess.run([*manager._systemctl(), "restart", *non_admin_units], capture_output=True, text=True, timeout=60, env=env)
-    return (result.returncode == 0), (result.stderr or result.stdout if result.returncode != 0 else None)
+        return False
+    subprocess.run(
+        [*manager._systemctl(), "restart", *non_admin_units],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=env,
+        check=True,
+    )
+    return True
 
 
-def _do_restart(bench_root: Path, config: BenchConfig) -> tuple[bool, str | None]:
+def _do_restart(bench_root: Path, config: BenchConfig) -> bool:
     from pilot.core.bench import Bench
     from pilot.managers.process_manager import ProcessManager
     from pilot.managers.process_managers.supervisor import SupervisorProcessManager
@@ -349,7 +386,53 @@ def _do_restart(bench_root: Path, config: BenchConfig) -> tuple[bool, str | None
         return _restart_supervisor(manager, config.name)
     if isinstance(manager, SystemdProcessManager):
         return _restart_systemd(manager)
-    return False, None
+    return False
+
+
+def _apply_post_save_changes(
+    bench_root: Path,
+    config: BenchConfig,
+    old_restart: dict,
+    old_firewall: dict,
+    old_s3_config: dict,
+) -> bool:
+    restarted = False
+    if _needs_restart(old_restart, _restart_trigger_values(config)):
+        try:
+            _regenerate_configs(bench_root, config)
+        except Exception as error:
+            raise _SettingsApplyFailed(
+                "configuration_generation_failed",
+                "Settings were saved, but service configuration could not be regenerated.",
+            ) from error
+        try:
+            restarted = _do_restart(bench_root, config)
+        except Exception as error:
+            raise _SettingsApplyFailed(
+                "service_restart_failed",
+                "Settings were saved, but running services could not be restarted.",
+            ) from error
+
+    if config.production.enabled and _firewall_payload(config) != old_firewall:
+        try:
+            _regenerate_nginx(bench_root, config)
+        except Exception as error:
+            raise _SettingsApplyFailed(
+                "nginx_apply_failed",
+                "Settings were saved, but nginx could not apply them.",
+            ) from error
+
+    if _s3_payload(config) != old_s3_config:
+        try:
+            bench = Bench(BenchConfig.from_file(bench_root / "bench.toml"), bench_root)
+            bench.sync_s3_credentials(config.s3)
+        except Exception as error:
+            raise _SettingsApplyFailed(
+                "s3_sync_failed",
+                "Settings were saved, but site backup configuration could not be synchronized.",
+            ) from error
+
+    return restarted
 
 
 # ── Response ──────────────────────────────────────────────────────────────────
@@ -471,37 +554,15 @@ def update_settings():
     except Exception:
         return error_response("settings_update_failed", "Could not update settings.", 500)
 
-    restarted, restart_error = False, None
-    if _needs_restart(old_restart, _restart_trigger_values(config)):
-        try:
-            _regenerate_configs(bench_root, config)
-        except Exception:
-            return error_response(
-                "configuration_generation_failed",
-                "Could not regenerate service configuration.",
-                500,
-            )
-        restarted, restart_error = _do_restart(bench_root, config)
+    try:
+        restarted = _apply_post_save_changes(
+            bench_root,
+            config,
+            old_restart,
+            old_firewall,
+            old_s3_config,
+        )
+    except _SettingsApplyFailed as error:
+        return error_response(error.code, error.message, 500, {"saved": True})
 
-    # Firewall rules only affect nginx: regenerate + reload the vhosts (no
-    # workload restart). Only meaningful once the bench is in production.
-    nginx_error = None
-    if config.production.enabled and _firewall_payload(config) != old_firewall:
-        try:
-            _regenerate_nginx(bench_root, config)
-        except Exception as error:
-            nginx_error = str(error)
-
-    # Sync common site config with the patched s3 settings
-    if _s3_payload(config) != old_s3_config:
-        bench = Bench(BenchConfig.from_file(bench_root / "bench.toml"), bench_root)
-        bench.sync_s3_credentials(config.s3)
-
-    return jsonify(
-        {
-            "ok": True,
-            "restarted": restarted,
-            "restart_error": restart_error,
-            "nginx_error": nginx_error,
-        }
-    )
+    return jsonify({"restarted": restarted})

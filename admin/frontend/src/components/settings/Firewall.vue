@@ -124,12 +124,11 @@ async function save() {
       })),
     }
     const result = await settingsApi.update({ firewall: payload })
-    if (!result.ok) {
+    if (result.error) {
       error.value = apiErrorMessage(result, 'Failed to save.')
       return
     }
     toast.success('Firewall updated')
-    if (result.nginx_error) toast.error(result.nginx_error)
   } catch (e) {
     error.value = e.message || 'Failed to save.'
   } finally {
