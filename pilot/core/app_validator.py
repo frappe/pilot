@@ -1,18 +1,62 @@
 from __future__ import annotations
 
 import ast
-import json
-import subprocess
-import sys
-import tomllib
+import shutil
+import tempfile
 import typing
-from functools import cached_property
 from pathlib import Path
 
-from pilot.exceptions import AppValidationError
+from pilot.exceptions import AppValidationError, BenchError, CommandError
+from pilot.utils import run_command
 
 if typing.TYPE_CHECKING:
     from pilot.core.app import App
+
+
+class TmpEnv:
+    """A throwaway venv an app is installed into, to validate the install
+    succeeds before it touches the bench's real environment."""
+
+    def __init__(self) -> None:
+        self._dir: str | None = None
+
+    @property
+    def path(self) -> Path:
+        if self._dir is None:
+            raise BenchError("Temporary environment not created yet.")
+        return Path(self._dir)
+
+    def create(self, frappe_path: Path) -> TmpEnv:
+        self._dir = tempfile.mkdtemp(prefix="pilot-app-validate-")
+        run_command([self._uv(), "venv", str(self.path)], stream_output=True)
+        try:
+            self._pip_install(str(self.path / "bin" / "python"), frappe_path)
+        except CommandError as exc:
+            raise AppValidationError(
+                f"Failed to install frappe into the validation env:\n{exc.message}"
+            )
+        return self
+
+    def install_app(self, app: "App") -> None:
+        try:
+            self._pip_install(str(self.path / "bin" / "python"), app.path)
+        except CommandError as exc:
+            raise AppValidationError(f"'{app.config.name}' failed to install:\n{exc.message}")
+
+    def _pip_install(self, python: str, path: Path) -> None:
+        run_command([self._uv(), "pip", "install", "--python", python, str(path)])
+
+    def delete(self) -> None:
+        if self._dir is not None:
+            shutil.rmtree(self._dir, ignore_errors=True)
+            self._dir = None
+
+    @staticmethod
+    def _uv() -> str:
+        uv = shutil.which("uv")
+        if not uv:
+            raise BenchError("uv not found — run the pilot install script to set it up")
+        return uv
 
 
 class Validator:
@@ -23,10 +67,18 @@ class Validator:
     def __init__(self, app: "App"):
         self.app = app
         self.module_path = app.path / app.module_name
+        self.tmp_env = self.create_tmp_env_with_frappe_app()
 
     def validate(self) -> None:
         self.validate_repo_structure()
         self.validate_syntax()
+        try:
+            self.tmp_env.install_app(self.app)
+        finally:
+            self.tmp_env.delete()
+
+    def create_tmp_env_with_frappe_app(self) -> TmpEnv:
+        return TmpEnv().create(self.app.bench.apps_path / "frappe")
 
     def validate_repo_structure(self) -> None:
         if not (self.app.path / "pyproject.toml").exists():
@@ -64,128 +116,3 @@ class Validator:
 
     def _python_files(self) -> list[Path]:
         return list(self.module_path.rglob("*.py"))
-
-    @staticmethod
-    def _top_level_package(module: str) -> str:
-        return module.split(".")[0]
-
-    def _distribution_name(self, module: str) -> str:
-        """Map an import's top-level name to its installed distribution name.
-
-        `import bs4` and `pip install beautifulsoup4` refer to the same
-        package under different names. Reads that mapping from packages
-        already installed in the bench's own env (frappe and every app
-        installed before this one) rather than a hand-maintained alias
-        list — the app being validated isn't installed yet, so its own
-        distribution metadata doesn't exist to consult.
-        """
-        root = self._top_level_package(module)
-        return self._bench_import_to_distribution.get(root, root)
-
-    @cached_property
-    def _bench_import_to_distribution(self) -> dict[str, str]:
-        bench_python = self.app.bench.python
-        if not bench_python.exists():
-            return {}
-        result = subprocess.run(
-            [
-                str(bench_python),
-                "-c",
-                "import importlib.metadata, json; print(json.dumps(importlib.metadata.packages_distributions()))",
-            ],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            return {}
-        try:
-            return {
-                module: names[0].replace("-", "_")
-                for module, names in json.loads(result.stdout).items()
-            }
-        except (json.JSONDecodeError, IndexError):
-            return {}
-
-    @staticmethod
-    def _imported_modules(path: Path) -> list[str]:
-        try:
-            tree = ast.parse(path.read_text(), filename=str(path))
-        except (SyntaxError, OSError):
-            return []
-        guarded = Validator._optional_import_ids(tree)
-        modules = []
-        for node in ast.walk(tree):
-            if id(node) in guarded:
-                continue
-            if isinstance(node, ast.Import):
-                modules.extend(alias.name for alias in node.names)
-            elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
-                modules.append(node.module)
-        return modules
-
-    @staticmethod
-    def _optional_import_ids(tree: ast.AST) -> set[int]:
-        """Node ids of imports inside the `try:` body of a `try/except ImportError` block.
-
-        Apps commonly guard an optional dependency this way; such an import
-        isn't a hard requirement, so it shouldn't be flagged as broken or
-        undeclared. The except handler's body is left unguarded — a broken
-        import shipped there is still a real bug.
-        """
-        guarded: set[int] = set()
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Try) or not Validator._catches_import_error(node):
-                continue
-            for stmt in node.body:
-                guarded.update(id(n) for n in ast.walk(stmt))
-        return guarded
-
-    @staticmethod
-    def _catches_import_error(node: ast.Try) -> bool:
-        for handler in node.handlers:
-            if handler.type is None:
-                return True
-            types = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
-            if any(
-                isinstance(t, ast.Name) and t.id in ("ImportError", "ModuleNotFoundError")
-                for t in types
-            ):
-                return True
-        return False
-
-    def _resolves(self, module: str) -> bool:
-        parts = module.split(".")
-        candidate = self.app.path.joinpath(*parts)
-        return candidate.with_suffix(".py").exists() or (candidate / "__init__.py").exists()
-
-    def _is_external(self, module: str) -> bool:
-        root = self._top_level_package(module)
-        return root != self.app.module_name and root not in sys.stdlib_module_names
-
-    def _declared_dependencies(self) -> set[str]:
-        names = self._dependencies_declared_in(self.app.path)
-        names.add("frappe")
-        # Apps run inside the frappe framework's own environment, so any
-        # dependency frappe itself declares (e.g. pypika) is already
-        # installed and usable without every app redeclaring it.
-        names |= self._dependencies_declared_in(self.app.bench.apps_path / "frappe")
-        return names
-
-    @staticmethod
-    def _dependencies_declared_in(app_path: Path) -> set[str]:
-        pyproject = app_path / "pyproject.toml"
-        try:
-            data = tomllib.loads(pyproject.read_text())
-        except (tomllib.TOMLDecodeError, OSError):
-            return set()
-        return {
-            Validator._dependency_name(dep)
-            for dep in data.get("project", {}).get("dependencies", [])
-        }
-
-    @staticmethod
-    def _dependency_name(requirement: str) -> str:
-        import re
-
-        name = re.split(r"[<>=!~\[; ]", requirement, maxsplit=1)[0]
-        return name.strip().replace("-", "_").casefold()
