@@ -8,7 +8,7 @@ class NewSiteTask(BaseTask):
     def _parser(cls):
         p = super()._parser()
         p.add_argument("name")
-        p.add_argument("--admin-password", default="admin")
+        p.set_defaults(admin_password=None)
         p.add_argument("--db-type", default=None)
         p.add_argument("--apps", nargs="*", default=[])
         return p

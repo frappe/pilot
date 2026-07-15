@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 from admin.backend.tasks.manager.models import TaskInfo
+from admin.backend.tasks.manager.task_args import redact_task_args
 from pilot.exceptions import TaskNotFoundError
 
 _TASK_ID_PATTERN = re.compile(r"^\d{8}-\d{6}-[a-f0-9]{6}$")
@@ -77,7 +78,7 @@ class TaskReader:
             return []
         with open(output_path, "r", errors="replace", newline='') as f:
             text = f.read()
-        all_lines = [_display_line(l) for l in text.split("\n")]
+        all_lines = [_display_line(line) for line in text.split("\n")]
         while all_lines and not all_lines[-1]:
             all_lines.pop()
         if lines is None:
@@ -171,7 +172,7 @@ def _read_task_dir(reader: TaskReader, task_dir: Path) -> TaskInfo:
     return TaskInfo(
         task_id=meta["task_id"],
         command=meta["command"],
-        args=meta.get("args", {}),
+        args=redact_task_args(meta.get("args", {})),
         status=effective_status,
         pid=pid,
         started_at=started_at,

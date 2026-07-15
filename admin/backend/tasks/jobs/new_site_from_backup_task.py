@@ -11,7 +11,7 @@ class NewSiteFromBackupTask(BaseTask):
         p = super()._parser()
         p.add_argument("name")
         p.add_argument("db_file")
-        p.add_argument("--admin-password", default="admin")
+        p.set_defaults(admin_password=None)
         p.add_argument("--public-files", default=None)
         p.add_argument("--private-files", default=None)
         return p

@@ -1,11 +1,21 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import time
 from pathlib import Path
 
 from pilot.config.toml_store import BenchTomlStore
 from pilot.core.bench import Bench
+
+
+def _apply_task_secrets(args: argparse.Namespace) -> None:
+    secret_path = os.environ.get("BENCH_TASK_SECRETS_FILE")
+    if not secret_path:
+        return
+    for key, value in json.loads(Path(secret_path).read_text()).items():
+        setattr(args, key, value)
 
 
 class BaseTask:
@@ -33,6 +43,7 @@ class BaseTask:
     @classmethod
     def main(cls) -> None:
         args = cls._parser().parse_args()
+        _apply_task_secrets(args)
         bench_root = Path(args.bench_root)
         bench = Bench(BenchTomlStore.for_bench(bench_root).read(), bench_root)
         task = cls(bench, bench_root, args)

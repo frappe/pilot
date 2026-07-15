@@ -11,7 +11,6 @@ import pytest
 
 from admin.backend.tasks.manager.task_runner import TaskRunner, TASK_RETENTION_LIMIT
 from admin.backend.tasks.manager.task_reader import TaskReader
-from pilot.exceptions import TaskNotFoundError, TaskNotRunningError
 
 
 # ── TaskRunner._generate_task_id ────────────────────────────────────────────
@@ -87,6 +86,16 @@ def test_build_argv_get_app_with_branch(tmp_path: Path) -> None:
     argv = runner._build_argv("get-app", {"name": "erpnext", "repo": "https://github.com/frappe/erpnext", "branch": "version-16"})
     assert "--branch" in argv
     assert "version-16" in argv
+
+
+def test_build_argv_rejects_credentials_in_repo_url(tmp_path: Path) -> None:
+    runner = TaskRunner(tmp_path)
+
+    with pytest.raises(ValueError, match="Git provider connection"):
+        runner._build_argv(
+            "get-app",
+            {"name": "private", "repo": "https://token@github.com/acme/private.git"},
+        )
 
 
 def test_build_argv_build_no_app(tmp_path: Path) -> None:

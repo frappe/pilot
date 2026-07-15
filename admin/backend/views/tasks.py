@@ -9,9 +9,10 @@ from flask import (
     stream_with_context,
 )
 
-from pilot.exceptions import TaskNotFoundError, TaskNotRunningError
+from admin.backend.tasks.manager.task_args import task_requires_secrets
 from admin.backend.tasks.manager.task_reader import TaskReader
 from admin.backend.tasks.manager.task_runner import TaskRunner
+from pilot.exceptions import TaskNotFoundError, TaskNotRunningError
 
 tasks_bp = Blueprint("tasks", __name__)
 
@@ -130,6 +131,8 @@ def rerun_task(task_id: str):
         return jsonify({"ok": False, "error": str(error)}), 500
 
     try:
+        if task_requires_secrets(task.command):
+            return jsonify({"ok": False, "error": "This task requires fresh credentials and cannot be rerun."}), 400
         new_task_id = TaskRunner(bench_root).run(task.command, task.args)
     except ValueError as error:
         return jsonify({"ok": False, "error": str(error)}), 400

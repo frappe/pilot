@@ -4,6 +4,7 @@ import json
 import os
 import pickle
 import signal
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -108,6 +109,55 @@ def test_run_persists_task_before_starting_wrapper(
     assert pickle.loads((task_dir / "on_success.bin").read_bytes()) is successful_callback
 
 
+def test_run_hands_secret_to_job_without_persisting_it_publicly(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task_dir = tmp_path / "tasks" / TASK_ID
+    process = SimpleNamespace(pid=4321)
+    password = "unique-admin-password"
+    captured = {}
+
+    def start_process(argv: list[str], **kwargs):
+        captured.update(kwargs)
+        return process
+
+    monkeypatch.setattr(TaskRunner, "_generate_task_id", staticmethod(lambda: TASK_ID))
+    monkeypatch.setattr(task_runner_module.subprocess, "Popen", start_process)
+
+    TaskRunner(tmp_path).run(
+        "new-site",
+        {"name": "new.localhost", "admin_password": password},
+    )
+
+    meta_text = (task_dir / "meta.json").read_text()
+    meta = json.loads(meta_text)
+    secret_path = task_dir / "secrets.json"
+    assert password not in meta_text
+    assert password not in "\0".join(meta["command_argv"])
+    assert "--admin-password" not in meta["command_argv"]
+    assert meta["args"]["admin_password"] == "[redacted]"
+    assert json.loads(secret_path.read_text()) == {"admin_password": password}
+    assert stat.S_IMODE(secret_path.stat().st_mode) == 0o600
+    assert captured["env"]["BENCH_TASK_SECRETS_FILE"] == str(secret_path)
+
+
+def test_base_task_loads_secret_arguments_from_handoff_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from admin.backend.tasks.jobs.base_task import _apply_task_secrets
+
+    secret_path = tmp_path / "secrets.json"
+    secret_path.write_text(json.dumps({"admin_password": "from-file"}))
+    monkeypatch.setenv("BENCH_TASK_SECRETS_FILE", str(secret_path))
+    args = SimpleNamespace(admin_password=None)
+
+    _apply_task_secrets(args)
+
+    assert args.admin_password == "from-file"
+
+
 @pytest.mark.parametrize("status", ["running", "success", "failed", "killed"])
 def test_task_reader_preserves_current_statuses(
     tmp_path: Path,
@@ -125,6 +175,23 @@ def test_task_reader_preserves_current_statuses(
 
     assert task.status == status
     assert task.pid == 4321
+
+
+def test_task_reader_redacts_secrets_in_legacy_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task_dir = tmp_path / "tasks" / TASK_ID
+    task_dir.mkdir(parents=True)
+    meta = task_meta(tmp_path)
+    meta["args"] = {"name": "new.localhost", "admin_password": "legacy-password"}
+    (task_dir / "meta.json").write_text(json.dumps(meta))
+    (task_dir / "status").write_text("success")
+    monkeypatch.setattr(os, "kill", lambda pid, sig: None)
+
+    task = TaskReader(tmp_path).read_task(TASK_ID)
+
+    assert task.args == {"name": "new.localhost", "admin_password": "[redacted]"}
 
 
 def test_kill_signals_task_pid_and_marks_it_killed(
@@ -196,6 +263,53 @@ def test_wrapper_output_is_readable_without_syslog_envelopes(tmp_path: Path) -> 
     (task_dir / "status").write_text("success")
     assert exit_code == 0
     assert TaskReader(tmp_path).read_output(TASK_ID) == ["standard output", "standard error"]
+
+
+def test_wrapper_redacts_secrets_from_task_output(tmp_path: Path) -> None:
+    output_path = tmp_path / "output.log"
+    password = "do-not-log-this-password"
+    command = [sys.executable, "-c", f"print({password!r})"]
+
+    exit_code = run_with_syslog_output(
+        command,
+        str(tmp_path),
+        "new-site",
+        output_path,
+        redactions=[password],
+    )
+
+    output = output_path.read_text()
+    assert exit_code == 0
+    assert password not in output
+    assert "[redacted]" in output
+
+
+def test_wrapper_loads_config_redactions_and_removes_secret_handoff(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task_dir = tmp_path / "tasks" / TASK_ID
+    task_dir.mkdir(parents=True)
+    (task_dir / "meta.json").write_text(json.dumps(task_meta(tmp_path)))
+    (task_dir / "secrets.json").write_text(
+        json.dumps({"admin_password": "task-password"})
+    )
+    (tmp_path / "bench.toml").write_text(
+        '[mariadb]\nroot_password = "database-password"\n'
+    )
+    captured = {}
+
+    def run_task(*args):
+        captured["redactions"] = args[4]
+        return 0
+
+    monkeypatch.setattr(wrapper_module, "run_with_syslog_output", run_task)
+    monkeypatch.setattr(sys, "argv", ["wrapper", str(task_dir)])
+
+    wrapper_module.main()
+
+    assert set(captured["redactions"]) >= {"task-password", "database-password"}
+    assert not (task_dir / "secrets.json").exists()
 
 
 @pytest.mark.parametrize(

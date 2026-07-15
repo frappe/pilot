@@ -11,6 +11,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TypedDict
 
+from admin.backend.tasks.manager.task_args import (
+    redact_task_args,
+    reject_url_credentials,
+    task_secret_args,
+)
 from pilot.exceptions import TaskNotFoundError, TaskNotRunningError
 
 TASK_RETENTION_LIMIT = 100
@@ -57,11 +62,12 @@ class TaskRunner:
         task_dir = self._task_dir(task_id)
         task_dir.mkdir(parents=True)
         command_argv = self._build_argv(command, args)
+        secret_args = task_secret_args(command, args)
 
         meta = {
             "task_id": task_id,
             "command": command,
-            "args": args,
+            "args": redact_task_args(args),
             "command_argv": command_argv,
             "started_at": datetime.now(timezone.utc).isoformat(),
             "finished_at": None,
@@ -71,18 +77,29 @@ class TaskRunner:
         (task_dir / "meta.json").write_text(json.dumps(meta, indent=2))
         (task_dir / "status").write_text("running")
 
+        secret_path = task_dir / "secrets.json"
+        if secret_args:
+            fd = os.open(secret_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "w") as secret_file:
+                json.dump(secret_args, secret_file)
+
         if callbacks:
             if on_success := callbacks.get("on_success"):
                 (task_dir / "on_success.bin").write_bytes(pickle.dumps(on_success))
             if on_failure := callbacks.get("on_failure"):
                 (task_dir / "on_failure.bin").write_bytes(pickle.dumps(on_failure))
 
+        process_kwargs = {
+            "start_new_session": True,
+            "stdin": subprocess.DEVNULL,
+            "stdout": subprocess.DEVNULL,
+            "stderr": subprocess.DEVNULL,
+        }
+        if secret_args:
+            process_kwargs["env"] = {**os.environ, "BENCH_TASK_SECRETS_FILE": str(secret_path)}
         process = subprocess.Popen(
             [sys.executable, "-m", "admin.backend.tasks.manager.wrapper", str(task_dir)],
-            start_new_session=True,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            **process_kwargs,
         )
         (task_dir / "pid").write_text(str(process.pid))
         self._purge_old_tasks()
@@ -111,6 +128,7 @@ class TaskRunner:
     def _build_argv(self, command: str, args: dict) -> list[str]:
         if command not in _WHITELIST:
             raise ValueError(f"Unknown command: {command!r}. Allowed: {sorted(_WHITELIST)}")
+        reject_url_credentials(args)
 
         required = _WHITELIST[command]
         for key in required:
@@ -153,8 +171,6 @@ class TaskRunner:
             return [sys.executable, "-m", "admin.backend.tasks.jobs.remove_app_task", str(self._bench_root), args["name"]]
         if command == "new-site":
             argv = [sys.executable, "-m", "admin.backend.tasks.jobs.new_site_task", str(self._bench_root), args["name"]]
-            if args.get("admin_password"):
-                argv += ["--admin-password", args["admin_password"]]
             if args.get("db_type"):
                 argv += ["--db-type", args["db_type"]]
             if args.get("apps"):
@@ -163,9 +179,7 @@ class TaskRunner:
         if command == "drop-site":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.drop_site_task", str(self._bench_root), args["site"]]
         if command == "reinstall-site":
-            argv = [sys.executable, "-m", "admin.backend.tasks.jobs.reinstall_site_task", str(self._bench_root), args["site"]]
-            argv += ["--admin-password", args["admin_password"]]
-            return argv
+            return [sys.executable, "-m", "admin.backend.tasks.jobs.reinstall_site_task", str(self._bench_root), args["site"]]
         if command == "delete-backup":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.delete_backup_task", str(self._bench_root), args["site"], *args["filenames"]]
         if command == "install-app":
@@ -194,8 +208,6 @@ class TaskRunner:
             return [sys.executable, "-m", "admin.backend.tasks.jobs.wizard_setup_task", str(self._bench_root)]
         if command == "new-site-from-backup":
             argv = [sys.executable, "-m", "admin.backend.tasks.jobs.new_site_from_backup_task", str(self._bench_root), args["name"], args["db_file"]]
-            if args.get("admin_password"):
-                argv += ["--admin-password", args["admin_password"]]
             if args.get("public_files"):
                 argv += ["--public-files", args["public_files"]]
             if args.get("private_files"):

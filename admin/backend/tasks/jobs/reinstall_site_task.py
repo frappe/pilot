@@ -9,7 +9,7 @@ class ReinstallSiteTask(BaseTask):
     def _parser(cls):
         p = super()._parser()
         p.add_argument("site")
-        p.add_argument("--admin-password", default="admin")
+        p.set_defaults(admin_password=None)
         return p
 
     def __init__(self, bench, bench_root, args):
