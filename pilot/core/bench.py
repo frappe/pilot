@@ -136,7 +136,7 @@ class Bench:
             if d.is_dir() and cfg_path.exists():
                 try:
                     raw = _json.loads(cfg_path.read_text())
-                except Exception:
+                except (OSError, _json.JSONDecodeError):
                     raw = {}
                 domains = [(entry.get("domain") if isinstance(entry, dict) else entry) for entry in (raw.get("domains") or [])]
                 domains = [d for d in domains if isinstance(d, str) and d]

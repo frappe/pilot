@@ -83,7 +83,7 @@ class RenameSiteCommand(Command):
             return
         try:
             data = json.loads(path.read_text())
-        except Exception:
+        except (OSError, json.JSONDecodeError):
             return
         if data.get("default_site") == self.old_name:
             data["default_site"] = self.new_name

@@ -345,7 +345,7 @@ def resolve_app_name_from_repo(bench_root: Path, repo_url: str, branch: str = ""
 
     try:
         data = tomllib.loads(content)
-    except Exception as exc:
+    except tomllib.TOMLDecodeError as exc:
         raise GitProviderError(f"Could not parse pyproject.toml: {exc}") from exc
 
     project = data.get("project") or {}

@@ -170,9 +170,11 @@ class RunCommand(Command):
             print("\nSetup complete. Run 'bench start' to start your bench.\n", flush=True)
 
     def _admin_port(self) -> int:
+        import tomllib
+
         from pilot.config.toml_store import BenchTomlStore
 
         try:
             return BenchTomlStore.for_bench(self.bench.path).read_raw().get("admin", {}).get("port", 7000)
-        except Exception:
+        except (OSError, tomllib.TOMLDecodeError):
             return 7000

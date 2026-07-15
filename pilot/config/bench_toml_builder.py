@@ -94,7 +94,7 @@ def current_port_offset(toml_path: Path) -> int:
         with open(toml_path, "rb") as f:
             data = tomllib.load(f)
         return data.get("bench", {}).get("http_port", default_ports()["http_port"]) - default_ports()["http_port"]
-    except Exception:
+    except (OSError, tomllib.TOMLDecodeError):
         return 0
 
 
