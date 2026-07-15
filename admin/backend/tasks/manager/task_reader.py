@@ -10,11 +10,16 @@ from pathlib import Path
 from admin.backend.tasks.manager.models import TaskInfo, safe_task_failure
 from admin.backend.tasks.manager.task_queue import TaskQueue
 from admin.backend.tasks.manager.task_args import redact_task_args
-from admin.backend.tasks.manager.task_state import TaskStatus, parse_task_status
+from admin.backend.tasks.manager.task_state import (
+    ACTIVE_TASK_STATUSES,
+    TaskStatus,
+    parse_task_status,
+)
 from admin.backend.tasks.manager.events import (
     TaskStreamEvent,
     done_event,
     output_event,
+    status_event,
 )
 from pilot.exceptions import TaskNotFoundError
 from pilot.secure_files import open_private
@@ -98,6 +103,8 @@ class TaskReader:
     def stream_output(self, task_id: str) -> Generator[TaskStreamEvent, None, None]:
         task = self.read_task(task_id)
         output_path = task.output_path
+        last_state = (task.status, task.queue_position)
+        yield status_event(task.status.value, task.queue_position)
 
         open_private(output_path, "a").close()
         with open(output_path, "r", errors="replace", newline='') as log_file:
@@ -123,22 +130,17 @@ class TaskReader:
                         yield output_event(_display_line(cur), overwrite=True)
                     continue
 
-                status_path = self._bench_root / "tasks" / task_id / "status"
-                raw_status = status_path.read_text().strip() if status_path.exists() else "running"
-                pid = task.pid
-                effective = self._effective_status(task_id, raw_status, pid)
+                task = self.read_task(task_id)
+                current_state = (task.status, task.queue_position)
+                if current_state != last_state:
+                    yield status_event(task.status.value, task.queue_position)
+                    last_state = current_state
 
-                if effective != "running":
+                if task.status not in ACTIVE_TASK_STATUSES:
                     if cur:
                         yield output_event(_display_line(cur))
-
-                    meta_path = self._bench_root / "tasks" / task_id / "meta.json"
-                    exit_code: int | None = None
-                    if meta_path.exists():
-                        import json
-                        meta = json.loads(meta_path.read_text())
-                        exit_code = meta.get("exit_code")
-                    yield done_event(exit_code)
+                    failure = task.as_dict()["failure"]
+                    yield done_event(task.status.value, task.exit_code, failure)
                     return
 
                 time.sleep(_POLL_INTERVAL)
@@ -153,7 +155,7 @@ class TaskReader:
         if status != TaskStatus.RUNNING:
             return status
         if pid is None:
-            return TaskStatus.KILLED
+            return TaskStatus.RUNNING
         try:
             os.kill(pid, 0)
         except OSError:

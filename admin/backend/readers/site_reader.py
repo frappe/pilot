@@ -5,10 +5,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from admin.backend.tasks.manager.task_reader import TaskReader
+from admin.backend.tasks.manager.task_state import ACTIVE_TASK_STATUSES
 from pilot.commands.list_site_apps import _query_via_db_cli
 
 # Commands that write site_config.json well before the site's DB is queryable.
-# While one of these is still running for a site, a failed DB probe means
+# While one of these is active for a site, a failed DB probe means
 # "not ready yet", not "broken".
 _PROVISIONING_COMMANDS = {"new-site", "new-site-from-backup", "reinstall-site"}
 _PROVISIONING_ARG_KEYS = ("name", "site")
@@ -46,8 +47,8 @@ class SiteReader:
         return self._read_site(site_name, self._provisioning_site_names())
 
     def _provisioning_site_names(self) -> set[str]:
-        """Sites with a new-site/new-site-from-backup/reinstall-site task still
-        running. Reading the task registry is a handful of small local file
+        """Sites with an active new-site/new-site-from-backup/reinstall-site task.
+        Reading the task registry is a handful of small local file
         reads, cheap next to the DB probe it lets us skip."""
         try:
             tasks = TaskReader(self._bench_root).list_tasks()
@@ -56,7 +57,10 @@ class SiteReader:
 
         names = set()
         for task in tasks:
-            if task.status != "running" or task.command not in _PROVISIONING_COMMANDS:
+            if (
+                task.status not in ACTIVE_TASK_STATUSES
+                or task.command not in _PROVISIONING_COMMANDS
+            ):
                 continue
             for key in _PROVISIONING_ARG_KEYS:
                 if name := task.args.get(key):

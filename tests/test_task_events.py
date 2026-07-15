@@ -1,6 +1,11 @@
 import json
 
-from admin.backend.tasks.manager.events import done_event, output_event, sse_message
+from admin.backend.tasks.manager.events import (
+    done_event,
+    output_event,
+    sse_message,
+    status_event,
+)
 
 
 def test_sse_message_encodes_structured_json_with_event_id() -> None:
@@ -22,5 +27,18 @@ def test_output_text_cannot_impersonate_completion_event() -> None:
     assert json.loads(sse_message(event).removeprefix("data: ")) == event
 
 
-def test_done_event_preserves_unknown_exit_code() -> None:
-    assert done_event(None) == {"type": "done", "exit_code": None}
+def test_done_event_keeps_terminal_details() -> None:
+    assert done_event("killed", None, None) == {
+        "type": "done",
+        "status": "killed",
+        "exit_code": None,
+        "failure": None,
+    }
+
+
+def test_status_event_reports_queue_position() -> None:
+    assert status_event("queued", 2) == {
+        "type": "status",
+        "status": "queued",
+        "queue_position": 2,
+    }

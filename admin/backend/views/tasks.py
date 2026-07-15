@@ -64,7 +64,12 @@ def stream_task_output(task_id: str):
         skip = 0
 
     def generate():
-        for event_id, event in enumerate(reader.stream_output(task_id), start=1):
+        event_id = 0
+        for event in reader.stream_output(task_id):
+            if event["type"] == "status":
+                yield sse_message(event)
+                continue
+            event_id += 1
             if event_id <= skip:
                 continue
             yield sse_message(event, event_id)

@@ -50,9 +50,13 @@ def _setup_complete(bench_root: Path, config: BenchConfig) -> bool:
         return False
     try:
         from admin.backend.tasks.manager.task_reader import TaskReader
+        from admin.backend.tasks.manager.task_state import ACTIVE_TASK_STATUSES
 
         tasks = TaskReader(bench_root).list_tasks(limit=20)
-        if any(t.command == "wizard-setup" and t.status == "running" for t in tasks):
+        if any(
+            t.command == "wizard-setup" and t.status in ACTIVE_TASK_STATUSES
+            for t in tasks
+        ):
             return False
     except Exception:
         pass

@@ -98,3 +98,31 @@ def test_task_detail_exposes_queue_position_and_safe_failure(tmp_path: Path) -> 
         "message": "Task command failed.",
     }
     assert "secret text" not in str(failed)
+
+
+def test_stream_keeps_status_updates_out_of_output_event_ids(tmp_path: Path) -> None:
+    events = iter(
+        [
+            {"type": "status", "status": "queued", "queue_position": 1},
+            {"type": "line", "line": "started"},
+            {
+                "type": "done",
+                "status": "success",
+                "exit_code": 0,
+                "failure": None,
+            },
+        ]
+    )
+    with patch(
+        "admin.backend.views.tasks.TaskReader.stream_output",
+        return_value=events,
+    ):
+        response = client(tmp_path).get(
+            "/api/tasks/20260715-120000-aabbcc/stream"
+        )
+
+    blocks = response.get_data(as_text=True).strip().split("\n\n")
+    assert blocks[0].startswith("data: ")
+    assert "id:" not in blocks[0]
+    assert blocks[1].startswith("id: 1\n")
+    assert blocks[2].startswith("id: 2\n")

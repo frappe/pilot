@@ -9,6 +9,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import admin.backend.tasks.manager.task_reader as task_reader_module
+from admin.backend.tasks.manager.task_state import TaskStatus
+from admin.backend.tasks.manager.task_store import TaskStore
 from admin.backend.tasks.manager.task_runner import TaskRunner, TASK_RETENTION_LIMIT
 from admin.backend.tasks.manager.task_reader import TaskReader
 
@@ -224,10 +227,10 @@ def test_effective_status_non_running_passthrough(tmp_path: Path) -> None:
         assert result == status
 
 
-def test_effective_status_none_pid_returns_killed(tmp_path: Path) -> None:
+def test_effective_status_none_pid_remains_running_until_recovery(tmp_path: Path) -> None:
     reader = TaskReader(tmp_path)
     result = reader._effective_status("task-id", "running", None)
-    assert result == "killed"
+    assert result == "running"
 
 
 # ── TaskReader.read_output ───────────────────────────────────────────────────
@@ -288,10 +291,121 @@ def test_stream_output_yields_structured_events(tmp_path: Path) -> None:
     events = list(TaskReader(tmp_path).stream_output(task_id))
 
     assert events == [
+        {"type": "status", "status": "success", "queue_position": None},
         {"type": "line", "line": "alpha"},
         {"type": "line", "line": "beta"},
-        {"type": "done", "exit_code": 0},
+        {
+            "type": "done",
+            "status": "success",
+            "exit_code": 0,
+            "failure": None,
+        },
     ]
+
+
+def test_stream_waits_across_queued_running_and_success(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task_id = "20260521-143022-aabbcc"
+    store = TaskStore(tmp_path)
+    store.create_queued(
+        {
+            "task_id": task_id,
+            "command": "build",
+            "args": {},
+            "queued_at": "2026-05-21T14:30:22+00:00",
+            "started_at": None,
+            "finished_at": None,
+            "exit_code": None,
+            "failure": None,
+        }
+    )
+    polls = 0
+
+    def advance_task(_interval: float) -> None:
+        nonlocal polls
+        polls += 1
+        if polls == 1:
+            store.transition(
+                task_id,
+                TaskStatus.QUEUED,
+                TaskStatus.RUNNING,
+                {"started_at": "2026-05-21T14:30:23+00:00"},
+            )
+        elif polls == 2:
+            store.transition(
+                task_id,
+                TaskStatus.RUNNING,
+                TaskStatus.SUCCESS,
+                {
+                    "finished_at": "2026-05-21T14:30:24+00:00",
+                    "exit_code": 0,
+                },
+            )
+
+    monkeypatch.setattr(task_reader_module.time, "sleep", advance_task)
+
+    events = list(TaskReader(tmp_path).stream_output(task_id))
+
+    assert [event["type"] for event in events] == ["status", "status", "status", "done"]
+    assert [event["status"] for event in events] == [
+        "queued",
+        "running",
+        "success",
+        "success",
+    ]
+    assert events[-1]["exit_code"] == 0
+
+
+def test_stream_waits_for_queued_cancellation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task_id = "20260521-143022-aabbcc"
+    store = TaskStore(tmp_path)
+    store.create_queued(
+        {
+            "task_id": task_id,
+            "command": "build",
+            "args": {},
+            "queued_at": "2026-05-21T14:30:22+00:00",
+            "started_at": None,
+            "finished_at": None,
+            "exit_code": None,
+            "failure": None,
+        }
+    )
+
+    def cancel_task(_interval: float) -> None:
+        store.transition(task_id, TaskStatus.QUEUED, TaskStatus.KILLED)
+
+    monkeypatch.setattr(task_reader_module.time, "sleep", cancel_task)
+
+    events = list(TaskReader(tmp_path).stream_output(task_id))
+
+    assert [event["status"] for event in events] == ["queued", "killed", "killed"]
+    assert events[-1]["type"] == "done"
+
+
+def test_queued_setup_task_is_available_for_resume(tmp_path: Path) -> None:
+    from admin.backend.views.setup import _running_setup_task
+
+    task_id = "20260521-143022-aabbcc"
+    TaskStore(tmp_path).create_queued(
+        {
+            "task_id": task_id,
+            "command": "wizard-setup",
+            "args": {},
+            "queued_at": "2026-05-21T14:30:22+00:00",
+            "started_at": None,
+            "finished_at": None,
+            "exit_code": None,
+            "failure": None,
+        }
+    )
+
+    assert _running_setup_task(tmp_path).task_id == task_id
 
 
 def test_reader_derives_queue_positions_from_fifo_order(tmp_path: Path) -> None:

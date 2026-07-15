@@ -12,17 +12,38 @@ class OutputEvent(TypedDict):
 class DoneEvent(TypedDict):
     type: Literal["done"]
     exit_code: int | None
+    status: str
+    failure: dict | None
 
 
-TaskStreamEvent = OutputEvent | DoneEvent
+class StatusEvent(TypedDict):
+    type: Literal["status"]
+    status: str
+    queue_position: int | None
+
+
+TaskStreamEvent = OutputEvent | StatusEvent | DoneEvent
 
 
 def output_event(line: str, *, overwrite: bool = False) -> OutputEvent:
     return {"type": "overwrite" if overwrite else "line", "line": line}
 
 
-def done_event(exit_code: int | None) -> DoneEvent:
-    return {"type": "done", "exit_code": exit_code}
+def status_event(status: str, queue_position: int | None) -> StatusEvent:
+    return {
+        "type": "status",
+        "status": status,
+        "queue_position": queue_position,
+    }
+
+
+def done_event(status: str, exit_code: int | None, failure: dict | None) -> DoneEvent:
+    return {
+        "type": "done",
+        "status": status,
+        "exit_code": exit_code,
+        "failure": failure,
+    }
 
 
 def sse_message(event: TaskStreamEvent, event_id: int | None = None) -> str:

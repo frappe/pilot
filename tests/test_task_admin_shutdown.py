@@ -20,7 +20,9 @@ def wait_for_pid(path: Path) -> int:
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:
         if path.exists():
-            return int(path.read_text())
+            value = path.read_text().strip()
+            if value:
+                return int(value)
         time.sleep(0.01)
     raise AssertionError("task process did not start")
 

@@ -8,6 +8,7 @@ from flask import Blueprint, Response, current_app, jsonify, request, stream_wit
 from admin.backend.tasks.manager.task_reader import TaskReader
 from admin.backend.tasks.manager.events import sse_message
 from admin.backend.tasks.manager.task_runner import TaskRunner
+from admin.backend.tasks.manager.task_state import ACTIVE_TASK_STATUSES
 from pilot.config.bench_toml_builder import (
     FRAMEWORK_BRANCHES,
     BenchTomlBuilder,
@@ -353,13 +354,13 @@ def _read_defaults(bench_root: Path) -> dict:
 
 
 def _running_setup_task(bench_root: Path):
-    """The wizard's setup task if it's currently running, else None. The single
+    """The wizard's setup task if it's queued or running, else None. The single
     live task is the whole resume signal: a reload reattaches to it."""
     return next(
         (
             t
             for t in TaskReader(bench_root).list_tasks()
-            if t.command == "wizard-setup" and t.status == "running"
+            if t.command == "wizard-setup" and t.status in ACTIVE_TASK_STATUSES
         ),
         None,
     )
