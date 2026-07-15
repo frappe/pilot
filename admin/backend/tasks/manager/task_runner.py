@@ -19,11 +19,9 @@ from admin.backend.tasks.manager.task_args import (
 from admin.backend.tasks.manager.task_state import (
     TERMINAL_TASK_STATUSES,
     TaskStatus,
-    parse_task_status,
-    validate_task_transition,
 )
-from pilot.exceptions import TaskNotFoundError, TaskNotRunningError
-from pilot.secure_files import make_private_directory, open_private, write_private_text
+from admin.backend.tasks.manager.task_store import TaskStore
+from pilot.exceptions import TaskNotRunningError
 
 TASK_RETENTION_LIMIT = 100
 
@@ -68,6 +66,7 @@ class TaskCallbacks(TypedDict, total=False):
 class TaskRunner:
     def __init__(self, bench_root: Path) -> None:
         self._bench_root = bench_root
+        self._store = TaskStore(bench_root)
 
     def run(self, command: str, args: dict, callbacks: TaskCallbacks | None = None) -> str:
         callback_payload = {}
@@ -77,9 +76,6 @@ class TaskRunner:
             if spec is not None:
                 callback_payload[trigger] = validate_callback(spec)
         task_id = self._generate_task_id()
-        task_dir = self._task_dir(task_id)
-        make_private_directory(task_dir.parent, parents=True)
-        make_private_directory(task_dir)
         command_argv = self._build_argv(command, args)
         secret_args = task_secret_args(command, args)
 
@@ -95,16 +91,13 @@ class TaskRunner:
             "exit_code": None,
             "bench_root": str(self._bench_root),
         }
-        write_private_text(task_dir / "meta.json", json.dumps(meta, indent=2))
-        write_private_text(task_dir / "status", TaskStatus.QUEUED.value)
-
-        secret_path = task_dir / "secrets.json"
+        private_files = {}
         if secret_args:
-            with open_private(secret_path, exclusive=True) as secret_file:
-                json.dump(secret_args, secret_file)
-
+            private_files["secrets.json"] = json.dumps(secret_args)
         if callback_payload:
-            write_private_text(task_dir / "callbacks.json", json.dumps(callback_payload, indent=2))
+            private_files["callbacks.json"] = json.dumps(callback_payload, indent=2)
+        task_dir = self._store.create_queued(meta, private_files)
+        secret_path = task_dir / "secrets.json"
 
         process_kwargs = {
             "start_new_session": True,
@@ -118,36 +111,33 @@ class TaskRunner:
             [sys.executable, "-m", "admin.backend.tasks.manager.wrapper", str(task_dir)],
             **process_kwargs,
         )
-        write_private_text(task_dir / "pid", str(process.pid))
+        self._store.write_pid(task_id, process.pid)
         self._purge_old_tasks()
         return task_id
 
     def kill(self, task_id: str) -> None:
-        task_dir = self._task_dir(task_id)
-        if not task_dir.exists():
-            raise TaskNotFoundError(f"Task not found: {task_id}")
-
-        status = parse_task_status((task_dir / "status").read_text().strip())
+        status = self._store.read_status(task_id)
         if status not in {TaskStatus.QUEUED, TaskStatus.RUNNING}:
             raise TaskNotRunningError(
                 f"Task is not active: {task_id} (status={status.value})"
             )
 
-        validate_task_transition(status, TaskStatus.KILLED)
-        write_private_text(task_dir / "status", TaskStatus.KILLED.value)
+        if not self._store.transition(task_id, status, TaskStatus.KILLED):
+            current = self._store.read_status(task_id)
+            raise TaskNotRunningError(
+                f"Task is not active: {task_id} (status={current.value})"
+            )
+        if status == TaskStatus.QUEUED:
+            self._store.remove_private_files(task_id, "secrets.json", "callbacks.json")
 
-        pid_path = task_dir / "pid"
-        if not pid_path.exists():
+        pid = self._store.read_pid(task_id)
+        if pid is None:
             return
-        pid = int(pid_path.read_text().strip())
         try:
             if os.getpgid(pid) == pid:
                 os.killpg(pid, signal.SIGTERM)
         except OSError:
             pass
-
-    def _task_dir(self, task_id: str) -> Path:
-        return self._bench_root / "tasks" / task_id
 
     def _build_argv(self, command: str, args: dict) -> list[str]:
         if command not in _WHITELIST:

@@ -20,10 +20,9 @@ from admin.backend.tasks.callbacks import run_callback
 from admin.backend.tasks.manager.task_state import (
     TERMINAL_TASK_STATUSES,
     TaskStatus,
-    parse_task_status,
-    validate_task_transition,
 )
-from pilot.secure_files import open_private, write_private_text
+from admin.backend.tasks.manager.task_store import TaskStore
+from pilot.secure_files import open_private
 
 _HOSTNAME = socket.gethostname()
 
@@ -167,15 +166,22 @@ def _load_redactions(task_dir: Path, bench_root: Path) -> list[str]:
 
 def main() -> None:
     task_dir = Path(sys.argv[1])
-    meta = json.loads((task_dir / "meta.json").read_text())
-    current_status = parse_task_status((task_dir / "status").read_text().strip())
+    task_id = task_dir.name
+    store = TaskStore(task_dir.parent.parent)
+    meta = store.read_metadata(task_id)
+    current_status = store.read_status(task_id)
     if current_status in TERMINAL_TASK_STATUSES:
         return
     if current_status == TaskStatus.QUEUED:
-        validate_task_transition(current_status, TaskStatus.RUNNING)
-        meta["started_at"] = datetime.now(timezone.utc).isoformat()
-        write_private_text(task_dir / "meta.json", json.dumps(meta, indent=2))
-        write_private_text(task_dir / "status", TaskStatus.RUNNING.value)
+        started_at = datetime.now(timezone.utc).isoformat()
+        if not store.transition(
+            task_id,
+            TaskStatus.QUEUED,
+            TaskStatus.RUNNING,
+            {"started_at": started_at},
+        ):
+            return
+        meta["started_at"] = started_at
     callbacks_path = task_dir / "callbacks.json"
     callbacks = {}
     if callbacks_path.exists():
@@ -201,26 +207,29 @@ def main() -> None:
             redactions,
         )
     finally:
-        (task_dir / "secrets.json").unlink(missing_ok=True)
+        store.remove_private_files(task_id, "secrets.json")
 
     selected = callbacks.get("on_success" if exit_code == 0 else "on_failure")
     if selected:
         callback_handler(selected, task_dir / "output.log", meta=meta, redactions=redactions)
 
-    for leftover in (
-        callbacks_path,
-        task_dir / "on_success.bin",
-        task_dir / "on_failure.bin",
-    ):
-        if leftover.exists():
-            leftover.unlink()
+    store.remove_private_files(
+        task_id,
+        "callbacks.json",
+        "on_success.bin",
+        "on_failure.bin",
+    )
 
-    meta["finished_at"] = datetime.now(timezone.utc).isoformat()
-    meta["exit_code"] = exit_code
-    write_private_text(task_dir / "meta.json", json.dumps(meta, indent=2))
     status = TaskStatus.SUCCESS if exit_code == 0 else TaskStatus.FAILED
-    validate_task_transition(TaskStatus.RUNNING, status)
-    write_private_text(task_dir / "status", status.value)
+    store.transition(
+        task_id,
+        TaskStatus.RUNNING,
+        status,
+        {
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+            "exit_code": exit_code,
+        },
+    )
 
 
 if __name__ == "__main__":
