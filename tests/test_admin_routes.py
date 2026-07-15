@@ -71,14 +71,14 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         and not rule.rule.startswith(f"{API_V1_PREFIX}/")
     ]
 
-    assert len(routes) == 107
+    assert len(routes) == 106
     assert unversioned == []
-    assert len({(method, path) for method, path, _, _ in routes}) == 107
+    assert len({(method, path) for method, path, _, _ in routes}) == 106
     assert Counter(method for method, _, _, _ in routes) == {
         "DELETE": 11,
         "GET": 54,
         "PATCH": 4,
-        "POST": 35,
+        "POST": 34,
         "PUT": 3,
     }
     assert Counter(policy for _, _, _, policy in routes) == {
@@ -86,7 +86,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         "authenticated+bench-management": 9,
         "authenticated+site-scope": 26,
         "open": 6,
-        "setup-conditional": 7,
+        "setup-conditional": 6,
     }
     assert Counter(areas) == {
         "apps": 6,
@@ -108,7 +108,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         "network": 1,
         "runtime": 4,
         "settings": 2,
-        "setup": 7,
+        "setup": 6,
         "site-login-handoffs": 1,
         "site-restores": 1,
         "sites": 29,
@@ -224,7 +224,6 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         ("POST", "/api/v1/setup/database-validations"),
         ("POST", "/api/v1/setup/actions/start"),
         ("POST", "/api/v1/setup/actions/finish"),
-        ("POST", "/api/v1/setup/new-site"),
     } <= route_keys
     assert not {
         path
@@ -294,5 +293,6 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
             "/api/v1/system-info",
             "/api/v1/stats",
             "/api/v1/updates/cli",
+            "/api/v1/setup/new-site",
         }
     }

@@ -899,15 +899,3 @@ def test_site_actions_reject_missing_and_symlinked_sites(tmp_path: Path) -> None
 
     assert missing.status_code == linked.status_code == 404
     assert not (bench_root / "tasks").exists()
-
-
-def test_setup_site_creation_generates_admin_password_when_omitted(tmp_path: Path) -> None:
-    client = _client(tmp_path / "benches" / "current")
-
-    with patch("admin.backend.views.setup.TaskRunner.run", return_value="task-1") as run:
-        response = client.post("/api/v1/setup/new-site", json={"name": "s.localhost"})
-
-    assert response.get_json() == {"ok": True, "task_id": "task-1"}
-    args = run.call_args.args[1]
-    assert args["name"] == "s.localhost"
-    assert args["admin_password"] and args["admin_password"] != "admin"

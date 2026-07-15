@@ -409,29 +409,6 @@ def finish_setup():
     return response
 
 
-@setup_bp.route("/new-site", methods=["POST"])
-@allow_during_setup
-def start_new_site():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return error_response("malformed_request", "Expected a JSON object.", 400)
-    if not data.get("name"):
-        return error_response("invalid_site", "Site name is required.", 422)
-    admin_password = data.get("admin_password")
-    if not isinstance(admin_password, str) or not admin_password.strip():
-        import secrets
-
-        admin_password = secrets.token_urlsafe(16)
-
-    args = {"name": data["name"], "admin_password": admin_password}
-    try:
-        task_id = TaskRunner(bench_root).run("new-site", args)
-        return jsonify({"ok": True, "task_id": task_id})
-    except Exception:
-        return error_response("site_creation_failed", "Could not create site.", 500)
-
-
 _PASSWORD_KEYS = ("admin_password", "mariadb_password", "postgres_password")
 
 
