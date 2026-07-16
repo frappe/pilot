@@ -4,7 +4,7 @@ import json
 from pilot.commands.setup.letsencrypt import SetupLetsEncryptCommand
 from pilot.config.toml_store import BenchTomlStore
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
-from .base_task import BaseTask
+from pilot.tasks.jobs.base_task import BaseTask
 
 
 class SetupLetsEncryptTask(BaseTask):

@@ -5,8 +5,8 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request
 
-from ...api.responses import accepted_task_response, error_response
-from ...providers.apps import AppProvider
+from admin.backend.api.responses import accepted_task_response, error_response
+from admin.backend.providers.apps import AppProvider
 from pilot.internal.validators import validate_app_name, validate_repo_url
 from pilot.internal.git import GitRepo
 from pilot.tasks.manager.task_runner import TaskRunner

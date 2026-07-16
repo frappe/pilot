@@ -4,7 +4,7 @@ import subprocess
 
 from pilot.loader import cli_root
 
-from .base_task import BaseTask
+from pilot.tasks.jobs.base_task import BaseTask
 
 
 class UpdateCliTask(BaseTask):

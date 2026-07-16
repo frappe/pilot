@@ -2,7 +2,7 @@ from pilot.commands.apps.download import GetAppCommand
 from pilot.commands.sites.create import NewSiteCommand
 from pilot.integrations.marketplace import Marketplace
 
-from .base_task import BaseTask
+from pilot.tasks.jobs.base_task import BaseTask
 
 
 class NewSiteTask(BaseTask):

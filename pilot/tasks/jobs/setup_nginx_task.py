@@ -1,5 +1,5 @@
 from pilot.commands.setup.nginx import SetupNginxCommand
-from .base_task import BaseTask
+from pilot.tasks.jobs.base_task import BaseTask
 
 
 class SetupNginxTask(BaseTask):

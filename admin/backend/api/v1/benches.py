@@ -18,7 +18,7 @@ from pilot.internal.atomic_file import exclusive_file_lock
 from pilot.loader import cli_root
 from pilot.managers.processes.local import ProcessManager
 
-from ...api.responses import created_response, error_response, no_content_response
+from admin.backend.api.responses import created_response, error_response, no_content_response
 
 benches_bp = Blueprint("benches", __name__)
 bench_readiness_bp = Blueprint("bench-readiness", __name__)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pilot.commands.sites.restore import NewSiteFromBackupCommand
 
-from .base_task import BaseTask
+from pilot.tasks.jobs.base_task import BaseTask
 
 
 class NewSiteFromBackupTask(BaseTask):

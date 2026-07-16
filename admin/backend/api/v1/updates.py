@@ -7,7 +7,7 @@ from flask import Blueprint, current_app, jsonify
 from pilot.internal.git import GitRepo
 from pilot.loader import cli_root
 
-from ...api.responses import error_response
+from admin.backend.api.responses import error_response
 
 updates_bp = Blueprint("updates", __name__)
 

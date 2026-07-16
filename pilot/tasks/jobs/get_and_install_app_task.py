@@ -3,7 +3,7 @@ from pilot.core.app import App
 from pilot.core.site import Site, SiteConfig
 from pilot.integrations.marketplace import Marketplace
 
-from .base_task import BaseTask
+from pilot.tasks.jobs.base_task import BaseTask
 
 
 class GetAndInstallAppTask(BaseTask):

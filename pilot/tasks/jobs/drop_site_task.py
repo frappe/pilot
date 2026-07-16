@@ -1,5 +1,5 @@
 from pilot.commands.sites.delete import DropSiteCommand
-from .base_task import BaseTask
+from pilot.tasks.jobs.base_task import BaseTask
 
 
 class DropSiteTask(BaseTask):

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from .validators import validate_site_name
+from pilot.internal.validators import validate_site_name
 
 
 def resolve_site_path(bench_root: Path, name: str) -> Path | None:

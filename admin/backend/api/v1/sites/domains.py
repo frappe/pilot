@@ -13,8 +13,8 @@ from pilot.tasks.manager.task_runner import TaskCallback, TaskRunner
 from admin.backend.api.responses import accepted_task_response, error_response
 from admin.backend.middleware import require_scope
 
-from . import sites_bp
-from .shared import (
+from admin.backend.api.v1.sites import sites_bp
+from admin.backend.api.v1.sites.shared import (
     internal_error,
     invalid_fields,
     malformed_body,

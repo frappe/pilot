@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from pilot.integrations.marketplace import Marketplace
 
-from .base_task import BaseTask
+from pilot.tasks.jobs.base_task import BaseTask
 
 if TYPE_CHECKING:
     from pilot.core.app import App

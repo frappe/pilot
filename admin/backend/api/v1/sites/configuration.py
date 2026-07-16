@@ -13,8 +13,8 @@ from pilot.internal.site_paths import site_config_path
 from admin.backend.api.responses import error_response
 from admin.backend.middleware import require_scope
 
-from . import sites_bp
-from .shared import internal_error, malformed_body, site_name, site_not_found
+from admin.backend.api.v1.sites import sites_bp
+from admin.backend.api.v1.sites.shared import internal_error, malformed_body, site_name, site_not_found
 
 # Confidential / system-managed site_config keys. These are never sent to the
 # admin UI and cannot be edited through it — they are preserved as-is on disk.

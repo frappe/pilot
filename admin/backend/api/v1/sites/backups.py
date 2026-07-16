@@ -11,8 +11,8 @@ from pilot.tasks.manager.task_runner import TaskRunner
 from admin.backend.api.responses import accepted_task_response, error_response, no_content_response
 from admin.backend.middleware import require_scope
 
-from . import sites_bp
-from .shared import internal_error, invalid_fields, malformed_body, site_name, site_not_found, task_failure, text_fields
+from admin.backend.api.v1.sites import sites_bp
+from admin.backend.api.v1.sites.shared import internal_error, invalid_fields, malformed_body, site_name, site_not_found, task_failure, text_fields
 
 _DEFAULT_BACKUPS_PAGE_SIZE = 20
 
@@ -33,7 +33,7 @@ def backup_site(name: str):
 @sites_bp.get("/<name>/backups")
 @require_scope(site_name)
 def list_backups(name: str):
-    from ....providers.backups import BackupProvider
+    from admin.backend.providers.backups import BackupProvider
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
     limit = request.args.get("limit", _DEFAULT_BACKUPS_PAGE_SIZE, type=int)
@@ -47,7 +47,7 @@ def list_backups(name: str):
 @sites_bp.get("/<name>/backups/<timestamp>")
 @require_scope(site_name)
 def get_backup(name: str, timestamp: str):
-    from ....providers.backups import BackupProvider
+    from admin.backend.providers.backups import BackupProvider
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:

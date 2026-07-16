@@ -7,11 +7,11 @@ from flask import Flask, send_file
 
 from pilot.config.toml_store import BenchTomlStore
 
-from .api.errors import install_api_error_handlers
-from .api.responses import error_response
-from .api.routes import API_V1_PREFIX
-from .internal.rate_limiter import UsedTokens
-from .middleware import allow_unauthenticated, install_auth_guard
+from admin.backend.api.errors import install_api_error_handlers
+from admin.backend.api.responses import error_response
+from admin.backend.api.routes import API_V1_PREFIX
+from admin.backend.internal.rate_limiter import UsedTokens
+from admin.backend.middleware import allow_unauthenticated, install_auth_guard
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -35,20 +35,20 @@ def create_app(bench_root: Path) -> Flask:
 
 
 def register_blueprints(app: Flask) -> None:
-    from .api.v1.apps import apps_bp, marketplace_bp
-    from .api.v1.benches import bench_readiness_bp, benches_bp
-    from .api.v1.core import core_bp
-    from .api.v1.databases import database_bp
-    from .api.v1.git import git_bp
-    from .api.v1.logs import logs_bp
-    from .api.v1.processes import processes_bp
-    from .api.v1.settings import audit_bp, network_bp, settings_bp
-    from .api.v1.setup import setup_bp
-    from .api.v1.sites import sites_bp
-    from .api.v1.ssh_keys import ssh_keys_bp
-    from .api.v1.stats import stats_bp
-    from .api.v1.tasks import task_worker_bp, tasks_bp
-    from .api.v1.updates import updates_bp
+    from admin.backend.api.v1.apps import apps_bp, marketplace_bp
+    from admin.backend.api.v1.benches import bench_readiness_bp, benches_bp
+    from admin.backend.api.v1.core import core_bp
+    from admin.backend.api.v1.databases import database_bp
+    from admin.backend.api.v1.git import git_bp
+    from admin.backend.api.v1.logs import logs_bp
+    from admin.backend.api.v1.processes import processes_bp
+    from admin.backend.api.v1.settings import audit_bp, network_bp, settings_bp
+    from admin.backend.api.v1.setup import setup_bp
+    from admin.backend.api.v1.sites import sites_bp
+    from admin.backend.api.v1.ssh_keys import ssh_keys_bp
+    from admin.backend.api.v1.stats import stats_bp
+    from admin.backend.api.v1.tasks import task_worker_bp, tasks_bp
+    from admin.backend.api.v1.updates import updates_bp
 
     app.register_blueprint(core_bp, url_prefix=API_V1_PREFIX)
     app.register_blueprint(setup_bp, url_prefix=f"{API_V1_PREFIX}/setup")

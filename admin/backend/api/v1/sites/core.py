@@ -20,10 +20,10 @@ from pilot.utils import normalize_host
 from admin.backend.api.responses import accepted_task_response, created_response, error_response
 from admin.backend.middleware import rate_limit, require_scope
 
-from ....providers.apps import AppProvider
-from ....providers.sites import SiteInfo, SiteProvider
-from . import sites_bp
-from .shared import (
+from admin.backend.providers.apps import AppProvider
+from admin.backend.providers.sites import SiteInfo, SiteProvider
+from admin.backend.api.v1.sites import sites_bp
+from admin.backend.api.v1.sites.shared import (
     internal_error,
     invalid_fields,
     malformed_body,

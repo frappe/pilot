@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pilot.commands.bench.initialize import InitCommand
 
-from .base_task import BaseTask
+from pilot.tasks.jobs.base_task import BaseTask
 
 
 class WizardSetupTask(BaseTask):

@@ -1,7 +1,7 @@
 from pilot.commands.apps.download import GetAppCommand
 from pilot.integrations.marketplace import Marketplace
 
-from .base_task import BaseTask
+from pilot.tasks.jobs.base_task import BaseTask
 
 
 class GetAppTask(BaseTask):

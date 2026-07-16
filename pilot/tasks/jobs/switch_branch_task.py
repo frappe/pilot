@@ -3,7 +3,7 @@ import sys
 
 from pilot.config.toml_store import BenchTomlStore
 from pilot.managers.python_environment import PythonEnvManager
-from .base_task import BaseTask
+from pilot.tasks.jobs.base_task import BaseTask
 
 
 class SwitchBranchTask(BaseTask):

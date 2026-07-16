@@ -10,8 +10,8 @@ from pilot.exceptions import (
     TaskNotRunningError,
 )
 
-from .responses import error_response
-from .routes import is_api_path
+from admin.backend.api.responses import error_response
+from admin.backend.api.routes import is_api_path
 
 _HTTP_ERROR_CODES = {
     400: "malformed_request",

@@ -3,7 +3,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .base_task import BaseTask
+from pilot.tasks.jobs.base_task import BaseTask
 from pilot.core.audit_log import AuditLog
 from pilot.core.backup_pruning import BackupPruner
 from pilot.integrations.s3.backups import OffsiteBackup

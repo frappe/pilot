@@ -9,9 +9,9 @@ from flask import Flask, current_app, g, request
 
 from pilot.config.toml_store import BenchTomlStore
 
-from .api.responses import error_response
-from .api.routes import is_api_path
-from .internal.rate_limiter import SlidingWindow
+from admin.backend.api.responses import error_response
+from admin.backend.api.routes import is_api_path
+from admin.backend.internal.rate_limiter import SlidingWindow
 
 _AUTH_POLICY = "_auth_policy"
 _SITE_SCOPE_RESOLVER = "_site_scope_resolver"
@@ -71,7 +71,7 @@ def decode_session_token(token: str, config) -> dict | None:
     if claims is not None:
         return claims
     if config.admin.jwks_url:
-        from .internal.jwks import verify_jwks_token
+        from admin.backend.internal.jwks import verify_jwks_token
 
         return verify_jwks_token(token, config.admin.jwks_url, config.admin.jwks_audience)
     return None

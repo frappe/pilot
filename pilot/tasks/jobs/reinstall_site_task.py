@@ -1,7 +1,7 @@
 from pilot.config.site_config import SiteConfig
 from pilot.core.site import Site
 
-from .base_task import BaseTask
+from pilot.tasks.jobs.base_task import BaseTask
 
 
 class ReinstallSiteTask(BaseTask):

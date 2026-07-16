@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from .base_task import BaseTask
+from pilot.tasks.jobs.base_task import BaseTask
 from pilot.core.audit_log import AuditLog
 from pilot.integrations.s3.backups import OffsiteBackup
 from pilot.integrations.s3.base import S3IntegrationError

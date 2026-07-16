@@ -1,6 +1,6 @@
 import sys
 
-from .base_task import BaseTask
+from pilot.tasks.jobs.base_task import BaseTask
 
 
 class InstallAppTask(BaseTask):
