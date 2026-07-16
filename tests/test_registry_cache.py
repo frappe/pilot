@@ -172,6 +172,23 @@ def test_first_clone_installs_daily_refresh_cron(tmp_path: Path) -> None:
     assert str(cache._cli_root) in command
 
 
+def test_daily_refresh_cron_command_quotes_paths_with_spaces(tmp_path: Path) -> None:
+    """Regression: an unquoted cli_root with a space breaks argv parsing for
+    the cron-invoked refresh command permanently — the command string must
+    survive a shell round-trip via shlex.split()."""
+    import shlex
+
+    spaced_root = tmp_path / "cli root with spaces"
+    with patch("pilot.core.registry_cache.CronManager") as mock_cron_cls:
+        cache = RegistryCache(spaced_root)
+        cache.ensure_fresh()
+
+    mock_manager = mock_cron_cls.return_value
+    _, _, command = mock_manager.set_schedule.call_args.args
+    argv = shlex.split(command.split(">>")[0])
+    assert argv[-1] == str(spaced_root)
+
+
 def test_subsequent_ensure_fresh_does_not_reinstall_cron(tmp_path: Path) -> None:
     cache = make_cache(tmp_path)
     cache.ensure_fresh()  # first clone — installs cron (via autouse-patched CronManager)

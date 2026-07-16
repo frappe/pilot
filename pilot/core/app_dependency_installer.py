@@ -66,16 +66,18 @@ class AppDependencyInstaller:
 
     def _dependency_apps(self, resolver: Resolver) -> list["App"]:
         try:
-            chain = resolver.resolve()
+            names = [dep.app for dep in resolver.resolve()[:-1]]  # exclude self (last entry)
         except DependencyResolutionError:
-            return []
+            # A deeper transitive conflict shouldn't hide direct deps we
+            # already know are installed — fall back to those.
+            names = list(resolver.dependencies)
 
         apps = []
-        for dep in chain[:-1]:  # exclude self (last entry)
-            if dep.app == "frappe":
+        for name in names:
+            if name == "frappe":
                 continue
             try:
-                apps.append(self.bench.app(dep.app))
+                apps.append(self.bench.app(name))
             except BenchError:
                 continue
         return apps

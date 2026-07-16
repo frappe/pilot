@@ -8,7 +8,7 @@ import pytest
 
 from pilot.core.app_dependency_installer import AppDependencyInstaller
 from pilot.core.marketplace import Marketplace, Resolver
-from pilot.exceptions import BenchError, RegistryUnavailableError
+from pilot.exceptions import BenchError, DependencyResolutionError, RegistryUnavailableError
 from tests.test_commands import make_bench
 from tests.test_get_app import make_resolver
 
@@ -72,6 +72,30 @@ def test_install_skips_already_installed_dependency(tmp_path: Path) -> None:
         result = AppDependencyInstaller(bench, app).install()
 
     mock_cmd.assert_not_called()
+    assert [a.config.name for a in result] == ["telephony"]
+
+
+def test_dependency_apps_falls_back_to_direct_deps_on_transitive_conflict(tmp_path: Path) -> None:
+    """Regression: telephony is already installed (_install_missing's direct-
+    deps check short-circuits before ever calling resolve()), but a deeper
+    transitive conflict makes the full-chain resolve() raise when
+    _dependency_apps calls it. That must not wipe out telephony from the
+    result — it's still a real, already-installed dependency."""
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    (bench.apps_path / "telephony").mkdir(parents=True)
+    (bench.sites_path / "apps.txt").write_text("frappe\ntelephony\n")
+    app = make_app(bench, "helpdesk")
+
+    telephony = make_resolver("telephony")
+    helpdesk = make_resolver("helpdesk", deps={"telephony": ""})
+    helpdesk._registry = {"telephony": [telephony]}
+
+    with patch.object(Marketplace, "read_all_apps", return_value=[helpdesk]), \
+            patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"), \
+            patch.object(Resolver, "resolve", side_effect=DependencyResolutionError("conflict deep in the graph")):
+        result = AppDependencyInstaller(bench, app).install()
+
     assert [a.config.name for a in result] == ["telephony"]
 
 

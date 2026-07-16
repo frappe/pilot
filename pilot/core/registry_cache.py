@@ -7,6 +7,7 @@ once an hour, and refuses to serve a clone that's been edited by hand.
 """
 from __future__ import annotations
 
+import shlex
 import subprocess
 import sys
 import time
@@ -124,7 +125,8 @@ class RegistryCache:
         calls. Safe to call repeatedly — CronManager upserts by job key."""
         log_file = self._cli_root / "logs" / "registry-refresh.log"
         log_file.parent.mkdir(parents=True, exist_ok=True)
-        command = f"{sys.executable} -m pilot.core.registry_cache {self._cli_root} >> {log_file} 2>&1"
+        python, cli_root, log = (shlex.quote(str(p)) for p in (sys.executable, self._cli_root, log_file))
+        command = f"{python} -m pilot.core.registry_cache {cli_root} >> {log} 2>&1"
         CronManager(self._cli_root).set_schedule(_CRON_JOB_KEY, _CRON_SCHEDULE, command)
 
 
