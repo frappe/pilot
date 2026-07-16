@@ -40,7 +40,9 @@ class WafReader:
         for record in self._iter_records_reversed(self._log_path):
             transaction = record.get("transaction", record)
             when = self._parse_time(self._first(transaction, "time_stamp", "timestamp", "time"))
-            if when is not None and when < self._cutoff:
+            if when is None:
+                continue  # can't place it in the window — skip, don't inflate totals
+            if when < self._cutoff:
                 break  # older than the window; the rest is older still
             messages = self._first(transaction, "messages") or []
             if not messages:
@@ -57,10 +59,9 @@ class WafReader:
                 rule_id = self._rule_id(message)
                 if rule_id and not rule_id.startswith(_SUMMARY_RULE_PREFIXES):
                     rules[(rule_id, self._rule_label(message))] += 1
-            if when is not None:
-                bucket = int(when.timestamp() // bucket_size * bucket_size)
-                buckets[bucket] += 1
-                bucket_blocked[bucket] += is_blocked
+            bucket = int(when.timestamp() // bucket_size * bucket_size)
+            buckets[bucket] += 1
+            bucket_blocked[bucket] += is_blocked
 
         return {
             "window": self._window,

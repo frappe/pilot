@@ -78,6 +78,21 @@ def test_window_excludes_old_entries(tmp_path: Path) -> None:
     assert out["totals"]["flagged"] == 1
 
 
+def test_unparseable_timestamp_is_skipped(tmp_path: Path) -> None:
+    now = datetime.now()
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    good = _entry("1.1.1.1", 403, [("942100", "SQLi"), ("949110", "anomaly")], now)
+    bad = _entry("9.9.9.9", 403, [("942100", "SQLi"), ("949110", "anomaly")], now)
+    bad["transaction"]["time_stamp"] = "garbage-timestamp"  # none of the known formats
+    (logs / "modsec_audit.log").write_text(json.dumps(good) + "\n" + json.dumps(bad) + "\n")
+
+    out = WafReader(tmp_path, "24h").read()
+    # Only the parseable entry counts; the unparseable one must not inflate totals.
+    assert out["totals"] == {"flagged": 1, "blocked": 1, "would_block": 1}
+    assert out["top_ips"] == [{"ip": "1.1.1.1", "count": 1}]
+
+
 def test_missing_log_is_empty(tmp_path: Path) -> None:
     out = WafReader(tmp_path, "1h").read()
     assert out["totals"] == {"flagged": 0, "blocked": 0, "would_block": 0}
