@@ -56,30 +56,30 @@ def test_fetch_missing_apps_fetches_app_not_on_bench(tmp_path: Path) -> None:
 
     with patch.object(Marketplace, "read_all_apps", return_value=[frappe_helpdesk]), \
             patch("pilot.commands.apps.download.GetAppCommand.run") as mock_run, \
-            patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"):
+            patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"), \
+            patch.object(Marketplace, "_read_apps_json", return_value="[]"):
         task._fetch_missing_apps()
 
     mock_run.assert_called_once()
 
 
-def test_fetch_missing_apps_resolves_dependencies_first(tmp_path: Path) -> None:
+def test_fetch_missing_apps_installs_dependencies_via_get_app(tmp_path: Path) -> None:
+    """Dependency resolution now happens inside GetAppCommand itself
+    (install_dependencies=True), not as a separate fetch loop here."""
     task = make_task(tmp_path, ["payments"])
 
     dep = resolver("frappe_payments_dep")
     top = resolver("payments", deps={"frappe_payments_dep": ""})
     top._registry = {"frappe_payments_dep": [dep]}
 
-    fetched: list[str] = []
-
-    def fake_run(self):
-        fetched.append(self.name)
-
     with patch.object(Marketplace, "read_all_apps", return_value=[top]), \
             patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"), \
-            patch("pilot.commands.apps.download.GetAppCommand.run", fake_run):
+            patch.object(Marketplace, "_read_apps_json", return_value="[]"), \
+            patch("pilot.tasks.jobs.new_site_task.GetAppCommand") as mock_cmd:
         task._fetch_missing_apps()
 
-    assert fetched == ["frappe_payments_dep", "payments"]
+    mock_cmd.assert_called_once_with(task.bench, top.repo, top.target, install_dependencies=True)
+    mock_cmd.return_value.run.assert_called_once()
 
 
 def test_fetch_missing_apps_raises_when_not_in_marketplace(tmp_path: Path) -> None:
@@ -88,7 +88,8 @@ def test_fetch_missing_apps_raises_when_not_in_marketplace(tmp_path: Path) -> No
     task = make_task(tmp_path, ["unknown_app"])
 
     with patch.object(Marketplace, "read_all_apps", return_value=[]), \
-            patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"):
+            patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"), \
+            patch.object(Marketplace, "_read_apps_json", return_value="[]"):
         try:
             task._fetch_missing_apps()
         except BenchError as error:

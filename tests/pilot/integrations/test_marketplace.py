@@ -340,12 +340,12 @@ def make_marketplace(frappe_version: str, registry: list | None = None) -> Marke
     bench = MagicMock()
     bench.env_path = Path("/fake/env")
 
+    import json
+
     with (
         patch("pilot.integrations.marketplace.Marketplace.get_current_frappe_version", return_value=frappe_version),
-        patch("pilot.integrations.marketplace._REGISTRY_V2_PATH") as mock_path,
+        patch("pilot.integrations.marketplace.Marketplace._read_apps_json", return_value=json.dumps(registry or SAMPLE_REGISTRY)),
     ):
-        import json
-        mock_path.read_text.return_value = json.dumps(registry or SAMPLE_REGISTRY)
         mp = Marketplace(bench)
     return mp
 
@@ -498,3 +498,18 @@ def test_read_all_apps_no_targets_produces_non_installable():
     apps = mp.read_all_apps()
     ghost = next(a for a in apps if a.app == "ghost_app")
     assert ghost.is_installable is False
+
+
+# ── Marketplace.find_app ──────────────────────────────────────────────────────
+
+
+def test_find_app_returns_matching_resolver():
+    mp = make_marketplace("15.0.0")
+    resolver = mp.find_app("erpnext")
+    assert resolver.app == "erpnext"
+
+
+def test_find_app_raises_for_unknown_app():
+    mp = make_marketplace("15.0.0")
+    with pytest.raises(BenchError, match="'unknown_app' not found in marketplace"):
+        mp.find_app("unknown_app")

@@ -57,6 +57,7 @@ admin/backend/static/dist/
 .ruff_cache
 .claude
 
+registry-cache*
 
 # Agent Skills
 .agents

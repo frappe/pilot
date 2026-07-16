@@ -3,20 +3,17 @@
 import json
 import typing
 from dataclasses import dataclass, field
-from pathlib import Path
+from functools import lru_cache
 from typing import Literal
 
 from packaging.specifiers import SpecifierSet
-from functools import lru_cache
 from packaging.version import Version
 
-from pilot.exceptions import BenchError
+from pilot.exceptions import AppNotFoundError, DependencyResolutionError
 from pilot.utils import run_command
 
 if typing.TYPE_CHECKING:
     from pilot.core.bench import Bench
-
-_REGISTRY_V2_PATH = Path(__file__).parent.parent.parent / "registry" / "apps_v2.json"
 
 
 @dataclass
@@ -71,10 +68,10 @@ class Resolver:
     ):
         if app in path:
             cycle = " -> ".join(path[path.index(app) :] + [app])
-            raise BenchError(f"Circular dependency detected: {cycle}")
+            raise DependencyResolutionError(f"Circular dependency detected: {cycle}")
         if app in visited:
             if required_spec and Version(visited[app]) not in SpecifierSet(required_spec):
-                raise BenchError(
+                raise DependencyResolutionError(
                     f"Version conflict: '{app}' {visited[app]!r} already selected "
                     f"but {required_spec!r} is required by '{path[-1]}'."
                 )
@@ -88,10 +85,10 @@ class Resolver:
             None,
         )
         if not resolver:
-            raise BenchError(
+            raise DependencyResolutionError(
                 f"Dependency '{app}' has no version satisfying {required_spec!r} "
                 f"compatible with Frappe {self.frappe_version}.\n"
-                f"Needed by '{path[-2]}'."
+                f"Needed by '{path[-2]}' in the marketplace registry."
             )
 
         for dep, dep_spec in resolver.dependencies.items():
@@ -104,7 +101,7 @@ class Resolver:
     def resolve(self) -> list["Resolver"]:
         """Returns dependencies in install order (deepest first, self last)."""
         if not self.is_installable:
-            raise BenchError(
+            raise DependencyResolutionError(
                 f"'{self.app}' is not compatible with the current Frappe version.\nRequired: {self.required_version} Current: {self.frappe_version}"
             )
         result: list["Resolver"] = []
@@ -122,8 +119,17 @@ class Marketplace:
 
     def __post_init__(self):
         self.frappe_version = self.get_current_frappe_version()
-        # Snapshot at construction so callers reading _REGISTRY_V2_PATH (incl. tests) see it.
-        self._registry = self._parse_registry(json.loads(_REGISTRY_V2_PATH.read_text()))
+        # Snapshot at construction so callers see a consistent registry for this instance.
+        self._registry = self._parse_registry(json.loads(self._read_apps_json()))
+
+    @staticmethod
+    def _read_apps_json() -> str:
+        from pilot.core.registry_cache import RegistryCache
+        from pilot.loader import cli_root
+
+        cache = RegistryCache(cli_root())
+        cache.ensure_fresh()
+        return cache.apps_json_path.read_text()
 
     def get_current_frappe_version(self) -> str:
         cmd = [str(self.bench.env_path / "bin" / "python"), "-c", "import frappe; print(frappe.__version__)"]
@@ -134,7 +140,7 @@ class Marketplace:
     @lru_cache(maxsize=1)
     def registry() -> list[dict]:
         """Parsed registry for callers that don't have a Marketplace/bench (e.g. tasks). Cached once."""
-        return Marketplace._parse_registry(json.loads(_REGISTRY_V2_PATH.read_text()))
+        return Marketplace._parse_registry(json.loads(Marketplace._read_apps_json()))
 
     @staticmethod
     def _parse_registry(raw: list[dict]) -> list[dict]:
@@ -186,3 +192,11 @@ class Marketplace:
         for resolver in resolvers:
             resolver._registry = dependency_lookup
         return resolvers
+
+    def find_app(self, name: str) -> Resolver:
+        """Look up a marketplace app by name, or raise AppNotFoundError — the
+        single place every caller resolves a marketplace name to its Resolver."""
+        resolver = next((r for r in self.read_all_apps() if r.app == name), None)
+        if resolver is None:
+            raise AppNotFoundError(f"'{name}' not found in marketplace.")
+        return resolver

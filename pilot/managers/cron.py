@@ -26,11 +26,16 @@ class CronManager:
     def set_schedule(self, job_key: str, cron_expr: str, command: str) -> None:
         lines = self._read_crontab()
         marker = self._marker(job_key)
+        entry = f"{cron_expr} {command}"
         try:
             i = lines.index(marker)
-            lines[i + 1] = f"{cron_expr} {command}"
         except ValueError:
-            lines += [marker, f"{cron_expr} {command}"]
+            lines += [marker, entry]
+        else:
+            if i + 1 < len(lines):
+                lines[i + 1] = entry
+            else:
+                lines.append(entry)
         self._write_crontab(lines)
 
     def remove_schedule(self, job_key: str) -> None:

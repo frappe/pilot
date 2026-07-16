@@ -43,3 +43,19 @@ class DomainConflictError(BenchError):
 
 class DomainProviderError(BenchError):
     pass
+
+
+class RegistryError(BenchError):
+    """Base for marketplace-registry-related failures."""
+
+
+class RegistryUnavailableError(RegistryError):
+    """The registry itself failed to load (tampered cache, network, corruption)."""
+
+
+class AppNotFoundError(RegistryError):
+    """The named app isn't in an otherwise successfully-loaded registry."""
+
+
+class DependencyResolutionError(RegistryError):
+    """A dependency chain couldn't be resolved (cycle, version conflict, etc)."""

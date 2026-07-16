@@ -1,6 +1,7 @@
 from pilot.commands.apps.download import GetAppCommand
+from pilot.integrations.marketplace import Marketplace
+
 from .base_task import BaseTask
-from .marketplace_fetcher import MarketplaceFetcher
 
 
 class GetAppTask(BaseTask):
@@ -20,10 +21,12 @@ class GetAppTask(BaseTask):
 
     def run(self) -> None:
         if self.marketplace_app:
-            MarketplaceFetcher(self.bench, self._step).fetch(self.marketplace_app)
+            resolver = Marketplace(self.bench).find_app(self.marketplace_app)
+            repo, branch = resolver.repo, resolver.target
         else:
-            self._step("fetch", f"Fetch {self.repo}")
-            GetAppCommand(self.bench, self.repo, self.branch).run()
+            repo, branch = self.repo, self.branch
+        self._step("fetch", f"Fetch {self.marketplace_app or self.repo}")
+        GetAppCommand(self.bench, repo, branch, install_dependencies=bool(self.marketplace_app)).run()
         self._step("done")
 
 

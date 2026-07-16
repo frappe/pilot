@@ -1,8 +1,9 @@
 from pilot.commands.apps.download import GetAppCommand
+from pilot.core.app import App
 from pilot.core.site import Site, SiteConfig
+from pilot.integrations.marketplace import Marketplace
 
 from .base_task import BaseTask
-from .marketplace_fetcher import MarketplaceFetcher
 
 
 class GetAndInstallAppTask(BaseTask):
@@ -27,32 +28,48 @@ class GetAndInstallAppTask(BaseTask):
         self.sites = args.sites or []
 
     def run(self) -> None:
-        if self.marketplace_app:
-            cmds = MarketplaceFetcher(self.bench, self._step).fetch(self.marketplace_app)
-        else:
-            cmds = [self._fetch_custom()]
-        self._install_on_sites(cmds)
+        cmd = self._fetch()
+        # Frappe's site install-app cascades installing declared dependencies
+        # onto the site itself, but never builds their assets — that's a
+        # separate, bench-wide step this task still owns.
+        self._install_on_sites(cmd.app)
+        self._build_assets([cmd.app] + cmd.installed_dependencies)
         self._step("done")
 
-    def _fetch_custom(self) -> GetAppCommand:
-        self._step("fetch", f"Fetch {self.repo}")
-        cmd = GetAppCommand(self.bench, self.repo, self.branch)
+    def _fetch(self) -> GetAppCommand:
+        # get-app resolves and installs marketplace dependencies itself; a
+        # plain repo has none to resolve.
+        if self.marketplace_app:
+            resolver = Marketplace(self.bench).find_app(self.marketplace_app)
+            repo, branch = resolver.repo, resolver.target
+        else:
+            repo, branch = self.repo, self.branch
+        self._step("fetch", f"Fetch {self.marketplace_app or self.repo}")
+        cmd = GetAppCommand(
+            self.bench,
+            repo,
+            branch,
+            install_dependencies=bool(self.marketplace_app),
+            skip_validations=False,
+        )
         cmd.run()
         return cmd
 
-    def _install_on_sites(self, cmds: list[GetAppCommand]) -> None:
-        from pilot.managers.python_environment import PythonEnvManager
-
+    def _install_on_sites(self, app: App) -> None:
         for site in self.sites:
             safe_key = site.replace(".", "_").replace("-", "_")
-            for cmd in cmds:
-                self._step(f"install_{safe_key}_{cmd.app.config.name}", f"Install {cmd.app.config.name} on {site}")
-                Site(SiteConfig(name=site, apps=[]), self.bench).install_app(cmd.app)
+            self._step(
+                f"install_{safe_key}_{app.config.name}", f"Install {app.config.name} on {site}"
+            )
+            Site(SiteConfig(name=site, apps=[]), self.bench).install_app(app)
+
+    def _build_assets(self, apps: list[App]) -> None:
+        from pilot.managers.python_environment import PythonEnvManager
 
         env = PythonEnvManager(self.bench)
-        for cmd in cmds:
-            self._step("build", f"Build assets for {cmd.app.config.name}")
-            env.build_assets_for_app(cmd.app)
+        for app in apps:
+            self._step(f"build_{app.config.name}", f"Build assets for {app.config.name}")
+            env.build_assets_for_app(app)
 
 
 if __name__ == "__main__":

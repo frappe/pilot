@@ -114,6 +114,21 @@ class Bench:
                 result.append(App(app_config, self))
         return result
 
+    def registered_apps(self) -> List[str]:
+        """Module names listed in sites/apps.txt — the bench-wide record of
+        which apps are actually installed, as opposed to merely cloned."""
+        apps_txt = self.sites_path / "apps.txt"
+        return apps_txt.read_text().splitlines() if apps_txt.exists() else []
+
+    def is_app_installed(self, name: str) -> bool:
+        """Whether `name` (raw or module form) is installed on this bench —
+        i.e. listed in apps.txt, not just cloned under apps/."""
+        from pilot.config.app_config import AppConfig
+        from pilot.core.app import App
+
+        module_name = App(AppConfig(name=name, repo="", branch=""), self).module_name
+        return module_name in self.registered_apps()
+
     def init_apps(self) -> List["App"]:
         """Return apps declared in bench.toml (used only during bench init)."""
         from pilot.core.app import App
