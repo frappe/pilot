@@ -117,6 +117,7 @@ def uninstall_app(page: Page, base_url: str, site_name: str, app_name: str) -> N
         page,
         "/api/v1/sites/",
         lambda: dialog.get_by_role("button", name="Uninstall", exact=True).click(),
+        method="DELETE",
     )
     wait_for_task(page.request, base_url, task_id)
 
