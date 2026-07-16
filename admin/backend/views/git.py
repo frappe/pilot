@@ -5,7 +5,7 @@ from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request
 
 from ..api_contract import error_response, no_content_response
-from pilot.integrations.git_providers import (
+from pilot.integrations.git import (
     TOKEN_HELP_URLS,
     GitAuthError,
     GitCredentialStore,

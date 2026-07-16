@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from pilot.config.bench_toml_builder import BenchTomlBuilder
-from pilot.integrations.git_providers import GitAuthError
+from pilot.integrations.git import GitAuthError
 
 
 def _client(bench_root: Path, password: str = "secret"):

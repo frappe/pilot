@@ -123,7 +123,7 @@ class App:
 
     @property
     def _git_remote(self) -> tuple[str, dict | None]:
-        from pilot.integrations.git_providers import git_remote_for
+        from pilot.integrations.git import git_remote_for
 
         return git_remote_for(self.bench.path, self.config.repo)
 

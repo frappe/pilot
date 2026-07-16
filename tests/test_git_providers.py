@@ -1,4 +1,4 @@
-"""Tests for pilot.integrations.git_providers — credential storage and URL helpers."""
+"""Tests for pilot.integrations.git — credential storage and URL helpers."""
 from __future__ import annotations
 
 import stat
@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pilot.integrations.git_providers import (
+from pilot.integrations.git import (
     GitCredentialStore,
     GitHubProvider,
     GitProviderError,
@@ -86,7 +86,7 @@ def test_app_clone_passes_plain_remote_and_auth_environment(tmp_path: Path) -> N
 
     with (
         patch(
-            "pilot.integrations.git_providers.git_remote_for",
+            "pilot.integrations.git.git_remote_for",
             return_value=("https://github.com/acme/private.git", auth_env),
         ),
         patch("pilot.core.app.run_command") as run,
@@ -121,7 +121,7 @@ def test_resolve_app_name_requires_hooks_file(tmp_path: Path) -> None:
         '[project]\nname = "myapp"\n',
         GitProviderError("myapp/hooks.py not found in repository."),
     ]
-    with patch("pilot.integrations.git_providers.provider_for_repo", return_value=provider):
+    with patch("pilot.integrations.git.provider_for_repo", return_value=provider):
         with pytest.raises(GitProviderError, match="doesn't look like a Frappe app"):
             resolve_app_name_from_repo(tmp_path, "https://github.com/acme/myapp")
 
@@ -132,7 +132,7 @@ def test_resolve_app_name_succeeds_with_hooks_file(tmp_path: Path) -> None:
         '[project]\nname = "myapp"\ndescription = "A demo app"\n',
         "app_name = 'myapp'\n",
     ]
-    with patch("pilot.integrations.git_providers.provider_for_repo", return_value=provider):
+    with patch("pilot.integrations.git.provider_for_repo", return_value=provider):
         resolved = resolve_app_name_from_repo(tmp_path, "https://github.com/acme/myapp")
     assert resolved == {"name": "myapp", "description": "A demo app"}
 
@@ -143,6 +143,6 @@ def test_resolve_app_name_defaults_description_when_missing(tmp_path: Path) -> N
         '[project]\nname = "myapp"\n',
         "app_name = 'myapp'\n",
     ]
-    with patch("pilot.integrations.git_providers.provider_for_repo", return_value=provider):
+    with patch("pilot.integrations.git.provider_for_repo", return_value=provider):
         resolved = resolve_app_name_from_repo(tmp_path, "https://github.com/acme/myapp")
     assert resolved == {"name": "myapp", "description": ""}

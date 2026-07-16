@@ -9,7 +9,7 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request, send_file
 
-from pilot.integrations.git_providers import GitProviderError, resolve_app_name_from_repo
+from pilot.integrations.git import GitProviderError, resolve_app_name_from_repo
 from pilot.exceptions import (
     BenchError,
     ConfigError,
