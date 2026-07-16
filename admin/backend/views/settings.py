@@ -8,10 +8,12 @@ from flask import Blueprint, current_app, jsonify, request
 from pilot.config.bench_config import BenchConfig
 from pilot.config.firewall_config import FirewallRule
 from pilot.config.s3_config import S3Config
+from pilot.config.waf_config import WAF_MODES
 from pilot.config.toml_store import BenchTomlStore
 from pilot.config.worker_config import WorkerGroup
 from pilot.core.bench import Bench
 from pilot.managers.redis_manager import RedisManager
+from pilot.managers.waf_manager import WafManager
 from pilot.platform import is_linux, native_process_manager
 
 settings_bp = Blueprint("settings", __name__)
@@ -47,6 +49,20 @@ def _firewall_payload(config: BenchConfig) -> dict:
         "enabled": fw.enabled,
         "default": fw.default,
         "rules": [{"ip": r.ip, "action": r.action, "description": r.description} for r in fw.rules],
+    }
+
+
+def _waf_payload(config: BenchConfig) -> dict:
+    waf = config.waf
+    return {
+        "enabled": waf.enabled,
+        "mode": waf.mode,
+        "paranoia": waf.paranoia,
+        "inbound_threshold": waf.inbound_threshold,
+        "body_limit": waf.body_limit,
+        "inspect_responses": waf.inspect_responses,
+        "exclusions": list(waf.exclusions),
+        "exempt_paths": list(waf.exempt_paths),
     }
 
 
@@ -94,6 +110,7 @@ class ConfigPatcher:
         self._apply_redis()
         self._apply_workers()
         self._apply_firewall()
+        self._apply_waf()
         self._apply_admin()
         self._apply_monitor()
         if error := self._apply_s3():
@@ -186,6 +203,28 @@ class ConfigPatcher:
                     )
                 )
             fw.rules = rules
+
+    def _apply_waf(self) -> None:
+        waf = self.data.get("waf")
+        if waf is None:
+            return
+        w = self.config.waf
+        if "enabled" in waf:
+            w.enabled = bool(waf["enabled"])
+        if "mode" in waf:
+            w.mode = str(waf["mode"])
+        if "paranoia" in waf:
+            w.paranoia = int(waf["paranoia"])
+        if "inbound_threshold" in waf:
+            w.inbound_threshold = int(waf["inbound_threshold"])
+        if "body_limit" in waf:
+            w.body_limit = str(waf["body_limit"]).strip()
+        if "inspect_responses" in waf:
+            w.inspect_responses = bool(waf["inspect_responses"])
+        if "exclusions" in waf:
+            w.exclusions = [str(line).strip() for line in (waf["exclusions"] or []) if str(line).strip()]
+        if "exempt_paths" in waf:
+            w.exempt_paths = [str(path).strip() for path in (waf["exempt_paths"] or []) if str(path).strip()]
 
     def _apply_admin(self) -> None:
         """TLS termination is opt-in: persisting tls=true only records the intent;
@@ -374,6 +413,7 @@ def _build_settings_response(config: BenchConfig) -> dict:
         "redis": {"cache_port": config.redis.cache_port, "queue_port": config.redis.queue_port, "version": RedisManager.installed_version() or config.redis.version or ""},
         "workers": _worker_groups_payload(config),
         "firewall": _firewall_payload(config),
+        "waf": {**_waf_payload(config), "installed": WafManager.is_installed(), "modes": list(WAF_MODES)},
         "production": {"process_manager": config.production.process_manager or "none"},
         "admin": {"domain": config.admin.domain, "tls": config.admin.tls},
         "letsencrypt": {"email": config.letsencrypt.email},
@@ -446,6 +486,7 @@ def update_settings():
 
     old_restart = _restart_trigger_values(config)
     old_firewall = _firewall_payload(config)
+    old_waf = _waf_payload(config)
     old_s3_config = _s3_payload(config)
 
     if error := ConfigPatcher(config, data).apply():
@@ -475,11 +516,16 @@ def update_settings():
             return jsonify({"ok": False, "error": f"Failed to regenerate configs: {error}"}), 500
         restarted, restart_error = _do_restart(bench_root, config)
 
-    # Firewall rules only affect nginx: regenerate + reload the vhosts (no
-    # workload restart). Only meaningful once the bench is in production.
+    # Firewall and WAF rules only affect nginx: regenerate + reload the vhosts
+    # (no workload restart). Only meaningful once the bench is in production.
+    # Enabling the WAF for the first time also installs the ModSecurity module +
+    # CRS, so this branch can be slow on that one transition (idempotent after).
     nginx_error = None
-    if config.production.enabled and _firewall_payload(config) != old_firewall:
+    waf_changed = _waf_payload(config) != old_waf
+    if config.production.enabled and (_firewall_payload(config) != old_firewall or waf_changed):
         try:
+            if waf_changed and config.waf.enabled:
+                WafManager(Bench(config, bench_root)).install()
             _regenerate_nginx(bench_root, config)
         except Exception as error:
             nginx_error = str(error)

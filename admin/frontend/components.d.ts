@@ -57,6 +57,7 @@ declare module 'vue' {
     TerminalOutput: typeof import('./src/components/TerminalOutput.vue')['default']
     UpdateAppsDialog: typeof import('./src/components/UpdateAppsDialog.vue')['default']
     UpdatesAvailableButton: typeof import('./src/components/UpdatesAvailableButton.vue')['default']
+    Waf: typeof import('./src/components/settings/Waf.vue')['default']
     Workers: typeof import('./src/components/settings/Workers.vue')['default']
   }
 }
