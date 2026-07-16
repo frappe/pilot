@@ -33,7 +33,7 @@ class GetAndInstallAppTask(BaseTask):
         # onto the site itself, but never builds their assets — that's a
         # separate, bench-wide step this task still owns.
         self._install_on_sites(cmd.app)
-        self._build_assets([cmd.app] + [cmd.installed_dependencies])
+        self._build_assets([cmd.app] + cmd.installed_dependencies)
         self._step("done")
 
     def _fetch(self) -> GetAppCommand:
