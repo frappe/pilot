@@ -12,8 +12,8 @@ import pytest
 from pilot.config.bench_config import BenchConfig
 from pilot.config.waf_config import WafConfig
 from pilot.core.bench import Bench
-from pilot.managers.nginx_manager import NginxManager
-from pilot.managers.waf_manager import WafManager
+from pilot.managers.nginx import NginxManager
+from pilot.managers.waf import WafManager
 
 pytestmark = pytest.mark.integration
 

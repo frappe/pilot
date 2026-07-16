@@ -7,6 +7,8 @@ import json
 import re
 from datetime import datetime, timezone
 
+from pilot.secure_files import open_private
+
 _FILE_RE = re.compile(r"^audit_\d{4}_\d{2}\.jsonl$")
 
 
@@ -17,7 +19,7 @@ class AuditLog:
     def append(self, entry_type: str, entry: dict) -> None:
         record = {"type": entry_type, "logged_at": self._now(), **entry}
         self._dir.mkdir(parents=True, exist_ok=True)
-        with self._current_file().open("a") as handle:
+        with open_private(self._current_file(), "a") as handle:
             handle.write(json.dumps(record) + "\n")
 
     def entries(self, entry_type=None, site=None, status=None, limit=None) -> list[dict]:

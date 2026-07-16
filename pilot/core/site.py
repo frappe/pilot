@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.config.site_config import SiteConfig
+from pilot.exceptions import BenchError
 from pilot.utils import run_command
 
 if TYPE_CHECKING:
@@ -29,6 +30,8 @@ class Site:
         return [*self.bench.frappe_call, *args]
 
     def create(self, db_type: str | None = None) -> None:
+        if not isinstance(self.config.admin_password, str) or not self.config.admin_password.strip():
+            raise BenchError("Site Administrator password must not be empty.")
         cmd = self._frappe_call("frappe", "--site", self.config.name, "new-site", self.config.name)
         cmd += ["--admin-password", self.config.admin_password]
         effective = db_type or self.bench.config.db_type
@@ -41,7 +44,7 @@ class Site:
         run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
 
     def _mariadb_db_args(self) -> list[str]:
-        from pilot.managers.mariadb_manager import MariaDBManager
+        from pilot.managers.mariadb import MariaDBManager
 
         mariadb = self.bench.config.mariadb
         socket_path = MariaDBManager(mariadb)._detect_socket()
@@ -81,7 +84,9 @@ class Site:
         cmd += self.bench.db_root_args()
         run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
 
-    def reinstall(self, admin_password: str = "admin") -> None:
+    def reinstall(self, admin_password: str) -> None:
+        if not isinstance(admin_password, str) or not admin_password.strip():
+            raise BenchError("Site Administrator password must not be empty.")
         cmd = self._frappe_call("frappe", "--site", self.config.name, "reinstall", "--yes", "--admin-password", admin_password)
         cmd += self.bench.db_root_args()
         run_command(cmd, cwd=self.bench.sites_path, stream_output=True)

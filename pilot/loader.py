@@ -1,20 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
+from pilot.context import CliContext
 from pilot.exceptions import BenchError
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
-
-# Bench name selected via -b / --bench; set by cli.main() before dispatch.
-_active_bench: Optional[str] = None
-
-
-def set_active_bench(name: Optional[str]) -> None:
-    global _active_bench
-    _active_bench = name
 
 
 def cli_root() -> Path:
@@ -23,41 +16,25 @@ def cli_root() -> Path:
     return Path(_pkg.__file__).parent.parent
 
 
-def find_bench_root(require_explicit: bool = False) -> Path:
-    """
-    Locate the directory containing bench.toml for the active bench.
+def find_bench_root(context: CliContext, require_explicit: bool = False) -> Path:
+    """Resolve the bench dir: -b/--bench, then the enclosing dir, then the sole bench."""
+    benches_dir = context.installation_root / "benches"
 
-    Resolution order:
-    1. -b / --bench <name> flag → benches/<name>/
-    2. Walk up from cwd → the bench you're inside wins (even when many exist).
-    3. Exactly one bench in benches/ → use it automatically.
-    4. Multiple benches and no other signal → ask for -b.
-
-    With ``require_explicit``, only (1) and (2) apply — auto-pick (3) is off.
-    """
-    benches_dir = cli_root() / "benches"
-
-    if _active_bench:
-        bench_dir = benches_dir / _active_bench
+    if context.bench_name:
+        bench_dir = benches_dir / context.bench_name
         if not (bench_dir / "bench.toml").exists():
-            candidates = [d.name for d in benches_dir.iterdir() if d.is_dir() and (d / "bench.toml").exists()] if benches_dir.is_dir() else []
-            hint = f"  Available: {', '.join(candidates)}" if candidates else "  No benches found. Run: bench new <name>"
-            raise BenchError(f"Bench '{_active_bench}' not found.\n{hint}")
+            raise BenchError(f"Bench '{context.bench_name}' not found.\n{_available_hint(benches_dir)}")
         return bench_dir
 
-    # Inside a bench directory? Use it — this takes precedence over the
-    # multiple-benches ambiguity below, so `cd benches/x && bench <cmd>` works.
     current = Path.cwd()
     for directory in [current, *current.parents]:
         if (directory / "bench.toml").exists():
             return directory
 
     if require_explicit:
-        candidates = [d.name for d in benches_dir.iterdir() if d.is_dir() and (d / "bench.toml").exists()] if benches_dir.is_dir() else []
-        hint = f"  Available: {', '.join(sorted(candidates))}" if candidates else "  No benches found. Run: bench new <name>"
         raise BenchError(
             "This command needs an explicit bench — run it from inside the bench "
-            "directory, or pass -b <name>.\n" + hint
+            "directory, or pass -b <name>.\n" + _available_hint(benches_dir, sort=True)
         )
 
     if benches_dir.is_dir():
@@ -71,10 +48,19 @@ def find_bench_root(require_explicit: bool = False) -> Path:
     raise BenchError("No bench found. Create one with: bench new <name>")
 
 
-def load_bench(require_explicit: bool = False) -> "Bench":
+def _available_hint(benches_dir: Path, sort: bool = False) -> str:
+    if not benches_dir.is_dir():
+        return "  No benches found. Run: bench new <name>"
+    names = [d.name for d in benches_dir.iterdir() if d.is_dir() and (d / "bench.toml").exists()]
+    if not names:
+        return "  No benches found. Run: bench new <name>"
+    return f"  Available: {', '.join(sorted(names) if sort else names)}"
+
+
+def load_bench(context: CliContext, require_explicit: bool = False) -> "Bench":
     from pilot.config.toml_store import BenchTomlStore
     from pilot.core.bench import Bench
 
-    bench_root = find_bench_root(require_explicit=require_explicit)
+    bench_root = find_bench_root(context, require_explicit=require_explicit)
     config = BenchTomlStore.for_bench(bench_root).read()
     return Bench(config, bench_root)

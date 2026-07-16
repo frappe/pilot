@@ -2,6 +2,10 @@ class BenchError(Exception):
     pass
 
 
+class BenchAlreadyExistsError(BenchError):
+    pass
+
+
 class ConfigError(BenchError):
     pass
 
@@ -21,11 +25,23 @@ class TaskNotRunningError(BenchError):
     pass
 
 
+class TaskConflictError(BenchError):
+    pass
+
+
 class MigrateError(BenchError):
     pass
 
 
 class AppValidationError(BenchError):
+    pass
+
+
+class DomainConflictError(BenchError):
+    pass
+
+
+class DomainProviderError(BenchError):
     pass
 
 

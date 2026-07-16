@@ -11,7 +11,7 @@ on:
 jobs:
   e2e:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 30
     name: e2e (${{ matrix.variant }})
     strategy:
       # Variants run as independent jobs in parallel, so adding one doesn't add
@@ -63,7 +63,7 @@ jobs:
       - name: Install PostgreSQL
         if: matrix.db_type == 'postgres'
         run: |
-          sudo apt-get install -y postgresql postgresql-client libpq-dev
+          sudo apt-get install -y postgresql postgresql-client libpq-dev libmariadb-dev
           # Same as MariaDB above: bench provisions its own rootless server.
           sudo systemctl disable --now postgresql
 
@@ -102,7 +102,7 @@ jobs:
         working-directory: tests/e2e
         # BENCH_BIN is intentionally unset so the harness uses the repo launcher
         # (<repo>/bench), which writes to <repo>/benches where the harness reads.
-        run: pytest
+        run: pytest -v -s --durations=10
         env:
           E2E_MARIADB_PASSWORD: admin
           E2E_POSTGRES_PASSWORD: admin

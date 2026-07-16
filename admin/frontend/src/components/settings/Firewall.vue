@@ -75,6 +75,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { Button, ErrorMessage, Select, Switch, TextInput, toast, Alert } from 'frappe-ui'
+import { apiErrorMessage } from '@/api/client'
 import { settingsApi } from '@/api/settings'
 
 const ACTION_OPTIONS = [
@@ -132,12 +133,11 @@ async function save() {
       })),
     }
     const result = await settingsApi.update({ firewall: payload })
-    if (!result.ok) {
-      error.value = result.error || 'Failed to save.'
+    if (result.error) {
+      error.value = apiErrorMessage(result, 'Failed to save.')
       return
     }
     toast.success('Firewall updated')
-    if (result.nginx_error) toast.error(result.nginx_error)
   } catch (e) {
     error.value = e.message || 'Failed to save.'
   } finally {

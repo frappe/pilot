@@ -10,7 +10,7 @@ from __future__ import annotations
 from playwright.sync_api import Page, expect
 
 # Long pole: bench init clones the framework and builds the venv.
-SETUP_TIMEOUT_MS = 45 * 60_000
+SETUP_TIMEOUT_MS = 20 * 60_000
 
 
 class WizardSetupError(Exception):
@@ -84,7 +84,7 @@ def complete_dev_wizard(
     # locator times out 45 minutes later.
     ready = page.get_by_text("Your bench is ready.")
     failed = page.get_by_role("button", name="Back to configuration")
-    expect(ready.or_(failed).first).to_be_visible(timeout=SETUP_TIMEOUT_MS)
+    expect(ready.or_(failed).filter(visible=True).first).to_be_visible(timeout=SETUP_TIMEOUT_MS)
 
     if failed.is_visible():
         raise WizardSetupError(_wizard_error_text(page))

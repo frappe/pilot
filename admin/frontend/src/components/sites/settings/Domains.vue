@@ -45,7 +45,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { Badge, Button, Dropdown, ErrorMessage, LoadingText, Tooltip } from 'frappe-ui'
 import AddDomainDialog from './domains/AddDomainDialog.vue'
 import RemoveDomainDialog from './domains/RemoveDomainDialog.vue'
-import { useSite } from '@/composables/useSite'
+import { useSite } from '@/composables/sites/useSite'
+import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
 
 const props = defineProps({ siteName: { type: String, required: true } })
@@ -98,7 +99,7 @@ async function setPrimary(domain) {
   error.value = ''
   try {
     const data = await sitesApi.domains.setPrimary(props.siteName, domain)
-    if (!data.ok) { error.value = data.error; return }
+    if (!data.task_id) { error.value = apiErrorMessage(data, 'Failed to set primary domain.'); return }
     await loadDomains()
   } catch (e) {
     error.value = e.message || 'Failed to set primary domain.'

@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { navigationRoutes } from './navigation'
-import { useSession } from './composables/useSession'
+import { useSession } from './composables/auth/useSession'
 import { safeRedirect } from './utils/redirect'
 import { authApi } from './api/auth'
 
@@ -8,26 +8,26 @@ const routes = [
   {
     path: '/setup',
     name: 'Setup',
-    component: () => import('./pages/Setup.vue'),
+    component: () => import('./pages/setup/Setup.vue'),
     meta: { title: 'Setup', fullScreen: true },
   },
   {
     path: '/login',
     name: 'Login',
-    component: () => import('./pages/Login.vue'),
+    component: () => import('./pages/auth/Login.vue'),
     meta: { title: 'Login', fullScreen: true },
   },
   { path: '/', redirect: '/sites' },
   {
     path: '/sites/:name/:tab?',
     name: 'SiteDetail',
-    component: () => import('./pages/SiteDetail.vue'),
+    component: () => import('./pages/sites/SiteDetail.vue'),
     meta: { group: 'Sites' },
   },
   {
     path: '/insights/tasks/:taskId',
     name: 'TaskDetail',
-    component: () => import('./pages/TaskDetail.vue'),
+    component: () => import('./pages/tasks/TaskDetail.vue'),
     meta: { group: 'Insights' },
   },
   ...navigationRoutes(),

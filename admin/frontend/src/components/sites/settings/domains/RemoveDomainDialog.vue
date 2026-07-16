@@ -17,6 +17,7 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { Button, Dialog, ErrorMessage } from 'frappe-ui'
+import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
 
 const props = defineProps({
@@ -37,7 +38,7 @@ async function confirmRemove() {
   removing.value = true
   try {
     const data = await sitesApi.domains.remove(props.siteName, props.domain)
-    if (!data.ok) { error.value = data.error; return }
+    if (!data.task_id) { error.value = apiErrorMessage(data, 'Failed to remove domain.'); return }
     show.value = false
     emit('removed')
   } catch (e) {

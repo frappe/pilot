@@ -29,16 +29,16 @@ class RemoveProductionCommand(Command):
 
     def _remove_process_manager(self, pm: str) -> None:
         if pm == "systemd":
-            from pilot.managers.process_managers.systemd import SystemdProcessManager
+            from pilot.managers.processes.systemd import SystemdProcessManager
 
             SystemdProcessManager(self.bench).remove_units()
         else:
-            from pilot.managers.process_managers.supervisor import SupervisorProcessManager
+            from pilot.managers.processes.supervisor import SupervisorProcessManager
 
             SupervisorProcessManager(self.bench).shutdown()
 
     def _remove_nginx(self) -> None:
-        from pilot.managers.nginx_manager import NginxManager
+        from pilot.managers.nginx import NginxManager
 
         try:
             NginxManager(self.bench).uninstall_config()
@@ -51,12 +51,11 @@ class RemoveProductionCommand(Command):
         from pilot.config.toml_store import BenchTomlStore
 
         store = BenchTomlStore.for_bench(self.bench.path)
-        data = store.read_raw()
-        production = data.setdefault("production", {})
-        production["enabled"] = False
-        production.pop("process_manager", None)
-        production.pop("nginx", None)
-        store.write_raw(data)
+        with store.edit_raw() as data:
+            production = data.setdefault("production", {})
+            production["enabled"] = False
+            production.pop("process_manager", None)
+            production.pop("nginx", None)
 
     def _print_summary(self) -> None:
         from pilot.admin_url import admin_url

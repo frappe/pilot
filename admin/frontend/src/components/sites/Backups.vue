@@ -81,8 +81,10 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, Dialog, Dropdown, ErrorMessage, ListFooter, ListView, ListRowItem, LoadingText } from 'frappe-ui'
 import BackupConfigDialog from '@/components/sites/BackupConfigDialog.vue'
+import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
-import { useSite } from '@/composables/useSite'
+import { tasksApi } from '@/api/tasks'
+import { useSite } from '@/composables/sites/useSite'
 import { openTaskDetailPage } from '@/utils/taskRoute'
 import { cronToLabel } from '@/utils/backup'
 
@@ -125,8 +127,8 @@ async function backupNow() {
   error.value = ''
   try {
     const result = await sitesApi.backups.create(props.siteName)
-    if (result.ok) openTaskDetailPage(router, result.task_id)
-    else error.value = result.error || 'Backup failed.'
+    if (result.task_id) openTaskDetailPage(router, result.task_id)
+    else error.value = apiErrorMessage(result, 'Backup failed.')
   } catch (e) {
     error.value = e.message || 'Backup failed.'
   } finally {
@@ -184,19 +186,19 @@ function menuOptions(set) {
 async function downloadFile(set, kind) {
   const file = fileOf(set, kind)
   if (file?.path) {
-    window.location.href = sitesApi.backups.download(props.siteName, file.filename)
+    window.location.href = sitesApi.backups.download(props.siteName, set.timestamp, file.filename)
     return
   }
   // Offsite-only file: fetch a direct, time-limited S3 link and open it —
   // this server never proxies or re-downloads the transfer.
   error.value = ''
   try {
-    const result = await sitesApi.backups.offsiteUrls(props.siteName, set.timestamp)
-    if (result.error) {
-      error.value = result.error
+    const links = await sitesApi.backups.downloadLinks(props.siteName, set.timestamp)
+    if (links.error) {
+      error.value = apiErrorMessage(links, 'Could not load offsite backup.')
       return
     }
-    const url = result.urls[OFFSITE_KIND_KEYS[kind]]
+    const url = links[OFFSITE_KIND_KEYS[kind]]
     if (!url) {
       error.value = 'Backup file not found offsite.'
       return
@@ -217,16 +219,11 @@ async function confirmDelete() {
   deleteError.value = ''
   try {
     const filenames = deleteTarget.value.files.map((f) => f.filename)
-    const res = await fetch('/api/tasks/run', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ command: 'delete-backup', site: props.siteName, filenames }),
-    })
-    const data = await res.json()
-    if (data.ok) {
+    const data = await tasksApi.run('delete-backup', { site: props.siteName, filenames })
+    if (data.task_id) {
       showDelete.value = false
       openTaskDetailPage(router, data.task_id)
-    } else deleteError.value = data.error || 'Delete failed.'
+    } else deleteError.value = apiErrorMessage(data, 'Delete failed.')
   } catch (e) {
     deleteError.value = e.message || 'Delete failed.'
   } finally {

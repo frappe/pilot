@@ -82,6 +82,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, Dialog, ErrorMessage, TextInput } from 'frappe-ui'
+import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
 import { openTaskDetailPage } from '@/utils/taskRoute'
 
@@ -98,10 +99,10 @@ async function confirmMigrate() {
   migrateError.value = ''
   try {
     const data = await sitesApi.migrate(props.siteName)
-    if (data.ok) {
+    if (data.task_id) {
       showMigrate.value = false
       openTaskDetailPage(router, data.task_id)
-    } else migrateError.value = data.error
+    } else migrateError.value = apiErrorMessage(data, 'Failed to migrate site.')
   } catch (e) {
     migrateError.value = e.message || 'Failed to migrate site.'
   } finally {
@@ -142,10 +143,10 @@ async function confirmReset() {
   resetError.value = ''
   try {
     const data = await sitesApi.reinstall(props.siteName)
-    if (data.ok) {
+    if (data.task_id) {
       showReset.value = false
       openTaskDetailPage(router, data.task_id)
-    } else resetError.value = data.error
+    } else resetError.value = apiErrorMessage(data, 'Failed to reset site.')
   } catch (e) {
     resetError.value = e.message || 'Failed to reset site.'
   } finally {
@@ -162,11 +163,11 @@ async function confirmDrop() {
   dropError.value = ''
   try {
     const data = await sitesApi.drop(props.siteName)
-    if (data.ok) {
+    if (data.task_id) {
       showDrop.value = false
       openTaskDetailPage(router, data.task_id)
     } else {
-      dropError.value = data.error || 'Failed to drop site.'
+      dropError.value = apiErrorMessage(data, 'Failed to drop site.')
       dropping.value = false
     }
   } catch (e) {

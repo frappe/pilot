@@ -4,29 +4,29 @@ export const navigation = {
   Sites: {
     path: '/sites',
     icon: 'lucide-layout-grid',
-    component: () => import('./pages/Sites.vue'),
+    component: () => import('./pages/sites/Sites.vue'),
   },
   Marketplace: {
     path: '/marketplace',
     icon: 'lucide-store',
-    component: () => import('./pages/Marketplace.vue'),
+    component: () => import('./pages/marketplace/Marketplace.vue'),
   },
   Insights: {
     children: {
       Analytics: {
         path: '/insights/analytics',
         icon: 'lucide-chart-line',
-        component: () => import('./pages/Analytics.vue'),
+        component: () => import('./pages/dashboard/Analytics.vue'),
       },
       Logs: {
         path: '/insights/logs',
         icon: 'lucide-scroll-text',
-        component: () => import('./pages/Logs.vue'),
+        component: () => import('./pages/logs/Logs.vue'),
       },
       Tasks: {
         path: '/insights/tasks',
         icon: 'lucide-list-checks',
-        component: () => import('./pages/Tasks.vue'),
+        component: () => import('./pages/tasks/Tasks.vue'),
       },
     },
   },
@@ -40,7 +40,7 @@ export const navigation = {
       'SQL playground': {
         path: '/database/sql-playground',
         icon: 'lucide-terminal',
-        component: () => import('./pages/SQLPlayground.vue'),
+        component: () => import('./pages/database/SQLPlayground.vue'),
       },
     },
   },

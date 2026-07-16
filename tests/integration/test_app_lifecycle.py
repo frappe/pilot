@@ -84,7 +84,7 @@ def _purge_testapp(bench_root: Path, bench_bin: str, site: str) -> None:
     # Remove from sites/apps.txt
     apps_txt = bench_root / "sites" / "apps.txt"
     if apps_txt.exists():
-        lines = [l for l in apps_txt.read_text().splitlines() if l.strip() != APP_NAME]
+        lines = [line for line in apps_txt.read_text().splitlines() if line.strip() != APP_NAME]
         apps_txt.write_text("\n".join(lines) + ("\n" if lines else ""))
 
 

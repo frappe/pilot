@@ -98,7 +98,7 @@ class ImportCheck:
             # We ideally should never hit SyntaxError here because we already validated syntax.
             return []
 
-        modules = []
+        modules: list[tuple[str, int]] = []
         for node in self._runtime_imports(tree.body):
             if isinstance(node, ast.Import):
                 modules.extend((alias.name, node.lineno) for alias in node.names)

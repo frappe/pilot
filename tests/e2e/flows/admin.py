@@ -14,7 +14,7 @@ from harness.tasks import run_task_action, wait_for_task
 
 
 def login(page: Page, base_url: str, password: str) -> None:
-    # The wizard's /api/setup/save hands back a session cookie, which carries over
+    # PUT /api/v1/setup/configuration hands back a session cookie, which carries over
     # in this shared browser context — so without clearing it we'd already be
     # authenticated and the login form would never render. Drop it to exercise the
     # actual login.
@@ -26,18 +26,16 @@ def login(page: Page, base_url: str, password: str) -> None:
     expect(page.get_by_role("button", name="New site")).to_be_visible(timeout=30_000)
 
 
-def create_site(page: Page, base_url: str, site_name: str, db_type: str = "") -> None:
+def create_site(page: Page, base_url: str, site_name: str) -> None:
     page.goto(f"{base_url}/")
     page.get_by_role("button", name="New site").click()
 
     dialog = page.get_by_role("dialog")
     dialog.get_by_label("Site name").fill(site_name)
-    if db_type == "sqlite":
-        dialog.get_by_role("button", name="SQLite").click()
 
     task_id = run_task_action(
         page,
-        "/api/sites/create",
+        "/api/v1/sites",
         lambda: dialog.get_by_role("button", name="Create Site").click(),
     )
     wait_for_task(page.request, base_url, task_id)
@@ -76,7 +74,7 @@ def install_custom_app(page: Page, base_url: str, site_name: str, repo: str, bra
     found_text = dialog.get_by_text(re.compile(r"Found \S")).inner_text()
     app_name = found_text.split("Found ", 1)[1].strip()
 
-    add_task_id = run_task_action(page, "/api/apps/add", lambda: add_button.click())
+    add_task_id = run_task_action(page, "/api/v1/apps", lambda: add_button.click())
     wait_for_task(page.request, base_url, add_task_id)
 
     # Adding lands on the task's detail page; the newly-cloned app now shows up
@@ -93,7 +91,7 @@ def install_custom_app(page: Page, base_url: str, site_name: str, repo: str, bra
     install_dialog = page.get_by_role("dialog")
     install_task_id = run_task_action(
         page,
-        "/api/sites/",
+        "/api/v1/sites/",
         lambda: install_dialog.get_by_role("button", name="Install", exact=True).click(),
     )
     wait_for_task(page.request, base_url, install_task_id)
@@ -117,8 +115,9 @@ def uninstall_app(page: Page, base_url: str, site_name: str, app_name: str) -> N
     dialog = page.get_by_role("dialog")
     task_id = run_task_action(
         page,
-        "/api/sites/",
+        "/api/v1/sites/",
         lambda: dialog.get_by_role("button", name="Uninstall", exact=True).click(),
+        method="DELETE",
     )
     wait_for_task(page.request, base_url, task_id)
 
@@ -133,8 +132,9 @@ def drop_site(page: Page, base_url: str, site_name: str) -> None:
     dialog.get_by_label(f"Type {site_name} to confirm").fill(site_name)
     task_id = run_task_action(
         page,
-        "/api/sites/",
+        f"/api/v1/sites/{site_name}",
         lambda: dialog.get_by_role("button", name="Delete site").click(),
+        method="DELETE",
     )
     wait_for_task(page.request, base_url, task_id)
 
@@ -143,15 +143,13 @@ def drop_site(page: Page, base_url: str, site_name: str) -> None:
 
 
 def installed_apps(page: Page, base_url: str, site_name: str) -> list[str]:
-    # GET /api/sites/<name> nests the site under a "site" key:
-    #   { site: { installed_apps: [...] }, installable_apps: [...], ... }
-    res = page.request.get(f"{base_url}/api/sites/{site_name}")
+    res = page.request.get(f"{base_url}/api/v1/sites/{site_name}")
     expect(res).to_be_ok()
-    return (res.json().get("site") or {}).get("installed_apps") or []
+    return res.json().get("installed_apps") or []
 
 
 def site_exists(page: Page, base_url: str, site_name: str) -> bool:
-    res = page.request.get(f"{base_url}/api/sites/")
+    res = page.request.get(f"{base_url}/api/v1/sites")
     if not res.ok:
         return False
     return any(s.get("name") == site_name for s in res.json())

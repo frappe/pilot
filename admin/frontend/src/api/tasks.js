@@ -1,10 +1,21 @@
-import { request } from './client'
+import { apiUrl, request } from './client'
 
 export const tasksApi = {
-  list: (status) => request.get('tasks/', status && status !== 'all' ? { searchParams: { status } } : {}).json(),
+  list: (status) => request.get('tasks', status && status !== 'all' ? { searchParams: { status } } : {}).json(),
   detail: (taskId) => request.get(`tasks/${taskId}`).json(),
-  run: (command, args = {}) => request.post('tasks/run', { json: { command, ...args } }).json(),
-  kill: (taskId) => request.post(`tasks/${taskId}/kill`).json(),
-  rerun: (taskId) => request.post(`tasks/${taskId}/rerun`).json(),
-  streamUrl: (taskId) => `/api/tasks/${taskId}/stream`,
+  run: (command, args = {}) => request.post('tasks', { json: { command, ...args } }).json(),
+  cancel: (taskId) => request.delete(`tasks/${taskId}`),
+  retry: (taskId) => request.post(`tasks/${taskId}/actions/retry`).json(),
+  output: async (taskId) => {
+    const response = await request.get(`tasks/${taskId}/output/content`)
+    return response.ok ? response.text() : ''
+  },
+  outputUrl: (taskId) => apiUrl(`tasks/${taskId}/output/content`),
+  streamUrl: (taskId) => apiUrl(`tasks/${taskId}/events`),
+}
+
+export const taskWorkerApi = {
+  detail: () => request.get('task-worker').json(),
+  start: () => request.post('task-worker/actions/start').json(),
+  stop: () => request.post('task-worker/actions/stop').json(),
 }

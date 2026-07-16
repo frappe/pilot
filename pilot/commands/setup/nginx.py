@@ -16,7 +16,7 @@ class SetupNginxCommand(Command):
     group = "setup"
 
     def __init__(self, bench: "Bench") -> None:
-        from pilot.managers.nginx_manager import NginxManager
+        from pilot.managers.nginx import NginxManager
 
         self.bench = bench
         self.nginx_manager = NginxManager(bench)
@@ -38,11 +38,11 @@ class SetupNginxCommand(Command):
         Best-effort: a package/download hiccup must not abort an otherwise-fine
         deploy — the WAF just stays unavailable (render is gated on is_installed)
         until a later setup run succeeds. Linux-only; a no-op elsewhere."""
-        from pilot.platform import is_linux
+        from pilot.managers.platform import is_linux
 
         if not is_linux():
             return
-        from pilot.managers.waf_manager import WafManager
+        from pilot.managers.waf import WafManager
 
         try:
             WafManager(self.bench).install()

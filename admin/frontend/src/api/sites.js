@@ -1,47 +1,59 @@
-import { request } from './client'
+import { apiUrl, request } from './client'
 
 export const sitesApi = {
-  list: () => request.get('sites/').json(),
+  list: () => request.get('sites').json(),
   detail: (name) => request.get(`sites/${encodeURIComponent(name)}`).json(),
-  create: (payload) => request.post('sites/create', { json: payload }).json(),
-  createFromUpload: (formData) => request.post('sites/create-from-upload', { body: formData }).json(),
-  login: (name) => request.post(`sites/${encodeURIComponent(name)}/login`).json(),
-  config: (name, config) => request.patch(`sites/${encodeURIComponent(name)}/config`, { json: config }).json(),
-  enableSsl: (name, email) => request.post(`sites/${encodeURIComponent(name)}/enable-ssl`, { json: email ? { email } : {} }).json(),
-  clearCache: (name) => request.post(`sites/${encodeURIComponent(name)}/clear-cache`).json(),
-  migrate: (name) => request.post(`sites/${encodeURIComponent(name)}/migrate`).json(),
-  reinstall: (name) => request.post(`sites/${encodeURIComponent(name)}/reinstall`).json(),
-  drop: (name) => request.post(`sites/${encodeURIComponent(name)}/drop`).json(),
-  forceDrop: (name) => request.post(`sites/${encodeURIComponent(name)}/force-drop`).json(),
+  create: (payload) => request.post('sites', { json: payload }).json(),
+  loginLink: (name) => request.post(`sites/${encodeURIComponent(name)}/login`).json(),
+  configuration: {
+    get: (name) => request.get(`sites/${encodeURIComponent(name)}/configuration`).json(),
+    update: (name, patch) => request.patch(`sites/${encodeURIComponent(name)}/configuration`, { json: patch }).json(),
+  },
+  enableTls: (name, email) => request.post(`sites/${encodeURIComponent(name)}/actions/enable-tls`, { json: email ? { email } : {} }).json(),
+  clearCache: (name) => request.post(`sites/${encodeURIComponent(name)}/actions/clear-cache`).json(),
+  migrate: (name) => request.post(`sites/${encodeURIComponent(name)}/actions/migrate`).json(),
+  reinstall: (name) => request.post(`sites/${encodeURIComponent(name)}/actions/reinstall`).json(),
+  drop: (name) => request.delete(`sites/${encodeURIComponent(name)}`).json(),
 
   apps: {
     list: (name) => request.get(`sites/${encodeURIComponent(name)}/apps`).json(),
-    install: (name, app) => request.post(`sites/${encodeURIComponent(name)}/install-app`, { json: { app } }).json(),
-    getAndInstall: (name, payload) => request.post(`sites/${encodeURIComponent(name)}/get-and-install-app`, { json: payload }).json(),
-    uninstall: (name, app) => request.post(`sites/${encodeURIComponent(name)}/uninstall-app`, { json: { app } }).json(),
-    forceUninstall: (name, app) => request.post(`sites/${encodeURIComponent(name)}/force-uninstall-app`, { json: { app } }).json(),
+    install: (name, payload) => request.post(`sites/${encodeURIComponent(name)}/apps`, { json: payload }).json(),
+    remove: (name, app, { force = false } = {}) =>
+      request
+        .delete(`sites/${encodeURIComponent(name)}/apps/${encodeURIComponent(app)}`, {
+          searchParams: force ? { force: 'true' } : {},
+        })
+        .json(),
   },
 
   domains: {
     list: (name) => request.get(`sites/${encodeURIComponent(name)}/domains`).json(),
     add: (name, domain) => request.post(`sites/${encodeURIComponent(name)}/domains`, { json: { domain } }).json(),
-    remove: (name, domain) => request.delete(`sites/${encodeURIComponent(name)}/domains`, { json: { domain } }).json(),
-    setPrimary: (name, domain) => request.post(`sites/${encodeURIComponent(name)}/domains/primary`, { json: { domain } }).json(),
-    dnsRecords: (name, domain) => request.post(`sites/${encodeURIComponent(name)}/domains/dns-records`, { json: { domain } }).json(),
+    remove: (name, domain) =>
+      request.delete(`sites/${encodeURIComponent(name)}/domains/${encodeURIComponent(domain)}`).json(),
+    setPrimary: (name, domain) =>
+      request
+        .patch(`sites/${encodeURIComponent(name)}/domains/${encodeURIComponent(domain)}`, { json: { primary: true } })
+        .json(),
+    dnsRecords: (name, domain) =>
+      request.get(`sites/${encodeURIComponent(name)}/domains/${encodeURIComponent(domain)}/dns-records`).json(),
     wildcardList: () => request.get('sites/wildcard-domains').json(),
   },
 
   backups: {
     list: (name, limit) =>
       request.get(`sites/${encodeURIComponent(name)}/backups`, { searchParams: limit ? { limit } : {} }).json(),
-    create: (name) => request.post(`sites/${encodeURIComponent(name)}/backup`).json(),
-    download: (name, filename) => `/api/sites/${encodeURIComponent(name)}/backups/download?filename=${encodeURIComponent(filename)}`,
-    offsiteUrls: (name, timestamp) =>
-      request.get(`sites/${encodeURIComponent(name)}/backups/${encodeURIComponent(timestamp)}/offsite-urls`).json(),
+    create: (name) => request.post(`sites/${encodeURIComponent(name)}/backups`).json(),
+    download: (name, timestamp, fileId) =>
+      apiUrl(
+        `sites/${encodeURIComponent(name)}/backups/${encodeURIComponent(timestamp)}/files/${encodeURIComponent(fileId)}/content`,
+      ),
+    downloadLinks: (name, timestamp) =>
+      request.get(`sites/${encodeURIComponent(name)}/backups/${encodeURIComponent(timestamp)}/download-links`).json(),
     schedule: {
       get: (name) => request.get(`sites/${encodeURIComponent(name)}/backup-schedule`).json(),
-      set: (name, payload) => request.post(`sites/${encodeURIComponent(name)}/backup-schedule`, { json: payload }).json(),
-      remove: (name) => request.delete(`sites/${encodeURIComponent(name)}/backup-schedule`).json(),
+      set: (name, payload) => request.put(`sites/${encodeURIComponent(name)}/backup-schedule`, { json: payload }).json(),
+      remove: (name) => request.delete(`sites/${encodeURIComponent(name)}/backup-schedule`),
     },
   },
 }

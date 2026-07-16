@@ -2,9 +2,9 @@
 import { computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { Breadcrumbs } from 'frappe-ui'
-import AppSidebar from '@/components/AppSidebar.vue'
-import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
-import { useIsMobile } from '@/composables/useIsMobile'
+import AppSidebar from '@/components/common/AppSidebar.vue'
+import { useBreadcrumbs } from '@/composables/common/useBreadcrumbs'
+import { useIsMobile } from '@/composables/common/useIsMobile'
 
 const route = useRoute()
 const { items, resetBreadcrumbs } = useBreadcrumbs()

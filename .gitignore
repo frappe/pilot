@@ -53,6 +53,10 @@ admin/backend/static/dist/
 .env
 .env.local
 .vite/
+.mypy_cache
+.ruff_cache
+.claude
+
 registry-cache*
 
 # Agent Skills

@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from pilot.platform import default_nginx_config_dir
+from pilot.managers.platform import default_nginx_config_dir
 
 
 @dataclass

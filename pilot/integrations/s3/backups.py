@@ -6,6 +6,7 @@ from pathlib import Path
 
 from pilot.config.s3_config import S3Config
 from pilot.integrations.s3.base import S3
+from pilot.internal.atomic_file import exclusive_file_lock
 
 FILE_TYPE_SUFFIXES = {
     "-database.sql.gz": "database",
@@ -61,29 +62,36 @@ class Metadata:
             "site_config": "20260702_174545-assets_local-site_config_backup.json"
           }
         }
+
+    A local advisory lock serializes the read-modify-write so concurrent
+    uploads, deletes, and pruning on the bench host cannot lose runs; the
+    monthly object is only ever written by that one host.
     """
 
-    def __init__(self, s3: S3, bucket: str, keys: BackupKeys):
+    def __init__(self, s3: S3, bucket: str, keys: BackupKeys, lock: Path):
         self.s3 = s3
         self.bucket = bucket
         self.keys = keys
+        self.lock = lock
 
     def add(self, timestamp: str, filename: str) -> None:
         key = self.keys.month(timestamp)
-        runs = self._read_month(key)
-        runs.setdefault(timestamp, {})[_file_type(filename)] = filename
-        self.s3.write_json(self.bucket, key, runs)
+        with exclusive_file_lock(self.lock):
+            runs = self._read_month(key)
+            runs.setdefault(timestamp, {})[_file_type(filename)] = filename
+            self.s3.write_json(self.bucket, key, runs)
 
     def remove(self, timestamp: str, filename: str) -> None:
         key = self.keys.month(timestamp)
-        runs = self._read_month(key)
-        run = runs.get(timestamp)
-        if run is None:
-            return
-        run.pop(_file_type(filename), None)
-        if not run:
-            runs.pop(timestamp)
-        self.s3.write_json(self.bucket, key, runs)
+        with exclusive_file_lock(self.lock):
+            runs = self._read_month(key)
+            run = runs.get(timestamp)
+            if run is None:
+                return
+            run.pop(_file_type(filename), None)
+            if not run:
+                runs.pop(timestamp)
+            self.s3.write_json(self.bucket, key, runs)
 
     def iter_runs(self) -> Iterator[tuple[str, dict[str, str]]]:
         """(timestamp, files) pairs across every monthly file, newest first.
@@ -109,15 +117,16 @@ class OffsiteBackup:
     and run bookkeeping to ``Metadata``.
     """
 
-    def __init__(self, s3: S3, bucket: str) -> None:
+    def __init__(self, s3: S3, bucket: str, bench_root: Path) -> None:
         self.s3 = s3
         self.bucket = bucket
+        self.bench_root = Path(bench_root)
 
     @classmethod
-    def from_config(cls, config: S3Config) -> "OffsiteBackup":
+    def from_config(cls, config: S3Config, bench_root: Path) -> "OffsiteBackup":
         """Connect using bench.toml's [s3] section, creating the bucket on first use."""
         client = S3.from_config(config)
-        return cls(client, config.bucket)
+        return cls(client, config.bucket, bench_root)
 
     def upload(self, site_name: str, timestamp: str, backup_path: Path, remove_local: bool = True) -> None:
         keys = BackupKeys(site_name)
@@ -158,4 +167,4 @@ class OffsiteBackup:
         return self._metadata(keys)._read_month(keys.month(timestamp)).get(timestamp)
 
     def _metadata(self, keys: BackupKeys) -> Metadata:
-        return Metadata(self.s3, self.bucket, keys)
+        return Metadata(self.s3, self.bucket, keys, self.bench_root / ".backup-metadata")

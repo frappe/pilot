@@ -13,7 +13,7 @@ import sys
 import time
 from pathlib import Path
 
-from pilot.core.cron_manager import CronManager
+from pilot.managers.cron import CronManager
 from pilot.exceptions import CommandError, RegistryUnavailableError
 from pilot.utils import run_command
 

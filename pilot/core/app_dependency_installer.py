@@ -4,7 +4,7 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING
 
-from pilot.core.marketplace import Marketplace, Resolver
+from pilot.integrations.marketplace import Marketplace, Resolver
 from pilot.exceptions import AppNotFoundError, BenchError, DependencyResolutionError
 
 if TYPE_CHECKING:
@@ -44,7 +44,7 @@ class AppDependencyInstaller:
         if all(self.bench.is_app_installed(dep) for dep in resolver.dependencies):
             return
 
-        from pilot.commands.get_app import GetAppCommand
+        from pilot.commands.apps.download import GetAppCommand
 
         try:
             dependency_chain = resolver.resolve()

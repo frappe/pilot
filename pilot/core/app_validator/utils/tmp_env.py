@@ -88,6 +88,9 @@ class TmpEnv:
     @staticmethod
     def _uv() -> str:
         uv = shutil.which("uv")
-        if not uv:
-            raise BenchError("uv not found — run the pilot install script to set it up")
-        return uv
+        if uv:
+            return uv
+        for candidate in (Path.home() / ".local" / "bin" / "uv", Path.home() / ".cargo" / "bin" / "uv"):
+            if candidate.exists():
+                return str(candidate)
+        raise BenchError("uv not found — run the pilot install script to set it up")

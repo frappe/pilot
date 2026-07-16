@@ -21,7 +21,7 @@ class SetupRequirementsCommand(Command):
         self._install_js()
 
     def _install_python(self) -> None:
-        from pilot.managers.python_env_manager import PythonEnvManager
+        from pilot.managers.python_environment import PythonEnvManager
         from pilot.utils import run_command
 
         manager = PythonEnvManager(self.bench)

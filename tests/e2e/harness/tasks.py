@@ -14,18 +14,23 @@ from typing import Callable
 from playwright.sync_api import APIRequestContext, Page, expect
 
 
-def run_task_action(page: Page, url_fragment: str, action: Callable[[], None]) -> str:
+def run_task_action(
+    page: Page,
+    url_fragment: str,
+    action: Callable[[], None],
+    method: str = "POST",
+) -> str:
     """Run a UI action that kicks off a background task and return its task_id.
 
     Pass the URL fragment the action POSTs to (e.g. 'create', 'install-app',
     'drop') so we wait for the right response.
     """
     with page.expect_response(
-        lambda r: url_fragment in r.url and r.request.method == "POST"
+        lambda r: url_fragment in r.url and r.request.method == method
     ) as response_info:
         action()
     body = response_info.value.json()
-    if not body.get("ok") or not body.get("task_id"):
+    if not body.get("task_id"):
         raise RuntimeError(f'Action "{url_fragment}" did not start a task: {body}')
     return body["task_id"]
 
@@ -36,17 +41,20 @@ def wait_for_task(
     task_id: str,
     timeout: float = 30 * 60,
 ) -> None:
-    """Poll /api/tasks/:id until it succeeds; raise with the output tail on failure."""
+    """Poll /api/v1/tasks/:id until it succeeds; raise with the output tail on failure."""
     deadline = time.time() + timeout
     while time.time() < deadline:
-        res = request.get(f"{base_url}/api/tasks/{task_id}")
+        res = request.get(f"{base_url}/api/v1/tasks/{task_id}")
         if res.ok:
             data = res.json()
-            status = data["task"]["status"]
+            status = data["status"]
             if status == "success":
                 return
             if status == "failed":
-                tail = "\n".join((data.get("output") or [])[-30:])
+                output = request.get(
+                    f"{base_url}/api/v1/tasks/{task_id}/output/content"
+                )
+                tail = "\n".join(output.text().splitlines()[-30:]) if output.ok else ""
                 raise RuntimeError(f"Task {task_id} failed:\n{tail}")
         time.sleep(2)
     raise TimeoutError(f"Task {task_id} did not finish within {timeout}s")
@@ -66,6 +74,6 @@ def run_and_await_task(
 
 def expect_bench_online(request: APIRequestContext, base_url: str) -> None:
     """Sanity assert that the admin is reachable and out of wizard mode."""
-    res = request.get(f"{base_url}/api/status")
+    res = request.get(f"{base_url}/api/v1/bootstrap")
     expect(res).to_be_ok()
-    assert res.json().get("wizard") is not True
+    assert res.json().get("mode") == "admin"

@@ -17,7 +17,7 @@ completion. Built on **pytest + pytest-playwright** (sync API).
 | Path | Purpose |
 |------|---------|
 | `harness/bench.py`  | `Bench` class: wraps `bench new` / `bench start` (wizard + full), stop, destroy (via `bench drop`). Reads the admin port from `bench.toml`; the admin password is harness-chosen (the wizard sets it). |
-| `harness/tasks.py`  | Capture a UI action's `task_id` and poll `/api/tasks/:id` to success. |
+| `harness/tasks.py`  | Capture a UI action's `task_id` and poll `/api/v1/tasks/:id` to success. |
 | `flows/wizard.py`   | `complete_dev_wizard()` — drives `Setup.vue` for the chosen engine (`db_type="mariadb"`/`"postgres"`), dev mode. |
 | `flows/admin.py`    | `login`, `create_site`, `install_custom_app`, `uninstall_app`, `drop_site` + API-based assertions. |
 | `conftest.py`       | `bench` + `page` fixtures (module-scoped) and the serial-skip wiring. |

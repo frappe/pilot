@@ -623,13 +623,13 @@ pilot/
     │
     ├── core/
     │   ├── ...
-    │   └── domain_controller.py     # DomainRouteProvider
+    │   └── domains.py                # DomainRouteProvider
     │
     ├── managers/
     │   ├── ...
-    │   ├── nginx_manager.py
-    │   ├── gunicorn_manager.py
-    │   └── letsencrypt_manager.py
+    │   ├── nginx.py
+    │   ├── gunicorn.py
+    │   └── letsencrypt.py
     │
     └── commands/
         ├── ...

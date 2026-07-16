@@ -6,6 +6,7 @@ import sys
 from typing import TYPE_CHECKING, Optional
 
 from pilot.commands.base import Command
+from pilot.secure_files import write_private_text
 from pilot.exceptions import BenchError
 from pilot.utils import host_owner
 
@@ -143,7 +144,7 @@ class SetupProductionCommand(Command):
         admin domain (always) and a Let's Encrypt email (only when --tls would
         actually obtain a cert). Better here than deep inside nginx/cert work, or
         as a silently-skipped cert."""
-        from pilot.managers.letsencrypt_manager import letsencrypt_email_required
+        from pilot.managers.letsencrypt import letsencrypt_email_required
 
         if not self.bench.config.admin.domain:
             raise BenchError(
@@ -159,8 +160,8 @@ class SetupProductionCommand(Command):
     def _installed_manager(self) -> Optional[str]:
         """Which process manager already has a deployment on disk, if any —
         used to migrate when --process-manager differs."""
-        from pilot.managers.process_managers.supervisor import SupervisorProcessManager
-        from pilot.managers.process_managers.systemd import SystemdProcessManager
+        from pilot.managers.processes.supervisor import SupervisorProcessManager
+        from pilot.managers.processes.systemd import SystemdProcessManager
 
         if SystemdProcessManager(self.bench).is_configured():
             return "systemd"
@@ -176,18 +177,18 @@ class SetupProductionCommand(Command):
             return
         print(f"Migrating from {old_pm} to {new_pm}: removing old manager resources...")
         if old_pm == "supervisor":
-            from pilot.managers.process_managers.supervisor import SupervisorProcessManager
+            from pilot.managers.processes.supervisor import SupervisorProcessManager
 
             SupervisorProcessManager(self.bench).shutdown()
         else:
-            from pilot.managers.process_managers.systemd import SystemdProcessManager
+            from pilot.managers.processes.systemd import SystemdProcessManager
 
             SystemdProcessManager(self.bench).remove_units()
 
     def _setup_monitoring(self):
         """Install the shared bench-monitor timer unit and persist monitor config to bench.toml."""
         from pilot.config.toml_store import BenchTomlStore
-        from pilot.core.monitor import ConfigureMonitor, resolve_monitor_log_path
+        from pilot.core.monitoring import ConfigureMonitor, resolve_monitor_log_path
 
         ConfigureMonitor().install()
         self.bench.config.monitor.log_path = resolve_monitor_log_path(self.bench.config)
@@ -206,7 +207,7 @@ class SetupProductionCommand(Command):
         )
 
     def _require_linux(self) -> None:
-        from pilot.platform import is_linux
+        from pilot.managers.platform import is_linux
 
         if not is_linux():
             print(
@@ -221,7 +222,7 @@ class SetupProductionCommand(Command):
         pre-granted (bench init needs none of that), so either passwordless
         sudo is already cached/configured, or there's a TTY sudo can prompt
         on. Neither means this would hang or silently fail partway through."""
-        from pilot.platform import has_passwordless_sudo, is_root, which
+        from pilot.managers.platform import has_passwordless_sudo, is_root, which
 
         if is_root() or has_passwordless_sudo():
             return
@@ -238,7 +239,7 @@ class SetupProductionCommand(Command):
         """Admin is reached only via its domain in production. Use whatever is in
         bench.toml (validate() enforces it is present); just reject a domain that
         another bench already claims."""
-        from pilot.core.domain_controller import DomainRouteProvider
+        from pilot.core.domains import DomainRouteProvider
         from pilot.utils import matches_wildcard, normalize_host
 
         domain = self.bench.config.admin.domain
@@ -266,7 +267,7 @@ class SetupProductionCommand(Command):
         work that would be wasted on a failure. _check_admin_domain has already
         enforced the wildcard rule for it. Records the new domain so the run can
         roll it back on failure or release the previous one on success."""
-        from pilot.core.domain_controller import DomainRouteProvider
+        from pilot.core.domains import DomainRouteProvider
         from pilot.utils import normalize_host
 
         self._registered_admin_domain = None
@@ -279,7 +280,7 @@ class SetupProductionCommand(Command):
     def _rollback_admin_domain(self) -> None:
         """Release the just-registered admin route after a failed setup."""
         if self._registered_admin_domain:
-            from pilot.core.domain_controller import DomainRouteProvider
+            from pilot.core.domains import DomainRouteProvider
 
             DomainRouteProvider(self.bench).release(self._registered_admin_domain)
 
@@ -287,7 +288,7 @@ class SetupProductionCommand(Command):
         """Free the superseded admin hostname at the provider once the switch is
         committed, so another bench can reuse it without manual cleanup."""
         if self._registered_admin_domain and self._existing_admin_domain:
-            from pilot.core.domain_controller import DomainRouteProvider
+            from pilot.core.domains import DomainRouteProvider
 
             DomainRouteProvider(self.bench).release(self._existing_admin_domain)
 
@@ -296,12 +297,11 @@ class SetupProductionCommand(Command):
         from pilot.config.toml_store import BenchTomlStore
 
         store = BenchTomlStore.for_bench(self.bench.path)
-        data = store.read_raw()
-        for section, values in updates.items():
-            data.setdefault(section, {}).update(values)
-        # Drop the deprecated production.nginx key — nginx is always on in prod.
-        data.get("production", {}).pop("nginx", None)
-        store.write_raw(data)
+        with store.edit_raw() as data:
+            for section, values in updates.items():
+                data.setdefault(section, {}).update(values)
+            # Drop the deprecated production.nginx key — nginx is always on in prod.
+            data.get("production", {}).pop("nginx", None)
 
     def _write_dns_multitenancy(self) -> None:
         common_config_path = self.bench.sites_path / "common_site_config.json"
@@ -309,18 +309,18 @@ class SetupProductionCommand(Command):
         if common_config_path.exists():
             existing_data = json.loads(common_config_path.read_text())
         existing_data["dns_multitenant"] = 1
-        common_config_path.write_text(json.dumps(existing_data, indent=2))
+        write_private_text(common_config_path, json.dumps(existing_data, indent=2))
 
     def _setup_supervisor(self) -> None:
         import subprocess
 
-        from pilot.package_managers import get_package_manager
+        from pilot.managers.packages import get_package_manager
 
         pkg = get_package_manager()
         if not pkg.is_installed("supervisor"):
             pkg.install("supervisor")
             subprocess.run(["sudo", "systemctl", "disable", "--now", "supervisor"], check=False)
-        from pilot.managers.process_managers.supervisor import SupervisorProcessManager
+        from pilot.managers.processes.supervisor import SupervisorProcessManager
 
         mgr = SupervisorProcessManager(self.bench)
         mgr.write_config()
@@ -328,7 +328,7 @@ class SetupProductionCommand(Command):
         mgr.reload_manager_config()
 
     def _setup_systemd(self) -> None:
-        from pilot.managers.process_managers.systemd import SystemdProcessManager
+        from pilot.managers.processes.systemd import SystemdProcessManager
 
         mgr = SystemdProcessManager(self.bench)
         mgr.write_config()
@@ -338,7 +338,7 @@ class SetupProductionCommand(Command):
     def _start_workload(self) -> None:
         """Start the workload (and admin) so the bench is actually serving once
         setup completes — otherwise sites 502 until a separate `bench start`."""
-        from pilot.managers.process_manager import ProcessManager
+        from pilot.managers.processes.local import ProcessManager
 
         ProcessManager.for_bench(self.bench).start()
 
@@ -348,7 +348,7 @@ class SetupProductionCommand(Command):
         SetupNginxCommand(self.bench).run()
 
     def _setup_letsencrypt_if_needed(self) -> None:
-        from pilot.managers.letsencrypt_manager import needs_letsencrypt
+        from pilot.managers.letsencrypt import needs_letsencrypt
 
         if not needs_letsencrypt(self.bench):
             return
@@ -366,12 +366,12 @@ class SetupProductionCommand(Command):
             )
 
     def _build_admin_for_production(self) -> None:
-        from pilot.commands.admin import BuildAdminCommand
+        from pilot.commands.admin.start import BuildAdminCommand
 
         BuildAdminCommand().run()
 
     def _print_summary(self) -> None:
-        from pilot.managers.nginx_manager import NginxManager
+        from pilot.managers.nginx import NginxManager
 
         nginx_manager = NginxManager(self.bench)
         print("\nProduction setup complete.")

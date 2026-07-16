@@ -7,6 +7,7 @@ from typing import List
 from pilot.config.admin_config import AdminConfig
 from pilot.config.app_config import AppConfig
 from pilot.config.central_config import CentralConfig
+from pilot.config.config_schema import unknown_config_paths
 from pilot.config.firewall_config import FirewallConfig, FirewallRule
 from pilot.config.gunicorn_config import GunicornConfig
 from pilot.config.letsencrypt_config import LetsEncryptConfig
@@ -75,7 +76,8 @@ class BenchConfig:
         return config
 
     @classmethod
-    def _from_dict(cls, data: dict) -> "BenchConfig":
+    def _from_dict(cls, data: dict, *, strict: bool = False) -> "BenchConfig":
+        cls._report_unknown_fields(data, strict=strict)
         bench_data = data.get("bench", {})
         apps = [
             AppConfig(
@@ -98,7 +100,7 @@ class BenchConfig:
         central = cls._parse_central(data.get("central", {}))
         firewall = cls._parse_firewall(data.get("firewall"))
         waf = cls._parse_waf(data.get("waf"))
-        s3 = S3Config(**data.get("s3", {}))
+        s3 = S3Config(**cls._known_fields(S3Config, data.get("s3", {})))
         return cls(
             name=bench_data.get("name", ""),
             python_version=bench_data.get("python", ""),
@@ -132,6 +134,16 @@ class BenchConfig:
         declares, so a config written by an older bench-cli still loads."""
         known = {f.name for f in fields(dataclass_type)}
         return {k: v for k, v in data.items() if k in known}
+
+    @staticmethod
+    def _report_unknown_fields(data: dict, *, strict: bool) -> None:
+        """Unknown keys are ignored so older/foreign configs still load; strict
+        (opt-in, for validation) raises ConfigError naming them."""
+        if not strict:
+            return
+        paths = unknown_config_paths(data)
+        if paths:
+            raise ConfigError(f"bench.toml has unrecognized fields: {', '.join(paths)}")
 
     @staticmethod
     def _parse_redis(data: dict) -> RedisConfig:

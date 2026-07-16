@@ -1,0 +1,61 @@
+[bench]
+name = "postgres-dev"
+python = "3.14"
+http_port = 8010
+socketio_port = 9010
+socketio_backend = "python"
+watch_apps_js = true
+reload_python = true
+watch_admin_js = true
+db_type = "postgres"
+default_branch = "version-16"
+
+[[apps]]
+name = "frappe"
+repo = "https://github.com/frappe/frappe"
+branch = "version-16"
+branches = ["version-16", "develop"]
+
+[mariadb]
+host = "localhost"
+port = 3306
+root_password = ""
+admin_user = "root"
+socket_path = ""
+existing = false
+
+[postgres]
+host = "db.internal"
+port = 5433
+root_password = "fixture-postgres-password"
+admin_user = "dbadmin"
+existing = true
+
+[redis]
+cache_port = 13010
+queue_port = 11010
+version = "7.2"
+
+[[workers]]
+queues = ["default", "short"]
+count = 2
+
+[[workers]]
+queues = ["long"]
+count = 1
+
+[production]
+enabled = false
+use_companion_manager = false
+
+[admin]
+port = 7010
+timeout = 240
+enabled = true
+password = "fixture-admin-password"
+jwt_secret = "fixture-jwt-secret"
+jwks_url = "https://identity.example.test/.well-known/jwks.json"
+jwks_audience = "postgres-dev"
+domain = "admin.postgres.localhost"
+tls = false
+allow_bench_management = true

@@ -12,9 +12,9 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useTheme, FrappeUIProvider } from 'frappe-ui'
-import ReconnectOverlay from './components/ReconnectOverlay.vue'
+import ReconnectOverlay from './components/common/ReconnectOverlay.vue'
 import MainLayout from './layouts/MainLayout.vue'
-import { useSetupHandoff } from './composables/useSetupHandoff'
+import { useSetupHandoff } from './composables/setup/useSetupHandoff'
 
 const route = useRoute()
 const isFullScreen = computed(() => route.meta.fullScreen === true)

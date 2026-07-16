@@ -42,6 +42,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { Button, Checkbox, Dialog, ErrorMessage, FormControl, Select } from 'frappe-ui'
+import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
 import { formatHour } from '@/utils/backup'
 
@@ -128,10 +129,16 @@ async function save() {
   saving.value = true
   error.value = ''
   try {
-    const result = isEnabled.value
-      ? await sitesApi.backups.schedule.set(props.siteName, { schedule: cron.value, retention: retentionPayload() })
-      : await sitesApi.backups.schedule.remove(props.siteName)
-    if (!result.ok) { error.value = result.error || 'Could not save.'; return }
+    if (isEnabled.value) {
+      const result = await sitesApi.backups.schedule.set(props.siteName, { schedule: cron.value, retention: retentionPayload() })
+      if (result.error) { error.value = apiErrorMessage(result, 'Could not save.'); return }
+    } else {
+      const response = await sitesApi.backups.schedule.remove(props.siteName)
+      if (!response.ok) {
+        error.value = apiErrorMessage(await response.json(), 'Could not save.')
+        return
+      }
+    }
     show.value = false
     emit('saved')
   } catch (e) {

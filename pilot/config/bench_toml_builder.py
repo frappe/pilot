@@ -4,13 +4,13 @@ import copy
 import tomllib
 from pathlib import Path
 
+from pilot.config.bench_toml import dumps_config
 from pilot.config.bench_config import BenchConfig
-from pilot.config.toml_writer import bench_config_to_toml
 from pilot.config.worker_config import WorkerConfig, WorkerGroup
 
 # The single registry of wizard-editable settings: flat key -> attribute path on
 # BenchConfig. Defaults and serialization live in the dataclasses and
-# bench_config_to_toml; adding a config field means adding the dataclass field
+# dumps_config; adding a config field means adding the dataclass field
 # (+ its toml_writer line) and, if it is wizard-editable, one entry here.
 FLAT_KEYS = {
     "bench_name": "name",
@@ -49,7 +49,7 @@ FLAT_KEYS = {
     "production_process_manager": "production.process_manager",
 }
 
-# Framework branches the setup wizard offers, newest/recommended first. The
+# Framework branches the setup wizard offers, newest/recommended first.
 FRAMEWORK_BRANCHES = ["version-16", "develop"]
 
 _DEFAULT_DATA: dict = {
@@ -94,7 +94,7 @@ def current_port_offset(toml_path: Path) -> int:
         with open(toml_path, "rb") as f:
             data = tomllib.load(f)
         return data.get("bench", {}).get("http_port", default_ports()["http_port"]) - default_ports()["http_port"]
-    except Exception:
+    except (OSError, tomllib.TOMLDecodeError):
         return 0
 
 
@@ -169,7 +169,7 @@ def _flatten(config: BenchConfig) -> dict:
 class BenchTomlBuilder:
     """Adapter between the wizard's flat settings dicts and ``BenchConfig``.
 
-    ``BenchConfig`` + ``bench_config_to_toml`` are the single source of truth
+    ``BenchConfig`` + ``dumps_config`` are the single source of truth
     for defaults and serialization; this class only translates flat keys.
     """
 
@@ -182,17 +182,20 @@ class BenchTomlBuilder:
 
     def build(self) -> BenchConfig:
         config = _default_config(self._name)
-        for key, value in self._settings.items():
-            _apply_setting(config, key, value)
+        self.apply_to(config)
         if self._port_offset:
             for field in _PORT_FIELDS:
                 _set_path(config, field, _get_path(config, field) + self._port_offset)
-        if self._name:
-            config.name = self._name
         return config
 
+    def apply_to(self, config: BenchConfig) -> None:
+        for key, value in self._settings.items():
+            _apply_setting(config, key, value)
+        if self._name:
+            config.name = self._name
+
     def render(self) -> str:
-        return bench_config_to_toml(self.build())
+        return dumps_config(self.build())
 
     @classmethod
     def read_settings(cls, toml_path: Path) -> dict:
