@@ -8,10 +8,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pilot.core.database import (
-    Database,
     MariaDB,
     PostgreSQL,
-    QueryResult,
     SQLite,
     make_database,
     make_site_database,

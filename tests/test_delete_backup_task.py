@@ -1,4 +1,3 @@
-import json
 from types import SimpleNamespace
 
 from admin.backend.tasks.jobs.delete_backup_task import DeleteBackupTask

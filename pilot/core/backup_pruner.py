@@ -1,7 +1,6 @@
 """Apply a retention policy to one site's backups, local and offsite."""
 
 import re
-from pathlib import Path
 
 from pilot.config.site_backup_config import read_retention
 from pilot.core.backup_retention import BackupRetentionPolicy

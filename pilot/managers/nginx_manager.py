@@ -343,7 +343,7 @@ class NginxManager:
             + self._render_socketio_location(socketio_port, site.name)
             + self._render_site_login_handoff_location()
             + self._render_proxy_location(bench_name, site)
-            + f"}}\n"
+            + "}\n"
         )
 
     def _render_http_redirect_block(self, site: "SiteConfig", nginx_config: object) -> str:
@@ -359,10 +359,10 @@ class NginxManager:
             + self._render_firewall()
             + self._render_acme_location()
             + self._render_site_login_handoff_location()
-            + f"    location / {{\n"
-            f"        return 301 https://$host$request_uri;\n"
-            f"    }}\n"
-            f"}}\n\n"
+            + "    location / {\n"
+            "        return 301 https://$host$request_uri;\n"
+            "    }\n"
+            "}\n\n"
         )
 
     def _render_https_block(
@@ -406,16 +406,16 @@ class NginxManager:
             + self._render_socketio_location(socketio_port, site.name)
             + self._render_site_login_handoff_location()
             + self._render_proxy_location(bench_name, site)
-            + f"}}\n"
+            + "}\n"
         )
 
     def _render_assets_location(self) -> str:
         return (
-            f"    location /assets {{\n"
-            f"        try_files $uri =404;\n"
-            f"        expires 1y;\n"
-            f'        add_header Cache-Control "public, immutable";\n'
-            f"    }}\n\n"
+            "    location /assets {\n"
+            "        try_files $uri =404;\n"
+            "        expires 1y;\n"
+            '        add_header Cache-Control "public, immutable";\n'
+            "    }\n\n"
         )
 
     def _render_files_location(self, site: "SiteConfig") -> str:
@@ -470,7 +470,7 @@ class NginxManager:
                 f"        }}\n"
             )
         return (
-            f"    location / {{\n"
+            "    location / {\n"
             + redirect
             + f"        proxy_pass         http://bench-{bench_name};\n"
             f"        proxy_read_timeout 120;\n"
@@ -512,7 +512,7 @@ class NginxManager:
                 + firewall_block
                 + acme_block
                 + proxy_block
-                + f"}}\n"
+                + "}\n"
             )
 
         if not ssl_ready or not self.admin_cert_exists():
@@ -525,7 +525,7 @@ class NginxManager:
                 + firewall_block
                 + acme_block
                 + proxy_block
-                + f"}}\n"
+                + "}\n"
             )
 
         cert = self.admin_cert_path()
@@ -560,7 +560,7 @@ class NginxManager:
             + firewall_block
             + ssl_directives
             + proxy_block
-            + f"}}\n"
+            + "}\n"
         )
 
     def _render_open_cors_location(self, path: str) -> str:

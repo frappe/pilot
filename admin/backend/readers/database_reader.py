@@ -74,7 +74,7 @@ class DatabaseReader:
         try:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    f"SHOW BINLOG EVENTS IN %s LIMIT %s, %s",
+                    "SHOW BINLOG EVENTS IN %s LIMIT %s, %s",
                     (log_name, offset, limit),
                 )
                 rows = cursor.fetchall()

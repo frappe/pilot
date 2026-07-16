@@ -447,7 +447,6 @@ def test_honcho_generate_config_procfile_format(tmp_path: Path) -> None:
 
 def test_honcho_start_writes_per_process_pid_files(tmp_path: Path) -> None:
     """Each spawned process gets its own pids/<name>.pid file."""
-    import subprocess
     from unittest.mock import MagicMock, patch
 
     bench = make_bench(tmp_path)
