@@ -74,7 +74,7 @@ def install_custom_app(page: Page, base_url: str, site_name: str, repo: str, bra
     found_text = dialog.get_by_text(re.compile(r"Found \S")).inner_text()
     app_name = found_text.split("Found ", 1)[1].strip()
 
-    add_task_id = run_task_action(page, "/api/v1/apps/add", lambda: add_button.click())
+    add_task_id = run_task_action(page, "/api/v1/apps", lambda: add_button.click())
     wait_for_task(page.request, base_url, add_task_id)
 
     # Adding lands on the task's detail page; the newly-cloned app now shows up
