@@ -97,15 +97,13 @@ class RegistryCache:
 
     def _remote_head_sha(self) -> str | None:
         try:
-            result = subprocess.run(
-                ["git", "ls-remote", REGISTRY_URL, "HEAD"],
-                capture_output=True,
-                text=True,
-                timeout=_LS_REMOTE_TIMEOUT_SECONDS,
+            result = run_command(
+                ["git", "ls-remote", REGISTRY_URL, "HEAD"], timeout=_LS_REMOTE_TIMEOUT_SECONDS
             )
-        except (subprocess.SubprocessError, OSError):
+        except (CommandError, subprocess.SubprocessError, OSError):
             return None
-        line = result.stdout.splitlines()[0] if result.stdout else ""
+        stdout = result.stdout.decode()
+        line = stdout.splitlines()[0] if stdout else ""
         sha = line.split("\t", 1)[0].strip()
         return sha or None
 

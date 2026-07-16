@@ -53,6 +53,7 @@ admin/backend/static/dist/
 .env
 .env.local
 .vite/
+registry-cache*
 
 # Agent Skills
 .agents

@@ -198,12 +198,14 @@ def run_command(
     cwd: Path | None = None,
     env: dict | None = None,
     stream_output: bool = False,
+    timeout: float | None = None,
 ) -> subprocess.CompletedProcess:
     result = subprocess.run(
         argv,
         cwd=cwd,
         env=env,
         capture_output=not stream_output,
+        timeout=timeout,
     )
     if result.returncode != 0:
         stderr = result.stderr.decode() if not stream_output and result.stderr else ""
