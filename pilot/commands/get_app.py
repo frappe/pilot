@@ -76,13 +76,19 @@ class GetAppCommand(Command):
         self.installed_dependencies: list[App] = []
 
     def run(self) -> None:
+        if self._is_registered():
+            self.name = self.app.module_name
+            print(f"'{self.name}' already installed, skipping.")
+            sys.stdout.flush()
+            return
+
         self._clone()
         self._normalize_folder()
 
         if self.install_dependencies:
             self._install_dependencies()
 
-        if not self.skip_validations and not self._is_registered():
+        if not self.skip_validations:
             self._validate()
 
         self._install()
@@ -222,7 +228,7 @@ class GetAppCommand(Command):
             )
 
     def _is_registered(self) -> bool:
-        return self.name in self._registered_apps()
+        return self.app.module_name in self._registered_apps()
 
     def _registered_apps(self) -> list[str]:
         apps_txt = self.bench.sites_path / "apps.txt"
