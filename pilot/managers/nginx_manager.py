@@ -732,8 +732,17 @@ class NginxManager:
     def _module_already_loaded() -> bool:
         """True when nginx is already set to load the module — a load_module line
         in nginx.conf or a modules-enabled drop-in. Distinct from the .so merely
-        existing on disk (which may not be loaded)."""
-        if "ngx_http_modsecurity_module" in _NGINX_CONF.read_text():
+        existing on disk (which may not be loaded).
+
+        If nginx.conf can't be read (e.g. root-only on a host where the bench runs
+        unprivileged), assume loaded: skip the best-effort injection rather than
+        crash install_config before _reload_or_rollback can run. nginx -t is the
+        authoritative check, and a bench that can't read nginx.conf can't edit it
+        to inject a load_module anyway."""
+        try:
+            if "ngx_http_modsecurity_module" in _NGINX_CONF.read_text():
+                return True
+        except OSError:
             return True
         modules_dir = Path("/etc/nginx/modules-enabled")
         return modules_dir.is_dir() and any("modsecurity" in entry.name for entry in modules_dir.iterdir())

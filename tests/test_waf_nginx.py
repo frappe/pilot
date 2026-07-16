@@ -108,3 +108,10 @@ def test_write_waf_files_noop_when_disabled(tmp_path: Path, installed) -> None:
     manager = _manager(tmp_path, WafConfig(enabled=False))
     manager._write_waf_files()
     assert not (manager.bench.config_path / "modsecurity").exists()
+
+
+def test_module_already_loaded_survives_unreadable_nginx_conf(tmp_path: Path, monkeypatch) -> None:
+    # An unreadable/absent nginx.conf must not raise (which would break
+    # install_config before rollback); treat it as "loaded" and skip injection.
+    monkeypatch.setattr(nginx_manager, "_NGINX_CONF", tmp_path / "nonexistent-nginx.conf")
+    assert NginxManager._module_already_loaded() is True
