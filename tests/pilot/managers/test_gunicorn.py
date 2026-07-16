@@ -193,6 +193,32 @@ def test_web_definition_uses_frappe_serve_in_dev(tmp_path: Path) -> None:
     assert "gunicorn" not in command_line
 
 
+def test_admin_runs_dev_server_on_admin_port_in_dev(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    manager = ProcessManager(bench, watch_admin_js=False)
+
+    pd = manager._to_dev(manager._admin_definition())
+    command_line = shlex.join(pd.argv)
+
+    assert "admin.backend.run_server" in command_line
+    assert "gunicorn" not in command_line
+    assert f"--port {bench.config.admin.port}" in command_line
+    assert "--no-timeout" in command_line
+    assert "--dev" not in command_line
+
+
+def test_admin_dev_server_enables_reload_when_watching(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    manager = ProcessManager(bench, watch_admin_js=True)
+
+    pd = manager._to_dev(manager._admin_definition())
+    command_line = shlex.join(pd.argv)
+
+    assert "admin.backend.run_server" in command_line
+    assert f"--port {bench.config.admin.port}" in command_line
+    assert "--dev" in command_line
+
+
 def test_generate_config_writes_gunicorn_config(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     bench.create_directories()
@@ -203,7 +229,6 @@ def test_generate_config_writes_gunicorn_config(tmp_path: Path) -> None:
         mock_ensure.assert_called_once()
 
     assert (bench.config_path / "gunicorn.conf.py").exists()
-    assert (bench.config_path / "admin-gunicorn.conf.py").exists()
 
 
 def test_supervisor_generate_config_writes_gunicorn_config(tmp_path: Path) -> None:

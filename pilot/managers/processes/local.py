@@ -107,9 +107,7 @@ class ProcessManager:
         self.procfile_path.write_text("".join(lines))
 
     def _ensure_gunicorn_config(self) -> None:
-        manager = GunicornManager(self.bench)
-        manager.generate_config()
-        manager.generate_admin_config()
+        GunicornManager(self.bench).generate_config()
 
     def _ensure_redis_config(self) -> None:
         from pilot.managers.redis import RedisManager
@@ -279,8 +277,8 @@ class ProcessManager:
 
     def _to_dev(self, pd: ProcessDefinition) -> ProcessDefinition:
         """Map a production process definition to its dev-mode variant."""
-        if pd.name == "admin" and self.watch_admin_js:
-            return self._watch_admin_definition()
+        if pd.name == "admin":
+            return self._watch_admin_definition() if self.watch_admin_js else self._build_admin_definition("--no-timeout")
         if pd.name == "web":
             return self._web_definition(dev=True)
         return pd
