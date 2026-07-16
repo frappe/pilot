@@ -98,7 +98,7 @@ def test_api_benches_includes_production_metadata(tmp_path: Path) -> None:
             f'[production]\nenabled = true\nprocess_manager = "systemd"\n'
         )
         # https only once the cert is in place; pretend it is for this assertion.
-        with patch("admin.backend.views.benches.admin_cert_exists", return_value=True):
+        with patch("admin.backend.api.v1.benches.admin_cert_exists", return_value=True):
             resp = client.get("/api/v1/benches")
 
     entry = next(b for b in resp.get_json() if b["name"] == "prod-bench")
@@ -121,7 +121,7 @@ def test_api_benches_admin_url_is_http_until_cert_exists(tmp_path: Path) -> None
             f'[admin]\nport = {live_port}\ndomain = "admin-prod.example.com"\ntls = true\n\n'
             f'[production]\nenabled = true\nprocess_manager = "systemd"\n'
         )
-        with patch("admin.backend.views.benches.admin_cert_exists", return_value=False):
+        with patch("admin.backend.api.v1.benches.admin_cert_exists", return_value=False):
             resp = client.get("/api/v1/benches")
 
     entry = next(b for b in resp.get_json() if b["name"] == "prod-bench")
@@ -295,9 +295,9 @@ def test_api_benches_create_does_not_prompt_for_system_privileges(tmp_path: Path
     client = _client(benches_dir / "current")
 
     with (
-        patch("admin.backend.views.benches.current_is_production", return_value=True),
+        patch("admin.backend.api.v1.benches.current_is_production", return_value=True),
         patch("pilot.managers.platform.has_passwordless_sudo", return_value=False),
-        patch("admin.backend.views.benches.NewCommand.run") as create,
+        patch("admin.backend.api.v1.benches.NewCommand.run") as create,
         patch(
             "pilot.core.domains.DomainRouteProvider.wildcard_domains",
             return_value=[],
@@ -316,7 +316,7 @@ def test_api_benches_create_reports_busy_without_waiting(tmp_path: Path) -> None
     client = _client(benches_dir / "current")
 
     with patch(
-        "admin.backend.views.benches.exclusive_file_lock",
+        "admin.backend.api.v1.benches.exclusive_file_lock",
         side_effect=BlockingIOError,
     ):
         resp = client.post("/api/v1/benches", json=_new_payload("fresh"))
@@ -649,7 +649,7 @@ def test_api_benches_explicit_actions_return_updated_resource(tmp_path: Path) ->
     manager.is_running.return_value = True
     manager.is_admin_running.return_value = True
 
-    with patch("admin.backend.views.benches.ProcessManager.for_bench", return_value=manager):
+    with patch("admin.backend.api.v1.benches.ProcessManager.for_bench", return_value=manager):
         responses = {
             action: client.post(f"/api/v1/benches/prod-bench/actions/{action}")
             for action in ("start", "stop", "restart")
@@ -669,7 +669,7 @@ def test_api_benches_control_reports_failure(tmp_path: Path) -> None:
 
     manager = MagicMock()
     manager.stop.side_effect = RuntimeError("manager detail")
-    with patch("admin.backend.views.benches.ProcessManager.for_bench", return_value=manager):
+    with patch("admin.backend.api.v1.benches.ProcessManager.for_bench", return_value=manager):
         resp = client.post("/api/v1/benches/prod-bench/actions/stop")
 
     assert resp.status_code == 500
@@ -697,7 +697,7 @@ def test_api_benches_drop_rejects_bench_with_sites(tmp_path: Path) -> None:
     (bench_dir / "sites" / "a.localhost").mkdir(parents=True)
     (bench_dir / "sites" / "a.localhost" / "site_config.json").write_text("{}")
 
-    with patch("admin.backend.views.benches.subprocess.run") as mock_run:
+    with patch("admin.backend.api.v1.benches.subprocess.run") as mock_run:
         resp = client.delete("/api/v1/benches/prod-bench")
 
     assert resp.status_code == 409
@@ -720,7 +720,7 @@ def test_api_benches_drop_runs_pilot(tmp_path: Path) -> None:
     _write_prod_bench_toml(benches_dir / "prod-bench", "prod-bench")
 
     with (
-        patch("admin.backend.views.benches.DropBenchCommand.run") as drop,
+        patch("admin.backend.api.v1.benches.DropBenchCommand.run") as drop,
         patch("pilot.managers.platform.has_passwordless_sudo", return_value=True),
     ):
         resp = client.delete("/api/v1/benches/prod-bench")
@@ -737,7 +737,7 @@ def test_api_benches_drop_does_not_prompt_for_system_privileges(tmp_path: Path) 
 
     with (
         patch("pilot.managers.platform.has_passwordless_sudo", return_value=False),
-        patch("admin.backend.views.benches.DropBenchCommand.run") as drop,
+        patch("admin.backend.api.v1.benches.DropBenchCommand.run") as drop,
     ):
         resp = client.delete("/api/v1/benches/prod-bench")
 
@@ -754,7 +754,7 @@ def test_create_site_does_not_carry_db_type(tmp_path: Path) -> None:
     client = _client(bench_root)
 
     with (
-        patch("admin.backend.views.sites._new_site_name_error", return_value=None),
+        patch("admin.backend.api.v1.sites._new_site_name_error", return_value=None),
         patch(
             "pilot.tasks.manager.task_runner.task_workers.wake",
             return_value=False,

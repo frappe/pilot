@@ -5,7 +5,7 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, g, jsonify, request, url_for
 
-from admin.backend.api_contract import created_response, error_response, no_content_response
+from admin.backend.api.responses import created_response, error_response, no_content_response
 from admin.backend.auth import (
     allow_unauthenticated,
     authenticate_request,
@@ -14,7 +14,7 @@ from admin.backend.auth import (
 )
 from admin.backend.rate_limit import rate_limit
 from pilot.tasks.manager.activity import TaskActivityReader
-from admin.backend.views.setup import wizard_marker_path
+from admin.backend.api.v1.setup import wizard_marker_path
 from pilot.config.bench_config import BenchConfig
 from pilot.config.toml_store import BenchTomlStore
 from pilot.internal.atomic_file import exclusive_file_lock

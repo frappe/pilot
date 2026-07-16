@@ -27,11 +27,11 @@ def test_cli_updates_reads_without_fetching(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
     client = _client(bench_root)
 
-    with patch("admin.backend.views.updates.cli_root", return_value=Path("/cli")), \
-         patch("admin.backend.views.updates._current_branch", return_value="main"), \
-         patch("admin.backend.views.updates._git_fetch") as git_fetch, \
-         patch("admin.backend.views.updates._count", return_value=2), \
-         patch("admin.backend.views.updates._log_subject", return_value="a commit"):
+    with patch("admin.backend.api.v1.updates.cli_root", return_value=Path("/cli")), \
+         patch("admin.backend.api.v1.updates._current_branch", return_value="main"), \
+         patch("admin.backend.api.v1.updates._git_fetch") as git_fetch, \
+         patch("admin.backend.api.v1.updates._count", return_value=2), \
+         patch("admin.backend.api.v1.updates._log_subject", return_value="a commit"):
         response = client.get("/api/v1/cli-updates")
 
     body = response.get_json()
@@ -45,11 +45,11 @@ def test_cli_update_checks_fetches_first(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
     client = _client(bench_root)
 
-    with patch("admin.backend.views.updates.cli_root", return_value=Path("/cli")), \
-         patch("admin.backend.views.updates._current_branch", return_value="main"), \
-         patch("admin.backend.views.updates._git_fetch") as git_fetch, \
-         patch("admin.backend.views.updates._count", return_value=0), \
-         patch("admin.backend.views.updates._log_subject", return_value="a commit"):
+    with patch("admin.backend.api.v1.updates.cli_root", return_value=Path("/cli")), \
+         patch("admin.backend.api.v1.updates._current_branch", return_value="main"), \
+         patch("admin.backend.api.v1.updates._git_fetch") as git_fetch, \
+         patch("admin.backend.api.v1.updates._count", return_value=0), \
+         patch("admin.backend.api.v1.updates._log_subject", return_value="a commit"):
         response = client.post("/api/v1/cli-update-checks")
 
     body = response.get_json()

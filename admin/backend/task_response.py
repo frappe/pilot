@@ -2,7 +2,7 @@ from pathlib import Path
 
 from flask import url_for
 
-from admin.backend.api_contract import accepted_response
+from admin.backend.api.responses import accepted_response
 from pilot.tasks.manager.task_reader import TaskReader
 
 

@@ -1,7 +1,7 @@
 """Tests for the admin Git integration view helpers."""
 from __future__ import annotations
 
-from admin.backend.views.git import _mask_token, _status
+from admin.backend.api.v1.git import _mask_token, _status
 
 
 def test_mask_token_keeps_short_tokens_unmasked() -> None:

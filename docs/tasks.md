@@ -237,7 +237,7 @@ The wrapper (`pilot/tasks/manager/wrapper.py`) runs `command_argv` as a subproce
 
 ## API surface
 
-Routes registered by `admin/backend/views/tasks.py` (`/tasks` and `/task-worker`, both under `/api/v1`):
+Routes registered by `admin/backend/api/v1/tasks.py` (`/tasks` and `/task-worker`, both under `/api/v1`):
 
 | Route | Behavior |
 |---|---|

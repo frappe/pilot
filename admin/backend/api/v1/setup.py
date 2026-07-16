@@ -5,7 +5,7 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, g, jsonify, request
 
-from admin.backend.api_contract import error_response, no_content_response
+from admin.backend.api.responses import error_response, no_content_response
 from admin.backend.auth import allow_during_setup, set_session_cookie
 from pilot.tasks.manager.task_reader import TaskReader
 from pilot.tasks.manager.task_runner import TaskRunner

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pilot.config.bench_config import BenchConfig
 
-from admin.backend.views.settings import ConfigPatcher, _build_settings_response, _firewall_payload
+from admin.backend.api.v1.settings import ConfigPatcher, _build_settings_response, _firewall_payload
 
 
 def _config() -> BenchConfig:
@@ -57,7 +57,7 @@ def test_patcher_leaves_firewall_untouched_when_absent() -> None:
 
 
 def test_my_ip_route_ignores_x_real_ip_from_untrusted_peer() -> None:
-    from admin.backend.views.settings import network_bp
+    from admin.backend.api.v1.settings import network_bp
     from flask import Flask
 
     app = Flask(__name__)
@@ -70,7 +70,7 @@ def test_my_ip_route_ignores_x_real_ip_from_untrusted_peer() -> None:
 
 
 def test_my_ip_route_reads_x_real_ip_from_trusted_peer() -> None:
-    from admin.backend.views.settings import network_bp
+    from admin.backend.api.v1.settings import network_bp
     from flask import Flask
 
     app = Flask(__name__)

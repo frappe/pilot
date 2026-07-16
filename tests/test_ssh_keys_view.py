@@ -28,7 +28,7 @@ def test_list_keys_returns_the_stored_keys(tmp_path: Path) -> None:
     client = _client(bench_root)
     key = Mock(fingerprint="SHA256:abc", key_type="ssh-ed25519", comment="me@laptop")
 
-    with patch("admin.backend.views.ssh_keys.AuthorizedKeysStore") as store:
+    with patch("admin.backend.api.v1.ssh_keys.AuthorizedKeysStore") as store:
         store.return_value.list.return_value = [key]
         response = client.get("/api/v1/ssh-keys")
 
@@ -43,7 +43,7 @@ def test_add_key_returns_201_with_the_created_resource(tmp_path: Path) -> None:
     client = _client(bench_root)
     key = Mock(fingerprint="SHA256:abc", key_type="ssh-ed25519", comment="me@laptop")
 
-    with patch("admin.backend.views.ssh_keys.AuthorizedKeysStore") as store:
+    with patch("admin.backend.api.v1.ssh_keys.AuthorizedKeysStore") as store:
         store.return_value.add.return_value = key
         response = client.post(
             "/api/v1/ssh-keys", json={"public_key": "ssh-ed25519 AAAA me@laptop"}
@@ -60,7 +60,7 @@ def test_remove_key_returns_204(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
     client = _client(bench_root)
 
-    with patch("admin.backend.views.ssh_keys.AuthorizedKeysStore") as store:
+    with patch("admin.backend.api.v1.ssh_keys.AuthorizedKeysStore") as store:
         response = client.delete("/api/v1/ssh-keys/SHA256:abc")
         store.return_value.remove.assert_called_once_with("SHA256:abc")
 

@@ -1,6 +1,6 @@
 import json
 
-from admin.backend.views.sites import _public_config
+from admin.backend.api.v1.sites import _public_config
 from tests.test_admin_app import _client
 
 

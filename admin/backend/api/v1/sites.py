@@ -19,7 +19,7 @@ from pilot.exceptions import (
 )
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
 
-from admin.backend.api_contract import error_response, no_content_response
+from admin.backend.api.responses import error_response, no_content_response
 from admin.backend.auth import require_scope
 from admin.backend.site_paths import site_config_path, site_exists
 from admin.backend.task_response import accepted_task_response
@@ -29,11 +29,11 @@ from admin.backend.uploads import (
     save_archive_upload,
     save_database_upload,
 )
-from ..validators import validate_app_name, validate_cron_expression, validate_site_name
+from ...validators import validate_app_name, validate_cron_expression, validate_site_name
 from pilot.tasks.manager.task_runner import TaskCallback, TaskRunner
 
-from ..readers.app_reader import AppReader
-from ..readers.site_reader import SiteInfo, SiteReader
+from ...readers.app_reader import AppReader
+from ...readers.site_reader import SiteInfo, SiteReader
 
 
 def site_name(kwargs: dict) -> str:
@@ -499,7 +499,7 @@ def enable_tls(name: str):
 
     from pilot.config.toml_store import BenchTomlStore
 
-    from ..validators import validate_email
+    from ...validators import validate_email
 
     store = BenchTomlStore.for_bench(bench_root)
     data = request.get_json(silent=True)
@@ -755,7 +755,7 @@ _DEFAULT_BACKUPS_PAGE_SIZE = 20
 @sites_bp.get("/<name>/backups")
 @require_scope(site_name)
 def list_backups(name: str):
-    from ..readers.backup_reader import BackupReader
+    from ...readers.backup_reader import BackupReader
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
     limit = request.args.get("limit", _DEFAULT_BACKUPS_PAGE_SIZE, type=int)
@@ -769,7 +769,7 @@ def list_backups(name: str):
 @sites_bp.get("/<name>/backups/<timestamp>")
 @require_scope(site_name)
 def get_backup(name: str, timestamp: str):
-    from ..readers.backup_reader import BackupReader
+    from ...readers.backup_reader import BackupReader
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
@@ -879,7 +879,7 @@ def get_backup_schedule(name: str):
 
     from pilot.config.site_backup_config import read_retention
 
-    from ..cron_manager import CronManager
+    from ...cron_manager import CronManager
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
@@ -895,7 +895,7 @@ def get_backup_schedule(name: str):
 def set_backup_schedule(name: str):
     from pilot.config.site_backup_config import write_retention
 
-    from ..cron_manager import CronManager
+    from ...cron_manager import CronManager
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
     data = request.get_json(silent=True)
@@ -926,7 +926,7 @@ def set_backup_schedule(name: str):
 def delete_backup_schedule(name: str):
     from pilot.config.site_backup_config import clear_retention
 
-    from ..cron_manager import CronManager
+    from ...cron_manager import CronManager
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:

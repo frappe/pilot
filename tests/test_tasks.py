@@ -383,7 +383,7 @@ def test_stream_waits_for_queued_cancellation(
 
 
 def test_queued_setup_task_is_available_for_resume(tmp_path: Path) -> None:
-    from admin.backend.views.setup import _running_setup_task
+    from admin.backend.api.v1.setup import _running_setup_task
 
     task_id = "20260521-143022-aabbcc"
     TaskStore(tmp_path).create_queued(

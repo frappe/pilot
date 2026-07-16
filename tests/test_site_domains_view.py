@@ -51,7 +51,7 @@ def test_get_domain_reports_the_site_itself_as_attached_and_primary(tmp_path: Pa
     client = _client(bench_root)
 
     with patch(
-        "admin.backend.views.sites._domain_routes",
+        "admin.backend.api.v1.sites._domain_routes",
         return_value=_mocked_routes(primary=None),
     ):
         response = client.get("/api/v1/sites/site.localhost/domains/site.localhost")
@@ -66,7 +66,7 @@ def test_get_domain_reports_a_custom_domain(tmp_path: Path) -> None:
     client = _client(bench_root)
 
     with patch(
-        "admin.backend.views.sites._domain_routes",
+        "admin.backend.api.v1.sites._domain_routes",
         return_value=_mocked_routes(domains=["custom.example.com"], primary="custom.example.com"),
     ):
         response = client.get("/api/v1/sites/site.localhost/domains/custom.example.com")
@@ -81,7 +81,7 @@ def test_get_domain_404s_for_an_unattached_domain(tmp_path: Path) -> None:
     client = _client(bench_root)
 
     with patch(
-        "admin.backend.views.sites._domain_routes",
+        "admin.backend.api.v1.sites._domain_routes",
         return_value=_mocked_routes(),
     ):
         response = client.get("/api/v1/sites/site.localhost/domains/other.example.com")
@@ -95,7 +95,7 @@ def test_update_domain_sets_primary_and_queues_nginx(tmp_path: Path) -> None:
     client = _client(bench_root)
     routes = _mocked_routes(domains=["custom.example.com"])
 
-    with patch("admin.backend.views.sites._domain_routes", return_value=routes):
+    with patch("admin.backend.api.v1.sites._domain_routes", return_value=routes):
         response = _request(
             client, "patch",
             "/api/v1/sites/site.localhost/domains/custom.example.com",
@@ -128,7 +128,7 @@ def test_delete_domain_queues_removal(tmp_path: Path) -> None:
     client = _client(bench_root)
     routes = _mocked_routes(domains=["custom.example.com"])
 
-    with patch("admin.backend.views.sites._domain_routes", return_value=routes):
+    with patch("admin.backend.api.v1.sites._domain_routes", return_value=routes):
         response = _request(client, "delete", "/api/v1/sites/site.localhost/domains/custom.example.com")
 
     body = response.get_json()
@@ -144,7 +144,7 @@ def test_domain_dns_records_is_read_only_and_returns_records_directly(tmp_path: 
     routes = _mocked_routes()
     routes.generate_dns_records.return_value = {"cname": [{"type": "CNAME"}], "a": []}
 
-    with patch("admin.backend.views.sites._domain_routes", return_value=routes):
+    with patch("admin.backend.api.v1.sites._domain_routes", return_value=routes):
         response = client.get("/api/v1/sites/site.localhost/domains/custom.example.com/dns-records")
 
     assert response.status_code == 200

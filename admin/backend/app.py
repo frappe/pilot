@@ -5,12 +5,12 @@ from pathlib import Path
 
 from flask import Flask, g, request, send_file
 
-from .api_contract import (
+from .api.errors import (
     API_V1_PREFIX,
-    error_response,
     install_api_error_handlers,
     is_api_path,
 )
+from .api.responses import error_response
 from .auth import (
     AuthPolicy,
     allow_unauthenticated,
@@ -19,22 +19,22 @@ from .auth import (
 )
 from .rate_limit import UsedTokens
 from .uploads import MAX_RESTORE_UPLOAD_BYTES
-from .views.apps import apps_bp, marketplace_bp
-from .views.benches import bench_readiness_bp, benches_bp
-from .views.core import core_bp
-from .views.dashboard import dashboard_bp
-from .views.database import database_bp
-from .views.git import git_bp
-from .views.logs import logs_bp
-from .views.processes import processes_bp
-from .views.settings import audit_bp, network_bp, settings_bp
-from .views.site_login import site_login_bp
-from .views.setup import setup_bp
-from .views.sites import site_restores_bp, sites_bp
-from .views.ssh_keys import ssh_keys_bp
-from .views.stats import stats_bp
-from .views.tasks import task_worker_bp, tasks_bp
-from .views.updates import updates_bp
+from .api.v1.apps import apps_bp, marketplace_bp
+from .api.v1.benches import bench_readiness_bp, benches_bp
+from .api.v1.core import core_bp
+from .api.v1.dashboard import dashboard_bp
+from .api.v1.databases import database_bp
+from .api.v1.git import git_bp
+from .api.v1.logs import logs_bp
+from .api.v1.processes import processes_bp
+from .api.v1.settings import audit_bp, network_bp, settings_bp
+from .api.v1.site_login import site_login_bp
+from .api.v1.setup import setup_bp
+from .api.v1.sites import site_restores_bp, sites_bp
+from .api.v1.ssh_keys import ssh_keys_bp
+from .api.v1.stats import stats_bp
+from .api.v1.tasks import task_worker_bp, tasks_bp
+from .api.v1.updates import updates_bp
 from pilot.config.bench_config import BenchConfig
 from pilot.config.toml_store import BenchTomlStore
 from admin.backend.site_login_handoff import SiteLoginHandoffStore

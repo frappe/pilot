@@ -69,7 +69,7 @@ def test_runtime_restart_returns_the_process_list(tmp_path: Path) -> None:
     restart_result = Mock(returncode=0)
 
     with patch(
-        "admin.backend.views.processes.subprocess.run",
+        "admin.backend.api.v1.processes.subprocess.run",
         side_effect=[status_result, restart_result],
     ), patch(
         "admin.backend.readers.process_reader.ProcessReader.read_all",

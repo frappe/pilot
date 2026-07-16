@@ -12,7 +12,7 @@ from flask import (
     url_for,
 )
 
-from admin.backend.api_contract import accepted_response, error_response, no_content_response
+from admin.backend.api.responses import accepted_response, error_response, no_content_response
 from pilot.tasks.manager.activity import TaskActivityReader
 from pilot.tasks.manager.events import sse_message
 from pilot.tasks.manager.task_args import task_requires_secrets

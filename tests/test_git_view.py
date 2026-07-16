@@ -41,7 +41,7 @@ def test_put_connection_saves_a_valid_token(tmp_path: Path) -> None:
     provider = Mock()
     provider.validate.return_value = {"login": "octocat"}
 
-    with patch("admin.backend.views.git.provider_for_name", return_value=provider):
+    with patch("admin.backend.api.v1.git.provider_for_name", return_value=provider):
         response = client.put(
             "/api/v1/git/connection",
             json={"provider": "github", "token": "ghp_abc123"},
@@ -61,7 +61,7 @@ def test_put_connection_rejects_an_invalid_token(tmp_path: Path) -> None:
     provider = Mock()
     provider.validate.side_effect = GitAuthError()
 
-    with patch("admin.backend.views.git.provider_for_name", return_value=provider):
+    with patch("admin.backend.api.v1.git.provider_for_name", return_value=provider):
         response = client.put(
             "/api/v1/git/connection",
             json={"provider": "github", "token": "bad-token"},
@@ -76,7 +76,7 @@ def test_delete_connection_clears_the_credential(tmp_path: Path) -> None:
     client = _client(bench_root)
     provider = Mock()
     provider.validate.return_value = {"login": "octocat"}
-    with patch("admin.backend.views.git.provider_for_name", return_value=provider):
+    with patch("admin.backend.api.v1.git.provider_for_name", return_value=provider):
         client.put("/api/v1/git/connection", json={"provider": "github", "token": "ghp_abc123"})
 
     response = client.delete("/api/v1/git/connection")
@@ -101,11 +101,11 @@ def test_repositories_returns_the_list_directly(tmp_path: Path) -> None:
     client = _client(bench_root)
     provider = Mock()
     provider.validate.return_value = {"login": "octocat"}
-    with patch("admin.backend.views.git.provider_for_name", return_value=provider):
+    with patch("admin.backend.api.v1.git.provider_for_name", return_value=provider):
         client.put("/api/v1/git/connection", json={"provider": "github", "token": "ghp_abc123"})
 
     provider.list_repos.return_value = [{"name": "suite"}]
-    with patch("admin.backend.views.git.provider_for_name", return_value=provider):
+    with patch("admin.backend.api.v1.git.provider_for_name", return_value=provider):
         response = client.get("/api/v1/git/repositories")
 
     assert response.status_code == 200
@@ -119,8 +119,8 @@ def test_branches_returns_branches_and_default(tmp_path: Path) -> None:
     provider.list_branches.return_value = ["main", "develop"]
     provider.get_default_branch.return_value = "main"
 
-    with patch("admin.backend.views.git.provider_for_repo", return_value=provider), \
-         patch("admin.backend.views.git.provider_for_name", return_value=provider):
+    with patch("admin.backend.api.v1.git.provider_for_repo", return_value=provider), \
+         patch("admin.backend.api.v1.git.provider_for_name", return_value=provider):
         response = client.get(
             "/api/v1/git/branches", query_string={"repo": "https://github.com/frappe/suite"}
         )
@@ -135,9 +135,9 @@ def test_repository_resolutions_returns_the_resolved_app(tmp_path: Path) -> None
     bench_root = tmp_path / "benches" / "current"
     client = _client(bench_root)
 
-    with patch("admin.backend.views.git.provider_for_repo", return_value=Mock()), \
+    with patch("admin.backend.api.v1.git.provider_for_repo", return_value=Mock()), \
          patch(
-             "admin.backend.views.git.resolve_app_name_from_repo",
+             "admin.backend.api.v1.git.resolve_app_name_from_repo",
              return_value={"name": "suite", "description": "A suite app"},
          ):
         response = client.post(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from admin.backend.views.setup import _read_defaults, _validate
+from admin.backend.api.v1.setup import _read_defaults, _validate
 
 
 # ── _validate ───────────────────────────────────────────────────────────────────
@@ -77,7 +77,7 @@ def test_read_defaults_omits_password_fallbacks_for_fresh_bench(tmp_path: Path) 
 def test_read_defaults_never_leaks_a_real_saved_password(tmp_path: Path) -> None:
     """Even a real, already-saved password must never come back over this
     endpoint — it's polled before login."""
-    from admin.backend.views.setup import BenchTomlStore
+    from admin.backend.api.v1.setup import BenchTomlStore
 
     store = BenchTomlStore(tmp_path / "bench.toml")
     store.write_flat("bench6", {"mariadb_password": "s3cr3t", "postgres_password": "s3cr3t"})

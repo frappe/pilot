@@ -173,11 +173,11 @@ def test_site_restore_passes_only_generated_paths_to_task(tmp_path: Path) -> Non
 
     with (
         patch(
-            "admin.backend.views.sites.TaskRunner.submit",
+            "admin.backend.api.v1.sites.TaskRunner.submit",
             return_value=TaskSubmission("task-1", True),
         ) as submit,
         patch(
-            "admin.backend.views.sites.accepted_task_response",
+            "admin.backend.api.v1.sites.accepted_task_response",
             return_value=({"task_id": "task-1"}, 202),
         ),
     ):
@@ -217,11 +217,11 @@ def test_site_restore_generates_admin_password_when_omitted(tmp_path: Path) -> N
 
     with (
         patch(
-            "admin.backend.views.sites.TaskRunner.submit",
+            "admin.backend.api.v1.sites.TaskRunner.submit",
             return_value=TaskSubmission("task-1", True),
         ) as submit,
         patch(
-            "admin.backend.views.sites.accepted_task_response",
+            "admin.backend.api.v1.sites.accepted_task_response",
             return_value=({"task_id": "task-1"}, 202),
         ),
     ):

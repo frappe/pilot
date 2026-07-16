@@ -53,7 +53,7 @@ def test_ssh_key_add_errors_have_distinct_statuses(
     code: str,
 ) -> None:
     client = _client(tmp_path / "bench")
-    with patch("admin.backend.views.ssh_keys.AuthorizedKeysStore") as store:
+    with patch("admin.backend.api.v1.ssh_keys.AuthorizedKeysStore") as store:
         store.return_value.add.side_effect = error
         response = client.post(
             "/api/v1/ssh-keys",
@@ -78,7 +78,7 @@ def test_ssh_key_remove_errors_have_distinct_statuses(
     code: str,
 ) -> None:
     client = _client(tmp_path / "bench")
-    with patch("admin.backend.views.ssh_keys.AuthorizedKeysStore") as store:
+    with patch("admin.backend.api.v1.ssh_keys.AuthorizedKeysStore") as store:
         store.return_value.remove.side_effect = error
         response = client.delete("/api/v1/ssh-keys/SHA256:value")
 
@@ -89,7 +89,7 @@ def test_ssh_key_remove_errors_have_distinct_statuses(
 def test_database_process_conflict_is_not_a_blanket_mapping(tmp_path: Path) -> None:
     client = _client(tmp_path / "bench")
     manager = Mock()
-    with patch("admin.backend.views.database._get_mariadb_manager", return_value=manager):
+    with patch("admin.backend.api.v1.databases._get_mariadb_manager", return_value=manager):
         manager.kill_process.side_effect = DatabaseProcessNotActiveError()
         inactive = client.delete("/api/v1/database/processes/42")
         manager.kill_process.side_effect = RuntimeError("secret connection detail")
@@ -151,7 +151,7 @@ def test_domain_failures_preserve_their_semantics(
     routes = Mock()
     routes.domains.side_effect = error
 
-    with patch("admin.backend.views.sites._domain_routes", return_value=routes):
+    with patch("admin.backend.api.v1.sites._domain_routes", return_value=routes):
         response = client.get("/api/v1/sites/site.test/domains")
 
     assert response.status_code == status

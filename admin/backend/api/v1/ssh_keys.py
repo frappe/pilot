@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
 
-from admin.backend.api_contract import created_response, error_response, no_content_response
+from admin.backend.api.responses import created_response, error_response, no_content_response
 from pilot.core.ssh_keys import (
     AuthorizedKeysStore,
     InvalidSSHKeyError,

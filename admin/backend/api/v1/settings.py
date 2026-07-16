@@ -5,7 +5,7 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request
 
-from admin.backend.api_contract import error_response
+from admin.backend.api.responses import error_response
 from admin.backend.client_ip import client_ip
 
 from pilot.config.bench_config import BenchConfig
@@ -503,7 +503,7 @@ def audit_log():
     """The bench-wide audit log as JSON, newest first. The log has no dedicated
     UI — it's viewed directly, paginated with ``limit``/``cursor`` query params,
     and optionally filtered by ``type``/``status``/``site``."""
-    from admin.backend.api_contract import paginated_response, parse_pagination
+    from admin.backend.api.responses import paginated_response, parse_pagination
     from pilot.core.audit_log import AuditLog
 
     bench_root = Path(current_app.config["BENCH_ROOT"])

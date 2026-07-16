@@ -51,43 +51,48 @@ admin/
     ├── app.py                   # Flask app factory — create_app(bench_root: Path)
     ├── server.py                # dev/watch entry point (started via `--dev`/`--wizard`)
     ├── wsgi.py                  # gunicorn entry point used in production
-    ├── api_contract.py          # response envelope, error handling, pagination helpers
+    ├── task_response.py         # accepted_task_response() — the one Flask-coupled
+    │                               piece of task handling; the engine itself lives in
+    │                               pilot/tasks (see docs/tasks.md)
     ├── auth.py                  # AuthPolicy, session/JWT verification, site-scope checks
     ├── jwks.py                  # remote JWKS verification for external issuers
     ├── rate_limit.py            # in-memory sliding-window rate limiting
     │
-    ├── readers/                 # Stateless filesystem/DB readers, one per resource
-    │   ├── bench_reader.py      # BenchReader — bench.toml summary
-    │   ├── app_reader.py        # AppReader — cloned apps + git/pip state
-    │   ├── site_reader.py       # SiteReader — sites + site_config.json
-    │   ├── process_reader.py    # ProcessReader — process status/PID/resource use
-    │   ├── log_reader.py        # LogReader — log listing, tail, streaming
-    │   ├── database_reader.py   # DatabaseReader — binlogs, processlist, slow queries
-    │   ├── backup_reader.py     # BackupReader — on-disk and offsite backup sets
-    │   └── monitor_reader.py    # MonitorHistoryReader — monitor log history
+    ├── api/
+    │   ├── errors.py             # ApiProblem, is_api_path, install_api_error_handlers
+    │   ├── responses.py          # response envelope + pagination helpers
+    │   └── v1/                   # Flask blueprints, one per API area
+    │       ├── core.py               # health, bootstrap, session
+    │       ├── setup.py               # first-run setup wizard API
+    │       ├── dashboard.py           # composed dashboard read
+    │       ├── apps.py, git.py        # installed apps, marketplace, git connection
+    │       ├── benches.py             # multi-bench management
+    │       ├── sites.py, site_login.py # sites, domains, backups, login handoff
+    │       ├── processes.py           # runtime/process control
+    │       ├── logs.py, databases.py  # log and database inspection
+    │       ├── tasks.py                # task queue + task worker control
+    │       ├── settings.py             # bench.toml read/patch, audit log, client IP
+    │       └── ssh_keys.py, stats.py, updates.py
     │
-    ├── views/                   # Flask blueprints, one per API area
-    │   ├── core.py               # health, bootstrap, session
-    │   ├── setup.py               # first-run setup wizard API
-    │   ├── dashboard.py           # composed dashboard read
-    │   ├── apps.py, git.py        # installed apps, marketplace, git connection
-    │   ├── benches.py             # multi-bench management
-    │   ├── sites.py, site_login.py # sites, domains, backups, login handoff
-    │   ├── processes.py           # runtime/process control
-    │   ├── logs.py, database.py   # log and database inspection
-    │   ├── tasks.py                # task queue + task worker control
-    │   ├── settings.py             # bench.toml read/patch, audit log, client IP
-    │   ├── ssh_keys.py, stats.py, updates.py
-    │
-    └── tasks/
-        ├── manager/              # Task infrastructure
-        │   ├── task_runner.py    # TaskRunner — validates + queues a task
-        │   ├── task_reader.py    # TaskReader — reads task state from disk
-        │   ├── task_store.py     # durable queue + idempotent creation
-        │   ├── worker_registry.py, worker.py, worker_state.py  # single task worker
-        │   ├── events.py         # SSE event shapes for task streaming
-        │   └── models.py         # TaskInfo dataclass
-        └── jobs/                 # One class per background job (get_app_task.py, new_site_task.py, ...)
+    └── readers/                 # Stateless filesystem/DB readers, one per resource
+        ├── bench_reader.py      # BenchReader — bench.toml summary
+        ├── app_reader.py        # AppReader — cloned apps + git/pip state
+        ├── site_reader.py       # SiteReader — sites + site_config.json
+        ├── process_reader.py    # ProcessReader — process status/PID/resource use
+        ├── log_reader.py        # LogReader — log listing, tail, streaming
+        ├── database_reader.py   # DatabaseReader — binlogs, processlist, slow queries
+        ├── backup_reader.py     # BackupReader — on-disk and offsite backup sets
+        └── monitor_reader.py    # MonitorHistoryReader — monitor log history
+
+pilot/tasks/                     # The task engine itself (Flask-free) — see docs/tasks.md
+├── manager/                     # Task infrastructure
+│   ├── task_runner.py           # TaskRunner — validates + queues a task
+│   ├── task_reader.py           # TaskReader — reads task state from disk
+│   ├── task_store.py            # durable queue + idempotent creation
+│   ├── worker_registry.py, worker.py, worker_state.py  # single task worker
+│   ├── events.py                # SSE event shapes for task streaming
+│   └── models.py                # TaskInfo dataclass
+└── jobs/                        # One class per background job (get_app_task.py, new_site_task.py, ...)
 ```
 
 ---
@@ -106,7 +111,7 @@ admin/
 
 A successful response is either the resource's JSON directly, or `{"data": [...], "meta": {...}}` for a paginated collection. There is no `{"ok": true}` wrapper.
 
-Every error uses one shape, produced by `error_response()` in `api_contract.py`:
+Every error uses one shape, produced by `error_response()` in `api/responses.py`:
 
 ```json
 {
@@ -158,7 +163,7 @@ Sensitive endpoints add a sliding-window rate limit on top (`@rate_limit`): `POS
 
 ### Pagination
 
-Growing collections use cursor pagination via `parse_pagination()` / `paginated_response()` in `api_contract.py`:
+Growing collections use cursor pagination via `parse_pagination()` / `paginated_response()` in `api/responses.py`:
 
 - Request: `?limit=N&cursor=<opaque>`. An invalid or out-of-range `limit`/`cursor` silently falls back to the default rather than erroring — pagination inputs are advisory.
 - Response: `{"data": [...], "meta": {"limit": N, "next_cursor": "<opaque>" | null}}`. `next_cursor` is `null` once there's nothing more to fetch.

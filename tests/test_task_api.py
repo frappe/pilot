@@ -8,7 +8,7 @@ from flask import Flask
 from pilot.tasks.manager.task_state import TaskStatus
 from pilot.tasks.manager.task_store import TaskStore
 from pilot.tasks.manager.worker_state import WorkerIntent, WorkerStore
-from admin.backend.views.tasks import task_worker_bp, tasks_bp
+from admin.backend.api.v1.tasks import task_worker_bp, tasks_bp
 from pilot.exceptions import TaskConflictError, TaskNotFoundError
 
 
@@ -63,7 +63,7 @@ def test_submit_returns_queued_task_and_location(tmp_path: Path) -> None:
         create_task(tmp_path)
         return TASK_ID
 
-    with patch("admin.backend.views.tasks.TaskRunner.run", side_effect=submit) as run:
+    with patch("admin.backend.api.v1.tasks.TaskRunner.run", side_effect=submit) as run:
         response = client(tmp_path).post(
             "/api/v1/tasks",
             json={"command": "build", "app": "frappe"},
@@ -85,7 +85,7 @@ def test_submit_returns_conflict_for_incompatible_idempotency_key(
     tmp_path: Path,
 ) -> None:
     with patch(
-        "admin.backend.views.tasks.TaskRunner.run",
+        "admin.backend.api.v1.tasks.TaskRunner.run",
         side_effect=TaskConflictError("Idempotency key conflict"),
     ):
         response = client(tmp_path).post(
@@ -192,7 +192,7 @@ def test_retry_returns_queued_task_and_location(tmp_path: Path) -> None:
         create_task(tmp_path, RETRY_TASK_ID)
         return RETRY_TASK_ID
 
-    with patch("admin.backend.views.tasks.TaskRunner.run", side_effect=retry):
+    with patch("admin.backend.api.v1.tasks.TaskRunner.run", side_effect=retry):
         response = client(tmp_path).post(
             f"/api/v1/tasks/{TASK_ID}/actions/retry"
         )
@@ -214,7 +214,7 @@ def test_retry_rejects_an_active_task(tmp_path: Path) -> None:
 
 def test_missing_task_is_rejected_before_sse_response(tmp_path: Path) -> None:
     with patch(
-        "admin.backend.views.tasks.TaskReader.read_task",
+        "admin.backend.api.v1.tasks.TaskReader.read_task",
         side_effect=TaskNotFoundError(f"Task not found: {TASK_ID}"),
     ):
         response = client(tmp_path).get(f"/api/v1/tasks/{TASK_ID}/events")
@@ -238,7 +238,7 @@ def test_events_keep_status_updates_out_of_output_event_ids(tmp_path: Path) -> N
         ]
     )
     with patch(
-        "admin.backend.views.tasks.TaskReader.stream_output",
+        "admin.backend.api.v1.tasks.TaskReader.stream_output",
         return_value=events,
     ):
         response = client(tmp_path).get(f"/api/v1/tasks/{TASK_ID}/events")
@@ -285,9 +285,9 @@ def test_stop_task_worker_persists_intent_without_signalling_processes(
     tmp_path: Path,
 ) -> None:
     with (
-        patch("admin.backend.views.tasks.task_workers.wake", return_value=True) as wake,
-        patch("admin.backend.views.tasks.task_workers.start") as start,
-        patch("admin.backend.views.tasks.task_workers.request_drain") as drain,
+        patch("admin.backend.api.v1.tasks.task_workers.wake", return_value=True) as wake,
+        patch("admin.backend.api.v1.tasks.task_workers.start") as start,
+        patch("admin.backend.api.v1.tasks.task_workers.request_drain") as drain,
     ):
         response = client(tmp_path).post("/api/v1/task-worker/actions/stop")
 
@@ -305,8 +305,8 @@ def test_start_task_worker_persists_intent_and_wakes_existing_thread(
 ) -> None:
     WorkerStore(tmp_path).write_intent(WorkerIntent.STOPPED)
     with (
-        patch("admin.backend.views.tasks.task_workers.wake", return_value=True) as wake,
-        patch("admin.backend.views.tasks.task_workers.start") as start,
+        patch("admin.backend.api.v1.tasks.task_workers.wake", return_value=True) as wake,
+        patch("admin.backend.api.v1.tasks.task_workers.start") as start,
     ):
         response = client(tmp_path).post("/api/v1/task-worker/actions/start")
 

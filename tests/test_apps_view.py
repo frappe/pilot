@@ -133,7 +133,7 @@ def test_update_app_sets_the_upstream_remote(tmp_path: Path) -> None:
     client = _client(bench_root)
     completed = Mock(returncode=0)
 
-    with patch("admin.backend.views.apps.subprocess.run", return_value=completed) as run:
+    with patch("admin.backend.api.v1.apps.subprocess.run", return_value=completed) as run:
         response = client.patch(
             "/api/v1/apps/suite", json={"repo": "https://github.com/frappe/suite"}
         )
@@ -208,8 +208,8 @@ def test_app_updates_reads_without_fetching(tmp_path: Path) -> None:
     bench.apps.return_value = [app]
 
     with patch("pilot.core.bench.Bench", return_value=bench), \
-         patch("admin.backend.views.updates._git_fetch") as git_fetch, \
-         patch("admin.backend.views.updates._app_info", return_value={"name": "suite"}):
+         patch("admin.backend.api.v1.updates._git_fetch") as git_fetch, \
+         patch("admin.backend.api.v1.updates._app_info", return_value={"name": "suite"}):
         response = client.get("/api/v1/app-updates")
 
     assert response.status_code == 200
@@ -227,8 +227,8 @@ def test_app_update_checks_fetches_each_cloned_app(tmp_path: Path) -> None:
     bench.apps.return_value = [app]
 
     with patch("pilot.core.bench.Bench", return_value=bench), \
-         patch("admin.backend.views.updates._git_fetch") as git_fetch, \
-         patch("admin.backend.views.updates._app_info", return_value={"name": "suite"}):
+         patch("admin.backend.api.v1.updates._git_fetch") as git_fetch, \
+         patch("admin.backend.api.v1.updates._app_info", return_value={"name": "suite"}):
         response = client.post("/api/v1/app-update-checks")
 
     assert response.status_code == 200

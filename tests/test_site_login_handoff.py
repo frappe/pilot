@@ -59,7 +59,7 @@ def test_site_login_handoff_sets_cookie_and_cannot_be_replayed(tmp_path: Path) -
     link = client.post("/api/v1/sites/s.localhost/login-links").get_json()
 
     with patch(
-        "admin.backend.views.site_login.create_site_session",
+        "admin.backend.api.v1.site_login.create_site_session",
         return_value="frappe-session",
     ) as create_session:
         response = client.post(

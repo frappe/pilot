@@ -9,7 +9,7 @@ from pathlib import Path
 import psutil
 from flask import Blueprint, current_app, jsonify, request
 
-from admin.backend.api_contract import error_response
+from admin.backend.api.responses import error_response
 from pilot.config.bench_config import BenchConfig
 from pilot.config.toml_store import BenchTomlStore
 
@@ -120,7 +120,7 @@ def get_monitor_status():
 
 @stats_bp.get("/monitor/history")
 def get_monitor_history():
-    from ..readers.monitor_reader import MonitorHistoryReader
+    from ...readers.monitor_reader import MonitorHistoryReader
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
     window = request.args.get("window", "1h")
@@ -137,7 +137,7 @@ def get_monitor_history():
 @stats_bp.get("/system")
 def system_info():
     from pilot.managers.platform import kernel_version, os_version
-    from ..readers.runtime_reader import RuntimeVersionReader
+    from ...readers.runtime_reader import RuntimeVersionReader
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
     config = BenchTomlStore.for_bench(bench_root).read()

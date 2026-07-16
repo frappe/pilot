@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pilot.config.bench_config import BenchConfig
 
-from admin.backend.views.settings import ConfigPatcher, _build_settings_response
+from admin.backend.api.v1.settings import ConfigPatcher, _build_settings_response
 
 
 def _config() -> BenchConfig:
