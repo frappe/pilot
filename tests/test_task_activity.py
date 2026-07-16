@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from admin.backend.tasks.manager.activity import TaskActivityReader
-from admin.backend.tasks.manager.task_state import TaskStatus
-from admin.backend.tasks.manager.task_store import TaskStore
-from admin.backend.tasks.manager.worker_state import (
+from pilot.tasks.manager.activity import TaskActivityReader
+from pilot.tasks.manager.task_state import TaskStatus
+from pilot.tasks.manager.task_store import TaskStore
+from pilot.tasks.manager.worker_state import (
     WorkerIntent,
     WorkerStatus,
     WorkerStore,

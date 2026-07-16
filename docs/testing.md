@@ -34,7 +34,7 @@ Recorded before Milestone 10's folder restructuring, as the point full CI is exp
 
 These aren't gaps in the unit suite's design — each is exercised by `tests/integration` or `tests/e2e` instead, which run a real subprocess or a real browser rather than importing the module in-process:
 
-- `admin/backend/tasks/jobs/*.py` — each job's `if __name__ == "__main__":` entry point only runs when the task manager actually spawns `python -m admin.backend.tasks.jobs.<name>_task` as a subprocess; unit tests exercise the job's class directly instead, which covers the class body but not the module-level entry point line.
+- `pilot/tasks/jobs/*.py` — each job's `if __name__ == "__main__":` entry point only runs when the task manager actually spawns `python -m pilot.tasks.jobs.<name>_task` as a subprocess; unit tests exercise the job's class directly instead, which covers the class body but not the module-level entry point line.
 - `admin/backend/server.py`, `admin/backend/wsgi.py` — process entry points, exercised by integration/e2e runs against a live admin server.
 
 These modules have no test coverage at all today and are a real gap, not an

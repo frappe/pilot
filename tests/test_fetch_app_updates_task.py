@@ -1,4 +1,4 @@
-"""Tests for admin.backend.tasks.jobs.fetch_app_updates_task.
+"""Tests for pilot.tasks.jobs.fetch_app_updates_task.
 
 Covers the marketplace-aware update check: a tag/commit-pinned app resolves
 purely locally by comparing against the marketplace's advertised revision —
@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from admin.backend.tasks.jobs.fetch_app_updates_task import FetchAppUpdatesTask
+from pilot.tasks.jobs.fetch_app_updates_task import FetchAppUpdatesTask
 from pilot.core.app import RevisionPin
 from pilot.core.marketplace import Marketplace
 

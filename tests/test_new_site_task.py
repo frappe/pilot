@@ -1,4 +1,4 @@
-"""Tests for admin.backend.tasks.jobs.new_site_task.
+"""Tests for pilot.tasks.jobs.new_site_task.
 
 The new-site wizard lets users pick marketplace apps that haven't been
 `get-app`'d onto this bench yet, which used to fail deep inside
@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from admin.backend.tasks.jobs.new_site_task import NewSiteTask
+from pilot.tasks.jobs.new_site_task import NewSiteTask
 from pilot.core.marketplace import Marketplace, Resolver
 from tests.test_commands import make_bench
 

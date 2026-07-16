@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
-from admin.backend.timing import CAPTURE_POLL_SECONDS, CAPTURE_TIMEOUT_SECONDS
+from pilot.tasks.timing import CAPTURE_POLL_SECONDS, CAPTURE_TIMEOUT_SECONDS
 
 _BOOT_ID_PATH = Path("/proc/sys/kernel/random/boot_id")
 _PROC_ROOT = Path("/proc")

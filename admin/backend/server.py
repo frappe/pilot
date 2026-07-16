@@ -48,7 +48,7 @@ def main() -> None:
         _start_vite_watch()
 
     if not args.dev or os.environ.get("WERKZEUG_RUN_MAIN"):
-        from admin.backend.tasks.manager.worker_registry import task_workers
+        from pilot.tasks.manager.worker_registry import task_workers
 
         task_workers.start(bench_root)
         task_workers.install_signal_handlers()

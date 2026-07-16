@@ -1,6 +1,6 @@
 import json
 
-from admin.backend.tasks.manager.events import (
+from pilot.tasks.manager.events import (
     done_event,
     output_event,
     sse_message,

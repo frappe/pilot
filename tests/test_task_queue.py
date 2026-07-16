@@ -3,9 +3,9 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from admin.backend.tasks.manager.task_queue import TaskQueue
-from admin.backend.tasks.manager.task_state import TaskStatus
-from admin.backend.tasks.manager.task_store import TaskStore
+from pilot.tasks.manager.task_queue import TaskQueue
+from pilot.tasks.manager.task_state import TaskStatus
+from pilot.tasks.manager.task_store import TaskStore
 
 
 def task_metadata(task_id: str) -> dict:

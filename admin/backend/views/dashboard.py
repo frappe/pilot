@@ -5,7 +5,7 @@ from dataclasses import asdict
 from flask import Blueprint, current_app, jsonify
 
 from admin.backend.api_contract import error_response
-from admin.backend.tasks.manager.task_reader import TaskReader
+from pilot.tasks.manager.task_reader import TaskReader
 
 from ..readers.app_reader import AppReader
 from ..readers.bench_reader import BenchReader

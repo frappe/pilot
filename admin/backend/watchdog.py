@@ -9,7 +9,7 @@ from pathlib import Path
 
 from flask import Flask
 
-from admin.backend.tasks.manager.activity import TaskActivityReader
+from pilot.tasks.manager.activity import TaskActivityReader
 from admin.backend.timing import WATCHDOG_MAX_POLL_SECONDS
 
 

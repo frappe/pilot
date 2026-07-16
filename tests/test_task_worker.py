@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
-import admin.backend.tasks.manager.worker as worker_module
-from admin.backend.tasks.manager.task_state import TaskStatus
-from admin.backend.tasks.manager.task_store import TaskStore
-from admin.backend.tasks.manager.worker import TaskWorker
-from admin.backend.tasks.manager.worker_state import WorkerIntent, WorkerStatus, WorkerStore
+import pilot.tasks.manager.worker as worker_module
+from pilot.tasks.manager.task_state import TaskStatus
+from pilot.tasks.manager.task_store import TaskStore
+from pilot.tasks.manager.worker import TaskWorker
+from pilot.tasks.manager.worker_state import WorkerIntent, WorkerStatus, WorkerStore
 
 
 def enqueue(store: TaskStore, task_id: str, sequence: int) -> None:

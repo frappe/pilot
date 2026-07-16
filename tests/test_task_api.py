@@ -5,9 +5,9 @@ from unittest.mock import patch
 
 from flask import Flask
 
-from admin.backend.tasks.manager.task_state import TaskStatus
-from admin.backend.tasks.manager.task_store import TaskStore
-from admin.backend.tasks.manager.worker_state import WorkerIntent, WorkerStore
+from pilot.tasks.manager.task_state import TaskStatus
+from pilot.tasks.manager.task_store import TaskStore
+from pilot.tasks.manager.worker_state import WorkerIntent, WorkerStore
 from admin.backend.views.tasks import task_worker_bp, tasks_bp
 from pilot.exceptions import TaskConflictError, TaskNotFoundError
 

@@ -1,7 +1,7 @@
 """
 Entry point for a forked child process that runs a bench command.
 
-Invoked as: python -m admin.backend.tasks.manager.wrapper <task-dir>
+Invoked as: python -m pilot.tasks.manager.wrapper <task-dir>
 
 This module uses only the standard library and the fixed callback registry.
 """
@@ -17,12 +17,12 @@ import tomllib
 from datetime import datetime, timezone
 from pathlib import Path
 
-from admin.backend.tasks.callbacks import run_callback, trigger_for_task_status
-from admin.backend.tasks.manager.task_state import (
+from pilot.tasks.callbacks import run_callback, trigger_for_task_status
+from pilot.tasks.manager.task_state import (
     TERMINAL_TASK_STATUSES,
     TaskStatus,
 )
-from admin.backend.tasks.manager.task_store import TaskStore
+from pilot.tasks.manager.task_store import TaskStore
 from pilot.secure_files import open_private
 
 _HOSTNAME = socket.gethostname()

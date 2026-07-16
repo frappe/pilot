@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 
 from admin.backend.app import _install_idle_watchdog, create_app
-from admin.backend.tasks.manager.worker_registry import task_workers
+from pilot.tasks.manager.worker_registry import task_workers
 
 bench_root = Path(os.environ["BENCH_ADMIN_ROOT"])
 application = create_app(bench_root)

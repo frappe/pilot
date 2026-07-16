@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterator
 
-from admin.backend.tasks.manager.task_state import (
+from pilot.tasks.manager.task_state import (
     ACTIVE_TASK_STATUSES,
     TERMINAL_TASK_STATUSES,
     TaskStatus,

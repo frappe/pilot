@@ -11,15 +11,15 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from admin.backend.tasks.callbacks import run_stored_callback, trigger_for_task_status
-from admin.backend.tasks.manager.process_identity import (
+from pilot.tasks.callbacks import run_stored_callback, trigger_for_task_status
+from pilot.tasks.manager.process_identity import (
     ProcessIdentity,
     ProcessInspector,
     ProcessOwnership,
 )
-from admin.backend.tasks.manager.task_state import TERMINAL_TASK_STATUSES, TaskStatus
-from admin.backend.tasks.manager.task_store import TaskStore
-from admin.backend.timing import CANCEL_GRACE_SECONDS, PROCESS_EXIT_POLL_SECONDS
+from pilot.tasks.manager.task_state import TERMINAL_TASK_STATUSES, TaskStatus
+from pilot.tasks.manager.task_store import TaskStore
+from pilot.tasks.timing import CANCEL_GRACE_SECONDS, PROCESS_EXIT_POLL_SECONDS
 from pilot.exceptions import TaskNotFoundError, TaskNotRunningError
 from pilot.platform import NONINTERACTIVE_PRIVILEGES_ENV
 
@@ -63,7 +63,7 @@ class TaskProcess:
         argv = [
             sys.executable,
             "-m",
-            "admin.backend.tasks.manager.wrapper",
+            "pilot.tasks.manager.wrapper",
             str(task_dir),
         ]
         launch_id = secrets.token_hex(16)

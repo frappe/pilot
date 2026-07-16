@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-import admin.backend.tasks.manager.worker_registry as registry_module
-from admin.backend.tasks.manager.worker_registry import WorkerRegistry
+import pilot.tasks.manager.worker_registry as registry_module
+from pilot.tasks.manager.worker_registry import WorkerRegistry
 
 
 def test_registry_keeps_one_live_worker_per_bench(

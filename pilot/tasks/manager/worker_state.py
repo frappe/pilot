@@ -15,7 +15,7 @@ from pilot.internal.atomic_file import (
     replace_private_text_locked,
 )
 from pilot.secure_files import make_private_directory, open_private
-from admin.backend.tasks.manager.worker_lock import WorkerLock
+from pilot.tasks.manager.worker_lock import WorkerLock
 
 
 class WorkerStatus(StrEnum):

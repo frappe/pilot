@@ -4,8 +4,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from admin.backend.tasks.manager.task_reader import TaskReader
-from admin.backend.tasks.manager.task_state import ACTIVE_TASK_STATUSES
+from pilot.tasks.manager.task_reader import TaskReader
+from pilot.tasks.manager.task_state import ACTIVE_TASK_STATUSES
 from pilot.commands.list_site_apps import _query_via_db_cli
 
 # Commands that write site_config.json well before the site's DB is queryable.

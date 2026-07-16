@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from admin.backend.tasks.manager.worker_state import (
+from pilot.tasks.manager.worker_state import (
     WorkerIntent,
     WorkerState,
     WorkerStatus,

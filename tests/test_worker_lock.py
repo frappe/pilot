@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from admin.backend.tasks.manager.worker_state import WorkerStore
+from pilot.tasks.manager.worker_state import WorkerStore
 
 
 def test_only_one_worker_lock_can_be_owned(tmp_path: Path) -> None:

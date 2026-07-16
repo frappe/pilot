@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-import admin.backend.tasks.manager.task_store as task_store_module
-from admin.backend.tasks.manager.task_state import TaskStatus
-from admin.backend.tasks.manager.task_store import TaskStore
+import pilot.tasks.manager.task_store as task_store_module
+from pilot.tasks.manager.task_state import TaskStatus
+from pilot.tasks.manager.task_store import TaskStore
 from pilot.exceptions import TaskConflictError, TaskNotFoundError
 
 TASK_ID = "20260715-120000-aabbcc"

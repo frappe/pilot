@@ -4,8 +4,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from admin.backend.tasks.manager.task_state import TaskStatus, parse_task_status
-from admin.backend.tasks.manager.worker_state import (
+from pilot.tasks.manager.task_state import TaskStatus, parse_task_status
+from pilot.tasks.manager.worker_state import (
     WorkerIntent,
     WorkerState,
     WorkerStatus,

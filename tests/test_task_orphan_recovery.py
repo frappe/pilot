@@ -9,12 +9,12 @@ from pathlib import Path
 
 import pytest
 
-import admin.backend.tasks.manager.worker as worker_module
-from admin.backend.tasks.manager.process_identity import ProcessInspector
-from admin.backend.tasks.manager.task_process import TaskProcessRecord
-from admin.backend.tasks.manager.task_state import TaskStatus
-from admin.backend.tasks.manager.task_store import TaskStore
-from admin.backend.tasks.manager.worker import TaskWorker
+import pilot.tasks.manager.worker as worker_module
+from pilot.tasks.manager.process_identity import ProcessInspector
+from pilot.tasks.manager.task_process import TaskProcessRecord
+from pilot.tasks.manager.task_state import TaskStatus
+from pilot.tasks.manager.task_store import TaskStore
+from pilot.tasks.manager.worker import TaskWorker
 
 RUNNING_TASK = "20260715-120000-111111"
 QUEUED_TASK = "20260715-120000-222222"

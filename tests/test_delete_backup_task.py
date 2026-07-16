@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from admin.backend.tasks.jobs.delete_backup_task import DeleteBackupTask
+from pilot.tasks.jobs.delete_backup_task import DeleteBackupTask
 from pilot.core.audit_log import AuditLog
 
 

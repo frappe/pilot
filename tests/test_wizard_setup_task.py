@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from admin.backend.tasks.jobs.wizard_setup_task import WizardSetupTask
+from pilot.tasks.jobs.wizard_setup_task import WizardSetupTask
 
 
 def _make_task(process_manager: str) -> WizardSetupTask:

@@ -10,12 +10,12 @@ from pathlib import Path
 
 import pytest
 
-from admin.backend.tasks.manager.process_identity import ProcessInspector
-from admin.backend.tasks.manager.task_process import TaskProcess, TaskProcessRecord
-from admin.backend.tasks.manager.task_runner import TaskRunner
-from admin.backend.tasks.manager.task_state import TaskStatus
-from admin.backend.tasks.manager.task_store import TaskStore
-from admin.backend.tasks import callbacks as callback_module
+from pilot.tasks.manager.process_identity import ProcessInspector
+from pilot.tasks.manager.task_process import TaskProcess, TaskProcessRecord
+from pilot.tasks.manager.task_runner import TaskRunner
+from pilot.tasks.manager.task_state import TaskStatus
+from pilot.tasks.manager.task_store import TaskStore
+from pilot.tasks import callbacks as callback_module
 from pilot.exceptions import TaskConflictError, TaskNotRunningError
 
 TASK_ID = "20260715-120000-aabbcc"

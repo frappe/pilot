@@ -5,7 +5,7 @@ import signal
 import threading
 from pathlib import Path
 
-from admin.backend.tasks.manager.worker import TaskWorker
+from pilot.tasks.manager.worker import TaskWorker
 
 
 class WorkerRegistry:

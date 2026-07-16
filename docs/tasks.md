@@ -16,7 +16,7 @@ Admin view / API
    └─ TaskWorker (background thread inside the admin process)
         ├─ holds tasks/worker.lock for the lifetime of the bench's admin process
         ├─ claims the oldest queued task (TaskQueue.claim_next)
-        ├─ starts admin.backend.tasks.manager.wrapper as a detached child
+        ├─ starts pilot.tasks.manager.wrapper as a detached child
         │     └─ wrapper runs the job's command_argv, streams output → output.log
         │     └─ wrapper finalizes status on exit (success/failed/killed)
         └─ repeats until the queue is empty, then goes idle
@@ -35,7 +35,7 @@ queued --> running --> success
 queued --------------> killed
 ```
 
-Success, failed, and killed are terminal — no further transitions are allowed from them. Every transition is validated (`admin/backend/tasks/manager/task_state.py: validate_task_transition`) and applied as a compare-and-swap under the tasks-directory lock (`TaskStore.transition_locked` re-reads the current status and only writes if it still matches the expected one).
+Success, failed, and killed are terminal — no further transitions are allowed from them. Every transition is validated (`pilot/tasks/manager/task_state.py: validate_task_transition`) and applied as a compare-and-swap under the tasks-directory lock (`TaskStore.transition_locked` re-reads the current status and only writes if it still matches the expected one).
 
 | Transition | Trigger |
 |---|---|
@@ -74,7 +74,7 @@ Success, failed, and killed are terminal — no further transitions are allowed 
   "task_id": "20260716-143022-a1b2c3",
   "command": "migrate",
   "args": { "site": "site1.example.com" },
-  "command_argv": ["/bench/env/bin/python", "-m", "admin.backend.tasks.jobs.migrate_task", "/bench/root", "site1.example.com"],
+  "command_argv": ["/bench/env/bin/python", "-m", "pilot.tasks.jobs.migrate_task", "/bench/root", "site1.example.com"],
   "queued_at": "2026-07-16T14:30:22.441000+00:00",
   "started_at": "2026-07-16T14:30:22.501000+00:00",
   "finished_at": "2026-07-16T14:30:35.112000+00:00",
@@ -92,7 +92,7 @@ Success, failed, and killed are terminal — no further transitions are allowed 
 ```json
 {
   "task_id": "20260716-143022-a1b2c3",
-  "argv": ["/bench/env/bin/python", "-m", "admin.backend.tasks.manager.wrapper", "/bench/root/tasks/20260716-143022-a1b2c3"],
+  "argv": ["/bench/env/bin/python", "-m", "pilot.tasks.manager.wrapper", "/bench/root/tasks/20260716-143022-a1b2c3"],
   "identity": {
     "pid": 48213, "pgid": 48213, "sid": 48213, "boot_id": "...",
     "start_ticks": 918273, "uid": 1000, "argv_hash": "...", "launch_id": "..."
@@ -106,7 +106,7 @@ Success, failed, and killed are terminal — no further transitions are allowed 
 
 ## Worker lifecycle
 
-`TaskWorker` (`admin/backend/tasks/manager/worker.py`) runs one loop per bench:
+`TaskWorker` (`pilot/tasks/manager/worker.py`) runs one loop per bench:
 
 1. `try_acquire()` the `worker.lock`; if another worker already holds it, exit immediately (no-op).
 2. Write `worker.pid` and enter the loop. On each iteration:
@@ -184,7 +184,7 @@ So: if the worker (admin process) dies while a task's wrapper is still alive, a 
 
 ## Process ownership and PID safety
 
-A bare PID is not trustworthy: PIDs get reused, so `kill(pid)` after any delay risks signalling an unrelated process that now happens to own that number. `ProcessIdentity` (`admin/backend/tasks/manager/process_identity.py`) is captured once at launch and re-checked before every signal:
+A bare PID is not trustworthy: PIDs get reused, so `kill(pid)` after any delay risks signalling an unrelated process that now happens to own that number. `ProcessIdentity` (`pilot/tasks/manager/process_identity.py`) is captured once at launch and re-checked before every signal:
 
 | Field | Why it's checked |
 |---|---|
@@ -207,7 +207,7 @@ Signalling uses `pidfd_send_signal` (falling back to `os.kill`) so the check-the
 
 ## Watchdog interaction
 
-`AdminIdleWatchdog` (`admin/backend/watchdog.py`) must never shut the admin down while a task is running or a worker is draining. It reads one shared source of truth, `TaskActivityReader.read()` (`admin/backend/tasks/manager/activity.py`), which is also what the CLI and API status endpoints use:
+`AdminIdleWatchdog` (`admin/backend/watchdog.py`) must never shut the admin down while a task is running or a worker is draining. It reads one shared source of truth, `TaskActivityReader.read()` (`pilot/tasks/manager/activity.py`), which is also what the CLI and API status endpoints use:
 
 ```
 active = uncertain
@@ -223,15 +223,15 @@ Notably, **queued-but-not-yet-claimed tasks do not count as activity** — if th
 
 ## Job contract
 
-Every job subclasses `BaseTask` (`admin/backend/tasks/jobs/base_task.py`). `BaseTask.main()` loads any secret arguments handed off via `BENCH_TASK_SECRETS_FILE`, constructs the bench and the task, and calls `run()`:
+Every job subclasses `BaseTask` (`pilot/tasks/jobs/base_task.py`). `BaseTask.main()` loads any secret arguments handed off via `BENCH_TASK_SECRETS_FILE`, constructs the bench and the task, and calls `run()`:
 
 - `self._step(key, label)` prints `STEP <key>,<timestamp> <label>` — opens a collapsible step in the admin UI. Every job emits at least one, even single-step ones.
 - `self._step_failed()` prints `STEP-FAILED <key>,<timestamp>` for the currently open step.
 - `main()` calls `_step_failed()` automatically around `run()` if it raises, or exits with a non-zero `SystemExit` code — a job never has to handle its own top-level failure reporting; raising is enough to make the task fail.
 
-`SwitchBranchTask` (`admin/backend/tasks/jobs/switch_branch_task.py`) is a representative example: it calls `_step` for `fetch`, `checkout`, `install`, an optional `js`, `assets`, and a final `done`, and calls `sys.exit(result.returncode)` on a failed checkout rather than raising, which `main()` also treats as a failure via the `SystemExit` branch.
+`SwitchBranchTask` (`pilot/tasks/jobs/switch_branch_task.py`) is a representative example: it calls `_step` for `fetch`, `checkout`, `install`, an optional `js`, `assets`, and a final `done`, and calls `sys.exit(result.returncode)` on a failed checkout rather than raising, which `main()` also treats as a failure via the `SystemExit` branch.
 
-The wrapper (`admin/backend/tasks/manager/wrapper.py`) runs `command_argv` as a subprocess, capturing merged stdout/stderr into `output.log` with a syslog envelope per line (so `\r`-terminated progress redraws each get re-stamped and `TaskReader` can collapse them like a terminal would) and redacting known secret values before they ever reach disk.
+The wrapper (`pilot/tasks/manager/wrapper.py`) runs `command_argv` as a subprocess, capturing merged stdout/stderr into `output.log` with a syslog envelope per line (so `\r`-terminated progress redraws each get re-stamped and `TaskReader` can collapse them like a terminal would) and redacting known secret values before they ever reach disk.
 
 ---
 

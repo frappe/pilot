@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from admin.backend.tasks.jobs import backup_site_task as mod
-from admin.backend.tasks.jobs.backup_site_task import BackupSiteTask
+from pilot.tasks.jobs import backup_site_task as mod
+from pilot.tasks.jobs.backup_site_task import BackupSiteTask
 from pilot.core.audit_log import AuditLog
 
 

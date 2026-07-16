@@ -73,7 +73,7 @@ def test_site_apps_falls_back_to_name_when_app_missing(tmp_path: Path) -> None:
 
 def _post_install(client, site: str, **payload):
     with patch(
-        "admin.backend.tasks.manager.task_runner.task_workers.wake",
+        "pilot.tasks.manager.task_runner.task_workers.wake",
         return_value=False,
     ):
         return client.post(f"/api/v1/sites/{site}/apps", json=payload)
@@ -81,7 +81,7 @@ def _post_install(client, site: str, **payload):
 
 def _delete_app(client, site: str, app: str, **query):
     with patch(
-        "admin.backend.tasks.manager.task_runner.task_workers.wake",
+        "pilot.tasks.manager.task_runner.task_workers.wake",
         return_value=False,
     ):
         return client.delete(f"/api/v1/sites/{site}/apps/{app}", query_string=query)

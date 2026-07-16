@@ -10,7 +10,7 @@ from unittest.mock import patch
 import pytest
 from werkzeug.datastructures import FileStorage
 
-from admin.backend.tasks.manager.task_runner import TaskSubmission
+from pilot.tasks.manager.task_runner import TaskSubmission
 from admin.backend.uploads import (
     UploadError,
     create_upload_directory,
@@ -253,7 +253,7 @@ def test_site_restore_replay_removes_duplicate_upload_directory(
     }
 
     with patch(
-        "admin.backend.tasks.manager.task_runner.task_workers.wake",
+        "pilot.tasks.manager.task_runner.task_workers.wake",
         return_value=False,
     ):
         first = client.post(

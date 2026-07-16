@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from admin.backend.tasks import callbacks
+from pilot.tasks import callbacks
 
 
 def test_remove_failed_site_operation_uses_json_args(

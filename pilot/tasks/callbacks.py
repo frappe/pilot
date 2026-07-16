@@ -4,7 +4,7 @@ import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
-from admin.backend.tasks.manager.task_state import TaskStatus
+from pilot.tasks.manager.task_state import TaskStatus
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
 from pilot.utils import hosts_line_contains
 

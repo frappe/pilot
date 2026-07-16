@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from admin.backend.tasks.manager.process_identity import (
+from pilot.tasks.manager.process_identity import (
     ProcessInspector,
     ProcessOwnership,
 )
@@ -71,7 +71,7 @@ def test_capture_waits_for_child_exec(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(inspector, "_read_process", lambda pid: next(snapshots))
     monkeypatch.setattr(inspector, "_has_launch_id", lambda pid, launch_id: True)
     monkeypatch.setattr(inspector, "_read_boot_id", lambda: "boot")
-    monkeypatch.setattr("admin.backend.tasks.manager.process_identity.time.sleep", lambda _: None)
+    monkeypatch.setattr("pilot.tasks.manager.process_identity.time.sleep", lambda _: None)
 
     identity = inspector.capture(123, argv, "launch")
 

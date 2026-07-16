@@ -1,4 +1,4 @@
-"""Tests for admin.backend.tasks.jobs.marketplace_fetcher.MarketplaceFetcher.
+"""Tests for pilot.tasks.jobs.marketplace_fetcher.MarketplaceFetcher.
 
 Shared by GetAppTask, GetAndInstallAppTask, and NewSiteTask so each doesn't
 duplicate marketplace dependency resolution.
@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from admin.backend.tasks.jobs.marketplace_fetcher import MarketplaceFetcher
+from pilot.tasks.jobs.marketplace_fetcher import MarketplaceFetcher
 from pilot.core.marketplace import Marketplace, Resolver
 from pilot.exceptions import BenchError
 

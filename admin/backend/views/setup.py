@@ -7,10 +7,10 @@ from flask import Blueprint, current_app, g, jsonify, request
 
 from admin.backend.api_contract import error_response, no_content_response
 from admin.backend.auth import allow_during_setup, set_session_cookie
-from admin.backend.tasks.manager.task_reader import TaskReader
-from admin.backend.tasks.manager.task_runner import TaskRunner
-from admin.backend.tasks.manager.task_state import ACTIVE_TASK_STATUSES, TaskStatus
-from admin.backend.tasks.task_response import accepted_task_response
+from pilot.tasks.manager.task_reader import TaskReader
+from pilot.tasks.manager.task_runner import TaskRunner
+from pilot.tasks.manager.task_state import ACTIVE_TASK_STATUSES, TaskStatus
+from admin.backend.task_response import accepted_task_response
 from admin.backend.validators import validate_branch_name, validate_repo_url
 from pilot.config.bench_toml_builder import (
     FRAMEWORK_BRANCHES,

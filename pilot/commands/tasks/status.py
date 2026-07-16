@@ -9,7 +9,7 @@ class TaskWorkerStatusCommand(Command):
     group = "tasks"
 
     def run(self) -> None:
-        from admin.backend.tasks.manager.activity import TaskActivityReader
+        from pilot.tasks.manager.activity import TaskActivityReader
 
         activity = TaskActivityReader(self.bench.path).read()
         print(

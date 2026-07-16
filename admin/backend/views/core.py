@@ -13,7 +13,7 @@ from admin.backend.auth import (
     set_session_cookie,
 )
 from admin.backend.rate_limit import rate_limit
-from admin.backend.tasks.manager.activity import TaskActivityReader
+from pilot.tasks.manager.activity import TaskActivityReader
 from admin.backend.views.setup import wizard_marker_path
 from pilot.config.bench_config import BenchConfig
 from pilot.config.toml_store import BenchTomlStore
@@ -190,8 +190,8 @@ def _setup_complete(bench_root: Path, config: BenchConfig) -> bool:
     if config.production.process_manager and not config.production.enabled:
         return False
     try:
-        from admin.backend.tasks.manager.task_reader import TaskReader
-        from admin.backend.tasks.manager.task_state import ACTIVE_TASK_STATUSES
+        from pilot.tasks.manager.task_reader import TaskReader
+        from pilot.tasks.manager.task_state import ACTIVE_TASK_STATUSES
 
         tasks = TaskReader(bench_root).list_tasks(limit=20)
         return not any(

@@ -22,7 +22,7 @@ def test_delete_site_returns_accepted_task_resource(tmp_path: Path) -> None:
     _write_site(bench_root, "s.localhost")
 
     with patch(
-        "admin.backend.tasks.manager.task_runner.task_workers.wake",
+        "pilot.tasks.manager.task_runner.task_workers.wake",
         return_value=False,
     ):
         response = client.delete("/api/v1/sites/s.localhost")
@@ -69,7 +69,7 @@ def test_same_site_mutations_cannot_queue_together(tmp_path: Path) -> None:
     with (
         patch("admin.backend.views.sites._new_site_name_error", return_value=None),
         patch(
-            "admin.backend.tasks.manager.task_runner.task_workers.wake",
+            "pilot.tasks.manager.task_runner.task_workers.wake",
             return_value=False,
         ),
     ):

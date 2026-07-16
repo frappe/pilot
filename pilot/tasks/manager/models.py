@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from admin.backend.tasks.manager.task_state import TaskStatus
+from pilot.tasks.manager.task_state import TaskStatus
 
 FAILURE_MESSAGES = {
     "command_failed": "Task command failed.",

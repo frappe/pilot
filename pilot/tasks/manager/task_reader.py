@@ -6,21 +6,21 @@ from collections.abc import Generator
 from datetime import datetime
 from pathlib import Path
 
-from admin.backend.tasks.manager.models import TaskInfo, safe_task_failure
-from admin.backend.tasks.manager.task_queue import TaskQueue
-from admin.backend.tasks.manager.task_args import redact_task_args
-from admin.backend.tasks.manager.task_state import (
+from pilot.tasks.manager.models import TaskInfo, safe_task_failure
+from pilot.tasks.manager.task_queue import TaskQueue
+from pilot.tasks.manager.task_args import redact_task_args
+from pilot.tasks.manager.task_state import (
     ACTIVE_TASK_STATUSES,
     TaskStatus,
     parse_task_status,
 )
-from admin.backend.tasks.manager.events import (
+from pilot.tasks.manager.events import (
     TaskStreamEvent,
     done_event,
     output_event,
     status_event,
 )
-from admin.backend.timing import TASK_POLL_SECONDS
+from pilot.tasks.timing import TASK_POLL_SECONDS
 from pilot.exceptions import TaskNotFoundError
 from pilot.secure_files import open_private
 

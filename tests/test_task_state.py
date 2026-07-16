@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from admin.backend.tasks.manager.task_state import (
+from pilot.tasks.manager.task_state import (
     ACTIVE_TASK_STATUSES,
     ALLOWED_TASK_TRANSITIONS,
     TERMINAL_TASK_STATUSES,

@@ -11,12 +11,12 @@ from types import SimpleNamespace
 
 import pytest
 
-import admin.backend.tasks.manager.task_runner as task_runner_module
-import admin.backend.tasks.manager.wrapper as wrapper_module
-import admin.backend.tasks.callbacks as callback_module
-from admin.backend.tasks.manager.task_reader import TaskReader
-from admin.backend.tasks.manager.task_runner import TaskRunner
-from admin.backend.tasks.manager.wrapper import callback_handler, run_with_syslog_output
+import pilot.tasks.manager.task_runner as task_runner_module
+import pilot.tasks.manager.wrapper as wrapper_module
+import pilot.tasks.callbacks as callback_module
+from pilot.tasks.manager.task_reader import TaskReader
+from pilot.tasks.manager.task_runner import TaskRunner
+from pilot.tasks.manager.wrapper import callback_handler, run_with_syslog_output
 from pilot.exceptions import TaskConflictError, TaskNotFoundError, TaskNotRunningError
 
 
@@ -363,7 +363,7 @@ def test_base_task_loads_secret_arguments_from_handoff_file(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from admin.backend.tasks.jobs.base_task import _apply_task_secrets
+    from pilot.tasks.jobs.base_task import _apply_task_secrets
 
     secret_path = tmp_path / "secrets.json"
     secret_path.write_text(json.dumps({"admin_password": "from-file"}))

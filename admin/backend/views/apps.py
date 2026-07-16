@@ -9,8 +9,8 @@ from flask import Blueprint, current_app, jsonify, request
 from ..api_contract import error_response
 from ..readers.app_reader import AppReader
 from ..validators import validate_app_name, validate_repo_url
-from admin.backend.tasks.manager.task_runner import TaskRunner
-from admin.backend.tasks.task_response import accepted_task_response
+from pilot.tasks.manager.task_runner import TaskRunner
+from admin.backend.task_response import accepted_task_response
 
 apps_bp = Blueprint("apps", __name__)
 marketplace_bp = Blueprint("marketplace", __name__)

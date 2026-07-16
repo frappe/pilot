@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from admin.backend.tasks.jobs.update_cli_task import UpdateCliTask
+from pilot.tasks.jobs.update_cli_task import UpdateCliTask
 
 
 def make_task(bench_root: Path) -> UpdateCliTask:
@@ -15,7 +15,7 @@ def make_task(bench_root: Path) -> UpdateCliTask:
 
 def test_run_pulls_the_cli_root(tmp_path: Path) -> None:
     task = make_task(tmp_path)
-    with patch("admin.backend.tasks.jobs.update_cli_task.cli_root", return_value=tmp_path), patch(
+    with patch("pilot.tasks.jobs.update_cli_task.cli_root", return_value=tmp_path), patch(
         "subprocess.run"
     ) as run:
         run.return_value = subprocess.CompletedProcess(args=[], returncode=0)
@@ -26,7 +26,7 @@ def test_run_pulls_the_cli_root(tmp_path: Path) -> None:
 
 def test_run_raises_on_git_failure(tmp_path: Path) -> None:
     task = make_task(tmp_path)
-    with patch("admin.backend.tasks.jobs.update_cli_task.cli_root", return_value=tmp_path), patch(
+    with patch("pilot.tasks.jobs.update_cli_task.cli_root", return_value=tmp_path), patch(
         "subprocess.run", side_effect=subprocess.CalledProcessError(1, "git")
     ):
         with pytest.raises(subprocess.CalledProcessError):

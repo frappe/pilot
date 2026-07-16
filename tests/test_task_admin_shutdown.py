@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from admin.backend.tasks.manager.task_runner import TaskRunner
-from admin.backend.tasks.manager.worker import TaskWorker
+from pilot.tasks.manager.task_runner import TaskRunner
+from pilot.tasks.manager.worker import TaskWorker
 from pilot.managers.process_manager import ProcessDefinition
 from pilot.managers.process_managers.supervisor import SupervisorRenderer
 from pilot.managers.process_managers.systemd import SystemdRenderer

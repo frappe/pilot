@@ -22,7 +22,7 @@ from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text
 from admin.backend.api_contract import error_response, no_content_response
 from admin.backend.auth import require_scope
 from admin.backend.site_paths import site_config_path, site_exists
-from admin.backend.tasks.task_response import accepted_task_response
+from admin.backend.task_response import accepted_task_response
 from admin.backend.uploads import (
     UploadError,
     create_upload_directory,
@@ -30,7 +30,7 @@ from admin.backend.uploads import (
     save_database_upload,
 )
 from ..validators import validate_app_name, validate_cron_expression, validate_site_name
-from admin.backend.tasks.manager.task_runner import TaskCallback, TaskRunner
+from pilot.tasks.manager.task_runner import TaskCallback, TaskRunner
 
 from ..readers.app_reader import AppReader
 from ..readers.site_reader import SiteInfo, SiteReader
@@ -845,7 +845,7 @@ def _backup_cron_command(bench_root: Path, site: str) -> str:
     import sys
 
     log_file = bench_root / "logs" / f"backup-{site}.log"
-    return f"{sys.executable} -m admin.backend.tasks.jobs.backup_site_task {bench_root} {site} --with-files >> {log_file} 2>&1"
+    return f"{sys.executable} -m pilot.tasks.jobs.backup_site_task {bench_root} {site} --with-files >> {log_file} 2>&1"
 
 
 def _retention_from_payload(block: dict | None):

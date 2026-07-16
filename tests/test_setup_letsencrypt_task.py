@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from admin.backend.tasks.jobs.setup_letsencrypt_task import SetupLetsEncryptTask
+from pilot.tasks.jobs.setup_letsencrypt_task import SetupLetsEncryptTask
 from pilot.config.toml_store import BenchTomlStore
 from pilot.exceptions import BenchError
 from tests.test_commands import make_bench
@@ -39,10 +39,10 @@ def test_production_preflight_runs_before_tls_configuration_changes(tmp_path: Pa
 
     with (
         patch(
-            "admin.backend.tasks.jobs.base_task.has_passwordless_sudo",
+            "pilot.tasks.jobs.base_task.has_passwordless_sudo",
             return_value=False,
         ),
-        patch("admin.backend.tasks.jobs.setup_letsencrypt_task.SetupLetsEncryptCommand.run") as run,
+        patch("pilot.tasks.jobs.setup_letsencrypt_task.SetupLetsEncryptCommand.run") as run,
         pytest.raises(BenchError, match="non-interactive system privileges"),
     ):
         task.run()
@@ -57,7 +57,7 @@ def test_tls_task_applies_email_and_site_flag_before_certificate_setup(tmp_path:
     config_path = tmp_path / "sites" / "secure.localhost" / "site_config.json"
 
     with patch(
-        "admin.backend.tasks.jobs.setup_letsencrypt_task.SetupLetsEncryptCommand.run"
+        "pilot.tasks.jobs.setup_letsencrypt_task.SetupLetsEncryptCommand.run"
     ) as run:
         task.run()
 

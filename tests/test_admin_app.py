@@ -756,7 +756,7 @@ def test_create_site_does_not_carry_db_type(tmp_path: Path) -> None:
     with (
         patch("admin.backend.views.sites._new_site_name_error", return_value=None),
         patch(
-            "admin.backend.tasks.manager.task_runner.task_workers.wake",
+            "pilot.tasks.manager.task_runner.task_workers.wake",
             return_value=False,
         ),
     ):
@@ -787,7 +787,7 @@ def test_reinstall_site_generates_new_admin_password(tmp_path: Path) -> None:
     (site_dir / "site_config.json").write_text("{}")
 
     with patch(
-        "admin.backend.tasks.manager.task_runner.task_workers.wake",
+        "pilot.tasks.manager.task_runner.task_workers.wake",
         return_value=False,
     ):
         response = client.post("/api/v1/sites/s.localhost/actions/reinstall", json={})
@@ -811,7 +811,7 @@ def test_reinstall_site_submits_new_admin_password_as_secret(tmp_path: Path) -> 
     (site_dir / "site_config.json").write_text("{}")
 
     with patch(
-        "admin.backend.tasks.manager.task_runner.task_workers.wake",
+        "pilot.tasks.manager.task_runner.task_workers.wake",
         return_value=False,
     ):
         response = client.post(
@@ -839,7 +839,7 @@ def test_site_actions_return_canonical_task_resources(tmp_path: Path) -> None:
     ]
 
     with patch(
-        "admin.backend.tasks.manager.task_runner.task_workers.wake",
+        "pilot.tasks.manager.task_runner.task_workers.wake",
         return_value=False,
     ):
         for index, (action, command, payload) in enumerate(cases):
@@ -868,7 +868,7 @@ def test_site_action_idempotency_replays_same_task(tmp_path: Path) -> None:
     (site_dir / "site_config.json").write_text("{}")
 
     with patch(
-        "admin.backend.tasks.manager.task_runner.task_workers.wake",
+        "pilot.tasks.manager.task_runner.task_workers.wake",
         return_value=False,
     ):
         first = client.post(

@@ -9,19 +9,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TypedDict
 
-from admin.backend.tasks.callbacks import validate_callback
-from admin.backend.tasks.manager.task_args import (
+from pilot.tasks.callbacks import validate_callback
+from pilot.tasks.manager.task_args import (
     fingerprint_task_args,
     public_task_args,
     reject_url_credentials,
     task_secret_args,
 )
-from admin.backend.tasks.manager.task_state import (
+from pilot.tasks.manager.task_state import (
     TaskStatus,
 )
-from admin.backend.tasks.manager.task_process import TaskProcess
-from admin.backend.tasks.manager.task_store import TaskStore
-from admin.backend.tasks.manager.worker_registry import task_workers
+from pilot.tasks.manager.task_process import TaskProcess
+from pilot.tasks.manager.task_store import TaskStore
+from pilot.tasks.manager.worker_registry import task_workers
 from pilot.exceptions import TaskNotRunningError
 
 TASK_RETENTION_LIMIT = 100
@@ -203,33 +203,33 @@ class TaskRunner:
                 raise ValueError("admin_password must not be empty")
 
         if command == "migrate":
-            return [sys.executable, "-m", "admin.backend.tasks.jobs.migrate_task", str(self._bench_root), args["site"]]
+            return [sys.executable, "-m", "pilot.tasks.jobs.migrate_task", str(self._bench_root), args["site"]]
         if command == "clear-cache":
-            return [sys.executable, "-m", "admin.backend.tasks.jobs.clear_cache_task", str(self._bench_root), args["site"]]
+            return [sys.executable, "-m", "pilot.tasks.jobs.clear_cache_task", str(self._bench_root), args["site"]]
         if command == "uninstall-app":
-            argv = [sys.executable, "-m", "admin.backend.tasks.jobs.uninstall_app_task", str(self._bench_root), args["site"], args["app"]]
+            argv = [sys.executable, "-m", "pilot.tasks.jobs.uninstall_app_task", str(self._bench_root), args["site"], args["app"]]
             if args.get("force"):
                 argv += ["--force"]
             return argv
         if command == "backup-site":
-            argv = [sys.executable, "-m", "admin.backend.tasks.jobs.backup_site_task", str(self._bench_root), args["site"]]
+            argv = [sys.executable, "-m", "pilot.tasks.jobs.backup_site_task", str(self._bench_root), args["site"]]
             if args.get("with_files"):
                 argv += ["--with-files"]
             return argv
         if command == "build":
-            argv = [sys.executable, "-m", "admin.backend.tasks.jobs.build_task", str(self._bench_root)]
+            argv = [sys.executable, "-m", "pilot.tasks.jobs.build_task", str(self._bench_root)]
             if args.get("app"):
                 argv += ["--app", args["app"]]
             return argv
         if command == "update":
-            argv = [sys.executable, "-m", "admin.backend.tasks.jobs.update_task", str(self._bench_root)]
+            argv = [sys.executable, "-m", "pilot.tasks.jobs.update_task", str(self._bench_root)]
             if args.get("apps"):
                 argv += ["--apps"] + list(args["apps"])
             if args.get("skip_failing_patches"):
                 argv += ["--skip-failing-patches"]
             return argv
         if command == "get-app":
-            argv = [sys.executable, "-m", "admin.backend.tasks.jobs.get_app_task", str(self._bench_root)]
+            argv = [sys.executable, "-m", "pilot.tasks.jobs.get_app_task", str(self._bench_root)]
             if args.get("marketplace_app"):
                 argv += ["--marketplace-app", args["marketplace_app"]]
             else:
@@ -238,24 +238,24 @@ class TaskRunner:
                     argv += ["--branch", args["branch"]]
             return argv
         if command == "remove-app":
-            return [sys.executable, "-m", "admin.backend.tasks.jobs.remove_app_task", str(self._bench_root), args["name"]]
+            return [sys.executable, "-m", "pilot.tasks.jobs.remove_app_task", str(self._bench_root), args["name"]]
         if command == "new-site":
-            argv = [sys.executable, "-m", "admin.backend.tasks.jobs.new_site_task", str(self._bench_root), args["name"]]
+            argv = [sys.executable, "-m", "pilot.tasks.jobs.new_site_task", str(self._bench_root), args["name"]]
             if args.get("db_type"):
                 argv += ["--db-type", args["db_type"]]
             if args.get("apps"):
                 argv += ["--apps"] + list(args["apps"])
             return argv
         if command == "drop-site":
-            return [sys.executable, "-m", "admin.backend.tasks.jobs.drop_site_task", str(self._bench_root), args["site"]]
+            return [sys.executable, "-m", "pilot.tasks.jobs.drop_site_task", str(self._bench_root), args["site"]]
         if command == "reinstall-site":
-            return [sys.executable, "-m", "admin.backend.tasks.jobs.reinstall_site_task", str(self._bench_root), args["site"]]
+            return [sys.executable, "-m", "pilot.tasks.jobs.reinstall_site_task", str(self._bench_root), args["site"]]
         if command == "delete-backup":
-            return [sys.executable, "-m", "admin.backend.tasks.jobs.delete_backup_task", str(self._bench_root), args["site"], *args["filenames"]]
+            return [sys.executable, "-m", "pilot.tasks.jobs.delete_backup_task", str(self._bench_root), args["site"], *args["filenames"]]
         if command == "install-app":
-            return [sys.executable, "-m", "admin.backend.tasks.jobs.install_app_task", str(self._bench_root), args["site"], args["app"]]
+            return [sys.executable, "-m", "pilot.tasks.jobs.install_app_task", str(self._bench_root), args["site"], args["app"]]
         if command == "get-and-install-app":
-            argv = [sys.executable, "-m", "admin.backend.tasks.jobs.get_and_install_app_task", str(self._bench_root)]
+            argv = [sys.executable, "-m", "pilot.tasks.jobs.get_and_install_app_task", str(self._bench_root)]
             if args.get("marketplace_app"):
                 argv += ["--marketplace-app", args["marketplace_app"]]
             else:
@@ -267,31 +267,31 @@ class TaskRunner:
                 argv += ["--sites", *sites]
             return argv
         if command == "switch-branch":
-            return [sys.executable, "-m", "admin.backend.tasks.jobs.switch_branch_task", str(self._bench_root), args["name"], args["branch"]]
+            return [sys.executable, "-m", "pilot.tasks.jobs.switch_branch_task", str(self._bench_root), args["name"], args["branch"]]
         if command == "setup-nginx":
-            return [sys.executable, "-m", "admin.backend.tasks.jobs.setup_nginx_task", str(self._bench_root)]
+            return [sys.executable, "-m", "pilot.tasks.jobs.setup_nginx_task", str(self._bench_root)]
         if command == "setup-production":
-            return [sys.executable, "-m", "admin.backend.tasks.jobs.setup_production_task", str(self._bench_root)]
+            return [sys.executable, "-m", "pilot.tasks.jobs.setup_production_task", str(self._bench_root)]
         if command == "setup-letsencrypt":
-            argv = [sys.executable, "-m", "admin.backend.tasks.jobs.setup_letsencrypt_task", str(self._bench_root)]
+            argv = [sys.executable, "-m", "pilot.tasks.jobs.setup_letsencrypt_task", str(self._bench_root)]
             if args.get("site"):
                 argv += ["--site", args["site"]]
             if args.get("email"):
                 argv += ["--email", args["email"]]
             return argv
         if command == "wizard-setup":
-            return [sys.executable, "-m", "admin.backend.tasks.jobs.wizard_setup_task", str(self._bench_root)]
+            return [sys.executable, "-m", "pilot.tasks.jobs.wizard_setup_task", str(self._bench_root)]
         if command == "new-site-from-backup":
-            argv = [sys.executable, "-m", "admin.backend.tasks.jobs.new_site_from_backup_task", str(self._bench_root), args["name"], args["db_file"]]
+            argv = [sys.executable, "-m", "pilot.tasks.jobs.new_site_from_backup_task", str(self._bench_root), args["name"], args["db_file"]]
             if args.get("public_files"):
                 argv += ["--public-files", args["public_files"]]
             if args.get("private_files"):
                 argv += ["--private-files", args["private_files"]]
             return argv
         if command == "update-cli":
-            return [sys.executable, "-m", "admin.backend.tasks.jobs.update_cli_task", str(self._bench_root)]
+            return [sys.executable, "-m", "pilot.tasks.jobs.update_cli_task", str(self._bench_root)]
         if command == "fetch-all-app-updates":
-            return [sys.executable, "-m", "admin.backend.tasks.jobs.fetch_app_updates_task", str(self._bench_root)]
+            return [sys.executable, "-m", "pilot.tasks.jobs.fetch_app_updates_task", str(self._bench_root)]
         raise ValueError(f"Unhandled command: {command!r}")
 
     @staticmethod

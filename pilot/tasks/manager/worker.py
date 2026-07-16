@@ -5,11 +5,11 @@ import subprocess
 import threading
 from pathlib import Path
 
-from admin.backend.tasks.manager.task_queue import TaskQueue
-from admin.backend.tasks.manager.task_process import TaskProcess, TaskProcessStartError
-from admin.backend.tasks.manager.task_state import TERMINAL_TASK_STATUSES
-from admin.backend.tasks.manager.task_store import TaskStore
-from admin.backend.tasks.manager.worker_state import WorkerIntent, WorkerStatus, WorkerStore
+from pilot.tasks.manager.task_queue import TaskQueue
+from pilot.tasks.manager.task_process import TaskProcess, TaskProcessStartError
+from pilot.tasks.manager.task_state import TERMINAL_TASK_STATUSES
+from pilot.tasks.manager.task_store import TaskStore
+from pilot.tasks.manager.worker_state import WorkerIntent, WorkerStatus, WorkerStore
 
 _CONTROL_POLL_SECONDS = 0.2
 

@@ -3,7 +3,7 @@ from pathlib import Path
 from flask import url_for
 
 from admin.backend.api_contract import accepted_response
-from admin.backend.tasks.manager.task_reader import TaskReader
+from pilot.tasks.manager.task_reader import TaskReader
 
 
 def accepted_task_response(bench_root: Path, task_id: str):
