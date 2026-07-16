@@ -121,6 +121,42 @@ def test_ensure_fresh_falls_back_when_fetch_fails_mid_refresh(tmp_path: Path, _p
     assert cache.apps_json_path.read_text() == '{"apps": []}'
 
 
+def test_ensure_fresh_raises_bench_error_when_git_status_fails(tmp_path: Path) -> None:
+    """A corrupted .git dir (e.g. a partial clone) makes `git status` itself
+    fail with CommandError — that must surface as a clear BenchError, not
+    propagate uncaught and break every marketplace/get-app call."""
+    from pilot.exceptions import CommandError
+
+    cache = make_cache(tmp_path)
+    cache.ensure_fresh()
+
+    with patch("pilot.core.registry_cache.run_command", side_effect=CommandError("fatal: not a git repository")):
+        with pytest.raises(BenchError, match="corrupted"):
+            cache.ensure_fresh()
+
+
+def test_ensure_fresh_falls_back_when_rev_parse_fails_mid_refresh(tmp_path: Path, _point_at_local_remote) -> None:
+    """A corrupted local clone can make `git rev-parse HEAD` fail even
+    though the remote is reachable — that must fall back too, not propagate."""
+    from pilot.exceptions import CommandError
+    from pilot.utils import run_command as real_run_command
+
+    cache = make_cache(tmp_path)
+    cache.ensure_fresh()
+    _age_last_checked(cache)
+
+    def flaky_run_command(argv, *args, **kwargs):
+        if "rev-parse" in argv:
+            raise CommandError("fatal: bad object HEAD")
+        return real_run_command(argv, *args, **kwargs)
+
+    with patch.object(RegistryCache, "_remote_head_sha", return_value="deadbeef" * 5), \
+            patch("pilot.core.registry_cache.run_command", side_effect=flaky_run_command):
+        cache.ensure_fresh()  # must not raise
+
+    assert cache.apps_json_path.read_text() == '{"apps": []}'
+
+
 def test_first_clone_installs_daily_refresh_cron(tmp_path: Path) -> None:
     with patch("pilot.core.registry_cache.CronManager") as mock_cron_cls:
         cache = make_cache(tmp_path)
