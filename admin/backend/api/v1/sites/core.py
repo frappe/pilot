@@ -282,10 +282,11 @@ def _site_resource(site: SiteInfo) -> dict:
 
 
 def create_site_session(bench_root: Path, site: str) -> str | None:
+    from pilot.loader import cli_root
+
     python = bench_root / "env" / "bin" / "python"
-    cli_root = Path(__file__).resolve().parents[4]
     env = os.environ.copy()
-    env["PYTHONPATH"] = str(cli_root)
+    env["PYTHONPATH"] = str(cli_root())
     program = (
         "import sys, frappe\n"
         "frappe.init(site=sys.argv[1], sites_path='.')\n"
