@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 WINDOW_SECONDS = {"30m": 1800, "1h": 3600, "6h": 21600, "12h": 43200, "24h": 86400, "1w": 604800}
@@ -19,7 +19,7 @@ class MonitorHistoryReader:
     def __init__(self, bench_root: Path, window: str) -> None:
         self._bench_root = bench_root
         self._window = window if window in WINDOW_SECONDS else "1h"
-        self._cutoff = datetime.now() - timedelta(seconds=WINDOW_SECONDS[self._window])
+        self._cutoff = datetime.now(timezone.utc) - timedelta(seconds=WINDOW_SECONDS[self._window])
 
     def read(self) -> dict:
         from pilot.config.monitor_config import MonitorConfig
@@ -30,9 +30,8 @@ class MonitorHistoryReader:
         return {
             "window": self._window,
             "window_seconds": WINDOW_SECONDS[self._window],
-            # Absolute epoch ms so the browser windows correctly regardless of its
-            # timezone — log timestamps are naive (server-local).
-            "now": int(datetime.now().timestamp() * 1000),
+            # Absolute epoch ms so the browser windows correctly regardless of its timezone.
+            "now": int(datetime.now(timezone.utc).timestamp() * 1000),
             "system": self._system(config.monitor.system_log_path),
             "application": self._application(app_log, config.name),
         }
@@ -110,12 +109,19 @@ class MonitorHistoryReader:
         # first one older than the window — we never read past the cutoff.
         rows = []
         for record in self._iter_records_reversed(path):
-            when = datetime.fromisoformat(record["time"])
+            when = self._parse_time(record["time"])
             if when < self._cutoff:
                 break
             rows.append((when, record))
         rows.reverse()
         return self._downsample(rows)
+
+    @staticmethod
+    def _parse_time(value: str) -> datetime:
+        """Older log lines carry a naive server-local time; astimezone() on a
+        naive datetime converts local time to UTC, so both formats normalize."""
+        when = datetime.fromisoformat(value)
+        return when if when.tzinfo else when.astimezone(timezone.utc)
 
     def _service_names(self, rows: list, bench_name: str) -> list[str]:
         names: list[str] = []
@@ -165,7 +171,7 @@ class MonitorHistoryReader:
             return None
         with path.open() as handle:
             first = handle.readline()
-        return cls._ms(datetime.fromisoformat(json.loads(first)["time"])) if first.strip() else None
+        return cls._ms(cls._parse_time(json.loads(first)["time"])) if first.strip() else None
 
     @staticmethod
     def _downsample(rows: list) -> list:

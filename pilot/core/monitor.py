@@ -10,7 +10,7 @@ import re
 import subprocess
 import time
 import typing
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from pilot.exceptions import BenchError
@@ -494,7 +494,7 @@ class Monitor:
         self._append(
             self.system_log_path,
             {
-                "time": datetime.now().isoformat(),
+                "time": datetime.now(timezone.utc).isoformat(),
                 "load_avg": self._load_average(),
                 "cpu_percent": self._system_cpu_percent(),
                 "cpu_breakdown": self._system_cpu_breakdown(),
@@ -516,7 +516,7 @@ class Monitor:
 
         self._append(
             self.log_path,
-            {"time": datetime.now().isoformat(), "bench": self.bench.config.name, "processes": processes},
+            {"time": datetime.now(timezone.utc).isoformat(), "bench": self.bench.config.name, "processes": processes},
         )
 
     @staticmethod
