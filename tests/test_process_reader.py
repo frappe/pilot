@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from admin.backend.readers.process_reader import ProcessReader
+from admin.backend.readers.processes import ProcessReader
 
 
 def make_reader(tmp_path: Path) -> ProcessReader:
@@ -18,7 +18,7 @@ def make_reader(tmp_path: Path) -> ProcessReader:
 def test_parse_systemd_block_running(tmp_path: Path) -> None:
     reader = make_reader(tmp_path)
     block = "Id=test-bench-web.service\nActiveState=active\nMainPID=1234"
-    with patch("admin.backend.readers.process_reader._get_process_stats", return_value=(1.0, 40.0, 35.0)):
+    with patch("admin.backend.readers.processes._get_process_stats", return_value=(1.0, 40.0, 35.0)):
         info = reader._parse_systemd_block(block, "test-bench")
     assert info is not None
     assert info.name == "web"
@@ -52,7 +52,7 @@ def test_parse_systemd_block_not_a_service_returns_none(tmp_path: Path) -> None:
 def test_parse_systemd_block_strips_bench_name_prefix(tmp_path: Path) -> None:
     reader = make_reader(tmp_path)
     block = "Id=my-bench-worker-default-1.service\nActiveState=active\nMainPID=9999"
-    with patch("admin.backend.readers.process_reader._get_process_stats", return_value=(None, None, None)):
+    with patch("admin.backend.readers.processes._get_process_stats", return_value=(None, None, None)):
         info = reader._parse_systemd_block(block, "my-bench")
     assert info is not None
     assert info.name == "worker-default-1"
@@ -88,7 +88,7 @@ def test_read_from_systemd_parses_multiple_units(tmp_path: Path) -> None:
     )
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = MagicMock(stdout=stdout)
-        with patch("admin.backend.readers.process_reader._get_process_stats", return_value=(1.2, 45.0, 40.0)):
+        with patch("admin.backend.readers.processes._get_process_stats", return_value=(1.2, 45.0, 40.0)):
             result = reader._read_from_systemd(systemd)
 
     assert len(result) == 2
@@ -108,8 +108,8 @@ def test_read_from_systemd_parses_multiple_units(tmp_path: Path) -> None:
 def test_parse_supervisorctl_running_with_pid_and_uptime(tmp_path: Path) -> None:
     reader = make_reader(tmp_path)
     line = "test-bench:test-bench-web  RUNNING  pid 5678, uptime 0:01:23"
-    with patch("admin.backend.readers.process_reader._get_process_stats", return_value=(0.5, 30.0, 25.0)), \
-         patch("admin.backend.readers.process_reader._proc_uptime", return_value="1m 23s"):
+    with patch("admin.backend.readers.processes._get_process_stats", return_value=(0.5, 30.0, 25.0)), \
+         patch("admin.backend.readers.processes._proc_uptime", return_value="1m 23s"):
         info = reader._parse_supervisorctl_line(line, "test-bench")
     assert info is not None
     assert info.name == "web"
@@ -144,7 +144,7 @@ def test_parse_supervisorctl_malformed_returns_none(tmp_path: Path) -> None:
 def test_parse_supervisorctl_strips_bench_name_prefix(tmp_path: Path) -> None:
     reader = make_reader(tmp_path)
     line = "my-bench:my-bench-worker-default-1  RUNNING  pid 42, uptime 1:00:00"
-    with patch("admin.backend.readers.process_reader._get_process_stats", return_value=(None, None, None)):
+    with patch("admin.backend.readers.processes._get_process_stats", return_value=(None, None, None)):
         info = reader._parse_supervisorctl_line(line, "my-bench")
     assert info is not None
     assert info.name == "worker-default-1"
@@ -165,7 +165,7 @@ def test_read_from_supervisor_parses_output(tmp_path: Path) -> None:
     )
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = MagicMock(stdout=stdout)
-        with patch("admin.backend.readers.process_reader._get_process_stats", return_value=(0.5, 30.0, 25.0)):
+        with patch("admin.backend.readers.processes._get_process_stats", return_value=(0.5, 30.0, 25.0)):
             result = reader._read_from_supervisor(supervisor)
 
     assert len(result) == 2
@@ -200,7 +200,7 @@ def test_read_from_pids_running_process(tmp_path: Path) -> None:
     pids_dir.mkdir()
     (pids_dir / "web.pid").write_text(str(os.getpid()))
 
-    with patch("admin.backend.readers.process_reader._get_process_stats", return_value=(2.0, 50.0, 45.0)):
+    with patch("admin.backend.readers.processes._get_process_stats", return_value=(2.0, 50.0, 45.0)):
         result = make_reader(tmp_path)._read_from_pids()
 
     assert len(result) == 1

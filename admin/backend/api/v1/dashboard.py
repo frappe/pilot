@@ -7,10 +7,10 @@ from flask import Blueprint, current_app, jsonify
 from admin.backend.api.responses import error_response
 from pilot.tasks.manager.task_reader import TaskReader
 
-from ...readers.app_reader import AppReader
-from ...readers.bench_reader import BenchReader
-from ...readers.process_reader import ProcessReader
-from ...readers.site_reader import SiteReader
+from ...readers.apps import AppReader
+from ...readers.benches import BenchReader
+from ...readers.processes import ProcessReader
+from ...readers.sites import SiteReader
 
 dashboard_bp = Blueprint("dashboard", __name__)
 

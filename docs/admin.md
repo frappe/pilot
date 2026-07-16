@@ -77,14 +77,16 @@ admin/
     │       └── ssh_keys.py, stats.py, updates.py
     │
     └── readers/                 # Stateless filesystem/DB readers, one per resource
-        ├── bench_reader.py      # BenchReader — bench.toml summary
-        ├── app_reader.py        # AppReader — cloned apps + git/pip state
-        ├── site_reader.py       # SiteReader — sites + site_config.json
-        ├── process_reader.py    # ProcessReader — process status/PID/resource use
-        ├── log_reader.py        # LogReader — log listing, tail, streaming
-        ├── database_reader.py   # DatabaseReader — binlogs, processlist, slow queries
-        ├── backup_reader.py     # BackupReader — on-disk and offsite backup sets
-        └── monitor_reader.py    # MonitorHistoryReader — monitor log history
+        ├── benches.py           # BenchReader — bench.toml summary
+        ├── apps.py              # AppReader — cloned apps + git/pip state
+        ├── sites.py             # SiteReader — sites + site_config.json
+        ├── processes.py         # ProcessReader — process status/PID/resource use
+        ├── logs.py              # LogReader — log listing, tail, streaming
+        ├── databases.py         # DatabaseReader — binlogs, processlist, slow queries
+        ├── backups.py           # BackupReader — on-disk and offsite backup sets
+        ├── monitoring.py        # MonitorHistoryReader — monitor log history
+        ├── runtime.py           # RuntimeVersionReader — CLI/frappe version info
+        └── tail_read.py         # read_tail_text() — shared tailing helper for logs.py
 
 pilot/tasks/                     # The task engine itself (Flask-free) — see docs/tasks.md
 ├── manager/                     # Task infrastructure

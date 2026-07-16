@@ -37,7 +37,7 @@ def test_runtime_processes_lists_processes(tmp_path: Path) -> None:
     client = _client(bench_root)
 
     with patch(
-        "admin.backend.readers.process_reader.ProcessReader.read_all",
+        "admin.backend.readers.processes.ProcessReader.read_all",
         return_value=[_process()],
     ):
         response = client.get("/api/v1/runtime/processes")
@@ -72,7 +72,7 @@ def test_runtime_restart_returns_the_process_list(tmp_path: Path) -> None:
         "admin.backend.api.v1.processes.subprocess.run",
         side_effect=[status_result, restart_result],
     ), patch(
-        "admin.backend.readers.process_reader.ProcessReader.read_all",
+        "admin.backend.readers.processes.ProcessReader.read_all",
         return_value=[_process()],
     ):
         response = client.post("/api/v1/runtime/actions/restart")
@@ -120,7 +120,7 @@ def test_log_events_emits_structured_json_lines(tmp_path: Path) -> None:
     client = _client(bench_root)
 
     with patch(
-        "admin.backend.readers.log_reader.LogReader.stream_tail",
+        "admin.backend.readers.logs.LogReader.stream_tail",
         return_value=iter(["first line", "second line"]),
     ):
         response = client.get("/api/v1/logs/web.log/events")

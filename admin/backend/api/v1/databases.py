@@ -7,8 +7,8 @@ from flask import Blueprint, current_app, jsonify, request
 from admin.backend.api.responses import error_response, no_content_response
 from pilot.exceptions import DatabaseProcessNotActiveError, UnsupportedDatabaseEngineError
 
-from ...readers.bench_reader import BenchReader
-from ...readers.database_reader import DatabaseReader
+from ...readers.benches import BenchReader
+from ...readers.databases import DatabaseReader
 
 database_bp = Blueprint("database", __name__)
 

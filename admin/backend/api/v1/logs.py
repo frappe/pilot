@@ -5,7 +5,7 @@ import json
 from flask import Blueprint, Response, current_app, jsonify, request, stream_with_context
 
 from admin.backend.api.responses import error_response
-from ...readers.log_reader import LogReader
+from ...readers.logs import LogReader
 
 logs_bp = Blueprint("logs", __name__)
 

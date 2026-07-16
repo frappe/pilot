@@ -38,6 +38,6 @@ These aren't gaps in the unit suite's design — each is exercised by `tests/int
 - `admin/backend/server.py`, `admin/backend/wsgi.py` — process entry points, exercised by integration/e2e runs against a live admin server.
 
 These modules have no test coverage at all today and are a real gap, not an
-artifact of the unit/integration/e2e split: `admin/backend/readers/monitor_reader.py`,
-`admin/backend/readers/runtime_reader.py`, `pilot/_secure_exec.py`, and
+artifact of the unit/integration/e2e split: `admin/backend/readers/monitoring.py`,
+`admin/backend/readers/runtime.py`, `pilot/_secure_exec.py`, and
 `pilot/internal/site_session.py`.

@@ -32,8 +32,8 @@ from admin.backend.uploads import (
 from ...security.validation import validate_app_name, validate_cron_expression, validate_site_name
 from pilot.tasks.manager.task_runner import TaskCallback, TaskRunner
 
-from ...readers.app_reader import AppReader
-from ...readers.site_reader import SiteInfo, SiteReader
+from ...readers.apps import AppReader
+from ...readers.sites import SiteInfo, SiteReader
 
 
 def site_name(kwargs: dict) -> str:
@@ -755,7 +755,7 @@ _DEFAULT_BACKUPS_PAGE_SIZE = 20
 @sites_bp.get("/<name>/backups")
 @require_scope(site_name)
 def list_backups(name: str):
-    from ...readers.backup_reader import BackupReader
+    from ...readers.backups import BackupReader
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
     limit = request.args.get("limit", _DEFAULT_BACKUPS_PAGE_SIZE, type=int)
@@ -769,7 +769,7 @@ def list_backups(name: str):
 @sites_bp.get("/<name>/backups/<timestamp>")
 @require_scope(site_name)
 def get_backup(name: str, timestamp: str):
-    from ...readers.backup_reader import BackupReader
+    from ...readers.backups import BackupReader
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:

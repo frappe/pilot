@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from admin.backend.readers.site_reader import SiteReader
+from admin.backend.readers.sites import SiteReader
 
 
 def _make_site(sites: Path, name: str, config: dict) -> None:

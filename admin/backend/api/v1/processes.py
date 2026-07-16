@@ -8,7 +8,7 @@ from flask import Blueprint, current_app, jsonify
 from pilot.config.toml_store import BenchTomlStore
 
 from ...api.responses import error_response
-from ...readers.process_reader import ProcessReader
+from ...readers.processes import ProcessReader
 
 processes_bp = Blueprint("processes", __name__)
 

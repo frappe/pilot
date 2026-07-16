@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from admin.backend.readers.app_reader import AppReader
+from admin.backend.readers.apps import AppReader
 
 
 def _make_app(bench_root: Path, name: str, pyproject: str | None = None) -> Path:
