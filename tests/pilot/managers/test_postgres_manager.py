@@ -230,6 +230,7 @@ def test_provision_user_owned_initialises_and_installs_unit_when_fresh(tmp_path)
          patch.object(m, "_ensure_port_available"), \
          patch.object(m, "is_running", return_value=False), \
          patch.object(m, "_install_unit") as install_unit, \
+         patch.object(m, "_server_binary", side_effect=lambda name: name), \
          patch(f"{MODULE}.run_command") as rc:
         m._provision_user_owned()
     install_unit.assert_called_once()
@@ -297,6 +298,38 @@ def test_run_sql_as_superuser_uses_default_socket_on_macos() -> None:
         m._run_sql_as_superuser("SELECT 1;")
     cmd = run.call_args[0][0]
     assert "-h" not in cmd
+
+
+def test_server_binary_prefers_path() -> None:
+    with patch(f"{MODULE}.which", return_value="/usr/bin/initdb"):
+        assert _mgr()._server_binary("initdb") == "/usr/bin/initdb"
+
+
+def test_server_binary_falls_back_to_newest_debian_versioned_dir(tmp_path) -> None:
+    for version in ("9.6", "16", "17"):
+        bin_dir = tmp_path / version / "bin"
+        bin_dir.mkdir(parents=True)
+        (bin_dir / "initdb").touch()
+    with patch(f"{MODULE}.which", return_value=None), \
+         patch(f"{MODULE}._DEBIAN_POSTGRES_ROOT", tmp_path):
+        assert _mgr()._server_binary("initdb") == str(tmp_path / "17" / "bin" / "initdb")
+
+
+def test_server_binary_returns_bare_name_when_missing(tmp_path) -> None:
+    with patch(f"{MODULE}.which", return_value=None), \
+         patch(f"{MODULE}._DEBIAN_POSTGRES_ROOT", tmp_path / "missing"):
+        assert _mgr()._server_binary("initdb") == "initdb"
+
+
+def test_install_unit_execstart_uses_resolved_postgres_binary(tmp_path) -> None:
+    m = _mgr(port=5440)
+    with patch.object(m, "unit_path", return_value=tmp_path / "pilot-postgres.service"), \
+         patch.object(m, "_server_binary", return_value="/usr/lib/postgresql/17/bin/postgres"), \
+         patch.object(m, "_user_unit_dir", return_value=tmp_path), \
+         patch(f"{MODULE}.run_command"):
+        m._install_unit()
+    content = (tmp_path / "pilot-postgres.service").read_text()
+    assert "ExecStart=/usr/lib/postgresql/17/bin/postgres " in content
 
 
 def test_install_unit_pins_unix_socket_directories_to_owned_dir(tmp_path) -> None:

@@ -25,10 +25,10 @@ jobs:
             db_type: mariadb
             extra_app: "1"
           # PostgreSQL bench on the rootless, per-user PostgreSQL server the
-          # wizard provisions from scratch. Temporarily disabled — known broken.
-          # - variant: postgres
-          #   db_type: postgres
-          #   extra_app: "1"
+          # wizard provisions from scratch.
+          - variant: postgres
+            db_type: postgres
+            extra_app: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -63,7 +63,7 @@ jobs:
       - name: Install PostgreSQL
         if: matrix.db_type == 'postgres'
         run: |
-          sudo apt-get install -y postgresql postgresql-client libpq-dev
+          sudo apt-get install -y postgresql postgresql-client libpq-dev libmariadb-dev
           # Same as MariaDB above: bench provisions its own rootless server.
           sudo systemctl disable --now postgresql
 

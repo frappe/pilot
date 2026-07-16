@@ -16,6 +16,7 @@ from pilot.utils import run_command
 # per-bench units.
 _STATE_DIR = Path.home() / ".local" / "share" / "pilot" / "postgres"
 _CLIENT_TIMEOUT = 5
+_DEBIAN_POSTGRES_ROOT = Path("/usr/lib/postgresql")
 
 
 class PostgresManager(UserOwnedDBManager):
@@ -106,7 +107,7 @@ class PostgresManager(UserOwnedDBManager):
             # No --username: the bootstrap superuser matches whoever runs
             # initdb (the bench user), authenticated via unix-socket peer
             # auth — no sudo, no OS-level 'postgres' account involved.
-            run_command(["initdb", "-D", str(self.data_dir())])
+            run_command([self._server_binary("initdb"), "-D", str(self.data_dir())])
             self._install_unit()
             run_command(
                 self._systemctl("enable", "--now", self._UNIT_NAME), env=self._systemctl_env()
@@ -130,7 +131,7 @@ class PostgresManager(UserOwnedDBManager):
         )
 
     def _install_unit(self) -> None:
-        postgres = which("postgres") or "/usr/lib/postgresql/bin/postgres"
+        postgres = self._server_binary("postgres")
         content = (
             "[Unit]\n"
             "Description=PostgreSQL (pilot, user-owned)\n\n"
@@ -250,6 +251,22 @@ class PostgresManager(UserOwnedDBManager):
             )
             return result.returncode == 0
         return self.is_running()
+
+    def _server_binary(self, name: str) -> str:
+        found = which(name)
+        if found:
+            return found
+        candidates = sorted(
+            _DEBIAN_POSTGRES_ROOT.glob(f"*/bin/{name}"), key=self._debian_version_key
+        )
+        if candidates:
+            return str(candidates[-1])
+        return name
+
+    @staticmethod
+    def _debian_version_key(binary: Path) -> tuple[int, ...]:
+        version = binary.parent.parent.name
+        return tuple(int(part) for part in version.split(".") if part.isdigit())
 
     def _psql(self) -> str | None:
         found = which("psql")
