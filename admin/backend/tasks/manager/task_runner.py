@@ -15,6 +15,9 @@ from pilot.exceptions import TaskNotFoundError, TaskNotRunningError
 
 TASK_RETENTION_LIMIT = 100
 
+# Snapshot apps/ before these run so cleanup removes only what the task cloned.
+_APP_FETCH_COMMANDS = frozenset({"get-app", "get-and-install-app", "add-and-install-app"})
+
 _WHITELIST: dict[str, list[str]] = {
     "migrate": ["site"],
     "clear-cache": ["site"],
@@ -67,6 +70,8 @@ class TaskRunner:
             "exit_code": None,
             "bench_root": str(self._bench_root),
         }
+        if command in _APP_FETCH_COMMANDS:
+            meta["pre_existing_apps"] = self._existing_app_dirs()
         (task_dir / "meta.json").write_text(json.dumps(meta, indent=2))
         (task_dir / "status").write_text("running")
 
@@ -106,6 +111,12 @@ class TaskRunner:
 
     def _task_dir(self, task_id: str) -> Path:
         return self._bench_root / "tasks" / task_id
+
+    def _existing_app_dirs(self) -> list[str]:
+        apps_dir = self._bench_root / "apps"
+        if not apps_dir.exists():
+            return []
+        return sorted(entry.name for entry in apps_dir.iterdir() if entry.is_dir())
 
     def _build_argv(self, command: str, args: dict, task_dir: Path | None = None) -> list[str]:
         if command not in _WHITELIST:

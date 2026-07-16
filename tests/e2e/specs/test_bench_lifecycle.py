@@ -22,16 +22,19 @@ import os
 import pytest
 
 from flows.admin import (
+    bench_app_names,
     create_site,
     drop_site,
     install_custom_app,
     installed_apps,
     login,
     site_exists,
+    start_custom_app_install,
+    start_site_create,
     uninstall_app,
 )
 from flows.wizard import complete_dev_wizard
-from harness.tasks import expect_bench_online
+from harness.tasks import cancel_task, expect_bench_online, wait_for_task_status
 
 pytestmark = pytest.mark.incremental
 
@@ -112,6 +115,35 @@ def test_uninstalls_extra_app(bench, page):
     assert EXTRA_APP_NAME not in installed_apps(page, bench.admin_url, SITE)
 
 
+@_skip_extra_app
+def test_cancelled_app_install_is_rolled_back(bench, page):
+    """Cancel a custom-app install mid-clone; the app must not be left on the
+    bench (app_fetch_failure_callback runs on the cancel path)."""
+    before = set(bench_app_names(page, bench.admin_url))
+    task_id = start_custom_app_install(page, bench.admin_url, SITE, EXTRA_APP_REPO, EXTRA_APP_BRANCH)
+    cancel_task(page.request, bench.admin_url, task_id)
+
+    status, _ = wait_for_task_status(page.request, bench.admin_url, task_id)
+    if status == "success":
+        pytest.skip("install finished before the cancel landed")
+    assert set(bench_app_names(page, bench.admin_url)) == before, "cancelled install left an orphan app"
+
+
 def test_drops_the_site(bench, page):
     drop_site(page, bench.admin_url, SITE)
     assert not site_exists(page, bench.admin_url, SITE)
+
+
+CANCEL_SITE = "cancel-me.localhost"
+
+
+def test_cancelled_site_create_is_rolled_back(bench, page):
+    """Cancel a site create mid-run; new_site_failure_callback must drop the
+    database and remove the site so nothing is left behind."""
+    task_id = start_site_create(page, bench.admin_url, CANCEL_SITE, SITE_ADMIN_PASSWORD)
+    cancel_task(page.request, bench.admin_url, task_id)
+
+    status, _ = wait_for_task_status(page.request, bench.admin_url, task_id)
+    if status == "success":
+        pytest.skip("site create finished before the cancel landed")
+    assert not site_exists(page, bench.admin_url, CANCEL_SITE)

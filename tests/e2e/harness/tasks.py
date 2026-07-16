@@ -64,6 +64,31 @@ def run_and_await_task(
     wait_for_task(page.request, base_url, task_id, timeout)
 
 
+def wait_for_task_status(
+    request: APIRequestContext,
+    base_url: str,
+    task_id: str,
+    timeout: float = 30 * 60,
+) -> tuple[str, list[str]]:
+    """Poll /api/tasks/:id until it settles; return (status, output_lines)."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        res = request.get(f"{base_url}/api/tasks/{task_id}")
+        if res.ok:
+            data = res.json()
+            status = data["task"]["status"]
+            if status in ("success", "failed", "killed"):
+                return status, data.get("output") or []
+        time.sleep(2)
+    raise TimeoutError(f"Task {task_id} did not settle within {timeout}s")
+
+
+def cancel_task(request: APIRequestContext, base_url: str, task_id: str) -> None:
+    """Request cancellation. A 400 (task already finished) is fine — the caller
+    asserts on the settled status afterwards."""
+    request.post(f"{base_url}/api/tasks/{task_id}/kill")
+
+
 def expect_bench_online(request: APIRequestContext, base_url: str) -> None:
     """Sanity assert that the admin is reachable and out of wizard mode."""
     res = request.get(f"{base_url}/api/status")
