@@ -13,6 +13,7 @@ import typing
 from datetime import datetime, timezone
 from pathlib import Path
 
+from pilot.config.host_toml_store import HostTomlStore
 from pilot.exceptions import BenchError
 from pilot.loader import cli_root
 from pilot.platform import is_linux
@@ -465,28 +466,23 @@ class Monitor:
         return {"disk": self._disk_usage(self.bench.path)}
 
     @property
-    def is_system_log_authority(self):
-        system_log_authority_path = self.bench.config.monitor.authority_file_path
-        if not system_log_authority_path.exists():
-            system_log_authority_path.write_text(self.bench.config.name)
-            return True
-
-        authority_bench = system_log_authority_path.read_text()
-        if self.bench.config.name == authority_bench:
-            return True
-
-        for _, bench_config in iter_sibling_benches(self.bench.path):
-            # In case the bench has been dropped or being used in dev mode
-            # If that's not the case then the logging authority should remain with that bench.
-            if bench_config.name == authority_bench and bench_config.production.process_manager in (
-                "systemd",
-                "supervisor",
-            ):
+    def is_system_log_authority(self) -> bool:
+        with HostTomlStore.for_bench(self.bench.path).edit() as host:
+            if host.monitor_authority == self.bench.config.name:
+                return True
+            if host.monitor_authority and self._authority_still_running(host.monitor_authority):
                 return False
+            # Either no bench has claimed authority yet, or the recorded one has
+            # been dropped or is now in dev mode — take over.
+            host.monitor_authority = self.bench.config.name
+            return True
 
-        # We won't be using it for monitoring therefore update the monitoring authority
-        system_log_authority_path.write_text(self.bench.config.name)
-        return True
+    def _authority_still_running(self, authority_bench: str) -> bool:
+        return any(
+            bench_config.name == authority_bench
+            and bench_config.production.process_manager in ("systemd", "supervisor")
+            for _, bench_config in iter_sibling_benches(self.bench.path)
+        )
 
     def collect_system_metrics(self) -> None:
         if not self.is_system_log_authority:

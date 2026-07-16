@@ -191,7 +191,6 @@ class BenchConfig:
     def _parse_monitor(data: dict) -> MonitorConfig:
         return MonitorConfig(
             system_log_path=Path(data.get("system_log_path", "/var/log/bench-system-stats.log")),
-            authority_file_path=Path(data.get("authority_file_path", "/var/log/.bench-authority")),
             system_log_max_size=data.get("system_log_max_size", "500M"),
             application_log_max_size=data.get("application_log_max_size", "500M"),
             log_path=Path(data["log_path"]) if "log_path" in data else None,

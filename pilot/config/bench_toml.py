@@ -136,7 +136,6 @@ def _bench_config_to_dict(config: BenchConfig) -> ConfigDict:
         monitor = config.monitor
         data["monitor"] = {
             "system_log_path": str(monitor.system_log_path),
-            "authority_file_path": str(monitor.authority_file_path),
             "system_log_max_size": monitor.system_log_max_size,
             "application_log_max_size": monitor.application_log_max_size,
         }

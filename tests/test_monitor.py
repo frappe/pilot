@@ -3,6 +3,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from pilot.config.bench_config import BenchConfig
+from pilot.config.host_config import HostConfig
+from pilot.config.host_toml_store import HostTomlStore
 from pilot.config.mariadb_config import MariaDBConfig
 from pilot.config.production_config import ProductionConfig
 from pilot.config.redis_config import RedisConfig
@@ -22,10 +24,9 @@ def _make_bench(path: Path, name: str = "my-bench") -> Bench:
     return Bench(config, path)
 
 
-def _make_monitor(bench: Bench, authority_file: Path) -> Monitor:
+def _make_monitor(bench: Bench) -> Monitor:
     with patch.object(Monitor, "setup"):
         monitor = Monitor(bench)
-    monitor.bench.config.monitor.authority_file_path = authority_file
     monitor.bench.config.monitor.log_path = bench.path / f"{bench.config.name}-stats.log"
     return monitor
 
@@ -45,68 +46,60 @@ def _sibling(name: str, process_manager: str = "") -> tuple[Path, BenchConfig]:
 # ── is_system_log_authority ──────────────────────────────────────────────────
 
 
-def test_authority_claimed_when_no_file_exists(tmp_path: Path) -> None:
-    authority_file = tmp_path / ".bench-authority"
-    monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
+def test_authority_claimed_when_no_host_toml_exists(tmp_path: Path) -> None:
+    monitor = _make_monitor(_make_bench(tmp_path / "my-bench"))
 
     assert monitor.is_system_log_authority is True
-    assert authority_file.read_text() == "my-bench"
+    assert HostTomlStore(tmp_path).read().monitor_authority == "my-bench"
 
 
 def test_authority_true_when_already_recorded(tmp_path: Path) -> None:
-    authority_file = tmp_path / ".bench-authority"
-    authority_file.write_text("my-bench")
-    monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
+    HostTomlStore(tmp_path).write(HostConfig(monitor_authority="my-bench"))
+    monitor = _make_monitor(_make_bench(tmp_path / "my-bench"))
 
     assert monitor.is_system_log_authority is True
 
 
 def test_authority_false_when_sibling_runs_systemd(tmp_path: Path) -> None:
-    authority_file = tmp_path / ".bench-authority"
-    authority_file.write_text("other-bench")
-    monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
+    HostTomlStore(tmp_path).write(HostConfig(monitor_authority="other-bench"))
+    monitor = _make_monitor(_make_bench(tmp_path / "my-bench"))
 
     with patch("pilot.core.monitor.iter_sibling_benches", return_value=iter([_sibling("other-bench", "systemd")])):
         assert monitor.is_system_log_authority is False
 
 
 def test_authority_false_when_sibling_runs_supervisor(tmp_path: Path) -> None:
-    authority_file = tmp_path / ".bench-authority"
-    authority_file.write_text("other-bench")
-    monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
+    HostTomlStore(tmp_path).write(HostConfig(monitor_authority="other-bench"))
+    monitor = _make_monitor(_make_bench(tmp_path / "my-bench"))
 
     with patch("pilot.core.monitor.iter_sibling_benches", return_value=iter([_sibling("other-bench", "supervisor")])):
         assert monitor.is_system_log_authority is False
 
 
 def test_authority_stolen_when_recorded_bench_is_in_dev_mode(tmp_path: Path) -> None:
-    authority_file = tmp_path / ".bench-authority"
-    authority_file.write_text("other-bench")
-    monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
+    HostTomlStore(tmp_path).write(HostConfig(monitor_authority="other-bench"))
+    monitor = _make_monitor(_make_bench(tmp_path / "my-bench"))
 
     with patch("pilot.core.monitor.iter_sibling_benches", return_value=iter([_sibling("other-bench", "")])):
         assert monitor.is_system_log_authority is True
-    assert authority_file.read_text() == "my-bench"
+    assert HostTomlStore(tmp_path).read().monitor_authority == "my-bench"
 
 
 def test_authority_stolen_when_recorded_bench_no_longer_exists(tmp_path: Path) -> None:
-    authority_file = tmp_path / ".bench-authority"
-    authority_file.write_text("dropped-bench")
-    monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
+    HostTomlStore(tmp_path).write(HostConfig(monitor_authority="dropped-bench"))
+    monitor = _make_monitor(_make_bench(tmp_path / "my-bench"))
 
     with patch("pilot.core.monitor.iter_sibling_benches", return_value=iter([])):
         assert monitor.is_system_log_authority is True
-    assert authority_file.read_text() == "my-bench"
+    assert HostTomlStore(tmp_path).read().monitor_authority == "my-bench"
 
 
 def test_exactly_one_bench_holds_authority(tmp_path: Path) -> None:
     """When two benches run, exactly one is the system-log authority."""
-    authority_file = tmp_path / ".bench-authority"
+    monitor_a = _make_monitor(_make_bench(tmp_path / "bench-a", "bench-a"))
+    monitor_b = _make_monitor(_make_bench(tmp_path / "bench-b", "bench-b"))
 
-    monitor_a = _make_monitor(_make_bench(tmp_path / "bench-a", "bench-a"), authority_file)
-    monitor_b = _make_monitor(_make_bench(tmp_path / "bench-b", "bench-b"), authority_file)
-
-    # bench-a claims authority (file absent)
+    # bench-a claims authority (host.toml absent)
     assert monitor_a.is_system_log_authority is True
 
     # bench-b sees bench-a as the running authority
@@ -126,9 +119,8 @@ def _fake_proc_reads(monitor: Monitor) -> None:
 
 
 def test_collect_system_metrics_writes_to_system_log_file(tmp_path: Path) -> None:
-    authority_file = tmp_path / ".bench-authority"
     system_log_file = tmp_path / "bench-system-stats.log"
-    monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
+    monitor = _make_monitor(_make_bench(tmp_path / "my-bench"))
     monitor.bench.config.monitor.system_log_path = system_log_file
     _fake_proc_reads(monitor)
 
@@ -143,9 +135,8 @@ def test_collect_system_metrics_writes_to_system_log_file(tmp_path: Path) -> Non
 
 def test_collect_system_metrics_does_not_write_app_log(tmp_path: Path) -> None:
     """System metrics must never bleed into the per-bench application log."""
-    authority_file = tmp_path / ".bench-authority"
     system_log_file = tmp_path / "bench-system-stats.log"
-    monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
+    monitor = _make_monitor(_make_bench(tmp_path / "my-bench"))
     monitor.bench.config.monitor.system_log_path = system_log_file
     _fake_proc_reads(monitor)
 
@@ -155,10 +146,9 @@ def test_collect_system_metrics_does_not_write_app_log(tmp_path: Path) -> None:
 
 
 def test_collect_system_metrics_skipped_when_not_authority(tmp_path: Path) -> None:
-    authority_file = tmp_path / ".bench-authority"
-    authority_file.write_text("other-bench")
+    HostTomlStore(tmp_path).write(HostConfig(monitor_authority="other-bench"))
     system_log_file = tmp_path / "bench-system-stats.log"
-    monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
+    monitor = _make_monitor(_make_bench(tmp_path / "my-bench"))
     monitor.bench.config.monitor.system_log_path = system_log_file
 
     siblings = [_sibling("other-bench", "systemd")]
@@ -169,9 +159,8 @@ def test_collect_system_metrics_skipped_when_not_authority(tmp_path: Path) -> No
 
 
 def test_collect_system_metrics_includes_storage(tmp_path: Path) -> None:
-    authority_file = tmp_path / ".bench-authority"
     system_log_file = tmp_path / "bench-system-stats.log"
-    monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
+    monitor = _make_monitor(_make_bench(tmp_path / "my-bench"))
     monitor.bench.config.monitor.system_log_path = system_log_file
     _fake_proc_reads(monitor)
 
@@ -187,7 +176,7 @@ def test_collect_system_metrics_includes_storage(tmp_path: Path) -> None:
 
 
 def test_disk_usage_returns_expected_fields(tmp_path: Path) -> None:
-    monitor = _make_monitor(_make_bench(tmp_path), tmp_path / ".auth")
+    monitor = _make_monitor(_make_bench(tmp_path))
     result = monitor._disk_usage(tmp_path)
     assert result["total_mb"] > 0
     assert result["used_mb"] >= 0
@@ -197,7 +186,7 @@ def test_disk_usage_returns_expected_fields(tmp_path: Path) -> None:
 
 
 def test_storage_usage_always_includes_disk(tmp_path: Path) -> None:
-    monitor = _make_monitor(_make_bench(tmp_path), tmp_path / ".auth")
+    monitor = _make_monitor(_make_bench(tmp_path))
     result = monitor._storage_usage()
     assert "disk" in result
     assert result["disk"]["total_mb"] > 0
@@ -207,7 +196,7 @@ def test_storage_usage_always_includes_disk(tmp_path: Path) -> None:
 
 
 def test_compute_cpu_breakdown_sums_to_100_percent(tmp_path: Path) -> None:
-    monitor = _make_monitor(_make_bench(tmp_path), tmp_path / ".auth")
+    monitor = _make_monitor(_make_bench(tmp_path))
     readings = iter(
         [
             {"user": 100, "nice": 0, "system": 50, "idle": 800, "iowait": 20, "irq": 10, "softirq": 10, "steal": 10},
@@ -226,7 +215,7 @@ def test_compute_cpu_breakdown_sums_to_100_percent(tmp_path: Path) -> None:
 
 def test_compute_cpu_breakdown_zero_delta_reports_idle(tmp_path: Path) -> None:
     """A stalled /proc/stat (identical before/after) must not divide by zero."""
-    monitor = _make_monitor(_make_bench(tmp_path), tmp_path / ".auth")
+    monitor = _make_monitor(_make_bench(tmp_path))
     fields = {"user": 100, "nice": 0, "system": 50, "idle": 800, "iowait": 20, "irq": 10, "softirq": 10, "steal": 10}
     monitor._cpu_fields = lambda: dict(fields)  # type: ignore[method-assign]
     monitor.sample_cpu()
@@ -240,7 +229,7 @@ def test_compute_cpu_breakdown_zero_delta_reports_idle(tmp_path: Path) -> None:
 
 
 def test_memory_usage_breakdown_sums_to_total(tmp_path: Path) -> None:
-    monitor = _make_monitor(_make_bench(tmp_path), tmp_path / ".auth")
+    monitor = _make_monitor(_make_bench(tmp_path))
     result = monitor._memory_usage()
 
     assert set(result) >= {"total_mb", "used_mb", "cached_mb", "free_mb", "swap_used_mb", "percent"}
@@ -251,7 +240,7 @@ def test_memory_usage_breakdown_sums_to_total(tmp_path: Path) -> None:
 
 
 def test_compute_io_reports_bytes_per_sec(tmp_path: Path) -> None:
-    monitor = _make_monitor(_make_bench(tmp_path), tmp_path / ".auth")
+    monitor = _make_monitor(_make_bench(tmp_path))
     net_readings = iter([{"rx_bytes": 1000, "tx_bytes": 200}, {"rx_bytes": 3000, "tx_bytes": 700}])
     disk_readings = iter([{"read_bytes": 5000, "write_bytes": 1000}, {"read_bytes": 6000, "write_bytes": 1500}])
     monitor._net_fields = lambda: next(net_readings)  # type: ignore[method-assign]
@@ -265,7 +254,7 @@ def test_compute_io_reports_bytes_per_sec(tmp_path: Path) -> None:
 
 
 def test_disk_io_fields_ignores_partitions(tmp_path: Path) -> None:
-    monitor = _make_monitor(_make_bench(tmp_path), tmp_path / ".auth")
+    monitor = _make_monitor(_make_bench(tmp_path))
     diskstats = tmp_path / "diskstats"
     diskstats.write_text(
         "   8       0 sda 100 0 2000 0 50 0 1000 0 0 0 0\n"

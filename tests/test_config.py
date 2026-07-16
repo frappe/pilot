@@ -543,7 +543,6 @@ def test_toml_writer_monitor_section_emitted_when_production_enabled() -> None:
     toml = bench_config_to_toml(config)
     assert "[monitor]" in toml
     assert "system_log_path" in toml
-    assert "authority_file_path" in toml
 
 
 def test_toml_writer_monitor_log_path_omitted_when_none() -> None:
