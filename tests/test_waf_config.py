@@ -115,6 +115,16 @@ def test_disabled_waf_with_exclusions_is_preserved() -> None:
     assert BenchConfig._from_dict(tomllib.loads(rendered)).waf.exclusions == ["SecRuleRemoveById 1"]
 
 
+def test_disabled_waf_with_non_default_tuning_is_preserved() -> None:
+    # Pre-configuring mode/paranoia before enabling must survive a round-trip.
+    config = _config()
+    config.waf = WafConfig(enabled=False, mode="On", paranoia=3, inbound_threshold=9)
+    rendered = bench_config_to_toml(config)
+    assert "[waf]" in rendered
+    reloaded = BenchConfig._from_dict(tomllib.loads(rendered)).waf
+    assert reloaded.mode == "On" and reloaded.paranoia == 3 and reloaded.inbound_threshold == 9
+
+
 def test_waf_modes_are_the_allowed_set() -> None:
     assert set(WAF_MODES) == {"Off", "DetectionOnly", "On"}
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pilot.config.bench_config import BenchConfig
+from pilot.config.waf_config import WafConfig
 
 
 def _toml_string(value: str) -> str:
@@ -139,7 +140,10 @@ def bench_config_to_toml(config: BenchConfig) -> str:
             parts.append("")
 
     waf = config.waf
-    if waf.enabled or waf.exclusions or waf.exempt_paths:
+    # Persist whenever anything differs from the defaults — not just when enabled —
+    # so non-default tuning (mode/paranoia/…) set before enabling isn't dropped on
+    # the next load.
+    if waf != WafConfig():
         parts.append("[waf]")
         parts.append(f"enabled = {'true' if waf.enabled else 'false'}")
         parts.append(f'mode = "{waf.mode}"')
