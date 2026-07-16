@@ -88,6 +88,7 @@ def _render_error_html(code: int, title: str, message: str) -> str:
 if TYPE_CHECKING:
     from pilot.config.nginx_config import NginxConfig
     from pilot.config.site_config import SiteConfig
+    from pilot.config.waf_config import WafConfig
     from pilot.core.bench import Bench
 
 
@@ -210,7 +211,7 @@ class NginxManager:
             f"Include {modsec_dir}/exclusions.conf\n"
         )
 
-    def _render_modsec_engine(self, waf: object) -> str:
+    def _render_modsec_engine(self, waf: WafConfig) -> str:
         from pilot.config.waf_config import parse_nginx_size
 
         audit_log = self.bench.path / "logs" / "modsec_audit.log"
@@ -239,7 +240,7 @@ class NginxManager:
             'SecDefaultAction "phase:2,pass,log"\n'
         )
 
-    def _render_modsec_overrides(self, waf: object) -> str:
+    def _render_modsec_overrides(self, waf: WafConfig) -> str:
         """Per-bench CRS tuning, applied after crs-setup.conf so it wins. Custom
         rule ids (1000+) stay clear of the CRS 900000-949999 reserved range to
         avoid duplicate-id errors. paranoia is set under both the CRS 4.x and 3.x
@@ -261,7 +262,7 @@ class NginxManager:
         return "\n".join(lines) + "\n"
 
     @staticmethod
-    def _render_modsec_exclusions(waf: object) -> str:
+    def _render_modsec_exclusions(waf: WafConfig) -> str:
         """User SecLang lines (SecRuleRemoveById etc.), one per line. May be empty;
         an empty Included file is harmless."""
         return "\n".join(waf.exclusions) + ("\n" if waf.exclusions else "")
