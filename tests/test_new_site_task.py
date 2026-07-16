@@ -56,7 +56,8 @@ def test_fetch_missing_apps_fetches_app_not_on_bench(tmp_path: Path) -> None:
 
     with patch.object(Marketplace, "read_all_apps", return_value=[frappe_helpdesk]), \
             patch("pilot.commands.get_app.GetAppCommand.run") as mock_run, \
-            patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"):
+            patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"), \
+            patch.object(Marketplace, "_read_apps_v2", return_value="[]"):
         task._fetch_missing_apps()
 
     mock_run.assert_called_once()
@@ -73,6 +74,7 @@ def test_fetch_missing_apps_installs_dependencies_via_get_app(tmp_path: Path) ->
 
     with patch.object(Marketplace, "read_all_apps", return_value=[top]), \
             patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"), \
+            patch.object(Marketplace, "_read_apps_v2", return_value="[]"), \
             patch("admin.backend.tasks.jobs.new_site_task.GetAppCommand") as mock_cmd:
         task._fetch_missing_apps()
 
@@ -86,7 +88,8 @@ def test_fetch_missing_apps_raises_when_not_in_marketplace(tmp_path: Path) -> No
     task = make_task(tmp_path, ["unknown_app"])
 
     with patch.object(Marketplace, "read_all_apps", return_value=[]), \
-            patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"):
+            patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"), \
+            patch.object(Marketplace, "_read_apps_v2", return_value="[]"):
         try:
             task._fetch_missing_apps()
         except BenchError as error:

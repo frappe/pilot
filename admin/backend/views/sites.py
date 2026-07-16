@@ -727,7 +727,7 @@ def get_backup_schedule(name: str):
 
     from pilot.config.site_backup_config import read_retention
 
-    from ..cron_manager import CronManager
+    from pilot.core.cron_manager import CronManager
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
@@ -743,7 +743,7 @@ def get_backup_schedule(name: str):
 def set_backup_schedule(name: str):
     from pilot.config.site_backup_config import write_retention
 
-    from ..cron_manager import CronManager
+    from pilot.core.cron_manager import CronManager
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
     data = request.get_json(silent=True) or {}
@@ -766,7 +766,7 @@ def set_backup_schedule(name: str):
 def delete_backup_schedule(name: str):
     from pilot.config.site_backup_config import clear_retention
 
-    from ..cron_manager import CronManager
+    from pilot.core.cron_manager import CronManager
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:

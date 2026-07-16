@@ -729,7 +729,8 @@ def test_update_command_update_apps_raises_on_command_error(tmp_path: Path) -> N
 
     cmd = UpdateCommand(bench, skip_confirm=True)
 
-    with patch("pilot.core.app.App.update", side_effect=CommandError("git error")):
+    with patch("pilot.core.app.App.update", side_effect=CommandError("git error")), \
+            patch("pilot.core.marketplace.Marketplace.registry", return_value=[]):
         with pytest.raises(MigrateError):
             cmd._update_apps()
 

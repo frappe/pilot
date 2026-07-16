@@ -8,7 +8,6 @@ import json
 import typing
 from dataclasses import dataclass, field
 from functools import lru_cache
-from pathlib import Path
 from typing import Literal
 
 from packaging.specifiers import SpecifierSet
@@ -19,8 +18,6 @@ from pilot.utils import run_command
 
 if typing.TYPE_CHECKING:
     from pilot.core.bench import Bench
-
-_REGISTRY_V2_PATH = Path(__file__).parent.parent.parent / "registry" / "apps_v2.json"
 
 
 @dataclass
@@ -126,8 +123,17 @@ class Marketplace:
 
     def __post_init__(self):
         self.frappe_version = self.get_current_frappe_version()
-        # Snapshot at construction so callers reading _REGISTRY_V2_PATH (incl. tests) see it.
-        self._registry = self._parse_registry(json.loads(_REGISTRY_V2_PATH.read_text()))
+        # Snapshot at construction so callers see a consistent registry for this instance.
+        self._registry = self._parse_registry(json.loads(self._read_apps_v2()))
+
+    @staticmethod
+    def _read_apps_v2() -> str:
+        from pilot.core.registry_cache import RegistryCache
+        from pilot.loader import cli_root
+
+        cache = RegistryCache(cli_root())
+        cache.ensure_fresh()
+        return cache.apps_v2_path.read_text()
 
     def get_current_frappe_version(self) -> str:
         """We need the current framework version to correctly suggest apps for installation"""
@@ -139,7 +145,7 @@ class Marketplace:
     @lru_cache(maxsize=1)
     def registry() -> list[dict]:
         """Parsed registry for callers that don't have a Marketplace/bench (e.g. tasks). Cached once."""
-        return Marketplace._parse_registry(json.loads(_REGISTRY_V2_PATH.read_text()))
+        return Marketplace._parse_registry(json.loads(Marketplace._read_apps_v2()))
 
     @staticmethod
     def _parse_registry(raw: list[dict]) -> list[dict]:

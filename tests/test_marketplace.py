@@ -340,12 +340,12 @@ def make_marketplace(frappe_version: str, registry: list | None = None) -> Marke
     bench = MagicMock()
     bench.env_path = Path("/fake/env")
 
+    import json
+
     with (
         patch("pilot.core.marketplace.Marketplace.get_current_frappe_version", return_value=frappe_version),
-        patch("pilot.core.marketplace._REGISTRY_V2_PATH") as mock_path,
+        patch("pilot.core.marketplace.Marketplace._read_apps_v2", return_value=json.dumps(registry or SAMPLE_REGISTRY)),
     ):
-        import json
-        mock_path.read_text.return_value = json.dumps(registry or SAMPLE_REGISTRY)
         mp = Marketplace(bench)
     return mp
 
