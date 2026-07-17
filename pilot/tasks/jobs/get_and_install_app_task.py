@@ -1,4 +1,4 @@
-from pilot.commands.apps.download import GetAppCommand
+from pilot.config.app import AppConfig
 from pilot.core.app import App
 from pilot.core.site import Site, SiteConfig
 from pilot.integrations.marketplace import Marketplace
@@ -28,32 +28,24 @@ class GetAndInstallAppTask(BaseTask):
         self.sites = args.sites or []
 
     def run(self) -> None:
-        cmd = self._fetch()
+        result = self._fetch()
         # Frappe's site install-app cascades installing declared dependencies
         # onto the site itself, but never builds their assets — that's a
         # separate, bench-wide step this task still owns.
-        self._install_on_sites(cmd.app)
-        self._build_assets([cmd.app] + cmd.installed_dependencies)
+        self._install_on_sites(result.app)
+        self._build_assets([result.app] + result.installed_dependencies)
         self._step("done")
 
-    def _fetch(self) -> GetAppCommand:
+    def _fetch(self):
         # get-app resolves and installs marketplace dependencies itself; a
         # plain repo has none to resolve.
         if self.marketplace_app:
             resolver = Marketplace(self.bench).find_app(self.marketplace_app)
-            repo, branch = resolver.repo, resolver.target
+            app = App(AppConfig(name=resolver.app, repo=resolver.repo, branch=resolver.target), self.bench)
         else:
-            repo, branch = self.repo, self.branch
+            app = App.from_repo(self.bench, self.repo, self.branch)
         self._step("fetch", f"Fetch {self.marketplace_app or self.repo}")
-        cmd = GetAppCommand(
-            self.bench,
-            repo,
-            branch,
-            install_dependencies=bool(self.marketplace_app),
-            skip_validations=False,
-        )
-        cmd.run()
-        return cmd
+        return app.install(install_dependencies=bool(self.marketplace_app), on_progress=self._report)
 
     def _install_on_sites(self, app: App) -> None:
         for site in self.sites:

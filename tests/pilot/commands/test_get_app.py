@@ -1,13 +1,14 @@
-"""Tests for GetAppCommand.run() — an already-installed app skips clone,
-validate, install, and build, but its dependencies are still installed
-(missing ones) or resolved (already-present ones) so callers can still
-install them onto new sites."""
+"""Tests for GetAppCommand.run() (delegating to App.install()) — an
+already-installed app skips clone, validate, install, and build, but its
+dependencies are still installed (missing ones) or resolved (already-present
+ones) so callers can still install them onto new sites."""
 from __future__ import annotations
 
 from pathlib import Path
 from unittest.mock import patch
 
 from pilot.commands.apps.download import GetAppCommand
+from pilot.core.app import App
 from pilot.integrations.marketplace import Marketplace, Resolver
 from tests.pilot.commands.test_commands import make_bench
 
@@ -26,31 +27,15 @@ def make_resolver(name: str, deps: dict[str, str] | None = None) -> Resolver:
     )
 
 
-def make_command(tmp_path: Path, name: str = "myapp", **kwargs) -> GetAppCommand:
-    bench = make_bench(tmp_path)
-    bench.create_directories()
-    cmd = GetAppCommand(bench, f"https://github.com/frappe/{name}", **kwargs)
-    # Skip real cloning/installing/building — only run()'s early-return
-    # decision is under test here.
-    cmd._clone = lambda: None
-    cmd._normalize_folder = lambda: None
-    cmd._install = lambda: None
-    cmd._register = lambda: None
-    cmd._build = lambda: None
-    return cmd
-
-
 def test_full_flow_runs_when_app_not_registered(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     bench.create_directories()
     cmd = GetAppCommand(bench, "https://github.com/frappe/myapp")
-    cmd._normalize_folder = lambda: None
-    cmd._register = lambda: None
 
-    with patch.object(GetAppCommand, "_validate") as mock_validate, \
-            patch.object(GetAppCommand, "_clone") as mock_clone, \
-            patch.object(GetAppCommand, "_install") as mock_install, \
-            patch.object(GetAppCommand, "_build") as mock_build:
+    with patch.object(App, "clone") as mock_clone, \
+            patch.object(App, "_validate") as mock_validate, \
+            patch.object(App, "_install_into_environment") as mock_install, \
+            patch.object(App, "_build_assets_via_env_manager") as mock_build:
         cmd.run()
 
     mock_clone.assert_called_once()
@@ -66,10 +51,10 @@ def test_run_short_circuits_when_app_already_registered(tmp_path: Path) -> None:
     (bench.sites_path / "apps.txt").write_text("frappe\nmyapp\n")
     cmd = GetAppCommand(bench, "https://github.com/frappe/myapp")
 
-    with patch.object(GetAppCommand, "_validate") as mock_validate, \
-            patch.object(GetAppCommand, "_clone") as mock_clone, \
-            patch.object(GetAppCommand, "_install") as mock_install, \
-            patch.object(GetAppCommand, "_build") as mock_build:
+    with patch.object(App, "clone") as mock_clone, \
+            patch.object(App, "_validate") as mock_validate, \
+            patch.object(App, "_install_into_environment") as mock_install, \
+            patch.object(App, "_build_assets_via_env_manager") as mock_build:
         cmd.run()
 
     mock_clone.assert_not_called()
@@ -94,7 +79,7 @@ def test_short_circuit_adopts_real_on_disk_app_path(tmp_path: Path) -> None:
 
     assert cmd.app.path == real_app_dir
     assert cmd.app.path.is_dir()
-    assert cmd.name == "india_compliance"
+    assert cmd.app.config.name == "india_compliance"
 
 
 def test_short_circuit_still_populates_installed_dependencies(tmp_path: Path) -> None:
@@ -114,13 +99,11 @@ def test_short_circuit_still_populates_installed_dependencies(tmp_path: Path) ->
 
     with patch.object(Marketplace, "read_all_apps", return_value=[helpdesk]), \
             patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"), \
-            patch.object(Marketplace, "_read_apps_json", return_value="[]"), \
-            patch("pilot.commands.apps.download.GetAppCommand") as mock_cmd:
+            patch.object(Marketplace, "_read_apps_json", return_value="[]"):
         cmd = GetAppCommand(bench, "https://github.com/frappe/helpdesk", install_dependencies=True)
         cmd.run()
 
     assert [app.config.name for app in cmd.installed_dependencies] == ["telephony"]
-    mock_cmd.assert_not_called()
 
 
 def test_still_installs_missing_dependency_when_parent_already_installed(tmp_path: Path) -> None:
@@ -140,20 +123,28 @@ def test_still_installs_missing_dependency_when_parent_already_installed(tmp_pat
     with patch.object(Marketplace, "read_all_apps", return_value=[helpdesk]), \
             patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"), \
             patch.object(Marketplace, "_read_apps_json", return_value="[]"), \
-            patch("pilot.commands.apps.download.GetAppCommand") as mock_cmd:
+            patch.object(App, "clone", autospec=True, side_effect=lambda app: app.path.mkdir(parents=True, exist_ok=True)) as mock_clone, \
+            patch.object(App, "_validate"), \
+            patch.object(App, "_install_into_environment"), \
+            patch.object(App, "_build_assets_via_env_manager"):
         cmd = GetAppCommand(bench, "https://github.com/frappe/helpdesk", install_dependencies=True)
         cmd.run()
 
-    mock_cmd.assert_called_once_with(
-        bench, telephony.repo, telephony.target, install_dependencies=False, skip_validations=True
-    )
-    mock_cmd.return_value.run.assert_called_once()
+    # helpdesk itself short-circuits (already installed); telephony is the
+    # only app that needed an actual clone.
+    mock_clone.assert_called_once()
+    assert [app.config.name for app in cmd.installed_dependencies] == ["telephony"]
 
 
 def test_skip_validations_flag_still_skips_validate(tmp_path: Path) -> None:
-    cmd = make_command(tmp_path, skip_validations=True)
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    cmd = GetAppCommand(bench, "https://github.com/frappe/myapp", skip_validations=True)
 
-    with patch.object(GetAppCommand, "_validate") as mock_validate:
+    with patch.object(App, "clone"), \
+            patch.object(App, "_validate") as mock_validate, \
+            patch.object(App, "_install_into_environment"), \
+            patch.object(App, "_build_assets_via_env_manager"):
         cmd.run()
 
     mock_validate.assert_not_called()

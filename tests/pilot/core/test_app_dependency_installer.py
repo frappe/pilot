@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
+from pilot.core.app import App
 from pilot.core.app_dependency_installer import AppDependencyInstaller
 from pilot.integrations.marketplace import Marketplace, Resolver
 from pilot.exceptions import BenchError, DependencyResolutionError, RegistryUnavailableError
@@ -47,14 +48,14 @@ def test_install_installs_missing_dependency(tmp_path: Path) -> None:
     with patch.object(Marketplace, "read_all_apps", return_value=[helpdesk]), \
             patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"), \
             patch.object(Marketplace, "_read_apps_json", return_value="[]"), \
-            patch("pilot.commands.apps.download.GetAppCommand") as mock_cmd:
+            patch.object(App, "install") as mock_install:
         result = AppDependencyInstaller(bench, app).install()
 
-    mock_cmd.assert_called_once_with(
-        bench, telephony.repo, telephony.target, install_dependencies=False, skip_validations=True
-    )
-    mock_cmd.return_value.run.assert_called_once()
-    assert result == []  # dep wasn't actually created on disk by the mocked run()
+    mock_install.assert_called_once()
+    _, kwargs = mock_install.call_args
+    assert kwargs["install_dependencies"] is False
+    assert kwargs["skip_validations"] is True
+    assert result == []  # dep wasn't actually created on disk by the mocked install()
 
 
 def test_install_skips_already_installed_dependency(tmp_path: Path) -> None:
@@ -71,10 +72,10 @@ def test_install_skips_already_installed_dependency(tmp_path: Path) -> None:
     with patch.object(Marketplace, "read_all_apps", return_value=[helpdesk]), \
             patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"), \
             patch.object(Marketplace, "_read_apps_json", return_value="[]"), \
-            patch("pilot.commands.apps.download.GetAppCommand") as mock_cmd:
+            patch.object(App, "install") as mock_install:
         result = AppDependencyInstaller(bench, app).install()
 
-    mock_cmd.assert_not_called()
+    mock_install.assert_not_called()
     assert [a.config.name for a in result] == ["telephony"]
 
 

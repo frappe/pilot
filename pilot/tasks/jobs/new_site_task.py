@@ -1,5 +1,5 @@
-from pilot.commands.apps.download import GetAppCommand
 from pilot.commands.sites.create import NewSiteCommand
+from pilot.core.app import App
 from pilot.integrations.marketplace import Marketplace
 
 from pilot.tasks.jobs.base_task import BaseTask
@@ -42,7 +42,9 @@ class NewSiteTask(BaseTask):
         for app_name in missing:
             resolver = marketplace.find_app(app_name)
             self._step("fetch", f"Fetch {app_name}")
-            GetAppCommand(self.bench, resolver.repo, resolver.target, install_dependencies=True).run()
+            App.from_repo(self.bench, resolver.repo, resolver.target).install(
+                install_dependencies=True, on_progress=self._report
+            )
 
 
 if __name__ == "__main__":
