@@ -8,7 +8,15 @@ from flask import Blueprint, current_app, jsonify, request
 from pilot.config.bench_config import BenchConfig
 from pilot.config.firewall_config import FirewallRule
 from pilot.config.s3_config import S3Config
-from pilot.config.waf_config import WAF_MODES
+from pilot.config.waf_config import (
+    WAF_MODES,
+    WAF_RULE_ACTIONS,
+    WAF_RULE_FIELDS,
+    WAF_RULE_MATCH,
+    WAF_RULE_OPERATORS,
+    WafCondition,
+    WafRule,
+)
 from pilot.config.toml_store import BenchTomlStore
 from pilot.config.worker_config import WorkerGroup
 from pilot.core.bench import Bench
@@ -63,6 +71,19 @@ def _waf_payload(config: BenchConfig) -> dict:
         "inspect_responses": waf.inspect_responses,
         "exclusions": list(waf.exclusions),
         "exempt_paths": list(waf.exempt_paths),
+        "custom_rules": [
+            {
+                "name": rule.name,
+                "action": rule.action,
+                "match": rule.match,
+                "enabled": rule.enabled,
+                "conditions": [
+                    {"field": c.field, "operator": c.operator, "value": c.value, "header_name": c.header_name}
+                    for c in rule.conditions
+                ],
+            }
+            for rule in waf.custom_rules
+        ],
     }
 
 
@@ -235,6 +256,31 @@ class ConfigPatcher:
             w.exclusions = [str(line).strip() for line in (waf["exclusions"] or []) if str(line).strip()]
         if "exempt_paths" in waf:
             w.exempt_paths = [str(path).strip() for path in (waf["exempt_paths"] or []) if str(path).strip()]
+        if "custom_rules" in waf:
+            w.custom_rules = [self._parse_waf_rule(rule) for rule in (waf["custom_rules"] or [])]
+
+    @staticmethod
+    def _parse_waf_rule(data: dict) -> WafRule:
+        # Values pass through as strings; config.validate() is the authoritative
+        # reject (a bad rule becomes a clean 400, not a 500). Blank conditions are
+        # dropped so an empty builder row doesn't trip validation.
+        conditions = [
+            WafCondition(
+                field=str(c.get("field", "")).strip(),
+                operator=str(c.get("operator", "")).strip(),
+                value=str(c.get("value", "")).strip(),
+                header_name=str(c.get("header_name", "")).strip(),
+            )
+            for c in (data.get("conditions") or [])
+            if str(c.get("value", "")).strip() or str(c.get("field", "")).strip()
+        ]
+        return WafRule(
+            name=str(data.get("name", "")).strip(),
+            action=str(data.get("action", "block")).strip(),
+            match=str(data.get("match", "all")).strip(),
+            enabled=bool(data.get("enabled", True)),
+            conditions=conditions,
+        )
 
     def _apply_admin(self) -> None:
         """TLS termination is opt-in: persisting tls=true only records the intent;
@@ -423,7 +469,15 @@ def _build_settings_response(config: BenchConfig) -> dict:
         "redis": {"cache_port": config.redis.cache_port, "queue_port": config.redis.queue_port, "version": RedisManager.installed_version() or config.redis.version or ""},
         "workers": _worker_groups_payload(config),
         "firewall": _firewall_payload(config),
-        "waf": {**_waf_payload(config), "installed": WafManager.is_installed(), "modes": list(WAF_MODES)},
+        "waf": {
+            **_waf_payload(config),
+            "installed": WafManager.is_installed(),
+            "modes": list(WAF_MODES),
+            "rule_fields": list(WAF_RULE_FIELDS),
+            "rule_operators": list(WAF_RULE_OPERATORS),
+            "rule_actions": list(WAF_RULE_ACTIONS),
+            "rule_match": list(WAF_RULE_MATCH),
+        },
         "production": {"process_manager": config.production.process_manager or "none", "enabled": config.production.enabled},
         "admin": {"domain": config.admin.domain, "tls": config.admin.tls},
         "letsencrypt": {"email": config.letsencrypt.email},

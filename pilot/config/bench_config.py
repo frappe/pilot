@@ -17,7 +17,17 @@ from pilot.config.postgres_config import PostgresConfig
 from pilot.config.production_config import ProductionConfig
 from pilot.config.redis_config import RedisConfig
 from pilot.config.s3_config import S3Config
-from pilot.config.waf_config import WAF_MODES, WafConfig, parse_nginx_size
+from pilot.config.waf_config import (
+    WAF_MODES,
+    WAF_RULE_ACTIONS,
+    WAF_RULE_FIELDS,
+    WAF_RULE_MATCH,
+    WAF_RULE_OPERATORS,
+    WafCondition,
+    WafConfig,
+    WafRule,
+    parse_nginx_size,
+)
 from pilot.config.worker_config import WorkerConfig, WorkerGroup
 from pilot.exceptions import ConfigError
 
@@ -31,6 +41,18 @@ _HOSTNAME_PATTERN = re.compile(r"^(?=.{1,253}$)[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-
 # be a plain URL path — no quotes, whitespace, backslashes, or control characters
 # that could break out of the rule and inject directives.
 _WAF_EXEMPT_PATH_PATTERN = re.compile(r"^/[A-Za-z0-9._~%/-]*$")
+# A custom-rule condition value is interpolated into a quoted SecLang operator
+# argument. Regex metacharacters are allowed (the "matches" operator), but a
+# double quote, newline, or NUL would break out of the string and inject
+# directives, so those are forbidden. Header names must be plain HTTP tokens.
+_WAF_RULE_VALUE_FORBIDDEN = re.compile(r'["\n\r\x00]')
+# The rule name is wrapped in a single-quoted SecLang msg inside a double-quoted
+# action list, so it must contain neither quote style nor a newline.
+_WAF_RULE_NAME_FORBIDDEN = re.compile("[\"'\n\r\x00]")
+_WAF_HEADER_NAME_PATTERN = re.compile(r"^[A-Za-z0-9-]{1,64}$")
+_WAF_MAX_RULES = 100
+_WAF_MAX_CONDITIONS = 10
+_WAF_MAX_VALUE_LEN = 1024
 _REDIS_PORT_MIN = 1024
 _REDIS_PORT_MAX = 65535
 _PORT_MIN = 1
@@ -254,8 +276,8 @@ class BenchConfig:
             rules=rules,
         )
 
-    @staticmethod
-    def _parse_waf(data: dict | None) -> WafConfig:
+    @classmethod
+    def _parse_waf(cls, data: dict | None) -> WafConfig:
         if not data:
             return WafConfig()
         # paranoia/inbound_threshold pass through unconverted so a hand-edited
@@ -270,6 +292,26 @@ class BenchConfig:
             inspect_responses=bool(data.get("inspect_responses", False)),
             exclusions=[str(line) for line in data.get("exclusions", [])],
             exempt_paths=[str(path) for path in data.get("exempt_paths", [])],
+            custom_rules=[cls._parse_waf_rule(rule) for rule in data.get("custom_rules", [])],
+        )
+
+    @staticmethod
+    def _parse_waf_rule(data: dict) -> WafRule:
+        # Values pass through as strings; _validate_waf is the authoritative check.
+        return WafRule(
+            name=str(data.get("name", "")),
+            action=str(data.get("action", "block")),
+            match=str(data.get("match", "all")),
+            enabled=bool(data.get("enabled", True)),
+            conditions=[
+                WafCondition(
+                    field=str(cond.get("field", "")),
+                    operator=str(cond.get("operator", "")),
+                    value=str(cond.get("value", "")),
+                    header_name=str(cond.get("header_name", "")),
+                )
+                for cond in data.get("conditions", [])
+            ],
         )
 
     def validate(self) -> None:
@@ -428,6 +470,48 @@ class BenchConfig:
                     f"waf.exempt_paths[{i}] '{path}' is invalid. Must be a URL path starting "
                     f"with '/' using only letters, digits, and . _ ~ % / - characters."
                 )
+        self._validate_waf_custom_rules(waf)
+
+    def _validate_waf_custom_rules(self, waf) -> None:
+        """Every condition value is interpolated into a SecLang rule, so reject any
+        breakout input here (authoritative for both bench.toml and the settings API)."""
+        if len(waf.custom_rules) > _WAF_MAX_RULES:
+            raise ConfigError(f"waf.custom_rules has too many rules (max {_WAF_MAX_RULES}).")
+        for i, rule in enumerate(waf.custom_rules):
+            prefix = f"waf.custom_rules[{i}]"
+            if rule.action not in WAF_RULE_ACTIONS:
+                raise ConfigError(f"{prefix}.action '{rule.action}' is invalid. Must be one of: {', '.join(WAF_RULE_ACTIONS)}.")
+            if rule.match not in WAF_RULE_MATCH:
+                raise ConfigError(f"{prefix}.match '{rule.match}' is invalid. Must be one of: {', '.join(WAF_RULE_MATCH)}.")
+            if _WAF_RULE_NAME_FORBIDDEN.search(rule.name) or len(rule.name) > 128:
+                raise ConfigError(f"{prefix}.name is invalid. Must be under 128 chars with no quotes or newlines.")
+            if not rule.conditions:
+                raise ConfigError(f"{prefix} must have at least one condition.")
+            if len(rule.conditions) > _WAF_MAX_CONDITIONS:
+                raise ConfigError(f"{prefix} has too many conditions (max {_WAF_MAX_CONDITIONS}).")
+            for j, cond in enumerate(rule.conditions):
+                self._validate_waf_condition(f"{prefix}.conditions[{j}]", cond)
+
+    @staticmethod
+    def _validate_waf_condition(prefix: str, cond) -> None:
+        if cond.field not in WAF_RULE_FIELDS:
+            raise ConfigError(f"{prefix}.field '{cond.field}' is invalid. Must be one of: {', '.join(WAF_RULE_FIELDS)}.")
+        if cond.operator not in WAF_RULE_OPERATORS:
+            raise ConfigError(f"{prefix}.operator '{cond.operator}' is invalid. Must be one of: {', '.join(WAF_RULE_OPERATORS)}.")
+        if not cond.value:
+            raise ConfigError(f"{prefix}.value is required.")
+        if len(cond.value) > _WAF_MAX_VALUE_LEN or _WAF_RULE_VALUE_FORBIDDEN.search(cond.value):
+            raise ConfigError(f"{prefix}.value is invalid. Must be under {_WAF_MAX_VALUE_LEN} chars with no double quotes or newlines.")
+        if cond.field == "header" and not _WAF_HEADER_NAME_PATTERN.match(cond.header_name):
+            raise ConfigError(f"{prefix}.header_name '{cond.header_name}' is invalid. Must be an HTTP header token (letters, digits, hyphen).")
+        if cond.field == "source_ip":
+            import ipaddress
+
+            for entry in cond.value.split(","):
+                try:
+                    ipaddress.ip_network(entry.strip(), strict=False)
+                except ValueError:
+                    raise ConfigError(f"{prefix}.value '{entry.strip()}' is not a valid IP or CIDR range.")
 
     def _validate_gunicorn(self) -> None:
         if not isinstance(self.gunicorn.workers, int) or self.gunicorn.workers < 1:

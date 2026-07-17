@@ -7,7 +7,7 @@ import pytest
 
 from pilot.config.bench_config import BenchConfig
 from pilot.config.toml_writer import bench_config_to_toml
-from pilot.config.waf_config import WAF_MODES, WafConfig, parse_nginx_size
+from pilot.config.waf_config import WAF_MODES, WafCondition, WafConfig, WafRule, parse_nginx_size
 from pilot.exceptions import ConfigError
 
 
@@ -127,6 +127,51 @@ def test_disabled_waf_with_non_default_tuning_is_preserved() -> None:
 
 def test_waf_modes_are_the_allowed_set() -> None:
     assert set(WAF_MODES) == {"Off", "DetectionOnly", "On"}
+
+
+def _rule(conditions, **kw):
+    kw.setdefault("name", "r")
+    return {**kw, "conditions": conditions}
+
+
+def test_valid_custom_rule_accepted() -> None:
+    c = _config({"custom_rules": [_rule(
+        [{"field": "uri_path", "operator": "starts_with", "value": "/admin"},
+         {"field": "source_ip", "operator": "is_not", "value": "10.0.0.0/8, 192.168.0.1"}],
+        action="block", match="all")]})
+    rule = c.waf.custom_rules[0]
+    assert rule.action == "block" and len(rule.conditions) == 2
+
+
+@pytest.mark.parametrize("rules,needle", [
+    ([_rule([{"field": "uri_path", "operator": "is", "value": '/a" "id:1,deny"'}])], "value"),
+    ([_rule([{"field": "query", "operator": "contains", "value": "a\nSecRule"}])], "value"),
+    ([_rule([{"field": "cookie", "operator": "is", "value": "x"}])], "field"),
+    ([_rule([{"field": "method", "operator": "regexish", "value": "x"}])], "operator"),
+    ([_rule([{"field": "method", "operator": "is", "value": "GET"}], action="challenge")], "action"),
+    ([_rule([{"field": "header", "operator": "is", "value": "x", "header_name": "bad header!"}])], "header_name"),
+    ([_rule([{"field": "source_ip", "operator": "is", "value": "not-an-ip"}])], "IP"),
+    ([_rule([])], "condition"),
+    ([_rule([{"field": "method", "operator": "is", "value": "GET"}], name='has"quote')], "name"),
+])
+def test_invalid_custom_rules_rejected(rules, needle) -> None:
+    with pytest.raises(ConfigError) as exc:
+        _config({"custom_rules": rules})
+    assert needle in str(exc.value)
+
+
+def test_custom_rules_round_trip() -> None:
+    config = _config()
+    config.waf = WafConfig(custom_rules=[
+        WafRule(name="Block admin abroad", action="block", match="all", conditions=[
+            WafCondition(field="uri_path", operator="starts_with", value="/admin"),
+            WafCondition(field="source_ip", operator="is_not", value="10.0.0.0/8")]),
+        WafRule(name="UA", action="log", match="any", enabled=False, conditions=[
+            WafCondition(field="user_agent", operator="matches", value="(sqlmap|nikto).*")])])
+    rendered = bench_config_to_toml(config)
+    reparsed = BenchConfig._from_dict(tomllib.loads(rendered))
+    reparsed.validate()
+    assert reparsed.waf == config.waf
 
 
 def test_module_package_aliases_per_distro() -> None:

@@ -24,6 +24,33 @@ _USER_DIRECTIVE = re.compile(r"^[ \t]*user[ \t]+[^;\n]+;", re.MULTILINE)
 
 _SHARED_ERROR_DIR = Path("/usr/share/nginx/bench-error-pages")
 
+# Custom-rule compilation maps (see _render_modsec_custom_rules). Field -> the
+# ModSecurity variable it inspects; operator -> the ModSecurity operator, with the
+# negated variants prefixed by "!"; action -> the SecLang disruptive action.
+_WAF_FIELD_VARS = {
+    "uri_path": "REQUEST_FILENAME",
+    "uri_full": "REQUEST_URI",
+    "query": "QUERY_STRING",
+    "method": "REQUEST_METHOD",
+    "source_ip": "REMOTE_ADDR",
+    "user_agent": "REQUEST_HEADERS:User-Agent",
+    "host": "REQUEST_HEADERS:Host",
+}
+_WAF_OPERATORS = {
+    "is": "@streq",
+    "is_not": "@streq",
+    "contains": "@contains",
+    "not_contains": "@contains",
+    "starts_with": "@beginsWith",
+    "matches": "@rx",
+}
+_WAF_NEGATED_OPERATORS = {"is_not", "not_contains"}
+_WAF_ACTION_DIRECTIVES = {
+    "block": "deny,status:403,log",
+    "log": "pass,log,auditlog",
+    "skip": "pass,ctl:ruleEngine=Off",
+}
+
 
 def _catchall_conf() -> Path:
     """Server-wide catch-all so unknown hosts get our 404 instead of nginx's
@@ -194,17 +221,20 @@ class NginxManager:
         (self.bench.path / "logs").mkdir(exist_ok=True)
         (modsec_dir / "modsecurity.conf").write_text(self._render_modsec_engine(waf))
         (modsec_dir / "overrides.conf").write_text(self._render_modsec_overrides(waf))
+        (modsec_dir / "custom_rules.conf").write_text(self._render_modsec_custom_rules(waf))
         (modsec_dir / "exclusions.conf").write_text(self._render_modsec_exclusions(waf))
         (modsec_dir / "main.conf").write_text(self._render_modsec_main(modsec_dir))
 
     def _render_modsec_main(self, modsec_dir: Path) -> str:
-        """Chain the config layers in the order CRS requires: engine, then the CRS
-        baseline, then per-bench overrides (paranoia/thresholds/exempt paths), then
-        the CRS rules, then user exclusions last."""
+        """Chain the config layers in the order CRS requires: engine, the CRS
+        baseline, per-bench overrides (paranoia/thresholds/exempt paths), then the
+        user's custom rules (before the CRS rules, so a block/skip wins, like
+        Cloudflare), the CRS rules, and user exclusions last."""
         return (
             f"Include {modsec_dir}/modsecurity.conf\n"
             f"Include {SHARED_MODSEC_DIR}/crs-setup.conf\n"
             f"Include {modsec_dir}/overrides.conf\n"
+            f"Include {modsec_dir}/custom_rules.conf\n"
             f"Include {SHARED_MODSEC_DIR}/rules/*.conf\n"
             f"Include {modsec_dir}/exclusions.conf\n"
         )
@@ -264,6 +294,74 @@ class NginxManager:
         """User SecLang lines (SecRuleRemoveById etc.), one per line. May be empty;
         an empty Included file is harmless."""
         return "\n".join(waf.exclusions) + ("\n" if waf.exclusions else "")
+
+    @classmethod
+    def _render_modsec_custom_rules(cls, waf: object) -> str:
+        """Compile the structured custom rules to ModSecurity SecRules. Conditions
+        combined with "all" become one chained rule (AND); "any" becomes one rule
+        per condition (OR). Everything runs in phase 1 — all supported fields are
+        available then — so a block/skip short-circuits the CRS rules that follow.
+        Ids start at 100000 (100 apart), clear of the CRS and overrides ranges. The
+        engine mode still governs enforcement: a "block" only denies under On.
+        Values are already validation-guaranteed free of quotes/newlines."""
+        blocks = []
+        for index, rule in enumerate(waf.custom_rules):
+            if not rule.enabled or not rule.conditions:
+                continue
+            base_id = 100000 + index * 100
+            action = _WAF_ACTION_DIRECTIVES[rule.action]
+            msg = f"msg:'Custom rule: {rule.name or 'unnamed'}'"
+            if rule.match == "any":
+                blocks.append(cls._render_any_rule(rule, base_id, action, msg))
+            else:
+                blocks.append(cls._render_all_rule(rule, base_id, action, msg))
+        return "\n".join(blocks) + ("\n" if blocks else "")
+
+    @staticmethod
+    def _condition_var_op(cond: object) -> tuple[str, str]:
+        """Return (variable, operator-argument) for one condition, e.g.
+        ("REQUEST_METHOD", "!@streq GET")."""
+        if cond.field == "header":
+            variable = f"REQUEST_HEADERS:{cond.header_name}"
+        else:
+            variable = _WAF_FIELD_VARS[cond.field]
+        negate = "!" if cond.operator in _WAF_NEGATED_OPERATORS else ""
+        if cond.field == "source_ip" and cond.operator in ("is", "is_not"):
+            operator = "@ipMatch"
+            value = ",".join(entry.strip() for entry in cond.value.split(","))
+        else:
+            operator = _WAF_OPERATORS[cond.operator]
+            value = cond.value
+        return variable, f"{negate}{operator} {value}"
+
+    @classmethod
+    def _render_all_rule(cls, rule: object, base_id: int, action: str, msg: str) -> str:
+        """AND: a single chained rule. The disruptive action sits on the starter and
+        fires only when every chained condition also matches."""
+        conditions = rule.conditions
+        lines = []
+        for position, cond in enumerate(conditions):
+            variable, operator_arg = cls._condition_var_op(cond)
+            last = position == len(conditions) - 1
+            if position == 0:
+                actions = [f"id:{base_id}", "phase:1", action, msg]
+                if not last:
+                    actions.append("chain")
+                lines.append(f'SecRule {variable} "{operator_arg}" "{",".join(actions)}"')
+            else:
+                tail = ' "chain"' if not last else ""
+                lines.append(f'    SecRule {variable} "{operator_arg}"{tail}')
+        return "\n".join(lines)
+
+    @classmethod
+    def _render_any_rule(cls, rule: object, base_id: int, action: str, msg: str) -> str:
+        """OR: one standalone rule per condition, each carrying the action."""
+        lines = []
+        for position, cond in enumerate(rule.conditions):
+            variable, operator_arg = cls._condition_var_op(cond)
+            actions = ",".join([f"id:{base_id + position}", "phase:1", action, msg])
+            lines.append(f'SecRule {variable} "{operator_arg}" "{actions}"')
+        return "\n".join(lines)
 
     def _xff_header(self) -> str:
         """Behind trusted proxies, pass their X-Forwarded-For through unchanged

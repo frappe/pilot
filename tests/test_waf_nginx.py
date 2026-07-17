@@ -7,10 +7,18 @@ import pytest
 
 from pilot.config.bench_config import BenchConfig
 from pilot.config.site_config import SiteConfig
-from pilot.config.waf_config import WafConfig
+from pilot.config.waf_config import WafCondition, WafConfig, WafRule
 from pilot.core.bench import Bench
 from pilot.managers import nginx_manager
 from pilot.managers.nginx_manager import NginxManager
+
+
+def _compile(rules) -> str:
+    return NginxManager._render_modsec_custom_rules(WafConfig(custom_rules=rules))
+
+
+def _cond(field, operator, value, header_name=""):
+    return WafCondition(field=field, operator=operator, value=value, header_name=header_name)
 
 _DATA: dict = {
     "bench": {"name": "test-bench", "python": "3.14"},
@@ -115,3 +123,56 @@ def test_module_already_loaded_survives_unreadable_nginx_conf(tmp_path: Path, mo
     # install_config before rollback); treat it as "loaded" and skip injection.
     monkeypatch.setattr(nginx_manager, "_NGINX_CONF", tmp_path / "nonexistent-nginx.conf")
     assert NginxManager._module_already_loaded() is True
+
+
+# ── custom-rule compiler ──────────────────────────────────────────────────────
+
+
+def test_compile_and_rule_is_a_chain() -> None:
+    out = _compile([WafRule(name="Block admin abroad", action="block", match="all", conditions=[
+        _cond("uri_path", "starts_with", "/admin"),
+        _cond("source_ip", "is_not", "10.0.0.0/8"),
+    ])])
+    assert 'SecRule REQUEST_FILENAME "@beginsWith /admin" "id:100000,phase:1,deny,status:403,log,msg:\'Custom rule: Block admin abroad\',chain"' in out
+    assert '    SecRule REMOTE_ADDR "!@ipMatch 10.0.0.0/8"' in out
+    assert out.count("id:100000") == 1  # chained rules share the starter's id
+
+
+def test_compile_any_rule_is_one_rule_per_condition() -> None:
+    out = _compile([WafRule(name="Log weird", action="log", match="any", conditions=[
+        _cond("user_agent", "matches", "(sqlmap|nikto)"),
+        _cond("header", "is", "1", header_name="X-Debug"),
+    ])])
+    assert 'SecRule REQUEST_HEADERS:User-Agent "@rx (sqlmap|nikto)" "id:100000,phase:1,pass,log,auditlog' in out
+    assert 'SecRule REQUEST_HEADERS:X-Debug "@streq 1" "id:100001,phase:1,pass,log,auditlog' in out
+    assert "chain" not in out
+
+
+def test_compile_skip_action() -> None:
+    out = _compile([WafRule(name="Skip health", action="skip", conditions=[_cond("uri_path", "is", "/healthz")])])
+    assert "pass,ctl:ruleEngine=Off" in out
+
+
+def test_compile_source_ip_normalizes_and_ids_step_by_100() -> None:
+    out = _compile([
+        WafRule(name="a", conditions=[_cond("method", "is", "TRACE")]),
+        WafRule(name="b", conditions=[_cond("source_ip", "is", "10.0.0.0/8, 192.168.0.1")]),
+    ])
+    assert "@ipMatch 10.0.0.0/8,192.168.0.1" in out  # spaces stripped
+    assert "id:100000" in out and "id:100100" in out
+
+
+def test_compile_skips_disabled_rules() -> None:
+    assert _compile([WafRule(name="off", enabled=False, conditions=[_cond("method", "is", "TRACE")])]) == ""
+
+
+def test_custom_rules_file_written_and_included_before_crs(tmp_path: Path, installed) -> None:
+    config = BenchConfig._from_dict(_DATA)
+    config.waf = WafConfig(enabled=True, custom_rules=[
+        WafRule(name="block", conditions=[_cond("uri_path", "starts_with", "/blocked")])])
+    manager = NginxManager(Bench(config, tmp_path))
+    manager._write_waf_files()
+    modsec = manager.bench.config_path / "modsecurity"
+    assert (modsec / "custom_rules.conf").read_text().startswith("SecRule REQUEST_FILENAME")
+    main = (modsec / "main.conf").read_text()
+    assert main.index("overrides.conf") < main.index("custom_rules.conf") < main.index("rules/*.conf")

@@ -154,6 +154,20 @@ def bench_config_to_toml(config: BenchConfig) -> str:
         parts.append(f"exclusions = {_toml_string_array(waf.exclusions)}")
         parts.append(f"exempt_paths = {_toml_string_array(waf.exempt_paths)}")
         parts.append("")
+        # Nested table-arrays must follow the parent table's scalar keys.
+        for rule in waf.custom_rules:
+            parts.append("[[waf.custom_rules]]")
+            parts.append(f"name = {_toml_string(rule.name)}")
+            parts.append(f'action = "{rule.action}"')
+            parts.append(f'match = "{rule.match}"')
+            parts.append(f"enabled = {'true' if rule.enabled else 'false'}")
+            for cond in rule.conditions:
+                parts.append("[[waf.custom_rules.conditions]]")
+                parts.append(f'field = "{cond.field}"')
+                parts.append(f'operator = "{cond.operator}"')
+                parts.append(f"value = {_toml_string(cond.value)}")
+                parts.append(f"header_name = {_toml_string(cond.header_name)}")
+            parts.append("")
 
     s3 = config.s3
     if s3.access_key or s3.secret_key or s3.bucket or s3.provider or s3.region:
