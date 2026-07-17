@@ -134,6 +134,19 @@ def _bench_config_to_dict(config: BenchConfig) -> ConfigDict:
             "inspect_responses": waf.inspect_responses,
             "exclusions": waf.exclusions,
             "exempt_paths": waf.exempt_paths,
+            "custom_rules": [
+                {
+                    "name": rule.name,
+                    "action": rule.action,
+                    "match": rule.match,
+                    "enabled": rule.enabled,
+                    "conditions": [
+                        {"field": c.field, "operator": c.operator, "value": c.value, "header_name": c.header_name}
+                        for c in rule.conditions
+                    ],
+                }
+                for rule in waf.custom_rules
+            ],
         }
 
     s3 = config.s3

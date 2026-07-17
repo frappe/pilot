@@ -17,7 +17,7 @@ from pilot.config.postgres_config import PostgresConfig
 from pilot.config.production_config import ProductionConfig
 from pilot.config.redis_config import RedisConfig
 from pilot.config.s3_config import S3Config
-from pilot.config.waf_config import WafConfig
+from pilot.config.waf_config import WafCondition, WafConfig, WafRule
 from pilot.config.worker_config import WorkerGroup
 
 
@@ -73,7 +73,15 @@ def _bench_schema() -> _Table:
                 keys=_keys(FirewallConfig) - {"rules"},
                 arrays={"rules": _Table(keys=_keys(FirewallRule))},
             ),
-            "waf": _Table(keys=_keys(WafConfig)),
+            "waf": _Table(
+                keys=_keys(WafConfig) - {"custom_rules"},
+                arrays={
+                    "custom_rules": _Table(
+                        keys=_keys(WafRule) - {"conditions"},
+                        arrays={"conditions": _Table(keys=_keys(WafCondition))},
+                    )
+                },
+            ),
         },
         arrays={
             "apps": _Table(keys=_keys(AppConfig)),

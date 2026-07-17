@@ -66,3 +66,31 @@ def test_patcher_leaves_waf_untouched_when_absent() -> None:
     config.waf.enabled = True
     ConfigPatcher(config, {"admin": {"tls": True}}).apply()
     assert config.waf.enabled is True
+
+
+def test_patcher_applies_custom_rule_and_drops_blank_conditions() -> None:
+    config = _config()
+    error = ConfigPatcher(config, {"waf": {"custom_rules": [{
+        "name": "Block admin abroad", "action": "block", "match": "all", "enabled": True,
+        "conditions": [
+            {"field": "uri_path", "operator": "starts_with", "value": "/admin"},
+            {"field": "", "operator": "", "value": ""},  # trailing blank row dropped
+        ],
+    }]}}).apply()
+    assert error is None
+    rule = config.waf.custom_rules[0]
+    assert rule.name == "Block admin abroad" and len(rule.conditions) == 1
+
+
+def test_patcher_rejects_malicious_custom_rule_cleanly() -> None:
+    # An injection attempt must yield a clean error string, never an unhandled 500.
+    error = ConfigPatcher(_config(), {"waf": {"custom_rules": [{
+        "name": "x", "conditions": [{"field": "uri_path", "operator": "is", "value": '/a" "deny"'}],
+    }]}}).apply()
+    assert error is not None and "value" in error
+
+
+def test_settings_response_exposes_rule_vocabulary() -> None:
+    waf = _build_settings_response(_config())["waf"]
+    assert waf["rule_fields"] and waf["rule_operators"] and waf["rule_actions"]
+    assert "block" in waf["rule_actions"] and "uri_path" in waf["rule_fields"]
