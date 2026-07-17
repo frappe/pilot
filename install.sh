@@ -4,8 +4,8 @@ set -e
 # POSIX sh (not bash) so a bare box can bootstrap via `wget -qO- ... | sh`
 # before bash exists. The provisioned-host one-liner still pipes to bash.
 #
-# Supported distros: Debian, Ubuntu, Fedora, Arch, Alpine (and their
-# derivatives via ID_LIKE). Unknown distros fall back to apt when available.
+# Supported distros: Debian, Ubuntu, Fedora, Arch (and their derivatives via
+# ID_LIKE). Unknown distros fall back to apt when available.
 
 # ── configuration ────────────────────────────────────────────────────────────
 INSTALL_URL="https://raw.githubusercontent.com/frappe/pilot/main/install.sh"
@@ -17,27 +17,21 @@ DEFAULT_USER="frappe"
 
 # ── arguments / environment ──────────────────────────────────────────────────
 BENCH_USER="${BENCH_USER:-$DEFAULT_USER}"
-# Non-interactive support: -y/--yes (or BENCH_YES=1) never prompts; the sudo
-# password may be supplied with --sudo-password or the SUDO_PASS env var.
-NONINTERACTIVE="${BENCH_YES:-0}"
+# Only relevant to the rare case of running this script directly as a
+# pre-existing non-root sudo user with a base tool missing (bootstrap_needed):
+# that fallback still shells out to sudo, and unattended runs (e.g. CI) can't
+# answer its password prompt.
 SUDO_PASS="${SUDO_PASS:-}"
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --user) BENCH_USER="$2"; shift 2 ;;
         --user=*) BENCH_USER="${1#*=}"; shift ;;
-        -y|--yes) NONINTERACTIVE=1; shift ;;
         --sudo-password|--sudo-pass) SUDO_PASS="$2"; shift 2 ;;
         --sudo-password=*|--sudo-pass=*) SUDO_PASS="${1#*=}"; shift ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
-
-# If a sudo password was supplied, we can run unattended.
-[ -n "$SUDO_PASS" ] && NONINTERACTIVE=1
-
-# A tty is required to prompt; without one we must run non-interactively.
-[ -e /dev/tty ] || NONINTERACTIVE=1
 
 # ── distro detection ──────────────────────────────────────────────────────────
 detect_distro() {
@@ -56,7 +50,7 @@ detect_distro() {
     # shellcheck disable=SC1091
     distro_like=$(. /etc/os-release; echo "${ID_LIKE:-}")
     case "$distro_id" in
-        debian|ubuntu|fedora|arch|alpine) echo "$distro_id"; return ;;
+        debian|ubuntu|fedora|arch) echo "$distro_id"; return ;;
     esac
     # Derivatives advertise their parent in ID_LIKE (e.g. Mint -> ubuntu).
     for token in $distro_like; do
@@ -70,48 +64,120 @@ detect_distro() {
 DISTRO="$(detect_distro)"
 
 # ── sudo wrapper ──────────────────────────────────────────────────────────────
-# Injects SUDO_PASS when provided so the script works unattended; otherwise
-# relies on cached/passwordless sudo.
+# Injects SUDO_PASS when provided so the script works unattended. Otherwise,
+# if sudo would actually need a password (no cached/passwordless sudo), we
+# prompt for it ourselves via /dev/tty and cache the answer in SUDO_PASS —
+# piping this script through `curl | sh` leaves stdin occupied by the script
+# itself, so sudo's own prompt can't read an answer from it.
 run_sudo() {
     if [ "$(id -u)" -eq 0 ]; then
         "$@"
-    elif [ -n "$SUDO_PASS" ]; then
+        return
+    fi
+    if [ -z "$SUDO_PASS" ] && ! sudo -n true 2>/dev/null; then
+        if [ -r /dev/tty ]; then
+            printf "[sudo] password for %s: " "$(id -un)" > /dev/tty
+            stty -echo < /dev/tty 2>/dev/null
+            read -r SUDO_PASS < /dev/tty
+            stty echo < /dev/tty 2>/dev/null
+            printf "\n" > /dev/tty
+        fi
+    fi
+    if [ -n "$SUDO_PASS" ]; then
         echo "$SUDO_PASS" | sudo -S "$@"
     else
         sudo "$@"
     fi
 }
 
+# Downloads a vendor bootstrap script (MariaDB repo setup, NodeSource,
+# Homebrew) over a pinned HTTPS/TLS floor. These vendors only publish
+# "curl | bash" installers with no checksum/signature to pin against, so the
+# content itself is trusted the same way their own docs instruct — but a
+# truncated transfer, non-HTTPS redirect, or empty/garbage response is caught
+# before anything runs.
+download_installer() {
+    url="$1"
+    tmp="$(mktemp)"
+    curl -fsSL --proto '=https' --tlsv1.2 "$url" -o "$tmp"
+    if [ ! -s "$tmp" ] || ! head -c 2 "$tmp" | grep -q '^#'; then
+        echo "Downloaded installer from $url looks invalid, aborting." >&2
+        rm -f "$tmp"
+        exit 1
+    fi
+    echo "$tmp"
+}
+
+fetch_and_run_as_root() {
+    url="$1"; shift
+    tmp="$(download_installer "$url")" || exit 1
+    run_sudo bash "$tmp" "$@"
+    rm -f "$tmp"
+}
+
 # ── package manager primitives ────────────────────────────────────────────────
 # Unknown distros fall back to apt, mirroring the runtime in pilot/platform.py.
+# macOS uses Homebrew, ownership-per-user, so it never goes through run_sudo.
 pkg_update() {
     case "$DISTRO" in
+        macos)  ensure_homebrew; brew update ;;
         fedora) run_sudo dnf -y makecache ;;
         arch)   run_sudo pacman -Sy --noconfirm --disable-download-timeout ;;
-        alpine) run_sudo apk update ;;
         *)      run_sudo apt-get update ;;
     esac
 }
 
 pkg_install() {
     case "$DISTRO" in
+        macos)  ensure_homebrew; brew install "$@" ;;
         # --allowerasing: containers ship curl-minimal, which conflicts with curl.
         fedora) run_sudo dnf install -y --allowerasing "$@" ;;
         # -Sy: sync the package database first; stale Arch mirrors 404 otherwise.
         # The download timeout aborts large transfers on slow links; disable it.
         arch)   run_sudo pacman -Sy --noconfirm --needed --disable-download-timeout "$@" ;;
-        alpine) run_sudo apk add --no-cache "$@" ;;
         *)      run_sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "$@" ;;
     esac
 }
 
 pkg_installed() {
     case "$DISTRO" in
+        macos)  brew list --versions "$1" >/dev/null 2>&1 ;;
         fedora) rpm -q "$1" >/dev/null 2>&1 ;;
         arch)   pacman -Qi "$1" >/dev/null 2>&1 ;;
-        alpine) apk info -e "$1" >/dev/null 2>&1 ;;
         *)      dpkg -l "$1" 2>/dev/null | grep -q '^ii' ;;
     esac
+}
+
+# download_installer (mariadb/nodesource/homebrew) needs curl before anything
+# else runs, and bootstrap_packages()'s own curl install happens too late for
+# that — so get it on its own, ahead of everything else in bootstrap().
+# macOS always ships curl, so this is a no-op there.
+ensure_curl() {
+    command -v curl >/dev/null 2>&1 && return 0
+    [ "$DISTRO" = "macos" ] && return 0
+    echo "Installing curl..."
+    pkg_update
+    pkg_install curl
+}
+
+# Homebrew is the one base dependency on macOS the runtime can't lazily
+# install itself (pilot/package_managers.py's BrewPackageManager assumes
+# `brew` already exists). On Intel Macs, Homebrew's own installer needs sudo
+# for the initial /usr/local setup; priming the sudo timestamp cache first
+# means it reuses that instead of prompting separately (or failing outright
+# if --sudo-password was given but the installer's own prompt can't read it).
+ensure_homebrew() {
+    command -v brew >/dev/null 2>&1 && return 0
+    echo "Installing Homebrew..."
+    run_sudo true
+    tmp="$(download_installer "https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh")" || exit 1
+    NONINTERACTIVE=1 bash "$tmp"
+    rm -f "$tmp"
+    if [ -x /opt/homebrew/bin/brew ]; then
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+    elif [ -x /usr/local/bin/brew ]; then
+        eval "$(/usr/local/bin/brew shellenv)"
+    fi
 }
 
 # ── base dependency bootstrap ─────────────────────────────────────────────────
@@ -119,12 +185,14 @@ pkg_installed() {
 # of this script and bench need before they're first used: git/curl/bash, sudo
 # + user tooling (so the user-setup path's useradd/usermod/visudo work), a
 # Python, and the base build deps for compiling the admin venv (psutil) and
-# frappe wheels.
+# frappe wheels. macOS ships curl/bash/sudo itself, so brew (the one thing it
+# can't lazily install for itself) takes their place here.
 bootstrap_needed() {
-    # Build deps are otherwise installed by bench at runtime, but Alpine needs
-    # them up front to compile the admin venv (musl wheels are not universal).
-    tools="git curl bash sudo python3"
-    [ "$DISTRO" = "alpine" ] && tools="$tools cc"
+    if [ "$DISTRO" = "macos" ]; then
+        tools="git brew python3"
+    else
+        tools="git curl bash sudo python3"
+    fi
     for tool in $tools; do
         command -v "$tool" >/dev/null 2>&1 || return 0
     done
@@ -133,23 +201,109 @@ bootstrap_needed() {
 
 bootstrap_packages() {
     case "$DISTRO" in
+        macos)
+            pkg_install git python3 ;;
         debian|ubuntu)
             pkg_install git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata ;;
         fedora)
             pkg_install git curl bash sudo shadow-utils python3 python3-devel gcc gcc-c++ make tzdata ;;
         arch)
             pkg_install git curl bash sudo python base-devel tzdata ;;
-        alpine)
-            pkg_install git curl bash sudo shadow python3 python3-dev build-base linux-headers tzdata ;;
+    esac
+}
+
+# ── database engines ──────────────────────────────────────────────────────────
+# bench runs one MariaDB server and one PostgreSQL server per bench user
+# (rootless, systemctl --user) shared across that user's benches, so the
+# engines must already be installed system-wide before `bench init` ever
+# runs — the runtime never installs packages itself. Root, one-time.
+_MARIADB_REPO_SETUP_URL="https://r.mariadb.com/downloads/mariadb_repo_setup"
+_MARIADB_VERSION="11.8"
+_POSTGRES_VERSION="16"
+
+# Debian/Ubuntu ship an older MariaDB than 11.8 by default, so the official
+# repo must be added before bootstrap()'s single pkg_update() runs — that one
+# call then refreshes both the base indices and this new repo together,
+# instead of a second apt-get update just for it.
+add_distro_repos() {
+    case "$DISTRO" in
+        debian|ubuntu)
+            # Same version the runtime expects (MariaDBManager DEFAULT_VERSION).
+            fetch_and_run_as_root "$_MARIADB_REPO_SETUP_URL" --mariadb-server-version="mariadb-$_MARIADB_VERSION" ;;
+    esac
+}
+
+install_database_engines() {
+    # Dev headers for building the Python client libraries (mysqlclient,
+    # psycopg) that frappe's virtualenv compiles during `bench init` — listed
+    # here so bench init never has to install a package itself.
+    case "$DISTRO" in
+        macos)
+            # Versions pinned to match the runtime's own defaults
+            # (MariaDBManager/PostgresManager _DEFAULT_VERSION), so the formula
+            # this installs is the same one BrewPackageManager would lazily
+            # reach for later.
+            pkg_install "mariadb@$_MARIADB_VERSION" "postgresql@$_POSTGRES_VERSION" ;;
+        debian|ubuntu)
+            pkg_install mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config ;;
+        fedora)
+            pkg_install mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config ;;
+        arch)
+            pkg_install mariadb mariadb-clients mariadb-libs postgresql postgresql-libs pkgconf ;;
+    esac
+}
+
+# Distro packages auto-start/enable a system-wide service on the default
+# port (3306/5432). bench never uses that — it runs a per-user instance
+# instead — so free the ports right away rather than have every `bench
+# init` fight over them.
+disable_system_db_services() {
+    case "$DISTRO" in
+        macos|unknown) ;;
+        *)
+            run_sudo systemctl disable --now mariadb 2>/dev/null || true
+            run_sudo systemctl disable --now postgresql 2>/dev/null || true
+            ;;
+    esac
+}
+
+# ── Node.js ───────────────────────────────────────────────────────────────────
+# System-wide, root/bootstrap only — same reasoning as the database engines:
+# installed once up front so the bench user never needs privileges of its own.
+# NodeSource pins Node 24 on the deb/rpm distros; Arch ships a current Node in
+# its own repos.
+install_node_nodesource() {
+    kind="$1"; shift
+    fetch_and_run_as_root "https://${kind}.nodesource.com/setup_24.x"
+    run_sudo "$@"
+}
+
+install_node() {
+    command -v node >/dev/null 2>&1 && return 0
+    case "$DISTRO" in
+        macos)  echo "Installing Node.js..."; pkg_install node ;;
+        debian|ubuntu)
+            echo "Installing Node.js..."
+            install_node_nodesource deb apt-get install -y nodejs ;;
+        fedora)
+            echo "Installing Node.js..."
+            install_node_nodesource rpm dnf install -y nodejs ;;
+        arch)   echo "Installing Node.js..."; pkg_install nodejs npm ;;
+        *)
+            # Same fallback as before this script knew about distros: NodeSource
+            # when apt exists, otherwise leave Node to the operator.
+            if command -v apt-get >/dev/null 2>&1; then
+                echo "Installing Node.js..."
+                install_node_nodesource deb apt-get install -y nodejs
+            fi ;;
     esac
 }
 
 bootstrap() {
-    case "$DISTRO" in
-        macos|unknown) return 0 ;;
-    esac
+    [ "$DISTRO" = "unknown" ] && return 0
     # Root always bootstraps (idempotent, and bare containers need it before
-    # useradd); a normal user only when a base tool is actually missing.
+    # useradd); a normal user only when a base tool is actually missing
+    # (bootstrap_needed is platform-aware: brew on macOS, sudo elsewhere).
     if [ "$(id -u)" -ne 0 ]; then
         bootstrap_needed || return 0
         if ! command -v sudo >/dev/null 2>&1; then
@@ -164,35 +318,22 @@ bootstrap() {
         fi
     fi
     echo "$DISTRO detected — installing base dependencies..."
+    ensure_curl
+    add_distro_repos
     pkg_update
     bootstrap_packages
+    install_database_engines
+    disable_system_db_services
+    install_node
 }
 
 bootstrap
 
-# ── passwordless sudo configuration ──────────────────────────────────────────
-# Writes /etc/sudoers.d/<user> granting passwordless sudo. Validated with visudo
-# before being installed so a bad file can never lock anyone out.
-write_sudoers() {
-    user="$1"
-    file="/etc/sudoers.d/$user"
-    tmp="$(mktemp)"
-
-    printf '# Frappe bench — managed by install.sh, do not edit\n%s ALL=(ALL) NOPASSWD: ALL\n' "$user" > "$tmp"
-
-    if run_sudo visudo -cf "$tmp" >/dev/null; then
-        run_sudo install -m 0440 "$tmp" "$file"
-        echo "Configured passwordless sudo at $file"
-    else
-        echo "Generated sudoers file is invalid — aborting."
-        rm -f "$tmp"
-        exit 1
-    fi
-    rm -f "$tmp"
-}
-
-# The group conventionally granted admin rights (only cosmetic here — actual
-# access comes from the sudoers.d file above).
+# The group conventionally granted admin rights, so the bench user can
+# authenticate sudo interactively later if they ever need it (e.g. `bench
+# setup production`). Nothing in this installer's own bench-user path needs
+# sudo — base tools, database engines and Node.js are all installed
+# system-wide above, before the bench user is ever created.
 admin_group() {
     case "$DISTRO" in
         debian|ubuntu|unknown) echo sudo ;;
@@ -212,11 +353,10 @@ if [ "$(id -u)" -eq 0 ]; then
         usermod -aG "$(admin_group)" "$BENCH_USER" 2>/dev/null || true
     fi
 
-    write_sudoers "$BENCH_USER"
-
     echo ""
     echo "========================================================================"
-    echo " User '$BENCH_USER' is ready with passwordless sudo."
+    echo " User '$BENCH_USER' is ready — base tools and database engines are"
+    echo " installed system-wide, so day-to-day bench commands never need root."
     echo ""
     echo " bench must NOT be installed as root. Switch to '$BENCH_USER' and run"
     echo " the installer again:"
@@ -227,62 +367,11 @@ if [ "$(id -u)" -eq 0 ]; then
     exit 0
 fi
 
-# ── Path B: running as a normal user → configure sudo, then install ──────────
-# Establish a usable sudo credential. Order of preference:
-#   1. passwordless sudo already configured        → nothing to do
-#   2. SUDO_PASS provided (unattended)             → validate it
-#   3. interactive terminal                        → prompt, with retries
-# We read the prompt from /dev/tty so it still works when the script is piped
-# (curl ... | bash), where stdin is the script rather than the keyboard.
-authenticate_sudo() {
-    if sudo -n true 2>/dev/null; then
-        return 0  # passwordless sudo already configured
-    fi
-
-    if [ -n "$SUDO_PASS" ]; then
-        if echo "$SUDO_PASS" | sudo -S -v 2>/dev/null; then
-            return 0
-        fi
-        echo "sudo authentication failed with the supplied password."
-        exit 1
-    fi
-
-    if [ "$NONINTERACTIVE" = "1" ]; then
-        echo "Passwordless sudo is required but not configured, and no password"
-        echo "was supplied. Re-run with --sudo-password or configure sudo first."
-        exit 1
-    fi
-
-    pass=""
-    while true; do
-        printf "[sudo] password for %s: " "$(id -un)" > /dev/tty
-        # `read -s` is a bashism; toggle echo via stty so this works under ash too.
-        stty -echo < /dev/tty 2>/dev/null || true
-        read -r pass < /dev/tty
-        stty echo < /dev/tty 2>/dev/null || true
-        echo > /dev/tty
-        if echo "$pass" | sudo -S -v 2>/dev/null; then
-            SUDO_PASS="$pass"
-            return 0
-        fi
-        echo "Sorry, try again." > /dev/tty
-    done
-}
-
-if ! command -v sudo >/dev/null 2>&1; then
-    echo "sudo is required but not installed — aborting."
-    exit 1
-fi
-
-echo "Bench needs passwordless sudo to install packages and manage services."
-if [ "$DISTRO" = "macos" ]; then
-    echo ""
-    echo "NOTE: this will grant the current user '$(id -un)' passwordless sudo"
-    echo "      access by writing /etc/sudoers.d/$(id -un)."
-    echo ""
-fi
-authenticate_sudo
-write_sudoers "$(id -un)"
+# ── Path B: running as a normal user → clone and install ─────────────────────
+# All system-wide, privileged setup (base tools, database engines, Node.js)
+# already happened in bootstrap() above — as root, or earlier in this same
+# run if a base tool was missing — so nothing below here needs sudo.
+echo "Setting up your environment..."
 
 # ── clone or update the repo ──────────────────────────────────────────────────
 if [ -d "$PILOT_DIR" ]; then
@@ -301,42 +390,6 @@ if ! command -v uv >/dev/null 2>&1; then
     curl -LsSf https://astral.sh/uv/install.sh | sh
     export PATH="$HOME/.local/bin:$PATH"
 fi
-
-# ── Node.js ───────────────────────────────────────────────────────────────────
-# NodeSource pins Node 24 on the deb/rpm distros; the rolling distros (Arch,
-# Alpine) ship a current Node in their own repos — and NodeSource has no musl
-# builds anyway.
-install_node_nodesource() {
-    kind="$1"; shift
-    NODE_SETUP_TMP="$(mktemp)"
-    curl -fsSL "https://${kind}.nodesource.com/setup_24.x" -o "$NODE_SETUP_TMP"
-    run_sudo bash "$NODE_SETUP_TMP"
-    rm -f "$NODE_SETUP_TMP"
-    run_sudo "$@"
-}
-
-install_node() {
-    command -v node >/dev/null 2>&1 && return 0
-    case "$DISTRO" in
-        debian|ubuntu)
-            echo "Installing Node.js..."
-            install_node_nodesource deb apt-get install -y nodejs ;;
-        fedora)
-            echo "Installing Node.js..."
-            install_node_nodesource rpm dnf install -y nodejs ;;
-        arch)   echo "Installing Node.js..."; pkg_install nodejs npm ;;
-        alpine) echo "Installing Node.js..."; pkg_install nodejs npm ;;
-        *)
-            # Same fallback as before this script knew about distros: NodeSource
-            # when apt exists, otherwise leave Node to the operator.
-            if command -v apt-get >/dev/null 2>&1; then
-                echo "Installing Node.js..."
-                install_node_nodesource deb apt-get install -y nodejs
-            fi ;;
-    esac
-}
-
-install_node
 
 # ── timezone data ─────────────────────────────────────────────────────────────
 # Required by Python's zoneinfo module on systems without system tzdata.
@@ -377,7 +430,7 @@ case "$SHELL" in
         add_to_path "$RC_FILE"
         ;;
     */ash|*/sh|"")
-        # Alpine/POSIX login shells read ~/.profile.
+        # POSIX login shells read ~/.profile.
         RC_FILE="$HOME/.profile"
         add_to_path "$RC_FILE"
         ;;

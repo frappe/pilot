@@ -1,0 +1,105 @@
+[bench]
+name = "systemd-prod"
+python = "3.14"
+http_port = 8020
+socketio_port = 9020
+socketio_backend = "node"
+watch_apps_js = false
+reload_python = false
+watch_admin_js = false
+db_type = "mariadb"
+default_branch = "version-16"
+
+[[apps]]
+name = "frappe"
+repo = "https://github.com/frappe/frappe"
+branch = "version-16"
+
+[[apps]]
+name = "erpnext"
+repo = "https://github.com/frappe/erpnext"
+branch = "version-16"
+
+[mariadb]
+host = "mariadb.internal"
+port = 3307
+root_password = "fixture-mariadb-password"
+admin_user = "dbadmin"
+socket_path = ""
+existing = true
+
+[postgres]
+host = "localhost"
+port = 5432
+root_password = ""
+admin_user = "postgres"
+existing = false
+
+[redis]
+cache_port = 13020
+queue_port = 11020
+version = "7"
+
+[[workers]]
+queues = ["default", "short", "long"]
+count = 3
+
+[production]
+enabled = true
+process_manager = "systemd"
+use_companion_manager = false
+
+[gunicorn]
+workers = 4
+threads = 8
+timeout = 180
+worker_class = "gthread"
+malloc_arena_max = 2
+max_requests = 1500
+max_requests_jitter = 250
+
+[letsencrypt]
+email = "admin@example.test"
+webroot_path = "/var/www/letsencrypt"
+
+[admin]
+port = 7020
+timeout = 300
+enabled = true
+password = "fixture-admin-password"
+jwt_secret = "fixture-jwt-secret"
+domain = "admin.systemd.example.test"
+tls = true
+allow_bench_management = false
+
+[central]
+endpoint = "https://central.example.test"
+auth_token = "fixture-central-token"
+
+[firewall]
+enabled = true
+default = "deny"
+
+[[firewall.rules]]
+ip = "192.0.2.0/24"
+action = "allow"
+description = "edge proxies"
+
+[[firewall.rules]]
+ip = "2001:db8::/32"
+action = "allow"
+description = "ipv6 edge proxies"
+
+[s3]
+access_key = "fixture-access-key"
+secret_key = "fixture-secret-key"
+bucket = "fixture-backups"
+provider = "aws"
+region = "us-east-1"
+
+[monitor]
+system_log_path = "/var/log/bench-system-stats.log"
+authority_file_path = "/var/log/.bench-authority"
+system_log_max_size = "750M"
+application_log_max_size = "1G"
+log_path = "/var/log/systemd-prod-stats.log"

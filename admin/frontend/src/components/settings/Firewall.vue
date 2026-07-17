@@ -3,6 +3,14 @@
     <span class="size-5 text-ink-gray-4 animate-spin lucide-loader-circle"></span>
   </div>
   <div v-else class="space-y-6">
+    <Alert v-if="!production" title="Not enforced yet" theme="yellow" :dismissible="false">
+      <template #description>
+        <span class="text-ink-gray-6 text-p-sm">These rules take effect only in production (they're applied by
+          nginx). This bench isn't deployed, so nothing is enforced until you run
+          <span class="font-mono text-xs">bench setup production</span>.</span>
+      </template>
+    </Alert>
+
     <Switch label="Enable firewall" description="Restrict who can reach Pilot and deployed sites; off means open."
       :model-value="enabled" @update:model-value="(v) => (enabled = v)" />
 
@@ -67,6 +75,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { Button, ErrorMessage, Select, Switch, TextInput, toast, Alert } from 'frappe-ui'
+import { apiErrorMessage } from '@/api/client'
 import { settingsApi } from '@/api/settings'
 
 const ACTION_OPTIONS = [
@@ -80,6 +89,7 @@ const loading = ref(true)
 const saving = ref(false)
 const error = ref('')
 const enabled = ref(false)
+const production = ref(true)
 const defaultPolicy = ref('allow')
 const rules = ref([])
 const myIp = ref('')
@@ -123,12 +133,11 @@ async function save() {
       })),
     }
     const result = await settingsApi.update({ firewall: payload })
-    if (!result.ok) {
-      error.value = result.error || 'Failed to save.'
+    if (result.error) {
+      error.value = apiErrorMessage(result, 'Failed to save.')
       return
     }
     toast.success('Firewall updated')
-    if (result.nginx_error) toast.error(result.nginx_error)
   } catch (e) {
     error.value = e.message || 'Failed to save.'
   } finally {
@@ -139,6 +148,7 @@ async function save() {
 onMounted(async () => {
   try {
     const data = await settingsApi.get()
+    production.value = !!data.production?.enabled
     const fw = data.firewall || {}
     enabled.value = !!fw.enabled
     defaultPolicy.value = fw.default || 'allow'

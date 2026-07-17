@@ -53,7 +53,7 @@ class Bench:
         self.name = name
         self._extra_env = env or {}
         # `bench new` no longer pre-generates an admin password (it's set in the
-        # wizard's first step and persisted to bench.toml by /api/setup/save).
+        # wizard's first step and persisted by PUT /api/v1/setup/configuration).
         # So the harness chooses it, the wizard enters it, and login reuses it.
         # A bare token_urlsafe() isn't guaranteed to satisfy the wizard's password
         # policy (upper + lower + digit + symbol) — fixed affixes guarantee it.
@@ -114,14 +114,20 @@ class Bench:
         self._spawn_start()
         self._wait_for_admin(expect_wizard=True)
 
-    def wait_for_wizard_exit(self, timeout: float = 30 * 60) -> None:
+    def wait_for_wizard_exit(self, timeout: float = 5 * 60) -> None:
         """After the wizard finishes it shuts its own server down, which makes the
         foreground ``bench start`` exit. Wait for that so the next start gets a
         clean port."""
         deadline = time.time() + timeout
+        start = time.time()
+        next_log = start + 15
         while self._proc and self._proc.poll() is None:
-            if time.time() > deadline:
+            now = time.time()
+            if now > deadline:
                 raise TimeoutError("Wizard server did not exit in time")
+            if now >= next_log:
+                print(f"[harness] waiting for wizard server to exit, {int(now - start)}s elapsed", flush=True)
+                next_log = now + 15
             time.sleep(1)
         self._proc = None
 
@@ -350,24 +356,38 @@ class Bench:
                 pass  # already gone
         self._proc = None
 
-    def _wait_for_admin(self, expect_wizard: bool, timeout: float = 60 * 60) -> None:
-        """Poll /api/status until the admin answers in the expected mode."""
+    def _wait_for_admin(self, expect_wizard: bool, timeout: float = 5 * 60) -> None:
+        """Poll bootstrap until the admin answers in the expected mode."""
         deadline = time.time() + timeout
+        start = time.time()
+        last = "no response yet"
+        next_log = start + 15
         while time.time() < deadline:
             if self._proc and self._proc.poll() is not None:
                 raise RuntimeError(
                     f"bench start exited early (code {self._proc.returncode}) before the admin came up"
                 )
             try:
-                with urlopen(f"{self.admin_url}/api/status", timeout=5) as res:
+                with urlopen(f"{self.admin_url}/api/v1/bootstrap", timeout=5) as res:
                     data = json.load(res)
-                if (data.get("wizard") is True) == expect_wizard:
+                mode = data.get("mode")
+                last = f"mode={mode!r}"
+                if (mode == "setup") == expect_wizard:
                     return
-            except Exception:
-                pass  # not up yet
+            except Exception as exc:
+                last = f"{type(exc).__name__}: {exc}"
+            now = time.time()
+            if now >= next_log:
+                print(
+                    f"[harness] waiting for admin (expect_wizard={expect_wizard}), "
+                    f"{int(now - start)}s elapsed, last: {last}",
+                    flush=True,
+                )
+                next_log = now + 15
             time.sleep(1)
         raise TimeoutError(
-            f'Admin server for "{self.name}" not ready (expect_wizard={expect_wizard}) within {timeout}s'
+            f'Admin server for "{self.name}" not ready (expect_wizard={expect_wizard}) '
+            f"within {timeout}s; last bootstrap: {last}"
         )
 
     def _read_config(self) -> dict:

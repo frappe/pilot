@@ -26,9 +26,12 @@ jobs:
         run: sudo apt-get install -y redis-tools
 
       - name: Install dependencies
-        run: pip install -e ".[test,admin]"
+        run: pip install -e ".[test,admin,type-check]"
 
       - name: Run unit tests with coverage
         # e2e (Playwright, browser-driven) runs in its own workflow and needs a
         # live bench + browser, so keep it out of the unit run alongside integration.
         run: pytest tests/ --ignore=tests/integration --ignore=tests/e2e --cov=pilot --cov-report=term-missing -q
+
+      - name: Type check (dev-only, see [tool.mypy] in pyproject.toml)
+        run: mypy pilot admin/backend

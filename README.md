@@ -21,10 +21,10 @@ A zero-dependency CLI for managing [Frappe](https://frappeframework.com) environ
 
 ## Requirements
 
-**Debian 12+ / Ubuntu 22.04+** — Python 3.11+, a user with `sudo` access  
+**Debian 12+ / Ubuntu 22.04+** — Python 3.11+ (install.sh needs `sudo` only as a fallback if base
+tools are missing and you're not root; not required day-to-day)  
 **Fedora 40+** — dnf + systemd; redis is provided by valkey  
 **Arch Linux** — pacman + systemd; redis is provided by valkey  
-**Alpine 3.20+** — apk + OpenRC; production runs under OpenRC (`process_manager = "openrc"`) instead of systemd  
 **macOS** — Python 3.11+, [Homebrew](https://brew.sh) (dev only — no `sudo` setup)
 
 Derivatives that set `ID_LIKE` in `/etc/os-release` (Linux Mint, EndeavourOS, …)
@@ -32,11 +32,19 @@ are detected as their parent distro.
 
 ## Install
 
+Run this directly as yourself — **do not prefix it with `sudo`**:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/frappe/pilot/main/install.sh | bash
 ```
 
-On a bare box (no curl/bash preinstalled — e.g. a fresh Alpine or a distro
+The script escalates on its own only where it actually needs to (installing
+system packages); it never expects to be invoked as `sudo install.sh`. The one
+exception is a genuinely root shell — e.g. logging into a fresh VPS as `root`
+— which install.sh detects and handles by creating a non-root bench user for
+you (see "Running as root" below).
+
+On a bare box (no curl/bash preinstalled — e.g. a fresh distro
 container) bootstrap with `wget` + `sh` instead — the installer uses the
 distro's package manager to install git, curl, bash, sudo and the build deps
 itself:
@@ -48,9 +56,12 @@ wget -qO- https://raw.githubusercontent.com/frappe/pilot/main/install.sh | sh
 This single command:
 
 - Clones pilot to `~/pilot` and adds `bench` to your `PATH`
-- Installs [`uv`](https://github.com/astral-sh/uv) and Node.js if missing
+- Installs the MariaDB/PostgreSQL server packages, [`uv`](https://github.com/astral-sh/uv) and
+  Node.js system-wide if missing
 - Creates the isolated admin environment (`.admin-venv`) used by the setup wizard and admin UI
-- Configures **passwordless sudo** for your user (see below)
+
+None of this needs standing sudo access for your day-to-day bench user — every privileged step
+runs once, up front, as root (see below).
 
 ### Running as root (fresh VPS)
 
@@ -58,25 +69,50 @@ bench is never meant to run as root. If you launch the installer as **root** —
 freshly provisioned VPS where `root` is the only account — it will:
 
 1. Create (or reuse) a non-root user — `frappe` by default, or whatever you choose
-2. Grant that user passwordless sudo via `/etc/sudoers.d/<user>`
-3. Re-run the rest of the install **as that user** automatically
+2. Install every system-wide dependency (database engines, Node.js, base build tools) so the
+   bench user never has to
+3. Ask you to switch to that user and re-run the installer, which then just clones the repo and
+   sets up the admin environment — no `sudo` involved
 
-No password is set for a freshly created user — login stays SSH-key based, and passwordless
-sudo covers everything bench needs. This also means a brand-new VPS user with no password set
-works out of the box.
+### Nothing installed yet?
+
+install.sh is designed to work on a bare box — no git, curl, Python, or even
+`sudo` required beforehand. What happens next depends on who's running it:
+
+- **You're root** (fresh VPS, only `root` exists): no prompt, ever. Every
+  package-manager call install.sh makes runs directly, without `sudo`, and is
+  already flagged non-interactive (`dnf -y`, `pacman --noconfirm`,
+  `DEBIAN_FRONTEND=noninteractive apt-get`, `apk`). Git, curl, bash, Python,
+  build tools, MariaDB/PostgreSQL and Node all get installed silently no
+  matter how empty the image is.
+- **You're a normal user and `sudo` itself is missing too**: still no prompt.
+  install.sh can't install packages without some way to gain privileges, so it
+  fails fast with an explicit message telling you to re-run the installer as
+  root first, then switch to your bench user afterward.
+- **You're a normal user with `sudo` already installed**, but git/curl/Python/
+  etc. are missing: this is the one case that does prompt — the OS's own
+  native `sudo` password prompt (install.sh has no password-reading logic of
+  its own). In a real terminal this just works as usual. For unattended/CI
+  runs with no cached credential, supply the password up front instead of
+  hitting that prompt:
+
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/frappe/pilot/main/install.sh | bash -s -- --sudo-password <password>
+  # or: export SUDO_PASS=<password>
+  ```
 
 ### Non-interactive install
 
-Pass flags after `--`, or set the matching environment variables, to skip all prompts:
+Pass flags after `--`, or set the matching environment variables, to skip prompts:
 
 | Flag | Env var | Default | Purpose |
 |------|---------|---------|---------|
 | `--user <name>` | `BENCH_USER` | `frappe` | Non-root user to create/use when run as root |
-| `-y`, `--yes` | `BENCH_YES=1` | off | Never prompt; accept defaults |
+| `--sudo-password <pw>` | `SUDO_PASS` | none | Answers the native `sudo` prompt for you — only relevant if you're not root and base tools are missing (see "Nothing installed yet?" above) |
 
 ```bash
 # Unattended, as root: create/use user "frappe" and finish silently
-curl -fsSL https://raw.githubusercontent.com/frappe/pilot/main/install.sh | bash -s -- --user frappe -y
+curl -fsSL https://raw.githubusercontent.com/frappe/pilot/main/install.sh | bash -s -- --user frappe
 ```
 
 ### Manual install
@@ -86,16 +122,16 @@ git clone https://github.com/frappe/pilot ~/pilot
 echo 'export PATH="$HOME/pilot:$PATH"' >> ~/.zshrc && source ~/.zshrc
 ```
 
-If you install manually, make sure your user has **passwordless sudo** — bench needs it (see
-below). The one-line installer sets this up for you.
+If you install manually, install MariaDB/PostgreSQL, Node.js and `uv` yourself first — the
+one-line installer otherwise handles all of that for you.
 
-### Passwordless sudo
+### sudo access
 
-`bench init` and the admin setup wizard install system packages and manage services through
-many `sudo` calls, and the wizard runs them with **no terminal** (it can't answer a password
-prompt). bench therefore requires passwordless sudo for your user. The installer configures it;
-if it's missing, `bench init` stops immediately with instructions instead of hanging. To set it
-up by hand:
+bench itself never requires standing passwordless sudo. It's only needed for the handful of
+production operations that manage system state on your behalf (`bench setup production` writing
+nginx config and `/etc/hosts` entries, for example) — those prompt for a password interactively
+like any other `sudo` command, or you can grant your user passwordless sudo yourself if you want
+those to run unattended:
 
 ```bash
 echo "$(whoami) ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/$(whoami)
@@ -170,7 +206,7 @@ tls = false                        # server-wide HTTPS opt-in (Let's Encrypt); f
 
 [production]
 enabled = true                     # set by `bench setup production`
-process_manager = "supervisor"     # systemd | supervisor | openrc
+process_manager = "supervisor"     # systemd | supervisor
 use_companion_manager = false      # run scheduler/workers/socketio inside gunicorn
 
 [gunicorn]
@@ -193,7 +229,7 @@ Apps and sites are tracked by the filesystem — no need to list them in `bench.
 | `bench init -b <name>` | Install deps, create venv, clone framework, generate Procfile (needs `-b <name>` or run inside the bench dir) |
 | `bench start` | Start all processes (web, workers, Redis, admin UI) |
 | `bench stop` | Stop a running bench from another terminal |
-| `bench restart` | Restart all processes — supervisor, systemd, or OpenRC (production only) |
+| `bench restart` | Restart all processes — supervisor or systemd (production only) |
 | `bench get-app <repo>` | Clone and install an app |
 | `bench new-site <name>` | Create a site |
 | `bench rename-site <old> <new>` | Rename a site (checks the hostname is free across all benches) |
@@ -283,7 +319,7 @@ That's the whole change — `bench hello` now works. Commands that take argument
 ```toml
 [production]
 enabled = true                   # set by `bench setup production`
-process_manager = "supervisor"   # systemd | supervisor | openrc
+process_manager = "supervisor"   # systemd | supervisor
 use_companion_manager = false      # run scheduler/workers/socketio inside gunicorn
 
 [gunicorn]
@@ -313,7 +349,6 @@ bench remove production        # tear down production, back to dev (keeps certs/
 **Process managers:**
 - **Supervisor** — runs a bench-owned `supervisord` instance, no root needed.
 - **Systemd** — uses `systemctl --user` units; requires `loginctl enable-linger` once.
-- **OpenRC** — the Alpine counterpart of systemd: one `supervise-daemon` init script per process under `/etc/init.d/`. Selected automatically on Alpine.
 - **None** — development mode; use `bench start` / Procfile runner.
 
 **Companion manager:**
@@ -336,13 +371,13 @@ The built-in admin UI runs on port 8002 (configurable via `[admin] port`).
 | Processes | Live process list with CPU %, memory (MB), uptime, and log links; Start/Stop/Restart in production mode |
 | Logs | Tail and search log files with live streaming |
 | Tasks | Multi-step task view with collapsible output per step; task history |
-| Database | MariaDB process list, slow queries, binary log viewer |
+| Database | SQL playground — run read-only or write queries against a site's database |
 | Settings | Tabbed — Bench ports, MariaDB (read-only), Redis ports, Workers, Nginx, HTTPS toggle (`admin.tls` + Let's Encrypt), Production process manager; saves to `bench.toml` and restarts affected processes automatically |
 | Updates | Check for pilot updates and apply in one click |
 
 All forms validate input before submission — site names are checked for valid hostname format, repository URLs for valid git URL format, branch names for legal characters, cron expressions for valid 5-field syntax, and port numbers for the 1–65535 range.
 
-**Remote access.** Beyond the password and `bench generate-admin-session` sign-in link, an external control plane can log in and drive the whole API by signing JWTs with a key published at `[admin] jwks_url` — no shared secret. See [Remote login via JWKS](docs/admin.md#remote-login-via-jwks).
+**Remote access.** Beyond the password and `bench generate-admin-session` sign-in link, an external control plane can log in and drive the whole API by signing JWTs with a key published at `[admin] jwks_url` — no shared secret. See [Remote login via JWKS](docs/admin-api.md#remote-login-via-jwks).
 
 ## Directory layout
 

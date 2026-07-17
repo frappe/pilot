@@ -15,7 +15,7 @@
 <script setup>
 import { ref } from 'vue'
 import { ErrorMessage, Switch } from 'frappe-ui'
-import { useSite } from '@/composables/useSite'
+import { useSite } from '@/composables/sites/useSite'
 import { sitesApi } from '@/api/sites'
 
 const props = defineProps({ siteName: { type: String, required: true } })
@@ -55,8 +55,7 @@ async function toggle(s, value) {
   savingKey.value = s.key
   error.value = ''
   try {
-    const next = { ...site.value.site_config, [s.key]: s.toValue(value) }
-    await sitesApi.config(props.siteName, next)
+    await sitesApi.configuration.update(props.siteName, { [s.key]: s.toValue(value) })
     await reload()
   } catch (e) {
     error.value = e.message || 'Failed to update.'

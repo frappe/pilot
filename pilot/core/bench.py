@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import json
-import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING, List
 
 from pilot.config.bench_config import BenchConfig
+from pilot.secure_files import write_private_text
 from pilot.exceptions import BenchError
 
 if TYPE_CHECKING:
@@ -114,6 +114,21 @@ class Bench:
                 result.append(App(app_config, self))
         return result
 
+    def registered_apps(self) -> List[str]:
+        """Module names listed in sites/apps.txt — the bench-wide record of
+        which apps are actually installed, as opposed to merely cloned."""
+        apps_txt = self.sites_path / "apps.txt"
+        return apps_txt.read_text().splitlines() if apps_txt.exists() else []
+
+    def is_app_installed(self, name: str) -> bool:
+        """Whether `name` (raw or module form) is installed on this bench —
+        i.e. listed in apps.txt, not just cloned under apps/."""
+        from pilot.config.app_config import AppConfig
+        from pilot.core.app import App
+
+        module_name = App(AppConfig(name=name, repo="", branch=""), self).module_name
+        return module_name in self.registered_apps()
+
     def init_apps(self) -> List["App"]:
         """Return apps declared in bench.toml (used only during bench init)."""
         from pilot.core.app import App
@@ -130,18 +145,18 @@ class Bench:
         if not self.sites_path.is_dir():
             return []
         result = []
-        for d in sorted(self.sites_path.iterdir()):
-            cfg_path = d / "site_config.json"
-            if d.is_dir() and cfg_path.exists():
+        for site_dir in sorted(self.sites_path.iterdir()):
+            cfg_path = site_dir / "site_config.json"
+            if site_dir.is_dir() and cfg_path.exists():
                 try:
                     raw = _json.loads(cfg_path.read_text())
-                except Exception:
+                except (OSError, _json.JSONDecodeError):
                     raw = {}
-                domains = [(entry.get("domain") if isinstance(entry, dict) else entry) for entry in (raw.get("domains") or [])]
-                domains = [d for d in domains if isinstance(d, str) and d]
+                raw_domains = [(entry.get("domain") if isinstance(entry, dict) else entry) for entry in (raw.get("domains") or [])]
+                domains = [domain for domain in raw_domains if isinstance(domain, str) and domain]
                 host_name = (raw.get("host_name") or "").strip()
                 primary = host_name.split("://", 1)[-1] if host_name else ""
-                site_config = SiteConfig(name=d.name, apps=[], ssl=bool(raw.get("ssl")), domains=domains, primary_domain=primary)
+                site_config = SiteConfig(name=site_dir.name, apps=[], ssl=bool(raw.get("ssl")), domains=domains, primary_domain=primary)
                 result.append(Site(site_config, self))
         return result
 
@@ -166,7 +181,7 @@ class Bench:
         config_path = self.sites_path / "common_site_config.json"
         config = json.loads(config_path.read_text())
         config["maintenance_mode"] = 1 if enabled else 0
-        config_path.write_text(json.dumps(config, indent=2))
+        write_private_text(config_path, json.dumps(config, indent=2))
 
     def sync_s3_credentials(self, s3_config: S3Config):
         config_path = self.sites_path / "common_site_config.json"
@@ -179,7 +194,7 @@ class Bench:
         config["s3_secret_key"] = s3_config.secret_key
         config["s3_provider"] = s3_config.provider
         config["s3_region"] = s3_config.region
-        config_path.write_text(json.dumps(config, indent=2) + "\n")
+        write_private_text(config_path, json.dumps(config, indent=2) + "\n")
 
     def write_common_site_config(self) -> None:
         r = self.config.redis
@@ -197,16 +212,16 @@ class Bench:
             "monitor": True,
         }
         config_path = self.sites_path / "common_site_config.json"
-        config_path.write_text(json.dumps(config, indent=2) + "\n")
+        write_private_text(config_path, json.dumps(config, indent=2) + "\n")
 
     def restart(self):
         """Restart bench in case we are running in production"""
-        from pilot.commands.restart import RestartCommand
+        from pilot.commands.runtime.restart import RestartCommand
 
         RestartCommand(self).run()
 
     def reload_workers(self, web_only: bool = False, raises: bool = False):
-        from pilot.managers.process_manager import ProcessManager
+        from pilot.managers.processes.local import ProcessManager
 
         try:
             ProcessManager.for_bench(self).reload_workers(web_only)
@@ -217,18 +232,12 @@ class Bench:
 
     @staticmethod
     def _git_remote(path: Path) -> str:
-        result = subprocess.run(
-            ["git", "-C", str(path), "remote", "get-url", "origin"],
-            capture_output=True,
-            text=True,
-        )
-        return result.stdout.strip() if result.returncode == 0 else ""
+        from pilot.internal.git import GitRepo
+
+        return GitRepo(path).remote_url
 
     @staticmethod
     def _git_branch(path: Path) -> str:
-        result = subprocess.run(
-            ["git", "-C", str(path), "branch", "--show-current"],
-            capture_output=True,
-            text=True,
-        )
-        return result.stdout.strip() if result.returncode == 0 else ""
+        from pilot.internal.git import GitRepo
+
+        return GitRepo(path).branch

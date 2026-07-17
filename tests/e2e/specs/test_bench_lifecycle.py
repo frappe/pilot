@@ -6,7 +6,6 @@
 One spec, several variants — selected by env so CI can run them as a matrix:
 
     E2E_DB_TYPE   mariadb | postgres      (default: mariadb)
-    E2E_DB_MODE   shared | dedicated      (default: shared; MariaDB only)
     E2E_EXTRA_APP 0 to skip the install/uninstall app steps (keeps a run quick)
 
 The steps share one bench and one browser context (so the login cookie carries
@@ -41,9 +40,8 @@ def _truthy(name: str, default: str = "") -> bool:
 
 # ── variant (override via env to match the CI matrix) ─────────────────────────
 DB_TYPE = os.environ.get("E2E_DB_TYPE", "mariadb")  # 'mariadb' | 'postgres'
-DB_MODE = os.environ.get("E2E_DB_MODE", "shared")  # 'shared' | 'dedicated' (MariaDB only)
 # Distinct name per variant so local runs of different variants don't collide.
-BENCH_NAME = f"e2e-postgres-{DB_MODE}" if DB_TYPE == "postgres" else f"e2e-{DB_MODE}"
+BENCH_NAME = f"e2e-{DB_TYPE}"
 
 SITE = "site1.localhost"
 MARIADB_PASSWORD = os.environ.get("E2E_MARIADB_PASSWORD", "admin")
@@ -68,7 +66,6 @@ def test_completes_setup_wizard(bench, page):
             admin_password=bench.admin_password,
             db_type=DB_TYPE,
             mariadb_password=MARIADB_PASSWORD,
-            db_mode=DB_MODE,
             postgres_password=POSTGRES_PASSWORD,
         )
     except Exception as err:

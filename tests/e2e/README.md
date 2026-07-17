@@ -17,11 +17,11 @@ completion. Built on **pytest + pytest-playwright** (sync API).
 | Path | Purpose |
 |------|---------|
 | `harness/bench.py`  | `Bench` class: wraps `bench new` / `bench start` (wizard + full), stop, destroy (via `bench drop`). Reads the admin port from `bench.toml`; the admin password is harness-chosen (the wizard sets it). |
-| `harness/tasks.py`  | Capture a UI action's `task_id` and poll `/api/tasks/:id` to success. |
-| `flows/wizard.py`   | `complete_dev_wizard()` — drives `Setup.vue` for the chosen engine (`db_type="mariadb"`/`"postgres"`), shared/dedicated MariaDB, dev mode. |
+| `harness/tasks.py`  | Capture a UI action's `task_id` and poll `/api/v1/tasks/:id` to success. |
+| `flows/wizard.py`   | `complete_dev_wizard()` — drives `Setup.vue` for the chosen engine (`db_type="mariadb"`/`"postgres"`), dev mode. |
 | `flows/admin.py`    | `login`, `create_site`, `install_custom_app`, `uninstall_app`, `drop_site` + API-based assertions. |
 | `conftest.py`       | `bench` + `page` fixtures (module-scoped) and the serial-skip wiring. |
-| `specs/test_bench_lifecycle.py` | The one serial lifecycle; the variant (shared / dedicated) is selected by env. |
+| `specs/test_bench_lifecycle.py` | The one serial lifecycle; the engine (`mariadb` / `postgres`) is selected by env. |
 
 The tests in a module are **serial**: they share one bench and one browser
 context (so the login cookie carries across) and the `incremental` marker skips
@@ -29,21 +29,20 @@ the remaining steps once one fails.
 
 ## Running locally
 
-Prerequisites: a running system MariaDB (root password below) or PostgreSQL,
-Redis, and `bench` on `PATH` (or set `BENCH_BIN`).
+Prerequisites: MariaDB and/or PostgreSQL packages installed (bench provisions
+its own rootless, per-user server from them — see `MariaDBManager`/
+`PostgresManager` — so no running system service or pre-set password is
+needed), Redis, and `bench` on `PATH` (or set `BENCH_BIN`).
 
 ```bash
 pip install -e ".[admin,e2e]"      # from the repo root
 playwright install chromium        # one-time browser download
 cd tests/e2e
 
-# Shared system MariaDB on the standard port (CI default):
+# MariaDB bench:
 E2E_MARIADB_PASSWORD=admin pytest
 
-# Dedicated per-bench MariaDB instance:
-E2E_DB_MODE=dedicated E2E_MARIADB_PASSWORD=admin pytest
-
-# PostgreSQL bench (shared server; the superuser password below must already be set):
+# PostgreSQL bench:
 E2E_DB_TYPE=postgres E2E_POSTGRES_PASSWORD=admin pytest
 ```
 
@@ -66,29 +65,27 @@ Useful env vars:
 |----------|---------|---------|
 | `BENCH_BIN` | `<repo>/bench` | CLI entry point. |
 | `E2E_DB_TYPE` | `mariadb` | Bench database engine: `mariadb` or `postgres`. |
-| `E2E_DB_MODE` | `shared` | MariaDB only: `shared` validates against system MariaDB; `dedicated` provisions a per-bench instance. |
-| `E2E_MARIADB_PASSWORD` | `admin` | Existing system MariaDB root password. |
-| `E2E_POSTGRES_PASSWORD` | `admin` | PostgreSQL superuser password (used when `E2E_DB_TYPE=postgres`). |
+| `E2E_MARIADB_PASSWORD` | `admin` | Root password the wizard sets on bench's own rootless MariaDB server. |
+| `E2E_POSTGRES_PASSWORD` | `admin` | Superuser password the wizard sets on bench's own rootless PostgreSQL server (used when `E2E_DB_TYPE=postgres`). |
 | `E2E_EXTRA_APP` | `1` | `0` skips the install/uninstall app steps (keeps a run quick). |
 | `E2E_EXTRA_APP_NAME` / `_REPO` / `_BRANCH` | `blog` / `frappe/blog` / `develop` | The extra app installed/uninstalled. Point at `erpnext`, `india-compliance`, etc. to widen coverage. |
 | `E2E_KEEP_ON_FAILURE` | (set) | On failure the bench is kept for inspection; set to `0` to always clean up. |
 | `E2E_BUILD_ADMIN` | off | `1` builds the admin UI from source (wizard + full bench) so the run exercises *this branch's* frontend. Off (default) = the harness never builds and `bench start` serves the prebuilt bundle (faster). |
 
-The suite creates a bench named `e2e-<db_mode>` (e.g. `e2e-shared`,
-`e2e-dedicated`) under `benches/` and tears it down with `bench drop` on
-teardown (which removes the dedicated MariaDB instance too). Bench
-names must start with `e2e-` (the harness refuses to delete anything else).
+The suite creates a bench named `e2e-<db_type>` (e.g. `e2e-mariadb`,
+`e2e-postgres`) under `benches/` and tears it down with `bench drop` on
+teardown. Bench names must start with `e2e-` (the harness refuses to delete
+anything else).
 
 ## Variants & CI
 
 The lifecycle is one env-driven spec; CI (`.github/workflows/e2e.yml`) runs it as
 a **matrix** of parallel jobs:
 
-| Variant | `E2E_DB_TYPE` | `E2E_DB_MODE` | `E2E_EXTRA_APP` |
-|---------|---------------|---------------|----------------|
-| `shared` | `mariadb` | `shared` | `1` |
-| `dedicated` | `mariadb` | `dedicated` | `0` |
-| `postgres` | `postgres` | `shared` | `1` |
+| Variant | `E2E_DB_TYPE` | `E2E_EXTRA_APP` |
+|---------|---------------|----------------|
+| `mariadb` | `mariadb` | `1` |
+| `postgres` | `postgres` | `1` |
 
 To add another variant, add a row to the matrix `include` (and any system deps
 its `if:` step needs). To widen what a variant exercises, flip the env knobs

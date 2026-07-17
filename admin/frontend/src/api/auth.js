@@ -1,8 +1,9 @@
 import { request } from './client'
 
 export const authApi = {
-  status: () => request.get('status').json(),
-  login: (password) => request.post('login', { json: { password } }).json(),
-  loginWithSid: (sid) => request.post('login', { json: { sid } }).json(),
-  logout: () => request.post('logout'),
+  bootstrap: () => request.get('bootstrap').json(),
+  session: () => request.get('session').json(),
+  login: (password) => request.post('session', { json: { password } }).json(),
+  loginWithSid: (sid) => request.post('session', { json: { sid } }).json(),
+  logout: () => request.delete('session'),
 }

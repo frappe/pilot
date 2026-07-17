@@ -42,6 +42,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { Alert, Button, ErrorMessage, FormControl, toast } from 'frappe-ui'
+import { apiErrorMessage } from '@/api/client'
 import { gitApi } from '@/api/git'
 
 const loading = ref(true)
@@ -73,12 +74,12 @@ async function verifyAndConnect() {
   error.value = ''
   try {
     const result = await gitApi.connect('github', token.value.trim(), username.value.trim())
-    if (result.ok) {
-      token.value = ''
-      status.value = result.status
-      toast.success(`Connected as ${result.status.username}`)
+    if (result.error) {
+      error.value = apiErrorMessage(result, 'Could not verify token.')
     } else {
-      error.value = result.error || 'Could not verify token.'
+      token.value = ''
+      status.value = result
+      toast.success(`Connected as ${result.username}`)
     }
   } catch (e) {
     error.value = e.message || 'Could not verify token.'
@@ -91,8 +92,8 @@ async function verifyConnection() {
   verifying.value = true
   try {
     const result = await gitApi.repos()
-    if (result.ok) toast.success('GitHub connection is working')
-    else toast.error(result.error || 'GitHub connection failed')
+    if (Array.isArray(result)) toast.success('GitHub connection is working')
+    else toast.error(apiErrorMessage(result, 'GitHub connection failed'))
   } catch (e) {
     toast.error(e.message || 'GitHub connection failed')
   } finally {

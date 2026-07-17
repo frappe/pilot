@@ -1,0 +1,44 @@
+[bench]
+name = "legacy-supervisor"
+python = "3.11"
+http_port = 8030
+socketio_port = 9030
+
+[[apps]]
+name = "frappe"
+repo = "https://github.com/frappe/frappe"
+branch = "version-15"
+
+[mariadb]
+host = "localhost"
+port = 3306
+root_password = "fixture-root-password"
+instance = "legacy-supervisor"
+version = "10.6"
+data_dir = "/var/lib/mysql-legacy-supervisor"
+
+[postgres]
+host = "localhost"
+port = 5432
+root_password = ""
+instance = "legacy-supervisor"
+version = "15"
+
+[redis]
+cache_port = 13030
+queue_port = 11030
+socketio_port = 12030
+
+[[workers]]
+queue = "default"
+count = 1
+
+[production]
+process_manager = "supervisord"
+
+[admin]
+port = 7030
+enabled = true
+password = "fixture-admin-password"
+domain = "admin.legacy.example.test"
+tls = true

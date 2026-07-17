@@ -1,5 +1,6 @@
-import io
+import os
 import shutil
+import signal
 import subprocess
 from collections.abc import Iterator
 from pathlib import Path
@@ -57,6 +58,15 @@ def normalize_host(host: str) -> str:
     return h
 
 
+def hosts_line_contains(
+    line: str,
+    hostname: str,
+    address: str = "127.0.0.1",
+) -> bool:
+    tokens = line.split("#", 1)[0].split()
+    return bool(tokens) and tokens[0] == address and hostname in tokens[1:]
+
+
 def wildcard_suffix(pattern: str) -> str:
     """The fixed part of a wildcard domain pattern, e.g. '*.example.com' -> '.example.com',
     '*-box1.example.com' -> '-box1.example.com'."""
@@ -111,41 +121,6 @@ def host_owner(bench_path: Path, host: str) -> Optional[str]:
     return None
 
 
-def write_toml(path: Path, data: dict) -> None:
-    """Minimal TOML serialiser for the simple structures in bench.toml."""
-    out = io.StringIO()
-
-    def _write_value(v):
-        if isinstance(v, bool):
-            return "true" if v else "false"
-        if isinstance(v, str):
-            return f'"{v}"'
-        if isinstance(v, list):
-            return "[" + ", ".join(_write_value(i) for i in v) + "]"
-        return str(v)
-
-    def _write_section(obj: dict, prefix: str = "") -> None:
-        scalars = {k: v for k, v in obj.items() if not isinstance(v, (dict, list)) or (isinstance(v, list) and not any(isinstance(i, dict) for i in v))}
-        dicts = {k: v for k, v in obj.items() if isinstance(v, dict)}
-        array_of_tables = {k: v for k, v in obj.items() if isinstance(v, list) and any(isinstance(i, dict) for i in v)}
-
-        for k, v in scalars.items():
-            out.write(f"{k} = {_write_value(v)}\n")
-
-        for k, v in dicts.items():
-            out.write(f"\n[{prefix}{k}]\n")
-            _write_section(v, prefix=f"{prefix}{k}.")
-
-        for k, entries in array_of_tables.items():
-            for entry in entries:
-                out.write(f"\n[[{prefix}{k}]]\n")
-                for ek, ev in entry.items():
-                    out.write(f"{ek} = {_write_value(ev)}\n")
-
-    _write_section(data)
-    path.write_text(out.getvalue())
-
-
 def installed_app_version(env_path: Path, name: str) -> str:
     """Version of an installed app read from its dist-info METADATA — no subprocess."""
     lib_dir = env_path / "lib"
@@ -168,20 +143,9 @@ def installed_app_version(env_path: Path, name: str) -> str:
 
 def git_has_local_changes(path: Path) -> bool:
     """True if the repo at *path* has uncommitted edits or commits not yet on upstream."""
-    import subprocess
+    from pilot.internal.git import GitRepo
 
-    r = subprocess.run(
-        ["git", "status", "--porcelain"],
-        capture_output=True, text=True, cwd=path,
-    )
-    if r.returncode == 0 and r.stdout.strip():
-        return True
-
-    r = subprocess.run(
-        ["git", "rev-list", "--count", "@{u}..HEAD"],
-        capture_output=True, text=True, cwd=path,
-    )
-    return r.returncode == 0 and r.stdout.strip() not in ("", "0")
+    return GitRepo(path).has_local_changes
 
 
 def get_yarn_bin() -> str:
@@ -193,22 +157,71 @@ def get_yarn_bin() -> str:
     raise BenchError("yarn not found — run bench init to install it.")
 
 
+def redact_text(text: str, secrets: list[str] | None) -> str:
+    if not text or not secrets:
+        return text
+    for secret in sorted(filter(None, secrets), key=len, reverse=True):
+        text = text.replace(secret, "[redacted]")
+    return text
+
+
 def run_command(
     argv: list[str],
     cwd: Path | None = None,
     env: dict | None = None,
     stream_output: bool = False,
+    timeout: float | None = None,
+    redactions: list[str] | None = None,
 ) -> subprocess.CompletedProcess:
-    result = subprocess.run(
+    process = _start_process(argv, cwd, env, stream_output)
+    stdout, stderr = _wait_for_process(process, argv, timeout)
+    _raise_on_failure(argv, process, stderr, stream_output, redactions)
+    return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
+
+
+def _start_process(argv: list[str], cwd: Path | None, env: dict | None, stream_output: bool) -> subprocess.Popen:
+    inherited = {
+        key: os.environ[key]
+        for key in ("BENCH_TASK_LAUNCH_ID", "PILOT_NONINTERACTIVE_PRIVILEGES")
+        if key in os.environ
+    }
+    if env is not None and inherited:
+        env = {**env, **inherited}
+    return subprocess.Popen(
         argv,
         cwd=cwd,
         env=env,
-        capture_output=not stream_output,
+        stdout=None if stream_output else subprocess.PIPE,
+        stderr=None if stream_output else subprocess.PIPE,
+        start_new_session=True,
     )
-    if result.returncode != 0:
-        stderr = result.stderr.decode() if not stream_output and result.stderr else ""
-        raise CommandError(
-            f"Command {argv[0]!r} failed with exit code {result.returncode}.\n{stderr}".strip(),
-            returncode=result.returncode,
-        )
-    return result
+
+
+def _wait_for_process(process: subprocess.Popen, argv: list[str], timeout: float | None):
+    try:
+        return process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _terminate_process_group(process)
+        raise CommandError(f"Command {argv[0]!r} timed out after {timeout}s and was terminated.", returncode=-1)
+    except KeyboardInterrupt:
+        _terminate_process_group(process)
+        raise
+
+
+def _terminate_process_group(process: subprocess.Popen) -> None:
+    # The child leads its own session, so killing its pgid reaches descendants too.
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    process.wait()
+
+
+def _raise_on_failure(argv, process, stderr, stream_output, redactions) -> None:
+    if process.returncode == 0:
+        return
+    stderr_text = redact_text(stderr.decode(), redactions) if not stream_output and stderr else ""
+    raise CommandError(
+        f"Command {argv[0]!r} failed with exit code {process.returncode}.\n{stderr_text}".strip(),
+        returncode=process.returncode,
+    )

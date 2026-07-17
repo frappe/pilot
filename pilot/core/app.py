@@ -10,6 +10,7 @@ from pilot.utils import installed_app_version, run_command
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
+    from pilot.internal.git import GitRepo
 
 
 @dataclass(frozen=True)
@@ -50,28 +51,20 @@ class App:
         return installed_app_version(self.bench.env_path, self.config.name)
 
     @property
+    def _repo(self) -> "GitRepo":
+        from pilot.internal.git import GitRepo
+
+        return GitRepo(self.path)
+
+    @property
     def installed_hash(self) -> str:
         """Full SHA of the app's current HEAD, or '' if it can't be resolved."""
-        import subprocess
-
-        result = subprocess.run(
-            ["git", "-C", str(self.path), "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-        )
-        return result.stdout.strip() if result.returncode == 0 else ""
+        return self._repo.head_sha
 
     @property
     def installed_tag(self) -> str:
         """Tag checked out exactly at HEAD, or '' if HEAD isn't on a tag."""
-        import subprocess
-
-        result = subprocess.run(
-            ["git", "-C", str(self.path), "describe", "--tags", "--exact-match"],
-            capture_output=True,
-            text=True,
-        )
-        return result.stdout.strip() if result.returncode == 0 else ""
+        return self._repo.tag_at_head
 
     def is_on_revision(self, pin: RevisionPin) -> bool:
         """Whether this app is currently checked out at a pinned revision."""
@@ -90,25 +83,10 @@ class App:
         to compare against, so this always reports no update; use
         `is_on_revision` against the marketplace target instead.
         """
-        import subprocess
-
-        branch = self.config.branch
-        if not branch:
+        if not self.config.branch:
             return False
-        result = subprocess.run(
-            ["git", "ls-remote", "origin", f"refs/heads/{branch}"],
-            cwd=str(self.path),
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        for line in result.stdout.splitlines():
-            parts = line.split("\t", 1)
-            if len(parts) == 2:
-                remote_sha = parts[0].strip()
-                local_sha = self.installed_hash
-                return bool(remote_sha and local_sha and remote_sha != local_sha)
-        return False
+        remote_sha = self._repo.remote_branch_sha(self.config.branch)
+        return bool(remote_sha and self.installed_hash and remote_sha != self.installed_hash)
 
     @property
     def is_cloned(self) -> bool:
@@ -129,7 +107,7 @@ class App:
         connected provider with a stored PAT, the token is injected so private
         clones and ls-remote probes authenticate.
         """
-        from pilot.core.git_providers import authenticated_url_for
+        from pilot.integrations.git import authenticated_url_for
 
         return authenticated_url_for(self.bench.path, self.config.repo)
 
@@ -180,14 +158,7 @@ class App:
 
     @property
     def _is_shallow(self) -> bool:
-        import subprocess
-
-        result = subprocess.run(
-            ["git", "-C", str(self.path), "rev-parse", "--is-shallow-repository"],
-            capture_output=True,
-            text=True,
-        )
-        return result.stdout.strip() == "true"
+        return self._repo.is_shallow
 
     @staticmethod
     def _pack_threads() -> int:

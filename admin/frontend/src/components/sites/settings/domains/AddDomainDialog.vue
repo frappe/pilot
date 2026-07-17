@@ -56,7 +56,8 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { Button, Dialog, ErrorMessage, TextInput } from 'frappe-ui'
-import SimpleTable from '@/components/SimpleTable.vue'
+import SimpleTable from '@/components/common/SimpleTable.vue'
+import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
 
 const DNS_RECORD_COLUMNS = [
@@ -100,8 +101,8 @@ async function continueAdd() {
   continuing.value = true
   try {
     const data = await sitesApi.domains.dnsRecords(props.siteName, value)
-    if (!data.ok) { error.value = data.error; return }
-    dnsRecordGroups.value = toRecordGroups(data.records)
+    if (data.error) { error.value = apiErrorMessage(data, 'Could not generate DNS records.'); return }
+    dnsRecordGroups.value = toRecordGroups(data)
     step.value = 'records'
   } catch (e) {
     error.value = e.message || 'Failed to validate domain.'
@@ -115,7 +116,7 @@ async function confirmAdd() {
   adding.value = true
   try {
     const data = await sitesApi.domains.add(props.siteName, domain.value.trim())
-    if (!data.ok) { error.value = data.error; return }
+    if (!data.task_id) { error.value = apiErrorMessage(data, 'Failed to add domain.'); return }
     show.value = false
     emit('added')
   } catch (e) {

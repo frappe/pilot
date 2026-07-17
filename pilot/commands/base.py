@@ -26,8 +26,10 @@ class Command:
     help: ClassVar[str] = ""
     #: Parent group for subcommands, e.g. "setup" (None = top level).
     group: ClassVar[Optional[str]] = None
-    #: If True, the registry loads the active Bench and passes it to from_args.
+    #: If True, the registry loads the selected Bench and passes it to from_args.
     requires_bench: ClassVar[bool] = True
+    #: If True, pass the Bench when one resolves, else None (ignored if requires_bench).
+    optional_bench: ClassVar[bool] = False
     #: If True, require -b/--bench or running inside the bench dir (no auto-pick).
     requires_explicit_bench: ClassVar[bool] = False
     #: If True, `-b all` runs this command once per production-managed bench.

@@ -44,6 +44,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { Alert, Button, ErrorMessage, FormControl, Select, toast } from 'frappe-ui'
+import { apiErrorMessage } from '@/api/client'
 import { settingsApi } from '@/api/settings'
 
 const loading = ref(true)
@@ -108,12 +109,12 @@ async function save() {
         region: region.value,
       },
     })
-    if (result.ok) {
+    if (!result.error) {
       secretKey.value = ''
       toast.success('S3 settings saved')
       await load()
     } else {
-      error.value = result.error || 'Could not save S3 settings.'
+      error.value = apiErrorMessage(result, 'Could not save S3 settings.')
     }
   } catch (e) {
     error.value = e.message || 'Could not save S3 settings.'
@@ -126,7 +127,7 @@ async function disconnect() {
   disconnecting.value = true
   try {
     const result = await settingsApi.update({ s3: { disconnect: true } })
-    if (result.ok) {
+    if (!result.error) {
       accessKey.value = ''
       secretKey.value = ''
       bucket.value = ''
@@ -135,7 +136,7 @@ async function disconnect() {
       secretKeySet.value = false
       toast.success('S3 disconnected')
     } else {
-      toast.error(result.error || 'Could not disconnect S3.')
+      toast.error(apiErrorMessage(result, 'Could not disconnect S3.'))
     }
   } catch (e) {
     toast.error(e.message || 'Could not disconnect S3.')

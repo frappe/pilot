@@ -35,12 +35,12 @@ pilot/
     │
     ├── managers/                # System-level concerns (install, configure)
     │   ├── __init__.py
-    │   ├── mariadb_manager.py        # MariaDBManager
-    │   ├── redis_manager.py          # RedisManager
-    │   ├── python_env_manager.py     # PythonEnvManager
-    │   ├── process_manager.py        # HonchoProcessManager — built-in Procfile runner
-    │   ├── nginx_manager.py          # NginxManager — config generation and reload
-    │   └── letsencrypt_manager.py    # LetsEncryptManager — cert obtain and renew
+    │   ├── mariadb.py                # MariaDBManager
+    │   ├── redis.py                  # RedisManager
+    │   ├── python_environment.py     # PythonEnvManager
+    │   ├── processes/local.py        # ProcessManager — built-in Procfile runner
+    │   ├── nginx.py                   # NginxManager — config generation and reload
+    │   └── letsencrypt.py             # LetsEncryptManager — cert obtain and renew
     │
     ├── commands/                # One self-registering Command subclass per file
     │   ├── __init__.py
@@ -56,14 +56,14 @@ pilot/
     │       ├── letsencrypt.py   # SetupLetsEncryptCommand
     │       └── production.py    # SetupProductionCommand
     │
-    ├── tasks/                   # Task execution and tracking (see specs/tasks.md)
+    ├── tasks/                   # Task execution and tracking (see tasks.md)
     │   ├── __init__.py
     │   ├── models.py            # TaskInfo dataclass
     │   ├── task_runner.py       # TaskRunner — forks child, writes task directory
     │   ├── task_reader.py       # TaskReader — reads task directory (stateless)
     │   └── wrapper.py           # entry point for the forked child (stdlib only)
     │
-    └── admin/                   # Flask admin interface (see specs/admin.md)
+    └── admin/                   # Flask admin interface (see admin-api.md)
         ├── __init__.py
         ├── app.py               # create_app(bench_root) factory
         ├── readers/             # Stateless filesystem/DB readers
@@ -138,7 +138,7 @@ class BenchConfig:
         """Load and validate bench.toml. Raises ConfigError on any violation."""
 
     def validate(self) -> None:
-        """Run all validation rules defined in config.md. Raises ConfigError."""
+        """Run all validation rules defined in configuration.md. Raises ConfigError."""
 
     @property
     def framework_app(self) -> AppConfig:
@@ -629,7 +629,7 @@ Set `requires_bench = False` for commands that don't operate on a bench (e.g. `n
 
 ---
 
-## Platform detection (`pilot/platform.py`)
+## Platform detection (`pilot/managers/platform.py`)
 
 All OS-specific branching lives in one module. Every other module imports from here rather than calling `platform.system()` or `shutil.which()` inline.
 

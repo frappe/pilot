@@ -9,6 +9,7 @@ and refuse to remove the final key (locking yourself out).
 from __future__ import annotations
 
 import base64
+import builtins
 import contextlib
 import fcntl
 import hashlib
@@ -23,6 +24,22 @@ _KEY_TYPE_PREFIXES = ("ssh-", "ecdsa-sha2-", "sk-ssh-", "sk-ecdsa-sha2-")
 
 class SSHKeyError(Exception):
     """A key was malformed, duplicated, missing, or the last one remaining."""
+
+
+class InvalidSSHKeyError(SSHKeyError):
+    pass
+
+
+class SSHKeyAlreadyExistsError(SSHKeyError):
+    pass
+
+
+class SSHKeyNotFoundError(SSHKeyError):
+    pass
+
+
+class LastSSHKeyError(SSHKeyError):
+    pass
 
 
 @dataclass
@@ -62,16 +79,16 @@ def _validate(public_key: str) -> tuple[str, str, str]:
     """
     parsed = _parse_line(public_key)
     if parsed is None:
-        raise SSHKeyError("Not a valid SSH public key.")
+        raise InvalidSSHKeyError("Not a valid SSH public key.")
     key_type, blob, comment = parsed
     try:
         raw = base64.b64decode(blob, validate=True)
         length = struct.unpack(">I", raw[:4])[0]
         algorithm = raw[4 : 4 + length].decode()
     except (ValueError, struct.error, UnicodeDecodeError):
-        raise SSHKeyError("The public key is malformed.")
+        raise InvalidSSHKeyError("The public key is malformed.")
     if algorithm != key_type:
-        raise SSHKeyError("The key type does not match the key data.")
+        raise InvalidSSHKeyError("The key type does not match the key data.")
     return key_type, blob, comment
 
 
@@ -81,7 +98,9 @@ class AuthorizedKeysStore:
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or (Path.home() / ".ssh" / "authorized_keys")
 
-    def list(self) -> list[SSHKey]:
+    # Other methods below spell the builtin as builtins.list[...] — this method's
+    # own name would otherwise shadow it in their annotations.
+    def list(self) -> builtins.list[SSHKey]:
         return [self._to_key(parsed) for parsed in self._parse_lines(self._read())]
 
     def add(self, public_key: str) -> SSHKey:
@@ -90,7 +109,7 @@ class AuthorizedKeysStore:
         with self._locked():
             lines = self._read()
             if any(_fingerprint(p[1]) == fingerprint for p in self._parse_lines(lines)):
-                raise SSHKeyError("That key is already authorized.")
+                raise SSHKeyAlreadyExistsError("That key is already authorized.")
             line = " ".join(part for part in (key_type, blob, comment) if part)
             self._write(lines + [line])
         return SSHKey(key_type=key_type, fingerprint=fingerprint, comment=comment)
@@ -100,9 +119,9 @@ class AuthorizedKeysStore:
             lines = self._read()
             keys = self._parse_lines(lines)
             if not any(_fingerprint(blob) == fingerprint for _, blob, _ in keys):
-                raise SSHKeyError("No authorized key matches that fingerprint.")
+                raise SSHKeyNotFoundError("No authorized key matches that fingerprint.")
             if len(keys) <= 1:
-                raise SSHKeyError("Refusing to remove the last authorized key.")
+                raise LastSSHKeyError("Refusing to remove the last authorized key.")
             kept = [line for line in lines if self._line_fingerprint(line) != fingerprint]
             self._write(kept)
 
@@ -110,20 +129,20 @@ class AuthorizedKeysStore:
         key_type, blob, comment = parsed
         return SSHKey(key_type=key_type, fingerprint=_fingerprint(blob), comment=comment)
 
-    def _parse_lines(self, lines: list[str]) -> list[tuple[str, str, str]]:
+    def _parse_lines(self, lines: builtins.list[str]) -> builtins.list[tuple[str, str, str]]:
         return [parsed for line in lines if (parsed := _parse_line(line))]
 
     def _line_fingerprint(self, line: str) -> str | None:
         parsed = _parse_line(line)
         return _fingerprint(parsed[1]) if parsed else None
 
-    def _read(self) -> list[str]:
+    def _read(self) -> builtins.list[str]:
         try:
             return self.path.read_text().splitlines()
         except FileNotFoundError:
             return []
 
-    def _write(self, lines: list[str]) -> None:
+    def _write(self, lines: builtins.list[str]) -> None:
         self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         content = "\n".join(lines) + "\n" if lines else ""
         fd, tmp = tempfile.mkstemp(dir=str(self.path.parent), prefix=".authorized_keys-")

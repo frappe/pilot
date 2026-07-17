@@ -92,7 +92,7 @@
 import { computed, ref } from 'vue'
 import { Button, Dialog, Dropdown, ErrorMessage, ListView, ListRowItem, TextInput } from 'frappe-ui'
 import { sitesApi } from '@/api/sites'
-import { useSite } from '@/composables/useSite'
+import { useSite } from '@/composables/sites/useSite'
 
 const props = defineProps({ siteName: { type: String, required: true } })
 
@@ -114,9 +114,6 @@ const rows = computed(() => {
     value: isPassword(key) ? '•••••••' : (typeof val === 'string' ? val : JSON.stringify(val)),
     readonly: false,
   }))
-  if (site.value?.db_name) {
-    entries.unshift({ name: '__db_name', key: 'db_name', value: site.value.db_name, readonly: true })
-  }
   return entries
 })
 
@@ -162,7 +159,7 @@ async function save() {
   saving.value = true
   dialogError.value = ''
   try {
-    await sitesApi.config(props.siteName, { ...site.value.site_config, [key]: parseValue(entryValue.value) })
+    await sitesApi.configuration.update(props.siteName, { [key]: parseValue(entryValue.value) })
     await reload()
     showAddDialog.value = false
     showEditDialog.value = false
@@ -182,9 +179,7 @@ async function confirmDelete() {
   deleting.value = true
   deleteError.value = ''
   try {
-    const next = { ...site.value.site_config }
-    delete next[deleteKey.value]
-    await sitesApi.config(props.siteName, next)
+    await sitesApi.configuration.update(props.siteName, { [deleteKey.value]: null })
     await reload()
     showDelete.value = false
   } catch (e) {

@@ -2,9 +2,9 @@
 import { computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { Breadcrumbs } from 'frappe-ui'
-import AppSidebar from '@/components/AppSidebar.vue'
-import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
-import { useIsMobile } from '@/composables/useIsMobile'
+import AppSidebar from '@/components/common/AppSidebar.vue'
+import { useBreadcrumbs } from '@/composables/common/useBreadcrumbs'
+import { useIsMobile } from '@/composables/common/useIsMobile'
 
 const route = useRoute()
 const { items, resetBreadcrumbs } = useBreadcrumbs()
@@ -32,7 +32,7 @@ function breadcrumbsFromRouteMeta({ title = '', group }) {
         <div id="header-badge" class="flex items-center" />
         <div id="header-actions" class="flex items-center gap-2 ml-auto" />
       </header>
-      <div class="flex-1 p-4 sm:p-6 min-h-0 overflow-auto">
+      <div class="flex-1 p-4 sm:p-6 min-h-0 overflow-auto [scrollbar-gutter:stable]">
         <slot />
       </div>
     </main>

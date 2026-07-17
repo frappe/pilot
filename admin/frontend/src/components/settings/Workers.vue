@@ -27,6 +27,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { Button, ErrorMessage, TextInput, toast } from 'frappe-ui'
+import { apiErrorMessage } from '@/api/client'
 import { settingsApi } from '@/api/settings'
 
 const loading = ref(true)
@@ -72,12 +73,11 @@ async function save() {
   try {
     const payload = groups.value.map((group) => ({ queues: queueList(group.queues), count: Number(group.count) }))
     const result = await settingsApi.update({ workers: payload })
-    if (!result.ok) {
-      error.value = result.error || 'Failed to save.'
+    if (result.error) {
+      error.value = apiErrorMessage(result, 'Failed to save.')
       return
     }
     toast.success(result.restarted ? 'Saved & restarted' : 'Saved')
-    if (result.restart_error) toast.error(result.restart_error)
   } catch (e) {
     error.value = e.message || 'Failed to save.'
   } finally {

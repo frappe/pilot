@@ -79,14 +79,14 @@ All of the above is this bench's own implementation. If a `bench-domain-provider
 ```toml
 [production]
 enabled = true                   # set by bench setup production
-process_manager = "supervisor"   # systemd | supervisor | openrc
+process_manager = "supervisor"   # systemd | supervisor
 use_companion_manager = false    # run scheduler/workers/socketio inside gunicorn
 ```
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `enabled` | bool | no | `false` | `true` once deployed to production. Gates `bench restart`, nginx setup, and production process management. |
-| `process_manager` | string | no | `""` | Production process manager: `systemd`, `supervisor`, or `openrc` (Alpine). Empty on an undeployed bench. |
+| `process_manager` | string | no | `""` | Production process manager: `systemd` or `supervisor`. Empty on an undeployed bench. |
 | `use_companion_manager` | bool | no | `false` | Run scheduler, RQ workers, and socket.io as Gunicorn companion processes under a single preloaded master. Requires the Frappe Gunicorn fork with companion support. |
 
 **Supervisor** (`process_manager = "supervisor"`, default):
@@ -98,12 +98,6 @@ use_companion_manager = false    # run scheduler/workers/socketio inside gunicor
 - Writes `.service` files to `~/.config/systemd/user/` and a `.target` that groups them.
 - Requires `sudo loginctl enable-linger <user>` once so the user session persists after logout.
 - No `sudo` needed after that — `systemctl --user` manages everything.
-
-**OpenRC** (`process_manager = "openrc"`, the Alpine default):
-- The Alpine counterpart of systemd. Writes one `supervise-daemon` init script per process to `config/openrc/`, symlinks them into `/etc/init.d/`, and enables them with `rc-update`.
-- `supervise-daemon` keeps each process alive (the equivalent of systemd's `Restart=on-failure`).
-- The admin runs as a plain supervised Flask process on `admin.port` (no socket activation); nginx proxies straight to it. The workload and admin are separate services, so `bench stop` stops the workload while the admin keeps serving.
-- Selected automatically on Alpine; per-bench `mariadb-<instance>` OpenRC services are provisioned (no `mariadb@.service` template units needed).
 
 ### Companion manager
 
@@ -211,7 +205,7 @@ When `admin.domain` is set and the bench is deployed to production (`production.
 
 ### Validation additions
 
-10. When `production.enabled` is `true`, `production.process_manager` must be `systemd`, `supervisor`, or `openrc`, and `admin.domain` must be set.
+10. When `production.enabled` is `true`, `production.process_manager` must be `systemd` or `supervisor`, and `admin.domain` must be set.
 11. `letsencrypt.email` must match a basic email pattern if present. Serving SSL sites over HTTPS requires `admin.tls = true` and a `letsencrypt.email`.
 12. `admin.domain`, when set, must be a valid hostname.
 13. If the bench has wildcard domains configured (see Custom domain management above), a new site's `name` and `admin.domain` must match one of them.
@@ -629,13 +623,13 @@ pilot/
     │
     ├── core/
     │   ├── ...
-    │   └── domain_controller.py     # DomainRouteProvider
+    │   └── domains.py                # DomainRouteProvider
     │
     ├── managers/
     │   ├── ...
-    │   ├── nginx_manager.py
-    │   ├── gunicorn_manager.py
-    │   └── letsencrypt_manager.py
+    │   ├── nginx.py
+    │   ├── gunicorn.py
+    │   └── letsencrypt.py
     │
     └── commands/
         ├── ...
@@ -828,7 +822,7 @@ domain = "admin.example.com"    # optional — serve admin UI over HTTPS via ngi
 
 [production]
 enabled = true
-process_manager = "supervisor"   # systemd | supervisor | openrc
+process_manager = "supervisor"   # systemd | supervisor
 # use_companion_manager = true   # run scheduler/workers/socketio inside gunicorn
 
 [nginx]

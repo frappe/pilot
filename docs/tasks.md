@@ -1,388 +1,252 @@
 # Task Execution Specification
 
-Covers how admin-triggered commands are run as tracked background processes, how their output is stored, and how the admin panel reads and displays task state.
+Covers how admin-triggered commands (migrate, build, site creation, branch switches, etc.) run as durable, queued background tasks: one FIFO queue per bench, one worker per bench, crash recovery, and cancellation. The admin panel and API read task state from the filesystem on every request — no in-memory task state, no database.
 
 ---
 
 ## Design
 
-Every command triggered from the admin panel (migrate, build, update, etc.) is run as a **forked child process** that is fully detached from the Flask web server. The admin server writes the task metadata to disk and returns immediately. The child process runs independently, writing its output to a log file and updating a status file when it finishes.
-
-The admin panel reads task state from the filesystem on every request — no in-memory state, no database.
-
 ```
-Admin view
+Admin view / API
    │
-   ├─ TaskRunner.run(command, args)
-   │    ├─ create tasks/<task-id>/ directory
-   │    ├─ write meta.json
-   │    ├─ fork: python -m pilot.tasks.wrapper <task-dir>
-   │    │         └─ runs command
-   │    │         └─ streams output → output.log
-   │    │         └─ writes status on exit
-   │    ├─ write pid file
-   │    └─ return task_id   ← admin redirects to /tasks/<task-id>
+   ├─ TaskRunner.submit(command, args)
+   │    ├─ TaskStore.create_queued(): write meta.json + status=queued atomically
+   │    └─ wake the bench's worker thread
    │
-   └─ (child process runs independently)
+   └─ TaskWorker (background thread inside the admin process)
+        ├─ holds tasks/worker.lock for the lifetime of the bench's admin process
+        ├─ claims the oldest queued task (TaskQueue.claim_next)
+        ├─ starts pilot.tasks.manager.wrapper as a detached child
+        │     └─ wrapper runs the job's command_argv, streams output → output.log
+        │     └─ wrapper finalizes status on exit (success/failed/killed)
+        └─ repeats until the queue is empty, then goes idle
 ```
+
+The worker is a **thread**, not a separate OS process: `task_workers.start(bench_root)` is called once from `server.py`/`wsgi.py` at admin startup. The `tasks/worker.lock` file (via `flock`) is what actually enforces "one worker per bench" — it protects against more than one admin process (e.g. two gunicorn workers) racing to run the same bench's queue, not just concurrent threads.
 
 ---
 
-## Task directory layout
-
-Each task lives in its own directory under `<bench-root>/tasks/`:
+## Task states and transitions
 
 ```
-tasks/
-├── 20250521-143022-a1b2c3/        # task_id = YYYYMMDD-HHMMSS-<6-hex>
-│   ├── meta.json                  # command, args, started_at, finished_at, exit_code
-│   ├── pid                        # integer PID of the child process (one line)
-│   ├── output.log                 # combined stdout + stderr of the command
-│   └── status                     # one word: running | success | failed | killed
-├── 20250521-144501-f7a3d1/
-│   └── ...
+queued --> running --> success
+                    --> failed
+                    --> killed
+queued --------------> killed
+```
+
+Success, failed, and killed are terminal — no further transitions are allowed from them. Every transition is validated (`pilot/tasks/manager/task_state.py: validate_task_transition`) and applied as a compare-and-swap under the tasks-directory lock (`TaskStore.transition_locked` re-reads the current status and only writes if it still matches the expected one).
+
+| Transition | Trigger |
+|---|---|
+| `queued` → `running` | `TaskQueue.claim_next()`: the worker claims the oldest queued task |
+| `running` → `success` | wrapper exits with code 0 |
+| `running` → `failed` | wrapper exits with a non-zero code (`failure.code = command_failed`), or a crash/orphan is detected (`failure.code = task_interrupted`) |
+| `running` → `killed` | `TaskProcess.cancel()` confirms the process group was signalled |
+| `queued` → `killed` | `TaskRunner.kill()` on a task that hasn't been claimed yet |
+
+---
+
+## On-disk layout
+
+```
+<bench-root>/tasks/
+├── worker.lock            # flock target; held by the single active worker thread
+├── worker.pid             # pid of the admin process currently holding the lock (empty if none)
+├── worker-state.json       # {status, pid, current_task_id, updated_at}
+├── worker-control.json     # {desired: "running" | "stopped"} — persisted operator intent
+├── store                  # flock target guarding all metadata/status writes below
+├── queue-sequence         # monotonic FIFO counter
+└── <task-id>/              # task_id = YYYYMMDD-HHMMSS-<6 lowercase hex chars>
+    ├── meta.json
+    ├── status              # one word: queued | running | success | failed | killed
+    ├── process.json         # present only while a wrapper process is (or was) tracked
+    ├── pid                 # wrapper's pid, written alongside process.json
+    ├── output.log           # syslog-framed combined stdout+stderr of the command
+    ├── secrets.json         # transient; args like admin_password, deleted once the wrapper reads them
+    └── callbacks.json       # transient; optional on_success/on_failure/on_cancel spec
 ```
 
 ### `meta.json` schema
 
 ```json
 {
-  "task_id": "20250521-143022-a1b2c3",
+  "task_id": "20260716-143022-a1b2c3",
   "command": "migrate",
   "args": { "site": "site1.example.com" },
-  "command_argv": ["env/bin/bench", "--site", "site1.example.com", "migrate"],
-  "started_at": "2025-05-21T14:30:22.441Z",
-  "finished_at": "2025-05-21T14:30:35.112Z",
-  "exit_code": 0
+  "command_argv": ["/bench/env/bin/python", "-m", "pilot.tasks.jobs.migrate_task", "/bench/root", "site1.example.com"],
+  "queued_at": "2026-07-16T14:30:22.441000+00:00",
+  "started_at": "2026-07-16T14:30:22.501000+00:00",
+  "finished_at": "2026-07-16T14:30:35.112000+00:00",
+  "exit_code": 0,
+  "failure": null,
+  "bench_root": "/bench/root",
+  "queue_sequence": 482
 }
 ```
 
-`command_argv` is the actual list passed to `subprocess`, derived from `command` + `args` by the same whitelist logic used in the old commands endpoint. `finished_at` and `exit_code` are `null` until the task completes.
+`started_at`, `finished_at`, `exit_code`, and `failure` are `null` until set by the corresponding transition. `args` is already redacted/whitelisted for public consumption (`public_task_args`) — secret values (e.g. `admin_password`) never appear here; they live only in `secrets.json`, which the wrapper deletes as soon as it hands them to the job. `failure`, when present, stores only `{"code": "command_failed"}` or `{"code": "task_interrupted"}`; the human-readable message is looked up from a fixed table at read time, not stored. Tasks submitted with an `Idempotency-Key` also carry `idempotency_digest` and `request_fingerprint`; tasks scoped to a resource (e.g. one site) carry `resource_key`, which blocks a second active task from touching the same resource.
 
-### `status` file
+### `process.json` schema
 
-Contains exactly one word with no trailing newline: `running`, `success`, `failed`, or `killed`.
+```json
+{
+  "task_id": "20260716-143022-a1b2c3",
+  "argv": ["/bench/env/bin/python", "-m", "pilot.tasks.manager.wrapper", "/bench/root/tasks/20260716-143022-a1b2c3"],
+  "identity": {
+    "pid": 48213, "pgid": 48213, "sid": 48213, "boot_id": "...",
+    "start_ticks": 918273, "uid": 1000, "argv_hash": "...", "launch_id": "..."
+  }
+}
+```
 
-Written as `running` by `TaskRunner` before the fork. Updated to `success`/`failed` by the wrapper when the child exits. Set to `killed` by the admin if a kill request is received, or by `TaskReader` lazily when the PID is dead but the status file still says `running`.
+`argv` here is the **wrapper's** own argv, not `command_argv` — `process.json` identifies the wrapper (the process-group leader), and the actual bench command runs as its child in the same session/group, inheriting the same `launch_id` environment variable. See [Process ownership and PID safety](#process-ownership-and-pid-safety).
 
 ---
 
-## Package layout additions
+## Worker lifecycle
 
-```
-pilot/
-└── pilot/
-    └── tasks/
-        ├── __init__.py
-        ├── task_runner.py    # TaskRunner — forks child, writes task directory
-        ├── task_reader.py    # TaskReader — reads task directory (stateless)
-        ├── wrapper.py        # entry point for the forked child process
-        └── models.py         # TaskInfo dataclass
-```
+`TaskWorker` (`pilot/tasks/manager/worker.py`) runs one loop per bench:
 
----
+1. `try_acquire()` the `worker.lock`; if another worker already holds it, exit immediately (no-op).
+2. Write `worker.pid` and enter the loop. On each iteration:
+   - `TaskProcess.reconcile()` first — checks whether any previously-tracked task process is still alive, unowned, or dead (see [Crash recovery](#crash-recovery-and-orphan-handling)). If one is still alive/uncertain, park and re-poll instead of claiming new work.
+   - If the operator has requested a stop (`worker-control.json` desired = `stopped`), report status `stopped` and park without claiming.
+   - Otherwise claim and run the oldest queued task; loop immediately to try for more work.
+   - If nothing is queued, report status `idle` and wait (woken early by a new submission, a cancel, or a worker start/stop request, otherwise polls every 0.2s).
+3. On exit (drain complete), write status `stopped` and clear `worker.pid`.
 
-## `TaskRunner`
+### Worker states (`worker-state.json`)
 
-Creates the task directory and forks the wrapper. Returns immediately after fork.
+| Status | Meaning |
+|---|---|
+| `starting` | Lock acquired, loop not yet run once |
+| `idle` | No queued task; waiting for work |
+| `running` | A task is actively executing |
+| `draining` | Finishing the current (or orphaned) task before stopping — see below |
+| `stopped` | Not claiming work — either the operator paused the queue (`worker.pid` still set, thread alive) or the worker thread has fully exited after a drain (`worker.pid` empty) |
 
-```python
-class TaskRunner:
-    def __init__(self, bench_root: Path): ...
+`worker.pid` is the disambiguator for `stopped`: non-empty means the thread is alive and idling because the queue was deliberately paused; empty means the thread has actually terminated.
 
-    def run(self, command: str, args: dict) -> str:
-        """
-        Validate command against the whitelist.
-        Create tasks/<task-id>/ and write meta.json and status='running'.
-        Fork: python -m pilot.tasks.wrapper <task-dir>
-        Write pid file.
-        Purge old tasks if total completed > TASK_RETENTION_LIMIT.
-        Return task_id.
-        """
+### Operator intent vs. drain
 
-    def kill(self, task_id: str) -> None:
-        """
-        Read pid file. Send SIGTERM. Write status='killed'.
-        Raises TaskNotFoundError if task_id is unknown.
-        Raises TaskNotRunningError if status is not 'running'.
-        """
+These are two independent controls that both stop the worker from claiming new work, but behave differently:
 
-    def _task_dir(self, task_id: str) -> Path: ...
-
-    def _build_argv(self, command: str, args: dict) -> List[str]:
-        """
-        Map (command, args) to a concrete argv list.
-        Raises ValueError if command is not in the whitelist.
-        This is the single place where the whitelist is enforced.
-        """
-
-    @staticmethod
-    def _generate_task_id() -> str:
-        """Return YYYYMMDD-HHMMSS-<secrets.token_hex(3)>."""
-```
-
-**Task retention:** `TASK_RETENTION_LIMIT = 100`. After each `run()`, if the number of completed (non-running) tasks exceeds the limit, the oldest completed tasks are deleted (directory removed). Running tasks are never deleted automatically.
-
-**Whitelist** (same commands as the old `/commands/run` endpoint, now centralised here):
-
-| `command` | Required `args` keys | `command_argv` produced |
-|-----------|---------------------|------------------------|
-| `migrate` | `site` | `env/bin/bench --site <site> migrate` |
-| `clear-cache` | `site` | `env/bin/bench --site <site> clear-cache` |
-| `install-app` | `site`, `app` | `env/bin/bench --site <site> install-app <app>` |
-| `build` | — | `env/bin/bench build` |
-| `update` | `apps` (optional list) | `python -m admin.backend.tasks.jobs.update_task --bench-root <root> --apps [...] --task-log <output.log>` |
-| `reload-supervisor` | — | `supervisorctl -c config/supervisor.conf reload` |
-
-All paths in `command_argv` are absolute (resolved from `bench_root`) so the child process does not depend on `$CWD`.
+- **`worker-control.json` intent** (`running`/`stopped`) — set via `POST /task-worker/actions/start` or `.../stop`. Persisted to disk, survives admin restarts, and only pauses claiming; the worker thread stays alive and holds the lock.
+- **Drain** (`threading.Event`, in-memory only) — set when the admin process receives `SIGTERM`/`SIGINT`. Not persisted; a freshly started admin process is never pre-drained. Once set, the worker finishes any in-flight task, then the loop exits and the thread releases the lock.
 
 ---
 
-## `wrapper.py` — the forked child
+## SIGTERM / drain behavior
 
-Invoked as `python -m pilot.tasks.wrapper <task-dir>`. This module is the entire body of the child process; it has no imports outside the standard library.
+| Event | Actual behavior |
+|---|---|
+| Admin process gets `SIGTERM`/`SIGINT` while its worker is idle | Drain flag set; loop has no task to wait for, breaks immediately; state → `stopped`, `worker.pid` cleared, lock released |
+| ...while a task is running | The running task's process is **not** signalled; state flips to `draining` and the worker keeps polling `process.wait()` until it exits normally; only then does the loop see the drain flag and exit |
+| A task is submitted while draining | Persisted as `queued` exactly as normal (`TaskStore.create_queued` doesn't check worker state at all); `TaskWorker._claim_next()` refuses to claim it while `_drain` is set, so it stays queued |
+| A fresh admin process starts later | New `TaskWorker` acquires the now-free `worker.lock`; `TaskQueue.claim_next()` always picks the oldest queued task by `queue_sequence`, so it resumes FIFO order regardless of which worker enqueued what |
+| A task is cancelled (`DELETE /tasks/<id>`) | Only that task's own process group is signalled; the worker thread and every other task are untouched |
+| The admin process dies mid-task and a new one starts | `reconcile()` finds the still-alive wrapper via `process.json` and blocks claiming new work until it exits — see below |
 
-```python
-# pilot/tasks/wrapper.py
-import json, subprocess, sys
-from datetime import datetime, timezone
-from pathlib import Path
-
-def main():
-    task_dir = Path(sys.argv[1])
-    meta = json.loads((task_dir / 'meta.json').read_text())
-
-    with open(task_dir / 'output.log', 'wb') as log:
-        result = subprocess.run(
-            meta['command_argv'],
-            cwd=str(task_dir.parent.parent),   # bench_root
-            stdout=log,
-            stderr=subprocess.STDOUT,
-        )
-
-    exit_code = result.returncode
-    meta['finished_at'] = datetime.now(timezone.utc).isoformat()
-    meta['exit_code'] = exit_code
-    (task_dir / 'meta.json').write_text(json.dumps(meta, indent=2))
-    (task_dir / 'status').write_text('success' if exit_code == 0 else 'failed')
-
-if __name__ == '__main__':
-    main()
-```
-
-The wrapper has no knowledge of bench internals. If the wrapper itself crashes before writing `status`, `TaskReader` detects the dead PID and reports `killed`.
+`WorkerRegistry.install_signal_handlers()` hooks `SIGTERM`/`SIGINT` on the admin process itself: the handler calls `request_drain()` on every bench worker it manages, then chains to whatever handler was previously installed (e.g. gunicorn's own). If there was no previous custom handler, it resets the signal to default and spawns a thread that joins all workers before re-raising the same signal — so the process's actual exit is deferred until every worker has drained.
 
 ---
 
-## `TaskReader`
+## Cancellation
 
-Reads task directories. Stateless — instantiated per request.
+`TaskRunner.kill(task_id)`:
 
-```python
-class TaskReader:
-    def __init__(self, bench_root: Path): ...
-
-    def list_tasks(self, limit: int = 50) -> List[TaskInfo]:
-        """
-        Scan tasks/ directory. Return tasks sorted by started_at descending.
-        Limit to <limit> most recent.
-        """
-
-    def read_task(self, task_id: str) -> TaskInfo:
-        """Read a single task directory. Raises TaskNotFoundError if missing."""
-
-    def read_output(self, task_id: str, lines: int = 200) -> List[str]:
-        """Return the last <lines> lines of output.log."""
-
-    def stream_output(self, task_id: str) -> Generator[str, None, None]:
-        """
-        Yield lines from output.log as they are written.
-        Stops yielding when status changes from 'running' (checked every 0.5s).
-        Yields a final sentinel line '__DONE__:<exit_code>' when complete,
-        so the SSE client can update the status badge without a page reload.
-        """
-
-    def _effective_status(self, task_id: str, raw_status: str, pid: int) -> str:
-        """
-        If raw_status == 'running' but the PID is no longer alive,
-        return 'killed'. Otherwise return raw_status unchanged.
-        """
-```
-
-```python
-@dataclass
-class TaskInfo:
-    task_id: str
-    command: str
-    args: dict
-    status: str             # effective status (never 'running' for a dead PID)
-    pid: Optional[int]
-    started_at: datetime
-    finished_at: Optional[datetime]
-    exit_code: Optional[int]
-    output_path: Path
-    duration_seconds: Optional[float]   # None if still running
-```
+- **Queued task:** transitions `queued` → `killed` directly, deletes `secrets.json`, wakes the worker (in case it's idling on that same task's resource). No process is involved.
+- **Running task:** delegates to `TaskProcess.cancel()`:
+  1. Reject if the task isn't currently `running`.
+  2. Inspect the tracked process's ownership (see below). If it's already dead/stale, treat this as an orphan and mark the task `failed`/`task_interrupted` instead of `killed`. If ownership is uncertain, refuse (`TaskNotRunningError`) rather than guess.
+  3. Send `SIGTERM` to every process sharing the wrapper's launch id (its whole process group — descendants signalled before the group leader, so children don't get orphaned mid-signal).
+  4. As soon as the signal is confirmed delivered, transition the task to `killed` and delete `secrets.json` — the visible state does not wait for the process to actually exit.
+  5. Poll for exit every 0.05s for up to 3 seconds (`CANCEL_GRACE_SECONDS`); if still alive, send `SIGKILL` to the group and poll for up to another `max(1, grace)` seconds. This cleanup is best-effort and doesn't change the already-recorded `killed` status.
 
 ---
 
-## Admin routes
+## Crash recovery and orphan handling
 
-Replace the old `POST /commands/run` SSE approach entirely. All command execution goes through tasks.
+Every worker loop iteration calls `TaskProcess.reconcile()` before claiming new work — this is both routine post-task cleanup and crash recovery, driven entirely by whether `process.json` still exists and what the wrapper's identity looks like now:
 
-### Updated `views/commands.py` → `views/tasks.py`
+| `process.json` present, ownership is... | Task status | Result |
+|---|---|---|
+| `owned` (process alive, all identity checks pass) or `unknown` (can't tell) | any | Treated as still blocking — worker parks and does not claim new work until this resolves |
+| `dead`/`stale` (process is gone or was reused by something else) | `running` | Task transitioned `running` → `failed` with `failure.code = "task_interrupted"`; `process.json`/`secrets.json` removed |
+| `dead`/`stale` | already terminal | Stale `process.json` left behind by a wrapper that exited normally is just cleaned up; any pending callback for that terminal status still gets run |
 
-The `commands.py` view is renamed `tasks.py` and registered at `/tasks`.
+So: if the worker (admin process) dies while a task's wrapper is still alive, a replacement worker waits for that live orphan to finish on its own — it is never signalled or replayed. If both the worker and the task's process die while status was `running`, the task is marked `failed` with `task_interrupted` and must be retried explicitly; mid-step replay is never attempted (unsafe for migrations, site creation, package installs, production setup).
 
-### `POST /tasks/run` — create a task
-
-```
-POST /tasks/run
-Content-Type: application/x-www-form-urlencoded
-
-command=migrate&site=site1.example.com
-```
-
-Behaviour:
-1. Pass `command` and remaining form fields to `TaskRunner.run()`.
-2. On `ValueError` (unknown command or missing args): return HTTP 400 with a plain-text error.
-3. On success: redirect `303` to `GET /tasks/<task-id>`.
-
-This means submitting a form in the admin immediately takes you to the task's status page.
-
-### `GET /tasks` — task list
-
-`TaskReader.list_tasks()` rendered as a table, most recent first.
-
-| Column | Content |
-|--------|---------|
-| Command | `command` + key args (e.g. "migrate — site1.example.com") |
-| Status | Coloured badge: green (success), red (failed), amber (running), grey (killed) |
-| Started | Human-readable relative time (e.g. "3 minutes ago") — computed server-side |
-| Duration | `duration_seconds` formatted as `0m 12s`, or "—" if still running |
-| Actions | "View" link; "Kill" button if status is `running` |
-
-### `GET /tasks/<task-id>` — task detail
-
-`TaskReader.read_task(task_id)`. Renders:
-
-- **Header bar:** command summary, status badge, started/finished timestamps, exit code.
-- **Output block:** `<pre id="output">` populated with `TaskReader.read_output()`.
-- **If running:** JavaScript opens an `EventSource` on `/tasks/<task-id>/stream` and appends each line to `#output`, scrolling to the bottom. On receiving the `__DONE__:<exit_code>` sentinel, the status badge and exit code fields are updated in place without a page reload.
-- **Kill button:** shown only when status is `running`. Submits a form `POST /tasks/<task-id>/kill`.
-
-### `GET /tasks/<task-id>/stream` — SSE output stream
-
-```python
-@tasks_bp.route('/<task_id>/stream')
-def stream_task_output(task_id):
-    reader = TaskReader(current_app.config['BENCH_ROOT'])
-    def generate():
-        for line in reader.stream_output(task_id):
-            if line.startswith('__DONE__:'):
-                yield f"event: done\ndata: {line[9:]}\n\n"
-            else:
-                yield f"data: {line}\n\n"
-    return Response(stream_with_context(generate()), mimetype='text/event-stream')
-```
-
-The client's `EventSource` listens for the `done` event type to know the task finished:
-
-```javascript
-const es = new EventSource('/tasks/20250521-143022-a1b2c3/stream');
-es.onmessage = e => appendLine(e.data);
-es.addEventListener('done', e => {
-    es.close();
-    updateStatusBadge(parseInt(e.data) === 0 ? 'success' : 'failed');
-});
-```
-
-### `POST /tasks/<task-id>/kill` — kill a running task
-
-```python
-@tasks_bp.route('/<task_id>/kill', methods=['POST'])
-def kill_task(task_id):
-    TaskRunner(current_app.config['BENCH_ROOT']).kill(task_id)
-    return redirect(url_for('tasks.task_detail', task_id=task_id))
-```
-
-Errors (`TaskNotFoundError`, `TaskNotRunningError`) render a plain error page.
+`POST /tasks/<id>/actions/retry` re-submits the same `command`/`args` as a brand-new queued task. It refuses tasks that are still active, and refuses commands whose whitelist requires a secret (`task_requires_secrets`, e.g. `admin_password` for `new-site`) since the original plaintext value was deleted after first use.
 
 ---
 
-## Updated admin package layout
+## Process ownership and PID safety
 
-```
-pilot/
-└── pilot/
-    └── admin/
-        ├── readers/
-        │   ├── ...
-        │   └── (TaskReader lives in pilot/tasks/task_reader.py, not here)
-        └── views/
-            ├── dashboard.py
-            ├── apps.py
-            ├── sites.py
-            ├── processes.py
-            ├── logs.py
-            ├── database.py
-            └── tasks.py          # replaces commands.py
-        └── templates/
-            ├── ...
-            └── tasks/
-                ├── list.html
-                └── detail.html
-```
+A bare PID is not trustworthy: PIDs get reused, so `kill(pid)` after any delay risks signalling an unrelated process that now happens to own that number. `ProcessIdentity` (`pilot/tasks/manager/process_identity.py`) is captured once at launch and re-checked before every signal:
 
-`TaskRunner` and `TaskReader` live in `pilot/tasks/`, not under `pilot/admin/`, because they are independent of Flask and could be used by other parts of the system (e.g., a future CLI `bench status` command).
+| Field | Why it's checked |
+|---|---|
+| `pgid`, `sid` | Must equal the process's own pid — proves it's still the session/group leader the wrapper was started as (`start_new_session=True`) |
+| `boot_id` (`/proc/sys/kernel/random/boot_id`) | A reboot invalidates any PID/start-time comparison; a boot id mismatch short-circuits straight to "not owned" |
+| `start_ticks` (process start time from `/proc/<pid>/stat`) | Detects the same PID being reused by a different process after this one exited, without needing a reboot |
+| `argv_hash` (`sha256` of `/proc/<pid>/cmdline`) | Confirms the process at this PID is still running the expected wrapper command line |
+| `uid` | The signalling process must own the target |
+| `launch_id` (random token passed via `BENCH_TASK_LAUNCH_ID` and read back from `/proc/<pid>/environ`) | The strongest check — a reused PID/argv-lookalike can't forge another process's environment |
+
+`ProcessInspector.inspect()` returns one of: `owned` (alive, everything matches), `dead` (gone), `stale` (a PID/group match but the identity fields disagree — some other process now occupies that slot), or `unknown` (couldn't determine, e.g. permission denied) — `unknown` is never signalled or treated as dead; code that hits it backs off rather than guessing.
+
+Signalling uses `pidfd_send_signal` (falling back to `os.kill`) so the check-then-signal isn't racy against the PID being recycled between the ownership check and the actual signal. Cancelling a whole task additionally scans `/proc` for every process (not just the tracked one) whose environment carries the same `launch_id`, so descendants that forked under the wrapper are signalled too, not just the leader.
+
+### Startup gate
+
+`TaskProcess.start()` passes the new wrapper a read end of a pipe (`BENCH_TASK_READY_FD`) and blocks it in `_wait_until_ready()` before it does anything. Only after `process.json` (the durable identity record) has been written does `start()` write one byte to the other end, releasing the wrapper. If the admin crashes between forking the wrapper and persisting `process.json`, the pipe's write end is closed unused, the wrapper reads EOF, and it exits without ever running the underlying command — so a task can never execute without a durable, discoverable record of its process pointing at it.
 
 ---
 
-## Updated architecture additions
+## Watchdog interaction
 
-### Bench directory layout
-
-```
-<bench-root>/
-└── tasks/
-    └── 20250521-143022-a1b2c3/
-        ├── meta.json
-        ├── pid
-        ├── output.log
-        └── status
-```
-
-### Full package layout additions
+`AdminIdleWatchdog` (`admin/backend/watchdog.py`) must never shut the admin down while a task is running or a worker is draining. It reads one shared source of truth, `TaskActivityReader.read()` (`pilot/tasks/manager/activity.py`), which is also what the CLI and API status endpoints use:
 
 ```
-pilot/
-└── pilot/
-    └── tasks/
-        ├── __init__.py
-        ├── models.py        # TaskInfo dataclass
-        ├── task_runner.py   # TaskRunner
-        ├── task_reader.py   # TaskReader
-        └── wrapper.py       # forked child entry point (stdlib only)
+active = uncertain
+      or worker_state.status in {starting, running, draining}
+      or running_tasks > 0
 ```
+
+Notably, **queued-but-not-yet-claimed tasks do not count as activity** — if the worker was deliberately stopped via the API while tasks sit `queued`, the admin can still idle-shut-down; nothing is holding it open on their behalf (matches `worker-control.json` intent being an operator decision, not a crash).
+
+`check_once()` double-checks before acting: it first does an unlocked idle/activity check, then re-checks both request idleness and task activity again under the lock immediately before calling `terminate()`, closing the race where a request or task starts in between. `AdminProcessOwner.terminate()` only ever signals the exact PID it was constructed to own (its own PID in dev/gunicorn mode, or `getppid()` in the systemd-managed case) and refuses if that PID no longer matches — the watchdog can shut down the admin process it's attached to, never a task's process group, and never a whole process group it doesn't own.
 
 ---
 
-## Error cases
+## Job contract
 
-| Situation | Behaviour |
-|-----------|-----------|
-| `command` not in whitelist | `TaskRunner._build_argv` raises `ValueError`; view returns HTTP 400 |
-| Required arg missing (e.g. `site` for migrate) | Same as above |
-| Task directory missing on detail page | `TaskReader.read_task` raises `TaskNotFoundError`; view renders 404 page |
-| PID alive but `output.log` empty | Normal — command hasn't written anything yet; show empty `<pre>` |
-| PID dead, `status` still `running` | `TaskReader._effective_status` returns `killed`; displayed to user |
-| Kill sent to already-finished task | `TaskRunner.kill` raises `TaskNotRunningError`; view shows error message |
-| Wrapper crashes before writing `status` | Indistinguishable from `killed` — PID dead, status never updated |
+Every job subclasses `BaseTask` (`pilot/tasks/jobs/base_task.py`). `BaseTask.main()` loads any secret arguments handed off via `BENCH_TASK_SECRETS_FILE`, constructs the bench and the task, and calls `run()`:
+
+- `self._step(key, label)` prints `STEP <key>,<timestamp> <label>` — opens a collapsible step in the admin UI. Every job emits at least one, even single-step ones.
+- `self._step_failed()` prints `STEP-FAILED <key>,<timestamp>` for the currently open step.
+- `main()` calls `_step_failed()` automatically around `run()` if it raises, or exits with a non-zero `SystemExit` code — a job never has to handle its own top-level failure reporting; raising is enough to make the task fail.
+
+`SwitchBranchTask` (`pilot/tasks/jobs/switch_branch_task.py`) is a representative example: it calls `_step` for `fetch`, `checkout`, `install`, an optional `js`, `assets`, and a final `done`, and calls `sys.exit(result.returncode)` on a failed checkout rather than raising, which `main()` also treats as a failure via the `SystemExit` branch.
+
+The wrapper (`pilot/tasks/manager/wrapper.py`) runs `command_argv` as a subprocess, capturing merged stdout/stderr into `output.log` with a syslog envelope per line (so `\r`-terminated progress redraws each get re-stamped and `TaskReader` can collapse them like a terminal would) and redacting known secret values before they ever reach disk.
 
 ---
 
-## Security notes
+## API surface
 
-- `TaskRunner._build_argv` only accepts commands from the hardcoded whitelist. No user-supplied string is ever passed to a shell.
-- `task_id` values are validated to match `^\d{8}-\d{6}-[0-9a-f]{6}$` before use as directory names.
-- The `tasks/` directory is inside the bench root; it is not web-accessible (the admin serves it through Flask routes only).
+Routes registered by `admin/backend/api/v1/tasks.py` (`/tasks` and `/task-worker`, both under `/api/v1`):
+
+| Route | Behavior |
+|---|---|
+| `GET /tasks` | List tasks, optionally filtered by `?status=` |
+| `POST /tasks` | Create a task; accepts `Idempotency-Key`; `202` with the task resource |
+| `GET /tasks/<id>` | Task detail |
+| `DELETE /tasks/<id>` | Cancel (queued or running); `204` on success |
+| `POST /tasks/<id>/actions/retry` | Re-submit a finished task's command/args as a new task |
+| `GET /tasks/<id>/events` | Structured JSON SSE: `status`, `line`/`overwrite`, and a final `done` event; replays `output.log` from the start on every new connection, so a reconnecting client gets full history |
+| `GET /tasks/<id>/output/content` | Download the redacted, envelope-stripped output as `text/plain` |
+| `GET /task-worker` | Current worker activity (`status`, `desired`, `queued_tasks`, `running_tasks`) |
+| `POST /task-worker/actions/start` / `.../stop` | Set the persisted worker intent and wake the worker |

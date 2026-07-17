@@ -1,12 +1,13 @@
 import re
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import List
 
 from pilot.config.admin_config import AdminConfig
 from pilot.config.app_config import AppConfig
 from pilot.config.central_config import CentralConfig
+from pilot.config.config_schema import unknown_config_paths
 from pilot.config.firewall_config import FirewallConfig, FirewallRule
 from pilot.config.gunicorn_config import GunicornConfig
 from pilot.config.letsencrypt_config import LetsEncryptConfig
@@ -17,6 +18,7 @@ from pilot.config.postgres_config import PostgresConfig
 from pilot.config.production_config import ProductionConfig
 from pilot.config.redis_config import RedisConfig
 from pilot.config.s3_config import S3Config
+from pilot.config.waf_config import WAF_MODES, WafConfig, parse_nginx_size
 from pilot.config.worker_config import WorkerConfig, WorkerGroup
 from pilot.exceptions import ConfigError
 
@@ -26,6 +28,10 @@ _VERSION_PATTERN = re.compile(r"^\d+(\.\d+)*$")
 # Lenient hostname: dotted labels of alphanumerics/hyphens. Allows dev names
 # like "admin1.localhost" and real domains like "admin.example.com".
 _HOSTNAME_PATTERN = re.compile(r"^(?=.{1,253}$)[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$")
+# A WAF exempt path is interpolated into a ModSecurity SecRule string, so it must
+# be a plain URL path — no quotes, whitespace, backslashes, or control characters
+# that could break out of the rule and inject directives.
+_WAF_EXEMPT_PATH_PATTERN = re.compile(r"^/[A-Za-z0-9._~%/-]*$")
 _REDIS_PORT_MIN = 1024
 _REDIS_PORT_MAX = 65535
 _PORT_MIN = 1
@@ -58,6 +64,7 @@ class BenchConfig:
     admin: AdminConfig = field(default_factory=AdminConfig)
     central: CentralConfig = field(default_factory=CentralConfig)
     firewall: FirewallConfig = field(default_factory=FirewallConfig)
+    waf: WafConfig = field(default_factory=WafConfig)
     s3: S3Config = field(default_factory=S3Config)
 
     @classmethod
@@ -69,7 +76,8 @@ class BenchConfig:
         return config
 
     @classmethod
-    def _from_dict(cls, data: dict) -> "BenchConfig":
+    def _from_dict(cls, data: dict, *, strict: bool = False) -> "BenchConfig":
+        cls._report_unknown_fields(data, strict=strict)
         bench_data = data.get("bench", {})
         apps = [
             AppConfig(
@@ -80,8 +88,8 @@ class BenchConfig:
             )
             for a in data.get("apps", [])
         ]
-        mariadb = MariaDBConfig(**data.get("mariadb", {}))
-        postgres = PostgresConfig(**data.get("postgres", {}))
+        mariadb = MariaDBConfig(**cls._known_fields(MariaDBConfig, data.get("mariadb", {})))
+        postgres = PostgresConfig(**cls._known_fields(PostgresConfig, data.get("postgres", {})))
         redis = cls._parse_redis(data.get("redis", {}))
         workers = cls._parse_workers(data.get("workers", []))
         production = cls._parse_production(data.get("production"))
@@ -91,7 +99,8 @@ class BenchConfig:
         admin = cls._parse_admin(data.get("admin", {}))
         central = cls._parse_central(data.get("central", {}))
         firewall = cls._parse_firewall(data.get("firewall"))
-        s3 = S3Config(**data.get("s3", {}))
+        waf = cls._parse_waf(data.get("waf"))
+        s3 = S3Config(**cls._known_fields(S3Config, data.get("s3", {})))
         return cls(
             name=bench_data.get("name", ""),
             python_version=bench_data.get("python", ""),
@@ -115,8 +124,26 @@ class BenchConfig:
             admin=admin,
             central=central,
             firewall=firewall,
+            waf=waf,
             s3=s3,
         )
+
+    @staticmethod
+    def _known_fields(dataclass_type: type, data: dict) -> dict:
+        """Drop keys a bench.toml table has that the dataclass no longer
+        declares, so a config written by an older bench-cli still loads."""
+        known = {f.name for f in fields(dataclass_type)}
+        return {k: v for k, v in data.items() if k in known}
+
+    @staticmethod
+    def _report_unknown_fields(data: dict, *, strict: bool) -> None:
+        """Unknown keys are ignored so older/foreign configs still load; strict
+        (opt-in, for validation) raises ConfigError naming them."""
+        if not strict:
+            return
+        paths = unknown_config_paths(data)
+        if paths:
+            raise ConfigError(f"bench.toml has unrecognized fields: {', '.join(paths)}")
 
     @staticmethod
     def _parse_redis(data: dict) -> RedisConfig:
@@ -240,6 +267,24 @@ class BenchConfig:
             rules=rules,
         )
 
+    @staticmethod
+    def _parse_waf(data: dict | None) -> WafConfig:
+        if not data:
+            return WafConfig()
+        # paranoia/inbound_threshold pass through unconverted so a hand-edited
+        # non-integer surfaces as a clean ConfigError in _validate_waf rather
+        # than a raw ValueError here.
+        return WafConfig(
+            enabled=bool(data.get("enabled", False)),
+            mode=str(data.get("mode", "DetectionOnly")),
+            paranoia=data.get("paranoia", 1),
+            inbound_threshold=data.get("inbound_threshold", 5),
+            body_limit=str(data.get("body_limit", "50m")),
+            inspect_responses=bool(data.get("inspect_responses", False)),
+            exclusions=[str(line) for line in data.get("exclusions", [])],
+            exempt_paths=[str(path) for path in data.get("exempt_paths", [])],
+        )
+
     def validate(self) -> None:
         self._validate_required_fields()
         self._validate_bench_name()
@@ -251,13 +296,11 @@ class BenchConfig:
         self._validate_worker_counts()
         self._validate_letsencrypt_email()
         self._validate_gunicorn()
-        self._validate_mariadb_version()
-        self._validate_mariadb_instance()
-        self._validate_postgres_instance()
         self._validate_redis_version()
         self._validate_production()
         self._validate_admin_domain()
         self._validate_firewall()
+        self._validate_waf()
 
     def _validate_required_fields(self) -> None:
         if not self.name:
@@ -373,6 +416,32 @@ class BenchConfig:
             except ValueError:
                 raise ConfigError(f"{prefix}.ip '{rule.ip}' is not a valid IPv4/IPv6 address or CIDR range.")
 
+    def _validate_waf(self) -> None:
+        waf = self.waf
+        if waf.mode not in WAF_MODES:
+            raise ConfigError(f"waf.mode '{waf.mode}' is invalid. Must be one of: {', '.join(WAF_MODES)}.")
+        if not isinstance(waf.paranoia, int) or not 1 <= waf.paranoia <= 4:
+            raise ConfigError(f"waf.paranoia '{waf.paranoia}' is invalid. Must be an integer between 1 and 4.")
+        if not isinstance(waf.inbound_threshold, int) or waf.inbound_threshold < 1:
+            raise ConfigError(f"waf.inbound_threshold '{waf.inbound_threshold}' is invalid. Must be a positive integer.")
+        try:
+            body_limit = parse_nginx_size(waf.body_limit)
+        except ValueError:
+            raise ConfigError(f"waf.body_limit '{waf.body_limit}' is not a valid size (e.g. '50m', '13107200').")
+        # Coupling only matters when the WAF is on: a body larger than what
+        # ModSecurity buffers would be proxied to the app uninspected.
+        if waf.enabled and body_limit < parse_nginx_size(self.nginx.client_max_body_size):
+            raise ConfigError(
+                f"waf.body_limit '{waf.body_limit}' must be >= nginx.client_max_body_size "
+                f"'{self.nginx.client_max_body_size}', else large uploads bypass inspection."
+            )
+        for i, path in enumerate(waf.exempt_paths):
+            if len(path) > 255 or not _WAF_EXEMPT_PATH_PATTERN.match(path):
+                raise ConfigError(
+                    f"waf.exempt_paths[{i}] '{path}' is invalid. Must be a URL path starting "
+                    f"with '/' using only letters, digits, and . _ ~ % / - characters."
+                )
+
     def _validate_gunicorn(self) -> None:
         if not isinstance(self.gunicorn.workers, int) or self.gunicorn.workers < 1:
             raise ConfigError(f"gunicorn.workers must be a positive integer, got '{self.gunicorn.workers}'.")
@@ -388,26 +457,6 @@ class BenchConfig:
             raise ConfigError(f"gunicorn.max_requests must be a non-negative integer, got '{self.gunicorn.max_requests}'.")
         if not isinstance(self.gunicorn.max_requests_jitter, int) or self.gunicorn.max_requests_jitter < 0:
             raise ConfigError(f"gunicorn.max_requests_jitter must be a non-negative integer, got '{self.gunicorn.max_requests_jitter}'.")
-
-    def _validate_mariadb_version(self) -> None:
-        if self.mariadb.version and not _VERSION_PATTERN.match(self.mariadb.version):
-            raise ConfigError(f"mariadb.version '{self.mariadb.version}' is invalid. Must be a version string like '11.8' or '11.4'.")
-
-    def _validate_mariadb_instance(self) -> None:
-        instance = self.mariadb.instance
-        if instance and not _BENCH_NAME_PATTERN.match(instance):
-            raise ConfigError(
-                f"mariadb.instance '{instance}' is invalid. Must start with a letter and contain only letters, digits, underscores, or hyphens."
-            )
-        if self.mariadb.data_dir and not Path(self.mariadb.data_dir).is_absolute():
-            raise ConfigError(f"mariadb.data_dir '{self.mariadb.data_dir}' must be an absolute path.")
-
-    def _validate_postgres_instance(self) -> None:
-        instance = self.postgres.instance
-        if instance and not _BENCH_NAME_PATTERN.match(instance):
-            raise ConfigError(
-                f"postgres.instance '{instance}' is invalid. Must start with a letter and contain only letters, digits, underscores, or hyphens."
-            )
 
     def _validate_redis_version(self) -> None:
         if self.redis.version and not _VERSION_PATTERN.match(self.redis.version):

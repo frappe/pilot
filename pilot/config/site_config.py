@@ -6,7 +6,7 @@ from typing import List
 class SiteConfig:
     name: str
     apps: List[str]
-    admin_password: str = "admin"
+    admin_password: str | None = None
     domains: List[str] = field(default_factory=list)
     ssl: bool = False
     default: bool = False

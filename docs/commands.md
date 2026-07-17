@@ -76,7 +76,7 @@ If the `IS_SUDOERS_SETUP` environment variable is set, `bench init` assumes the 
 
 #### Step 2 — Install system packages
 
-`MariaDBManager.install()` and `RedisManager.install()` each check `is_installed()` first and skip if already present. The package manager is selected by `get_package_manager()` from `pilot.platform`.
+`MariaDBManager.install()` and `RedisManager.install()` each check `is_installed()` first and skip if already present. The package manager is selected by `get_package_manager()` from `pilot.managers.platform`.
 
 **Ubuntu (apt):**
 - `mariadb-server`
@@ -467,7 +467,7 @@ bench build-admin
 
 The admin server starts automatically as part of `bench start` (via the `admin:` entry in the Procfile) and is always available at `http://localhost:8002` while the bench is running. This command only rebuilds the static assets — it does not start or stop the server.
 
-See [docs/admin.md](admin.md) for the full interface specification.
+See [docs/admin-api.md](admin-api.md) for the full interface specification.
 
 ---
 
@@ -482,7 +482,7 @@ bench generate-admin-session --full-path  # prints the full admin URL with ?sid=
 
 Open the `--full-path` URL in a browser within **5 minutes**: the frontend exchanges the `?sid=` token for a 1-day `HttpOnly` session cookie, and the sign-in token is consumed (single-use). Both are HS256 JWTs signed with `admin.jwt_secret` in `bench.toml` (generated on first run). Requires `admin.password` to be set.
 
-A remote control plane can mint its own `?sid=` tokens (and Bearer tokens) instead of using this command, by signing them with a key published at `admin.jwks_url` — see [Remote login via JWKS](admin.md#remote-login-via-jwks).
+A remote control plane can mint its own `?sid=` tokens (and Bearer tokens) instead of using this command, by signing them with a key published at `admin.jwks_url` — see [Remote login via JWKS](admin-api.md#remote-login-via-jwks).
 
 ---
 
@@ -501,7 +501,7 @@ Use the token as a Bearer token in the `Authorization` header:
 curl -H "Authorization: Bearer <token>" https://admin.example.com/api/sites/site-name
 ```
 
-Requires `admin.jwt_secret` to be set in `bench.toml`. See [docs/admin.md](admin.md) for scoped authentication details.
+Requires `admin.jwt_secret` to be set in `bench.toml`. See [docs/admin-api.md](admin-api.md) for scoped authentication details.
 
 ---
 
@@ -556,7 +556,7 @@ bench setup production --process-manager supervisord --admin-domain admin.exampl
 ```
 
 **Flags:**
-- `--process-manager systemd|supervisord|openrc` — which process manager to deploy with (defaults to `production.process_manager` in `bench.toml`, or `systemd` — `openrc` on Alpine). Switching between them on a re-run migrates the existing deployment.
+- `--process-manager systemd|supervisord` — which process manager to deploy with (defaults to `production.process_manager` in `bench.toml`, or `systemd`). Switching between them on a re-run migrates the existing deployment.
 - `--admin-domain` — admin domain (defaults to `admin.domain` in `bench.toml`). Must match one of this bench's wildcard domains if any are configured (see [docs/production.md](production.md#custom-domain-management)).
 - `--tls` — terminate TLS via Let's Encrypt for the admin and SSL-enabled sites. Omit to serve plain HTTP (a central proxy may terminate TLS upstream).
 

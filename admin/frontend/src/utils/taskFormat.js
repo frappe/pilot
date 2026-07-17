@@ -1,4 +1,10 @@
 export const STATUS_CONFIG = {
+  queued: {
+    label: 'Queued',
+    theme: 'blue',
+    icon: 'lucide-clock-3',
+    iconBg: 'bg-surface-blue-2 text-ink-blue-8',
+  },
   success: { label: 'Success', theme: 'green', icon: 'lucide-check', iconBg: 'bg-surface-green-2 text-ink-green-8' },
   failed: { label: 'Failed', theme: 'red', icon: 'lucide-x', iconBg: 'bg-surface-red-2 text-ink-red-8' },
   running: {
@@ -12,6 +18,17 @@ export const STATUS_CONFIG = {
 
 export function statusConfig(task) {
   return STATUS_CONFIG[task.status] || STATUS_CONFIG.killed
+}
+
+export function isTaskActive(task) {
+  return task?.status === 'queued' || task?.status === 'running'
+}
+
+export function taskActivityLabel(task) {
+  if (task.status === 'queued') {
+    return task.queue_position ? `Queued · #${task.queue_position} in queue` : 'Queued'
+  }
+  return relativeTime(task.started_at || task.queued_at)
 }
 
 const COMMAND_LABELS = {
@@ -64,6 +81,7 @@ export function siteLabel(task) {
 }
 
 export function relativeTime(iso) {
+  if (!iso) return ''
   const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
   if (seconds < 60) return 'just now'
   const minutes = Math.floor(seconds / 60)

@@ -15,8 +15,8 @@ class SetupLetsEncryptCommand(Command):
     group = "setup"
 
     def __init__(self, bench: "Bench") -> None:
-        from pilot.managers.letsencrypt_manager import LetsEncryptManager
-        from pilot.managers.nginx_manager import NginxManager
+        from pilot.managers.letsencrypt import LetsEncryptManager
+        from pilot.managers.nginx import NginxManager
 
         self.bench = bench
         self.letsencrypt_manager = LetsEncryptManager(bench)

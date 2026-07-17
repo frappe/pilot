@@ -10,7 +10,7 @@ from __future__ import annotations
 from playwright.sync_api import Page, expect
 
 # Long pole: bench init clones the framework and builds the venv.
-SETUP_TIMEOUT_MS = 45 * 60_000
+SETUP_TIMEOUT_MS = 20 * 60_000
 
 
 class WizardSetupError(Exception):
@@ -26,7 +26,6 @@ def complete_dev_wizard(
     admin_password: str,
     mariadb_password: str = "",
     db_type: str = "mariadb",
-    db_mode: str = "shared",
     postgres_password: str = "",
     postgres_admin_user: str = "postgres",
     framework_branch: str | None = None,
@@ -36,13 +35,12 @@ def complete_dev_wizard(
     are no domain/TLS/process-manager prompts to drive here.
 
     db_type:
-        'mariadb'   — drive the MariaDB fields (db_mode below).
+        'mariadb'   — drive the MariaDB fields.
         'postgres'  — drive the PostgreSQL fields (superuser + password).
 
-    db_mode:
-        'shared'    — use the existing system server (CI default).
-        'dedicated' — provision a fresh per-bench instance (MariaDB) or cluster
-                      (PostgreSQL, systemd Linux only).
+    Every bench for this OS user shares one MariaDB/PostgreSQL server (see
+    MariaDBManager/PostgresManager) — there's no per-bench deployment mode to
+    choose, just whether that shared server still needs to be installed.
     """
     # The wizard mounts in a 'loading' state, then resolves to the first step.
     expect(page.get_by_text("Step 1 of", exact=False)).to_be_visible(timeout=30_000)
@@ -52,24 +50,15 @@ def complete_dev_wizard(
     page.get_by_role("button", name="Next").click()
 
     # ── Step 2: Database ────────────────────────────────────────────────────────
-    # MariaDB and PostgreSQL share one set of fields: an engine-agnostic
-    # "Deployment mode" select and generic "Root username" / "Root user password"
-    # fields (Setup.vue's showDeploymentMode/showRootUsername).
+    # MariaDB and PostgreSQL share one set of fields: generic "Root username" /
+    # "Root user password" fields (Setup.vue's showRootUsername).
     _choose_select(page, "Database engine", "PostgreSQL" if db_type == "postgres" else "MariaDB")
-    # The dedicated/shared choice only renders where supported (Linux; PostgreSQL
-    # additionally needs systemd, i.e. not Alpine).
-    if page.get_by_role("combobox", name="Deployment mode").is_visible():
-        _choose_select(
-            page,
-            "Deployment mode",
-            "Dedicated Instance" if db_mode == "dedicated" else "Shared Instance",
-        )
-    # Root username only renders when it isn't implied (dedicated instances and
-    # fresh installs default to root/postgres).
+    # Root username only renders when it isn't implied (a fresh install
+    # defaults to root/postgres).
     if page.get_by_label("Root username").is_visible():
         page.get_by_label("Root username").fill(postgres_admin_user if db_type == "postgres" else "root")
     page.get_by_label("Root user password").fill(postgres_password if db_type == "postgres" else mariadb_password)
-    page.get_by_role("button", name="Next").click()
+    page.get_by_role("button", name="Verify credentials").click()
     # A wrong password surfaces inline and keeps us on this step.
     expect(page.get_by_text("Incorrect MariaDB credentials.")).to_be_hidden()
     expect(page.get_by_text("Incorrect PostgreSQL credentials.")).to_be_hidden()
@@ -95,7 +84,7 @@ def complete_dev_wizard(
     # locator times out 45 minutes later.
     ready = page.get_by_text("Your bench is ready.")
     failed = page.get_by_role("button", name="Back to configuration")
-    expect(ready.or_(failed).first).to_be_visible(timeout=SETUP_TIMEOUT_MS)
+    expect(ready.or_(failed).filter(visible=True).first).to_be_visible(timeout=SETUP_TIMEOUT_MS)
 
     if failed.is_visible():
         raise WizardSetupError(_wizard_error_text(page))

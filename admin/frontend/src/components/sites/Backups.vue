@@ -1,17 +1,20 @@
 <template>
   <div class="space-y-4 mt-5">
-    <CronScheduleControl ref="scheduleRef" title="Automatic backups" noun="backups"
-      enabled-hint="Taken on a schedule and kept for 30 days." disabled-hint="Automatic backups are disabled."
-      disable-body="Automatic backups will stop. Existing backups are kept."
-      retention-hint="Kept 30 days. Times shown in your timezone." :fetch-schedule="fetchSchedule"
-      :set-schedule="setSchedule" :remove-schedule="removeSchedule">
-      <template #actions>
+    <div class="flex sm:flex-row flex-col sm:justify-between sm:items-center gap-3">
+      <div>
+        <p class="font-medium text-ink-gray-8 text-sm">Automated backups</p>
+        <p class="mt-0.5 text-ink-gray-5 text-sm">{{ scheduleSummary }}</p>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <Button variant="subtle" size="sm" @click="configRef.open()">{{ enabled ? 'Configure' : 'Enable' }}</Button>
         <Button size="sm" :loading="backingUp" @click="backupNow">
           <template #prefix><span class="size-4 lucide-archive" /></template>
           Back up now
         </Button>
-      </template>
-    </CronScheduleControl>
+      </div>
+    </div>
+
+    <BackupConfigDialog ref="configRef" :site-name="siteName" @saved="loadConfig" />
 
     <ErrorMessage v-if="error" :message="error" />
 
@@ -26,8 +29,8 @@
         <div>
           <p class="font-medium text-ink-gray-7 text-sm">No backups yet</p>
           <p class="mt-1 max-w-xs text-ink-gray-5 text-p-sm">
-            <template v-if="scheduleRef?.disabled">Enable automatic backups to start protecting your site.</template>
-            <template v-else>The first automatic backup runs {{ nextHint }}. You can also back up now.</template>
+            <template v-if="!enabled">Enable automatic backups to start protecting your site.</template>
+            <template v-else>Automatic backups run on schedule. You can also back up now.</template>
           </p>
         </div>
         <Button size="sm" :loading="backingUp" @click="backupNow">
@@ -77,10 +80,13 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, Dialog, Dropdown, ErrorMessage, ListFooter, ListView, ListRowItem, LoadingText } from 'frappe-ui'
-import CronScheduleControl from '@/components/CronScheduleControl.vue'
+import BackupConfigDialog from '@/components/sites/BackupConfigDialog.vue'
+import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
-import { useSite } from '@/composables/useSite'
+import { tasksApi } from '@/api/tasks'
+import { useSite } from '@/composables/sites/useSite'
 import { openTaskDetailPage } from '@/utils/taskRoute'
+import { cronToLabel } from '@/utils/backup'
 
 const props = defineProps({ siteName: { type: String, required: true } })
 const router = useRouter()
@@ -100,20 +106,29 @@ const footerOptions = computed(() => ({
 const backingUp = ref(false)
 const error = ref('')
 
-const scheduleRef = ref(null)
-const nextHint = computed(() => scheduleRef.value?.currentScheduleLabel?.toLowerCase() ?? '')
+const configRef = ref(null)
+const config = ref(null)
+const enabled = computed(() => !!config.value?.schedule)
 
-const fetchSchedule = () => sitesApi.backups.schedule.get(props.siteName)
-const setSchedule = (cron) => sitesApi.backups.schedule.set(props.siteName, cron)
-const removeSchedule = () => sitesApi.backups.schedule.remove(props.siteName)
+const scheduleSummary = computed(() =>
+  enabled.value ? `${cronToLabel(config.value.schedule)}.` : 'Manual backups are kept until you delete them.',
+)
+
+async function loadConfig() {
+  try {
+    config.value = await sitesApi.backups.schedule.get(props.siteName)
+  } catch {
+    config.value = null
+  }
+}
 
 async function backupNow() {
   backingUp.value = true
   error.value = ''
   try {
     const result = await sitesApi.backups.create(props.siteName)
-    if (result.ok) openTaskDetailPage(router, result.task_id)
-    else error.value = result.error || 'Backup failed.'
+    if (result.task_id) openTaskDetailPage(router, result.task_id)
+    else error.value = apiErrorMessage(result, 'Backup failed.')
   } catch (e) {
     error.value = e.message || 'Backup failed.'
   } finally {
@@ -171,19 +186,19 @@ function menuOptions(set) {
 async function downloadFile(set, kind) {
   const file = fileOf(set, kind)
   if (file?.path) {
-    window.location.href = sitesApi.backups.download(props.siteName, file.filename)
+    window.location.href = sitesApi.backups.download(props.siteName, set.timestamp, file.filename)
     return
   }
   // Offsite-only file: fetch a direct, time-limited S3 link and open it —
   // this server never proxies or re-downloads the transfer.
   error.value = ''
   try {
-    const result = await sitesApi.backups.offsiteUrls(props.siteName, set.timestamp)
-    if (result.error) {
-      error.value = result.error
+    const links = await sitesApi.backups.downloadLinks(props.siteName, set.timestamp)
+    if (links.error) {
+      error.value = apiErrorMessage(links, 'Could not load offsite backup.')
       return
     }
-    const url = result.urls[OFFSITE_KIND_KEYS[kind]]
+    const url = links[OFFSITE_KIND_KEYS[kind]]
     if (!url) {
       error.value = 'Backup file not found offsite.'
       return
@@ -204,16 +219,11 @@ async function confirmDelete() {
   deleteError.value = ''
   try {
     const filenames = deleteTarget.value.files.map((f) => f.filename)
-    const res = await fetch('/api/tasks/run', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ command: 'delete-backup', site: props.siteName, filenames }),
-    })
-    const data = await res.json()
-    if (data.ok) {
+    const data = await tasksApi.run('delete-backup', { site: props.siteName, filenames })
+    if (data.task_id) {
       showDelete.value = false
       openTaskDetailPage(router, data.task_id)
-    } else deleteError.value = data.error || 'Delete failed.'
+    } else deleteError.value = apiErrorMessage(data, 'Delete failed.')
   } catch (e) {
     deleteError.value = e.message || 'Delete failed.'
   } finally {
@@ -221,5 +231,8 @@ async function confirmDelete() {
   }
 }
 
-onMounted(() => { loadBackups() })
+onMounted(() => {
+  loadBackups()
+  loadConfig()
+})
 </script>

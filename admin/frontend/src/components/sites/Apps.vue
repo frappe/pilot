@@ -6,8 +6,8 @@
     <div v-else-if="!installedApps.length" class="py-12 text-ink-gray-5 text-sm text-center">
       No apps installed on this site.
     </div>
-    <div v-else class="gap-x-6 grid grid-cols-1 sm:grid-cols-2">
-      <MarketplaceAppCard v-for="app in appObjects" :key="app.name" :app="app" :show-divider="true">
+    <div v-else class="gap-x-6 gap-y-4 grid grid-cols-1 md:grid-cols-2">
+      <MarketplaceAppCard v-for="app in appObjects" :key="app.name" :app="app">
         <template #actions>
           <Dropdown v-if="menuOptions(app).length" :options="menuOptions(app)" placement="bottom-end">
             <template #default="{ open }">
@@ -42,9 +42,10 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, Dialog, Dropdown, ErrorMessage, LoadingText } from 'frappe-ui'
-import MarketplaceAppCard from '@/components/MarketplaceAppCard.vue'
-import { useSite } from '@/composables/useSite'
-import { useAppRegistry } from '@/composables/useAppRegistry'
+import { apiErrorMessage } from '@/api/client'
+import MarketplaceAppCard from '@/components/marketplace/MarketplaceAppCard.vue'
+import { useSite } from '@/composables/sites/useSite'
+import { useAppRegistry } from '@/composables/apps/useAppRegistry'
 import { openTaskDetailPage } from '@/utils/taskRoute'
 import { toSentenceCase } from '@/utils/format'
 
@@ -101,11 +102,11 @@ async function confirmUninstall() {
   uninstallError.value = ''
   try {
     const result = await uninstallApp(uninstallTarget.value)
-    if (result?.ok) {
+    if (result.task_id) {
       showUninstall.value = false
       openTaskDetailPage(router, result.task_id)
     } else {
-      uninstallError.value = result?.error || 'Uninstall failed.'
+      uninstallError.value = apiErrorMessage(result, 'Uninstall failed.')
     }
   } catch (e) {
     uninstallError.value = e.message || 'Uninstall failed.'

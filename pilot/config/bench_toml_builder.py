@@ -4,13 +4,13 @@ import copy
 import tomllib
 from pathlib import Path
 
+from pilot.config.bench_toml import dumps_config
 from pilot.config.bench_config import BenchConfig
-from pilot.config.toml_writer import bench_config_to_toml
 from pilot.config.worker_config import WorkerConfig, WorkerGroup
 
 # The single registry of wizard-editable settings: flat key -> attribute path on
 # BenchConfig. Defaults and serialization live in the dataclasses and
-# bench_config_to_toml; adding a config field means adding the dataclass field
+# dumps_config; adding a config field means adding the dataclass field
 # (+ its toml_writer line) and, if it is wizard-editable, one entry here.
 FLAT_KEYS = {
     "bench_name": "name",
@@ -22,21 +22,22 @@ FLAT_KEYS = {
     "db_type": "db_type",
     "mariadb_password": "mariadb.root_password",
     "mariadb_admin_user": "mariadb.admin_user",
-    "mariadb_instance": "mariadb.instance",
     "mariadb_socket_path": "mariadb.socket_path",
-    "mariadb_data_dir": "mariadb.data_dir",
-    # NB: mariadb.port is deliberately NOT a flat key. Like the other ports
-    # (http/admin/redis) it is offset-managed via _PORT_FIELDS. Exposing it as a
-    # flat key made read_settings() round-trip the already-offset value, which
-    # render() then offset a *second* time — so every wizard /save compounded the
-    # offset onto mariadb.port alone (e.g. 3306→3312→3318), drifting it off-grid
-    # and colliding with sibling instances.
-    # postgres.port is safe as a flat key — it's a shared server, never offset
-    # (not in _PORT_FIELDS), so it doesn't hit the double-offset issue above.
+    "mariadb_host": "mariadb.host",
+    "mariadb_existing": "mariadb.existing",
+    # mariadb.port and postgres.port are deliberately NOT offset-managed
+    # (not in _PORT_FIELDS): every bench for a given OS user shares the same
+    # single MariaDB/PostgreSQL server, so their ports must stay identical
+    # across benches rather than being offset per bench. mariadb.port is
+    # still a flat key (unlike the offset-managed ports) so NewCommand can
+    # set it explicitly — the shared server's port isn't always the default
+    # 3306 (e.g. a system-wide MariaDB may already be running there).
+    "mariadb_port": "mariadb.port",
     "postgres_password": "postgres.root_password",
     "postgres_admin_user": "postgres.admin_user",
     "postgres_port": "postgres.port",
-    "postgres_instance": "postgres.instance",
+    "postgres_host": "postgres.host",
+    "postgres_existing": "postgres.existing",
     "admin_enabled": "admin.enabled",
     "admin_password": "admin.password",
     "admin_domain": "admin.domain",
@@ -48,7 +49,7 @@ FLAT_KEYS = {
     "production_process_manager": "production.process_manager",
 }
 
-# Framework branches the setup wizard offers, newest/recommended first. The
+# Framework branches the setup wizard offers, newest/recommended first.
 FRAMEWORK_BRANCHES = ["version-16", "develop"]
 
 _DEFAULT_DATA: dict = {
@@ -70,7 +71,7 @@ def _default_config(name: str = "") -> BenchConfig:
 # and dotted paths — callers needing them (e.g. NewCommand's port offset
 # logic) should go through default_ports()/BenchTomlBuilder, not duplicate
 # the numbers themselves.
-_PORT_FIELDS = ("http_port", "socketio_port", "redis.cache_port", "redis.queue_port", "admin.port", "mariadb.port")
+_PORT_FIELDS = ("http_port", "socketio_port", "redis.cache_port", "redis.queue_port", "admin.port")
 
 
 def default_ports() -> dict[str, int]:
@@ -93,7 +94,7 @@ def current_port_offset(toml_path: Path) -> int:
         with open(toml_path, "rb") as f:
             data = tomllib.load(f)
         return data.get("bench", {}).get("http_port", default_ports()["http_port"]) - default_ports()["http_port"]
-    except Exception:
+    except (OSError, tomllib.TOMLDecodeError):
         return 0
 
 
@@ -168,7 +169,7 @@ def _flatten(config: BenchConfig) -> dict:
 class BenchTomlBuilder:
     """Adapter between the wizard's flat settings dicts and ``BenchConfig``.
 
-    ``BenchConfig`` + ``bench_config_to_toml`` are the single source of truth
+    ``BenchConfig`` + ``dumps_config`` are the single source of truth
     for defaults and serialization; this class only translates flat keys.
     """
 
@@ -181,17 +182,20 @@ class BenchTomlBuilder:
 
     def build(self) -> BenchConfig:
         config = _default_config(self._name)
-        for key, value in self._settings.items():
-            _apply_setting(config, key, value)
+        self.apply_to(config)
         if self._port_offset:
             for field in _PORT_FIELDS:
                 _set_path(config, field, _get_path(config, field) + self._port_offset)
-        if self._name:
-            config.name = self._name
         return config
 
+    def apply_to(self, config: BenchConfig) -> None:
+        for key, value in self._settings.items():
+            _apply_setting(config, key, value)
+        if self._name:
+            config.name = self._name
+
     def render(self) -> str:
-        return bench_config_to_toml(self.build())
+        return dumps_config(self.build())
 
     @classmethod
     def read_settings(cls, toml_path: Path) -> dict:

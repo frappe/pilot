@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import importlib
 import pkgutil
 
 from pilot.commands.base import Command
+from pilot.context import CliContext
 from pilot.exceptions import BenchError
 from pilot.loader import load_bench
 
@@ -12,18 +14,14 @@ from pilot.loader import load_bench
 GROUP_HELP = {
     "setup": "Production setup commands.",
     "remove": "Teardown commands.",
+    "tasks": "Admin task worker controls.",
 }
 
-_commands_cache: list[type[Command]] | None = None
 
-
+@functools.cache
 def _discover() -> list[type[Command]]:
     """Import every module under pilot.commands and collect Command subclasses
-    that define a `name`. Result is memoised for the process lifetime."""
-    global _commands_cache
-    if _commands_cache is not None:
-        return _commands_cache
-
+    that define a `name`. Cached for the process lifetime."""
     import pilot.commands as pkg
 
     for mod in pkgutil.walk_packages(pkg.__path__, pkg.__name__ + "."):
@@ -38,8 +36,7 @@ def _discover() -> list[type[Command]]:
             collect(sub)
 
     collect(Command)
-    _commands_cache = sorted(found.values(), key=lambda c: (c.group or "", c.name))
-    return _commands_cache
+    return sorted(found.values(), key=lambda c: (c.group or "", c.name))
 
 
 def command_names() -> frozenset[str]:
@@ -75,23 +72,29 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+def dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser, context: CliContext) -> None:
     cls: type[Command] | None = getattr(args, "_command_cls", None)
     if cls is None:
-        # No command, or a group selected without a subcommand.
         printer = getattr(args, "_help_printer", None)
         (printer or parser.print_help)()
         return
-
-    bench = load_bench(require_explicit=cls.requires_explicit_bench) if cls.requires_bench else None
-    cls.from_args(args, bench).run()
+    cls.from_args(args, _resolve_bench(cls, context)).run()
 
 
-def dispatch_all(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
-    """Run the dispatched command once per production-managed bench — for `-b all`.
+def _resolve_bench(cls: type[Command], context: CliContext):
+    if cls.requires_bench:
+        return load_bench(context, require_explicit=cls.requires_explicit_bench)
+    if cls.optional_bench:
+        try:
+            return load_bench(context)
+        except Exception:
+            return None
+    return None
 
-    Dev benches (no process manager) are skipped: their `start` blocks in the
-    foreground, which would hang the loop on the first one."""
+
+def dispatch_all(args: argparse.Namespace, parser: argparse.ArgumentParser, context: CliContext) -> None:
+    """Run the command once per production bench (`-b all`); dev benches are skipped
+    because their foreground `start` would hang the loop."""
     cls: type[Command] | None = getattr(args, "_command_cls", None)
     if cls is None:
         printer = getattr(args, "_help_printer", None)
@@ -100,9 +103,7 @@ def dispatch_all(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
     if not cls.supports_all_benches:
         raise BenchError(f"'-b all' isn't supported for '{cls.name}'. Pass a specific bench name instead.")
 
-    import pilot.loader as loader
-
-    benches_dir = loader.cli_root() / "benches"
+    benches_dir = context.installation_root / "benches"
     names = sorted(
         d.name for d in benches_dir.iterdir() if d.is_dir() and (d / "bench.toml").exists()
     ) if benches_dir.is_dir() else []
@@ -111,8 +112,7 @@ def dispatch_all(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
 
     failed = []
     for name in names:
-        loader.set_active_bench(name)
-        bench = load_bench()
+        bench = load_bench(context.for_bench(name))
         if not bench.config.production.enabled:
             print(f"== {name} == (skipped: dev mode)")
             continue

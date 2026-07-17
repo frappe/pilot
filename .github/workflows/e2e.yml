@@ -11,7 +11,7 @@ on:
 jobs:
   e2e:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 30
     name: e2e (${{ matrix.variant }})
     strategy:
       # Variants run as independent jobs in parallel, so adding one doesn't add
@@ -19,30 +19,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Dev bench on the shared system MariaDB; exercises app install/uninstall.
-          - variant: shared
+          # Dev bench on the rootless, per-user MariaDB server the wizard
+          # provisions from scratch; exercises app install/uninstall.
+          - variant: mariadb
             db_type: mariadb
-            db_mode: shared
             extra_app: "1"
-          # The production shape: a dedicated per-bench MariaDB instance. Skips
-          # the extra-app step (covered by `shared`) to stay quick.
-          - variant: dedicated
-            db_type: mariadb
-            db_mode: dedicated
-            extra_app: "0"
-          # PostgreSQL bench on the shared system server; exercises app
-          # install/uninstall on the postgres engine end to end.
+          # PostgreSQL bench on the rootless, per-user PostgreSQL server the
+          # wizard provisions from scratch.
           - variant: postgres
             db_type: postgres
-            db_mode: shared
             extra_app: "1"
-          # PostgreSQL with a dedicated per-bench cluster (pg_createcluster); the
-          # dedicated counterpart of the shared-server postgres variant. Skips the
-          # extra-app step (covered by `postgres`) to stay quick.
-          - variant: postgres-dedicated
-            db_type: postgres
-            db_mode: dedicated
-            extra_app: "0"
 
     steps:
       - uses: actions/checkout@v4
@@ -67,18 +53,19 @@ jobs:
       - name: Install MariaDB
         if: matrix.db_type == 'mariadb'
         run: |
-          sudo apt-get install -y mariadb-server
-          sudo systemctl start mariadb
-          # The setup wizard validates "shared system MariaDB" against this.
-          sudo mysql -e "SET PASSWORD FOR root@localhost = PASSWORD('admin'); FLUSH PRIVILEGES;"
+          sudo apt-get install -y mariadb-server libmariadb-dev
+          # bench runs its own rootless, per-user MariaDB server (see
+          # MariaDBManager) — disable the system service install.sh would
+          # also disable, so it doesn't hold the port the wizard provisions
+          # a fresh server on.
+          sudo systemctl disable --now mariadb
 
       - name: Install PostgreSQL
         if: matrix.db_type == 'postgres'
         run: |
-          sudo apt-get install -y postgresql postgresql-client
-          sudo systemctl start postgresql
-          # The setup wizard validates PostgreSQL against this superuser password.
-          sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'admin';"
+          sudo apt-get install -y postgresql postgresql-client libpq-dev libmariadb-dev
+          # Same as MariaDB above: bench provisions its own rootless server.
+          sudo systemctl disable --now postgresql
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -115,14 +102,13 @@ jobs:
         working-directory: tests/e2e
         # BENCH_BIN is intentionally unset so the harness uses the repo launcher
         # (<repo>/bench), which writes to <repo>/benches where the harness reads.
-        run: pytest
+        run: pytest -v -s --durations=10
         env:
           E2E_MARIADB_PASSWORD: admin
           E2E_POSTGRES_PASSWORD: admin
           # CI validates this branch's frontend, so build the admin UI from source.
           E2E_BUILD_ADMIN: "1"
           E2E_DB_TYPE: ${{ matrix.db_type }}
-          E2E_DB_MODE: ${{ matrix.db_mode }}
           E2E_EXTRA_APP: ${{ matrix.extra_app }}
 
       - name: Upload Playwright traces

@@ -1,3 +1,49 @@
+:root {
+  /* Strong UI easing curves (built-in CSS easings are too weak) */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+/* Reduced motion: keep transitions near-instant, drop movement */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* Smart scrollbars: thin, rounded, hidden until the pointer is inside the
+   scroll area — the macOS overlay feel, brought to Windows/Linux too. Colors
+   use espresso tokens so they follow light/dark automatically. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+*:hover {
+  scrollbar-color: var(--outline-gray-3) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 9999px;
+}
+
+:hover::-webkit-scrollbar-thumb {
+  background-color: var(--outline-gray-3);
+}
+
 /* Ensure frappe-ui dialog overlay sits above the sticky app header */
 .dialog-overlay {
   z-index: 50;

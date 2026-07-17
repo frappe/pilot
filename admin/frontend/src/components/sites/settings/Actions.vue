@@ -45,7 +45,8 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, Dialog, ErrorMessage, TextInput } from 'frappe-ui'
-import { useSite } from '@/composables/useSite'
+import { useSite } from '@/composables/sites/useSite'
+import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
 import { openTaskDetailPage } from '@/utils/taskRoute'
 
@@ -66,15 +67,15 @@ async function enableSsl(email) {
   sslEmailError.value = ''
   sslLoading.value = true
   try {
-    const data = await sitesApi.enableSsl(props.siteName, email)
-    if (data.ok) {
+    const data = await sitesApi.enableTls(props.siteName, email)
+    if (data.task_id) {
       showSslEmail.value = false
       openTaskDetailPage(router, data.task_id)
-    } else if (data.needs_email) {
+    } else if (data.error?.details?.needs_email) {
       showSslEmail.value = true
-      if (email) sslEmailError.value = data.error
+      if (email) sslEmailError.value = apiErrorMessage(data, 'Could not enable SSL.')
     } else {
-      error.value = data.error
+      error.value = apiErrorMessage(data, 'Could not enable SSL.')
     }
   } catch (e) {
     if (showSslEmail.value) sslEmailError.value = e.message
@@ -91,8 +92,8 @@ async function clearCache() {
   clearingCache.value = true
   try {
     const data = await sitesApi.clearCache(props.siteName)
-    if (data.ok) openTaskDetailPage(router, data.task_id)
-    else error.value = data.error
+    if (data.task_id) openTaskDetailPage(router, data.task_id)
+    else error.value = apiErrorMessage(data, 'Failed to clear cache.')
   } catch (e) {
     error.value = e.message || 'Failed to clear cache.'
   } finally {
