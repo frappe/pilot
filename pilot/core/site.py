@@ -293,30 +293,9 @@ class Site:
         if not self.bench.config.production.process_manager == "none":
             return
 
-        import subprocess
-        import sys
+        from pilot.managers.platform import add_hosts_entry
 
-        from pilot.utils import hosts_line_contains
-
-        hosts_path = Path("/etc/hosts")
-        entry = f"127.0.0.1 {self.config.name}"
-        for line in hosts_path.read_text().splitlines():
-            if hosts_line_contains(line, self.config.name):
-                return
-
-        try:
-            subprocess.run(
-                ["sudo", "-n", "tee", "-a", str(hosts_path)],
-                input=f"{entry}\n".encode(),
-                capture_output=True,
-                check=True,
-            )
-        except (subprocess.CalledProcessError, OSError) as e:
-            print(
-                f"Warning: could not add '{entry}' to {hosts_path}: {e}.\n"
-                f"  Add it manually to reach the site by name.",
-                file=sys.stderr,
-            )
+        add_hosts_entry(self.config.name)
 
     def _obtain_cert(self, on_progress: Callable[[str], None]) -> None:
         import json

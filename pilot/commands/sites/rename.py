@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sys
 from dataclasses import dataclass
 from typing import Annotated, ClassVar
 
@@ -91,31 +90,12 @@ class RenameSiteCommand(Command):
         (self.bench.config_path / "nginx" / "sites" / f"{self.old_name}.conf").unlink(missing_ok=True)
 
     def _add_to_hosts(self) -> None:
-        import subprocess
-        from pathlib import Path
-
         if not self.bench.config.production.process_manager == "none":
             return
-        hosts_path = Path("/etc/hosts")
-        from pilot.utils import hosts_line_contains
 
-        entry = f"127.0.0.1 {self.new_name}"
-        for line in hosts_path.read_text().splitlines():
-            if hosts_line_contains(line, self.new_name):
-                return
-        try:
-            subprocess.run(
-                ["sudo", "-n", "tee", "-a", str(hosts_path)],
-                input=f"{entry}\n".encode(),
-                capture_output=True,
-                check=True,
-            )
-        except (subprocess.CalledProcessError, OSError) as e:
-            print(
-                f"Warning: could not add '{entry}' to {hosts_path}: {e}.\n"
-                f"  Add it manually to reach the site by name.",
-                file=sys.stderr,
-            )
+        from pilot.managers.platform import add_hosts_entry
+
+        add_hosts_entry(self.new_name)
 
     def _run_followups(self, ssl_enabled: bool) -> None:
         # Auto-run whatever the new domain needs; on failure point the user at the

@@ -323,7 +323,9 @@ class Bench:
         # shares one MariaDB/PostgreSQL server, and ensure_no_sites above
         # already guarantees this bench has no sites — and therefore no
         # databases — left.
-        self._unmount_legacy_bind_mount(self.path)
+        from pilot.managers.platform import unmount_legacy_bind_mount
+
+        unmount_legacy_bind_mount(self.path)
         on_progress(f"Deleting {self.path}...")
         shutil.rmtree(self.path, ignore_errors=True)
         on_progress(f"\nBench '{name}' dropped.")
@@ -345,58 +347,6 @@ class Bench:
         domain = self.config.admin.domain
         if domain:
             DomainRouteProvider(self).release(domain)
-
-    @staticmethod
-    def _unmount_legacy_bind_mount(target: Path, fstab_path: Path = Path("/etc/fstab")) -> None:
-        """Unmount `target` and drop its fstab entry if present.
-
-        Benches created before ZFS/volume support was removed may still have
-        their directory (or a dedicated MariaDB datadir) bind-mounted from an
-        old dataset, with a matching fstab line so it survived reboots. This
-        doesn't depend on ZFS or any volume-management code being present —
-        it only looks at whether `target` is currently a mountpoint — so it's
-        a no-op, and safe to call unconditionally, for any bench that was
-        never volume-backed.
-        """
-        import subprocess
-
-        from pilot.managers.platform import _privileged
-
-        try:
-            is_mounted = target.is_mount()
-        except OSError:
-            is_mounted = False
-        if is_mounted:
-            print(f"Unmounting legacy bind mount at {target}...", flush=True)
-            try:
-                subprocess.run(_privileged(["umount", "-l", str(target)]), check=False)
-            except Exception as exc:
-                print(f"  (unmount {target} skipped: {exc})")
-
-        try:
-            lines = fstab_path.read_text().splitlines()
-        except OSError:
-            return
-        kept = [
-            line for line in lines
-            if not (
-                len(line.split()) >= 2
-                and not line.lstrip().startswith("#")
-                and line.split()[1] == str(target)
-            )
-        ]
-        if len(kept) == len(lines):
-            return
-        content = "\n".join(kept) + "\n"
-        try:
-            subprocess.run(
-                _privileged(["tee", str(fstab_path)]),
-                input=content.encode(),
-                capture_output=True,
-                check=True,
-            )
-        except Exception as exc:
-            print(f"  (fstab cleanup for {target} skipped: {exc})")
 
     def setup_nginx(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
         from pilot.exceptions import ConfigError

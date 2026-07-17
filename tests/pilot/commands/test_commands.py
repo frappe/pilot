@@ -1108,19 +1108,19 @@ def _drop_config(name: str) -> BenchConfig:
 def test_unmount_legacy_bind_mount_noop_when_not_mounted(tmp_path: Path) -> None:
     """A bench that was never volume-backed has nothing mounted at its dir, so
     this must be a silent no-op — no sudo calls, no fstab rewrite."""
-    from pilot.core.bench import Bench
+    from pilot.managers.platform import unmount_legacy_bind_mount
 
     target = tmp_path / "not-a-mountpoint"
     target.mkdir()
     with patch("subprocess.run") as run:
-        Bench._unmount_legacy_bind_mount(target)
+        unmount_legacy_bind_mount(target)
     run.assert_not_called()
 
 
 def test_unmount_legacy_bind_mount_unmounts_and_cleans_fstab(tmp_path: Path) -> None:
     """A leftover ZFS-era bind mount must be unmounted and its fstab line
     dropped, without depending on any ZFS/volume code being present."""
-    from pilot.core.bench import Bench
+    from pilot.managers.platform import unmount_legacy_bind_mount
 
     target = tmp_path / "old-bench"
     target.mkdir()
@@ -1140,7 +1140,7 @@ def test_unmount_legacy_bind_mount_unmounts_and_cleans_fstab(tmp_path: Path) -> 
 
     with patch("subprocess.run", side_effect=fake_run), \
          patch.object(Path, "is_mount", return_value=True):
-        Bench._unmount_legacy_bind_mount(target, fstab_path=fstab)
+        unmount_legacy_bind_mount(target, fstab_path=fstab)
 
     assert ["sudo", "umount", "-l", str(target)] in calls
     assert fstab.read_text() == "UUID=abc / ext4 defaults 0 1\n"

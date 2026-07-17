@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from pilot.managers import platform
 from pilot.tasks import callbacks
 
 
@@ -88,7 +89,7 @@ def test_remove_from_hosts_matches_address_and_hostname_tokens(
     captured = {}
     monkeypatch.setattr(callbacks, "_HOSTS_PATH", hosts_path)
     monkeypatch.setattr(
-        callbacks.subprocess,
+        platform.subprocess,
         "run",
         lambda argv, **kwargs: captured.update(argv=argv, **kwargs),
     )
