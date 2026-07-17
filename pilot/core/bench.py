@@ -216,9 +216,24 @@ class Bench:
 
     def restart(self):
         """Restart bench in case we are running in production"""
-        from pilot.commands.runtime.restart import RestartCommand
+        self.restart_processes()
 
-        RestartCommand(self).run()
+    def restart_processes(self) -> None:
+        if not self.config.production.enabled:
+            return
+        from typing import cast
+
+        from pilot.managers.processes.base import ManagedProcessManager
+        from pilot.managers.processes.local import ProcessManager
+
+        # production.enabled is already confirmed above, so for_bench() always
+        # returns a ManagedProcessManager subclass here, never the plain base.
+        manager = cast(ManagedProcessManager, ProcessManager.for_bench(self))
+        if not manager.is_configured():
+            return
+        manager.write_config()
+        manager.reload_manager_config()
+        manager.restart()
 
     def reload_workers(self, web_only: bool = False, raises: bool = False):
         from pilot.managers.processes.local import ProcessManager

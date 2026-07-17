@@ -40,14 +40,14 @@ class Site:
         elif effective == "sqlite":
             cmd += self._sqlite_db_args()
         else:
-            cmd += self._mariadb_db_args()
+            from pilot.managers.mariadb import MariaDBManager
+
+            socket_path = MariaDBManager(self.bench.config.mariadb)._detect_socket()
+            cmd += self._mariadb_db_args(socket_path)
         run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
 
-    def _mariadb_db_args(self) -> list[str]:
-        from pilot.managers.mariadb import MariaDBManager
-
+    def _mariadb_db_args(self, socket_path: str) -> list[str]:
         mariadb = self.bench.config.mariadb
-        socket_path = MariaDBManager(mariadb)._detect_socket()
         args = ["--db-root-username", mariadb.admin_user]
         if socket_path:
             args += ["--db-socket", socket_path]
