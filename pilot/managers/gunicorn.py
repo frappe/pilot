@@ -199,5 +199,6 @@ class GunicornManager:
     def _bind(self) -> str:
         return f"127.0.0.1:{self.bench.config.http_port}"
 
+    @property
     def upstream_server(self) -> str:
         return self._bind()

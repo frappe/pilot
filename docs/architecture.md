@@ -42,19 +42,16 @@ pilot/
     │   ├── nginx.py                   # NginxManager — config generation and reload
     │   └── letsencrypt.py             # LetsEncryptManager — cert obtain and renew
     │
-    ├── commands/                # One self-registering Command subclass per file
+    ├── commands/                # One self-registering Command dataclass per file
     │   ├── __init__.py
-    │   ├── base.py              # Command    — base class all commands subclass
-    │   ├── new.py               # NewCommand     — scaffold a starter bench.toml
-    │   ├── init.py              # InitCommand    — install deps, clone framework app
-    │   ├── start.py             # RunCommand     — run Procfile processes in foreground
-    │   ├── build.py             # BuildCommand
-    │   ├── update.py            # UpdateCommand
-    │   └── setup/               # commands with group = "setup"
-    │       ├── __init__.py
-    │       ├── nginx.py         # SetupNginxCommand
-    │       ├── letsencrypt.py   # SetupLetsEncryptCommand
-    │       └── production.py    # SetupProductionCommand
+    │   ├── base.py              # Command, Arg — base dataclass + CLI-field inference
+    │   ├── bench/                # new, init, ls, drop
+    │   ├── sites/                 # new-site, list-site-apps, rename-site, ...
+    │   ├── apps/                  # get-app, install-app, uninstall-app, ...
+    │   ├── runtime/                # start, stop, build, update, restart, frappe
+    │   ├── setup/                 # commands with group = "setup" or "remove"
+    │   ├── admin/                 # commands with group = None (admin session/config)
+    │   └── tasks/                 # commands with group = "tasks"
     │
     ├── tasks/                   # Task execution and tracking (see tasks.md)
     │   ├── __init__.py
@@ -515,61 +512,45 @@ class ProcessDefinition:
 
 ## Commands layer (`pilot/commands/`)
 
-Each command class receives a `Bench` object. It orchestrates managers and core objects in the correct order. Commands are the only layer that produces user-visible console output.
+Each command is a dataclass holding a `Bench` object plus whatever arguments it
+declares. It orchestrates managers and core objects in the correct order. Commands
+are the only layer that produces user-visible console output.
 
-```python
-class NewCommand:
-    def __init__(self, bench_name: str): ...
-    def run(self) -> None: ...          # create benches/<name>/ and write bench.toml
-
-class InitCommand:
-    def __init__(self, bench: Bench): ...
-    def run(self) -> None: ...          # install deps, venv, clone framework app, generate Procfile
-
-class StartCommand:
-    def __init__(self, bench: Bench): ...
-    def run(self) -> None: ...          # start Procfile processes in foreground
-
-class BuildCommand:
-    def __init__(self, bench: Bench): ...
-    def run(self) -> None: ...
-
-class UpdateCommand:
-    def __init__(self, bench: Bench): ...
-    def run(self) -> None: ...          # git pull all apps, reinstall, migrate all sites
-```
-
----
-
-## CLI entry point and command registry
-
-Built with `argparse` (stdlib). Zero Python dependencies. The wiring is split into
-three small modules so that **a command owns everything about itself in one file** —
-adding or changing a command never touches the CLI layer.
+Built on `argparse` (stdlib, zero dependencies), but a command never touches
+argparse directly — `Command` (`commands/base.py`) derives the parser from the
+dataclass's own fields, so a command owns everything about itself in one file
+and adding one never touches the CLI layer.
 
 ### `commands/base.py` — the `Command` base class
 
-Every command subclasses `Command` and declares its own metadata, arguments, and
-execution. Subclasses keep their own `__init__` (used directly in tests and by other
-commands); the registry builds an instance through `from_args`.
+Declare a command as a `@dataclass(kw_only=True)` subclass of `Command`; each
+field becomes a CLI argument (positional if it has no default, `--flag` if it
+does, type inferred from the annotation — see the full inference table in
+`Command`'s docstring). `Arg(...)` overrides help text, a short flag, or opts
+a field out of the CLI entirely.
 
 ```python
-class Command:
-    name: ClassVar[str]                  # CLI name, e.g. "remove-app"
-    help: ClassVar[str] = ""
-    group: ClassVar[str | None] = None   # subcommand group: "setup" | None
-    requires_bench: ClassVar[bool] = True # registry loads the Bench and passes it in
+@dataclass(kw_only=True)
+class RemoveAppCommand(Command):
+    name: ClassVar[str] = "remove-app"
+    help: ClassVar[str] = "Remove an app from the bench."
 
-    def __init__(self, bench=None): ...
+    app_name: Annotated[str, Arg(help="App name to remove.", metavar="app")]
+    skip_confirm: bool = False   # sourced from the global -y/--yes flag, not its own CLI flag
 
-    @classmethod
-    def add_arguments(cls, parser): ...           # declare argparse arguments
-
-    @classmethod
-    def from_args(cls, args, bench): ...          # map parsed args → constructor
-
-    def run(self) -> None: ...                    # do the work
+    def run(self) -> None:
+        self.confirm(f"Remove '{self.app_name}'?", skip=self.skip_confirm)
+        self.bench.app(self.app_name).remove(on_progress=self.print)
 ```
+
+`name`, `help`, `group`, `bench_mode` (a `BenchMode`: `AUTO`/`EXPLICIT`/
+`OPTIONAL`/`NONE` — how the registry resolves `self.bench`), and
+`supports_all_benches` are `ClassVar`s, not dataclass fields — they configure
+the command itself, not its arguments.
+`Command.add_arguments`/`Command.from_args` are concrete (derived from the
+fields); a command overrides them only for the rare shape the inference can't
+express (e.g. `FrappeCommand`'s raw passthrough, `NewCommand`'s bench path
+computed from global config before the instance exists).
 
 ### `registry.py` — discovery, parser, dispatch
 
@@ -579,9 +560,8 @@ class Command:
    then one sub-parser per command (and a parent parser per `group`). Each command's
    `add_arguments()` populates its own sub-parser, and `set_defaults(_command_cls=…)`
    records which class owns it.
-3. **`dispatch(args)`** — reads `_command_cls`, loads the `Bench` when
-   `requires_bench` is set, then runs `cls.from_args(args, bench).run()`. No `elif`
-   chain.
+3. **`dispatch(args)`** — reads `_command_cls`, resolves the `Bench` per its
+   `bench_mode`, then runs `cls.from_args(args, bench).run()`. No `elif` chain.
 
 ### `cli.py` — the thin entry point
 
@@ -594,38 +574,26 @@ inside the active bench (handled before argparse so flags like `--site` aren't c
 Create one file under `commands/` — nothing else:
 
 ```python
-# pilot/commands/list_apps.py
+# pilot/commands/apps/list.py
+from dataclasses import dataclass
+from typing import ClassVar
+
 from pilot.commands.base import Command
 
 
+@dataclass(kw_only=True)
 class ListAppsCommand(Command):
-    name = "list-apps"
-    help = "List apps installed in the bench."
+    name: ClassVar[str] = "list-apps"
+    help: ClassVar[str] = "List apps installed in the bench."
 
     def run(self) -> None:
         for line in (self.bench.sites_path / "apps.txt").read_text().splitlines():
-            print(line)
+            self.print(line)
 ```
 
-For arguments and grouping:
-
-```python
-class RemoveAppCommand(Command):
-    name = "remove-app"
-    help = "Remove an app from the bench."
-
-    @classmethod
-    def add_arguments(cls, parser):
-        parser.add_argument("app", help="App name to remove.")
-
-    @classmethod
-    def from_args(cls, args, bench):
-        return cls(bench, args.app, skip_confirm=args.yes)
-```
-
-Set `group = "setup"` on the class to nest it as `bench setup <name>`.
-Set `requires_bench = False` for commands that don't operate on a bench (e.g. `new`,
-`build-admin`).
+Set `group: ClassVar[str] = "setup"` to nest it as `bench setup <name>`. Set
+`bench_mode: ClassVar[BenchMode] = BenchMode.NONE` for commands that don't
+operate on a bench (e.g. `new`, `build-admin`).
 
 ---
 

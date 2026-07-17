@@ -1,7 +1,7 @@
 """Resolves and installs an app's marketplace dependencies onto a bench."""
 from __future__ import annotations
 
-import sys
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from pilot.integrations.marketplace import Marketplace, Resolver
@@ -20,11 +20,11 @@ class AppDependencyInstaller:
         self.bench = bench
         self.app = app
 
-    def install(self) -> list["App"]:
+    def install(self, on_progress: Callable[[str], None] = lambda message: None) -> list["App"]:
         resolver = self._find_resolver()
         if resolver is None:
             return []
-        self._install_missing(resolver)
+        self._install_missing(resolver, on_progress)
         return self._dependency_apps(resolver)
 
     def _find_resolver(self) -> Resolver | None:
@@ -40,11 +40,12 @@ class AppDependencyInstaller:
                 )
             return None
 
-    def _install_missing(self, resolver: Resolver) -> None:
+    def _install_missing(self, resolver: Resolver, on_progress: Callable[[str], None]) -> None:
         if all(self.bench.is_app_installed(dep) for dep in resolver.dependencies):
             return
 
-        from pilot.commands.apps.download import GetAppCommand
+        from pilot.config.app import AppConfig
+        from pilot.core.app import App
 
         try:
             dependency_chain = resolver.resolve()
@@ -57,12 +58,10 @@ class AppDependencyInstaller:
         for dep in dependency_chain[:-1]:  # exclude self (last entry)
             if dep.app == "frappe" or self.bench.is_app_installed(dep.app):
                 continue
-            print(f"Installing dependency '{dep.app}'...")
-            sys.stdout.flush()
+            on_progress(f"Installing dependency '{dep.app}'...")
             # transitive deps already handled by earlier entries in the chain
-            GetAppCommand(
-                self.bench, dep.repo, dep.target, install_dependencies=False, skip_validations=True
-            ).run()
+            dependency = App(AppConfig(name=dep.app, repo=dep.repo, branch=dep.target), self.bench)
+            dependency.install(install_dependencies=False, skip_validations=True, on_progress=on_progress)
 
     def _dependency_apps(self, resolver: Resolver) -> list["App"]:
         try:

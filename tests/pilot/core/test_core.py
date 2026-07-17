@@ -3,12 +3,12 @@ from pathlib import Path
 
 import pytest
 
-from pilot.config.app_config import AppConfig
-from pilot.config.bench_config import BenchConfig
-from pilot.config.mariadb_config import MariaDBConfig
-from pilot.config.redis_config import RedisConfig
-from pilot.config.site_config import SiteConfig
-from pilot.config.worker_config import WorkerConfig, WorkerGroup
+from pilot.config.app import AppConfig
+from pilot.config.bench import BenchConfig
+from pilot.config.mariadb import MariaDBConfig
+from pilot.config.redis import RedisConfig
+from pilot.config.site import SiteConfig
+from pilot.config.worker import WorkerConfig, WorkerGroup
 from pilot.core.app import App, RevisionPin
 from pilot.core.bench import Bench
 from pilot.core.site import Site

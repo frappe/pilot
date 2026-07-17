@@ -1,19 +1,15 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import ClassVar
 
 from pilot.commands.base import Command
 
-if TYPE_CHECKING:
-    from pilot.core.bench import Bench
 
-
+@dataclass(kw_only=True)
 class ListAppsCommand(Command):
-    name = "list-apps"
-    help = "List apps installed in the bench."
-
-    def __init__(self, bench: "Bench") -> None:
-        self.bench = bench
+    name: ClassVar[str] = "list-apps"
+    help: ClassVar[str] = "List apps installed in the bench."
 
     def run(self) -> None:
         apps_txt = self.bench.sites_path / "apps.txt"
@@ -22,4 +18,4 @@ class ListAppsCommand(Command):
         else:
             apps = [a.config.name for a in self.bench.apps()]
         for app in apps:
-            print(app)
+            self.print(app)

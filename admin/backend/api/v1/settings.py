@@ -8,10 +8,10 @@ from flask import Blueprint, current_app, jsonify, request
 from admin.backend.api.responses import error_response
 from admin.backend.middleware import client_ip
 
-from pilot.config.bench_config import BenchConfig
-from pilot.config.firewall_config import FirewallRule
-from pilot.config.s3_config import S3Config
-from pilot.config.waf_config import (
+from pilot.config.bench import BenchConfig
+from pilot.config.firewall import FirewallRule
+from pilot.config.s3 import S3Config
+from pilot.config.waf import (
     WAF_MODES,
     WAF_RULE_ACTIONS,
     WAF_RULE_FIELDS,
@@ -21,7 +21,7 @@ from pilot.config.waf_config import (
     WafRule,
 )
 from pilot.config.toml_store import BenchTomlStore
-from pilot.config.worker_config import WorkerGroup
+from pilot.config.worker import WorkerGroup
 from pilot.core.bench import Bench
 from pilot.managers.redis import RedisManager
 from pilot.managers.waf import WafManager
@@ -369,7 +369,7 @@ class ConfigPatcher:
         if not production:
             return None
         if "process_manager" in production:
-            from pilot.config.production_config import VALID_PROCESS_MANAGERS
+            from pilot.config.production import VALID_PROCESS_MANAGERS
 
             process_manager = str(production["process_manager"])
             valid = ("none", *VALID_PROCESS_MANAGERS)

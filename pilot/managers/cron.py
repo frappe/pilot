@@ -52,7 +52,7 @@ class CronManager:
         return f"{_MARKER_PREFIX}{self._bench_root}:{job_key}"
 
     def _read_crontab(self) -> list[str]:
-        result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+        result = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=10)
         if result.returncode != 0:
             return []
         return result.stdout.splitlines()
@@ -60,9 +60,9 @@ class CronManager:
     def _write_crontab(self, lines: list[str]) -> None:
         non_empty = [line for line in lines if line.strip()]
         if not non_empty:
-            subprocess.run(["crontab", "-r"], capture_output=True)
+            subprocess.run(["crontab", "-r"], capture_output=True, timeout=10)
             return
         content = "\n".join(non_empty) + "\n"
-        proc = subprocess.run(["crontab", "-"], input=content, capture_output=True, text=True)
+        proc = subprocess.run(["crontab", "-"], input=content, capture_output=True, text=True, timeout=10)
         if proc.returncode != 0:
             raise RuntimeError(f"Failed to write crontab: {proc.stderr}")

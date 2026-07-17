@@ -10,7 +10,7 @@ import psutil
 from flask import Blueprint, current_app, jsonify, request
 
 from admin.backend.api.responses import error_response
-from pilot.config.bench_config import BenchConfig
+from pilot.config.bench import BenchConfig
 from pilot.config.toml_store import BenchTomlStore
 
 stats_bp = Blueprint("stats", __name__)
@@ -81,7 +81,7 @@ def _path_sizes(bench_root: Path, config: BenchConfig) -> list[dict]:
     from pilot.managers.mariadb import MariaDBManager
 
     benches_dir = str(bench_root)
-    mariadb_dir = str(MariaDBManager(config.mariadb).data_dir())
+    mariadb_dir = str(MariaDBManager(config.mariadb).data_dir)
     return [
         {"label": "Benches", "path": benches_dir, "used_bytes": _directory_size(benches_dir)},
         {"label": "MariaDB", "path": mariadb_dir, "used_bytes": _directory_size(mariadb_dir)},
@@ -99,7 +99,7 @@ def _log_file_info(description: str, path: Path) -> dict:
 
 @stats_bp.get("/monitor/status")
 def get_monitor_status():
-    from pilot.config.monitor_config import MonitorConfig
+    from pilot.config.monitor import MonitorConfig
     from pilot.config.toml_store import BenchTomlStore
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:

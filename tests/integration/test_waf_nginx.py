@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from pilot.config.bench_config import BenchConfig
-from pilot.config.waf_config import WafConfig
+from pilot.config.bench import BenchConfig
+from pilot.config.waf import WafConfig
 from pilot.core.bench import Bench
 from pilot.managers.nginx import NginxManager
 from pilot.managers.waf import WafManager

@@ -2,7 +2,7 @@
 
 import re
 
-from pilot.config.site_backup_config import read_retention
+from pilot.config.site_backup import read_retention
 from pilot.core.backup_retention import BackupRetentionPolicy
 from pilot.integrations.s3.backups import OffsiteBackup
 

@@ -2,13 +2,13 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from pilot.config.bench_config import BenchConfig
-from pilot.config.mariadb_config import MariaDBConfig
-from pilot.config.production_config import ProductionConfig
-from pilot.config.redis_config import RedisConfig
-from pilot.config.worker_config import WorkerConfig
+from pilot.config.bench import BenchConfig
+from pilot.config.mariadb import MariaDBConfig
+from pilot.config.production import ProductionConfig
+from pilot.config.redis import RedisConfig
+from pilot.config.worker import WorkerConfig
 from pilot.core.bench import Bench
-from pilot.core.monitoring import Monitor
+from pilot.core.monitoring import Monitor, MonitorConfigurator
 
 
 def _make_bench(path: Path, name: str = "my-bench") -> Bench:
@@ -23,7 +23,7 @@ def _make_bench(path: Path, name: str = "my-bench") -> Bench:
 
 
 def _make_monitor(bench: Bench, authority_file: Path | None = None) -> Monitor:
-    with patch.object(Monitor, "setup"):
+    with patch.object(MonitorConfigurator, "setup"):
         monitor = Monitor(bench)
     # Keep the authority sentinel inside tmp_path — never touch /var/log in tests.
     monitor.bench.config.monitor.authority_file_path = authority_file or (
@@ -52,7 +52,7 @@ def test_authority_claimed_when_no_file_exists(tmp_path: Path) -> None:
     authority_file = tmp_path / ".bench-authority"
     monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
 
-    assert monitor.is_system_log_authority is True
+    assert monitor.is_system_log_authority() is True
     assert authority_file.read_text() == "my-bench"
 
 
@@ -61,7 +61,7 @@ def test_authority_true_when_already_recorded(tmp_path: Path) -> None:
     authority_file.write_text("my-bench")
     monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
 
-    assert monitor.is_system_log_authority is True
+    assert monitor.is_system_log_authority() is True
 
 
 def test_authority_false_when_sibling_runs_systemd(tmp_path: Path) -> None:
@@ -70,7 +70,7 @@ def test_authority_false_when_sibling_runs_systemd(tmp_path: Path) -> None:
     monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
 
     with patch("pilot.core.monitoring.iter_sibling_benches", return_value=iter([_sibling("other-bench", "systemd")])):
-        assert monitor.is_system_log_authority is False
+        assert monitor.is_system_log_authority() is False
 
 
 def test_authority_false_when_sibling_runs_supervisor(tmp_path: Path) -> None:
@@ -79,7 +79,7 @@ def test_authority_false_when_sibling_runs_supervisor(tmp_path: Path) -> None:
     monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
 
     with patch("pilot.core.monitoring.iter_sibling_benches", return_value=iter([_sibling("other-bench", "supervisor")])):
-        assert monitor.is_system_log_authority is False
+        assert monitor.is_system_log_authority() is False
 
 
 def test_authority_stolen_when_recorded_bench_is_in_dev_mode(tmp_path: Path) -> None:
@@ -88,7 +88,7 @@ def test_authority_stolen_when_recorded_bench_is_in_dev_mode(tmp_path: Path) -> 
     monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
 
     with patch("pilot.core.monitoring.iter_sibling_benches", return_value=iter([_sibling("other-bench", "")])):
-        assert monitor.is_system_log_authority is True
+        assert monitor.is_system_log_authority() is True
     assert authority_file.read_text() == "my-bench"
 
 
@@ -98,7 +98,7 @@ def test_authority_stolen_when_recorded_bench_no_longer_exists(tmp_path: Path) -
     monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
 
     with patch("pilot.core.monitoring.iter_sibling_benches", return_value=iter([])):
-        assert monitor.is_system_log_authority is True
+        assert monitor.is_system_log_authority() is True
     assert authority_file.read_text() == "my-bench"
 
 
@@ -110,11 +110,11 @@ def test_exactly_one_bench_holds_authority(tmp_path: Path) -> None:
     monitor_b = _make_monitor(_make_bench(tmp_path / "bench-b", "bench-b"), authority_file)
 
     # bench-a claims authority (file absent)
-    assert monitor_a.is_system_log_authority is True
+    assert monitor_a.is_system_log_authority() is True
 
     # bench-b sees bench-a as the running authority
     with patch("pilot.core.monitoring.iter_sibling_benches", return_value=iter([_sibling("bench-a", "systemd")])):
-        assert monitor_b.is_system_log_authority is False
+        assert monitor_b.is_system_log_authority() is False
 
 
 # ── collect_system_metrics ───────────────────────────────────────────────────
@@ -123,7 +123,7 @@ def test_exactly_one_bench_holds_authority(tmp_path: Path) -> None:
 def _fake_proc_reads(monitor: Monitor) -> None:
     """Stub out /proc reads so tests don't depend on the host machine state."""
     monitor._load_average = lambda: (0.5, 0.4, 0.3)  # type: ignore[method-assign]
-    monitor._system_cpu_percent = lambda: 12.5  # type: ignore[method-assign]
+    monitor._system_cpu = 12.5
     monitor._memory_usage = lambda: {"total_mb": 8192.0, "used_mb": 4096.0, "available_mb": 4096.0, "percent": 50.0}  # type: ignore[method-assign]
     monitor._storage_usage = lambda: {"disk": {"total_mb": 51200.0, "used_mb": 20480.0, "free_mb": 30720.0, "percent": 40.0}}  # type: ignore[method-assign]
 
@@ -218,10 +218,10 @@ def test_compute_cpu_breakdown_sums_to_100_percent(tmp_path: Path) -> None:
     monitor.sample_cpu()
     monitor.compute_cpu()
 
-    breakdown = monitor._system_cpu_breakdown()
+    breakdown = monitor._cpu_breakdown
     assert set(breakdown) == {"user", "system", "iowait", "irq", "other", "idle"}
     assert abs(sum(breakdown.values()) - 100.0) < 0.5
-    assert monitor._system_cpu_percent() == round(100 - breakdown["idle"], 2)
+    assert monitor._system_cpu == round(100 - breakdown["idle"], 2)
 
 
 def test_compute_cpu_breakdown_zero_delta_reports_idle(tmp_path: Path) -> None:
@@ -232,8 +232,8 @@ def test_compute_cpu_breakdown_zero_delta_reports_idle(tmp_path: Path) -> None:
     monitor.sample_cpu()
     monitor.compute_cpu()
 
-    assert monitor._system_cpu_breakdown()["idle"] == 100.0
-    assert monitor._system_cpu_percent() == 0.0
+    assert monitor._cpu_breakdown["idle"] == 100.0
+    assert monitor._system_cpu == 0.0
 
 
 # ── memory breakdown ────────────────────────────────────────────────────────────
@@ -260,8 +260,8 @@ def test_compute_io_reports_bytes_per_sec(tmp_path: Path) -> None:
     monitor.sample_io()
     monitor.compute_io()
 
-    assert monitor._system_network() == {"rx_bytes_per_sec": 2000.0, "tx_bytes_per_sec": 500.0}
-    assert monitor._system_disk_io() == {"read_bytes_per_sec": 1000.0, "write_bytes_per_sec": 500.0}
+    assert monitor._network == {"rx_bytes_per_sec": 2000.0, "tx_bytes_per_sec": 500.0}
+    assert monitor._disk_io == {"read_bytes_per_sec": 1000.0, "write_bytes_per_sec": 500.0}
 
 
 def test_disk_io_fields_ignores_partitions(tmp_path: Path) -> None:

@@ -134,4 +134,4 @@ class ManagedProcessManager(ProcessManager, ABC):
 
     def _invalidate_assets_cache(self) -> None:
         cache_port = self.bench.config.redis.cache_port
-        subprocess.run(["redis-cli", "-p", str(cache_port), "del", "assets_json"], capture_output=True)
+        subprocess.run(["redis-cli", "-p", str(cache_port), "del", "assets_json"], capture_output=True, timeout=5)

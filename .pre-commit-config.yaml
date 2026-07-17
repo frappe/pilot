@@ -1,0 +1,32 @@
+exclude: 'node_modules'
+default_stages: [pre-commit]
+fail_fast: false
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.22
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v2.3.0
+    hooks:
+      - id: mypy
+        args: [pilot, admin/backend]
+        pass_filenames: false
+        additional_dependencies:
+          - boto3==1.43.39
+          - flask>=3.0
+          - packaging
+          - psutil>=5.9
+          - psycopg2-binary>=2.9
+          - pyjwt[crypto]>=2.8
+          - pymysql>=1.1
+
+  - repo: https://github.com/biomejs/pre-commit
+    rev: v2.5.4
+    hooks:
+      - id: biome-check
+        language_version: "22.20.0"

@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 
 from pilot.tasks.jobs.base_task import BaseTask
-from pilot.core.audit_log import AuditLog
 from pilot.integrations.s3.backups import OffsiteBackup
 from pilot.integrations.s3.base import S3IntegrationError
 
@@ -56,14 +55,10 @@ class DeleteBackupTask(BaseTask):
         self._step("done")
 
     def _record(self, deleted: list[str], offsite: bool) -> None:
-        """Audit every manual deletion; a logging failure must not fail the delete."""
-        try:
-            AuditLog(self.bench).append(
-                "backup",
-                {"site": self.site, "event": "delete", "status": "success", "files": deleted, "offsite": offsite},
-            )
-        except Exception as e:
-            print(f"Audit log update skipped due to error: {e!s}")
+        self._record_audit(
+            "backup",
+            {"site": self.site, "event": "delete", "status": "success", "files": deleted, "offsite": offsite},
+        )
 
 
 if __name__ == "__main__":

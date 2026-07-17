@@ -4,21 +4,21 @@ import copy
 from collections.abc import Mapping
 from dataclasses import dataclass, field, fields
 
-from pilot.config.admin_config import AdminConfig
-from pilot.config.app_config import AppConfig
-from pilot.config.central_config import CentralConfig
-from pilot.config.firewall_config import FirewallConfig, FirewallRule
-from pilot.config.gunicorn_config import GunicornConfig
-from pilot.config.letsencrypt_config import LetsEncryptConfig
-from pilot.config.mariadb_config import MariaDBConfig
-from pilot.config.monitor_config import MonitorConfig
-from pilot.config.nginx_config import NginxConfig
-from pilot.config.postgres_config import PostgresConfig
-from pilot.config.production_config import ProductionConfig
-from pilot.config.redis_config import RedisConfig
-from pilot.config.s3_config import S3Config
-from pilot.config.waf_config import WafCondition, WafConfig, WafRule
-from pilot.config.worker_config import WorkerGroup
+from pilot.config.admin import AdminConfig
+from pilot.config.app import AppConfig
+from pilot.config.central import CentralConfig
+from pilot.config.firewall import FirewallConfig, FirewallRule
+from pilot.config.gunicorn import GunicornConfig
+from pilot.config.letsencrypt import LetsEncryptConfig
+from pilot.config.mariadb import MariaDBConfig
+from pilot.config.monitor import MonitorConfig
+from pilot.config.nginx import NginxConfig
+from pilot.config.postgres import PostgresConfig
+from pilot.config.production import ProductionConfig
+from pilot.config.redis import RedisConfig
+from pilot.config.s3 import S3Config
+from pilot.config.waf import WafCondition, WafConfig, WafRule
+from pilot.config.worker import WorkerGroup
 
 
 @dataclass

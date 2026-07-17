@@ -6,7 +6,7 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-from pilot.config.backup_config import BackupConfig
+from pilot.config.backup import BackupConfig
 from pilot.secure_files import write_private_text
 
 _KEY = "backup_retention"

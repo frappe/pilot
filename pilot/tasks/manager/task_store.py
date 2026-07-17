@@ -277,7 +277,7 @@ class TaskStore:
             try:
                 status = self.read_status(task_id)
                 if status not in ACTIVE_TASK_STATUSES and not (
-                    include_cleanup_pending and self._cleanup_pending(task_dir)
+                    include_cleanup_pending and self.has_cleanup_pending(task_dir)
                 ):
                     continue
                 metadata = self.read_metadata(task_id)
@@ -288,7 +288,7 @@ class TaskStore:
         return None
 
     @staticmethod
-    def _cleanup_pending(task_dir: Path) -> bool:
+    def has_cleanup_pending(task_dir: Path) -> bool:
         return (task_dir / "callbacks.json").exists() or (
             task_dir / "process.json"
         ).exists()
@@ -311,7 +311,7 @@ class TaskStore:
             try:
                 if self.read_status(task_id) not in TERMINAL_TASK_STATUSES:
                     continue
-                if self._cleanup_pending(task_dir):
+                if self.has_cleanup_pending(task_dir):
                     continue
                 metadata = self.read_metadata(task_id)
                 terminal.append((self._completion_key(metadata, task_id), task_id))

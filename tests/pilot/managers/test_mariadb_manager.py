@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import subprocess
-from unittest.mock import patch
+from unittest.mock import patch, PropertyMock
 
 import pytest
 
-from pilot.config.mariadb_config import MariaDBConfig
+from pilot.config.mariadb import MariaDBConfig
+from pilot.exceptions import DatabaseError
 from pilot.managers.mariadb import MariaDBManager
 
 MODULE = "pilot.managers.mariadb"
@@ -20,11 +21,11 @@ def _manager(password: str = "root") -> MariaDBManager:
 
 
 def test_socket_path_defaults_under_state_dir() -> None:
-    assert _manager().socket_path().endswith("/.local/share/pilot/mariadb/mysqld.sock")
+    assert _manager().socket_path.endswith("/.local/share/pilot/mariadb/mysqld.sock")
 
 
 def test_socket_path_honors_explicit_value() -> None:
-    assert MariaDBManager(MariaDBConfig(socket_path="/tmp/custom.sock")).socket_path() == "/tmp/custom.sock"
+    assert MariaDBManager(MariaDBConfig(socket_path="/tmp/custom.sock")).socket_path == "/tmp/custom.sock"
 
 
 # ── existing ─────────────────────────────────────────────────────────────────
@@ -45,7 +46,7 @@ def test_install_raises_when_missing_on_linux() -> None:
     m = _manager()
     with patch.object(m, "is_installed", return_value=False), \
          patch(f"{BASE_MODULE}.is_macos", return_value=False):
-        with pytest.raises(RuntimeError, match="install.sh"):
+        with pytest.raises(DatabaseError, match="install.sh"):
             m.install()
 
 
@@ -66,7 +67,7 @@ def test_start_targets_systemctl_user_on_linux() -> None:
 def test_provision_initialises_and_installs_unit_when_fresh(tmp_path) -> None:
     m = _manager()
     with patch(f"{MODULE}.is_macos", return_value=False), \
-         patch.object(m, "install"), patch.object(m, "data_dir", return_value=tmp_path / "data"), \
+         patch.object(m, "install"), patch.object(type(m), "data_dir", new_callable=PropertyMock, return_value=tmp_path / "data"), \
          patch.object(m, "is_provisioned", return_value=False), \
          patch.object(m, "is_running", return_value=False), \
          patch.object(m, "_install_unit") as install_unit, \
@@ -183,7 +184,7 @@ def test_is_reachable_on_macos_ignores_local_socket_path() -> None:
     is_running() is a meaningful signal there."""
     m = _manager()
     with patch.object(m, "is_running", return_value=True), patch(f"{MODULE}.is_macos", return_value=True):
-        assert m._is_reachable() is True
+        assert m.is_reachable() is True
 
 
 def test_run_sql_as_superuser_omits_local_socket_on_macos() -> None:

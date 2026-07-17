@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import typing
 from pathlib import Path
 
@@ -115,7 +116,7 @@ def _update_configuration(bench_root: Path, data: dict):
 
 
 def _issue_setup_session(resp, toml_path: Path) -> None:
-    from pilot.commands.admin.generate_session import ensure_jwt_secret, issue_token
+    from pilot.core.admin_auth import ensure_jwt_secret, issue_token
 
     set_session_cookie(
         resp,
@@ -188,7 +189,7 @@ def _database_validation(bench_root: Path, data: dict):
         )
         return engine, MariaDBManager(config), password, existing
 
-    from pilot.config.postgres_config import PostgresConfig
+    from pilot.config.postgres import PostgresConfig
     from pilot.managers.postgres import PostgresManager
 
     config = PostgresConfig(
@@ -228,7 +229,7 @@ def _mariadb_config(
     existing: bool = False,
 ):
     """Build a MariaDBConfig from the bench's toml with the entered credentials applied."""
-    from pilot.config.mariadb_config import MariaDBConfig
+    from pilot.config.mariadb import MariaDBConfig
 
     config = MariaDBConfig(
         root_password=password,
@@ -242,8 +243,8 @@ def _mariadb_config(
         try:
             settings = BenchTomlStore(toml_path).read_flat()
             config.socket_path = settings.get("mariadb_socket_path", "") or ""
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.debug("Could not read the existing mariadb socket path: %s", exc)
     return config
 
 
@@ -438,8 +439,8 @@ def _read_defaults(bench_root: Path) -> dict:
             result.update(settings)
             if not result.get("bench_name"):
                 result["bench_name"] = bench_root.name
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.debug("Could not read bench.toml settings: %s", exc)
 
     for key in _PASSWORD_KEYS:
         result.setdefault(f"{key}_configured", False)
@@ -499,5 +500,5 @@ def _clear_wizard_marker_if_idle(bench_root: Path) -> None:
         with exclusive_file_lock(marker):
             if _running_setup_task(bench_root) is None:
                 marker.unlink(missing_ok=True)
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.debug("Could not clear the wizard marker for %s: %s", bench_root, exc)

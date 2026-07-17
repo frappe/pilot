@@ -5,8 +5,8 @@ import tomllib
 from pathlib import Path
 
 from pilot.config.bench_toml import dumps_config
-from pilot.config.bench_config import BenchConfig
-from pilot.config.worker_config import WorkerConfig, WorkerGroup
+from pilot.config.bench import BenchConfig
+from pilot.config.worker import WorkerConfig, WorkerGroup
 
 # The single registry of wizard-editable settings: flat key -> attribute path on
 # BenchConfig. Defaults and serialization live in the dataclasses and

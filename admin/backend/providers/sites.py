@@ -6,7 +6,7 @@ from pathlib import Path
 
 from pilot.tasks.manager.task_reader import TaskReader
 from pilot.tasks.manager.task_state import ACTIVE_TASK_STATUSES
-from pilot.commands.sites.list_apps import _query_via_db_cli
+from pilot.core.site import query_installed_apps_via_db
 from pilot.internal.site_paths import resolve_site_path
 
 # These write site_config.json well before the DB is queryable, so a failed
@@ -94,7 +94,7 @@ class SiteProvider:
             if isinstance(site_config.get("installed_apps"), list):
                 installed_apps = site_config["installed_apps"]
             elif not is_provisioning:
-                apps = _query_via_db_cli(site_config)
+                apps = query_installed_apps_via_db(site_config)
                 if apps is not None:
                     installed_apps = apps
                 else:

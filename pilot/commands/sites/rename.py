@@ -1,51 +1,38 @@
 from __future__ import annotations
 
-import argparse
 import json
-import sys
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import Annotated, ClassVar
 
-from pilot.commands.base import Command
+from pilot.commands.base import Arg, Command
 from pilot.exceptions import BenchError
 from pilot.secure_files import write_private_text
 
-if TYPE_CHECKING:
-    from pilot.core.bench import Bench
 
-
+@dataclass(kw_only=True)
 class RenameSiteCommand(Command):
-    name = "rename-site"
-    help = "Rename a site in this bench."
+    name: ClassVar[str] = "rename-site"
+    help: ClassVar[str] = "Rename a site in this bench."
 
-    @classmethod
-    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
-        parser.add_argument("old_name", help="Current site name.")
-        parser.add_argument("new_name", help="New site name (hostname).")
-
-    @classmethod
-    def from_args(cls, args, bench):
-        return cls(bench, args.old_name, args.new_name)
-
-    def __init__(self, bench: "Bench", old_name: str, new_name: str) -> None:
-        self.bench = bench
-        self.old_name = old_name
-        self.new_name = new_name
+    old_name: Annotated[str, Arg(help="Current site name.")]
+    new_name: Annotated[str, Arg(help="New site name (hostname).")]
 
     def run(self) -> None:
+        from pilot.managers.nginx import NginxManager
+
         old_site = self._validate()
         ssl_enabled = old_site.config.ssl
 
-        print(f"Renaming site '{self.old_name}' -> '{self.new_name}'...")
-        sys.stdout.flush()
+        self.print(f"Renaming site '{self.old_name}' -> '{self.new_name}'...")
         old_site.path.rename(self.bench.sites_path / self.new_name)
 
         self._update_default_site()
         self._rename_in_bench_toml()
         self._remove_stale_nginx_conf()
         self._add_to_hosts()
-        self._reload_nginx()
+        NginxManager(self.bench).reload_for_site_change()
 
-        print(f"\nSite renamed to '{self.new_name}'.")
+        self.print(f"\nSite renamed to '{self.new_name}'.")
         self._run_followups(ssl_enabled)
 
     def _validate(self):
@@ -103,44 +90,12 @@ class RenameSiteCommand(Command):
         (self.bench.config_path / "nginx" / "sites" / f"{self.old_name}.conf").unlink(missing_ok=True)
 
     def _add_to_hosts(self) -> None:
-        import subprocess
-        from pathlib import Path
-
         if not self.bench.config.production.process_manager == "none":
             return
-        hosts_path = Path("/etc/hosts")
-        from pilot.utils import hosts_line_contains
 
-        entry = f"127.0.0.1 {self.new_name}"
-        for line in hosts_path.read_text().splitlines():
-            if hosts_line_contains(line, self.new_name):
-                return
-        try:
-            subprocess.run(
-                ["sudo", "-n", "tee", "-a", str(hosts_path)],
-                input=f"{entry}\n".encode(),
-                capture_output=True,
-                check=True,
-            )
-        except (subprocess.CalledProcessError, OSError) as e:
-            print(
-                f"Warning: could not add '{entry}' to {hosts_path}: {e}.\n"
-                f"  Add it manually to reach the site by name.",
-                file=sys.stderr,
-            )
+        from pilot.managers.platform import add_hosts_entry
 
-    def _reload_nginx(self) -> None:
-        if not self.bench.config.production.enabled:
-            return
-        from pilot.managers.nginx import NginxManager
-
-        mgr = NginxManager(self.bench)
-        if not mgr.is_installed():
-            return
-        print("Updating nginx configuration...")
-        sys.stdout.flush()
-        mgr.generate_config(ssl_ready=True)
-        mgr.reload()
+        add_hosts_entry(self.new_name)
 
     def _run_followups(self, ssl_enabled: bool) -> None:
         # Auto-run whatever the new domain needs; on failure point the user at the
@@ -159,10 +114,9 @@ class RenameSiteCommand(Command):
                                  f"bench setup letsencrypt -b {name}")
 
     def _run_or_advise(self, label: str, fn, manual_cmd: str) -> None:
-        print(f"\nRunning {label} for the new domain...")
-        sys.stdout.flush()
+        self.print(f"\nRunning {label} for the new domain...")
         try:
             fn()
         except (Exception, SystemExit) as exc:
             detail = f" ({exc})" if str(exc) else ""
-            print(f"\n{label} did not complete{detail}. Run it yourself once resolved:\n  {manual_cmd}")
+            self.print(f"\n{label} did not complete{detail}. Run it yourself once resolved:\n  {manual_cmd}")

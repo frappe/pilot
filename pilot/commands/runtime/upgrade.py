@@ -1,13 +1,18 @@
 from __future__ import annotations
 
-from pilot.commands.base import Command
+import logging
+from dataclasses import dataclass
+from typing import ClassVar
+
+from pilot.commands.base import BenchMode, Command
 
 
+@dataclass(kw_only=True)
 class UpgradeCommand(Command):
-    name = "upgrade"
-    help = "Pull latest bench-cli and download the admin frontend."
-    requires_bench = False
-    optional_bench = True  # used only to restart processes in production
+    name: ClassVar[str] = "upgrade"
+    help: ClassVar[str] = "Pull latest bench-cli and download the admin frontend."
+    # OPTIONAL: used only to restart processes in production, if one is active.
+    bench_mode: ClassVar[BenchMode] = BenchMode.OPTIONAL
 
     def run(self) -> None:
         from pilot.commands.admin.start import download_admin_frontend
@@ -16,19 +21,19 @@ class UpgradeCommand(Command):
 
         root = cli_root()
 
-        print("Pulling latest bench-cli...")
+        self.print("Pulling latest bench-cli...")
         run_command(["git", "-C", str(root), "pull"], stream_output=True)
 
-        print("Installing admin Python dependencies...")
+        self.print("Installing admin Python dependencies...")
         from pilot.managers.admin_environment import AdminEnvManager
 
         AdminEnvManager(root).install_python_deps()
 
-        print("Downloading latest admin frontend...")
+        self.print("Downloading latest admin frontend...")
         if not download_admin_frontend(root):
-            print("  Download failed. Run 'bench build-admin' to build from source.")
+            self.print("  Download failed. Run 'bench build-admin' to build from source.")
         else:
-            print("bench-cli upgraded successfully.")
+            self.print("bench-cli upgraded successfully.")
 
         self._restart_if_production()
 
@@ -41,7 +46,7 @@ class UpgradeCommand(Command):
             manager = ProcessManager.detect_running(self.bench)
             if type(manager) is ProcessManager:
                 return
-            print("Restarting bench processes...")
+            self.print("Restarting bench processes...")
             manager.restart()
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.debug("Post-upgrade process restart failed: %s", exc)

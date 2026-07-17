@@ -1,26 +1,19 @@
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import ClassVar
 
 from pilot.commands.base import Command
 
-if TYPE_CHECKING:
-    from pilot.core.bench import Bench
 
-
+@dataclass(kw_only=True)
 class RunCommand(Command):
-    name = "start"
-    help = "Start all bench processes."
-    supports_all_benches = True
-
-    @classmethod
-    def from_args(cls, args, bench):
-        return cls(bench)
-
-    def __init__(self, bench: "Bench") -> None:
-        self.bench = bench
+    name: ClassVar[str] = "start"
+    help: ClassVar[str] = "Start all bench processes."
+    supports_all_benches: ClassVar[bool] = True
 
     def run(self) -> None:
         from pilot.managers.processes.local import ProcessManager
@@ -34,8 +27,8 @@ class RunCommand(Command):
         if not process_manager:
             try:
                 ProcessManager(self.bench).stop()
-            except Exception:
-                pass
+            except Exception as exc:
+                logging.debug("Best-effort stop of a stale process manager failed: %s", exc)
             if not initialized:
                 self._start_wizard()
                 return
@@ -66,15 +59,15 @@ class RunCommand(Command):
             from pilot.admin_url import admin_url
 
             manager.start_admin()
-            print(f"Admin running at {admin_url(self.bench.config)}")
-            print("Finish setup there; the bench starts serving once it's initialized.")
+            self.print(f"Admin running at {admin_url(self.bench.config)}")
+            self.print("Finish setup there; the bench starts serving once it's initialized.")
             return
 
         self._rebuild_config(manager)
         if not manager.is_configured():
             from pilot.commands.runtime.restart import _incomplete_message
 
-            print(_incomplete_message(self.bench))
+            self.print(_incomplete_message(self.bench))
             return
         manager.start()
 
@@ -96,9 +89,9 @@ class RunCommand(Command):
         has_source = (frontend / "package.json").exists()
 
         if not (dist / "assets").exists():
-            print("Admin UI not built yet; building it now...")
+            self.print("Admin UI not built yet; building it now...")
             if has_source:
-                BuildAdminCommand(force_build=True).run()
+                BuildAdminCommand(force=True).run()
             else:
                 download_admin_frontend(root)
             return
@@ -112,7 +105,7 @@ class RunCommand(Command):
 
         print("Admin UI source changed since last build; rebuilding...")
         try:
-            build_command(force_build=True).run()
+            build_command(force=True).run()
         except BenchError as error:
             # Never block startup on a build failure (e.g. Node too old) — keep
             # serving the existing dist and surface why.
@@ -142,12 +135,12 @@ class RunCommand(Command):
 
         assets = root / "admin" / "backend" / "static" / "dist" / "assets"
         if not assets.exists():
-            print("Downloading admin frontend...")
+            self.print("Downloading admin frontend...")
             download_admin_frontend(root)
 
         port = self._admin_port()
-        print("\nBench not initialized. Starting setup wizard...")
-        print(f"  Open http://localhost:{port} in your browser\n")
+        self.print("\nBench not initialized. Starting setup wizard...")
+        self.print(f"  Open http://localhost:{port} in your browser\n")
 
         env = {**os.environ, "PYTHONPATH": str(root)}
         subprocess.run(
@@ -167,7 +160,7 @@ class RunCommand(Command):
         )
 
         if (self.bench.path / "env" / "bin" / "python").exists():
-            print("\nSetup complete. Run 'bench start' to start your bench.\n", flush=True)
+            self.print("\nSetup complete. Run 'bench start' to start your bench.\n")
 
     def _admin_port(self) -> int:
         import tomllib

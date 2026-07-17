@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from pilot.tasks.jobs.base_task import BaseTask
-from pilot.core.audit_log import AuditLog
 from pilot.core.backup_pruning import BackupPruner
 from pilot.integrations.s3.backups import OffsiteBackup
 from pilot.integrations.s3.base import S3IntegrationError
@@ -87,23 +86,20 @@ class BackupSiteTask(BaseTask):
             return []
 
     def _record(self, status: str, timestamp: str, files: dict, offsite: bool, pruned: list[str]) -> None:
-        try:
-            AuditLog(self.bench).append(
-                "backup",
-                {
-                    "site": self.site,
-                    "event": "backup",
-                    "timestamp": timestamp,
-                    "finished_at": datetime.now(timezone.utc).isoformat(),
-                    "status": status,
-                    "with_files": self.with_files,
-                    "files": files,
-                    "offsite": offsite,
-                    "pruned": pruned,
-                },
-            )
-        except Exception as e:
-            print(f"Audit log update skipped due to error: {e!s}")
+        self._record_audit(
+            "backup",
+            {
+                "site": self.site,
+                "event": "backup",
+                "timestamp": timestamp,
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+                "status": status,
+                "with_files": self.with_files,
+                "files": files,
+                "offsite": offsite,
+                "pruned": pruned,
+            },
+        )
 
 
 if __name__ == "__main__":

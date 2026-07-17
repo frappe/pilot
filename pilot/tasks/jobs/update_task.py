@@ -1,6 +1,5 @@
 import sys
 
-from pilot.commands.runtime.update import UpdateCommand
 from pilot.exceptions import MigrateError
 from pilot.tasks.jobs.base_task import BaseTask
 
@@ -20,12 +19,12 @@ class UpdateTask(BaseTask):
 
     def run(self) -> None:
         try:
-            UpdateCommand(
-                self.bench,
-                skip_confirm=True,
-                apps=self._apps_filter,
+            self.bench.update(
+                apps_filter=self._apps_filter,
                 skip_failing_patches=self._skip_failing_patches,
-            ).run()
+                on_step=self._step,
+                on_progress=self._report,
+            )
         except MigrateError:
             sys.exit(1)
 

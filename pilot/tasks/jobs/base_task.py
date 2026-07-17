@@ -36,11 +36,24 @@ class BaseTask:
         if self._current_step:
             print(f"STEP-FAILED {self._current_step},{time.time():.3f}", flush=True)
 
+    def _report(self, message: str) -> None:
+        """Surface a progress message from a core call (e.g. App.install's
+        on_progress) inside the current step, flushed immediately."""
+        print(message, flush=True)
+
     def _require_production_privileges(self) -> None:
         if self.bench.config.production.enabled and not has_passwordless_sudo():
             raise BenchError(
                 "Production site operations require non-interactive system privileges."
             )
+
+    def _record_audit(self, category: str, fields: dict) -> None:
+        from pilot.core.audit_log import AuditLog
+
+        try:
+            AuditLog(self.bench).append(category, fields)
+        except Exception as e:
+            print(f"Audit log update skipped due to error: {e!s}")
 
     @classmethod
     def _parser(cls) -> argparse.ArgumentParser:

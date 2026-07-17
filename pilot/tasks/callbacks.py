@@ -1,12 +1,12 @@
 import json
+import logging
 import shutil
-import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
 from pilot.tasks.manager.task_state import TaskStatus
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
-from pilot.utils import hosts_line_contains
+from pilot.managers.platform import remove_hosts_entry
 
 CallbackOperation = Callable[[dict, dict], None]
 
@@ -50,36 +50,23 @@ def _drop_failed_site(bench_root: Path, site_name: str, site_path: Path) -> bool
     if not (site_path / "site_config.json").is_file():
         return True
     try:
-        from pilot.commands.sites.delete import DropSiteCommand
         from pilot.config.toml_store import BenchTomlStore
         from pilot.core.bench import Bench
+        from pilot.core.site import Site
         from pilot.managers.platform import noninteractive_privileges
 
         config = BenchTomlStore.for_bench(bench_root).read()
         bench = Bench(config, bench_root)
         with noninteractive_privileges():
-            DropSiteCommand(bench, site_name).run()
+            Site.for_name(site_name, bench).drop()
         return True
-    except Exception:
+    except Exception as exc:
+        logging.debug("Site drop callback failed for %s: %s", site_name, exc)
         return False
 
 
 def _remove_from_hosts(site_name: str) -> None:
-    try:
-        lines = _HOSTS_PATH.read_text().splitlines()
-    except OSError:
-        return
-
-    kept = [line for line in lines if not hosts_line_contains(line, site_name)]
-    if len(kept) == len(lines):
-        return
-
-    subprocess.run(
-        ["sudo", "-n", "tee", str(_HOSTS_PATH)],
-        input=("\n".join(kept) + "\n").encode(),
-        capture_output=True,
-        check=False,
-    )
+    remove_hosts_entry(site_name, hosts_path=_HOSTS_PATH)
 
 
 def _disable_site_ssl(meta: dict, args: dict) -> None:

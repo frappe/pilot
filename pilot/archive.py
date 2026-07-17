@@ -5,6 +5,8 @@ import tarfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from pilot.exceptions import BenchError
+
 
 @dataclass(frozen=True)
 class ArchiveLimits:
@@ -13,7 +15,7 @@ class ArchiveLimits:
     max_total_bytes: int = 32 * 1024**3
 
 
-class UnsafeArchiveError(ValueError):
+class UnsafeArchiveError(BenchError):
     pass
 
 

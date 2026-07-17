@@ -69,10 +69,12 @@ DISK_DEVICE_PATTERN = re.compile(r"^(sd[a-z]+|vd[a-z]+|xvd[a-z]+|nvme\d+n\d+)$")
 SECTOR_BYTES = 512
 
 
-class ConfigureMonitor:
-    """Installs a single system-wide `systemd --user` unit that monitors all benches."""
+class MonitorConfigurator:
+    """Installs a single system-wide `systemd --user` unit that monitors all benches,
+    and (given a bench) sets up that bench's log rotation and log authority."""
 
-    def __init__(self):
+    def __init__(self, bench: "Bench | None" = None):
+        self.bench = bench
         self.unit_name = "bench-monitor.service"
         self.timer_unit_name = "bench-monitor.timer"
         monitor_dir = cli_root() / "benches" / ".monitor"
@@ -142,8 +144,91 @@ class ConfigureMonitor:
         run_command(self._systemctl("daemon-reload"), env=env)
         run_command(self._systemctl("enable", "--now", self.timer_unit_name), env=env)
 
+    @property
+    def log_path(self) -> Path:
+        from pilot.config.monitor import MonitorConfig
 
-class ToMonitor:
+        bench = self._require_bench()
+        return bench.config.monitor.log_path or MonitorConfig.default_log_path(bench.config.name)
+
+    @property
+    def system_log_path(self) -> Path:
+        return self._require_bench().config.monitor.system_log_path
+
+    def setup(self) -> None:
+        if not is_linux():
+            raise BenchError("Monitoring is only supported on linux based machines.")
+
+        log_dir = self.log_path.parent
+        log_dir.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["sudo", "chown", f"{os.getuid()}:{os.getgid()}", str(log_dir)], check=True)
+        self.setup_log_rotation()
+
+    def setup_log_rotation(self) -> None:
+        bench = self._require_bench()
+        monitor_cfg = bench.config.monitor
+        app_config = f"""\
+{self.log_path} {{
+    size {monitor_cfg.application_log_max_size}
+    rotate 3
+    compress
+    missingok
+    notifempty
+    copytruncate
+}}
+"""
+        subprocess.run(
+            ["sudo", "tee", f"/etc/logrotate.d/{bench.config.name}-stats"],
+            input=app_config.encode(),
+            capture_output=True,
+            check=True,
+        )
+
+        system_config = f"""\
+{self.system_log_path} {{
+    size {monitor_cfg.system_log_max_size}
+    rotate 3
+    compress
+    missingok
+    notifempty
+    copytruncate
+}}
+"""
+        subprocess.run(
+            ["sudo", "tee", "/etc/logrotate.d/bench-system-stats"],
+            input=system_config.encode(),
+            capture_output=True,
+            check=True,
+        )
+
+    def is_system_log_authority(self) -> bool:
+        bench = self._require_bench()
+        system_log_authority_path = bench.config.monitor.authority_file_path
+        if not system_log_authority_path.exists():
+            system_log_authority_path.write_text(bench.config.name)
+            return True
+
+        authority_bench = system_log_authority_path.read_text()
+        if bench.config.name == authority_bench:
+            return True
+
+        for _, bench_config in iter_sibling_benches(bench.path):
+            # A sibling still running that name owns the log; otherwise reclaim it.
+            if bench_config.name == authority_bench and bench_config.production.process_manager in (
+                "systemd",
+                "supervisor",
+            ):
+                return False
+
+        system_log_authority_path.write_text(bench.config.name)
+        return True
+
+    def _require_bench(self) -> "Bench":
+        assert self.bench is not None, "MonitorConfigurator needs a bench for this operation"
+        return self.bench
+
+
+class ProcessResolver:
     def __init__(self, bench: "Bench"):
         self.bench = bench
         self.admin_service_name = f"{self.bench.config.name}-admin"
@@ -193,7 +278,7 @@ class ToMonitor:
 
         return pids
 
-    def to_monitor(self):
+    def resolve(self):
         prod_config = self.bench.config.production
         if not prod_config.enabled:
             return {}
@@ -209,6 +294,7 @@ class Monitor:
 
     def __init__(self, bench: "Bench"):
         self.bench = bench
+        self._configurator = MonitorConfigurator(bench)
         self._system_cpu: float = 0.0
         self._cpu_breakdown: dict[str, float] = {}
         self._proc_cpu: dict[int, float] = {}
@@ -217,13 +303,11 @@ class Monitor:
         self._targets: dict[str, int] | None = None
         self._cpu_before: tuple[dict[str, int], dict[int, int]] | None = None
         self._io_before: tuple[dict[str, int], dict[str, int]] | None = None
-        self.setup()
+        self._configurator.setup()
 
     def monitored_targets(self) -> dict[str, int]:
-        # `to_monitor()` shells out to systemctl/supervisorctl, so cache it: both
-        # the CPU sampling and the application metrics reuse the same result.
         if self._targets is None:
-            self._targets = ToMonitor(self.bench).to_monitor()
+            self._targets = ProcessResolver(self.bench).resolve()
         return self._targets
 
     def sample_cpu(self) -> None:
@@ -314,58 +398,14 @@ class Monitor:
 
     @property
     def log_path(self) -> Path:
-        from pilot.config.monitor_config import MonitorConfig
-
-        return self.bench.config.monitor.log_path or MonitorConfig.default_log_path(self.bench.config.name)
+        return self._configurator.log_path
 
     @property
     def system_log_path(self) -> Path:
-        return self.bench.config.monitor.system_log_path
+        return self._configurator.system_log_path
 
-    def setup_log_rotation(self) -> None:
-        monitor_cfg = self.bench.config.monitor
-        app_config = f"""\
-{self.log_path} {{
-    size {monitor_cfg.application_log_max_size}
-    rotate 3
-    compress
-    missingok
-    notifempty
-    copytruncate
-}}
-"""
-        subprocess.run(
-            ["sudo", "tee", f"/etc/logrotate.d/{self.bench.config.name}-stats"],
-            input=app_config.encode(),
-            capture_output=True,
-            check=True,
-        )
-
-        system_config = f"""\
-{self.system_log_path} {{
-    size {monitor_cfg.system_log_max_size}
-    rotate 3
-    compress
-    missingok
-    notifempty
-    copytruncate
-}}
-"""
-        subprocess.run(
-            ["sudo", "tee", "/etc/logrotate.d/bench-system-stats"],
-            input=system_config.encode(),
-            capture_output=True,
-            check=True,
-        )
-
-    def setup(self) -> None:
-        if not is_linux():
-            raise BenchError("Monitoring is only supported on linux based machines.")
-
-        log_dir = self.log_path.parent
-        log_dir.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["sudo", "chown", f"{os.getuid()}:{os.getgid()}", str(log_dir)], check=True)
-        self.setup_log_rotation()
+    def is_system_log_authority(self) -> bool:
+        return self._configurator.is_system_log_authority()
 
     def _cpu_percent(self, pid: int) -> float:
         return self._proc_cpu.get(pid, 0.0)
@@ -397,14 +437,14 @@ class Monitor:
     def _process_metrics(self, service: str, pid: int) -> dict:
         status = self._read_status(pid)
         # PSS accounts for shared memory pages, unlike RSS.
-        pss_memeory = self._read_pss(pid)
+        pss_memory = self._read_pss(pid)
         read_bytes, write_bytes = self._io_bytes(pid)
         return {
             "service": service,
             "pid": pid,
             "state": status.get("State", "?").split()[0],
             "cpu_percent": self._cpu_percent(pid),
-            "memory_rss_mb": round(pss_memeory / 1024, 2),
+            "memory_rss_mb": round(pss_memory / 1024, 2),
             "read_bytes": read_bytes,
             "write_bytes": write_bytes,
             "open_fds": self._open_fds(pid),
@@ -413,18 +453,6 @@ class Monitor:
     def _load_average(self) -> tuple[float, float, float]:
         parts = Path("/proc/loadavg").read_text().split()
         return float(parts[0]), float(parts[1]), float(parts[2])
-
-    def _system_cpu_percent(self) -> float:
-        return self._system_cpu
-
-    def _system_cpu_breakdown(self) -> dict:
-        return self._cpu_breakdown
-
-    def _system_network(self) -> dict:
-        return self._network
-
-    def _system_disk_io(self) -> dict:
-        return self._disk_io
 
     def _memory_usage(self) -> dict:
         data = {}
@@ -461,44 +489,20 @@ class Monitor:
     def _storage_usage(self) -> dict:
         return {"disk": self._disk_usage(self.bench.path)}
 
-    @property
-    def is_system_log_authority(self):
-        system_log_authority_path = self.bench.config.monitor.authority_file_path
-        if not system_log_authority_path.exists():
-            system_log_authority_path.write_text(self.bench.config.name)
-            return True
-
-        authority_bench = system_log_authority_path.read_text()
-        if self.bench.config.name == authority_bench:
-            return True
-
-        for _, bench_config in iter_sibling_benches(self.bench.path):
-            # In case the bench has been dropped or being used in dev mode
-            # If that's not the case then the logging authority should remain with that bench.
-            if bench_config.name == authority_bench and bench_config.production.process_manager in (
-                "systemd",
-                "supervisor",
-            ):
-                return False
-
-        # We won't be using it for monitoring therefore update the monitoring authority
-        system_log_authority_path.write_text(self.bench.config.name)
-        return True
-
     def collect_system_metrics(self) -> None:
-        if not self.is_system_log_authority:
+        if not self._configurator.is_system_log_authority():
             return
         self._append(
             self.system_log_path,
             {
                 "time": datetime.now(timezone.utc).isoformat(),
                 "load_avg": self._load_average(),
-                "cpu_percent": self._system_cpu_percent(),
-                "cpu_breakdown": self._system_cpu_breakdown(),
+                "cpu_percent": self._system_cpu,
+                "cpu_breakdown": self._cpu_breakdown,
                 "memory": self._memory_usage(),
                 "storage": self._storage_usage(),
-                "network": self._system_network(),
-                "disk_io": self._system_disk_io(),
+                "network": self._network,
+                "disk_io": self._disk_io,
             },
         )
 
@@ -525,7 +529,7 @@ class Monitor:
 
 
 def resolve_monitor_log_path(bench_config: "BenchConfig"):
-    from pilot.config.monitor_config import MonitorConfig
+    from pilot.config.monitor import MonitorConfig
 
     return MonitorConfig.default_log_path(bench_config.name)
 

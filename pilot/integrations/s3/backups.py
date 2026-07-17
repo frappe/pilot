@@ -4,7 +4,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-from pilot.config.s3_config import S3Config
+from pilot.config.s3 import S3Config
 from pilot.integrations.s3.base import S3
 from pilot.internal.atomic_file import exclusive_file_lock
 

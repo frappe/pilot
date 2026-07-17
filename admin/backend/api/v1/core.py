@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+import logging
 from pathlib import Path
 
 from flask import Blueprint, current_app, g, jsonify, request, url_for
@@ -15,7 +16,7 @@ from admin.backend.middleware import (
 )
 from pilot.tasks.manager.activity import TaskActivityReader
 from admin.backend.api.v1.setup import wizard_marker_path
-from pilot.config.bench_config import BenchConfig
+from pilot.config.bench import BenchConfig
 from pilot.config.toml_store import BenchTomlStore
 from pilot.internal.atomic_file import exclusive_file_lock
 from pilot.managers.platform import native_process_manager
@@ -120,7 +121,7 @@ def create_session():
     if error is not None:
         return error
 
-    from pilot.commands.admin.generate_session import ensure_jwt_secret, issue_token
+    from pilot.core.admin_auth import ensure_jwt_secret, issue_token
 
     response = created_response(
         {"authenticated": True, "scope": "bench"},
@@ -177,8 +178,8 @@ def _setup_bootstrap(bench_root: Path) -> dict:
     try:
         raw = BenchTomlStore.for_bench(bench_root).read_raw()
         name = raw.get("bench", {}).get("name", name)
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.debug("Could not read bench name during setup bootstrap: %s", exc)
     return {"mode": "setup", "name": name, "enabled": True}
 
 

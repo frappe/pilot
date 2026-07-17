@@ -1,4 +1,3 @@
-from pilot.config.site_config import SiteConfig
 from pilot.core.site import Site
 
 from pilot.tasks.jobs.base_task import BaseTask
@@ -19,7 +18,7 @@ class ReinstallSiteTask(BaseTask):
 
     def run(self) -> None:
         self._step("reinstall", f"Reinstall site {self.site}")
-        site = Site(SiteConfig(name=self.site, apps=[]), self.bench)
+        site = Site.for_name(self.site, self.bench)
         site.reinstall(self.admin_password)
         self._step("done")
 

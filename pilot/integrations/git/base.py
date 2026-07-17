@@ -17,6 +17,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from pilot.exceptions import BenchError
+
 # Per-provider Fine-Grained PAT generation links, pre-scoped where the provider
 # supports it, surfaced in the UI so the user lands on the right settings page.
 # Classic PAT URL pre-fills the `repo` scope so the user only has to click
@@ -26,11 +28,11 @@ TOKEN_HELP_URLS = {
 }
 
 
-class GitAuthError(Exception):
+class GitAuthError(BenchError):
     """The provider API rejected the token (HTTP 401/403)."""
 
 
-class GitProviderError(Exception):
+class GitProviderError(BenchError):
     """A provider API call failed for a non-auth reason."""
 
 

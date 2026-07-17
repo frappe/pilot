@@ -99,6 +99,10 @@ class ProcessManager:
     def pid_file(self) -> Path:
         return self.bench.pids_path / "bench.pid"
 
+    @property
+    def python(self) -> Path:
+        return self.bench.env_path / "bin" / "python"
+
     def write_config(self) -> None:
         AdminEnvManager(cli_root()).ensure()
         self._ensure_redis_config()
@@ -291,10 +295,9 @@ class ProcessManager:
 
     def _web_definition(self, dev: bool = False) -> ProcessDefinition:
         sites = self.bench.sites_path
-        python = self.bench.env_path / "bin" / "python"
         if dev:
             port = self.bench.config.http_port
-            argv = [str(python), "-m", "frappe.utils.bench_helper", "frappe", "serve", "--port", str(port)]
+            argv = [str(self.python), "-m", "frappe.utils.bench_helper", "frappe", "serve", "--port", str(port)]
             if not self.bench.config.reload_python:
                 argv.append("--noreload")
             return ProcessDefinition(
@@ -317,8 +320,7 @@ class ProcessManager:
 
     def _socketio_definition(self) -> ProcessDefinition:
         if self.bench.config.socketio_backend == "python":
-            python = self.bench.env_path / "bin" / "python"
-            argv = [str(python), "-m", "frappe.realtime.server"]
+            argv = [str(self.python), "-m", "frappe.realtime.server"]
             working_dir = self.bench.path
             backend_env = self._py_memory_env()
         else:
@@ -334,20 +336,18 @@ class ProcessManager:
         )
 
     def _watch_definition(self) -> ProcessDefinition:
-        python = self.bench.env_path / "bin" / "python"
         return ProcessDefinition(
             name="watch",
-            argv=[str(python), "-m", "frappe.utils.bench_helper", "frappe", "watch"],
+            argv=[str(self.python), "-m", "frappe.utils.bench_helper", "frappe", "watch"],
             log_file=self.bench.logs_path / "watch.log",
             working_dir=self.bench.sites_path,
         )
 
     def _worker_pool_definition(self, queues: str, num_workers: int) -> ProcessDefinition:
-        python = self.bench.env_path / "bin" / "python"
         return ProcessDefinition(
             name="worker_pool",
             argv=[
-                str(python),
+                str(self.python),
                 "-m",
                 "frappe.utils.bench_helper",
                 "frappe",
@@ -364,13 +364,12 @@ class ProcessManager:
 
     def _worker_definitions(self, queue: str, count: int) -> list[ProcessDefinition]:
         sites = self.bench.sites_path
-        python = self.bench.env_path / "bin" / "python"
         # Commas in queue names break supervisor's programs= list; slug them.
         slug = re.sub(r"[^A-Za-z0-9]+", "_", queue).strip("_") or "default"
         return [
             ProcessDefinition(
                 name=f"worker_{slug}_{i}",
-                argv=[str(python), "-m", "frappe.utils.bench_helper", "frappe", "worker", "--queue", queue],
+                argv=[str(self.python), "-m", "frappe.utils.bench_helper", "frappe", "worker", "--queue", queue],
                 log_file=self.bench.logs_path / f"worker_{slug}_{i}.log",
                 env=self._py_memory_env(),
                 working_dir=sites,

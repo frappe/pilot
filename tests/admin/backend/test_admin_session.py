@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from pilot.commands.admin.generate_session import (
+from pilot.core.admin_auth import (
     decode_token,
     has_scope,
     issue_login_token,
@@ -15,7 +15,7 @@ from pilot.commands.admin.generate_session import (
     issue_token,
     verify_token,
 )
-from pilot.config.bench_config import BenchConfig
+from pilot.config.bench import BenchConfig
 from pilot.config.bench_toml_builder import BenchTomlBuilder
 from pilot.core.bench import Bench
 from pilot.exceptions import BenchError

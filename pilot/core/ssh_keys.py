@@ -19,10 +19,12 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from pilot.exceptions import BenchError
+
 _KEY_TYPE_PREFIXES = ("ssh-", "ecdsa-sha2-", "sk-ssh-", "sk-ecdsa-sha2-")
 
 
-class SSHKeyError(Exception):
+class SSHKeyError(BenchError):
     """A key was malformed, duplicated, missing, or the last one remaining."""
 
 

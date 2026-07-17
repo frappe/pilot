@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pilot.commands.sites.restore import NewSiteFromBackupCommand
+from pilot.core.site import provision_from_backup
 
 from pilot.tasks.jobs.base_task import BaseTask
 
@@ -27,14 +27,15 @@ class NewSiteFromBackupTask(BaseTask):
     def run(self) -> None:
         self._require_production_privileges()
         self._step("restore", f"Restore site {self.name} from backup")
-        NewSiteFromBackupCommand(
+        provision_from_backup(
             self.bench,
             self.name,
             self.db_file,
             admin_password=self.admin_password,
             public_files=self.public_files,
             private_files=self.private_files,
-        ).run()
+            on_progress=self._report,
+        )
         self._step("done")
 
 

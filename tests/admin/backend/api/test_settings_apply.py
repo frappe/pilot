@@ -6,7 +6,7 @@ from unittest.mock import patch
 from flask import Flask
 
 from admin.backend.api.v1.settings import settings_bp
-from pilot.config.bench_config import BenchConfig
+from pilot.config.bench import BenchConfig
 from pilot.config.bench_toml_builder import BenchTomlBuilder
 
 

@@ -1,39 +1,28 @@
 from __future__ import annotations
 
-import argparse
-import sys
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Annotated, ClassVar
 
-from pilot.commands.base import Command
+from pilot.commands.base import Arg, Command
 from pilot.exceptions import BenchError
 
 if TYPE_CHECKING:
-    from pilot.core.bench import Bench
+    from pilot.core.site import Site
 
 
+@dataclass(kw_only=True)
 class InstallAppCommand(Command):
-    name = "install-app"
-    help = "Install one or more apps on a site."
+    name: ClassVar[str] = "install-app"
+    help: ClassVar[str] = "Install one or more apps on a site."
 
-    @classmethod
-    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
-        parser.add_argument("site", help="Site name.")
-        parser.add_argument("apps", nargs="+", help="App name(s) to install.")
-        parser.add_argument("--force", action="store_true", help="Reinstall even if already present.")
+    site_name: Annotated[str, Arg(help="Site name.", metavar="site")]
+    app_names: Annotated[list[str], Arg(help="App name(s) to install.", metavar="apps")]
+    force: Annotated[bool, Arg(help="Reinstall even if already present.")] = False
 
-    @classmethod
-    def from_args(cls, args, bench):
-        return cls(bench, args.site, args.apps, force=args.force)
-
-    def __init__(self, bench: "Bench", site_name: str, app_names: list[str], *, force: bool = False) -> None:
-        from pilot.config.site_config import SiteConfig
+    def __post_init__(self) -> None:
         from pilot.core.site import Site
 
-        self.bench = bench
-        self.site_name = site_name
-        self.app_names = app_names
-        self.force = force
-        self.site = Site(SiteConfig(name=site_name, apps=[]), bench)
+        self.site: "Site" = Site.for_name(self.site_name, self.bench)
 
     def run(self) -> None:
         if not self.site.exists:
@@ -43,9 +32,8 @@ class InstallAppCommand(Command):
         for app_name in self.app_names:
             app = self.bench.app(app_name)
             if not self.force and app.config.name in installed:
-                print(f"'{app_name}' is already installed on '{self.site_name}', skipping.")
+                self.print(f"'{app_name}' is already installed on '{self.site_name}', skipping.")
                 continue
-            print(f"Installing '{app_name}' on '{self.site_name}'...")
-            sys.stdout.flush()
+            self.print(f"Installing '{app_name}' on '{self.site_name}'...")
             self.site.install_app(app)
-            print(f"'{app_name}' installed on '{self.site_name}'.")
+            self.print(f"'{app_name}' installed on '{self.site_name}'.")

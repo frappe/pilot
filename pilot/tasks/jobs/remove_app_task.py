@@ -1,4 +1,3 @@
-from pilot.commands.apps.remove import RemoveAppCommand
 from pilot.tasks.jobs.base_task import BaseTask
 
 
@@ -15,7 +14,7 @@ class RemoveAppTask(BaseTask):
 
     def run(self) -> None:
         self._step("remove", f"Remove {self.name}")
-        RemoveAppCommand(self.bench, self.name, skip_confirm=True, force=True).run()
+        self.bench.app(self.name).remove(force=True, on_progress=self._report)
         self._step("done")
 
 

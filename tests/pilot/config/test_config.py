@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from pilot.config.bench_config import BenchConfig
-from pilot.config.production_config import ProductionConfig
+from pilot.config.bench import BenchConfig
+from pilot.config.production import ProductionConfig
 from pilot.config.bench_toml import dumps_config as bench_config_to_toml
 from pilot.exceptions import ConfigError
 
@@ -452,7 +452,7 @@ def test_admin_allow_bench_management_can_be_disabled() -> None:
 
 
 def test_admin_internal_port_is_port_plus_one() -> None:
-    from pilot.config.admin_config import AdminConfig
+    from pilot.config.admin import AdminConfig
 
     assert AdminConfig(port=8002).internal_port == 8003
     assert AdminConfig(port=9100).internal_port == 9101

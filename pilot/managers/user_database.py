@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import os
 import subprocess
+import time
 from pathlib import Path
 
+from pilot.exceptions import DatabaseError
 from pilot.managers.packages import get_package_manager
 from pilot.managers.platform import is_macos
 from pilot.utils import run_command
@@ -25,13 +27,23 @@ class UserOwnedDBManager:
     def is_installed(self) -> bool:
         raise NotImplementedError
 
+    def is_reachable(self) -> bool:
+        raise NotImplementedError
+
+    def _wait_until_reachable(self, timeout: float = 30.0) -> None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self.is_reachable():
+                return
+            time.sleep(0.5)
+
     def install(self) -> None:
         if self.is_installed():
             return
         if is_macos():
             get_package_manager().install(self._brew_package())
             return
-        raise RuntimeError(
+        raise DatabaseError(
             f"{self._DISPLAY_NAME} is not installed. Re-run install.sh as root to "
             f"install it (it provisions {self._SYSTEM_PACKAGE} for every supported "
             f"distro), or install '{self._SYSTEM_PACKAGE}' yourself."
@@ -39,6 +51,7 @@ class UserOwnedDBManager:
 
     # ── service control ──────────────────────────────────────────────────────
 
+    @property
     def unit_path(self) -> Path:
         return self._user_unit_dir() / self._UNIT_NAME
 
@@ -46,7 +59,7 @@ class UserOwnedDBManager:
         """The unit file existing is the single source of truth: once it's
         there, this server has already been set up (by this bench or a
         sibling) — reuse it rather than re-initialising."""
-        return self.unit_path().exists()
+        return self.unit_path.exists()
 
     def is_running(self) -> bool:
         if is_macos():
@@ -55,6 +68,7 @@ class UserOwnedDBManager:
             self._systemctl("is-active", self._UNIT_NAME),
             env=self._systemctl_env(),
             capture_output=True,
+            timeout=5,
         )
         return result.returncode == 0
 
@@ -98,7 +112,7 @@ class UserOwnedDBManager:
     def _installed_brew_formula(self) -> str | None:
         """The formula Homebrew already manages, so install/start/stop target
         whatever is installed rather than assuming a version."""
-        result = subprocess.run(["brew", "list", "--formula"], capture_output=True, text=True)
+        result = subprocess.run(["brew", "list", "--formula"], capture_output=True, text=True, timeout=10)
         if result.returncode != 0:
             return None
         formulae = result.stdout.split()
@@ -107,7 +121,7 @@ class UserOwnedDBManager:
         return next((f for f in formulae if f.startswith(f"{self._BREW_FORMULA_BASE}@")), None)
 
     def _brew_service_running(self) -> bool:
-        result = subprocess.run(["brew", "services", "list"], capture_output=True, text=True)
+        result = subprocess.run(["brew", "services", "list"], capture_output=True, text=True, timeout=10)
         for line in result.stdout.splitlines():
             parts = line.split()
             if parts and parts[0] == self._brew_package() and "started" in parts:

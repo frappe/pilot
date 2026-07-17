@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pilot.config.bench_config import BenchConfig
+    from pilot.config.bench import BenchConfig
 
 
 def admin_url(config: "BenchConfig", dev_host: str = "localhost") -> str:

@@ -1,7 +1,6 @@
 import argparse
 import json
 
-from pilot.commands.setup.letsencrypt import SetupLetsEncryptCommand
 from pilot.config.toml_store import BenchTomlStore
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
 from pilot.tasks.jobs.base_task import BaseTask
@@ -25,7 +24,7 @@ class SetupLetsEncryptTask(BaseTask):
         self._require_production_privileges()
         self._apply_email()
         self._enable_site_tls()
-        SetupLetsEncryptCommand(self.bench).run()
+        self.bench.setup_letsencrypt()
         self._step("done")
 
     def _apply_email(self) -> None:

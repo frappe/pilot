@@ -19,7 +19,7 @@ class MonitorProvider:
         self._cutoff = datetime.now(timezone.utc) - timedelta(seconds=WINDOW_SECONDS[self._window])
 
     def get_history(self) -> dict:
-        from pilot.config.monitor_config import MonitorConfig
+        from pilot.config.monitor import MonitorConfig
         from pilot.config.toml_store import BenchTomlStore
 
         config = BenchTomlStore.for_bench(self._bench_root).read()

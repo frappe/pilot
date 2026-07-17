@@ -5,11 +5,13 @@ import urllib.error
 import urllib.request
 from typing import TYPE_CHECKING, Any
 
+from pilot.exceptions import BenchError
+
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
 
-class CentralClientError(Exception):
+class CentralClientError(BenchError):
     """A Central API call could not be made or was rejected (missing config,
     transport failure, or a non-2xx response)."""
 

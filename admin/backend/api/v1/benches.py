@@ -9,8 +9,6 @@ from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request, url_for
 
 from admin.backend.providers.bench import BenchProvider
-from pilot.commands.bench.delete import DropBenchCommand
-from pilot.commands.bench.create import NewCommand
 from pilot.config.toml_store import BenchTomlStore
 from pilot.core.bench import Bench
 from pilot.exceptions import BenchAlreadyExistsError, BenchError
@@ -270,10 +268,7 @@ def _delete_bench_locked(target_dir: Path, toml_path: Path, name: str):
         from pilot.managers.platform import noninteractive_privileges
 
         with noninteractive_privileges():
-            DropBenchCommand(
-                Bench(target_config, target_dir),
-                skip_confirm=True,
-            ).run()
+            Bench(target_config, target_dir).drop()
     except Exception:
         return error_response("bench_drop_failed", "Could not drop the bench.", 500)
     return no_content_response()
@@ -322,7 +317,7 @@ def create_bench():
             422,
         )
 
-    from pilot.config.production_config import VALID_PROCESS_MANAGERS
+    from pilot.config.production import VALID_PROCESS_MANAGERS
 
     process_manager = (data.get("process_manager") or "").strip().lower()
     if process_manager == "supervisord":
@@ -424,14 +419,14 @@ def _create_bench_locked(
             )
 
     try:
-        NewCommand(
+        Bench.create_at(
             new_dir,
             name,
             process_manager=process_manager,
             admin_domain=admin_domain,
             admin_tls=admin_tls,
             db_type=db_type,
-        ).run()
+        )
     except BenchAlreadyExistsError:
         return error_response(
             "bench_already_exists",

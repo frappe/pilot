@@ -4,7 +4,7 @@ import re
 import subprocess
 from typing import TYPE_CHECKING
 
-from pilot.config.redis_config import RedisConfig
+from pilot.config.redis import RedisConfig
 from pilot.managers.packages import get_package_manager
 from pilot.managers.platform import is_macos, which
 

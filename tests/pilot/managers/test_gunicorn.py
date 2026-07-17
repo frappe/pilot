@@ -7,12 +7,12 @@ from unittest.mock import patch
 
 import pytest
 
-from pilot.config.app_config import AppConfig
-from pilot.config.bench_config import BenchConfig
-from pilot.config.gunicorn_config import GunicornConfig
-from pilot.config.mariadb_config import MariaDBConfig
-from pilot.config.redis_config import RedisConfig
-from pilot.config.worker_config import WorkerConfig, WorkerGroup
+from pilot.config.app import AppConfig
+from pilot.config.bench import BenchConfig
+from pilot.config.gunicorn import GunicornConfig
+from pilot.config.mariadb import MariaDBConfig
+from pilot.config.redis import RedisConfig
+from pilot.config.worker import WorkerConfig, WorkerGroup
 from pilot.core.bench import Bench
 from pilot.exceptions import ConfigError
 from pilot.managers.gunicorn import GunicornManager
@@ -148,7 +148,7 @@ def test_gunicorn_manager_bind_uses_bench_http_port(tmp_path: Path) -> None:
     manager = GunicornManager(bench)
 
     assert manager._bind() == "127.0.0.1:9000"
-    assert manager.upstream_server() == "127.0.0.1:9000"
+    assert manager.upstream_server == "127.0.0.1:9000"
 
 
 # ── ProcessManager integration tests ──────────────────────────────────────────
@@ -264,7 +264,7 @@ def test_systemd_generate_config_writes_gunicorn_config(tmp_path: Path) -> None:
 
 
 def test_nginx_upstream_uses_gunicorn_bind(tmp_path: Path) -> None:
-    from pilot.managers.nginx import NginxManager
+    from pilot.managers.nginx import NginxConfigRenderer
 
     config = BenchConfig._from_dict({
         "bench": {"name": "test-bench", "python": "3.14", "http_port": 9000},
@@ -273,9 +273,9 @@ def test_nginx_upstream_uses_gunicorn_bind(tmp_path: Path) -> None:
         "redis": {"cache_port": 13000, "queue_port": 11000},
     })
     bench = Bench(config, tmp_path)
-    manager = NginxManager(bench)
+    renderer = NginxConfigRenderer(bench)
 
-    upstream = manager._render_upstream_block("test-bench")
+    upstream = renderer._render_upstream_block("test-bench")
 
     assert "server 127.0.0.1:9000;" in upstream
 

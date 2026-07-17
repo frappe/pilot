@@ -4,7 +4,7 @@ import http.client
 import socket
 from pathlib import Path
 
-from pilot.config.bench_config import BenchConfig
+from pilot.config.bench import BenchConfig
 from pilot.config.toml_store import BenchTomlStore
 
 
@@ -39,7 +39,7 @@ class BenchProvider:
 
         try:
             bench = Bench(BenchTomlStore(self._toml_path).read(), self._bench_dir)
-            return NginxManager(bench).admin_cert_exists()
+            return NginxManager(bench).has_admin_cert
         except Exception:
             return False
 

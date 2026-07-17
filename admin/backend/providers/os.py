@@ -4,7 +4,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from pilot.config.bench_config import BenchConfig
+from pilot.config.bench import BenchConfig
 from pilot.exceptions import CommandError
 from pilot.managers.redis import RedisManager
 from pilot.managers.platform import which

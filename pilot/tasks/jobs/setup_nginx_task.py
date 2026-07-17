@@ -1,11 +1,10 @@
-from pilot.commands.setup.nginx import SetupNginxCommand
 from pilot.tasks.jobs.base_task import BaseTask
 
 
 class SetupNginxTask(BaseTask):
     def run(self) -> None:
         self._step("nginx", "Set up Nginx")
-        SetupNginxCommand(self.bench).run()
+        self.bench.setup_nginx(on_progress=self._report)
         self._step("done")
 
 

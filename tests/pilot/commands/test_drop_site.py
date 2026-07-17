@@ -1,12 +1,13 @@
-"""Tests for DropSiteCommand provider domain capture/release driving a dummy provider."""
+"""Tests for Site.drop()'s provider domain capture/release driving a dummy provider."""
 import json
 import os
 from pathlib import Path
 
-from pilot.commands.sites.delete import DropSiteCommand
-from pilot.config.bench_config import BenchConfig
+from pilot.config.bench import BenchConfig
+from pilot.config.site import SiteConfig
 from pilot.config.toml_store import BenchTomlStore
 from pilot.core.bench import Bench
+from pilot.core.site import Site
 
 _BENCH_DATA: dict = {
     "bench": {"name": "test-bench", "python": "3.14"},
@@ -56,7 +57,7 @@ def test_collects_site_name_and_custom_domains(tmp_path: Path, monkeypatch) -> N
     _write_site(bench, "mysite", {"domains": ["app.example.com", "shop.example.com"],
                                   "host_name": "https://app.example.com"})
 
-    assert DropSiteCommand(bench, "mysite")._provider_domains() == [
+    assert Site(SiteConfig(name="mysite", apps=[]), bench)._provider_domains() == [
         "mysite",
         "app.example.com",
         "shop.example.com",
@@ -67,7 +68,7 @@ def test_releases_every_captured_domain(tmp_path: Path, monkeypatch) -> None:
     log = _install_provider(tmp_path, monkeypatch)
     bench = _make_bench(tmp_path)
 
-    DropSiteCommand(bench, "mysite")._release_domains(["mysite", "app.example.com"])
+    Site(SiteConfig(name="mysite", apps=[]), bench)._release_domains(["mysite", "app.example.com"])
 
     assert log.read_text().splitlines() == [
         "deregister mysite",
@@ -81,19 +82,19 @@ def test_release_swallows_provider_failure(tmp_path: Path, monkeypatch) -> None:
     bench = _make_bench(tmp_path)
 
     # Best effort after a successful drop: a provider failure must not raise.
-    DropSiteCommand(bench, "mysite")._release_domains(["app.example.com"])
+    Site(SiteConfig(name="mysite", apps=[]), bench)._release_domains(["app.example.com"])
 
 
 def test_no_domains_without_site_config(tmp_path: Path, monkeypatch) -> None:
     _install_provider(tmp_path, monkeypatch)
     bench = _make_bench(tmp_path)
 
-    assert DropSiteCommand(bench, "mysite")._provider_domains() == []
+    assert Site(SiteConfig(name="mysite", apps=[]), bench)._provider_domains() == []
 
 
 def test_no_op_for_missing_site(tmp_path: Path, monkeypatch) -> None:
     log = _install_provider(tmp_path, monkeypatch)
-    cmd = DropSiteCommand(_make_bench(tmp_path), "ghost")
+    cmd = Site(SiteConfig(name="ghost", apps=[]), _make_bench(tmp_path))
     cmd._release_domains(cmd._provider_domains())
     assert not log.exists()
 
@@ -102,8 +103,8 @@ def _capture_drop_cmd(tmp_path: Path, monkeypatch, bench: Bench) -> dict:
     BenchTomlStore.for_bench(bench.path).write(bench.config)
     _write_site(bench, "mysite", {})
     captured: dict = {}
-    monkeypatch.setattr("pilot.utils.run_command", lambda cmd, **kw: captured.setdefault("cmd", cmd))
-    DropSiteCommand(bench, "mysite").run()
+    monkeypatch.setattr("pilot.core.site.run_command", lambda cmd, **kw: captured.setdefault("cmd", cmd))
+    Site(SiteConfig(name="mysite", apps=[]), bench).drop()
     return captured
 
 

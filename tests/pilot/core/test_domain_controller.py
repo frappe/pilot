@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from pilot.config.bench_config import BenchConfig
-from pilot.config.site_config import SiteConfig
+from pilot.config.bench import BenchConfig
+from pilot.config.site import SiteConfig
 from pilot.core.bench import Bench
 from pilot.core.domains import DomainRouteProvider
 from pilot.exceptions import BenchError
-from pilot.managers.nginx import NginxManager
+from pilot.managers.nginx import NginxConfigRenderer
 
 
 _BENCH_DATA: dict = {
@@ -168,7 +168,7 @@ def test_builtin_dns_records_without_provider(tmp_path: Path, monkeypatch) -> No
 
 def test_nginx_gates_tcp_peer_to_provider_proxy_servers(tmp_path: Path, monkeypatch) -> None:
     _install_provider(tmp_path, monkeypatch)
-    config = NginxManager(_make_bench(tmp_path))._generate_site_config(
+    config = NginxConfigRenderer(_make_bench(tmp_path)).generate_site_config(
         SiteConfig(name="site1.example.com", apps=["frappe"]), ssl_ready=False
     )
 

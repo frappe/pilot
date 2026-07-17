@@ -1,20 +1,16 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import ClassVar
 
 from pilot.commands.base import Command
 
-if TYPE_CHECKING:
-    from pilot.core.bench import Bench
 
-
+@dataclass(kw_only=True)
 class SetupRequirementsCommand(Command):
-    name = "requirements"
-    help = "Install Python and JS requirements for all apps."
-    group = "setup"
-
-    def __init__(self, bench: "Bench") -> None:
-        self.bench = bench
+    name: ClassVar[str] = "requirements"
+    help: ClassVar[str] = "Install Python and JS requirements for all apps."
+    group: ClassVar[str] = "setup"
 
     def run(self) -> None:
         self._install_python()
@@ -31,7 +27,7 @@ class SetupRequirementsCommand(Command):
         for app in self.bench.apps():
             if not (app.path / "pyproject.toml").exists() and not (app.path / "setup.py").exists():
                 continue
-            print(f"Installing Python requirements for {app.config.name}...")
+            self.print(f"Installing Python requirements for {app.config.name}...")
             run_command(
                 [uv, "pip", "install", "--python", python, "-e", str(app.path)],
                 stream_output=True,
@@ -43,5 +39,5 @@ class SetupRequirementsCommand(Command):
         for app in self.bench.apps():
             if not (app.path / "package.json").exists():
                 continue
-            print(f"Installing JS requirements for {app.config.name}...")
+            self.print(f"Installing JS requirements for {app.config.name}...")
             run_command([get_yarn_bin(), "install"], cwd=app.path, stream_output=True)

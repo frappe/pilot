@@ -1,36 +1,32 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import ClassVar
 
 from pilot.commands.base import Command
 
-if TYPE_CHECKING:
-    from pilot.core.bench import Bench
 
-
+@dataclass(kw_only=True)
 class UpdateConfigCommand(Command):
-    name = "config"
-    help = "Regenerate config files from bench.toml."
-    group = "setup"
-
-    def __init__(self, bench: "Bench") -> None:
-        self.bench = bench
+    name: ClassVar[str] = "config"
+    help: ClassVar[str] = "Regenerate config files from bench.toml."
+    group: ClassVar[str] = "setup"
 
     def run(self) -> None:
         from pilot.managers.nginx import NginxManager
         from pilot.managers.processes.local import ProcessManager
         from pilot.managers.redis import RedisManager
 
-        print("Updating Redis configs...")
+        self.print("Updating Redis configs...")
         RedisManager(self.bench.config.redis, self.bench).generate_configs()
 
-        print("Updating process manager config...")
+        self.print("Updating process manager config...")
         ProcessManager.for_bench(self.bench).write_config()
 
-        print("Updating common_site_config.json...")
+        self.print("Updating common_site_config.json...")
         self.bench.write_common_site_config()
 
         if self.bench.config.production.enabled:
-            print("Updating nginx configs...")
+            self.print("Updating nginx configs...")
             NginxManager(self.bench).generate_config()
-            print("  Note: run 'bench setup nginx' to reload nginx with the new config.")
+            self.print("  Note: run 'bench setup nginx' to reload nginx with the new config.")

@@ -5,11 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from pilot.config.app_config import AppConfig
-from pilot.config.bench_config import BenchConfig
-from pilot.config.mariadb_config import MariaDBConfig
-from pilot.config.redis_config import RedisConfig
-from pilot.config.worker_config import WorkerConfig, WorkerGroup
+from pilot.config.app import AppConfig
+from pilot.config.bench import BenchConfig
+from pilot.config.mariadb import MariaDBConfig
+from pilot.config.redis import RedisConfig
+from pilot.config.worker import WorkerConfig, WorkerGroup
 from pilot.core.bench import Bench
 from pilot.managers.redis import RedisManager
 
@@ -530,7 +530,7 @@ def test_supervisor_is_running_false_when_no_running_in_output(tmp_path: Path) -
 def test_supervisor_multiqueue_worker_name_has_no_commas(tmp_path: Path) -> None:
     """A worker group serving several queues must not produce a comma in the
     program name — commas break supervisor's `programs=` CSV (regression)."""
-    from pilot.config.worker_config import WorkerConfig, WorkerGroup
+    from pilot.config.worker import WorkerConfig, WorkerGroup
 
     from pilot.managers.processes.supervisor import SupervisorRenderer
 

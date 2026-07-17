@@ -42,7 +42,7 @@ def test_production_preflight_runs_before_tls_configuration_changes(tmp_path: Pa
             "pilot.tasks.jobs.base_task.has_passwordless_sudo",
             return_value=False,
         ),
-        patch("pilot.tasks.jobs.setup_letsencrypt_task.SetupLetsEncryptCommand.run") as run,
+        patch("pilot.core.bench.Bench.setup_letsencrypt") as run,
         pytest.raises(BenchError, match="non-interactive system privileges"),
     ):
         task.run()
@@ -56,9 +56,7 @@ def test_tls_task_applies_email_and_site_flag_before_certificate_setup(tmp_path:
     task = _task(tmp_path, production=False, email="ops@example.com")
     config_path = tmp_path / "sites" / "secure.localhost" / "site_config.json"
 
-    with patch(
-        "pilot.tasks.jobs.setup_letsencrypt_task.SetupLetsEncryptCommand.run"
-    ) as run:
+    with patch("pilot.core.bench.Bench.setup_letsencrypt") as run:
         task.run()
 
     run.assert_called_once_with()

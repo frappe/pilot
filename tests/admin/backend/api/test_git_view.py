@@ -10,7 +10,7 @@ from pilot.integrations.git import GitAuthError
 
 def _client(bench_root: Path, password: str = "secret"):
     from admin.backend.app import create_app
-    from pilot.commands.admin.generate_session import ensure_jwt_secret, issue_token
+    from pilot.core.admin_auth import ensure_jwt_secret, issue_token
 
     bench_root.mkdir(parents=True, exist_ok=True)
     (bench_root / "bench.toml").write_text(

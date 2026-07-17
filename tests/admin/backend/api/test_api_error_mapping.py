@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from admin.backend.app import create_app
-from pilot.commands.admin.generate_session import ensure_jwt_secret, issue_token
+from pilot.core.admin_auth import ensure_jwt_secret, issue_token
 from pilot.config.bench_toml_builder import BenchTomlBuilder
 from pilot.core.ssh_keys import (
     InvalidSSHKeyError,

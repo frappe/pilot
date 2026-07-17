@@ -3,9 +3,10 @@ from __future__ import annotations
 import argparse
 import functools
 import importlib
+import logging
 import pkgutil
 
-from pilot.commands.base import Command
+from pilot.commands.base import BenchMode, Command
 from pilot.context import CliContext
 from pilot.exceptions import BenchError
 from pilot.loader import load_bench
@@ -82,14 +83,16 @@ def dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser, context:
 
 
 def _resolve_bench(cls: type[Command], context: CliContext):
-    if cls.requires_bench:
-        return load_bench(context, require_explicit=cls.requires_explicit_bench)
-    if cls.optional_bench:
+    mode = cls.bench_mode
+    if mode is BenchMode.NONE:
+        return None
+    if mode is BenchMode.OPTIONAL:
         try:
             return load_bench(context)
-        except Exception:
+        except Exception as exc:
+            logging.debug("Optional bench load failed: %s", exc)
             return None
-    return None
+    return load_bench(context, require_explicit=mode is BenchMode.EXPLICIT)
 
 
 def dispatch_all(args: argparse.Namespace, parser: argparse.ArgumentParser, context: CliContext) -> None:

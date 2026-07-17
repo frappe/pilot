@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import secrets
 import signal
@@ -20,14 +21,14 @@ from pilot.tasks.manager.process_identity import (
 from pilot.tasks.manager.task_state import TERMINAL_TASK_STATUSES, TaskStatus
 from pilot.tasks.manager.task_store import TaskStore
 from pilot.tasks.timing import CANCEL_GRACE_SECONDS, PROCESS_EXIT_POLL_SECONDS
-from pilot.exceptions import TaskNotFoundError, TaskNotRunningError
+from pilot.exceptions import BenchError, TaskNotFoundError, TaskNotRunningError
 from pilot.managers.platform import NONINTERACTIVE_PRIVILEGES_ENV
 
 _READY_FD_ENV = "BENCH_TASK_READY_FD"
 _LAUNCH_ID_ENV = "BENCH_TASK_LAUNCH_ID"
 
 
-class TaskProcessStartError(RuntimeError):
+class TaskProcessStartError(BenchError):
     pass
 
 
@@ -243,8 +244,8 @@ class TaskProcess:
     def _run_stored_callback(self, task_id: str, trigger: str) -> None:
         try:
             run_stored_callback(self._store.task_dir(task_id), trigger)
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.debug("Stored callback %r failed for task %s: %s", trigger, task_id, exc)
 
     def _run_stored_callback_for_status(self, task_id: str) -> None:
         try:

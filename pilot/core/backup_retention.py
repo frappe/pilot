@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pilot.config.backup_config import SCHEME_FIFO, BackupConfig
+from pilot.config.backup import SCHEME_FIFO, BackupConfig
 
 _TS_FORMAT = "%Y%m%d_%H%M%S"
 

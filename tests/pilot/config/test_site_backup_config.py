@@ -3,8 +3,8 @@ import stat
 
 import pytest
 
-from pilot.config.backup_config import BackupConfig
-from pilot.config.site_backup_config import clear_retention, read_retention, write_retention
+from pilot.config.backup import BackupConfig
+from pilot.config.site_backup import clear_retention, read_retention, write_retention
 
 
 def test_write_creates_and_read_roundtrips(tmp_path) -> None:

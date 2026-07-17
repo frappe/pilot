@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from pilot.config.bench_config import BenchConfig
+from pilot.config.bench import BenchConfig
 
 from admin.backend.api.v1.settings import ConfigPatcher, _build_settings_response, _waf_payload
 

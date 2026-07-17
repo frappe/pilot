@@ -14,11 +14,12 @@ from pilot.core.database import (
     make_database,
     make_site_database,
 )
-from pilot.config.bench_config import BenchConfig
-from pilot.config.mariadb_config import MariaDBConfig
-from pilot.config.postgres_config import PostgresConfig
-from pilot.config.redis_config import RedisConfig
-from pilot.config.worker_config import WorkerConfig, WorkerGroup
+from pilot.exceptions import DatabaseError
+from pilot.config.bench import BenchConfig
+from pilot.config.mariadb import MariaDBConfig
+from pilot.config.postgres import PostgresConfig
+from pilot.config.redis import RedisConfig
+from pilot.config.worker import WorkerConfig, WorkerGroup
 
 
 def _bench_config(db_type: str = "mariadb") -> BenchConfig:
@@ -148,7 +149,7 @@ def test_sqlite_get_schema_groups_columns_per_table_in_one_connection(tmp_path: 
 
 def test_sqlite_execute_raises_on_bad_query(tmp_path: Path) -> None:
     db = SQLite(str(tmp_path / "x.db"))
-    with pytest.raises(RuntimeError):
+    with pytest.raises(DatabaseError):
         db.execute("SELECT * FROM nonexistent_table")
 
 
@@ -161,7 +162,7 @@ def test_sqlite_read_only_blocks_ddl(tmp_path: Path) -> None:
     conn.commit()
     conn.close()
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(DatabaseError):
         db.execute("DROP TABLE keep_me", read_only=True)
 
     assert "keep_me" in db.get_tables()
@@ -177,7 +178,7 @@ def test_sqlite_read_only_blocks_dml(tmp_path: Path) -> None:
     conn.commit()
     conn.close()
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(DatabaseError):
         db.execute("INSERT INTO t VALUES (2)", read_only=True)
 
     result = db.execute("SELECT * FROM t")
@@ -247,7 +248,7 @@ def test_make_database_returns_postgres_for_postgres_bench() -> None:
 
 
 def test_make_database_raises_for_sqlite_bench() -> None:
-    with pytest.raises(RuntimeError, match="SQLite"):
+    with pytest.raises(DatabaseError, match="SQLite"):
         make_database(_bench_config("sqlite"))
 
 

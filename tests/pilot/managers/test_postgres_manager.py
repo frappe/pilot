@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import subprocess
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, PropertyMock
 
 import pytest
 
-from pilot.config.postgres_config import PostgresConfig
+from pilot.config.postgres import PostgresConfig
+from pilot.exceptions import DatabaseError
 from pilot.managers.postgres import PostgresManager
 
 MODULE = "pilot.managers.postgres"
@@ -48,7 +49,7 @@ def test_install_raises_when_missing_on_linux() -> None:
     m = _mgr()
     with patch.object(m, "is_installed", return_value=False), \
          patch(f"{BASE_MODULE}.is_macos", return_value=False):
-        with pytest.raises(RuntimeError, match="install.sh"):
+        with pytest.raises(DatabaseError, match="install.sh"):
             m.install()
 
 
@@ -88,7 +89,7 @@ def test_secure_sets_password_then_verifies() -> None:
 def test_secure_raises_when_still_unauthenticated() -> None:
     m = _mgr(root_password="pw")
     with patch.object(m, "check_credentials", side_effect=[False, False]), patch.object(m, "_run_sql_as_superuser"):
-        with pytest.raises(RuntimeError, match="authenticate"):
+        with pytest.raises(DatabaseError, match="authenticate"):
             m.secure()
 
 
@@ -191,7 +192,7 @@ def test_is_unsecured_targets_own_socket_dir_on_linux() -> None:
          patch(f"{MODULE}.subprocess.run") as run:
         m.is_unsecured()
     cmd = run.call_args[0][0]
-    assert cmd[cmd.index("-h") + 1] == str(m.socket_dir())
+    assert cmd[cmd.index("-h") + 1] == str(m.socket_dir)
 
 
 def test_is_unsecured_ignores_trust_auth_and_checks_catalog() -> None:
@@ -225,7 +226,7 @@ def test_is_unsecured_true_when_role_does_not_exist_yet() -> None:
 
 def test_provision_user_owned_initialises_and_installs_unit_when_fresh(tmp_path) -> None:
     m = _mgr(port=5440)
-    with patch.object(m, "data_dir", return_value=tmp_path / "data"), \
+    with patch.object(type(m), "data_dir", new_callable=PropertyMock, return_value=tmp_path / "data"), \
          patch.object(m, "is_provisioned", return_value=False), \
          patch.object(m, "_ensure_port_available"), \
          patch.object(m, "is_running", return_value=False), \
@@ -249,7 +250,7 @@ def test_ensure_port_available_raises_when_port_taken() -> None:
         srv.bind(("127.0.0.1", 0))
         srv.listen(1)
         m.config.port = srv.getsockname()[1]
-        with pytest.raises(RuntimeError, match="already in use"):
+        with pytest.raises(DatabaseError, match="already in use"):
             m._ensure_port_available()
 
 
@@ -287,7 +288,7 @@ def test_run_sql_as_superuser_targets_own_socket_dir_on_linux() -> None:
          patch(f"{MODULE}.subprocess.run") as run:
         m._run_sql_as_superuser("SELECT 1;")
     cmd = run.call_args[0][0]
-    assert cmd[cmd.index("-h") + 1] == str(m.socket_dir())
+    assert cmd[cmd.index("-h") + 1] == str(m.socket_dir)
 
 
 def test_run_sql_as_superuser_uses_default_socket_on_macos() -> None:
@@ -323,7 +324,7 @@ def test_server_binary_returns_bare_name_when_missing(tmp_path) -> None:
 
 def test_install_unit_execstart_uses_resolved_postgres_binary(tmp_path) -> None:
     m = _mgr(port=5440)
-    with patch.object(m, "unit_path", return_value=tmp_path / "pilot-postgres.service"), \
+    with patch.object(type(m), "unit_path", new_callable=PropertyMock, return_value=tmp_path / "pilot-postgres.service"), \
          patch.object(m, "_server_binary", return_value="/usr/lib/postgresql/17/bin/postgres"), \
          patch.object(m, "_user_unit_dir", return_value=tmp_path), \
          patch(f"{MODULE}.run_command"):
@@ -334,19 +335,19 @@ def test_install_unit_execstart_uses_resolved_postgres_binary(tmp_path) -> None:
 
 def test_install_unit_pins_unix_socket_directories_to_owned_dir(tmp_path) -> None:
     m = _mgr(port=5440)
-    with patch.object(m, "unit_path", return_value=tmp_path / "pilot-postgres.service"), \
+    with patch.object(type(m), "unit_path", new_callable=PropertyMock, return_value=tmp_path / "pilot-postgres.service"), \
          patch.object(m, "_user_unit_dir", return_value=tmp_path), \
          patch(f"{MODULE}.which", return_value="/usr/lib/postgresql/bin/postgres"), \
          patch(f"{MODULE}.run_command"):
         m._install_unit()
     content = (tmp_path / "pilot-postgres.service").read_text()
-    assert f"unix_socket_directories={m.socket_dir()}" in content
+    assert f"unix_socket_directories={m.socket_dir}" in content
 
 
 def test_provision_user_owned_creates_socket_dir(tmp_path) -> None:
     m = _mgr(port=5440)
-    with patch.object(m, "data_dir", return_value=tmp_path / "data"), \
-         patch.object(m, "socket_dir", return_value=tmp_path / "run"), \
+    with patch.object(type(m), "data_dir", new_callable=PropertyMock, return_value=tmp_path / "data"), \
+         patch.object(type(m), "socket_dir", new_callable=PropertyMock, return_value=tmp_path / "run"), \
          patch.object(m, "is_provisioned", return_value=False), \
          patch.object(m, "_ensure_port_available"), \
          patch.object(m, "is_running", return_value=False), \

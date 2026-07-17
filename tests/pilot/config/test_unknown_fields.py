@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from pilot.config.bench_config import BenchConfig
+from pilot.config.bench import BenchConfig
 from pilot.config.bench_toml import load_config
 from pilot.config.config_schema import unknown_config_paths
 from pilot.exceptions import ConfigError

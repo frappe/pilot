@@ -15,29 +15,24 @@ def _make_task(process_manager: str) -> WizardSetupTask:
 def test_run_skips_production_setup_for_plain_dev_bench() -> None:
     task = _make_task("")
 
-    with patch("pilot.commands.bench.initialize.InitCommand.run") as mock_init, \
-         patch("pilot.commands.setup.production.SetupProductionCommand.run") as mock_setup:
-        task.run()
+    task.run()
 
-    mock_init.assert_called_once()
-    mock_setup.assert_not_called()
+    task.bench.initialize.assert_called_once()
+    task.bench.setup_production.assert_not_called()
 
 
 def test_run_finishes_production_setup_when_process_manager_chosen() -> None:
     """A bench created via the admin UI's "New Bench" dialog already has a
     process manager recorded, but production.enabled stays false until the
     venv/framework app this task's init step installs actually exist.
-    SetupProductionCommand then finishes the job (workload, nginx, TLS,
+    Bench.setup_production() then finishes the job (workload, nginx, TLS,
     persisting production.enabled) the same way `bench setup production`
     would from the CLI, instead of duplicating those steps here. TLS is
     best-effort here (unlike the CLI): nobody's watching to retry by hand if
     a cert can't issue yet, so a DNS hiccup must not roll back the rest."""
     task = _make_task("systemd")
 
-    with patch("pilot.commands.bench.initialize.InitCommand.run") as mock_init, \
-         patch("pilot.commands.setup.production.SetupProductionCommand") as mock_cls:
-        task.run()
+    task.run()
 
-    mock_init.assert_called_once()
-    mock_cls.assert_called_once_with(task.bench, best_effort_tls=True)
-    mock_cls.return_value.run.assert_called_once()
+    task.bench.initialize.assert_called_once()
+    task.bench.setup_production.assert_called_once_with(best_effort_tls=True, on_progress=task._report)

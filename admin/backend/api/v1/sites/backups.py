@@ -129,7 +129,7 @@ def _backup_cron_command(bench_root: Path, site: str) -> str:
 def _retention_from_payload(block: dict | None):
     """Build a validated BackupConfig from the UI payload, defaulting to GFS.
     Returns the config, or an error string."""
-    from pilot.config.backup_config import VALID_SCHEMES, BackupConfig
+    from pilot.config.backup import VALID_SCHEMES, BackupConfig
 
     block = block or {}
     config = BackupConfig()
@@ -155,7 +155,7 @@ def _retention_from_payload(block: dict | None):
 def get_backup_schedule(name: str):
     from dataclasses import asdict
 
-    from pilot.config.site_backup_config import read_retention
+    from pilot.config.site_backup import read_retention
     from pilot.managers.cron import CronManager
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
@@ -170,7 +170,7 @@ def get_backup_schedule(name: str):
 @sites_bp.put("/<name>/backup-schedule")
 @require_scope(site_name)
 def set_backup_schedule(name: str):
-    from pilot.config.site_backup_config import write_retention
+    from pilot.config.site_backup import write_retention
     from pilot.managers.cron import CronManager
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
@@ -200,7 +200,7 @@ def set_backup_schedule(name: str):
 @sites_bp.delete("/<name>/backup-schedule")
 @require_scope(site_name)
 def delete_backup_schedule(name: str):
-    from pilot.config.site_backup_config import clear_retention
+    from pilot.config.site_backup import clear_retention
     from pilot.managers.cron import CronManager
 
     bench_root = Path(current_app.config["BENCH_ROOT"])

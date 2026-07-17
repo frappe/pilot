@@ -1,36 +1,23 @@
 from __future__ import annotations
 
-import argparse
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import Annotated, ClassVar
 
-from pilot.commands.base import Command
+from pilot.commands.base import Arg, Command
 from pilot.exceptions import BenchError
 
-if TYPE_CHECKING:
-    from pilot.core.bench import Bench
 
-
+@dataclass(kw_only=True)
 class SetCentralConfigCommand(Command):
     """Persist the Central callback endpoint + pilot auth token that Atlas hands the
     bench at deploy, so pilot→Central calls can authenticate. Merges into
     bench.toml (bench-owned config) without disturbing the other sections."""
 
-    name = "set-central-config"
-    help = "Store the Central endpoint + pilot auth token in bench.toml."
+    name: ClassVar[str] = "set-central-config"
+    help: ClassVar[str] = "Store the Central endpoint + pilot auth token in bench.toml."
 
-    @classmethod
-    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
-        parser.add_argument("--endpoint", required=True, help="Central API base URL the pilot calls back on")
-        parser.add_argument("--token", required=True, help="Opaque token the pilot presents to Central")
-
-    @classmethod
-    def from_args(cls, args, bench):
-        return cls(bench, endpoint=args.endpoint, token=args.token)
-
-    def __init__(self, bench: "Bench", endpoint: str, token: str) -> None:
-        self.bench = bench
-        self.endpoint = endpoint
-        self.token = token
+    endpoint: Annotated[str, Arg(help="Central API base URL the pilot calls back on", required=True)]
+    token: Annotated[str, Arg(help="Opaque token the pilot presents to Central", required=True)]
 
     def run(self) -> None:
         from pilot.config.toml_store import BenchTomlStore
@@ -46,4 +33,4 @@ class SetCentralConfigCommand(Command):
             raise BenchError(f"{store.path} contains invalid TOML: {exc}") from exc
         self.bench.config.central.endpoint = self.endpoint
         self.bench.config.central.auth_token = self.token
-        print("Central config written to bench.toml")
+        self.print("Central config written to bench.toml")

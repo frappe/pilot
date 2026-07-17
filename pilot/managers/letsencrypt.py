@@ -9,7 +9,7 @@ from pilot.managers.platform import _privileged
 from pilot.utils import run_command
 
 if TYPE_CHECKING:
-    from pilot.config.site_config import SiteConfig
+    from pilot.config.site import SiteConfig
     from pilot.core.bench import Bench
 
 _CERT_EXPIRY_THRESHOLD_DAYS = 30
@@ -40,6 +40,7 @@ def cert_covers(cert_file: Path, domains: list[str]) -> bool:
         _privileged(["openssl", "x509", "-noout", "-ext", "subjectAltName", "-in", str(cert_file)]),
         capture_output=True,
         text=True,
+        timeout=10,
     )
     if result.returncode != 0:
         return False
@@ -97,7 +98,7 @@ class LetsEncryptManager:
 
         nginx_manager = NginxManager(self.bench)
         if (
-            nginx_manager.cert_exists(site)
+            nginx_manager.has_cert(site)
             and not self._is_near_expiry(site)
             and self._cert_covers(nginx_manager.cert_path(site), domains)
         ):
@@ -155,7 +156,7 @@ class LetsEncryptManager:
         nginx_manager = NginxManager(self.bench)
         domain = self.bench.config.admin.domain
 
-        if nginx_manager.admin_cert_exists() and not self._is_near_expiry_cert(nginx_manager.admin_cert_path()):
+        if nginx_manager.has_admin_cert and not self._is_near_expiry_cert(nginx_manager.admin_cert_path()):
             print(f"Certificate for {domain} already exists and is not near expiry. Skipping.")
             return
 
@@ -190,6 +191,7 @@ class LetsEncryptManager:
             _privileged(["openssl", "x509", "-enddate", "-noout", "-in", str(cert_file)]),
             capture_output=True,
             text=True,
+            timeout=10,
         )
         if result.returncode != 0:
             return True

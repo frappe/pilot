@@ -2,6 +2,7 @@ import os
 import platform
 import shutil
 import subprocess
+import sys
 from contextlib import contextmanager
 from contextvars import ContextVar
 from enum import Enum
@@ -133,7 +134,7 @@ def has_passwordless_sudo() -> bool:
         return True
     if which("sudo") is None:
         return False
-    return subprocess.run(["sudo", "-n", "true"], capture_output=True).returncode == 0
+    return subprocess.run(["sudo", "-n", "true"], capture_output=True, timeout=5).returncode == 0
 
 
 def service_command(action: str, name: str) -> list[str]:
@@ -155,9 +156,9 @@ def service_running(name: str) -> bool:
     """Return True if the named system service is currently running."""
     try:
         return subprocess.run(
-            ["systemctl", "is-active", "--quiet", name], capture_output=True
+            ["systemctl", "is-active", "--quiet", name], capture_output=True, timeout=5
         ).returncode == 0
-    except FileNotFoundError:
+    except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
 
 
@@ -174,3 +175,98 @@ def native_process_manager() -> str:
 def default_nginx_config_dir() -> Path:
     """Directory nginx includes server blocks from (``/etc/nginx/conf.d``)."""
     return Path("/etc/nginx/conf.d")
+
+
+_HOSTS_PATH = Path("/etc/hosts")
+
+
+def add_hosts_entry(hostname: str, hosts_path: Path = _HOSTS_PATH) -> None:
+    """Add a 127.0.0.1 entry for `hostname` to /etc/hosts, unless already
+    present. Always non-interactive (sudo -n): a best-effort dev convenience,
+    it must never block on a password prompt."""
+    from pilot.utils import hosts_line_contains
+
+    entry = f"127.0.0.1 {hostname}"
+    for line in hosts_path.read_text().splitlines():
+        if hosts_line_contains(line, hostname):
+            return
+    try:
+        subprocess.run(
+            ["sudo", "-n", "tee", "-a", str(hosts_path)],
+            input=f"{entry}\n".encode(),
+            capture_output=True,
+            check=True,
+        )
+    except (subprocess.CalledProcessError, OSError) as e:
+        print(
+            f"Warning: could not add '{entry}' to {hosts_path}: {e}.\n"
+            f"  Add it manually to reach the site by name.",
+            file=sys.stderr,
+        )
+
+
+def remove_hosts_entry(hostname: str, hosts_path: Path = _HOSTS_PATH) -> None:
+    """Remove any 127.0.0.1 entry for `hostname` from /etc/hosts, if present."""
+    from pilot.utils import hosts_line_contains
+
+    try:
+        lines = hosts_path.read_text().splitlines()
+    except OSError:
+        return
+    kept = [line for line in lines if not hosts_line_contains(line, hostname)]
+    if len(kept) == len(lines):
+        return
+    subprocess.run(
+        ["sudo", "-n", "tee", str(hosts_path)],
+        input=("\n".join(kept) + "\n").encode(),
+        capture_output=True,
+        check=False,
+    )
+
+
+def unmount_legacy_bind_mount(target: Path, fstab_path: Path = Path("/etc/fstab")) -> None:
+    """Unmount `target` and drop its fstab entry if present.
+
+    Benches created before ZFS/volume support was removed may still have
+    their directory (or a dedicated MariaDB datadir) bind-mounted from an
+    old dataset, with a matching fstab line so it survived reboots. This
+    doesn't depend on ZFS or any volume-management code being present —
+    it only looks at whether `target` is currently a mountpoint — so it's
+    a no-op, and safe to call unconditionally, for any bench that was
+    never volume-backed.
+    """
+    try:
+        is_mounted = target.is_mount()
+    except OSError:
+        is_mounted = False
+    if is_mounted:
+        print(f"Unmounting legacy bind mount at {target}...", flush=True)
+        try:
+            subprocess.run(_privileged(["umount", "-l", str(target)]), check=False)
+        except Exception as exc:
+            print(f"  (unmount {target} skipped: {exc})")
+
+    try:
+        lines = fstab_path.read_text().splitlines()
+    except OSError:
+        return
+    kept = [
+        line for line in lines
+        if not (
+            len(line.split()) >= 2
+            and not line.lstrip().startswith("#")
+            and line.split()[1] == str(target)
+        )
+    ]
+    if len(kept) == len(lines):
+        return
+    content = "\n".join(kept) + "\n"
+    try:
+        subprocess.run(
+            _privileged(["tee", str(fstab_path)]),
+            input=content.encode(),
+            capture_output=True,
+            check=True,
+        )
+    except Exception as exc:
+        print(f"  (fstab cleanup for {target} skipped: {exc})")

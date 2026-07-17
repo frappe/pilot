@@ -13,7 +13,7 @@ from pilot.internal.atomic_file import (
 from pilot.config.bench_toml import dumps_config, load_config
 from pilot.config.config_schema import preserve_unknown_config
 from pilot.internal.toml import Toml
-from pilot.config.bench_config import BenchConfig
+from pilot.config.bench import BenchConfig
 
 
 class BenchTomlStore:

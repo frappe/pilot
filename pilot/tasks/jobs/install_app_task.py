@@ -17,14 +17,13 @@ class InstallAppTask(BaseTask):
         self.app = args.app
 
     def run(self) -> None:
-        from pilot.config.site_config import SiteConfig
         from pilot.core.app_validator.dependency_declarations import DependencyDeclarationsCheck
         from pilot.core.site import Site
         from pilot.exceptions import BenchError
         from pilot.managers.python_environment import PythonEnvManager
 
         app = self.bench.app(self.app)
-        site = Site(SiteConfig(name=self.site, apps=[]), self.bench)
+        site = Site.for_name(self.site, self.bench)
 
         self._step("install", f"Install {self.app} into {self.site}")
         try:

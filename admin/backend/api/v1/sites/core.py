@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 
 from flask import current_app, jsonify, make_response, request
 
-from pilot.config.bench_config import BenchConfig
+from pilot.config.bench import BenchConfig
 from pilot.config.toml_store import BenchTomlStore
 from pilot.internal.site_paths import site_config_path, site_exists
 from pilot.internal.validators import validate_site_name

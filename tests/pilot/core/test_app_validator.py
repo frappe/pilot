@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from pilot.config.app_config import AppConfig
+from pilot.config.app import AppConfig
 from pilot.core.app import App
 from pilot.core.app_validator import Validator
 from pilot.core.app_validator.dependency_declarations import DependencyDeclarationsCheck

@@ -1,46 +1,27 @@
 from __future__ import annotations
 
-import argparse
 import subprocess
 import sys
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import ClassVar
 
 from pilot.commands.base import Command
 from pilot.exceptions import BenchError
 
-if TYPE_CHECKING:
-    from pilot.core.bench import Bench
 
-
+@dataclass(kw_only=True)
 class FrappeCommand(Command):
-    name = "frappe"
-    help = "Run a frappe CLI command."
+    name: ClassVar[str] = "frappe"
+    help: ClassVar[str] = "Run a frappe CLI command."
 
-    @classmethod
-    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
-        parser.add_argument("args", nargs=argparse.REMAINDER)
+    args: tuple[str, ...] = ()
 
-    @classmethod
-    def from_args(cls, args, bench):
-        cmd = cls(bench)
-        cmd._args = tuple(args.args)
-        return cmd
-
-    def __init__(self, bench: "Bench") -> None:
-        self.bench = bench
-        self._args: tuple[str, ...] = ()
-
-    def run(self) -> None:
-        self.run_raw(["frappe", *self._args])
-
-    def run_raw(self, args: list[str] | tuple[str, ...]) -> None:
+    def run(self, args: list[str] | tuple[str, ...] | None = None) -> None:
         python = self.bench.env_path / "bin" / "python"
         if not python.exists():
-            raise BenchError(
-                "Frappe environment not found. Run 'bench init' first."
-            )
+            raise BenchError("Frappe environment not found. Run 'bench init' first.")
         result = subprocess.run(
-            [*self.bench.frappe_call, *args],
+            [*self.bench.frappe_call, "frappe", *(args if args is not None else self.args)],
             cwd=self.bench.sites_path,
         )
         sys.exit(result.returncode)

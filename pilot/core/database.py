@@ -7,8 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
+from pilot.exceptions import DatabaseError
+
 if TYPE_CHECKING:
-    from pilot.config.bench_config import BenchConfig
+    from pilot.config.bench import BenchConfig
 
 _MAX_ROWS = 5000
 
@@ -87,7 +89,7 @@ class MariaDB(Database):
             )
         except pymysql.Error as exc:
             conn.rollback()
-            raise RuntimeError(str(exc)) from exc
+            raise DatabaseError(str(exc)) from exc
         finally:
             conn.close()
 
@@ -141,7 +143,7 @@ class PostgreSQL(Database):
         try:
             import psycopg2
         except ImportError:
-            raise RuntimeError("psycopg2 is not installed. Run: pip install psycopg2-binary")
+            raise DatabaseError("psycopg2 is not installed. Run: pip install psycopg2-binary")
         return psycopg2.connect(
             host=self._host, port=self._port,
             user=self._user, password=self._password,
@@ -173,7 +175,7 @@ class PostgreSQL(Database):
             )
         except Exception as exc:
             conn.rollback()
-            raise RuntimeError(str(exc)) from exc
+            raise DatabaseError(str(exc)) from exc
         finally:
             conn.close()
 
@@ -256,7 +258,7 @@ class SQLite(Database):
             )
         except sqlite3.Error as exc:
             conn.rollback()
-            raise RuntimeError(str(exc)) from exc
+            raise DatabaseError(str(exc)) from exc
         finally:
             conn.close()
 
@@ -298,7 +300,7 @@ class SQLite(Database):
 def make_database(config: "BenchConfig") -> Database:
     """Root-level admin database connection for a bench (not site-specific)."""
     if config.db_type == "sqlite":
-        raise RuntimeError("SQLite has no shared server; use make_site_database() for site access")
+        raise DatabaseError("SQLite has no shared server; use make_site_database() for site access")
     if config.db_type == "postgres":
         pg = config.postgres
         return PostgreSQL(

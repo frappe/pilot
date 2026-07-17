@@ -65,7 +65,7 @@ def set_session_cookie(response, token: str, secure: bool) -> None:
 
 def decode_session_token(token: str, config) -> dict | None:
     """Decode via the local HS256 secret, falling back to remote JWKS keys."""
-    from pilot.commands.admin.generate_session import decode_token
+    from pilot.core.admin_auth import decode_token
 
     claims = decode_token(token, config.admin.jwt_secret)
     if claims is not None:
@@ -98,7 +98,7 @@ def require_scope(site):
 
 
 def get_authorization_error(claims: dict | None, view, view_args: dict) -> str | None:
-    from pilot.commands.admin.generate_session import has_scope
+    from pilot.core.admin_auth import has_scope
 
     resolve_site = getattr(view, _SITE_SCOPE_RESOLVER, None)
     if resolve_site is not None:

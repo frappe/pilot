@@ -1,29 +1,17 @@
 from __future__ import annotations
 
-import argparse
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import Annotated, ClassVar
 
-from pilot.commands.base import Command
-
-if TYPE_CHECKING:
-    from pilot.core.bench import Bench
+from pilot.commands.base import Arg, Command
 
 
+@dataclass(kw_only=True)
 class BuildCommand(Command):
-    name = "build"
-    help = "Build assets (downloads pre-built if available)."
+    name: ClassVar[str] = "build"
+    help: ClassVar[str] = "Build assets (downloads pre-built if available)."
 
-    @classmethod
-    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
-        parser.add_argument("--force", action="store_true", help="Force a full rebuild, skipping pre-built asset download.")
-
-    @classmethod
-    def from_args(cls, args, bench):
-        return cls(bench, force=args.force)
-
-    def __init__(self, bench: "Bench", force: bool = False) -> None:
-        self.bench = bench
-        self.force = force
+    force: Annotated[bool, Arg(help="Force a full rebuild, skipping pre-built asset download.")] = False
 
     def run(self) -> None:
         from pilot.managers.processes.local import ProcessManager

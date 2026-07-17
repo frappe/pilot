@@ -59,3 +59,7 @@ class AppNotFoundError(RegistryError):
 
 class DependencyResolutionError(RegistryError):
     """A dependency chain couldn't be resolved (cycle, version conflict, etc)."""
+
+
+class DatabaseError(BenchError):
+    """A database server operation failed (connection, provisioning, credentials)."""

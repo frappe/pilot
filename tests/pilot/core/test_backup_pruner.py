@@ -1,7 +1,7 @@
 import json
 from types import SimpleNamespace
 
-from pilot.config.backup_config import BackupConfig
+from pilot.config.backup import BackupConfig
 from pilot.core.backup_pruning import BackupPruner
 
 _RUNS = ["20260101_020000", "20260102_020000", "20260103_020000"]  # oldest → newest

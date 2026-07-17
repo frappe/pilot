@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pilot.commands.bench.initialize import InitCommand
-
 from pilot.tasks.jobs.base_task import BaseTask
 
 
@@ -21,20 +19,15 @@ class WizardSetupTask(BaseTask):
 
     def run(self) -> None:
         self._step("init", "Initialize bench")
-        InitCommand(self.bench).run()
+        self.bench.initialize(on_progress=self._report)
         if self.bench.config.production.process_manager:
             self._step("production", "Set up production")
-            self._setup_production()
+            # A cert that can't issue yet (DNS still propagating for a domain
+            # created moments ago) shouldn't roll back an otherwise-working
+            # deployment - unlike a CLI `--tls` request, nobody's watching this to
+            # retry by hand, so leave the bench live on HTTP and let it retry later.
+            self.bench.setup_production(best_effort_tls=True, on_progress=self._report)
         self._step("done")
-
-    def _setup_production(self) -> None:
-        from pilot.commands.setup.production import SetupProductionCommand
-
-        # A cert that can't issue yet (DNS still propagating for a domain
-        # created moments ago) shouldn't roll back an otherwise-working
-        # deployment - unlike a CLI `--tls` request, nobody's watching this to
-        # retry by hand, so leave the bench live on HTTP and let it retry later.
-        SetupProductionCommand(self.bench, best_effort_tls=True).run()
 
 
 if __name__ == "__main__":

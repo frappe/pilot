@@ -1,20 +1,16 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import ClassVar
 
 from pilot.commands.base import Command
 
-if TYPE_CHECKING:
-    from pilot.core.bench import Bench
 
-
+@dataclass(kw_only=True)
 class StopCommand(Command):
-    name = "stop"
-    help = "Stop the running bench."
-    supports_all_benches = True
-
-    def __init__(self, bench: "Bench") -> None:
-        self.bench = bench
+    name: ClassVar[str] = "stop"
+    help: ClassVar[str] = "Stop the running bench."
+    supports_all_benches: ClassVar[bool] = True
 
     def run(self) -> None:
         from pilot.managers.processes.local import ProcessManager
@@ -22,4 +18,4 @@ class StopCommand(Command):
         manager = ProcessManager.detect_running(self.bench)
         manager.stop()
         manager.stop_admin()
-        print(f"Stopped bench {self.bench.config.name}.")
+        self.print(f"Stopped bench {self.bench.config.name}.")
