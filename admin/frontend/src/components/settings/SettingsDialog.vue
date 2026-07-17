@@ -1,7 +1,7 @@
 <template>
-  <Dialog v-model="open" bare size="3xl">
+  <Dialog v-model="open" bare size="5xl">
     <template #default="{ close }">
-      <div class="relative flex sm:h-[39rem] max-h-[85vh]">
+      <div class="relative flex sm:h-[39rem] max-h-[100vh]">
         <div class="flex-col p-4 sm:border-r border-outline-gray-2 w-full sm:w-52 shrink-0"
           :class="activeSection ? 'hidden sm:flex' : 'flex'">
           <h3
@@ -47,14 +47,14 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { Dialog, Button } from 'frappe-ui'
+import { Button, Dialog } from 'frappe-ui'
+import { computed, ref } from 'vue'
 import Firewall from '@/components/settings/Firewall.vue'
-import Waf from '@/components/settings/Waf.vue'
 import Git from '@/components/settings/Git.vue'
 import S3Bucket from '@/components/settings/S3Bucket.vue'
 import SshKeys from '@/components/settings/SshKeys.vue'
 import SystemInfo from '@/components/settings/SystemInfo.vue'
+import Waf from '@/components/settings/Waf.vue'
 import Workers from '@/components/settings/Workers.vue'
 import { useIsMobile } from '@/composables/common/useIsMobile'
 
@@ -75,5 +75,7 @@ const activeSection = ref(null)
 const workersRef = ref(null)
 const sshKeysRef = ref(null)
 const currentSection = computed(() => activeSection.value ?? sections.value[0].id)
-const activeSectionLabel = computed(() => sections.value.find((s) => s.id === currentSection.value)?.label)
+const activeSectionLabel = computed(
+  () => sections.value.find((s) => s.id === currentSection.value)?.label,
+)
 </script>
