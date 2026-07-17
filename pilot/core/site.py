@@ -358,6 +358,24 @@ def _validate_new_site(bench: "Bench", name: str, apps: list[str]) -> bool:
     return bool(patterns)
 
 
+def provision_from_backup(
+    bench: "Bench",
+    name: str,
+    db_file: str,
+    admin_password: str,
+    public_files: str | None = None,
+    private_files: str | None = None,
+    on_progress: Callable[[str], None] = lambda message: None,
+) -> "Site":
+    """Create a new site (same engine as the backup) and restore into it."""
+    if not isinstance(admin_password, str) or not admin_password.strip():
+        raise BenchError("Site Administrator password must not be empty.")
+    site = Site.provision(bench, name, [], admin_password, on_progress=on_progress)
+    on_progress(f"Restoring backup: {db_file}")
+    site.restore(db_file, public_files, private_files)
+    return site
+
+
 def _should_enable_ssl(bench: "Bench", name: str) -> bool:
     from pilot.managers.letsencrypt import _is_public_domain, letsencrypt_active
 
