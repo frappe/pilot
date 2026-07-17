@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from pilot.commands.base import Command
 
 
@@ -43,5 +45,5 @@ class UpgradeCommand(Command):
                 return
             print("Restarting bench processes...")
             manager.restart()
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.debug("Post-upgrade process restart failed: %s", exc)

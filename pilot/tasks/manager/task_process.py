@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import secrets
 import signal
@@ -243,8 +244,8 @@ class TaskProcess:
     def _run_stored_callback(self, task_id: str, trigger: str) -> None:
         try:
             run_stored_callback(self._store.task_dir(task_id), trigger)
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.debug("Stored callback %r failed for task %s: %s", trigger, task_id, exc)
 
     def _run_stored_callback_for_status(self, task_id: str) -> None:
         try:

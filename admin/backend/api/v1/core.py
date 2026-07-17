@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+import logging
 from pathlib import Path
 
 from flask import Blueprint, current_app, g, jsonify, request, url_for
@@ -177,8 +178,8 @@ def _setup_bootstrap(bench_root: Path) -> dict:
     try:
         raw = BenchTomlStore.for_bench(bench_root).read_raw()
         name = raw.get("bench", {}).get("name", name)
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.debug("Could not read bench name during setup bootstrap: %s", exc)
     return {"mode": "setup", "name": name, "enabled": True}
 
 

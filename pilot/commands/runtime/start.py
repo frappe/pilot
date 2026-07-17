@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 from typing import TYPE_CHECKING
@@ -34,8 +35,8 @@ class RunCommand(Command):
         if not process_manager:
             try:
                 ProcessManager(self.bench).stop()
-            except Exception:
-                pass
+            except Exception as exc:
+                logging.debug("Best-effort stop of a stale process manager failed: %s", exc)
             if not initialized:
                 self._start_wizard()
                 return

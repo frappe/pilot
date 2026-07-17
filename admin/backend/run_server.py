@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import subprocess
 import threading
@@ -32,8 +33,8 @@ def main() -> None:
         try:
             cfg = BenchTomlStore.for_bench(bench_root).read()
             skip_watchdog = cfg.admin.enabled
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.debug("Could not read bench.toml to decide the watchdog: %s", exc)
 
     if not skip_watchdog:
         from admin.backend.watchdog import AdminProcessOwner, install_idle_watchdog

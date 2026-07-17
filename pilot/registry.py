@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import functools
 import importlib
+import logging
 import pkgutil
 
 from pilot.commands.base import Command
@@ -87,7 +88,8 @@ def _resolve_bench(cls: type[Command], context: CliContext):
     if cls.optional_bench:
         try:
             return load_bench(context)
-        except Exception:
+        except Exception as exc:
+            logging.debug("Optional bench load failed: %s", exc)
             return None
     return None
 

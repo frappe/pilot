@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shutil
@@ -258,7 +259,8 @@ class PythonEnvManager:
             dest_dir.mkdir(parents=True, exist_ok=True)
             extract_tar_archive(tmp_path, dest_dir)
             return True
-        except Exception:
+        except Exception as exc:
+            logging.debug("Failed to extract downloaded archive to %s: %s", dest_dir, exc)
             return False
         finally:
             tmp_path.unlink(missing_ok=True)

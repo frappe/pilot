@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from pilot.commands.base import Command
@@ -73,8 +74,8 @@ class ListCommand(Command):
             address = admin_url(config)
             state = self._state(Bench(config, bench_dir), prod.enabled)
             sites = self._site_count(bench_dir)
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.debug("Failed to describe bench %s: %s", bench_dir, exc)
         return {"name": name, "mode": mode, "manager": manager, "address": address, "state": state, "sites": sites}
 
     def _site_count(self, bench_dir: Path) -> int:

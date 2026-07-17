@@ -1,4 +1,5 @@
 import json
+import logging
 import shutil
 import subprocess
 from collections.abc import Callable
@@ -60,7 +61,8 @@ def _drop_failed_site(bench_root: Path, site_name: str, site_path: Path) -> bool
         with noninteractive_privileges():
             DropSiteCommand(bench, site_name).run()
         return True
-    except Exception:
+    except Exception as exc:
+        logging.debug("Site drop callback failed for %s: %s", site_name, exc)
         return False
 
 

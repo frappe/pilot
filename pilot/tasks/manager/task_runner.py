@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import secrets
 import sys
 from dataclasses import dataclass
@@ -159,8 +160,8 @@ class TaskRunner:
         ):
             try:
                 operation()
-            except Exception:
-                pass
+            except Exception as exc:
+                logging.debug("Post-submission housekeeping step failed: %s", exc)
 
     def kill(self, task_id: str) -> None:
         status = self._store.read_status(task_id)
@@ -183,8 +184,8 @@ class TaskRunner:
             self._store.remove_private_files(task_id, "secrets.json")
             try:
                 task_workers.wake(self._bench_root)
-            except Exception:
-                pass
+            except Exception as exc:
+                logging.debug("Failed to wake task workers after kill: %s", exc)
             return
         self._processes.cancel(task_id)
 

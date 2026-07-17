@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 import time
 from collections.abc import Generator
@@ -69,7 +70,8 @@ class TaskReader:
             if entry.is_dir() and _TASK_ID_PATTERN.match(entry.name):
                 try:
                     tasks.append(_read_task_dir(self, entry, queue_positions))
-                except Exception:
+                except Exception as exc:
+                    logging.debug("Skipping unreadable task directory %s: %s", entry, exc)
                     continue
 
         tasks.sort(key=lambda task: task.queued_at, reverse=True)

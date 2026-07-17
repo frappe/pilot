@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import typing
 from pathlib import Path
 
@@ -242,8 +243,8 @@ def _mariadb_config(
         try:
             settings = BenchTomlStore(toml_path).read_flat()
             config.socket_path = settings.get("mariadb_socket_path", "") or ""
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.debug("Could not read the existing mariadb socket path: %s", exc)
     return config
 
 
@@ -438,8 +439,8 @@ def _read_defaults(bench_root: Path) -> dict:
             result.update(settings)
             if not result.get("bench_name"):
                 result["bench_name"] = bench_root.name
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.debug("Could not read bench.toml settings: %s", exc)
 
     for key in _PASSWORD_KEYS:
         result.setdefault(f"{key}_configured", False)
@@ -499,5 +500,5 @@ def _clear_wizard_marker_if_idle(bench_root: Path) -> None:
         with exclusive_file_lock(marker):
             if _running_setup_task(bench_root) is None:
                 marker.unlink(missing_ok=True)
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.debug("Could not clear the wizard marker for %s: %s", bench_root, exc)
