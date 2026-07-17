@@ -49,10 +49,9 @@ pilot/
     │   ├── sites/                 # new-site, list-site-apps, rename-site, ...
     │   ├── apps/                  # get-app, install-app, uninstall-app, ...
     │   ├── runtime/                # start, stop, build, update, restart, frappe
-    │   ├── setup/                 # commands with group = "setup"
+    │   ├── setup/                 # commands with group = "setup" or "remove"
     │   ├── admin/                 # commands with group = None (admin session/config)
-    │   ├── tasks/                 # commands with group = "tasks"
-    │   └── remove/                # commands with group = "remove"
+    │   └── tasks/                 # commands with group = "tasks"
     │
     ├── tasks/                   # Task execution and tracking (see tasks.md)
     │   ├── __init__.py

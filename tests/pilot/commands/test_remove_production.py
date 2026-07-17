@@ -4,7 +4,7 @@ import tomllib
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from pilot.commands.remove.production import RemoveProductionCommand
+from pilot.commands.setup.remove_production import RemoveProductionCommand
 from pilot.config.bench import BenchConfig
 from pilot.core.bench import Bench
 
