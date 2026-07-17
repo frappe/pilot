@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, List
 
@@ -10,7 +11,7 @@ from pilot.exceptions import BenchError
 
 if TYPE_CHECKING:
     from pilot.config.s3 import S3Config
-    from pilot.core.app import App
+    from pilot.core.app import App, RevisionPin
     from pilot.core.database import Database
     from pilot.core.site import Site
 
@@ -245,6 +246,80 @@ class Bench:
             if raises:
                 raise
 
+    def update(
+        self,
+        apps_filter: set | None = None,
+        skip_failing_patches: bool = False,
+        on_step: Callable[[str, str], None] = lambda key, label: None,
+        on_progress: Callable[[str], None] = lambda message: None,
+    ) -> None:
+        """Pull latest code, reinstall, rebuild assets, migrate every site,
+        then reload workers. `on_step` marks the start of each phase;
+        `on_progress` reports per-app/per-site lines within a phase."""
+        on_step("fetch", "Fetching latest code")
+        self._update_apps(apps_filter, on_progress)
+        on_step("install", "Installing dependencies")
+        self._reinstall_apps(apps_filter, on_progress)
+        on_step("assets", "Building assets")
+        self._rebuild_assets(apps_filter, on_progress)
+        on_step("migrate", "Migrating sites")
+        self._migrate_sites(skip_failing_patches, on_progress)
+        on_step("restart", "Restarting services")
+        self.reload_workers()
+        on_step("done", "Done")
+
+    def _update_apps(self, apps_filter: set | None, on_progress: Callable[[str], None]) -> None:
+        import sys
+
+        from pilot.exceptions import CommandError, MigrateError
+        from pilot.integrations.marketplace import Marketplace
+
+        marketplace_by_name = {entry["name"]: entry for entry in Marketplace.registry()}
+
+        for app in self.apps():
+            if apps_filter is not None and app.config.name not in apps_filter:
+                continue
+            on_progress(f"Updating {app.config.name}...")
+            try:
+                app.update(pin=_marketplace_pin(app, marketplace_by_name))
+            except CommandError as e:
+                print(f"  Error updating {app.config.name}: {e}", file=sys.stderr)
+                raise MigrateError(f"Failed to update {app.config.name}")
+
+    def _reinstall_apps(self, apps_filter: set | None, on_progress: Callable[[str], None]) -> None:
+        from pilot.exceptions import CommandError, MigrateError
+        from pilot.managers.python_environment import PythonEnvManager
+
+        mgr = PythonEnvManager(self)
+        for app in self.apps():
+            if apps_filter is not None and app.config.name not in apps_filter:
+                continue
+            on_progress(f"Reinstalling {app.config.name}...")
+            try:
+                mgr.install_app(app)
+            except CommandError as e:
+                raise MigrateError(f"Failed to install app {app}: {e}")
+
+    def _rebuild_assets(self, apps_filter: set | None, on_progress: Callable[[str], None]) -> None:
+        from pilot.managers.python_environment import PythonEnvManager
+
+        mgr = PythonEnvManager(self)
+        for app in self.apps():
+            if apps_filter is not None and app.config.name not in apps_filter:
+                continue
+            on_progress(f"Updating assets for {app.config.name}...")
+            mgr.build_assets_for_app(app)
+
+    def _migrate_sites(self, skip_failing_patches: bool, on_progress: Callable[[str], None]) -> None:
+        from pilot.exceptions import CommandError, MigrateError
+
+        for site in self.sites():
+            on_progress(f"Migrating {site.config.name}...")
+            try:
+                site.migrate(skip_failing=skip_failing_patches)
+            except CommandError as e:
+                raise MigrateError(f"Migration failed for {site.config.name}") from e
+
     @staticmethod
     def _git_remote(path: Path) -> str:
         from pilot.internal.git import GitRepo
@@ -256,3 +331,19 @@ class Bench:
         from pilot.internal.git import GitRepo
 
         return GitRepo(path).branch
+
+
+def _marketplace_pin(app: "App", marketplace_by_name: dict) -> "RevisionPin | None":
+    """Marketplace's advertised pin for app's installed version, or None for a
+    branch target, unlisted app, or repo mismatch (e.g. a fork)."""
+    entry = marketplace_by_name.get(app.config.name)
+    if not entry or app.config.repo != entry.get("repo"):
+        return None
+    version = app.installed_version
+    target = next((t for t in entry.get("targets", []) if t["version"] == version), None)
+    if target is None:
+        return None
+
+    from pilot.core.app import RevisionPin
+
+    return RevisionPin.from_marketplace_target(target)

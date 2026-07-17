@@ -207,11 +207,8 @@ class Site:
         db_type: str | None = None,
         on_progress: Callable[[str], None] = lambda message: None,
     ) -> "Site":
-        """Create a new site end to end: validate, register a wildcard-derived
-        domain, create via frappe, install the requested apps, write the
-        pilot-communication config, build missing assets, add a dev-mode
-        hosts entry, reload nginx, and obtain a cert if this domain qualifies
-        for Let's Encrypt."""
+        """Create a new site end to end: validate, register, create via
+        frappe, install apps, build assets, reload nginx, obtain a cert."""
         via_wildcard = _validate_new_site(bench, name, apps)
         ssl = _should_enable_ssl(bench, name)
         if via_wildcard:

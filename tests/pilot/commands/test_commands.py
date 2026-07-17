@@ -692,15 +692,18 @@ def test_upgrade_command_installs_admin_python_deps() -> None:
 
 def test_update_command_runs_all_steps(tmp_path: Path) -> None:
     from pilot.commands.runtime.update import UpdateCommand
+    from pilot.core.bench import Bench
 
     bench = make_bench(tmp_path)
     bench.create_directories()
     cmd = UpdateCommand(bench, skip_confirm=True)
 
     with patch.object(cmd, "_warn_if_running"), \
-         patch.object(cmd, "_update_apps"), \
-         patch.object(cmd, "_reinstall_apps"), \
-         patch.object(cmd, "_migrate_sites"):
+         patch.object(Bench, "_update_apps"), \
+         patch.object(Bench, "_reinstall_apps"), \
+         patch.object(Bench, "_rebuild_assets"), \
+         patch.object(Bench, "_migrate_sites"), \
+         patch.object(Bench, "reload_workers"):
         cmd.run()
 
 
@@ -715,8 +718,7 @@ def test_update_command_skips_confirm_when_bench_not_running(tmp_path: Path) -> 
         cmd._warn_if_running()  # no raise, no prompt
 
 
-def test_update_command_update_apps_raises_on_command_error(tmp_path: Path) -> None:
-    from pilot.commands.runtime.update import UpdateCommand
+def test_bench_update_apps_raises_on_command_error(tmp_path: Path) -> None:
     from pilot.exceptions import CommandError, MigrateError
 
     bench = make_bench(tmp_path)
@@ -725,20 +727,16 @@ def test_update_command_update_apps_raises_on_command_error(tmp_path: Path) -> N
     app_dir.mkdir()
     (app_dir / ".git").mkdir()
 
-    cmd = UpdateCommand(bench, skip_confirm=True)
-
     with patch("pilot.core.app.App.update", side_effect=CommandError("git error")), \
             patch("pilot.integrations.marketplace.Marketplace.registry", return_value=[]):
         with pytest.raises(MigrateError):
-            cmd._update_apps()
+            bench._update_apps(None, lambda message: None)
 
 
-def test_update_command_marketplace_pin_matched_by_version(tmp_path: Path) -> None:
-    from pilot.commands.runtime.update import UpdateCommand
+def test_bench_marketplace_pin_matched_by_version(tmp_path: Path) -> None:
     from pilot.core.app import RevisionPin
+    from pilot.core.bench import _marketplace_pin
 
-    bench = make_bench(tmp_path)
-    cmd = UpdateCommand(bench, skip_confirm=True)
     app = MagicMock()
     app.config.name = "helpdesk"
     app.config.repo = "https://github.com/frappe/helpdesk"
@@ -750,16 +748,14 @@ def test_update_command_marketplace_pin_matched_by_version(tmp_path: Path) -> No
         },
     }
 
-    pin = cmd._marketplace_pin(app, registry)
+    pin = _marketplace_pin(app, registry)
 
     assert pin == RevisionPin(kind="tag", ref="v1.0.0")
 
 
-def test_update_command_marketplace_pin_none_on_repo_mismatch(tmp_path: Path) -> None:
-    from pilot.commands.runtime.update import UpdateCommand
+def test_bench_marketplace_pin_none_on_repo_mismatch() -> None:
+    from pilot.core.bench import _marketplace_pin
 
-    bench = make_bench(tmp_path)
-    cmd = UpdateCommand(bench, skip_confirm=True)
     app = MagicMock()
     app.config.name = "helpdesk"
     app.config.repo = "https://github.com/someone/helpdesk"  # a fork
@@ -771,27 +767,23 @@ def test_update_command_marketplace_pin_none_on_repo_mismatch(tmp_path: Path) ->
         },
     }
 
-    assert cmd._marketplace_pin(app, registry) is None
+    assert _marketplace_pin(app, registry) is None
 
 
-def test_update_command_marketplace_pin_none_when_not_in_registry(tmp_path: Path) -> None:
-    from pilot.commands.runtime.update import UpdateCommand
+def test_bench_marketplace_pin_none_when_not_in_registry() -> None:
+    from pilot.core.bench import _marketplace_pin
 
-    bench = make_bench(tmp_path)
-    cmd = UpdateCommand(bench, skip_confirm=True)
     app = MagicMock()
     app.config.name = "frappe"
     app.config.repo = "https://github.com/frappe/frappe"
     app.installed_version = "16.0.0"
 
-    assert cmd._marketplace_pin(app, {}) is None
+    assert _marketplace_pin(app, {}) is None
 
 
-def test_update_command_marketplace_pin_none_for_branch_target(tmp_path: Path) -> None:
-    from pilot.commands.runtime.update import UpdateCommand
+def test_bench_marketplace_pin_none_for_branch_target() -> None:
+    from pilot.core.bench import _marketplace_pin
 
-    bench = make_bench(tmp_path)
-    cmd = UpdateCommand(bench, skip_confirm=True)
     app = MagicMock()
     app.config.name = "hrms"
     app.config.repo = "https://github.com/frappe/hrms"
@@ -803,12 +795,11 @@ def test_update_command_marketplace_pin_none_for_branch_target(tmp_path: Path) -
         },
     }
 
-    assert cmd._marketplace_pin(app, registry) is None
+    assert _marketplace_pin(app, registry) is None
 
 
-def test_update_command_passes_marketplace_pin_to_app_update(tmp_path: Path) -> None:
+def test_bench_update_apps_passes_marketplace_pin_to_app_update(tmp_path: Path) -> None:
     import subprocess
-    from pilot.commands.runtime.update import UpdateCommand
     from pilot.core.app import RevisionPin
     from pilot.integrations.marketplace import Marketplace
 
@@ -825,18 +816,15 @@ def test_update_command_passes_marketplace_pin_to_app_update(tmp_path: Path) -> 
         "targets": [{"version": "1.0.0", "target_type": "tag", "target": "v2.0.0"}],
     }]
 
-    cmd = UpdateCommand(bench, skip_confirm=True)
-
     with patch.object(Marketplace, "registry", return_value=registry), \
             patch("pilot.core.app.App.installed_version", new_callable=lambda: property(lambda self: "1.0.0")), \
             patch("pilot.core.app.App.update") as mock_update:
-        cmd._update_apps()
+        bench._update_apps(None, lambda message: None)
 
     mock_update.assert_called_once_with(pin=RevisionPin(kind="tag", ref="v2.0.0"))
 
 
-def test_update_command_migrate_sites_raises_on_failure(tmp_path: Path) -> None:
-    from pilot.commands.runtime.update import UpdateCommand
+def test_bench_migrate_sites_raises_on_failure(tmp_path: Path) -> None:
     from pilot.exceptions import CommandError, MigrateError
 
     bench = make_bench(tmp_path)
@@ -845,26 +833,20 @@ def test_update_command_migrate_sites_raises_on_failure(tmp_path: Path) -> None:
     site_dir.mkdir()
     (site_dir / "site_config.json").write_text("{}")
 
-    cmd = UpdateCommand(bench, skip_confirm=True)
-
     with patch("pilot.core.site.Site.migrate", side_effect=CommandError("migrate failed")):
         with pytest.raises(MigrateError):
-            cmd._migrate_sites()
+            bench._migrate_sites(False, lambda message: None)
 
 
-def test_update_command_migrate_sites_passes_skip_failing_patches(tmp_path: Path) -> None:
-    from pilot.commands.runtime.update import UpdateCommand
-
+def test_bench_migrate_sites_passes_skip_failing_patches(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     bench.create_directories()
     site_dir = bench.sites_path / "site1.localhost"
     site_dir.mkdir()
     (site_dir / "site_config.json").write_text("{}")
 
-    cmd = UpdateCommand(bench, skip_confirm=True, skip_failing_patches=True)
-
     with patch("pilot.core.site.Site.migrate") as mock_migrate:
-        cmd._migrate_sites()
+        bench._migrate_sites(True, lambda message: None)
 
     mock_migrate.assert_called_once_with(skip_failing=True)
 
