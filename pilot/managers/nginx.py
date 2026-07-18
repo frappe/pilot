@@ -7,7 +7,9 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pilot.managers.nginx_render import ERROR_PAGES, NginxConfigRenderer, render_error_html
+from pilot.managers.nginx_certs import cert_files_exist
+from pilot.managers.nginx_error_pages import ERROR_PAGES, render_error_html
+from pilot.managers.nginx_render import NginxConfigRenderer
 from pilot.managers.packages import get_package_manager
 from pilot.managers.waf import WafManager
 from pilot.managers.platform import (
@@ -33,17 +35,6 @@ def _catchall_conf() -> Path:
 def _stock_default_sites() -> list[Path]:
     """The distro's own default vhost(s), which would conflict with our catch-all."""
     return [Path("/etc/nginx/sites-enabled/default")]
-
-
-def _cert_files_exist(live_dir: Path) -> bool:
-    # /etc/letsencrypt/live is root-only (0700), so stat with privilege
-    # rather than letting Path.exists() raise EACCES for the bench user.
-    import subprocess
-
-    return subprocess.run(
-        _privileged(["test", "-f", str(live_dir / "fullchain.pem"), "-a", "-f", str(live_dir / "privkey.pem")]),
-        capture_output=True,
-    ).returncode == 0
 
 
 if TYPE_CHECKING:
@@ -113,7 +104,18 @@ class NginxManager:
         for code, (title, message) in ERROR_PAGES.items():
             staged = staging / f"_catchall_{code}.html"
             staged.write_text(render_error_html(code, title, message))
-            run_command(_privileged(["install", "-D", "-m", "644", str(staged), str(_SHARED_ERROR_DIR / f"{code}.html")]))
+            run_command(
+                _privileged(
+                    [
+                        "install",
+                        "-D",
+                        "-m",
+                        "644",
+                        str(staged),
+                        str(_SHARED_ERROR_DIR / f"{code}.html"),
+                    ]
+                )
+            )
             staged.unlink()
 
         staged = staging / "_catchall.conf"
@@ -144,7 +146,9 @@ class NginxManager:
         (self.bench.path / "logs").mkdir(exist_ok=True)
         (modsec_dir / "modsecurity.conf").write_text(self._renderer._render_modsec_engine(waf))
         (modsec_dir / "overrides.conf").write_text(self._renderer._render_modsec_overrides(waf))
-        (modsec_dir / "custom_rules.conf").write_text(self._renderer._render_modsec_custom_rules(waf))
+        (modsec_dir / "custom_rules.conf").write_text(
+            self._renderer._render_modsec_custom_rules(waf)
+        )
         (modsec_dir / "exclusions.conf").write_text(self._renderer._render_modsec_exclusions(waf))
         (modsec_dir / "main.conf").write_text(self._renderer._render_modsec_main(modsec_dir))
 
@@ -196,7 +200,9 @@ class NginxManager:
         except OSError:
             return True
         modules_dir = Path("/etc/nginx/modules-enabled")
-        return modules_dir.is_dir() and any("modsecurity" in entry.name for entry in modules_dir.iterdir())
+        return modules_dir.is_dir() and any(
+            "modsecurity" in entry.name for entry in modules_dir.iterdir()
+        )
 
     @staticmethod
     def _prune_dangling_symlinks(nginx_dir: Path) -> None:
@@ -253,7 +259,7 @@ class NginxManager:
         return Path("/etc/letsencrypt/live") / site.name / "fullchain.pem"
 
     def has_cert(self, site: "SiteConfig") -> bool:
-        return _cert_files_exist(Path("/etc/letsencrypt/live") / site.name)
+        return cert_files_exist(Path("/etc/letsencrypt/live") / site.name)
 
     def cert_covers(self, site: "SiteConfig") -> bool:
         """Cert exists and its SAN list covers every public domain, if any -
@@ -270,4 +276,4 @@ class NginxManager:
 
     @property
     def has_admin_cert(self) -> bool:
-        return _cert_files_exist(Path("/etc/letsencrypt/live") / self.bench.config.admin.domain)
+        return cert_files_exist(Path("/etc/letsencrypt/live") / self.bench.config.admin.domain)

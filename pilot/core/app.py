@@ -2,51 +2,19 @@ from __future__ import annotations
 
 import shutil
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 from pilot.config.app import AppConfig
-from pilot.exceptions import BenchError, CommandError
+from pilot.core.app_install_result import AppInstallResult
+from pilot.core.app_repository import AppRepository
+from pilot.core.app_revisions import RevisionPin
+from pilot.exceptions import BenchError
 from pilot.utils import installed_app_version, run_command
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
     from pilot.internal.git import GitRepo
-
-
-@dataclass(frozen=True)
-class RevisionPin:
-    """A fixed revision (tag or commit) an app should be checked out at.
-
-    Keeps App's public methods decoupled from the shape of any particular
-    source's data (e.g. the marketplace registry's raw target dicts) —
-    callers translate their own data into this before calling into App.
-    A branch is not a fixed revision, so it has no RevisionPin; pass None
-    to mean "no pin, follow the tracked branch" instead.
-    """
-
-    kind: Literal["tag", "commit"]
-    ref: str
-
-    @classmethod
-    def from_marketplace_target(cls, target: dict) -> "RevisionPin | None":
-        """Build a pin from a registry target dict, or None for a branch target."""
-        kind = target.get("target_type")
-        if kind not in ("tag", "commit"):
-            return None
-        return cls(kind=kind, ref=target["target"])
-
-
-@dataclass(frozen=True)
-class AppInstallResult:
-    """Outcome of installing an app: the final App (renamed to its importable
-    module name if that differs from the requested one), whether it was
-    already installed, and any dependency Apps installed alongside it."""
-
-    app: "App"
-    already_installed: bool
-    installed_dependencies: list["App"]
 
 
 class App:
@@ -83,61 +51,28 @@ class App:
 
     @property
     def _repo(self) -> "GitRepo":
-        from pilot.internal.git import GitRepo
+        return self._repository.repo
 
-        return GitRepo(self.path)
+    @property
+    def _repository(self) -> AppRepository:
+        return AppRepository(self)
 
     @property
     def installed_hash(self) -> str:
-        """Full SHA of the app's current HEAD, or '' if it can't be resolved."""
-        return self._repo.head_sha
+        return self._repository.installed_hash
 
     @property
     def installed_tag(self) -> str:
-        """Tag checked out exactly at HEAD, or '' if HEAD isn't on a tag."""
-        return self._repo.tag_at_head
+        return self._repository.installed_tag
 
     def is_on_revision(self, pin: RevisionPin) -> bool:
-        """Whether this app is currently checked out at a pinned revision."""
-        if pin.kind == "tag":
-            return self.installed_tag == pin.ref
-        
-        hash = self.installed_hash
-        return bool(hash) and hash.startswith(pin.ref)
+        return self._repository.is_on_revision(pin)
 
     def has_marketplace_update(self, marketplace_entry: dict | None) -> bool:
-        """Whether a newer version is available, per this app's entry in the
-        marketplace registry (matched by name+repo, if any), falling back to a
-        live remote-branch check when no marketplace entry covers the
-        installed version. Marketplace entries only ever advance, so a
-        different pin found there is always a forward one — comparing
-        against it locally is exact, no network round trip needed.
-        """
-        target = self._matching_marketplace_target(marketplace_entry)
-        pin = RevisionPin.from_marketplace_target(target) if target else None
-        if pin is not None:
-            return not self.is_on_revision(pin)
-        return self.has_remote_update()
-
-    def _matching_marketplace_target(self, marketplace_entry: dict | None) -> dict | None:
-        if not marketplace_entry or self.config.repo != marketplace_entry["repo"]:
-            return None
-        version = self.installed_version
-        return next((t for t in marketplace_entry["targets"] if t["version"] == version), None)
+        return self._repository.has_marketplace_update(marketplace_entry)
 
     def has_remote_update(self) -> bool:
-        """Whether the tracked branch has commits on origin not yet pulled locally.
-
-        Runs `git ls-remote` — ref pointers only, no object download — so it
-        completes in ~1-2s regardless of repo size. An app not on a branch
-        (detached HEAD, e.g. a tag/commit checkout) has no moving remote tip
-        to compare against, so this always reports no update; use
-        `is_on_revision` against the marketplace target instead.
-        """
-        if not self.config.branch:
-            return False
-        remote_sha = self._repo.remote_branch_sha(self.config.branch)
-        return bool(remote_sha and self.installed_hash and remote_sha != self.installed_hash)
+        return self._repository.has_remote_update()
 
     @property
     def is_cloned(self) -> bool:
@@ -152,142 +87,39 @@ class App:
 
     @property
     def _remote_url(self) -> str:
-        """The clone URL to use, token-embedded when the repo is private.
-
-        Public repos resolve to the original URL; for a repo hosted on a
-        connected provider with a stored PAT, the token is injected so private
-        clones and ls-remote probes authenticate.
-        """
-        from pilot.integrations.git import authenticated_url_for
-
-        return authenticated_url_for(self.bench.path, self.config.repo)
+        return self._repository.remote_url
 
     def _detect_default_branch(self) -> str:
-        import subprocess
-
-        remote = self._remote_url
-        result = subprocess.run(
-            ["git", "ls-remote", "--symref", remote, "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        for line in result.stdout.splitlines():
-            if line.startswith("ref: refs/heads/"):
-                return line.split("refs/heads/")[1].split()[0]
-        # Probe common Frappe branch names in priority order
-        refs = subprocess.run(
-            ["git", "ls-remote", "--heads", remote],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        ).stdout
-        for candidate in ("develop", "master", "version-16", "version-15"):
-            if f"refs/heads/{candidate}" in refs:
-                return candidate
-        return "develop"
+        return self._repository.detect_default_branch()
 
     def is_commit_hash(self, ref: str) -> bool:
-        import re
-
-        return bool(re.fullmatch(r"[0-9a-f]{7,40}", ref))
+        return AppRepository.is_commit_hash(ref)
 
     def _clone_rev(self, commit: str) -> None:
-        run_command(["git", "clone", self._remote_url, str(self.path)], stream_output=True)
-        try:
-            run_command(["git", "-C", str(self.path), "checkout", commit])
-        except CommandError:
-            raise BenchError(f"Commit '{commit}' not found in {self.config.repo}.")
+        self._repository.clone_rev(commit)
 
     def clone(self) -> None:
-        target = self.config.branch or self._detect_default_branch()
-        if self.is_commit_hash(target):
-            self._clone_rev(target)
-        else:
-            run_command(
-                ["git", "clone", self._remote_url, "--branch", target, "--depth", "1", str(self.path)],
-                stream_output=True,
-            )
+        self._repository.clone()
 
     @property
     def _is_shallow(self) -> bool:
-        return self._repo.is_shallow
+        return self._repository.is_shallow
 
     @staticmethod
     def _pack_threads() -> int:
-        import os
-
-        cpus = os.cpu_count() or 1
-        # On constrained servers (≤2 vCPUs) cap at 1 to avoid saturating the CPU.
-        # On beefier machines let git use half the cores so other processes stay responsive.
-        if cpus <= 2:
-            return 1
-        return max(1, cpus // 2)
+        return AppRepository.pack_threads()
 
     def update(self, pin: RevisionPin | None = None) -> None:
-        """Pull the latest code.
-
-        If `pin` is given, the app is moved to exactly that revision — not
-        the branch tip or the repo's overall latest tag/commit. A pin's
-        source (e.g. the marketplace registry) only ever advances, so no
-        ancestry check is needed here; it's the source of truth. Otherwise
-        this pulls the tracked branch's tip, as before.
-        """
-        if pin is not None:
-            self._checkout_pinned_target(pin)
-            return
-
-        cmd = ["git", "-c", f"pack.threads={self._pack_threads()}", "-C", str(self.path), "fetch", "origin", self.config.branch]
-        if self._is_shallow:
-            cmd.append("--depth=1")
-        run_command(cmd)
-        run_command(
-            [
-                "git",
-                "-C",
-                str(self.path),
-                "reset",
-                "--hard",
-                f"origin/{self.config.branch}",
-            ]
-        )
+        self._repository.update(pin)
 
     def switch_branch(self, branch: str) -> None:
-        """Fetch and move this app's clone to `branch`'s tip, restoring any
-        stashed changes first if the checkout fails. Raises BenchError on
-        failure; does not reinstall or rebuild assets — callers do that
-        afterwards via PythonEnvManager."""
-        if not self.is_cloned:
-            raise BenchError(f"'{self.config.name}' is not cloned at {self.path}")
-
-        repo = self._repo
-        repo.fetch("+refs/heads/*:refs/remotes/origin/*")
-        repo.abort_merge_rebase()
-        stashed = repo.stash_all()
-        if not repo.checkout_new_branch(branch, f"origin/{branch}"):
-            if stashed:
-                repo.stash_pop()
-            raise BenchError(f"Could not switch '{self.config.name}' to branch '{branch}'.")
-        self.config.branch = branch
+        self._repository.switch_branch(branch)
 
     def _checkout_pinned_target(self, pin: RevisionPin) -> None:
-        if pin.kind == "tag":
-            run_command(["git", "-C", str(self.path), "fetch", "--depth", "1", "origin", pin.ref])
-            run_command(["git", "-C", str(self.path), "checkout", "FETCH_HEAD"])
-        else:
-            self._checkout_pinned_commit(pin.ref)
+        self._repository.checkout_pinned_target(pin)
 
     def _checkout_pinned_commit(self, sha: str) -> None:
-        """Check out a specific commit SHA."""
-        try:
-            run_command(["git", "-C", str(self.path), "fetch", "--depth", "1", "origin", sha])
-            run_command(["git", "-C", str(self.path), "checkout", "FETCH_HEAD"])
-            return
-        except CommandError:
-            pass
-        unshallow_flag = ["--unshallow"] if self._is_shallow else []
-        run_command(["git", "-C", str(self.path), "fetch", *unshallow_flag, "origin", self.config.branch])
-        run_command(["git", "-C", str(self.path), "checkout", sha])
+        self._repository.checkout_pinned_commit(sha)
 
     @property
     def module_name(self) -> str:
@@ -339,7 +171,9 @@ class App:
             app = self.bench.app(self.module_name)
             dependencies = app._install_dependencies(on_progress) if install_dependencies else []
             on_progress(f"'{app.config.name}' already installed, skipping.")
-            return AppInstallResult(app, already_installed=True, installed_dependencies=dependencies)
+            return AppInstallResult(
+                app, already_installed=True, installed_dependencies=dependencies
+            )
 
         app, cloned_this_run = self._clone_and_normalize(on_progress)
         try:
@@ -377,7 +211,9 @@ class App:
         target = self.bench.apps_path / module
         if not target.exists():
             self.path.rename(target)
-        renamed = App(AppConfig(name=module, repo=self.config.repo, branch=self.config.branch), self.bench)
+        renamed = App(
+            AppConfig(name=module, repo=self.config.repo, branch=self.config.branch), self.bench
+        )
         return renamed, cloned_this_run
 
     def _install_dependencies(self, on_progress: Callable[[str], None]) -> list["App"]:
@@ -398,7 +234,9 @@ class App:
     def _register(self) -> None:
         existing = self.bench.registered_apps()
         if self.config.name not in existing:
-            (self.bench.sites_path / "apps.txt").write_text("\n".join(existing + [self.config.name]) + "\n")
+            (self.bench.sites_path / "apps.txt").write_text(
+                "\n".join(existing + [self.config.name]) + "\n"
+            )
 
     def _build_assets_via_env_manager(self) -> None:
         from pilot.managers.python_environment import PythonEnvManager
@@ -412,7 +250,9 @@ class App:
         if self.config.name == framework:
             raise BenchError(f"Cannot remove the framework app '{framework}'.")
 
-    def remove(self, force: bool = False, on_progress: Callable[[str], None] = lambda message: None) -> None:
+    def remove(
+        self, force: bool = False, on_progress: Callable[[str], None] = lambda message: None
+    ) -> None:
         """Uninstall from every site it's installed on, deregister from
         apps.txt, uninstall from the Python environment, and delete its
         folder. With force=True, a site uninstall failure is reported and
@@ -442,7 +282,9 @@ class App:
         apps_txt = self.bench.sites_path / "apps.txt"
         if not apps_txt.exists():
             return
-        lines = [line for line in apps_txt.read_text().splitlines() if line.strip() != self.config.name]
+        lines = [
+            line for line in apps_txt.read_text().splitlines() if line.strip() != self.config.name
+        ]
         apps_txt.write_text("\n".join(lines) + ("\n" if lines else ""))
 
     def _pip_uninstall(self) -> None:

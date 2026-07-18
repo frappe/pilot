@@ -69,7 +69,10 @@ def test_authority_false_when_sibling_runs_systemd(tmp_path: Path) -> None:
     authority_file.write_text("other-bench")
     monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
 
-    with patch("pilot.core.monitoring.iter_sibling_benches", return_value=iter([_sibling("other-bench", "systemd")])):
+    with patch(
+        "pilot.core.monitoring_config.iter_sibling_benches",
+        return_value=iter([_sibling("other-bench", "systemd")]),
+    ):
         assert monitor.is_system_log_authority() is False
 
 
@@ -78,7 +81,10 @@ def test_authority_false_when_sibling_runs_supervisor(tmp_path: Path) -> None:
     authority_file.write_text("other-bench")
     monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
 
-    with patch("pilot.core.monitoring.iter_sibling_benches", return_value=iter([_sibling("other-bench", "supervisor")])):
+    with patch(
+        "pilot.core.monitoring_config.iter_sibling_benches",
+        return_value=iter([_sibling("other-bench", "supervisor")]),
+    ):
         assert monitor.is_system_log_authority() is False
 
 
@@ -87,7 +93,10 @@ def test_authority_stolen_when_recorded_bench_is_in_dev_mode(tmp_path: Path) -> 
     authority_file.write_text("other-bench")
     monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
 
-    with patch("pilot.core.monitoring.iter_sibling_benches", return_value=iter([_sibling("other-bench", "")])):
+    with patch(
+        "pilot.core.monitoring_config.iter_sibling_benches",
+        return_value=iter([_sibling("other-bench", "")]),
+    ):
         assert monitor.is_system_log_authority() is True
     assert authority_file.read_text() == "my-bench"
 
@@ -97,7 +106,7 @@ def test_authority_stolen_when_recorded_bench_no_longer_exists(tmp_path: Path) -
     authority_file.write_text("dropped-bench")
     monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
 
-    with patch("pilot.core.monitoring.iter_sibling_benches", return_value=iter([])):
+    with patch("pilot.core.monitoring_config.iter_sibling_benches", return_value=iter([])):
         assert monitor.is_system_log_authority() is True
     assert authority_file.read_text() == "my-bench"
 
@@ -113,7 +122,10 @@ def test_exactly_one_bench_holds_authority(tmp_path: Path) -> None:
     assert monitor_a.is_system_log_authority() is True
 
     # bench-b sees bench-a as the running authority
-    with patch("pilot.core.monitoring.iter_sibling_benches", return_value=iter([_sibling("bench-a", "systemd")])):
+    with patch(
+        "pilot.core.monitoring_config.iter_sibling_benches",
+        return_value=iter([_sibling("bench-a", "systemd")]),
+    ):
         assert monitor_b.is_system_log_authority() is False
 
 
@@ -124,8 +136,15 @@ def _fake_proc_reads(monitor: Monitor) -> None:
     """Stub out /proc reads so tests don't depend on the host machine state."""
     monitor._load_average = lambda: (0.5, 0.4, 0.3)  # type: ignore[method-assign]
     monitor._system_cpu = 12.5
-    monitor._memory_usage = lambda: {"total_mb": 8192.0, "used_mb": 4096.0, "available_mb": 4096.0, "percent": 50.0}  # type: ignore[method-assign]
-    monitor._storage_usage = lambda: {"disk": {"total_mb": 51200.0, "used_mb": 20480.0, "free_mb": 30720.0, "percent": 40.0}}  # type: ignore[method-assign]
+    monitor._memory_usage = lambda: {
+        "total_mb": 8192.0,
+        "used_mb": 4096.0,
+        "available_mb": 4096.0,
+        "percent": 50.0,
+    }  # type: ignore[method-assign]
+    monitor._storage_usage = lambda: {
+        "disk": {"total_mb": 51200.0, "used_mb": 20480.0, "free_mb": 30720.0, "percent": 40.0}
+    }  # type: ignore[method-assign]
 
 
 def test_collect_system_metrics_writes_to_system_log_file(tmp_path: Path) -> None:
@@ -163,7 +182,7 @@ def test_collect_system_metrics_skipped_when_not_authority(tmp_path: Path) -> No
     monitor.bench.config.monitor.system_log_path = system_log_file
 
     siblings = [_sibling("other-bench", "systemd")]
-    with patch("pilot.core.monitoring.iter_sibling_benches", return_value=iter(siblings)):
+    with patch("pilot.core.monitoring_config.iter_sibling_benches", return_value=iter(siblings)):
         monitor.collect_system_metrics()
 
     assert not system_log_file.exists()
@@ -210,8 +229,26 @@ def test_compute_cpu_breakdown_sums_to_100_percent(tmp_path: Path) -> None:
     monitor = _make_monitor(_make_bench(tmp_path))
     readings = iter(
         [
-            {"user": 100, "nice": 0, "system": 50, "idle": 800, "iowait": 20, "irq": 10, "softirq": 10, "steal": 10},
-            {"user": 150, "nice": 0, "system": 70, "idle": 900, "iowait": 25, "irq": 12, "softirq": 12, "steal": 11},
+            {
+                "user": 100,
+                "nice": 0,
+                "system": 50,
+                "idle": 800,
+                "iowait": 20,
+                "irq": 10,
+                "softirq": 10,
+                "steal": 10,
+            },
+            {
+                "user": 150,
+                "nice": 0,
+                "system": 70,
+                "idle": 900,
+                "iowait": 25,
+                "irq": 12,
+                "softirq": 12,
+                "steal": 11,
+            },
         ]
     )
     monitor._cpu_fields = lambda: next(readings)  # type: ignore[method-assign]
@@ -227,7 +264,16 @@ def test_compute_cpu_breakdown_sums_to_100_percent(tmp_path: Path) -> None:
 def test_compute_cpu_breakdown_zero_delta_reports_idle(tmp_path: Path) -> None:
     """A stalled /proc/stat (identical before/after) must not divide by zero."""
     monitor = _make_monitor(_make_bench(tmp_path))
-    fields = {"user": 100, "nice": 0, "system": 50, "idle": 800, "iowait": 20, "irq": 10, "softirq": 10, "steal": 10}
+    fields = {
+        "user": 100,
+        "nice": 0,
+        "system": 50,
+        "idle": 800,
+        "iowait": 20,
+        "irq": 10,
+        "softirq": 10,
+        "steal": 10,
+    }
     monitor._cpu_fields = lambda: dict(fields)  # type: ignore[method-assign]
     monitor.sample_cpu()
     monitor.compute_cpu()
@@ -244,7 +290,9 @@ def test_memory_usage_breakdown_sums_to_total(tmp_path: Path) -> None:
     result = monitor._memory_usage()
 
     assert set(result) >= {"total_mb", "used_mb", "cached_mb", "free_mb", "swap_used_mb", "percent"}
-    assert abs(result["total_mb"] - result["used_mb"] - result["cached_mb"] - result["free_mb"]) < 1.0
+    assert (
+        abs(result["total_mb"] - result["used_mb"] - result["cached_mb"] - result["free_mb"]) < 1.0
+    )
 
 
 # ── network / disk I/O throughput ──────────────────────────────────────────────
@@ -253,7 +301,9 @@ def test_memory_usage_breakdown_sums_to_total(tmp_path: Path) -> None:
 def test_compute_io_reports_bytes_per_sec(tmp_path: Path) -> None:
     monitor = _make_monitor(_make_bench(tmp_path))
     net_readings = iter([{"rx_bytes": 1000, "tx_bytes": 200}, {"rx_bytes": 3000, "tx_bytes": 700}])
-    disk_readings = iter([{"read_bytes": 5000, "write_bytes": 1000}, {"read_bytes": 6000, "write_bytes": 1500}])
+    disk_readings = iter(
+        [{"read_bytes": 5000, "write_bytes": 1000}, {"read_bytes": 6000, "write_bytes": 1500}]
+    )
     monitor._net_fields = lambda: next(net_readings)  # type: ignore[method-assign]
     monitor._disk_io_fields = lambda: next(disk_readings)  # type: ignore[method-assign]
 
@@ -272,7 +322,10 @@ def test_disk_io_fields_ignores_partitions(tmp_path: Path) -> None:
         "   8       1 sda1 40 0 800 0 20 0 400 0 0 0 0\n"
         "  259       0 nvme0n1 10 0 200 0 5 0 100 0 0 0 0\n"
     )
-    with patch("pilot.core.monitoring.Path", side_effect=lambda p: diskstats if p == "/proc/diskstats" else Path(p)):
+    with patch(
+        "pilot.core.monitoring_proc.Path",
+        side_effect=lambda p: diskstats if p == "/proc/diskstats" else Path(p),
+    ):
         result = monitor._disk_io_fields()
 
     assert result == {"read_bytes": (2000 + 200) * 512, "write_bytes": (1000 + 100) * 512}

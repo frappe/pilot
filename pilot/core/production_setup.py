@@ -6,17 +6,15 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Optional
 
 from pilot.exceptions import BenchError
+from pilot.core.production_admin_domain import ProductionAdminDomain
 from pilot.secure_files import write_private_text
-from pilot.utils import host_owner
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
 
 class ProductionSetup:
-    """Deploys a bench to production: process manager, nginx, TLS, admin
-    domain registration, and monitoring. Rolls back a newly-registered admin
-    domain if any later step fails."""
+    """Deploys process management, nginx, TLS, admin routing, and monitoring."""
 
     def __init__(
         self,
@@ -32,14 +30,10 @@ class ProductionSetup:
         self._domain_arg = admin_domain
         self._tls_arg = admin_tls
         self._email_arg = letsencrypt_email
-        # CLI callers want a hard failure when the TLS they explicitly asked for
-        # doesn't work. The wizard's automatic hand-off doesn't - a cert that
-        # can't issue yet (e.g. DNS still propagating for a domain created
-        # moments ago) shouldn't roll back an otherwise-working deployment;
-        # the bench just stays reachable over HTTP until a retry succeeds.
+        # CLI callers want requested TLS to fail hard. Wizard hand-offs tolerate
+        # pending DNS and leave the bench on HTTP until a retry can issue certs.
         self._best_effort_tls = best_effort_tls
-        self._existing_admin_domain = bench.config.admin.domain
-        self._registered_admin_domain: Optional[str] = None
+        self._admin_domain = ProductionAdminDomain(bench, bench.config.admin.domain)
 
     def run(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
         self._require_linux()
@@ -79,13 +73,19 @@ class ProductionSetup:
         self._report_summary(on_progress)
 
     def _resolve_target(self) -> None:
-        """Apply --process-manager / --admin-domain to the in-memory config so the
-        rest of setup operates on the requested target. The toml is written last."""
+        """Apply CLI args in memory. The toml is written last."""
         from pilot.config.production import VALID_PROCESS_MANAGERS, ProductionConfig
 
-        pm = ProductionConfig._normalize_process_manager(self._pm_arg or self.bench.config.production.process_manager) or "systemd"
+        pm = (
+            ProductionConfig._normalize_process_manager(
+                self._pm_arg or self.bench.config.production.process_manager
+            )
+            or "systemd"
+        )
         if pm not in VALID_PROCESS_MANAGERS:
-            raise BenchError(f"Invalid process manager '{pm}'. Must be one of {', '.join(VALID_PROCESS_MANAGERS)}.")
+            raise BenchError(
+                f"Invalid process manager '{pm}'. Must be one of {', '.join(VALID_PROCESS_MANAGERS)}."
+            )
         self.bench.config.production.process_manager = pm
         self.bench.config.production.enabled = True
         # Production serves the admin behind its domain, so it must be enabled —
@@ -100,10 +100,7 @@ class ProductionSetup:
             self.bench.config.letsencrypt.email = self._email_arg
 
     def _require_production_inputs(self) -> None:
-        """Fail early and clearly on inputs the setup wizard no longer collects: an
-        admin domain (always) and a Let's Encrypt email (only when --tls would
-        actually obtain a cert). Better here than deep inside nginx/cert work, or
-        as a silently-skipped cert."""
+        """Fail before nginx/cert work on required production inputs."""
         from pilot.managers.letsencrypt import letsencrypt_email_required
 
         if not self.bench.config.admin.domain:
@@ -118,8 +115,7 @@ class ProductionSetup:
             )
 
     def _installed_manager(self) -> Optional[str]:
-        """Which process manager already has a deployment on disk, if any —
-        used to migrate when --process-manager differs."""
+        """Return the process manager already deployed on disk, if any."""
         from pilot.managers.processes.supervisor import SupervisorProcessManager
         from pilot.managers.processes.systemd import SystemdProcessManager
 
@@ -130,8 +126,7 @@ class ProductionSetup:
         return None
 
     def _migrate_from(self, old_pm: Optional[str], on_progress: Callable[[str], None]) -> None:
-        """Tear down the previous manager so it releases the workload ports before
-        the new manager starts and binds them."""
+        """Tear down the previous manager before the new one binds ports."""
         new_pm = self.bench.config.production.process_manager
         if not old_pm or old_pm == new_pm:
             return
@@ -177,17 +172,15 @@ class ProductionSetup:
             sys.exit(1)
 
     def _check_sudo_available(self) -> None:
-        """Unlike `bench init`, production setup does need root — for nginx,
-        certbot, and systemd's linger/user-manager bootstrap. It isn't
-        pre-granted (bench init needs none of that), so either passwordless
-        sudo is already cached/configured, or there's a TTY sudo can prompt
-        on. Neither means this would hang or silently fail partway through."""
+        """Fail early when production setup cannot get root privileges."""
         from pilot.managers.platform import has_passwordless_sudo, is_root, which
 
         if is_root() or has_passwordless_sudo():
             return
         if which("sudo") is None:
-            raise BenchError("sudo is required to deploy to production (nginx, certbot, systemd) but is not installed.")
+            raise BenchError(
+                "sudo is required to deploy to production (nginx, certbot, systemd) but is not installed."
+            )
         if not sys.stdin.isatty():
             raise BenchError(
                 "Deploying to production needs root (nginx, certbot, systemd) and there's no "
@@ -196,61 +189,16 @@ class ProductionSetup:
             )
 
     def _check_admin_domain(self) -> None:
-        """Admin is reached only via its domain in production. Use whatever is in
-        bench.toml (validate() enforces it is present); just reject a domain that
-        another bench already claims."""
-        from pilot.core.domains import DomainRouteProvider
-        from pilot.utils import matches_wildcard, normalize_host
-
-        domain = self.bench.config.admin.domain
-        if not domain:
-            return  # validate() raises the required-in-prod error, naming the bench
-        owner = host_owner(self.bench.path, domain)
-        if owner:
-            raise BenchError(f"Admin domain '{domain}' is already used by bench '{owner}'.")
-        target = normalize_host(domain)
-        for site in self.bench.sites():
-            if normalize_host(site.config.name) == target:
-                raise BenchError(
-                    f"Admin domain '{domain}' conflicts with this bench's own site '{site.config.name}'. "
-                    f"An admin domain must not match a site domain."
-                )
-        # Enforce the wildcard rule only on a new/changed admin domain.
-        if normalize_host(domain) == normalize_host(self._existing_admin_domain):
-            return
-        patterns = DomainRouteProvider.wildcard_domains()
-        if patterns and not matches_wildcard(domain, patterns):
-            raise BenchError(f"Admin domain must match one of this bench's wildcard domains: {', '.join(patterns)}.")
+        self._admin_domain.check()
 
     def _register_admin_domain(self) -> None:
-        """Provision a new/changed admin domain with the provider before nginx/cert
-        work that would be wasted on a failure. _check_admin_domain has already
-        enforced the wildcard rule for it. Records the new domain so the run can
-        roll it back on failure or release the previous one on success."""
-        from pilot.core.domains import DomainRouteProvider
-        from pilot.utils import normalize_host
-
-        self._registered_admin_domain = None
-        domain = self.bench.config.admin.domain
-        if not domain or normalize_host(domain) == normalize_host(self._existing_admin_domain):
-            return
-        DomainRouteProvider(self.bench).register(domain, domain)
-        self._registered_admin_domain = domain
+        self._admin_domain.register()
 
     def _rollback_admin_domain(self) -> None:
-        """Release the just-registered admin route after a failed setup."""
-        if self._registered_admin_domain:
-            from pilot.core.domains import DomainRouteProvider
-
-            DomainRouteProvider(self.bench).release(self._registered_admin_domain)
+        self._admin_domain.rollback()
 
     def _release_previous_admin_domain(self) -> None:
-        """Free the superseded admin hostname at the provider once the switch is
-        committed, so another bench can reuse it without manual cleanup."""
-        if self._registered_admin_domain and self._existing_admin_domain:
-            from pilot.core.domains import DomainRouteProvider
-
-            DomainRouteProvider(self.bench).release(self._existing_admin_domain)
+        self._admin_domain.release_previous()
 
     def _persist(self, updates: dict) -> None:
         """Merge ``updates`` into bench.toml in place, preserving all other fields."""

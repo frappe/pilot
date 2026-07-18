@@ -3,12 +3,14 @@ from __future__ import annotations
 import subprocess
 from abc import ABC, abstractmethod
 from enum import Enum, auto
+
 try:
     from typing import override  # type: ignore[attr-defined]  # Python 3.12+
 except ImportError:  # Python 3.11
 
     def override(func):
         return func
+
 
 from pilot.managers.processes.local import ProcessDefinition, ProcessManager
 
@@ -134,4 +136,8 @@ class ManagedProcessManager(ProcessManager, ABC):
 
     def _invalidate_assets_cache(self) -> None:
         cache_port = self.bench.config.redis.cache_port
-        subprocess.run(["redis-cli", "-p", str(cache_port), "del", "assets_json"], capture_output=True, timeout=5)
+        subprocess.run(
+            ["redis-cli", "-p", str(cache_port), "del", "assets_json"],
+            capture_output=True,
+            timeout=5,
+        )

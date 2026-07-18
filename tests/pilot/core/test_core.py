@@ -28,11 +28,13 @@ def make_bench(tmp_path: Path) -> Bench:
         ],
         mariadb=MariaDBConfig(root_password="root"),
         redis=RedisConfig(cache_port=13000, queue_port=11000),
-        workers=WorkerConfig(groups=[
-            WorkerGroup(queues=["default"], count=2),
-            WorkerGroup(queues=["short"], count=1),
-            WorkerGroup(queues=["long"], count=1),
-        ]),
+        workers=WorkerConfig(
+            groups=[
+                WorkerGroup(queues=["default"], count=2),
+                WorkerGroup(queues=["short"], count=1),
+                WorkerGroup(queues=["long"], count=1),
+            ]
+        ),
     )
     return Bench(config, tmp_path)
 
@@ -173,7 +175,9 @@ def _clone_at_tag(remote: Path, clone_dir: Path, tag: str, shallow: bool = True)
 
     subprocess.run(["git", "clone", "-q", str(remote), str(clone_dir)], check=True)
     if shallow:
-        subprocess.run(["git", "-C", str(clone_dir), "fetch", "-q", "origin", tag, "--depth", "1"], check=True)
+        subprocess.run(
+            ["git", "-C", str(clone_dir), "fetch", "-q", "origin", tag, "--depth", "1"], check=True
+        )
     subprocess.run(["git", "-C", str(clone_dir), "checkout", "-q", tag], check=True)
 
 
@@ -561,7 +565,9 @@ def test_honcho_start_writes_per_process_pid_files(tmp_path: Path) -> None:
 
 def _capture_site_cmd(monkeypatch) -> dict:
     captured: dict = {}
-    monkeypatch.setattr("pilot.core.site.run_command", lambda cmd, **kw: captured.setdefault("cmd", cmd))
+    monkeypatch.setattr(
+        "pilot.core.site_commands.run_command", lambda cmd, **kw: captured.setdefault("cmd", cmd)
+    )
     return captured
 
 
@@ -573,7 +579,9 @@ def _postgres_bench(tmp_path: Path, **postgres):
     return bench
 
 
-def test_site_create_postgres_builds_db_args(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_site_create_postgres_builds_db_args(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     bench = _postgres_bench(tmp_path, root_password="pgsecret", port=5433)
     captured = _capture_site_cmd(monkeypatch)
 
@@ -588,7 +596,9 @@ def test_site_create_postgres_builds_db_args(tmp_path: Path, monkeypatch: pytest
     assert "--db-socket" not in cmd
 
 
-def test_site_create_mariadb_when_bench_is_mariadb(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_site_create_mariadb_when_bench_is_mariadb(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     bench = make_bench(tmp_path)  # bench db_type defaults to mariadb
     captured = _capture_site_cmd(monkeypatch)
     monkeypatch.setattr("pilot.managers.mariadb.MariaDBManager._detect_socket", lambda self: "")
@@ -602,7 +612,9 @@ def test_site_create_mariadb_when_bench_is_mariadb(tmp_path: Path, monkeypatch: 
     assert "--db-host" in cmd
 
 
-def test_site_restore_uses_postgres_root_creds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_site_restore_uses_postgres_root_creds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     bench = _postgres_bench(tmp_path, root_password="pgpw")
     captured = _capture_site_cmd(monkeypatch)
 
@@ -615,7 +627,9 @@ def test_site_restore_uses_postgres_root_creds(tmp_path: Path, monkeypatch: pyte
     assert cmd[cmd.index("--db-root-password") + 1] == "pgpw"
 
 
-def test_site_restore_uses_mariadb_root_creds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_site_restore_uses_mariadb_root_creds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     bench = make_bench(tmp_path)  # mariadb bench, root_password="root"
     captured = _capture_site_cmd(monkeypatch)
 
@@ -630,7 +644,9 @@ def test_site_restore_uses_mariadb_root_creds(tmp_path: Path, monkeypatch: pytes
     assert cmd[cmd.index("--with-private-files") + 1] == "/tmp/priv.tar"
 
 
-def test_site_reinstall_postgres_root_creds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_site_reinstall_postgres_root_creds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     bench = _postgres_bench(tmp_path, root_password="pgpw")
     captured = _capture_site_cmd(monkeypatch)
 
@@ -663,7 +679,9 @@ def test_site_create_and_reinstall_reject_empty_admin_password(tmp_path: Path) -
         site.reinstall("   ")
 
 
-def test_site_migrate_skip_failing_adds_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_site_migrate_skip_failing_adds_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     bench = make_bench(tmp_path)
     captured = _capture_site_cmd(monkeypatch)
 
@@ -672,7 +690,9 @@ def test_site_migrate_skip_failing_adds_flag(tmp_path: Path, monkeypatch: pytest
     assert "--skip-failing" in captured["cmd"]
 
 
-def test_site_migrate_without_skip_failing_omits_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_site_migrate_without_skip_failing_omits_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     bench = make_bench(tmp_path)
     captured = _capture_site_cmd(monkeypatch)
 
@@ -681,7 +701,9 @@ def test_site_migrate_without_skip_failing_omits_flag(tmp_path: Path, monkeypatc
     assert "--skip-failing" not in captured["cmd"]
 
 
-def test_site_create_postgres_empty_password_uses_placeholder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_site_create_postgres_empty_password_uses_placeholder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     bench = _postgres_bench(tmp_path, root_password="")  # trust/peer auth — no password
     captured = _capture_site_cmd(monkeypatch)
 
