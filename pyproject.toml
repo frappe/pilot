@@ -50,7 +50,7 @@ warn_unused_ignores = true
 exclude = ["^build/", "^benches/", "^admin/frontend/"]
 
 # Every requires_bench=True command's self.bench is guaranteed non-None by the
-# CLI dispatch layer (pilot/registry.py) before run() executes — an invariant
+# CLI dispatch layer (pilot/registry.py) before run() executes - an invariant
 # the type checker can't see from Command's shared `Bench | None` attribute.
 # This is the one known, accepted gap in the type-checking baseline; every
 # other module is expected to be clean.

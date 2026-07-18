@@ -8,7 +8,7 @@ __all__ = [
     "TaskStatus",
     "TaskWorkerControl",
     "sse_message",
-    "task_requires_secrets",
+    "task_has_secrets",
 ]
 
 _EXPORTS = {
@@ -17,7 +17,7 @@ _EXPORTS = {
     "TaskStatus": ("pilot.managers.task.models", "TaskStatus"),
     "TaskWorkerControl": ("pilot.managers.task.control", "TaskWorkerControl"),
     "sse_message": ("pilot.managers.task.reader", "sse_message"),
-    "task_requires_secrets": ("pilot.managers.task.policy", "task_requires_secrets"),
+    "task_has_secrets": ("pilot.managers.task.policy", "task_has_secrets"),
 }
 
 

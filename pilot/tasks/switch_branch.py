@@ -44,10 +44,9 @@ class SwitchBranchTask(Task):
         env.build_assets_for_app(app)
 
     def update_bench_toml_branch(self) -> None:
-        from pilot.config import BenchTomlStore
+        from pilot.config import BenchConfig
 
-        store = BenchTomlStore.for_bench(self.bench_root)
-        with store.edit_raw() as raw:
+        with BenchConfig.open(self.bench_root, mode="raw") as raw:
             for app_entry in raw.get("apps", []):
                 if app_entry.get("name") == self.name:
                     app_entry["branch"] = self.branch

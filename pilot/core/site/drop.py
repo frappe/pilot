@@ -25,10 +25,9 @@ class SiteDropper:
             routes.release(domain)
 
     def remove_from_bench_toml(self) -> None:
-        from pilot.config import BenchTomlStore
+        from pilot.config import BenchConfig
 
-        store = BenchTomlStore.for_bench(self.site.bench.path)
-        with store.edit_raw() as raw:
+        with BenchConfig.open(self.site.bench.path, mode="raw") as raw:
             raw["sites"] = [
                 site for site in raw.get("sites", []) if site.get("name") != self.site.config.name
             ]

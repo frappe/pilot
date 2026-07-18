@@ -10,7 +10,7 @@ VALID_PROCESS_MANAGERS = ("systemd", "supervisor")
 @dataclass
 class ProductionConfig:
     enabled: bool = False
-    process_manager: str = ""  # systemd | supervisor — required when enabled
+    process_manager: str = ""  # systemd | supervisor - required when enabled
     use_companion_manager: bool = False
 
     @classmethod

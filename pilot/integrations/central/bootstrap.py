@@ -36,14 +36,13 @@ def seed_from_metadata(bench: "Bench", path: str) -> bool:
 
 
 def seed(bench: "Bench", endpoint: str, bootstrap_token: str) -> None:
-    from pilot.config.toml_store import BenchTomlStore
+    from pilot.config.bench import BenchConfig
 
-    store = BenchTomlStore.for_bench(bench.path)
-    config = store.read_raw()
+    config = BenchConfig.read_raw(bench.path)
     central = config.setdefault("central", {})
     central["endpoint"] = endpoint
     central["bootstrap_token"] = bootstrap_token
-    store.write_raw(config)
+    BenchConfig.write_raw(bench.path, config)
 
     bench.config.central.endpoint = endpoint
     bench.config.central.bootstrap_token = bootstrap_token
@@ -83,14 +82,13 @@ def _enroll(endpoint: str, bootstrap_token: str) -> dict[str, Any]:
 
 
 def _persist(bench: "Bench", result: dict[str, Any]) -> None:
-    from pilot.config.toml_store import BenchTomlStore
+    from pilot.config.bench import BenchConfig
 
     missing = [key for key in ("auth_token", "jwks_url", "audience_id") if not result.get(key)]
     if missing:
         raise CentralClientError(f"Enrollment response missing: {', '.join(missing)}")
 
-    store = BenchTomlStore.for_bench(bench.path)
-    config = store.read_raw()
+    config = BenchConfig.read_raw(bench.path)
 
     central = config.setdefault("central", {})
     central["endpoint"] = result.get("central_endpoint") or central.get("endpoint", "")
@@ -101,7 +99,7 @@ def _persist(bench: "Bench", result: dict[str, Any]) -> None:
     admin["jwks_url"] = result["jwks_url"]
     admin["jwks_audience"] = result["audience_id"]
 
-    store.write_raw(config)
+    BenchConfig.write_raw(bench.path, config)
 
     bench.config.central.endpoint = central["endpoint"]
     bench.config.central.auth_token = central["auth_token"]

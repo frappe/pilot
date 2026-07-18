@@ -9,7 +9,7 @@ from flask import url_for
 from admin.backend.api.responses import created_response, error_response
 from admin.backend.api.v1.benches.support import bench_resource, target_bench_dir
 from admin.backend.providers.bench import BenchProvider
-from pilot.config import BenchTomlStore
+from pilot.config import BenchConfig
 from pilot.core.bench import Bench
 from pilot.exceptions import BenchAlreadyExistsError, BenchError
 from pilot.utils import cli_root
@@ -55,7 +55,7 @@ def create_bench_locked(
     except BenchError as exc:
         return error_response("invalid_bench", str(exc), 422)
 
-    new_toml = BenchTomlStore.for_bench(new_dir).read_raw()
+    new_toml = BenchConfig.read_raw(new_dir)
     new_port = new_toml["admin"]["port"]
 
     if production_parent:

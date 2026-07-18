@@ -60,7 +60,7 @@ def build_admin_frontend(
     frontend = _find_frontend()
     _check_node_version()
     on_progress(f"Building admin frontend at {frontend}...")
-    if _needs_npm_install(frontend):
+    if _is_npm_install_stale(frontend):
         on_progress("Running npm install...")
         run_command(["npm", "install"], cwd=frontend, stream_output=True)
     on_progress("Running npm build")
@@ -79,7 +79,7 @@ def _find_frontend() -> Path:
     )
 
 
-def _needs_npm_install(frontend: Path) -> bool:
+def _is_npm_install_stale(frontend: Path) -> bool:
     install_state = frontend / "node_modules" / ".package-lock.json"
     if not install_state.exists():
         return True
@@ -107,7 +107,7 @@ def _check_node_version() -> None:
     try:
         version = (int(parts[0]), int(parts[1]))
     except (IndexError, ValueError):
-        return  # unparseable — let the build run and surface its own error
+        return  # unparseable - let the build run and surface its own error
     if version < _MIN_NODE:
         major, minor = _MIN_NODE
         raise BenchError(

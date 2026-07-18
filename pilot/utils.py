@@ -310,7 +310,7 @@ def host_owner(bench_path: Path, host: str) -> str | None:
 
 
 def installed_app_version(env_path: Path, name: str) -> str:
-    """Version of an installed app read from its dist-info METADATA — no subprocess."""
+    """Version of an installed app read from its dist-info METADATA - no subprocess."""
     lib_dir = env_path / "lib"
     if not lib_dir.is_dir():
         return ""
@@ -342,7 +342,7 @@ def get_yarn_bin() -> str:
     local_yarn = Path.home() / ".local" / "bin" / "yarn"
     if local_yarn.exists():
         return str(local_yarn)
-    raise BenchError("yarn not found — run bench init to install it.")
+    raise BenchError("yarn not found - run bench init to install it.")
 
 
 def redact_text(text: str, secrets: list[str] | None) -> str:

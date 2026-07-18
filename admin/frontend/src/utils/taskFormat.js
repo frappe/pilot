@@ -99,6 +99,6 @@ export function fmtDuration(seconds) {
 }
 
 export function fmtDateTime(iso) {
-  if (!iso) return '—'
+  if (!iso) return '-'
   return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }

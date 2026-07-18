@@ -35,11 +35,11 @@ def test_install_app_cascades_telephony_for_helpdesk(
 ) -> None:
     if not (bench_root / "apps" / HELPDESK).is_dir() or not (bench_root / "apps" / TELEPHONY).is_dir():
         pytest.skip(
-            f"{HELPDESK}/{TELEPHONY} not cloned on this bench — run "
+            f"{HELPDESK}/{TELEPHONY} not cloned on this bench - run "
             f"'bench get-app {HELPDESK}' first to exercise this cascade check."
         )
 
-    # Both start uninstalled on the site — telephony must come back purely
+    # Both start uninstalled on the site - telephony must come back purely
     # from helpdesk's own required_apps cascade, not from us installing it.
     _uninstall_if_present(bench_bin, bench_root, site_name, HELPDESK)
     _uninstall_if_present(bench_bin, bench_root, site_name, TELEPHONY)

@@ -41,7 +41,7 @@ def _discover() -> list[type[Command]]:
 
 
 def command_names() -> frozenset[str]:
-    """Top-level command names (incl. group names) — used to tell bench commands
+    """Top-level command names (incl. group names) - used to tell bench commands
     from Frappe passthrough."""
     top_level = {c.name for c in _discover() if c.group is None}
     return frozenset(top_level | GROUP_HELP.keys())
@@ -63,7 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Create a sub-parser action for each command group up front.
     # `help=` populates the parent listing; `description=` populates the
-    # subcommand's own `--help` page — set both so text shows in both places.
+    # subcommand's own `--help` page - set both so text shows in both places.
     group_subparsers: dict[str, argparse._SubParsersAction] = {}
     for gname, ghelp in GROUP_HELP.items():
         gparser = sub.add_parser(gname, help=ghelp, description=ghelp)

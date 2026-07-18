@@ -187,7 +187,7 @@ class ProcessInspector:
                 continue
         return owned
 
-    def owns_pid(self, identity: ProcessIdentity, pid: int) -> bool:
+    def has_pid(self, identity: ProcessIdentity, pid: int) -> bool:
         try:
             snapshot = self._read_process(pid)
             return (

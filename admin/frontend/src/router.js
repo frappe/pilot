@@ -43,7 +43,7 @@ router.beforeEach(async (to) => {
   // `pilot generate-session`). Exchange it for a real session cookie and
   // re-navigate to the same place with the token stripped, instead of
   // dragging it along into a /login redirect. Errors (expired/already-used
-  // link) are swallowed — the next pass through this guard will see no
+  // link) are swallowed - the next pass through this guard will see no
   // session cookie and fall through to the normal /login redirect below.
   if (to.query.sid) {
     try {

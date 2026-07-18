@@ -38,7 +38,7 @@ class AdminEnvManager:
     def uv(self) -> str:
         uv = shutil.which("uv")
         if not uv:
-            raise RuntimeError("uv not found — run the bench-cli install script to set it up")
+            raise RuntimeError("uv not found - run the bench-cli install script to set it up")
         return uv
 
     def ensure(self) -> None:
@@ -249,14 +249,14 @@ class PythonEnvManager:
         if uv:
             return uv
 
-        print("uv not found — installing via official installer...", flush=True)
+        print("uv not found - installing via official installer...", flush=True)
         try:
             run_command(
                 ["sh", "-c", "curl -LsSf https://astral.sh/uv/install.sh | sh"],
                 stream_output=True,
             )
         except Exception:
-            print("curl installer failed — falling back to pip install uv...", flush=True)
+            print("curl installer failed - falling back to pip install uv...", flush=True)
             run_command(
                 [sys.executable, "-m", "pip", "install", "--user", "uv"],
                 stream_output=True,

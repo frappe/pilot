@@ -176,19 +176,19 @@ def _config_patch_item_error(current, key, value) -> str | None:
         return config_patch_error(nested, value)
     if isinstance(value, list):
         return _config_list_replace_error(existing, value)
-    if _contains_protected_config(existing):
+    if _has_protected_config(existing):
         return "A configuration value containing protected fields cannot change type."
     return None
 
 
 def _config_remove_error(existing) -> str | None:
-    if _contains_protected_config(existing):
+    if _has_protected_config(existing):
         return "A configuration value containing protected fields cannot be removed."
     return None
 
 
 def _config_list_replace_error(existing, value: list) -> str | None:
-    if _contains_protected_config(existing):
+    if _has_protected_config(existing):
         return "A list containing protected fields cannot be replaced."
     for item in value:
         error = _submitted_config_value_error(item)
@@ -263,13 +263,13 @@ def _submitted_config_value_error(value) -> str | None:
     return None
 
 
-def _contains_protected_config(value) -> bool:
+def _has_protected_config(value) -> bool:
     if isinstance(value, dict):
         return any(
-            not is_public_config_key(key) or _contains_protected_config(child) for key, child in value.items()
+            not is_public_config_key(key) or _has_protected_config(child) for key, child in value.items()
         )
     if isinstance(value, list):
-        return any(_contains_protected_config(child) for child in value)
+        return any(_has_protected_config(child) for child in value)
     return False
 
 

@@ -76,7 +76,7 @@ class GunicornManager:
         # thread inside the pool workers, so it needs no companion of its own.
         workers: list[dict] = [self._worker_pool_spec(sites_dir, logs_dir)]
 
-        if self._socketio_companion_enabled():
+        if self._is_socketio_companion_enabled():
             workers.append(
                 self._companion_spec(
                     "socketio",
@@ -135,7 +135,7 @@ class GunicornManager:
             spec["env"] = env
         return spec
 
-    def _socketio_companion_enabled(self) -> bool:
+    def _is_socketio_companion_enabled(self) -> bool:
         if self.bench.config.socketio_backend == "python":
             return True
         return bool(shutil.which("node") or shutil.which("nodejs"))

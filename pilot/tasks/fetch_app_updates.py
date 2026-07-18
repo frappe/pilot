@@ -11,7 +11,7 @@ from pilot.tasks import Task, step
 class FetchAppUpdatesTask(Task):
     command: ClassVar[str] = "fetch-all-app-updates"
     # Sites.vue reads output[-1] as the JSON result, so the dumped JSON must
-    # stay the last line — no trailing "done" step.
+    # stay the last line - no trailing "done" step.
     has_done_step: ClassVar[bool] = False
 
     def __post_init__(self) -> None:
@@ -23,7 +23,7 @@ class FetchAppUpdatesTask(Task):
         updates = self.fetch()
         print(json.dumps(updates), flush=True)
 
-    def check_update(self, name: str) -> bool:
+    def has_update(self, name: str) -> bool:
         app = self.bench.app(name)
         return app.has_marketplace_update(self.marketplace_by_name.get(name))
 
@@ -34,7 +34,7 @@ class FetchAppUpdatesTask(Task):
 
         updates: dict[str, bool] = {}
         with ThreadPoolExecutor(max_workers=8) as pool:
-            futures = {pool.submit(self.check_update, name): name for name in app_names}
+            futures = {pool.submit(self.has_update, name): name for name in app_names}
             for future in as_completed(futures):
                 updates[futures[future]] = future.result()
         return updates

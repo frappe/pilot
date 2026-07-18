@@ -35,7 +35,7 @@ const props = defineProps({
   streaming: { type: Boolean, default: false },
 })
 
-// Auto-expanded while running, auto-collapsed once it settles — unless the
+// Auto-expanded while running, auto-collapsed once it settles - unless the
 // user has manually toggled it, in which case their choice sticks.
 const expanded = ref(props.status === 'running')
 let userOverridden = false

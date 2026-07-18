@@ -4,8 +4,7 @@ import logging
 from pathlib import Path
 
 from admin.backend.api.v1.setup.state import setup_handoff_task
-from pilot.config import BenchTomlStore
-from pilot.config.bench_toml_builder import BenchTomlBuilder
+from pilot.config import BenchConfig
 from pilot.internal.validators import validate_branch_name, validate_repo_url
 
 _PASSWORD_KEYS = ("admin_password", "mariadb_password", "postgres_password")
@@ -85,7 +84,7 @@ def read_defaults(bench_root: Path) -> dict:
 
     # This is a read endpoint the wizard polls before login - it must never echo
     # a DB password back, default or real, whether or not bench.toml has one set.
-    defaults = {key: value for key, value in BenchTomlBuilder.DEFAULTS.items() if key not in _PASSWORD_KEYS}
+    defaults = {key: value for key, value in BenchConfig.default_flat_settings().items() if key not in _PASSWORD_KEYS}
 
     result = {
         "bench_name": bench_root.name,
@@ -96,7 +95,7 @@ def read_defaults(bench_root: Path) -> dict:
     toml_path = bench_root / "bench.toml"
     if toml_path.exists():
         try:
-            settings = BenchTomlStore(toml_path).read_flat()
+            settings = BenchConfig.read_flat(toml_path)
             for key in _PASSWORD_KEYS:
                 result[f"{key}_configured"] = bool(settings.get(key))
                 settings.pop(key, None)

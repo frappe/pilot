@@ -66,7 +66,7 @@ def bench(request) -> Bench:
         print(f'\n[e2e] Kept bench "{b.name}" at {b.dir} for debugging.')
     else:
         # Full teardown: stop, remove the dedicated MariaDB instance + cnf +
-        # systemd override, and delete the bench dir — leave no trace.
+        # systemd override, and delete the bench dir - leave no trace.
         b.destroy()
 
 

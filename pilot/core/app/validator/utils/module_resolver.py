@@ -20,9 +20,9 @@ class ModuleResolver:
 
     def unresolved(self, modules: Iterable[str]) -> list[str]:
         """Get modules which are not resolvable in the venv's site-packages."""
-        return [module for module in modules if not self._resolves(module)]
+        return [module for module in modules if not self._is_resolvable(module)]
 
-    def _resolves(self, module: str) -> bool:
+    def _is_resolvable(self, module: str) -> bool:
         directory = self.site_packages
         parts = module.split(".")
         for index, part in enumerate(parts):

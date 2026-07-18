@@ -22,7 +22,7 @@ MODSEC_MODULE_NAME = "ngx_http_modsecurity_module.so"
 _MODULE_DIRS = ("/usr/lib/nginx/modules", "/usr/lib64/nginx/modules")
 
 # Pinned OWASP CRS (the 4.x LTS line) so every host runs an identical,
-# reproducible rule set regardless of what — or whether — the distro packages it.
+# reproducible rule set regardless of what - or whether - the distro packages it.
 # The immutable release asset (not the auto-generated source archive, whose bytes
 # GitHub does not guarantee stable) is verified against a hardcoded SHA-256 before
 # it is extracted into a privileged system directory. The digest was confirmed
@@ -48,7 +48,7 @@ class WafManager:
 
     @staticmethod
     def module_available() -> bool:
-        """True if nginx can load the module — the .so is on disk or a
+        """True if nginx can load the module - the .so is on disk or a
         modules-enabled drop-in (the Debian package's mechanism) references it."""
         if any((Path(base) / MODSEC_MODULE_NAME).exists() for base in _MODULE_DIRS):
             return True

@@ -22,7 +22,7 @@ _BENCH_DATA: dict = {
     "redis": {"cache_port": 13000, "queue_port": 11000},
 }
 
-# Minimal provider that only answers proxy-servers — enough to drive nginx config.
+# Minimal provider that only answers proxy-servers - enough to drive nginx config.
 _PROVIDER = """#!/usr/bin/env python3
 import json, sys
 if sys.argv[1:2] == ["proxy-servers"]:

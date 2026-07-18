@@ -8,8 +8,6 @@ from pathlib import Path
 import pytest
 
 from pilot.config import BenchConfig
-from pilot.config.bench_toml import load_config
-from pilot.config.config_schema import unknown_config_paths
 from pilot.exceptions import ConfigError
 
 MINIMAL: dict = {
@@ -24,26 +22,26 @@ MINIMAL: dict = {
 def test_unknown_nested_key_reported_with_full_path() -> None:
     data = copy.deepcopy(MINIMAL)
     data["mariadb"]["unknown_key"] = "x"
-    assert "mariadb.unknown_key" in unknown_config_paths(data)
+    assert "mariadb.unknown_key" in BenchConfig._unknown_config_paths(data)
 
 
 def test_unknown_bench_key_reported() -> None:
     data = copy.deepcopy(MINIMAL)
     data["bench"]["typo"] = 1
-    assert "bench.typo" in unknown_config_paths(data)
+    assert "bench.typo" in BenchConfig._unknown_config_paths(data)
 
 
 def test_unknown_top_level_table_reported() -> None:
     data = copy.deepcopy(MINIMAL)
     data["whatever"] = {"key": 1}
-    assert "whatever" in unknown_config_paths(data)
+    assert "whatever" in BenchConfig._unknown_config_paths(data)
 
 
 def test_unknown_array_entry_keys_reported_with_index() -> None:
     data = copy.deepcopy(MINIMAL)
     data["apps"][0]["typo"] = "x"
     data["firewall"] = {"rules": [{"ip": "203.0.113.4", "bogus": 1}]}
-    paths = unknown_config_paths(data)
+    paths = BenchConfig._unknown_config_paths(data)
     assert "apps[0].typo" in paths
     assert "firewall.rules[0].bogus" in paths
 
@@ -57,7 +55,7 @@ def test_known_and_legacy_keys_not_flagged() -> None:
         "lightweight": False,
     }
     data["workers"] = [{"queue": "default", "count": 1}]
-    assert unknown_config_paths(data) == []
+    assert BenchConfig._unknown_config_paths(data) == []
 
 
 def test_default_decode_silently_ignores_unknown_and_still_loads(
@@ -90,8 +88,8 @@ def test_load_config_strict_raises_default_loads(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ConfigError) as exc_info:
-        load_config(path, validate=False, strict=True)
+        BenchConfig.read(path, validate=False, strict=True)
     assert "mariadb.bogus" in str(exc_info.value)
 
     # Default read path tolerates the stale key and still decodes.
-    assert load_config(path, validate=False).mariadb.root_password == "r"
+    assert BenchConfig.read(path, validate=False).mariadb.root_password == "r"

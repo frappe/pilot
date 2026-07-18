@@ -28,12 +28,12 @@ def _is_public_domain(domain: str) -> bool:
 
 
 def public_domains(site: "SiteConfig") -> list[str]:
-    """The site's domains certbot can issue for — the only ones a cert covers, so
+    """The site's domains certbot can issue for - the only ones a cert covers, so
     a site with an internal name but a public custom domain still gets TLS."""
     return [domain for domain in site.all_domains if _is_public_domain(domain)]
 
 
-def cert_covers(cert_file: Path, domains: list[str]) -> bool:
+def has_domain_coverage(cert_file: Path, domains: list[str]) -> bool:
     """True if the on-disk cert's SAN list already includes every domain."""
     import subprocess
 
@@ -63,7 +63,7 @@ def letsencrypt_email_required(bench: "Bench") -> bool:
     return _is_public_domain(bench.config.admin.domain)
 
 
-def needs_letsencrypt(bench: "Bench") -> bool:
+def is_letsencrypt_required(bench: "Bench") -> bool:
     """True if any certificate is obtainable. Requires letsencrypt.email to be set."""
     return bool(bench.config.letsencrypt.email) and letsencrypt_email_required(bench)
 
@@ -95,7 +95,7 @@ class LetsEncryptManager:
         if (
             nginx_manager.has_cert(site)
             and not self._is_near_expiry(site)
-            and self._cert_covers(nginx_manager.cert_path(site), domains)
+            and self._has_domain_coverage(nginx_manager.cert_path(site), domains)
         ):
             print(f"Certificate for {site.name} already covers all domains and is not near expiry. Skipping.")
             return
@@ -162,7 +162,7 @@ class LetsEncryptManager:
         nginx_manager = NginxManager(self.bench)
         domain = self.bench.config.admin.domain
 
-        if nginx_manager.has_admin_cert and not self._is_near_expiry_cert(nginx_manager.admin_cert_path()):
+        if nginx_manager.has_admin_cert and not self._is_near_expiry_cert(nginx_manager.admin_cert_path):
             print(f"Certificate for {domain} already exists and is not near expiry. Skipping.")
             return
 
@@ -189,8 +189,8 @@ class LetsEncryptManager:
     def renew(self) -> None:
         run_command(_privileged(["certbot", "renew", "--quiet"]))
 
-    def _cert_covers(self, cert_file: Path, domains: list[str]) -> bool:
-        return cert_covers(cert_file, domains)
+    def _has_domain_coverage(self, cert_file: Path, domains: list[str]) -> bool:
+        return has_domain_coverage(cert_file, domains)
 
     def _is_near_expiry(self, site: "SiteConfig") -> bool:
         from pilot.managers.nginx import NginxManager

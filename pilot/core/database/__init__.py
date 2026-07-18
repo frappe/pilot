@@ -52,28 +52,28 @@ def make_site_database(bench_root: Path | str, site_name: str) -> Database:
     # path segment so it cannot escape sites/<site>/site_config.json.
     if not site_name or "/" in site_name or "\\" in site_name or site_name in (".", ".."):
         raise FileNotFoundError(f"Site '{site_name}' not found")
-    cfg_path = Path(bench_root) / "sites" / site_name / "site_config.json"
-    if not cfg_path.exists():
+    config_path = Path(bench_root) / "sites" / site_name / "site_config.json"
+    if not config_path.exists():
         raise FileNotFoundError(f"Site '{site_name}' not found")
-    cfg = json.loads(cfg_path.read_text())
-    db_type = cfg.get("db_type", "mariadb")
+    config = json.loads(config_path.read_text())
+    db_type = config.get("db_type", "mariadb")
     if db_type == "postgres":
         return PostgreSQL(
-            host=cfg.get("db_host", "localhost"),
-            port=int(cfg.get("db_port", 5432)),
-            user=cfg["db_user"],
-            password=cfg["db_password"],
-            database=cfg["db_name"],
+            host=config.get("db_host", "localhost"),
+            port=int(config.get("db_port", 5432)),
+            user=config["db_user"],
+            password=config["db_password"],
+            database=config["db_name"],
         )
     if db_type == "sqlite":
         # Frappe stores SQLite under sites/<site>/db/, not directly in the site folder.
-        db_file = Path(bench_root) / "sites" / site_name / "db" / f"{cfg.get('db_name', site_name)}.db"
+        db_file = Path(bench_root) / "sites" / site_name / "db" / f"{config.get('db_name', site_name)}.db"
         return SQLite(db_path=str(db_file))
     return MariaDB(
-        host=cfg.get("db_host", "localhost"),
-        port=int(cfg.get("db_port", 3306)),
-        user=cfg["db_user"],
-        password=cfg["db_password"],
-        database=cfg["db_name"],
-        socket=cfg.get("db_socket") or None,
+        host=config.get("db_host", "localhost"),
+        port=int(config.get("db_port", 3306)),
+        user=config["db_user"],
+        password=config["db_password"],
+        database=config["db_name"],
+        socket=config.get("db_socket") or None,
     )

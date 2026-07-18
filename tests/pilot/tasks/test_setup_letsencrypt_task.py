@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from pilot.config import BenchTomlStore
+from pilot.config import BenchConfig
 from pilot.exceptions import BenchError
 from pilot.tasks.setup_letsencrypt import SetupLetsEncryptTask
 from tests.pilot.commands.test_commands import make_bench
@@ -19,7 +19,7 @@ def _task(tmp_path: Path, *, production: bool, email: str = "") -> SetupLetsEncr
         bench.config.production.process_manager = "systemd"
         bench.config.admin.domain = "admin.example.com"
     bench.create_directories()
-    BenchTomlStore.for_bench(tmp_path).write(bench.config)
+    bench.config.write(tmp_path)
     site_path = tmp_path / "sites" / "secure.localhost"
     site_path.mkdir(parents=True)
     (site_path / "site_config.json").write_text(json.dumps({"ssl": False}))
@@ -53,4 +53,4 @@ def test_tls_task_applies_email_and_site_flag_before_certificate_setup(tmp_path:
 
     run.assert_called_once_with()
     assert json.loads(config_path.read_text())["ssl"] is True
-    assert BenchTomlStore.for_bench(tmp_path).read().letsencrypt.email == "ops@example.com"
+    assert BenchConfig.read(tmp_path).letsencrypt.email == "ops@example.com"

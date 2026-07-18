@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import ClassVar
 
-from pilot.config import BenchTomlStore
+from pilot.config import BenchConfig
 from pilot.tasks import Task, on_cancel, on_failure, step
 
 
@@ -32,7 +32,7 @@ class SetupLetsEncryptTask(Task):
     def apply_email(self) -> None:
         if not self.email:
             return
-        with BenchTomlStore.for_bench(self.bench_root).edit() as config:
+        with BenchConfig.open(self.bench_root) as config:
             config.letsencrypt.email = self.email
         self.bench.config.letsencrypt.email = self.email
 

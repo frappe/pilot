@@ -1,4 +1,4 @@
-"""Tests for pilot.tasks — TaskRunner and TaskReader."""
+"""Tests for pilot.tasks - TaskRunner and TaskReader."""
 
 from __future__ import annotations
 

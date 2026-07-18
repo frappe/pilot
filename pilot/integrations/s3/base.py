@@ -182,7 +182,7 @@ class S3:
             ) from error
 
     def presigned_url(self, bucket_name: str, remote_key: str, expires_in: int = 25_200) -> str:
-        """A time-limited URL the caller can hand straight to a browser/curl —
+        """A time-limited URL the caller can hand straight to a browser/curl -
         the download streams directly from S3, never through this server."""
         try:
             return self.client.generate_presigned_url(
@@ -215,7 +215,7 @@ class S3:
                 f"Failed to list '{bucket_name}/{prefix}': {error.response['Error'].get('Message', error)}",
             ) from error
 
-    def object_exists(self, bucket_name: str, remote_key: str) -> bool:
+    def has_object(self, bucket_name: str, remote_key: str) -> bool:
         try:
             self.client.head_object(Bucket=bucket_name, Key=remote_key)
             return True

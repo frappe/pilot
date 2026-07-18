@@ -14,6 +14,7 @@ class BenchConfigFiles:
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
 
+    @property
     def db_root_args(self) -> list[str]:
         if self.bench.config.db_type == "postgres":
             postgres = self.bench.config.postgres
@@ -21,7 +22,7 @@ class BenchConfigFiles:
                 "--db-root-username",
                 postgres.admin_user,
                 "--db-root-password",
-                self.postgres_root_password(),
+                self.postgres_root_password,
             ]
         if self.bench.config.db_type == "sqlite":
             return []
@@ -33,6 +34,7 @@ class BenchConfigFiles:
             mariadb.root_password,
         ]
 
+    @property
     def postgres_root_password(self) -> str:
         return self.bench.config.postgres.root_password or "trust_auth"
 

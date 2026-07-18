@@ -32,7 +32,7 @@ class App:
             name = name[:-4]
         if name.replace("-", "_").lower() == "frappe":
             raise BenchError(
-                "'frappe' is the base framework, not an app — it can't be added "
+                "'frappe' is the base framework, not an app - it can't be added "
                 "with get-app. It's set up when the bench itself is created."
             )
         return cls(AppConfig(name=name, repo=repo, branch=branch), bench)
@@ -87,7 +87,7 @@ class App:
         return self._repository.remote_url
 
     def _detect_default_branch(self) -> str:
-        return self._repository.detect_default_branch()
+        return self._repository.get_default_branch()
 
     def is_commit_hash(self, ref: str) -> bool:
         return AppRepository.is_commit_hash(ref)

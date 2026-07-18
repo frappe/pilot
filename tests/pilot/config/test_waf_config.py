@@ -7,7 +7,6 @@ import tomllib
 import pytest
 
 from pilot.config import WAF_MODES, BenchConfig, WafCondition, WafConfig, WafRule, parse_nginx_size
-from pilot.config.bench_toml import dumps_config as bench_config_to_toml
 from pilot.exceptions import ConfigError
 
 
@@ -119,7 +118,7 @@ def test_toml_round_trip_preserves_quotes() -> None:
         exclusions=[tricky, "SecRuleRemoveById 949110"],
         exempt_paths=["/files/"],
     )
-    rendered = bench_config_to_toml(config)
+    rendered = config.dumps()
 
     reparsed = BenchConfig._from_dict(tomllib.loads(rendered))
     reparsed.validate()
@@ -128,13 +127,13 @@ def test_toml_round_trip_preserves_quotes() -> None:
 
 
 def test_disabled_waf_writes_no_section() -> None:
-    assert "[waf]" not in bench_config_to_toml(_config())
+    assert "[waf]" not in (_config()).dumps()
 
 
 def test_disabled_waf_with_exclusions_is_preserved() -> None:
     config = _config()
     config.waf = WafConfig(enabled=False, exclusions=["SecRuleRemoveById 1"])
-    rendered = bench_config_to_toml(config)
+    rendered = config.dumps()
     assert "[waf]" in rendered
     assert BenchConfig._from_dict(tomllib.loads(rendered)).waf.exclusions == ["SecRuleRemoveById 1"]
 
@@ -143,7 +142,7 @@ def test_disabled_waf_with_non_default_tuning_is_preserved() -> None:
     # Pre-configuring mode/paranoia before enabling must survive a round-trip.
     config = _config()
     config.waf = WafConfig(enabled=False, mode="On", paranoia=3, inbound_threshold=9)
-    rendered = bench_config_to_toml(config)
+    rendered = config.dumps()
     assert "[waf]" in rendered
     reloaded = BenchConfig._from_dict(tomllib.loads(rendered)).waf
     assert reloaded.mode == "On" and reloaded.paranoia == 3 and reloaded.inbound_threshold == 9
@@ -243,7 +242,7 @@ def test_custom_rules_round_trip() -> None:
             ),
         ]
     )
-    rendered = bench_config_to_toml(config)
+    rendered = config.dumps()
     reparsed = BenchConfig._from_dict(tomllib.loads(rendered))
     reparsed.validate()
     assert reparsed.waf == config.waf

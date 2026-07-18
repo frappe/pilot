@@ -89,7 +89,7 @@ class AuthorizedKeysStore:
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or (Path.home() / ".ssh" / "authorized_keys")
 
-    # Other methods below spell the builtin as builtins.list[...] — this method's
+    # Other methods below spell the builtin as builtins.list[...] - this method's
     # own name would otherwise shadow it in their annotations.
     def list(self) -> builtins.list[SSHKey]:
         return [self._to_key(parsed) for parsed in self._parse_lines(self._read())]

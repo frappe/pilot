@@ -14,11 +14,8 @@ from admin.backend.api.v1.setup.state import (
     wizard_marker_path,
 )
 from admin.backend.middleware import allow_during_setup, set_session_cookie
-from pilot.config import BenchTomlStore
-from pilot.config.bench_toml_builder import (
-    FRAMEWORK_BRANCHES,
-    current_port_offset,
-)
+from pilot.config import BenchConfig
+from pilot.config.bench import FRAMEWORK_BRANCHES
 from pilot.core.bench import Bench
 from pilot.exceptions import TaskConflictError, TaskNotFoundError
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
@@ -28,7 +25,7 @@ from pilot.tasks.wizard_setup import WizardSetupTask
 setup_bp = Blueprint("setup", __name__)
 
 __all__ = [
-    "BenchTomlStore",
+    "BenchConfig",
     "read_defaults",
     "running_setup_task",
     "setup_bp",
@@ -63,11 +60,10 @@ def update_configuration():
 
 
 def _update_configuration(bench_root: Path, data: dict):
-    store = BenchTomlStore.for_bench(bench_root)
     current = {}
-    if store.exists():
+    if BenchConfig.exists(bench_root):
         try:
-            current = store.read_flat()
+            current = BenchConfig.read_flat(bench_root)
         except Exception:
             return error_response(
                 "configuration_unavailable",
@@ -88,10 +84,11 @@ def _update_configuration(bench_root: Path, data: dict):
 
     toml_path = bench_root / "bench.toml"
     try:
-        store.write_flat(
+        BenchConfig.write_flat(
+            bench_root,
             current.get("bench_name") or bench_root.name,
             {**data, "admin_enabled": True},
-            port_offset=current_port_offset(toml_path),
+            port_offset=BenchConfig.current_port_offset(toml_path),
         )
     except (TypeError, ValueError):
         return error_response(
@@ -161,7 +158,7 @@ def start_setup():
             422,
         )
     try:
-        config = BenchTomlStore.for_bench(bench_root).read()
+        config = BenchConfig.read(bench_root)
         config.validate()
     except Exception:
         return error_response(

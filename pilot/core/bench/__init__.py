@@ -31,9 +31,7 @@ class Bench:
             if path is not None:
                 raise TypeError("Use Bench(config, path) or Bench(path_or_name).")
             bench_path = self._resolve_path(config_or_path)
-            from pilot.config import BenchTomlStore
-
-            config = BenchTomlStore.for_bench(bench_path).read()
+            config = BenchConfig.read(bench_path)
 
         self.config = config
         self.path = bench_path
@@ -118,15 +116,17 @@ class Bench:
         """Command prefix to invoke frappe's bench helper via the venv Python."""
         return [str(self.python), "-m", "frappe.utils.bench_helper"]
 
+    @property
     def db_root_args(self) -> list[str]:
         from pilot.core.bench.config_files import BenchConfigFiles
 
-        return BenchConfigFiles(self).db_root_args()
+        return BenchConfigFiles(self).db_root_args
 
+    @property
     def postgres_root_password(self) -> str:
         from pilot.core.bench.config_files import BenchConfigFiles
 
-        return BenchConfigFiles(self).postgres_root_password()
+        return BenchConfigFiles(self).postgres_root_password
 
     def app(self, name: str) -> "App":
         from pilot.core.bench.inventory import BenchInventory

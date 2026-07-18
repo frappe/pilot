@@ -41,7 +41,7 @@ class SiteCommands:
             cmd += ["--with-public-files", public_files]
         if private_files:
             cmd += ["--with-private-files", private_files]
-        cmd += self.site.bench.db_root_args()
+        cmd += self.site.bench.db_root_args
         run_command(cmd, cwd=self.site.bench.sites_path, stream_output=True)
 
     def reinstall(self, admin_password: str) -> None:
@@ -56,7 +56,7 @@ class SiteCommands:
             "--admin-password",
             admin_password,
         )
-        cmd += self.site.bench.db_root_args()
+        cmd += self.site.bench.db_root_args
         run_command(cmd, cwd=self.site.bench.sites_path, stream_output=True)
 
     def migrate(self, skip_failing: bool) -> None:
@@ -100,5 +100,5 @@ class SiteCommands:
             "--db-root-username",
             postgres.admin_user,
             "--db-root-password",
-            self.site.bench.postgres_root_password(),
+            self.site.bench.postgres_root_password,
         ]

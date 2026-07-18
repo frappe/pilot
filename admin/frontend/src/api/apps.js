@@ -1,7 +1,7 @@
 import { apiErrorMessage, request } from './client'
 
 // ky is configured with throwHttpErrors: false, so an error response (e.g.
-// {"error": {...}}) resolves instead of rejecting — callers expecting an
+// {"error": {...}}) resolves instead of rejecting - callers expecting an
 // array would otherwise silently get an error object. Throw here instead,
 // once, so every caller gets the real backend message.
 async function getOrThrow(path) {

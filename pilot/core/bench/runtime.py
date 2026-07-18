@@ -212,10 +212,10 @@ class BenchRuntime:
     def _admin_port(self) -> int:
         import tomllib
 
-        from pilot.config import BenchTomlStore
+        from pilot.config import BenchConfig
 
         try:
-            return BenchTomlStore.for_bench(self.bench.path).read_raw().get("admin", {}).get("port", 7000)
+            return BenchConfig.read(self.bench.path, validate=False).admin.port
         except (OSError, tomllib.TOMLDecodeError):
             return 7000
 

@@ -50,12 +50,12 @@ class SystemdProcessManager(ManagedProcessManager):
             if pd.name == "admin":
                 (self.systemd_conf_dir / self._unit_name("admin")).write_text(self._admin_service_text())
                 (self.systemd_conf_dir / self._admin_socket_name()).write_text(
-                    renderer.admin_socket(self.bench.config.admin.internal_port)
+                    renderer.render_admin_socket(self.bench.config.admin.internal_port)
                 )
             else:
                 (self.systemd_conf_dir / self._unit_name(pd.name)).write_text(renderer.render(pd))
                 workload_units.append(self._unit_name(pd.name))
-        (self.systemd_conf_dir / self._target_name()).write_text(renderer.target(workload_units))
+        (self.systemd_conf_dir / self._target_name()).write_text(renderer.render_target(workload_units))
 
     @override
     def install_config(self) -> None:
@@ -212,7 +212,7 @@ class SystemdProcessManager(ManagedProcessManager):
             },
             working_dir=root,
         )
-        return SystemdRenderer(self.bench.config.name).admin_service(pd, self._admin_socket_name())
+        return SystemdRenderer(self.bench.config.name).render_admin_service(pd, self._admin_socket_name())
 
     def _control_admin(self, action: str, env: dict) -> None:
         if action == "start":

@@ -25,7 +25,7 @@ class DependencyDeclarationsCheck:
             )
 
         # hooks.py's required_apps never lists frappe itself (it's implicit),
-        # while pyproject.toml always does — exclude it before comparing.
+        # while pyproject.toml always does - exclude it before comparing.
         non_frappe_pyproject_deps = set(declared_required_apps_in_pyproject) - {"frappe"}
         missing = set(required_apps_from_hooks) - non_frappe_pyproject_deps
         if missing:

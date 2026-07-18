@@ -150,7 +150,7 @@ def test_dependency_declarations_fails_when_frappe_dependencies_omits_frappe(
 
 
 def test_dependency_declarations_excludes_frappe_from_hooks_comparison(tmp_path: Path) -> None:
-    """pyproject always declares frappe; hooks.py's required_apps never does —
+    """pyproject always declares frappe; hooks.py's required_apps never does -
     frappe being present in pyproject alone must not cause any false failure."""
     app = _make_app(
         tmp_path,
@@ -219,7 +219,7 @@ def _modules_for(app: App, relpath: str, source: str) -> set[str]:
 
 def test_import_check_skips_stdlib_imports(tmp_path: Path) -> None:
     # Stdlib filtering happens in _imported_module_locations (across all
-    # files), not per-file — os/sys/json show up in the raw per-file parse.
+    # files), not per-file - os/sys/json show up in the raw per-file parse.
     app = _make_app(
         tmp_path,
         "myapp",

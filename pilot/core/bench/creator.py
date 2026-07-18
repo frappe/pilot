@@ -34,8 +34,7 @@ class BenchCreator:
         self.db_type = db_type
 
     def run(self, on_progress: Callable[[str], None] = lambda message: None) -> "Bench":
-        from pilot.config import BenchTomlStore
-        from pilot.config.bench_toml_builder import default_ports
+        from pilot.config import BenchConfig
         from pilot.core.bench import Bench
 
         bench_toml = self.target_directory / "bench.toml"
@@ -54,13 +53,13 @@ class BenchCreator:
         on_progress("Writing bench.toml")
         settings = self._initial_settings()
 
-        BenchTomlStore(bench_toml).write_flat(self.name, settings, port_offset=offset)
+        BenchConfig.write_flat(bench_toml, self.name, settings, port_offset=offset)
 
-        admin_port = default_ports()["admin.port"] + offset
+        admin_port = BenchConfig.default_ports()["admin.port"] + offset
         on_progress(f"\nBench '{self.name}' created at {self.target_directory}")
         on_progress("\nNext step:")
         on_progress("  bench start")
-        on_progress(f"  Then open http://localhost:{admin_port} — the setup wizard takes it from there.")
+        on_progress(f"  Then open http://localhost:{admin_port} - the setup wizard takes it from there.")
 
         return Bench(self.target_directory)
 
@@ -179,9 +178,9 @@ class BenchCreator:
 
     def _pick_port_offset(self, bench_path: Path) -> int:
         """Pick the first base-port offset unused by configs or live processes."""
-        from pilot.config.bench_toml_builder import default_ports
+        from pilot.config import BenchConfig
 
-        bases = default_ports()
+        bases = BenchConfig.default_ports()
         base_http_port = bases["http_port"]
         used = set()
 

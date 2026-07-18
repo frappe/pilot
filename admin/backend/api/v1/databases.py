@@ -20,10 +20,10 @@ def list_query_sites():
     sites = []
     for d in site_dirs:
         try:
-            cfg = json.loads((d / "site_config.json").read_text())
+            config = json.loads((d / "site_config.json").read_text())
         except (OSError, ValueError):
-            cfg = {}
-        sites.append({"name": d.name, "db_type": cfg.get("db_type", "mariadb")})
+            config = {}
+        sites.append({"name": d.name, "db_type": config.get("db_type", "mariadb")})
     return jsonify(sites)
 
 

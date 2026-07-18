@@ -7,7 +7,7 @@ from flask import current_app
 
 from admin.backend.api.responses import error_response
 from admin.backend.providers.bench import BenchProvider
-from pilot.config import BenchTomlStore
+from pilot.config import BenchConfig
 
 BENCH_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 ADMIN_DOMAIN_RE = re.compile(
@@ -19,7 +19,7 @@ def guard_bench_management():
     """Gate bench-management routes behind admin.allow_bench_management."""
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
-        config = BenchTomlStore.for_bench(bench_root).read_raw()
+        config = BenchConfig.read_raw(bench_root)
     except Exception:
         return error_response(
             "bench_management_forbidden",
@@ -38,7 +38,7 @@ def guard_bench_management():
 
 def bench_resource(bench_dir: Path) -> dict:
     toml_path = bench_dir / "bench.toml"
-    config = BenchTomlStore(toml_path).read_raw()
+    config = BenchConfig.read_raw(toml_path)
     admin_config = config.get("admin", {})
     production_config = config.get("production", {})
     port = admin_config.get("port")

@@ -203,7 +203,7 @@ class NginxManager:
         # terminates TLS, so neither sites nor the admin serve HTTPS here.
         tls = self.bench.config.admin.tls
         sites = [
-            (site.config, tls and ssl_ready and site.config.ssl and self.cert_covers(site.config))
+            (site.config, tls and ssl_ready and site.config.ssl and self.has_covering_cert(site.config))
             for site in self.bench.sites()
         ]
         admin_ssl = tls and ssl_ready and self.has_admin_cert
@@ -371,16 +371,17 @@ class NginxManager:
     def has_cert(self, site: "SiteConfig") -> bool:
         return cert_files_exist(site.name)
 
-    def cert_covers(self, site: "SiteConfig") -> bool:
+    def has_covering_cert(self, site: "SiteConfig") -> bool:
         """Cert exists and its SAN list covers every public domain, if any -
         so a failed --expand can't serve a stale cert over HTTPS."""
-        from pilot.managers.letsencrypt import cert_covers, public_domains
+        from pilot.managers.letsencrypt import has_domain_coverage, public_domains
 
         if not self.has_cert(site):
             return False
         public = public_domains(site)
-        return cert_covers(self.cert_path(site), public) if public else True
+        return has_domain_coverage(self.cert_path(site), public) if public else True
 
+    @property
     def admin_cert_path(self) -> Path:
         return live_cert_path(self.bench.config.admin.domain)
 

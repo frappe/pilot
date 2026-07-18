@@ -10,12 +10,12 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from unittest.mock import PropertyMock, patch
 
-from pilot.config.bench_toml_builder import BenchTomlBuilder
+from pilot.config import BenchConfig
 
 
 def _write_bench_toml(bench_dir: Path, name: str, **settings) -> None:
     bench_dir.mkdir(parents=True, exist_ok=True)
-    (bench_dir / "bench.toml").write_text(BenchTomlBuilder(name, settings).render())
+    (bench_dir / "bench.toml").write_text(BenchConfig.from_flat(name, settings).dumps())
 
 
 def _write_raw_bench_toml(bench_dir: Path, name: str, admin_port: int) -> None:
@@ -234,16 +234,16 @@ def test_api_benches_create_creates_bench(tmp_path: Path) -> None:
     toml = (benches_dir / "fresh" / "bench.toml").read_text()
     assert 'process_manager = "systemd"' in toml
     assert 'domain = "fresh-admin.example.com"' in toml
-    # Stored as a preference only — not yet deployed.
+    # Stored as a preference only - not yet deployed.
     assert "enabled = false" in toml.split("[production]")[1].split("[")[0]
     mock_popen.assert_called_once()
 
 
 def test_api_benches_create_routes_wizard_at_domain_when_production(tmp_path: Path) -> None:
     # A bench created from a production admin is routed to the setup wizard at its
-    # own domain — not auto-provisioned to a password-protected login. Its process
+    # own domain - not auto-provisioned to a password-protected login. Its process
     # manager and TLS choice are recorded (mirroring the parent bench) but not
-    # brought up yet — that needs the venv/framework app the wizard's init step
+    # brought up yet - that needs the venv/framework app the wizard's init step
     # installs, so WizardSetupTask finishes the job via SetupProductionCommand.
     benches_dir = tmp_path / "benches"
     current = benches_dir / "current"
@@ -306,7 +306,7 @@ def test_api_benches_create_routes_wizard_at_domain_when_production(tmp_path: Pa
     mock_gen.assert_called_once()
     mock_popen.assert_not_called()
     # The workload (web/worker/socketio) needs the venv and framework app that
-    # only exist once the wizard's init step runs — starting it now would
+    # only exist once the wizard's init step runs - starting it now would
     # crash-loop and permanently rate-limit the units. WizardSetupTask starts
     # it once init actually finishes, not this view.
     mock_apply.assert_not_called()
@@ -317,7 +317,7 @@ def test_api_benches_create_routes_wizard_at_domain_when_production(tmp_path: Pa
     # forced onto plain HTTP.
     assert "tls = true" in fresh_toml
     # production.enabled stays false until the wizard's init + SetupProductionCommand
-    # actually finish — a half-built deployment must never look "done" to the switcher.
+    # actually finish - a half-built deployment must never look "done" to the switcher.
     assert "enabled = false" in fresh_toml.split("[production]")[1].split("[")[0]
     assert 'process_manager = "systemd"' in fresh_toml.split("[production]")[1].split("[")[0]
 

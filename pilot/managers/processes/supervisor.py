@@ -33,7 +33,7 @@ class SupervisorRenderer(ServiceRenderer):
             env = f"environment={pairs}\n"
         stop = f"stopwaitsecs={pd.stop_timeout}\n" if pd.stop_timeout is not None else ""
         return (
-            f"[program:{self.program_name(pd)}]\n"
+            f"[program:{self.get_program_name(pd)}]\n"
             f"command={shlex.join(pd.argv)}\n"
             f"{env}{directory}"
             f"autostart=true\n"
@@ -46,7 +46,7 @@ class SupervisorRenderer(ServiceRenderer):
             f"{stop}"
         )
 
-    def conf(self, defs: list[ProcessDefinition], sock, pid) -> str:
+    def render_supervisord_conf(self, defs: list[ProcessDefinition], sock, pid) -> str:
         workload = [pd for pd in defs if pd.name != "admin"]
         admin = [pd for pd in defs if pd.name == "admin"]
         admin_group = f"[group:{self.bench_name}-admin]\nprograms={self._csv(admin)}\n\n" if admin else ""
@@ -72,11 +72,11 @@ class SupervisorRenderer(ServiceRenderer):
             f"{programs}"
         )
 
-    def program_name(self, pd: ProcessDefinition) -> str:
+    def get_program_name(self, pd: ProcessDefinition) -> str:
         return f"{self.bench_name}-{pd.name.replace('_', '-')}"
 
     def _csv(self, items: list[ProcessDefinition]) -> str:
-        return ",".join(self.program_name(pd) for pd in items)
+        return ",".join(self.get_program_name(pd) for pd in items)
 
 
 class SupervisorProcessManager(ManagedProcessManager):
@@ -115,7 +115,7 @@ class SupervisorProcessManager(ManagedProcessManager):
         self.supervisor_dir.mkdir(parents=True, exist_ok=True)
         renderer = SupervisorRenderer(self.bench.config.name, self.bench.logs_path)
         self.supervisor_conf_path.write_text(
-            renderer.conf(self._prod_process_definitions(), self.supervisor_sock, self.supervisor_pid)
+            renderer.render_supervisord_conf(self._prod_process_definitions(), self.supervisor_sock, self.supervisor_pid)
         )
 
     @override

@@ -50,7 +50,7 @@ class BenchSettings:
         return restarted, waf_warning
 
     def _regenerate_and_restart_if_needed(self, old_restart: dict) -> bool:
-        if not needs_restart(old_restart, restart_trigger_values(self.bench.config)):
+        if not is_restart_needed(old_restart, restart_trigger_values(self.bench.config)):
             return False
         try:
             regenerate_configs(self.bench)
@@ -101,7 +101,7 @@ class BenchSettings:
             ) from error
 
 
-def needs_restart(old: dict, new: dict) -> bool:
+def is_restart_needed(old: dict, new: dict) -> bool:
     return any(
         old.get(section, {}).get(key) != new.get(section, {}).get(key) for section, key in _RESTART_KEYS
     )

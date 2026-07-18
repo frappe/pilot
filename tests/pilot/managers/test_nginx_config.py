@@ -342,7 +342,7 @@ def test_site_without_ssl_flag_stays_http_even_with_cert(tmp_path: Path) -> None
     bench = _bench_with_site(tmp_path, data)
 
     manager = NginxManager(bench)
-    manager.cert_covers = lambda site: True
+    manager.has_covering_cert = lambda site: True
     manager.generate_config(ssl_ready=True)
 
     content = (tmp_path / "config" / "nginx" / "include.conf").read_text()

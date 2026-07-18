@@ -113,7 +113,7 @@ class Site:
 
         provider_domains = self._provider_domains()
         cmd = [*self.bench.frappe_call, "frappe", "drop-site", "--force", self.config.name]
-        cmd += self.bench.db_root_args()
+        cmd += self.bench.db_root_args
         on_progress(f"Dropping site '{self.config.name}'...")
         run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
         self._remove_from_bench_toml()

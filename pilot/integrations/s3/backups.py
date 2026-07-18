@@ -29,11 +29,11 @@ class BackupKeys:
 
     site_name: str
 
-    def file(self, timestamp: str, filename: str) -> str:
+    def get_file_key(self, timestamp: str, filename: str) -> str:
         date, time = timestamp.split("_")
         return f"sites/{self.site_name}/backups/{date}/{time}/{filename}"
 
-    def month(self, timestamp: str) -> str:
+    def get_month_key(self, timestamp: str) -> str:
         date = timestamp.split("_")[0]
         return f"sites/{self.site_name}/backups_metadata/{date[:4]}-{date[4:6]}.json"
 
@@ -52,14 +52,14 @@ class Metadata:
         self.lock = lock
 
     def add(self, timestamp: str, filename: str) -> None:
-        key = self.keys.month(timestamp)
+        key = self.keys.get_month_key(timestamp)
         with exclusive_file_lock(self.lock):
             runs = self._read_month(key)
             runs.setdefault(timestamp, {})[_file_type(filename)] = filename
             self.s3.write_json(self.bucket, key, runs)
 
     def remove(self, timestamp: str, filename: str) -> None:
-        key = self.keys.month(timestamp)
+        key = self.keys.get_month_key(timestamp)
         with exclusive_file_lock(self.lock):
             runs = self._read_month(key)
             run = runs.get(timestamp)
@@ -79,7 +79,7 @@ class Metadata:
                 yield timestamp, runs[timestamp]
 
     def _read_month(self, key: str) -> dict[str, dict[str, str]]:
-        if not self.s3.object_exists(self.bucket, key):
+        if not self.s3.has_object(self.bucket, key):
             return {}
         return self.s3.read_json(self.bucket, key)
 
@@ -100,23 +100,23 @@ class OffsiteBackup:
 
     def upload(self, site_name: str, timestamp: str, backup_path: Path, remove_local: bool = True) -> None:
         keys = BackupKeys(site_name)
-        self.s3.upload_file(self.bucket, backup_path, keys.file(timestamp, backup_path.name))
+        self.s3.upload_file(self.bucket, backup_path, keys.get_file_key(timestamp, backup_path.name))
         self._metadata(keys).add(timestamp, backup_path.name)
         if remove_local:
             backup_path.unlink(missing_ok=True)
 
     def download(self, site_name: str, timestamp: str, filename: str, destination: Path) -> None:
-        self.s3.download_file(self.bucket, BackupKeys(site_name).file(timestamp, filename), destination)
+        self.s3.download_file(self.bucket, BackupKeys(site_name).get_file_key(timestamp, filename), destination)
 
     def presigned_url(self, site_name: str, timestamp: str, filename: str, expires_in: int = 25_000) -> str:
-        """A direct, time-limited S3 download link — the file goes straight
+        """A direct, time-limited S3 download link - the file goes straight
         from S3 to whoever has the link, without passing through this server."""
-        key = BackupKeys(site_name).file(timestamp, filename)
+        key = BackupKeys(site_name).get_file_key(timestamp, filename)
         return self.s3.presigned_url(self.bucket, key, expires_in=expires_in)
 
     def delete(self, site_name: str, timestamp: str, filename: str) -> None:
         keys = BackupKeys(site_name)
-        self.s3.delete_object(self.bucket, keys.file(timestamp, filename))
+        self.s3.delete_object(self.bucket, keys.get_file_key(timestamp, filename))
         self._metadata(keys).remove(timestamp, filename)
 
     def list_backups(self, site_name: str, limit: int | None = None) -> dict[str, dict[str, str]]:
@@ -131,7 +131,7 @@ class OffsiteBackup:
     def get_backup(self, site_name: str, timestamp: str) -> dict[str, str] | None:
         """Return one offsite backup run from its monthly metadata file."""
         keys = BackupKeys(site_name)
-        return self._metadata(keys)._read_month(keys.month(timestamp)).get(timestamp)
+        return self._metadata(keys)._read_month(keys.get_month_key(timestamp)).get(timestamp)
 
     def _metadata(self, keys: BackupKeys) -> Metadata:
         return Metadata(self.s3, self.bucket, keys, self.bench_root / ".backup-metadata")

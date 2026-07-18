@@ -7,19 +7,18 @@ from flask import Flask
 
 from admin.backend.api.v1.settings import settings_bp
 from pilot.config import BenchConfig
-from pilot.config.bench_toml_builder import BenchTomlBuilder
 
 
 def _client(bench_root: Path):
     bench_root.mkdir()
     (bench_root / "bench.toml").write_text(
-        BenchTomlBuilder(
+        BenchConfig.from_flat(
             bench_root.name,
             {
                 "admin_domain": "admin.example.com",
                 "admin_password": "secret",
             },
-        ).render()
+        ).dumps()
     )
     app = Flask(__name__)
     app.config["BENCH_ROOT"] = bench_root

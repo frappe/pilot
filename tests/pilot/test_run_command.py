@@ -1,4 +1,4 @@
-"""Tests for pilot.utils.run_command — timeout, redaction, cancellation."""
+"""Tests for pilot.utils.run_command - timeout, redaction, cancellation."""
 
 from __future__ import annotations
 

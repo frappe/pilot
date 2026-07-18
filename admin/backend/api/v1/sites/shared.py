@@ -53,7 +53,7 @@ def site_name_failure(message: str):
 def new_site_name_error(bench_root: Path, name: str) -> str | None:
     """Validate a new-site name before any task starts, so the error lands in the UI
     instead of failing mid-run. Mirrors NewSiteCommand._validate."""
-    from pilot.config import BenchTomlStore
+    from pilot.config import BenchConfig
     from pilot.utils import host_owner, normalize_host
 
     sites_path = bench_root / "sites"
@@ -68,7 +68,7 @@ def new_site_name_error(bench_root: Path, name: str) -> str | None:
         return f"'{name}' is already used by bench '{owner}' (as a site or its admin domain). All benches share one nginx, so hostnames must be unique."
 
     try:
-        admin_domain = BenchTomlStore.for_bench(bench_root).read().admin.domain
+        admin_domain = BenchConfig.read(bench_root).admin.domain
     except Exception:
         admin_domain = ""
     if admin_domain and normalize_host(name) == normalize_host(admin_domain):

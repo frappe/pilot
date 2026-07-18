@@ -67,7 +67,7 @@ class AppRepository:
 
         return authenticated_url_for(self.app.bench.path, self.app.config.repo)
 
-    def detect_default_branch(self) -> str:
+    def get_default_branch(self) -> str:
         import subprocess
 
         remote = self.remote_url
@@ -105,7 +105,7 @@ class AppRepository:
             raise BenchError(f"Commit '{commit}' not found in {self.app.config.repo}.") from exc
 
     def clone(self) -> None:
-        target = self.app.config.branch or self.detect_default_branch()
+        target = self.app.config.branch or self.get_default_branch()
         if self.is_commit_hash(target):
             self.clone_rev(target)
         else:

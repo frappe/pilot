@@ -47,7 +47,7 @@ class Bench:
         # wizard's first step and persisted by PUT /api/v1/setup/configuration).
         # So the harness chooses it, the wizard enters it, and login reuses it.
         # A bare token_urlsafe() isn't guaranteed to satisfy the wizard's password
-        # policy (upper + lower + digit + symbol) — fixed affixes guarantee it.
+        # policy (upper + lower + digit + symbol) - fixed affixes guarantee it.
         self._admin_password = admin_password or f"Aa1!{secrets.token_urlsafe(12)}"
         self._proc: subprocess.Popen | None = None
         self._info: dict | None = None
@@ -59,7 +59,7 @@ class Bench:
     @property
     def admin_port(self) -> int:
         if not self._info:
-            raise RuntimeError("Bench not created yet — call create() first")
+            raise RuntimeError("Bench not created yet - call create() first")
         return self._info["admin_port"]
 
     @property
@@ -74,7 +74,7 @@ class Bench:
     def create(self) -> None:
         """`bench new <name>` then read the generated admin port."""
         if self.dir.exists():
-            raise RuntimeError(f'Bench "{self.name}" already exists at {self.dir} — clean it up first')
+            raise RuntimeError(f'Bench "{self.name}" already exists at {self.dir} - clean it up first')
         self._run(["new", self.name])
         if not (self.dir / "bench.toml").exists():
             # `bench` resolves its benches dir as <dir containing pilot>/benches.
@@ -121,7 +121,7 @@ class Bench:
         """`bench -b <name> start` on the initialized bench: full admin + workload."""
         # `bench init` (run by the wizard) re-downloads the prebuilt admin dist,
         # clobbering any local build. Rebuild from source only when E2E_BUILD_ADMIN
-        # is set (no-op otherwise) — e.g. to exercise *this* branch's admin UI
+        # is set (no-op otherwise) - e.g. to exercise *this* branch's admin UI
         # rather than the released bundle.
         self._build_admin_ui()
         self._spawn_start()
@@ -147,7 +147,7 @@ class Bench:
             self.remove_dir()
 
     def _drop_bench(self) -> None:
-        """`bench -b <name> drop --yes` — best-effort. No-op if the bench has no
+        """`bench -b <name> drop --yes` - best-effort. No-op if the bench has no
         config yet (nothing to drop)."""
         if not (self.dir / "bench.toml").exists():
             return
@@ -349,7 +349,7 @@ class Bench:
 
     def _read_config(self) -> dict:
         """Read admin.port from the generated bench.toml. (admin.password is empty
-        on a fresh bench — the wizard sets it; see admin_password.)"""
+        on a fresh bench - the wizard sets it; see admin_password.)"""
         with open(self.dir / "bench.toml", "rb") as f:
             data = tomllib.load(f)
         return {"admin_port": int(data["admin"]["port"])}

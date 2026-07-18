@@ -7,7 +7,7 @@ import pytest
 
 from admin.backend.app import create_app
 from admin.backend.auth import ensure_jwt_secret, issue_token
-from pilot.config.bench_toml_builder import BenchTomlBuilder
+from pilot.config import BenchConfig
 from pilot.core.server.ssh_keys import (
     InvalidSSHKeyError,
     LastSSHKeyError,
@@ -25,10 +25,10 @@ from pilot.exceptions import (
 def _client(bench_root: Path):
     bench_root.mkdir(parents=True)
     (bench_root / "bench.toml").write_text(
-        BenchTomlBuilder(
+        BenchConfig.from_flat(
             bench_root.name,
             {"admin_enabled": True, "admin_password": "secret"},
-        ).render()
+        ).dumps()
     )
     secret = ensure_jwt_secret(bench_root / "bench.toml")
     app = create_app(bench_root)

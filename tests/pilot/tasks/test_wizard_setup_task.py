@@ -1,4 +1,4 @@
-"""Tests for WizardSetupTask — the setup wizard's init + production hand-off."""
+"""Tests for WizardSetupTask - the setup wizard's init + production hand-off."""
 
 from __future__ import annotations
 

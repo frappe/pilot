@@ -28,7 +28,7 @@ class SystemdRenderer(ServiceRenderer):
             f"StandardError=append:{pd.log_file}.error.log\n"
         )
 
-    def admin_socket(self, port: int) -> str:
+    def render_admin_socket(self, port: int) -> str:
         # No PartOf: admin stays reachable while the workload is stopped.
         return (
             f"[Unit]\n"
@@ -39,7 +39,7 @@ class SystemdRenderer(ServiceRenderer):
             f"WantedBy=default.target\n"
         )
 
-    def admin_service(self, pd: ProcessDefinition, socket_name: str) -> str:
+    def render_admin_service(self, pd: ProcessDefinition, socket_name: str) -> str:
         env = "".join(f"Environment={k}={v}\n" for k, v in pd.env.items())
         return (
             f"[Unit]\n"
@@ -60,7 +60,7 @@ class SystemdRenderer(ServiceRenderer):
             f"StandardError=append:{pd.log_file}.error.log\n"
         )
 
-    def target(self, unit_names: list[str]) -> str:
+    def render_target(self, unit_names: list[str]) -> str:
         return (
             f"[Unit]\n"
             f"Description={self.bench_name} bench\n"

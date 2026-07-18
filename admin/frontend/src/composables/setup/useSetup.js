@@ -73,7 +73,7 @@ export function useSetup() {
   })
 
   // Derived database state. Every bench for this OS user shares one
-  // MariaDB/PostgreSQL server (see MariaDBManager/PostgresManager) — there's
+  // MariaDB/PostgreSQL server (see MariaDBManager/PostgresManager) - there's
   // no per-bench deployment mode to choose, just whether that shared server
   // still needs to be installed and secured, or already exists.
   const dbWillInstall = computed(
@@ -99,7 +99,7 @@ export function useSetup() {
     if (useExistingDb.value) return `Credentials for the existing ${engine} server at ${dbHost.value || 'the given host'}.`
     if (dbWillInstall.value)
       return `${engine} will be installed and its ${dbType.value === 'mariadb' ? 'root' : 'superuser'} password set to this value.`
-    return `Using the ${engine} server pilot already manages for this user — enter its existing password.`
+    return `Using the ${engine} server pilot already manages for this user - enter its existing password.`
   })
 
   const branchOptions = computed(() => {
@@ -149,7 +149,7 @@ export function useSetup() {
       mariadbPasswordConfigured.value = config.mariadb_password_configured === true
       postgresPasswordConfigured.value = config.postgres_password_configured === true
       // Bench arrived with production already chosen (the admin UI's "New Bench"
-      // flow) — the wizard's task will bring up production itself, so the 'done'
+      // flow) - the wizard's task will bring up production itself, so the 'done'
       // step shouldn't tell the user to run `bench setup production` by hand.
       // The flattened config renders an unset manager as the literal string
       // "none" (see BenchTomlBuilder._flatten), not an empty value.
@@ -305,7 +305,7 @@ export function useSetup() {
       ...(adminPassword.value ? { admin_password: adminPassword.value } : {}),
     }
     const existing = useExistingDb.value
-    // 'localhost', not '', when off — an empty host breaks check_credentials'
+    // 'localhost', not '', when off - an empty host breaks check_credentials'
     // TCP fallback on systems where the local socket isn't detected.
     const host = existing ? dbHost.value : 'localhost'
     const port = existing ? Number(dbPort.value) || undefined : undefined

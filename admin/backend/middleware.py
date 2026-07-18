@@ -10,7 +10,7 @@ from flask import Flask, current_app, g, request
 from admin.backend.api.responses import error_response
 from admin.backend.api.routes import is_api_path
 from admin.backend.internal.rate_limiter import SlidingWindow
-from pilot.config import BenchTomlStore
+from pilot.config import BenchConfig
 
 _AUTH_POLICY = "_auth_policy"
 _SITE_SCOPE_RESOLVER = "_site_scope_resolver"
@@ -38,7 +38,7 @@ def get_auth_policy(view) -> AuthPolicy:
     return getattr(view, _AUTH_POLICY, AuthPolicy.AUTHENTICATED)
 
 
-def authenticate_request(config) -> bool:
+def is_request_authenticated(config) -> bool:
     authorization = request.headers.get("Authorization", "")
     token = authorization[7:] if authorization.startswith("Bearer ") else None
     token = token or request.cookies.get("sid")
@@ -107,14 +107,14 @@ def get_authorization_error(claims: dict | None, view, view_args: dict) -> str |
     return "Not authorized for this bench"
 
 
-def install_auth_guard(app: Flask, config_store: BenchTomlStore) -> None:
+def install_auth_guard(app: Flask, bench_root) -> None:
     @app.before_request
     def check_auth():
         g.jwt_claims = None
-        return _check_auth_request(app, config_store)
+        return _check_auth_request(app, bench_root)
 
 
-def _check_auth_request(app: Flask, config_store: BenchTomlStore):
+def _check_auth_request(app: Flask, bench_root):
     if not is_api_path(request.path):
         return None
 
@@ -126,7 +126,7 @@ def _check_auth_request(app: Flask, config_store: BenchTomlStore):
     if policy == AuthPolicy.OPEN:
         return None
 
-    config, response = _auth_config(config_store, policy)
+    config, response = _auth_config(bench_root, policy)
     if response is not None:
         return response
     if config is None:
@@ -140,12 +140,12 @@ def _check_auth_request(app: Flask, config_store: BenchTomlStore):
     return error_response("forbidden", error, 403) if error else None
 
 
-def _auth_config(config_store: BenchTomlStore, policy: AuthPolicy):
+def _auth_config(bench_root, policy: AuthPolicy):
     allowed_before_setup = policy == AuthPolicy.SETUP_CONDITIONAL
     try:
-        config = config_store.read()
+        config = BenchConfig.read(bench_root)
     except Exception:
-        if allowed_before_setup and not config_store.exists():
+        if allowed_before_setup and not BenchConfig.exists(bench_root):
             return None, None
         return None, error_response(
             "configuration_unavailable",
@@ -166,7 +166,7 @@ def _admin_session_response(config):
         return error_response(
             "session_unavailable", "No admin password is configured.", 503, {"enabled": False}
         )
-    if not authenticate_request(config):
+    if not is_request_authenticated(config):
         return error_response("authentication_required", "Authentication is required.", 401)
     return None
 

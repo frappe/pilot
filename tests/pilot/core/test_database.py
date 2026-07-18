@@ -1,4 +1,4 @@
-"""Tests for pilot.core.database — SQLite is tested live; MariaDB/PostgreSQL use mocks."""
+"""Tests for pilot.core.database - SQLite is tested live; MariaDB/PostgreSQL use mocks."""
 
 from __future__ import annotations
 

@@ -41,7 +41,7 @@ class ImportCheck:
             try:
                 paths.append(app.bench.app(name).path)
             except BenchError:
-                continue  # not installed — surfaces as an unresolved import instead
+                continue  # not installed - surfaces as an unresolved import instead
         return paths
 
     def _check_imports(self, app: "App") -> None:
@@ -54,7 +54,7 @@ class ImportCheck:
 
         reasons = self.tmp_env.resolve_modules(unresolved)
         if not reasons:
-            return  # find_spec disagrees with the stat check — nothing's actually missing
+            return  # find_spec disagrees with the stat check - nothing's actually missing
 
         lines = [
             f"{module}: {reason}\n    imported at: {', '.join(locations[module])}"
@@ -119,7 +119,7 @@ class ImportCheck:
     @staticmethod
     def _resolve_module(app: "App", path: Path, node: ast.ImportFrom) -> str:
         if node.level == 0:
-            # `from module import ...` — always has a module name (never bare).
+            # `from module import ...` - always has a module name (never bare).
             return typing.cast("str", node.module)
 
         parts = path.relative_to(app.path).with_suffix("").parts[:-1]

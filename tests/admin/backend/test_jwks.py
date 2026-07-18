@@ -151,20 +151,19 @@ def test_session_decode_skips_jwks_when_unconfigured() -> None:
 
 def _client(tmp_path: Path):
     from admin.backend.app import create_app
-    from pilot.config import BenchConfig, BenchTomlStore
-    from pilot.config.bench_toml_builder import BenchTomlBuilder
+    from pilot.config import BenchConfig
 
     bench_root = tmp_path / "benches" / "current"
     bench_root.mkdir(parents=True)
     toml_path = bench_root / "bench.toml"
     toml_path.write_text(
-        BenchTomlBuilder(bench_root.name, {"admin_enabled": True, "admin_password": "secret"}).render()
+        BenchConfig.from_flat(bench_root.name, {"admin_enabled": True, "admin_password": "secret"}).dumps()
     )
     config = BenchConfig.from_file(toml_path)
     config.admin.jwt_secret = "local-secret"
     config.admin.jwks_url = JWKS_URL
     config.admin.jwks_audience = AUDIENCE
-    BenchTomlStore(toml_path).write(config)
+    config.write(toml_path)
     (bench_root / "env" / "bin").mkdir(parents=True)
     (bench_root / "env" / "bin" / "python").touch()
     app = create_app(bench_root)

@@ -12,7 +12,6 @@ from pilot.config import (
     WorkerConfig,
     WorkerGroup,
 )
-from pilot.config.bench_toml_builder import BenchTomlBuilder
 from pilot.core.app import App, RevisionPin
 from pilot.core.bench import Bench
 from pilot.core.server import Server
@@ -45,7 +44,7 @@ def make_bench(tmp_path: Path) -> Bench:
 
 def _write_bench_toml(bench_dir: Path, name: str) -> None:
     bench_dir.mkdir(parents=True)
-    (bench_dir / "bench.toml").write_text(BenchTomlBuilder(name).render())
+    (bench_dir / "bench.toml").write_text(BenchConfig.from_flat(name).dumps())
 
 
 def test_bench_loads_from_path(tmp_path: Path) -> None:
@@ -137,7 +136,7 @@ def test_revision_pin_from_marketplace_target_commit() -> None:
 
 
 def test_revision_pin_from_marketplace_target_branch_is_none() -> None:
-    # A branch is not a fixed revision to pin to — no RevisionPin for it.
+    # A branch is not a fixed revision to pin to - no RevisionPin for it.
     assert RevisionPin.from_marketplace_target({"target_type": "branch", "target": "main"}) is None
 
 
@@ -203,7 +202,7 @@ def test_app_has_remote_update_false_without_tracked_branch(tmp_path: Path) -> N
     _init_git_repo(app.path)
     _commit(app.path, "c1")
 
-    # No configured remote at all — must not crash, and detached HEAD has
+    # No configured remote at all - must not crash, and detached HEAD has
     # no branch tip to compare against.
     assert app.has_remote_update() is False
 
@@ -234,7 +233,7 @@ def test_app_update_with_tag_target_checks_out_advertised_tag_not_latest(tmp_pat
     app = App(AppConfig(name="myapp", repo="r", branch=""), bench)
     _clone_at_tag(remote, app.path, "v1.0.0")
 
-    # Marketplace's next advertised pin is v2.0.0 — not the repo's true latest (v3.0.0).
+    # Marketplace's next advertised pin is v2.0.0 - not the repo's true latest (v3.0.0).
     app.update(pin=RevisionPin(kind="tag", ref="v2.0.0"))
 
     assert app.is_on_revision(RevisionPin(kind="tag", ref="v2.0.0")) is True
@@ -294,7 +293,7 @@ def test_app_has_marketplace_update_true_when_marketplace_tag_moved(
     monkeypatch.setattr("pilot.core.app.installed_app_version", lambda *_: "1.0.0")
     entry = {
         "repo": "https://github.com/frappe/myapp",
-        # Entries only ever advance — the tag for 1.0.0 has since moved.
+        # Entries only ever advance - the tag for 1.0.0 has since moved.
         "targets": [{"version": "1.0.0", "target_type": "tag", "target": "v1.0.0"}],
     }
 
@@ -624,7 +623,7 @@ def test_site_create_mariadb_when_bench_is_mariadb(tmp_path: Path, monkeypatch: 
     Site(SiteConfig(name="mdb.localhost", apps=["frappe"], admin_password="secret"), bench).create()
 
     cmd = captured["cmd"]
-    # mariadb is frappe's default engine — no --db-type flag is passed
+    # mariadb is frappe's default engine - no --db-type flag is passed
     assert "--db-type" not in cmd
     assert cmd[cmd.index("--db-root-username") + 1] == "root"
     assert "--db-host" in cmd
@@ -714,7 +713,7 @@ def test_site_migrate_without_skip_failing_omits_flag(
 def test_site_create_postgres_empty_password_uses_placeholder(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    bench = _postgres_bench(tmp_path, root_password="")  # trust/peer auth — no password
+    bench = _postgres_bench(tmp_path, root_password="")  # trust/peer auth - no password
     captured = _capture_site_cmd(monkeypatch)
 
     Site(SiteConfig(name="pg.localhost", apps=[], admin_password="secret"), bench).create()
@@ -726,9 +725,9 @@ def test_site_create_postgres_empty_password_uses_placeholder(
 
 def test_bench_db_root_args_postgres(tmp_path: Path) -> None:
     bench = _postgres_bench(tmp_path, root_password="pgpw")
-    assert bench.db_root_args() == ["--db-root-username", "postgres", "--db-root-password", "pgpw"]
+    assert bench.db_root_args == ["--db-root-username", "postgres", "--db-root-password", "pgpw"]
 
 
 def test_bench_db_root_args_mariadb(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
-    assert bench.db_root_args() == ["--db-root-username", "root", "--db-root-password", "root"]
+    assert bench.db_root_args == ["--db-root-username", "root", "--db-root-password", "root"]

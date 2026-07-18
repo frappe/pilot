@@ -38,7 +38,7 @@ class GenerateSessionCommand(Command):
 
 
 def _default_ttl() -> int:
-    # Discovery imports every command module, so this stays lazy — pilot.core
+    # Discovery imports every command module, so this stays lazy - pilot.core
     # must not load just to build --help.
     from admin.backend.auth import DEFAULT_TTL
 

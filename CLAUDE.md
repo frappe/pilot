@@ -41,8 +41,9 @@ These rules are mandatory for agents changing this repo:
 - Choose clean code over clever code.
 - Prefer explicit config over implicit behavior.
 - Prefer object-oriented code where it maps to the domain.
-- Keep functions small. Around 10 lines is a useful target, not a reason to split readable code blindly.
-- Keep files between 100 and 300 lines when practical.
+- Keep functions small. Around 25 lines is a useful target, not a reason to split readable code blindly.
+- Keep cyclomatic complexity <= 8
+- Keep files between 100 and 500 lines when practical.
 - Avoid crowded modules. If a folder grows too large, group related files into a subfolder instead of adding more same-prefix files.
 - Avoid abbreviations.
 - Use standard APIs and existing repo helpers before adding custom logic.

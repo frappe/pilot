@@ -25,7 +25,7 @@
             </div>
             <div class="hidden sm:flex items-center gap-1.5 mt-1 text-ink-gray-5 text-sm">
               <span class="size-3.5 lucide-box" />
-              {{ version || 'Version —' }}
+              {{ version || 'Version -' }}
             </div>
           </div>
         </div>

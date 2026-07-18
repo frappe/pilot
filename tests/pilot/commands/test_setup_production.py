@@ -11,7 +11,7 @@ from pilot.config import BenchConfig
 from pilot.core.bench import Bench
 from pilot.core.bench.setup import ProductionSetup
 from pilot.exceptions import BenchError
-from pilot.managers.letsencrypt import needs_letsencrypt
+from pilot.managers.letsencrypt import is_letsencrypt_required
 
 
 def _make_bench(
@@ -82,19 +82,19 @@ def test_check_admin_domain_grandfathers_existing_non_matching(tmp_path: Path, m
         cmd._check_admin_domain()
 
 
-def test_needs_letsencrypt(tmp_path: Path) -> None:
+def test_is_letsencrypt_required(tmp_path: Path) -> None:
     # Public admin domain + email → cert needed.
-    assert needs_letsencrypt(
+    assert is_letsencrypt_required(
         _make_bench(tmp_path, name="a", admin_domain="admin.example.com", email="x@y.com")
     )
     # No email → never.
-    assert not needs_letsencrypt(_make_bench(tmp_path, name="b", admin_domain="admin.example.com"))
+    assert not is_letsencrypt_required(_make_bench(tmp_path, name="b", admin_domain="admin.example.com"))
     # Local dev domain → not obtainable.
-    assert not needs_letsencrypt(
+    assert not is_letsencrypt_required(
         _make_bench(tmp_path, name="c", admin_domain="c-admin.localhost", email="x@y.com")
     )
     # TLS disabled (central proxy terminates TLS) → no admin cert needed.
-    assert not needs_letsencrypt(
+    assert not is_letsencrypt_required(
         _make_bench(tmp_path, name="d", admin_domain="admin.example.com", email="x@y.com", tls=False)
     )
 

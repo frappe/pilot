@@ -1,15 +1,15 @@
-"""Tests for BenchTomlBuilder port offsets."""
+"""Tests for BenchConfig.from_flat port offsets."""
 
 from __future__ import annotations
 
 import tomllib
 from pathlib import Path
 
-from pilot.config.bench_toml_builder import BenchTomlBuilder, current_port_offset, default_ports
+from pilot.config import BenchConfig
 
 
 def test_default_ports_returns_all_fields() -> None:
-    ports = default_ports()
+    ports = BenchConfig.default_ports()
     assert set(ports) == {
         "http_port",
         "socketio_port",
@@ -20,7 +20,7 @@ def test_default_ports_returns_all_fields() -> None:
 
 
 def test_default_ports_values_match_known_defaults() -> None:
-    ports = default_ports()
+    ports = BenchConfig.default_ports()
     assert ports["http_port"] == 8000
     assert ports["socketio_port"] == 9000
     assert ports["redis.cache_port"] == 13000
@@ -30,7 +30,7 @@ def test_default_ports_values_match_known_defaults() -> None:
 
 def _render(tmp_path: Path, settings: dict | None = None, port_offset: int = 0) -> dict:
     path = tmp_path / "bench.toml"
-    path.write_text(BenchTomlBuilder("my-bench", settings, port_offset=port_offset).render())
+    path.write_text(BenchConfig.from_flat("my-bench", settings, port_offset=port_offset).dumps())
     with open(path, "rb") as f:
         return tomllib.load(f)
 
@@ -62,18 +62,18 @@ def test_port_fields_not_settable_via_settings(tmp_path: Path) -> None:
 
 def test_current_port_offset_reads_http_port(tmp_path: Path) -> None:
     toml_path = tmp_path / "bench.toml"
-    toml_path.write_text(BenchTomlBuilder("my-bench", port_offset=3).render())
-    assert current_port_offset(toml_path) == 3
+    toml_path.write_text(BenchConfig.from_flat("my-bench", port_offset=3).dumps())
+    assert BenchConfig.current_port_offset(toml_path) == 3
 
 
 def test_current_port_offset_zero_when_file_missing(tmp_path: Path) -> None:
-    assert current_port_offset(tmp_path / "bench.toml") == 0
+    assert BenchConfig.current_port_offset(tmp_path / "bench.toml") == 0
 
 
 def test_current_port_offset_zero_when_file_invalid(tmp_path: Path) -> None:
     toml_path = tmp_path / "bench.toml"
     toml_path.write_text("not valid toml {{{")
-    assert current_port_offset(toml_path) == 0
+    assert BenchConfig.current_port_offset(toml_path) == 0
 
 
 def test_mariadb_host_and_existing_round_trip(tmp_path: Path) -> None:
@@ -83,9 +83,9 @@ def test_mariadb_host_and_existing_round_trip(tmp_path: Path) -> None:
         "mariadb_admin_user": "admin",
     }
     toml_path = tmp_path / "bench.toml"
-    toml_path.write_text(BenchTomlBuilder("my-bench", settings).render())
+    toml_path.write_text(BenchConfig.from_flat("my-bench", settings).dumps())
 
-    read_back = BenchTomlBuilder.read_settings(toml_path)
+    read_back = BenchConfig.read_flat(toml_path)
     assert read_back["mariadb_existing"] is True
     assert read_back["mariadb_host"] == "db.example.com"
 

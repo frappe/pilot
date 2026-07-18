@@ -93,7 +93,7 @@ const theme = EditorView.theme({
   },
   '.cm-line': { padding: '0 14px' },
   '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--ink-gray-8, #1e293b)' },
-  // No padding on .cm-gutters — CodeMirror positions gutter elements from the
+  // No padding on .cm-gutters - CodeMirror positions gutter elements from the
   // content line coordinates; adding padding here misaligns them.
   '.cm-gutters': {
     backgroundColor: 'var(--surface-gray-1, #f8fafc)',
@@ -133,8 +133,8 @@ const theme = EditorView.theme({
 
 // CodeMirror's basicSetup falls back to a fixed, non-theme-aware highlight
 // style (light-mode hex colors baked in, unchanged in dark mode). Registering
-// our own — keyed to the same --ink-* tokens as the rest of the editor theme
-// above — replaces that fallback and lets syntax colors flip with the app's
+// our own - keyed to the same --ink-* tokens as the rest of the editor theme
+// above - replaces that fallback and lets syntax colors flip with the app's
 // theme instead of staying stuck in light-mode hues on a dark background.
 const sqlHighlightStyle = HighlightStyle.define([
   { tag: [tags.keyword, tags.standard(tags.name)], color: 'var(--ink-blue-6, #2563eb)' },

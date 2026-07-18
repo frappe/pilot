@@ -97,7 +97,7 @@ class MariaDBManager(UserOwnedDBManager):
             return False
         if is_macos():
             # Homebrew owns the socket location here, not socket_path() (our
-            # own _STATE_DIR, only ever created for the Linux systemd unit) —
+            # own _STATE_DIR, only ever created for the Linux systemd unit) -
             # is_running() is the only signal we have.
             return True
         return Path(self.socket_path).exists()
@@ -119,7 +119,7 @@ class MariaDBManager(UserOwnedDBManager):
             return False
         return result.returncode == 0
 
-    def check_credentials(self, password: str | None = None) -> bool:
+    def has_valid_credentials(self, password: str | None = None) -> bool:
         """Check admin credentials using MYSQL_PWD, never argv."""
         pw = self.config.root_password if password is None else password
         cmd = [
@@ -150,7 +150,7 @@ class MariaDBManager(UserOwnedDBManager):
 
     def secure_installation(self) -> None:
         """Create/update the admin account and apply basic hardening."""
-        if self.check_credentials():
+        if self.has_valid_credentials():
             return
         # admin_user can come from setup wizard input; quote it like a value.
         user = self._sql_quote(self.config.admin_user)

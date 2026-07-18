@@ -59,7 +59,7 @@ class GitProvider(abc.ABC):
 
     # -- shared helpers --------------------------------------------------------
 
-    def owns(self, repo_url: str) -> bool:
+    def is_owner(self, repo_url: str) -> bool:
         return self.host in (repo_url or "")
 
     def _get_json(self, url: str, headers: dict):

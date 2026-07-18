@@ -171,7 +171,7 @@ async function loadLogs() {
   logsLoading.value = true
   logsError.value = ''
   try {
-    // Sort once here (most recently active first) — filteredLogs only needs to filter.
+    // Sort once here (most recently active first) - filteredLogs only needs to filter.
     logs.value = (await logsApi.list()).sort((a, b) => new Date(b.last_modified) - new Date(a.last_modified))
   } catch (caught) {
     logsError.value = caught.message || 'Failed to load logs'
@@ -195,12 +195,12 @@ const matchTotal = ref(0)
 let eventSource = null
 let lastTerm = ''
 
-// Below sm, the prev/next match controls are hidden (no room, no keyboard) —
+// Below sm, the prev/next match controls are hidden (no room, no keyboard) -
 // this intentionally shares the `sm` (640px) breakpoint with that template
 // class, so it stays in sync with when those controls are actually visible.
 const isMobile = useIsMobile()
 // Above md (768px) both panes show side by side, matching the `md:` classes
-// that switch the list/viewer layout — a separate breakpoint from isMobile above.
+// that switch the list/viewer layout - a separate breakpoint from isMobile above.
 const isSinglePane = useIsMobile(768)
 
 const isSearching = computed(() => search.value.trim().length > 0)
@@ -225,7 +225,7 @@ watch(visibleLines, () => nextTick(syncMatches))
 watch(linesCount, () => loadContent())
 
 function syncMatches() {
-  // Skip the DOM scan entirely when there's nothing to highlight — matters
+  // Skip the DOM scan entirely when there's nothing to highlight - matters
   // most during live tail, where visibleLines otherwise changes every line.
   if (!isSearching.value) {
     matchTotal.value = 0
@@ -256,7 +256,7 @@ function matchEls() {
   return viewer.value ? [...viewer.value.querySelectorAll('mark[data-mi]')] : []
 }
 
-// On mobile there's no way to act on an "active" match (see isMobile above) —
+// On mobile there's no way to act on an "active" match (see isMobile above) -
 // highlight everything the same instead of singling one out and auto-scrolling.
 function paintMatches(scroll) {
   if (isMobile.value) {
@@ -344,7 +344,7 @@ onMounted(async () => {
     loadContent()
   } else if (filteredLogs.value.length && !isSinglePane.value) {
     // Desktop shows both panes, so preselect the most recently active log. On
-    // mobile (< md) only one pane is visible at a time — leave the list showing instead.
+    // mobile (< md) only one pane is visible at a time - leave the list showing instead.
     selectedFile.value = filteredLogs.value[0].filename
   }
 })

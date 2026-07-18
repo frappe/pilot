@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from pilot.config import BenchConfig, BenchTomlStore
+from pilot.config import BenchConfig
 
 FIXTURES = Path(__file__).parent.parent.parent / "fixtures" / "bench_toml"
 
@@ -26,7 +26,7 @@ def test_representative_bench_toml_loads_and_round_trips(
 ) -> None:
     config = BenchConfig.from_file(FIXTURES / filename)
     round_trip_path = tmp_path / "bench.toml"
-    BenchTomlStore(round_trip_path).write(config)
+    config.write(round_trip_path)
 
     assert config.name == name
     assert config.db_type == db_type

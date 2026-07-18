@@ -10,7 +10,6 @@ from pilot.commands.admin.set_central_config import SetCentralConfigCommand
 from pilot.config import (
     AppConfig,
     BenchConfig,
-    BenchTomlStore,
     MariaDBConfig,
     RedisConfig,
     WorkerConfig,
@@ -34,7 +33,7 @@ def _bench(root: Path, name: str = "b1") -> Bench:
     )
     bench = Bench(config, bench_dir)
     bench.create_directories()
-    BenchTomlStore.for_bench(bench_dir).write(config)
+    config.write(bench_dir)
     return bench
 
 
@@ -45,11 +44,10 @@ def _write_common(bench: Bench, data: dict) -> Path:
 
 
 def _write_central(bench: Bench, endpoint: str, token: str) -> None:
-    store = BenchTomlStore.for_bench(bench.path)
-    config = store.read_raw()
+    config = BenchConfig.read_raw(bench.path)
     config["central"] = {"endpoint": endpoint, "auth_token": token}
-    store.write_raw(config)
-    bench.config = store.read()
+    BenchConfig.write_raw(bench.path, config)
+    bench.config = BenchConfig.read(bench.path)
 
 
 class _FakeResponse:
@@ -69,7 +67,7 @@ class _FakeResponse:
 def test_set_central_config_merges_into_bench_toml(tmp_path: Path) -> None:
     bench = _bench(tmp_path)
     SetCentralConfigCommand(bench, endpoint="https://central.test", token="tok-123").run()
-    config = BenchTomlStore.for_bench(bench.path).read_raw()
+    config = BenchConfig.read_raw(bench.path)
     assert config["central"]["endpoint"] == "https://central.test"
     assert config["central"]["auth_token"] == "tok-123"
     assert config["bench"]["name"] == "b1"  # untouched
@@ -167,11 +165,9 @@ def test_heartbeat_wraps_non_json_response(tmp_path: Path) -> None:
 def _app_client(bench_root: Path):
     from admin.backend.app import create_app
     from admin.backend.auth import ensure_jwt_secret, issue_token
-    from pilot.config.bench_toml_builder import BenchTomlBuilder
-
     bench_root.mkdir(parents=True, exist_ok=True)
     (bench_root / "bench.toml").write_text(
-        BenchTomlBuilder(bench_root.name, {"admin_enabled": True, "admin_password": "secret"}).render()
+        BenchConfig.from_flat(bench_root.name, {"admin_enabled": True, "admin_password": "secret"}).dumps()
     )
     secret = ensure_jwt_secret(bench_root / "bench.toml")
     app = create_app(bench_root)

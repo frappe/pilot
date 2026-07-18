@@ -265,7 +265,7 @@ class TaskProcess:
     ) -> bool:
         pid_descriptor = self._open_pid_descriptor(pid)
         try:
-            if not self._inspector.owns_pid(identity, pid):
+            if not self._inspector.has_pid(identity, pid):
                 return False
             if pid_descriptor is not None and hasattr(signal, "pidfd_send_signal"):
                 signal.pidfd_send_signal(pid_descriptor, signum)
