@@ -91,7 +91,7 @@ def test_generated_trusted_proxy_config_passes_nginx_t(tmp_path: Path, monkeypat
     NginxManager(bench).generate_config(ssl_ready=False)
 
     nginx_dir = bench.config_path / "nginx"
-    site_conf = (nginx_dir / "sites" / "site1.localhost.conf").read_text()
+    site_conf = (nginx_dir / "include.conf").read_text()
     for ip in _PROXIES:
         assert f"set_real_ip_from   {ip};" in site_conf
     assert "real_ip_header     X-Forwarded-For;" in site_conf

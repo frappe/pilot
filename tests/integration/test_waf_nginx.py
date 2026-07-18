@@ -63,7 +63,7 @@ def test_generated_waf_config_passes_nginx_t(tmp_path: Path) -> None:
     NginxManager(bench).generate_config(ssl_ready=False)
 
     nginx_dir = bench.config_path / "nginx"
-    site_conf = (nginx_dir / "sites" / "site1.localhost.conf").read_text()
+    site_conf = (nginx_dir / "include.conf").read_text()
     assert "modsecurity on;" in site_conf
 
     conf = _wrapper_conf(tmp_path, nginx_dir / "include.conf", WafManager.module_path())

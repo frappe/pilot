@@ -160,8 +160,8 @@ class Parser:
         elifs: list[tuple[str, list[Node]]] = []
         else_body: list[Node] = []
 
-        while self.current() is not None:
-            current_statement = self.statement(self.current())
+        while (token := self.current()) is not None:
+            current_statement = self.statement(token)
             keyword = self.keyword(current_statement)
 
             if keyword == "elif":

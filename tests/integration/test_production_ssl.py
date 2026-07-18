@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -203,6 +204,15 @@ def _nginx_conf_dir(bench_root: Path) -> Path:
     return bench_root / "config" / "nginx"
 
 
+def _vhost_blocks(bench_root: Path, server_name: str) -> str:
+    """This vhost's `server {}` block(s), pulled out of the combined include.conf."""
+    conf = (_nginx_conf_dir(bench_root) / "include.conf").read_text()
+    blocks = re.split(r"(?=^server \{)", conf, flags=re.MULTILINE)
+    matches = [b for b in blocks if f"server_name {server_name};" in b]
+    assert matches, f"no vhost for {server_name} in include.conf:\n{conf}"
+    return "\n".join(matches)
+
+
 def _bench_name(bench_root: Path) -> str:
     import tomllib
 
@@ -277,7 +287,7 @@ class TestProductionSSL:
         assert data["admin"]["enabled"] is True
 
     def test_site_nginx_has_http_redirect_and_https_blocks(self, production: Path) -> None:
-        conf = (_nginx_conf_dir(production) / "sites" / f"{SITE}.conf").read_text()
+        conf = _vhost_blocks(production, SITE)
 
         assert f"listen {HTTP_PORT};" in conf, conf
         assert "/.well-known/acme-challenge/" in conf
@@ -289,7 +299,7 @@ class TestProductionSSL:
         assert f"proxy_pass         http://bench-{_bench_name(production)};" in conf
 
     def test_admin_nginx_has_http_and_https_blocks(self, production: Path) -> None:
-        conf = (_nginx_conf_dir(production) / "sites" / "_admin.conf").read_text()
+        conf = _vhost_blocks(production, ADMIN_DOMAIN)
 
         assert f"server_name {ADMIN_DOMAIN};" in conf, conf
         assert f"listen {HTTP_PORT};" in conf
@@ -301,7 +311,7 @@ class TestProductionSSL:
 
     def test_socketio_proxy_configured(self, production: Path) -> None:
         # Realtime auth fails over HTTPS unless nginx rewrites Origin to $scheme://$http_host.
-        conf = (_nginx_conf_dir(production) / "sites" / f"{SITE}.conf").read_text()
+        conf = _vhost_blocks(production, SITE)
         assert "location /socket.io {" in conf, conf
         assert "proxy_set_header   Origin $scheme://$http_host;" in conf
 
@@ -350,7 +360,7 @@ class TestProductionSSL:
     def test_plain_site_vhost_has_no_ssl(self, production: Path) -> None:
         if not _site_dir(production, SITE_NO_SSL).is_dir():
             pytest.skip(f"{SITE_NO_SSL} not present in this bench")
-        conf = (_nginx_conf_dir(production) / "sites" / f"{SITE_NO_SSL}.conf").read_text()
+        conf = _vhost_blocks(production, SITE_NO_SSL)
         assert "ssl_certificate" not in conf, f"plain site got SSL config:\n{conf}"
         assert f"listen {HTTPS_PORT} ssl" not in conf, conf
         assert "return 301 https" not in conf, conf
@@ -400,9 +410,9 @@ class TestProductionSSL:
         assert _site_dir(production, RENAMED_SITE).exists()
         assert not _site_dir(production, SITE).exists()
 
-        sites_dir = _nginx_conf_dir(production) / "sites"
-        assert not (sites_dir / f"{SITE}.conf").exists(), "stale site vhost not pruned"
-        assert (sites_dir / f"{RENAMED_SITE}.conf").exists()
+        conf = (_nginx_conf_dir(production) / "include.conf").read_text()
+        assert f"server_name {SITE};" not in conf, "stale site vhost not pruned"
+        assert f"server_name {RENAMED_SITE};" in conf
 
         status, body = _request(RENAMED_SITE, "/api/method/frappe.ping")
         assert status == "200", f"renamed site frappe.ping returned {status}: {body!r}"
@@ -426,7 +436,7 @@ class TestProductionSSL:
         assert data["admin"]["domain"] == ADMIN_DOMAIN_2
         assert data["production"]["enabled"] is True
 
-        admin_conf = (_nginx_conf_dir(production) / "sites" / "_admin.conf").read_text()
+        admin_conf = (_nginx_conf_dir(production) / "include.conf").read_text()
         assert ADMIN_DOMAIN_2 in admin_conf
         status, body = _request(ADMIN_DOMAIN_2, "/api/v1/bootstrap")
         assert status == "200", f"new admin domain /api/v1/bootstrap returned {status}: {body!r}"
@@ -476,7 +486,7 @@ def http_only_production(bench_root: Path, bench_bin: str):
 
 class TestProductionNoTLS:
     def test_admin_vhost_is_http_only(self, http_only_production: Path) -> None:
-        conf = (_nginx_conf_dir(http_only_production) / "sites" / "_admin.conf").read_text()
+        conf = _vhost_blocks(http_only_production, ADMIN_DOMAIN)
         assert f"server_name {ADMIN_DOMAIN};" in conf, conf
         assert f"listen {HTTP_PORT};" in conf
         assert "ssl_certificate" not in conf, f"admin got TLS while admin.tls=false:\n{conf}"
