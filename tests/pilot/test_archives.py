@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from pilot.archive import (
+from pilot.utils import (
     ArchiveLimits,
     UnsafeArchiveError,
     extract_tar_archive,

@@ -18,7 +18,7 @@ def download_admin_frontend(cli_root: Path) -> bool:
     import urllib.error
     import urllib.request
 
-    from pilot.archive import extract_tar_archive
+    from pilot.utils import extract_tar_archive
 
     static_dir = cli_root / "admin" / "backend" / "static"
     with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp_file:

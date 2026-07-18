@@ -13,13 +13,13 @@ __all__ = [
 ]
 
 _EXPORTS = {
-    "Arg": ("pilot.tasks.task", "Arg"),
-    "Task": ("pilot.tasks.task", "Task"),
-    "step": ("pilot.tasks.task", "step"),
+    "Arg": ("pilot.tasks.base", "Arg"),
+    "Task": ("pilot.tasks.base", "Task"),
+    "step": ("pilot.tasks.base", "step"),
     "TaskCallback": ("pilot.tasks.callbacks", "TaskCallback"),
     "TaskCallbacks": ("pilot.tasks.callbacks", "TaskCallbacks"),
-    "TaskRunner": ("pilot.tasks.runner", "TaskRunner"),
-    "TaskSubmission": ("pilot.tasks.runner", "TaskSubmission"),
+    "TaskRunner": ("pilot.tasks.base", "TaskRunner"),
+    "TaskSubmission": ("pilot.tasks.base", "TaskSubmission"),
 }
 
 

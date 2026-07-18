@@ -43,7 +43,7 @@ pilot/
     │
     ├── commands/                # One self-registering Command dataclass per file
     │   ├── __init__.py
-    │   ├── command.py           # Command authoring API: Command, Arg
+    │   ├── base.py              # Command authoring API: Command, Arg
     │   ├── bench/                # new, init, ls, drop
     │   ├── sites/                 # new-site, list-site-apps, rename-site, ...
     │   ├── apps/                  # get-app, install-app, uninstall-app, ...
@@ -67,9 +67,8 @@ pilot/
     │
     ├── tasks/                   # Task definitions and public TaskRunner (see tasks.md)
     │   ├── __init__.py
-    │   ├── task.py              # Task authoring API: Task, step
+    │   ├── base.py              # Public task API: Task, step, TaskRunner
     │   ├── callbacks.py         # Public task submission callback types
-    │   ├── runner.py            # Public TaskRunner and TaskSubmission wrapper
     │   ├── migrate.py, build.py, new_site.py, ...
     │   └── setup_production.py, setup_nginx.py, ...
     │
@@ -534,7 +533,7 @@ argparse directly. The internal CLI adapter derives parser arguments from the
 command dataclass fields, so a command owns everything about itself in one file
 and adding one never touches parser plumbing.
 
-### `commands/command.py` — the `Command` base class
+### `commands/base.py` — the `Command` base class
 
 Declare a command as a `@dataclass(kw_only=True)` subclass of `Command`; each
 field becomes a CLI argument (positional if it has no default, `--flag` if it

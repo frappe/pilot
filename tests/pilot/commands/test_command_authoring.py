@@ -12,7 +12,7 @@ from pilot.internal.cli.command import add_command_arguments, command_from_args
 
 
 def test_arg_is_public_authoring_type() -> None:
-    assert Arg.__module__ == "pilot.commands.command"
+    assert Arg.__module__ == "pilot.commands.base"
 
 
 def test_command_public_api_does_not_expose_parser_plumbing() -> None:

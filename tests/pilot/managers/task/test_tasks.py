@@ -15,7 +15,7 @@ from pilot.managers.task.models import TaskStatus
 import pilot.internal.tasks.runner as task_runner_module
 from pilot.internal.tasks.store import TaskStore
 from pilot.internal.tasks.runner import TASK_RETENTION_LIMIT
-from pilot.managers.task.reader import TaskReader
+from pilot.managers.task.reader import TaskReader, collapse_cr
 from pilot.tasks import TaskRunner
 
 
@@ -504,48 +504,34 @@ def test_reader_returns_only_allowlisted_failure_message(tmp_path: Path) -> None
 
 
 def test_collapse_cr_no_cr() -> None:
-    from pilot.internal.tasks.output import collapse_cr
-
     assert collapse_cr("hello world") == "hello world"
 
 
 def test_collapse_cr_takes_last_segment() -> None:
-    from pilot.internal.tasks.output import collapse_cr
-
     assert collapse_cr("[50%]\r[60%]\r[70%]") == "[70%]"
 
 
 def test_collapse_cr_leading_cr() -> None:
-    from pilot.internal.tasks.output import collapse_cr
-
     assert collapse_cr("\rUpdating [93%]") == "Updating [93%]"
 
 
 def test_collapse_cr_trailing_cr_ignored() -> None:
-    from pilot.internal.tasks.output import collapse_cr
-
     assert collapse_cr("[100%]\r") == "[100%]"
 
 
 def test_collapse_cr_crlf_keeps_text() -> None:
     # dpkg/apt emit CRLF line endings without a TTY; the \r must not blank the
     # line out (this is what produced a wall of empty rows in the setup wizard).
-    from pilot.internal.tasks.output import collapse_cr
-
     assert collapse_cr("Unpacking package\r") == "Unpacking package"
 
 
 def test_collapse_cr_cleared_progress_padding() -> None:
     # apt clears a progress line by overwriting it with spaces after a \r; the
     # padding must collapse away to the last real segment, not leak spaces.
-    from pilot.internal.tasks.output import collapse_cr
-
     assert collapse_cr("Fetching\r        ") == "Fetching"
 
 
 def test_collapse_cr_all_whitespace_segments() -> None:
-    from pilot.internal.tasks.output import collapse_cr
-
     assert collapse_cr("   \r   ") == ""
 
 

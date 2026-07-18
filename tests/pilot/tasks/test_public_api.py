@@ -11,7 +11,7 @@ import pilot.tasks as tasks
 
 def test_task_authoring_api_is_public_on_tasks_package() -> None:
     assert tasks.Arg.__name__ == "Arg"
-    assert tasks.Arg.__module__ == "pilot.commands.command"
+    assert tasks.Arg.__module__ == "pilot.commands.base"
     assert tasks.Task.__name__ == "Task"
     assert callable(tasks.step)
 
@@ -24,7 +24,7 @@ def test_task_does_not_expose_subprocess_parser_plumbing() -> None:
 
 
 def test_task_module_does_not_expose_step_implementation() -> None:
-    import pilot.tasks.task as task_module
+    import pilot.tasks.base as task_module
 
     assert not hasattr(task_module, "Step")
     assert "_TaskStep" not in str(task_module.Task.step.__annotations__)
@@ -38,8 +38,8 @@ def test_task_submission_callback_types_are_public_on_tasks_package() -> None:
 
 
 def test_task_runner_types_are_public_on_tasks_package() -> None:
-    assert tasks.TaskRunner.__module__ == "pilot.tasks.runner"
-    assert tasks.TaskSubmission.__module__ == "pilot.tasks.runner"
+    assert tasks.TaskRunner.__module__ == "pilot.tasks.base"
+    assert tasks.TaskSubmission.__module__ == "pilot.tasks.base"
 
 
 def test_task_runner_does_not_forward_engine_internals(tmp_path) -> None:
@@ -53,10 +53,10 @@ def test_task_runner_does_not_forward_engine_internals(tmp_path) -> None:
 def test_importing_task_module_does_not_discover_task_modules() -> None:
     script = (
         "import json, sys; "
-        "import pilot.tasks.task; "
+        "import pilot.tasks.base; "
         "print(json.dumps(sorted("
         "name for name in sys.modules "
-        "if name.startswith('pilot.tasks.') and name != 'pilot.tasks.task'"
+        "if name.startswith('pilot.tasks.') and name != 'pilot.tasks.base'"
         ")))"
     )
 
@@ -94,23 +94,6 @@ def test_importing_tasks_package_does_not_load_runner_internals() -> None:
     )
 
     assert json.loads(result.stdout) == []
-
-
-def test_internal_runner_does_not_import_public_runner_wrapper() -> None:
-    script = (
-        "import json, sys; "
-        "import pilot.internal.tasks.runner; "
-        "print(json.dumps('pilot.tasks.runner' in sys.modules))"
-    )
-
-    result = subprocess.run(
-        [sys.executable, "-c", script],
-        check=True,
-        text=True,
-        capture_output=True,
-    )
-
-    assert json.loads(result.stdout) is False
 
 
 def test_task_registry_internals_are_not_public_on_tasks_package() -> None:

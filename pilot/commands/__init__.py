@@ -5,9 +5,9 @@ from importlib import import_module
 __all__ = ["Arg", "BenchMode", "Command"]
 
 _EXPORTS = {
-    "Arg": ("pilot.commands.command", "Arg"),
-    "BenchMode": ("pilot.commands.command", "BenchMode"),
-    "Command": ("pilot.commands.command", "Command"),
+    "Arg": ("pilot.commands.base", "Arg"),
+    "BenchMode": ("pilot.commands.base", "BenchMode"),
+    "Command": ("pilot.commands.base", "Command"),
 }
 
 

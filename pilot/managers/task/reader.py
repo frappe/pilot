@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from collections.abc import Generator
 from datetime import datetime
@@ -10,7 +11,6 @@ from typing import Literal, TypedDict
 
 from pilot.internal.tasks.args import redact_task_args
 from pilot.internal.tasks.files import TaskFiles
-from pilot.internal.tasks.output import display_line
 from pilot.internal.tasks.queue import TaskQueue
 from pilot.internal.tasks.state import parse_task_status, safe_task_failure
 from pilot.managers.task.models import (
@@ -20,6 +20,7 @@ from pilot.managers.task.models import (
 from pilot.utils import open_private
 
 _TASK_POLL_SECONDS = 0.5
+_SYSLOG_RE = re.compile(r"^<\d+>\d+ \S+ \S+ \S+ \S+ \S+ \S+ (.*)$")
 
 
 class OutputEvent(TypedDict):
@@ -68,6 +69,23 @@ def sse_message(event: TaskStreamEvent, event_id: int | None = None) -> str:
     prefix = f"id: {event_id}\n" if event_id is not None else ""
     payload = json.dumps(event, separators=(",", ":"))
     return f"{prefix}data: {payload}\n\n"
+
+
+def collapse_cr(line: str) -> str:
+    if "\r" not in line:
+        return line
+    parts = line.split("\r")
+    return next((part for part in reversed(parts) if part.strip()), "")
+
+
+def display_line(raw_line: str) -> str:
+    stripped = "\r".join(strip_syslog_envelope(segment) for segment in raw_line.split("\r"))
+    return collapse_cr(stripped)
+
+
+def strip_syslog_envelope(segment: str) -> str:
+    match = _SYSLOG_RE.match(segment)
+    return match.group(1) if match else segment
 
 
 class TaskReader:

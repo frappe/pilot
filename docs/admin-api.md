@@ -120,9 +120,8 @@ pilot/managers/task/             # Task status models, readers, activity, worker
 
 pilot/tasks/                     # Task definitions + public TaskRunner — see docs/tasks.md
 ├── __init__.py                  # Public task API; TaskRunner discovers jobs lazily
-├── task.py                      # Task authoring API: Task, step
+├── base.py                      # Public task API: Task, step, TaskRunner
 ├── callbacks.py                 # Public callback types for task submission
-├── runner.py                    # Public TaskRunner and TaskSubmission
 ├── migrate.py, build.py, ...
 └── new_site.py, setup_nginx.py, ...
 ```
