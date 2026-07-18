@@ -11,6 +11,9 @@ import LucideSquare from '~icons/lucide/square'
 import LucideRotateCw from '~icons/lucide/rotate-cw'
 import LucideLoader2 from '~icons/lucide/loader-2'
 import LucideTrash2 from '~icons/lucide/trash-2'
+import { useRouter } from 'vue-router'
+import { openTaskDetailPage } from '@/utils/taskRoute'
+import SetupProductionDialog from './SetupProductionDialog.vue'
 
 const props = defineProps({ modelValue: Boolean })
 const emit = defineEmits(['update:modelValue', 'new-bench'])
@@ -24,8 +27,16 @@ const { benches, loading, controlLoading, error: controlError, load: loadBenches
 const currentPort = window.location.port
 const currentHost = window.location.hostname
 
+const router = useRouter()
 const benchToDrop = ref(null)
 const dropping = ref(false)
+const showSetupProduction = ref(false)
+const setupProductionBenchName = ref('')
+
+function handleProductionSetupStarted(taskId) {
+  show.value = false
+  openTaskDetailPage(router, taskId)
+}
 
 const showDropConfirm = computed({
   get: () => !!benchToDrop.value,
@@ -124,6 +135,15 @@ function menuOptions(bench) {
     // Stopping the bench you're currently using would kill this very session.
     if (running !== false && !current)
       opts.push({ label: 'Stop', icon: LucideSquare, theme: 'red', onClick: () => controlBench(bench.name, 'stop') })
+  } else {
+    opts.push({
+      label: 'Setup Production',
+      icon: LucidePlay,
+      onClick: () => {
+        setupProductionBenchName.value = bench.name
+        showSetupProduction.value = true
+      }
+    })
   }
   // Only an empty bench can be dropped, and never the one you're using.
   if (!isCurrentBench(bench) && (bench.site_count ?? 0) === 0)
@@ -228,4 +248,10 @@ watch(show, (open) => {
       </div>
     </template>
   </Dialog>
+
+  <SetupProductionDialog
+    v-model="showSetupProduction"
+    :benchName="setupProductionBenchName"
+    @started="handleProductionSetupStarted"
+  />
 </template>

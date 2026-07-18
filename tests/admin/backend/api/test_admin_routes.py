@@ -71,19 +71,19 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         and not rule.rule.startswith(f"{API_V1_PREFIX}/")
     ]
 
-    assert len(routes) == 99
+    assert len(routes) == 107
     assert unversioned == []
-    assert len({(method, path) for method, path, _, _ in routes}) == 99
+    assert len({(method, path) for method, path, _, _ in routes}) == 107
     assert Counter(method for method, _, _, _ in routes) == {
         "DELETE": 10,
-        "GET": 50,
-        "PATCH": 4,
-        "POST": 32,
+        "GET": 53,
+        "PATCH": 5,
+        "POST": 36,
         "PUT": 3,
     }
     assert Counter(policy for _, _, _, policy in routes) == {
-        "authenticated": 53,
-        "authenticated+bench-management": 9,
+        "authenticated": 60,
+        "authenticated+bench-management": 10,
         "authenticated+site-scope": 26,
         "open": 5,
         "setup-conditional": 6,
@@ -94,7 +94,8 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         "app-updates": 1,
         "audit-events": 1,
         "bench-readiness-checks": 1,
-        "benches": 8,
+        "benches": 9,
+        "cloudflare": 7,
         "cli-update-checks": 1,
         "cli-updates": 1,
         "database": 3,
@@ -127,6 +128,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         ("POST", "/api/v1/benches/<name>/actions/start"),
         ("POST", "/api/v1/benches/<name>/actions/stop"),
         ("POST", "/api/v1/benches/<name>/actions/restart"),
+        ("POST", "/api/v1/benches/<name>/actions/setup-production"),
         ("GET", "/api/v1/benches/domain-options"),
         ("POST", "/api/v1/bench-readiness-checks"),
     } <= route_keys

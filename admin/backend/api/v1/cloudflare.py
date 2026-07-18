@@ -251,7 +251,9 @@ def get_site_expose_status(name: str):
         # Fetch current configuration from Cloudflare
         url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/cfd_tunnel/{tunnel_id}/configurations"
         res = manager._api_request(url, api_token)
-        ingress = res.get("result", {}).get("config", {}).get("ingress", [])
+        result = res.get("result") or {}
+        config_data = result.get("config") or {}
+        ingress = config_data.get("ingress") or []
         
         # Find any ingress rule that routes to the local bench webserver
         # (anything pointing to localhost/127.0.0.1 but NOT the admin port)
@@ -326,8 +328,9 @@ def toggle_site_expose(name: str):
         # 1. Fetch current ingress configuration
         url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/cfd_tunnel/{tunnel_id}/configurations"
         res = manager._api_request(url, api_token)
-        config_data = res.get("result", {}).get("config", {})
-        ingress = config_data.get("ingress", [])
+        result = res.get("result") or {}
+        config_data = result.get("config") or {}
+        ingress = config_data.get("ingress") or []
         
         # The ingress hostname to add/remove is the public domain, not the internal site name.
         # When removing, fall back to the public_domain provided by the caller.

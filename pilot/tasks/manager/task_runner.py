@@ -130,6 +130,19 @@ def _new_site_from_backup_argv(args: dict) -> list[str]:
     return argv
 
 
+def _setup_production_argv(args: dict) -> list[str]:
+    argv = []
+    if args.get("process_manager"):
+        argv += ["--process-manager", args["process_manager"]]
+    if args.get("admin_domain"):
+        argv += ["--admin-domain", args["admin_domain"]]
+    if args.get("tls"):
+        argv += ["--tls"]
+    if args.get("letsencrypt_email"):
+        argv += ["--letsencrypt-email", args["letsencrypt_email"]]
+    return argv
+
+
 # command -> (job module, function building the argv after bench_root)
 _ARGV_BUILDERS: dict[str, tuple[str, Callable[[dict], list[str]]]] = {
     "migrate": ("pilot.tasks.jobs.migrate_task", lambda args: [args["site"]]),
@@ -157,7 +170,7 @@ _ARGV_BUILDERS: dict[str, tuple[str, Callable[[dict], list[str]]]] = {
         lambda args: [args["name"], args["branch"]],
     ),
     "setup-nginx": ("pilot.tasks.jobs.setup_nginx_task", lambda args: []),
-    "setup-production": ("pilot.tasks.jobs.setup_production_task", lambda args: []),
+    "setup-production": ("pilot.tasks.jobs.setup_production_task", _setup_production_argv),
     "setup-letsencrypt": ("pilot.tasks.jobs.setup_letsencrypt_task", _setup_letsencrypt_argv),
     "wizard-setup": ("pilot.tasks.jobs.wizard_setup_task", lambda args: []),
     "new-site-from-backup": (

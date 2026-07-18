@@ -168,7 +168,7 @@ WantedBy=default.target
 
         # 3. Create Tunnel
         tunnel_secret = secrets.token_bytes(32)
-        tunnel_secret_b64 = base64.b64encode(tunnel_secret).decode("utf-8").replace("=", "")
+        tunnel_secret_b64 = base64.b64encode(tunnel_secret).decode("utf-8")
         
         create_res = self._api_request(
             f"https://api.cloudflare.com/client/v4/accounts/{account_id}/tunnels",
@@ -182,19 +182,38 @@ WantedBy=default.target
         )
         tunnel_id = create_res["result"]["id"]
 
-        # 4. Generate CNAME CName record mapping host to <tunnel_id>.cfargotunnel.com
-        self._api_request(
-            f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records",
-            api_token,
-            method="POST",
-            body={
-                "type": "CNAME",
-                "name": hostname,
-                "content": f"{tunnel_id}.cfargotunnel.com",
-                "ttl": 1,
-                "proxied": True
-            }
+        # 4. Generate CNAME record mapping host to <tunnel_id>.cfargotunnel.com
+        records_res = self._api_request(
+            f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records?name={hostname}",
+            api_token
         )
+        if records_res.get("result"):
+            record_id = records_res["result"][0]["id"]
+            self._api_request(
+                f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{record_id}",
+                api_token,
+                method="PUT",
+                body={
+                    "type": "CNAME",
+                    "name": hostname,
+                    "content": f"{tunnel_id}.cfargotunnel.com",
+                    "ttl": 1,
+                    "proxied": True
+                }
+            )
+        else:
+            self._api_request(
+                f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records",
+                api_token,
+                method="POST",
+                body={
+                    "type": "CNAME",
+                    "name": hostname,
+                    "content": f"{tunnel_id}.cfargotunnel.com",
+                    "ttl": 1,
+                    "proxied": True
+                }
+            )
 
         # 5. Generate Tunnel Token
         token_data = {
@@ -229,8 +248,9 @@ WantedBy=default.target
         # 1. Fetch current ingress configuration
         url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/cfd_tunnel/{tunnel_id}/configurations"
         res = self._api_request(url, api_token)
-        config_data = res.get("result", {}).get("config", {})
-        ingress = config_data.get("ingress", [])
+        result = res.get("result") or {}
+        config_data = result.get("config") or {}
+        ingress = config_data.get("ingress") or []
 
         # Filter out existing rule for this hostname if it exists
         ingress = [r for r in ingress if r.get("hostname") != hostname]

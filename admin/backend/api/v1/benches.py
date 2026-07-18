@@ -16,7 +16,8 @@ from pilot.internal.atomic_file import exclusive_file_lock
 from pilot.loader import cli_root
 from pilot.managers.processes.local import ProcessManager
 
-from admin.backend.api.responses import created_response, error_response, no_content_response
+from admin.backend.api.responses import accepted_task_response, created_response, error_response, no_content_response
+from pilot.tasks.jobs.setup_production_task import SetupProductionTask
 
 benches_bp = Blueprint("benches", __name__)
 bench_readiness_bp = Blueprint("bench-readiness", __name__)
@@ -154,6 +155,57 @@ def stop_bench(name: str):
 @benches_bp.post("/<name>/actions/restart")
 def restart_bench(name: str):
     return _run_action(name, "restart")
+
+
+@benches_bp.post("/<name>/actions/setup-production")
+def setup_production_bench(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    if not _NAME_RE.fullmatch(name):
+        return error_response("invalid_bench_name", "Invalid bench name.", 422)
+
+    try:
+        target_dir = _target_bench_dir(bench_root, name)
+    except ValueError:
+        return error_response("bench_not_found", f"Bench '{name}' not found.", 404)
+    toml_path = target_dir / "bench.toml"
+    if not toml_path.exists():
+        return error_response("bench_not_found", f"Bench '{name}' not found.", 404)
+
+    data = request.get_json(silent=True) or {}
+    process_manager = data.get("process_manager")
+    admin_domain = data.get("admin_domain")
+    tls = data.get("tls")
+    letsencrypt_email = data.get("letsencrypt_email")
+
+    if not admin_domain:
+        return error_response("admin_domain_required", "Admin domain is required.", 422)
+
+    from pilot.managers.platform import has_passwordless_sudo
+    if not has_passwordless_sudo():
+        return error_response(
+            "privileged_operation_unavailable",
+            "Production setup requires non-interactive system privileges.",
+            409,
+        )
+
+    try:
+        with (
+            exclusive_file_lock(_bench_management_lock_target(bench_root), blocking=False),
+            exclusive_file_lock(_bench_lock_target(bench_root, name), blocking=False),
+        ):
+            bench = Bench(target_dir)
+            task_id = SetupProductionTask.queue(
+                bench,
+                process_manager=process_manager,
+                admin_domain=admin_domain,
+                tls=tls,
+                letsencrypt_email=letsencrypt_email,
+            )
+            return accepted_task_response(target_dir, task_id)
+    except BlockingIOError:
+        return _bench_busy_response(name)
+    except Exception as exc:
+        return error_response("setup_production_failed", str(exc), 500)
 
 
 def _run_action(name: str, action: str):
