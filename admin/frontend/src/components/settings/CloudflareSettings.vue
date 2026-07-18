@@ -61,12 +61,12 @@
         <!-- Setup Type Selector -->
         <div class="flex gap-4 border-b border-outline-gray-2 pb-4">
           <label class="flex items-center gap-2 cursor-pointer text-sm font-medium text-ink-gray-7">
-            <input type="radio" value="create" v-model="setupType" class="text-indigo-600 focus:ring-indigo-500" />
-            Create New Tunnel
-          </label>
-          <label class="flex items-center gap-2 cursor-pointer text-sm font-medium text-ink-gray-7">
             <input type="radio" value="sso" v-model="setupType" class="text-indigo-600 focus:ring-indigo-500" />
             SSO / CLI Login
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer text-sm font-medium text-ink-gray-7">
+            <input type="radio" value="create" v-model="setupType" class="text-indigo-600 focus:ring-indigo-500" />
+            Create New Tunnel
           </label>
           <label class="flex items-center gap-2 cursor-pointer text-sm font-medium text-ink-gray-7">
             <input type="radio" value="existing" v-model="setupType" class="text-indigo-600 focus:ring-indigo-500" />
@@ -305,7 +305,7 @@ const saving = ref(false)
 const actionLoading = ref(false)
 const deleting = ref(false)
 const error = ref(null)
-const setupType = ref('create')
+const setupType = ref('sso')
 
 const statusData = ref({
   status: 'Not Installed',
