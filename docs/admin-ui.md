@@ -4,9 +4,29 @@ The Admin UI is the browser surface for benches, sites, apps, tasks, logs, and s
 
 ## Layout
 
-The React app lives under `admin/frontend`. Backend API routes live under `admin/backend/api/v1`.
+The Vue app lives under `admin/frontend`. Backend API routes live under `admin/backend/api/v1`.
 
-Keep UI code organized by feature area when it grows: benches, sites, apps, tasks, logs, settings, setup, and shared API/client utilities.
+Keep UI code organized by feature area: benches, sites, apps, tasks, logs, settings, setup, and shared utilities.
+
+Frontend source structure:
+
+```text
+admin/frontend/src/
+  api/          endpoint wrappers and API URL/error helpers
+  composables/  reusable state, loading, polling, stream, and workflow logic
+  components/   reusable UI pieces grouped by feature
+  pages/        route-level screens that compose components and composables
+  layouts/      shared page chrome
+  utils/        pure formatting and browser helpers
+```
+
+Pages should stay thin. Put fetch/mutate state in composables, HTTP details in `api`, and repeated UI in components.
+
+## Components
+
+Use Frappe UI by default. Think carefully before writing custom controls, overlays, menus, tables, inputs, dialogs, toasts, loading states, or empty states.
+
+Custom UI is acceptable when Frappe UI does not provide the behavior, but keep it small and reusable. Prefer wrapping Frappe UI components over rebuilding interaction and accessibility from scratch.
 
 ## Data Flow
 
