@@ -460,18 +460,17 @@ def get_site_expose_status(name: str):
 
     tunnel_configured = bool(config.cloudflare.tunnel_token)
     api_token_configured = bool(config.cloudflare.api_token)
+    cert_configured = (Path.home() / ".cloudflared" / "cert.pem").exists()
 
-    if not tunnel_configured or not api_token_configured:
+    if not tunnel_configured or (not api_token_configured and not cert_configured):
         return jsonify({
             "exposed": False,
             "tunnel_configured": tunnel_configured,
-            "api_token_configured": api_token_configured
+            "api_token_configured": api_token_configured,
+            "cert_configured": cert_configured
         })
 
     try:
-        import base64
-        import json
-        
         decrypted_token = decrypt(config.cloudflare.tunnel_token)
         decrypted_token = "".join(decrypted_token.split())
         padding = len(decrypted_token) % 4
@@ -482,45 +481,54 @@ def get_site_expose_status(name: str):
         
         account_id = token_data["a"]
         tunnel_id = token_data["t"]
-        api_token = decrypt(config.cloudflare.api_token)
-        api_token = "".join(api_token.split())
         
         bench = Bench(config, bench_root)
         manager = CloudflareTunnelManager(bench)
-        
-        # Fetch current configuration from Cloudflare
-        url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/cfd_tunnel/{tunnel_id}/configurations"
-        res = manager._api_request(url, api_token)
-        result = res.get("result") or {}
-        config_data = result.get("config") or {}
-        ingress = config_data.get("ingress") or []
-        
-        # Find any ingress rule that routes to the local bench webserver
-        # (anything pointing to localhost/127.0.0.1 but NOT the admin port)
         admin_port = config.admin.internal_port
         exposed_domain = None
-        for rule in ingress:
-            svc = rule.get("service", "")
-            hostname = rule.get("hostname", "")
-            if not hostname:
-                continue
-            # Check if this rule points to the bench web port (not admin)
-            if ("localhost" in svc or "127.0.0.1" in svc) and f":{admin_port}" not in svc:
-                # Match by site name stored in rule metadata or by checking site_config domains
-                meta_site = rule.get("originRequest", {}).get("httpHostHeader", "")
-                if meta_site == name or hostname == name:
+
+        if api_token_configured:
+            # API-based: fetch ingress from Cloudflare API
+            api_token = decrypt(config.cloudflare.api_token)
+            api_token = "".join(api_token.split())
+            url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/cfd_tunnel/{tunnel_id}/configurations"
+            res = manager._api_request(url, api_token)
+            result = res.get("result") or {}
+            config_data = result.get("config") or {}
+            ingress = config_data.get("ingress") or []
+            
+            for rule in ingress:
+                svc = rule.get("service", "")
+                hostname = rule.get("hostname", "")
+                if not hostname:
+                    continue
+                if ("localhost" in svc or "127.0.0.1" in svc) and f":{admin_port}" not in svc:
+                    meta_site = rule.get("originRequest", {}).get("httpHostHeader", "")
+                    if meta_site == name or hostname == name:
+                        exposed_domain = hostname
+                        break
+                if rule.get("originRequest", {}).get("_pilot_site") == name:
                     exposed_domain = hostname
                     break
-            # Also match if the hostname is explicitly tagged for this site
-            if rule.get("originRequest", {}).get("_pilot_site") == name:
-                exposed_domain = hostname
-                break
+        else:
+            # Cert-based: read ingress from local config file
+            config_path = Path.home() / ".cloudflared" / f"{config.bench.name}-config.yml"
+            if config_path.exists():
+                content = config_path.read_text(encoding="utf-8")
+                # Simple parse: look for hostname lines
+                import re
+                for m in re.finditer(r'hostname:\s*(\S+)', content):
+                    h = m.group(1)
+                    if h == name:
+                        exposed_domain = h
+                        break
         
         return jsonify({
             "exposed": exposed_domain is not None,
             "domain": exposed_domain or "",
             "tunnel_configured": True,
-            "api_token_configured": True
+            "api_token_configured": api_token_configured,
+            "cert_configured": cert_configured
         })
     except Exception as e:
         return error_response("check_failed", f"Failed to fetch tunnel configuration: {e}", 500)

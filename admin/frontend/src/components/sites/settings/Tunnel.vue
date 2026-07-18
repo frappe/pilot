@@ -16,12 +16,12 @@
         </div>
       </div>
       
-      <!-- State 2: Tunnel configured but API Token missing -->
-      <div v-else-if="!apiTokenConfigured" class="flex items-center gap-3 text-sm text-ink-gray-6">
+      <!-- State 2: Tunnel configured but no API Token and no cert -->
+      <div v-else-if="!apiTokenConfigured && !certConfigured" class="flex items-center gap-3 text-sm text-ink-gray-6">
         <span class="size-5 text-ink-orange-6 lucide-alert-triangle" />
         <div>
           <p class="font-medium text-ink-gray-8">Cloudflare API Token is missing</p>
-          <p class="mt-0.5 text-xs">A Cloudflare API Token is required to automatically create DNS records and manage routing for new sites. Please save your API Token in the <span @click="openCloudflareSettings" class="text-indigo-600 hover:underline cursor-pointer">Deployment</span> configurations page.</p>
+          <p class="mt-0.5 text-xs">A Cloudflare API Token or SSO certificate is required to manage routing for new sites. Please configure in the <span @click="openCloudflareSettings" class="text-indigo-600 hover:underline cursor-pointer">Deployment</span> configurations page.</p>
         </div>
       </div>
 
@@ -99,6 +99,7 @@ const loading = ref(true)
 const toggling = ref(false)
 const tunnelConfigured = ref(false)
 const apiTokenConfigured = ref(false)
+const certConfigured = ref(false)
 const isExposed = ref(false)
 const exposedDomain = ref('')
 
@@ -114,6 +115,7 @@ async function fetchStatus() {
     } else {
       tunnelConfigured.value = res.tunnel_configured
       apiTokenConfigured.value = res.api_token_configured
+      certConfigured.value = res.cert_configured || false
       isExposed.value = res.exposed
       exposedDomain.value = res.domain || ''
     }
