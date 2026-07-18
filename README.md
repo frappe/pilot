@@ -1,183 +1,103 @@
-# Pilot
+<p align="center">
+  <img src=".github/assets/pilot-logo.svg" alt="Pilot" height="72">
+</p>
 
-[![Unit Tests](https://github.com/frappe/pilot/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/frappe/pilot/actions/workflows/unit-tests.yml)
+<h1 align="center">Pilot</h1>
 
-A zero-dependency CLI for managing [Frappe](https://frappeframework.com) environments with Admin UI. Single `bench.toml`. No Docker.
+<p align="center">
+  <strong>Manage Frappe benches and sites on any server</strong>
+</p>
 
-![Apps](docs/screenshots/apps.png)
+<p align="center">
+  <img src="https://img.shields.io/badge/python-%3E=_3.11-green.svg" alt="Python >= 3.11">
+  <a href="https://github.com/frappe/pilot/actions/workflows/unit-tests.yml">
+    <img src="https://github.com/frappe/pilot/actions/workflows/unit-tests.yml/badge.svg" alt="Tests">
+  </a>
+  <img src="https://img.shields.io/badge/platform-linux%20%7C%20macos-blue" alt="Platform: Linux and macOS">
+</p>
 
-## Improvements from legacy bench
+Pilot makes it simple to run Frappe on your own servers. Use the Admin UI to manage apps, sites, processes, backups, domains, and production setup, with a CLI for automation.
 
-| | Legacy | Pilot |
-|---|---|---|
-| Dependencies | ~20 Python packages | Zero — stdlib only |
-| Marketplace | None | App registry `registry/apps.json` |
-| Config | None | Single `bench.toml` |
-| Folder layout | Wherever you `bench init` | All benches under `pilot/benches/` |
-| Process manager | Honcho / Supervisor | Built-in Procfile runner |
-| Python env | pip + virtualenv | [uv](https://github.com/astral-sh/uv) (auto-installed) |
-| Admin UI | None | Built-in — app status, sites, logs, task runner, process memory/CPU, live settings |
-| Storage | Root filesystem only dedicated disk **or** disk image — no spare disk needed with per-dataset snapshots |
+![Apps](.github/assets/pilot.png)
+
+## Key Features
+
+- Bench and site lifecycle: create, update, rename, restore, back up, and drop
+- Integrated marketplace to install apps on sites from Git repositories or the app registry
+- Local development runner for Redis, web, workers, socket.io, and Admin UI
+- Production setup for process managers, nginx, monitoring, domains, and TLS
+- Devtools for investigation: SQL playground, database analyzer, binlog browser, logs, and task history
 
 ## Requirements
 
-**Debian 12+ / Ubuntu 22.04+** — Python 3.11+ (install.sh needs `sudo` only as a fallback if base
-tools are missing and you're not root; not required day-to-day)  
-**Fedora 40+** — dnf + systemd; redis is provided by valkey  
-**Arch Linux** — pacman + systemd; redis is provided by valkey  
-**macOS** — Python 3.11+, [Homebrew](https://brew.sh) (dev only — no `sudo` setup)
+- Debian 12+, Ubuntu 22.04+, Fedora 40+, Arch Linux, or macOS with Homebrew for local development
+- Python 3.11+
 
-Derivatives that set `ID_LIKE` in `/etc/os-release` (Linux Mint, EndeavourOS, …)
-are detected as their parent distro.
+## Installation
 
-## Install
-
-Run this directly as yourself — **do not prefix it with `sudo`**:
+Run the installer as your normal user:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/frappe/pilot/main/install.sh | bash
 ```
 
-The script escalates on its own only where it actually needs to (installing
-system packages); it never expects to be invoked as `sudo install.sh`. The one
-exception is a genuinely root shell — e.g. logging into a fresh VPS as `root`
-— which install.sh detects and handles by creating a non-root bench user for
-you (see "Running as root" below).
+On a root-only VPS, run it as root; the installer creates a non-root bench user.
 
-On a bare box (no curl/bash preinstalled — e.g. a fresh distro
-container) bootstrap with `wget` + `sh` instead — the installer uses the
-distro's package manager to install git, curl, bash, sudo and the build deps
-itself:
+## Basic Usage
 
-```sh
-wget -qO- https://raw.githubusercontent.com/frappe/pilot/main/install.sh | sh
-```
-
-This single command:
-
-- Clones pilot to `~/pilot` and adds `bench` to your `PATH`
-- Installs the MariaDB/PostgreSQL server packages, [`uv`](https://github.com/astral-sh/uv) and
-  Node.js system-wide if missing
-- Creates the isolated admin environment (`.admin-venv`) used by the setup wizard and admin UI
-
-None of this needs standing sudo access for your day-to-day bench user — every privileged step
-runs once, up front, as root (see below).
-
-### Running as root (fresh VPS)
-
-bench is never meant to run as root. If you launch the installer as **root** — common on a
-freshly provisioned VPS where `root` is the only account — it will:
-
-1. Create (or reuse) a non-root user — `frappe` by default, or whatever you choose
-2. Install every system-wide dependency (database engines, Node.js, base build tools) so the
-   bench user never has to
-3. Ask you to switch to that user and re-run the installer, which then just clones the repo and
-   sets up the admin environment — no `sudo` involved
-
-### Nothing installed yet?
-
-install.sh is designed to work on a bare box — no git, curl, Python, or even
-`sudo` required beforehand. What happens next depends on who's running it:
-
-- **You're root** (fresh VPS, only `root` exists): no prompt, ever. Every
-  package-manager call install.sh makes runs directly, without `sudo`, and is
-  already flagged non-interactive (`dnf -y`, `pacman --noconfirm`,
-  `DEBIAN_FRONTEND=noninteractive apt-get`, `apk`). Git, curl, bash, Python,
-  build tools, MariaDB/PostgreSQL and Node all get installed silently no
-  matter how empty the image is.
-- **You're a normal user and `sudo` itself is missing too**: still no prompt.
-  install.sh can't install packages without some way to gain privileges, so it
-  fails fast with an explicit message telling you to re-run the installer as
-  root first, then switch to your bench user afterward.
-- **You're a normal user with `sudo` already installed**, but git/curl/Python/
-  etc. are missing: this is the one case that does prompt — the OS's own
-  native `sudo` password prompt (install.sh has no password-reading logic of
-  its own). In a real terminal this just works as usual. For unattended/CI
-  runs with no cached credential, supply the password up front instead of
-  hitting that prompt:
-
-  ```bash
-  curl -fsSL https://raw.githubusercontent.com/frappe/pilot/main/install.sh | bash -s -- --sudo-password <password>
-  # or: export SUDO_PASS=<password>
-  ```
-
-### Non-interactive install
-
-Pass flags after `--`, or set the matching environment variables, to skip prompts:
-
-| Flag | Env var | Default | Purpose |
-|------|---------|---------|---------|
-| `--user <name>` | `BENCH_USER` | `frappe` | Non-root user to create/use when run as root |
-| `--sudo-password <pw>` | `SUDO_PASS` | none | Answers the native `sudo` prompt for you — only relevant if you're not root and base tools are missing (see "Nothing installed yet?" above) |
+Create a bench and launch the setup wizard:
 
 ```bash
-# Unattended, as root: create/use user "frappe" and finish silently
-curl -fsSL https://raw.githubusercontent.com/frappe/pilot/main/install.sh | bash -s -- --user frappe
+bench new main
+bench -b main start
 ```
 
-### Manual install
+The first `start` opens the Admin setup wizard at `http://localhost:8002`. The wizard asks for the Admin password, database settings, and Frappe source settings, then initializes the bench with live task progress.
+
+Manual setup:
 
 ```bash
-git clone https://github.com/frappe/pilot ~/pilot
-echo 'export PATH="$HOME/pilot:$PATH"' >> ~/.zshrc && source ~/.zshrc
+bench new main
+$EDITOR benches/main/bench.toml
+bench -b main init
+bench -b main get-app https://github.com/frappe/erpnext --branch version-16
+bench -b main new-site site1.localhost
+bench -b main start
 ```
 
-If you install manually, install MariaDB/PostgreSQL, Node.js and `uv` yourself first — the
-one-line installer otherwise handles all of that for you.
+After start:
 
-### sudo access
-
-bench itself never requires standing passwordless sudo. It's only needed for the handful of
-production operations that manage system state on your behalf (`bench setup production` writing
-nginx config and `/etc/hosts` entries, for example) — those prompt for a password interactively
-like any other `sudo` command, or you can grant your user passwordless sudo yourself if you want
-those to run unattended:
-
-```bash
-echo "$(whoami) ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/$(whoami)
-sudo chmod 0440 /etc/sudoers.d/$(whoami)
-```
-
-## Set up your first bench
-
-After installing, you have two ways to configure and initialize a bench.
-
-### Guided setup (recommended)
-
-```bash
-bench new my-bench       # scaffold a bench
-bench start              # not yet initialized → launches the setup wizard
-```
-
-`bench start` detects that the bench isn't initialized and opens a browser-based wizard at
-`http://localhost:8002`. The wizard walks you through three steps:
-
-1. **Admin password** — password for the bench admin UI
-2. **Database** — choose between a dedicated MariaDB instance (default, recommended) or the shared system MariaDB; set the MariaDB root user (default `root`) and password
-3. **Customize** — Frappe branch/repo
-
-It then runs the full initialization with a live progress view.
-
-### Manual setup
-
-```bash
-bench new my-bench                      # creates bench.toml
-$EDITOR benches/my-bench/bench.toml     # set admin password, MariaDB root password (and admin_user if not root)
-bench init -b my-bench                  # installs deps, creates venv, clones frappe, generates Procfile
-bench get-app https://github.com/frappe/erpnext --branch version-16
-bench new-site site1.localhost
-bench start                             # starts web, workers, Redis, and admin UI
-```
-
-- App: `http://site1.localhost:8000`
+- Site: `http://site1.localhost:8000`
 - Admin UI: `http://localhost:8002`
 
-## bench.toml
+Common commands:
+
+| Command | Purpose |
+|---|---|
+| `bench new <name>` | Create a bench and `bench.toml` |
+| `bench ls` | List benches, status, production state, and Admin URL |
+| `bench -b <name> init` | Initialize a bench from `bench.toml` |
+| `bench -b <name> start` | Start development processes |
+| `bench -b <name> stop` | Stop development processes |
+| `bench -b <name> get-app <repo>` | Clone and install an app |
+| `bench -b <name> new-site <site>` | Create a site |
+| `bench -b <name> update` | Pull apps, install deps, build assets, and migrate sites |
+| `bench -b <name> setup production` | Configure process manager, nginx, Admin domain, and optional TLS |
+| `bench -b <name> restart` | Restart production processes |
+| `bench -b <name> remove production` | Remove production deployment files and services |
+
+For the full command list, see [Commands](docs/commands.md).
+
+## Configuration
+
+Each bench has one `bench.toml`. It is the source of truth for apps, database, Redis, workers, production, nginx, gunicorn, Let's Encrypt, Admin, firewall, WAF, S3, and monitoring settings.
+
+Minimal shape:
 
 ```toml
 [bench]
-name = "my-bench"
-python = "3.14"
+name = "main"
+python = "3.11"
 
 [[apps]]
 name = "frappe"
@@ -187,10 +107,11 @@ branch = "version-16"
 [mariadb]
 host = "localhost"
 port = 3306
-root_password = "your_root_password"
+root_password = "your-root-password"
 
 [redis]
-port = 13000
+cache_port = 13000
+queue_port = 11000
 
 [[workers]]
 queues = ["default", "short", "long"]
@@ -198,59 +119,57 @@ count = 1
 
 [admin]
 port = 8002
-password = "your-admin-password"   # required — admin refuses to start without this
-jwt_secret = "..."                 # auto-generated — signs admin session tokens (don't set by hand)
-jwks_url = ""                      # optional — trust session tokens from a remote issuer publishing keys here
-domain = "admin.example.com"       # optional — serve admin behind this domain via nginx
-tls = false                        # server-wide HTTPS opt-in (Let's Encrypt); false = plain HTTP
-
-[production]
-enabled = true                     # set by `bench setup production`
-process_manager = "supervisor"     # systemd | supervisor
-use_companion_manager = false      # run scheduler/workers/socketio inside gunicorn
-
-[gunicorn]
-workers = 4
-threads = 4                          # threads per worker (used by gthread)
-timeout = 120
-malloc_arena_max = 2                 # cap glibc malloc arenas to reduce RSS; 0 = unset
-max_requests = 0                     # recycle the web worker after N requests to release heap; 0 = disabled
-max_requests_jitter = 0              # random +/- spread on max_requests so workers don't all recycle at once
+password = "your-admin-password"
+domain = ""
+tls = false
 ```
 
-Apps and sites are tracked by the filesystem — no need to list them in `bench.toml`.
+Apps and sites also exist on disk under the bench. See [Configuration](docs/configuration.md) for every config section.
 
-## Commands
+## Production
 
-| Command | What it does |
-|---------|-------------|
-| `bench new <name>` | Scaffold a new bench |
-| `bench ls` | List all benches with status, production state, and admin URL |
-| `bench init -b <name>` | Install deps, create venv, clone framework, generate Procfile (needs `-b <name>` or run inside the bench dir) |
-| `bench start` | Start all processes (web, workers, Redis, admin UI) |
-| `bench stop` | Stop a running bench from another terminal |
-| `bench restart` | Restart all processes — supervisor or systemd (production only) |
-| `bench get-app <repo>` | Clone and install an app |
-| `bench new-site <name>` | Create a site |
-| `bench rename-site <old> <new>` | Rename a site (checks the hostname is free across all benches) |
-| `bench build` | Download pre-built assets (use `--force` to rebuild from source) |
-| `bench update [--apps ..]` | git pull → reinstall deps → rebuild assets → migrate all sites; fails fast on the first error |
-| `bench upgrade` | Pull latest pilot and download the admin frontend |
-| `bench setup config` | Regenerate Procfile and config files from bench.toml |
-| `bench build-admin` | Rebuild admin frontend assets from source |
-| `bench generate-admin-session` | Issue a 5-minute, single-use admin sign-in link (`--full-path` for the URL) |
-| `bench issue-site-token <name>` | Issue a scoped JWT for site-to-bench API calls (use as `Authorization: Bearer`) |
-| `bench set-admin-password` | Set the admin UI password (prompts securely if `--password` is omitted) |
-| `bench setup nginx` | Generate and install nginx config |
-| `bench setup letsencrypt` | Obtain SSL certificates |
-| `bench setup production` | Full production setup — `--process-manager`, `--admin-domain`, `--tls` |
-| `bench remove production` | Tear down production, return to dev (keeps certs/logs/domain) |
+Production setup writes process-manager config, nginx integration, Admin routing, monitoring config, and optional Let's Encrypt certificates.
 
-With multiple benches: `bench -b my-bench start`
+```bash
+bench -b main setup production --admin-domain admin.example.com
+bench -b main setup production --admin-domain admin.example.com --tls --letsencrypt-email ops@example.com
+```
 
-## Developing Frappe Apps with Pilot
+The Admin domain is required in production. Set `admin.tls = false` when HTTPS terminates at an upstream proxy.
 
-Use a source checkout when working on Pilot itself:
+Supported process managers:
+
+- `systemd`
+- `supervisor`
+- `none` for local development
+
+See [Production](docs/production.md).
+
+## Admin UI
+
+The Admin UI runs on `[admin] port`, usually `8002`. It exposes bench status, apps, marketplace installs, sites, backups, domains, processes, logs, tasks, database tools, updates, and settings.
+
+Long-running Admin operations return task IDs. Task progress, logs, callbacks, and final status are handled by `pilot.tasks`.
+
+See [Admin UI](docs/admin-ui.md) and [Admin API](docs/admin-api.md).
+
+## Guides
+
+- [Architecture](docs/architecture.md)
+- [Commands](docs/commands.md)
+- [Configuration](docs/configuration.md)
+- [Tasks](docs/tasks.md)
+- [Admin API](docs/admin-api.md)
+- [Admin UI](docs/admin-ui.md)
+- [Production](docs/production.md)
+- [Domain Provider](docs/domain-provider.md)
+
+## Development
+
+<details>
+<summary>Development setup and checks</summary>
+
+Use a source checkout when working on Pilot:
 
 ```bash
 git clone https://github.com/frappe/pilot ~/pilot
@@ -258,208 +177,58 @@ cd ~/pilot
 export PATH="$PWD:$PATH"
 ```
 
-The `bench` script at the repository root runs the code from this checkout, so
-changes to Python files are picked up the next time you run a command.
-
-Create a local bench and start it in development mode:
+Create a development bench:
 
 ```bash
-bench new dev-bench
-bench start              # first run opens the setup wizard
+bench new dev
+bench -b dev start
 ```
 
-For a tighter development loop, enable the dev watchers in
-`benches/dev-bench/bench.toml`:
+Useful development toggles in `bench.toml`:
 
 ```toml
 [bench]
-watch_apps_js = true     # run Frappe's JS asset watcher with bench start
-reload_python = true     # reload the dev web (frappe) process when Python files change
-watch_admin_js = true    # run the admin UI Vite dev server (if you are building the Pilot Admin UI)
+watch_apps_js = true
+reload_python = true
+watch_admin_js = true
 ```
 
-Then run the bench normally:
+Run checks:
 
 ```bash
-bench -b dev-bench start
+uv run ruff check admin pilot tests
+uv run pytest tests/ --ignore=tests/integration
 ```
 
-In this mode `bench start` regenerates the Procfile/common site config first,
-starts Redis, web, workers, socket.io, the admin backend, and any enabled watch
-processes in the foreground. Use `bench -b dev-bench stop` from another terminal
-to stop a running bench.
+Integration tests under `tests/integration/` use real services and run the full bench lifecycle.
 
-## Extending the CLI
+</details>
 
-Commands are **self-registering** — adding one means creating a single file under
-`pilot/commands/`. No edits to `cli.py` or any central list. Subclass `Command`,
-declare its name/help/arguments, and a registry auto-discovers it:
+## Community
 
-```python
-# pilot/commands/hello.py
-from dataclasses import dataclass
-from typing import Annotated, ClassVar
+- [Frappe Forum](https://discuss.frappe.io/)
+- [Frappe Framework Docs](https://frappeframework.com/docs)
+- [Frappe YouTube](https://www.youtube.com/@frappetech)
 
-from pilot.commands.base import Arg, Command
+## Contributing
 
+Keep CLI commands and Admin API routes thin. Put behavior on the closest core object: `Server`, `Bench`, `Site`, `App`, or a task.
 
-@dataclass(kw_only=True)
-class HelloCommand(Command):
-    name: ClassVar[str] = "hello"
-    help: ClassVar[str] = "Print a greeting."
+Read [SPEC.md](SPEC.md), [Architecture](docs/architecture.md), and [Commands](docs/commands.md) before changing behavior.
 
-    person: Annotated[str, Arg(help="Who to greet.", metavar="name")]
+## Security
 
-    def run(self) -> None:
-        self.report(f"hello {self.person}")
-```
+The Frappe team and community prioritize security. If you discover a security issue, please report it via our [Security Report Form](https://frappe.io/security).
+Your responsible disclosure helps keep Frappe and its users safe. We'll do our best to respond quickly and keep you informed throughout the process.
+For guidelines on reporting, check out our [Reporting Guidelines](https://frappe.io/security), and review our [Logo and Trademark Policy](https://github.com/frappe/erpnext/blob/develop/TRADEMARK_POLICY.md) for branding information.
 
-That's the whole change — `bench hello Ada` now works. The internal CLI registry
-turns annotated dataclass fields into arguments; use `Arg(cli=False)` for
-constructor-only values and `group = "setup"` to nest under a subcommand group. See
-[docs/architecture.md](docs/architecture.md#cli-entry-point-and-command-registry).
+<br/><br/>
 
-## Production
-
-```toml
-[production]
-enabled = true                   # set by `bench setup production`
-process_manager = "supervisor"   # systemd | supervisor
-use_companion_manager = false      # run scheduler/workers/socketio inside gunicorn
-
-[gunicorn]
-workers = 4
-threads = 4
-timeout = 120
-malloc_arena_max = 2
-max_requests = 0
-
-[letsencrypt]
-email = "ops@example.com"
-
-[admin]
-port = 8002
-password = "your-admin-password"
-jwt_secret = "..."             # auto-generated — signs admin session tokens (don't set by hand)
-domain = "admin.example.com"   # required in production — admin is served behind this domain
-tls = true                     # server-wide HTTPS via Let's Encrypt (omit/false = plain HTTP)
-```
-
-```bash
-bench setup production --tls   # process manager + nginx + SSL; flags: --process-manager, --admin-domain, --tls
-bench restart                  # restart all bench processes (works with both managers)
-bench remove production        # tear down production, back to dev (keeps certs/logs/domain)
-```
-
-**Process managers:**
-- **Supervisor** — runs a bench-owned `supervisord` instance, no root needed.
-- **Systemd** — uses `systemctl --user` units; requires `loginctl enable-linger` once.
-- **None** — development mode; use `bench start` / Procfile runner.
-
-**Companion manager:**
-Set `production.use_companion_manager = true` to run the scheduler, RQ workers, and socket.io as Gunicorn companion processes. This keeps them under the same preloaded Gunicorn master to share memory copy-on-write. Requires the Frappe Gunicorn fork with companion support.
-
-HTTPS is opt-in: with `admin.tls = true`, `bench setup production` (or the Settings → HTTPS toggle) obtains Let's Encrypt certificates for the admin domain and all SSL-enabled sites and redirects HTTP to HTTPS. With `admin.tls = false` the bench is served over plain HTTP (e.g. a central proxy terminates TLS upstream), and per-site SSL is hidden in the UI.
-
-The admin UI (port 8002 / `admin.domain`) shows Start, Stop, and Restart buttons on the Processes page when running in production mode. The Processes page also displays live CPU and memory usage per process.
-
-## Admin UI
-
-The built-in admin UI runs on port 8002 (configurable via `[admin] port`).
-
-| Page | Features |
-|------|----------|
-| Dashboard | Bench overview and quick stats |
-| Apps | Install/remove apps, edit upstream URL and branch, per-app update status |
-| Marketplace | App registry — filter by 6 categories, search, install with branch selection |
-| Sites | Create/restore/drop sites, install apps, edit site config, backup schedules |
-| Processes | Live process list with CPU %, memory (MB), uptime, and log links; Start/Stop/Restart in production mode |
-| Logs | Tail and search log files with live streaming |
-| Tasks | Multi-step task view with collapsible output per step; task history |
-| Database | SQL playground — run read-only or write queries against a site's database |
-| Settings | Tabbed — Bench ports, MariaDB (read-only), Redis ports, Workers, Nginx, HTTPS toggle (`admin.tls` + Let's Encrypt), Production process manager; saves to `bench.toml` and restarts affected processes automatically |
-| Updates | Check for pilot updates and apply in one click |
-
-All forms validate input before submission — site names are checked for valid hostname format, repository URLs for valid git URL format, branch names for legal characters, cron expressions for valid 5-field syntax, and port numbers for the 1–65535 range.
-
-**Remote access.** Beyond the password and `bench generate-admin-session` sign-in link, an external control plane can log in and drive the whole API by signing JWTs with a key published at `[admin] jwks_url` — no shared secret. See [Remote login via JWKS](docs/admin-api.md#remote-login-via-jwks).
-
-## Directory layout
-
-```
-pilot/
-└── benches/
-    └── my-bench/
-        ├── bench.toml              # infra config (python, db, redis, workers)
-        ├── apps/                   # cloned app source
-        ├── sites/
-        │   ├── apps.txt
-        │   ├── common_site_config.json
-        │   └── site1.localhost/
-        ├── env/                    # Python virtualenv (managed by uv)
-        ├── logs/                   # per-process log files
-        ├── pids/                   # bench.pid + per-process PID files
-        └── config/                 # Procfile, Redis configs, Nginx configs
-```
-
-## Contributing an app to the marketplace
-
-Add an entry to `registry/apps.json` and open a PR. Every PR that touches this file runs an automated Semgrep security scan against the app's source code. The PR cannot be merged until the scan passes.
-
-### Entry format
-
-```json
-{
-  "name": "my_app",
-  "title": "My App",
-  "description": "One-sentence description of what the app does.",
-  "repo": "https://github.com/your-org/my-app",
-  "branch": "version-16",
-  "branches": ["version-15", "version-16"],
-  "logo_url": "https://example.com/logo.png",
-  "category": "Applications",
-  "stars": 0
-}
-```
-
-| Field | Required | Notes |
-|---|---|---|
-| `name` | Yes | Unique snake_case identifier |
-| `title` | Yes | Human-readable display name |
-| `description` | Yes | Short description shown in the marketplace UI |
-| `repo` | Yes | Public GitHub repo URL |
-| `branch` | Yes | Default branch installed when a user picks this app |
-| `branches` | Yes | All available version branches |
-| `logo_url` | No | Direct URL to a square PNG/SVG logo; `null` if none |
-| `category` | Yes | One of: `Applications`, `Compliance`, `Developer Tools`, `Extensions`, `Integrations`, `Utilities` |
-| `stars` | No | Leave as `0`; the registry sync job updates this automatically |
-
-### What the security scan checks
-
-When your PR is opened, CI clones your repo at the specified `branch` and runs Semgrep against it. **Blocking** findings (which fail the PR) include:
-
-- **Code injection** — `eval()`, `exec()`, `compile()`, `safe_eval()`
-- **Template injection** — `render_template` with dynamic input, direct `jinja2.Environment` / `Template` construction
-- **SQL injection** — f-strings or `.format()` inside `frappe.db.sql()`
-- **Command execution** — `subprocess` with `shell=True`, `os.system`, `execute_in_shell`
-- **Authorization bypass** — `ignore_permissions=True` in whitelist methods, `frappe.set_user`
-- **Multitenancy violations** — module-level globals, `redis.set`/`redis.get` without scoping
-
-Non-blocking findings (WARNING severity) are reported but do not prevent merge — a Frappe reviewer will note them in the PR.
-
-## Testing
-
-```bash
-# Install test dependencies
-pip install -e ".[test]"
-
-# Run unit tests
-pytest tests/ --ignore=tests/integration
-
-# Run with coverage
-pytest tests/ --ignore=tests/integration --cov=pilot --cov-report=term-missing
-```
-
-Unit tests run against mocked filesystems — no MariaDB, Redis, or network required.
-
-Integration tests (in `tests/integration/`) run the full `bench init` → `bench new-site` lifecycle against real services and are triggered by CI on push to `main`.
+<div align="center">
+	<a href="https://frappe.io" target="_blank">
+		<picture>
+			<source media="(prefers-color-scheme: dark)" srcset="https://frappe.io/files/Frappe-white.png">
+			<img src="https://frappe.io/files/Frappe-black.png" alt="Frappe Technologies" height="28"/>
+		</picture>
+	</a>
+</div>
