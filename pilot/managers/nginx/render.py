@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING, Any
 
 from pilot.internal.template import Template
 from pilot.managers.gunicorn import GunicornManager
+from pilot.managers.nginx.certs import live_cert_path, live_key_path
 from pilot.managers.nginx.error_pages import ERROR_PAGES
-from pilot.managers.nginx.tls import live_cert_path, live_key_path
 from pilot.managers.waf import WafManager
 
 if TYPE_CHECKING:

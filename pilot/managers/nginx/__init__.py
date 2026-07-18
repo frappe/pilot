@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pilot.managers.nginx.certs import cert_files_exist
+from pilot.managers.nginx.certs import cert_files_exist, live_cert_path
 from pilot.managers.nginx.error_pages import ERROR_PAGES, render_error_html
 from pilot.managers.nginx.render import NginxConfigRenderer
 from pilot.managers.nginx.waf_render import ModSecurityRenderer
@@ -233,10 +233,10 @@ class NginxManager:
         run_command(service_command(action, "nginx"))
 
     def cert_path(self, site: "SiteConfig") -> Path:
-        return Path("/etc/letsencrypt/live") / site.name / "fullchain.pem"
+        return live_cert_path(site.name)
 
     def has_cert(self, site: "SiteConfig") -> bool:
-        return cert_files_exist(Path("/etc/letsencrypt/live") / site.name)
+        return cert_files_exist(site.name)
 
     def cert_covers(self, site: "SiteConfig") -> bool:
         """Cert exists and its SAN list covers every public domain, if any -
@@ -249,8 +249,8 @@ class NginxManager:
         return cert_covers(self.cert_path(site), public) if public else True
 
     def admin_cert_path(self) -> Path:
-        return Path("/etc/letsencrypt/live") / self.bench.config.admin.domain / "fullchain.pem"
+        return live_cert_path(self.bench.config.admin.domain)
 
     @property
     def has_admin_cert(self) -> bool:
-        return cert_files_exist(Path("/etc/letsencrypt/live") / self.bench.config.admin.domain)
+        return cert_files_exist(self.bench.config.admin.domain)

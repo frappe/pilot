@@ -5,8 +5,18 @@ from pathlib import Path
 
 from pilot.managers.platform import _privileged
 
+LETSENCRYPT_LIVE = Path("/etc/letsencrypt/live")
 
-def cert_files_exist(live_dir: Path) -> bool:
+
+def live_cert_path(domain: str) -> Path:
+    return LETSENCRYPT_LIVE / domain / "fullchain.pem"
+
+
+def live_key_path(domain: str) -> Path:
+    return LETSENCRYPT_LIVE / domain / "privkey.pem"
+
+
+def cert_files_exist(domain: str) -> bool:
     # /etc/letsencrypt/live is root-only (0700), so stat with privilege.
     return (
         subprocess.run(
@@ -14,10 +24,10 @@ def cert_files_exist(live_dir: Path) -> bool:
                 [
                     "test",
                     "-f",
-                    str(live_dir / "fullchain.pem"),
+                    str(live_cert_path(domain)),
                     "-a",
                     "-f",
-                    str(live_dir / "privkey.pem"),
+                    str(live_key_path(domain)),
                 ]
             ),
             capture_output=True,
