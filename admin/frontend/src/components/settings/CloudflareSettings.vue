@@ -245,14 +245,16 @@
 
             <!-- Successfully Authenticated: Domain Provisioning UI -->
             <div v-else-if="statusData.cert_configured" class="flex flex-col gap-4">
-              <div class="bg-green-50 text-green-800 p-4 rounded-lg flex items-center justify-between text-sm border border-green-200">
-                <div class="flex items-center gap-2">
-                  <span class="size-5 text-green-600 lucide-check-circle" />
-                  <span>Authorized via SSO (Certificate loaded on server)</span>
+              <div class="flex sm:flex-row sm:justify-between sm:items-center flex-col gap-3 pb-4 border-b border-outline-gray-2 mb-2">
+                <div>
+                  <p class="font-medium text-ink-gray-8 text-sm">Authorized via SSO</p>
+                  <p class="text-ink-gray-5 text-xs">Cloudflare Tunnel · Account Certificate</p>
                 </div>
-                <Button variant="subtle" size="xs" theme="red" :loading="ssoLoading" @click="disconnectSso">
-                  Disconnect SSO
-                </Button>
+                <div class="flex items-center gap-2">
+                  <Button class="flex-1 sm:flex-none" variant="subtle" theme="red" size="sm" :loading="ssoLoading" @click="disconnectSso">
+                    Disconnect SSO
+                  </Button>
+                </div>
               </div>
 
               <div class="grid grid-cols-2 gap-4">
@@ -436,7 +438,7 @@ async function fetchStatus() {
       }
       if (res.cert_configured && !res.token_configured) {
         setupType.value = 'sso'
-        createForm.value.domain = res.domain
+        createForm.value.domain = (res.domain && !res.domain.includes('dpdns.org')) ? res.domain : ''
       }
     }
   } catch (err) {
