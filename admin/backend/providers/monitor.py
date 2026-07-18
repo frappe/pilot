@@ -172,15 +172,3 @@ class MonitorProvider:
     @staticmethod
     def to_epoch_ms(when: datetime) -> int:
         return int(when.timestamp() * 1000)
-
-
-def latest_system_metrics(bench_root: Path) -> dict:
-    """The monitoring daemon's most recent system sample for this bench (carrying
-    cpu_percent, memory.percent, storage.disk.percent), or {} if it hasn't written
-    one yet. Reads only the tail of the log, never the whole file."""
-    from pilot.config.toml_store import BenchTomlStore
-
-    config = BenchTomlStore.for_bench(bench_root).read()
-    for record in MonitorHistoryReader._iter_records_reversed(config.monitor.system_log_path):
-        return record
-    return {}
