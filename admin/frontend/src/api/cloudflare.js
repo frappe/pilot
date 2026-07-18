@@ -9,4 +9,8 @@ export const cloudflareApi = {
   exposeSite: (name, expose, domain) => request.post(`cloudflare/sites/${name}/expose`, { json: { expose, domain } }).json(),
   delete: () => request.delete('cloudflare').json(),
   getZones: (apiToken) => request.get('cloudflare/zones', { searchParams: apiToken ? { api_token: apiToken } : {} }).json(),
+  startLogin: () => request.post('cloudflare/login/start').json(),
+  getLoginStatus: () => request.get('cloudflare/login/status').json(),
+  cancelLogin: () => request.post('cloudflare/login/cancel').json(),
+  disconnectLogin: () => request.post('cloudflare/login/disconnect').json(),
 }

@@ -304,3 +304,50 @@ WantedBy=default.target
                     }
                 )
 
+    def create_tunnel_via_cert(self, tunnel_name: str, hostname: str) -> tuple[str, str]:
+        """Creates a Cloudflare Tunnel using cert.pem and returns (tunnel_token, domain)."""
+        cloudflared_path = shutil.which("cloudflared")
+        if not cloudflared_path:
+            cloudflared_path = str(Path.home() / ".local" / "bin" / "cloudflared")
+            
+        import subprocess
+        res = subprocess.run(
+            [cloudflared_path, "tunnel", "create", tunnel_name],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        
+        import re
+        match = re.search(r"Created tunnel [^\s]+ with id ([a-f0-9-]+)", res.stdout)
+        if not match:
+            match = re.search(r"Created tunnel [^\s]+ with id ([a-f0-9-]+)", res.stderr)
+            if not match:
+                raise RuntimeError(f"Failed to parse tunnel ID from cloudflared output: {res.stdout}\n{res.stderr}")
+                
+        tunnel_id = match.group(1)
+        
+        creds_path = Path.home() / ".cloudflare" / f"{tunnel_id}.json"
+        if not creds_path.exists():
+            raise RuntimeError(f"Credentials file not found at {creds_path}")
+            
+        creds = json.loads(creds_path.read_text(encoding="utf-8"))
+        account_id = creds["AccountTag"]
+        tunnel_secret_b64 = creds["TunnelSecret"]
+        
+        subprocess.run(
+            [cloudflared_path, "tunnel", "route", "dns", tunnel_name, hostname],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        
+        token_data = {
+            "a": account_id,
+            "t": tunnel_id,
+            "s": tunnel_secret_b64
+        }
+        tunnel_token = base64.b64encode(json.dumps(token_data).encode("utf-8")).decode("utf-8")
+        
+        return tunnel_token, hostname
+

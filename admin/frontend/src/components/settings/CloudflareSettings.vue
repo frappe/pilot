@@ -65,6 +65,10 @@
             Create New Tunnel
           </label>
           <label class="flex items-center gap-2 cursor-pointer text-sm font-medium text-ink-gray-7">
+            <input type="radio" value="sso" v-model="setupType" class="text-indigo-600 focus:ring-indigo-500" />
+            SSO / CLI Login
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer text-sm font-medium text-ink-gray-7">
             <input type="radio" value="existing" v-model="setupType" class="text-indigo-600 focus:ring-indigo-500" />
             Your Tunnel Details
           </label>
@@ -112,7 +116,7 @@
         </div>
 
         <!-- Tab: Your Tunnel Details -->
-        <div v-else class="flex flex-col gap-4">
+        <div v-else-if="setupType === 'existing'" class="flex flex-col gap-4">
           <!-- Read-only details when configured and not in edit mode -->
           <div v-if="statusData.token_configured && !isEditingExisting" class="flex flex-col gap-4">
             <div class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm py-2 border-t border-b border-outline-gray-2">
@@ -194,13 +198,96 @@
             </div>
           </div>
         </div>
+
+        <!-- Tab: SSO / CLI Login -->
+        <div v-else-if="setupType === 'sso'" class="flex flex-col gap-4">
+            <!-- Not Authenticated and Idle -->
+            <div v-if="!statusData.cert_configured && ssoState.status === 'idle'" class="flex flex-col items-center gap-4 py-8 bg-surface-elevation-2 rounded-xl border border-dashed border-outline-gray-2">
+              <span class="text-ink-gray-5 text-sm text-center max-w-md">
+                Authenticate Pilot directly with Cloudflare Zero Trust via SSO. This securely creates an authorization certificate on your server without needing API tokens.
+              </span>
+              <Button variant="solid" :loading="ssoLoading" @click="startSsoFlow">
+                Start Cloudflare SSO Authentication
+              </Button>
+            </div>
+
+            <!-- Pending Authentication -->
+            <div v-else-if="ssoState.status === 'pending'" class="flex flex-col items-center gap-4 py-8 bg-surface-elevation-2 rounded-xl border border-dashed border-outline-gray-2">
+              <span class="text-indigo-600 animate-spin size-6 lucide-loader" />
+              <div class="flex flex-col items-center gap-2 text-center">
+                <span class="font-medium text-ink-gray-9 text-sm">Cloudflare Login Link Ready</span>
+                <a :href="ssoState.url" target="_blank" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors flex items-center gap-2">
+                  Authorize Pilot on Cloudflare
+                  <span class="size-4 lucide-external-link" />
+                </a>
+                <span class="text-ink-gray-5 text-xs max-w-sm mt-2">
+                  Click the button above to log in to Cloudflare. This page will update automatically once completed.
+                </span>
+              </div>
+              <Button variant="subtle" size="sm" theme="red" @click="cancelSsoFlow">
+                Cancel
+              </Button>
+            </div>
+
+            <!-- Failed Authentication -->
+            <div v-else-if="ssoState.status === 'failed'" class="flex flex-col items-center gap-4 py-8 bg-surface-elevation-2 rounded-xl border border-dashed border-outline-gray-2">
+              <span class="text-ink-red-6 font-medium text-sm">Authentication Failed</span>
+              <span class="text-ink-gray-5 text-xs text-center max-w-sm">{{ ssoState.error }}</span>
+              <div class="flex gap-2">
+                <Button variant="solid" size="sm" @click="startSsoFlow">
+                  Retry Login
+                </Button>
+                <Button variant="subtle" size="sm" @click="ssoState.status = 'idle'">
+                  Cancel
+                </Button>
+              </div>
+            </div>
+
+            <!-- Successfully Authenticated: Domain Provisioning UI -->
+            <div v-else-if="statusData.cert_configured" class="flex flex-col gap-4">
+              <div class="bg-green-50 text-green-800 p-4 rounded-lg flex items-center justify-between text-sm border border-green-200">
+                <div class="flex items-center gap-2">
+                  <span class="size-5 text-green-600 lucide-check-circle" />
+                  <span>Authorized via SSO (Certificate loaded on server)</span>
+                </div>
+                <Button variant="subtle" size="xs" theme="red" :loading="ssoLoading" @click="disconnectSso">
+                  Disconnect SSO
+                </Button>
+              </div>
+
+              <div class="grid grid-cols-2 gap-4">
+                <TextInput
+                  label="Subdomain (e.g. admin)"
+                  v-model="createForm.subdomain"
+                  placeholder="Leave blank for root domain"
+                />
+                
+                <TextInput
+                  label="Domain (e.g. codenetic.online)"
+                  v-model="createForm.domain"
+                  placeholder="Enter your Cloudflare domain"
+                />
+              </div>
+
+              <div class="flex justify-end mt-2">
+                <Button
+                  variant="solid"
+                  :loading="saving"
+                  :disabled="!createForm.domain"
+                  @click="provisionNewTunnel"
+                >
+                  Provision & Start Tunnel
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
-  </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
   Badge,
   Button,
@@ -226,6 +313,19 @@ const statusData = ref({
   tunnel_name: '',
   domain: '',
   token_configured: false,
+  cert_configured: false,
+})
+
+const ssoLoading = ref(false)
+const ssoState = ref({
+  status: 'idle',
+  url: '',
+  error: ''
+})
+let pollInterval = null
+
+onUnmounted(() => {
+  if (pollInterval) clearInterval(pollInterval)
 })
 
 const existingForm = ref({
@@ -334,6 +434,10 @@ async function fetchStatus() {
         existingForm.value.api_token = '******************************'
         createForm.value.api_token = '******************************'
       }
+      if (res.cert_configured && !res.token_configured) {
+        setupType.value = 'sso'
+        createForm.value.domain = res.domain
+      }
     }
   } catch (err) {
     error.value = err.message
@@ -376,6 +480,88 @@ async function provisionNewTunnel() {
     toast.error(err.message)
   } finally {
     saving.value = false
+  }
+}
+
+function startPolling() {
+  if (pollInterval) clearInterval(pollInterval)
+  pollInterval = setInterval(async () => {
+    try {
+      const res = await cloudflareApi.getLoginStatus()
+      if (res.status === 'success') {
+        clearInterval(pollInterval)
+        pollInterval = null
+        ssoState.value.status = 'success'
+        toast.success('SSO Authorization successful!')
+        await fetchStatus()
+      } else if (res.status === 'failed') {
+        clearInterval(pollInterval)
+        pollInterval = null
+        ssoState.value.status = 'failed'
+        ssoState.value.error = res.error || 'Authentication process failed.'
+      } else if (res.status === 'pending') {
+        ssoState.value.status = 'pending'
+        ssoState.value.url = res.url
+      }
+    } catch (err) {
+      console.error('SSO poll error:', err)
+    }
+  }, 2000)
+}
+
+async function startSsoFlow() {
+  ssoLoading.value = true
+  ssoState.value.error = ''
+  try {
+    const res = await cloudflareApi.startLogin()
+    if (res.error) {
+      toast.error(apiErrorMessage(res, 'Failed to start SSO login.'))
+    } else {
+      ssoState.value.status = 'pending'
+      ssoState.value.url = res.url
+      startPolling()
+      if (res.url) {
+        window.open(res.url, '_blank')
+      }
+    }
+  } catch (err) {
+    toast.error(err.message)
+  } finally {
+    ssoLoading.value = false
+  }
+}
+
+async function cancelSsoFlow() {
+  if (pollInterval) {
+    clearInterval(pollInterval)
+    pollInterval = null
+  }
+  ssoState.value.status = 'idle'
+  ssoState.value.url = ''
+  try {
+    await cloudflareApi.cancelLogin()
+  } catch (err) {
+    console.error(err)
+  }
+}
+
+async function disconnectSso() {
+  if (!confirm('Are you sure you want to disconnect Cloudflare SSO? This will delete the authorization certificate on the server.')) {
+    return
+  }
+  ssoLoading.value = true
+  try {
+    const res = await cloudflareApi.disconnectLogin()
+    if (res.error) {
+      toast.error(apiErrorMessage(res, 'Failed to disconnect SSO.'))
+    } else {
+      toast.success('SSO Disconnected successfully.')
+      await fetchStatus()
+    }
+  } catch (err) {
+    toast.error(err.message)
+  } finally {
+    ssoLoading.value = false
   }
 }
 
