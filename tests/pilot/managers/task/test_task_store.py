@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-import pilot.managers.task.store as task_store_module
+import pilot.internal.tasks.files as task_files_module
 from pilot.managers.task.models import TaskStatus
-from pilot.managers.task.store import TaskStore
+from pilot.internal.tasks.store import TaskStore
 from pilot.exceptions import TaskConflictError, TaskNotFoundError
 
 TASK_ID = "20260715-120000-aabbcc"
@@ -49,20 +49,70 @@ def test_create_failure_leaves_no_visible_or_staged_task(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     store = TaskStore(tmp_path)
-    real_replace = task_store_module.os.replace
+    real_replace = task_files_module.os.replace
 
     def fail_replace(source: Path, destination: Path) -> None:
         if Path(destination) == store.task_dir(TASK_ID):
             raise OSError("replace failed")
         real_replace(source, destination)
 
-    monkeypatch.setattr(task_store_module.os, "replace", fail_replace)
+    monkeypatch.setattr(task_files_module.os, "replace", fail_replace)
 
     with pytest.raises(OSError, match="replace failed"):
         store.create_queued(metadata())
 
     assert not store.task_dir(TASK_ID).exists()
     assert [path for path in store.tasks_root.iterdir() if path.is_dir()] == []
+
+
+def test_queue_sequence_recovery_ignores_symlinked_task_dirs(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    store.tasks_root.mkdir(parents=True)
+    real_task = store.task_dir("20260715-120000-111111")
+    real_task.mkdir()
+    (real_task / "meta.json").write_text(json.dumps({**metadata(), "queue_sequence": 3}))
+
+    outside = tmp_path / "outside-task"
+    outside.mkdir()
+    (outside / "meta.json").write_text(json.dumps({**metadata(), "queue_sequence": 99}))
+    try:
+        (store.tasks_root / "20260715-120000-222222").symlink_to(outside, target_is_directory=True)
+    except OSError as error:
+        pytest.skip(f"symlinks unavailable: {error}")
+
+    task_dir = store.create_queued({**metadata(), "task_id": "20260715-120000-333333"})
+
+    assert json.loads((task_dir / "meta.json").read_text())["queue_sequence"] == 4
+
+
+def test_queue_sequence_recovery_ignores_staged_task_dirs(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    store.tasks_root.mkdir(parents=True)
+    staged_task = store.tasks_root / ".20260715-120000-staged.tmp"
+    staged_task.mkdir()
+    (staged_task / "meta.json").write_text(
+        json.dumps({**metadata(), "queue_sequence": 99})
+    )
+    (staged_task / "status").write_text(TaskStatus.QUEUED.value)
+
+    task_dir = store.create_queued({**metadata(), "task_id": "20260715-120000-333333"})
+
+    assert json.loads((task_dir / "meta.json").read_text())["queue_sequence"] == 1
+    assert staged_task.exists()
+
+
+def test_queue_sequence_recovery_ignores_invalid_task_dirs(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    store.tasks_root.mkdir(parents=True)
+    invalid_task = store.tasks_root / "not-a-task"
+    invalid_task.mkdir()
+    (invalid_task / "meta.json").write_text(json.dumps({**metadata(), "queue_sequence": 99}))
+    (invalid_task / "status").write_text(TaskStatus.QUEUED.value)
+
+    task_dir = store.create_queued({**metadata(), "task_id": "20260715-120000-333333"})
+
+    assert json.loads((task_dir / "meta.json").read_text())["queue_sequence"] == 1
+    assert invalid_task.exists()
 
 
 def test_transition_updates_metadata_before_status(tmp_path: Path) -> None:
@@ -126,6 +176,10 @@ def test_store_rejects_missing_and_unsafe_task_paths(tmp_path: Path) -> None:
         store.read_status(TASK_ID)
     with pytest.raises(TaskNotFoundError, match="Invalid task ID"):
         store.read_status("../outside")
+    with pytest.raises(TaskNotFoundError, match="Invalid task ID"):
+        store.read_status(".staged-task")
+    with pytest.raises(TaskNotFoundError, match="Invalid task ID"):
+        store.read_status("not-a-task")
 
 
 def test_active_idempotent_submission_returns_existing_task(tmp_path: Path) -> None:

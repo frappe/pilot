@@ -8,50 +8,29 @@ import signal
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pilot.managers.task.callbacks import run_stored_callback, trigger_for_task_status
-from pilot.managers.task.process_identity import (
+from pilot.internal.tasks.callbacks import run_stored_callback, trigger_for_task_status
+from pilot.internal.tasks.process_identity import (
     ProcessIdentity,
     ProcessInspector,
     ProcessOwnership,
+    TaskProcessRecord,
 )
-from pilot.managers.task.models import TERMINAL_TASK_STATUSES, TaskStatus
-from pilot.managers.task.store import TaskStore
-from pilot.managers.task.timing import CANCEL_GRACE_SECONDS, PROCESS_EXIT_POLL_SECONDS
+from pilot.managers.task.models import TaskStatus
+from pilot.internal.tasks.store import TaskStore
 from pilot.exceptions import BenchError, TaskNotFoundError, TaskNotRunningError
 from pilot.managers.platform import NONINTERACTIVE_PRIVILEGES_ENV
 
 _READY_FD_ENV = "BENCH_TASK_READY_FD"
 _LAUNCH_ID_ENV = "BENCH_TASK_LAUNCH_ID"
+CANCEL_GRACE_SECONDS = 3.0
+_PROCESS_EXIT_POLL_SECONDS = 0.05
 
 
 class TaskProcessStartError(BenchError):
     pass
-
-
-@dataclass(frozen=True)
-class TaskProcessRecord:
-    task_id: str
-    argv: list[str]
-    identity: ProcessIdentity
-
-    def to_dict(self) -> dict:
-        return {
-            "task_id": self.task_id,
-            "argv": self.argv,
-            "identity": self.identity.to_dict(),
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict) -> TaskProcessRecord:
-        return cls(
-            task_id=str(data["task_id"]),
-            argv=[str(value) for value in data["argv"]],
-            identity=ProcessIdentity.from_dict(data["identity"]),
-        )
 
 
 class TaskProcess:
@@ -61,12 +40,7 @@ class TaskProcess:
 
     def start(self, task_id: str) -> subprocess.Popen:
         task_dir = self._store.task_dir(task_id)
-        argv = [
-            sys.executable,
-            "-m",
-            "pilot.managers.task.wrapper",
-            str(task_dir),
-        ]
+        argv = [sys.executable, "-m", "pilot.internal.tasks.wrapper", str(task_dir)]
         launch_id = secrets.token_hex(16)
         read_fd, write_fd = os.pipe()
         process = None
@@ -165,7 +139,7 @@ class TaskProcess:
         )
         if not transitioned:
             status = self._store.read_status(task_id)
-            if status not in TERMINAL_TASK_STATUSES:
+            if not status.is_terminal:
                 raise TaskNotRunningError(f"Task state changed during cancellation: {task_id}")
 
         grace = CANCEL_GRACE_SECONDS if grace_seconds is None else grace_seconds
@@ -183,11 +157,7 @@ class TaskProcess:
             environment["BENCH_TASK_SECRETS_FILE"] = str(secret_path)
         return environment
 
-    def _abort_start(
-        self,
-        task_id: str,
-        process: subprocess.Popen | None,
-    ) -> None:
+    def _abort_start(self, task_id: str, process: subprocess.Popen | None) -> None:
         if process is not None:
             try:
                 process.kill()
@@ -207,22 +177,11 @@ class TaskProcess:
                 "failure": {"code": "task_interrupted"},
             },
         )
-        self._store.remove_private_files(
-            task_id,
-            "process.json",
-            "secrets.json",
-        )
+        self._store.remove_private_files(task_id, "process.json", "secrets.json")
 
     def _wait_for_exit(self, record: TaskProcessRecord, grace_seconds: float) -> None:
-        deadline = time.monotonic() + max(0, grace_seconds)
-        while time.monotonic() < deadline:
-            ownership = self._inspector.inspect(record.identity, record.argv)
-            if ownership in {ProcessOwnership.DEAD, ProcessOwnership.STALE}:
-                self._clear_process(record.task_id)
-                return
-            if ownership == ProcessOwnership.UNKNOWN:
-                return
-            time.sleep(PROCESS_EXIT_POLL_SECONDS)
+        if self._wait_for_process_to_stop(record, grace_seconds):
+            return
 
         outcome = self._signal(record, signal.SIGKILL)
         if outcome in {ProcessOwnership.DEAD, ProcessOwnership.STALE}:
@@ -231,15 +190,23 @@ class TaskProcess:
         if outcome == ProcessOwnership.UNKNOWN:
             return
 
-        deadline = time.monotonic() + max(1.0, grace_seconds)
+        self._wait_for_process_to_stop(record, max(CANCEL_GRACE_SECONDS, grace_seconds))
+
+    def _wait_for_process_to_stop(
+        self,
+        record: TaskProcessRecord,
+        timeout_seconds: float,
+    ) -> bool:
+        deadline = time.monotonic() + max(0, timeout_seconds)
         while time.monotonic() < deadline:
             ownership = self._inspector.inspect(record.identity, record.argv)
             if ownership in {ProcessOwnership.DEAD, ProcessOwnership.STALE}:
                 self._clear_process(record.task_id)
-                return
+                return True
             if ownership == ProcessOwnership.UNKNOWN:
-                return
-            time.sleep(PROCESS_EXIT_POLL_SECONDS)
+                return True
+            time.sleep(_PROCESS_EXIT_POLL_SECONDS)
+        return False
 
     def _run_stored_callback(self, task_id: str, trigger: str) -> None:
         try:
@@ -258,17 +225,9 @@ class TaskProcess:
     def _recover_terminal_callbacks(self) -> None:
         for task_id in self._store.terminal_task_ids_with_callbacks():
             self._run_stored_callback_for_status(task_id)
-            self._store.remove_private_files(
-                task_id,
-                "secrets.json",
-                "callbacks.json",
-            )
+            self._store.remove_private_files(task_id, "secrets.json", "callbacks.json")
 
-    def _signal(
-        self,
-        record: TaskProcessRecord,
-        signum: signal.Signals,
-    ) -> ProcessOwnership:
+    def _signal(self, record: TaskProcessRecord, signum: signal.Signals) -> ProcessOwnership:
         ownership = self._inspector.inspect(record.identity, record.argv)
         if ownership != ProcessOwnership.OWNED:
             return ownership
@@ -315,8 +274,4 @@ class TaskProcess:
             return None
 
     def _clear_process(self, task_id: str) -> None:
-        self._store.remove_private_files(
-            task_id,
-            "process.json",
-            "secrets.json",
-        )
+        self._store.remove_private_files(task_id, "process.json", "secrets.json")

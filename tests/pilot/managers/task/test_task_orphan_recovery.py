@@ -9,12 +9,12 @@ from pathlib import Path
 
 import pytest
 
-import pilot.managers.task.worker as worker_module
-from pilot.managers.task.process_identity import ProcessInspector
-from pilot.managers.task.process import TaskProcessRecord
+import pilot.internal.tasks.worker as worker_module
+from pilot.internal.tasks.process_identity import ProcessInspector
+from pilot.internal.tasks.process import TaskProcessRecord
 from pilot.managers.task.models import TaskStatus
-from pilot.managers.task.store import TaskStore
-from pilot.managers.task.worker import TaskWorker
+from pilot.internal.tasks.store import TaskStore
+from pilot.internal.tasks.worker import TaskWorker
 
 RUNNING_TASK = "20260715-120000-111111"
 QUEUED_TASK = "20260715-120000-222222"
@@ -99,9 +99,7 @@ def test_worker_waits_for_live_orphan_group_before_next_claim(
 
     if orphan_status == TaskStatus.RUNNING:
         assert store.read_status(RUNNING_TASK) == TaskStatus.FAILED
-        assert store.read_metadata(RUNNING_TASK)["failure"] == {
-            "code": "task_interrupted"
-        }
+        assert store.read_metadata(RUNNING_TASK)["failure"] == {"code": "task_interrupted"}
     else:
         assert store.read_status(RUNNING_TASK) == TaskStatus.KILLED
     assert store.read_process(RUNNING_TASK) is None
@@ -170,6 +168,4 @@ def test_dead_orphan_is_failed_before_next_task_runs(
     worker.join(2)
 
     assert store.read_status(RUNNING_TASK) == TaskStatus.FAILED
-    assert store.read_metadata(RUNNING_TASK)["failure"] == {
-        "code": "task_interrupted"
-    }
+    assert store.read_metadata(RUNNING_TASK)["failure"] == {"code": "task_interrupted"}

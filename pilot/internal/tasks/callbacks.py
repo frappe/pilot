@@ -38,8 +38,7 @@ def _remove_failed_site(meta: dict, args: dict) -> None:
     site_path = _safe_site_path(bench_root, site_name)
     if not _drop_failed_site(bench_root, site_name, site_path):
         raise RuntimeError(
-            f"Could not clean up partial site {site_name!r}; "
-            "its files were preserved for recovery."
+            f"Could not clean up partial site {site_name!r}; its files were preserved for recovery."
         )
     shutil.rmtree(site_path, ignore_errors=True)
     _remove_from_hosts(site_name)

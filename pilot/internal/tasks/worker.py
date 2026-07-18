@@ -6,11 +6,10 @@ import subprocess
 import threading
 from pathlib import Path
 
-from pilot.managers.task.models import TERMINAL_TASK_STATUSES
-from pilot.managers.task.process import TaskProcess, TaskProcessStartError
-from pilot.managers.task.queue import TaskQueue
-from pilot.managers.task.store import TaskStore
-from pilot.managers.task.worker_state import WorkerIntent, WorkerStatus, WorkerStore
+from pilot.internal.tasks.process import TaskProcess, TaskProcessStartError
+from pilot.internal.tasks.queue import TaskQueue
+from pilot.internal.tasks.store import TaskStore
+from pilot.internal.tasks.worker_state import WorkerIntent, WorkerStatus, WorkerStore
 
 _CONTROL_POLL_SECONDS = 0.2
 
@@ -68,11 +67,7 @@ class TaskWorker:
             self._wake.clear()
             blocking_task = self._processes.reconcile()
             if blocking_task is not None:
-                status = (
-                    WorkerStatus.DRAINING
-                    if self._intent_stopped()
-                    else WorkerStatus.RUNNING
-                )
+                status = WorkerStatus.DRAINING if self._intent_stopped() else WorkerStatus.RUNNING
                 self._write_state(status, pid, blocking_task)
                 self._wake.wait(_CONTROL_POLL_SECONDS)
                 continue
@@ -100,7 +95,7 @@ class TaskWorker:
         except TaskProcessStartError:
             return True
         self._wait_for_task(process, pid, task_id)
-        if self._tasks.read_status(task_id) not in TERMINAL_TASK_STATUSES:
+        if not self._tasks.read_status(task_id).is_terminal:
             raise RuntimeError(f"Task wrapper exited without finalizing {task_id}")
         return True
 

@@ -10,13 +10,13 @@ from pathlib import Path
 
 import pytest
 
-from pilot.managers.task.process_identity import ProcessInspector
-from pilot.managers.task.process import TaskProcess, TaskProcessRecord
-from pilot.managers.task.models import TaskStatus
-from pilot.managers.task.store import TaskStore
-from pilot.managers.task import callbacks as callback_module
-from pilot.tasks import TaskRunner
+from pilot.internal.tasks import callbacks as callback_module
 from pilot.exceptions import TaskConflictError, TaskNotRunningError
+from pilot.managers.task.models import TaskStatus
+from pilot.internal.tasks.process import TaskProcess, TaskProcessRecord
+from pilot.internal.tasks.process_identity import ProcessInspector
+from pilot.internal.tasks.store import TaskStore
+from pilot.tasks import TaskRunner
 
 TASK_ID = "20260715-120000-aabbcc"
 
@@ -129,9 +129,7 @@ def test_cancel_queued_task_runs_cancel_callback(
             "bench_root": str(tmp_path),
         },
         {
-            "callbacks.json": (
-                '{"on_cancel":{"operation":"test-cancel","args":{}}}'
-            ),
+            "callbacks.json": ('{"on_cancel":{"operation":"test-cancel","args":{}}}'),
         },
         resource_key="site:new.localhost",
     )
@@ -239,9 +237,7 @@ def test_cancel_does_not_signal_a_stale_process_identity(tmp_path: Path) -> None
 
         assert process.poll() is None
         assert store.read_status(TASK_ID) == TaskStatus.FAILED
-        assert store.read_metadata(TASK_ID)["failure"] == {
-            "code": "task_interrupted"
-        }
+        assert store.read_metadata(TASK_ID)["failure"] == {"code": "task_interrupted"}
         assert store.read_process(TASK_ID) is None
     finally:
         stop_process_group(process)

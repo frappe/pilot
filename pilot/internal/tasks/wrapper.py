@@ -1,7 +1,7 @@
 """
 Entry point for a forked child process that runs a bench command.
 
-Invoked as: python -m pilot.managers.task.wrapper <task-dir>
+Invoked as: python -m pilot.internal.tasks.wrapper <task-dir>
 
 This module uses only the standard library and the fixed callback registry.
 """
@@ -16,12 +16,9 @@ import tomllib
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pilot.managers.task.callbacks import run_callback, trigger_for_task_status
-from pilot.managers.task.models import (
-    TERMINAL_TASK_STATUSES,
-    TaskStatus,
-)
-from pilot.managers.task.store import TaskStore
+from pilot.internal.tasks.callbacks import run_callback, trigger_for_task_status
+from pilot.managers.task.models import TaskStatus
+from pilot.internal.tasks.store import TaskStore
 from pilot.secure_files import open_private
 
 _HOSTNAME = socket.gethostname()
@@ -78,11 +75,15 @@ def run_with_syslog_output(
     single long `frappe build` log line) cost one slice-copy instead of one
     interpreter iteration per byte.
     """
-    process = subprocess.Popen(command_argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    process = subprocess.Popen(
+        command_argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+    )
     assert process.stdout is not None
     fd = process.stdout.fileno()
     head, tail = _syslog_prefix_parts(tag, process.pid)
-    secret_bytes = sorted({value.encode() for value in redactions or [] if value}, key=len, reverse=True)
+    secret_bytes = sorted(
+        {value.encode() for value in redactions or [] if value}, key=len, reverse=True
+    )
 
     def write_prefix(log_file) -> None:
         ts = datetime.now(timezone.utc).isoformat(timespec="microseconds").encode()
@@ -104,7 +105,7 @@ def run_with_syslog_output(
                 idx = nl if cr == -1 or (nl != -1 and nl < cr) else cr
                 write_prefix(log_file)
                 log_file.write(_redact(bytes(buf) + chunk[start:idx], secret_bytes))
-                log_file.write(chunk[idx:idx + 1])
+                log_file.write(chunk[idx : idx + 1])
                 buf.clear()
                 start = idx + 1
             log_file.flush()
@@ -189,7 +190,7 @@ def _run_task() -> None:
     store = TaskStore(task_dir.parent.parent)
     meta = store.read_metadata(task_id)
     current_status = store.read_status(task_id)
-    if current_status in TERMINAL_TASK_STATUSES:
+    if current_status.is_terminal:
         return
     if current_status != TaskStatus.RUNNING:
         return
@@ -232,7 +233,6 @@ def _run_task() -> None:
         "on_success.bin",
         "on_failure.bin",
     )
-
 
 
 def _finalize_task(store: TaskStore, task_id: str, exit_code: int) -> TaskStatus:

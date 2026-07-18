@@ -1,40 +1,35 @@
-import argparse
+from dataclasses import dataclass
+from typing import ClassVar
 
 from pilot.config.toml_store import BenchTomlStore
-from pilot.managers.task.base_task import BaseTask
+from pilot.tasks.base import BaseTask, step
 
 
+@dataclass(kw_only=True)
 class SetupLetsEncryptTask(BaseTask):
-    command = "setup-letsencrypt"
+    command: ClassVar[str] = "setup-letsencrypt"
 
-    @classmethod
-    def _parser(cls) -> argparse.ArgumentParser:
-        parser = super()._parser()
-        parser.add_argument("--site", default="")
-        parser.add_argument("--email", default="")
-        return parser
-
-    def __init__(self, bench, bench_root, args):
-        super().__init__(bench, bench_root, args)
-        self.site = args.site
-        self.email = args.email
+    site: str = ""
+    email: str = ""
 
     def run(self) -> None:
-        self._step("letsencrypt", "Set up Let's Encrypt")
-        self._require_production_privileges()
-        self._apply_email()
-        self._enable_site_tls()
-        self.bench.setup_letsencrypt()
-        self._step("done")
+        self.setup_letsencrypt()
 
-    def _apply_email(self) -> None:
+    @step("letsencrypt", "Set up Let's Encrypt")
+    def setup_letsencrypt(self) -> None:
+        self.require_production_privileges()
+        self.apply_email()
+        self.enable_site_tls()
+        self.bench.setup_letsencrypt()
+
+    def apply_email(self) -> None:
         if not self.email:
             return
         with BenchTomlStore.for_bench(self.bench_root).edit() as config:
             config.letsencrypt.email = self.email
         self.bench.config.letsencrypt.email = self.email
 
-    def _enable_site_tls(self) -> None:
+    def enable_site_tls(self) -> None:
         if not self.site:
             return
         from pilot.core.site import Site

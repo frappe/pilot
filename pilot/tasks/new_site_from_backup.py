@@ -1,35 +1,29 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Annotated, ClassVar
+
 from pilot.core.site import provision_from_backup
 
-from pilot.managers.task.base_task import BaseTask
+from pilot.tasks.base import Arg, BaseTask, step
 
 
+@dataclass(kw_only=True)
 class NewSiteFromBackupTask(BaseTask):
-    command = "new-site-from-backup"
-    required_args = ["name", "admin_password", "db_file"]
+    command: ClassVar[str] = "new-site-from-backup"
 
-    @classmethod
-    def _parser(cls):
-        p = super()._parser()
-        p.add_argument("name")
-        p.add_argument("db_file")
-        p.set_defaults(admin_password=None)
-        p.add_argument("--public-files", default=None)
-        p.add_argument("--private-files", default=None)
-        return p
-
-    def __init__(self, bench, bench_root, args):
-        super().__init__(bench, bench_root, args)
-        self.name = args.name
-        self.db_file = args.db_file
-        self.admin_password = args.admin_password
-        self.public_files = args.public_files
-        self.private_files = args.private_files
+    name: str
+    db_file: str
+    admin_password: Annotated[str, Arg(cli=False)]
+    public_files: str | None = None
+    private_files: str | None = None
 
     def run(self) -> None:
-        self._require_production_privileges()
-        self._step("restore", f"Restore site {self.name} from backup")
+        self.require_production_privileges()
+        self.restore()
+
+    @step("restore", lambda self: f"Restore site {self.name} from backup")
+    def restore(self) -> None:
         provision_from_backup(
             self.bench,
             self.name,
@@ -37,9 +31,8 @@ class NewSiteFromBackupTask(BaseTask):
             admin_password=self.admin_password,
             public_files=self.public_files,
             private_files=self.private_files,
-            on_progress=self._report,
+            on_progress=self.report,
         )
-        self._step("done")
 
 
 if __name__ == "__main__":

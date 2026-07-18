@@ -19,15 +19,12 @@ from admin.backend.api.responses import (
     no_content_response,
 )
 from pilot.managers.task import (
-    ACTIVE_TASK_STATUSES,
     TaskActivityReader,
     TaskReader,
     TaskStatus,
-    WorkerIntent,
-    WorkerStore,
+    TaskWorkerControl,
     sse_message,
     task_requires_secrets,
-    task_workers,
 )
 from pilot.tasks import TaskRunner
 from pilot.exceptions import TaskConflictError, TaskNotFoundError, TaskNotRunningError
@@ -124,7 +121,7 @@ def retry_task(task_id: str):
             "This task requires fresh credentials and cannot be retried.",
             409,
         )
-    if task.status in ACTIVE_TASK_STATUSES:
+    if task.status.is_active:
         return error_response(
             "task_not_finished",
             "An active task cannot be retried.",
@@ -188,9 +185,7 @@ def task_output(task_id: str):
     return Response(
         stream_with_context(reader.iter_output(task_id)),
         mimetype="text/plain",
-        headers={
-            "Content-Disposition": f'attachment; filename="{task_id}_output.log"'
-        },
+        headers={"Content-Disposition": f'attachment; filename="{task_id}_output.log"'},
     )
 
 
@@ -202,16 +197,14 @@ def get_task_worker():
 @task_worker_bp.post("/task-worker/actions/start")
 def start_task_worker():
     bench_root = _bench_root()
-    WorkerStore(bench_root).write_intent(WorkerIntent.RUNNING)
-    task_workers.wake(bench_root)
+    TaskWorkerControl(bench_root).request_start()
     return _accepted_worker()
 
 
 @task_worker_bp.post("/task-worker/actions/stop")
 def stop_task_worker():
     bench_root = _bench_root()
-    WorkerStore(bench_root).write_intent(WorkerIntent.STOPPED)
-    task_workers.wake(bench_root)
+    TaskWorkerControl(bench_root).request_stop()
     return _accepted_worker()
 
 

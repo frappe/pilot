@@ -1,33 +1,30 @@
 import sys
+from dataclasses import dataclass
+from typing import ClassVar
 
 from pilot.exceptions import MigrateError
-from pilot.managers.task.base_task import BaseTask
+from pilot.tasks.base import BaseTask
 
 
+@dataclass(kw_only=True)
 class UpdateTask(BaseTask):
-    command = "update"
+    command: ClassVar[str] = "update"
+    # Bench.update() emits its own on_step("done", ...) as its last phase.
+    has_done_step: ClassVar[bool] = False
 
-    @classmethod
-    def _parser(cls):
-        p = super()._parser()
-        p.add_argument("--apps", nargs="*", default=None)
-        p.add_argument("--skip-failing-patches", action="store_true")
-        return p
-
-    def __init__(self, bench, bench_root, args):
-        super().__init__(bench, bench_root, args)
-        self._apps_filter = set(args.apps) if args.apps else None
-        self._skip_failing_patches = args.skip_failing_patches
+    apps: list[str] | None = None
+    skip_failing_patches: bool = False
 
     def run(self) -> None:
         try:
             self.bench.update(
-                apps_filter=self._apps_filter,
-                skip_failing_patches=self._skip_failing_patches,
-                on_step=self._step,
-                on_progress=self._report,
+                apps_filter=set(self.apps) if self.apps else None,
+                skip_failing_patches=self.skip_failing_patches,
+                on_step=self.step,
+                on_progress=self.report,
             )
         except MigrateError:
+            self.step_failed()
             sys.exit(1)
 
 

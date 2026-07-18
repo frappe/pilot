@@ -10,11 +10,12 @@ from types import SimpleNamespace
 
 import pytest
 
-import pilot.managers.task.runner as task_runner_module
-import pilot.managers.task.wrapper as wrapper_module
-import pilot.managers.task.callbacks as callback_module
+import pilot.internal.tasks.runner as task_runner_module
+import pilot.internal.tasks.store as task_store_module
+import pilot.internal.tasks.wrapper as wrapper_module
+import pilot.internal.tasks.callbacks as callback_module
 from pilot.managers.task.reader import TaskReader
-from pilot.managers.task.wrapper import callback_handler, run_with_syslog_output
+from pilot.internal.tasks.wrapper import callback_handler, run_with_syslog_output
 from pilot.tasks import TaskRunner
 from pilot.exceptions import TaskConflictError, TaskNotFoundError, TaskNotRunningError
 
@@ -67,7 +68,7 @@ def test_run_persists_task_before_starting_wrapper(
         assert not (task_dir / "pid").exists()
         return True
 
-    monkeypatch.setattr(TaskRunner, "_generate_task_id", staticmethod(lambda: TASK_ID))
+    monkeypatch.setattr(task_runner_module, "generate_task_id", lambda: TASK_ID)
     monkeypatch.setattr(task_runner_module.task_workers, "wake", wake_worker)
     monkeypatch.setitem(callback_module._OPERATIONS, "test-success", successful_callback)
 
@@ -138,7 +139,7 @@ def test_run_reuses_active_task_for_same_idempotency_key(
         started.append(bench_root)
         return True
 
-    monkeypatch.setattr(TaskRunner, "_generate_task_id", staticmethod(lambda: next(task_ids)))
+    monkeypatch.setattr(task_runner_module, "generate_task_id", lambda: next(task_ids))
     monkeypatch.setattr(task_runner_module.task_workers, "wake", wake_worker)
     runner = TaskRunner(tmp_path)
 
@@ -157,7 +158,7 @@ def test_submit_reports_new_and_replayed_tasks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     task_ids = iter([TASK_ID, "20260715-120001-bbccdd"])
-    monkeypatch.setattr(TaskRunner, "_generate_task_id", staticmethod(lambda: next(task_ids)))
+    monkeypatch.setattr(task_runner_module, "generate_task_id", lambda: next(task_ids))
     monkeypatch.setattr(task_runner_module.task_workers, "wake", lambda bench_root: True)
     runner = TaskRunner(tmp_path)
 
@@ -179,16 +180,15 @@ def test_submit_returns_published_task_when_housekeeping_fails(
         housekeeping.append(("wake", bench_root))
         raise RuntimeError("wake failed")
 
-    def fail_purge(limit: int) -> None:
+    def fail_purge(_store, limit: int) -> None:
         housekeeping.append(("purge", limit))
         raise OSError("purge failed")
 
-    monkeypatch.setattr(TaskRunner, "_generate_task_id", staticmethod(lambda: TASK_ID))
+    monkeypatch.setattr(task_runner_module, "generate_task_id", lambda: TASK_ID)
     monkeypatch.setattr(task_runner_module.task_workers, "wake", fail_wake)
-    runner = TaskRunner(tmp_path)
-    monkeypatch.setattr(runner._store, "purge_terminal", fail_purge)
+    monkeypatch.setattr(task_store_module.TaskStore, "purge_terminal", fail_purge)
 
-    submission = runner.submit("build", {})
+    submission = TaskRunner(tmp_path).submit("build", {})
 
     assert submission.task_id == TASK_ID
     assert submission.created is True
@@ -204,7 +204,7 @@ def test_run_rejects_idempotency_key_reuse_for_different_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     task_ids = iter([TASK_ID, "20260715-120001-bbccdd"])
-    monkeypatch.setattr(TaskRunner, "_generate_task_id", staticmethod(lambda: next(task_ids)))
+    monkeypatch.setattr(task_runner_module, "generate_task_id", lambda: next(task_ids))
     monkeypatch.setattr(task_runner_module.task_workers, "wake", lambda bench_root: True)
     runner = TaskRunner(tmp_path)
     runner.run("build", {}, idempotency_key="client-request-key")
@@ -238,7 +238,7 @@ def test_run_hands_secret_to_job_without_persisting_it_publicly(
     task_dir = tmp_path / "tasks" / TASK_ID
     password = "unique-admin-password"
 
-    monkeypatch.setattr(TaskRunner, "_generate_task_id", staticmethod(lambda: TASK_ID))
+    monkeypatch.setattr(task_runner_module, "generate_task_id", lambda: TASK_ID)
     monkeypatch.setattr(task_runner_module.task_workers, "wake", lambda bench_root: True)
 
     TaskRunner(tmp_path).run(
@@ -268,7 +268,7 @@ def test_restore_task_hides_upload_paths_from_public_args(
     private_files = upload_dir / "private.tar"
     for path in (database, public_files, private_files):
         path.write_bytes(path.name.encode())
-    monkeypatch.setattr(TaskRunner, "_generate_task_id", staticmethod(lambda: TASK_ID))
+    monkeypatch.setattr(task_runner_module, "generate_task_id", lambda: TASK_ID)
     monkeypatch.setattr(task_runner_module.task_workers, "wake", lambda bench_root: True)
 
     TaskRunner(tmp_path).run(
@@ -282,9 +282,7 @@ def test_restore_task_hides_upload_paths_from_public_args(
         },
     )
 
-    public_args = json.loads(
-        (tmp_path / "tasks" / TASK_ID / "meta.json").read_text()
-    )["args"]
+    public_args = json.loads((tmp_path / "tasks" / TASK_ID / "meta.json").read_text())["args"]
     assert public_args == {
         "name": "example.test",
         "admin_password": "[redacted]",
@@ -302,7 +300,7 @@ def test_restore_idempotency_fingerprints_upload_contents(
     second_upload.parent.mkdir(parents=True)
     first_upload.write_bytes(b"same database backup")
     second_upload.write_bytes(b"same database backup")
-    monkeypatch.setattr(TaskRunner, "_generate_task_id", staticmethod(lambda: next(task_ids)))
+    monkeypatch.setattr(task_runner_module, "generate_task_id", lambda: next(task_ids))
     monkeypatch.setattr(task_runner_module.task_workers, "wake", lambda bench_root: True)
     runner = TaskRunner(tmp_path)
 
@@ -339,7 +337,7 @@ def test_restore_idempotency_rejects_different_upload_contents(
     second_upload = tmp_path / "second.sql.gz"
     first_upload.write_bytes(b"first backup")
     second_upload.write_bytes(b"second backup")
-    monkeypatch.setattr(TaskRunner, "_generate_task_id", staticmethod(lambda: next(task_ids)))
+    monkeypatch.setattr(task_runner_module, "generate_task_id", lambda: next(task_ids))
     monkeypatch.setattr(task_runner_module.task_workers, "wake", lambda bench_root: True)
     runner = TaskRunner(tmp_path)
     common_args = {"name": "example.test", "admin_password": "secret"}
@@ -362,21 +360,19 @@ def test_base_task_loads_secret_arguments_from_handoff_file(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from pilot.managers.task.base_task import _apply_task_secrets
+    from pilot.internal.tasks.authoring import apply_task_secrets
 
     secret_path = tmp_path / "secrets.json"
     secret_path.write_text(json.dumps({"admin_password": "from-file"}))
     monkeypatch.setenv("BENCH_TASK_SECRETS_FILE", str(secret_path))
     args = SimpleNamespace(admin_password=None)
 
-    _apply_task_secrets(args)
+    apply_task_secrets(args)
 
     assert args.admin_password == "from-file"
 
 
-@pytest.mark.parametrize(
-    "status", ["queued", "running", "success", "failed", "killed"]
-)
+@pytest.mark.parametrize("status", ["queued", "running", "success", "failed", "killed"])
 def test_task_reader_preserves_current_statuses(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -486,12 +482,8 @@ def test_wrapper_loads_config_redactions_and_removes_secret_handoff(
     task_dir.mkdir(parents=True)
     (task_dir / "meta.json").write_text(json.dumps(task_meta(tmp_path)))
     (task_dir / "status").write_text("running")
-    (task_dir / "secrets.json").write_text(
-        json.dumps({"admin_password": "task-password"})
-    )
-    (tmp_path / "bench.toml").write_text(
-        '[mariadb]\nroot_password = "database-password"\n'
-    )
+    (task_dir / "secrets.json").write_text(json.dumps({"admin_password": "task-password"}))
+    (tmp_path / "bench.toml").write_text('[mariadb]\nroot_password = "database-password"\n')
     captured = {}
 
     def run_task(*args):
@@ -568,9 +560,7 @@ def test_wrapper_runs_matching_callback_and_finalizes_task(
     assert (task_dir / "status").read_text() == status
     assert final_meta["exit_code"] == exit_code
     assert final_meta["finished_at"] is not None
-    assert final_meta["failure"] == (
-        None if exit_code == 0 else {"code": "command_failed"}
-    )
+    assert final_meta["failure"] == (None if exit_code == 0 else {"code": "command_failed"})
     assert "Callback successfully triggered" in (task_dir / "output.log").read_text()
 
 
@@ -620,9 +610,7 @@ def test_wrapper_terminal_state_wins_before_callback(
     (task_dir / "meta.json").write_text(json.dumps(task_meta(tmp_path)))
     (task_dir / "status").write_text("running")
     (task_dir / "callbacks.json").write_text(
-        json.dumps(
-            {"on_success": {"operation": "test-late-cancel", "args": {}}}
-        )
+        json.dumps({"on_success": {"operation": "test-late-cancel", "args": {}}})
     )
     observed = []
 

@@ -10,8 +10,9 @@ def _task(tmp_path, filenames):
         sites_path=tmp_path / "sites",
         config=SimpleNamespace(s3=SimpleNamespace(is_configured=False)),
     )
-    args = SimpleNamespace(site="site1", filenames=filenames)
-    return DeleteBackupTask(bench, tmp_path, args), bench
+    return DeleteBackupTask(
+        bench=bench, bench_root=tmp_path, site="site1", filenames=filenames
+    ), bench
 
 
 def test_delete_removes_local_files_and_logs(tmp_path) -> None:

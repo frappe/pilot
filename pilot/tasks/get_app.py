@@ -1,37 +1,33 @@
+from dataclasses import dataclass
+from typing import ClassVar
+
 from pilot.core.app import App
 from pilot.integrations.marketplace import Marketplace
 
-from pilot.managers.task.base_task import BaseTask
+from pilot.tasks.base import BaseTask, step
 
 
+@dataclass(kw_only=True)
 class GetAppTask(BaseTask):
-    command = "get-app"
-    required_args = ["name"]
+    command: ClassVar[str] = "get-app"
+    required_submit_args: ClassVar[tuple[str, ...]] = ("name",)
 
-    @classmethod
-    def _parser(cls):
-        p = super()._parser()
-        p.add_argument("--repo", default="")
-        p.add_argument("--branch", default="")
-        p.add_argument("--marketplace-app", default="")
-        return p
-
-    def __init__(self, bench, bench_root, args):
-        super().__init__(bench, bench_root, args)
-        self.repo = args.repo
-        self.branch = args.branch
-        self.marketplace_app = args.marketplace_app
+    repo: str = ""
+    branch: str = ""
+    marketplace_app: str = ""
 
     def run(self) -> None:
+        self.fetch()
+
+    @step("fetch", lambda self: f"Fetch {self.marketplace_app or self.repo}")
+    def fetch(self) -> None:
         if self.marketplace_app:
             resolver = Marketplace(self.bench).find_app(self.marketplace_app)
             repo, branch = resolver.repo, resolver.target
         else:
             repo, branch = self.repo, self.branch
-        self._step("fetch", f"Fetch {self.marketplace_app or self.repo}")
         app = App.from_repo(self.bench, repo, branch)
-        app.install(install_dependencies=bool(self.marketplace_app), on_progress=self._report)
-        self._step("done")
+        app.install(install_dependencies=bool(self.marketplace_app), on_progress=self.report)
 
 
 if __name__ == "__main__":

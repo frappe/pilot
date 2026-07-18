@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from pilot.managers.task.queue import TaskQueue
+import pytest
+
+from pilot.internal.tasks.queue import TaskQueue
 from pilot.managers.task.models import TaskStatus
-from pilot.managers.task.store import TaskStore
+from pilot.internal.tasks.store import TaskStore
 
 
 def task_metadata(task_id: str) -> dict:
@@ -40,6 +43,12 @@ def test_queue_preserves_submission_order_with_same_timestamp(tmp_path: Path) ->
         task_ids[1]: 2,
         task_ids[2]: 3,
     }
+
+
+def test_empty_queue_does_not_require_tasks_directory(tmp_path: Path) -> None:
+    assert TaskQueue(tmp_path).queued_task_ids() == []
+    assert TaskQueue(tmp_path).positions() == {}
+    assert TaskQueue(tmp_path).claim_next() is None
 
 
 def test_claim_next_transitions_oldest_queued_task(tmp_path: Path) -> None:
@@ -92,3 +101,56 @@ def test_queue_skips_terminal_tasks(tmp_path: Path) -> None:
 
     assert TaskQueue(tmp_path).queued_task_ids() == [queued]
     assert TaskQueue(tmp_path).claim_next() == queued
+
+
+def test_queue_ignores_staged_task_dirs(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    queued = "20260715-120000-111111"
+    staged = "20260715-120000-222222"
+    enqueue(store, queued)
+
+    staged_dir = store.tasks_root / f".{staged}.tmp"
+    staged_dir.mkdir()
+    (staged_dir / "meta.json").write_text(json.dumps(task_metadata(staged)))
+    (staged_dir / "status").write_text(TaskStatus.QUEUED.value)
+
+    assert TaskQueue(tmp_path).queued_task_ids() == [queued]
+    assert TaskQueue(tmp_path).claim_next() == queued
+    assert staged_dir.exists()
+    assert TaskQueue(tmp_path).claim_next() is None
+
+
+def test_queue_ignores_invalid_task_dirs(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    queued = "20260715-120000-111111"
+    enqueue(store, queued)
+
+    invalid_dir = store.tasks_root / "not-a-task"
+    invalid_dir.mkdir()
+    (invalid_dir / "meta.json").write_text(
+        json.dumps(task_metadata("20260715-120000-222222"))
+    )
+    (invalid_dir / "status").write_text(TaskStatus.QUEUED.value)
+
+    assert TaskQueue(tmp_path).queued_task_ids() == [queued]
+    assert TaskQueue(tmp_path).claim_next() == queued
+    assert invalid_dir.exists()
+    assert TaskQueue(tmp_path).claim_next() is None
+
+
+def test_queue_ignores_symlinked_task_dirs(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    queued = "20260715-120000-111111"
+    linked = "20260715-120000-222222"
+    enqueue(store, queued)
+
+    outside = tmp_path / "outside-task"
+    outside.mkdir()
+    (outside / "meta.json").write_text(json.dumps(task_metadata(linked)))
+    (outside / "status").write_text(TaskStatus.QUEUED.value)
+    try:
+        (store.tasks_root / linked).symlink_to(outside, target_is_directory=True)
+    except OSError as error:
+        pytest.skip(f"symlinks unavailable: {error}")
+
+    assert TaskQueue(tmp_path).queued_task_ids() == [queued]

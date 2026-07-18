@@ -1,30 +1,25 @@
+from dataclasses import dataclass
+from typing import ClassVar
+
 from pilot.core.site import Site
-from pilot.managers.task.base_task import BaseTask
+from pilot.tasks.base import BaseTask, step
 
 
+@dataclass(kw_only=True)
 class UninstallAppTask(BaseTask):
-    command = "uninstall-app"
-    required_args = ["site", "app"]
+    command: ClassVar[str] = "uninstall-app"
 
-    @classmethod
-    def _parser(cls):
-        p = super()._parser()
-        p.add_argument("site")
-        p.add_argument("app")
-        p.add_argument("--force", action="store_true")
-        return p
-
-    def __init__(self, bench, bench_root, args):
-        super().__init__(bench, bench_root, args)
-        self.site = args.site
-        self.app = args.app
-        self.force = args.force
+    site: str
+    app: str
+    force: bool = False
 
     def run(self) -> None:
-        self._step("uninstall", f"Uninstall {self.app} from {self.site}")
+        self.uninstall()
+
+    @step("uninstall", lambda self: f"Uninstall {self.app} from {self.site}")
+    def uninstall(self) -> None:
         site = Site.for_name(self.site, self.bench)
-        site.uninstall_apps([self.app], force=self.force, on_progress=self._report)
-        self._step("done")
+        site.uninstall_apps([self.app], force=self.force, on_progress=self.report)
 
 
 if __name__ == "__main__":

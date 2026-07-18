@@ -1,13 +1,19 @@
-from pilot.managers.task.base_task import BaseTask
+from dataclasses import dataclass
+from typing import ClassVar
+
+from pilot.tasks.base import BaseTask, step
 
 
+@dataclass(kw_only=True)
 class SetupNginxTask(BaseTask):
-    command = "setup-nginx"
+    command: ClassVar[str] = "setup-nginx"
 
     def run(self) -> None:
-        self._step("nginx", "Set up Nginx")
-        self.bench.setup_nginx(on_progress=self._report)
-        self._step("done")
+        self.setup_nginx()
+
+    @step("nginx", "Set up Nginx")
+    def setup_nginx(self) -> None:
+        self.bench.setup_nginx(on_progress=self.report)
 
 
 if __name__ == "__main__":

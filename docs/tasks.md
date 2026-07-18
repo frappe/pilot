@@ -16,13 +16,13 @@ Admin view / API
    └─ TaskWorker (background thread inside the admin process)
         ├─ holds tasks/worker.lock for the lifetime of the bench's admin process
         ├─ claims the oldest queued task (TaskQueue.claim_next)
-        ├─ starts pilot.tasks.manager.wrapper as a detached child
+        ├─ starts pilot.internal.tasks.wrapper as a detached child
         │     └─ wrapper runs the job's command_argv, streams output → output.log
         │     └─ wrapper finalizes status on exit (success/failed/killed)
         └─ repeats until the queue is empty, then goes idle
 ```
 
-The worker is a **thread**, not a separate OS process: `task_workers.start(bench_root)` is called once from `server.py`/`wsgi.py` at admin startup. The `tasks/worker.lock` file (via `flock`) is what actually enforces "one worker per bench" — it protects against more than one admin process (e.g. two gunicorn workers) racing to run the same bench's queue, not just concurrent threads.
+The worker is a **thread**, not a separate OS process: `TaskWorkerControl(bench_root).start_background_worker()` is called once from `server.py`/`wsgi.py` at admin startup. The `tasks/worker.lock` file (via `flock`) is what actually enforces "one worker per bench" — it protects against more than one admin process (e.g. two gunicorn workers) racing to run the same bench's queue, not just concurrent threads.
 
 ---
 
@@ -35,7 +35,7 @@ queued --> running --> success
 queued --------------> killed
 ```
 
-Success, failed, and killed are terminal — no further transitions are allowed from them. Every transition is validated (`pilot/tasks/manager/task_state.py: validate_task_transition`) and applied as a compare-and-swap under the tasks-directory lock (`TaskStore.transition_locked` re-reads the current status and only writes if it still matches the expected one).
+Success, failed, and killed are terminal — no further transitions are allowed from them. Every transition is validated and applied as a compare-and-swap under the tasks-directory lock (`TaskStore.transition_locked` re-reads the current status and only writes if it still matches the expected one).
 
 | Transition | Trigger |
 |---|---|
@@ -74,7 +74,7 @@ Success, failed, and killed are terminal — no further transitions are allowed 
   "task_id": "20260716-143022-a1b2c3",
   "command": "migrate",
   "args": { "site": "site1.example.com" },
-  "command_argv": ["/bench/env/bin/python", "-m", "pilot.tasks.jobs.migrate_task", "/bench/root", "site1.example.com"],
+  "command_argv": ["/bench/env/bin/python", "-m", "pilot.tasks.migrate", "/bench/root", "site1.example.com"],
   "queued_at": "2026-07-16T14:30:22.441000+00:00",
   "started_at": "2026-07-16T14:30:22.501000+00:00",
   "finished_at": "2026-07-16T14:30:35.112000+00:00",
@@ -85,14 +85,14 @@ Success, failed, and killed are terminal — no further transitions are allowed 
 }
 ```
 
-`started_at`, `finished_at`, `exit_code`, and `failure` are `null` until set by the corresponding transition. `args` is already redacted/whitelisted for public consumption (`public_task_args`) — secret values (e.g. `admin_password`) never appear here; they live only in `secrets.json`, which the wrapper deletes as soon as it hands them to the job. `failure`, when present, stores only `{"code": "command_failed"}` or `{"code": "task_interrupted"}`; the human-readable message is looked up from a fixed table at read time, not stored. Tasks submitted with an `Idempotency-Key` also carry `idempotency_digest` and `request_fingerprint`; tasks scoped to a resource (e.g. one site) carry `resource_key`, which blocks a second active task from touching the same resource.
+`started_at`, `finished_at`, `exit_code`, and `failure` are `null` until set by the corresponding transition. `args` is already redacted and whitelisted for public consumption — secret values (e.g. `admin_password`) never appear here; they live only in `secrets.json`, which the wrapper deletes as soon as it hands them to the job. `failure`, when present, stores only `{"code": "command_failed"}` or `{"code": "task_interrupted"}`; the human-readable message is looked up from a fixed table at read time, not stored. Tasks submitted with an `Idempotency-Key` also carry `idempotency_digest` and `request_fingerprint`; tasks scoped to a resource (e.g. one site) carry `resource_key`, which blocks a second active task from touching the same resource.
 
 ### `process.json` schema
 
 ```json
 {
   "task_id": "20260716-143022-a1b2c3",
-  "argv": ["/bench/env/bin/python", "-m", "pilot.tasks.manager.wrapper", "/bench/root/tasks/20260716-143022-a1b2c3"],
+  "argv": ["/bench/env/bin/python", "-m", "pilot.internal.tasks.wrapper", "/bench/root/tasks/20260716-143022-a1b2c3"],
   "identity": {
     "pid": 48213, "pgid": 48213, "sid": 48213, "boot_id": "...",
     "start_ticks": 918273, "uid": 1000, "argv_hash": "...", "launch_id": "..."
@@ -106,7 +106,7 @@ Success, failed, and killed are terminal — no further transitions are allowed 
 
 ## Worker lifecycle
 
-`TaskWorker` (`pilot/tasks/manager/worker.py`) runs one loop per bench:
+`TaskWorker` (`pilot/internal/tasks/worker.py`) runs one loop per bench:
 
 1. `try_acquire()` the `worker.lock`; if another worker already holds it, exit immediately (no-op).
 2. Write `worker.pid` and enter the loop. On each iteration:
@@ -178,13 +178,13 @@ Every worker loop iteration calls `TaskProcess.reconcile()` before claiming new 
 
 So: if the worker (admin process) dies while a task's wrapper is still alive, a replacement worker waits for that live orphan to finish on its own — it is never signalled or replayed. If both the worker and the task's process die while status was `running`, the task is marked `failed` with `task_interrupted` and must be retried explicitly; mid-step replay is never attempted (unsafe for migrations, site creation, package installs, production setup).
 
-`POST /tasks/<id>/actions/retry` re-submits the same `command`/`args` as a brand-new queued task. It refuses tasks that are still active, and refuses commands whose whitelist requires a secret (`task_requires_secrets`, e.g. `admin_password` for `new-site`) since the original plaintext value was deleted after first use.
+`POST /tasks/<id>/actions/retry` re-submits the same `command`/`args` as a brand-new queued task. It refuses tasks that are still active, and refuses commands whose required args include a secret (for example, `admin_password` for `new-site`) since the original plaintext value was deleted after first use.
 
 ---
 
 ## Process ownership and PID safety
 
-A bare PID is not trustworthy: PIDs get reused, so `kill(pid)` after any delay risks signalling an unrelated process that now happens to own that number. `ProcessIdentity` (`pilot/tasks/manager/process_identity.py`) is captured once at launch and re-checked before every signal:
+A bare PID is not trustworthy: PIDs get reused, so `kill(pid)` after any delay risks signalling an unrelated process that now happens to own that number. `ProcessIdentity` (`pilot/internal/tasks/process_identity.py`) is captured once at launch and re-checked before every signal:
 
 | Field | Why it's checked |
 |---|---|
@@ -207,7 +207,7 @@ Signalling uses `pidfd_send_signal` (falling back to `os.kill`) so the check-the
 
 ## Watchdog interaction
 
-`AdminIdleWatchdog` (`admin/backend/watchdog.py`) must never shut the admin down while a task is running or a worker is draining. It reads one shared source of truth, `TaskActivityReader.read()` (`pilot/tasks/manager/activity.py`), which is also what the CLI and API status endpoints use:
+`AdminIdleWatchdog` (`admin/backend/watchdog.py`) must never shut the admin down while a task is running or a worker is draining. It reads one shared source of truth, `TaskActivityReader.read()` (`pilot/managers/task/activity.py`), which is also what the CLI and API status endpoints use:
 
 ```
 active = uncertain
@@ -223,15 +223,19 @@ Notably, **queued-but-not-yet-claimed tasks do not count as activity** — if th
 
 ## Job contract
 
-Every job subclasses `BaseTask` (`pilot/tasks/jobs/base_task.py`). `BaseTask.main()` loads any secret arguments handed off via `BENCH_TASK_SECRETS_FILE`, constructs the bench and the task, and calls `run()`:
+Every job subclasses `BaseTask` from `pilot.tasks.base`. Task modules live directly under `pilot/tasks/`, and `pilot.tasks.TaskRunner` discovers any dataclass task with a non-empty `command`.
 
-- `self._step(key, label)` prints `STEP <key>,<timestamp> <label>` — opens a collapsible step in the admin UI. Every job emits at least one, even single-step ones.
-- `self._step_failed()` prints `STEP-FAILED <key>,<timestamp>` for the currently open step.
-- `main()` calls `_step_failed()` automatically around `run()` if it raises, or exits with a non-zero `SystemExit` code — a job never has to handle its own top-level failure reporting; raising is enough to make the task fail.
+Task fields are the task API: required dataclass fields become required submit args and subprocess CLI arguments; defaults become optional flags; `Annotated[..., Arg(cli=False)]` fields use `Arg` from `pilot.tasks.base` (re-exported from `pilot.cli_args`), are accepted from `secrets.json`, and are never exposed on the subprocess command line. Internal task-authoring plumbing loads `BENCH_TASK_SECRETS_FILE`, constructs the bench and task, calls `run()`, and emits a final `done` step unless `has_done_step = False`.
 
-`SwitchBranchTask` (`pilot/tasks/jobs/switch_branch_task.py`) is a representative example: it calls `_step` for `fetch`, `checkout`, `install`, an optional `js`, `assets`, and a final `done`, and calls `sys.exit(result.returncode)` on a failed checkout rather than raising, which `main()` also treats as a failure via the `SystemExit` branch.
+Use `required_submit_args` only for a value that must be submitted for validation or UI metadata but is not a constructor field. `GetAppTask` uses this for `name`; most tasks should not need it.
 
-The wrapper (`pilot/tasks/manager/wrapper.py`) runs `command_argv` as a subprocess, capturing merged stdout/stderr into `output.log` with a syslog envelope per line (so `\r`-terminated progress redraws each get re-stamped and `TaskReader` can collapse them like a terminal would) and redacting known secret values before they ever reach disk.
+- `@step(key, label)` wraps a task method, prints `STEP <key>,<timestamp> <label>`, and prints `STEP-FAILED <key>,<timestamp>` if that method raises.
+- `with self.step(key, label):` is for dynamic steps, usually loops where the key or label depends on the current item.
+- `self.report(message)` flushes progress from core methods into the active step.
+
+`SwitchBranchTask` (`pilot/tasks/switch_branch.py`) is a representative example: it declares only its submitted fields (`name`, `branch`), uses `@step` for checkout/install/assets, and leaves final success/failure status to the wrapper.
+
+The wrapper (`pilot/internal/tasks/wrapper.py`) runs `command_argv` as a subprocess, capturing merged stdout/stderr into `output.log` with a syslog envelope per line (so `\r`-terminated progress redraws each get re-stamped and `TaskReader` can collapse them like a terminal would) and redacting known secret values before they ever reach disk.
 
 ---
 

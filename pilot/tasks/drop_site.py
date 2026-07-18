@@ -1,26 +1,23 @@
+from dataclasses import dataclass
+from typing import ClassVar
+
 from pilot.core.site import Site
-from pilot.managers.task.base_task import BaseTask
+from pilot.tasks.base import BaseTask, step
 
 
+@dataclass(kw_only=True)
 class DropSiteTask(BaseTask):
-    command = "drop-site"
-    required_args = ["site"]
+    command: ClassVar[str] = "drop-site"
 
-    @classmethod
-    def _parser(cls):
-        p = super()._parser()
-        p.add_argument("site")
-        return p
-
-    def __init__(self, bench, bench_root, args):
-        super().__init__(bench, bench_root, args)
-        self.site = args.site
+    site: str
 
     def run(self) -> None:
-        self._require_production_privileges()
-        self._step("drop", f"Drop site {self.site}")
-        Site.for_name(self.site, self.bench).drop(on_progress=self._report)
-        self._step("done")
+        self.require_production_privileges()
+        self.drop()
+
+    @step("drop", lambda self: f"Drop site {self.site}")
+    def drop(self) -> None:
+        Site.for_name(self.site, self.bench).drop(on_progress=self.report)
 
 
 if __name__ == "__main__":

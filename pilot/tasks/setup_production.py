@@ -1,13 +1,19 @@
-from pilot.managers.task.base_task import BaseTask
+from dataclasses import dataclass
+from typing import ClassVar
+
+from pilot.tasks.base import BaseTask, step
 
 
+@dataclass(kw_only=True)
 class SetupProductionTask(BaseTask):
-    command = "setup-production"
+    command: ClassVar[str] = "setup-production"
 
     def run(self) -> None:
-        self._step("production", "Set up production")
-        self.bench.setup_production(on_progress=self._report)
-        self._step("done")
+        self.setup_production()
+
+    @step("production", "Set up production")
+    def setup_production(self) -> None:
+        self.bench.setup_production(on_progress=self.report)
 
 
 if __name__ == "__main__":

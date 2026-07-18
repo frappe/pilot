@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from pilot.managers.task.process_identity import (
+from pilot.internal.tasks.process_identity import (
     ProcessInspector,
     ProcessOwnership,
 )
@@ -71,7 +71,7 @@ def test_capture_waits_for_child_exec(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(inspector, "_read_process", lambda pid: next(snapshots))
     monkeypatch.setattr(inspector, "_has_launch_id", lambda pid, launch_id: True)
     monkeypatch.setattr(inspector, "_read_boot_id", lambda: "boot")
-    monkeypatch.setattr("pilot.managers.task.process_identity.time.sleep", lambda _: None)
+    monkeypatch.setattr("pilot.internal.tasks.process_identity.time.sleep", lambda _: None)
 
     identity = inspector.capture(123, argv, "launch")
 
@@ -150,7 +150,9 @@ def test_permission_failure_is_unknown(
     process, argv, launch_id = owned_process
     inspector = ProcessInspector()
     identity = inspector.capture(process.pid, argv, launch_id)
-    monkeypatch.setattr(inspector, "_read_process", lambda pid: (_ for _ in ()).throw(PermissionError()))
+    monkeypatch.setattr(
+        inspector, "_read_process", lambda pid: (_ for _ in ()).throw(PermissionError())
+    )
 
     assert inspector.inspect(identity, argv) == ProcessOwnership.UNKNOWN
 

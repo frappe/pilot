@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from pilot.managers.task import ACTIVE_TASK_STATUSES, TaskReader
+from pilot.managers.task import TaskReader
 from pilot.core.site import query_installed_apps_via_db
 from pilot.internal.site_paths import resolve_site_path
 
@@ -61,7 +61,7 @@ class SiteProvider:
         names = set()
         for task in tasks:
             if (
-                task.status not in ACTIVE_TASK_STATUSES
+                not task.status.is_active
                 or task.command not in _PROVISIONING_COMMANDS
             ):
                 continue

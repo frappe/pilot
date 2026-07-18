@@ -1,15 +1,55 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
-from pilot.managers.task.runner import TaskRunner as _TaskRunner
-from pilot.tasks.registry import JOBS, WHITELIST
+from pilot.tasks.callbacks import TaskCallbacks
 
 
-class TaskRunner(_TaskRunner):
-    """The TaskRunner bound to this app's actual task registry — what every
-    caller should use. pilot.managers.task.TaskRunner is the generic engine;
-    this just wires it to pilot.tasks.registry's job classes."""
+@dataclass(frozen=True)
+class TaskSubmission:
+    task_id: str
+    created: bool
 
+
+class TaskRunner:
     def __init__(self, bench_root: Path) -> None:
-        super().__init__(bench_root, JOBS, WHITELIST)
+        from pilot.internal.tasks.runner import runner_class
+
+        self.__engine = runner_class()(bench_root)
+
+    def run(
+        self,
+        command: str,
+        args: dict,
+        callbacks: TaskCallbacks | None = None,
+        idempotency_key: str | None = None,
+        resource_key: str | None = None,
+    ) -> str:
+        return self.__engine.run(
+            command,
+            args,
+            callbacks=callbacks,
+            idempotency_key=idempotency_key,
+            resource_key=resource_key,
+        )
+
+    def submit(
+        self,
+        command: str,
+        args: dict,
+        callbacks: TaskCallbacks | None = None,
+        idempotency_key: str | None = None,
+        resource_key: str | None = None,
+    ) -> TaskSubmission:
+        result = self.__engine.submit(
+            command,
+            args,
+            callbacks=callbacks,
+            idempotency_key=idempotency_key,
+            resource_key=resource_key,
+        )
+        return TaskSubmission(result.task_id, result.created)
+
+    def kill(self, task_id: str) -> None:
+        self.__engine.kill(task_id)

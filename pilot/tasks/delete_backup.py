@@ -1,26 +1,23 @@
 from __future__ import annotations
 
-from pilot.managers.task.base_task import BaseTask
+from dataclasses import dataclass
+from typing import ClassVar
+
+from pilot.tasks.base import BaseTask, step
 from pilot.core.backup_pruning import BackupPruner, parse_backup_timestamp
 from pilot.integrations.s3.backups import OffsiteBackup
 from pilot.integrations.s3.base import S3IntegrationError
 
 
+@dataclass(kw_only=True)
 class DeleteBackupTask(BaseTask):
-    command = "delete-backup"
-    required_args = ["site", "filenames"]
+    command: ClassVar[str] = "delete-backup"
 
-    @classmethod
-    def _parser(cls):
-        p = super()._parser()
-        p.add_argument("site")
-        p.add_argument("filenames", nargs="+")
-        return p
+    site: str
+    filenames: list[str]
 
-    def __init__(self, bench, bench_root, args):
-        super().__init__(bench, bench_root, args)
-        self.site = args.site
-        self.filenames = args.filenames
+    def run(self) -> None:
+        self.delete()
 
     def delete_from_remote(self, filename: str) -> bool:
         timestamp = parse_backup_timestamp(filename)
@@ -34,11 +31,13 @@ class DeleteBackupTask(BaseTask):
             print(f"Deleted from S3: {filename}")
             return True
         except S3IntegrationError as e:
-            print(f"Something seems wrong with s3 integration, skipping remote delete for {filename}: {e!s}")
+            print(
+                f"Something seems wrong with s3 integration, skipping remote delete for {filename}: {e!s}"
+            )
             return False
 
-    def run(self) -> None:
-        self._step("delete", f"Delete {len(self.filenames)} backup(s) for {self.site}")
+    @step("delete", lambda self: f"Delete {len(self.filenames)} backup(s) for {self.site}")
+    def delete(self) -> None:
         backup_dir = BackupPruner(self.bench, self.site).backups_dir
         deleted, offsite = [], False
         for filename in self.filenames:
@@ -51,13 +50,18 @@ class DeleteBackupTask(BaseTask):
                 deleted.append(filename)
                 offsite = True
 
-        self._record(deleted, offsite)
-        self._step("done")
+        self.record(deleted, offsite)
 
-    def _record(self, deleted: list[str], offsite: bool) -> None:
-        self._record_audit(
+    def record(self, deleted: list[str], offsite: bool) -> None:
+        self.record_audit(
             "backup",
-            {"site": self.site, "event": "delete", "status": "success", "files": deleted, "offsite": offsite},
+            {
+                "site": self.site,
+                "event": "delete",
+                "status": "success",
+                "files": deleted,
+                "offsite": offsite,
+            },
         )
 
 

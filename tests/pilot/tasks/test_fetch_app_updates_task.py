@@ -23,7 +23,7 @@ def test_run_reports_has_marketplace_update_result_per_app(tmp_path: Path, capsy
     bench.app.side_effect = lambda n: app
 
     with patch.object(Marketplace, "registry", return_value=REGISTRY):
-        FetchAppUpdatesTask(bench, tmp_path, MagicMock()).run()
+        FetchAppUpdatesTask(bench=bench, bench_root=tmp_path).run()
 
     app.has_marketplace_update.assert_called_once_with(REGISTRY[0])
     result = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
@@ -38,7 +38,7 @@ def test_run_passes_none_for_app_not_in_marketplace(tmp_path: Path, capsys) -> N
     bench.app.side_effect = lambda n: app
 
     with patch.object(Marketplace, "registry", return_value=[]):
-        FetchAppUpdatesTask(bench, tmp_path, MagicMock()).run()
+        FetchAppUpdatesTask(bench=bench, bench_root=tmp_path).run()
 
     app.has_marketplace_update.assert_called_once_with(None)
     result = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
@@ -54,7 +54,7 @@ def test_run_ignores_non_git_dirs(tmp_path: Path) -> None:
     bench.app.side_effect = lambda n: app
 
     with patch.object(Marketplace, "registry", return_value=[]):
-        FetchAppUpdatesTask(bench, tmp_path, MagicMock()).run()
+        FetchAppUpdatesTask(bench=bench, bench_root=tmp_path).run()
 
     bench.app.assert_called_once_with("erpnext")
 
@@ -68,7 +68,7 @@ def test_run_mixed_apps_combine_results(tmp_path: Path, capsys) -> None:
     bench.app.side_effect = lambda n: apps[n]
 
     with patch.object(Marketplace, "registry", return_value=[]):
-        FetchAppUpdatesTask(bench, tmp_path, MagicMock()).run()
+        FetchAppUpdatesTask(bench=bench, bench_root=tmp_path).run()
 
     result = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert result == {"helpdesk": False, "hrms": True}

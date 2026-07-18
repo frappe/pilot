@@ -1,32 +1,28 @@
 import subprocess
 import sys
+from dataclasses import dataclass
+from typing import ClassVar
 
-from pilot.managers.task.base_task import BaseTask
+from pilot.tasks.base import BaseTask, step
 
 
+@dataclass(kw_only=True)
 class BuildTask(BaseTask):
-    command = "build"
-    required_args: list[str] = []  # optional: app
+    command: ClassVar[str] = "build"
 
-    @classmethod
-    def _parser(cls):
-        p = super()._parser()
-        p.add_argument("--app", default=None)
-        return p
-
-    def __init__(self, bench, bench_root, args):
-        super().__init__(bench, bench_root, args)
-        self.app = args.app
+    app: str | None = None
 
     def run(self) -> None:
-        self._step("build", f"Build assets for {self.app}" if self.app else "Build assets")
+        self.build()
+
+    @step("build", lambda self: f"Build assets for {self.app}" if self.app else "Build assets")
+    def build(self) -> None:
         argv = [*self.bench.frappe_call, "frappe", "build"]
         if self.app:
             argv += ["--app", self.app]
         result = subprocess.run(argv)
         if result.returncode != 0:
             sys.exit(result.returncode)
-        self._step("done")
 
 
 if __name__ == "__main__":

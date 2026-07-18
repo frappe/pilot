@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
+from pilot.internal.tasks import callbacks as callbacks
 from pilot.managers import platform
-from pilot.managers.task import callbacks
 
 
 def test_remove_failed_site_operation_uses_json_args(
@@ -35,9 +35,7 @@ def test_remove_failed_site_attempts_database_drop_before_file_cleanup(
     attempted_while_present = []
 
     def drop_failed_site(bench_root: Path, site_name: str, path: Path) -> bool:
-        attempted_while_present.append(
-            (bench_root, site_name, path, path.exists())
-        )
+        attempted_while_present.append((bench_root, site_name, path, path.exists()))
         return True
 
     monkeypatch.setattr(callbacks, "_drop_failed_site", drop_failed_site)
@@ -48,9 +46,7 @@ def test_remove_failed_site_attempts_database_drop_before_file_cleanup(
         {"bench_root": str(tmp_path)},
     )
 
-    assert attempted_while_present == [
-        (tmp_path, "new.localhost", site_path.resolve(), True)
-    ]
+    assert attempted_while_present == [(tmp_path, "new.localhost", site_path.resolve(), True)]
     assert not site_path.exists()
 
 
@@ -82,9 +78,7 @@ def test_remove_from_hosts_matches_address_and_hostname_tokens(
 ) -> None:
     hosts_path = tmp_path / "hosts"
     hosts_path.write_text(
-        "127.0.0.1 keep.localhost\n"
-        "127.0.0.1 failed.localhost\n"
-        "127.0.0.1 failed.localhost.example\n"
+        "127.0.0.1 keep.localhost\n127.0.0.1 failed.localhost\n127.0.0.1 failed.localhost.example\n"
     )
     captured = {}
     monkeypatch.setattr(callbacks, "_HOSTS_PATH", hosts_path)
@@ -98,8 +92,7 @@ def test_remove_from_hosts_matches_address_and_hostname_tokens(
 
     assert captured["argv"] == ["sudo", "-n", "tee", str(hosts_path)]
     assert captured["input"].decode() == (
-        "127.0.0.1 keep.localhost\n"
-        "127.0.0.1 failed.localhost.example\n"
+        "127.0.0.1 keep.localhost\n127.0.0.1 failed.localhost.example\n"
     )
 
 
@@ -118,9 +111,7 @@ def test_disable_site_ssl_operation_uses_json_args(tmp_path: Path) -> None:
 
 def test_callback_args_must_be_json_serializable(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="JSON serializable"):
-        callbacks.validate_callback(
-            {"operation": "remove-failed-site", "args": {"path": tmp_path}}
-        )
+        callbacks.validate_callback({"operation": "remove-failed-site", "args": {"path": tmp_path}})
 
 
 @pytest.mark.parametrize("remove_site", [False, True])

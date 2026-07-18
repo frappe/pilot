@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from pilot.managers.task.worker_state import (
+from pilot.internal.tasks.worker_state import (
     WorkerIntent,
     WorkerState,
     WorkerStatus,

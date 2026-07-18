@@ -1,20 +1,24 @@
 from __future__ import annotations
 
 import subprocess
+from dataclasses import dataclass
+from typing import ClassVar
 
 from pilot.loader import cli_root
 
-from pilot.managers.task.base_task import BaseTask
+from pilot.tasks.base import BaseTask, step
 
 
+@dataclass(kw_only=True)
 class UpdateCliTask(BaseTask):
-    command = "update-cli"
+    command: ClassVar[str] = "update-cli"
 
     def run(self) -> None:
-        root = cli_root()
-        self._step("update", f"Update bench-cli at {root}")
-        subprocess.run(["git", "-C", str(root), "pull"], check=True)
-        self._step("done")
+        self.update()
+
+    @step("update", lambda self: f"Update bench-cli at {cli_root()}")
+    def update(self) -> None:
+        subprocess.run(["git", "-C", str(cli_root()), "pull"], check=True)
 
 
 if __name__ == "__main__":

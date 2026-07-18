@@ -15,8 +15,7 @@ def _task(tmp_path):
         config=SimpleNamespace(s3=SimpleNamespace(is_configured=False)),
     )
     (bench.sites_path / "site1" / "private" / "backups").mkdir(parents=True)
-    args = SimpleNamespace(site="site1", with_files=False)
-    return BackupSiteTask(bench, tmp_path, args), bench
+    return BackupSiteTask(bench=bench, bench_root=tmp_path, site="site1", with_files=False), bench
 
 
 def test_success_exit_but_no_files_records_failure(tmp_path, monkeypatch) -> None:

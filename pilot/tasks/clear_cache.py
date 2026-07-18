@@ -1,29 +1,27 @@
 import subprocess
 import sys
+from dataclasses import dataclass
+from typing import ClassVar
 
-from pilot.managers.task.base_task import BaseTask
+from pilot.tasks.base import BaseTask, step
 
 
+@dataclass(kw_only=True)
 class ClearCacheTask(BaseTask):
-    command = "clear-cache"
-    required_args = ["site"]
+    command: ClassVar[str] = "clear-cache"
 
-    @classmethod
-    def _parser(cls):
-        p = super()._parser()
-        p.add_argument("site")
-        return p
-
-    def __init__(self, bench, bench_root, args):
-        super().__init__(bench, bench_root, args)
-        self.site = args.site
+    site: str
 
     def run(self) -> None:
-        self._step("clear_cache", f"Clear cache for {self.site}")
-        result = subprocess.run([*self.bench.frappe_call, "frappe", "--site", self.site, "clear-cache"])
+        self.clear_cache()
+
+    @step("clear_cache", lambda self: f"Clear cache for {self.site}")
+    def clear_cache(self) -> None:
+        result = subprocess.run(
+            [*self.bench.frappe_call, "frappe", "--site", self.site, "clear-cache"]
+        )
         if result.returncode != 0:
             sys.exit(result.returncode)
-        self._step("done")
 
 
 if __name__ == "__main__":

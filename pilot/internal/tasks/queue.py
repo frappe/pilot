@@ -3,13 +3,15 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
+from pilot.internal.tasks.files import TaskFiles
 from pilot.managers.task.models import TaskStatus
-from pilot.managers.task.store import TaskStore
+from pilot.internal.tasks.store import TaskStore
 
 
 class TaskQueue:
     def __init__(self, bench_root: Path) -> None:
         self._store = TaskStore(bench_root)
+        self._files = TaskFiles(self._store.tasks_root)
 
     def queued_task_ids(self) -> list[str]:
         with self._store.locked():
@@ -37,9 +39,7 @@ class TaskQueue:
 
     def _queued_tasks_locked(self) -> list[tuple[tuple, str]]:
         queued = []
-        for task_dir in self._store.tasks_root.iterdir():
-            if not task_dir.is_dir():
-                continue
+        for task_dir in self._files.task_dirs():
             task_id = task_dir.name
             try:
                 if self._store.read_status(task_id) != TaskStatus.QUEUED:

@@ -8,15 +8,15 @@ from pathlib import Path
 
 import pytest
 
-import pilot.managers.task.process as task_process_module
-from pilot.managers.task.process_identity import ProcessIdentity
-from pilot.managers.task.process import (
+import pilot.internal.tasks.process as task_process_module
+from pilot.internal.tasks.process_identity import ProcessIdentity
+from pilot.internal.tasks.process import (
     TaskProcess,
     TaskProcessRecord,
     TaskProcessStartError,
 )
 from pilot.managers.task.models import TaskStatus
-from pilot.managers.task.store import TaskStore
+from pilot.internal.tasks.store import TaskStore
 
 TASK_ID = "20260715-120000-aabbcc"
 
@@ -199,7 +199,7 @@ def test_gate_eof_exits_wrapper_without_side_effect(tmp_path: Path) -> None:
     argv = [
         sys.executable,
         "-m",
-        "pilot.managers.task.wrapper",
+        "pilot.internal.tasks.wrapper",
         str(task_dir),
     ]
     process = subprocess.Popen(

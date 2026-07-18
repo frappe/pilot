@@ -1,38 +1,39 @@
+from dataclasses import dataclass, field
+from typing import Annotated, ClassVar
+
 from pilot.core.app import App
 from pilot.core.site import Site
 from pilot.integrations.marketplace import Marketplace
 
-from pilot.managers.task.base_task import BaseTask
+from pilot.tasks.base import Arg, BaseTask, step
 
 
+@dataclass(kw_only=True)
 class NewSiteTask(BaseTask):
-    command = "new-site"
-    required_args = ["name", "admin_password"]
+    command: ClassVar[str] = "new-site"
 
-    @classmethod
-    def _parser(cls):
-        p = super()._parser()
-        p.add_argument("name")
-        p.set_defaults(admin_password=None)
-        p.add_argument("--db-type", default=None)
-        p.add_argument("--apps", nargs="*", default=[])
-        return p
-
-    def __init__(self, bench, bench_root, args):
-        super().__init__(bench, bench_root, args)
-        self.name = args.name
-        self.admin_password = args.admin_password
-        self.db_type = args.db_type
-        self.apps = args.apps
+    name: str
+    admin_password: Annotated[str, Arg(cli=False)]
+    db_type: str | None = None
+    apps: list[str] = field(default_factory=list)
 
     def run(self) -> None:
-        self._require_production_privileges()
-        self._fetch_missing_apps()
-        self._step("create", f"Create site {self.name}")
-        Site.provision(self.bench, self.name, self.apps, self.admin_password, db_type=self.db_type, on_progress=self._report)
-        self._step("done")
+        self.require_production_privileges()
+        self.fetch_missing_apps()
+        self.create()
 
-    def _fetch_missing_apps(self) -> None:
+    @step("create", lambda self: f"Create site {self.name}")
+    def create(self) -> None:
+        Site.provision(
+            self.bench,
+            self.name,
+            self.apps,
+            self.admin_password,
+            db_type=self.db_type,
+            on_progress=self.report,
+        )
+
+    def fetch_missing_apps(self) -> None:
         """The new-site wizard offers marketplace apps that may not be cloned onto
         this bench yet; fetch those (and their dependencies) before Site.provision
         validates the app list."""
@@ -43,10 +44,10 @@ class NewSiteTask(BaseTask):
         marketplace = Marketplace(self.bench)
         for app_name in missing:
             resolver = marketplace.find_app(app_name)
-            self._step("fetch", f"Fetch {app_name}")
-            App.from_repo(self.bench, resolver.repo, resolver.target).install(
-                install_dependencies=True, on_progress=self._report
-            )
+            with self.step("fetch", f"Fetch {app_name}"):
+                App.from_repo(self.bench, resolver.repo, resolver.target).install(
+                    install_dependencies=True, on_progress=self.report
+                )
 
 
 if __name__ == "__main__":

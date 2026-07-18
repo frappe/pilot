@@ -1,24 +1,21 @@
-from pilot.managers.task.base_task import BaseTask
+from dataclasses import dataclass
+from typing import ClassVar
+
+from pilot.tasks.base import BaseTask, step
 
 
+@dataclass(kw_only=True)
 class RemoveAppTask(BaseTask):
-    command = "remove-app"
-    required_args = ["name"]
+    command: ClassVar[str] = "remove-app"
 
-    @classmethod
-    def _parser(cls):
-        p = super()._parser()
-        p.add_argument("name")
-        return p
-
-    def __init__(self, bench, bench_root, args):
-        super().__init__(bench, bench_root, args)
-        self.name = args.name
+    name: str
 
     def run(self) -> None:
-        self._step("remove", f"Remove {self.name}")
-        self.bench.app(self.name).remove(force=True, on_progress=self._report)
-        self._step("done")
+        self.remove()
+
+    @step("remove", lambda self: f"Remove {self.name}")
+    def remove(self) -> None:
+        self.bench.app(self.name).remove(force=True, on_progress=self.report)
 
 
 if __name__ == "__main__":

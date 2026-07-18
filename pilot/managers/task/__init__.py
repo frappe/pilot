@@ -1,40 +1,30 @@
-from pilot.managers.task.activity import TaskActivityReader
-from pilot.managers.task.args import redact_task_args, task_requires_secrets
-from pilot.managers.task.base_task import BaseTask
-from pilot.managers.task.models import (
-    ACTIVE_TASK_STATUSES,
-    TERMINAL_TASK_STATUSES,
-    TaskFailure,
-    TaskInfo,
-    TaskStatus,
-)
-from pilot.managers.task.process import TaskProcess
-from pilot.managers.task.queue import TaskQueue
-from pilot.managers.task.reader import TaskReader, sse_message
-from pilot.managers.task.runner import TaskRunner
-from pilot.managers.task.store import TaskStore
-from pilot.managers.task.worker import TaskWorker, task_workers
-from pilot.managers.task.worker_state import WorkerIntent, WorkerStatus, WorkerStore
+from __future__ import annotations
+
+from importlib import import_module
 
 __all__ = [
-    "ACTIVE_TASK_STATUSES",
-    "TERMINAL_TASK_STATUSES",
-    "BaseTask",
     "TaskActivityReader",
-    "TaskFailure",
-    "TaskInfo",
-    "TaskProcess",
-    "TaskQueue",
     "TaskReader",
-    "TaskRunner",
     "TaskStatus",
-    "TaskStore",
-    "TaskWorker",
-    "WorkerIntent",
-    "WorkerStatus",
-    "WorkerStore",
-    "redact_task_args",
+    "TaskWorkerControl",
     "sse_message",
     "task_requires_secrets",
-    "task_workers",
 ]
+
+_EXPORTS = {
+    "TaskActivityReader": ("pilot.managers.task.activity", "TaskActivityReader"),
+    "TaskReader": ("pilot.managers.task.reader", "TaskReader"),
+    "TaskStatus": ("pilot.managers.task.models", "TaskStatus"),
+    "TaskWorkerControl": ("pilot.managers.task.control", "TaskWorkerControl"),
+    "sse_message": ("pilot.managers.task.reader", "sse_message"),
+    "task_requires_secrets": ("pilot.managers.task.policy", "task_requires_secrets"),
+}
+
+
+def __getattr__(name: str):
+    if name not in _EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module_name, attr_name = _EXPORTS[name]
+    value = getattr(import_module(module_name), attr_name)
+    globals()[name] = value
+    return value

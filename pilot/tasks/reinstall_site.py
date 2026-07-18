@@ -1,29 +1,24 @@
+from dataclasses import dataclass
+from typing import Annotated, ClassVar
+
 from pilot.core.site import Site
 
-from pilot.managers.task.base_task import BaseTask
+from pilot.tasks.base import Arg, BaseTask, step
 
 
+@dataclass(kw_only=True)
 class ReinstallSiteTask(BaseTask):
-    command = "reinstall-site"
-    required_args = ["site", "admin_password"]
+    command: ClassVar[str] = "reinstall-site"
 
-    @classmethod
-    def _parser(cls):
-        p = super()._parser()
-        p.add_argument("site")
-        p.set_defaults(admin_password=None)
-        return p
-
-    def __init__(self, bench, bench_root, args):
-        super().__init__(bench, bench_root, args)
-        self.site = args.site
-        self.admin_password = args.admin_password
+    site: str
+    admin_password: Annotated[str, Arg(cli=False)]
 
     def run(self) -> None:
-        self._step("reinstall", f"Reinstall site {self.site}")
-        site = Site.for_name(self.site, self.bench)
-        site.reinstall(self.admin_password)
-        self._step("done")
+        self.reinstall()
+
+    @step("reinstall", lambda self: f"Reinstall site {self.site}")
+    def reinstall(self) -> None:
+        Site.for_name(self.site, self.bench).reinstall(self.admin_password)
 
 
 if __name__ == "__main__":

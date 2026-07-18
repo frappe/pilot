@@ -9,7 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from pilot.managers.task.worker import TaskWorker
+from pilot.internal.tasks.worker import TaskWorker
+from pilot.internal.tasks.store import TaskStore
 from pilot.tasks import TaskRunner
 from pilot.managers.processes.local import ProcessDefinition
 from pilot.managers.processes.supervisor import SupervisorRenderer
@@ -110,7 +111,6 @@ def test_supervisor_admin_shutdown_signals_only_the_admin_group(tmp_path: Path) 
 
 def test_task_cancel_stops_wrapper_and_workload_group(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workload_pid_path = tmp_path / "workload.pid"
     workload = [
@@ -120,13 +120,27 @@ def test_task_cancel_stops_wrapper_and_workload_group(
         "Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(60)",
         str(workload_pid_path),
     ]
-    monkeypatch.setattr(TaskRunner, "_build_argv", lambda self, command, args: workload)
+    store = TaskStore(tmp_path)
+    task_id = "20260715-120000-aabbcc"
+    store.create_queued(
+        {
+            "task_id": task_id,
+            "command": "build",
+            "args": {},
+            "command_argv": workload,
+            "queued_at": "2026-07-15T12:00:00+00:00",
+            "started_at": None,
+            "finished_at": None,
+            "exit_code": None,
+            "failure": None,
+            "bench_root": str(tmp_path),
+        }
+    )
     runner = TaskRunner(tmp_path)
     worker = TaskWorker(tmp_path)
     wrapper_pid = None
 
     try:
-        task_id = runner.run("build", {})
         worker.start()
         wrapper_pid = wait_for_pid(tmp_path / "tasks" / task_id / "pid")
         workload_pid = wait_for_pid(workload_pid_path)

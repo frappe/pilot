@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 from pilot.managers.task.models import TaskStatus
-from pilot.managers.task.store import TaskStore
+from pilot.internal.tasks.store import TaskStore
 
 TASK_ID = "20260715-120000-aabbcc"
 

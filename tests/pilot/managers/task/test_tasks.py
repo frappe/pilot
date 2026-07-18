@@ -1,4 +1,5 @@
 """Tests for pilot.tasks — TaskRunner and TaskReader."""
+
 from __future__ import annotations
 
 import json
@@ -11,44 +12,49 @@ import pytest
 
 import pilot.managers.task.reader as task_reader_module
 from pilot.managers.task.models import TaskStatus
-from pilot.managers.task.store import TaskStore
-from pilot.managers.task.runner import TASK_RETENTION_LIMIT
+import pilot.internal.tasks.runner as task_runner_module
+from pilot.internal.tasks.store import TaskStore
+from pilot.internal.tasks.runner import TASK_RETENTION_LIMIT
 from pilot.managers.task.reader import TaskReader
 from pilot.tasks import TaskRunner
 
 
-# ── TaskRunner._generate_task_id ────────────────────────────────────────────
+# ── task id generation ──────────────────────────────────────────────────────
 
 
 def test_generate_task_id_format() -> None:
-    task_id = TaskRunner._generate_task_id()
+    task_id = task_runner_module.generate_task_id()
     assert re.match(r"^\d{8}-\d{6}-[a-f0-9]{6}$", task_id), f"Unexpected format: {task_id!r}"
 
 
-# ── TaskRunner._build_argv ───────────────────────────────────────────────────
+def task_argv(tmp_path: Path, command: str, args: dict) -> list[str]:
+    task_id = TaskRunner(tmp_path).run(command, args)
+    meta = json.loads((tmp_path / "tasks" / task_id / "meta.json").read_text())
+    return meta["command_argv"]
 
 
-def test_build_argv_migrate(tmp_path: Path) -> None:
-    runner = TaskRunner(tmp_path)
-    argv = runner._build_argv("migrate", {"site": "mysite.localhost"})
+# ── TaskRunner command argv handoff ──────────────────────────────────────────
+
+
+def test_command_argv_migrate(tmp_path: Path) -> None:
+    argv = task_argv(tmp_path, "migrate", {"site": "mysite.localhost"})
     assert argv[0] == sys.executable
     assert argv[1:3] == ["-m", "pilot.tasks.migrate"]
     assert str(tmp_path) in argv
     assert "mysite.localhost" in argv
 
 
-def test_build_argv_clear_cache(tmp_path: Path) -> None:
-    runner = TaskRunner(tmp_path)
-    argv = runner._build_argv("clear-cache", {"site": "mysite.localhost"})
+def test_command_argv_clear_cache(tmp_path: Path) -> None:
+    argv = task_argv(tmp_path, "clear-cache", {"site": "mysite.localhost"})
     assert argv[0] == sys.executable
     assert argv[1:3] == ["-m", "pilot.tasks.clear_cache"]
     assert str(tmp_path) in argv
     assert "mysite.localhost" in argv
 
 
-def test_build_argv_setup_letsencrypt_carries_site_and_email(tmp_path: Path) -> None:
-    runner = TaskRunner(tmp_path)
-    argv = runner._build_argv(
+def test_command_argv_setup_letsencrypt_carries_site_and_email(tmp_path: Path) -> None:
+    argv = task_argv(
+        tmp_path,
         "setup-letsencrypt",
         {"site": "mysite.localhost", "email": "ops@example.com"},
     )
@@ -57,9 +63,8 @@ def test_build_argv_setup_letsencrypt_carries_site_and_email(tmp_path: Path) -> 
     assert argv[-4:] == ["--site", "mysite.localhost", "--email", "ops@example.com"]
 
 
-def test_build_argv_install_app(tmp_path: Path) -> None:
-    runner = TaskRunner(tmp_path)
-    argv = runner._build_argv("install-app", {"site": "mysite.localhost", "app": "erpnext"})
+def test_command_argv_install_app(tmp_path: Path) -> None:
+    argv = task_argv(tmp_path, "install-app", {"site": "mysite.localhost", "app": "erpnext"})
     # install-app uses the install_app_task module (chains install + build)
     assert argv[0] == sys.executable
     assert argv[1:3] == ["-m", "pilot.tasks.install_app"]
@@ -68,9 +73,12 @@ def test_build_argv_install_app(tmp_path: Path) -> None:
     assert "erpnext" in argv
 
 
-def test_build_argv_uninstall_app(tmp_path: Path) -> None:
-    runner = TaskRunner(tmp_path)
-    argv = runner._build_argv("uninstall-app", {"site": "mysite.localhost", "app": "erpnext"})
+def test_command_argv_uninstall_app(tmp_path: Path) -> None:
+    argv = task_argv(
+        tmp_path,
+        "uninstall-app",
+        {"site": "mysite.localhost", "app": "erpnext"},
+    )
     assert argv[0] == sys.executable
     assert argv[1:3] == ["-m", "pilot.tasks.uninstall_app"]
     assert str(tmp_path) in argv
@@ -78,100 +86,112 @@ def test_build_argv_uninstall_app(tmp_path: Path) -> None:
     assert "erpnext" in argv
 
 
-def test_build_argv_new_site_carries_no_db_type(tmp_path: Path) -> None:
+def test_command_argv_new_site_carries_no_db_type(tmp_path: Path) -> None:
     # The engine is a bench-level setting now, so site tasks never pass --db-type.
-    runner = TaskRunner(tmp_path)
-    argv = runner._build_argv("new-site", {"name": "site1.localhost", "admin_password": "x"})
+    argv = task_argv(tmp_path, "new-site", {"name": "site1.localhost", "admin_password": "x"})
     assert argv[1:3] == ["-m", "pilot.tasks.new_site"]
     assert "site1.localhost" in argv
     assert "--db-type" not in argv
 
 
-@pytest.mark.parametrize("command,args", [
-    ("new-site", {"name": "site.localhost"}),
-    ("new-site-from-backup", {"name": "site.localhost", "db_file": "/tmp/db.sql"}),
-    ("reinstall-site", {"site": "site.localhost"}),
-])
+@pytest.mark.parametrize(
+    "command,args",
+    [
+        ("new-site", {"name": "site.localhost"}),
+        ("new-site-from-backup", {"name": "site.localhost", "db_file": "/tmp/db.sql"}),
+        ("reinstall-site", {"site": "site.localhost"}),
+    ],
+)
 def test_site_tasks_require_admin_password(tmp_path: Path, command: str, args: dict) -> None:
     with pytest.raises(ValueError, match="admin_password"):
-        TaskRunner(tmp_path)._build_argv(command, args)
+        TaskRunner(tmp_path).run(command, args)
 
 
 @pytest.mark.parametrize("password", ["", "   ", None])
 def test_site_tasks_reject_empty_admin_password(tmp_path: Path, password) -> None:
     with pytest.raises(ValueError, match="must not be empty"):
-        TaskRunner(tmp_path)._build_argv(
-            "new-site", {"name": "site.localhost", "admin_password": password}
-        )
+        TaskRunner(tmp_path).run("new-site", {"name": "site.localhost", "admin_password": password})
 
 
-def test_build_argv_get_app(tmp_path: Path) -> None:
-    runner = TaskRunner(tmp_path)
-    argv = runner._build_argv("get-app", {"name": "erpnext", "repo": "https://github.com/frappe/erpnext"})
+def test_command_argv_get_app(tmp_path: Path) -> None:
+    argv = task_argv(
+        tmp_path, "get-app", {"name": "erpnext", "repo": "https://github.com/frappe/erpnext"}
+    )
     assert argv[0] == sys.executable
     assert argv[1:3] == ["-m", "pilot.tasks.get_app"]
     assert str(tmp_path) in argv
     assert "https://github.com/frappe/erpnext" in argv
 
 
-def test_build_argv_get_app_with_branch(tmp_path: Path) -> None:
-    runner = TaskRunner(tmp_path)
-    argv = runner._build_argv("get-app", {"name": "erpnext", "repo": "https://github.com/frappe/erpnext", "branch": "version-16"})
+def test_command_argv_get_app_with_branch(tmp_path: Path) -> None:
+    argv = task_argv(
+        tmp_path,
+        "get-app",
+        {"name": "erpnext", "repo": "https://github.com/frappe/erpnext", "branch": "version-16"},
+    )
     assert "--branch" in argv
     assert "version-16" in argv
 
 
-def test_build_argv_rejects_credentials_in_repo_url(tmp_path: Path) -> None:
-    runner = TaskRunner(tmp_path)
+def test_command_argv_get_and_install_app_accepts_site_alias(tmp_path: Path) -> None:
+    argv = task_argv(
+        tmp_path,
+        "get-and-install-app",
+        {
+            "site": "mysite.localhost",
+            "repo": "https://github.com/frappe/helpdesk",
+        },
+    )
 
+    assert argv[1:3] == ["-m", "pilot.tasks.get_and_install_app"]
+    assert "--site" in argv
+    assert "mysite.localhost" in argv
+    assert "--sites" not in argv
+
+
+def test_command_argv_rejects_credentials_in_repo_url(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="Git provider connection"):
-        runner._build_argv(
+        TaskRunner(tmp_path).run(
             "get-app",
             {"name": "private", "repo": "https://token@github.com/acme/private.git"},
         )
 
 
-def test_build_argv_build_no_app(tmp_path: Path) -> None:
-    runner = TaskRunner(tmp_path)
-    argv = runner._build_argv("build", {})
+def test_command_argv_build_no_app(tmp_path: Path) -> None:
+    argv = task_argv(tmp_path, "build", {})
     assert argv[0] == sys.executable
     assert argv[1:3] == ["-m", "pilot.tasks.build"]
     assert str(tmp_path) in argv
     assert "--app" not in argv
 
 
-def test_build_argv_build_with_app(tmp_path: Path) -> None:
-    runner = TaskRunner(tmp_path)
-    argv = runner._build_argv("build", {"app": "erpnext"})
+def test_command_argv_build_with_app(tmp_path: Path) -> None:
+    argv = task_argv(tmp_path, "build", {"app": "erpnext"})
     assert argv[0] == sys.executable
     assert argv[1:3] == ["-m", "pilot.tasks.build"]
     assert "--app" in argv
     assert "erpnext" in argv
 
 
-def test_build_argv_update(tmp_path: Path) -> None:
-    runner = TaskRunner(tmp_path)
-    argv = runner._build_argv("update", {})
+def test_command_argv_update(tmp_path: Path) -> None:
+    argv = task_argv(tmp_path, "update", {})
     assert argv[0] == sys.executable
     assert argv[1:3] == ["-m", "pilot.tasks.update"]
     assert str(tmp_path) in argv
 
 
-def test_build_argv_update_skip_failing_patches(tmp_path: Path) -> None:
-    runner = TaskRunner(tmp_path)
-    argv = runner._build_argv("update", {"skip_failing_patches": True})
+def test_command_argv_update_skip_failing_patches(tmp_path: Path) -> None:
+    argv = task_argv(tmp_path, "update", {"skip_failing_patches": True})
     assert "--skip-failing-patches" in argv
 
 
-def test_build_argv_update_without_skip_failing_patches(tmp_path: Path) -> None:
-    runner = TaskRunner(tmp_path)
-    argv = runner._build_argv("update", {"skip_failing_patches": False})
+def test_command_argv_update_without_skip_failing_patches(tmp_path: Path) -> None:
+    argv = task_argv(tmp_path, "update", {"skip_failing_patches": False})
     assert "--skip-failing-patches" not in argv
 
 
-def test_build_argv_switch_branch(tmp_path: Path) -> None:
-    runner = TaskRunner(tmp_path)
-    argv = runner._build_argv("switch-branch", {"name": "gameplan", "branch": "develop"})
+def test_command_argv_switch_branch(tmp_path: Path) -> None:
+    argv = task_argv(tmp_path, "switch-branch", {"name": "gameplan", "branch": "develop"})
     assert argv[0] == sys.executable
     assert argv[1:3] == ["-m", "pilot.tasks.switch_branch"]
     assert str(tmp_path) in argv
@@ -179,9 +199,8 @@ def test_build_argv_switch_branch(tmp_path: Path) -> None:
     assert "develop" in argv
 
 
-def test_build_argv_backup_site(tmp_path: Path) -> None:
-    runner = TaskRunner(tmp_path)
-    argv = runner._build_argv("backup-site", {"site": "mysite.localhost"})
+def test_command_argv_backup_site(tmp_path: Path) -> None:
+    argv = task_argv(tmp_path, "backup-site", {"site": "mysite.localhost"})
     assert argv[0] == sys.executable
     assert argv[1:3] == ["-m", "pilot.tasks.backup_site"]
     assert str(tmp_path) in argv
@@ -189,30 +208,26 @@ def test_build_argv_backup_site(tmp_path: Path) -> None:
     assert "--with-files" not in argv
 
 
-def test_build_argv_unknown_command_raises(tmp_path: Path) -> None:
-    runner = TaskRunner(tmp_path)
+def test_command_argv_unknown_command_raises(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="Unknown command"):
-        runner._build_argv("hack-the-system", {})
+        TaskRunner(tmp_path).run("hack-the-system", {})
 
 
-def test_build_argv_missing_site_raises(tmp_path: Path) -> None:
-    runner = TaskRunner(tmp_path)
+def test_command_argv_missing_site_raises(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="site"):
-        runner._build_argv("migrate", {})
+        TaskRunner(tmp_path).run("migrate", {})
 
 
-def test_build_argv_install_app_requires_app(tmp_path: Path) -> None:
-    runner = TaskRunner(tmp_path)
+def test_command_argv_install_app_requires_app(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="app"):
-        runner._build_argv("install-app", {"site": "mysite.localhost"})
+        TaskRunner(tmp_path).run("install-app", {"site": "mysite.localhost"})
 
 
-def test_build_argv_switch_branch_requires_name_and_branch(tmp_path: Path) -> None:
-    runner = TaskRunner(tmp_path)
+def test_command_argv_switch_branch_requires_name_and_branch(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="name"):
-        runner._build_argv("switch-branch", {"branch": "develop"})
+        TaskRunner(tmp_path).run("switch-branch", {"branch": "develop"})
     with pytest.raises(ValueError, match="branch"):
-        runner._build_argv("switch-branch", {"name": "gameplan"})
+        TaskRunner(tmp_path).run("switch-branch", {"name": "gameplan"})
 
 
 # ── TaskReader.read_output ───────────────────────────────────────────────────
@@ -269,9 +284,7 @@ def test_iter_output_streams_display_text_without_syslog_envelopes(tmp_path: Pat
     task_id = "20260521-143022-aabbcc"
     task_dir = _make_task_dir(tmp_path / "tasks", task_id)
     envelope = "<14>1 2026-07-15T12:00:00Z host build 1 - - "
-    (task_dir / "output.log").write_text(
-        f"{envelope}started\n{envelope}[50%]\r{envelope}[70%]\n"
-    )
+    (task_dir / "output.log").write_text(f"{envelope}started\n{envelope}[50%]\r{envelope}[70%]\n")
 
     output = "".join(TaskReader(tmp_path).iter_output(task_id))
 
@@ -421,6 +434,54 @@ def test_reader_derives_queue_positions_from_fifo_order(tmp_path: Path) -> None:
     assert TaskReader(tmp_path).read_task(task_ids[1]).queue_position == 2
 
 
+def test_reader_ignores_staged_task_dirs(tmp_path: Path) -> None:
+    task_id = "20260521-143022-aabbcc"
+    _make_task_dir(tmp_path / "tasks", task_id)
+    staged_dir = tmp_path / "tasks" / ".20260521-143022-bbccdd.tmp"
+    staged_dir.mkdir()
+    (staged_dir / "meta.json").write_text(
+        json.dumps(
+            {
+                "task_id": "20260521-143022-bbccdd",
+                "command": "build",
+                "args": {},
+                "started_at": "2026-05-21T14:30:22+00:00",
+                "finished_at": None,
+                "exit_code": None,
+            }
+        )
+    )
+    (staged_dir / "status").write_text("running")
+
+    tasks = TaskReader(tmp_path).list_tasks()
+
+    assert [task.task_id for task in tasks] == [task_id]
+
+
+def test_reader_ignores_invalid_task_dirs(tmp_path: Path) -> None:
+    task_id = "20260521-143022-aabbcc"
+    _make_task_dir(tmp_path / "tasks", task_id)
+    invalid_dir = tmp_path / "tasks" / "not-a-task"
+    invalid_dir.mkdir()
+    (invalid_dir / "meta.json").write_text(
+        json.dumps(
+            {
+                "task_id": "20260521-143022-bbccdd",
+                "command": "build",
+                "args": {},
+                "started_at": "2026-05-21T14:30:22+00:00",
+                "finished_at": None,
+                "exit_code": None,
+            }
+        )
+    )
+    (invalid_dir / "status").write_text("running")
+
+    tasks = TaskReader(tmp_path).list_tasks()
+
+    assert [task.task_id for task in tasks] == [task_id]
+
+
 def test_reader_returns_only_allowlisted_failure_message(tmp_path: Path) -> None:
     task_id = "20260521-143022-aabbcc"
     task_dir = _make_task_dir(tmp_path / "tasks", task_id, status="failed")
@@ -443,42 +504,49 @@ def test_reader_returns_only_allowlisted_failure_message(tmp_path: Path) -> None
 
 
 def test_collapse_cr_no_cr() -> None:
-    from pilot.managers.task.reader import _collapse_cr
-    assert _collapse_cr("hello world") == "hello world"
+    from pilot.internal.tasks.output import collapse_cr
+
+    assert collapse_cr("hello world") == "hello world"
 
 
 def test_collapse_cr_takes_last_segment() -> None:
-    from pilot.managers.task.reader import _collapse_cr
-    assert _collapse_cr("[50%]\r[60%]\r[70%]") == "[70%]"
+    from pilot.internal.tasks.output import collapse_cr
+
+    assert collapse_cr("[50%]\r[60%]\r[70%]") == "[70%]"
 
 
 def test_collapse_cr_leading_cr() -> None:
-    from pilot.managers.task.reader import _collapse_cr
-    assert _collapse_cr("\rUpdating [93%]") == "Updating [93%]"
+    from pilot.internal.tasks.output import collapse_cr
+
+    assert collapse_cr("\rUpdating [93%]") == "Updating [93%]"
 
 
 def test_collapse_cr_trailing_cr_ignored() -> None:
-    from pilot.managers.task.reader import _collapse_cr
-    assert _collapse_cr("[100%]\r") == "[100%]"
+    from pilot.internal.tasks.output import collapse_cr
+
+    assert collapse_cr("[100%]\r") == "[100%]"
 
 
 def test_collapse_cr_crlf_keeps_text() -> None:
     # dpkg/apt emit CRLF line endings without a TTY; the \r must not blank the
     # line out (this is what produced a wall of empty rows in the setup wizard).
-    from pilot.managers.task.reader import _collapse_cr
-    assert _collapse_cr("Unpacking package\r") == "Unpacking package"
+    from pilot.internal.tasks.output import collapse_cr
+
+    assert collapse_cr("Unpacking package\r") == "Unpacking package"
 
 
 def test_collapse_cr_cleared_progress_padding() -> None:
     # apt clears a progress line by overwriting it with spaces after a \r; the
     # padding must collapse away to the last real segment, not leak spaces.
-    from pilot.managers.task.reader import _collapse_cr
-    assert _collapse_cr("Fetching\r        ") == "Fetching"
+    from pilot.internal.tasks.output import collapse_cr
+
+    assert collapse_cr("Fetching\r        ") == "Fetching"
 
 
 def test_collapse_cr_all_whitespace_segments() -> None:
-    from pilot.managers.task.reader import _collapse_cr
-    assert _collapse_cr("   \r   ") == ""
+    from pilot.internal.tasks.output import collapse_cr
+
+    assert collapse_cr("   \r   ") == ""
 
 
 def test_read_output_crlf_lines_not_blank(tmp_path: Path) -> None:
@@ -543,7 +611,7 @@ def test_task_retention_limit(tmp_path: Path) -> None:
     oldest_dir = tasks_dir / oldest_id
     assert oldest_dir.exists()
 
-    with patch("pilot.managers.task.runner.task_workers.wake", return_value=True):
+    with patch("pilot.internal.tasks.runner.task_workers.wake", return_value=True):
         runner.run("build", {})
 
     # The oldest completed task directory should have been removed.
@@ -553,7 +621,8 @@ def test_task_retention_limit(tmp_path: Path) -> None:
     remaining_completed = [
         entry
         for entry in tasks_dir.iterdir()
-        if entry.is_dir() and (entry / "status").exists()
+        if entry.is_dir()
+        and (entry / "status").exists()
         and (entry / "status").read_text().strip() in {"success", "failed", "killed"}
     ]
     assert len(remaining_completed) == TASK_RETENTION_LIMIT

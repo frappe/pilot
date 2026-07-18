@@ -5,6 +5,8 @@ from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 
+__all__ = ["TaskFailure", "TaskInfo", "TaskStatus"]
+
 
 class TaskStatus(StrEnum):
     QUEUED = "queued"
@@ -13,50 +15,23 @@ class TaskStatus(StrEnum):
     FAILED = "failed"
     KILLED = "killed"
 
+    @property
+    def is_active(self) -> bool:
+        return self in _ACTIVE_TASK_STATUSES
 
-TERMINAL_TASK_STATUSES = frozenset({TaskStatus.SUCCESS, TaskStatus.FAILED, TaskStatus.KILLED})
-ACTIVE_TASK_STATUSES = frozenset({TaskStatus.QUEUED, TaskStatus.RUNNING})
-
-ALLOWED_TASK_TRANSITIONS = {
-    TaskStatus.QUEUED: frozenset({TaskStatus.RUNNING, TaskStatus.KILLED}),
-    TaskStatus.RUNNING: TERMINAL_TASK_STATUSES,
-    TaskStatus.SUCCESS: frozenset(),
-    TaskStatus.FAILED: frozenset(),
-    TaskStatus.KILLED: frozenset(),
-}
+    @property
+    def is_terminal(self) -> bool:
+        return self in _TERMINAL_TASK_STATUSES
 
 
-def parse_task_status(value: str) -> TaskStatus:
-    try:
-        return TaskStatus(value)
-    except ValueError as error:
-        raise ValueError(f"Unknown task status: {value!r}") from error
-
-
-def validate_task_transition(current: TaskStatus, target: TaskStatus) -> None:
-    if target not in ALLOWED_TASK_TRANSITIONS[current]:
-        raise ValueError(f"Invalid task transition: {current.value} -> {target.value}")
-
-
-FAILURE_MESSAGES = {
-    "command_failed": "Task command failed.",
-    "task_interrupted": "Task execution was interrupted.",
-}
+_TERMINAL_TASK_STATUSES = frozenset({TaskStatus.SUCCESS, TaskStatus.FAILED, TaskStatus.KILLED})
+_ACTIVE_TASK_STATUSES = frozenset({TaskStatus.QUEUED, TaskStatus.RUNNING})
 
 
 @dataclass(frozen=True)
 class TaskFailure:
     code: str
     message: str
-
-
-def safe_task_failure(value: object, status: TaskStatus) -> TaskFailure | None:
-    if status != TaskStatus.FAILED:
-        return None
-    code = value.get("code") if isinstance(value, dict) else None
-    if code not in FAILURE_MESSAGES:
-        code = "command_failed"
-    return TaskFailure(code=code, message=FAILURE_MESSAGES[code])
 
 
 @dataclass

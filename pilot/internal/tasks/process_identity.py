@@ -7,11 +7,11 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
-from pilot.managers.task.timing import CAPTURE_POLL_SECONDS, CAPTURE_TIMEOUT_SECONDS
-
 _BOOT_ID_PATH = Path("/proc/sys/kernel/random/boot_id")
 _PROC_ROOT = Path("/proc")
 _LAUNCH_ID_ENV = "BENCH_TASK_LAUNCH_ID"
+_CAPTURE_POLL_SECONDS = 0.01
+_CAPTURE_TIMEOUT_SECONDS = 1.0
 
 
 class ProcessOwnership(StrEnum):
@@ -59,6 +59,28 @@ class ProcessIdentity:
 
 
 @dataclass(frozen=True)
+class TaskProcessRecord:
+    task_id: str
+    argv: list[str]
+    identity: ProcessIdentity
+
+    def to_dict(self) -> dict:
+        return {
+            "task_id": self.task_id,
+            "argv": self.argv,
+            "identity": self.identity.to_dict(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "TaskProcessRecord":
+        return cls(
+            task_id=str(data["task_id"]),
+            argv=[str(value) for value in data["argv"]],
+            identity=ProcessIdentity.from_dict(data["identity"]),
+        )
+
+
+@dataclass(frozen=True)
 class _ProcessSnapshot:
     state: str
     pgid: int
@@ -75,14 +97,14 @@ class ProcessInspector:
         expected_argv: list[str],
         launch_id: str,
     ) -> ProcessIdentity:
-        deadline = time.monotonic() + CAPTURE_TIMEOUT_SECONDS
+        deadline = time.monotonic() + _CAPTURE_TIMEOUT_SECONDS
         while True:
             try:
                 return self._capture_once(pid, expected_argv, launch_id)
             except RuntimeError:
                 if time.monotonic() >= deadline:
                     raise
-                time.sleep(CAPTURE_POLL_SECONDS)
+                time.sleep(_CAPTURE_POLL_SECONDS)
 
     def _capture_once(
         self,

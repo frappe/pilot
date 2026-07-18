@@ -1,8 +1,12 @@
 from __future__ import annotations
 
-from pilot.managers.task.base_task import BaseTask
+from dataclasses import dataclass
+from typing import ClassVar
+
+from pilot.tasks.base import BaseTask, step
 
 
+@dataclass(kw_only=True)
 class WizardSetupTask(BaseTask):
     """Initialize the bench — the only thing the setup wizard does for a plain
     dev bench; production is a deliberate, separate step the user runs from the
@@ -17,19 +21,24 @@ class WizardSetupTask(BaseTask):
     made that possible, instead of duplicating pieces of it here.
     """
 
-    command = "wizard-setup"
+    command: ClassVar[str] = "wizard-setup"
 
     def run(self) -> None:
-        self._step("init", "Initialize bench")
-        self.bench.initialize(on_progress=self._report)
+        self.init()
         if self.bench.config.production.process_manager:
-            self._step("production", "Set up production")
-            # A cert that can't issue yet (DNS still propagating for a domain
-            # created moments ago) shouldn't roll back an otherwise-working
-            # deployment - unlike a CLI `--tls` request, nobody's watching this to
-            # retry by hand, so leave the bench live on HTTP and let it retry later.
-            self.bench.setup_production(best_effort_tls=True, on_progress=self._report)
-        self._step("done")
+            self.setup_production()
+
+    @step("init", "Initialize bench")
+    def init(self) -> None:
+        self.bench.initialize(on_progress=self.report)
+
+    @step("production", "Set up production")
+    def setup_production(self) -> None:
+        # A cert that can't issue yet (DNS still propagating for a domain
+        # created moments ago) shouldn't roll back an otherwise-working
+        # deployment - unlike a CLI `--tls` request, nobody's watching this to
+        # retry by hand, so leave the bench live on HTTP and let it retry later.
+        self.bench.setup_production(best_effort_tls=True, on_progress=self.report)
 
 
 if __name__ == "__main__":

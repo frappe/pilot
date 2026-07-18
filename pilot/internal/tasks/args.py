@@ -11,9 +11,7 @@ _SECRET_ARGS = {
     "reinstall-site": frozenset({"admin_password"}),
 }
 _PRIVATE_ARGS = {
-    "new-site-from-backup": frozenset(
-        {"db_file", "public_files", "private_files"}
-    ),
+    "new-site-from-backup": frozenset({"db_file", "public_files", "private_files"}),
 }
 _SENSITIVE_KEY_PARTS = ("password", "secret", "token", "credential", "private_key")
 
@@ -28,9 +26,7 @@ def task_requires_secrets(command: str) -> bool:
 
 def public_task_args(command: str, args: dict) -> dict:
     private_args = _PRIVATE_ARGS.get(command, ())
-    return redact_task_args(
-        {key: value for key, value in args.items() if key not in private_args}
-    )
+    return redact_task_args({key: value for key, value in args.items() if key not in private_args})
 
 
 def fingerprint_task_args(command: str, args: dict) -> dict:
