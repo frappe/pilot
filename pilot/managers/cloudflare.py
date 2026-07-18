@@ -33,7 +33,9 @@ class CloudflareTunnelManager:
 
     @staticmethod
     def is_installed() -> bool:
-        return shutil.which("cloudflared") is not None
+        if shutil.which("cloudflared"):
+            return True
+        return (Path.home() / ".local" / "bin" / "cloudflared").exists()
 
     def install(self) -> None:
         if self.is_installed():
