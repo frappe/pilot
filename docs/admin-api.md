@@ -1,6 +1,6 @@
 # Admin API
 
-The Admin API is a FastAPI surface over the same core objects used by the CLI. Handlers should validate input, enforce auth, and delegate work.
+The Admin API is a Flask JSON API over the same core objects used by the CLI. Handlers should validate input, enforce auth, and delegate work.
 
 ## Layout
 

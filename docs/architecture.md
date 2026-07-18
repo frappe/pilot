@@ -20,10 +20,10 @@ pilot/
   tasks/         queued long-running operations
 
 admin/backend/
-  api/v1/        FastAPI route groups
+  api/v1/        Flask route groups
   providers/     backend provider integrations
 
-admin/frontend/  React Admin UI
+admin/frontend/  Vue Admin UI
 ```
 
 ## Main Objects
