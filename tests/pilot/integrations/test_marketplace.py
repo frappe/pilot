@@ -8,9 +8,6 @@ from pilot.integrations.marketplace import Marketplace, Resolver
 from pilot.exceptions import BenchError
 
 
-# ── helpers ──────────────────────────────────────────────────────────────────
-
-
 def make_resolver(
     app: str = "myapp",
     version: str = "1.0.0",
@@ -42,9 +39,6 @@ def inject_registry(root: Resolver, resolvers: list[Resolver]) -> None:
         registry.setdefault(r.app, []).append(r)
     for r in [root, *resolvers]:
         r._registry = registry
-
-
-# ── Resolver.to_dict ─────────────────────────────────────────────────────────
 
 
 def test_to_dict_maps_app_field_to_name():
@@ -91,9 +85,6 @@ def test_to_dict_includes_categories():
     assert r.to_dict()["categories"] == ["Payments", "Accounting"]
 
 
-# ── Resolver.resolve — non-installable guard ──────────────────────────────────
-
-
 def test_resolve_raises_for_non_installable_app():
     r = make_resolver(is_installable=False, frappe_version="14.0.0", required_version=">=15.0.0,<16.0.0")
     with pytest.raises(BenchError, match="not compatible"):
@@ -109,9 +100,6 @@ def test_resolve_error_message_contains_version_info():
     assert ">=15.0.0,<16.0.0" in msg
 
 
-# ── Resolver.resolve — no dependencies ───────────────────────────────────────
-
-
 def test_resolve_single_app_no_deps_returns_self():
     r = make_resolver()
     result = r.resolve()
@@ -121,9 +109,6 @@ def test_resolve_single_app_no_deps_returns_self():
 def test_resolve_returns_list_of_resolvers():
     r = make_resolver()
     assert isinstance(r.resolve(), list)
-
-
-# ── Resolver.resolve — transitive dependencies ────────────────────────────────
 
 
 def test_resolve_installs_dependency_before_root():
@@ -160,9 +145,6 @@ def test_resolve_diamond_dependency_deduplication():
     assert names[-1] == "root"
     assert names.index("D") < names.index("B")
     assert names.index("D") < names.index("C")
-
-
-# ── Resolver.resolve — version specifier matching ─────────────────────────────
 
 
 def test_resolve_picks_dep_satisfying_version_spec():
@@ -209,9 +191,6 @@ def test_resolve_accepts_dep_with_empty_spec():
     assert any(r.app == "payments" for r in result)
 
 
-# ── Resolver.resolve — missing dependency ─────────────────────────────────────
-
-
 def test_resolve_raises_when_dep_not_in_registry():
     root = make_resolver(app="erpnext", dependencies={"missing_app": ">=1.0.0"})
     root._registry = {}
@@ -226,9 +205,6 @@ def test_resolve_raises_when_registry_empty_and_has_deps():
 
     with pytest.raises(BenchError):
         root.resolve()
-
-
-# ── Resolver.resolve — circular dependency detection ─────────────────────────
 
 
 def test_resolve_detects_direct_cycle():
@@ -265,9 +241,6 @@ def test_resolve_detects_indirect_cycle():
 
     with pytest.raises(BenchError, match="Circular dependency"):
         a.resolve()
-
-
-# ── Marketplace.read_all_apps ─────────────────────────────────────────────────
 
 
 SAMPLE_REGISTRY = [
@@ -521,9 +494,6 @@ def test_read_all_apps_no_targets_produces_non_installable():
     apps = mp.read_all_apps()
     ghost = next(a for a in apps if a.app == "ghost_app")
     assert ghost.is_installable is False
-
-
-# ── Marketplace.find_app ──────────────────────────────────────────────────────
 
 
 def test_find_app_returns_matching_resolver():

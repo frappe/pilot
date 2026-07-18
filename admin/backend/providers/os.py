@@ -12,12 +12,7 @@ from pilot.utils import run_command
 
 
 class OSProvider:
-    """Host-level info for the bench: installed runtime/service versions,
-    with room to grow into other OS-level facts.
-
-    Anything not installed (or not detectable) is left out of the result
-    rather than reported as an error, since not every host runs every
-    service (e.g. postgres may be absent)."""
+    """Host/runtime facts for the admin API."""
 
     def __init__(self, bench_root: Path, config: BenchConfig) -> None:
         self._bench_root = bench_root

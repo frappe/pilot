@@ -19,9 +19,6 @@ def test_cli_module_is_only_the_console_entrypoint() -> None:
     assert not hasattr(cli, "is_frappe_passthrough")
 
 
-# ── _strip_bench_flag ─────────────────────────────────────────────────────────
-
-
 def test_strip_bench_flag_long_form() -> None:
     bench_name, remaining = dispatch.strip_bench_flag(["--bench", "my-bench", "start"])
     assert bench_name == "my-bench"
@@ -67,9 +64,6 @@ def test_strip_bench_flag_empty_args() -> None:
     assert remaining == []
 
 
-# ── _is_frappe_passthrough ────────────────────────────────────────────────────
-
-
 def test_passthrough_own_commands_are_not_forwarded() -> None:
     for cmd in ("start", "stop", "init", "new", "get-app", "new-site", "build", "update"):
         assert not dispatch.is_frappe_passthrough(
@@ -97,16 +91,8 @@ def test_passthrough_empty_args() -> None:
     assert dispatch.is_frappe_passthrough([]) is False
 
 
-# ── discovery stays light ─────────────────────────────────────────────────────
-
-
 def test_discovery_does_not_import_heavy_layers() -> None:
-    """Command discovery imports every module under pilot/commands/, so command
-    modules must keep their managers/core/config imports scoped to point of use.
-    If any of those heavy layers loads at discovery time, CLI startup grows with
-    every command added. Run in a clean interpreter so other tests' imports don't
-    pollute sys.modules.
-    """
+    """Command discovery does not import heavy manager/core/config layers."""
     # Patch __import__ to record the pilot call-site responsible for each
     # heavy import: (leaked_module, importer_file, importer_line).
     code = """

@@ -1,10 +1,4 @@
-"""Tests for pilot.tasks.install_app.InstallAppTask.
-
-Must delegate to Site.install_app (the standard install-app path — it also
-reloads workers afterward), not a hand-rolled subprocess call. Site's own
-install-app cascades required_apps onto the site, but never builds their
-assets, so this task still builds assets for the app and every required app.
-"""
+"""Tests for InstallAppTask."""
 
 from __future__ import annotations
 

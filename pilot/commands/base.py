@@ -33,11 +33,7 @@ class Arg:
 
 @dataclass
 class Command:
-    """Base class for a CLI command.
-
-    Command authors declare dataclass fields and implement run(). The internal
-    CLI registry turns those fields into argparse arguments.
-    """
+    """Dataclass-backed CLI command base."""
 
     name: ClassVar[str]
     help: ClassVar[str] = ""

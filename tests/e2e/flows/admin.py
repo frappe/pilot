@@ -1,8 +1,4 @@
-"""High-level UI actions against the bench admin, expressed the way the spec
-reads. Each returns only after the underlying background task has finished, so
-callers can assert on a settled bench. ``base_url`` is the admin origin
-(http://127.0.0.1:<port>) used for the authenticated task-polling API.
-"""
+"""High-level admin UI actions that wait for background tasks."""
 
 from __future__ import annotations
 
@@ -42,13 +38,7 @@ def create_site(page: Page, base_url: str, site_name: str) -> None:
 
 
 def install_custom_app(page: Page, base_url: str, site_name: str, repo: str, branch: str) -> None:
-    """Install an app from a public git repository. Using an explicit repo/branch
-    keeps the test independent of marketplace registry contents.
-
-    Adding a repo to the bench and installing it onto a site are two separate
-    background tasks in the marketplace flow (AddAppFromGithubDialog.vue then
-    InstallAppDialog.vue), so this drives both in turn.
-    """
+    """Import a repo app, then install it on the selected site."""
     page.goto(f"{base_url}/marketplace?site={site_name}")
     # The marketplace filter bar always shows an "Import app" entry point.
     page.get_by_role("button", name="Import app").click()
@@ -137,9 +127,6 @@ def drop_site(page: Page, base_url: str, site_name: str) -> None:
         method="DELETE",
     )
     wait_for_task(page.request, base_url, task_id)
-
-
-# ── assertions (read straight from the admin API, authenticated via cookies) ──
 
 
 def installed_apps(page: Page, base_url: str, site_name: str) -> list[str]:

@@ -1,10 +1,4 @@
-"""Tests for pilot.tasks.get_and_install_app.GetAndInstallAppTask.
-
-Only the requested app itself gets installed on sites — Frappe's own
-`site install-app` already cascades installing declared dependencies onto
-the site. But it never builds assets for anything, so this task still
-builds assets for the app *and* every dependency itself.
-"""
+"""Tests for GetAndInstallAppTask."""
 
 from __future__ import annotations
 
@@ -71,9 +65,7 @@ def test_build_assets_builds_for_app_and_every_dependency(tmp_path: Path) -> Non
 def test_run_installs_only_app_on_sites_but_builds_assets_for_dependencies_too(
     tmp_path: Path,
 ) -> None:
-    """Regression: install-app cascades a dependency onto the site, but never
-    builds its assets — run() must still build assets for
-    cmd.installed_dependencies, even though they never reach install_on_sites."""
+    """run() builds assets for dependencies cascaded by install-app."""
     task = make_task(tmp_path, ["site1.localhost"])
 
     fake_cmd = MagicMock()

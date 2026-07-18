@@ -191,9 +191,7 @@ class NginxManager:
 
     @staticmethod
     def _module_already_loaded() -> bool:
-        """A load_module line or modules-enabled drop-in, not just the .so on
-        disk. Unreadable nginx.conf (unprivileged bench) counts as loaded -
-        nginx -t is the authoritative check either way."""
+        """Return whether nginx config already loads ModSecurity."""
         try:
             if "ngx_http_modsecurity_module" in _NGINX_CONF.read_text():
                 return True

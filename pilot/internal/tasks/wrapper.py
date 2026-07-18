@@ -1,10 +1,4 @@
-"""
-Entry point for a forked child process that runs a bench command.
-
-Invoked as: python -m pilot.internal.tasks.wrapper <task-dir>
-
-This module uses only the standard library and the fixed callback registry.
-"""
+"""Forked task child process: python -m pilot.internal.tasks.wrapper <task-dir>."""
 
 import json
 import os
@@ -45,8 +39,7 @@ def _request_cancel(_signum, _frame) -> None:
 
 
 def _syslog_prefix_parts(tag: str, pid: int) -> tuple[bytes, bytes]:
-    """Envelope split around the only field that changes per line (TIMESTAMP),
-    so callers format just a timestamp instead of rebuilding the whole prefix."""
+    """Return static syslog prefix fragments around the timestamp field."""
     head = f"<{_PRI}>1 ".encode()
     tail = f" {_HOSTNAME} {tag} {pid} - - ".encode()
     return head, tail
@@ -65,16 +58,7 @@ def run_with_syslog_output(
     log_path: Path,
     redactions: list[str] | None = None,
 ) -> int:
-    """Run command_argv, writing its merged stdout/stderr to log_path with a
-    syslog envelope on every line. \\r-terminated progress redraws get their
-    own envelope too, so TaskReader's existing \\r-collapse logic still picks
-    the final redraw of a line.
-
-    Delimiters are located with bytes.find() (C-speed scan) rather than a
-    Python for-loop over every byte, so long delimiter-free runs (e.g. a
-    single long `frappe build` log line) cost one slice-copy instead of one
-    interpreter iteration per byte.
-    """
+    """Run a command and write merged output as syslog-framed lines."""
     process = subprocess.Popen(
         command_argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
     )

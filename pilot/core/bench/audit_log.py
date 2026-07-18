@@ -1,7 +1,4 @@
-"""Bench-wide, append-only audit log. Entries are typed (e.g. "backup") and
-sharded into one file per ISO week (``audit_<year>_<week>.jsonl``) so each file
-stays bounded and old weeks can be archived or dropped independently. Entries
-outlive the sites they record."""
+"""Bench-wide append-only audit log, sharded by ISO week."""
 
 import json
 import re
@@ -23,8 +20,7 @@ class AuditLog:
             handle.write(json.dumps(record) + "\n")
 
     def entries(self, entry_type=None, site=None, status=None, limit=None) -> list[dict]:
-        """Matching records across all weekly files, newest first. Reads lazily, so
-        a small ``limit`` never touches files (or lines) beyond what it returns."""
+        """Return matching records newest first across weekly files."""
         matched = []
         for record in self._read_newest_first():
             if self._matches(record, entry_type, site, status):
@@ -53,8 +49,7 @@ class AuditLog:
 
     @staticmethod
     def _reversed_lines(path, chunk_size: int = 65536):
-        """Yield a file's non-empty lines last-first, reading it back-to-front in
-        chunks so an entire (potentially large) weekly file is never held in memory."""
+        """Yield non-empty lines newest first without loading the whole file."""
         with path.open("rb") as handle:
             handle.seek(0, 2)
             pointer = handle.tell()

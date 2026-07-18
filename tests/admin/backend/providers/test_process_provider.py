@@ -12,9 +12,6 @@ def make_provider(tmp_path: Path) -> ProcessProvider:
     return ProcessProvider(tmp_path)
 
 
-# ── _get_systemd_process ──────────────────────────────────────────────────────
-
-
 def test_get_systemd_process_running(tmp_path: Path) -> None:
     provider = make_provider(tmp_path)
     block = "Id=test-bench-web.service\nActiveState=active\nMainPID=1234"
@@ -58,9 +55,6 @@ def test_get_systemd_process_strips_bench_name_prefix(tmp_path: Path) -> None:
     assert info.name == "worker-default-1"
 
 
-# ── get_from_systemd ────────────────────────────────────────────────────────
-
-
 def test_get_from_systemd_no_units_returns_empty(tmp_path: Path) -> None:
     provider = make_provider(tmp_path)
     systemd = MagicMock()
@@ -100,9 +94,6 @@ def test_get_from_systemd_parses_multiple_units(tmp_path: Path) -> None:
     assert worker.status == "stopped"
     assert worker.pid is None
     assert worker.cpu_percent is None
-
-
-# ── _get_supervisor_process ─────────────────────────────────────────────────
 
 
 def test_get_supervisor_process_running_with_pid_and_uptime(tmp_path: Path) -> None:
@@ -150,9 +141,6 @@ def test_get_supervisor_process_strips_bench_name_prefix(tmp_path: Path) -> None
     assert info.name == "worker-default-1"
 
 
-# ── get_from_supervisor ─────────────────────────────────────────────────────
-
-
 def test_get_from_supervisor_parses_output(tmp_path: Path) -> None:
     provider = make_provider(tmp_path)
     supervisor = MagicMock()
@@ -186,9 +174,6 @@ def test_get_from_supervisor_skips_blank_lines(tmp_path: Path) -> None:
         result = provider.get_from_supervisor(supervisor)
 
     assert len(result) == 1
-
-
-# ── get_from_pids ───────────────────────────────────────────────────────────
 
 
 def test_get_from_pids_no_pids_dir_returns_empty(tmp_path: Path) -> None:
@@ -232,9 +217,6 @@ def test_get_from_pids_malformed_pid_file_is_unknown(tmp_path: Path) -> None:
     assert len(result) == 1
     assert result[0].status == "unknown"
     assert result[0].pid is None
-
-
-# ── get_all routing ───────────────────────────────────────────────────────────
 
 
 def _patch_managers(systemd_running: bool, supervisor_running: bool):

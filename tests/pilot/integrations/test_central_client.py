@@ -63,9 +63,6 @@ class _FakeResponse:
         return False
 
 
-# --- set-central-config command --------------------------------------------
-
-
 def test_set_central_config_merges_into_bench_toml(tmp_path: Path) -> None:
     bench = _bench(tmp_path)
     SetCentralConfigCommand(bench, endpoint="https://central.test", token="tok-123").run()
@@ -80,9 +77,6 @@ def test_set_central_config_raises_without_bench_toml(tmp_path: Path) -> None:
     (bench.path / "bench.toml").unlink()
     with pytest.raises(BenchError, match="not found"):
         SetCentralConfigCommand(bench, endpoint="https://central.test", token="tok").run()
-
-
-# --- CentralClient ----------------------------------------------------------
 
 
 def test_client_reads_and_strips_endpoint(tmp_path: Path) -> None:

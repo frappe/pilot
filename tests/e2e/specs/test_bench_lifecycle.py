@@ -1,17 +1,4 @@
-"""Full happy-path lifecycle for a development bench, driven through the admin UI:
-
-    bench new  →  setup wizard  →  login  →  create site
-                →  install app  →  uninstall app  →  drop site
-
-One spec, several variants — selected by env so CI can run them as a matrix:
-
-    E2E_DB_TYPE   mariadb | postgres      (default: mariadb)
-    E2E_EXTRA_APP 0 to skip the install/uninstall app steps (keeps a run quick)
-
-The steps share one bench and one browser context (so the login cookie carries
-across, via the module-scoped fixtures in conftest.py) and run serially because
-each builds on the last — the `incremental` marker skips the rest once one fails.
-"""
+"""Development bench lifecycle through the admin UI."""
 
 from __future__ import annotations
 
@@ -38,7 +25,6 @@ def _truthy(name: str, default: str = "") -> bool:
     return os.environ.get(name, default).strip().lower() in ("1", "true", "yes", "on")
 
 
-# ── variant (override via env to match the CI matrix) ─────────────────────────
 DB_TYPE = os.environ.get("E2E_DB_TYPE", "mariadb")  # 'mariadb' | 'postgres'
 # Distinct name per variant so local runs of different variants don't collide.
 BENCH_NAME = f"e2e-{DB_TYPE}"

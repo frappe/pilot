@@ -14,9 +14,7 @@ _MAX_STREAM_LINES = 5000  # cap on lines a single log tail-stream connection emi
 
 
 def _read_tail_text(path: Path, min_lines: int, block_size: int = 65536) -> str:
-    """Read only as much of the file's end as needed for at least min_lines
-    newlines, doubling the window each attempt so a bounded tail read never
-    touches a large file's full size."""
+    """Read a bounded tail window large enough for min_lines."""
     size = path.stat().st_size
     read_size = min(block_size, size)
     with path.open("rb") as handle:

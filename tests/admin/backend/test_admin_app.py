@@ -51,9 +51,6 @@ def _listening_socket():
         sock.close()
 
 
-# ── GET /api/v1/benches ─────────────────────────────────────────────────────────
-
-
 def test_api_benches_requires_auth(tmp_path: Path) -> None:
     from admin.backend.app import create_app
 
@@ -156,9 +153,6 @@ def test_api_benches_includes_site_count(tmp_path: Path) -> None:
 
     entry = next(b for b in resp.get_json() if b["name"] == "with-sites")
     assert entry["site_count"] == 2
-
-
-# ── Bench detail, domain options, and creation ──────────────────────────────────
 
 
 def test_api_benches_gets_one_bench(tmp_path: Path) -> None:
@@ -491,9 +485,6 @@ def test_api_benches_create_rejects_duplicate_name(tmp_path: Path) -> None:
     assert "already exists" in resp.get_json()["error"]["message"]
 
 
-# ── POST /api/v1/bench-readiness-checks ─────────────────────────────────────────
-
-
 def test_api_benches_ready_true_when_port_live(tmp_path: Path) -> None:
     client = _client(tmp_path / "benches" / "current")
 
@@ -554,8 +545,7 @@ def test_api_bench_readiness_strictly_validates_selectors(tmp_path: Path) -> Non
 
 @contextmanager
 def _nginx_stub(health_status: int = 200):
-    """A loopback HTTP server standing in for nginx+admin: answers /api/v1/health with
-    the given status (any Host), so the domain readiness probe can be exercised."""
+    """Loopback nginx/admin health probe stub."""
 
     class _Handler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -649,9 +639,6 @@ def test_api_benches_ready_false_when_nginx_down_at_domain(tmp_path: Path) -> No
     assert resp.get_json() == {"ready": False}
 
 
-# ── Explicit bench lifecycle actions ────────────────────────────────────────────
-
-
 def _write_prod_bench_toml(bench_dir: Path, name: str) -> None:
     bench_dir.mkdir(parents=True, exist_ok=True)
     (bench_dir / "bench.toml").write_text(
@@ -728,9 +715,6 @@ def test_api_benches_control_reports_failure(tmp_path: Path) -> None:
     assert resp.get_json()["error"]["code"] == "bench_action_failed"
 
 
-# ── DELETE /api/v1/benches/<name> (drop) ────────────────────────────────────────
-
-
 def test_api_benches_drop_rejects_current_bench(tmp_path: Path) -> None:
     benches_dir = tmp_path / "benches"
     client = _client(benches_dir / "current")
@@ -796,9 +780,6 @@ def test_api_benches_drop_does_not_prompt_for_system_privileges(tmp_path: Path) 
     assert resp.status_code == 409
     assert resp.get_json()["error"]["code"] == "privileged_operation_unavailable"
     drop.assert_not_called()
-
-
-# ── POST /api/v1/sites — engine is bench-level, not per-site ────────────────────
 
 
 def test_create_site_does_not_carry_db_type(tmp_path: Path) -> None:

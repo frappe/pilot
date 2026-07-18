@@ -8,10 +8,7 @@ from pilot.config.bench_toml import dumps_config
 from pilot.config.bench import BenchConfig
 from pilot.config.worker import WorkerConfig, WorkerGroup
 
-# The single registry of wizard-editable settings: flat key -> attribute path on
-# BenchConfig. Defaults and serialization live in the dataclasses and
-# dumps_config; adding a config field means adding the dataclass field
-# (+ its toml_writer line) and, if it is wizard-editable, one entry here.
+# Wizard-editable flat key -> BenchConfig attribute path.
 FLAT_KEYS = {
     "bench_name": "name",
     "python": "python_version",
@@ -25,13 +22,7 @@ FLAT_KEYS = {
     "mariadb_socket_path": "mariadb.socket_path",
     "mariadb_host": "mariadb.host",
     "mariadb_existing": "mariadb.existing",
-    # mariadb.port and postgres.port are deliberately NOT offset-managed
-    # (not in _PORT_FIELDS): every bench for a given OS user shares the same
-    # single MariaDB/PostgreSQL server, so their ports must stay identical
-    # across benches rather than being offset per bench. mariadb.port is
-    # still a flat key (unlike the offset-managed ports) so NewCommand can
-    # set it explicitly — the shared server's port isn't always the default
-    # 3306 (e.g. a system-wide MariaDB may already be running there).
+    # DB ports are flat settings but not offset-managed; the server is shared.
     "mariadb_port": "mariadb.port",
     "postgres_password": "postgres.root_password",
     "postgres_admin_user": "postgres.admin_user",
@@ -65,12 +56,7 @@ def _default_config(name: str = "") -> BenchConfig:
     return BenchConfig._from_dict(data)
 
 
-# Ports are managed internally (new benches get an auto-picked offset so they
-# don't collide) rather than via FLAT_KEYS, so they stay out of the wizard
-# and settings UIs. This is the single place that knows their default values
-# and dotted paths — callers needing them (e.g. NewCommand's port offset
-# logic) should go through default_ports()/BenchTomlBuilder, not duplicate
-# the numbers themselves.
+# Offset-managed ports stay out of wizard/settings input.
 _PORT_FIELDS = ("http_port", "socketio_port", "redis.cache_port", "redis.queue_port", "admin.port")
 
 
@@ -81,13 +67,7 @@ def default_ports() -> dict[str, int]:
 
 
 def current_port_offset(toml_path: Path) -> int:
-    """Offset already baked into an existing bench.toml, derived from its http_port.
-
-    Since ports aren't in FLAT_KEYS, any code that rewrites an existing
-    bench.toml via BenchTomlBuilder (e.g. the setup wizard's save step) must
-    pass this back in as port_offset, or every other port field silently
-    resets to default on the next save.
-    """
+    """Return the offset already baked into an existing bench.toml."""
     if not toml_path.exists():
         return 0
     try:
@@ -137,11 +117,7 @@ def _apply_setting(config: BenchConfig, key: str, value) -> None:
 
 
 def _workers_to_groups(value) -> list[WorkerGroup]:
-    """Build worker groups from the wizard's ``[{queues, count}, ...]`` list.
-
-    ``queues`` may arrive as a list or a comma-separated string. Empty/invalid
-    input falls back to the default groups.
-    """
+    """Build worker groups from list or comma-separated queue settings."""
     if not isinstance(value, list) or not value:
         return WorkerConfig().groups
     groups = []
@@ -167,11 +143,7 @@ def _flatten(config: BenchConfig) -> dict:
 
 
 class BenchTomlBuilder:
-    """Adapter between the wizard's flat settings dicts and ``BenchConfig``.
-
-    ``BenchConfig`` + ``dumps_config`` are the single source of truth
-    for defaults and serialization; this class only translates flat keys.
-    """
+    """Translates flat wizard/settings input to BenchConfig."""
 
     DEFAULTS = {key: value for key, value in _flatten(_default_config()).items() if key != "bench_name"}
 
@@ -199,12 +171,7 @@ class BenchTomlBuilder:
 
     @classmethod
     def read_settings(cls, toml_path: Path) -> dict:
-        """Read bench.toml into the same flat-dict format as DEFAULTS.
-
-        Parse-only (no validation) so a half-configured file can still be read.
-        ``bench_name`` is included (empty string if absent so callers can
-        substitute a path-based fallback).
-        """
+        """Read bench.toml into the same flat-dict format as DEFAULTS."""
         with open(toml_path, "rb") as fh:
             data = tomllib.load(fh)
         return _flatten(BenchConfig._from_dict(data))

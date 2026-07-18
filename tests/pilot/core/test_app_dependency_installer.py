@@ -80,11 +80,7 @@ def test_install_skips_already_installed_dependency(tmp_path: Path) -> None:
 
 
 def test_dependency_apps_falls_back_to_direct_deps_on_transitive_conflict(tmp_path: Path) -> None:
-    """Regression: telephony is already installed (_install_missing's direct-
-    deps check short-circuits before ever calling resolve()), but a deeper
-    transitive conflict makes the full-chain resolve() raise when
-    _dependency_apps calls it. That must not wipe out telephony from the
-    result — it's still a real, already-installed dependency."""
+    """Regression: transitive conflicts keep direct installed dependencies."""
     bench = make_bench(tmp_path)
     bench.create_directories()
     (bench.apps_path / "telephony").mkdir(parents=True)
@@ -105,10 +101,7 @@ def test_dependency_apps_falls_back_to_direct_deps_on_transitive_conflict(tmp_pa
 
 
 def test_install_propagates_registry_unavailable_instead_of_swallowing_as_not_found(tmp_path: Path) -> None:
-    """P1 regression: a tampered/corrupted registry cache raising
-    RegistryUnavailableError during Marketplace construction must propagate —
-    it must NOT be treated as "app not in registry" (which would silently
-    skip dependency installation and leave a potentially broken install)."""
+    """RegistryUnavailableError propagates instead of looking like not-found."""
     bench = make_bench(tmp_path)
     bench.create_directories()
     app = make_app(bench, "helpdesk")

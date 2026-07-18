@@ -19,9 +19,6 @@ from pilot.managers.task.reader import TaskReader, collapse_cr
 from pilot.tasks import TaskRunner
 
 
-# ── task id generation ──────────────────────────────────────────────────────
-
-
 def test_generate_task_id_format() -> None:
     task_id = task_runner_module.generate_task_id()
     assert re.match(r"^\d{8}-\d{6}-[a-f0-9]{6}$", task_id), f"Unexpected format: {task_id!r}"
@@ -31,9 +28,6 @@ def task_argv(tmp_path: Path, command: str, args: dict) -> list[str]:
     task_id = TaskRunner(tmp_path).run(command, args)
     meta = json.loads((tmp_path / "tasks" / task_id / "meta.json").read_text())
     return meta["command_argv"]
-
-
-# ── TaskRunner command argv handoff ──────────────────────────────────────────
 
 
 def test_command_argv_migrate(tmp_path: Path) -> None:
@@ -228,9 +222,6 @@ def test_command_argv_switch_branch_requires_name_and_branch(tmp_path: Path) -> 
         TaskRunner(tmp_path).run("switch-branch", {"branch": "develop"})
     with pytest.raises(ValueError, match="branch"):
         TaskRunner(tmp_path).run("switch-branch", {"name": "gameplan"})
-
-
-# ── TaskReader.read_output ───────────────────────────────────────────────────
 
 
 def _make_task_dir(tasks_root: Path, task_id: str, status: str = "success") -> Path:
@@ -500,9 +491,6 @@ def test_reader_returns_only_allowlisted_failure_message(tmp_path: Path) -> None
     assert "database-password" not in str(task.as_dict())
 
 
-# ── _collapse_cr ────────────────────────────────────────────────────────────
-
-
 def test_collapse_cr_no_cr() -> None:
     assert collapse_cr("hello world") == "hello world"
 
@@ -560,9 +548,6 @@ def test_read_output_collapses_cr_lines(tmp_path: Path) -> None:
         result = reader.read_output(task_id, lines=200)
 
     assert result == ["[70%]", "Done"]
-
-
-# ── TaskRunner task retention ────────────────────────────────────────────────
 
 
 def test_task_retention_limit(tmp_path: Path) -> None:

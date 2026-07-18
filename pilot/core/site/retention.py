@@ -8,13 +8,7 @@ _TS_FORMAT = "%Y%m%d_%H%M%S"
 
 
 class BackupRetentionPolicy:
-    """Given backup run timestamps (`YYYYMMDD_HHMMSS`), decide which to delete.
-
-    FIFO keeps the newest ``keep_last`` runs. GFS keeps the latest run in each of
-    the most recent ``keep_daily`` days, ``keep_weekly`` ISO weeks, ``keep_monthly``
-    months and ``keep_yearly`` years; a run survives if any tier selects it. Either
-    way the single newest run is always kept.
-    """
+    """Select backup timestamps to delete under FIFO or GFS retention."""
 
     def __init__(self, config: BackupConfig) -> None:
         self.config = config
@@ -52,8 +46,7 @@ class BackupRetentionPolicy:
 
     @staticmethod
     def _parse(timestamps: list[str]) -> list[tuple[datetime, str]]:
-        """Parseable timestamps, newest first. Unparseable ones are dropped so
-        they are never selected for deletion."""
+        """Return parseable timestamps newest first."""
         runs = []
         for ts in timestamps:
             try:

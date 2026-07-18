@@ -3,15 +3,10 @@ from dataclasses import dataclass, field
 
 from pilot.exceptions import ConfigError
 
-# The only accepted values for WafConfig.mode, in UI order. Single source of
-# truth: WafConfig.validate(), the settings API, and the admin UI all
-# reference this rather than repeating the literals.
+# Accepted WAF modes, in UI order.
 WAF_MODES = ("Off", "DetectionOnly", "On")
 
-# Custom-rule vocabulary. Single source of truth shared by validation, the
-# SecRule compiler (nginx renderer), the settings API, and the builder UI.
-# ``field`` -> the request part matched; ``operator`` -> how; ``action`` -> what
-# happens on a match; ``match`` -> how a rule's conditions combine.
+# Custom-rule vocabulary shared by validation, rendering, API, and UI.
 WAF_RULE_FIELDS = ("uri_path", "uri_full", "query", "method", "source_ip", "user_agent", "header", "host")
 WAF_RULE_OPERATORS = ("is", "is_not", "contains", "not_contains", "starts_with", "matches")
 WAF_RULE_ACTIONS = ("block", "log", "skip")
@@ -34,8 +29,7 @@ _WAF_MAX_VALUE_LEN = 1024
 
 
 def parse_nginx_size(value: str) -> int:
-    """Bytes for an nginx size string ('50m', '1g', '13107200'). Suffixes k/m/g
-    are powers of 1024; a bare number is bytes. Raises ValueError on garbage."""
+    """Parse nginx sizes like '50m', '1g', or raw byte counts."""
     text = str(value).strip().lower()
     if not text:
         raise ValueError("empty size")
@@ -46,9 +40,7 @@ def parse_nginx_size(value: str) -> int:
 
 @dataclass
 class WafCondition:
-    """One predicate of a custom rule: match ``field`` against ``value`` with
-    ``operator``. ``header_name`` names the request header when ``field`` is
-    "header" (ignored otherwise)."""
+    """One predicate in a custom WAF rule."""
 
     field: str
     operator: str
@@ -58,10 +50,7 @@ class WafCondition:
 
 @dataclass
 class WafRule:
-    """A Cloudflare-style custom rule that compiles to ModSecurity SecRule(s):
-    when the ``conditions`` match (all of them for ``match`` "all", any of them
-    for "any"), apply ``action`` ("block" | "log" | "skip"). ``name`` is a label
-    surfaced in the audit log; ``enabled`` toggles the rule without deleting it."""
+    """A custom rule compiled to ModSecurity SecRule(s)."""
 
     name: str
     action: str = "block"
@@ -72,21 +61,7 @@ class WafRule:
 
 @dataclass
 class WafConfig:
-    """ModSecurity (layer-7 WAF) settings applied to every nginx vhost of the bench.
-
-    Runs the OWASP Core Rule Set. ``mode`` maps to ``SecRuleEngine``:
-    "DetectionOnly" logs matches without blocking (the safe default for a
-    monitor-first rollout), "On" enforces, "Off" disables inspection. ``enabled``
-    is the master switch; when off, no ModSecurity directives are emitted at all.
-
-    ``paranoia`` is the CRS blocking paranoia level (1 = fewest false positives,
-    4 = most aggressive). ``inbound_threshold`` is the anomaly score at which a
-    request is blocked. ``body_limit`` caps the request body ModSecurity buffers
-    for inspection and must be >= nginx's ``client_max_body_size``. ``exclusions``
-    are raw SecLang lines (e.g. ``SecRuleRemoveById``) applied after the CRS to
-    silence false positives; ``exempt_paths`` are location prefixes that bypass
-    the WAF entirely.
-    """
+    """ModSecurity/OWASP CRS settings applied to every nginx vhost."""
 
     enabled: bool = False
     mode: str = "DetectionOnly"  # "DetectionOnly" | "On" | "Off"
@@ -102,9 +77,7 @@ class WafConfig:
     def from_dict(cls, data: dict | None) -> "WafConfig":
         if not data:
             return cls()
-        # paranoia/inbound_threshold pass through unconverted so a hand-edited
-        # non-integer surfaces as a clean ConfigError in validate() rather
-        # than a raw ValueError here.
+        # Let validate() report non-integers as ConfigError.
         return cls(
             enabled=bool(data.get("enabled", False)),
             mode=str(data.get("mode", "DetectionOnly")),
@@ -163,8 +136,7 @@ class WafConfig:
         self._validate_custom_rules()
 
     def _validate_custom_rules(self) -> None:
-        """Every condition value is interpolated into a SecLang rule, so this is
-        the authoritative check for both bench.toml and the settings API."""
+        """Validate SecLang-bound custom rule input."""
         if len(self.custom_rules) > _WAF_MAX_RULES:
             raise ConfigError(f"waf.custom_rules has too many rules (max {_WAF_MAX_RULES}).")
         for i, rule in enumerate(self.custom_rules):

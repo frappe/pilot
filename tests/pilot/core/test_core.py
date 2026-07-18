@@ -78,9 +78,6 @@ def test_server_resolves_bench_by_name(tmp_path: Path, monkeypatch) -> None:
     assert bench.config.name == "alpha"
 
 
-# ── App tests ────────────────────────────────────────────────────────────────
-
-
 def test_app_is_cloned_returns_false_for_nonexistent_path(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     app_config = AppConfig(name="frappe", repo="https://example.com/frappe", branch="main")
@@ -349,9 +346,6 @@ def test_app_path_is_under_apps_directory(tmp_path: Path) -> None:
     assert app.path == tmp_path / "apps" / "frappe"
 
 
-# ── Site tests ───────────────────────────────────────────────────────────────
-
-
 def test_site_exists_returns_false_for_nonexistent_path(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     site_config = SiteConfig(name="site1.localhost", apps=["frappe"])
@@ -381,9 +375,6 @@ def test_site_path_is_under_sites_directory(tmp_path: Path) -> None:
     site_config = SiteConfig(name="site1.localhost", apps=["frappe"])
     site = Site(site_config, bench)
     assert site.path == tmp_path / "sites" / "site1.localhost"
-
-
-# ── Bench tests ───────────────────────────────────────────────────────────────
 
 
 def test_bench_create_directories(tmp_path: Path) -> None:
@@ -441,9 +432,6 @@ def test_bench_init_apps_comes_from_config(tmp_path: Path) -> None:
     init_apps = bench.init_apps()
     assert len(init_apps) == 1
     assert init_apps[0].config.name == "frappe"
-
-
-# ── ProcessManager._process_definitions ──────────────────────────────────────
 
 
 def test_process_definitions_returns_correct_count(tmp_path: Path) -> None:
@@ -520,9 +508,6 @@ def test_dev_web_can_enable_python_reloader(tmp_path: Path) -> None:
     assert "--noreload" not in web.argv
 
 
-# ── ProcessManager tests ───────────────────────────────────────────────
-
-
 def test_honcho_generate_config_writes_procfile(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     bench.create_directories()
@@ -594,12 +579,6 @@ def test_honcho_start_writes_per_process_pid_files(tmp_path: Path) -> None:
         pid_file = bench.pids_path / f"{name}.pid"
         assert pid_file.exists(), f"Missing PID file for process '{name}'"
         assert pid_file.read_text().strip() == "12345"
-
-
-# ── Site.create() database engine selection ───────────────────────────────────
-
-
-# ── Site create/restore/reinstall use the bench's single engine ───────────────
 
 
 def _capture_site_cmd(monkeypatch) -> dict:

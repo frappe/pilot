@@ -5,11 +5,7 @@ from pathlib import Path
 
 
 class GitRepo:
-    """A robust wrapper over the ``git`` CLI for one working tree.
-
-    Read accessors degrade to an empty/default value on any failure, so callers
-    stay free of try/except noise. Only network/mutating helpers surface failure.
-    """
+    """Git CLI wrapper with quiet read accessors."""
 
     def __init__(self, path: Path) -> None:
         self.path = Path(path)

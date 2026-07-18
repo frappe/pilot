@@ -1,7 +1,4 @@
-"""Tests for GetAppCommand.run() (delegating to App.install()) — an
-already-installed app skips clone, validate, install, and build, but its
-dependencies are still installed (missing ones) or resolved (already-present
-ones) so callers can still install them onto new sites."""
+"""Tests for GetAppCommand.run()."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -64,10 +61,7 @@ def test_run_short_circuits_when_app_already_registered(tmp_path: Path) -> None:
 
 
 def test_short_circuit_adopts_real_on_disk_app_path(tmp_path: Path) -> None:
-    """Regression: a hyphenated repo name's raw path never existed on disk —
-    only the module-normalized folder from an earlier run does. cmd.app must
-    point at the real folder so callers (e.g. get_and_install_app_task) don't
-    get an App referencing a nonexistent path."""
+    """Regression: short-circuit uses the normalized on-disk app path."""
     bench = make_bench(tmp_path)
     bench.create_directories()
     real_app_dir = bench.apps_path / "india_compliance"
@@ -83,10 +77,7 @@ def test_short_circuit_adopts_real_on_disk_app_path(tmp_path: Path) -> None:
 
 
 def test_short_circuit_still_populates_installed_dependencies(tmp_path: Path) -> None:
-    """Defect: when run() short-circuits on an already-registered app,
-    installed_dependencies must still list its marketplace dependencies —
-    otherwise GetAndInstallAppTask only installs the primary app onto new
-    sites and silently leaves its dependencies uninstalled there."""
+    """Regression: short-circuit still reports installed dependencies."""
     bench = make_bench(tmp_path)
     bench.create_directories()
     (bench.apps_path / "helpdesk").mkdir(parents=True)
@@ -107,10 +98,7 @@ def test_short_circuit_still_populates_installed_dependencies(tmp_path: Path) ->
 
 
 def test_still_installs_missing_dependency_when_parent_already_installed(tmp_path: Path) -> None:
-    """A dependency can still be missing even when the parent app itself is
-    already installed (e.g. helpdesk was installed before telephony existed,
-    or the app is being added to a new site) — it must still get installed,
-    otherwise that site breaks."""
+    """Missing dependencies are installed even when the parent app exists."""
     bench = make_bench(tmp_path)
     bench.create_directories()
     (bench.apps_path / "helpdesk").mkdir(parents=True)

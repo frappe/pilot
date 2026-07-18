@@ -15,12 +15,7 @@ class FirewallRule:
 
 @dataclass
 class FirewallConfig:
-    """IP allow/block list applied to every nginx vhost of the bench.
-
-    ``default`` is the policy for clients no rule matches: "allow" (blocklist
-    mode) or "deny" (allowlist mode). ``enabled`` is a master switch; when off,
-    nginx serves everyone regardless of rules.
-    """
+    """IP allow/block list applied to every nginx vhost."""
 
     enabled: bool = False
     default: str = "allow"  # "allow" | "deny"

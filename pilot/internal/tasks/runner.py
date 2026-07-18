@@ -39,10 +39,7 @@ class SubmissionResult:
 
 
 class TaskRunner:
-    """Generic task-submission engine: it knows nothing about any specific
-    task. Callers supply the command -> job class registry and the
-    command -> required args; see pilot.tasks.TaskRunner
-    for the bound instance used across the app."""
+    """Generic task-submission engine bound by pilot.tasks.TaskRunner."""
 
     def __init__(
         self,

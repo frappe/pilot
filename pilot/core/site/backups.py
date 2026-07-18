@@ -17,8 +17,7 @@ _TS_RE = re.compile(r"^(\d{8}_\d{6})")
 
 
 def parse_backup_timestamp(filename: str) -> str | None:
-    """The `YYYYMMDD_HHMMSS` run timestamp a backup file's name starts with, or
-    None if it doesn't match Frappe's `<timestamp>-<site>-<part>.<ext>` naming."""
+    """Return a Frappe backup filename's YYYYMMDD_HHMMSS prefix."""
     match = _TS_RE.match(filename)
     return match.group(1) if match else None
 
@@ -45,8 +44,7 @@ class SiteBackups:
         return latest, groups[latest]
 
     def prune(self) -> list[str]:
-        """Delete runs the site's retention policy rejects, returning the timestamps
-        actually pruned. With no per-site retention (automated backups off), keep all."""
+        """Delete runs rejected by this site's retention policy."""
         config = read_retention(self.site.path / "site_config.json")
         if config is None:
             return []
@@ -117,9 +115,7 @@ class SiteBackups:
         return retention_from_payload(block)
 
     def _delete_run(self, offsite, offsite_runs: dict, timestamp: str) -> bool:
-        """Delete one run offsite-first, then local. On an offsite error the run is
-        left intact in both stores (retried next prune) rather than half-deleted, and
-        the timestamp is not reported as pruned."""
+        """Delete one run offsite first; keep local files if offsite deletion fails."""
         if timestamp in offsite_runs:
             try:
                 self._delete_offsite(offsite, timestamp, offsite_runs[timestamp])

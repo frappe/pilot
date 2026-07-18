@@ -1,36 +1,25 @@
-"""Verify JWTs minted by a remote issuer against its JWKS endpoint.
-
-Lets a remote control plane sign session tokens with its own private key; the
-bench trusts them by fetching the matching public keys from ``admin.jwks_url``
-— no shared secret. Runs in the admin venv, so it leans on PyJWT (and thus
-supports RSA, EC, and EdDSA keys) rather than hand-rolled crypto."""
+"""Verify remote JWTs against admin.jwks_url."""
 
 from __future__ import annotations
 
 import jwt
 from jwt import PyJWKClient
 
-# Asymmetric algorithms an issuer may sign with; symmetric HS* is deliberately
-# excluded so a published public key can never be replayed as an HMAC secret.
+# Exclude HS*: a public JWKS key must never become an HMAC secret.
 _ALGORITHMS = ["RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "PS256", "PS384", "PS512", "EdDSA"]
 
 _clients: dict[str, PyJWKClient] = {}
 
 
 def verify_jwks_token(token: str, jwks_url: str, audience: str) -> dict | None:
-    """Return the token's claims if a JWKS key verifies it, it has not expired,
-    and its ``aud`` matches ``audience``; else None. Fails closed. ``audience``
-    is mandatory — it binds a remote token to this bench, so an empty one
-    rejects every remote token."""
+    """Return verified claims, or None on any auth failure."""
     if not token or not jwks_url or not audience:
         return None
     try:
         kid = jwt.get_unverified_header(token).get("kid")
         if not isinstance(kid, str):
             return None
-        # Match against the cached key set only. The set self-refreshes on its
-        # 5-minute lifespan, so an unknown kid never triggers a per-request
-        # refetch an attacker could use to hammer the issuer.
+        # Unknown kids must not trigger attacker-controlled refetches.
         signing_key = PyJWKClient.match_kid(_client(jwks_url).get_signing_keys(), kid)
         if signing_key is None:
             return None

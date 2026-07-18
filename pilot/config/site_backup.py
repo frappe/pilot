@@ -1,6 +1,4 @@
-"""Per-site backup retention, stored in the site's site_config.json under
-``backup_retention``. Present only while automated backups are enabled; when
-absent, nothing is pruned (every backup is kept)."""
+"""Per-site backup retention stored in site_config.json."""
 
 import json
 from dataclasses import asdict
@@ -36,8 +34,7 @@ def clear_retention(site_config_path: Path) -> None:
 
 
 def _load(path: Path) -> dict:
-    """Existing config as a dict. Raises on a corrupt/unreadable file so writers
-    never overwrite (and erase) a config they couldn't parse; readers catch it."""
+    """Load existing config; writers must not overwrite unreadable JSON."""
     if not path.is_file():
         return {}
     return json.loads(path.read_text())

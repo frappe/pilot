@@ -135,9 +135,7 @@ _AUDIT_LOG_MAX_LIMIT = 500
 
 @audit_bp.get("/audit-events")
 def audit_log():
-    """The bench-wide audit log as JSON, newest first. The log has no dedicated
-    UI — it's viewed directly, paginated with ``limit``/``cursor`` query params,
-    and optionally filtered by ``type``/``status``/``site``."""
+    """Return filtered bench audit events, newest first."""
     from admin.backend.api.responses import paginated_response, parse_pagination
     from pilot.core.bench.audit_log import AuditLog
 
@@ -161,9 +159,7 @@ def audit_log():
 
 @network_bp.get("/network/client")
 def my_ip():
-    """The requesting client's IP, so the UI can tell the operator which address to
-    allow-list before blocking by default. Forwarded addresses are accepted only
-    from the configured local nginx peer."""
+    """Return the client IP the firewall should allow-list."""
     return jsonify({"ip": client_ip(default="")})
 
 

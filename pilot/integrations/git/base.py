@@ -1,13 +1,4 @@
-"""Provider-agnostic Git integration contract: errors, the provider ABC, and
-URL helpers shared by every concrete provider.
-
-The flow is deliberately split into two layers:
-
-* the **API layer** (a Personal Access Token) is used for administrative tasks
-  the user does through the UI — validating the connection and listing repos;
-* the **transport layer** passes an HTTP authorization header through Git's
-  environment config while keeping the remote URL free of credentials.
-"""
+"""Provider API contracts and URL helpers for private Git repositories."""
 
 from __future__ import annotations
 
@@ -19,10 +10,7 @@ import urllib.request
 
 from pilot.exceptions import BenchError
 
-# Per-provider Fine-Grained PAT generation links, pre-scoped where the provider
-# supports it, surfaced in the UI so the user lands on the right settings page.
-# Classic PAT URL pre-fills the `repo` scope so the user only has to click
-# "Generate token" — no manual scope selection needed.
+# Provider token-generation links surfaced in the UI.
 TOKEN_HELP_URLS = {
     "github": "https://github.com/settings/tokens/new?scopes=repo&description=Bench+CLI",
 }
@@ -47,10 +35,7 @@ class GitProvider(abc.ABC):
 
     @abc.abstractmethod
     def validate(self) -> dict:
-        """Ping the provider's identity endpoint; return account info.
-
-        Raises ``GitAuthError`` if the token is rejected.
-        """
+        """Ping the identity endpoint and return account info."""
 
     @abc.abstractmethod
     def list_repos(self) -> list[dict]:
@@ -65,11 +50,7 @@ class GitProvider(abc.ABC):
         """Return branch names for *full_name* (``owner/repo``), up to 100."""
 
     def fetch_raw_file(self, repo_url: str, path: str, ref: str = "HEAD") -> str:
-        """Return the raw text content of *path* at *ref* in *repo_url*.
-
-        Raises ``GitProviderError`` if the file is not found or the provider
-        does not support this operation.
-        """
+        """Return raw text content from a repository ref."""
         raise GitProviderError(f"Fetching repository files is not supported for {self.name}.")
 
     def get_default_branch(self, full_name: str) -> str:
@@ -109,10 +90,7 @@ def normalize_to_https(repo_url: str) -> str:
 
 
 def inject_https_token(repo_url: str, username: str, token: str) -> str:
-    """Embed ``username:token`` userinfo into an https clone URL.
-
-    Falls back to the normalized URL untouched when there is no token.
-    """
+    """Embed username/token userinfo into an HTTPS clone URL."""
     https = normalize_to_https(repo_url)
     if not token or not https.startswith("https://"):
         return https

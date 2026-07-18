@@ -147,9 +147,6 @@ def test_module_already_loaded_survives_unreadable_nginx_conf(tmp_path: Path, mo
     assert NginxManager._module_already_loaded() is True
 
 
-# ── custom-rule compiler ──────────────────────────────────────────────────────
-
-
 def test_compile_and_rule_is_a_chain() -> None:
     out = _compile(
         [

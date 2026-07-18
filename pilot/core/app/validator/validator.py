@@ -13,9 +13,7 @@ if typing.TYPE_CHECKING:
 
 
 class Validator:
-    """Runs a cloned app through a series of checks before it's installed
-    into the bench env, so a broken app is rejected up front instead of
-    after `pip install` has already touched the environment."""
+    """Runs pre-install checks against a cloned app."""
 
     def __init__(self, app: "App", checks: list["ValidationCheck"] | None = None) -> None:
         self.app = app

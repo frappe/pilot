@@ -68,8 +68,6 @@ def _calls(log: Path) -> list[str]:
     return log.read_text().splitlines()
 
 
-# --- provider installed -------------------------------------------------------
-
 def test_generate_dns_records_returns_provider_output(tmp_path: Path, monkeypatch) -> None:
     _install_provider(tmp_path, monkeypatch)
     bench = _make_bench(tmp_path)
@@ -91,8 +89,7 @@ def test_generate_dns_records_passes_site_then_domain(tmp_path: Path, monkeypatc
 
 
 def test_generate_dns_records_validates_locally_before_provider(tmp_path: Path, monkeypatch) -> None:
-    """The local basic checks run even with a provider installed: a domain already
-    taken by a sibling site is rejected here, before the provider is ever called."""
+    """Local duplicate checks run before provider calls."""
     log = _install_provider(tmp_path, monkeypatch)
     bench = _make_bench(tmp_path)
     _write_site(bench, "mysite")
@@ -145,8 +142,6 @@ def test_provider_failure_raises_with_stderr(tmp_path: Path, monkeypatch) -> Non
         DomainRouteProvider.proxy_servers()
 
 
-# --- no provider: built-in fallback ------------------------------------------
-
 def test_host_queries_empty_without_provider(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
     assert DomainRouteProvider.wildcard_domains() == []
@@ -163,8 +158,6 @@ def test_builtin_dns_records_without_provider(tmp_path: Path, monkeypatch) -> No
 
     assert records == {"cname": [{"type": "CNAME", "host": "app.example.com", "value": "mysite"}], "a": []}
 
-
-# --- end to end: provider proxy IPs reach the nginx config -------------------
 
 def test_nginx_gates_tcp_peer_to_provider_proxy_servers(tmp_path: Path, monkeypatch) -> None:
     _install_provider(tmp_path, monkeypatch)

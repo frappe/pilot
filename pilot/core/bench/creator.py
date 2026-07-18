@@ -14,9 +14,7 @@ if TYPE_CHECKING:
 
 
 class BenchCreator:
-    """Creates a new bench directory + bench.toml, inheriting shared-server
-    settings (db port/password, TLS, Let's Encrypt email, JWKS) from any
-    sibling bench, and picking a free port offset."""
+    """Creates a bench and inherits server-wide settings from siblings."""
 
     def __init__(
         self,
@@ -98,8 +96,7 @@ class BenchCreator:
         return Bench(self.target_directory)
 
     def _sibling_letsencrypt_email(self) -> str:
-        """The Let's Encrypt email from any sibling bench that has one, so a new
-        production bench inherits the server-wide ACME account."""
+        """Return the shared Let's Encrypt email from a sibling bench."""
         for _, config in iter_sibling_benches(self.target_directory):
             email = getattr(config.letsencrypt, "email", "")
             if email:
@@ -107,24 +104,14 @@ class BenchCreator:
         return ""
 
     def _sibling_mariadb_port(self) -> int:
-        """The MariaDB port a sibling bench already established for the
-        shared user-owned server (see MariaDBManager), so this bench points
-        at the same running instance instead of a fresh guess."""
+        """Return the shared MariaDB port from a sibling bench."""
         for _, config in iter_sibling_benches(self.target_directory):
             if config.db_type == "mariadb" and config.mariadb.port:
                 return config.mariadb.port
         return 0
 
     def _pick_mariadb_port(self) -> int:
-        """Smallest port at/above the default 3306 that isn't already live —
-        used only when no sibling has picked one yet, so the very first
-        MariaDB bench on a host doesn't collide with a system-wide MariaDB
-        already listening on 3306.
-
-        macOS never creates a bindable-anywhere instance of its own —
-        MariaDBManager just starts Homebrew's single shared service via
-        `brew services`.
-        """
+        """Pick the first free MariaDB port for the first bench on this host."""
         from pilot.config import MariaDBConfig
         from pilot.managers.platform import is_macos
 
@@ -136,32 +123,21 @@ class BenchCreator:
         return port
 
     def _sibling_mariadb_password(self) -> str:
-        """The MariaDB root password from any sibling MariaDB bench — every
-        bench for this OS user shares one server (see MariaDBManager)."""
+        """Return the shared MariaDB root password from a sibling bench."""
         for _, config in iter_sibling_benches(self.target_directory):
             if config.db_type == "mariadb" and config.mariadb.root_password:
                 return config.mariadb.root_password
         return ""
 
     def _sibling_postgres_port(self) -> int:
-        """The PostgreSQL port a sibling bench already established for the
-        shared server (see PostgresManager), so this bench points at the
-        same running instance instead of a fresh guess."""
+        """Return the shared PostgreSQL port from a sibling bench."""
         for _, config in iter_sibling_benches(self.target_directory):
             if config.db_type == "postgres" and config.postgres.port:
                 return config.postgres.port
         return 0
 
     def _pick_postgres_port(self) -> int:
-        """Smallest port at/above the default 5432 that isn't already live —
-        used only when no sibling has picked one yet, so the very first
-        Postgres bench on a host doesn't collide with a system-wide
-        PostgreSQL already listening on 5432. Mirrors _pick_mariadb_port().
-
-        macOS never creates a bindable-anywhere instance of its own —
-        PostgresManager just starts Homebrew's single shared service via
-        `brew services`
-        """
+        """Pick the first free PostgreSQL port for the first bench on this host."""
         from pilot.config import PostgresConfig
         from pilot.managers.platform import is_macos
 
@@ -173,32 +149,27 @@ class BenchCreator:
         return port
 
     def _sibling_postgres_password(self) -> str:
-        """The PostgreSQL superuser password from any sibling Postgres bench —
-        every bench for this OS user shares one server (see PostgresManager)."""
+        """Return the shared PostgreSQL password from a sibling bench."""
         for _, config in iter_sibling_benches(self.target_directory):
             if config.db_type == "postgres" and config.postgres.root_password:
                 return config.postgres.root_password
         return ""
 
     def _sibling_jwks_admin(self):
-        """The admin config of the first sibling that trusts a remote JWKS
-        issuer, so a new bench inherits the same jwks_url and audience."""
+        """Return sibling admin config that trusts a remote JWKS issuer."""
         for _, config in iter_sibling_benches(self.target_directory):
             if getattr(config.admin, "jwks_url", ""):
                 return config.admin
         return None
 
     def _sibling_admin_tls(self) -> bool:
-        """Carry forward the server-wide TLS choice from a sibling bench; default
-        to False (plain HTTP, enable TLS explicitly) when this is the first bench."""
+        """Return the server-wide admin TLS choice from a sibling bench."""
         for _, config in iter_sibling_benches(self.target_directory):
             return bool(getattr(config.admin, "tls", False))
         return False
 
     def _pick_port_offset(self, bench_path: Path) -> int:
-        """Smallest offset (added to every base port) that collides with
-        neither another bench's bench.toml nor a port that's actually live
-        right now — covers both stale configs and orphaned processes."""
+        """Pick the first base-port offset unused by configs or live processes."""
         from pilot.config.bench_toml_builder import default_ports
 
         bases = default_ports()

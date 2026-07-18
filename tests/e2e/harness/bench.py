@@ -1,14 +1,4 @@
-"""Owns the full lifecycle of one bench for an e2e run.
-
-    new            create()        -> writes benches/<name>/bench.toml
-    start (wizard) start_wizard()  -> foreground admin in --wizard mode
-    <browser drives the setup wizard; the wizard server SIGTERMs itself>
-    start (bench)  start_full()    -> the initialized bench + admin
-    stop/destroy   stop() / destroy()
-
-Each start spawns ``bench ... start`` in its own session (process group) so
-stop() can tear down the whole tree (admin, workers, redis, gunicorn).
-"""
+"""Owns one e2e bench lifecycle and its spawned process tree."""
 
 from __future__ import annotations
 
@@ -61,8 +51,6 @@ class Bench:
         self._proc: subprocess.Popen | None = None
         self._info: dict | None = None
 
-    # ── identity ───────────────────────────────────────────────────────────────
-
     @property
     def dir(self) -> Path:
         return BENCHES_DIR / self.name
@@ -75,15 +63,12 @@ class Bench:
 
     @property
     def admin_password(self) -> str:
-        """The admin password the harness will set via the wizard and log in with
-        (the fresh bench.toml has none until the wizard saves it)."""
+        """Admin password entered by the wizard and reused for login."""
         return self._admin_password
 
     @property
     def admin_url(self) -> str:
         return f"http://127.0.0.1:{self.admin_port}"
-
-    # ── lifecycle ──────────────────────────────────────────────────────────────
 
     def create(self) -> None:
         """`bench new <name>` then read the generated admin port."""
@@ -106,8 +91,7 @@ class Bench:
         self._info = self._read_config()
 
     def start_wizard(self) -> None:
-        """`bench -b <name> start` on an un-initialized bench boots the standalone
-        setup-wizard server. Returns once it answers on the admin port."""
+        """Start the standalone setup-wizard server."""
         # No-op unless E2E_BUILD_ADMIN is set; otherwise `bench start` downloads
         # the prebuilt wizard UI itself.
         self._build_admin_ui()
@@ -115,9 +99,7 @@ class Bench:
         self._wait_for_admin(expect_wizard=True)
 
     def wait_for_wizard_exit(self, timeout: float = 5 * 60) -> None:
-        """After the wizard finishes it shuts its own server down, which makes the
-        foreground ``bench start`` exit. Wait for that so the next start gets a
-        clean port."""
+        """Wait for the wizard server to exit after setup."""
         deadline = time.time() + timeout
         start = time.time()
         next_log = start + 15
@@ -153,13 +135,7 @@ class Bench:
         self._kill_child()
 
     def destroy(self) -> None:
-        """Fully tear the bench down and leave no trace.
-
-        Prefer `bench drop`: it removes production services and the dedicated
-        MariaDB instance, then the bench dir. It refuses when sites remain (e.g.
-        a run that failed mid-lifecycle, or pre-clean of a leftover bench), so
-        fall back to manual cleanup whenever the dir survives.
-        """
+        """Fully tear the bench down and leave no trace."""
         self.stop()
         self._drop_bench()
         if self.dir.exists():
@@ -180,12 +156,7 @@ class Bench:
         )
 
     def remove_dir(self) -> None:
-        """Remove the bench directory. Guarded by the e2e- prefix.
-
-        A dedicated bench's dir may hold bind mounts (and root-owned files), so a
-        plain rmtree can fail with "device busy" and leave the folder behind.
-        Unmount anything mounted under it first, then remove the dir (with
-        privileges if needed)."""
+        """Remove the guarded e2e bench directory, unmounting first if needed."""
         if not (self.name.startswith(E2E_PREFIX) and self.dir.exists()):
             return
         # Guard every sudo/rm below: only ever an e2e- bench right under
@@ -203,8 +174,7 @@ class Bench:
             )
 
     def _teardown_mounts_under(self, root: Path) -> None:
-        """Unmount every mountpoint at/under ``root`` (deepest first), so a
-        dropped/failed bench leaves no busy mountpoint. Best-effort."""
+        """Best-effort unmount of every mountpoint under root."""
         quiet = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
         for _, mountpoint, _ in self._mounts_under(root):
             subprocess.run(["sudo", "umount", "-l", mountpoint], **quiet)
@@ -226,12 +196,8 @@ class Bench:
         ]
         return sorted(found, key=lambda entry: len(entry[1]), reverse=True)
 
-    # ── diagnostics ────────────────────────────────────────────────────────────
-
     def setup_task_error(self, max_lines: int = 40) -> str | None:
-        """Tail of the most recently failed task's output.log (e.g. the
-        wizard-setup task), for surfacing *why* a wizard run failed. Returns None
-        when there is no failed task or no readable log."""
+        """Return the newest failed setup task log tail, if readable."""
         tasks_dir = self.dir / "tasks"
         if not tasks_dir.exists():
             return None
@@ -261,17 +227,8 @@ class Bench:
         except OSError:
             return None
 
-    # ── internals ──────────────────────────────────────────────────────────────
-
     def _build_admin_ui(self) -> None:
-        """Build the admin UI from source into admin/backend/static/dist so the
-        server serves *this branch's* code instead of the prebuilt bundle.
-
-        Opt-in via E2E_BUILD_ADMIN: off by default, in which case the harness
-        never builds and `bench start` serves the prebuilt bundle it downloads
-        (the wizard) / already has from bench init (the full bench). Turn it on
-        to exercise local frontend changes end to end. Installs frontend deps
-        once if missing."""
+        """Optionally build the admin UI from source for E2E_BUILD_ADMIN."""
         if not _env_truthy("E2E_BUILD_ADMIN"):
             return
         print("[e2e] Building admin UI from source (E2E_BUILD_ADMIN)...")
@@ -283,10 +240,7 @@ class Bench:
             raise RuntimeError("admin frontend `npm run build` failed")
 
     def _teardown_dedicated_instance(self) -> None:
-        """Best-effort: a dedicated-DB bench provisions its own MariaDB instance
-        (systemd unit + datadir) which lives outside the bench dir, so
-        remove_dir() alone would orphan it. Read the instance from bench.toml and
-        tear it down. No-op for shared-DB benches (no instance configured)."""
+        """Best-effort cleanup for legacy dedicated MariaDB instances."""
         toml = self.dir / "bench.toml"
         if not toml.exists():
             return

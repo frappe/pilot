@@ -16,12 +16,7 @@ _TIME_FORMATS = ("%a %b %d %H:%M:%S %Y", "%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S
 
 
 class WafProvider:
-    """Aggregates the ModSecurity JSON audit log into WAF analytics for a window.
-
-    The audit log is JSON Lines: one transaction per line, written only for
-    requests that tripped a rule (SecAuditEngine RelevantOnly). Field names vary
-    slightly across ModSecurity builds, so extraction is deliberately lenient.
-    """
+    """Aggregates ModSecurity JSON audit logs for one time window."""
 
     def __init__(self, bench_root: Path, window: str) -> None:
         self._log_path = bench_root / "logs" / "modsec_audit.log"
@@ -133,8 +128,7 @@ class WafProvider:
 
     @staticmethod
     def _iter_records_reversed(path: Path, block_size: int = 65536):
-        """Yield JSON records newest-first, reading the file from the end so a short
-        window never touches the whole log. Malformed lines are skipped."""
+        """Yield JSON records newest first, skipping malformed lines."""
         if not path.exists():
             return
         with path.open("rb") as handle:

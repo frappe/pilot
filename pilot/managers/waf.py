@@ -37,9 +37,7 @@ _CRS_SHA256 = "409a0da1f4daed0719150fcee5173c351e08ffa33b5b2f8936f30968b3ad4ff0"
 
 
 class WafManager:
-    """Installs the ModSecurity nginx module (via the system package manager) and
-    the shared OWASP CRS assets. Only the compiled module is distro-specific; the
-    rule set is vendored to SHARED_MODSEC_DIR."""
+    """Installs the ModSecurity nginx module and shared CRS assets."""
 
     # Canonical (apt-style) name; per-distro names live in each package manager's
     # package_aliases map.
@@ -83,8 +81,7 @@ class WafManager:
             self._install_crs()
 
     def _install_crs(self) -> None:
-        """Download the pinned CRS release and stage crs-setup.conf + rules/ into
-        the shared dir (under /usr/share, so the copies need privilege)."""
+        """Download the pinned CRS release into the shared ModSecurity dir."""
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             archive = tmp_path / "crs.tar.gz"
@@ -103,9 +100,7 @@ class WafManager:
 
     @staticmethod
     def _verify_checksum(archive: Path) -> None:
-        """Abort before extraction if the download doesn't match the pinned digest,
-        so a compromised release or a redirect can't plant tampered rules under
-        /usr/share."""
+        """Abort before extraction if the archive digest changed."""
         digest = hashlib.sha256(archive.read_bytes()).hexdigest()
         if digest != _CRS_SHA256:
             raise RuntimeError(

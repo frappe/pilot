@@ -55,11 +55,7 @@ def site_name() -> str:
 
 @pytest.fixture(scope="session")
 def testapp_repo(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """
-    Initialises a local git repo from tests/fixtures/testapp so get-app can
-    clone it without a network round-trip.  The directory is named 'testapp'
-    so frappe's get-app infers the correct app name from the URL.
-    """
+    """Create a local testapp git repo for get-app tests."""
     src = Path(__file__).parent.parent / "fixtures" / "testapp"
     base = tmp_path_factory.mktemp("repos")
     repo = base / "testapp"

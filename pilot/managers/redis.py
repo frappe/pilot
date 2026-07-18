@@ -13,10 +13,7 @@ if TYPE_CHECKING:
 
 
 def redis_server_binary() -> str | None:
-    """Path to the redis server binary, or None if not installed.
-
-    Fedora and Arch ship valkey (a redis fork) whose binary keeps redis'
-    CLI and version-output format."""
+    """Return redis-server or valkey-server when installed."""
     return which("redis-server") or which("valkey-server")
 
 

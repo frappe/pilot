@@ -25,13 +25,7 @@ def _file_type(filename: str) -> str:
 
 @dataclass(frozen=True)
 class BackupKeys:
-    """Every S3 key the backups feature touches, built in one place.
-
-    Fixed layout::
-
-        sites/<site>/backups/<date>/<time>/<filename>       backup files
-        sites/<site>/backups_metadata/<year>-<month>.json    monthly run index
-    """
+    """Builds S3 keys for backup files and monthly metadata."""
 
     site_name: str
 
@@ -49,24 +43,7 @@ class BackupKeys:
 
 
 class Metadata:
-    """Monthly index of one site's offsite backup runs.
-
-    Each monthly file groups backup runs by timestamp, so a run's files
-    (database, site files, private files, site config) render as one row::
-
-        {
-          "20260702_174545": {
-            "database": "20260702_174545-assets_local-database.sql.gz",
-            "files": "20260702_174545-assets_local-files.tar",
-            "private_files": "20260702_174545-assets_local-private-files.tar",
-            "site_config": "20260702_174545-assets_local-site_config_backup.json"
-          }
-        }
-
-    A local advisory lock serializes the read-modify-write so concurrent
-    uploads, deletes, and pruning on the bench host cannot lose runs; the
-    monthly object is only ever written by that one host.
-    """
+    """Monthly offsite-backup index, locked during read-modify-write."""
 
     def __init__(self, s3: S3, bucket: str, keys: BackupKeys, lock: Path):
         self.s3 = s3
@@ -94,9 +71,7 @@ class Metadata:
             self.s3.write_json(self.bucket, key, runs)
 
     def iter_runs(self) -> Iterator[tuple[str, dict[str, str]]]:
-        """(timestamp, files) pairs across every monthly file, newest first.
-        Fetches one month at a time so a caller that only needs the most recent
-        runs can stop early instead of paying for the whole history."""
+        """Yield (timestamp, files) pairs newest first, one month at a time."""
         month_keys = self.s3.list_objects(self.bucket, prefix=self.keys.month_prefix)
         for key in sorted(month_keys, reverse=True):
             runs = self.s3.read_json(self.bucket, key)
@@ -110,12 +85,7 @@ class Metadata:
 
 
 class OffsiteBackup:
-    """Uploads, downloads and deletes site backups in one bench's bucket.
-
-    Wraps a configured ``S3`` client (composition, not inheritance: this class
-    is not itself an S3 client), with all key naming delegated to ``BackupKeys``
-    and run bookkeeping to ``Metadata``.
-    """
+    """Uploads, downloads and deletes site backups in one bench bucket."""
 
     def __init__(self, s3: S3, bucket: str, bench_root: Path) -> None:
         self.s3 = s3
@@ -150,9 +120,7 @@ class OffsiteBackup:
         self._metadata(keys).remove(timestamp, filename)
 
     def list_backups(self, site_name: str, limit: int | None = None) -> dict[str, dict[str, str]]:
-        """Offsite backup runs for a site, newest first, keyed by timestamp.
-        Stops reading monthly metadata files as soon as `limit` runs are
-        collected, instead of fetching a site's entire backup history."""
+        """Return offsite backup runs newest first, keyed by timestamp."""
         runs: dict[str, dict[str, str]] = {}
         for timestamp, files in self._metadata(BackupKeys(site_name)).iter_runs():
             runs[timestamp] = files
@@ -161,8 +129,7 @@ class OffsiteBackup:
         return runs
 
     def get_backup(self, site_name: str, timestamp: str) -> dict[str, str] | None:
-        """Files for a single backup run, or None if it doesn't exist offsite.
-        Reads only that run's monthly metadata file, not the whole history."""
+        """Return one offsite backup run from its monthly metadata file."""
         keys = BackupKeys(site_name)
         return self._metadata(keys)._read_month(keys.month(timestamp)).get(timestamp)
 

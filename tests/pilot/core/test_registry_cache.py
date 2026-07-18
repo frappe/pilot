@@ -1,6 +1,4 @@
-"""Tests for pilot.core.registry_cache.RegistryCache — the local git-clone
-cache of the external marketplace registry, using a real local git repo as
-the fake "remote" so clone/fetch/reset all run for real."""
+"""Tests for RegistryCache using a real local git remote."""
 from __future__ import annotations
 
 import os
@@ -98,9 +96,7 @@ def test_ensure_fresh_falls_back_to_local_clone_when_offline(tmp_path: Path) -> 
 
 
 def test_ensure_fresh_falls_back_when_fetch_fails_mid_refresh(tmp_path: Path, _point_at_local_remote) -> None:
-    """ls-remote can succeed (remote reachable) while the subsequent fetch
-    still fails (connection dropped mid-transfer) — that must fall back too,
-    not propagate and take down every marketplace/get-app call."""
+    """A mid-refresh fetch failure keeps serving the local clone."""
     from pilot.exceptions import CommandError
     from pilot.utils import run_command as real_run_command
 
@@ -122,9 +118,7 @@ def test_ensure_fresh_falls_back_when_fetch_fails_mid_refresh(tmp_path: Path, _p
 
 
 def test_ensure_fresh_raises_bench_error_when_git_status_fails(tmp_path: Path) -> None:
-    """A corrupted .git dir (e.g. a partial clone) makes `git status` itself
-    fail with CommandError — that must surface as a clear BenchError, not
-    propagate uncaught and break every marketplace/get-app call."""
+    """A corrupted local clone raises a clear BenchError."""
     from pilot.exceptions import CommandError
 
     cache = make_cache(tmp_path)
@@ -136,8 +130,7 @@ def test_ensure_fresh_raises_bench_error_when_git_status_fails(tmp_path: Path) -
 
 
 def test_ensure_fresh_falls_back_when_rev_parse_fails_mid_refresh(tmp_path: Path, _point_at_local_remote) -> None:
-    """A corrupted local clone can make `git rev-parse HEAD` fail even
-    though the remote is reachable — that must fall back too, not propagate."""
+    """rev-parse failure during refresh keeps serving the local clone."""
     from pilot.exceptions import CommandError
     from pilot.utils import run_command as real_run_command
 
@@ -173,9 +166,7 @@ def test_first_clone_installs_daily_refresh_cron(tmp_path: Path) -> None:
 
 
 def test_daily_refresh_cron_command_quotes_paths_with_spaces(tmp_path: Path) -> None:
-    """Regression: an unquoted cli_root with a space breaks argv parsing for
-    the cron-invoked refresh command permanently — the command string must
-    survive a shell round-trip via shlex.split()."""
+    """Cron refresh command quotes cli_root paths with spaces."""
     import shlex
 
     spaced_root = tmp_path / "cli root with spaces"

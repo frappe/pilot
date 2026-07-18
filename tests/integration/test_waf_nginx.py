@@ -1,6 +1,4 @@
-"""Integration: nginx accepts the ModSecurity config we generate. Runs the real
-`nginx -t` against a generated WAF vhost. Skipped unless the ModSecurity module
-and CRS are actually installed (so it no-ops in environments without the WAF)."""
+"""Integration test for generated ModSecurity nginx config."""
 from __future__ import annotations
 
 import shutil

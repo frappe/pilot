@@ -1,10 +1,4 @@
-"""Stateless management of the bench user's ``~/.ssh/authorized_keys``.
-
-Reads, adds, and removes OpenSSH public keys directly on disk. The admin process
-runs as the target user, so no privilege escalation is needed. Mutations take an
-exclusive ``fcntl`` lock so concurrent admin requests can't clobber each other,
-and refuse to remove the final key (locking yourself out).
-"""
+"""Manage the bench user's authorized_keys file."""
 
 from __future__ import annotations
 
@@ -61,8 +55,7 @@ def _fingerprint(blob: str) -> str:
 
 
 def _parse_line(line: str) -> tuple[str, str, str] | None:
-    """Return ``(key_type, base64_blob, comment)`` for a key line, else None for
-    blanks and ``#`` comments. Any leading options field is discarded."""
+    """Parse one authorized_keys line, ignoring options and comments."""
     stripped = line.strip()
     if not stripped or stripped.startswith("#"):
         return None
@@ -74,11 +67,7 @@ def _parse_line(line: str) -> tuple[str, str, str] | None:
 
 
 def _validate(public_key: str) -> tuple[str, str, str]:
-    """Validate a pasted public key and return ``(key_type, blob, comment)``.
-
-    Confirms the base64 blob decodes and its embedded algorithm name (the first
-    length-prefixed field of the SSH wire format) matches the declared type.
-    """
+    """Validate key blob and declared algorithm."""
     parsed = _parse_line(public_key)
     if parsed is None:
         raise InvalidSSHKeyError("Not a valid SSH public key.")

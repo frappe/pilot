@@ -1,10 +1,4 @@
-"""Tests for pilot.tasks.new_site.
-
-The new-site wizard lets users pick marketplace apps that haven't been
-`get-app`'d onto this bench yet, which used to fail deep inside
-NewSiteCommand._validate() with a "run bench get-app" error. NewSiteTask
-should fetch any such apps first.
-"""
+"""Tests for NewSiteTask."""
 
 from __future__ import annotations
 

@@ -36,9 +36,6 @@ def make_bench(tmp_path: Path, gunicorn: GunicornConfig | None = None) -> Bench:
     return Bench(config, tmp_path)
 
 
-# ── Config tests ──────────────────────────────────────────────────────────────
-
-
 def test_gunicorn_config_defaults() -> None:
     cfg = GunicornConfig()
     assert cfg.workers == 2
@@ -99,9 +96,6 @@ def test_gunicorn_worker_class_must_not_be_empty(tmp_path: Path) -> None:
         bench.config.validate()
 
 
-# ── GunicornManager tests ─────────────────────────────────────────────────────
-
-
 def test_gunicorn_manager_generates_config_file(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     bench.config_path.mkdir(parents=True, exist_ok=True)
@@ -149,9 +143,6 @@ def test_gunicorn_manager_bind_uses_bench_http_port(tmp_path: Path) -> None:
 
     assert manager._bind() == "127.0.0.1:9000"
     assert manager.upstream_server == "127.0.0.1:9000"
-
-
-# ── ProcessManager integration tests ──────────────────────────────────────────
 
 
 def test_web_definition_uses_gunicorn_in_production(tmp_path: Path) -> None:
@@ -260,9 +251,6 @@ def test_systemd_generate_config_writes_gunicorn_config(tmp_path: Path) -> None:
     assert (bench.config_path / "gunicorn.conf.py").exists()
 
 
-# ── Nginx integration tests ───────────────────────────────────────────────────
-
-
 def test_nginx_upstream_uses_gunicorn_bind(tmp_path: Path) -> None:
     from pilot.managers.nginx import NginxConfigRenderer
 
@@ -280,9 +268,6 @@ def test_nginx_upstream_uses_gunicorn_bind(tmp_path: Path) -> None:
     assert "server 127.0.0.1:9000;" in upstream
 
 
-# ── TOML writer tests ─────────────────────────────────────────────────────────
-
-
 def test_toml_writer_includes_gunicorn_section(tmp_path: Path) -> None:
     from pilot.config.bench_toml import dumps_config as bench_config_to_toml
 
@@ -296,9 +281,6 @@ def test_toml_writer_includes_gunicorn_section(tmp_path: Path) -> None:
     assert 'worker_class = "gthread"' in toml
     assert "bind" not in toml
     assert "preload_app" not in toml
-
-
-# ── Companion manager tests ───────────────────────────────────────────────────
 
 
 def test_production_config_parses_use_companion_manager(tmp_path: Path) -> None:
@@ -511,9 +493,6 @@ def test_py_memory_env_caps_glibc_arenas(tmp_path: Path) -> None:
 
     bench0 = make_bench(tmp_path, GunicornConfig(malloc_arena_max=0))
     assert ProcessManager(bench0)._py_memory_env() == {}
-
-
-# ── max_requests worker recycling ───────────────────────────────────────────────
 
 
 def test_max_requests_emitted_when_enabled(tmp_path: Path) -> None:

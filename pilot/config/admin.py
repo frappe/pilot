@@ -14,7 +14,8 @@ class AdminConfig:
     password: str = ""
     jwt_secret: str = ""
     jwks_url: str = ""  # trust session tokens minted by a remote issuer publishing keys here
-    jwks_audience: str = ""  # REQUIRED with jwks_url: remote tokens must carry a matching `aud` (per-bench binding); if empty, all remote tokens are rejected
+    # Required with jwks_url; binds remote tokens to this bench.
+    jwks_audience: str = ""
     domain: str = ""
     tls: bool = False
     allow_bench_management: bool = True
@@ -36,9 +37,7 @@ class AdminConfig:
 
     @property
     def internal_port(self) -> int:
-        """Localhost-only port that gunicorn binds (via the systemd socket) when
-        the admin is socket-activated. nginx listens on `port` and forwards here.
-        Derived for now; promote to a bench.toml field if it needs to be tunable."""
+        """Localhost-only Gunicorn port behind nginx."""
         return self.port + 1
 
     def validate(self, production_enabled: bool, bench_name: str) -> None:

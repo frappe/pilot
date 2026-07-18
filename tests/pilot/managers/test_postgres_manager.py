@@ -17,18 +17,12 @@ def _mgr(**kwargs) -> PostgresManager:
     return PostgresManager(PostgresConfig(**kwargs))
 
 
-# ── existing ─────────────────────────────────────────────────────────────────
-
-
 def test_existing_defaults_to_false() -> None:
     assert PostgresConfig().existing is False
 
 
 def test_existing_is_not_inferred_from_host() -> None:
     assert PostgresConfig(host="db.example.com").existing is False
-
-
-# ── install ───────────────────────────────────────────────────────────────────
 
 
 def test_is_installed_checks_binaries() -> None:
@@ -59,9 +53,6 @@ def test_install_uses_brew_formula_on_macos() -> None:
          patch.object(m, "_installed_brew_formula", return_value=None), patch(f"{BASE_MODULE}.get_package_manager", return_value=pkg):
         m.install()
     pkg.install.assert_called_once_with("postgresql@16")
-
-
-# ── secure ────────────────────────────────────────────────────────────────────
 
 
 def test_secure_skips_when_no_password() -> None:
@@ -100,9 +91,6 @@ def test_ensure_role_sql_creates_or_alters_with_quoting() -> None:
     assert "'p''w'" in sql  # single quote doubled for the SQL literal
 
 
-# ── credentials check ──────────────────────────────────────────────────────────
-
-
 def test_check_credentials_uses_pgpassword_and_tcp() -> None:
     m = _mgr(root_password="pw", host="h", port=5440, admin_user="pg")
     captured: dict = {}
@@ -136,9 +124,6 @@ def test_check_credentials_times_out() -> None:
         assert _mgr(root_password="pw").check_credentials() is False
 
 
-# ── service control ─────────────────────────────────────────────────────────────
-
-
 def test_start_targets_systemctl_user_on_linux() -> None:
     m = _mgr()
     with patch(f"{BASE_MODULE}.is_macos", return_value=False), \
@@ -154,9 +139,6 @@ def test_start_targets_brew_on_macos() -> None:
     rc.assert_called_once_with(["brew", "services", "start", "postgresql@16"])
 
 
-# ── provisioning ──────────────────────────────────────────────────────────────
-
-
 def test_provision_orchestrates_steps_on_linux() -> None:
     m = _mgr(root_password="pw")
     with patch(f"{MODULE}.is_macos", return_value=False), \
@@ -169,9 +151,7 @@ def test_provision_orchestrates_steps_on_linux() -> None:
 
 
 def test_is_provisioned_on_macos_checks_live_server_not_a_marker_file() -> None:
-    """No systemd --user unit ever exists on macOS — is_provisioned() must
-    reflect the server's actual live state (running + already secured), not
-    a marker file that could drift from reality (e.g. get deleted)."""
+    """macOS provisioning state comes from the live secured server."""
     m = _mgr()
     with patch(f"{MODULE}.is_macos", return_value=True), patch.object(m, "is_running", return_value=False):
         assert m.is_provisioned() is False  # not running yet
@@ -196,9 +176,7 @@ def test_is_unsecured_targets_own_socket_dir_on_linux() -> None:
 
 
 def test_is_unsecured_ignores_trust_auth_and_checks_catalog() -> None:
-    """Regression: Homebrew/vanilla initdb default local connections to
-    'trust', which grants access regardless of whether a password is set —
-    a successful connection alone must never be read as 'still passwordless'."""
+    """is_unsecured checks pg_authid instead of trust-auth success."""
     m = _mgr()
 
     def fake_run(cmd, **kwargs):

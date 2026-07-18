@@ -11,9 +11,7 @@ _BENCH_DIRS = ("apps", "sites", "logs", "config", "pids", "env", "admin", "tasks
 
 
 class BenchInitializer:
-    """Initializes a freshly-created bench: system packages, directory
-    structure, virtualenv, framework app, Node.js, Redis, admin frontend,
-    and process config. Rolls back partial changes on failure."""
+    """Initializes a fresh bench and rolls back partial setup on failure."""
 
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
@@ -132,7 +130,7 @@ class BenchInitializer:
 
         pkg = get_package_manager()
 
-        # A bench runs exactly one engine; install/provision (or verify, if existing) only that one.
+        # Provision only the configured database engine.
         if self.bench.config.db_type == "postgres":
             self._provision_or_verify(self._postgres_manager(), "PostgreSQL")
         elif self.bench.config.db_type == "sqlite":

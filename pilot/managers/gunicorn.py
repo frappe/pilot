@@ -34,13 +34,7 @@ class GunicornManager:
         self.config_path.write_text(self._render_config())
 
     def generate_admin_config(self) -> None:
-        """Gunicorn config for the socket-activated admin.
-
-        Bound to a localhost port as a fallback; under systemd socket activation
-        gunicorn inherits the listening socket via LISTEN_FDS and ignores `bind`.
-        Single worker with threads so the in-app idle watchdog and SSE streams
-        share one process. No preload, so create_app runs in the worker (the
-        watchdog needs the arbiter as its parent)."""
+        """Write admin Gunicorn config for socket activation."""
         cfg = self.bench.config.admin
         self.admin_config_path.parent.mkdir(parents=True, exist_ok=True)
         self.admin_config_path.write_text(

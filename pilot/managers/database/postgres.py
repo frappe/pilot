@@ -11,18 +11,14 @@ from pilot.managers.database.base import UserOwnedDBManager
 from pilot.managers.platform import is_macos, which
 from pilot.utils import run_command
 
-# One PostgreSQL server per bench user, shared by every bench they own —
-# rootless, running as a single systemd --user unit. Fixed locations, no
-# per-bench units.
+# One rootless PostgreSQL server per OS user, shared by all their benches.
 _STATE_DIR = Path.home() / ".local" / "share" / "pilot" / "postgres"
 _CLIENT_TIMEOUT = 5
 _DEBIAN_POSTGRES_ROOT = Path("/usr/lib/postgresql")
 
 
 class PostgresManager(UserOwnedDBManager):
-    """Manage the single, per-bench-user PostgreSQL server. Every bench for a
-    given OS user connects to the same running server (isolated per-database),
-    provisioned once by whichever bench inits first."""
+    """Manages the shared per-user PostgreSQL server."""
 
     _UNIT_NAME = "pilot-postgres.service"
     _DISPLAY_NAME = "PostgreSQL"
@@ -53,12 +49,7 @@ class PostgresManager(UserOwnedDBManager):
         return super().is_provisioned()
 
     def is_unsecured(self) -> bool:
-        """True if the admin role has no password set yet (i.e. a fresh,
-        not-yet-secured install). Queries the catalog directly via a local
-        bootstrap connection (peer auth on Linux, trust on macOS by default)
-        rather than testing whether a passwordless connection succeeds —
-        local trust/peer auth grants access regardless of whether the role
-        has a password, so a successful connection alone proves nothing."""
+        """True when the admin role has no password in pg_authid."""
         role = self._sql_quote(self.config.admin_user)
         cmd = [
             self._psql() or "psql",
@@ -86,12 +77,8 @@ class PostgresManager(UserOwnedDBManager):
         # Empty output means the role doesn't exist yet at all — also fresh.
         return output in ("", "t")
 
-    # ── provisioning ─────────────────────────────────────────────────────────
-
     def provision(self) -> None:
-        """Install, start and secure the shared server. Idempotent — safe for
-        every bench to call; the first bench for this user provisions it,
-        later benches just reuse the already-running server."""
+        """Install, start and secure the shared PostgreSQL server."""
         self.install()
         if is_macos():
             if not self.is_running():
@@ -106,9 +93,7 @@ class PostgresManager(UserOwnedDBManager):
             self._ensure_port_available()
             self.data_dir.parent.mkdir(parents=True, exist_ok=True)
             self.socket_dir.mkdir(parents=True, exist_ok=True)
-            # No --username: the bootstrap superuser matches whoever runs
-            # initdb (the bench user), authenticated via unix-socket peer
-            # auth — no sudo, no OS-level 'postgres' account involved.
+            # No --username: the bootstrap superuser is the bench OS user.
             run_command([self._server_binary("initdb"), "-D", str(self.data_dir)])
             self._install_unit()
             run_command(
@@ -118,9 +103,7 @@ class PostgresManager(UserOwnedDBManager):
             run_command(self._systemctl("start", self._UNIT_NAME), env=self._systemctl_env())
 
     def _ensure_port_available(self) -> None:
-        """Only checked before this server has ever been provisioned — once
-        our unit owns the port, is_provisioned() short-circuits future calls,
-        so this never fires again for that port."""
+        """Fail if an unowned process is already listening on the configured port."""
         try:
             with socket.create_connection(("127.0.0.1", self.config.port), timeout=0.3):
                 pass
@@ -151,8 +134,7 @@ class PostgresManager(UserOwnedDBManager):
         run_command(self._systemctl("daemon-reload"), env=self._systemctl_env())
 
     def secure(self) -> None:
-        """Ensure the admin role exists with the configured password so frappe can
-        connect over TCP. Idempotent: a no-op once credentials work."""
+        """Create/update the admin role so Frappe can connect over TCP."""
         if not self.config.root_password:
             print(
                 "  postgres.root_password is empty — skipping superuser setup. "
@@ -170,9 +152,7 @@ class PostgresManager(UserOwnedDBManager):
             )
 
     def check_credentials(self, password: str | None = None) -> bool:
-        """True if the admin user can connect over TCP with the given password
-        (default: configured root password). Uses psql so the zero-dep CLI works
-        during init; the password goes via PGPASSWORD, not argv."""
+        """Check admin credentials using PGPASSWORD, never argv."""
         pw = self.config.root_password if password is None else password
         psql = self._psql()
         if not psql:
@@ -219,12 +199,8 @@ class PostgresManager(UserOwnedDBManager):
         )
 
     def _run_sql_as_superuser(self, sql: str) -> None:
-        # Unix-socket peer auth: the bootstrap superuser is whoever ran initdb
-        # (the bench user itself, no sudo needed). -p targets this server's
-        # port. On Linux we pin -h to our own socket_dir(), since the
-        # compiled-in default is owned by the 'postgres' OS user, not us; on
-        # macOS, Homebrew already points postgres at a user-owned socket, so
-        # the default (no -h) is used as-is.
+        # Peer/trust auth lets the bench OS user bootstrap without sudo.
+        # Linux needs our socket_dir; Homebrew already uses a user-owned socket.
         cmd = [
             self._psql() or "psql",
             "-p",

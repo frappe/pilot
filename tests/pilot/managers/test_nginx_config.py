@@ -323,9 +323,6 @@ def test_two_benches_generate_non_conflicting_configs(tmp_path: Path) -> None:
     assert "bench-beta" not in a and "bench-alpha" not in b
 
 
-# ── IPv6 (dual-stack listeners) ───────────────────────────────────────────────
-
-
 def test_http_site_listens_dual_stack(tmp_path: Path) -> None:
     bench = _make_bench(tmp_path, _BASE_DATA)
     renderer = NginxConfigRenderer(bench)
@@ -436,9 +433,6 @@ def test_catchall_default_server(tmp_path: Path) -> None:
     assert "listen 443 ssl http2 default_server;" in conf
     assert "ssl_reject_handshake on;" in conf
 
-
-# ── Firewall ────────────────────────────────────────────────────────────────
-
 def _firewall_data(enabled: bool, default: str, rules: list) -> dict:
     data = copy.deepcopy(_BASE_DATA)
     data["firewall"] = {"enabled": enabled, "default": default, "rules": rules}
@@ -511,10 +505,7 @@ def test_install_config_rolls_back_symlink_when_reload_fails(tmp_path: Path) -> 
 
 
 def test_prune_dangling_symlinks_removes_only_broken_ones(tmp_path: Path) -> None:
-    """A bench dropped without going through its own teardown (e.g. its
-    directory deleted directly) leaves its vhost symlink dangling; that alone
-    fails nginx -t for every bench sharing the config dir, so install_config
-    must sweep it away regardless of which bench it belonged to."""
+    """Dangling vhost symlinks are pruned before nginx -t."""
     nginx_dir = tmp_path / "conf.d"
     nginx_dir.mkdir()
     target = tmp_path / "real-target.conf"
@@ -531,9 +522,7 @@ def test_prune_dangling_symlinks_removes_only_broken_ones(tmp_path: Path) -> Non
 
 
 def test_config_dir_falls_back_to_platform_default(tmp_path: Path) -> None:
-    """Regression: Path("") is truthy, so `config_dir or default(...)` never
-    falls back - the unconfigured default must resolve to the real directory,
-    not the empty sentinel itself."""
+    """Empty config_dir falls back to the platform default."""
     bench = _make_bench(tmp_path, _BASE_DATA)
     manager = NginxManager(bench)
     with patch("pilot.managers.nginx.default_nginx_config_dir", return_value=Path("/etc/nginx/conf.d")):

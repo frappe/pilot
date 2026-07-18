@@ -11,9 +11,7 @@ from pilot.tasks import Task, step
 
 @dataclass(kw_only=True)
 class GetAndInstallAppTask(Task):
-    """Fetch an app (by repo or marketplace name) and install it on zero or
-    more sites. Zero sites is valid: it just fetches (and, for marketplace
-    apps, resolves dependencies) without installing anywhere."""
+    """Fetch an app and optionally install it on sites."""
 
     command: ClassVar[str] = "get-and-install-app"
 
@@ -30,16 +28,13 @@ class GetAndInstallAppTask(Task):
 
     def run(self) -> None:
         result = self.fetch()
-        # Frappe's site install-app cascades installing declared dependencies
-        # onto the site itself, but never builds their assets — that's a
-        # separate, bench-wide step this task still owns.
+        # Frappe cascades dependency installs on sites, but not asset builds.
         self.install_on_sites(result.app)
         self.build_assets([result.app] + result.installed_dependencies)
 
     @step("fetch", lambda self: f"Fetch {self.marketplace_app or self.repo}")
     def fetch(self) -> AppInstallResult:
-        # get-app resolves and installs marketplace dependencies itself; a
-        # plain repo has none to resolve.
+        # Marketplace apps can bring dependency apps; raw repos do not.
         if self.marketplace_app:
             resolver = Marketplace(self.bench).find_app(self.marketplace_app)
             app = App(

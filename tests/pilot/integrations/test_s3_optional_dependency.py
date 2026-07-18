@@ -1,5 +1,4 @@
-"""boto3 is an optional (admin-extra) dependency: importing pilot.integrations.s3.base
-must never fail even when it's absent, and only constructing an S3 client should."""
+"""boto3 stays optional until constructing an S3 client."""
 
 from __future__ import annotations
 

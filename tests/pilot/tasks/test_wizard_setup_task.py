@@ -23,14 +23,7 @@ def test_run_skips_production_setup_for_plain_dev_bench() -> None:
 
 
 def test_run_finishes_production_setup_when_process_manager_chosen() -> None:
-    """A bench created via the admin UI's "New Bench" dialog already has a
-    process manager recorded, but production.enabled stays false until the
-    venv/framework app this task's init step installs actually exist.
-    Bench.setup_production() then finishes the job (workload, nginx, TLS,
-    persisting production.enabled) the same way `bench setup production`
-    would from the CLI, instead of duplicating those steps here. TLS is
-    best-effort here (unlike the CLI): nobody's watching to retry by hand if
-    a cert can't issue yet, so a DNS hiccup must not roll back the rest."""
+    """Wizard setup finishes production when a process manager was chosen."""
     task = _make_task("systemd")
 
     task.run()

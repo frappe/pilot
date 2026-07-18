@@ -18,9 +18,7 @@ class ArgField(NamedTuple):
 def arg_fields(
     cls: type, *, exclude: frozenset[str] = frozenset(), hint_namespace: dict | None = None
 ) -> list[ArgField]:
-    """Every dataclass field on cls (minus exclude), with its Arg metadata resolved.
-    Includes cli=False fields; callers filter those out where only CLI-exposed
-    fields are wanted."""
+    """Return dataclass fields with resolved Arg metadata."""
     hints = get_type_hints(cls, include_extras=True, localns=hint_namespace or {})
     result = []
     for field in fields(cls):

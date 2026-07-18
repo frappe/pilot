@@ -1,9 +1,4 @@
-"""Reads/writes the ``.bench.git.info`` file holding a provider PAT.
-
-The token is persisted (unencrypted, by request) in this file at the bench
-root. Stored as plain JSON; the file is written with ``0600`` permissions so
-it is at least not world-readable.
-"""
+"""Reads/writes provider PATs in .bench.git.info."""
 
 from __future__ import annotations
 

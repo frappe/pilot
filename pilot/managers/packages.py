@@ -1,9 +1,4 @@
-"""System package installation for every supported platform.
-
-Call sites pass canonical Debian/apt package names; each manager's
-``package_aliases`` maps those onto its distro's own names. An alias may be
-a tuple when one canonical package corresponds to several native ones.
-"""
+"""System package installation with per-distro package aliases."""
 
 import os
 import subprocess

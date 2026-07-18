@@ -69,10 +69,7 @@ def database_validation_state(manager, password: str, existing: bool) -> str:
 
 
 def _is_fresh_install(manager: PostgresManager | MariaDBManager) -> bool:
-    """True when init will install/provision + secure the server itself
-    (rather than connecting to an already-configured one). is_provisioned()
-    checks for the manager's own systemd --user unit - the single source of
-    truth for whether this bench user's server has already been set up."""
+    """Return whether init will provision and secure the DB server."""
     if not manager.is_installed():
         return True
     return not manager.is_provisioned()
@@ -86,7 +83,6 @@ def _mariadb_config(
     port=None,
     existing: bool = False,
 ):
-    """Build a MariaDBConfig from the bench's toml with the entered credentials applied."""
     from pilot.config import MariaDBConfig
 
     config = MariaDBConfig(

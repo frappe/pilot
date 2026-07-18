@@ -1,6 +1,4 @@
-"""Integration: nginx itself accepts the trusted-proxy config we generate when a
-domain provider reports edge-proxy IPs. Runs the real `nginx -t`; non-destructive
-(stays in a tmp prefix, no sudo, no machine config touched)."""
+"""Integration test for nginx trusted-proxy config."""
 from __future__ import annotations
 
 import os

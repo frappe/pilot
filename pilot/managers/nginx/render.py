@@ -49,11 +49,7 @@ class NginxConfigRenderer:
         )
 
     def _render_proxy_trust(self) -> str:
-        """Accept TCP only from trusted proxy IPs and read the real client IP
-        from their X-Forwarded-For; empty (no restriction) when directly exposed.
-        Tests $realip_remote_addr (the real TCP peer) so it runs before
-        _render_firewall rewrites $remote_addr. Exempts the ACME path so a
-        direct certbot hit still passes during setup."""
+        """Restrict traffic to trusted proxies when the provider reports them."""
         proxies = self._proxy_servers
         if not proxies:
             return ""
@@ -69,9 +65,7 @@ class NginxConfigRenderer:
         )
 
     def _render_firewall(self) -> str:
-        """First-match-wins allow/deny list. Trusted proxies are allowed first
-        so a request without X-Forwarded-For (proxy IP in $remote_addr) can't
-        be rejected by the configured rules. Empty when the firewall is off."""
+        """Render first-match-wins allow/deny rules."""
         firewall = self.bench.config.firewall
         if not firewall.enabled:
             return ""

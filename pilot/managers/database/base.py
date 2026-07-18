@@ -12,11 +12,7 @@ from pilot.utils import run_command
 
 
 class UserOwnedDBManager:
-    """Service-control plumbing shared by database servers that run as a
-    single, per-bench-user instance — a rootless systemd --user unit on
-    Linux, a Homebrew service on macOS — reused by every bench that OS user
-    owns. Subclasses set the class attributes below and add their own
-    install/provisioning/credential logic."""
+    """Shared service-control for per-user database servers."""
 
     _UNIT_NAME: str = ""
     _DISPLAY_NAME: str = ""
@@ -49,16 +45,12 @@ class UserOwnedDBManager:
             f"distro), or install '{self._SYSTEM_PACKAGE}' yourself."
         )
 
-    # ── service control ──────────────────────────────────────────────────────
-
     @property
     def unit_path(self) -> Path:
         return self._user_unit_dir() / self._UNIT_NAME
 
     def is_provisioned(self) -> bool:
-        """The unit file existing is the single source of truth: once it's
-        there, this server has already been set up (by this bench or a
-        sibling) — reuse it rather than re-initialising."""
+        """A user unit means this per-user server has already been set up."""
         return self.unit_path.exists()
 
     def is_running(self) -> bool:
@@ -91,9 +83,7 @@ class UserOwnedDBManager:
         return ["systemctl", "--user", *args]
 
     def _systemctl_env(self) -> dict:
-        # A login session normally sets XDG_RUNTIME_DIR; environments without
-        # one (CI runners, su -c) need it set explicitly for `systemctl --user`
-        # to find the right user manager. Mirrors processes/systemd.py.
+        # CI and su -c often miss this; systemctl --user needs it.
         env = dict(os.environ)
         if not env.get("XDG_RUNTIME_DIR"):
             env["XDG_RUNTIME_DIR"] = f"/run/user/{os.getuid()}"
@@ -102,16 +92,13 @@ class UserOwnedDBManager:
     def _user_unit_dir(self) -> Path:
         return Path.home() / ".config" / "systemd" / "user"
 
-    # ── homebrew (macOS) ─────────────────────────────────────────────────────
-
     def _brew_package(self) -> str:
         return (
             self._installed_brew_formula() or f"{self._BREW_FORMULA_BASE}@{self._DEFAULT_VERSION}"
         )
 
     def _installed_brew_formula(self) -> str | None:
-        """The formula Homebrew already manages, so install/start/stop target
-        whatever is installed rather than assuming a version."""
+        """Return the installed Homebrew formula name, versioned or unversioned."""
         result = subprocess.run(["brew", "list", "--formula"], capture_output=True, text=True, timeout=10)
         if result.returncode != 0:
             return None

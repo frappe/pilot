@@ -1,9 +1,4 @@
-"""Provider-agnostic Git integration for cloning private app repositories.
-
-Only GitHub is implemented. This package's public surface is re-exported
-here so callers do `from pilot.integrations.git import ...` rather than
-reaching into base/credentials/github directly.
-"""
+"""Provider-agnostic Git integration for private app repositories."""
 
 from __future__ import annotations
 
@@ -57,11 +52,7 @@ def provider_for_repo(repo_url: str, token: str = "") -> GitProvider | None:
 
 
 def resolve_app_name_from_repo(bench_root: Path, repo_url: str, branch: str = "") -> dict:
-    """Fetch *pyproject.toml* from *repo_url* and return its ``project`` name/description.
-
-    Uses the stored credential when available so private repos work.
-    Public repos are fetched anonymously when no token is on file.
-    """
+    """Return pyproject project name/description from a repo."""
     import tomllib
 
     record = GitCredentialStore(bench_root).load()
@@ -90,9 +81,7 @@ def resolve_app_name_from_repo(bench_root: Path, repo_url: str, branch: str = ""
         )
     description = (project.get("description") or "").strip()
 
-    # Every Frappe app ships a hooks.py at <module>/hooks.py — bench itself
-    # uses this file to recognize an app. A repo without one is just a
-    # regular Python package, not something Frappe can install.
+    # A Frappe app must ship hooks.py under its importable module.
     try:
         provider.fetch_raw_file(repo_url, f"{name}/hooks.py", ref)
     except GitProviderError as exc:
@@ -102,12 +91,7 @@ def resolve_app_name_from_repo(bench_root: Path, repo_url: str, branch: str = ""
 
 
 def authenticated_url_for(bench_root: Path, repo_url: str) -> str:
-    """Return a clone URL for ``repo_url``, token-embedded when applicable.
-
-    Consults the bench's stored credential. If the repo's host matches the
-    connected provider and a token is on file, the token is embedded; otherwise
-    the original URL is returned unchanged (public repos clone fine without it).
-    """
+    """Return a token-embedded clone URL when stored credentials apply."""
     record = GitCredentialStore(bench_root).load()
     if not record or not record.get("token"):
         return repo_url

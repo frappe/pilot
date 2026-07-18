@@ -39,9 +39,7 @@ class NewSiteTask(Task):
         )
 
     def fetch_missing_apps(self) -> None:
-        """The new-site wizard offers marketplace apps that may not be cloned onto
-        this bench yet; fetch those (and their dependencies) before Site.provision
-        validates the app list."""
+        """Fetch marketplace apps before Site.provision validates the app list."""
         installed = set(self.bench.registered_apps())
         missing = [name for name in self.apps if name not in installed]
         if not missing:

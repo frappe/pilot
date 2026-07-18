@@ -17,18 +17,12 @@ def _manager(password: str = "root") -> MariaDBManager:
     return MariaDBManager(MariaDBConfig(root_password=password))
 
 
-# ── locations ────────────────────────────────────────────────────────────────
-
-
 def test_socket_path_defaults_under_state_dir() -> None:
     assert _manager().socket_path.endswith("/.local/share/pilot/mariadb/mysqld.sock")
 
 
 def test_socket_path_honors_explicit_value() -> None:
     assert MariaDBManager(MariaDBConfig(socket_path="/tmp/custom.sock")).socket_path == "/tmp/custom.sock"
-
-
-# ── existing ─────────────────────────────────────────────────────────────────
 
 
 def test_existing_defaults_to_false() -> None:
@@ -39,9 +33,6 @@ def test_existing_is_not_inferred_from_host() -> None:
     assert MariaDBConfig(host="db.example.com").existing is False
 
 
-# ── install ──────────────────────────────────────────────────────────────────
-
-
 def test_install_raises_when_missing_on_linux() -> None:
     m = _manager()
     with patch.object(m, "is_installed", return_value=False), \
@@ -50,18 +41,12 @@ def test_install_raises_when_missing_on_linux() -> None:
             m.install()
 
 
-# ── service control ──────────────────────────────────────────────────────────
-
-
 def test_start_targets_systemctl_user_on_linux() -> None:
     m = _manager()
     with patch(f"{BASE_MODULE}.is_macos", return_value=False), \
          patch(f"{BASE_MODULE}.run_command") as rc:
         m.start()
     assert rc.call_args.args[0] == ["systemctl", "--user", "start", "pilot-mariadb.service"]
-
-
-# ── provisioning ──────────────────────────────────────────────────────────────
 
 
 def test_provision_initialises_and_installs_unit_when_fresh(tmp_path) -> None:
@@ -81,9 +66,7 @@ def test_provision_initialises_and_installs_unit_when_fresh(tmp_path) -> None:
 
 
 def test_is_provisioned_on_macos_checks_live_server_not_a_marker_file() -> None:
-    """No systemd --user unit ever exists on macOS — is_provisioned() must
-    reflect the server's actual live state (running + already secured), not
-    a marker file that could drift from reality (e.g. get deleted)."""
+    """macOS provisioning state comes from the live secured server."""
     m = _manager()
     with patch(f"{MODULE}.is_macos", return_value=True), patch.object(m, "is_running", return_value=False):
         assert m.is_provisioned() is False  # not running yet
@@ -111,9 +94,6 @@ def test_provision_reuses_already_provisioned_server() -> None:
     secure.assert_called_once()
 
 
-# ── _sql_quote ────────────────────────────────────────────────────────────────
-
-
 def test_sql_quote_plain() -> None:
     assert MariaDBManager._sql_quote("hunter2") == "'hunter2'"
 
@@ -124,9 +104,6 @@ def test_sql_quote_escapes_single_quote() -> None:
 
 def test_sql_quote_escapes_backslash() -> None:
     assert MariaDBManager._sql_quote("a\\b") == "'a\\\\b'"
-
-
-# ── secure_installation ───────────────────────────────────────────────────────
 
 
 def test_secure_installation_noop_when_credentials_valid() -> None:
@@ -155,9 +132,7 @@ def test_secure_installation_creates_and_grants() -> None:
 
 
 def test_secure_installation_escapes_malicious_admin_user() -> None:
-    """admin_user can arrive from the unauthenticated setup wizard's
-    bench.toml — a quote/backslash in it must never break out of the SQL
-    string literal into a second statement."""
+    """admin_user is SQL-quoted before secure-installation statements."""
     config = MariaDBConfig(root_password="pw", admin_user="root'; DROP TABLE mysql.user; --")
     manager = MariaDBManager(config)
     with patch.object(manager, "check_credentials", return_value=False), patch.object(
@@ -197,9 +172,6 @@ def test_run_sql_as_superuser_omits_local_socket_on_macos() -> None:
     assert cmd == ["mariadb"]
 
 
-# ── check_credentials ─────────────────────────────────────────────────────────
-
-
 def test_check_credentials_true_on_successful_connect() -> None:
     manager = _manager()
     with patch(f"{MODULE}.subprocess.run") as run:
@@ -225,9 +197,6 @@ def test_check_credentials_times_out() -> None:
         side_effect=subprocess.TimeoutExpired("mariadb", 5),
     ):
         assert manager.check_credentials("wrong") is False
-
-
-# ── /api/v1/setup/database-validations endpoint
 
 
 def _client(tmp_path):
@@ -275,11 +244,7 @@ def test_validate_endpoint_invalid(tmp_path) -> None:
 
 
 def test_validate_endpoint_on_macos_checks_password_for_already_secured_server(tmp_path) -> None:
-    """Regression: on macOS there's no unit file, so is_provisioned() must
-    reflect the live server (running + already secured), not always read
-    False — otherwise a second bench's wizard would think the server is fresh
-    and let a wrong password through, which bench init then uses to silently
-    reset the first bench's real password."""
+    """macOS validation checks credentials on an already-secured server."""
     with patch(f"{MODULE}.is_macos", return_value=True), \
          patch(f"{MODULE}.MariaDBManager.is_installed", return_value=True), \
          patch(f"{MODULE}.MariaDBManager.is_running", return_value=True), \

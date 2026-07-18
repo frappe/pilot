@@ -45,9 +45,6 @@ def _sibling(name: str, process_manager: str = "") -> tuple[Path, BenchConfig]:
     return Path(f"/fake/{name}"), config
 
 
-# ── is_system_log_authority ──────────────────────────────────────────────────
-
-
 def test_authority_claimed_when_no_file_exists(tmp_path: Path) -> None:
     authority_file = tmp_path / ".bench-authority"
     monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
@@ -129,9 +126,6 @@ def test_exactly_one_bench_holds_authority(tmp_path: Path) -> None:
         assert monitor_b.is_system_log_authority() is False
 
 
-# ── collect_system_metrics ───────────────────────────────────────────────────
-
-
 def _fake_proc_reads(monitor: Monitor) -> None:
     """Stub out /proc reads so tests don't depend on the host machine state."""
     monitor._load_average = lambda: (0.5, 0.4, 0.3)  # type: ignore[method-assign]
@@ -202,9 +196,6 @@ def test_collect_system_metrics_includes_storage(tmp_path: Path) -> None:
     assert entry["storage"]["disk"]["percent"] == 40.0
 
 
-# ── storage metrics ───────────────────────────────────────────────────────────
-
-
 def test_disk_usage_returns_expected_fields(tmp_path: Path) -> None:
     monitor = _make_monitor(_make_bench(tmp_path))
     result = monitor._disk_usage(tmp_path)
@@ -220,9 +211,6 @@ def test_storage_usage_always_includes_disk(tmp_path: Path) -> None:
     result = monitor._storage_usage()
     assert "disk" in result
     assert result["disk"]["total_mb"] > 0
-
-
-# ── CPU breakdown ─────────────────────────────────────────────────────────────
 
 
 def test_compute_cpu_breakdown_sums_to_100_percent(tmp_path: Path) -> None:
@@ -282,9 +270,6 @@ def test_compute_cpu_breakdown_zero_delta_reports_idle(tmp_path: Path) -> None:
     assert monitor._system_cpu == 0.0
 
 
-# ── memory breakdown ────────────────────────────────────────────────────────────
-
-
 def test_memory_usage_breakdown_sums_to_total(tmp_path: Path) -> None:
     monitor = _make_monitor(_make_bench(tmp_path))
     result = monitor._memory_usage()
@@ -293,9 +278,6 @@ def test_memory_usage_breakdown_sums_to_total(tmp_path: Path) -> None:
     assert (
         abs(result["total_mb"] - result["used_mb"] - result["cached_mb"] - result["free_mb"]) < 1.0
     )
-
-
-# ── network / disk I/O throughput ──────────────────────────────────────────────
 
 
 def test_compute_io_reports_bytes_per_sec(tmp_path: Path) -> None:

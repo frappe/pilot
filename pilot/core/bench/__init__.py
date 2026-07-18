@@ -332,9 +332,7 @@ class Bench:
         on_step: Callable[[str, str], None] = lambda key, label: None,
         on_progress: Callable[[str], None] = lambda message: None,
     ) -> None:
-        """Pull latest code, reinstall, rebuild assets, migrate every site,
-        then reload workers. `on_step` marks the start of each phase;
-        `on_progress` reports per-app/per-site lines within a phase."""
+        """Update apps, dependencies, assets, sites, and workers."""
         on_step("fetch", "Fetching latest code")
         self._update_apps(apps_filter, on_progress)
         on_step("install", "Installing dependencies")

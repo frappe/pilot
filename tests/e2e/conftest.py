@@ -1,15 +1,4 @@
-"""Shared fixtures and serial-lifecycle wiring for the admin e2e suite.
-
-These tests drive a real bench through its whole lifecycle (bench init clones the
-framework, creates sites, installs apps). Every step is minutes long and
-stateful, so a module's tests share one bench and one browser context (the login
-cookie carries across) and run serially: once a step fails, the rest are skipped
-rather than run against a half-mutated bench.
-
-The browser comes from pytest-playwright's session-scoped ``browser`` fixture
-(so --headed/--browser CLI flags still work); we build a module-scoped context on
-top of it and capture an always-on Playwright trace per module.
-"""
+"""Shared e2e fixtures for one serial bench lifecycle per module."""
 
 from __future__ import annotations
 
@@ -28,9 +17,6 @@ RESULTS_DIR = HERE / "test-results"
 # selector fails in seconds instead of hanging on a multi-minute step. Long waits
 # (task polling, the wizard) set their own timeouts.
 ACTION_TIMEOUT_MS = 30_000
-
-
-# ── serial lifecycle: skip remaining steps once one fails ─────────────────────
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -53,16 +39,9 @@ def pytest_runtest_setup(item):
         pytest.skip(f"serial: earlier step '{earlier}' failed")
 
 
-# ── fixtures ──────────────────────────────────────────────────────────────────
-
-
 @pytest.fixture(scope="module")
 def bench(request) -> Bench:
-    """Create a fresh bench and bring up its wizard server; tear it down after.
-
-    The bench name (and optional db mode / extra env) come from module-level
-    constants on the spec, so adding a variant is just new constants + a new file.
-    """
+    """Create a fresh bench, start the wizard, and tear it down after."""
     name = request.module.BENCH_NAME
     extra_env = getattr(request.module, "BENCH_ENV", None)
     b = Bench(name=name, env=extra_env)
@@ -94,9 +73,7 @@ def bench(request) -> Bench:
 
 @pytest.fixture(scope="module")
 def context(browser: Browser, request) -> BrowserContext:
-    """One context per module so the login cookie persists across the lifecycle
-    steps. An always-on trace (with screenshots) is written per module — replay
-    it with ``playwright show-trace test-results/<module>/trace.zip``."""
+    """Module browser context with persistent login and always-on trace."""
     ctx = browser.new_context(ignore_https_errors=True)
     ctx.set_default_timeout(ACTION_TIMEOUT_MS)
     ctx.tracing.start(screenshots=True, snapshots=True, sources=True)

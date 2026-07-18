@@ -95,10 +95,7 @@ class ListCommand(Command):
         )
 
     def _state(self, bench, production: bool) -> str:
-        """Match the admin UI's view: 'running' when the workload is up, 'admin'
-        when only the (socket-activated) admin control plane is up — e.g. a bench
-        provisioned but not yet set up — and 'stopped' otherwise. A dev bench is
-        'running' iff its foreground admin is reachable."""
+        """Return running/admin/stopped using the same states as the admin UI."""
         from pilot.managers.processes.local import ProcessManager
 
         try:

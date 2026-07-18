@@ -47,9 +47,6 @@ def _stub_fetch(monkeypatch):
     jwks._clients.clear()
 
 
-# ── verifier ──────────────────────────────────────────────────────────────────
-
-
 def test_rsa_token_verifies() -> None:
     claims = verify_jwks_token(_mint(scope="site", site="a.com"), JWKS_URL, AUDIENCE)
     assert claims and claims["site"] == "a.com"
@@ -90,9 +87,6 @@ def test_no_jwks_url_rejected() -> None:
     assert verify_jwks_token(_mint(), "", AUDIENCE) is None
 
 
-# ── audience binding ──────────────────────────────────────────────────────────
-
-
 def test_audience_accepted_when_matching() -> None:
     assert verify_jwks_token(_mint(aud="bench-a"), JWKS_URL, "bench-a")
 
@@ -109,9 +103,6 @@ def test_no_audience_config_rejects_remote_token() -> None:
     # Audience is mandatory for JWKS: with no configured audience a remote token
     # is not bound to this bench, so verification fails closed.
     assert verify_jwks_token(_mint(aud="anything"), JWKS_URL, "") is None
-
-
-# ── unified session decoding ────────────────────────────────────────────────
 
 
 class _Config:
@@ -140,9 +131,6 @@ def test_session_decode_skips_jwks_when_unconfigured() -> None:
             jwks_url = ""
 
     assert decode_session_token(_mint(), NoJwks) is None
-
-
-# ── admin backend integration ─────────────────────────────────────────────────
 
 
 def _client(tmp_path: Path):

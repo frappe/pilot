@@ -34,9 +34,6 @@ def _bench_config(db_type: str = "mariadb") -> BenchConfig:
     )
 
 
-# ── SQLite live tests ─────────────────────────────────────────────────────────
-
-
 def test_sqlite_execute_select(tmp_path: Path) -> None:
     db_path = str(tmp_path / "test.db")
     db = SQLite(db_path)
@@ -185,9 +182,6 @@ def test_sqlite_read_only_blocks_dml(tmp_path: Path) -> None:
     assert result.rows == [[1]]
 
 
-# ── get_schema single-connection bulk fetch (mocked) ──────────────────────────
-
-
 def test_mariadb_get_schema_uses_one_connection() -> None:
     db = MariaDB(host="h", port=3306, user="u", password="p", database="d")
     fake_cursor = MagicMock()
@@ -234,9 +228,6 @@ def test_postgres_get_schema_uses_one_connection() -> None:
     assert [c["name"] for c in by_name["beta"]] == ["id"]
 
 
-# ── make_database ─────────────────────────────────────────────────────────────
-
-
 def test_make_database_returns_mariadb_for_mariadb_bench() -> None:
     db = make_database(_bench_config("mariadb"))
     assert isinstance(db, MariaDB)
@@ -250,9 +241,6 @@ def test_make_database_returns_postgres_for_postgres_bench() -> None:
 def test_make_database_raises_for_sqlite_bench() -> None:
     with pytest.raises(DatabaseError, match="SQLite"):
         make_database(_bench_config("sqlite"))
-
-
-# ── make_site_database ────────────────────────────────────────────────────────
 
 
 def _write_site_config(bench_root: Path, site: str, cfg: dict) -> None:
@@ -331,9 +319,6 @@ def test_make_site_database_rejects_path_traversal(tmp_path: Path, site_name: st
     finally:
         (secret_dir / "site_config.json").unlink()
         secret_dir.rmdir()
-
-
-# ── Bench.db lazy property ────────────────────────────────────────────────────
 
 
 def test_bench_db_lazy_init(tmp_path: Path) -> None:

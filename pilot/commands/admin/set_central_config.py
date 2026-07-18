@@ -9,9 +9,7 @@ from pilot.exceptions import BenchError
 
 @dataclass(kw_only=True)
 class SetCentralConfigCommand(Command):
-    """Persist the Central callback endpoint + pilot auth token that Atlas hands the
-    bench at deploy, so pilot→Central calls can authenticate. Merges into
-    bench.toml (bench-owned config) without disturbing the other sections."""
+    """Persist the Central endpoint and pilot auth token in bench.toml."""
 
     name: ClassVar[str] = "set-central-config"
     help: ClassVar[str] = "Store the Central endpoint + pilot auth token in bench.toml."

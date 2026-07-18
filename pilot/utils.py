@@ -219,13 +219,7 @@ def _write_archive_member(
 
 
 def iter_sibling_benches(bench_path: Path) -> Iterator[tuple[Path, "BenchConfig"]]:
-    """Yield ``(bench_dir, parsed bench.toml)`` for every *other* bench that
-    shares this bench's parent ``benches/`` directory.
-
-    Parse-only (no validation) so half-configured benches are still seen.
-    Skips ``bench_path`` itself and any directory without a readable
-    ``bench.toml``. ``bench_path`` need not exist yet (e.g. during ``bench new``).
-    """
+    """Yield parse-only configs for sibling benches."""
     import tomllib
 
     from pilot.core.bench import BenchConfig
@@ -241,19 +235,14 @@ def iter_sibling_benches(bench_path: Path) -> Iterator[tuple[Path, "BenchConfig"
         if not toml_path.exists():
             continue
         try:
-            # Parse-only (no validate) so half-configured siblings are still
-            # seen — important for port-offset collision avoidance and
-            # cross-bench hostname checks.
+            # Half-configured siblings still count for ports and hostnames.
             yield sibling, BenchConfig._from_dict(tomllib.loads(toml_path.read_text()))
         except Exception:
             continue
 
 
 def normalize_host(host: str) -> str:
-    """Canonical form for hostname comparison: lowercased, trailing dot stripped,
-    internationalized labels reduced to their ASCII (IDNA) form. Returns an empty
-    string for falsy input. Best-effort — a name that cannot be IDNA-encoded is
-    returned lowercased/stripped so comparison still works for ASCII domains."""
+    """Canonical hostname for comparisons: lowercase, no trailing dot, IDNA."""
     if not host:
         return ""
     h = host.strip().lower().rstrip(".")
@@ -274,21 +263,18 @@ def hosts_line_contains(
 
 
 def wildcard_suffix(pattern: str) -> str:
-    """The fixed part of a wildcard domain pattern, e.g. '*.example.com' -> '.example.com',
-    '*-box1.example.com' -> '-box1.example.com'."""
+    """Return the fixed suffix of a wildcard domain pattern."""
     return pattern[1:] if pattern.startswith("*") else pattern
 
 
 def matches_wildcard(domain: str, patterns: list[str]) -> bool:
-    """Whether ``domain`` ends with the fixed part of one of the wildcard ``patterns``
-    and has something before it (a bare suffix with no label doesn't match)."""
+    """Return whether a domain matches any wildcard pattern."""
     domain = normalize_host(domain)
     return any(domain != (suffix := wildcard_suffix(p)) and domain.endswith(suffix) for p in patterns)
 
 
 def _bench_hosts(bench_dir: Path, config: "BenchConfig") -> Iterator[str]:
-    """Yield every hostname a bench claims: its admin domain, each site's name,
-    and each site's configured ``domains`` aliases — all normalized."""
+    """Yield every normalized hostname claimed by a bench."""
     import json
 
     if config.admin.domain:
@@ -311,13 +297,7 @@ def _bench_hosts(bench_dir: Path, config: "BenchConfig") -> Iterator[str]:
 
 
 def host_owner(bench_path: Path, host: str) -> Optional[str]:
-    """Return the name of *another* bench that already claims ``host`` — as one of
-    its sites (name or alias) or as its ``admin.domain`` — or ``None`` if the host
-    is free across all sibling benches.
-
-    Hosts are compared in normalized form (lowercase, no trailing dot, IDNA), so
-    two benches can never fight over the same hostname served by the same nginx.
-    """
+    """Return the sibling bench that already claims host, if any."""
     target = normalize_host(host)
     if not target:
         return None

@@ -21,9 +21,6 @@ from pilot.core.bench import Bench
 from pilot.exceptions import BenchError
 
 
-# ── JWT module ────────────────────────────────────────────────────────────────
-
-
 def test_round_trip_is_valid() -> None:
     assert verify_token(issue_token("k3y"), "k3y")
 
@@ -52,9 +49,6 @@ def test_issue_requires_secret() -> None:
 
 def test_login_token_carries_jti() -> None:
     assert decode_token(issue_login_token("k3y"), "k3y").get("jti")
-
-
-# ── CLI command ───────────────────────────────────────────────────────────────
 
 
 def _bench(tmp_path: Path, password: str = "secret") -> Bench:
@@ -97,9 +91,6 @@ def test_command_requires_password(tmp_path) -> None:
 
     with pytest.raises(BenchError):
         GenerateSessionCommand(_bench(tmp_path, password="")).run()
-
-
-# ── backend cookie auth ───────────────────────────────────────────────────────
 
 
 def _initialized_bench(bench_dir: Path, password: str, jwt_secret: str) -> None:
@@ -428,9 +419,6 @@ def test_setup_endpoint_fails_closed_when_config_is_corrupt(tmp_path: Path) -> N
     )
 
     assert response.status_code == 503
-
-
-# ── scoped JWT ────────────────────────────────────────────────────────────────
 
 
 def test_issue_token_defaults_to_bench_scope() -> None:

@@ -16,8 +16,7 @@ if typing.TYPE_CHECKING:
 
 
 class ImportCheck:
-    """Installs the app into a throwaway venv and verifies every import it
-    makes actually resolves, without executing any module-level code."""
+    """Validates imports in a throwaway venv without executing app modules."""
 
     def __init__(self) -> None:
         self.tmp_env = TmpEnv()
@@ -32,12 +31,7 @@ class ImportCheck:
 
     @staticmethod
     def _dependency_paths(app: "App") -> list[Path]:
-        """Paths of this app's pyproject.toml-declared required apps that are
-        already in the bench, so e.g. india_compliance's `import erpnext...`
-        resolves against the real erpnext instead of failing as unresolved.
-        This also assumes that the app is already installed in the bench by get-app,
-        In case it isn't we will fail anyways saying that the import is unresolved which is true!!
-        """
+        """Return installed required-app paths for import resolution."""
         from pilot.core.app.validator.dependency_declarations import DependencyDeclarationsCheck
         from pilot.exceptions import BenchError
 
@@ -51,8 +45,7 @@ class ImportCheck:
         return paths
 
     def _check_imports(self, app: "App") -> None:
-        # Stat-based resolution first (fast, no code runs); anything it can't
-        # find goes through find_spec in the tmp env for an authoritative error.
+        # Stat first; find_spec confirms misses in the tmp env.
         locations = self._imported_module_locations(app)
         resolver = ModuleResolver(self.tmp_env.path)
         unresolved = resolver.unresolved(locations)
@@ -95,7 +88,6 @@ class ImportCheck:
         try:
             tree = ast.parse(path.read_text(), filename=str(path))
         except OSError:
-            # We ideally should never hit SyntaxError here because we already validated syntax.
             return []
 
         modules: list[tuple[str, int]] = []
@@ -107,9 +99,7 @@ class ImportCheck:
         return modules
 
     def _runtime_imports(self, nodes: Iterable[ast.AST]) -> Iterator[ast.Import | ast.ImportFrom]:
-        """Imports that must resolve at runtime — skips imports inside any
-        try/except block (apps use these for optional dependencies) and
-        `if TYPE_CHECKING:` blocks."""
+        """Yield imports that must resolve at runtime."""
         for node in nodes:
             if isinstance(node, (ast.Import, ast.ImportFrom)):
                 yield node

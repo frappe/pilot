@@ -1,10 +1,4 @@
-"""Background-task helpers.
-
-Every mutating admin action (create site, install/uninstall app, drop site) runs
-as a forked background task. The UI fires the request, gets a task_id, and
-streams progress. For tests we capture that task_id from the response and then
-poll the task API to completion — far more robust than racing UI toasts.
-"""
+"""Background-task helpers for admin e2e tests."""
 
 from __future__ import annotations
 
@@ -20,11 +14,7 @@ def run_task_action(
     action: Callable[[], None],
     method: str = "POST",
 ) -> str:
-    """Run a UI action that kicks off a background task and return its task_id.
-
-    Pass the URL fragment the action POSTs to (e.g. 'create', 'install-app',
-    'drop') so we wait for the right response.
-    """
+    """Run a UI action and return the task_id from its API response."""
     with page.expect_response(
         lambda r: url_fragment in r.url and r.request.method == method
     ) as response_info:

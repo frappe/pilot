@@ -179,9 +179,7 @@ class ProcessProvider:
 
     @staticmethod
     def _get_subtree_pids(pid: int) -> list[int]:
-        """pid plus every descendant pid — gunicorn/supervisord run workers as
-        children of the main PID, so the whole subtree is a service's real
-        footprint, not just the MainPID systemd/supervisor hand us."""
+        """Return pid plus descendants for a service's real footprint."""
         children: dict[int, list[int]] = {}
         try:
             proc_entries = os.listdir("/proc")
@@ -208,8 +206,7 @@ class ProcessProvider:
 
     @staticmethod
     def _get_pss_kb(pid: int) -> int | None:
-        """Proportional Set Size in KB from /proc/<pid>/smaps_rollup (Linux 4.14+);
-        None if the kernel lacks it or we can't read it (e.g. wrong user)."""
+        """Return PSS in KB from /proc/<pid>/smaps_rollup, if readable."""
         try:
             with open(f"/proc/{pid}/smaps_rollup") as f:
                 for line in f:
@@ -221,8 +218,7 @@ class ProcessProvider:
 
     @staticmethod
     def _get_proc_uptime(pid: int) -> str | None:
-        """Wall-clock uptime from /proc/<pid>/stat's start-time field; works for
-        any manager since it only needs the PID. None if /proc is unreadable."""
+        """Return wall-clock uptime from /proc/<pid>/stat, if readable."""
         try:
             with open("/proc/uptime") as f:
                 system_uptime = float(f.read().split()[0])

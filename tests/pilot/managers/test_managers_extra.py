@@ -35,9 +35,6 @@ def make_bench(tmp_path: Path) -> Bench:
     return bench
 
 
-# ── RedisManager ──────────────────────────────────────────────────────────────
-
-
 def test_redis_manager_writes_two_configs(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     redis_cfg = RedisConfig(cache_port=13000, queue_port=11000)
@@ -95,9 +92,6 @@ def test_redis_manager_is_installed_false() -> None:
     manager = RedisManager(RedisConfig(), bench)
     with patch("shutil.which", return_value=None):
         assert manager.is_installed() is False
-
-
-# ── SupervisorProcessManager ──────────────────────────────────────────────────
 
 
 def _make_supervisor_manager(tmp_path: Path):
@@ -260,9 +254,6 @@ def test_supervisor_supervisorctl_uses_local_conf(tmp_path: Path) -> None:
     mgr = _make_supervisor_manager(tmp_path)
     cmd = mgr._supervisorctl()
     assert cmd == ["supervisorctl", "-c", str(mgr.supervisor_conf_path)]
-
-
-# ── SystemdProcessManager ─────────────────────────────────────────────────────
 
 
 def _make_systemd_manager(tmp_path: Path):
@@ -466,9 +457,6 @@ def test_systemd_is_configured_false_when_target_not_enabled(tmp_path: Path) -> 
         assert mgr.is_configured() is False
 
 
-# ── SupervisorProcessManager — runtime ────────────────────────────────────────
-
-
 def test_supervisor_is_alive_false_when_no_pid_file(tmp_path: Path) -> None:
     mgr = _make_supervisor_manager(tmp_path)
     assert mgr.is_alive() is False
@@ -547,13 +535,8 @@ def test_supervisor_multiqueue_worker_name_has_no_commas(tmp_path: Path) -> None
     assert "--queue default,short,long" in conf
 
 
-# ── ManagedProcessManager — shared lifecycle ───────────────────────────────
-
-
 class _FakeProcessManager:
-    """A ManagedProcessManager whose primitives just record their calls, so
-    the inherited lifecycle (start/stop/restart/reload_workers) can be pinned
-    once for every backend."""
+    """ManagedProcessManager fake that records lifecycle calls."""
 
     def __init__(self) -> None:
         from pilot.managers.processes.base import ManagedProcessManager

@@ -17,11 +17,7 @@ from pilot.config.bench import BenchConfig
 
 
 class BenchTomlStore:
-    """Single entry point for reading and writing a bench's ``bench.toml``.
-
-    Wraps internal parsing and serialization so every caller funnels through
-    one object instead of touching the file directly.
-    """
+    """Single entry point for reading and writing bench.toml."""
 
     FILENAME = "bench.toml"
 

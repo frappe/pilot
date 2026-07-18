@@ -147,8 +147,7 @@ class S3:
             ) from error
 
     def upload_stream(self, bucket_name: str, remote_key: str, fileobj) -> None:
-        """Multipart-uploads any readable file-like object — e.g. a subprocess's
-        stdout pipe — without ever buffering the whole thing in memory or on disk."""
+        """Multipart-upload a stream without local buffering."""
         try:
             self.client.upload_fileobj(fileobj, bucket_name, remote_key, Config=_STREAM_TRANSFER)
         except ClientError as error:
@@ -157,9 +156,7 @@ class S3:
             ) from error
 
     def download_stream(self, bucket_name: str, remote_key: str, fileobj) -> None:
-        """Streams an S3 object into any writable file-like object — e.g. a
-        subprocess's stdin pipe — without ever buffering the whole thing in
-        memory or on disk."""
+        """Stream an S3 object into a writable file-like object."""
         try:
             self.client.download_fileobj(bucket_name, remote_key, fileobj, Config=_STREAM_TRANSFER)
         except ClientError as error:

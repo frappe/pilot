@@ -21,10 +21,7 @@ __all__ = ["AdminEnvManager", "PythonEnvManager"]
 
 
 class AdminEnvManager:
-    """
-    Manages an isolated venv at <cli_root>/.admin-venv/ that contains Flask.
-    Created on first use; subsequent calls are instant (venv already exists).
-    """
+    """Owns the source-tree admin venv at <cli_root>/.admin-venv."""
 
     def __init__(self, cli_root: Path) -> None:
         self.venv_path = cli_root / ".admin-venv"
@@ -72,9 +69,6 @@ class AdminEnvManager:
         print("done")
 
     def _ensure_frontend_deps(self) -> None:
-        """
-        Install admin frontend Node.js dependencies (needed for the vite dev server).
-        """
         frontend = self.venv_path.parent / "admin" / "frontend"
         if not (frontend / "package.json").exists():
             return  # not running from the bench-cli source tree
@@ -112,24 +106,7 @@ class PythonEnvManager:
         run_command([uv, "venv", "--python", version, str(self.bench.env_path)], stream_output=True)
 
     def _build_env(self) -> dict:
-        """Environment for subprocesses that build app artifacts.
-
-        Folds together the two build-time concerns so callers don't juggle
-        variants:
-
-        - `frappe build` shells out to bare `yarn` via PATH. yarn may live in
-          ~/.local/bin (installed by `_install_yarn`), which isn't on a fresh
-          VPS's PATH, so prepend its directory when present.
-        - On macOS, mysqlclient's C-extension build can't find MariaDB through
-          pkg-config (Homebrew doesn't expose a matching `.pc` on the default
-          search path), so it aborts with "Can not find valid pkg-config name".
-          We feed it the flags from `mariadb_config` directly via
-          MYSQLCLIENT_CFLAGS/LDFLAGS, which skips pkg-config entirely. On Linux
-          the system `libmariadb-dev` package provides the `.pc` file, so no
-          override is needed.
-
-        Both additions are harmless to callers that only need one of them.
-        """
+        """Build subprocess env with yarn on PATH and macOS mysqlclient flags."""
         env = os.environ.copy()
 
         try:
@@ -165,8 +142,7 @@ class PythonEnvManager:
 
     @staticmethod
     def _mariadb_config_bin() -> str | None:
-        """Locate mariadb_config (or mysql_config), falling back to the Homebrew
-        keg in case the formula is keg-only and not on PATH."""
+        """Find mariadb_config/mysql_config, including keg-only Homebrew installs."""
         if found := (shutil.which("mariadb_config") or shutil.which("mysql_config")):
             return found
         try:

@@ -135,9 +135,6 @@ def test_toml_writer_includes_watch_admin_js() -> None:
     assert "watch_admin_js = true" in toml
 
 
-# ── Validation rule tests ─────────────────────────────────────────────────────
-
-
 def test_rule_1_required_fields_bench_name_missing() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
     del data["bench"]["name"]
@@ -197,13 +194,8 @@ def test_rule_11_invalid_letsencrypt_email() -> None:
     assert "letsencrypt.email" in str(exc_info.value)
 
 
-# ── Dependency version tests ──────────────────────────────────────────────────
-
-
 def test_stale_mariadb_instance_key_is_ignored_not_a_hard_error() -> None:
-    """bench.toml written by an older bench-cli may still have mariadb.instance/
-    version/data_dir — every bench now shares one MariaDB server, so these keys
-    must be tolerated (dropped), not raise a TypeError from the dataclass ctor."""
+    """Legacy MariaDB instance keys are ignored, not rejected."""
     data = copy.deepcopy(MINIMAL_VALID_DATA)
     data["mariadb"]["instance"] = "old-bench"
     data["mariadb"]["version"] = "10.6"
@@ -244,9 +236,6 @@ def test_central_config_round_trips_through_typed_writer() -> None:
     assert 'auth_token = "tok-123"' in toml
 
 
-# ── PostgreSQL ────────────────────────────────────────────────────────────────
-
-
 def test_postgres_defaults_when_section_absent() -> None:
     config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
     assert config.postgres.host == "localhost"
@@ -284,9 +273,6 @@ def test_invalid_redis_version() -> None:
     with pytest.raises(ConfigError) as exc_info:
         config.validate()
     assert "redis.version" in str(exc_info.value)
-
-
-# ── branches field tests ──────────────────────────────────────────────────────
 
 
 def test_branches_defaults_to_empty_list() -> None:
@@ -329,9 +315,6 @@ def test_branches_single_branch_no_list_is_valid() -> None:
     config = load_from_dict(data)
     assert config.apps[0].branch == "some-custom-branch"
     assert config.apps[0].branches == []
-
-
-# ── ProductionConfig tests ────────────────────────────────────────────────────
 
 
 def test_production_defaults() -> None:
@@ -458,9 +441,6 @@ def test_admin_internal_port_is_port_plus_one() -> None:
     assert AdminConfig(port=9100).internal_port == 9101
 
 
-# ── Bench-level database engine ───────────────────────────────────────────────
-
-
 def test_db_type_defaults_to_mariadb() -> None:
     config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
     assert config.db_type == "mariadb"
@@ -488,9 +468,6 @@ def test_invalid_db_type_rejected() -> None:
     with pytest.raises(ConfigError) as exc_info:
         load_from_dict(data)
     assert "bench.db_type" in str(exc_info.value)
-
-
-# ── MonitorConfig ─────────────────────────────────────────────────────────────
 
 
 def test_monitor_defaults_when_section_absent() -> None:
@@ -565,9 +542,6 @@ def test_toml_writer_monitor_log_path_written_when_set() -> None:
     config.monitor.log_path = Path("/var/log/test-bench-stats.log")
     toml = bench_config_to_toml(config)
     assert 'log_path = "/var/log/test-bench-stats.log"' in toml
-
-
-# ── Firewall ────────────────────────────────────────────────────────────────
 
 
 def test_firewall_defaults_to_off_and_open() -> None:

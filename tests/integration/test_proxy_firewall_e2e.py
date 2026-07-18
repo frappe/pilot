@@ -1,11 +1,4 @@
-"""End-to-end: a real edge nginx in front of the bench nginx, exercising the
-trusted-proxy gate and firewall together over live HTTP.
-
-The edge binds a fixed loopback source (127.0.0.55) and rewrites X-Forwarded-For
-from an X-Test-Client request header, so one host can play both "via proxy"
-(peer 127.0.0.55) and "direct" (peer 127.0.0.1). A tiny backend echoes the
-X-Real-IP it receives, proving the real client IP survives real_ip. Non-destructive:
-runs unprivileged nginx in a tmp prefix, no sudo, no machine config touched."""
+"""Trusted-proxy and firewall integration test over live HTTP."""
 from __future__ import annotations
 
 import contextlib

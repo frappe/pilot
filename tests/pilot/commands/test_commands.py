@@ -37,9 +37,6 @@ def make_bench(tmp_path: Path) -> Bench:
     return Bench(config, tmp_path)
 
 
-# ── NewCommand ────────────────────────────────────────────────────────────────
-
-
 def test_new_command_creates_directory_and_toml(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -159,9 +156,7 @@ def test_new_command_first_bench_has_no_jwks_url(
 
 
 def test_new_command_postgres_bench(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A `--database postgres` bench records db_type and generates a postgres
-    password (there's no dedicated cluster/instance anymore — one shared
-    server per OS user)."""
+    """Postgres benches record db_type and a provisioning password."""
     from pilot.commands.bench.create import NewCommand
     from pilot.core.bench.creator import BenchCreator
 
@@ -179,9 +174,7 @@ def test_new_command_postgres_bench(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 def test_new_command_second_postgres_bench_inherits_password(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Every bench for this OS user shares one PostgreSQL server, so a second
-    bench must reuse the password that already secured it — not a fresh
-    random one that would lock it out."""
+    """Second Postgres bench reuses the shared server password."""
     from pilot.commands.bench.create import NewCommand
     from pilot.core.bench.creator import BenchCreator
 
@@ -201,9 +194,7 @@ def test_new_command_second_postgres_bench_inherits_password(
 def test_new_command_postgres_port_is_not_offset_between_benches(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Every bench for this OS user shares one PostgreSQL server, so
-    postgres.port must stay identical across benches — unlike http_port/redis
-    ports, which are offset per bench. Mirrors the equivalent mariadb test."""
+    """Postgres port stays shared while bench-local ports are offset."""
     from pilot.commands.bench.create import NewCommand
     from pilot.core.bench.creator import BenchCreator
 
@@ -226,9 +217,7 @@ def test_new_command_postgres_port_is_not_offset_between_benches(
 def test_new_command_postgres_port_ignores_live_scan_on_macos(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """On macOS, PostgresManager just starts Homebrew's single shared service
-    (`brew services start`, no -p override) — the actual server always binds
-    to its own default regardless of config. Mirrors the mariadb version."""
+    """macOS Postgres uses Homebrew's default service port."""
     from pilot.commands.bench.create import NewCommand
     from pilot.core.bench.creator import BenchCreator
 
@@ -264,9 +253,7 @@ def test_new_command_mariadb_bench_has_no_postgres_password(
 def test_new_command_mariadb_port_is_not_offset_between_benches(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Every bench for this OS user shares one MariaDB server, so mariadb.port
-    must stay identical across benches — unlike http_port/redis ports, which
-    are offset per bench."""
+    """MariaDB port stays shared while bench-local ports are offset."""
     from pilot.commands.bench.create import NewCommand
     from pilot.core.bench.creator import BenchCreator
 
@@ -285,10 +272,7 @@ def test_new_command_mariadb_port_is_not_offset_between_benches(
 def test_new_command_mariadb_port_ignores_live_scan_on_macos(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """On macOS, MariaDBManager just starts Homebrew's single shared service
-    (`brew services start`, no --port override) — the actual server always
-    binds to its own default regardless of config. Scanning for a "free" port
-    there would record a value nothing will ever actually bind to."""
+    """macOS MariaDB uses Homebrew's default service port."""
     from pilot.commands.bench.create import NewCommand
     from pilot.core.bench.creator import BenchCreator
 
@@ -306,10 +290,7 @@ def test_new_command_mariadb_port_ignores_live_scan_on_macos(
 def test_new_command_second_mariadb_bench_inherits_password(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Every bench for this OS user shares one MariaDB server, so a second
-    bench must reuse the password that already secured it — not the bare
-    default, which would reset (and lock bench 1 out of) a server a sibling
-    already secured with a different password."""
+    """Second MariaDB bench reuses the shared server password."""
     from pilot.commands.bench.create import NewCommand
     from pilot.core.bench.creator import BenchCreator
 
@@ -351,9 +332,7 @@ def test_new_command_skips_offset_with_live_port(
 def test_new_command_skips_offset_with_live_admin_internal_port(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """admin.internal_port (admin.port + 1) is where systemd actually binds a
-    socket-activated admin — a sibling live there must be avoided even though
-    it isn't one of the stored port fields checked directly."""
+    """Port offset avoids the derived admin internal port too."""
     from pilot.commands.bench.create import NewCommand
     from pilot.core.bench.creator import BenchCreator
 
@@ -372,9 +351,6 @@ def test_new_command_skips_offset_with_live_admin_internal_port(
     # The concrete regression guard: offset 0 (http_port 8000) must not be
     # chosen, since its admin.internal_port (7001) is already live.
     assert data["bench"]["http_port"] == 8002
-
-
-# ── Site.provision validation ────────────────────────────────────────────────
 
 
 def test_new_site_raises_if_site_exists(tmp_path: Path) -> None:
@@ -436,9 +412,6 @@ def test_build_missing_assets_skips_cloned_but_unregistered_apps(tmp_path: Path)
 
     built = {call.args[0].config.name for call in build.call_args_list}
     assert built == {"frappe"}
-
-
-# ── RemoveAppCommand ──────────────────────────────────────────────────────────
 
 
 def test_remove_app_raises_when_app_directory_missing(tmp_path: Path) -> None:
@@ -534,9 +507,6 @@ def test_remove_app_full_flow_no_sites(tmp_path: Path) -> None:
     assert "erpnext" not in remaining
 
 
-# ── UninstallAppCommand ───────────────────────────────────────────────────────
-
-
 def test_uninstall_app_raises_if_site_not_found(tmp_path: Path) -> None:
     from pilot.commands.apps.uninstall import UninstallAppCommand
 
@@ -582,9 +552,6 @@ def test_uninstall_app_calls_site_uninstall_when_installed(tmp_path: Path) -> No
         mock_uninstall.assert_called_once()
 
 
-# ── FrappeCommand ─────────────────────────────────────────────────────────────
-
-
 def test_frappe_command_raises_if_venv_python_missing(tmp_path: Path) -> None:
     from pilot.commands.runtime.frappe import FrappeCommand
 
@@ -625,9 +592,6 @@ def test_frappe_command_exits_with_subprocess_returncode(tmp_path: Path) -> None
         assert exc_info.value.code == 42
 
 
-# ── BuildCommand ──────────────────────────────────────────────────────────────
-
-
 def test_build_command_force_calls_frappe_build(tmp_path: Path) -> None:
     from pilot.commands.runtime.build import BuildCommand
 
@@ -651,9 +615,6 @@ def test_build_command_default_uses_prebuilt_per_app(tmp_path: Path) -> None:
         with patch.object(bench, "apps", return_value=[]):
             BuildCommand(bench).run()
             mock_build.assert_not_called()  # no apps → nothing called
-
-
-# ── SetupRequirementsCommand ──────────────────────────────────────────────────
 
 
 def test_requirements_skips_app_without_python_setup_files(tmp_path: Path) -> None:
@@ -740,9 +701,6 @@ def test_requirements_installs_js_for_app_with_package_json(tmp_path: Path) -> N
             BenchRuntime(bench)._install_js_requirements(lambda _message: None)
             mock_rc.assert_called_once()
             assert mock_rc.call_args[0][0] == ["yarn", "install"]
-
-
-# ── UpdateCommand ─────────────────────────────────────────────────────────────
 
 
 def test_upgrade_command_installs_admin_python_deps() -> None:
@@ -946,9 +904,6 @@ def test_bench_migrate_sites_passes_skip_failing_patches(tmp_path: Path) -> None
     mock_migrate.assert_called_once_with(skip_failing=True)
 
 
-# ── Site.drop ─────────────────────────────────────────────────────────────────
-
-
 def test_drop_site_removes_site_from_bench_toml(tmp_path: Path) -> None:
     import tomllib
     from pilot.config import SiteConfig
@@ -992,9 +947,6 @@ def test_drop_site_removes_from_toml_when_no_sites_key(tmp_path: Path) -> None:
 
     site = Site(SiteConfig(name="nonexistent", apps=[]), bench)
     site._remove_from_bench_toml()  # no raise
-
-
-# ── RestartCommand / StartCommand routing ───────────────────────────────────────
 
 
 def test_restart_dev_bench_prints_guidance(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
@@ -1192,9 +1144,6 @@ def test_start_rebuild_config_writes_process_and_common_site_config(tmp_path: Pa
     common_site.assert_called_once()
 
 
-# ── DropBenchCommand ────────────────────────────────────────────────────────
-
-
 def _drop_config(name: str) -> BenchConfig:
     return BenchConfig(
         name=name,
@@ -1263,9 +1212,7 @@ def test_drop_bench_refuses_when_sites_exist(tmp_path: Path) -> None:
 
 
 def test_drop_bench_deletes_directory_with_no_sites(tmp_path: Path) -> None:
-    """No dedicated database instance to reason about anymore — every bench for
-    this OS user shares one MariaDB/PostgreSQL server, so a clean drop (no
-    sites) just removes the bench directory."""
+    """Clean drop with no sites removes the bench directory."""
     from pilot.commands.bench.delete import DropBenchCommand
 
     benches = tmp_path / "benches"
@@ -1275,9 +1222,6 @@ def test_drop_bench_deletes_directory_with_no_sites(tmp_path: Path) -> None:
 
     DropBenchCommand(bench, skip_confirm=True).run()
     assert not bench_dir.exists()
-
-
-# ── admin_frontend node-version guard ──────────────────────────────────────────
 
 
 def test_build_admin_rejects_old_node(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1352,9 +1296,6 @@ def test_build_admin_skips_install_when_installed_deps_are_current(tmp_path: Pat
     os.utime(install_state, (200, 200))
 
     assert _needs_npm_install(tmp_path) is False
-
-
-# ── bench start: rebuild the admin UI when source changed ─────────────────────
 
 
 def _admin_source_checkout(tmp_path: Path, src_mtime: int, built_mtime: int) -> Path:

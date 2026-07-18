@@ -6,14 +6,7 @@ from typing import Literal
 
 @dataclass(frozen=True)
 class RevisionPin:
-    """A fixed revision (tag or commit) an app should be checked out at.
-
-    Keeps App's public methods decoupled from the shape of any particular
-    source's data (e.g. the marketplace registry's raw target dicts) -
-    callers translate their own data into this before calling into App.
-    A branch is not a fixed revision, so it has no RevisionPin; pass None
-    to mean "no pin, follow the tracked branch" instead.
-    """
+    """A fixed app revision target: tag or commit, never a branch."""
 
     kind: Literal["tag", "commit"]
     ref: str

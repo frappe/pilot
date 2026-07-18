@@ -1,8 +1,4 @@
-"""Tests for ProductionSetup helpers and letsencrypt gating.
-
-The full `run()` touches sudo/systemd, so these exercise the pure helpers:
-admin-domain handling, in-place toml persistence, and the cert-needed check.
-"""
+"""Tests for ProductionSetup helpers and letsencrypt gating."""
 from __future__ import annotations
 
 import tomllib
@@ -89,9 +85,6 @@ def test_needs_letsencrypt(tmp_path: Path) -> None:
     )
 
 
-# ── --process-manager / persist-last / migration ────────────────────────────────
-
-
 def test_resolve_target_uses_flag_over_config(tmp_path: Path) -> None:
     bench = _make_bench(tmp_path, process_manager="supervisor")
     cmd = ProductionSetup(bench, process_manager="systemd")
@@ -162,9 +155,6 @@ def test_require_production_inputs_passes_with_domain_and_email(tmp_path: Path) 
     cmd._require_production_inputs()  # no raise
 
 
-# ── monitor log path resolution ───────────────────────────────────────────────
-
-
 def test_resolve_monitor_log_path_default(tmp_path: Path) -> None:
     from pilot.core.server.monitoring import resolve_monitor_log_path
 
@@ -205,9 +195,6 @@ def test_setup_monitoring_log_path_is_path_on_config(tmp_path: Path, monkeypatch
     assert bench.config.monitor.log_path.name == f"{bench.config.name}-stats.log"
 
 
-# ── best-effort TLS (wizard hand-off) ───────────────────────────────────────
-
-
 def test_setup_letsencrypt_reraises_by_default(tmp_path: Path, monkeypatch) -> None:
     from pilot.core.bench import Bench
 
@@ -221,10 +208,7 @@ def test_setup_letsencrypt_reraises_by_default(tmp_path: Path, monkeypatch) -> N
 
 
 def test_setup_letsencrypt_swallows_when_best_effort(tmp_path: Path, monkeypatch, capsys) -> None:
-    """The wizard's automatic hand-off (unlike an explicit CLI --tls request)
-    shouldn't roll back an otherwise-working deployment just because a cert
-    can't issue yet - e.g. DNS for a domain created moments ago hasn't
-    propagated. The bench should stay live on HTTP instead."""
+    """Wizard handoff keeps HTTP live when TLS is not ready yet."""
     from pilot.core.bench import Bench
 
     bench = _make_bench(tmp_path, admin_domain="admin.example.com", email="x@y.com")

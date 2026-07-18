@@ -54,14 +54,7 @@ class AppRepository:
         return next((t for t in marketplace_entry["targets"] if t["version"] == version), None)
 
     def has_remote_update(self) -> bool:
-        """Whether the tracked branch has commits on origin not yet pulled locally.
-
-        Runs `git ls-remote` - ref pointers only, no object download - so it
-        completes in ~1-2s regardless of repo size. An app not on a branch
-        (detached HEAD, e.g. a tag/commit checkout) has no moving remote tip
-        to compare against, so this always reports no update; use
-        `is_on_revision` against the marketplace target instead.
-        """
+        """Check the remote branch tip without downloading objects."""
         if not self.app.config.branch:
             return False
         remote_sha = self.repo.remote_branch_sha(self.app.config.branch)
@@ -139,8 +132,7 @@ class AppRepository:
         import os
 
         cpus = os.cpu_count() or 1
-        # On constrained servers (<=2 vCPUs) cap at 1 to avoid saturating the CPU.
-        # On beefier machines let git use half the cores so other processes stay responsive.
+        # Keep git from saturating small servers.
         if cpus <= 2:
             return 1
         return max(1, cpus // 2)

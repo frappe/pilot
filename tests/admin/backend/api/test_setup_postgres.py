@@ -7,9 +7,6 @@ from pathlib import Path
 from admin.backend.api.v1.setup import read_defaults, validate_configuration
 
 
-# ── validate_configuration ─────────────────────────────────────────────────────
-
-
 def test_validate_configuration_requires_postgres_password() -> None:
     error = validate_configuration({"admin_password": "x", "db_type": "postgres", "postgres_password": ""})
     assert error and "postgres_password" in error
@@ -58,9 +55,6 @@ def test_validate_configuration_accepts_complete_existing_mariadb() -> None:
 def test_validate_configuration_ignores_host_when_not_marked_existing() -> None:
     data = {"admin_password": "x", "db_type": "mariadb", "mariadb_password": "pw", "mariadb_host": "db.example.com"}
     assert validate_configuration(data) is None
-
-
-# ── read_defaults ────────────────────────────────────────────────────────────
 
 
 def test_read_defaults_omits_password_fallbacks_for_fresh_bench(tmp_path: Path) -> None:

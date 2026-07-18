@@ -1,17 +1,4 @@
-"""
-End-to-end test for the production deployment + SSL flow:
-
-    bench setup production --admin-domain bench.localhost --tls
-    bench rename-site site1.localhost <new-domain>
-    bench setup production --admin-domain <new-admin-domain>
-
-Let's Encrypt can't validate ``*.localhost``, so certbot is never invoked;
-we drop self-signed certs at the paths nginx reads
-(``/etc/letsencrypt/live/<domain>/``) and assert the full HTTPS chain.
-
-Destructive (installs services, rewrites nginx): gated behind
-BENCH_E2E_PRODUCTION=1, skipped otherwise, torn down on the way out.
-"""
+"""Production deployment and SSL integration test."""
 
 from __future__ import annotations
 
@@ -53,9 +40,6 @@ def _require_tooling():
     reason = _missing_tooling()
     if reason:
         pytest.skip(reason)
-
-
-# ── helpers ──────────────────────────────────────────────────────────────
 
 def _run(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(list(args), cwd=cwd, capture_output=True, text=True)
@@ -212,9 +196,6 @@ def _start_external_redis(bench_root: Path) -> None:
         path = bench_root / "config" / conf
         if path.exists():
             _run("redis-server", str(path), "--daemonize", "yes")
-
-
-# ── full TLS deploy: site1 https + site2 http-only + admin ───────────────
 
 @pytest.fixture(scope="class")
 def production(bench_root: Path, bench_bin: str):
@@ -424,9 +405,6 @@ class TestProductionSSL:
         # Vhost gone -> catch-all rejects (000) or no upstream (502); never 200.
         assert _https_status(current_site) != "200", "site still served after remove"
 
-
-# ── admin.tls = false: central proxy terminates TLS, bench serves plain HTTP ──
-
 @pytest.fixture(scope="class")
 def http_only_production(bench_root: Path, bench_bin: str):
     _set_admin_tls(bench_root, False)
@@ -464,9 +442,6 @@ class TestProductionNoTLS:
 
     def test_admin_not_served_over_https(self, http_only_production: Path) -> None:
         assert _https_status(ADMIN_DOMAIN) == "000", "admin answered HTTPS with TLS disabled"
-
-
-# ── process-manager migration: systemd -> supervisord ────────────────────
 
 @pytest.fixture(scope="class")
 def systemd_production(bench_root: Path, bench_bin: str):
@@ -517,9 +492,6 @@ class TestProcessManagerMigration:
         status, body = _request_ok(SITE, "/api/method/frappe.ping")
         assert status == "200", f"site broke after PM migration ({status}): {body!r}"
         assert "pong" in body, body
-
-
-# ── multi-bench nginx sharing (needs BENCH_TEST_ROOT_2) ──────────────────
 
 class TestMultiBench:
 

@@ -67,10 +67,7 @@ class Site:
         SiteApps(self).install_app(app)
 
     def install_app_with_dependencies(self, app: "App") -> list["App"]:
-        """Install `app` here, then resolve the hooks.py-declared dependencies
-        frappe's own install-app cascades onto this site — returned so callers
-        can build their assets too, since frappe's cascade doesn't report them
-        back."""
+        """Install the app and return dependencies cascaded by Frappe."""
         from pilot.core.site.apps import SiteApps
 
         return SiteApps(self).install_app_with_dependencies(app)
@@ -86,10 +83,7 @@ class Site:
         return SiteApps(self).list_apps()
 
     def installed_apps(self) -> list[str]:
-        """Installed app names for this site, using the fastest available
-        method (site_config.json's cache, then a direct DB query, then a
-        frappe subprocess) — cheaper than list_apps() for read-heavy callers
-        like the admin API."""
+        """Return installed apps using cache, DB, then Frappe as fallback."""
         from pilot.core.site.apps import SiteApps
 
         return SiteApps(self).installed_apps()
@@ -137,17 +131,13 @@ class Site:
         SiteRename(self, new_name).run(on_progress)
 
     def _provider_domains(self) -> list[str]:
-        """Hostnames this site claimed at the provider — its own name (the route a
-        wildcard create registers) plus its custom domains — captured before the
-        drop removes the site config so nothing is left dangling at the edge."""
+        """Capture provider-owned domains before the site config is removed."""
         from pilot.core.site.drop import SiteDropper
 
         return SiteDropper(self).provider_domains()
 
     def _release_domains(self, domains: list[str]) -> None:
-        """Release the captured domains at the provider, only after the drop has
-        succeeded. Best effort: a teardown failure leaves a stale route, but the
-        site is already gone so it must not turn a successful drop into an error."""
+        """Best-effort provider cleanup after a successful local drop."""
         from pilot.core.site.drop import SiteDropper
 
         SiteDropper(self).release_domains(domains)
@@ -167,8 +157,7 @@ class Site:
         db_type: str | None = None,
         on_progress: Callable[[str], None] = lambda message: None,
     ) -> "Site":
-        """Create a new site end to end: validate, register, create via
-        frappe, install apps, build assets, reload nginx, obtain a cert."""
+        """Create a site, install apps, reload nginx, and issue TLS if needed."""
         from pilot.core.site.provisioning import SiteProvisioner
 
         return SiteProvisioner(bench, name, apps, admin_password, db_type).provision(on_progress)
@@ -203,9 +192,7 @@ class Site:
 
 
 def _validate_new_site(bench: "Bench", name: str, apps: list[str]) -> bool:
-    """Validate a candidate new-site name/app-list; returns whether the name
-    was matched via one of the bench's wildcard domains (which then must be
-    registered with the domain provider before creation)."""
+    """Validate the site name/apps and return whether a wildcard matched."""
     from pilot.core.site.provisioning import validate_new_site
 
     return validate_new_site(bench, name, apps)
@@ -241,8 +228,7 @@ def _should_enable_ssl(bench: "Bench", name: str) -> bool:
 
 
 def _register_with_provider(bench: "Bench", name: str) -> None:
-    """A wildcard-derived name is the provider's to allocate; provision it before
-    creating the site so a provider failure leaves no orphan site."""
+    """Reserve a wildcard-derived name before creating the local site."""
     from pilot.core.site.provisioning import register_with_provider
 
     register_with_provider(bench, name)
@@ -262,10 +248,7 @@ def query_installed_apps_via_db(site_config: dict) -> list[str] | None:
 
 
 def set_site_ssl_flag(sites_root: Path, site_name: str, enabled: bool) -> None:
-    """Flip a site's `ssl` flag in its site_config.json, guarding against a
-    site name that would escape `sites_root` via a symlink or `..`. A plain
-    function (not a Site method) so it works from contexts — like a task
-    callback — that only have a bench_root and site name, not a live Bench."""
+    """Flip a site's ssl flag after resolving the path safely."""
     from pilot.core.site.config import set_site_ssl_flag as _set_site_ssl_flag
 
     _set_site_ssl_flag(sites_root, site_name, enabled)

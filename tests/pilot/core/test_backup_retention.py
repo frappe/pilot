@@ -3,8 +3,6 @@ from datetime import date, timedelta
 from pilot.config import BackupConfig
 from pilot.core.site.retention import BackupRetentionPolicy
 
-# ── Retention policy ────────────────────────────────────────────────────────────
-
 
 def _daily_runs(days: int, start=date(2026, 1, 1)) -> list[str]:
     return [(start + timedelta(days=i)).strftime("%Y%m%d") + "_020000" for i in range(days)]

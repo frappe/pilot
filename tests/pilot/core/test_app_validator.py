@@ -35,9 +35,7 @@ def _make_app(bench_root: Path, name: str, pyproject: str, files: dict[str, str]
 
 
 def _static_checks() -> list:
-    """RepoStructureCheck, SyntaxCheck and DependencyDeclarationsCheck only —
-    excludes ImportCheck, which installs into a real throwaway venv and needs
-    a real frappe checkout, making it an integration concern, not a unit test."""
+    """Static checks only; ImportCheck needs a real throwaway venv."""
     return [RepoStructureCheck(), SyntaxCheck(), DependencyDeclarationsCheck()]
 
 
@@ -45,9 +43,7 @@ _SETUPTOOLS_BUILD = '[build-system]\nrequires = ["setuptools>=61"]\nbuild-backen
 
 
 def _make_fake_frappe(bench_root: Path) -> None:
-    """A minimal, locally-buildable stand-in for the real frappe package,
-    installed into the bench's apps/ dir so TmpEnv.create() has something
-    real to pip install without needing network access to PyPI for frappe."""
+    """Create a local fake frappe package for TmpEnv tests."""
     frappe_path = bench_root / "apps" / "frappe"
     frappe_path.mkdir(parents=True)
     (frappe_path / "pyproject.toml").write_text(
@@ -192,9 +188,7 @@ def test_import_check_fails_on_genuinely_missing_import(tmp_path: Path) -> None:
 def test_import_check_resolves_external_package_published_under_different_dist_name(
     tmp_path: Path,
 ) -> None:
-    """beautifulsoup4 is published on PyPI under that dist name but installs
-    an import-name folder of `bs4` — proves resolution goes off what's
-    actually on disk in site-packages, not the pyproject dependency string."""
+    """Import resolution uses installed modules, not distribution names."""
     _make_fake_frappe(tmp_path)
     app = _make_app(
         tmp_path,

@@ -1,10 +1,4 @@
-"""Local git-clone cache of the external marketplace registry repo.
-
-The registry (apps.json) lives in a separate, community-editable GitHub
-repo rather than in this codebase. `RegistryCache` keeps one shared clone of
-it per pilot install (under `<cli_root>/registry-cache/`), refreshed at most
-once an hour, and refuses to serve a clone that's been edited by hand.
-"""
+"""Tamper-checked local clone of the marketplace registry."""
 from __future__ import annotations
 
 import shlex
@@ -26,9 +20,7 @@ _CRON_SCHEDULE = "0 3 * * *"  # once a day, 03:00
 
 
 class RegistryCache:
-    """Shallow, read-only clone of REGISTRY_URL at `cli_root/registry-cache`.
-    Refresh-tracking file lives beside the clone, not inside it, so it can't
-    itself trip the tamper check."""
+    """Shallow, read-only clone at <cli_root>/registry-cache."""
 
     def __init__(self, cli_root: Path) -> None:
         self._cli_root = cli_root
@@ -46,8 +38,7 @@ class RegistryCache:
         return self._cli_root / "registry-cache.last_checked"
 
     def ensure_fresh(self) -> None:
-        """Clone on first use; otherwise verify the clone hasn't been hand-edited
-        and pull if the 1hr refresh window has elapsed."""
+        """Clone on first use; later reject tampering and refresh hourly."""
         if not self._is_cloned():
             self._clone()
             self._touch_last_checked()
@@ -120,9 +111,7 @@ class RegistryCache:
         self._last_checked_path.touch()
 
     def install_daily_refresh_cron(self) -> None:
-        """Idempotently register a system cron entry that runs `ensure_fresh`
-        once a day, so the cache stays warm even between get-app/marketplace
-        calls. Safe to call repeatedly — CronManager upserts by job key."""
+        """Register the daily cache refresh cron entry."""
         log_file = self._cli_root / "logs" / "registry-refresh.log"
         log_file.parent.mkdir(parents=True, exist_ok=True)
         python, cli_root, log = (shlex.quote(str(p)) for p in (sys.executable, self._cli_root, log_file))

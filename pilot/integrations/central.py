@@ -12,18 +12,11 @@ if TYPE_CHECKING:
 
 
 class CentralClientError(BenchError):
-    """A Central API call could not be made or was rejected (missing config,
-    transport failure, or a non-2xx response)."""
+    """A Central API call could not be made or was rejected."""
 
 
 class CentralClient:
-    """Calls Central's HTTP API on behalf of this bench's pilot.
-
-    Reads ``central.endpoint`` + ``central.auth_token`` from ``bench.toml`` (written
-    by ``bench set-central-config`` at deploy) and authenticates with the
-    ``X-Pilot-Token`` header — the reverse of the
-    site→bench ``pilot_auth_token`` (PR #133).
-    """
+    """Calls Central using the bench's pilot auth token."""
 
     TOKEN_HEADER = "X-Pilot-Token"
 
@@ -31,8 +24,7 @@ class CentralClient:
         self.bench = bench
 
     def heartbeat(self) -> dict[str, Any]:
-        """Prove this pilot can authenticate to Central; returns Central's identity echo
-        (team + pilot_credential_id)."""
+        """Verify Central auth and return its identity echo."""
         return self._get("/api/method/central.api.pilot.heartbeat")
 
     def _credentials(self) -> tuple[str, str]:

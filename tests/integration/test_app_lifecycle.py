@@ -1,17 +1,4 @@
-"""
-Integration tests for the app lifecycle: get-app → install-app → migrate →
-remove-app → migrate-after-remove.
-
-Each test in TestAppLifecycle relies on the previous one having succeeded, so
-run the class as a whole.  They exercise the bench-cli CLI passthrough, which
-forwards unrecognised commands directly to the Frappe bench binary.
-
-Prerequisites (once per developer machine):
-    cd test-bench && bench init
-
-In CI the BENCH_TEST_ROOT env var points at the already-initialised bench that
-the earlier workflow steps set up.
-"""
+"""Integration tests for get-app, install-app, migrate, and remove-app."""
 
 from __future__ import annotations
 
@@ -23,10 +10,6 @@ import pytest
 
 APP_NAME = "testapp"
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _run(bench_bin: str, *args: str, cwd: Path) -> subprocess.CompletedProcess:
     return subprocess.run(
@@ -52,11 +35,6 @@ def _app_in_venv(bench_root: Path) -> bool:
     )
     return r.returncode == 0
 
-
-# ---------------------------------------------------------------------------
-# Module-level cleanup: remove testapp from the bench before and after the
-# tests so re-runs start from a clean state.
-# ---------------------------------------------------------------------------
 
 @pytest.fixture(scope="module", autouse=True)
 def clean_slate(bench_root: Path, bench_bin: str, site_name: str):
@@ -88,21 +66,13 @@ def _purge_testapp(bench_root: Path, bench_bin: str, site: str) -> None:
         apps_txt.write_text("\n".join(lines) + ("\n" if lines else ""))
 
 
-# ---------------------------------------------------------------------------
-# Tests (run in definition order)
-# ---------------------------------------------------------------------------
-
 @pytest.mark.integration
 class TestAppLifecycle:
 
     def test_get_app_clones_and_installs(
         self, bench_root: Path, bench_bin: str, testapp_repo: Path
     ) -> None:
-        """
-        bench get-app <local-repo>
-        → passthrough → env/bin/bench get-app <local-repo>
-        Clones the repo into apps/testapp and pip-installs it editable.
-        """
+        """get-app clones testapp and installs it editable."""
         result = _run(bench_bin, "get-app", str(testapp_repo), cwd=bench_root)
         assert result.returncode == 0, (
             f"get-app failed (exit {result.returncode}):\n"
@@ -119,11 +89,7 @@ class TestAppLifecycle:
     def test_install_app_on_site(
         self, bench_root: Path, bench_bin: str, site_name: str
     ) -> None:
-        """
-        bench --site site1.localhost install-app testapp
-        → passthrough → env/bin/bench --site site1.localhost install-app testapp
-        Registers the app on the site.
-        """
+        """install-app registers testapp on the site."""
         if not (bench_root / "apps" / APP_NAME).is_dir():
             pytest.skip(f"{APP_NAME} not in apps/ — run test_get_app first")
 
@@ -145,11 +111,7 @@ class TestAppLifecycle:
     def test_migrate_after_install(
         self, bench_root: Path, bench_bin: str, site_name: str
     ) -> None:
-        """
-        bench --site site1.localhost migrate
-        → passthrough → env/bin/bench --site site1.localhost migrate
-        Runs DB migrations; must succeed with testapp installed.
-        """
+        """migrate succeeds with testapp installed."""
         result = _run(bench_bin, "--site", site_name, "migrate", cwd=bench_root)
         assert result.returncode == 0, (
             f"migrate failed (exit {result.returncode}):\n"
@@ -159,11 +121,7 @@ class TestAppLifecycle:
     def test_remove_app_from_site(
         self, bench_root: Path, bench_bin: str, site_name: str
     ) -> None:
-        """
-        bench --site site1.localhost uninstall-app testapp --yes --no-backup
-        → passthrough → env/bin/bench frappe --site site1.localhost uninstall-app testapp --yes --no-backup
-        Unregisters the app from the site.
-        """
+        """uninstall-app removes testapp from the site."""
         installed = _installed_apps(bench_bin, bench_root, site_name)
         if APP_NAME not in installed:
             pytest.skip(f"{APP_NAME} not installed on {site_name} — run test_install_app first")
@@ -186,10 +144,7 @@ class TestAppLifecycle:
     def test_migrate_after_remove(
         self, bench_root: Path, bench_bin: str, site_name: str
     ) -> None:
-        """
-        bench --site site1.localhost migrate
-        Verifies the site is still healthy after app removal.
-        """
+        """migrate succeeds after app removal."""
         result = _run(bench_bin, "--site", site_name, "migrate", cwd=bench_root)
         assert result.returncode == 0, (
             f"migrate after remove-app failed (exit {result.returncode}):\n"

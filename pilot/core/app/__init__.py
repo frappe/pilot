@@ -24,10 +24,7 @@ class App:
 
     @classmethod
     def from_repo(cls, bench: "Bench", repo: str, branch: str = "") -> "App":
-        """Build an App from a raw git repository URL, deriving its name from
-        the repo's final path segment (e.g. '.../india-compliance.git' ->
-        'india-compliance'). Rejects 'frappe' — it's the base framework, set
-        up when the bench itself is created, not installable via get-app."""
+        """Create an App from a git URL, rejecting the framework app."""
         from pathlib import PurePosixPath
 
         name = PurePosixPath(repo.rstrip("/")).name
@@ -123,14 +120,7 @@ class App:
 
     @property
     def module_name(self) -> str:
-        """Return the importable Python package name for the app.
-
-        The authoritative source is pyproject.toml's ``[project] name`` (PEP 621),
-        which for Frappe apps is the importable module (e.g. 'india_compliance'
-        even when the repo/folder is 'india-compliance'). Fall back to scanning
-        for the subdir containing hooks.py, then to the conventional hyphen->
-        underscore mapping, for older apps that ship only setup.py.
-        """
+        """Return the importable package name, preferring pyproject.toml."""
         pyproject = self.path / "pyproject.toml"
         if pyproject.exists():
             import tomllib
@@ -163,10 +153,7 @@ class App:
         skip_validations: bool = False,
         on_progress: Callable[[str], None] = lambda message: None,
     ) -> AppInstallResult:
-        """Clone (if needed), validate, install into the Python environment,
-        register in apps.txt, and build assets. Installs missing marketplace
-        dependencies first when requested. A clone made during this call is
-        rolled back if a later step fails; an already-cloned app never is."""
+        """Clone, validate, install, register, and build app assets."""
         if self.bench.is_app_installed(self.config.name):
             app = self.bench.app(self.module_name)
             dependencies = app._install_dependencies(on_progress) if install_dependencies else []
@@ -194,9 +181,7 @@ class App:
         return AppInstallResult(app, already_installed=False, installed_dependencies=dependencies)
 
     def _clone_and_normalize(self, on_progress: Callable[[str], None]) -> tuple["App", bool]:
-        """Clone this app if it isn't already, then move it into its
-        importable-module-name folder if that differs from the requested
-        name — returning the (possibly different) App for the final path."""
+        """Clone if needed and rename the folder to the importable module name."""
         cloned_this_run = False
         if self.is_cloned:
             on_progress(f"'{self.config.name}' already cloned, skipping clone.")
@@ -253,10 +238,7 @@ class App:
     def remove(
         self, force: bool = False, on_progress: Callable[[str], None] = lambda message: None
     ) -> None:
-        """Uninstall from every site it's installed on, deregister from
-        apps.txt, uninstall from the Python environment, and delete its
-        folder. With force=True, a site uninstall failure is reported and
-        skipped rather than aborting the whole removal."""
+        """Uninstall from sites, deregister, pip-uninstall, and delete the clone."""
         self.ensure_removable()
         self._uninstall_from_all_sites(force, on_progress)
         self._deregister()

@@ -1,18 +1,4 @@
-"""Integration test: installing helpdesk on a site auto-installs telephony.
-
-`bench --site <site> install-app helpdesk` routes through pilot's own
-InstallAppCommand -> Site.install_app -> a single subprocess call into the
-bench's real `bench frappe --site <site> install-app helpdesk`. That's the
-actual frappe.installer.install_app function (see
-frappe/installer.py:install_app), which reads hooks.py's `required_apps`
-and recursively calls itself for each one before installing the app —
-telephony is declared there for helpdesk. No fixture apps are created here;
-this uses helpdesk/telephony however they already exist on the target bench,
-so it needs no network fetch and skips cleanly if they're not present.
-
-Requires BENCH_TEST_ROOT (or the default test-bench) to already have
-helpdesk and telephony cloned onto it — e.g. via `bench get-app helpdesk`.
-"""
+"""Integration test for Frappe's install-app dependency cascade."""
 from __future__ import annotations
 
 import subprocess
