@@ -3,11 +3,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-TOKEN_RE = re.compile(r"({{.*?}}|{%.*?%})", re.S)
+TOKEN_RE = re.compile(r"({{.*?}}|{%.*?%}|{#.*?#})", re.S)
 
-# Remove the newline after a block tag when the tag is alone on a line.
+# Remove the newline after a block or comment tag when it is alone on a line.
 BLOCK_LINE_RE = re.compile(
-    r"^[ \t]*({%.*?%})[ \t]*(?:\r?\n|$)",
+    r"^[ \t]*((?:{%.*?%}|{#.*?#}))[ \t]*(?:\r?\n|$)",
     re.M,
 )
 
@@ -102,6 +102,10 @@ class Parser:
         while (token := self.current()) is not None:
             if token.startswith("{{"):
                 nodes.append(self.parse_expr())
+                continue
+
+            if token.startswith("{#"):
+                self.consume()
                 continue
 
             if not token.startswith("{%"):

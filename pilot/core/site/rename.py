@@ -27,7 +27,6 @@ class SiteRename:
 
         self._update_default_site()
         self._rename_in_bench_toml()
-        self._remove_stale_nginx_conf()
         self._add_to_hosts()
         self._reload_nginx()
 
@@ -96,9 +95,6 @@ class SiteRename:
             for site in raw.get("sites", []):
                 if site.get("name") == self.old_name:
                     site["name"] = self.new_name
-
-    def _remove_stale_nginx_conf(self) -> None:
-        (self.bench.config_path / "nginx" / "sites" / f"{self.old_name}.conf").unlink(missing_ok=True)
 
     def _add_to_hosts(self) -> None:
         if self.bench.config.production.process_manager != "none":

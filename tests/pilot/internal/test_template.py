@@ -82,6 +82,18 @@ def test_block_tag_alone_on_line_swallows_newline() -> None:
     assert render(template, show=True) == "a\nb\nc"
 
 
+def test_comment_renders_nothing() -> None:
+    assert render("a{# note #}b") == "ab"
+
+
+def test_comment_alone_on_line_swallows_newline() -> None:
+    assert render("a\n{# note #}\nb") == "a\nb"
+
+
+def test_comment_may_span_tags_and_lines() -> None:
+    assert render("x{# {% if %} {{ y }} \n still comment #}z") == "xz"
+
+
 def test_unknown_statement_raises_value_error() -> None:
     with pytest.raises(ValueError, match="Unknown statement"):
         Template("{% bogus %}")

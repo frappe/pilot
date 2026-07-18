@@ -1,4 +1,9 @@
-"""Tests for nginx config generation - no real nginx required."""
+"""Tests for nginx config generation - no real nginx required.
+
+The renderer turns a bench + per-site TLS readiness into config text; these
+tests assert on that text. NginxManager tests cover the TLS decisions and the
+on-disk files it writes.
+"""
 
 import copy
 from pathlib import Path
@@ -18,103 +23,284 @@ _BASE_DATA: dict = {
     "redis": {"cache_port": 13000, "queue_port": 11000},
 }
 
-_SSL_DATA: dict = {
-    **_BASE_DATA,
-    "letsencrypt": {"email": "admin@example.com"},
-}
-
 _BASE_SITE = SiteConfig(name="site1.example.com", apps=["frappe"])
-_SSL_SITE = SiteConfig(name="site1.example.com", apps=["frappe"], ssl=True)
 
 
 def _make_bench(tmp_path: Path, data: dict) -> Bench:
-    config = BenchConfig._from_dict(data)
-    return Bench(config, tmp_path)
+    return Bench(BenchConfig._from_dict(data), tmp_path)
 
 
-def test_http_only_site_config(tmp_path: Path) -> None:
-    bench = _make_bench(tmp_path, _BASE_DATA)
-    renderer = NginxConfigRenderer(bench)
+def _renderer(tmp_path: Path, data: dict | None = None, proxy_servers: list[str] | None = None):
+    """A renderer with the proxy lookup stubbed so tests never hit the provider."""
+    renderer = NginxConfigRenderer(_make_bench(tmp_path, data or _BASE_DATA))
+    renderer._proxy_servers_cache = proxy_servers or []
+    return renderer
 
-    config = renderer.generate_site_config(_BASE_SITE, ssl_ready=False)
 
-    assert "server_name" in config
-    assert "listen 80" in config
+def _site_config(tmp_path: Path, site: SiteConfig, ssl: bool = False, **kwargs) -> str:
+    return _renderer(tmp_path, **kwargs).generate_bench_config([(site, ssl)], admin_ssl=False)
+
+
+# --- site vhost -------------------------------------------------------------
+
+
+def test_http_only_site_has_no_tls(tmp_path: Path) -> None:
+    config = _site_config(tmp_path, _BASE_SITE, ssl=False)
+
+    assert "listen 80;" in config
+    assert "listen [::]:80;" in config
     assert "ssl_certificate" not in config
+    assert "return 301 https://" not in config
 
 
-def test_ssl_site_not_ready_is_http_only(tmp_path: Path) -> None:
-    bench = _make_bench(tmp_path, _SSL_DATA)
-    renderer = NginxConfigRenderer(bench)
+def test_ssl_site_redirects_http_and_serves_https(tmp_path: Path) -> None:
+    config = _site_config(tmp_path, _BASE_SITE, ssl=True)
 
-    config = renderer.generate_site_config(_SSL_SITE, ssl_ready=False)
-
-    assert "listen 80" in config
-    assert "ssl_certificate" not in config
-    assert "listen 443" not in config
-
-
-def test_ssl_site_ready_has_https_block(tmp_path: Path) -> None:
-    bench = _make_bench(tmp_path, _SSL_DATA)
-    renderer = NginxConfigRenderer(bench)
-
-    config = renderer.generate_site_config(_SSL_SITE, ssl_ready=True)
-
-    assert "listen 443 ssl http2" in config
+    assert "listen 443 ssl http2;" in config
+    assert "listen [::]:443 ssl http2;" in config
     assert "ssl_certificate" in config
     assert "ssl_certificate_key" in config
     assert "return 301 https://$host$request_uri" in config
 
 
-def test_include_conf_content(tmp_path: Path) -> None:
-    bench = _make_bench(tmp_path, _BASE_DATA)
-    bench.create_directories()
+def test_server_name_lists_all_domains(tmp_path: Path) -> None:
+    site = SiteConfig(name="site1.example.com", apps=["frappe"], domains=["www.site1.example.com"])
+    config = _site_config(tmp_path, site)
 
-    # Place a fake site on disk so generate_config has something to iterate
-    site_dir = tmp_path / "sites" / "site1.example.com"
-    site_dir.mkdir(parents=True)
-    (site_dir / "site_config.json").write_text("{}")
-
-    manager = NginxManager(bench)
-    manager.generate_config(ssl_ready=False)
-
-    include_conf = tmp_path / "config" / "nginx" / "include.conf"
-    assert include_conf.exists()
-    content = include_conf.read_text()
-    assert "include" in content
-    assert "*.conf" in content
-    nginx_dir = str(tmp_path / "config" / "nginx")
-    assert nginx_dir in content
+    assert "server_name site1.example.com www.site1.example.com;" in config
 
 
-_ADMIN_SYSTEMD_DATA: dict = {
+def test_no_canonical_redirect_without_explicit_primary(tmp_path: Path) -> None:
+    # Without an explicit primary, site.primary falls back to the (internal) site
+    # name; a 301 there would strand public traffic on an unreachable host.
+    site = SiteConfig(name="site.localhost", apps=["frappe"], domains=["www.example.com"])
+
+    assert "return 301 $scheme://" not in _site_config(tmp_path, site)
+
+
+def test_canonical_redirect_with_explicit_primary(tmp_path: Path) -> None:
+    site = SiteConfig(
+        name="site.localhost",
+        apps=["frappe"],
+        domains=["www.example.com"],
+        primary_domain="www.example.com",
+    )
+    config = _site_config(tmp_path, site)
+
+    assert 'if ($host != "www.example.com")' in config
+    assert "return 301 $scheme://www.example.com$request_uri;" in config
+
+
+def test_proxy_headers_and_error_pages_present(tmp_path: Path) -> None:
+    config = _site_config(tmp_path, _BASE_SITE)
+
+    assert "X-Frappe-Site-Name" in config
+    assert "X-Forwarded-Proto" in config
+    assert "error_page 404 /_errors/404.html;" in config
+    assert "location ^~ /_errors/ {" in config
+
+
+def test_socketio_proxies_to_socketio_port(tmp_path: Path) -> None:
+    data = copy.deepcopy(_BASE_DATA)
+    data["bench"]["socketio_port"] = 9000
+    config = _site_config(tmp_path, _BASE_SITE, data=data)
+
+    assert "location /socket.io {" in config
+    assert "proxy_pass         http://127.0.0.1:9000;" in config
+    assert "proxy_set_header   Upgrade $http_upgrade;" in config
+
+
+def test_dual_stack_listeners(tmp_path: Path) -> None:
+    config = _site_config(tmp_path, _BASE_SITE, ssl=True)
+
+    for line in ("listen 80;", "listen [::]:80;", "listen 443 ssl http2;", "listen [::]:443 ssl http2;"):
+        assert line in config
+
+
+# --- trusted proxy ----------------------------------------------------------
+
+
+def test_direct_exposure_keeps_default_xff(tmp_path: Path) -> None:
+    config = _site_config(tmp_path, _BASE_SITE, proxy_servers=[])
+
+    assert "set_real_ip_from" not in config
+    assert "realip_remote_addr" not in config
+    assert "X-Forwarded-For    $proxy_add_x_forwarded_for" in config
+
+
+def test_trusted_proxies_gate_peer_and_trust_xff(tmp_path: Path) -> None:
+    config = _site_config(tmp_path, _BASE_SITE, proxy_servers=["203.0.113.5", "203.0.113.6"])
+
+    assert "set_real_ip_from   203.0.113.5;" in config
+    assert "set_real_ip_from   203.0.113.6;" in config
+    assert "real_ip_header     X-Forwarded-For;" in config
+    assert (
+        r'if ($realip_remote_addr ~ "^(203\.0\.113\.5|203\.0\.113\.6)$") { set $bench_from_proxy 1; }'
+        in config
+    )
+    assert "if ($bench_from_proxy = 0) { return 403; }" in config
+    assert r'if ($request_uri ~ "^/\.well-known/acme-challenge/") { set $bench_from_proxy 1; }' in config
+    assert "X-Forwarded-For    $http_x_forwarded_for" in config
+    assert "$proxy_add_x_forwarded_for" not in config
+
+
+# --- firewall ---------------------------------------------------------------
+
+
+def _firewall_config(tmp_path: Path, enabled: bool, default: str, rules: list, proxy=None) -> str:
+    data = copy.deepcopy(_BASE_DATA)
+    data["firewall"] = {"enabled": enabled, "default": default, "rules": rules}
+    data["admin"] = {"domain": "admin.example.com"}
+    renderer = _renderer(tmp_path, data, proxy_servers=proxy)
+    return renderer.generate_bench_config([(_BASE_SITE, False)], admin_ssl=False)
+
+
+def test_firewall_off_renders_nothing(tmp_path: Path) -> None:
+    out = _firewall_config(tmp_path, False, "deny", [{"ip": "1.2.3.4", "action": "deny"}])
+    assert "deny 1.2.3.4;" not in out
+    assert "deny all;" not in out
+
+
+def test_firewall_blocklist_emits_only_deny(tmp_path: Path) -> None:
+    out = _firewall_config(tmp_path, True, "allow", [{"ip": "203.0.113.4", "action": "deny"}])
+    assert "deny 203.0.113.4;" in out
+    assert "deny all;" not in out  # default allow => no terminal deny
+
+
+def test_firewall_allowlist_emits_allow_then_deny_all(tmp_path: Path) -> None:
+    out = _firewall_config(tmp_path, True, "deny", [{"ip": "203.0.113.4", "action": "allow"}])
+    assert out.index("allow 203.0.113.4;") < out.index("deny all;")
+
+
+def test_firewall_never_blocks_trusted_proxy(tmp_path: Path) -> None:
+    # allow wins as access rules are first-match, even with an explicit deny.
+    out = _firewall_config(
+        tmp_path, True, "deny", [{"ip": "203.0.113.5", "action": "deny"}], proxy=["203.0.113.5"]
+    )
+    assert out.index("allow 203.0.113.5;") < out.index("deny 203.0.113.5;")
+    assert out.index("allow 203.0.113.5;") < out.index("deny all;")
+
+
+def test_firewall_applies_to_site_and_admin(tmp_path: Path) -> None:
+    out = _firewall_config(tmp_path, True, "allow", [{"ip": "203.0.113.4", "action": "deny"}])
+    # both the site and admin server blocks carry the rule
+    assert out.count("deny 203.0.113.4;") == 2
+
+
+# --- WAF --------------------------------------------------------------------
+
+
+def test_waf_directives_gate_on_install(tmp_path: Path) -> None:
+    from pilot.managers import nginx
+
+    data = copy.deepcopy(_BASE_DATA)
+    data["waf"] = {"enabled": True}
+    data["admin"] = {"domain": "admin.example.com"}
+
+    with patch.object(nginx.WafManager, "is_installed", staticmethod(lambda: True)):
+        active = _renderer(tmp_path, data).generate_bench_config([(_BASE_SITE, False)], admin_ssl=False)
+    with patch.object(nginx.WafManager, "is_installed", staticmethod(lambda: False)):
+        inactive = _renderer(tmp_path, data).generate_bench_config([(_BASE_SITE, False)], admin_ssl=False)
+
+    assert active.count("modsecurity on;") == 2  # site + admin
+    assert "modsecurity" not in inactive
+
+
+# --- admin vhost ------------------------------------------------------------
+
+_ADMIN_DATA: dict = {
     **_BASE_DATA,
     "production": {"process_manager": "systemd", "nginx": True},
     "admin": {"enabled": True, "port": 7000, "password": "x", "domain": "admin.example.com"},
 }
 
 
-def test_admin_domain_proxy_under_systemd(tmp_path: Path) -> None:
-    bench = _make_bench(tmp_path, _ADMIN_SYSTEMD_DATA)
+def test_admin_proxy_port_under_systemd(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, _ADMIN_DATA)
+    config = _renderer(tmp_path, _ADMIN_DATA).generate_bench_config([], admin_ssl=False)
+
+    assert "server_name admin.example.com;" in config
+    # systemd socket-activates the admin on its internal port.
+    assert f"proxy_pass         http://127.0.0.1:{bench.config.admin.internal_port};" in config
+
+
+def test_admin_proxy_port_under_supervisor(tmp_path: Path) -> None:
+    data = copy.deepcopy(_ADMIN_DATA)
+    data["production"]["process_manager"] = "supervisor"
+    config = _renderer(tmp_path, data).generate_bench_config([], admin_ssl=False)
+
+    assert "proxy_pass         http://127.0.0.1:7000;" in config
+
+
+def test_admin_ssl_redirects_http_to_https(tmp_path: Path) -> None:
+    config = _renderer(tmp_path, _ADMIN_DATA).generate_bench_config([], admin_ssl=True)
+
+    assert "listen 443 ssl http2" in config
+    assert "ssl_certificate" in config
+    assert "return 301 https://$host$request_uri" in config
+
+
+def test_no_admin_vhost_without_domain(tmp_path: Path) -> None:
+    config = _renderer(tmp_path, _BASE_DATA).generate_bench_config([(_BASE_SITE, False)], admin_ssl=False)
+    assert "location = /api/v1/health" not in config
+
+
+# --- server-wide catch-all --------------------------------------------------
+
+
+def test_server_config_is_default_server(tmp_path: Path) -> None:
+    conf = _renderer(tmp_path).generate_server_config(Path("/usr/share/nginx/bench-error-pages"))
+
+    assert "listen 80 default_server;" in conf
+    assert "server_name _;" in conf
+    assert "error_page 404 /_errors/404.html;" in conf
+    assert "return 404;" in conf
+    assert "alias /usr/share/nginx/bench-error-pages/;" in conf
+    # A 443 default_server rejects https for http-only benches instead of
+    # serving the first TLS vhost's cert.
+    assert "listen 443 ssl http2 default_server;" in conf
+    assert "ssl_reject_handshake on;" in conf
+
+
+# --- NginxManager: files and TLS decisions ----------------------------------
+
+
+def _bench_with_site(tmp_path: Path, data: dict, site_config: str = "{}") -> Bench:
+    bench = _make_bench(tmp_path, data)
     bench.create_directories()
-    (tmp_path / "sites" / "site1.example.com").mkdir(parents=True)
-    (tmp_path / "sites" / "site1.example.com" / "site_config.json").write_text("{}")
+    site_dir = tmp_path / "sites" / "site1.example.com"
+    site_dir.mkdir(parents=True)
+    (site_dir / "site_config.json").write_text(site_config)
+    return bench
 
-    manager = NginxManager(bench)
-    manager.generate_config(ssl_ready=False)
 
-    admin_conf = tmp_path / "config" / "nginx" / "sites" / "_admin.conf"
-    assert admin_conf.exists()
-    content = admin_conf.read_text()
-    assert "server_name admin.example.com;" in content
-    # Under systemd the admin is socket-activated on the internal port.
-    assert f"proxy_pass         http://127.0.0.1:{bench.config.admin.internal_port};" in content
+def test_generate_config_writes_full_bench_file(tmp_path: Path) -> None:
+    bench = _bench_with_site(tmp_path, _BASE_DATA)
+    NginxManager(bench).generate_config(ssl_ready=False)
+
+    include_conf = tmp_path / "config" / "nginx" / "include.conf"
+    content = include_conf.read_text()
+    assert "upstream bench-test-bench {" in content
+    assert "server_name site1.example.com;" in content
+
+
+def test_generate_config_writes_error_page_files(tmp_path: Path) -> None:
+    data = copy.deepcopy(_BASE_DATA)
+    data["admin"] = {"domain": "admin.example.com"}
+    bench = _bench_with_site(tmp_path, data)
+
+    NginxManager(bench).generate_config(ssl_ready=False)
+
+    error_dir = bench.config_path / "nginx" / "error_pages"
+    assert sorted(p.name for p in error_dir.iterdir()) == ["403.html", "404.html", "502.html", "503.html"]
+    assert "404" in (error_dir / "404.html").read_text()
 
 
 def test_localhost_ssl_site_gets_https_when_cert_present(tmp_path: Path) -> None:
     # A pure-.localhost SSL site has no public domains to validate a SAN against,
     # so cert existence alone enables HTTPS (the e2e suite runs on site1.localhost).
-    data = copy.deepcopy(_SSL_DATA)
+    data = copy.deepcopy(_BASE_DATA)
+    data["letsencrypt"] = {"email": "admin@example.com"}
     data["admin"] = {"domain": "admin.example.com", "tls": True}
     bench = _make_bench(tmp_path, data)
     bench.create_directories()
@@ -122,382 +308,84 @@ def test_localhost_ssl_site_gets_https_when_cert_present(tmp_path: Path) -> None
     (tmp_path / "sites" / "site1.localhost" / "site_config.json").write_text('{"ssl": true}')
 
     manager = NginxManager(bench)
-    manager.has_cert = lambda site: True  # pretend a cert is present
+    manager.has_cert = lambda site: True
     manager.generate_config(ssl_ready=True)
 
-    content = (tmp_path / "config" / "nginx" / "sites" / "site1.localhost.conf").read_text()
+    content = (tmp_path / "config" / "nginx" / "include.conf").read_text()
     assert "listen 443 ssl http2" in content
     assert "return 301 https://$host$request_uri;" in content
 
 
-def test_admin_tls_disabled_serves_sites_http_only(tmp_path: Path) -> None:
+def test_admin_tls_disabled_serves_everything_http(tmp_path: Path) -> None:
     # admin.tls = False is bench-wide: even an SSL site with a cert on disk is
     # served plain-HTTP, because a central proxy terminates TLS upstream.
-    data = copy.deepcopy(_SSL_DATA)
+    data = copy.deepcopy(_BASE_DATA)
+    data["letsencrypt"] = {"email": "admin@example.com"}
     data["admin"] = {"domain": "admin.example.com", "tls": False}
-    bench = _make_bench(tmp_path, data)
-    bench.create_directories()
-    (tmp_path / "sites" / "site1.example.com").mkdir(parents=True)
-    (tmp_path / "sites" / "site1.example.com" / "site_config.json").write_text('{"ssl": true}')
+    bench = _bench_with_site(tmp_path, data, site_config='{"ssl": true}')
 
     manager = NginxManager(bench)
-    manager.has_cert = lambda site: True  # pretend a cert is present
+    manager.has_cert = lambda site: True
     manager.generate_config(ssl_ready=True)
 
-    content = (tmp_path / "config" / "nginx" / "sites" / "site1.example.com.conf").read_text()
-    assert "listen 80" in content
-    assert "ssl_certificate" not in content
-    assert "return 301 https://" not in content
-
-
-def test_admin_tls_disabled_serves_plain_http(tmp_path: Path) -> None:
-    # With admin.tls = False a central proxy terminates TLS; nginx must serve the
-    # admin over plain HTTP on :80 and never redirect to HTTPS.
-    data = copy.deepcopy(_ADMIN_SYSTEMD_DATA)
-    data["admin"]["tls"] = False
-    bench = _make_bench(tmp_path, data)
-    bench.create_directories()
-    (tmp_path / "sites" / "site1.example.com").mkdir(parents=True)
-    (tmp_path / "sites" / "site1.example.com" / "site_config.json").write_text("{}")
-
-    manager = NginxManager(bench)
-    # Even when told SSL is ready, a tls=False admin stays HTTP-only.
-    manager.generate_config(ssl_ready=True)
-
-    content = (tmp_path / "config" / "nginx" / "sites" / "_admin.conf").read_text()
-    assert "server_name admin.example.com;" in content
+    content = (tmp_path / "config" / "nginx" / "include.conf").read_text()
     assert "listen 80;" in content
-    assert "return 301 https://" not in content
     assert "ssl_certificate" not in content
+    assert "return 301 https://" not in content
 
 
-def test_admin_tls_enabled_redirects_http_to_https(tmp_path: Path) -> None:
-    # admin.tls = True with a cert on disk: nginx serves HTTPS and redirects the
-    # whole HTTP vhost to it.
-    data = copy.deepcopy(_ADMIN_SYSTEMD_DATA)
+def test_site_without_ssl_flag_stays_http_even_with_cert(tmp_path: Path) -> None:
+    # site_config.json lacks "ssl": true, so a cert on disk must not flip the
+    # site to HTTPS - the flag is the operator's opt-in, checked bench-wide.
+    data = copy.deepcopy(_BASE_DATA)
+    data["admin"] = {"domain": "admin.example.com", "tls": True}
+    bench = _bench_with_site(tmp_path, data)
+
+    manager = NginxManager(bench)
+    manager.cert_covers = lambda site: True
+    manager.generate_config(ssl_ready=True)
+
+    content = (tmp_path / "config" / "nginx" / "include.conf").read_text()
+    assert "listen 80;" in content
+    assert "ssl_certificate" not in content
+    assert "return 301 https://" not in content
+
+
+def test_admin_tls_enabled_redirects_admin_to_https(tmp_path: Path) -> None:
+    data = copy.deepcopy(_ADMIN_DATA)
     data["admin"]["tls"] = True
-    bench = _make_bench(tmp_path, data)
-    bench.create_directories()
-    (tmp_path / "sites" / "site1.example.com").mkdir(parents=True)
-    (tmp_path / "sites" / "site1.example.com" / "site_config.json").write_text("{}")
+    bench = _bench_with_site(tmp_path, data)
 
     manager = NginxManager(bench)
     with patch.object(NginxManager, "has_admin_cert", new_callable=PropertyMock, return_value=True):
         manager.generate_config(ssl_ready=True)
 
-    content = (tmp_path / "config" / "nginx" / "sites" / "_admin.conf").read_text()
+    content = (tmp_path / "config" / "nginx" / "include.conf").read_text()
+    assert "server_name admin.example.com;" in content
     assert "listen 443 ssl http2" in content
-    assert "ssl_certificate" in content
     assert "return 301 https://$host$request_uri" in content
 
 
-def test_admin_domain_proxy_under_supervisor(tmp_path: Path) -> None:
-    data = copy.deepcopy(_ADMIN_SYSTEMD_DATA)
-    data["production"]["process_manager"] = "supervisor"
-    bench = _make_bench(tmp_path, data)
-    bench.create_directories()
-    (tmp_path / "sites" / "site1.example.com").mkdir(parents=True)
-    (tmp_path / "sites" / "site1.example.com" / "site_config.json").write_text("{}")
+def test_two_benches_use_distinct_upstreams(tmp_path: Path) -> None:
+    """All benches share one nginx, so each bench's config must use a uniquely
+    named upstream."""
 
-    manager = NginxManager(bench)
-    manager.generate_config(ssl_ready=False)
-
-    admin_conf = tmp_path / "config" / "nginx" / "sites" / "_admin.conf"
-    assert admin_conf.exists()
-    content = admin_conf.read_text()
-    assert "server_name admin.example.com;" in content
-    # Supervisor runs the admin directly on admin.port.
-    assert f"proxy_pass         http://127.0.0.1:{bench.config.admin.port};" in content
-
-
-def test_server_name_includes_all_domains(tmp_path: Path) -> None:
-    bench = _make_bench(tmp_path, _BASE_DATA)
-    renderer = NginxConfigRenderer(bench)
-
-    site = SiteConfig(
-        name="site1.example.com",
-        apps=["frappe"],
-        domains=["www.site1.example.com"],
-    )
-    config_text = renderer.generate_site_config(site, ssl_ready=False)
-
-    assert "site1.example.com" in config_text
-    assert "www.site1.example.com" in config_text
-
-
-def test_no_canonical_redirect_without_explicit_primary(tmp_path: Path) -> None:
-    # Without an explicit primary, site.primary falls back to the (internal) site
-    # name; a 301 there would strand public traffic on an unreachable host.
-    bench = _make_bench(tmp_path, _BASE_DATA)
-    renderer = NginxConfigRenderer(bench)
-    site = SiteConfig(name="site.localhost", apps=["frappe"], domains=["www.example.com"])
-
-    config_text = renderer.generate_site_config(site, ssl_ready=False)
-
-    assert "return 301 $scheme://" not in config_text
-
-
-def test_canonical_redirect_with_explicit_primary(tmp_path: Path) -> None:
-    bench = _make_bench(tmp_path, _BASE_DATA)
-    renderer = NginxConfigRenderer(bench)
-    site = SiteConfig(
-        name="site.localhost",
-        apps=["frappe"],
-        domains=["www.example.com"],
-        primary_domain="www.example.com",
-    )
-
-    config_text = renderer.generate_site_config(site, ssl_ready=False)
-
-    assert 'if ($host != "www.example.com")' in config_text
-    assert "return 301 $scheme://www.example.com$request_uri;" in config_text
-
-
-def test_proxy_headers_present(tmp_path: Path) -> None:
-    bench = _make_bench(tmp_path, _BASE_DATA)
-    renderer = NginxConfigRenderer(bench)
-
-    config = renderer.generate_site_config(_BASE_SITE, ssl_ready=False)
-
-    assert "X-Frappe-Site-Name" in config
-    assert "X-Forwarded-Proto" in config
-
-
-def test_no_proxy_servers_keeps_direct_defaults(tmp_path: Path) -> None:
-    bench = _make_bench(tmp_path, _BASE_DATA)
-    renderer = NginxConfigRenderer(bench)
-    renderer._proxy_servers_cache = []  # no provider / direct exposure
-
-    config = renderer.generate_site_config(_BASE_SITE, ssl_ready=False)
-
-    assert "set_real_ip_from" not in config
-    assert "realip_remote_addr" not in config  # no proxy gate; XFF untrusted
-    assert "X-Forwarded-For    $proxy_add_x_forwarded_for" in config
-
-
-def test_proxy_servers_gate_tcp_peer_and_trust_xff(tmp_path: Path) -> None:
-    bench = _make_bench(tmp_path, _BASE_DATA)
-    renderer = NginxConfigRenderer(bench)
-    renderer._proxy_servers_cache = ["203.0.113.5", "203.0.113.6"]
-
-    config = renderer.generate_site_config(_BASE_SITE, ssl_ready=False)
-
-    # Trust the proxy IPs to supply the real client IP via X-Forwarded-For.
-    assert "set_real_ip_from   203.0.113.5;" in config
-    assert "set_real_ip_from   203.0.113.6;" in config
-    assert "real_ip_header     X-Forwarded-For;" in config
-    # Accept TCP connections from the proxies alone, tested on the real peer
-    # ($realip_remote_addr) since real_ip has already rewritten $remote_addr.
-    assert (
-        r'if ($realip_remote_addr ~ "^(203\.0\.113\.5|203\.0\.113\.6)$") { set $bench_from_proxy 1; }'
-        in config
-    )
-    assert "if ($bench_from_proxy = 0) { return 403; }" in config
-    # ACME challenges stay reachable directly, so cert issuance never 403s.
-    assert r'if ($request_uri ~ "^/\.well-known/acme-challenge/") { set $bench_from_proxy 1; }' in config
-    # The old allow-proxy/deny-all (which tested the rewritten client IP) is gone.
-    assert "allow              203.0.113.5;" not in config
-    assert "deny               all;" not in config
-    # Trust the proxy's X-Forwarded-For unchanged rather than appending to it.
-    assert "X-Forwarded-For    $http_x_forwarded_for" in config
-    assert "$proxy_add_x_forwarded_for" not in config
-
-
-def test_two_benches_generate_non_conflicting_configs(tmp_path: Path) -> None:
-    """All benches share one nginx, so each bench's include.conf must use a
-    uniquely-named upstream and its own admin server_name."""
-
-    def _include_for(name: str, http_port: int, admin_domain: str) -> str:
+    def _config_for(name: str, http_port: int) -> str:
         data = copy.deepcopy(_BASE_DATA)
         data["bench"] = {"name": name, "python": "3.14", "http_port": http_port}
-        data["admin"] = {"domain": admin_domain}
-        bench = _make_bench(tmp_path / name, data)
-        bench.create_directories()
+        bench = _bench_with_site(tmp_path / name, data)
         NginxManager(bench).generate_config(ssl_ready=False)
         return (tmp_path / name / "config" / "nginx" / "include.conf").read_text()
 
-    a = _include_for("alpha", 8000, "alpha-admin.localhost")
-    b = _include_for("beta", 8001, "beta-admin.localhost")
+    a = _config_for("alpha", 8000)
+    b = _config_for("beta", 8001)
 
-    assert "upstream bench-alpha {" in a
-    assert "upstream bench-beta {" in b
+    assert "upstream bench-alpha {" in a and "server 127.0.0.1:8000;" in a
+    assert "upstream bench-beta {" in b and "server 127.0.0.1:8001;" in b
     assert "bench-beta" not in a and "bench-alpha" not in b
 
 
-def test_http_site_listens_dual_stack(tmp_path: Path) -> None:
-    bench = _make_bench(tmp_path, _BASE_DATA)
-    renderer = NginxConfigRenderer(bench)
-
-    config = renderer.generate_site_config(_BASE_SITE, ssl_ready=False)
-
-    assert "listen 80;" in config
-    assert "listen [::]:80;" in config
-
-
-def test_https_site_listens_dual_stack(tmp_path: Path) -> None:
-    bench = _make_bench(tmp_path, _SSL_DATA)
-    renderer = NginxConfigRenderer(bench)
-
-    config = renderer.generate_site_config(_SSL_SITE, ssl_ready=True)
-
-    # HTTP→HTTPS redirect block and the SSL block both listen on both stacks.
-    assert "listen 80;" in config
-    assert "listen [::]:80;" in config
-    assert "listen 443 ssl http2;" in config
-    assert "listen [::]:443 ssl http2;" in config
-
-
-def test_admin_domain_config_listens_dual_stack(tmp_path: Path) -> None:
-    data = copy.deepcopy(_SSL_DATA)
-    data["admin"] = {"enabled": True, "domain": "admin.example.com"}
-    bench = _make_bench(tmp_path, data)
-    renderer = NginxConfigRenderer(bench)
-
-    config = renderer.generate_admin_config(ssl_ready=False)
-
-    assert "listen 80;" in config
-    assert "listen [::]:80;" in config
-
-
-def test_upstream_block_uses_bench_http_port(tmp_path: Path) -> None:
-    """Regression: the upstream block used to hardcode 127.0.0.1:8000
-    regardless of the bench's actual http_port."""
-    data = copy.deepcopy(_BASE_DATA)
-    data["bench"]["http_port"] = 8001
-    bench = _make_bench(tmp_path, data)
-    renderer = NginxConfigRenderer(bench)
-
-    upstream = renderer._render_upstream_block(bench.config.name)
-
-    assert "server 127.0.0.1:8001;" in upstream
-    assert "8000" not in upstream
-
-
-def test_socketio_location_proxies_to_socketio_port(tmp_path: Path) -> None:
-    data = copy.deepcopy(_BASE_DATA)
-    data["bench"] = {"name": "test-bench", "python": "3.14", "socketio_port": 9000}
-    bench = _make_bench(tmp_path, data)
-    renderer = NginxConfigRenderer(bench)
-
-    config = renderer.generate_site_config(_BASE_SITE, ssl_ready=False)
-
-    assert "location /socket.io" in config
-    assert "proxy_pass         http://127.0.0.1:9000;" in config
-    assert "proxy_set_header   Upgrade $http_upgrade;" in config
-
-
-def test_site_config_has_error_pages(tmp_path: Path) -> None:
-    bench = _make_bench(tmp_path, _BASE_DATA)
-    renderer = NginxConfigRenderer(bench)
-
-    config = renderer.generate_site_config(_BASE_SITE, ssl_ready=False)
-
-    assert "error_page 404 /_errors/404.html;" in config
-    assert "error_page 502 /_errors/502.html;" in config
-    assert "error_page 503 /_errors/503.html;" in config
-    assert "location ^~ /_errors/ {" in config
-    assert "internal;" in config
-
-
-def test_generate_config_writes_error_page_files(tmp_path: Path) -> None:
-    data = copy.deepcopy(_BASE_DATA)
-    data["admin"] = {"domain": "admin.example.com"}
-    bench = _make_bench(tmp_path, data)
-    bench.create_directories()
-    site_dir = bench.sites_path / "site1.example.com"
-    site_dir.mkdir()
-    (site_dir / "site_config.json").write_text("{}")
-
-    NginxManager(bench).generate_config(ssl_ready=False)
-
-    error_dir = bench.config_path / "nginx" / "error_pages"
-    assert sorted(p.name for p in error_dir.iterdir()) == [
-        "403.html",
-        "404.html",
-        "502.html",
-        "503.html",
-    ]
-    assert "404" in (error_dir / "404.html").read_text()
-    # admin vhost also serves the custom pages
-    admin_conf = (bench.config_path / "nginx" / "sites" / "_admin.conf").read_text()
-    assert "/_errors/" in admin_conf
-
-
-def test_catchall_default_server(tmp_path: Path) -> None:
-    from pathlib import Path as _P
-
-    bench = _make_bench(tmp_path, _BASE_DATA)
-    conf = NginxConfigRenderer(bench)._render_catchall(80, 443, _P("/usr/share/nginx/bench-error-pages"))
-
-    assert "listen 80 default_server;" in conf
-    assert "server_name _;" in conf
-    assert "error_page 404 /_errors/404.html;" in conf
-    assert "return 404;" in conf
-    assert "alias /usr/share/nginx/bench-error-pages/;" in conf
-    # A 443 default_server is required so https requests for an http-only bench
-    # are rejected instead of falling through to the first TLS vhost.
-    assert "listen 443 ssl http2 default_server;" in conf
-    assert "ssl_reject_handshake on;" in conf
-
-
-def _firewall_data(enabled: bool, default: str, rules: list) -> dict:
-    data = copy.deepcopy(_BASE_DATA)
-    data["firewall"] = {"enabled": enabled, "default": default, "rules": rules}
-    return data
-
-
-def test_firewall_master_switch_off_renders_nothing(tmp_path: Path) -> None:
-    bench = _make_bench(tmp_path, _firewall_data(False, "deny", [{"ip": "1.2.3.4", "action": "deny"}]))
-    assert NginxConfigRenderer(bench)._render_firewall() == ""
-
-
-def test_firewall_blocklist_emits_only_deny(tmp_path: Path) -> None:
-    rules = [{"ip": "203.0.113.4", "action": "deny"}]
-    bench = _make_bench(tmp_path, _firewall_data(True, "allow", rules))
-    out = NginxConfigRenderer(bench)._render_firewall()
-    assert "deny 203.0.113.4;" in out
-    assert "deny all;" not in out  # default allow => no terminal deny
-
-
-def test_firewall_allowlist_emits_allow_then_deny_all(tmp_path: Path) -> None:
-    rules = [{"ip": "203.0.113.4", "action": "allow"}]
-    bench = _make_bench(tmp_path, _firewall_data(True, "deny", rules))
-    out = NginxConfigRenderer(bench)._render_firewall()
-    assert out.index("allow 203.0.113.4;") < out.index("deny all;")
-
-
-def test_firewall_never_blocks_trusted_proxy(tmp_path: Path) -> None:
-    # Even an allowlist and an explicit deny on the proxy IP must not block it:
-    # allow wins as access rules are first-match.
-    rules = [{"ip": "203.0.113.5", "action": "deny"}]
-    bench = _make_bench(tmp_path, _firewall_data(True, "deny", rules))
-    renderer = NginxConfigRenderer(bench)
-    renderer._proxy_servers_cache = ["203.0.113.5"]
-    out = renderer._render_firewall()
-    assert out.index("allow 203.0.113.5;") < out.index("deny 203.0.113.5;")
-    assert out.index("allow 203.0.113.5;") < out.index("deny all;")
-
-
-def test_firewall_appears_in_site_and_admin_blocks(tmp_path: Path) -> None:
-    data = _firewall_data(True, "allow", [{"ip": "203.0.113.4", "action": "deny"}])
-    data["admin"] = {"domain": "admin.example.com"}
-    bench = _make_bench(tmp_path, data)
-    renderer = NginxConfigRenderer(bench)
-    assert "deny 203.0.113.4;" in renderer.generate_site_config(_BASE_SITE, ssl_ready=False)
-    assert "deny 203.0.113.4;" in renderer.generate_admin_config(ssl_ready=False)
-
-
-def test_error_pages_include_403_and_errors_allow_all(tmp_path: Path) -> None:
-    bench = _make_bench(tmp_path, _BASE_DATA)
-    renderer = NginxConfigRenderer(bench)
-    block = renderer._render_error_pages()
-    assert "error_page 403 /_errors/403.html;" in block
-    assert "allow all;" in block  # blocked client can still fetch its 403 page
-
-
 def test_install_config_rolls_back_symlink_when_reload_fails(tmp_path: Path) -> None:
-    """A broken config for one bench must not leave a dangling symlink behind —
-    that breaks the shared nginx.conf test for every other bench on the box."""
     bench = _make_bench(tmp_path, _BASE_DATA)
     manager = NginxManager(bench)
     symlink_path = tmp_path / "test-bench.conf"
@@ -514,7 +402,6 @@ def test_install_config_rolls_back_symlink_when_reload_fails(tmp_path: Path) -> 
 
 
 def test_prune_dangling_symlinks_removes_only_broken_ones(tmp_path: Path) -> None:
-    """Dangling vhost symlinks are pruned before nginx -t."""
     nginx_dir = tmp_path / "conf.d"
     nginx_dir.mkdir()
     target = tmp_path / "real-target.conf"
@@ -531,9 +418,7 @@ def test_prune_dangling_symlinks_removes_only_broken_ones(tmp_path: Path) -> Non
 
 
 def test_config_dir_falls_back_to_platform_default(tmp_path: Path) -> None:
-    """Empty config_dir falls back to the platform default."""
-    bench = _make_bench(tmp_path, _BASE_DATA)
-    manager = NginxManager(bench)
+    manager = NginxManager(_make_bench(tmp_path, _BASE_DATA))
     with patch("pilot.managers.nginx.default_nginx_config_dir", return_value=Path("/etc/nginx/conf.d")):
         assert manager.config_dir == Path("/etc/nginx/conf.d")
 
@@ -541,5 +426,4 @@ def test_config_dir_falls_back_to_platform_default(tmp_path: Path) -> None:
 def test_config_dir_honors_explicit_value(tmp_path: Path) -> None:
     bench = _make_bench(tmp_path, _BASE_DATA)
     bench.config.nginx.config_dir = Path("/custom/nginx/dir")
-    manager = NginxManager(bench)
-    assert manager.config_dir == Path("/custom/nginx/dir")
+    assert NginxManager(bench).config_dir == Path("/custom/nginx/dir")

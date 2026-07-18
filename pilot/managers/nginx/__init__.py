@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from pilot.managers.nginx.certs import cert_files_exist
 from pilot.managers.nginx.error_pages import ERROR_PAGES, render_error_html
 from pilot.managers.nginx.render import NginxConfigRenderer
+from pilot.managers.nginx.waf_render import ModSecurityRenderer
 from pilot.managers.packages import get_package_manager
 from pilot.managers.platform import (
     _privileged,
@@ -48,6 +49,7 @@ class NginxManager:
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
         self._renderer = NginxConfigRenderer(bench)
+        self._modsec = ModSecurityRenderer(bench)
 
     def is_installed(self) -> bool:
         return shutil.which("nginx") is not None
@@ -58,23 +60,18 @@ class NginxManager:
 
     def generate_config(self, ssl_ready: bool = False) -> None:
         nginx_dir = self.bench.config_path / "nginx"
-        sites_dir = nginx_dir / "sites"
-        sites_dir.mkdir(parents=True, exist_ok=True)
+        nginx_dir.mkdir(parents=True, exist_ok=True)
         self._write_error_pages(nginx_dir)
         self._write_waf_files()
         # admin.tls = False makes the whole bench HTTP-only: a central proxy
         # terminates TLS, so neither sites nor the admin serve HTTPS here.
         tls = self.bench.config.admin.tls
-        for site in self.bench.sites():
-            site_ssl_ready = tls and ssl_ready and self.cert_covers(site.config)
-            conf_text = self._renderer.generate_site_config(site.config, site_ssl_ready)
-            (sites_dir / f"{site.config.name}.conf").write_text(conf_text)
-        # The admin is always reached via its (mandatory) domain in production;
-        # nginx forwards that host to the local admin process.
-        if self.bench.config.admin.domain:
-            conf_text = self._renderer.generate_admin_config(ssl_ready, self.has_admin_cert)
-            (sites_dir / "_admin.conf").write_text(conf_text)
-        self._write_include_conf(nginx_dir)
+        sites = [
+            (site.config, tls and ssl_ready and site.config.ssl and self.cert_covers(site.config))
+            for site in self.bench.sites()
+        ]
+        admin_ssl = tls and ssl_ready and self.has_admin_cert
+        (nginx_dir / "include.conf").write_text(self._renderer.generate_bench_config(sites, admin_ssl))
 
     def reload_for_site_change(self) -> None:
         if not self.bench.config.production.enabled or not self.is_installed():
@@ -83,13 +80,6 @@ class NginxManager:
         sys.stdout.flush()
         self.generate_config(ssl_ready=True)
         self.reload()
-
-    def _write_include_conf(self, nginx_dir: Path) -> None:
-        bench_name = self.bench.config.name
-        include_path = nginx_dir / "include.conf"
-        include_path.write_text(
-            self._renderer._render_upstream_block(bench_name) + f"include {nginx_dir}/sites/*.conf;\n"
-        )
 
     def _write_error_pages(self, nginx_dir: Path) -> None:
         error_dir = nginx_dir / "error_pages"
@@ -118,13 +108,7 @@ class NginxManager:
             staged.unlink()
 
         staged = staging / "_catchall.conf"
-        staged.write_text(
-            self._renderer._render_catchall(
-                self.bench.config.nginx.http_port,
-                self.bench.config.nginx.https_port,
-                _SHARED_ERROR_DIR,
-            )
-        )
+        staged.write_text(self._renderer.generate_server_config(_SHARED_ERROR_DIR))
         run_command(_privileged(["cp", str(staged), str(_catchall_conf())]))
         staged.unlink()
 
@@ -140,14 +124,14 @@ class NginxManager:
         waf = self.bench.config.waf
         if not waf.enabled:
             return
-        modsec_dir = self._renderer.modsec_dir()
+        modsec_dir = self._modsec.modsec_dir()
         modsec_dir.mkdir(parents=True, exist_ok=True)
         (self.bench.path / "logs").mkdir(exist_ok=True)
-        (modsec_dir / "modsecurity.conf").write_text(self._renderer._render_modsec_engine(waf))
-        (modsec_dir / "overrides.conf").write_text(self._renderer._render_modsec_overrides(waf))
-        (modsec_dir / "custom_rules.conf").write_text(self._renderer._render_modsec_custom_rules(waf))
-        (modsec_dir / "exclusions.conf").write_text(self._renderer._render_modsec_exclusions(waf))
-        (modsec_dir / "main.conf").write_text(self._renderer._render_modsec_main(modsec_dir))
+        (modsec_dir / "modsecurity.conf").write_text(self._modsec.render_engine(waf))
+        (modsec_dir / "overrides.conf").write_text(self._modsec.render_overrides(waf))
+        (modsec_dir / "custom_rules.conf").write_text(self._modsec.render_custom_rules(waf))
+        (modsec_dir / "exclusions.conf").write_text(self._modsec.render_exclusions(waf))
+        (modsec_dir / "main.conf").write_text(self._modsec.render_main(modsec_dir))
 
     @property
     def config_dir(self) -> Path:

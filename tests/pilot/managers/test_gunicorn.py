@@ -298,10 +298,12 @@ def test_nginx_upstream_uses_gunicorn_bind(tmp_path: Path) -> None:
     )
     bench = Bench(config, tmp_path)
     renderer = NginxConfigRenderer(bench)
+    renderer._proxy_servers_cache = []
 
-    upstream = renderer._render_upstream_block("test-bench")
+    config_text = renderer.generate_bench_config([], admin_ssl=False)
 
-    assert "server 127.0.0.1:9000;" in upstream
+    assert "upstream bench-test-bench {" in config_text
+    assert "server 127.0.0.1:9000;" in config_text
 
 
 def test_toml_writer_includes_gunicorn_section(tmp_path: Path) -> None:

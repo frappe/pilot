@@ -166,8 +166,8 @@ def test_builtin_dns_records_without_provider(tmp_path: Path, monkeypatch) -> No
 
 def test_nginx_gates_tcp_peer_to_provider_proxy_servers(tmp_path: Path, monkeypatch) -> None:
     _install_provider(tmp_path, monkeypatch)
-    config = NginxConfigRenderer(_make_bench(tmp_path)).generate_site_config(
-        SiteConfig(name="site1.example.com", apps=["frappe"]), ssl_ready=False
+    config = NginxConfigRenderer(_make_bench(tmp_path)).generate_bench_config(
+        [(SiteConfig(name="site1.example.com", apps=["frappe"]), False)], admin_ssl=False
     )
 
     assert "set_real_ip_from   203.0.113.10;" in config

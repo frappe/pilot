@@ -36,6 +36,9 @@ markers = [
   "static/dist/**/*",
   "static/dist/index.html",
 ]
+"pilot.managers.nginx" = [
+  "templates/*.template",
+]
 
 [tool.mypy]
 python_version = "3.11"

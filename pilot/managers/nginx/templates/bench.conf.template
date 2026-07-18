@@ -1,0 +1,209 @@
+upstream bench-{{ upstream_name }} {
+    server {{ upstream_server }};
+    keepalive 32;
+}
+
+{% for vhost in vhosts %}
+{% if vhost.ssl %}
+{# HTTP vhost: redirect everything to HTTPS, minus the ACME challenge path #}
+server {
+    listen {{ http_port }};
+    listen [::]:{{ http_port }};
+    server_name {{ vhost.server_name }};
+
+    {# trust known reverse proxies: adopt their client IP, reject direct hits #}
+    {% if proxy_servers %}
+    {% for ip in proxy_servers %}
+    set_real_ip_from   {{ ip }};
+    {% endfor %}
+    real_ip_header     X-Forwarded-For;
+    real_ip_recursive  on;
+    set $bench_from_proxy 0;
+    if ($realip_remote_addr ~ "^({{ proxy_peers }})$") { set $bench_from_proxy 1; }
+    if ($request_uri ~ "^/\.well-known/acme-challenge/") { set $bench_from_proxy 1; }
+    if ($bench_from_proxy = 0) { return 403; }
+
+    {% endif %}
+    {# firewall: first-match allow / deny #}
+    {% if firewall.enabled %}
+    {% for ip in proxy_servers %}
+    allow {{ ip }};
+    {% endfor %}
+    {% for rule in firewall.rules %}
+    {{ rule.action }} {{ rule.ip }};
+    {% endfor %}
+    {% if firewall.default == "deny" %}
+    deny all;
+    {% endif %}
+
+    {% endif %}
+    {# web application firewall #}
+    {% if waf_active %}
+    modsecurity on;
+    modsecurity_rules_file {{ waf_rules_file }};
+
+    {% endif %}
+    location /.well-known/acme-challenge/ {
+        allow all;
+        root {{ acme_root }};
+        try_files $uri =404;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+{% endif %}
+{# main vhost: HTTPS when a cert is ready, plain HTTP otherwise #}
+server {
+    {% if vhost.ssl %}
+    listen {{ https_port }} ssl http2;
+    listen [::]:{{ https_port }} ssl http2;
+    {% else %}
+    listen {{ http_port }};
+    listen [::]:{{ http_port }};
+    {% endif %}
+    server_name {{ vhost.server_name }};
+
+    {# trust known reverse proxies: adopt their client IP, reject direct hits #}
+    {% if proxy_servers %}
+    {% for ip in proxy_servers %}
+    set_real_ip_from   {{ ip }};
+    {% endfor %}
+    real_ip_header     X-Forwarded-For;
+    real_ip_recursive  on;
+    set $bench_from_proxy 0;
+    if ($realip_remote_addr ~ "^({{ proxy_peers }})$") { set $bench_from_proxy 1; }
+    if ($request_uri ~ "^/\.well-known/acme-challenge/") { set $bench_from_proxy 1; }
+    if ($bench_from_proxy = 0) { return 403; }
+
+    {% endif %}
+    {# firewall: first-match allow / deny #}
+    {% if firewall.enabled %}
+    {% for ip in proxy_servers %}
+    allow {{ ip }};
+    {% endfor %}
+    {% for rule in firewall.rules %}
+    {{ rule.action }} {{ rule.ip }};
+    {% endfor %}
+    {% if firewall.default == "deny" %}
+    deny all;
+    {% endif %}
+
+    {% endif %}
+    {# web application firewall #}
+    {% if waf_active %}
+    modsecurity on;
+    modsecurity_rules_file {{ waf_rules_file }};
+
+    {% endif %}
+    {# TLS certificate and protocols #}
+    {% if vhost.ssl %}
+    ssl_certificate     {{ vhost.cert }};
+    ssl_certificate_key {{ vhost.key }};
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache   shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    {% endif %}
+    {# document root #}
+    {% if vhost.kind == "site" %}
+    root {{ sites_root }};
+    client_max_body_size {{ client_max_body_size }};
+
+    {% endif %}
+    {# ACME http-01 challenge, kept reachable so cert issuance never 403s #}
+    {% if not vhost.ssl %}
+    location /.well-known/acme-challenge/ {
+        allow all;
+        root {{ acme_root }};
+        try_files $uri =404;
+    }
+
+    {% endif %}
+    {# custom error pages for nginx-generated errors #}
+    {% for code in error_codes %}
+    error_page {{ code }} /_errors/{{ code }}.html;
+    {% endfor %}
+    location ^~ /_errors/ {
+        internal;
+        allow all;
+        alias {{ error_dir }}/;
+    }
+
+    {% if vhost.kind == "site" %}
+    {# static assets and public files served straight from disk #}
+    location /assets {
+        try_files $uri =404;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location ~ ^/files/.*\.(jpg|jpeg|png|gif|svg|webp|pdf|docx?|xlsx?)$ {
+        root {{ vhost.public_root }};
+        try_files $uri =404;
+    }
+
+    {# realtime (socket.io) #}
+    location /socket.io {
+        proxy_pass         http://127.0.0.1:{{ socketio_port }};
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade $http_upgrade;
+        proxy_set_header   Connection "upgrade";
+        proxy_set_header   X-Frappe-Site-Name {{ vhost.name }};
+        proxy_set_header   Origin $scheme://$http_host;
+        proxy_set_header   Host $host;
+    }
+
+    {# everything else to the app upstream #}
+    location / {
+        {% if vhost.canonical %}
+        if ($host != "{{ vhost.canonical }}") {
+            return 301 $scheme://{{ vhost.canonical }}$request_uri;
+        }
+
+        {% endif %}
+        proxy_pass         http://bench-{{ upstream_name }};
+        proxy_read_timeout 120;
+        proxy_redirect     off;
+        proxy_set_header   Host               $host;
+        proxy_set_header   X-Real-IP          $remote_addr;
+        proxy_set_header   X-Forwarded-For    {% if proxy_servers %}$http_x_forwarded_for{% else %}$proxy_add_x_forwarded_for{% endif %};
+        proxy_set_header   X-Forwarded-Proto  $scheme;
+        proxy_set_header   X-Frappe-Site-Name {{ vhost.name }};
+    }
+
+    {% else %}
+    {# health/bootstrap answered with open CORS regardless of the app #}
+    {% for path in cors_paths %}
+    location = {{ path }} {
+        proxy_pass         http://127.0.0.1:{{ vhost.port }};
+        proxy_read_timeout 120;
+        proxy_redirect     off;
+        proxy_set_header   Host               $host;
+        proxy_set_header   X-Real-IP          $remote_addr;
+        proxy_set_header   X-Forwarded-For    {% if proxy_servers %}$http_x_forwarded_for{% else %}$proxy_add_x_forwarded_for{% endif %};
+        proxy_set_header   X-Forwarded-Proto  $scheme;
+        proxy_hide_header  Access-Control-Allow-Origin;
+        add_header         Access-Control-Allow-Origin * always;
+    }
+
+    {% endfor %}
+    {# everything else to the local admin process #}
+    location / {
+        proxy_pass         http://127.0.0.1:{{ vhost.port }};
+        proxy_read_timeout 120;
+        proxy_redirect     off;
+        proxy_set_header   Host               $host;
+        proxy_set_header   X-Real-IP          $remote_addr;
+        proxy_set_header   X-Forwarded-For    {% if proxy_servers %}$http_x_forwarded_for{% else %}$proxy_add_x_forwarded_for{% endif %};
+        proxy_set_header   X-Forwarded-Proto  $scheme;
+    }
+
+    {% endif %}
+}
+
+{% endfor %}

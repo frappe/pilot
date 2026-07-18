@@ -1,0 +1,27 @@
+server_names_hash_bucket_size 256;
+
+server {
+    listen {{ http_port }} default_server;
+    listen [::]:{{ http_port }} default_server;
+    server_name _;
+
+    {% for code in error_codes %}
+    error_page {{ code }} /_errors/{{ code }}.html;
+    {% endfor %}
+    location ^~ /_errors/ {
+        internal;
+        alias {{ error_dir }}/;
+    }
+
+    location / {
+        return 404;
+    }
+}
+
+server {
+    listen {{ https_port }} ssl http2 default_server;
+    listen [::]:{{ https_port }} ssl http2 default_server;
+    server_name _;
+
+    ssl_reject_handshake on;
+}
