@@ -539,7 +539,6 @@ def toggle_site_expose(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     data = request.get_json(silent=True) or {}
     expose = bool(data.get("expose", False))
-    # Public domain provided by the user (e.g. test.codenetic.online)
     public_domain = (data.get("domain") or "").strip().lower()
     
     if expose and not public_domain:
@@ -550,13 +549,15 @@ def toggle_site_expose(name: str):
     except Exception:
         return error_response("config_unavailable", "Could not read bench config.", 500)
 
-    if not config.cloudflare.api_token or not config.cloudflare.tunnel_token:
-        return error_response("not_configured", "Cloudflare API Token and Tunnel Token must be configured in Pilot first.", 400)
+    has_api_token = bool(config.cloudflare.api_token)
+    has_tunnel_token = bool(config.cloudflare.tunnel_token)
+    cert_path = Path.home() / ".cloudflared" / "cert.pem"
+    has_cert = cert_path.exists()
+
+    if not has_tunnel_token or (not has_api_token and not has_cert):
+        return error_response("not_configured", "Cloudflare Tunnel must be configured first (via API Token or SSO certificate).", 400)
 
     try:
-        import base64
-        import json
-        
         decrypted_token = decrypt(config.cloudflare.tunnel_token)
         decrypted_token = "".join(decrypted_token.split())
         padding = len(decrypted_token) % 4
@@ -567,97 +568,128 @@ def toggle_site_expose(name: str):
         
         account_id = token_data["a"]
         tunnel_id = token_data["t"]
-        api_token = decrypt(config.cloudflare.api_token)
-        api_token = "".join(api_token.split())
+        tunnel_name = config.cloudflare.tunnel_name
         
         bench = Bench(config, bench_root)
         manager = CloudflareTunnelManager(bench)
         
-        # 1. Fetch current ingress configuration
-        url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/cfd_tunnel/{tunnel_id}/configurations"
-        res = manager._api_request(url, api_token)
-        result = res.get("result") or {}
-        config_data = result.get("config") or {}
-        ingress = config_data.get("ingress") or []
-        
-        # The ingress hostname to add/remove is the public domain, not the internal site name.
-        # When removing, fall back to the public_domain provided by the caller.
         hostname_to_use = public_domain if public_domain else name
-        
-        # Filter out any existing rule for this public domain or internal site name
-        ingress = [r for r in ingress if r.get("hostname") not in (hostname_to_use, name)]
-        
-        # 2. Extract Zone ID from the public domain
-        target_for_zone = hostname_to_use if hostname_to_use else name
-        segments = target_for_zone.split(".")
-        if len(segments) >= 2:
-            zone_name = ".".join(segments[-2:])
-        else:
-            zone_name = target_for_zone
-            
-        zones_res = manager._api_request(f"https://api.cloudflare.com/client/v4/zones?name={zone_name}", api_token)
-        if not zones_res.get("result"):
-            return error_response("zone_not_found", f"Zone '{zone_name}' not found on Cloudflare.", 404)
-        zone_id = zones_res["result"][0]["id"]
-        
-        if expose:
-            # Route through Nginx (port 80) so static assets are served correctly.
-            # httpHostHeader rewrites the Host header to the internal site name so
-            # Nginx knows which site vhost to serve.
-            new_rule = {
-                "hostname": hostname_to_use,
-                "service": "http://localhost:80",
-                "originRequest": {
-                    "httpHostHeader": name,
-                    "_pilot_site": name
-                }
-            }
-            if len(ingress) > 0:
-                ingress.insert(len(ingress) - 1, new_rule)
-            else:
-                ingress.append(new_rule)
-                ingress.append({"service": "http_status:404"})
-                
-            # Create/update DNS CNAME record for the public domain
-            records_res = manager._api_request(
-                f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records?name={hostname_to_use}&type=CNAME",
-                api_token
-            )
-            if not records_res.get("result"):
-                manager._api_request(
-                    f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records",
-                    api_token,
-                    method="POST",
-                    body={
-                        "type": "CNAME",
-                        "name": hostname_to_use,
-                        "content": f"{tunnel_id}.cfargotunnel.com",
-                        "ttl": 1,
-                        "proxied": True
-                    }
-                )
-        else:
-            # Delete CNAME record for the public domain
-            records_res = manager._api_request(
-                f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records?name={hostname_to_use}&type=CNAME",
-                api_token
-            )
-            if records_res.get("result"):
-                record_id = records_res["result"][0]["id"]
-                manager._api_request(
-                    f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{record_id}",
-                    api_token,
-                    method="DELETE"
-                )
 
-        # 3. Push updated ingress rules back to Cloudflare
-        config_data["ingress"] = ingress
-        manager._api_request(
-            url,
-            api_token,
-            method="PUT",
-            body={"config": config_data}
-        )
+        if has_api_token:
+            # === API-based flow (unchanged) ===
+            api_token = decrypt(config.cloudflare.api_token)
+            api_token = "".join(api_token.split())
+            
+            url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/cfd_tunnel/{tunnel_id}/configurations"
+            res = manager._api_request(url, api_token)
+            result = res.get("result") or {}
+            config_data = result.get("config") or {}
+            ingress = config_data.get("ingress") or []
+            
+            ingress = [r for r in ingress if r.get("hostname") not in (hostname_to_use, name)]
+            
+            segments = hostname_to_use.split(".")
+            zone_name = ".".join(segments[-2:]) if len(segments) >= 2 else hostname_to_use
+                
+            zones_res = manager._api_request(f"https://api.cloudflare.com/client/v4/zones?name={zone_name}", api_token)
+            if not zones_res.get("result"):
+                return error_response("zone_not_found", f"Zone '{zone_name}' not found on Cloudflare.", 404)
+            zone_id = zones_res["result"][0]["id"]
+            
+            if expose:
+                new_rule = {
+                    "hostname": hostname_to_use,
+                    "service": "http://localhost:80",
+                    "originRequest": {
+                        "httpHostHeader": name,
+                        "_pilot_site": name
+                    }
+                }
+                if len(ingress) > 0:
+                    ingress.insert(len(ingress) - 1, new_rule)
+                else:
+                    ingress.append(new_rule)
+                    ingress.append({"service": "http_status:404"})
+                    
+                records_res = manager._api_request(
+                    f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records?name={hostname_to_use}&type=CNAME",
+                    api_token
+                )
+                if not records_res.get("result"):
+                    manager._api_request(
+                        f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records",
+                        api_token,
+                        method="POST",
+                        body={
+                            "type": "CNAME",
+                            "name": hostname_to_use,
+                            "content": f"{tunnel_id}.cfargotunnel.com",
+                            "ttl": 1,
+                            "proxied": True
+                        }
+                    )
+            else:
+                records_res = manager._api_request(
+                    f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records?name={hostname_to_use}&type=CNAME",
+                    api_token
+                )
+                if records_res.get("result"):
+                    record_id = records_res["result"][0]["id"]
+                    manager._api_request(
+                        f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{record_id}",
+                        api_token,
+                        method="DELETE"
+                    )
+
+            config_data["ingress"] = ingress
+            manager._api_request(url, api_token, method="PUT", body={"config": config_data})
+        else:
+            # === Cert-based flow: update local config.yml + CLI DNS ===
+            import re as _re
+            import shutil
+
+            config_file = Path.home() / ".cloudflared" / f"{config.name}-config.yml"
+            if not config_file.exists():
+                return error_response("config_missing", "Local tunnel config file not found.", 500)
+
+            content = config_file.read_text(encoding="utf-8")
+
+            if expose:
+                # Insert new ingress entry before the catch-all rule
+                new_entry = f"  - hostname: {hostname_to_use}\n    service: http://localhost:80\n    originRequest:\n      httpHostHeader: {name}\n"
+                content = content.replace(
+                    "  - service: http_status:404",
+                    new_entry + "  - service: http_status:404"
+                )
+                config_file.write_text(content, encoding="utf-8")
+
+                # Route DNS via CLI (non-fatal if already exists)
+                cloudflared_path = shutil.which("cloudflared") or str(Path.home() / ".local" / "bin" / "cloudflared")
+                dns_res = subprocess.run(
+                    [cloudflared_path, "tunnel", "route", "dns", tunnel_name, hostname_to_use],
+                    capture_output=True, text=True,
+                )
+                if dns_res.returncode != 0 and "already exists" not in f"{dns_res.stdout}\n{dns_res.stderr}".lower():
+                    return error_response("dns_failed", f"Failed to create DNS record: {dns_res.stdout}\n{dns_res.stderr}", 500)
+            else:
+                # Remove the ingress entry for this hostname
+                lines = content.split("\n")
+                new_lines = []
+                skip_block = False
+                for line in lines:
+                    if _re.match(r'\s*-\s*hostname:\s*' + _re.escape(hostname_to_use), line):
+                        skip_block = True
+                        continue
+                    if skip_block:
+                        if _re.match(r'\s*-\s', line) or (line.strip() == "" and not any(c.isalpha() for c in line)):
+                            skip_block = False
+                        else:
+                            continue
+                    new_lines.append(line)
+                config_file.write_text("\n".join(new_lines), encoding="utf-8")
+
+            # Restart the tunnel service to pick up config changes
+            manager.restart()
         
     except Exception as e:
         return error_response("expose_failed", f"Failed to modify tunnel configuration: {e}", 500)
