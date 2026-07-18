@@ -264,11 +264,12 @@ const loadingZones = ref(false)
 
 async function loadZones() {
   const token = createForm.value.api_token
-  if (!token || token.startsWith('*****')) return
+  if (!token) return
+  const tokenParam = token.startsWith('*****') ? null : token
   
   loadingZones.value = true
   try {
-    const res = await cloudflareApi.getZones(token)
+    const res = await cloudflareApi.getZones(tokenParam)
     if (res.error) {
       toast.error(apiErrorMessage(res, 'Failed to fetch domains from Cloudflare.'))
     } else if (res.zones) {
@@ -285,7 +286,7 @@ async function loadZones() {
 }
 
 watch(() => createForm.value.api_token, (val) => {
-  if (val && !val.startsWith('*****')) {
+  if (val) {
     loadZones()
   }
 })
@@ -331,6 +332,7 @@ async function fetchStatus() {
       }
       if (res.api_token_configured) {
         existingForm.value.api_token = '******************************'
+        createForm.value.api_token = '******************************'
       }
     }
   } catch (err) {

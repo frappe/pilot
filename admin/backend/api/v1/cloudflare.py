@@ -214,6 +214,15 @@ def provision_cloudflare_tunnel():
     api_token = "".join(api_token.split())
     domain_root = domain_root.strip()
 
+    if api_token.startswith("*****") or api_token.startswith("****"):
+        try:
+            store = BenchTomlStore.for_bench(bench_root)
+            config = store.read()
+            if config.cloudflare.api_token:
+                api_token = decrypt(config.cloudflare.api_token)
+        except Exception:
+            pass
+
     if subdomain:
         hostname = f"{subdomain}.{domain_root}"
     else:
