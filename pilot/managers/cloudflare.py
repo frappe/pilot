@@ -487,3 +487,11 @@ WantedBy=default.target
 
         return tunnel_token, hostname
 
+    def delete_tunnel_via_api(self, api_token: str, account_id: str, tunnel_id: str) -> None:
+        """Deletes a Cloudflare Tunnel via API during rollback."""
+        try:
+            url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/cfd_tunnel/{tunnel_id}"
+            self._api_request(url, api_token, method="DELETE")
+        except Exception:
+            pass
+

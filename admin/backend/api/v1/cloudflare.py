@@ -73,7 +73,7 @@ def _start_login_process() -> str:
         start_new_session=True,
     )
 
-    url_holder: list[str] = []
+    _save_login_session("", proc.pid)
 
     def read_output():
         if proc.stdout:
@@ -82,23 +82,22 @@ def _start_login_process() -> str:
                 if "https://" in line:
                     for word in line.split():
                         if word.startswith("https://"):
-                            url_holder.append(word)
+                            _save_login_session(word, proc.pid)
                             return
 
     t = threading.Thread(target=read_output)
     t.daemon = True
     t.start()
 
+    # Non-blocking poll: wait at most 1.5s for initial URL, otherwise return pending
     start_time = time.time()
-    while time.time() - start_time < 8.0:
-        if url_holder:
-            url = url_holder[0]
-            _save_login_session(url, proc.pid)
-            return url
+    while time.time() - start_time < 1.5:
+        session = _read_login_session()
+        if session and session.get("url"):
+            return session["url"]
         time.sleep(0.1)
 
-    _cancel_login_process()
-    raise RuntimeError("Failed to retrieve login URL from cloudflared.")
+    return ""
 
 
 @cloudflare_bp.post("/login/start")
@@ -269,6 +268,7 @@ def provision_cloudflare_tunnel():
     tunnel_name = re.sub(r'[^a-zA-Z0-9-]', '-', vm_hostname)
 
     store = BenchTomlStore.for_bench(bench_root)
+    api_cleanup_info: tuple[str, str, str] | None = None
     try:
         config = store.read()
         bench = Bench(config, bench_root)
@@ -314,6 +314,14 @@ def provision_cloudflare_tunnel():
                 hostname=hostname
             )
 
+            # Extract account_id & tunnel_id for rollback cleanup if subsequent steps fail
+            try:
+                dec_bytes = base64.b64decode(tunnel_token)
+                t_data = json.loads(dec_bytes.decode("utf-8"))
+                api_cleanup_info = (api_token, t_data["a"], t_data["t"])
+            except Exception:
+                pass
+
             # Save token & settings first so store and manager contain valid credentials
             with store.edit() as config:
                 config.cloudflare.enabled = True
@@ -337,7 +345,12 @@ def provision_cloudflare_tunnel():
             manager.start()
         
     except Exception as e:
-        # Clean up any partial service or configuration on failure
+        # Clean up any partial service, remote tunnel, or configuration on failure
+        if api_cleanup_info:
+            try:
+                manager.delete_tunnel_via_api(api_cleanup_info[0], api_cleanup_info[1], api_cleanup_info[2])
+            except Exception:
+                pass
         try:
             manager.remove_service()
             with store.edit() as config:
@@ -419,13 +432,15 @@ def get_site_expose_status(name: str):
             if config_path.exists():
                 content = config_path.read_text(encoding="utf-8")
                 import re
-                for block in content.split("  - hostname:")[1:]:
-                    hostname_match = re.search(r'^\s*(\S+)', block)
-                    header_match = re.search(r'httpHostHeader:\s*(\S+)', block)
-                    if hostname_match:
-                        h = hostname_match.group(1).strip()
-                        hdr = header_match.group(1).strip() if header_match else ""
-                        if hdr == name or h == name:
+                # Match each ingress rule block regardless of leading space indentation
+                for match in re.finditer(r'-\s+hostname:\s*(\S+)(?:(?!-\s+hostname:).)*', content, re.DOTALL):
+                    block = match.group(0)
+                    h_match = re.search(r'hostname:\s*(\S+)', block)
+                    hdr_match = re.search(r'httpHostHeader:\s*(\S+)', block)
+                    if h_match:
+                        h = h_match.group(1).strip()
+                        hdr = hdr_match.group(1).strip() if hdr_match else ""
+                        if (hdr and hdr == name) or (h and h == name):
                             exposed_domain = h
                             break
         
