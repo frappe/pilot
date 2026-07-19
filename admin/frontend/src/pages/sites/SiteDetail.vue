@@ -34,6 +34,10 @@
             <template #prefix><span class="size-4 lucide-plus" /></template>
             Install app
           </Button>
+          <Button size="sm" @click="showCreateApp = true">
+            <template #prefix><span class="size-4 lucide-plus" /></template>
+            Create app
+          </Button>
           <Dropdown :options="menuOptions" placement="bottom-end">
             <template #default="{ open }">
               <Button variant="subtle" size="sm" :active="open">
@@ -55,6 +59,8 @@
     <SiteSettings v-else-if="activeTab === 'settings'" :site-name="siteName" />
   </div>
 
+  <CreateAppDialog v-model:open="showCreateApp" :site-name="siteName" />
+
   <Teleport defer to="#header-actions">
     <Button variant="subtle" size="sm" @click="openSite">
       <template #prefix><span class="size-4 lucide-external-link" /></template>
@@ -69,6 +75,7 @@ import { computed, onMounted, onUnmounted, ref, watch, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Badge, Button, Dropdown, ErrorMessage, LoadingText, TabButtons, toast } from 'frappe-ui'
 import UpdatesAvailableButton from '@/components/common/UpdatesAvailableButton.vue'
+import CreateAppDialog from '@/components/apps/CreateAppDialog.vue'
 import SiteApps from '@/components/sites/Apps.vue'
 import SiteBackups from '@/components/sites/Backups.vue'
 import SiteConfig from '@/components/sites/Config.vue'
@@ -83,6 +90,7 @@ import { openTaskDetailPage } from '@/utils/taskRoute'
 const route = useRoute()
 const router = useRouter()
 const siteName = route.params.name
+const showCreateApp = ref(false)
 
 const { setBreadcrumbs } = useBreadcrumbs()
 const { site, loading, error, status, load, login, backup } = useSite(siteName)
@@ -151,7 +159,10 @@ async function backupNow() {
 }
 
 const menuOptions = computed(() => [
-  ...(isMobile.value ? [{ label: 'Install app', icon: 'lucide-plus', onClick: goToMarketplace }] : []),
+  ...(isMobile.value ? [
+    { label: 'Install app', icon: 'lucide-plus', onClick: goToMarketplace },
+    { label: 'Create app', icon: 'lucide-plus', onClick: () => showCreateApp.value = true }
+  ] : []),
   { label: 'Login as admin', icon: 'lucide-log-in', onClick: loginAsAdmin },
   { label: 'Back up now', icon: 'lucide-archive', onClick: backupNow },
 ])

@@ -21,6 +21,11 @@
           <template #prefix><GithubMark class="size-4" /></template>
           Import app
         </Button>
+
+        <Button variant="solid" @click="$emit('create-app')">
+          <template #prefix><span class="size-4 lucide-plus" /></template>
+          Create app
+        </Button>
       </div>
     </div>
 
@@ -46,7 +51,7 @@ import { PILLS } from '@/utils/marketplaceCategories'
 const props = defineProps({
   worksWithOptions: { type: Array, default: () => [] },
 })
-defineEmits(['add-from-github'])
+defineEmits(['add-from-github', 'create-app'])
 
 const searchModel = defineModel('search', { type: String })
 const pillModel = defineModel('pill', { type: String })

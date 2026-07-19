@@ -15,4 +15,5 @@ export const appsApi = {
   installed: () => getOrThrow('apps'),
   fetchUpdates: () => request.post('apps/fetch').json(),
   add: (payload) => request.post('apps', { json: payload }).json(),
+  create: (payload) => request.post('apps/create', { json: payload }).json(),
 }

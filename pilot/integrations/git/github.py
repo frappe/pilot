@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import urllib.error
 import urllib.request
 
@@ -99,3 +100,24 @@ class GitHubProvider(GitProvider):
             raise GitProviderError(f"HTTP {exc.code} reading {path}.") from exc
         except urllib.error.URLError as exc:
             raise GitProviderError(f"Could not reach GitHub: {exc.reason}.") from exc
+
+    def create_repo(self, name: str, description: str, private: bool) -> dict:
+        url = f"{self.api_base}/user/repos"
+        body = {
+            "name": name,
+            "description": description,
+            "private": private,
+            "auto_init": False
+        }
+        req = urllib.request.Request(url, method="POST", headers=self._headers())
+        try:
+            with urllib.request.urlopen(req, data=json.dumps(body).encode("utf-8"), timeout=15) as resp:
+                return json.loads(resp.read().decode())
+        except urllib.error.HTTPError as exc:
+            err_msg = exc.read().decode("utf-8")
+            if exc.code in (401, 403):
+                raise GitAuthError(f"Access denied creating repository: {err_msg}") from exc
+            raise GitProviderError(f"HTTP {exc.code} creating repository: {err_msg}") from exc
+        except urllib.error.URLError as exc:
+            raise GitProviderError(f"Could not reach GitHub: {exc.reason}.") from exc
+

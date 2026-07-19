@@ -29,7 +29,7 @@
 
     <!-- Filters -->
     <MarketplaceFilters v-model:search="search" v-model:pill="selectedPill" v-model:works-with="worksWith"
-      :works-with-options="worksWithOptions" @add-from-github="showAddFromGithub = true" />
+      :works-with-options="worksWithOptions" @add-from-github="showAddFromGithub = true" @create-app="showCreateApp = true" />
 
     <!-- Loading -->
     <div v-if="loading || error" class="flex flex-row justify-center items-center w-full h-[250px]">
@@ -83,6 +83,7 @@
   <ChooseSiteDialog v-model:open="showChooseSite" v-model:site="currentSiteName" :sites="sites" />
   <InstallAppDialog v-model:open="showInstallApp" :app="installTarget" :sites="sites" :site-name="currentSiteName" />
   <AddAppFromGithubDialog v-model:open="showAddFromGithub" />
+  <CreateAppDialog v-model:open="showCreateApp" :site-name="currentSiteName" />
 </template>
 
 <script setup>
@@ -90,6 +91,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ErrorMessage, LoadingText } from 'frappe-ui'
 import AddAppFromGithubDialog from '@/components/apps/AddAppFromGithubDialog.vue'
+import CreateAppDialog from '@/components/apps/CreateAppDialog.vue'
 import ChooseSiteDialog from '@/components/sites/ChooseSiteDialog.vue'
 import InstallAppDialog from '@/components/apps/InstallAppDialog.vue'
 import MarketplaceAppCard from '@/components/marketplace/MarketplaceAppCard.vue'
@@ -128,6 +130,7 @@ const filteredHeading = computed(() => {
 const showChooseSite = ref(false)
 const showInstallApp = ref(false)
 const showAddFromGithub = ref(false)
+const showCreateApp = ref(false)
 const installTarget = ref(null)
 
 function onInstall(app) {

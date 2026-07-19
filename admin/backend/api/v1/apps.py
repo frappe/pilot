@@ -116,6 +116,45 @@ def _queue_install_task(bench_root: Path, task_args: dict, sites: list[str]) -> 
     )
 
 
+@apps_bp.post("/create")
+def create_app():
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response("malformed_request", "Expected a JSON object.", 400)
+        
+    name = (data.get("name") or "").strip()
+    if not name:
+        return error_response("invalid_app", "App name is required.", 422)
+        
+    err = validate_app_name(name)
+    if err:
+        return error_response("invalid_app", err, 422)
+        
+    if (bench_root / "apps" / name).exists():
+        return error_response("app_already_exists", f"'{name}' already exists in bench.", 409)
+        
+    task_args = {
+        "name": name,
+        "title": (data.get("title") or "").strip(),
+        "description": (data.get("description") or "").strip(),
+        "publisher": (data.get("publisher") or "").strip(),
+        "email": (data.get("email") or "").strip(),
+        "app_license": (data.get("app_license") or "mit").strip(),
+        "create_github_repo": bool(data.get("create_github_repo", False)),
+        "github_repo_private": bool(data.get("github_repo_private", False)),
+        "sites": data.get("sites") or []
+    }
+    
+    try:
+        task_id = TaskRunner(bench_root).run("create-app", task_args)
+    except Exception as e:
+        return error_response("app_creation_failed", f"Could not start app creation: {e}", 500)
+        
+    return accepted_task_response(bench_root, task_id)
+
+
+
 @apps_bp.get("/<name>")
 def detail(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
