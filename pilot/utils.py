@@ -266,9 +266,8 @@ def _get_machine_id() -> bytes:
         fallback_path.write_bytes(key)
         fallback_path.chmod(0o600)
         return key
-    except Exception:
-        # Absolute last resort fallback
-        return b"pilot-fallback-secret-key-salt"
+    except Exception as e:
+        raise RuntimeError(f"Failed to read machine-id and unable to securely generate/persist a fallback secret key: {e}")
 
 
 def encrypt(plain_text: str) -> str:
@@ -308,7 +307,7 @@ def decrypt(cipher_text: str) -> str:
             salt_hex, iter_str, b64_cipher = parts
             iterations = int(iter_str)
         else:
-            return cipher_text
+            raise ValueError("Invalid ciphertext format")
 
         salt = bytes.fromhex(salt_hex)
         cipher_bytes = base64.b64decode(b64_cipher)
@@ -317,6 +316,6 @@ def decrypt(cipher_text: str) -> str:
         keystream = hashlib.pbkdf2_hmac("sha256", machine_id, salt, iterations, dklen=len(cipher_bytes))
         plain_bytes = bytes(a ^ b for a, b in zip(cipher_bytes, keystream))
         return plain_bytes.decode("utf-8")
-    except Exception:
-        return cipher_text
+    except Exception as e:
+        raise ValueError(f"Decryption failed: {e}")
 
