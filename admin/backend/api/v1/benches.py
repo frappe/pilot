@@ -193,6 +193,15 @@ def setup_production_bench(name: str):
             "invalid_admin_domain", f"'{admin_domain}' is not a valid hostname.", 422
         )
 
+    from pilot.utils import host_owner
+    owner = host_owner(target_dir, admin_domain)
+    if owner:
+        return error_response(
+            "admin_domain_conflict",
+            f"Admin domain '{admin_domain}' is already used by bench '{owner}'.",
+            409,
+        )
+
     tls = data.get("tls")
     letsencrypt_email = data.get("letsencrypt_email")
 
