@@ -132,6 +132,8 @@ WantedBy=default.target
             raise BenchError(f"Invalid hostname '{hostname}' for Cloudflare tunnel configuration.")
         if not re.fullmatch(r"^[a-zA-Z0-9._-]+$", tunnel_id):
             raise BenchError(f"Invalid tunnel_id '{tunnel_id}'.")
+        if not re.fullmatch(r"^[a-zA-Z0-9._-]+$", tunnel_name):
+            raise BenchError(f"Invalid tunnel_name '{tunnel_name}'.")
 
         self.install()
 

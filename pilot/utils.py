@@ -259,6 +259,7 @@ def _get_machine_id() -> bytes:
 def encrypt(plain_text: str) -> str:
     import base64
     import hashlib
+    import hmac
     import os
 
     if not plain_text:
@@ -268,16 +269,22 @@ def encrypt(plain_text: str) -> str:
     salt = os.urandom(16)
     iterations = 600000
     data_bytes = plain_text.encode("utf-8")
-    keystream = hashlib.pbkdf2_hmac("sha256", machine_id, salt, iterations, dklen=len(data_bytes))
-    cipher_bytes = bytes(a ^ b for a, b in zip(data_bytes, keystream))
     
-    # Store iterations in the ciphertext payload for future-proofing
-    return f"{salt.hex()}:{iterations}:{base64.b64encode(cipher_bytes).decode('utf-8')}"
+    # Derive key material: dklen = len(data_bytes) + 32 (keystream + 32-byte HMAC key)
+    key_material = hashlib.pbkdf2_hmac("sha256", machine_id, salt, iterations, dklen=len(data_bytes) + 32)
+    keystream = key_material[:len(data_bytes)]
+    mac_key = key_material[len(data_bytes):]
+    
+    cipher_bytes = bytes(a ^ b for a, b in zip(data_bytes, keystream))
+    mac_tag = hmac.new(mac_key, cipher_bytes, hashlib.sha256).digest()
+    
+    return f"{salt.hex()}:{iterations}:{base64.b64encode(cipher_bytes).decode('utf-8')}:{base64.b64encode(mac_tag).decode('utf-8')}"
 
 
 def decrypt(cipher_text: str) -> str:
     import base64
     import hashlib
+    import hmac
 
     if not cipher_text:
         return ""
@@ -286,12 +293,17 @@ def decrypt(cipher_text: str) -> str:
         
     try:
         parts = cipher_text.split(":")
+        mac_tag_expected = None
         if len(parts) == 2:
             salt_hex, b64_cipher = parts
             iterations = 1000  # Legacy tokens
         elif len(parts) == 3:
             salt_hex, iter_str, b64_cipher = parts
             iterations = int(iter_str)
+        elif len(parts) == 4:
+            salt_hex, iter_str, b64_cipher, b64_mac = parts
+            iterations = int(iter_str)
+            mac_tag_expected = base64.b64decode(b64_mac)
         else:
             raise ValueError("Invalid ciphertext format")
 
@@ -299,7 +311,15 @@ def decrypt(cipher_text: str) -> str:
         cipher_bytes = base64.b64decode(b64_cipher)
         machine_id = _get_machine_id()
 
-        keystream = hashlib.pbkdf2_hmac("sha256", machine_id, salt, iterations, dklen=len(cipher_bytes))
+        key_material = hashlib.pbkdf2_hmac("sha256", machine_id, salt, iterations, dklen=len(cipher_bytes) + 32)
+        keystream = key_material[:len(cipher_bytes)]
+        mac_key = key_material[len(cipher_bytes):]
+
+        if mac_tag_expected is not None:
+            mac_tag_actual = hmac.new(mac_key, cipher_bytes, hashlib.sha256).digest()
+            if not hmac.compare_digest(mac_tag_actual, mac_tag_expected):
+                raise ValueError("Integrity check failed: invalid HMAC signature")
+
         plain_bytes = bytes(a ^ b for a, b in zip(cipher_bytes, keystream))
         return plain_bytes.decode("utf-8")
     except Exception as e:
