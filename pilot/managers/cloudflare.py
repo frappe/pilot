@@ -17,8 +17,18 @@ from pilot.exceptions import BenchError
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
-_CLOUDFLARED_URL = "https://github.com/cloudflare/cloudflared/releases/download/2026.7.2/cloudflared-linux-amd64"
-_CLOUDFLARED_SHA256 = "ec905ea7b7e327ff8abdde8cb64697a2152de74dbcdbf6aec9db8364eb3886cd"
+import platform as _platform
+_CLOUDFLARED_VERSION = "2026.7.2"
+_CLOUDFLARED_ASSETS: dict[str, tuple[str, str]] = {
+    "x86_64":  (f"https://github.com/cloudflare/cloudflared/releases/download/{_CLOUDFLARED_VERSION}/cloudflared-linux-amd64",
+                "ec905ea7b7e327ff8abdde8cb64697a2152de74dbcdbf6aec9db8364eb3886cd"),
+    "aarch64": (f"https://github.com/cloudflare/cloudflared/releases/download/{_CLOUDFLARED_VERSION}/cloudflared-linux-arm64",
+                "<arm64-sha256-here>"),
+}
+_machine = _platform.machine()
+if _machine not in _CLOUDFLARED_ASSETS:
+    raise RuntimeError(f"Unsupported architecture for cloudflared auto-install: {_machine}")
+_CLOUDFLARED_URL, _CLOUDFLARED_SHA256 = _CLOUDFLARED_ASSETS[_machine]
 
 class CloudflareTunnelManager:
     def __init__(self, bench: Bench) -> None:
