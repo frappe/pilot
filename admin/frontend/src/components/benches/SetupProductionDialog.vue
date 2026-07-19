@@ -46,7 +46,9 @@ async function loadWildcardDomains() {
 
 watch([adminPrefix, selectedSuffix], () => {
   if (wildcardDomains.value.length > 0) {
-    adminDomain.value = `${adminPrefix.value.trim()}${selectedSuffix.value}`
+    adminDomain.value = adminPrefix.value.trim()
+      ? `${adminPrefix.value.trim()}${selectedSuffix.value}`
+      : ''
   }
 })
 
@@ -63,6 +65,10 @@ watch(show, (open) => {
 })
 
 async function submit() {
+  if (wildcardDomains.value.length > 0 && !adminPrefix.value.trim()) {
+    error.value = 'Admin domain prefix is required.'
+    return
+  }
   const domain = adminDomain.value.trim()
   if (!domain) {
     error.value = 'Admin domain is required.'
@@ -165,7 +171,7 @@ async function submit() {
     <template #actions>
       <div class="flex justify-end gap-2">
         <Button variant="ghost" @click="show = false">Cancel</Button>
-        <Button variant="solid" :loading="submitting" @click="submit" :disabled="!adminDomain">Configure Production</Button>
+        <Button variant="solid" :loading="submitting" @click="submit" :disabled="!adminDomain || (wildcardDomains.length > 0 && !adminPrefix.trim())">Configure Production</Button>
       </div>
     </template>
   </Dialog>
