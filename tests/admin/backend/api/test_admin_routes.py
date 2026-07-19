@@ -5,10 +5,10 @@ from admin.backend.api.routes import API_ROOT_PREFIX, API_V1_PREFIX
 from admin.backend.app import create_app
 from admin.backend.middleware import AuthPolicy, get_auth_policy
 
+
 SITE_SCOPED_ENDPOINTS = {
     "sites.add_domain",
     "sites.backup_site",
-    "sites.central_proxy",
     "sites.clear_cache",
     "sites.delete_backup_schedule",
     "sites.backup_download_links",
@@ -60,27 +60,31 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         for rule in app.url_map.iter_rules()
         if rule.rule.startswith(API_V1_PREFIX)
     ]
-    areas = [path.removeprefix(f"{API_V1_PREFIX}/").split("/", 1)[0] for _, path, _, _ in routes]
+    areas = [
+        path.removeprefix(f"{API_V1_PREFIX}/").split("/", 1)[0]
+        for _, path, _, _ in routes
+    ]
     unversioned = [
         rule.rule
         for rule in app.url_map.iter_rules()
-        if rule.rule.startswith(f"{API_ROOT_PREFIX}/") and not rule.rule.startswith(f"{API_V1_PREFIX}/")
+        if rule.rule.startswith(f"{API_ROOT_PREFIX}/")
+        and not rule.rule.startswith(f"{API_V1_PREFIX}/")
     ]
 
-    assert len(routes) == 101
+    assert len(routes) == 107
     assert unversioned == []
-    assert len({(method, path) for method, path, _, _ in routes}) == 101
+    assert len({(method, path) for method, path, _, _ in routes}) == 107
     assert Counter(method for method, _, _, _ in routes) == {
         "DELETE": 10,
-        "GET": 51,
-        "PATCH": 4,
-        "POST": 33,
+        "GET": 53,
+        "PATCH": 5,
+        "POST": 36,
         "PUT": 3,
     }
     assert Counter(policy for _, _, _, policy in routes) == {
-        "authenticated": 53,
-        "authenticated+bench-management": 9,
-        "authenticated+site-scope": 28,
+        "authenticated": 60,
+        "authenticated+bench-management": 10,
+        "authenticated+site-scope": 26,
         "open": 5,
         "setup-conditional": 6,
     }
@@ -90,7 +94,8 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         "app-updates": 1,
         "audit-events": 1,
         "bench-readiness-checks": 1,
-        "benches": 8,
+        "benches": 9,
+        "cloudflare": 7,
         "cli-update-checks": 1,
         "cli-updates": 1,
         "database": 3,
@@ -104,7 +109,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         "runtime": 4,
         "settings": 2,
         "setup": 6,
-        "sites": 31,
+        "sites": 29,
         "ssh-keys": 3,
         "metrics": 1,
         "session": 3,
@@ -123,6 +128,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         ("POST", "/api/v1/benches/<name>/actions/start"),
         ("POST", "/api/v1/benches/<name>/actions/stop"),
         ("POST", "/api/v1/benches/<name>/actions/restart"),
+        ("POST", "/api/v1/benches/<name>/actions/setup-production"),
         ("GET", "/api/v1/benches/domain-options"),
         ("POST", "/api/v1/bench-readiness-checks"),
     } <= route_keys
@@ -164,8 +170,6 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         ("GET", "/api/v1/sites/<name>/backup-schedule"),
         ("PUT", "/api/v1/sites/<name>/backup-schedule"),
         ("DELETE", "/api/v1/sites/<name>/backup-schedule"),
-        ("GET", "/api/v1/sites/<name>/central/<path:method_path>"),
-        ("POST", "/api/v1/sites/<name>/central/<path:method_path>"),
     } <= route_keys
     assert {
         ("GET", "/api/v1/tasks"),
@@ -223,8 +227,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
     assert not {
         path
         for _, path, _, _ in routes
-        if path
-        in {
+        if path in {
             "/api/v1/tasks/",
             "/api/v1/tasks/run",
             "/api/v1/tasks/<task_id>/kill",

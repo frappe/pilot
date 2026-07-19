@@ -56,5 +56,9 @@ export function useBenches() {
     return run(name, () => benchesApi.drop(name))
   }
 
-  return { benches, loading, controlLoading, error, load, control, drop }
+  function setupProduction(name, payload) {
+    return run(name, () => benchesApi.setupProduction(name, payload))
+  }
+
+  return { benches, loading, controlLoading, error, load, control, drop, setupProduction }
 }
