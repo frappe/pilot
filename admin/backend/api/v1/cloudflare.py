@@ -666,7 +666,7 @@ def toggle_site_expose(name: str):
                 # Route DNS via CLI (non-fatal if already exists)
                 cloudflared_path = shutil.which("cloudflared") or str(Path.home() / ".local" / "bin" / "cloudflared")
                 dns_res = subprocess.run(
-                    [cloudflared_path, "tunnel", "route", "dns", tunnel_name, hostname_to_use],
+                    [cloudflared_path, "tunnel", "route", "dns", "--overwrite-dns", tunnel_name, hostname_to_use],
                     capture_output=True, text=True,
                 )
                 if dns_res.returncode != 0 and "already exists" not in f"{dns_res.stdout}\n{dns_res.stderr}".lower():

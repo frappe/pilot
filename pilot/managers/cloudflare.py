@@ -408,7 +408,7 @@ WantedBy=default.target
 
         # Step 3: Route DNS (non-fatal if record already exists)
         dns_res = subprocess.run(
-            [cloudflared_path, "tunnel", "route", "dns", tunnel_name, hostname],
+            [cloudflared_path, "tunnel", "route", "dns", "--overwrite-dns", tunnel_name, hostname],
             capture_output=True,
             text=True,
         )
