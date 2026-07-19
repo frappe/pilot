@@ -18,17 +18,27 @@ if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
 import platform as _platform
+
 _CLOUDFLARED_VERSION = "2026.7.2"
 _CLOUDFLARED_ASSETS: dict[str, tuple[str, str]] = {
-    "x86_64":  (f"https://github.com/cloudflare/cloudflared/releases/download/{_CLOUDFLARED_VERSION}/cloudflared-linux-amd64",
-                "ec905ea7b7e327ff8abdde8cb64697a2152de74dbcdbf6aec9db8364eb3886cd"),
-    "aarch64": (f"https://github.com/cloudflare/cloudflared/releases/download/{_CLOUDFLARED_VERSION}/cloudflared-linux-arm64",
-                "<arm64-sha256-here>"),
+    "x86_64": (
+        f"https://github.com/cloudflare/cloudflared/releases/download/{_CLOUDFLARED_VERSION}/cloudflared-linux-amd64",
+        "ec905ea7b7e327ff8abdde8cb64697a2152de74dbcdbf6aec9db8364eb3886cd",
+    ),
+    "amd64": (
+        f"https://github.com/cloudflare/cloudflared/releases/download/{_CLOUDFLARED_VERSION}/cloudflared-linux-amd64",
+        "ec905ea7b7e327ff8abdde8cb64697a2152de74dbcdbf6aec9db8364eb3886cd",
+    ),
+    "aarch64": (
+        f"https://github.com/cloudflare/cloudflared/releases/download/{_CLOUDFLARED_VERSION}/cloudflared-linux-arm64",
+        "405df476437e027fc6d18729a5a77155c0a33a6082aeee60a799a688f3052e66",
+    ),
+    "arm64": (
+        f"https://github.com/cloudflare/cloudflared/releases/download/{_CLOUDFLARED_VERSION}/cloudflared-linux-arm64",
+        "405df476437e027fc6d18729a5a77155c0a33a6082aeee60a799a688f3052e66",
+    ),
 }
-_machine = _platform.machine()
-if _machine not in _CLOUDFLARED_ASSETS:
-    raise RuntimeError(f"Unsupported architecture for cloudflared auto-install: {_machine}")
-_CLOUDFLARED_URL, _CLOUDFLARED_SHA256 = _CLOUDFLARED_ASSETS[_machine]
+
 
 class CloudflareTunnelManager:
     def __init__(self, bench: Bench) -> None:
@@ -52,6 +62,12 @@ class CloudflareTunnelManager:
         if self.is_installed():
             return
 
+        machine = _platform.machine().lower()
+        if machine not in _CLOUDFLARED_ASSETS:
+            raise BenchError(f"Auto-installation of cloudflared is not supported on architecture '{machine}'. Please install cloudflared manually.")
+
+        download_url, expected_sha256 = _CLOUDFLARED_ASSETS[machine]
+
         # Download the binary to ~/.local/bin/cloudflared
         bin_dir = Path.home() / ".local" / "bin"
         bin_dir.mkdir(parents=True, exist_ok=True)
@@ -59,7 +75,7 @@ class CloudflareTunnelManager:
 
         try:
             import hashlib
-            urllib.request.urlretrieve(_CLOUDFLARED_URL, dest)
+            urllib.request.urlretrieve(download_url, dest)
             
             # Verify the downloaded binary hash
             hasher = hashlib.sha256()
@@ -67,9 +83,9 @@ class CloudflareTunnelManager:
                 for chunk in iter(lambda: f.read(4096), b""):
                     hasher.update(chunk)
             
-            if hasher.hexdigest() != _CLOUDFLARED_SHA256:
+            if hasher.hexdigest() != expected_sha256:
                 dest.unlink(missing_ok=True)
-                raise BenchError(f"Checksum mismatch for cloudflared binary. Expected {_CLOUDFLARED_SHA256}, got {hasher.hexdigest()}")
+                raise BenchError(f"Checksum mismatch for cloudflared binary. Expected {expected_sha256}, got {hasher.hexdigest()}")
                 
             dest.chmod(0o755)
         except Exception as e:
