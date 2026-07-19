@@ -314,6 +314,12 @@ def provision_cloudflare_tunnel():
                 hostname=hostname
             )
         
+            # Configure ingress routing via Cloudflare API BEFORE setting up service
+            manager.update_ingress_rule(
+                hostname=domain,
+                local_service=f"http://localhost:{config.admin.internal_port}"
+            )
+
             # Save token & settings
             with store.edit() as config:
                 config.cloudflare.enabled = True
@@ -322,20 +328,22 @@ def provision_cloudflare_tunnel():
                 config.cloudflare.tunnel_token = encrypt(tunnel_token)
                 config.cloudflare.api_token = encrypt(api_token)
                 
-            # Start the service with token
+            # Set up and start the background daemon service
             manager.setup_service(tunnel_token)
             manager.start()
-            
-            # Configure routing via Cloudflare API
-            config = store.read()
-            bench = Bench(config, bench_root)
-            manager = CloudflareTunnelManager(bench)
-            manager.update_ingress_rule(
-                hostname=domain,
-                local_service=f"http://localhost:{config.admin.internal_port}"
-            )
         
     except Exception as e:
+        # Clean up any partial service or configuration on failure
+        try:
+            manager.remove_service()
+            with store.edit() as config:
+                config.cloudflare.enabled = False
+                config.cloudflare.tunnel_name = ""
+                config.cloudflare.domain = ""
+                config.cloudflare.tunnel_token = ""
+                config.cloudflare.api_token = ""
+        except Exception:
+            pass
         return error_response("provisioning_failed", f"Failed to provision tunnel: {e}", 500)
 
     return jsonify({"success": True})
