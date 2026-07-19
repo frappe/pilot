@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import base64
 import json
+import os
+import signal
 import subprocess
 import threading
 import time
@@ -17,201 +19,86 @@ from pilot.utils import encrypt, decrypt
 cloudflare_bp = Blueprint("cloudflare", __name__)
 
 
-@cloudflare_bp.get("")
-def get_cloudflare_status():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+def _get_login_session_file() -> Path:
+    dir_path = Path.home() / ".cloudflared"
+    dir_path.mkdir(parents=True, exist_ok=True)
+    return dir_path / "login_session.json"
+
+
+def _save_login_session(url: str, pid: int) -> None:
+    session_file = _get_login_session_file()
+    fd = os.open(str(session_file), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(json.dumps({"url": url, "pid": pid, "created_at": time.time()}))
+
+
+def _read_login_session() -> dict | None:
+    session_file = _get_login_session_file()
+    if not session_file.exists():
+        return None
     try:
-        config = BenchTomlStore.for_bench(bench_root).read()
+        return json.loads(session_file.read_text(encoding="utf-8"))
     except Exception:
-        return error_response("config_unavailable", "Could not read bench config.", 500)
-
-    bench = Bench(config, bench_root)
-    manager = CloudflareTunnelManager(bench)
-    
-    return jsonify({
-        "status": manager.status(),
-        "enabled": config.cloudflare.enabled,
-        "tunnel_name": config.cloudflare.tunnel_name,
-        "domain": config.cloudflare.domain,
-        "token_configured": bool(config.cloudflare.tunnel_token),
-        "api_token_configured": bool(config.cloudflare.api_token),
-        "cert_configured": (Path.home() / ".cloudflared" / "cert.pem").exists()
-    })
+        return None
 
 
-@cloudflare_bp.patch("")
-def update_cloudflare_settings():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return error_response("malformed_request", "Expected a JSON object.", 400)
-
-    store = BenchTomlStore.for_bench(bench_root)
-    try:
-        with store.edit() as config:
-            cf = config.cloudflare
-            if "enabled" in data:
-                cf.enabled = bool(data["enabled"])
-            if "tunnel_name" in data:
-                cf.tunnel_name = str(data["tunnel_name"]).strip()
-            if "domain" in data:
-                cf.domain = str(data["domain"]).strip()
-            if "tunnel_token" in data:
-                token = str(data["tunnel_token"]).strip()
-                if token and not token.startswith("*****"):
-                    cf.tunnel_token = encrypt(token)
-            if "api_token" in data:
-                api_token = str(data["api_token"]).strip()
-                if api_token and not api_token.startswith("*****"):
-                    cf.api_token = encrypt(api_token)
-    except Exception as e:
-        return error_response("update_failed", f"Failed to save settings: {e}", 500)
-
-    # Apply configuration (enable/disable systemd service)
-    try:
-        config = store.read()
-        bench = Bench(config, bench_root)
-        manager = CloudflareTunnelManager(bench)
-        
-        if config.cloudflare.enabled:
-            if not config.cloudflare.tunnel_token:
-                return error_response("missing_token", "Cannot enable tunnel without a token.", 400)
-            
-            decrypted_token = decrypt(config.cloudflare.tunnel_token)
-            manager.setup_service(decrypted_token)
-            manager.start()
-            
-            if config.cloudflare.domain:
-                manager.update_ingress_rule(
-                    hostname=config.cloudflare.domain,
-                    local_service=f"http://localhost:{config.admin.internal_port}"
-                )
-        else:
-            manager.stop()
-    except Exception as e:
-        return error_response("apply_failed", f"Settings saved, but failed to apply to service: {e}", 500)
+def _cancel_login_process() -> None:
+    session = _read_login_session()
+    session_file = _get_login_session_file()
+    if session and "pid" in session:
+        pid = session["pid"]
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+    if session_file.exists():
+        try:
+            session_file.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
-    return jsonify({"success": True})
+def _start_login_process() -> str:
+    _cancel_login_process()
 
-
-@cloudflare_bp.delete("")
-def delete_cloudflare_tunnel():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
-    store = BenchTomlStore.for_bench(bench_root)
-    try:
-        config = store.read()
-        bench = Bench(config, bench_root)
-        manager = CloudflareTunnelManager(bench)
-        
-        # 1. Stop and remove systemd service
-        manager.remove_service()
-        
-        # 2. Attempt to delete from Cloudflare if API token is configured
-        if config.cloudflare.api_token and config.cloudflare.tunnel_token:
-            try:
-                api_token = decrypt(config.cloudflare.api_token)
-                api_token = "".join(api_token.split())
-                
-                decrypted_token = decrypt(config.cloudflare.tunnel_token)
-                decrypted_token = "".join(decrypted_token.split())
-                padding = len(decrypted_token) % 4
-                if padding:
-                    decrypted_token += "=" * (4 - padding)
-                token_bytes = base64.b64decode(decrypted_token)
-                token_data = json.loads(token_bytes.decode("utf-8"))
-                
-                account_id = token_data["a"]
-                tunnel_id = token_data["t"]
-                
-                # Delete tunnel from Cloudflare
-                manager._api_request(
-                    f"https://api.cloudflare.com/client/v4/accounts/{account_id}/cfd_tunnel/{tunnel_id}",
-                    api_token,
-                    method="DELETE"
-                )
-            except Exception:
-                pass
-        
-        # 3. Clear configuration in bench.toml
-        with store.edit() as config:
-            config.cloudflare.enabled = False
-            config.cloudflare.tunnel_name = ""
-            config.cloudflare.domain = ""
-            config.cloudflare.tunnel_token = ""
-            config.cloudflare.api_token = ""
-            
-    except Exception as e:
-        return error_response("delete_failed", f"Failed to delete tunnel configuration: {e}", 500)
-    
-    return jsonify({"success": True})
-
-
-_login_processes: dict[str, subprocess.Popen] = {}
-_login_urls: dict[str, str] = {}
-
-
-def _start_login_process(bench_root: Path):
-    global _login_processes, _login_urls
-    
-    _cancel_login_process(bench_root)
-    
     import shutil
     cloudflared_path = shutil.which("cloudflared") or str(Path.home() / ".local" / "bin" / "cloudflared")
-    
+
     proc = subprocess.Popen(
         [cloudflared_path, "tunnel", "login"],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
-        close_fds=True
+        start_new_session=True,
     )
-    
-    _login_processes[str(bench_root)] = proc
-    _login_urls[str(bench_root)] = ""
-    
+
+    url_holder: list[str] = []
+
     def read_output():
-        url_found = False
-        for line in iter(proc.stdout.readline, ""):
-            line = line.strip()
-            if "https://" in line:
-                for word in line.split():
-                    if word.startswith("https://"):
-                        _login_urls[str(bench_root)] = word
-                        url_found = True
-                        break
-            if url_found:
-                break
-                
+        if proc.stdout:
+            for line in iter(proc.stdout.readline, ""):
+                line = line.strip()
+                if "https://" in line:
+                    for word in line.split():
+                        if word.startswith("https://"):
+                            url_holder.append(word)
+                            return
+
     t = threading.Thread(target=read_output)
     t.daemon = True
     t.start()
-    
+
     start_time = time.time()
-    while time.time() - start_time < 5.0:
-        if _login_urls[str(bench_root)]:
-            return _login_urls[str(bench_root)]
+    while time.time() - start_time < 8.0:
+        if url_holder:
+            url = url_holder[0]
+            _save_login_session(url, proc.pid)
+            return url
         time.sleep(0.1)
-        
+
+    _cancel_login_process()
     raise RuntimeError("Failed to retrieve login URL from cloudflared.")
-
-
-def _cancel_login_process(bench_root: Path):
-    global _login_processes, _login_urls
-    key = str(bench_root)
-    proc = _login_processes.get(key)
-    if proc:
-        try:
-            proc.terminate()
-            proc.wait(timeout=1)
-        except Exception:
-            try:
-                proc.kill()
-            except Exception:
-                pass
-        _login_processes.pop(key, None)
-    _login_urls.pop(key, None)
 
 
 @cloudflare_bp.post("/login/start")
@@ -223,8 +110,8 @@ def start_cloudflare_login():
         bench = Bench(config, bench_root)
         manager = CloudflareTunnelManager(bench)
         manager.install()
-        
-        url = _start_login_process(bench_root)
+
+        url = _start_login_process()
         return jsonify({"url": url})
     except Exception as e:
         return error_response("login_start_failed", f"Failed to start Cloudflare login: {e}", 500)
@@ -232,40 +119,45 @@ def start_cloudflare_login():
 
 @cloudflare_bp.get("/login/status")
 def get_cloudflare_login_status():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
     cert_path = Path.home() / ".cloudflared" / "cert.pem"
-    
+
     if cert_path.exists():
-        _cancel_login_process(bench_root)
+        _cancel_login_process()
         return jsonify({"status": "success", "cert_path": str(cert_path)})
-        
-    key = str(bench_root)
-    proc = _login_processes.get(key)
-    if proc:
-        exit_code = proc.poll()
-        if exit_code is not None:
-            time.sleep(0.5)
-            if cert_path.exists() or exit_code == 0:
-                _cancel_login_process(bench_root)
-                return jsonify({"status": "success", "cert_path": str(cert_path)})
-                
-            _login_processes.pop(key, None)
-            _login_urls.pop(key, None)
-            return jsonify({
-                "status": "failed",
-                "error": f"Login process exited prematurely with code {exit_code}."
-            })
-            
-        url = _login_urls.get(key, "")
+
+    session = _read_login_session()
+    if not session:
+        return jsonify({"status": "idle"})
+
+    pid = session.get("pid")
+    url = session.get("url", "")
+
+    is_alive = False
+    if pid:
+        try:
+            os.kill(pid, 0)
+            is_alive = True
+        except (ProcessLookupError, PermissionError, OSError):
+            is_alive = False
+
+    if is_alive:
         return jsonify({"status": "pending", "url": url})
-        
-    return jsonify({"status": "idle"})
+
+    time.sleep(0.5)
+    if cert_path.exists():
+        _cancel_login_process()
+        return jsonify({"status": "success", "cert_path": str(cert_path)})
+
+    _cancel_login_process()
+    return jsonify({
+        "status": "failed",
+        "error": "Login process exited without creating credentials."
+    })
 
 
 @cloudflare_bp.post("/login/cancel")
 def cancel_cloudflare_login():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
-    _cancel_login_process(bench_root)
+    _cancel_login_process()
     return jsonify({"success": True})
 
 

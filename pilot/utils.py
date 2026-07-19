@@ -188,24 +188,6 @@ def _start_process(argv: list[str], cwd: Path | None, env: dict | None, stream_o
     }
     run_env.update(inherited)
 
-    # Automatically prepend the latest NVM Node version to PATH if present
-    nvm_dir = Path.home() / ".nvm" / "versions" / "node"
-    if nvm_dir.is_dir():
-        versions = []
-        for p in nvm_dir.iterdir():
-            if p.is_dir() and p.name.startswith("v"):
-                try:
-                    parts = [int(x) for x in p.name[1:].split(".")]
-                    versions.append((parts, p / "bin"))
-                except ValueError:
-                    continue
-        if versions:
-            versions.sort(reverse=True)
-            node_bin_dir = str(versions[0][1])
-            current_path = run_env.get("PATH", "")
-            if node_bin_dir not in current_path:
-                run_env["PATH"] = os.pathsep.join([node_bin_dir, current_path]) if current_path else node_bin_dir
-
     return subprocess.Popen(
         argv,
         cwd=cwd,
