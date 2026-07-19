@@ -100,79 +100,90 @@ _create_app_boilerplate('apps', hooks, no_git=False)
         app._install_into_environment()
         app._register()
         
-        # Build assets using bench/frappe call
-        build_res = subprocess.run([*self.bench.frappe_call, "frappe", "build", "--force", "--app", self.name], cwd=str(self.bench_root), capture_output=True, text=True)
-        if build_res.returncode != 0:
-            self._report(f"Asset build failed: {build_res.stderr}")
-            sys.exit(1)
-        
-        # GitHub repo creation
-        if self.create_github_repo:
-            self._step("github_repo", f"Creating GitHub repository for {self.name}")
-            store = GitCredentialStore(self.bench_root)
-            record = store.load()
-            if record and record.get("token"):
-                token = record["token"]
-                provider = provider_for_name("github", token)
-                try:
-                    repo_info = None
+        try:
+            # Build assets using bench/frappe call
+            build_res = subprocess.run([*self.bench.frappe_call, "frappe", "build", "--force", "--app", self.name], cwd=str(self.bench_root), capture_output=True, text=True)
+            if build_res.returncode != 0:
+                raise RuntimeError(f"Asset build failed: {build_res.stderr}")
+            
+            # GitHub repo creation
+            if self.create_github_repo:
+                self._step("github_repo", f"Creating GitHub repository for {self.name}")
+                store = GitCredentialStore(self.bench_root)
+                record = store.load()
+                if record and record.get("token"):
+                    token = record["token"]
+                    provider = provider_for_name("github", token)
                     try:
-                        repo_info = provider.create_repo(self.name, self.description, self.github_repo_private)
-                    except Exception as repo_err:
-                        if "already exists" in str(repo_err).lower() or "name already exists" in str(repo_err).lower():
-                            username = record.get("username", "")
-                            full_name = f"{username}/{self.name}"
-                            
-                            # Check if the repo has any branches (is it empty?)
-                            try:
-                                branches = provider.list_branches(full_name)
-                            except Exception:
-                                branches = []
+                        repo_info = None
+                        try:
+                            repo_info = provider.create_repo(self.name, self.description, self.github_repo_private)
+                        except Exception as repo_err:
+                            if "already exists" in str(repo_err).lower() or "name already exists" in str(repo_err).lower():
+                                username = record.get("username", "")
+                                full_name = f"{username}/{self.name}"
                                 
-                            if branches:
-                                raise RuntimeError(f"GitHub repository '{full_name}' already exists and contains existing code/branches ({', '.join(branches)}). Choose a different name or delete the repo first.")
+                                # Check if the repo has any branches (is it empty?)
+                                try:
+                                    branches = provider.list_branches(full_name)
+                                except Exception:
+                                    branches = []
+                                    
+                                if branches:
+                                    raise RuntimeError(f"GitHub repository '{full_name}' already exists and contains existing code/branches ({', '.join(branches)}). Choose a different name or delete the repo first.")
+                                    
+                                self._report(f"GitHub repository '{self.name}' already exists but is empty, reusing it.")
+                                clone_url = f"https://github.com/{username}/{self.name}.git"
+                                repo_info = {
+                                    "clone_url": clone_url,
+                                    "html_url": f"https://github.com/{username}/{self.name}"
+                                }
+                            else:
+                                raise repo_err
                                 
-                            self._report(f"GitHub repository '{self.name}' already exists but is empty, reusing it.")
-                            clone_url = f"https://github.com/{username}/{self.name}.git"
-                            repo_info = {
-                                "clone_url": clone_url,
-                                "html_url": f"https://github.com/{username}/{self.name}"
-                            }
+                        clone_url = repo_info["clone_url"]
+                        self._report(f"GitHub repo: {repo_info['html_url']}")
+                        
+                        # Add clean remote (ignore error if it exists)
+                        app_path = apps_dir / self.name
+                        subprocess.run(["git", "remote", "add", "origin", clone_url], cwd=str(app_path), capture_output=True)
+                        subprocess.run(["git", "remote", "set-url", "origin", clone_url], cwd=str(app_path), capture_output=True)
+                        
+                        # Rename branch to main if needed
+                        subprocess.run(["git", "branch", "-M", "main"], cwd=str(app_path), capture_output=True)
+                        
+                        # Push to origin without exposing token in the process list
+                        self._report(f"Pushing initial commit to GitHub...")
+                        git_env = {
+                            **os.environ,
+                            "GIT_CONFIG_COUNT": "1",
+                            "GIT_CONFIG_KEY_0": "http.extraHeader",
+                            "GIT_CONFIG_VALUE_0": f"Authorization: token {token}",
+                        }
+                        push_res = subprocess.run([
+                            "git", "push", "-u", "origin", "main"
+                        ], cwd=str(app_path), capture_output=True, text=True, env=git_env)
+                        if push_res.returncode != 0:
+                            raise RuntimeError(f"Failed to push to GitHub: {push_res.stderr}")
                         else:
-                            raise repo_err
-                            
-                    clone_url = repo_info["clone_url"]
-                    self._report(f"GitHub repo: {repo_info['html_url']}")
+                            self._report(f"Successfully pushed to GitHub.")
+                        
+                    except Exception as e:
+                        raise RuntimeError(f"GitHub repository integration failed: {e}")
+                else:
+                    self._report("No GitHub integration connected. Skipping GitHub repository creation.")
                     
-                    # Add clean remote (ignore error if it exists)
-                    app_path = apps_dir / self.name
-                    subprocess.run(["git", "remote", "add", "origin", clone_url], cwd=str(app_path), capture_output=True)
-                    subprocess.run(["git", "remote", "set-url", "origin", clone_url], cwd=str(app_path), capture_output=True)
-                    
-                    # Rename branch to main if needed
-                    subprocess.run(["git", "branch", "-M", "main"], cwd=str(app_path), capture_output=True)
-                    
-                    # Push to origin without exposing token in the process list
-                    self._report(f"Pushing initial commit to GitHub...")
-                    git_env = {
-                        **os.environ,
-                        "GIT_CONFIG_COUNT": "1",
-                        "GIT_CONFIG_KEY_0": "http.extraHeader",
-                        "GIT_CONFIG_VALUE_0": f"Authorization: token {token}",
-                    }
-                    push_res = subprocess.run([
-                        "git", "push", "-u", "origin", "main"
-                    ], cwd=str(app_path), capture_output=True, text=True, env=git_env)
-                    if push_res.returncode != 0:
-                        raise RuntimeError(f"Failed to push to GitHub: {push_res.stderr}")
-                    else:
-                        self._report(f"Successfully pushed to GitHub.")
-                    
-                except Exception as e:
-                    self._report(f"GitHub repository integration failed: {e}")
-                    sys.exit(1)
-            else:
-                self._report("No GitHub integration connected. Skipping GitHub repository creation.")
+        except Exception as e:
+            self._report(f"App creation failed: {e}. Rolling back...")
+            try:
+                import shutil
+                app._deregister()
+                app._pip_uninstall()
+                if app.path.exists():
+                    shutil.rmtree(app.path)
+            except Exception as cleanup_err:
+                self._report(f"Failed to rollback app installation entirely: {cleanup_err}")
+            sys.exit(1)
                 
         # Install on requested sites
         for site in self.sites:
