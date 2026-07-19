@@ -172,13 +172,29 @@ def setup_production_bench(name: str):
         return error_response("bench_not_found", f"Bench '{name}' not found.", 404)
 
     data = request.get_json(silent=True) or {}
-    process_manager = data.get("process_manager")
-    admin_domain = data.get("admin_domain")
-    tls = data.get("tls")
-    letsencrypt_email = data.get("letsencrypt_email")
+    process_manager_raw = (data.get("process_manager") or "systemd").strip().lower()
+    if process_manager_raw == "supervisord":
+        process_manager_raw = "supervisor"
+    
+    from pilot.config.production import VALID_PROCESS_MANAGERS
+    if process_manager_raw not in VALID_PROCESS_MANAGERS:
+        return error_response(
+            "invalid_process_manager",
+            f"Choose a process manager: {', '.join(VALID_PROCESS_MANAGERS)}.",
+            422,
+        )
+    process_manager = process_manager_raw
 
+    admin_domain = (data.get("admin_domain") or "").strip()
     if not admin_domain:
         return error_response("admin_domain_required", "Admin domain is required.", 422)
+    if not _ADMIN_DOMAIN_RE.match(admin_domain):
+        return error_response(
+            "invalid_admin_domain", f"'{admin_domain}' is not a valid hostname.", 422
+        )
+
+    tls = data.get("tls")
+    letsencrypt_email = data.get("letsencrypt_email")
 
     from pilot.managers.platform import has_passwordless_sudo
     if not has_passwordless_sudo():
@@ -204,8 +220,8 @@ def setup_production_bench(name: str):
             return accepted_task_response(target_dir, task_id)
     except BlockingIOError:
         return _bench_busy_response(name)
-    except Exception as exc:
-        return error_response("setup_production_failed", str(exc), 500)
+    except Exception:
+        return error_response("setup_production_failed", "Could not initiate production setup.", 500)
 
 
 def _run_action(name: str, action: str):
