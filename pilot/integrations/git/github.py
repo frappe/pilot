@@ -109,7 +109,8 @@ class GitHubProvider(GitProvider):
             "private": private,
             "auto_init": False
         }
-        req = urllib.request.Request(url, method="POST", headers=self._headers())
+        headers = {**self._headers(), "Content-Type": "application/json"}
+        req = urllib.request.Request(url, method="POST", headers=headers)
         try:
             with urllib.request.urlopen(req, data=json.dumps(body).encode("utf-8"), timeout=15) as resp:
                 return json.loads(resp.read().decode())
