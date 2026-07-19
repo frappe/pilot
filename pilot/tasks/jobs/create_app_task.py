@@ -101,7 +101,10 @@ _create_app_boilerplate('apps', hooks, no_git=False)
         app._register()
         
         # Build assets using bench/frappe call
-        subprocess.run([*self.bench.frappe_call, "frappe", "build", "--force", "--app", self.name], cwd=str(self.bench_root))
+        build_res = subprocess.run([*self.bench.frappe_call, "frappe", "build", "--force", "--app", self.name], cwd=str(self.bench_root), capture_output=True, text=True)
+        if build_res.returncode != 0:
+            self._report(f"Asset build failed: {build_res.stderr}")
+            sys.exit(1)
         
         # GitHub repo creation
         if self.create_github_repo:
@@ -141,12 +144,13 @@ _create_app_boilerplate('apps', hooks, no_git=False)
                     clone_url = repo_info["clone_url"]
                     self._report(f"GitHub repo: {repo_info['html_url']}")
                     
-                    # Add clean remote
+                    # Add clean remote (ignore error if it exists)
                     app_path = apps_dir / self.name
-                    subprocess.run(["git", "remote", "add", "origin", clone_url], cwd=str(app_path))
+                    subprocess.run(["git", "remote", "add", "origin", clone_url], cwd=str(app_path), capture_output=True)
+                    subprocess.run(["git", "remote", "set-url", "origin", clone_url], cwd=str(app_path), capture_output=True)
                     
                     # Rename branch to main if needed
-                    subprocess.run(["git", "branch", "-M", "main"], cwd=str(app_path))
+                    subprocess.run(["git", "branch", "-M", "main"], cwd=str(app_path), capture_output=True)
                     
                     # Push to origin without exposing token in the process list
                     self._report(f"Pushing initial commit to GitHub...")
