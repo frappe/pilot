@@ -305,9 +305,10 @@ def perform_cloudflare_action():
     return jsonify({"success": True})
 
 
-@cloudflare_bp.get("/zones")
+@cloudflare_bp.post("/zones")
 def get_cloudflare_zones():
-    api_token = request.args.get("api_token")
+    data = request.get_json(silent=True) or {}
+    api_token = data.get("api_token")
     if not api_token:
         bench_root = Path(current_app.config["BENCH_ROOT"])
         try:

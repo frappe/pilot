@@ -59,20 +59,25 @@ class CloudflareTunnelManager:
         if not cloudflared_path:
             cloudflared_path = str(Path.home() / ".local" / "bin" / "cloudflared")
 
+        self.service_path.parent.mkdir(parents=True, exist_ok=True)
+        env_file = self.service_path.parent / f"{self.bench.config.name}-tunnel.env"
+        env_file.write_text(f"TUNNEL_TOKEN={token}\n", encoding="utf-8")
+        env_file.chmod(0o600)
+
         service_content = f"""[Unit]
 Description=Frappe Pilot Cloudflare Tunnel ({self.bench.config.name})
 After=network.target
 
 [Service]
 Type=simple
-ExecStart={cloudflared_path} --no-autoupdate tunnel run --token {token}
+EnvironmentFile={env_file}
+ExecStart={cloudflared_path} --no-autoupdate tunnel run
 Restart=on-failure
 RestartSec=5
 
 [Install]
 WantedBy=default.target
 """
-        self.service_path.parent.mkdir(parents=True, exist_ok=True)
         self.service_path.write_text(service_content, encoding="utf-8")
         
         # Reload systemd manager config
@@ -166,6 +171,9 @@ WantedBy=default.target
         if self.service_path.exists():
             self.stop()
             self.service_path.unlink()
+            env_file = self.service_path.parent / f"{self.bench.config.name}-tunnel.env"
+            if env_file.exists():
+                env_file.unlink()
             self._systemctl("daemon-reload")
 
     def _systemctl(self, *args: str) -> None:

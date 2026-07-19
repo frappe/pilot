@@ -246,6 +246,31 @@ def _raise_on_failure(argv, process, stderr, stream_output, redactions) -> None:
     )
 
 
+def _get_machine_id() -> bytes:
+    for p in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
+        try:
+            with open(p, "rb") as f:
+                content = f.read().strip()
+                if content:
+                    return content
+        except Exception:
+            continue
+            
+    # Generate and persist a secure fallback key instead of using a static string
+    fallback_path = Path.home() / ".config" / "pilot" / ".secret_key"
+    try:
+        if fallback_path.exists():
+            return fallback_path.read_bytes()
+        fallback_path.parent.mkdir(parents=True, exist_ok=True)
+        key = os.urandom(32)
+        fallback_path.write_bytes(key)
+        fallback_path.chmod(0o600)
+        return key
+    except Exception:
+        # Absolute last resort fallback
+        return b"pilot-fallback-secret-key-salt"
+
+
 def encrypt(plain_text: str) -> str:
     import base64
     import hashlib
@@ -254,23 +279,15 @@ def encrypt(plain_text: str) -> str:
     if not plain_text:
         return ""
 
-    # Use machine-id if available, fallback to a static salt
-    machine_id = b"pilot-fallback-secret-key-salt"
-    for p in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
-        try:
-            with open(p, "rb") as f:
-                content = f.read().strip()
-                if content:
-                    machine_id = content
-                    break
-        except Exception:
-            continue
-
+    machine_id = _get_machine_id()
     salt = os.urandom(16)
+    iterations = 600000
     data_bytes = plain_text.encode("utf-8")
-    keystream = hashlib.pbkdf2_hmac("sha256", machine_id, salt, 1000, dklen=len(data_bytes))
+    keystream = hashlib.pbkdf2_hmac("sha256", machine_id, salt, iterations, dklen=len(data_bytes))
     cipher_bytes = bytes(a ^ b for a, b in zip(data_bytes, keystream))
-    return f"{salt.hex()}:{base64.b64encode(cipher_bytes).decode('utf-8')}"
+    
+    # Store iterations in the ciphertext payload for future-proofing
+    return f"{salt.hex()}:{iterations}:{base64.b64encode(cipher_bytes).decode('utf-8')}"
 
 
 def decrypt(cipher_text: str) -> str:
@@ -281,23 +298,23 @@ def decrypt(cipher_text: str) -> str:
         return ""
     if ":" not in cipher_text:
         return cipher_text
+        
     try:
-        salt_hex, b64_cipher = cipher_text.split(":", 1)
+        parts = cipher_text.split(":")
+        if len(parts) == 2:
+            salt_hex, b64_cipher = parts
+            iterations = 1000  # Legacy tokens
+        elif len(parts) == 3:
+            salt_hex, iter_str, b64_cipher = parts
+            iterations = int(iter_str)
+        else:
+            return cipher_text
+
         salt = bytes.fromhex(salt_hex)
         cipher_bytes = base64.b64decode(b64_cipher)
+        machine_id = _get_machine_id()
 
-        machine_id = b"pilot-fallback-secret-key-salt"
-        for p in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
-            try:
-                with open(p, "rb") as f:
-                    content = f.read().strip()
-                    if content:
-                        machine_id = content
-                        break
-            except Exception:
-                continue
-
-        keystream = hashlib.pbkdf2_hmac("sha256", machine_id, salt, 1000, dklen=len(cipher_bytes))
+        keystream = hashlib.pbkdf2_hmac("sha256", machine_id, salt, iterations, dklen=len(cipher_bytes))
         plain_bytes = bytes(a ^ b for a, b in zip(cipher_bytes, keystream))
         return plain_bytes.decode("utf-8")
     except Exception:
