@@ -110,9 +110,6 @@ def delete_cloudflare_tunnel():
         # 2. Attempt to delete from Cloudflare if API token is configured
         if config.cloudflare.api_token and config.cloudflare.tunnel_token:
             try:
-                import base64
-                import json
-                
                 api_token = decrypt(config.cloudflare.api_token)
                 api_token = "".join(api_token.split())
                 
@@ -159,7 +156,8 @@ def _start_login_process(bench_root: Path):
     
     _cancel_login_process(bench_root)
     
-    cloudflared_path = "/home/frappe/.local/bin/cloudflared"
+    import shutil
+    cloudflared_path = shutil.which("cloudflared") or str(Path.home() / ".local" / "bin" / "cloudflared")
     
     proc = subprocess.Popen(
         [cloudflared_path, "tunnel", "login"],
