@@ -53,6 +53,27 @@ _WAF_ACTION_DIRECTIVES = {
 }
 
 
+_REJECT_HANDSHAKE_CACHE: bool | None = None
+
+
+def _supports_ssl_reject_handshake() -> bool:
+    global _REJECT_HANDSHAKE_CACHE
+    if _REJECT_HANDSHAKE_CACHE is not None:
+        return _REJECT_HANDSHAKE_CACHE
+    try:
+        import subprocess, re
+        v_out = subprocess.run(["nginx", "-v"], capture_output=True, text=True)
+        v_match = re.search(r"nginx/(\d+)\.(\d+)\.(\d+)", v_out.stderr or v_out.stdout)
+        if v_match:
+            major, minor, patch = map(int, v_match.groups())
+            _REJECT_HANDSHAKE_CACHE = (major > 1) or (major == 1 and minor > 19) or (major == 1 and minor == 19 and patch >= 4)
+        else:
+            _REJECT_HANDSHAKE_CACHE = False
+    except Exception:
+        _REJECT_HANDSHAKE_CACHE = False
+    return _REJECT_HANDSHAKE_CACHE
+
+
 def _catchall_conf() -> Path:
     """Shared default_server vhost so unknown hosts get our 404, not nginx's."""
     return default_nginx_config_dir() / "00-bench-default.conf"
@@ -381,18 +402,7 @@ class NginxConfigRenderer:
     def _render_catchall(self, http_port: int, https_port: int, error_dir: Path) -> str:
         directives = "".join(f"    error_page {code} /_errors/{code}.html;\n" for code in _ERROR_PAGES)
         
-        # Check if ssl_reject_handshake is supported (nginx >= 1.19.4)
-        import subprocess, re
-        try:
-            v_out = subprocess.run(["nginx", "-v"], capture_output=True, text=True)
-            v_match = re.search(r"nginx/(\d+)\.(\d+)\.(\d+)", v_out.stderr or v_out.stdout)
-            if v_match:
-                major, minor, patch = map(int, v_match.groups())
-                has_reject_handshake = (major > 1) or (major == 1 and minor > 19) or (major == 1 and minor == 19 and patch >= 4)
-            else:
-                has_reject_handshake = False
-        except Exception:
-            has_reject_handshake = False
+        has_reject_handshake = _supports_ssl_reject_handshake()
 
         ssl_default_server_block = ""
         if has_reject_handshake:
