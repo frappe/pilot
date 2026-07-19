@@ -223,7 +223,7 @@ WantedBy=default.target
                 err_json = json.loads(err_msg)
                 if "errors" in err_json and err_json["errors"]:
                     raise RuntimeError(err_json["errors"][0]["message"])
-            except Exception:
+            except (json.JSONDecodeError, KeyError, TypeError):
                 pass
             raise RuntimeError(f"Cloudflare API error: {e.code} - {e.reason} ({err_msg})")
         except Exception as e:
