@@ -72,3 +72,17 @@ def test_setup_production_invalid_tls(tmp_path: Path) -> None:
     assert res.get_json()["error"]["code"] == "invalid_tls"
 
 
+def test_setup_production_missing_letsencrypt_email(tmp_path: Path) -> None:
+    app = create_app(tmp_path)
+    client = app.test_client()
+
+    bench_dir = tmp_path.parent / "testbench"
+    bench_dir.mkdir(parents=True, exist_ok=True)
+    (bench_dir / "bench.toml").write_text("[admin]\nport = 8000\n[production]\nenabled = false\n", encoding="utf-8")
+
+    res = client.post("/api/v1/benches/testbench/actions/setup-production", json={"admin_domain": "pilot.example.com", "tls": True})
+    assert res.status_code == 422
+    assert res.get_json()["error"]["code"] == "letsencrypt_email_required"
+
+
+

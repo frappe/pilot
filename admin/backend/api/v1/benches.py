@@ -206,6 +206,15 @@ def setup_production_bench(name: str):
     if tls is not None and not isinstance(tls, bool):
         return error_response("invalid_tls", "tls must be a boolean.", 422)
     letsencrypt_email = data.get("letsencrypt_email")
+    if tls is True:
+        email_str = (letsencrypt_email or "").strip()
+        if not email_str:
+            return error_response(
+                "letsencrypt_email_required",
+                "Let's Encrypt email is required when TLS is enabled.",
+                422,
+            )
+        letsencrypt_email = email_str
 
     from pilot.managers.platform import has_passwordless_sudo
     if not has_passwordless_sudo():
