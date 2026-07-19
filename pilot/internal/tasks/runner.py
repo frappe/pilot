@@ -11,13 +11,11 @@ from pathlib import Path
 
 from pilot.exceptions import TaskNotRunningError
 from pilot.internal.tasks.authoring import required_task_args
+from pilot.internal.tasks.models import TaskStatus
 from pilot.internal.tasks.payload import TaskPayloadBuilder
 from pilot.internal.tasks.process import TaskProcess
 from pilot.internal.tasks.store import TaskStore
 from pilot.internal.tasks.worker import task_workers
-from pilot.managers.task.models import (
-    TaskStatus,
-)
 from pilot.tasks import Task
 from pilot.tasks.callbacks import TaskCallback as TaskCallback
 from pilot.tasks.callbacks import TaskCallbacks

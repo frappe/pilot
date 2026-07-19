@@ -14,6 +14,7 @@ from pathlib import Path
 
 from pilot.exceptions import BenchError, TaskNotFoundError, TaskNotRunningError
 from pilot.internal.tasks.callbacks import run_stored_callback, trigger_for_task_status
+from pilot.internal.tasks.models import TaskStatus
 from pilot.internal.tasks.process_identity import (
     ProcessIdentity,
     ProcessInspector,
@@ -22,7 +23,6 @@ from pilot.internal.tasks.process_identity import (
 )
 from pilot.internal.tasks.store import TaskStore
 from pilot.managers.platform import NONINTERACTIVE_PRIVILEGES_ENV
-from pilot.managers.task.models import TaskStatus
 
 _READY_FD_ENV = "BENCH_TASK_READY_FD"
 _LAUNCH_ID_ENV = "BENCH_TASK_LAUNCH_ID"

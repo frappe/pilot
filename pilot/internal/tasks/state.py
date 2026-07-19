@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pilot.managers.task.models import TaskFailure, TaskStatus
+from pilot.internal.tasks.models import TaskFailure, TaskStatus
 
 _TERMINAL_TASK_STATUSES = frozenset({TaskStatus.SUCCESS, TaskStatus.FAILED, TaskStatus.KILLED})
 

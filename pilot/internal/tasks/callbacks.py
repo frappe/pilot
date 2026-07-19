@@ -4,8 +4,8 @@ import shutil
 from collections.abc import Callable
 from pathlib import Path
 
+from pilot.internal.tasks.models import TaskStatus
 from pilot.managers.platform import remove_hosts_entry
-from pilot.managers.task.models import TaskStatus
 
 CallbackOperation = Callable[[dict, dict], None]
 
