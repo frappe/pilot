@@ -148,7 +148,7 @@ class ProductionSetup:
         self.bench.config.monitor.log_path = resolve_monitor_log_path(self.bench.config)
         self.bench.config.write(self.bench.path)
 
-        UptimeMonitorConfigurator(self.bench).install()
+        UptimeMonitorConfigurator().install()
 
     def _persist_production_state(self) -> None:
         """Write the production state to bench.toml LAST, so the switcher never

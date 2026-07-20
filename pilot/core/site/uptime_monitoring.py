@@ -24,6 +24,8 @@ PING_TIMEOUT = 5.0
 class UptimeMonitor:
     def __init__(self, bench: "Bench"):
         self.bench = bench
+        self._configurator = UptimeMonitorConfigurator(bench)
+        self._configurator.setup()
 
     def get_sites(self) -> list[str]:
         return [site.config.name for site in self.bench.sites()]
@@ -42,9 +44,7 @@ class UptimeMonitor:
 
     def collect(self) -> None:
         """Ping every site on this bench once and append results to its uptime log."""
-        log_path = UptimeMonitorConfigurator(self.bench).log_path
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        with log_path.open("a") as log_file:
+        with self._configurator.log_path.open("a") as log_file:
             for site_name in self.get_sites():
                 log_file.write(json.dumps(self.ping_site(site_name)) + "\n")
 
