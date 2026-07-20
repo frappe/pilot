@@ -22,23 +22,13 @@
       </p>
     </div>
     <div v-else class="space-y-4">
-      <ChartCard title="Frequent requests">
-        <AxisChart :config="topPathsConfig" class="w-full min-w-0 h-full min-h-[360px] px-2 sm:px-4 py-2" />
-      </ChartCard>
-      <ChartCard title="Slowest requests">
-        <AxisChart :config="slowestRequestsConfig" class="w-full min-w-0 h-full min-h-[360px] px-2 sm:px-4 py-2" />
-      </ChartCard>
-      <ChartCard title="Frequent background jobs">
-        <AxisChart :config="topJobsConfig" class="w-full min-w-0 h-full min-h-[360px] px-2 sm:px-4 py-2" />
-      </ChartCard>
-      <ChartCard title="Slowest background jobs">
-        <AxisChart :config="slowestJobsConfig" class="w-full min-w-0 h-full min-h-[360px] px-2 sm:px-4 py-2" />
-      </ChartCard>
-      <ChartCard title="Frequent IPs">
-        <AxisChart :config="topIpsConfig" class="w-full min-w-0 h-full min-h-[360px] px-2 sm:px-4 py-2" />
-      </ChartCard>
-      <ChartCard title="Slowest reports">
-        <AxisChart :config="slowestReportsConfig" class="w-full min-w-0 h-full min-h-[360px] px-2 sm:px-4 py-2" />
+      <ChartCard v-for="chart in charts" :key="chart.key" :title="chart.title">
+        <div v-if="!chart.config.series.length"
+          class="flex flex-col justify-center items-center gap-1 min-h-[200px] text-center">
+          <span class="size-6 text-ink-gray-3 lucide-chart-bar" />
+          <p class="text-ink-gray-5 text-xs">No data in this window</p>
+        </div>
+        <AxisChart v-else :config="chart.config" class="w-full min-w-0 h-full min-h-[360px] px-2 sm:px-4 py-2" />
       </ChartCard>
     </div>
   </div>
@@ -75,14 +65,6 @@ const data = ref(null)
 
 const GRID = { show: true, lineStyle: { type: 'dashed', color: 'var(--outline-gray-2)' } }
 const PALETTE = ['#10b981', '#ef4444', '#2490ef', '#f59e0b', '#8b5cf6']
-
-const empty = computed(() => {
-  const d = data.value
-  if (!d) return true
-  return !d.top_paths.categories.length && !d.slowest_requests.categories.length &&
-    !d.top_jobs.categories.length && !d.slowest_jobs.categories.length && !d.top_ips.categories.length &&
-    !d.slowest_reports.categories.length
-})
 
 const numberFormat = new Intl.NumberFormat()
 const dateFormat = { month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }
@@ -125,12 +107,16 @@ function timelineConfig(timeline, valueLabel) {
   }
 }
 
-const topPathsConfig = computed(() => timelineConfig(data.value?.top_paths, 'Requests'))
-const slowestRequestsConfig = computed(() => timelineConfig(data.value?.slowest_requests, 'Duration (ms)'))
-const topJobsConfig = computed(() => timelineConfig(data.value?.top_jobs, 'Runs'))
-const slowestJobsConfig = computed(() => timelineConfig(data.value?.slowest_jobs, 'Duration (ms)'))
-const topIpsConfig = computed(() => timelineConfig(data.value?.top_ips, 'Requests'))
-const slowestReportsConfig = computed(() => timelineConfig(data.value?.slowest_reports, 'Duration (ms)'))
+const charts = computed(() => [
+  { key: 'top_paths', title: 'Frequent requests', config: timelineConfig(data.value?.top_paths, 'Requests') },
+  { key: 'slowest_requests', title: 'Slowest requests', config: timelineConfig(data.value?.slowest_requests, 'Duration (s)') },
+  { key: 'top_jobs', title: 'Frequent background jobs', config: timelineConfig(data.value?.top_jobs, 'Runs') },
+  { key: 'slowest_jobs', title: 'Slowest background jobs', config: timelineConfig(data.value?.slowest_jobs, 'Duration (s)') },
+  { key: 'top_ips', title: 'Frequent IPs', config: timelineConfig(data.value?.top_ips, 'Requests') },
+  { key: 'slowest_reports', title: 'Slowest reports', config: timelineConfig(data.value?.slowest_reports, 'Duration (s)') },
+])
+
+const empty = computed(() => !data.value || charts.value.every((chart) => !chart.config.series.length))
 
 // Rapid window switches can resolve out of order; only the most recently
 // started load is allowed to write to state.

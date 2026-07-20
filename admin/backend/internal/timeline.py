@@ -31,7 +31,8 @@ def build_timeline(
         if by == "count":
             row[point.category] = row.get(point.category, 0) + 1
         else:
-            row[point.category] = max(row.get(point.category, 0), round(point.duration / 1000))
+            # duration is microseconds; keep millisecond precision within a seconds unit.
+            row[point.category] = max(row.get(point.category, 0), round(point.duration / 1_000_000, 3))
     return {
         "categories": categories,
         "points": [{"time": time, **values} for time, values in sorted(buckets.items())],
