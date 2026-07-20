@@ -1,22 +1,21 @@
 from __future__ import annotations
 
-import json
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
-WINDOW_SECONDS = {"30m": 1800, "1h": 3600, "6h": 21600, "12h": 43200, "24h": 86400, "1w": 604800}
+from admin.backend.providers.windowed_log import WindowedLogProvider
+
 MAX_POINTS = 400
 DISK_SERIES = "Root Disk"
 
 
-class MonitorProvider:
+class MonitorProvider(WindowedLogProvider):
     """Time-series for a window from the monitor logs: system metrics in a
     shared JSON-Lines log, application metrics in a per-bench one."""
 
     def __init__(self, bench_root: Path, window: str) -> None:
+        super().__init__(window)
         self._bench_root = bench_root
-        self._window = window if window in WINDOW_SECONDS else "1h"
-        self._cutoff = datetime.now(UTC) - timedelta(seconds=WINDOW_SECONDS[self._window])
 
     def get_history(self) -> dict:
         from pilot.config import BenchConfig, MonitorConfig
@@ -24,10 +23,10 @@ class MonitorProvider:
         config = BenchConfig.read(self._bench_root)
         app_log = config.monitor.log_path or MonitorConfig.default_log_path(config.name)
         return {
-            "window": self._window,
-            "window_seconds": WINDOW_SECONDS[self._window],
+            "window": self.window,
+            "window_seconds": self.window_seconds,
             # Absolute epoch ms so the browser windows correctly regardless of its timezone.
-            "now": int(datetime.now(UTC).timestamp() * 1000),
+            "now": self.now_ms(),
             "system": self.get_system_metrics(config.monitor.system_log_path),
             "application": self.get_application_metrics(app_log, config.name),
         }
@@ -106,26 +105,13 @@ class MonitorProvider:
         }
 
     def get_records_in_window(self, path: Path) -> list[tuple[datetime, dict]]:
-        # Records are appended in time order, so read newest-first and stop at
-        # the first one older than the window, never past the cutoff.
-        rows = []
-        for record in self._get_records_reversed(path):
-            when = self._get_time(record["time"])
-            if when < self._cutoff:
-                break
-            rows.append((when, record))
+        rows = [(self.get_time(record["time"]), record) for record in self.records_in_window(path)]
         rows.reverse()
 
         if len(rows) <= MAX_POINTS:
             return rows
         step = len(rows) // MAX_POINTS + 1
         return rows[::step]
-
-    @staticmethod
-    def _get_time(value: str) -> datetime:
-        """Older lines carry naive server-local time; astimezone() normalizes it to UTC."""
-        when = datetime.fromisoformat(value)
-        return when if when.tzinfo else when.astimezone(UTC)
 
     def get_service_names(self, rows: list, bench_name: str) -> list[str]:
         names: list[str] = []
@@ -146,37 +132,3 @@ class MonitorProvider:
     @staticmethod
     def get_short_name(service: str, bench_name: str) -> str:
         return service.removeprefix(f"{bench_name}-").removesuffix(".service")
-
-    @staticmethod
-    def _get_records_reversed(path: Path, block_size: int = 65536):
-        """Yields records newest-first, in blocks from the end, so a short window
-        never touches the whole file."""
-        if not path.exists():
-            return
-        with path.open("rb") as handle:
-            handle.seek(0, 2)
-            position = handle.tell()
-            remainder = b""
-            while position > 0:
-                size = min(block_size, position)
-                position -= size
-                handle.seek(position)
-                lines = (handle.read(size) + remainder).split(b"\n")
-                remainder = lines[0]  # first piece may be incomplete; carry it back
-                for line in reversed(lines[1:]):
-                    if line:
-                        yield json.loads(line)
-            if remainder:
-                yield json.loads(remainder)
-
-    @classmethod
-    def get_earliest(cls, path: Path) -> int | None:
-        if not path.exists():
-            return None
-        with path.open() as handle:
-            first = handle.readline()
-        return cls.to_epoch_ms(cls._get_time(json.loads(first)["time"])) if first.strip() else None
-
-    @staticmethod
-    def to_epoch_ms(when: datetime) -> int:
-        return int(when.timestamp() * 1000)
