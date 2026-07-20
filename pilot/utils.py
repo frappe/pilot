@@ -377,13 +377,15 @@ def _start_process(
     }
     if env is not None and inherited:
         env = {**env, **inherited}
+
+    detach_session = not (argv and (argv[0] == "sudo" or argv[0].endswith("/sudo")))
     return subprocess.Popen(
         argv,
         cwd=cwd,
         env=env,
         stdout=None if stream_output else subprocess.PIPE,
         stderr=None if stream_output else subprocess.PIPE,
-        start_new_session=True,
+        start_new_session=detach_session,
     )
 
 
