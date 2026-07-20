@@ -25,7 +25,6 @@ class UptimeMonitor:
     def __init__(self, bench: "Bench"):
         self.bench = bench
         self._configurator = UptimeMonitorConfigurator(bench)
-        self._configurator.setup()
 
     def get_sites(self) -> list[str]:
         return [site.config.name for site in self.bench.sites()]
