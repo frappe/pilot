@@ -181,12 +181,14 @@ def test_setup_monitoring_persists_log_path_to_toml(tmp_path: Path, monkeypatch)
     import tomllib
 
     from pilot.core.server.monitoring import MonitorConfigurator
+    from pilot.core.site.uptime_monitoring_config import UptimeMonitorConfigurator
 
     bench = _make_bench(tmp_path, process_manager="systemd")
     bench.config.production.enabled = True
     cmd = ProductionSetup(bench)
 
     monkeypatch.setattr(MonitorConfigurator, "install", lambda self: None)
+    monkeypatch.setattr(UptimeMonitorConfigurator, "install", lambda self: None)
 
     cmd._setup_monitoring()
 
@@ -197,12 +199,14 @@ def test_setup_monitoring_persists_log_path_to_toml(tmp_path: Path, monkeypatch)
 
 def test_setup_monitoring_log_path_is_path_on_config(tmp_path: Path, monkeypatch) -> None:
     from pilot.core.server.monitoring import MonitorConfigurator
+    from pilot.core.site.uptime_monitoring_config import UptimeMonitorConfigurator
 
     bench = _make_bench(tmp_path, process_manager="systemd")
     bench.config.production.enabled = True
     cmd = ProductionSetup(bench)
 
     monkeypatch.setattr(MonitorConfigurator, "install", lambda self: None)
+    monkeypatch.setattr(UptimeMonitorConfigurator, "install", lambda self: None)
 
     cmd._setup_monitoring()
 
