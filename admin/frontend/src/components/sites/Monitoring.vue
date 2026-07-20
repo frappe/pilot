@@ -132,17 +132,24 @@ const slowestJobsConfig = computed(() => timelineConfig(data.value?.slowest_jobs
 const topIpsConfig = computed(() => timelineConfig(data.value?.top_ips, 'Requests'))
 const slowestReportsConfig = computed(() => timelineConfig(data.value?.slowest_reports, 'Duration (ms)'))
 
+// Rapid window switches can resolve out of order; only the most recently
+// started load is allowed to write to state.
+let loadGeneration = 0
+
 async function load() {
+  const generation = ++loadGeneration
   loading.value = true
   error.value = ''
   try {
     const result = await sitesApi.monitoring.get(props.siteName, activeWindow.value)
+    if (generation !== loadGeneration) return
     if (result.error) throw new Error(apiErrorMessage(result, 'Could not load monitoring data.'))
     data.value = result
   } catch (e) {
+    if (generation !== loadGeneration) return
     error.value = e.message || 'Could not load monitoring data.'
   } finally {
-    loading.value = false
+    if (generation === loadGeneration) loading.value = false
   }
 }
 
