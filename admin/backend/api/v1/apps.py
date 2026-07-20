@@ -13,7 +13,7 @@ from pilot.internal.validators import validate_app_name, validate_repo_url
 from pilot.tasks.fetch_app_updates import FetchAppUpdatesTask
 from pilot.tasks.get_and_install_app import GetAndInstallAppTask
 from pilot.tasks.get_app import GetAppTask
-from pilot.tasks.jobs.create_app_task import CreateAppTask
+from pilot.tasks.create_app import CreateAppTask
 from pilot.tasks.remove_app import RemoveAppTask
 
 apps_bp = Blueprint("apps", __name__)
