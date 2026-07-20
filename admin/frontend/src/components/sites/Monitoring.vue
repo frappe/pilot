@@ -57,6 +57,11 @@ const empty = computed(() => {
 const numberFormat = new Intl.NumberFormat()
 const dateFormat = { month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }
 
+const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
+// Series names come from logged request paths/job methods/IPs - attacker-controlled
+// data that ends up here as an HTML string, so it must be escaped before interpolation.
+const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => HTML_ESCAPES[c])
+
 // Custom tooltip: lets the label wrap without breaking the number, and reuses
 // ECharts' own marker HTML so the dot color always matches the bar/legend.
 function tooltipFormatter(paramsInput) {
@@ -68,7 +73,7 @@ function tooltipFormatter(paramsInput) {
     .map((p) => `
       <div class="flex items-start gap-2 py-0.5" style="display:flex;white-space:normal;">
         ${p.marker}
-        <span class="flex-1 min-w-0" style="flex:1 1 auto;min-width:0;overflow-wrap:break-word;white-space:normal;">${p.seriesName}</span>
+        <span class="flex-1 min-w-0" style="flex:1 1 auto;min-width:0;overflow-wrap:break-word;white-space:normal;">${escapeHtml(p.seriesName)}</span>
         <span class="font-bold shrink-0" style="flex:0 0 auto;white-space:nowrap;">${numberFormat.format(p.value[1])}</span>
       </div>
     `)
