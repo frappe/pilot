@@ -65,7 +65,7 @@ const isMobile = useIsMobile()
 const sections = computed(() => [
   { id: 'github', label: 'Git', icon: 'lucide-git-branch' },
   { id: 'workers', label: 'Workers', icon: 'lucide-server-cog' },
-  { id: 's3-bucket', label: 'S3 Bucket', icon: 'lucide-archive' },
+  { id: 's3-bucket', label: 'Object Storage', icon: 'lucide-archive' },
   { id: 'firewall', label: 'Firewall', icon: 'lucide-shield' },
   { id: 'waf', label: 'WAF', icon: 'lucide-shield-alert' },
   { id: 'ssh-keys', label: 'SSH Keys', icon: 'lucide-key-round' },
