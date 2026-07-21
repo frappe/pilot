@@ -244,7 +244,7 @@ class ProcessDefinitionBuilder:
         cfg = self.bench.config.admin
         return ProcessDefinition(
             name="admin-ui",
-            argv=["npm", "run", "dev", "--prefix", str(frontend_dir)],
+            argv=["yarn", "--cwd", str(frontend_dir), "dev"],
             log_file=self.bench.logs_path / "admin-ui.log",
             env={"VITE_ADMIN_PORT": str(cfg.port)},
         )

@@ -77,7 +77,7 @@ class AdminEnvManager:
         if (frontend / "node_modules").exists():
             return
         print("  Installing admin frontend Node.js dependencies...", flush=True)
-        subprocess.run(["npm", "install"], cwd=frontend, check=True)
+        subprocess.run(["yarn", "install"], cwd=frontend, check=True)
         print("  done")
 
     def _read_admin_deps(self) -> list[str]:
