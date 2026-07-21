@@ -81,6 +81,7 @@ class MigrationOperation:
     root_task_id: str | None = None
     task_ids: dict[str, str] = field(default_factory=dict)
     restore_checkpoints: dict = field(default_factory=dict)
+    decisions: list = field(default_factory=list)  # user decisions, e.g. patch skips
 
     # Non-persisted runtime wiring.
     bench: "Bench" = field(default=None, repr=False, compare=False)  # type: ignore[assignment]
@@ -122,6 +123,48 @@ class MigrationOperation:
         self.failed_site = None
         self._transition(RETRYING)
         self._migrate_pending(on_step, on_progress)
+
+    def bypass_patch(self, patch: str, on_progress: OnProgress = _NO_PROGRESS) -> None:
+        """Permanently mark one patch as completed for the failed site via Frappe.
+
+        Never auto-retries; the operation stays in needs_attention so the user
+        must explicitly choose Retry to continue.
+        """
+        from pilot.utils import run_command
+
+        if self.state != NEEDS_ATTENTION or not self.failed_site:
+            raise MigrationStateError("Skip patch is only available on a failed migration.")
+        on_progress(f"Skipping patch {patch} on {self.failed_site}...")
+        command = [
+            *self.bench.frappe_call,
+            "frappe",
+            "--site",
+            self.failed_site,
+            "bypass-patch",
+            patch,
+            "--yes",
+        ]
+        result = run_command(command, cwd=self.bench.sites_path, tee_output=True)
+        if result.returncode != 0:
+            raise BenchError(
+                f"bypass-patch failed for {patch} (exit {result.returncode}). "
+                "This Frappe version may not support bypass-patch."
+            )
+        failed = self.site(self.failed_site)
+        failed.touched_tables = sorted(set(failed.touched_tables) | {"tabPatch Log"})
+        self.decisions.append(
+            {"action": "bypass_patch", "site": self.failed_site, "patch": patch, "at": _now()}
+        )
+        self._save()
+        self._record_audit("bypass_patch", {"site": self.failed_site, "patch": patch})
+
+    def _record_audit(self, entry_type: str, fields: dict) -> None:
+        from pilot.core.bench.audit_log import AuditLog
+
+        try:
+            AuditLog(self.bench).append(entry_type, {"operation": self.id, **fields})
+        except Exception as error:  # audit must never block recovery
+            print(f"Audit log update skipped: {error}")
 
     def restore(self, on_step: OnStep = _NO_STEP, on_progress: OnProgress = _NO_PROGRESS) -> None:
         """Roll apps back to captured revisions and selectively reverse DB changes.
@@ -205,12 +248,11 @@ class MigrationOperation:
             site.migration_status = "success"
             return True
         except MigrateError as error:
+            from pilot.core.bench.migration.diagnosis import diagnose
+
             site.migration_status = "failed"
             self.failed_site = site.name
-            self.diagnosis = {
-                "message": str(error),
-                "output_excerpt": (error.output or "")[-4000:],
-            }
+            self.diagnosis = diagnose(error.output or "", str(error))
             self._transition(NEEDS_ATTENTION)
             return False
         finally:
@@ -312,6 +354,7 @@ class MigrationOperation:
             "root_task_id": self.root_task_id,
             "task_ids": self.task_ids,
             "restore_checkpoints": self.restore_checkpoints,
+            "decisions": self.decisions,
         }
 
     @classmethod
@@ -333,6 +376,7 @@ class MigrationOperation:
             root_task_id=data.get("root_task_id"),
             task_ids=data.get("task_ids", {}),
             restore_checkpoints=data.get("restore_checkpoints", {}),
+            decisions=data.get("decisions", []),
         )
         operation.bench = bench
         operation.store = store

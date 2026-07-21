@@ -294,8 +294,8 @@ Ordered by dependency. Each phase is a single landable, tested commit. Do not st
 - [ ] Tests: retry resume semantics; restore selective import + created-table drop + fallback; opt-out removes Restore but keeps Retry.
 
 ### Phase 5 — Patch-failure diagnosis & Skip-this-patch
-- [ ] Structured diagnosis (`phase, patch, table, column, database_engine, failure_kind, message, output_excerpt, resolver_id`) from captured output; track latest `Executing <patch> ...` line to name the failing patch; classify known failure kinds, retain unknown without guessing. (`resolver_id` populated in Milestone 2; null here.)
-- [ ] `bypass_patch()`: explicit only, strong permanence warning + confirm, queues `bypass-patch <patch> --yes`, records audit, adds `tabPatch Log` to touched set, returns to `needs_attention`. Never auto-run; Retry and Skip-this-patch always both offered, never automatic. Disable/hide when the Frappe version lacks `bypass-patch` (show manual command).
+- [x] Structured diagnosis (`phase, patch, table, column, database_engine, failure_kind, message, output_excerpt, resolver_id`) from captured output; track latest `Executing <patch> ...` line to name the failing patch; classify known failure kinds, retain unknown without guessing. (`resolver_id` populated in Milestone 2; null here.)
+- [x] `bypass_patch()`: explicit only, strong permanence warning + confirm (UI, Phase 7), queues `bypass-patch <patch> --yes`, records audit, adds `tabPatch Log` to touched set, returns to `needs_attention`. Never auto-run; Retry and Skip-this-patch always both offered, never automatic. _(version gate is reactive: bypass errors with a clear message when Frappe lacks the command; proactive disable/manual-command still to build in Phase 7)_
 - [ ] Tests: patch identified from output; bypass validates exact site+patch, audits, no auto-retry; version-gated fallback.
 
 ### Phase 6 — APIs (recovery core)
