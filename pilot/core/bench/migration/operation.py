@@ -86,6 +86,9 @@ class MigrationOperation:
         return self.state in TERMINAL_STATES
 
     def execute_update(self, on_step: OnStep = _NO_STEP, on_progress: OnProgress = _NO_PROGRESS) -> None:
+        on_step("safeguards", "Preparing recovery snapshots")
+        if not self._prepare_safeguards(on_progress):
+            return
         self._transition(UPDATING)
         filter_set = set(self.apps_filter) if self.apps_filter else None
         on_step("update", "Updating apps")
@@ -95,6 +98,9 @@ class MigrationOperation:
         self._migrate_pending(on_step, on_progress)
 
     def execute_site_migrate(self, on_step: OnStep = _NO_STEP, on_progress: OnProgress = _NO_PROGRESS) -> None:
+        on_step("safeguards", "Preparing recovery snapshot")
+        if not self._prepare_safeguards(on_progress):
+            return
         self._migrate_pending(on_step, on_progress)
 
     def site(self, name: str) -> SiteProgress:
@@ -134,9 +140,58 @@ class MigrationOperation:
             self._union_touched_tables(site)
             self._save()
 
+    def _prepare_safeguards(self, on_progress: OnProgress) -> bool:
+        """Maintenance-mode every site, then snapshot each unless opted out.
+
+        Returns False (and leaves the operation in needs_attention) if a snapshot
+        fails, after restoring the original maintenance settings.
+        """
+        from pilot.core.site.migration_snapshot import SnapshotUnsupported
+
+        for site in self.sites:
+            site_obj = self.bench.site(site.name)
+            site.original_config = {"maintenance_mode": 1 if site_obj.maintenance_mode else 0}
+            site_obj.set_maintenance_mode(True)
+        self._save()
+
+        if self.safeguards_disabled:
+            return True
+
+        for site in self.sites:
+            try:
+                on_progress(f"Creating recovery snapshot for {site.name}...")
+                site.previous_tables = self.bench.site(site.name).snapshot.create()
+                site.snapshot_status = "created"
+                self._save()
+            except SnapshotUnsupported as error:
+                site.snapshot_status = "unsupported"
+                self.safeguards_disabled = True
+                on_progress(str(error))
+                self._save()
+            except Exception as error:
+                site.snapshot_status = "failed"
+                self.failed_site = site.name
+                self.diagnosis = {
+                    "message": f"Safeguard failed for {site.name}: {error}",
+                    "output_excerpt": "",
+                }
+                self._restore_maintenance()
+                self._transition(NEEDS_ATTENTION)
+                return False
+        return True
+
+    def _restore_maintenance(self) -> None:
+        for site in self.sites:
+            original = bool(site.original_config.get("maintenance_mode"))
+            self.bench.site(site.name).set_maintenance_mode(original)
+
     def _complete(self, on_step: OnStep) -> None:
         on_step("restart", "Restarting services")
         self.bench.reload_workers()
+        self._restore_maintenance()
+        for site in self.sites:
+            if site.snapshot_status == "created":
+                self.bench.site(site.name).snapshot.discard()
         self._transition(COMPLETED)
 
     def _union_touched_tables(self, site: SiteProgress) -> None:

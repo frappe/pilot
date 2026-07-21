@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from pilot.core.bench import Bench
     from pilot.core.site.backups import SiteBackups
     from pilot.core.site.domains import SiteDomains
+    from pilot.core.site.migration_snapshot import SiteMigrationSnapshot
 
 
 class Site:
@@ -39,6 +40,31 @@ class Site:
         from pilot.core.site.domains import SiteDomains
 
         return SiteDomains(self)
+
+    @cached_property
+    def snapshot(self) -> "SiteMigrationSnapshot":
+        from pilot.core.site.migration_snapshot import SiteMigrationSnapshot
+
+        return SiteMigrationSnapshot(self)
+
+    @property
+    def maintenance_mode(self) -> bool:
+        from pilot.core.site.config import read_site_config
+
+        return bool(read_site_config(self.path).get("maintenance_mode"))
+
+    def set_maintenance_mode(self, enabled: bool) -> None:
+        import json
+
+        from pilot.core.site.config import safe_site_config_path
+        from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
+
+        config_path = safe_site_config_path(self.bench.sites_path, self.config.name)
+        with exclusive_file_lock(config_path):
+            config = json.loads(config_path.read_text())
+            config["maintenance_mode"] = 1 if enabled else 0
+            config["pause_scheduler"] = 1 if enabled else 0
+            replace_private_text_locked(config_path, json.dumps(config, indent=1))
 
     def _frappe_call(self, *args: str) -> list[str]:
         """Build a frappe bench_helper command."""
