@@ -204,10 +204,11 @@ class NginxManager:
         Idempotent: same deterministic content every call."""
         bench_user = pwd.getpwuid(self.bench.path.stat().st_uid).pw_name
         sudoers_file = Path(f"/etc/sudoers.d/{bench_user}-pilot-nginx")
+        systemctl = which("systemctl") or "/bin/systemctl"
         sudoers_content = (
             f"{bench_user} ALL=(ALL) NOPASSWD: /usr/sbin/nginx,"
-            "/bin/systemctl reload nginx,"
-            "/bin/systemctl start nginx\n"
+            f"{systemctl} reload nginx,"
+            f"{systemctl} start nginx\n"
         )
         self._stage_and_copy(sudoers_content, sudoers_file)
         run_command(_privileged(["chmod", "440", str(sudoers_file)]))
