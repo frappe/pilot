@@ -11,6 +11,7 @@ from pilot.exceptions import BenchError
 if TYPE_CHECKING:
     from pilot.config import S3Config
     from pilot.core.app import App, RevisionPin
+    from pilot.core.bench.migration import MigrationStore
     from pilot.core.database import Database
     from pilot.core.site import Site
     from pilot.tasks import TaskRunner
@@ -82,6 +83,12 @@ class Bench:
         from pilot.tasks import TaskRunner
 
         return TaskRunner(self.path)
+
+    @cached_property
+    def migrations(self) -> "MigrationStore":
+        from pilot.core.bench.migration import MigrationStore
+
+        return MigrationStore(self)
 
     @property
     def apps_path(self) -> Path:
