@@ -20,8 +20,8 @@ jobs:
       - name: Build admin frontend
         run: |
           cd admin/frontend
-          npm install
-          npm run build
+          yarn install --frozen-lockfile
+          yarn build
 
       - name: Package dist
         run: |

@@ -1,4 +1,4 @@
-import { apiUrl, request } from './client'
+import { apiUrl, request, unwrap } from './client'
 
 export const sitesApi = {
   list: () => request.get('sites').json(),
@@ -6,8 +6,9 @@ export const sitesApi = {
   create: (payload) => request.post('sites', { json: payload }).json(),
   loginLink: (name) => request.post(`sites/${encodeURIComponent(name)}/login`).json(),
   configuration: {
-    get: (name) => request.get(`sites/${encodeURIComponent(name)}/configuration`).json(),
-    update: (name, patch) => request.patch(`sites/${encodeURIComponent(name)}/configuration`, { json: patch }).json(),
+    get: (name) => unwrap(request.get(`sites/${encodeURIComponent(name)}/configuration`).json()),
+    update: (name, patch) =>
+      unwrap(request.patch(`sites/${encodeURIComponent(name)}/configuration`, { json: patch }).json()),
   },
   enableTls: (name, email) => request.post(`sites/${encodeURIComponent(name)}/actions/enable-tls`, { json: email ? { email } : {} }).json(),
   clearCache: (name) => request.post(`sites/${encodeURIComponent(name)}/actions/clear-cache`).json(),
@@ -38,6 +39,16 @@ export const sitesApi = {
     dnsRecords: (name, domain) =>
       request.get(`sites/${encodeURIComponent(name)}/domains/${encodeURIComponent(domain)}/dns-records`).json(),
     wildcardList: () => request.get('sites/wildcard-domains').json(),
+  },
+
+  monitoring: {
+    get: (name, window) =>
+      request.get(`sites/${encodeURIComponent(name)}/monitoring`, { searchParams: { window } }).json(),
+  },
+
+  uptime: {
+    get: (name, window) =>
+      request.get(`sites/${encodeURIComponent(name)}/uptime`, { searchParams: { window } }).json(),
   },
 
   backups: {

@@ -33,7 +33,6 @@ class Monitor:
         self._targets: dict[str, int] | None = None
         self._cpu_before: tuple[dict[str, int], dict[int, int]] | None = None
         self._io_before: tuple[dict[str, int], dict[str, int]] | None = None
-        self._configurator.setup()
 
     def monitored_targets(self) -> dict[str, int]:
         if self._targets is None:

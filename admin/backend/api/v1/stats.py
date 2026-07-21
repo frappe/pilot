@@ -131,12 +131,12 @@ def get_monitor_status():
 
 @stats_bp.get("/monitor/history")
 def get_monitor_history():
-    from admin.backend.providers.monitor import MonitorProvider
+    from admin.backend.providers.system_monitoring import SystemMonitoringProvider
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
     window = request.args.get("window", "1h")
     try:
-        return jsonify(MonitorProvider(bench_root, window).get_history())
+        return jsonify(SystemMonitoringProvider(bench_root, window).get_history())
     except Exception:
         return error_response(
             "monitor_history_unavailable",

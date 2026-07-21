@@ -63,6 +63,7 @@ def _install_provider(tmp_path: Path, monkeypatch) -> None:
 def _make_bench(tmp_path: Path) -> Bench:
     bench = Bench(BenchConfig._from_dict(_BENCH_DATA), tmp_path)
     bench.config.nginx.http_port = _HTTP_PORT
+    bench.create_directories()
     site = bench.sites_path / "site1.localhost"
     site.mkdir(parents=True, exist_ok=True)
     (site / "site_config.json").write_text("{}")
@@ -77,6 +78,8 @@ def _wrapper_conf(tmp_path: Path, include_conf: Path) -> Path:
         f"error_log {tmp_path}/error.log;\n"
         "events {}\n"
         "http {\n"
+        "    log_format pilot_access '$remote_addr [$time_local] \"$request_method $uri\" "
+        "$status \"$host\" $request_time';\n"
         f"    access_log {tmp_path}/access.log;\n"
         f"    include {include_conf};\n"
         "}\n"

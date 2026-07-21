@@ -141,12 +141,18 @@ class ProductionSetup:
             SystemdProcessManager(self.bench).remove_units()
 
     def _setup_monitoring(self):
-        """Install the shared bench-monitor timer unit and persist monitor config to bench.toml."""
         from pilot.core.server.monitoring import MonitorConfigurator, resolve_monitor_log_path
+        from pilot.core.site.uptime_monitoring_config import UptimeMonitorConfigurator
 
-        MonitorConfigurator().install()
+        monitor = MonitorConfigurator(self.bench)
+        monitor.install()
         self.bench.config.monitor.log_path = resolve_monitor_log_path(self.bench.config)
         self.bench.config.write(self.bench.path)
+        monitor.setup()
+
+        uptime = UptimeMonitorConfigurator(self.bench)
+        uptime.install()
+        uptime.setup()
 
     def _persist_production_state(self) -> None:
         """Write the production state to bench.toml LAST, so the switcher never

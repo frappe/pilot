@@ -3,10 +3,10 @@
     <span class="size-5 text-ink-gray-4 animate-spin lucide-loader-circle"></span>
   </div>
   <div v-else class="space-y-6">
-    <Alert v-if="!connected" theme="blue" title="Why connect S3?" :dismissible="false">
+    <Alert v-if="!connected" theme="blue" title="Why connect object storage?" :dismissible="false">
       <template #description>
         <p class="text-ink-gray-6 text-p-sm">
-          Connect an S3-compatible bucket to send offsite backups and snapshots.
+          Connect S3-compatible object storage to send offsite backups and snapshots.
         </p>
       </template>
     </Alert>
@@ -111,13 +111,13 @@ async function save() {
     })
     if (!result.error) {
       secretKey.value = ''
-      toast.success('S3 settings saved')
+      toast.success('Object storage settings saved')
       await load()
     } else {
-      error.value = apiErrorMessage(result, 'Could not save S3 settings.')
+      error.value = apiErrorMessage(result, 'Could not save object storage settings.')
     }
   } catch (e) {
-    error.value = e.message || 'Could not save S3 settings.'
+    error.value = e.message || 'Could not save object storage settings.'
   } finally {
     saving.value = false
   }
@@ -134,12 +134,12 @@ async function disconnect() {
       provider.value = providers.value[0]?.value || ''
       region.value = ''
       secretKeySet.value = false
-      toast.success('S3 disconnected')
+      toast.success('Object storage disconnected')
     } else {
-      toast.error(apiErrorMessage(result, 'Could not disconnect S3.'))
+      toast.error(apiErrorMessage(result, 'Could not disconnect object storage.'))
     }
   } catch (e) {
-    toast.error(e.message || 'Could not disconnect S3.')
+    toast.error(e.message || 'Could not disconnect object storage.')
   } finally {
     disconnecting.value = false
   }

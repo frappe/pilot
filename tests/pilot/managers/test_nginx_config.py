@@ -245,6 +245,50 @@ def test_no_admin_vhost_without_domain(tmp_path: Path) -> None:
     assert "location = /api/v1/health" not in config
 
 
+# --- access log --------------------------------------------------------------
+
+
+def test_site_vhost_logs_real_ip_via_pilot_access_format(tmp_path: Path) -> None:
+    config = _site_config(tmp_path, _BASE_SITE)
+
+    assert "access_log" in config
+    assert "pilot_access" in config
+    assert "nginx-access.log" in config
+
+
+def test_only_the_app_location_gets_request_logging(tmp_path: Path) -> None:
+    config = _site_config(tmp_path, _BASE_SITE)
+
+    # Exactly one access_log directive: the proxied app location, not
+    # /assets, /files, or /socket.io - those aren't measured by monitor.json.log
+    # either, so keep the two IP sources comparable.
+    assert config.count("access_log") == 1
+    assets_block = config[config.index("location /assets") : config.index("location /socket.io")]
+    assert "access_log" not in assets_block
+    socketio_block = config[config.index("location /socket.io") :]
+    socketio_block = socketio_block[: socketio_block.index("location /")]
+    assert "access_log" not in socketio_block
+
+
+def test_admin_only_vhost_has_no_access_log(tmp_path: Path) -> None:
+    data = copy.deepcopy(_BASE_DATA)
+    data["admin"] = {"domain": "admin.example.com"}
+    config = _renderer(tmp_path, data).generate_bench_config([], admin_ssl=False)
+
+    assert "access_log" not in config
+
+
+def test_every_vhost_gets_error_log_including_admin(tmp_path: Path) -> None:
+    # Unlike access_log (app requests only, site vhosts only), error_log covers
+    # every vhost - admin included - since operational errors matter there too.
+    data = copy.deepcopy(_BASE_DATA)
+    data["admin"] = {"domain": "admin.example.com"}
+    config = _renderer(tmp_path, data).generate_bench_config([(_BASE_SITE, False)], admin_ssl=False)
+
+    assert config.count("error_log") == 2  # one site vhost + one admin vhost
+    assert "nginx-error.log" in config
+
+
 # --- server-wide catch-all --------------------------------------------------
 
 
@@ -260,6 +304,13 @@ def test_server_config_is_default_server(tmp_path: Path) -> None:
     # serving the first TLS vhost's cert.
     assert "listen 443 ssl http2 default_server;" in conf
     assert "ssl_reject_handshake on;" in conf
+
+
+def test_server_config_declares_pilot_access_log_format(tmp_path: Path) -> None:
+    conf = _renderer(tmp_path).generate_server_config(Path("/usr/share/nginx/bench-error-pages"))
+
+    assert "log_format pilot_access" in conf
+    assert "$remote_addr" in conf
 
 
 # --- NginxManager: files and TLS decisions ----------------------------------
@@ -399,6 +450,39 @@ def test_install_config_rolls_back_symlink_when_reload_fails(tmp_path: Path) -> 
 
     mock_run.assert_called_once()
     assert mock_run.call_args[0][0][-2:] == ["unlink", str(symlink_path)]
+
+
+def test_write_nginx_logrotate_content(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, _BASE_DATA)
+    manager = NginxManager(bench)
+
+    with patch.object(manager, "_stage_and_copy") as mock_stage:
+        manager._write_nginx_logrotate()
+
+    mock_stage.assert_called_once()
+    content, target = mock_stage.call_args[0]
+    assert target == Path("/etc/logrotate.d/test-bench-nginx")
+    assert str(bench.logs_path / "nginx-access.log") in content
+    assert str(bench.logs_path / "nginx-error.log") in content
+    assert "copytruncate" in content
+    assert "rotate 3" in content
+
+
+def test_install_config_writes_nginx_logrotate(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, _BASE_DATA)
+    manager = NginxManager(bench)
+
+    with (
+        patch.object(manager, "_write_nginx_logrotate") as mock_logrotate,
+        patch.object(manager, "install_default_server"),
+        patch.object(manager, "_set_worker_user"),
+        patch.object(manager, "_reload_or_rollback"),
+        patch.object(manager, "_prune_dangling_symlinks"),
+        patch("pilot.managers.nginx.run_command"),
+    ):
+        manager.install_config()
+
+    mock_logrotate.assert_called_once()
 
 
 def test_prune_dangling_symlinks_removes_only_broken_ones(tmp_path: Path) -> None:

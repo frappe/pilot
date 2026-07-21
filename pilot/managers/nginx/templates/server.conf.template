@@ -1,5 +1,7 @@
 server_names_hash_bucket_size 256;
 
+log_format pilot_access '$remote_addr [$time_local] "$request_method $uri" $status "$host" $request_time';
+
 server {
     listen {{ http_port }} default_server;
     listen [::]:{{ http_port }} default_server;

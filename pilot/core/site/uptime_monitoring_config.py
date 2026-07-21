@@ -8,51 +8,54 @@ from pathlib import Path
 
 from pilot.exceptions import BenchError
 from pilot.managers.platform import _privileged, is_linux
-from pilot.utils import cli_root, iter_sibling_benches, run_command
+from pilot.utils import cli_root, run_command
 
 if typing.TYPE_CHECKING:
     from pilot.core.bench import Bench
 
-MONITOR_TIMER_TEMPLATE = """\
+SITE_UPTIME_TIMER_TEMPLATE = """\
 [Unit]
-Description=bench monitor timer
+Description=site uptime monitor timer
 
 [Timer]
-OnBootSec=10s
-OnUnitInactiveSec=10s
+OnBootSec=5s
+OnUnitInactiveSec=5s
 AccuracySec=1s
 
 [Install]
 WantedBy=timers.target
 """
 
-MONITOR_DAEMON_TEMPLATE = """\
+SITE_UPTIME_DAEMON_TEMPLATE = """\
 [Unit]
-Description=bench monitor
+Description=site uptime monitor
 
 [Service]
 Type=oneshot
 WorkingDirectory={cli_root}
 Environment=PYTHONPATH={cli_root}
-ExecStart={python} -m pilot.core.server.monitoring
-StandardOutput=append:/var/log/bench-monitor.log
-StandardError=append:/var/log/bench-monitor.error.log
+ExecStart={python} -m pilot.core.site.uptime_monitoring
+StandardOutput=append:/var/log/site-uptime.log
+StandardError=append:/var/log/site-uptime.error.log
 
 [Install]
 WantedBy=default.target
 """
 
 
-class MonitorConfigurator:
-    """Installs monitor units and configures per-bench log files."""
+class UptimeMonitorConfigurator:
+    """Installs the shared systemd timer that wakes every few seconds and
+    pings every production site's /api/method/ping endpoint. One timer covers
+    every sibling bench's sites, same shape as MonitorConfigurator. The actual
+    polling logic lives in pilot.core.site.uptime_monitoring."""
 
     def __init__(self, bench: "Bench | None" = None):
         self.bench = bench
-        self.unit_name = "bench-monitor.service"
-        self.timer_unit_name = "bench-monitor.timer"
-        monitor_dir = cli_root() / "benches" / ".monitor"
-        self.monitor_service_path = monitor_dir / self.unit_name
-        self.monitor_timer_path = monitor_dir / self.timer_unit_name
+        self.unit_name = "site-uptime.service"
+        self.timer_unit_name = "site-uptime.timer"
+        uptime_dir = cli_root() / "benches" / ".site-uptime-monitor"
+        self.uptime_service_path = uptime_dir / self.unit_name
+        self.uptime_timer_path = uptime_dir / self.timer_unit_name
         self.user_unit_dir = Path.home() / ".config" / "systemd" / "user"
 
     def install(self) -> None:
@@ -61,8 +64,8 @@ class MonitorConfigurator:
         self._write_timer_unit()
         self._install_user_timer_unit()
 
-        # Best-effort: both are idempotent preconditions that may already be
-        # satisfied, so a failure here isn't fatal.
+        # Best-effort: linger/user-instance may already be enabled from
+        # MonitorConfigurator's own install(), so a failure here isn't fatal.
         for command in (
             ["loginctl", "enable-linger", getpass.getuser()],
             ["systemctl", "start", f"user@{os.getuid()}.service"],
@@ -76,18 +79,11 @@ class MonitorConfigurator:
 
     @property
     def log_path(self) -> Path:
-        from pilot.config import MonitorConfig
-
-        bench = self._require_bench()
-        return bench.config.monitor.log_path or MonitorConfig.default_log_path(bench.config.name)
-
-    @property
-    def system_log_path(self) -> Path:
-        return self._require_bench().config.monitor.system_log_path
+        return self._require_bench().logs_path / "uptime.json.log"
 
     def setup(self) -> None:
         if not is_linux():
-            raise BenchError("Monitoring is only supported on linux based machines.")
+            raise BenchError("Uptime monitoring is only supported on linux based machines.")
 
         log_dir = self.log_path.parent
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -96,38 +92,11 @@ class MonitorConfigurator:
 
     def setup_log_rotation(self) -> None:
         bench = self._require_bench()
-        monitor_config = bench.config.monitor
         self._write_logrotate_config(
-            f"/etc/logrotate.d/{bench.config.name}-stats",
+            f"/etc/logrotate.d/{bench.config.name}-site-uptime",
             self.log_path,
-            monitor_config.application_log_max_size,
+            "20M",
         )
-        self._write_logrotate_config(
-            "/etc/logrotate.d/bench-system-stats",
-            self.system_log_path,
-            monitor_config.system_log_max_size,
-        )
-
-    def is_system_log_authority(self) -> bool:
-        bench = self._require_bench()
-        authority_path = bench.config.monitor.authority_file_path
-        if not authority_path.exists():
-            authority_path.write_text(bench.config.name)
-            return True
-
-        authority_bench = authority_path.read_text()
-        if bench.config.name == authority_bench:
-            return True
-
-        for _, bench_config in iter_sibling_benches(bench.path):
-            if bench_config.name == authority_bench and bench_config.production.process_manager in (
-                "systemd",
-                "supervisor",
-            ):
-                return False
-
-        authority_path.write_text(bench.config.name)
-        return True
 
     def _systemctl_env(self) -> dict:
         env = dict(os.environ)
@@ -141,24 +110,24 @@ class MonitorConfigurator:
         from pilot.managers.environment import AdminEnvManager
 
         root = cli_root()
-        return MONITOR_DAEMON_TEMPLATE.format(
+        return SITE_UPTIME_DAEMON_TEMPLATE.format(
             cli_root=root,
             python=AdminEnvManager(root).python,
         )
 
     def _write_unit(self) -> None:
-        self.monitor_service_path.parent.mkdir(parents=True, exist_ok=True)
-        self.monitor_service_path.write_text(self._render_unit())
+        self.uptime_service_path.parent.mkdir(parents=True, exist_ok=True)
+        self.uptime_service_path.write_text(self._render_unit())
 
     def _install_user_unit(self) -> None:
-        self._install_user_symlink(self.unit_name, self.monitor_service_path)
+        self._install_user_symlink(self.unit_name, self.uptime_service_path)
 
     def _write_timer_unit(self) -> None:
-        self.monitor_timer_path.parent.mkdir(parents=True, exist_ok=True)
-        self.monitor_timer_path.write_text(MONITOR_TIMER_TEMPLATE)
+        self.uptime_timer_path.parent.mkdir(parents=True, exist_ok=True)
+        self.uptime_timer_path.write_text(SITE_UPTIME_TIMER_TEMPLATE)
 
     def _install_user_timer_unit(self) -> None:
-        self._install_user_symlink(self.timer_unit_name, self.monitor_timer_path)
+        self._install_user_symlink(self.timer_unit_name, self.uptime_timer_path)
 
     def _install_user_symlink(self, name: str, target: Path) -> None:
         self.user_unit_dir.mkdir(parents=True, exist_ok=True)
@@ -178,11 +147,11 @@ class MonitorConfigurator:
     copytruncate
 }}
 """
-        staged = self.monitor_service_path.parent / Path(target).name
+        staged = self.uptime_service_path.parent / Path(target).name
         staged.write_text(config)
         run_command(_privileged(["cp", str(staged), target]))
         staged.unlink()
 
     def _require_bench(self) -> "Bench":
-        assert self.bench is not None, "MonitorConfigurator needs a bench for this operation"
+        assert self.bench is not None, "UptimeMonitorConfigurator needs a bench for this operation"
         return self.bench

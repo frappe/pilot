@@ -411,13 +411,14 @@ def _inherit_task_env(env: dict | None) -> dict | None:
 def _start_process(
     argv: list[str], cwd: Path | None, env: dict | None, stream_output: bool
 ) -> subprocess.Popen:
+    detach_session = not (argv and (argv[0] == "sudo" or argv[0].endswith("/sudo")))
     return subprocess.Popen(
         argv,
         cwd=cwd,
         env=_inherit_task_env(env),
         stdout=None if stream_output else subprocess.PIPE,
         stderr=None if stream_output else subprocess.PIPE,
-        start_new_session=True,
+        start_new_session=detach_session,
     )
 
 
