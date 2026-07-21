@@ -60,11 +60,11 @@ def build_admin_frontend(
     frontend = _find_frontend()
     _check_node_version()
     on_progress(f"Building admin frontend at {frontend}...")
-    if _is_npm_install_stale(frontend):
-        on_progress("Running npm install...")
-        run_command(["npm", "install"], cwd=frontend, stream_output=True)
-    on_progress("Running npm build")
-    run_command(["npm", "run", "build"], cwd=frontend, stream_output=True)
+    if _is_yarn_install_stale(frontend):
+        on_progress("Running yarn install...")
+        run_command(["yarn", "install"], cwd=frontend, stream_output=True)
+    on_progress("Running yarn build")
+    run_command(["yarn", "build"], cwd=frontend, stream_output=True)
     on_progress("\nAdmin frontend rebuilt successfully.")
 
 
@@ -79,13 +79,13 @@ def _find_frontend() -> Path:
     )
 
 
-def _is_npm_install_stale(frontend: Path) -> bool:
-    install_state = frontend / "node_modules" / ".package-lock.json"
+def _is_yarn_install_stale(frontend: Path) -> bool:
+    install_state = frontend / "node_modules" / ".yarn-integrity"
     if not install_state.exists():
         return True
 
     installed_at = install_state.stat().st_mtime
-    for manifest in (frontend / "package.json", frontend / "package-lock.json"):
+    for manifest in (frontend / "package.json", frontend / "yarn.lock"):
         if manifest.exists() and manifest.stat().st_mtime > installed_at:
             return True
     return False
