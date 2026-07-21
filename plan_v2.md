@@ -299,10 +299,10 @@ Ordered by dependency. Each phase is a single landable, tested commit. Do not st
 - [ ] Tests: patch identified from output; bypass validates exact site+patch, audits, no auto-retry; version-gated fallback.
 
 ### Phase 6 — APIs (recovery core)
-- [ ] `POST /updates` (creates `kind="update"` op + task), standalone migrate endpoint creates `kind="site_migrate"`. Both return op + task IDs.
-- [ ] `GET /migrations?cursor=&limit=&status=&kind=&site=`, `GET /migrations/current`, `GET /migrations/<id>`.
-- [ ] Action endpoints `retry`, `restore`, `bypass-patch`: validate op state, queue task, attach task ID, return both IDs. Claim bench + affected-site resource keys (Phase 0). (`apply-fix` lands in Milestone 2.)
-- [ ] Responses expose durable op summaries + nullable task-log links; legacy `update`/`migrate` tasks surface as read-only rows.
+- [x] `POST /updates` (creates `kind="update"` op + task), standalone migrate endpoint creates `kind="site_migrate"`. Both return op + task IDs.
+- [x] `GET /migrations?cursor=&limit=&status=&kind=&site=`, `GET /migrations/current`, `GET /migrations/<id>`.
+- [x] Action endpoints `retry`, `restore`, `bypass-patch`: validate op state, queue task, attach task ID, return both IDs. Claim bench + affected-site resource keys (Phase 0). (`apply-fix` lands in Milestone 2.)
+- [x] Responses expose durable op summaries + nullable task-log links; legacy `update`/`migrate` tasks surface as read-only rows.
 - [ ] Tests: state validation, cursor pagination, filters, legacy rows, nav-to-operation on create.
 
 ### Phase 7 — Admin UI (recovery core)

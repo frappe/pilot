@@ -205,15 +205,20 @@ def migrate_site(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     if not site_exists(bench_root, name):
         return site_not_found()
+    bench = Bench(bench_root)
+    operation = bench.migrations.create_site_migrate(name)
     try:
         task_id = MigrateTask.queue(
-            Bench(bench_root),
+            bench,
             site=name,
+            operation_id=operation.id,
             idempotency_key=request.headers.get("Idempotency-Key"),
             resource_key=f"site:{name.lower()}",
         )
     except Exception as error:
         return task_failure(error)
+    operation.root_task_id = task_id
+    operation.store.save(operation)
     return accepted_task_response(bench_root, task_id)
 
 
