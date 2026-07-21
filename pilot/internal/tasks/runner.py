@@ -62,7 +62,7 @@ class TaskRunner:
         args: dict,
         callbacks: TaskCallbacks | None = None,
         idempotency_key: str | None = None,
-        resource_key: str | None = None,
+        resource_key: str | list[str] | None = None,
     ) -> str:
         return self.submit(
             command,
@@ -78,7 +78,7 @@ class TaskRunner:
         args: dict,
         callbacks: TaskCallbacks | None = None,
         idempotency_key: str | None = None,
-        resource_key: str | None = None,
+        resource_key: str | list[str] | None = None,
     ) -> SubmissionResult:
         payload = self._payloads.build(command, args, callbacks)
         if idempotency_key is None:

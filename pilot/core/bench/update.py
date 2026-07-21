@@ -55,14 +55,9 @@ class BenchUpdater:
             python_env.build_assets_for_app(app)
 
     def migrate_sites(self, skip_failing_patches: bool, on_progress: Callable[[str], None]) -> None:
-        from pilot.exceptions import CommandError, MigrateError
-
         for site in self.bench.sites():
             on_progress(f"Migrating {site.config.name}...")
-            try:
-                site.migrate(skip_failing=skip_failing_patches)
-            except CommandError as error:
-                raise MigrateError(f"Migration failed for {site.config.name}") from error
+            site.migrate(skip_failing=skip_failing_patches)
 
 
 def marketplace_pin(app: "App", marketplace_by_name: dict) -> "RevisionPin | None":

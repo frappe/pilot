@@ -253,7 +253,7 @@ def test_active_resource_rejects_another_task(tmp_path: Path) -> None:
             resource_key="site:example.test",
         )
 
-    assert store.read_metadata(TASK_ID)["resource_key"] == "site:example.test"
+    assert store.read_metadata(TASK_ID)["resource_keys"] == ["site:example.test"]
 
 
 def test_idempotent_replay_precedes_resource_conflict(tmp_path: Path) -> None:
@@ -309,7 +309,7 @@ def test_terminal_task_releases_resource(tmp_path: Path) -> None:
         resource_key="site:example.test",
     )
 
-    assert store.read_metadata(retry_id)["resource_key"] == "site:example.test"
+    assert store.read_metadata(retry_id)["resource_keys"] == ["site:example.test"]
 
 
 @pytest.mark.parametrize("pending_file", ["callbacks.json", "process.json"])

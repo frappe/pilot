@@ -854,7 +854,7 @@ def test_bench_update_apps_passes_marketplace_pin_to_app_update(tmp_path: Path) 
 
 
 def test_bench_migrate_sites_raises_on_failure(tmp_path: Path) -> None:
-    from pilot.exceptions import CommandError, MigrateError
+    from pilot.exceptions import MigrateError
 
     bench = make_bench(tmp_path)
     bench.create_directories()
@@ -863,7 +863,7 @@ def test_bench_migrate_sites_raises_on_failure(tmp_path: Path) -> None:
     (site_dir / "site_config.json").write_text("{}")
 
     with (
-        patch("pilot.core.site.Site.migrate", side_effect=CommandError("migrate failed")),
+        patch("pilot.core.site.Site.migrate", side_effect=MigrateError("migrate failed")),
         pytest.raises(MigrateError),
     ):
         bench._migrate_sites(False, lambda message: None)

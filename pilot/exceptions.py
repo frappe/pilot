@@ -30,7 +30,10 @@ class TaskConflictError(BenchError):
 
 
 class MigrateError(BenchError):
-    pass
+    def __init__(self, message: str, output: str = "", returncode: int = 1):
+        super().__init__(message)
+        self.output = output
+        self.returncode = returncode
 
 
 class AppValidationError(BenchError):

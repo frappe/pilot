@@ -88,10 +88,11 @@ class Site:
 
         return SiteApps(self).installed_apps()
 
-    def migrate(self, skip_failing: bool = False) -> None:
+    def migrate(self, skip_failing: bool = False) -> str:
+        """Run migration through the shared path, returning the full captured output."""
         from pilot.core.site.commands import SiteCommands
 
-        SiteCommands(self).migrate(skip_failing)
+        return SiteCommands(self).migrate(skip_failing)
 
     def uninstall_apps(
         self,

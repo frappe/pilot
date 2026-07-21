@@ -33,13 +33,14 @@ class TaskStore:
         self,
         metadata: Mapping[str, object],
         private_files: Mapping[str, str] | None = None,
-        resource_key: str | None = None,
+        resource_key: str | list[str] | None = None,
     ) -> Path:
+        keys = self._normalize_keys(resource_key)
         make_private_directory(self.tasks_root, parents=True)
         with exclusive_file_lock(self._lock_target):
-            self._reject_active_resource_locked(resource_key)
+            self._reject_active_resource_locked(keys)
             return self._create_queued_locked(
-                self._with_resource_key(metadata, resource_key),
+                self._with_resource_keys(metadata, keys),
                 private_files or {},
             )
 
@@ -49,8 +50,9 @@ class TaskStore:
         private_files: Mapping[str, str],
         idempotency_digest: str,
         request_fingerprint: str,
-        resource_key: str | None = None,
+        resource_key: str | list[str] | None = None,
     ) -> TaskCreation:
+        keys = self._normalize_keys(resource_key)
         make_private_directory(self.tasks_root, parents=True)
         with exclusive_file_lock(self._lock_target):
             existing = self._active_idempotent_task_locked(idempotency_digest)
@@ -60,11 +62,11 @@ class TaskStore:
                     raise TaskConflictError("Idempotency key is already in use for another active task")
                 return TaskCreation(existing, self.task_dir(existing), False)
 
-            self._reject_active_resource_locked(resource_key)
+            self._reject_active_resource_locked(keys)
             stored_metadata = dict(metadata)
             stored_metadata["idempotency_digest"] = idempotency_digest
             stored_metadata["request_fingerprint"] = request_fingerprint
-            stored_metadata = self._with_resource_key(stored_metadata, resource_key)
+            stored_metadata = self._with_resource_keys(stored_metadata, keys)
             task_dir = self._create_queued_locked(stored_metadata, private_files)
             return TaskCreation(str(metadata["task_id"]), task_dir, True)
 
@@ -209,16 +211,24 @@ class TaskStore:
             include_cleanup_pending=False,
         )
 
-    def _reject_active_resource_locked(self, resource_key: str | None) -> None:
-        if resource_key is None:
+    def _reject_active_resource_locked(self, resource_keys: list[str]) -> None:
+        if not resource_keys:
             return
-        existing = self._active_task_with_metadata_locked(
-            "resource_key",
-            resource_key,
-            include_cleanup_pending=True,
-        )
-        if existing is not None:
-            raise TaskConflictError(f"Another active task is already using resource {resource_key!r}")
+        requested = set(resource_keys)
+        for task_dir in self._files.task_dirs():
+            task_id = task_dir.name
+            try:
+                status = self.read_status(task_id)
+                if not status.is_active and not self._files.has_cleanup_pending(task_dir):
+                    continue
+                held = set(self._task_resource_keys(self.read_metadata(task_id)))
+            except (OSError, ValueError, TaskNotFoundError):
+                continue
+            conflict = requested & held
+            if conflict:
+                raise TaskConflictError(
+                    f"Another active task is already using resource {sorted(conflict)[0]!r}"
+                )
 
     def _active_task_with_metadata_locked(
         self,
@@ -243,10 +253,26 @@ class TaskStore:
         return None
 
     @staticmethod
-    def _with_resource_key(metadata: Mapping[str, object], resource_key: str | None) -> dict[str, object]:
+    def _normalize_keys(resource_key: str | list[str] | None) -> list[str]:
+        if resource_key is None:
+            return []
+        if isinstance(resource_key, str):
+            return [resource_key]
+        return list(resource_key)
+
+    @staticmethod
+    def _task_resource_keys(metadata: Mapping[str, object]) -> list[str]:
+        keys = metadata.get("resource_keys")
+        if isinstance(keys, list):
+            return keys
+        single = metadata.get("resource_key")
+        return [single] if isinstance(single, str) else []
+
+    @staticmethod
+    def _with_resource_keys(metadata: Mapping[str, object], keys: list[str]) -> dict[str, object]:
         stored_metadata = dict(metadata)
-        if resource_key is not None:
-            stored_metadata["resource_key"] = resource_key
+        if keys:
+            stored_metadata["resource_keys"] = list(keys)
         return stored_metadata
 
     def _terminal_tasks_locked(self) -> list[tuple[tuple[float, str], str]]:

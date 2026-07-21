@@ -585,10 +585,15 @@ def test_honcho_start_writes_per_process_pid_files(tmp_path: Path) -> None:
 
 
 def _capture_site_cmd(monkeypatch) -> dict:
+    import subprocess
+
     captured: dict = {}
-    monkeypatch.setattr(
-        "pilot.core.site.commands.run_command", lambda cmd, **kw: captured.setdefault("cmd", cmd)
-    )
+
+    def stub(cmd, **kw):
+        captured["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr("pilot.core.site.commands.run_command", stub)
     return captured
 
 

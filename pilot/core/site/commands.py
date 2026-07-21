@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pilot.exceptions import BenchError
+from pilot.exceptions import BenchError, MigrateError
 from pilot.utils import run_command
 
 if TYPE_CHECKING:
@@ -59,11 +59,19 @@ class SiteCommands:
         cmd += self.site.bench.db_root_args
         run_command(cmd, cwd=self.site.bench.sites_path, stream_output=True)
 
-    def migrate(self, skip_failing: bool) -> None:
+    def migrate(self, skip_failing: bool) -> str:
+        """Run migration, streaming output live and returning the full captured output."""
         cmd = self.site._frappe_call("frappe", "--site", self.site.config.name, "migrate")
         if skip_failing:
             cmd.append("--skip-failing")
-        run_command(cmd, cwd=self.site.bench.sites_path, stream_output=True)
+        result = run_command(cmd, cwd=self.site.bench.sites_path, tee_output=True)
+        if result.returncode != 0:
+            raise MigrateError(
+                f"Migration failed for {self.site.config.name}",
+                output=result.stdout,
+                returncode=result.returncode,
+            )
+        return result.stdout
 
     def db_args(self, db_type: str) -> list[str]:
         if db_type == "postgres":
