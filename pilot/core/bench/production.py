@@ -79,6 +79,7 @@ class BenchProduction:
         letsencrypt_manager = LetsEncryptManager(self.bench)
         nginx_manager = NginxManager(self.bench)
         letsencrypt_manager.install()
+        letsencrypt_manager.setup_sudoers()
         letsencrypt_manager.ensure_webroot()
         nginx_manager.generate_config(ssl_ready=False)
         nginx_manager.reload()

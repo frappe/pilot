@@ -17,11 +17,11 @@ from pilot.managers.platform import (
     _privileged,
     default_nginx_config_dir,
     is_linux,
-    is_root,
     service_command,
     service_running,
     which,
 )
+from pilot.managers.sudoers import has_passwordless_sudo_for, install_sudoers_grant, stage_and_copy
 from pilot.managers.waf import WafManager
 from pilot.utils import run_command
 
@@ -198,33 +198,30 @@ class NginxManager:
             get_package_manager().install("nginx")
 
     def setup_sudoers(self):
-        """Give nginx password less sudo access to allow reloads and other actions.
+        """Give nginx passwordless sudo for exactly the commands reload needs.
         Idempotent: same deterministic content every call."""
         bench_user = pwd.getpwuid(self.bench.path.stat().st_uid).pw_name
-        sudoers_file = Path(f"/etc/sudoers.d/{bench_user}-pilot-nginx")
         systemctl = which("systemctl") or "/bin/systemctl"
         nginx = which("nginx") or "/usr/sbin/nginx"
-        sudoers_content = (
-            f"{bench_user} ALL=(ALL) NOPASSWD: {nginx} -t,"
-            f"{nginx} -T,"
-            f"{systemctl} start nginx,"
-            f"{systemctl} stop nginx,"
-            f"{systemctl} reload nginx\n"
+        install_sudoers_grant(
+            self.bench.config_path / "nginx",
+            bench_user,
+            "nginx",
+            [
+                f"{nginx} -t",
+                f"{nginx} -T",
+                f"{systemctl} start nginx",
+                f"{systemctl} stop nginx",
+                f"{systemctl} reload nginx",
+            ],
         )
-        self._stage_and_copy(sudoers_content, sudoers_file, validate=["visudo", "-cf"])
-        run_command(_privileged(["chmod", "440", str(sudoers_file)]))
 
     @property
     def has_passwordless_sudo(self) -> bool:
         """True when the sudoers grant from `setup_sudoers` lets this user run
         nginx commands without a password prompt."""
-        if is_root():
-            return True
-        if which("sudo") is None:
-            return False
         nginx = which("nginx") or "/usr/sbin/nginx"
-        result = subprocess.run(["sudo", "-n", "-l", nginx, "-t"], capture_output=True, timeout=5)
-        return result.returncode == 0
+        return has_passwordless_sudo_for([nginx, "-t"])
 
     def generate_config(self, ssl_ready: bool = False) -> None:
         nginx_dir = self.bench.config_path / "nginx"
@@ -342,16 +339,8 @@ class NginxManager:
         self._stage_and_copy(config, target)
 
     def _stage_and_copy(self, content: str, target: Path, validate: list[str] | None = None) -> None:
-        """Sudo-copy content into a root-owned target via a bench-owned staging file.
-        `validate`, if given, is a command run against the staged file before it's
-        copied into place - e.g. ["visudo", "-cf"] to catch bad sudoers syntax."""
-        staged = self.bench.config_path / "nginx" / target.name
-        staged.parent.mkdir(parents=True, exist_ok=True)
-        staged.write_text(content)
-        if validate:
-            run_command(_privileged([*validate, str(staged)]))
-        run_command(_privileged(["cp", str(staged), str(target)]))
-        staged.unlink()
+        """Sudo-copy content into a root-owned target via a bench-owned staging file."""
+        stage_and_copy(self.bench.config_path / "nginx", content, target, validate)
 
     def _ensure_modsecurity_module(self) -> None:
         """Debian auto-enables the module; elsewhere inject a load_module line.

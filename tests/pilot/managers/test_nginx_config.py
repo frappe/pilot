@@ -476,7 +476,7 @@ def test_stage_and_copy_creates_missing_nginx_config_dir(tmp_path: Path) -> None
     nginx_dir = bench.config_path / "nginx"
     assert not nginx_dir.exists()
 
-    with patch("pilot.managers.nginx.run_command") as mock_run:
+    with patch("pilot.managers.sudoers.run_command") as mock_run:
         manager._stage_and_copy("content", Path("/etc/logrotate.d/test-bench-nginx"))
 
     mock_run.assert_called_once()
@@ -488,7 +488,7 @@ def test_stage_and_copy_validates_staged_file_before_copying(tmp_path: Path) -> 
     manager = NginxManager(bench)
     target = Path("/etc/sudoers.d/test-bench-pilot-nginx")
 
-    with patch("pilot.managers.nginx.run_command") as mock_run:
+    with patch("pilot.managers.sudoers.run_command") as mock_run:
         manager._stage_and_copy("content", target, validate=["visudo", "-cf"])
 
     assert mock_run.call_count == 2
@@ -505,13 +505,13 @@ def test_setup_sudoers_grants_only_start_stop_reload(tmp_path: Path) -> None:
 
     with (
         patch("pwd.getpwuid") as mock_getpwuid,
-        patch.object(manager, "_stage_and_copy") as mock_stage,
-        patch("pilot.managers.nginx.run_command") as mock_run,
+        patch("pilot.managers.sudoers.stage_and_copy") as mock_stage,
+        patch("pilot.managers.sudoers.run_command") as mock_run,
     ):
         mock_getpwuid.return_value.pw_name = "runner"
         manager.setup_sudoers()
 
-    content, target = mock_stage.call_args.args
+    content, target = mock_stage.call_args.args[1:3]
     assert mock_stage.call_args.kwargs == {"validate": ["visudo", "-cf"]}
     assert target == sudoers_file
     assert "runner ALL=(ALL) NOPASSWD:" in content
