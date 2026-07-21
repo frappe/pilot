@@ -1,5 +1,4 @@
 <template>
-  <UpdatesAvailableButton />
 
   <div class="mx-auto max-w-3xl">
     <!-- Header -->
@@ -54,7 +53,6 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { Button, ErrorMessage, LoadingText, TabButtons } from 'frappe-ui'
-import UpdatesAvailableButton from '@/components/common/UpdatesAvailableButton.vue'
 import { useTasks } from '@/composables/tasks/useTasks'
 import { commandLabel, fmtDuration, siteLabel, statusConfig, taskActivityLabel } from '@/utils/taskFormat'
 import { taskDetailRoute } from '@/utils/taskRoute'

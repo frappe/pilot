@@ -35,6 +35,7 @@ def _summary(operation: MigrationOperation) -> dict:
     data = operation.to_dict()
     root = operation.root_task_id
     data["task_log_url"] = url_for("tasks.get_task", task_id=root) if root else None
+    data["can_restore"] = operation.can_restore
     return data
 
 

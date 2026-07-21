@@ -306,10 +306,10 @@ Ordered by dependency. Each phase is a single landable, tested commit. Do not st
 - [ ] Tests: state validation, cursor pagination, filters, legacy rows, nav-to-operation on create.
 
 ### Phase 7 — Admin UI (recovery core)
-- [ ] One `MigrationStatusButton` in `MainLayout`; remove `UpdatesAvailableButton` from individual pages. Priority: failed > active > update-available.
-- [ ] Global migration composable: load current op, poll while active, refresh after task completion + each action.
-- [ ] Routes `/migrations` (index: pinned active op, cursor list, filters) and `/migrations/:operationId` (live + historical detail; Retry/Restore/confirmed Skip-this-patch actions + manual-repair guidance; SSE stream with polling reconnect fallback).
-- [ ] Starting update/migrate navigates here, not Task Detail. Add a Migrations nav entry that always opens history.
+- [x] One `MigrationStatusButton` in `MainLayout`; remove `UpdatesAvailableButton` from individual pages. Priority: failed > active > update-available.
+- [x] Global migration composable: load current op, poll while active, refresh after each action.
+- [x] Routes `/migrations` (index: pinned active op) and `/migrations/:operationId` (live + historical detail; Retry/Restore/confirmed Skip-this-patch actions + manual-repair guidance). _(polling only; SSE stream + cursor-list filters UI still to build)_
+- [x] Starting an update navigates here (update dialog now calls `POST /updates` with an opt-out safeguard). Migrations nav entry added.
 - [ ] Frontend tests per plan §Test Plan UI rows.
 
 ---

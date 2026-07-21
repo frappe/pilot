@@ -1,5 +1,4 @@
 <template>
-  <UpdatesAvailableButton />
 
   <div class="mx-auto max-w-3xl">
     <!-- Header -->
@@ -142,7 +141,6 @@ import {
   toast,
 } from 'frappe-ui'
 import NewSiteDialog from '@/components/sites/NewSiteDialog.vue'
-import UpdatesAvailableButton from '@/components/common/UpdatesAvailableButton.vue'
 import { useBreadcrumbs } from '@/composables/common/useBreadcrumbs'
 import { useSites } from '@/composables/sites/useSites'
 import { apiErrorMessage } from '@/api/client'

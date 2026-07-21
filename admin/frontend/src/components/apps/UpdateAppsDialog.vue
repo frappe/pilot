@@ -24,8 +24,8 @@
 
           <div class="flex flex-col gap-2 pt-2">
             <label class="flex items-center gap-2 cursor-pointer">
-              <Checkbox v-model="skipFailingPatches" />
-              <span class="text-ink-gray-7 text-sm">Skip failing patches</span>
+              <Checkbox v-model="safeguard" />
+              <span class="text-ink-gray-7 text-sm">Create recovery snapshot (recommended)</span>
             </label>
           </div>
         </template>
@@ -55,12 +55,10 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, Checkbox, Dialog, ErrorMessage, LoadingText } from 'frappe-ui'
-import { apiErrorMessage } from '@/api/client'
-import { tasksApi } from '@/api/tasks'
+import { migrationsApi } from '@/api/migrations'
 import AppIcon from '@/components/apps/AppIcon.vue'
 import { useAppRegistry } from '@/composables/apps/useAppRegistry'
 import { useAppUpdates } from '@/composables/apps/useAppUpdates'
-import { openTaskDetailPage } from '@/utils/taskRoute'
 
 const open = defineModel()
 const router = useRouter()
@@ -79,7 +77,7 @@ const appNames = computed(() => {
 })
 
 const selected = ref(new Set())
-const skipFailingPatches = ref(false)
+const safeguard = ref(true)
 const updating = ref(false)
 const error = ref('')
 
@@ -97,16 +95,12 @@ async function runUpdate() {
   updating.value = true
   error.value = ''
   try {
-    const res = await tasksApi.run('update', {
+    const res = await migrationsApi.createUpdate({
       apps: [...selected.value],
-      skip_failing_patches: skipFailingPatches.value,
+      disable_safeguards: !safeguard.value,
     })
-    if (res.task_id) {
-      open.value = false
-      openTaskDetailPage(router, res.task_id)
-    } else {
-      error.value = apiErrorMessage(res, 'Failed to start update.')
-    }
+    open.value = false
+    router.push({ name: 'MigrationDetail', params: { operationId: res.operation.id } })
   } catch (e) {
     error.value = e.message || 'Failed to start update.'
   } finally {

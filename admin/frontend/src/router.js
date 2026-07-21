@@ -30,6 +30,13 @@ const routes = [
     component: () => import('./pages/tasks/TaskDetail.vue'),
     meta: { group: 'Insights' },
   },
+  {
+    path: '/migrations/:operationId',
+    name: 'MigrationDetail',
+    component: () => import('./pages/migrations/MigrationDetail.vue'),
+    props: true,
+    meta: { title: 'Migration', group: 'Insights' },
+  },
   ...navigationRoutes(),
 ]
 

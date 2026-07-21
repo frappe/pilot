@@ -28,6 +28,11 @@ export const navigation = {
         icon: 'lucide-list-checks',
         component: () => import('./pages/tasks/Tasks.vue'),
       },
+      Migrations: {
+        path: '/migrations',
+        icon: 'lucide-git-pull-request-arrow',
+        component: () => import('./pages/migrations/Migrations.vue'),
+      },
     },
   },
   'Dev tools': {
