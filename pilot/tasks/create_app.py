@@ -179,27 +179,32 @@ _create_app_boilerplate('apps', hooks, no_git=False)
                 else:
                     raise repo_err
 
-            clone_url = repo_info["clone_url"]
-            authenticated_url = provider.authenticated_clone_url(clone_url)
+            clean_url = repo_info["clone_url"]
             self.report(f"GitHub repo: {repo_info['html_url']}")
 
             app_path = self.bench_root / "apps" / self.name
             subprocess.run(
-                ["git", "remote", "add", "origin", authenticated_url],
+                ["git", "remote", "add", "origin", clean_url],
                 cwd=str(app_path),
                 capture_output=True,
             )
             subprocess.run(
-                ["git", "remote", "set-url", "origin", authenticated_url],
+                ["git", "remote", "set-url", "origin", clean_url],
                 cwd=str(app_path),
                 capture_output=True,
             )
             subprocess.run(["git", "branch", "-M", "main"], cwd=str(app_path), capture_output=True)
 
             self.report("Pushing initial commit to GitHub...")
+            push_env = dict(os.environ)
+            push_env["GIT_CONFIG_COUNT"] = "1"
+            push_env["GIT_CONFIG_KEY_0"] = "http.extraheader"
+            push_env["GIT_CONFIG_VALUE_0"] = f"Authorization: Bearer {token}"
+
             push_res = subprocess.run(
                 ["git", "push", "-u", "origin", "main"],
                 cwd=str(app_path),
+                env=push_env,
                 capture_output=True,
                 text=True,
             )
