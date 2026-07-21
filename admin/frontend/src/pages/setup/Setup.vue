@@ -86,17 +86,17 @@
           </p>
           <div>
             <p class="font-medium text-ink-gray-6 text-xs">Develop locally</p>
-            <code class="block bg-surface-gray-2 mt-1 px-2 py-1.5 rounded font-mono text-ink-gray-8 text-sm select-all">bench
-      start</code>
+            <code
+              class="block bg-surface-gray-2 mt-1 px-2 py-1.5 rounded font-mono text-ink-gray-8 text-sm select-all">{{ benchCommand }} start</code>
           </div>
           <div>
             <p class="font-medium text-ink-gray-6 text-xs">Deploy to production</p>
-            <code class="block bg-surface-gray-2 mt-1 px-2 py-1.5 rounded font-mono text-ink-gray-8 text-sm select-all">bench
-      setup production --admin-domain &lt;your-domain&gt; --tls --letsencrypt-email
+            <code
+              class="block bg-surface-gray-2 mt-1 px-2 py-1.5 rounded font-mono text-ink-gray-8 text-sm select-all">{{ benchCommand }} setup production --admin-domain &lt;your-domain&gt; --tls --letsencrypt-email
       &lt;you@example.com&gt;</code>
           </div>
           <p class="text-ink-gray-5 text-xs">
-            <code class="font-mono">bench start</code> reloads this page automatically once the
+            <code class="font-mono">{{ benchCommand }} start</code> reloads this page automatically once the
             bench is back.
           </p>
         </div>
@@ -154,6 +154,7 @@ const {
   isLinux,
   isProductionHandoff,
   isDone,
+  benchCommand,
   terminal,
   streamUrl,
   streamStatus,

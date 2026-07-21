@@ -88,6 +88,9 @@ def read_defaults(bench_root: Path) -> dict:
 
     result = {
         "bench_name": bench_root.name,
+        # Lets the wizard print a bare `bench start`; with siblings around the
+        # CLI needs an explicit -b (see cli.dispatch._implicit_bench_root).
+        "is_only_bench": len(list(bench_root.parent.glob("*/bench.toml"))) <= 1,
         "is_linux": is_linux(),
         "native_process_manager": native_process_manager(),
         **defaults,

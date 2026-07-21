@@ -78,6 +78,19 @@ def test_read_defaults_omits_password_fallbacks_for_fresh_bench(tmp_path: Path) 
     assert result["postgres_password_configured"] is False
 
 
+def test_read_defaults_flags_sibling_benches(tmp_path: Path) -> None:
+    """The wizard prints `bench start` only while this is the sole bench."""
+    bench_root = tmp_path / "one"
+    bench_root.mkdir()
+    (bench_root / "bench.toml").touch()
+    assert read_defaults(bench_root)["is_only_bench"] is True
+
+    sibling = tmp_path / "two"
+    sibling.mkdir()
+    (sibling / "bench.toml").touch()
+    assert read_defaults(bench_root)["is_only_bench"] is False
+
+
 def test_read_defaults_never_leaks_a_real_saved_password(tmp_path: Path) -> None:
     """Even a real, already-saved password must never come back over this
     endpoint - it's polled before login."""
