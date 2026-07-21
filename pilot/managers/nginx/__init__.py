@@ -72,27 +72,17 @@ def live_key_path(domain: str) -> Path:
 
 
 def cert_files_exist(domain: str) -> bool:
-    # /etc/letsencrypt/live is root-only (0700), so stat with privilege.
-    """Ensure no sudo does not take the whole bench to http"""
-    try:
-        run_command(
-            _privileged(
-                [
-                    "test",
-                    "-f",
-                    str(live_cert_path(domain)),
-                    "-a",
-                    "-f",
-                    str(live_key_path(domain)),
-                ]
-            )
+    """Ensure a missing sudo grant does not take the whole bench to http."""
+    # /etc/letsencrypt/live is root-only (0700), so stat with privilege..
+    command = ["test", "-f", str(live_cert_path(domain)), "-a", "-f", str(live_key_path(domain))]
+    if not has_passwordless_sudo_for(command):
+        raise ConfigError(
+            f"Cannot check certificates for {domain}: the certbot sudoers grant is missing or "
+            "stale. Run bench setup letsencrypt as root to reinstall it."
         )
-    except CommandError as exc:
-        if "password is required" in str(exc):
-            raise ConfigError(
-                f"Cannot check certificates for {domain}: the certbot sudoers grant is missing or "
-                "stale. Run bench setup letsencrypt as root to reinstall it."
-            ) from exc
+    try:
+        run_command(_privileged(command))
+    except CommandError:
         return False
     return True
 
