@@ -17,26 +17,26 @@ export function fmtDate(iso) {
 
 const STATE_TONE = {
   completed: 'green',
-  restored: 'blue',
+  reverted: 'blue',
   needs_attention: 'red',
-  restore_failed: 'red',
+  revert_failed: 'red',
   preparing: 'orange',
   updating: 'orange',
   migrating: 'orange',
   retrying: 'orange',
-  restoring: 'orange',
+  reverting: 'orange',
 }
 
 const STATE_LABEL = {
   completed: 'Completed',
-  restored: 'Restored',
+  reverted: 'Reverted',
   needs_attention: 'Needs attention',
-  restore_failed: 'Restore failed',
+  revert_failed: 'Revert failed',
   preparing: 'Preparing',
   updating: 'Updating',
   migrating: 'Migrating',
   retrying: 'Retrying',
-  restoring: 'Restoring',
+  reverting: 'Reverting',
 }
 
 export function stateTone(state) {

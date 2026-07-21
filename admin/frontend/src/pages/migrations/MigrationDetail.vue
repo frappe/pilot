@@ -33,8 +33,8 @@
 
         <div class="flex flex-wrap gap-2 mt-3">
           <Button variant="solid" :loading="acting" @click="doRetry">Retry</Button>
-          <Button v-if="op.can_restore" variant="outline" :loading="acting" @click="doRestore">
-            Restore this update
+          <Button v-if="op.can_revert" variant="outline" :loading="acting" @click="doRevert">
+            Revert this update
           </Button>
           <Button v-if="op.diagnosis?.patch" variant="outline" theme="red" :loading="acting"
             @click="confirmSkip = true">
@@ -117,7 +117,7 @@ async function runAction(action) {
 }
 
 const doRetry = () => runAction(() => migrationsApi.retry(props.operationId))
-const doRestore = () => runAction(() => migrationsApi.restore(props.operationId))
+const doRevert = () => runAction(() => migrationsApi.revert(props.operationId))
 const doSkip = () => {
   confirmSkip.value = false
   return runAction(() => migrationsApi.bypassPatch(props.operationId, op.value.diagnosis.patch))

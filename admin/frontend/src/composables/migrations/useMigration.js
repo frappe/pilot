@@ -12,7 +12,7 @@ const STATE_LABELS = {
   updating: 'Updating',
   migrating: 'Migrating',
   retrying: 'Retrying',
-  restoring: 'Restoring',
+  reverting: 'Reverting',
 }
 
 export function useMigration() {

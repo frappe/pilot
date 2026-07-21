@@ -66,3 +66,6 @@ registry-cache*
 # Agent Skills
 .agents
 skills-lock.json
+
+# Local planning docs, never commit
+plan_*.md

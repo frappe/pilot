@@ -6,15 +6,15 @@ from pilot.tasks import Task
 
 
 @dataclass(kw_only=True)
-class RestoreMigrationTask(Task):
-    command: ClassVar[str] = "restore-migration"
+class RevertMigrationTask(Task):
+    command: ClassVar[str] = "revert-migration"
 
     operation_id: str
 
     def run(self) -> None:
         operation = self.bench.migrations.get(self.operation_id)
         try:
-            operation.restore(on_step=self._start_step, on_progress=self.report)
+            operation.revert(on_step=self._start_step, on_progress=self.report)
         except Exception:
             self.step_failed()
             sys.exit(1)
@@ -24,4 +24,4 @@ class RestoreMigrationTask(Task):
 
 
 if __name__ == "__main__":
-    RestoreMigrationTask.main()
+    RevertMigrationTask.main()

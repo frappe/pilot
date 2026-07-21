@@ -8,15 +8,8 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from pilot.core.bench.migration.state import (
-    COMPLETED,
-    MIGRATING,
-    NEEDS_ATTENTION,
-    RESTORE_FAILED,
-    RESTORED,
-    RESTORING,
-    RETRYING,
     TERMINAL_STATES,
-    UPDATING,
+    MigrationState,
     MigrationStateError,
     validate_transition,
 )
@@ -80,10 +73,9 @@ class MigrationOperation:
     skip_failing_patches: bool = False
     root_task_id: str | None = None
     task_ids: dict[str, str] = field(default_factory=dict)
-    restore_checkpoints: dict = field(default_factory=dict)
+    revert_checkpoints: dict = field(default_factory=dict)
     decisions: list = field(default_factory=list)  # user decisions, e.g. patch skips
 
-    # Non-persisted runtime wiring.
     bench: "Bench" = field(default=None, repr=False, compare=False)  # type: ignore[assignment]
     store: "MigrationStore" = field(default=None, repr=False, compare=False)  # type: ignore[assignment]
 
@@ -95,7 +87,7 @@ class MigrationOperation:
         on_step("safeguards", "Preparing recovery snapshots")
         if not self._prepare_safeguards(on_progress):
             return
-        self._transition(UPDATING)
+        self._transition(MigrationState.UPDATING)
         filter_set = set(self.apps_filter) if self.apps_filter else None
         on_step("update", "Updating apps")
         self.bench._update_apps(filter_set, on_progress)
@@ -110,18 +102,18 @@ class MigrationOperation:
         self._migrate_pending(on_step, on_progress)
 
     @property
-    def can_restore(self) -> bool:
+    def can_revert(self) -> bool:
         return not self.safeguards_disabled and all(
             site.snapshot_status == "created" for site in self.sites
         )
 
     def retry(self, on_step: OnStep = _NO_STEP, on_progress: OnProgress = _NO_PROGRESS) -> None:
         """Re-migrate from the failed site, skipping already-successful sites."""
-        if self.state != NEEDS_ATTENTION:
+        if self.state != MigrationState.NEEDS_ATTENTION:
             raise MigrationStateError(f"Retry is not allowed from state {self.state}")
         self.diagnosis = None
         self.failed_site = None
-        self._transition(RETRYING)
+        self._transition(MigrationState.RETRYING)
         self._migrate_pending(on_step, on_progress)
 
     def bypass_patch(self, patch: str, on_progress: OnProgress = _NO_PROGRESS) -> None:
@@ -132,7 +124,7 @@ class MigrationOperation:
         """
         from pilot.utils import run_command
 
-        if self.state != NEEDS_ATTENTION or not self.failed_site:
+        if self.state != MigrationState.NEEDS_ATTENTION or not self.failed_site:
             raise MigrationStateError("Skip patch is only available on a failed migration.")
         on_progress(f"Skipping patch {patch} on {self.failed_site}...")
         command = [
@@ -158,70 +150,62 @@ class MigrationOperation:
         self._save()
         self._record_audit("bypass_patch", {"site": self.failed_site, "patch": patch})
 
-    def _record_audit(self, entry_type: str, fields: dict) -> None:
-        from pilot.core.bench.audit_log import AuditLog
-
-        try:
-            AuditLog(self.bench).append(entry_type, {"operation": self.id, **fields})
-        except Exception as error:  # audit must never block recovery
-            print(f"Audit log update skipped: {error}")
-
-    def restore(self, on_step: OnStep = _NO_STEP, on_progress: OnProgress = _NO_PROGRESS) -> None:
+    def revert(self, on_step: OnStep = _NO_STEP, on_progress: OnProgress = _NO_PROGRESS) -> None:
         """Roll apps back to captured revisions and selectively reverse DB changes.
 
-        Resumable: each step is checkpointed, so a restore that fails leaves the
-        operation in restore_failed and can be re-run without repeating work.
+        Resumable: each step is checkpointed, so a revert that fails leaves the
+        operation in revert_failed and can be re-run without repeating work.
         """
-        if self.state not in (NEEDS_ATTENTION, RESTORE_FAILED):
-            raise MigrationStateError(f"Restore is not allowed from state {self.state}")
-        if not self.can_restore:
-            raise BenchError("Restore is unavailable: safeguards were not created for this update.")
-        self._transition(RESTORING)
+        if self.state not in (MigrationState.NEEDS_ATTENTION, MigrationState.REVERT_FAILED):
+            raise MigrationStateError(f"Revert is not allowed from state {self.state}")
+        if not self.can_revert:
+            raise BenchError("Revert is unavailable: safeguards were not created for this update.")
+        self._transition(MigrationState.REVERTING)
         try:
-            self._restore_apps(on_step, on_progress)
-            self._restore_sites(on_step)
-            self._finish_restore(on_step)
+            self._revert_apps(on_step, on_progress)
+            self._revert_sites(on_step)
+            self._finish_revert(on_step)
         except Exception as error:
-            self.diagnosis = {"message": f"Restore failed: {error}", "output_excerpt": ""}
-            self._transition(RESTORE_FAILED)
+            self.diagnosis = {"message": f"Revert failed: {error}", "output_excerpt": ""}
+            self._transition(MigrationState.REVERT_FAILED)
             raise
 
-    def _restore_apps(self, on_step: OnStep, on_progress: OnProgress) -> None:
-        if not self.restore_checkpoints.get("apps"):
-            on_step("restore_apps", "Restoring app revisions")
+    def _revert_apps(self, on_step: OnStep, on_progress: OnProgress) -> None:
+        if not self.revert_checkpoints.get("apps"):
+            on_step("revert_apps", "Reverting app revisions")
             for app in self.apps:
-                on_progress(f"Restoring {app.name} to {app.sha[:8]}...")
+                on_progress(f"Reverting {app.name} to {app.sha[:8]}...")
                 self.bench.app(app.name).checkout_commit(app.sha)
-            self.restore_checkpoints["apps"] = True
+            self.revert_checkpoints["apps"] = True
             self._save()
-        if not self.restore_checkpoints.get("build") and self.apps:
-            on_step("restore_build", "Reinstalling dependencies and assets")
+        if not self.revert_checkpoints.get("build") and self.apps:
+            on_step("revert_build", "Reinstalling dependencies and assets")
             filter_set = set(self.apps_filter) if self.apps_filter else None
             self.bench._reinstall_apps(filter_set, on_progress)
             self.bench._rebuild_assets(filter_set, on_progress)
-            self.restore_checkpoints["build"] = True
+            self.revert_checkpoints["build"] = True
             self._save()
 
-    def _restore_sites(self, on_step: OnStep) -> None:
+    def _revert_sites(self, on_step: OnStep) -> None:
         for site in self.sites:
             if site.migration_status == "pending":
                 continue
             key = f"site:{site.name}"
-            if self.restore_checkpoints.get(key):
+            if self.revert_checkpoints.get(key):
                 continue
-            on_step("restore_db", f"Restoring database for {site.name}")
+            on_step("revert_db", f"Reverting database for {site.name}")
             self.bench.site(site.name).snapshot.restore(site.touched_tables)
-            self.restore_checkpoints[key] = True
+            self.revert_checkpoints[key] = True
             self._save()
 
-    def _finish_restore(self, on_step: OnStep) -> None:
+    def _finish_revert(self, on_step: OnStep) -> None:
         on_step("restart", "Restarting services")
         self.bench.reload_workers()
         self._restore_maintenance()
         for site in self.sites:
             if site.snapshot_status == "created":
                 self.bench.site(site.name).snapshot.discard()
-        self._transition(RESTORED)
+        self._transition(MigrationState.REVERTED)
 
     def site(self, name: str) -> SiteProgress:
         for site in self.sites:
@@ -229,8 +213,16 @@ class MigrationOperation:
                 return site
         raise BenchError(f"Site {name!r} is not part of migration {self.id}")
 
+    def _record_audit(self, entry_type: str, fields: dict) -> None:
+        from pilot.core.bench.audit_log import AuditLog
+
+        try:
+            AuditLog(self.bench).append(entry_type, {"operation": self.id, **fields})
+        except Exception as error:
+            print(f"Audit log update skipped: {error}")
+
     def _migrate_pending(self, on_step: OnStep, on_progress: OnProgress) -> None:
-        self._transition(MIGRATING)
+        self._transition(MigrationState.MIGRATING)
         for site in self.sites:
             if site.migration_status == "success":
                 continue
@@ -253,7 +245,7 @@ class MigrationOperation:
             site.migration_status = "failed"
             self.failed_site = site.name
             self.diagnosis = diagnose(error.output or "", str(error))
-            self._transition(NEEDS_ATTENTION)
+            self._transition(MigrationState.NEEDS_ATTENTION)
             return False
         finally:
             self._union_touched_tables(site)
@@ -295,7 +287,7 @@ class MigrationOperation:
                     "output_excerpt": "",
                 }
                 self._restore_maintenance()
-                self._transition(NEEDS_ATTENTION)
+                self._transition(MigrationState.NEEDS_ATTENTION)
                 return False
         return True
 
@@ -311,7 +303,7 @@ class MigrationOperation:
         for site in self.sites:
             if site.snapshot_status == "created":
                 self.bench.site(site.name).snapshot.discard()
-        self._transition(COMPLETED)
+        self._transition(MigrationState.COMPLETED)
 
     def _union_touched_tables(self, site: SiteProgress) -> None:
         path = self.bench.site(site.name).path / "touched_tables.json"
@@ -324,10 +316,10 @@ class MigrationOperation:
         if isinstance(data, list):
             site.touched_tables = sorted(set(site.touched_tables) | {str(t) for t in data})
 
-    def _transition(self, target: str) -> None:
+    def _transition(self, target: MigrationState) -> None:
         validate_transition(self.state, target)
         self.state = target
-        if target in (UPDATING, MIGRATING) and self.started_at is None:
+        if target in (MigrationState.UPDATING, MigrationState.MIGRATING) and self.started_at is None:
             self.started_at = _now()
         if target in TERMINAL_STATES:
             self.finished_at = _now()
@@ -340,7 +332,7 @@ class MigrationOperation:
         return {
             "id": self.id,
             "kind": self.kind,
-            "state": self.state,
+            "state": str(self.state),
             "created_at": self.created_at,
             "started_at": self.started_at,
             "finished_at": self.finished_at,
@@ -353,7 +345,7 @@ class MigrationOperation:
             "skip_failing_patches": self.skip_failing_patches,
             "root_task_id": self.root_task_id,
             "task_ids": self.task_ids,
-            "restore_checkpoints": self.restore_checkpoints,
+            "revert_checkpoints": self.revert_checkpoints,
             "decisions": self.decisions,
         }
 
@@ -375,7 +367,7 @@ class MigrationOperation:
             skip_failing_patches=data.get("skip_failing_patches", False),
             root_task_id=data.get("root_task_id"),
             task_ids=data.get("task_ids", {}),
-            restore_checkpoints=data.get("restore_checkpoints", {}),
+            revert_checkpoints=data.get("revert_checkpoints", {}),
             decisions=data.get("decisions", []),
         )
         operation.bench = bench
@@ -392,9 +384,7 @@ class MigrationStore:
         self, apps_filter: set | None = None, skip_failing_patches: bool = False
     ) -> MigrationOperation:
         selected = [
-            app
-            for app in self.bench.apps()
-            if apps_filter is None or app.config.name in apps_filter
+            app for app in self.bench.apps() if apps_filter is None or app.config.name in apps_filter
         ]
         apps = [AppRevision(app.config.name, app.installed_hash) for app in selected]
         sites = [site.config.name for site in self.bench.sites()]
@@ -450,12 +440,10 @@ class MigrationStore:
         sites: list[str],
         skip_failing_patches: bool = False,
     ) -> MigrationOperation:
-        from pilot.core.bench.migration.state import PREPARING
-
         operation = MigrationOperation(
             id=generate_operation_id(),
             kind=kind,
-            state=PREPARING,
+            state=MigrationState.PREPARING,
             created_at=_now(),
             started_at=None,
             finished_at=None,

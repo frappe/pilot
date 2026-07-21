@@ -15,8 +15,8 @@ from pilot.core.bench import Bench
 from pilot.core.bench.migration import MigrationOperation
 from pilot.exceptions import BenchError
 from pilot.tasks.bypass_patch import BypassPatchTask
-from pilot.tasks.restore_migration import RestoreMigrationTask
 from pilot.tasks.retry_update import RetryUpdateTask
+from pilot.tasks.revert_migration import RevertMigrationTask
 from pilot.tasks.update import UpdateTask
 
 migrations_bp = Blueprint("migrations", __name__)
@@ -35,7 +35,7 @@ def _summary(operation: MigrationOperation) -> dict:
     data = operation.to_dict()
     root = operation.root_task_id
     data["task_log_url"] = url_for("tasks.get_task", task_id=root) if root else None
-    data["can_restore"] = operation.can_restore
+    data["can_revert"] = operation.can_revert
     return data
 
 
@@ -122,18 +122,18 @@ def retry_action(operation_id: str):
     return _queue_action(operation, RetryUpdateTask, "retry")
 
 
-@migrations_bp.post("/migrations/<operation_id>/actions/restore")
-def restore_action(operation_id: str):
+@migrations_bp.post("/migrations/<operation_id>/actions/revert")
+def revert_action(operation_id: str):
     operation = _load(operation_id)
     if operation is None:
         return _not_found()
-    if operation.state not in ("needs_attention", "restore_failed"):
+    if operation.state not in ("needs_attention", "revert_failed"):
         return _invalid_state(operation)
-    if not operation.can_restore:
+    if not operation.can_revert:
         return error_response(
-            "restore_unavailable", "Restore is unavailable: no safeguards were created.", 409
+            "revert_unavailable", "Revert is unavailable: no safeguards were created.", 409
         )
-    return _queue_action(operation, RestoreMigrationTask, "restore")
+    return _queue_action(operation, RevertMigrationTask, "revert")
 
 
 @migrations_bp.post("/migrations/<operation_id>/actions/bypass-patch")

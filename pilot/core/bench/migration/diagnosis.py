@@ -1,10 +1,3 @@
-"""Classify a failed `bench migrate` run from its captured output.
-
-Best-effort only: what is confidently recognized is filled in; everything else
-stays null so the UI falls back to manual repair rather than guessing at a fix.
-The `resolver_id` stays null in Milestone 1 and is set once resolvers exist.
-"""
-
 from __future__ import annotations
 
 import re
@@ -23,6 +16,7 @@ _SIGNATURES: list[tuple[str, tuple[str, ...]]] = [
 
 
 def diagnose(output: str, message: str, database_engine: str = "mariadb") -> dict:
+    """Classify a failed migrate run; unrecognized failures stay null for manual repair."""
     output = output or ""
     return {
         "phase": "migrate",

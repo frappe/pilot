@@ -1,11 +1,3 @@
-"""Private table-wise recovery snapshots taken before a risky migration.
-
-These are recovery artifacts owned by a MigrationOperation, not user-visible
-backups: they never appear in the Backups UI and are never pruned by retention.
-MariaDB gets selective per-table dumps; other engines fall back to unsupported
-in v1 (the operation then offers Retry/manual repair but not Restore).
-"""
-
 from __future__ import annotations
 
 import gzip
@@ -22,19 +14,19 @@ from pilot.utils import make_private_directory
 if TYPE_CHECKING:
     from pilot.core.site import Site
 
-_DB_SOCKET_CANDIDATES = [
-    "/var/run/mysqld/mysqld.sock",
-    "/run/mysqld/mysqld.sock",
-    "/tmp/mysql.sock",
-    "/usr/local/var/mysql/mysql.sock",
-]
-
 
 class SnapshotUnsupported(BenchError):
     """Selective table snapshots are not available for this site's engine."""
 
 
 class SiteMigrationSnapshot:
+    """Private per-table recovery snapshot taken before a risky migration.
+
+    A recovery artifact owned by a MigrationOperation, never a user-visible
+    backup. MariaDB gets selective per-table dumps; other engines are
+    unsupported in v1 (Retry/manual repair remain, but not Revert).
+    """
+
     def __init__(self, site: "Site") -> None:
         self.site = site
 
@@ -170,21 +162,14 @@ class SiteMigrationSnapshot:
             raise BenchError("No mariadb-dump/mysqldump found for snapshot operations.")
         return cli
 
-    @staticmethod
-    def _conn_args(config: dict) -> list[str]:
-        db_name = config["db_name"]
-        args = [f"--user={db_name}", f"--password={config['db_password']}"]
-        db_host = config.get("db_host") or "localhost"
-        db_port = int(config.get("db_port") or 3306)
-        socket = config.get("db_socket")
+    def _conn_args(self, config: dict) -> list[str]:
+        args = [f"--user={config['db_name']}", f"--password={config['db_password']}"]
+        socket = config.get("db_socket") or self.site.bench.config.mariadb.socket_path
         if socket:
             args.append(f"--socket={socket}")
-        elif db_host in ("localhost", "127.0.0.1", ""):
-            found = next((s for s in _DB_SOCKET_CANDIDATES if Path(s).exists()), None)
-            if found:
-                args.append(f"--socket={found}")
-            else:
-                args += ["--host=127.0.0.1", f"--port={db_port}"]
         else:
-            args += [f"--host={db_host}", f"--port={db_port}"]
+            args += [
+                f"--host={config.get('db_host') or 'localhost'}",
+                f"--port={int(config.get('db_port') or 3306)}",
+            ]
         return args

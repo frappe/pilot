@@ -6,16 +6,16 @@ export const migrationsApi = {
   detail: (id) => request.get(`migrations/${id}`).json(),
   createUpdate: (json = {}) => request.post('updates', { json }).json(),
   retry: (id) => request.post(`migrations/${id}/actions/retry`).json(),
-  restore: (id) => request.post(`migrations/${id}/actions/restore`).json(),
+  revert: (id) => request.post(`migrations/${id}/actions/revert`).json(),
   bypassPatch: (id, patch) =>
     request.post(`migrations/${id}/actions/bypass-patch`, { json: { patch } }).json(),
 }
 
-export const ACTIVE_STATES = ['preparing', 'updating', 'migrating', 'retrying', 'restoring']
-export const ATTENTION_STATES = ['needs_attention', 'restore_failed']
+export const ACTIVE_STATES = ['preparing', 'updating', 'migrating', 'retrying', 'reverting']
+export const ATTENTION_STATES = ['needs_attention', 'revert_failed']
 
 export function isResolved(operation) {
-  return !operation || operation.state === 'completed' || operation.state === 'restored'
+  return !operation || operation.state === 'completed' || operation.state === 'reverted'
 }
 
 export function needsAttention(operation) {
