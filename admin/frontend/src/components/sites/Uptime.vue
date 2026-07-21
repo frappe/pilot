@@ -27,7 +27,7 @@
         tracking uptime.
       </p>
     </div>
-    <div v-else-if="!data || !data.buckets.length" class="flex flex-col items-center gap-1 py-10 text-center">
+    <div v-else-if="!data || data.overall_percent === null" class="flex flex-col items-center gap-1 py-10 text-center">
       <span class="size-6 text-ink-gray-3 lucide-activity" />
       <p class="text-ink-gray-5 text-xs">No uptime data yet</p>
     </div>
