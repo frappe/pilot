@@ -236,7 +236,7 @@ class MigrationOperation:
         site.migration_status = "running"
         self._save()
         try:
-            self.bench.site(site.name).migrate()
+            self.bench.site(site.name).migrate(skip_failing=self.skip_failing_patches)
             site.migration_status = "success"
             return True
         except MigrateError as error:

@@ -25,7 +25,11 @@
           <div class="flex flex-col gap-2 pt-2">
             <label class="flex items-center gap-2 cursor-pointer">
               <Checkbox v-model="safeguard" />
-              <span class="text-ink-gray-7 text-sm">Create recovery snapshot (recommended)</span>
+              <span class="text-ink-gray-7 text-sm">Take backup of sites</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <Checkbox v-model="skipFailingPatches" />
+              <span class="text-ink-gray-7 text-sm">Skip failing patches</span>
             </label>
           </div>
         </template>
@@ -78,6 +82,7 @@ const appNames = computed(() => {
 
 const selected = ref(new Set())
 const safeguard = ref(true)
+const skipFailingPatches = ref(false)
 const updating = ref(false)
 const error = ref('')
 
@@ -98,6 +103,7 @@ async function runUpdate() {
     const res = await migrationsApi.createUpdate({
       apps: [...selected.value],
       disable_safeguards: !safeguard.value,
+      skip_failing_patches: skipFailingPatches.value,
     })
     open.value = false
     router.push({ name: 'MigrationDetail', params: { operationId: res.operation.id } })
