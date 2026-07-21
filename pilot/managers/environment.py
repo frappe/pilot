@@ -42,14 +42,9 @@ class AdminEnvManager:
         return uv
 
     def ensure(self) -> None:
-        """Create the admin venv and reconcile admin dependencies.
-
-        Deps are reconciled on every call, not just at creation, so an existing venv
-        picks up dependencies added since. Announce only the one-time setup; the
-        reconcile is a no-op once satisfied and should stay silent.
-        """
-        created = self._ensure_venv()
-        self.install_python_deps(announce=created)
+        """Create the admin venv and install admin dependencies when they change."""
+        self._ensure_venv()
+        self.install_python_deps()
         self._ensure_frontend_deps()
 
     def _ensure_venv(self) -> bool:
@@ -61,22 +56,24 @@ class AdminEnvManager:
         print("done")
         return True
 
-    def install_python_deps(self, announce: bool = True) -> None:
-        """Install any missing admin Python dependencies into the admin venv."""
+    def install_python_deps(self) -> None:
+        """Install admin Python dependencies when the declared set changed."""
         self._ensure_venv()
         deps = self._read_admin_deps()
         if not deps:
-            if announce:
-                print("  No admin dependencies specified, skipping installation.")
+            print("  No admin dependencies specified, skipping installation.")
             return
 
-        if announce:
-            print(f"  Installing {', '.join(deps)}...", end=" ", flush=True)
+        installed = self.venv_path / ".admin-deps"
+        if installed.exists() and installed.read_text().splitlines() == deps:
+            return
+
+        print(f"  Installing {', '.join(deps)}...", end=" ", flush=True)
         subprocess.run(
             [self.uv, "pip", "install", "--python", str(self.python), "--quiet", *deps], check=True
         )
-        if announce:
-            print("done")
+        installed.write_text("\n".join(deps))
+        print("done")
 
     def _ensure_frontend_deps(self) -> None:
         frontend = self.venv_path.parent / "admin" / "frontend"
