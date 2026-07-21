@@ -11,8 +11,13 @@ from pilot.core.bench.migration.state import (
     COMPLETED,
     MIGRATING,
     NEEDS_ATTENTION,
+    RESTORE_FAILED,
+    RESTORED,
+    RESTORING,
+    RETRYING,
     TERMINAL_STATES,
     UPDATING,
+    MigrationStateError,
     validate_transition,
 )
 from pilot.exceptions import BenchError, MigrateError
@@ -102,6 +107,78 @@ class MigrationOperation:
         if not self._prepare_safeguards(on_progress):
             return
         self._migrate_pending(on_step, on_progress)
+
+    @property
+    def can_restore(self) -> bool:
+        return not self.safeguards_disabled and all(
+            site.snapshot_status == "created" for site in self.sites
+        )
+
+    def retry(self, on_step: OnStep = _NO_STEP, on_progress: OnProgress = _NO_PROGRESS) -> None:
+        """Re-migrate from the failed site, skipping already-successful sites."""
+        if self.state != NEEDS_ATTENTION:
+            raise MigrationStateError(f"Retry is not allowed from state {self.state}")
+        self.diagnosis = None
+        self.failed_site = None
+        self._transition(RETRYING)
+        self._migrate_pending(on_step, on_progress)
+
+    def restore(self, on_step: OnStep = _NO_STEP, on_progress: OnProgress = _NO_PROGRESS) -> None:
+        """Roll apps back to captured revisions and selectively reverse DB changes.
+
+        Resumable: each step is checkpointed, so a restore that fails leaves the
+        operation in restore_failed and can be re-run without repeating work.
+        """
+        if self.state not in (NEEDS_ATTENTION, RESTORE_FAILED):
+            raise MigrationStateError(f"Restore is not allowed from state {self.state}")
+        if not self.can_restore:
+            raise BenchError("Restore is unavailable: safeguards were not created for this update.")
+        self._transition(RESTORING)
+        try:
+            self._restore_apps(on_step, on_progress)
+            self._restore_sites(on_step)
+            self._finish_restore(on_step)
+        except Exception as error:
+            self.diagnosis = {"message": f"Restore failed: {error}", "output_excerpt": ""}
+            self._transition(RESTORE_FAILED)
+            raise
+
+    def _restore_apps(self, on_step: OnStep, on_progress: OnProgress) -> None:
+        if not self.restore_checkpoints.get("apps"):
+            on_step("restore_apps", "Restoring app revisions")
+            for app in self.apps:
+                on_progress(f"Restoring {app.name} to {app.sha[:8]}...")
+                self.bench.app(app.name).checkout_commit(app.sha)
+            self.restore_checkpoints["apps"] = True
+            self._save()
+        if not self.restore_checkpoints.get("build") and self.apps:
+            on_step("restore_build", "Reinstalling dependencies and assets")
+            filter_set = set(self.apps_filter) if self.apps_filter else None
+            self.bench._reinstall_apps(filter_set, on_progress)
+            self.bench._rebuild_assets(filter_set, on_progress)
+            self.restore_checkpoints["build"] = True
+            self._save()
+
+    def _restore_sites(self, on_step: OnStep) -> None:
+        for site in self.sites:
+            if site.migration_status == "pending":
+                continue
+            key = f"site:{site.name}"
+            if self.restore_checkpoints.get(key):
+                continue
+            on_step("restore_db", f"Restoring database for {site.name}")
+            self.bench.site(site.name).snapshot.restore(site.touched_tables)
+            self.restore_checkpoints[key] = True
+            self._save()
+
+    def _finish_restore(self, on_step: OnStep) -> None:
+        on_step("restart", "Restarting services")
+        self.bench.reload_workers()
+        self._restore_maintenance()
+        for site in self.sites:
+            if site.snapshot_status == "created":
+                self.bench.site(site.name).snapshot.discard()
+        self._transition(RESTORED)
 
     def site(self, name: str) -> SiteProgress:
         for site in self.sites:

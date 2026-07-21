@@ -262,35 +262,35 @@ Ordered by dependency. Each phase is a single landable, tested commit. Do not st
 ## Milestone 1 — Safe & recoverable migration (manual repair)
 
 ### Phase 0 — Groundwork (no behavior change)
-- [ ] Route the CLI/`SiteCommands.migrate()` and `MigrateTask` through one shared `Site.migrate()` path. Make it tee output: stream live to the task while returning the full captured output for later classification. (Plan §Failure Diagnosis)
-- [ ] Add a `resource_keys: list[str]` path to task queueing/locking alongside the existing single `resource_key` (union of keys), so update/retry/restore can claim bench + every affected site. Keep single-key callers working. (Plan §Migration UI and APIs)
+- [x] Route the CLI/`SiteCommands.migrate()` and `MigrateTask` through one shared `Site.migrate()` path. Make it tee output: stream live to the task while returning the full captured output for later classification. (Plan §Failure Diagnosis)
+- [x] Add a `resource_keys: list[str]` path to task queueing/locking alongside the existing single `resource_key` (union of keys), so update/retry/restore can claim bench + every affected site. Keep single-key callers working. (Plan §Migration UI and APIs)
 - [ ] Tests: shared migrate path returns captured output; multi-key lock rejects a conflicting site op.
 
 ### Phase 1 — MigrationOperation domain object (foundation, everything depends on this)
-- [ ] New `pilot/core/bench/migration/` package: `MigrationOperation` dataclass + a JSON store persisted atomically via `pilot.internal.atomic_file`, one file per operation under the bench dir. One owner for the state; no task writes it directly.
-- [ ] State machine: `preparing | updating | migrating | needs_attention | retrying | restoring | completed | restored | restore_failed`. A single `transition(to)` validates every edge and rejects illegal ones loudly.
-- [ ] Fields per plan §Migration Operation: kind, timestamps/duration, selected apps + pre-update SHAs, ordered sites + original config snapshots, per-site snapshot/table/migration status, cumulative touched-table set, current phase, failed site, structured diagnosis, available actions, root + child task IDs, safeguards-disabled flag, restore checkpoints.
-- [ ] `execute_update()` / `execute_site_migrate()` orchestration methods (called by tasks). For now they wrap the *existing* update/migrate flow: create op → maintenance mode → update code → migrate sites sequentially, persisting after each → stop at first failure → `needs_attention` (task exits FAILED, op unresolved). Snapshots stubbed/skipped this phase.
-- [ ] Read `touched_tables.json` in a `finally` after each migrate attempt; union into the op.
-- [ ] Retain completed/failed op summaries independent of task logs.
+- [x] New `pilot/core/bench/migration/` package: `MigrationOperation` dataclass + a JSON store persisted atomically via `pilot.internal.atomic_file`, one file per operation under the bench dir. One owner for the state; no task writes it directly.
+- [x] State machine: `preparing | updating | migrating | needs_attention | retrying | restoring | completed | restored | restore_failed`. A single `transition(to)` validates every edge and rejects illegal ones loudly.
+- [x] Fields per plan §Migration Operation: kind, timestamps/duration, selected apps + pre-update SHAs, ordered sites + original config snapshots, per-site snapshot/table/migration status, cumulative touched-table set, current phase, failed site, structured diagnosis, available actions, root + child task IDs, safeguards-disabled flag, restore checkpoints.
+- [x] `execute_update()` / `execute_site_migrate()` orchestration methods (called by tasks). For now they wrap the *existing* update/migrate flow: create op → maintenance mode → update code → migrate sites sequentially, persisting after each → stop at first failure → `needs_attention` (task exits FAILED, op unresolved). Snapshots stubbed/skipped this phase.
+- [x] Read `touched_tables.json` in a `finally` after each migrate attempt; union into the op.
+- [x] Retain completed/failed op summaries independent of task logs.
 - [ ] Tests: creation, atomic persistence, every valid transition + rejected invalid ones, stop-on-first-failure record, survival after task cleanup, touched-table union across attempts.
 
 ### Phase 2 — Wire tasks as thin adapters
-- [ ] `UpdateTask -> operation.execute_update()`, `MigrateTask -> operation.execute_site_migrate()`. Task ending never resolves the op.
-- [ ] Add `RetryUpdateTask`, `RestoreMigrationTask`, `MigrationFixTask`, `BypassPatchTask` as thin task shells delegating to op methods (bodies filled in later phases).
+- [x] `UpdateTask -> operation.execute_update()`, `MigrateTask -> operation.execute_site_migrate()`. Task ending never resolves the op.
+- [x] Add `RetryUpdateTask`, `RestoreMigrationTask` as thin task shells delegating to op methods (added in Phase 4 with their op methods). `MigrationFixTask`/`BypassPatchTask` land with Phases 5/8.
 - [ ] Tests: task FAILED + op `needs_attention` on migration failure; no paused status introduced.
 
 ### Phase 3 — Selective table safeguards (SiteMigrationSnapshot)
-- [ ] `SiteMigrationSnapshot` service under the site core (MariaDB first). Owns `<site>/.migrate/` (restrictive perms), per-table `.migrate/<table>.sql.gz`, `previous_tables.json`, original config snapshot.
-- [ ] Clear/recreate `.migrate/` only under the exclusive migration lock with no unresolved op present. Keep artifacts until completion/restore/explicit discard. Not shown in Backups UI, not pruned by retention.
-- [ ] Wire into `execute_update`: maintenance mode → snapshot every site → abort+restore maintenance if any safeguard fails, before any code change. Record safeguards-disabled when opted out.
-- [ ] Protected Git refs pinning old SHAs so shallow-clone cleanup can't drop them; release on completion/restore.
-- [ ] PostgreSQL/SQLite: same interface, full-DB fallback.
+- [x] `SiteMigrationSnapshot` service under the site core (MariaDB first). Owns `<site>/.migrate/` (restrictive perms), per-table `.migrate/<table>.sql.gz`, `previous_tables.json`, original config snapshot.
+- [x] Clear/recreate `.migrate/` only under the exclusive migration lock with no unresolved op present. Keep artifacts until completion/restore/explicit discard. Not shown in Backups UI, not pruned by retention.
+- [x] Wire into `execute_update`: maintenance mode → snapshot every site → abort+restore maintenance if any safeguard fails, before any code change. Record safeguards-disabled when opted out.
+- [ ] Protected Git refs pinning old SHAs so shallow-clone cleanup can't drop them; release on completion/restore.  _(deferred: restore refetches the SHA from origin; local ref pinning only needed for pruned/force-pushed origins)_
+- [ ] PostgreSQL/SQLite: same interface, full-DB fallback. _(v1: raises SnapshotUnsupported and disables Restore for non-MariaDB; full-DB fallback still to build)_
 - [ ] Tests: writes to `.migrate/<table>.sql.gz`; unresolved op blocks clearing; safeguard failure aborts unchanged; pins survive `needs_attention`, released after finish.
 
 ### Phase 4 — Retry & Restore
-- [ ] `retry()`: only from `needs_attention`, no action running. Re-migrate failed site with normal patch behavior, skip successful sites, continue pending; on total success restart services + restore maintenance + `completed`; on failure replace diagnosis, back to `needs_attention`.
-- [ ] `restore()`: only when all safeguards created. Restore selected apps to captured SHAs, reinstall deps + rebuild assets; per migrated site selectively import cumulative touched tables and drop `current - previous` tables; skip pending sites; keep maintenance forced until all steps succeed → `restored`. Checkpoint each table import/drop; on failure `restore_failed`, resume from checkpoint. Fallback to all `previous_tables` when touched set is missing/untrusted.
+- [x] `retry()`: only from `needs_attention`, no action running. Re-migrate failed site with normal patch behavior, skip successful sites, continue pending; on total success restart services + restore maintenance + `completed`; on failure replace diagnosis, back to `needs_attention`.
+- [x] `restore()`: only when all safeguards created. Restore selected apps to captured SHAs, reinstall deps + rebuild assets; per migrated site selectively import cumulative touched tables and drop `current - previous` tables; skip pending sites; keep maintenance forced until all steps succeed → `restored`. Checkpoint each table import/drop; on failure `restore_failed`, resume from checkpoint. Fallback to all `previous_tables` when touched set is missing/untrusted.
 - [ ] Tests: retry resume semantics; restore selective import + created-table drop + fallback; opt-out removes Restore but keeps Retry.
 
 ### Phase 5 — Patch-failure diagnosis & Skip-this-patch

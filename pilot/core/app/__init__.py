@@ -112,6 +112,10 @@ class App:
     def switch_branch(self, branch: str) -> None:
         self._repository.switch_branch(branch)
 
+    def checkout_commit(self, sha: str) -> None:
+        """Check out a specific commit SHA, refetching it from origin if needed."""
+        self._repository.checkout_pinned_commit(sha)
+
     def _checkout_pinned_target(self, pin: RevisionPin) -> None:
         self._repository.checkout_pinned_target(pin)
 
