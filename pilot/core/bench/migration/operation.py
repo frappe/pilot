@@ -90,10 +90,22 @@ class MigrationOperation:
         self._transition(MigrationState.UPDATING)
         filter_set = set(self.apps_filter) if self.apps_filter else None
         on_step("update", "Updating apps")
-        self.bench._update_apps(filter_set, on_progress)
-        self.bench._reinstall_apps(filter_set, on_progress)
-        self.bench._rebuild_assets(filter_set, on_progress)
+        try:
+            self.bench._update_apps(filter_set, on_progress)
+            self.bench._reinstall_apps(filter_set, on_progress)
+            self.bench._rebuild_assets(filter_set, on_progress)
+        except Exception as error:
+            self._fail_update(error)
+            return
         self._migrate_pending(on_step, on_progress)
+
+    def _fail_update(self, error: Exception) -> None:
+        self.diagnosis = {
+            "phase": "update",
+            "message": str(error),
+            "output_excerpt": getattr(error, "output", "") or "",
+        }
+        self._transition(MigrationState.NEEDS_ATTENTION)
 
     def execute_site_migrate(self, on_step: OnStep = _NO_STEP, on_progress: OnProgress = _NO_PROGRESS) -> None:
         on_step("safeguards", "Preparing recovery snapshot")
@@ -405,6 +417,9 @@ class MigrationStore:
             self.root / f"{operation.id}.json",
             json.dumps(operation.to_dict(), indent=2),
         )
+
+    def delete(self, operation_id: str) -> None:
+        (self.root / f"{operation_id}.json").unlink(missing_ok=True)
 
     def get(self, operation_id: str) -> MigrationOperation:
         path = self.root / f"{operation_id}.json"

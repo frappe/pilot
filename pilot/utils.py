@@ -364,6 +364,8 @@ def run_command(
     tee_output: bool = False,
 ) -> subprocess.CompletedProcess:
     if tee_output:
+        if timeout is not None:
+            raise ValueError("tee_output does not support timeout")
         return _run_command_tee(argv, cwd, env)
     process = _start_process(argv, cwd, env, stream_output)
     stdout, stderr = _wait_for_process(process, argv, timeout)

@@ -216,6 +216,7 @@ def migrate_site(name: str):
             resource_key=f"site:{name.lower()}",
         )
     except Exception as error:
+        bench.migrations.delete(operation.id)
         return task_failure(error)
     operation.root_task_id = task_id
     operation.store.save(operation)

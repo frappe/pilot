@@ -68,6 +68,7 @@ def _queue_root(bench: Bench, operation: MigrationOperation, task_type, **task_a
             **task_args,
         )
     except Exception as error:
+        bench.migrations.delete(operation.id)
         return task_failure(error)
     operation.root_task_id = task_id
     operation.store.save(operation)
