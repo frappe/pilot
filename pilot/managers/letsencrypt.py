@@ -89,6 +89,7 @@ class LetsEncryptManager:
         certbot = which("certbot") or "/usr/bin/certbot"
         openssl = which("openssl") or "/usr/bin/openssl"
         mkdir = which("mkdir") or "/bin/mkdir"
+        test = which("test") or "/usr/bin/test"
         webroot_path = self.bench.config.letsencrypt.webroot_path
         hook = _nginx_reload_hook()
         # Domain/cert-name/email tokens must stay wildcarded (new sites arrive after
@@ -108,6 +109,8 @@ class LetsEncryptManager:
                 f"--agree-tos --non-interactive --deploy-hook {hook}",
                 f"{certbot} renew --quiet",
                 f"{mkdir} -p {webroot_path}",
+                # cert_files_exist(): live/ is 0700, so existence checks need privilege
+                f"{test} -f {LETSENCRYPT_LIVE}/*/fullchain.pem -a -f {LETSENCRYPT_LIVE}/*/privkey.pem",
                 f"{openssl} x509 -noout -ext subjectAltName -in {LETSENCRYPT_LIVE}/*/fullchain.pem",
                 f"{openssl} x509 -enddate -noout -in {LETSENCRYPT_LIVE}/*/fullchain.pem",
             ],

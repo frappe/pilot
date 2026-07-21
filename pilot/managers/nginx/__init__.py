@@ -3,12 +3,12 @@ from __future__ import annotations
 import pwd
 import re
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
+from pilot.exceptions import CommandError
 from pilot.internal.template import Template
 from pilot.managers.gunicorn import GunicornManager
 from pilot.managers.nginx.waf_render import ModSecurityRenderer
@@ -72,23 +72,14 @@ def live_key_path(domain: str) -> Path:
 
 
 def cert_files_exist(domain: str) -> bool:
+    """Ensure a missing sudo grant does not take the whole bench to http."""
     # /etc/letsencrypt/live is root-only (0700), so stat with privilege.
-    return (
-        subprocess.run(
-            _privileged(
-                [
-                    "test",
-                    "-f",
-                    str(live_cert_path(domain)),
-                    "-a",
-                    "-f",
-                    str(live_key_path(domain)),
-                ]
-            ),
-            capture_output=True,
-        ).returncode
-        == 0
-    )
+    command = ["test", "-f", str(live_cert_path(domain)), "-a", "-f", str(live_key_path(domain))]
+    try:
+        run_command(_privileged(command))
+    except CommandError:
+        return False
+    return True
 
 
 class NginxConfigRenderer:

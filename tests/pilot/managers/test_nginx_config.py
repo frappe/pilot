@@ -569,3 +569,26 @@ def test_config_dir_honors_explicit_value(tmp_path: Path) -> None:
     bench = _make_bench(tmp_path, _BASE_DATA)
     bench.config.nginx.config_dir = Path("/custom/nginx/dir")
     assert NginxManager(bench).config_dir == Path("/custom/nginx/dir")
+
+
+def test_cert_files_exist_falls_back_to_http_on_failure() -> None:
+    """Any failure - cert absent, or sudo denied - renders the vhost HTTP-only."""
+    from pilot.managers.nginx import cert_files_exist
+
+    denied = CommandError("Command 'sudo' failed with exit code 1.\nsudo: a password is required")
+    with patch("pilot.managers.nginx.run_command", side_effect=denied):
+        assert cert_files_exist("site.example.com") is False
+
+
+def test_cert_files_exist_true_when_both_files_present() -> None:
+    from pilot.managers.nginx import cert_files_exist
+
+    with patch("pilot.managers.nginx.run_command") as mock_run:
+        assert cert_files_exist("site.example.com") is True
+    argv = mock_run.call_args.args[0]
+    assert argv[-4:] == [
+        "/etc/letsencrypt/live/site.example.com/fullchain.pem",
+        "-a",
+        "-f",
+        "/etc/letsencrypt/live/site.example.com/privkey.pem",
+    ]

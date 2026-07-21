@@ -48,6 +48,11 @@ def test_setup_sudoers_grants_only_certbot_and_cert_reads(tmp_path: Path) -> Non
     assert "certbot renew --quiet," in content
     assert "certbot renew *" not in content
     assert "mkdir -p /var/www/letsencrypt," in content
+    # cert_files_exist() runs this as the bench user; without it every cert reads
+    # as missing and generate_config renders the whole bench HTTP-only.
+    assert (
+        "test -f /etc/letsencrypt/live/*/fullchain.pem -a -f /etc/letsencrypt/live/*/privkey.pem" in content
+    )
     assert "-in /etc/letsencrypt/live/*/fullchain.pem" in content
     assert content.count("openssl") == 2
     assert "ALL=(ALL) NOPASSWD: ALL" not in content
