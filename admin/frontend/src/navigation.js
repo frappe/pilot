@@ -37,11 +37,11 @@ export const navigation = {
   },
   'Dev tools': {
     children: {
-      // 'DB analyzer': {
-      //   path: '/database/analyzer',
-      //   icon: 'lucide-database',
-      //   component: Placeholder,
-      // },
+      'DB analyzer': {
+        path: '/database/analyzer',
+        icon: 'lucide-database',
+        component: () => import('./pages/database/Analyzer.vue'),
+      },
       'SQL playground': {
         path: '/database/sql-playground',
         icon: 'lucide-terminal',
