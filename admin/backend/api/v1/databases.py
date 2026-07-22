@@ -73,6 +73,53 @@ def execute_query():
         return error_response("query_failed", "Could not execute query.", 500)
 
 
+def _provider():
+    from admin.backend.providers.database import DatabaseDiagnosticsProvider
+
+    return DatabaseDiagnosticsProvider(current_app.config["BENCH_ROOT"])
+
+
+@database_bp.get("/diagnostics")
+def get_diagnostics():
+    try:
+        return jsonify(_provider().get_diagnostics())
+    except Exception:
+        return error_response("diagnostics_unavailable", "Could not read database diagnostics.", 500)
+
+
+@database_bp.get("/processlist")
+def get_process_list():
+    try:
+        return jsonify(_provider().get_process_list())
+    except Exception:
+        return error_response("processlist_unavailable", "Could not read the database process list.", 500)
+
+
+@database_bp.get("/binlogs")
+def get_binlogs():
+    try:
+        return jsonify(_provider().get_binlog_files())
+    except Exception:
+        return error_response("binlogs_unavailable", "Could not list binary logs.", 500)
+
+
+@database_bp.post("/binlogs/purge")
+def purge_binlogs():
+    from pilot.exceptions import DatabaseError
+
+    data = request.get_json(silent=True)
+    up_to = data.get("up_to", "") if isinstance(data, dict) else ""
+    if not isinstance(up_to, str) or not up_to.strip():
+        return error_response("invalid_up_to", "up_to is required.", 422)
+    try:
+        _provider().purge_binlogs(up_to.strip())
+        return jsonify({"status": "ok"})
+    except DatabaseError as exc:
+        return error_response("purge_failed", str(exc), 422)
+    except Exception:
+        return error_response("purge_failed", "Could not purge binary logs.", 500)
+
+
 def _query_request(data):
     if not isinstance(data, dict):
         return {}, error_response("malformed_request", "Expected a JSON object.", 400)
