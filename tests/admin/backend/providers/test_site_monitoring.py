@@ -5,8 +5,11 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from admin.backend.providers.site_monitoring import SiteMonitoringProvider
+from pilot.config import BenchConfig
+from pilot.core.database.slow_queries import SlowQueryLog
 
 
 def _request(site: str, when: datetime, path: str, duration: int = 1_000_000) -> dict:
@@ -44,3 +47,37 @@ def test_slowest_requests_still_includes_ping(tmp_path: Path) -> None:
     result = SiteMonitoringProvider(root, "site-a.local", "1h").get_analytics()
 
     assert result["slowest_requests"]["categories"] == ["/api/method/ping"]
+
+
+def _site_root(tmp_path: Path, site: str, db_name: str) -> Path:
+    site_dir = tmp_path / "sites" / site
+    site_dir.mkdir(parents=True)
+    (site_dir / "site_config.json").write_text(json.dumps({"db_name": db_name}))
+    return tmp_path
+
+
+def test_slow_query_timelines_scoped_to_site_db(tmp_path: Path) -> None:
+    root = _site_root(tmp_path, "site-a.local", "_dba")
+    config = BenchConfig.default(name="test-bench")
+    config.monitor.slow_query_log_path = tmp_path / "slow-queries.json"
+    now = datetime.now(UTC)
+    SlowQueryLog(config.monitor.slow_query_log_path).append([
+        {"db": "_dba", "sql_text": "SELECT 1", "query_time": 1.5, "start_time": now},
+        {"db": "_dba", "sql_text": "SELECT 1", "query_time": 1.5, "start_time": now},
+        {"db": "_other_site_db", "sql_text": "SELECT 2", "query_time": 9.0, "start_time": now},
+    ])
+
+    with patch.object(BenchConfig, "read", return_value=config):
+        result = SiteMonitoringProvider(root, "site-a.local", "1h").get_analytics()
+
+    assert result["frequent_slow_queries"]["categories"] == ["SELECT ?"]
+    assert result["slowest_queries"]["categories"] == ["SELECT ?"]
+    assert result["slowest_queries"]["points"][0]["SELECT ?"] == 1.5
+
+
+def test_slow_query_timeline_empty_for_unknown_site(tmp_path: Path) -> None:
+    root = _write_log(tmp_path, [])
+
+    result = SiteMonitoringProvider(root, "no-such-site.local", "1h").get_analytics()
+
+    assert result["frequent_slow_queries"]["categories"] == []

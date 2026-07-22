@@ -19,6 +19,22 @@ if typing.TYPE_CHECKING:
 # Gap between the two /proc samples used to turn cumulative counters into a rate.
 CPU_SAMPLE_INTERVAL = 1.0
 
+# Raw MariaDB status counters/gauges + variables logged per cycle; the provider
+# turns consecutive samples into rates.
+_DB_STATUS_KEYS = (
+    "Com_insert",
+    "Com_update",
+    "Com_delete",
+    "Com_select",
+    "Questions",
+    "Innodb_buffer_pool_reads",
+    "Innodb_buffer_pool_read_requests",
+    "Innodb_row_lock_time",
+    "Innodb_row_lock_waits",
+    "Threads_connected",
+)
+_DB_VARIABLE_KEYS = ("innodb_buffer_pool_size", "max_connections")
+
 
 class Monitor:
     def __init__(self, bench: "Bench"):
@@ -108,6 +124,14 @@ class Monitor:
     def system_log_path(self) -> Path:
         return self._configurator.system_log_path
 
+    @property
+    def db_log_path(self) -> Path:
+        return self._configurator.db_log_path
+
+    @property
+    def slow_query_log_path(self) -> Path:
+        return self.bench.config.monitor.slow_query_log_path
+
     def is_system_log_authority(self) -> bool:
         return self._configurator.is_system_log_authority()
 
@@ -127,6 +151,51 @@ class Monitor:
                 "disk_io": self._disk_io,
             },
         )
+
+    def collect_database_metrics(self) -> None:
+        """One raw MariaDB sample per host. Never crashes the daemon on a bad DB."""
+        if not self._configurator.is_system_log_authority():
+            return
+        if self.bench.config.db_type != "mariadb":
+            return
+        try:
+            from pilot.core.database import make_database
+            from pilot.core.database.engines import MariaDB
+
+            database = make_database(self.bench.config)
+            if not isinstance(database, MariaDB):
+                return
+            status = database.get_global_status()
+            variables = database.get_global_variables()
+        except Exception:
+            return
+        record: dict[str, typing.Any] = {"time": datetime.now(UTC).isoformat()}
+        for key in _DB_STATUS_KEYS:
+            record[key] = _to_int(status.get(key))
+        for key in _DB_VARIABLE_KEYS:
+            record[key] = _to_int(variables.get(key))
+        record["total_ram_mb"] = self._memory_usage().get("total_mb")
+        self._append(self.db_log_path, record)
+
+    def collect_slow_queries(self) -> None:
+        """Append new slow-log rows to the occurrence log. Skips quietly if the
+        slow log is off or the DB is unreachable so the daemon never crashes."""
+        if not self._configurator.is_system_log_authority():
+            return
+        if self.bench.config.db_type != "mariadb":
+            return
+        try:
+            from pilot.core.database import make_database
+            from pilot.core.database.engines import MariaDB
+            from pilot.core.database.slow_queries import SlowQueryLog
+
+            database = make_database(self.bench.config)
+            if not isinstance(database, MariaDB) or not database.is_slow_log_enabled():
+                return
+            log = SlowQueryLog(self.slow_query_log_path)
+            log.append(database.scan_slow_queries(since=log.watermark()))
+        except Exception:
+            return
 
     def collect_application_metrics(self) -> None:
         processes = []
@@ -212,6 +281,13 @@ class Monitor:
             log_file.write(json.dumps(record) + "\n")
 
 
+def _to_int(value: object) -> int:
+    try:
+        return int(value)  # type: ignore[call-overload]
+    except (TypeError, ValueError):
+        return 0
+
+
 def resolve_monitor_log_path(bench_config: "BenchConfig"):
     from pilot.config import MonitorConfig
 
@@ -240,6 +316,8 @@ def main() -> None:
         monitor.compute_io()
         monitor.collect_application_metrics()
         monitor.collect_system_metrics()
+        monitor.collect_database_metrics()
+        monitor.collect_slow_queries()
 
 
 if __name__ == "__main__":
