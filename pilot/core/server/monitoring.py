@@ -160,13 +160,16 @@ class Monitor:
             return
         try:
             from pilot.core.database import make_database
+            from pilot.core.database.engines import MariaDB
 
             database = make_database(self.bench.config)
+            if not isinstance(database, MariaDB):
+                return
             status = database.get_global_status()
             variables = database.get_global_variables()
         except Exception:
             return
-        record = {"time": datetime.now(UTC).isoformat()}
+        record: dict[str, typing.Any] = {"time": datetime.now(UTC).isoformat()}
         for key in _DB_STATUS_KEYS:
             record[key] = _to_int(status.get(key))
         for key in _DB_VARIABLE_KEYS:
@@ -183,10 +186,11 @@ class Monitor:
             return
         try:
             from pilot.core.database import make_database
+            from pilot.core.database.engines import MariaDB
             from pilot.core.database.slow_queries import SlowQueryLog
 
             database = make_database(self.bench.config)
-            if not database.is_slow_log_enabled():
+            if not isinstance(database, MariaDB) or not database.is_slow_log_enabled():
                 return
             log = SlowQueryLog(self.slow_query_log_path)
             log.append(database.scan_slow_queries(since=log.watermark()))
@@ -279,7 +283,7 @@ class Monitor:
 
 def _to_int(value: object) -> int:
     try:
-        return int(value)  # type: ignore[arg-type]
+        return int(value)  # type: ignore[call-overload]
     except (TypeError, ValueError):
         return 0
 

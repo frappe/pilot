@@ -24,19 +24,21 @@ class SlowQueryProvider(WindowedLogProvider):
     def get_overview(self) -> dict:
         from pilot.config import BenchConfig
         from pilot.core.database import make_database
+        from pilot.core.database.engines import MariaDB
         from pilot.core.database.slow_queries import SlowQueryLog
 
         config = BenchConfig.read(self._bench_root)
         if config.db_type != "mariadb":
             return {"enabled": False, "unsupported": True, "sites": [], "counts": [], "durations": []}
-        if not make_database(config).is_slow_log_enabled():
+        database = make_database(config)
+        if not isinstance(database, MariaDB) or not database.is_slow_log_enabled():
             return {"enabled": False, "sites": [], "counts": [], "durations": []}
 
         site_by_db = self._site_by_db()
         records = [
             {
                 **record,
-                "site": site_by_db.get(record.get("db"), record.get("db") or "unknown"),
+                "site": site_by_db.get(str(record.get("db") or ""), str(record.get("db") or "unknown")),
                 "query": self._label(record.get("query") or ""),
             }
             for record in SlowQueryLog(config.monitor.slow_query_log_path).records()
