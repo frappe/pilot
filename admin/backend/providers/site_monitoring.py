@@ -6,10 +6,10 @@ from pathlib import Path
 from admin.backend.internal.timeline import TimelinePoint, build_timeline
 from admin.backend.providers.site_access_log import SiteAccessLogProvider
 from admin.backend.providers.windowed_log import WindowedLogProvider
+from pilot.core.site.uptime_monitoring import PING_PATH
 
 _MAX_BUCKETS = 48
 _TOP_LIMIT = 5
-_UPTIME_PING_PATH = "/api/method/ping"
 
 
 class SiteMonitoringProvider(WindowedLogProvider):
@@ -91,11 +91,12 @@ class SiteMonitoringProvider(WindowedLogProvider):
     def _non_ping_path(cls, entry: dict) -> str | None:
         """Uptime checks hit /api/method/ping constantly and would drown out real traffic."""
         path = cls._request_path(entry)
-        return None if path == _UPTIME_PING_PATH else path
+        return None if path == PING_PATH else path
 
     @staticmethod
     def _request_ip(entry: dict) -> str | None:
-        return (entry.get("request") or {}).get("ip")
+        path = SiteMonitoringProvider._request_path(entry)
+        return None if path == PING_PATH else (entry.get("request") or {}).get("ip")
 
     @staticmethod
     def _job_method(entry: dict) -> str | None:

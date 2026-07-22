@@ -1,5 +1,5 @@
 <template>
-  <div class="bg-surface-white border rounded-lg border-outline-gray-2 overflow-hidden">
+  <div class="bg-surface-white border rounded-lg border-outline-gray-2">
     <div class="flex justify-between items-center gap-2 px-4 py-3 border-b border-outline-gray-2">
       <div class="flex items-center gap-1.5">
         <h3 class="font-medium text-ink-gray-8 text-base">Uptime</h3>
@@ -31,8 +31,8 @@
       <span class="size-6 text-ink-gray-3 lucide-activity" />
       <p class="text-ink-gray-5 text-xs">No uptime data yet</p>
     </div>
-    <div v-else class="relative px-4 pt-4 pb-3">
-      <div class="flex items-end gap-[3px] h-10">
+    <div v-else ref="chartRef" class="relative px-4 pt-4 pb-3">
+      <div ref="barsRef" class="flex items-end gap-[3px] h-10">
         <div v-for="(bucket, i) in data.buckets" :key="bucket.time"
           class="flex-1 rounded-full min-w-[3px] h-full cursor-pointer"
           :class="{ 'bg-surface-gray-3': bucket.percent === null }"
@@ -44,9 +44,9 @@
         <span>{{ formatAxisTime(data.buckets[data.buckets.length - 1].time) }}</span>
       </div>
 
-      <div v-if="hovered !== null"
-        class="z-10 absolute bg-surface-gray-8 shadow-lg mb-2 px-3 py-2 rounded-lg text-xs whitespace-nowrap -translate-x-1/2"
-        :style="tooltipStyle">
+      <div v-if="hovered !== null" ref="tooltipRef"
+        class="bottom-full left-0 z-10 absolute bg-surface-gray-8 shadow-lg mb-2 px-3 py-2 rounded-lg max-w-[calc(100%_-_16px)] text-xs"
+        :style="{ transform: `translateX(${tooltipLeft}px)` }">
         <div class="font-semibold text-ink-white">
           {{ formatPercent(data.buckets[hovered].percent) }} · {{ formatFullTime(data.buckets[hovered].time) }}
         </div>
@@ -57,10 +57,11 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
 import { ErrorMessage, LoadingText } from 'frappe-ui'
 import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
+import { clampTooltipOffset } from '@/utils/chartTooltip'
 
 const props = defineProps({
   siteName: { type: String, required: true },
@@ -71,6 +72,10 @@ const loading = ref(true)
 const error = ref('')
 const data = ref(null)
 const hovered = ref(null)
+const chartRef = ref(null)
+const barsRef = ref(null)
+const tooltipRef = ref(null)
+const tooltipLeft = ref(0)
 
 const GREEN = '#10b981'
 const AMBER = '#f59e0b'
@@ -105,11 +110,16 @@ function formatRange(bucket) {
   return `${start.toLocaleTimeString(undefined, TIME_ONLY_FORMAT)} to ${end.toLocaleTimeString(undefined, TIME_ONLY_FORMAT)}`
 }
 
-const tooltipStyle = computed(() => {
-  if (hovered.value === null || !data.value) return {}
-  const count = data.value.buckets.length
-  const left = ((hovered.value + 0.5) / count) * 100
-  return { left: `${left}%`, bottom: '100%' }
+watch(hovered, async (index) => {
+  if (index === null) return
+  await nextTick()
+  const chart = chartRef.value
+  const bar = barsRef.value?.children[index]
+  const tooltip = tooltipRef.value
+  if (!chart || !bar || !tooltip) return
+
+  const center = bar.offsetLeft + bar.offsetWidth / 2
+  tooltipLeft.value = clampTooltipOffset(center, tooltip.offsetWidth, chart.offsetWidth)
 })
 
 async function load() {

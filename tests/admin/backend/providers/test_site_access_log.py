@@ -109,6 +109,40 @@ def test_dash_request_time_does_not_raise(tmp_path: Path) -> None:
     assert result["categories"] == ["1.1.1.1"]
 
 
+def test_ignores_uptime_ping_requests(tmp_path: Path) -> None:
+    now = datetime.now(UTC)
+    root = _write_log(
+        tmp_path,
+        [
+            _line("7.7.7.7", "site-a.local", now, path="/api/method/ping"),
+            _line("7.7.7.7", "site-a.local", now, path="/api/method/ping?x=1"),
+            _line("1.1.1.1", "site-a.local", now),
+        ],
+    )
+
+    result = SiteAccessLogProvider(root, "site-a.local", "1h").get_top_ips()
+
+    assert result["categories"] == ["1.1.1.1"]
+
+
+def test_ping_only_traffic_yields_no_ips(tmp_path: Path) -> None:
+    now = datetime.now(UTC)
+    root = _write_log(tmp_path, [_line("7.7.7.7", "site-a.local", now, path="/api/method/ping")])
+
+    result = SiteAccessLogProvider(root, "site-a.local", "1h").get_top_ips()
+
+    assert result["categories"] == []
+
+
+def test_keeps_paths_that_merely_start_with_the_ping_path(tmp_path: Path) -> None:
+    now = datetime.now(UTC)
+    root = _write_log(tmp_path, [_line("3.3.3.3", "site-a.local", now, path="/api/method/pingback")])
+
+    result = SiteAccessLogProvider(root, "site-a.local", "1h").get_top_ips()
+
+    assert result["categories"] == ["3.3.3.3"]
+
+
 def test_is_available_false_when_missing(tmp_path: Path) -> None:
     provider = SiteAccessLogProvider(tmp_path, "site-a.local", "1h")
 

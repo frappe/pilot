@@ -19,6 +19,7 @@ if typing.TYPE_CHECKING:
     from pilot.core.bench import Bench
 
 PING_TIMEOUT = 5.0
+PING_PATH = "/api/method/ping"
 
 
 class UptimeMonitor:
@@ -30,7 +31,7 @@ class UptimeMonitor:
         return [site.config.name for site in self.bench.sites()]
 
     def ping_site(self, site_name: str) -> dict:
-        url = f"https://{site_name}/api/method/ping"
+        url = f"https://{site_name}{PING_PATH}"
         start = time.monotonic()
         try:
             request = urllib.request.Request(url, headers={"User-Agent": "pilot-uptime-monitor"})
