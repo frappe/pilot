@@ -78,7 +78,7 @@ export function stateLabel(state) {
 // Per-site lifecycle: pending -> backing up -> running -> success / failed / recovered
 export function siteStatus(site) {
   if (site.migration_status === 'recovering') return { label: 'Recovering', tone: 'orange', busy: true, value: 'recovering' }
-  if (site.migration_status === 'recovered') return { label: 'Recovered', tone: 'blue', value: 'recovered' }
+  if (site.migration_status === 'recovered') return { label: 'Recovered', tone: 'green', value: 'recovered' }
   if (site.migration_status === 'success') return { label: 'Success', tone: 'green', value: 'success' }
   if (site.migration_status === 'running') return { label: 'Running', tone: 'orange', busy: true, value: 'running' }
   if (site.migration_status === 'failed') return { label: 'Failed', tone: 'red', value: 'failed' }
