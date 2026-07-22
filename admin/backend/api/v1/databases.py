@@ -6,6 +6,8 @@ from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request
 
 from admin.backend.api.responses import error_response
+from admin.backend.api.v1.benches.support import guard_bench_management
+from pilot.exceptions import DatabaseError
 
 database_bp = Blueprint("database", __name__)
 
@@ -83,20 +85,21 @@ def _provider():
 def get_diagnostics():
     try:
         return jsonify(_provider().get_diagnostics())
+    except DatabaseError as exc:
+        return error_response("diagnostics_unavailable", str(exc), 422)
     except Exception:
         return error_response("diagnostics_unavailable", "Could not read database diagnostics.", 500)
 
 
 @database_bp.get("/processlist")
 def get_process_list():
-    from admin.backend.api.v1.benches.support import guard_bench_management
-
     forbidden = guard_bench_management()
     if forbidden is not None:
         return forbidden
-
     try:
         return jsonify(_provider().get_process_list())
+    except DatabaseError as exc:
+        return error_response("processlist_unavailable", str(exc), 422)
     except Exception:
         return error_response("processlist_unavailable", "Could not read the database process list.", 500)
 
@@ -105,15 +108,15 @@ def get_process_list():
 def get_binlogs():
     try:
         return jsonify(_provider().get_binlog_files())
+    except DatabaseError as exc:
+        return error_response("binlogs_unavailable", str(exc), 422)
     except Exception:
         return error_response("binlogs_unavailable", "Could not list binary logs.", 500)
 
 
 @database_bp.post("/binlogs/purge")
 def purge_binlogs():
-    from admin.backend.api.v1.benches.support import guard_bench_management
-    from pilot.exceptions import DatabaseError
-
+    # Binlogs are server-wide state shared by every bench on this host.
     forbidden = guard_bench_management()
     if forbidden is not None:
         return forbidden

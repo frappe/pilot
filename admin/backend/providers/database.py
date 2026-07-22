@@ -5,30 +5,52 @@ from pathlib import Path
 
 from pilot.config import BenchConfig
 from pilot.core.database import Database, make_database
+from pilot.exceptions import DatabaseError
+
+NO_DATABASE_SERVER = (
+    "SQLite is a per-site database file, not a shared server"
+)
 
 
 class DatabaseDiagnosticsProvider:
     """Server-level diagnostics for the bench's database, shaped for JSON.
+
+    A SQLite bench has no database server: every site owns a file under
+    sites/<site>/db/. Only get_diagnostics() answers for such a bench;
+    the rest raise DatabaseError.
 
     Timestamps stay raw (epoch ms) and sizes stay raw bytes; formatting
     belongs to the consumer.
     """
 
     def __init__(self, bench_root: Path, database: Database | None = None) -> None:
-        self._db = database or make_database(BenchConfig.read(bench_root, validate=False))
+        if database is not None:
+            self._db: Database | None = database
+            return
+        config = BenchConfig.read(bench_root, validate=False)
+        self._db = None if config.db_type == "sqlite" else make_database(config)
 
     def get_diagnostics(self) -> dict:
+        if self._db is None:
+            return {"supported": False, "reason": NO_DATABASE_SERVER}
+        database = self._require_server()
         return {
-            "active_connections": self._db.get_active_connections(),
-            "lock_waits": asdict(self._db.get_lock_waits()),
-            "binlog": asdict(self._db.get_binlog_status()),
+            "supported": True,
+            "active_connections": database.get_active_connections(),
+            "lock_waits": asdict(database.get_lock_waits()),
+            "binlog": asdict(database.get_binlog_status()),
         }
 
     def get_process_list(self) -> list[dict]:
-        return self._db.get_process_list()
+        return self._require_server().get_process_list()
 
     def get_binlog_files(self) -> list[dict]:
-        return [asdict(file) for file in self._db.get_binlog_files()]
+        return [asdict(file) for file in self._require_server().get_binlog_files()]
 
     def purge_binlogs(self, up_to: str) -> None:
-        self._db.purge_binlogs(up_to)
+        self._require_server().purge_binlogs(up_to)
+
+    def _require_server(self) -> Database:
+        if self._db is None:
+            raise DatabaseError(NO_DATABASE_SERVER)
+        return self._db

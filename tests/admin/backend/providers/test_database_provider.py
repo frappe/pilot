@@ -19,10 +19,30 @@ def test_get_diagnostics_shapes_dataclasses_as_dicts() -> None:
     db.get_binlog_status.return_value = BinlogStatus(enabled=True, file_count=2, size_bytes=4096)
 
     assert _provider(db).get_diagnostics() == {
+        "supported": True,
         "active_connections": 3,
         "lock_waits": {"current_waits": 1, "total_waits": 9, "timeout_seconds": 50},
         "binlog": {"enabled": True, "file_count": 2, "size_bytes": 4096},
     }
+
+
+def test_sqlite_bench_has_no_database_server(tmp_path) -> None:
+    import pytest
+
+    from admin.backend.providers.database import NO_DATABASE_SERVER
+    from pilot.config import BenchConfig
+    from pilot.exceptions import DatabaseError
+
+    (tmp_path / "bench.toml").write_text(
+        BenchConfig.from_flat(tmp_path.name, {"db_type": "sqlite"}).dumps()
+    )
+    provider = DatabaseDiagnosticsProvider(tmp_path)
+
+    assert provider.get_diagnostics() == {"supported": False, "reason": NO_DATABASE_SERVER}
+    # Server-only reads fail loudly rather than pretending the bench has none of each.
+    for call in (provider.get_process_list, provider.get_binlog_files):
+        with pytest.raises(DatabaseError, match="per-site"):
+            call()
 
 
 def test_get_binlog_files_shapes_files_as_dicts() -> None:
