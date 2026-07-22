@@ -8,14 +8,19 @@ from pathlib import Path
 from pilot.config import BenchConfig
 
 
-def _bench(tmp_path: Path) -> Path:
+def _bench(tmp_path: Path, developer_mode: bool = True) -> Path:
     bench_root = tmp_path / "benches" / "current"
     (bench_root / "apps" / "widgets").mkdir(parents=True)
     (bench_root / "apps" / "widgets" / "hello.py").write_text("print('hi')\n")
     (bench_root / "sites").mkdir(parents=True)
     (bench_root / "bench.toml").write_text(
         BenchConfig.from_flat(
-            bench_root.name, {"admin_enabled": True, "admin_password": "secret"}
+            bench_root.name,
+            {
+                "admin_enabled": True,
+                "admin_password": "secret",
+                "admin_developer_mode": developer_mode,
+            },
         ).dumps()
     )
     return bench_root
@@ -118,6 +123,13 @@ def test_site_scoped_token_is_forbidden(tmp_path: Path) -> None:
     client = _client(_bench(tmp_path), scope="site")
     response = client.get("/api/v1/editor/tree", query_string={"app": "widgets"})
     assert response.status_code == 403
+
+
+def test_editor_is_forbidden_when_developer_mode_off(tmp_path: Path) -> None:
+    client = _client(_bench(tmp_path, developer_mode=False))
+    response = client.get("/api/v1/editor/tree", query_string={"app": "widgets"})
+    assert response.status_code == 403
+    assert response.get_json()["error"]["code"] == "editor_disabled"
 
 
 def test_state_roundtrips(tmp_path: Path) -> None:

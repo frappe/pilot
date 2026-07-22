@@ -95,7 +95,11 @@ def build_settings_response(config: BenchConfig) -> dict:
             "process_manager": config.production.process_manager or "none",
             "enabled": config.production.enabled,
         },
-        "admin": {"domain": config.admin.domain, "tls": config.admin.tls},
+        "admin": {
+            "domain": config.admin.domain,
+            "tls": config.admin.tls,
+            "developer_mode": config.admin.developer_mode,
+        },
         "letsencrypt": {"email": config.letsencrypt.email},
         "s3": s3_payload(config),
         "s3_providers": s3_provider_options(),

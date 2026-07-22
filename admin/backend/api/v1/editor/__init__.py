@@ -22,17 +22,28 @@ def with_workspace(view):
 
     @wraps(view)
     def wrapper(*args, **kwargs):
+        bench_root = Path(current_app.config["BENCH_ROOT"])
+        if not is_developer_mode_enabled(bench_root):
+            return error_response("editor_disabled", "Code editor is disabled. Enable Developer Mode in Settings.", 403)
         name = (request.args.get("app") or "").strip()
         if validate_app_name(name) is not None:
             return error_response("editor_app_not_found", "Unknown or missing app.", 404)
-        bench = Bench(Path(current_app.config["BENCH_ROOT"]))
         try:
-            root = bench.app(name).path
+            root = Bench(bench_root).app(name).path
         except Exception:
             return error_response("editor_app_not_found", "Unknown or missing app.", 404)
         return view(EditorWorkspace(root), *args, **kwargs)
 
     return wrapper
+
+
+def is_developer_mode_enabled(bench_root: Path) -> bool:
+    from pilot.config import BenchConfig
+
+    try:
+        return BenchConfig.read(bench_root).admin.developer_mode
+    except Exception:
+        return False
 
 
 def query_flag(name: str) -> bool:

@@ -180,6 +180,8 @@ class ConfigPatcher:
         admin = self.data.get("admin") or {}
         if "tls" in admin:
             self.config.admin.tls = bool(admin["tls"])
+        if "developer_mode" in admin:
+            self.config.admin.developer_mode = bool(admin["developer_mode"])
         letsencrypt = self.data.get("letsencrypt") or {}
         if "email" in letsencrypt:
             self.config.letsencrypt.email = str(letsencrypt["email"]).strip()

@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Sidebar, SidebarItem, useTheme } from 'frappe-ui'
-import { sidebarSections } from '@/navigation'
+import { navigation, sidebarSections } from '@/navigation'
 import { authApi } from '@/api/auth'
 import { useSession } from '@/composables/auth/useSession'
 import { useIsMobile } from '@/composables/common/useIsMobile'
@@ -14,9 +14,11 @@ const { setTheme } = useTheme()
 
 const route = useRoute()
 const router = useRouter()
-const sections = sidebarSections()
 const isMobile = useIsMobile()
 const { session } = useSession()
+const sections = computed(() =>
+  sidebarSections(navigation, { developerMode: session.developerMode }),
+)
 
 const showSettings = ref(false)
 const showBenches = ref(false)

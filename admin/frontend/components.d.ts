@@ -31,7 +31,7 @@ declare module 'vue' {
     DiagnosticsStat: typeof import('./src/components/database/DiagnosticsStat.vue')['default']
     Domains: typeof import('./src/components/sites/settings/Domains.vue')['default']
     Firewall: typeof import('./src/components/settings/Firewall.vue')['default']
-    General: typeof import('./src/components/sites/settings/General.vue')['default']
+    General: typeof import('./src/components/settings/General.vue')['default']
     Git: typeof import('./src/components/settings/Git.vue')['default']
     GithubMark: typeof import('./src/components/icons/GithubMark.vue')['default']
     InstallAppDialog: typeof import('./src/components/apps/InstallAppDialog.vue')['default']

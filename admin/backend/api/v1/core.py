@@ -67,6 +67,7 @@ def bootstrap():
             "production": config.production.enabled,
             "native_process_manager": native_process_manager(),
             "allow_bench_management": config.admin.allow_bench_management,
+            "developer_mode": config.admin.developer_mode,
             "task_worker": TaskActivityReader(bench_root).read().public_dict,
         }
     )

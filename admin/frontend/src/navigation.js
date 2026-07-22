@@ -51,6 +51,7 @@ export const navigation = {
         path: '/editor',
         icon: 'lucide-code',
         component: () => import('./pages/editor/Launcher.vue'),
+        flag: 'developerMode',
       },
     },
   },
@@ -64,21 +65,21 @@ export function navigationRoutes(tree = navigation, group = '') {
   )
 }
 
-export function sidebarSections(tree = navigation) {
+// `flags` gates items marked with a `flag` (e.g. { developerMode: true }); an
+// item whose flag is not enabled is hidden, and empty sections are dropped.
+export function sidebarSections(tree = navigation, flags = {}) {
+  const enabled = (node) => !node.flag || flags[node.flag]
   const sections = []
   const looseItems = []
   for (const [title, node] of Object.entries(tree)) {
     if (node.children) {
-      sections.push({
-        label: title,
-        collapsible: node.collapsible ?? false,
-        items: Object.entries(node.children).map(([label, child]) => ({
-          label,
-          icon: child.icon,
-          to: child.path,
-        })),
-      })
-    } else {
+      const items = Object.entries(node.children)
+        .filter(([, child]) => enabled(child))
+        .map(([label, child]) => ({ label, icon: child.icon, to: child.path }))
+      if (items.length) {
+        sections.push({ label: title, collapsible: node.collapsible ?? false, items })
+      }
+    } else if (enabled(node)) {
       looseItems.push({ label: title, icon: node.icon, to: node.path })
     }
   }

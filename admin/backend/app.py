@@ -81,6 +81,10 @@ def register_editor_frontend(app: Flask) -> None:
     @app.route("/editor/<app_name>")
     @allow_unauthenticated
     def serve_editor(app_name):
+        from admin.backend.api.v1.editor import is_developer_mode_enabled
+
+        if not is_developer_mode_enabled(Path(app.config["BENCH_ROOT"])):
+            return "Code editor is disabled. Enable Developer Mode in Settings.", 404
         index = editor_dist / "index.html"
         if not index.exists():
             return "Editor not built. Run: cd admin/editor && yarn install && yarn build", 503

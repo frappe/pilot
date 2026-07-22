@@ -46,6 +46,7 @@ import { apiErrorMessage } from '@/api/client'
 import MarketplaceAppCard from '@/components/marketplace/MarketplaceAppCard.vue'
 import { useSite } from '@/composables/sites/useSite'
 import { useAppRegistry } from '@/composables/apps/useAppRegistry'
+import { useSession } from '@/composables/auth/useSession'
 import { openTaskDetailPage } from '@/utils/taskRoute'
 import { toSentenceCase } from '@/utils/format'
 
@@ -53,6 +54,7 @@ const props = defineProps({
   siteName: { type: String, required: true },
 })
 const router = useRouter()
+const { session } = useSession()
 
 const { apps, installedApps, appsLoading, loadApps, uninstallApp } = useSite(props.siteName)
 const { titleMap, descriptionMap, logoMap, documentationMap, websiteMap, load: loadRegistry } = useAppRegistry()
@@ -82,7 +84,9 @@ function openLink(url) {
 
 function menuOptions(app) {
   return [
-    { label: 'Open in editor', icon: 'lucide-code', onClick: () => openLink(`/editor/${encodeURIComponent(app.name)}`) },
+    ...(session.developerMode
+      ? [{ label: 'Open in editor', icon: 'lucide-code', onClick: () => openLink(`/editor/${encodeURIComponent(app.name)}`) }]
+      : []),
     ...(app.website
       ? [{ label: 'Website', icon: 'lucide-globe', onClick: () => openLink(app.website) }]
       : []),
