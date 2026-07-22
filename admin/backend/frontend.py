@@ -49,7 +49,7 @@ def download_admin_frontend(cli_root: Path) -> bool:
 def build_admin_frontend(
     force_build: bool = False, on_progress: Callable[[str], None] = lambda message: None
 ) -> None:
-    from pilot.utils import cli_root, run_command
+    from pilot.utils import cli_root
 
     if not force_build and download_admin_frontend(cli_root()):
         return
@@ -57,15 +57,21 @@ def build_admin_frontend(
         on_progress("Skipping download, building from source...")
     else:
         on_progress("Download failed, building from source...")
-    frontend = _find_frontend()
     _check_node_version()
-    on_progress(f"Building admin frontend at {frontend}...")
+    _build_frontend(_find_frontend(), "admin", on_progress)
+    _build_frontend(_find_editor(), "editor", on_progress)
+    on_progress("\nAdmin frontend rebuilt successfully.")
+
+
+def _build_frontend(frontend: Path, label: str, on_progress: Callable[[str], None]) -> None:
+    from pilot.utils import run_command
+
+    on_progress(f"Building {label} frontend at {frontend}...")
     if _is_yarn_install_stale(frontend):
         on_progress("Running yarn install...")
         run_command(["yarn", "install"], cwd=frontend, stream_output=True)
     on_progress("Running yarn build")
     run_command(["yarn", "build"], cwd=frontend, stream_output=True)
-    on_progress("\nAdmin frontend rebuilt successfully.")
 
 
 def _find_frontend() -> Path:
@@ -76,6 +82,17 @@ def _find_frontend() -> Path:
         return candidate
     raise BenchError(
         "admin/frontend not found. This command requires the bench-cli source directory with admin/frontend/."
+    )
+
+
+def _find_editor() -> Path:
+    from pilot.utils import cli_root
+
+    candidate = cli_root() / "admin" / "editor"
+    if (candidate / "package.json").exists():
+        return candidate
+    raise BenchError(
+        "admin/editor not found. This command requires the bench-cli source directory with admin/editor/."
     )
 
 

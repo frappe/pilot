@@ -1,0 +1,31 @@
+{
+  "name": "hatch-editor",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "frappe-ui": "^0.1.278",
+    "monaco-editor": "^0.55.1",
+    "pinia": "^2.3.1",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@iconify-json/lucide": "^1.2.114",
+    "@iconify-json/vscode-icons": "^1.2.62",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "unplugin-icons": "^23.0.1",
+    "vite": "^5.4.11"
+  },
+  "resolutions": {
+    "browserslist": "4.28.0"
+  }
+}

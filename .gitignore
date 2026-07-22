@@ -50,8 +50,10 @@ htmlcov/
 
 # Admin
 admin/frontend/node_modules/
-admin/frontend2/node_modules/
+admin/editor/node_modules/
 admin/backend/static/dist/
+admin/backend/static/editor/
+admin/backend/static/editor/
 *.timestamp-*
 .env
 .env.local

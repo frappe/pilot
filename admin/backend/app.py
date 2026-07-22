@@ -3,7 +3,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from flask import Flask, send_file
+from flask import Flask, send_file, send_from_directory
+from werkzeug.exceptions import NotFound
 
 from admin.backend.api.errors import install_api_error_handlers
 from admin.backend.api.responses import error_response
@@ -25,6 +26,7 @@ def create_app(bench_root: Path) -> Flask:
 
     install_auth_guard(app, bench_root)
     register_blueprints(app)
+    register_editor_frontend(app)
     register_frontend(app)
     install_api_error_handlers(app)
 
@@ -36,6 +38,7 @@ def register_blueprints(app: Flask) -> None:
     from admin.backend.api.v1.benches import bench_readiness_bp, benches_bp
     from admin.backend.api.v1.core import core_bp
     from admin.backend.api.v1.databases import database_bp
+    from admin.backend.api.v1.editor import editor_bp
     from admin.backend.api.v1.git import git_bp
     from admin.backend.api.v1.logs import logs_bp
     from admin.backend.api.v1.migrations import migrations_bp
@@ -66,8 +69,30 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(updates_bp, url_prefix=API_V1_PREFIX)
     app.register_blueprint(migrations_bp, url_prefix=API_V1_PREFIX)
     app.register_blueprint(git_bp, url_prefix=f"{API_V1_PREFIX}/git")
+    app.register_blueprint(editor_bp, url_prefix=f"{API_V1_PREFIX}/editor")
     app.register_blueprint(ssh_keys_bp, url_prefix=f"{API_V1_PREFIX}/ssh-keys")
     app.register_blueprint(stats_bp, url_prefix=API_V1_PREFIX)
+
+
+def register_editor_frontend(app: Flask) -> None:
+    """Serve the isolated full-page code editor, scoped by /editor/<app_name>."""
+    editor_dist = STATIC_DIR / "editor"
+
+    @app.route("/editor/<app_name>")
+    @allow_unauthenticated
+    def serve_editor(app_name):
+        index = editor_dist / "index.html"
+        if not index.exists():
+            return "Editor not built. Run: cd admin/editor && yarn install && yarn build", 503
+        return send_file(str(index))
+
+    @app.route("/editor-assets/<path:path>")
+    @allow_unauthenticated
+    def serve_editor_assets(path):
+        try:
+            return send_from_directory(editor_dist, path)
+        except NotFound:
+            return error_response("not_found", "Asset not found.", 404)
 
 
 def register_frontend(app: Flask) -> None:

@@ -82,6 +82,7 @@ function openLink(url) {
 
 function menuOptions(app) {
   return [
+    { label: 'Open in editor', icon: 'lucide-code', onClick: () => openLink(`/editor/${encodeURIComponent(app.name)}`) },
     ...(app.website
       ? [{ label: 'Website', icon: 'lucide-globe', onClick: () => openLink(app.website) }]
       : []),

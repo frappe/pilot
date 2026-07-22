@@ -47,6 +47,11 @@ export const navigation = {
         icon: 'lucide-terminal',
         component: () => import('./pages/database/SQLPlayground.vue'),
       },
+      'Code editor': {
+        path: '/editor',
+        icon: 'lucide-code',
+        component: () => import('./pages/editor/Launcher.vue'),
+      },
     },
   },
 }
