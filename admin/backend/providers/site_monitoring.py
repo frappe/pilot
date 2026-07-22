@@ -9,6 +9,7 @@ from admin.backend.providers.windowed_log import WindowedLogProvider
 
 _MAX_BUCKETS = 48
 _TOP_LIMIT = 5
+_UPTIME_PING_PATH = "/api/method/ping"
 
 
 class SiteMonitoringProvider(WindowedLogProvider):
@@ -32,7 +33,7 @@ class SiteMonitoringProvider(WindowedLogProvider):
             "window": self.window,
             "window_seconds": self.window_seconds,
             "now": self.now_ms(),
-            "top_paths": self._timeline(entries, "request", self._request_path, "count"),
+            "top_paths": self._timeline(entries, "request", self._non_ping_path, "count"),
             "slowest_requests": self._timeline(entries, "request", self._request_path, "duration"),
             "top_jobs": self._timeline(entries, "job", self._job_method, "count"),
             "slowest_jobs": self._timeline(entries, "job", self._job_method, "duration"),
@@ -68,7 +69,29 @@ class SiteMonitoringProvider(WindowedLogProvider):
 
     @staticmethod
     def _request_path(entry: dict) -> str | None:
+        """Entry example:
+        {
+            "duration": 845,
+            "request": {
+                "ip": "13.206.253.38",
+                "method": "GET",
+                "path": "/api/method/ping",
+                "response_length": 18,
+                "status_code": 200,
+            },
+            "site": "x.site.frappe.cloud",
+            "timestamp": "2026-07-21 17:43:57.747746+00:00",
+            "transaction_type": "request",
+            "uuid": "xxx",
+        }
+        """
         return (entry.get("request") or {}).get("path")
+
+    @classmethod
+    def _non_ping_path(cls, entry: dict) -> str | None:
+        """Uptime checks hit /api/method/ping constantly and would drown out real traffic."""
+        path = cls._request_path(entry)
+        return None if path == _UPTIME_PING_PATH else path
 
     @staticmethod
     def _request_ip(entry: dict) -> str | None:
