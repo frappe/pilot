@@ -1,14 +1,12 @@
-"""Tests for pilot.integrations.marketplace — Resolver and Marketplace classes."""
+"""Tests for pilot.integrations.marketplace - Resolver and Marketplace classes."""
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from pilot.integrations.marketplace import Marketplace, Resolver
+
 from pilot.exceptions import BenchError
-
-
-# ── helpers ──────────────────────────────────────────────────────────────────
+from pilot.integrations.marketplace import Marketplace, Resolver
 
 
 def make_resolver(
@@ -44,9 +42,6 @@ def inject_registry(root: Resolver, resolvers: list[Resolver]) -> None:
         r._registry = registry
 
 
-# ── Resolver.to_dict ─────────────────────────────────────────────────────────
-
-
 def test_to_dict_maps_app_field_to_name():
     r = make_resolver(app="erpnext", version="15.1.0")
     d = r.to_dict()
@@ -63,10 +58,25 @@ def test_to_dict_excludes_registry():
 
 def test_to_dict_contains_all_expected_keys():
     r = make_resolver()
-    keys = {"name", "repo", "target_type", "target", "version", "frappe_version",
-             "required_version", "dependencies", "is_installable",
-             "title", "description", "logo_url", "category", "categories", "stars",
-             "documentation", "website"}
+    keys = {
+        "name",
+        "repo",
+        "target_type",
+        "target",
+        "version",
+        "frappe_version",
+        "required_version",
+        "dependencies",
+        "is_installable",
+        "title",
+        "description",
+        "logo_url",
+        "category",
+        "categories",
+        "stars",
+        "documentation",
+        "website",
+    }
     assert keys == set(r.to_dict().keys())
 
 
@@ -91,9 +101,6 @@ def test_to_dict_includes_categories():
     assert r.to_dict()["categories"] == ["Payments", "Accounting"]
 
 
-# ── Resolver.resolve — non-installable guard ──────────────────────────────────
-
-
 def test_resolve_raises_for_non_installable_app():
     r = make_resolver(is_installable=False, frappe_version="14.0.0", required_version=">=15.0.0,<16.0.0")
     with pytest.raises(BenchError, match="not compatible"):
@@ -109,9 +116,6 @@ def test_resolve_error_message_contains_version_info():
     assert ">=15.0.0,<16.0.0" in msg
 
 
-# ── Resolver.resolve — no dependencies ───────────────────────────────────────
-
-
 def test_resolve_single_app_no_deps_returns_self():
     r = make_resolver()
     result = r.resolve()
@@ -121,9 +125,6 @@ def test_resolve_single_app_no_deps_returns_self():
 def test_resolve_returns_list_of_resolvers():
     r = make_resolver()
     assert isinstance(r.resolve(), list)
-
-
-# ── Resolver.resolve — transitive dependencies ────────────────────────────────
 
 
 def test_resolve_installs_dependency_before_root():
@@ -162,9 +163,6 @@ def test_resolve_diamond_dependency_deduplication():
     assert names.index("D") < names.index("C")
 
 
-# ── Resolver.resolve — version specifier matching ─────────────────────────────
-
-
 def test_resolve_picks_dep_satisfying_version_spec():
     dep_old = make_resolver(app="payments", version="0.9.0")
     dep_new = make_resolver(app="payments", version="2.0.0")
@@ -187,7 +185,7 @@ def test_resolve_raises_when_no_dep_version_satisfies_spec():
 
 
 def test_resolve_raises_on_version_conflict_in_diamond():
-    # B picks payments 1.5.0, A requires payments >=2.0.0 — conflict
+    # B picks payments 1.5.0, A requires payments >=2.0.0 - conflict
     payments_old = make_resolver(app="payments", version="1.5.0")
     payments_new = make_resolver(app="payments", version="2.0.0")
     b = make_resolver(app="B", dependencies={"payments": ">=1.0.0,<2.0.0"})
@@ -209,9 +207,6 @@ def test_resolve_accepts_dep_with_empty_spec():
     assert any(r.app == "payments" for r in result)
 
 
-# ── Resolver.resolve — missing dependency ─────────────────────────────────────
-
-
 def test_resolve_raises_when_dep_not_in_registry():
     root = make_resolver(app="erpnext", dependencies={"missing_app": ">=1.0.0"})
     root._registry = {}
@@ -222,13 +217,10 @@ def test_resolve_raises_when_dep_not_in_registry():
 
 def test_resolve_raises_when_registry_empty_and_has_deps():
     root = make_resolver(app="erpnext", dependencies={"someapp": ">=1.0.0"})
-    # _registry defaults to {} — no injection needed
+    # _registry defaults to {} - no injection needed
 
     with pytest.raises(BenchError):
         root.resolve()
-
-
-# ── Resolver.resolve — circular dependency detection ─────────────────────────
 
 
 def test_resolve_detects_direct_cycle():
@@ -265,9 +257,6 @@ def test_resolve_detects_indirect_cycle():
 
     with pytest.raises(BenchError, match="Circular dependency"):
         a.resolve()
-
-
-# ── Marketplace.read_all_apps ─────────────────────────────────────────────────
 
 
 SAMPLE_REGISTRY = [
@@ -343,11 +332,16 @@ def make_marketplace(frappe_version: str, registry: list | None = None) -> Marke
     import json
 
     with (
-        patch("pilot.integrations.marketplace.Marketplace.get_current_frappe_version", return_value=frappe_version),
-        patch("pilot.integrations.marketplace.Marketplace._read_apps_json", return_value=json.dumps(registry or SAMPLE_REGISTRY)),
+        patch(
+            "pilot.integrations.marketplace.Marketplace.get_current_frappe_version",
+            return_value=frappe_version,
+        ),
+        patch(
+            "pilot.integrations.marketplace.Marketplace._read_apps_json",
+            return_value=json.dumps(registry or SAMPLE_REGISTRY),
+        ),
     ):
-        mp = Marketplace(bench)
-    return mp
+        return Marketplace(bench)
 
 
 def test_parse_registry_tolerates_bad_frappe_core():
@@ -356,14 +350,24 @@ def test_parse_registry_tolerates_bad_frappe_core():
             "name": "null_spec_app",
             "repo": "https://github.com/frappe/null_spec_app",
             "targets": [
-                {"version": "1.0.0", "target_type": "branch", "target": "main", "frappe_core": None},
+                {
+                    "version": "1.0.0",
+                    "target_type": "branch",
+                    "target": "main",
+                    "frappe_core": None,
+                },
             ],
         },
         {
             "name": "garbage_spec_app",
             "repo": "https://github.com/frappe/garbage_spec_app",
             "targets": [
-                {"version": "1.0.0", "target_type": "branch", "target": "main", "frappe_core": "not-a-spec"},
+                {
+                    "version": "1.0.0",
+                    "target_type": "branch",
+                    "target": "main",
+                    "frappe_core": "not-a-spec",
+                },
             ],
         },
     ]
@@ -521,9 +525,6 @@ def test_read_all_apps_no_targets_produces_non_installable():
     apps = mp.read_all_apps()
     ghost = next(a for a in apps if a.app == "ghost_app")
     assert ghost.is_installable is False
-
-
-# ── Marketplace.find_app ──────────────────────────────────────────────────────
 
 
 def test_find_app_returns_matching_resolver():

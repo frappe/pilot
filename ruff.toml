@@ -1,0 +1,44 @@
+line-length = 110
+target-version = "py311"
+
+[format]
+indent-style = "space"
+line-ending = "auto"
+quote-style = "double"
+
+[lint]
+select = [
+  "F",
+  "E",
+  "W",
+  "I",
+  "UP",
+  "B",
+  "RUF",
+  "FA",
+  "TCH",
+  "C90",
+  "RET",
+  "SIM",
+]
+ignore = [
+  "UP015",
+  "SIM108",
+  "F821",
+  "F722",
+  "E501",
+  "W191",
+  "B023",
+  "TC001",
+  "TC002",
+  "TC003",
+  "UP037",
+  "SIM103",
+]
+
+[lint.mccabe]
+max-complexity = 8
+
+[lint.per-file-ignores]
+"**/test_*.py" = ["C901"]
+"tests/e2e/**" = ["C901"]

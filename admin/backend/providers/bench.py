@@ -4,8 +4,7 @@ import http.client
 import socket
 from pathlib import Path
 
-from pilot.config.bench import BenchConfig
-from pilot.config.toml_store import BenchTomlStore
+from pilot.config import BenchConfig
 
 
 class BenchProvider:
@@ -25,9 +24,7 @@ class BenchProvider:
     @property
     def is_production(self) -> bool:
         try:
-            prod = BenchTomlStore.for_bench(self._bench_dir).read_raw().get("production", {})
-            pm = str(prod.get("process_manager", "")).lower()
-            return bool(prod.get("enabled", pm not in ("", "none")))
+            return BenchConfig.read(self._bench_dir, validate=False).production.enabled
         except Exception:
             return False
 
@@ -38,7 +35,7 @@ class BenchProvider:
         from pilot.managers.nginx import NginxManager
 
         try:
-            bench = Bench(BenchTomlStore(self._toml_path).read(), self._bench_dir)
+            bench = Bench(self._bench_dir)
             return NginxManager(bench).has_admin_cert
         except Exception:
             return False
@@ -50,7 +47,7 @@ class BenchProvider:
         from pilot.managers.processes.local import ProcessManager
 
         try:
-            bench = Bench(BenchTomlStore(self._toml_path).read(), self._bench_dir)
+            bench = Bench(self._bench_dir)
             return ProcessManager.for_bench(bench).is_running()
         except Exception:
             return None
@@ -62,7 +59,7 @@ class BenchProvider:
         from pilot.managers.processes.local import ProcessManager
 
         try:
-            bench = Bench(BenchConfig.from_file(self._toml_path), self._bench_dir)
+            bench = Bench(self._bench_dir)
             return ProcessManager.for_bench(bench).is_admin_running()
         except Exception:
             return None
@@ -70,7 +67,7 @@ class BenchProvider:
     def is_wizard_ready(self, domain: str, scheme: str = "http") -> bool:
         """Whether a production bench's wizard answers at its admin domain."""
         try:
-            port = int(BenchTomlStore.for_bench(self._bench_dir).read_raw().get("nginx", {}).get("http_port", 80))
+            port = int(BenchConfig.read_raw(self._bench_dir).get("nginx", {}).get("http_port", 80))
         except Exception:
             port = 80
 

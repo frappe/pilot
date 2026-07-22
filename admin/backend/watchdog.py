@@ -9,7 +9,7 @@ from pathlib import Path
 
 from flask import Flask
 
-from pilot.tasks.manager.activity import TaskActivityReader
+from pilot.managers.task import TaskActivityReader
 
 _WATCHDOG_MAX_POLL_SECONDS = 30.0  # longest single sleep between activity checks
 
@@ -97,10 +97,7 @@ class AdminIdleWatchdog:
             return self._requests_are_idle_locked()
 
     def _requests_are_idle_locked(self) -> bool:
-        return (
-            self._active_requests == 0
-            and time.monotonic() - self._last_request > self._timeout
-        )
+        return self._active_requests == 0 and time.monotonic() - self._last_request > self._timeout
 
     def _tasks_are_active(self) -> bool:
         try:

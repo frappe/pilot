@@ -17,7 +17,7 @@ def _make_site(sites: Path, name: str, config: dict) -> None:
 def test_site_provider_exposes_db_type(tmp_path: Path) -> None:
     sites = tmp_path / "sites"
     _make_site(sites, "pg.localhost", {"db_type": "postgres", "installed_apps": ["frappe"]})
-    # frappe omits db_type for older MariaDB sites — provider defaults to mariadb.
+    # frappe omits db_type for older MariaDB sites - provider defaults to mariadb.
     _make_site(sites, "old.localhost", {"installed_apps": ["frappe"]})
 
     infos = {s.name: s for s in SiteProvider(tmp_path).get_all()}
@@ -31,9 +31,7 @@ def test_site_provider_skips_symlinked_site(tmp_path: Path) -> None:
     _make_site(outside, "linked.localhost", {"installed_apps": ["frappe"]})
     sites = tmp_path / "sites"
     sites.mkdir()
-    (sites / "linked.localhost").symlink_to(
-        outside / "linked.localhost", target_is_directory=True
-    )
+    (sites / "linked.localhost").symlink_to(outside / "linked.localhost", target_is_directory=True)
 
     assert SiteProvider(tmp_path).get_all() == []
 

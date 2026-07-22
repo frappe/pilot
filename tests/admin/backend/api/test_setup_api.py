@@ -5,9 +5,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from admin.backend.app import create_app
-from pilot.tasks.manager.task_state import TaskStatus
-from pilot.tasks.manager.task_store import TaskStore
-from pilot.config.toml_store import BenchTomlStore
+from pilot.config import BenchConfig
+from pilot.internal.tasks.store import TaskStore
+from pilot.managers.task.models import TaskStatus
 
 
 def setup_client(bench_root: Path):
@@ -27,7 +27,7 @@ def save_configuration(client):
 
 
 def start_setup(client, key: str = "wizard-setup"):
-    with patch("pilot.tasks.manager.task_runner.task_workers.wake"):
+    with patch("pilot.internal.tasks.runner.task_workers.wake"):
         return client.post(
             "/api/v1/setup/actions/start",
             headers={"Idempotency-Key": key},
@@ -69,8 +69,7 @@ def test_configuration_update_is_sanitized_and_preserves_unknown_keys(
 ) -> None:
     client = setup_client(tmp_path)
     first = save_configuration(client)
-    store = BenchTomlStore.for_bench(tmp_path)
-    with store.edit_raw() as config:
+    with BenchConfig.open(tmp_path, mode="raw") as config:
         config["plugin"] = {"custom_key": "custom-value"}
 
     response = client.put(
@@ -86,9 +85,9 @@ def test_configuration_update_is_sanitized_and_preserves_unknown_keys(
     assert response.get_json()["postgres_password_configured"] is False
     assert "admin_password" not in response.get_json()
     assert "mariadb_password" not in response.get_json()
-    assert store.read().admin.password == "admin-secret"
-    assert store.read().mariadb.root_password == "database-secret"
-    assert store.read_raw()["plugin"] == {"custom_key": "custom-value"}
+    assert BenchConfig.read(tmp_path).admin.password == "admin-secret"
+    assert BenchConfig.read(tmp_path).mariadb.root_password == "database-secret"
+    assert BenchConfig.read_raw(tmp_path)["plugin"] == {"custom_key": "custom-value"}
 
 
 def test_authenticated_reload_can_save_without_resending_secrets(tmp_path: Path) -> None:
@@ -106,7 +105,7 @@ def test_authenticated_reload_can_save_without_resending_secrets(tmp_path: Path)
     assert "admin_password" not in configuration
     assert "mariadb_password" not in configuration
     assert response.status_code == 200
-    config = BenchTomlStore.for_bench(tmp_path).read()
+    config = BenchConfig.read(tmp_path)
     assert config.admin.password == "admin-secret"
     assert config.mariadb.root_password == "database-secret"
 
@@ -137,12 +136,12 @@ def test_only_one_unauthenticated_request_can_claim_setup(
     first_in_write = threading.Event()
     second_passed_guard = threading.Event()
     release_first = threading.Event()
-    original_write = BenchTomlStore.write_flat
+    original_write = BenchConfig.write_flat.__func__
 
-    def delayed_write(store, *args, **kwargs):
+    def delayed_write(*args, **kwargs):
         first_in_write.set()
         assert release_first.wait(2)
-        return original_write(store, *args, **kwargs)
+        return original_write(BenchConfig, *args, **kwargs)
 
     @app.before_request
     def observe_second_request():
@@ -151,7 +150,7 @@ def test_only_one_unauthenticated_request_can_claim_setup(
         if request.headers.get("X-Setup-Claim") == "second":
             second_passed_guard.set()
 
-    monkeypatch.setattr(BenchTomlStore, "write_flat", delayed_write)
+    monkeypatch.setattr(BenchConfig, "write_flat", delayed_write)
     responses = {}
 
     def claim(name: str) -> None:
@@ -176,12 +175,12 @@ def test_only_one_unauthenticated_request_can_claim_setup(
 
     assert responses["first"].status_code == 200
     assert responses["second"].status_code == 401
-    assert BenchTomlStore.for_bench(tmp_path).read().admin.password == "first-admin-secret"
+    assert BenchConfig.read(tmp_path).admin.password == "first-admin-secret"
 
 
 def test_database_validation_uses_one_engine_neutral_resource(tmp_path: Path) -> None:
     client = setup_client(tmp_path)
-    with patch("pilot.managers.mariadb.MariaDBManager") as manager_class:
+    with patch("pilot.managers.database.MariaDBManager") as manager_class:
         manager_class.return_value.is_installed.return_value = False
         response = client.post(
             "/api/v1/setup/database-validations",
@@ -198,8 +197,8 @@ def test_database_validation_uses_one_engine_neutral_resource(tmp_path: Path) ->
 
 def test_database_validation_supports_existing_postgres(tmp_path: Path) -> None:
     client = setup_client(tmp_path)
-    with patch("pilot.managers.postgres.PostgresManager") as manager_class:
-        manager_class.return_value.check_credentials.return_value = False
+    with patch("pilot.managers.database.PostgresManager") as manager_class:
+        manager_class.return_value.has_valid_credentials.return_value = False
         response = client.post(
             "/api/v1/setup/database-validations",
             json={

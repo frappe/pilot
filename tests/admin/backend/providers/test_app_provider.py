@@ -1,4 +1,5 @@
 """Tests for AppProvider's best-effort pyproject.toml title/description scraping."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -16,7 +17,8 @@ def _make_app(bench_root: Path, name: str, pyproject: str | None = None) -> Path
 
 def test_pyproject_meta_reads_name_and_description(tmp_path: Path) -> None:
     _make_app(
-        tmp_path, "myapp",
+        tmp_path,
+        "myapp",
         '[project]\nname = "myapp"\ndescription = "A demo Frappe app"\n',
     )
     provider = AppProvider(tmp_path)
@@ -43,7 +45,8 @@ def test_pyproject_meta_falls_back_on_unparseable_toml(tmp_path: Path) -> None:
 
 def test_read_all_includes_title_and_description(tmp_path: Path) -> None:
     app_path = _make_app(
-        tmp_path, "myapp",
+        tmp_path,
+        "myapp",
         '[project]\nname = "myapp"\ndescription = "A demo Frappe app"\n',
     )
     (app_path / ".git").mkdir()

@@ -3,18 +3,21 @@ from pathlib import Path
 
 import pytest
 
-from pilot.config.app import AppConfig
-from pilot.config.bench import BenchConfig
-from pilot.config.mariadb import MariaDBConfig
-from pilot.config.redis import RedisConfig
-from pilot.config.site import SiteConfig
-from pilot.config.worker import WorkerConfig, WorkerGroup
+from pilot.config import (
+    AppConfig,
+    BenchConfig,
+    MariaDBConfig,
+    RedisConfig,
+    SiteConfig,
+    WorkerConfig,
+    WorkerGroup,
+)
 from pilot.core.app import App, RevisionPin
 from pilot.core.bench import Bench
+from pilot.core.server import Server
 from pilot.core.site import Site
 from pilot.exceptions import BenchError
 from pilot.managers.processes.local import ProcessDefinition, ProcessManager
-
 
 FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures"
 
@@ -28,16 +31,52 @@ def make_bench(tmp_path: Path) -> Bench:
         ],
         mariadb=MariaDBConfig(root_password="root"),
         redis=RedisConfig(cache_port=13000, queue_port=11000),
-        workers=WorkerConfig(groups=[
-            WorkerGroup(queues=["default"], count=2),
-            WorkerGroup(queues=["short"], count=1),
-            WorkerGroup(queues=["long"], count=1),
-        ]),
+        workers=WorkerConfig(
+            groups=[
+                WorkerGroup(queues=["default"], count=2),
+                WorkerGroup(queues=["short"], count=1),
+                WorkerGroup(queues=["long"], count=1),
+            ]
+        ),
     )
     return Bench(config, tmp_path)
 
 
-# ── App tests ────────────────────────────────────────────────────────────────
+def _write_bench_toml(bench_dir: Path, name: str) -> None:
+    bench_dir.mkdir(parents=True)
+    (bench_dir / "bench.toml").write_text(BenchConfig.from_flat(name).dumps())
+
+
+def test_bench_loads_from_path(tmp_path: Path) -> None:
+    bench_dir = tmp_path / "benches" / "alpha"
+    _write_bench_toml(bench_dir, "alpha")
+
+    bench = Bench(bench_dir)
+
+    assert bench.path == bench_dir
+    assert bench.config.name == "alpha"
+
+
+def test_bench_loads_name_from_known_benches_dir(tmp_path: Path, monkeypatch) -> None:
+    bench_dir = tmp_path / "benches" / "alpha"
+    _write_bench_toml(bench_dir, "alpha")
+    monkeypatch.setattr("pilot.utils.cli_root", lambda: tmp_path)
+
+    bench = Bench("alpha")
+
+    assert bench.path == bench_dir
+    assert bench.config.name == "alpha"
+
+
+def test_server_resolves_bench_by_name(tmp_path: Path, monkeypatch) -> None:
+    bench_dir = tmp_path / "benches" / "alpha"
+    _write_bench_toml(bench_dir, "alpha")
+    monkeypatch.setattr("pilot.utils.cli_root", lambda: tmp_path)
+
+    bench = Server().bench("alpha")
+
+    assert bench.path == bench_dir
+    assert bench.config.name == "alpha"
 
 
 def test_app_is_cloned_returns_false_for_nonexistent_path(tmp_path: Path) -> None:
@@ -97,7 +136,7 @@ def test_revision_pin_from_marketplace_target_commit() -> None:
 
 
 def test_revision_pin_from_marketplace_target_branch_is_none() -> None:
-    # A branch is not a fixed revision to pin to — no RevisionPin for it.
+    # A branch is not a fixed revision to pin to - no RevisionPin for it.
     assert RevisionPin.from_marketplace_target({"target_type": "branch", "target": "main"}) is None
 
 
@@ -163,7 +202,7 @@ def test_app_has_remote_update_false_without_tracked_branch(tmp_path: Path) -> N
     _init_git_repo(app.path)
     _commit(app.path, "c1")
 
-    # No configured remote at all — must not crash, and detached HEAD has
+    # No configured remote at all - must not crash, and detached HEAD has
     # no branch tip to compare against.
     assert app.has_remote_update() is False
 
@@ -173,7 +212,9 @@ def _clone_at_tag(remote: Path, clone_dir: Path, tag: str, shallow: bool = True)
 
     subprocess.run(["git", "clone", "-q", str(remote), str(clone_dir)], check=True)
     if shallow:
-        subprocess.run(["git", "-C", str(clone_dir), "fetch", "-q", "origin", tag, "--depth", "1"], check=True)
+        subprocess.run(
+            ["git", "-C", str(clone_dir), "fetch", "-q", "origin", tag, "--depth", "1"], check=True
+        )
     subprocess.run(["git", "-C", str(clone_dir), "checkout", "-q", tag], check=True)
 
 
@@ -192,7 +233,7 @@ def test_app_update_with_tag_target_checks_out_advertised_tag_not_latest(tmp_pat
     app = App(AppConfig(name="myapp", repo="r", branch=""), bench)
     _clone_at_tag(remote, app.path, "v1.0.0")
 
-    # Marketplace's next advertised pin is v2.0.0 — not the repo's true latest (v3.0.0).
+    # Marketplace's next advertised pin is v2.0.0 - not the repo's true latest (v3.0.0).
     app.update(pin=RevisionPin(kind="tag", ref="v2.0.0"))
 
     assert app.is_on_revision(RevisionPin(kind="tag", ref="v2.0.0")) is True
@@ -222,14 +263,88 @@ def test_app_update_with_commit_target_checks_out_advertised_commit(tmp_path: Pa
     assert app.installed_hash == target_sha
 
 
+def test_app_has_marketplace_update_false_when_pinned_tag_matches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bench = make_bench(tmp_path)
+    app = App(AppConfig(name="myapp", repo="https://github.com/frappe/myapp", branch=""), bench)
+    app.path.mkdir(parents=True)
+    _init_git_repo(app.path)
+    _commit(app.path, "c1")
+    _tag(app.path, "v1.0.0")
+    monkeypatch.setattr("pilot.core.app.installed_app_version", lambda *_: "1.0.0")
+    entry = {
+        "repo": "https://github.com/frappe/myapp",
+        "targets": [{"version": "1.0.0", "target_type": "tag", "target": "v1.0.0"}],
+    }
+
+    assert app.has_marketplace_update(entry) is False
+
+
+def test_app_has_marketplace_update_true_when_marketplace_tag_moved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bench = make_bench(tmp_path)
+    app = App(AppConfig(name="myapp", repo="https://github.com/frappe/myapp", branch=""), bench)
+    app.path.mkdir(parents=True)
+    _init_git_repo(app.path)
+    _commit(app.path, "c1")
+    _tag(app.path, "v0.9.0")  # installed at the version's old tag
+    monkeypatch.setattr("pilot.core.app.installed_app_version", lambda *_: "1.0.0")
+    entry = {
+        "repo": "https://github.com/frappe/myapp",
+        # Entries only ever advance - the tag for 1.0.0 has since moved.
+        "targets": [{"version": "1.0.0", "target_type": "tag", "target": "v1.0.0"}],
+    }
+
+    assert app.has_marketplace_update(entry) is True
+
+
+def test_app_has_marketplace_update_falls_back_to_remote_check_on_repo_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A fork with a different repo URL isn't the marketplace's app.
+    bench = make_bench(tmp_path)
+    app = App(AppConfig(name="myapp", repo="https://github.com/someone/fork", branch=""), bench)
+    monkeypatch.setattr(App, "has_remote_update", lambda self: True)
+    entry = {
+        "repo": "https://github.com/frappe/myapp",
+        "targets": [{"version": "1.0.0", "target_type": "tag", "target": "v1.0.0"}],
+    }
+
+    assert app.has_marketplace_update(entry) is True
+
+
+def test_app_has_marketplace_update_falls_back_to_remote_check_when_not_in_marketplace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bench = make_bench(tmp_path)
+    app = App(AppConfig(name="myapp", repo="https://github.com/frappe/myapp", branch=""), bench)
+    monkeypatch.setattr(App, "has_remote_update", lambda self: False)
+
+    assert app.has_marketplace_update(None) is False
+
+
+def test_app_has_marketplace_update_falls_back_to_remote_check_for_branch_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bench = make_bench(tmp_path)
+    app = App(AppConfig(name="myapp", repo="https://github.com/frappe/myapp", branch="main"), bench)
+    monkeypatch.setattr("pilot.core.app.installed_app_version", lambda *_: "3.0.0")
+    monkeypatch.setattr(App, "has_remote_update", lambda self: True)
+    entry = {
+        "repo": "https://github.com/frappe/myapp",
+        "targets": [{"version": "3.0.0", "target_type": "branch", "target": "main"}],
+    }
+
+    assert app.has_marketplace_update(entry) is True
+
+
 def test_app_path_is_under_apps_directory(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     app_config = AppConfig(name="frappe", repo="https://example.com", branch="main")
     app = App(app_config, bench)
     assert app.path == tmp_path / "apps" / "frappe"
-
-
-# ── Site tests ───────────────────────────────────────────────────────────────
 
 
 def test_site_exists_returns_false_for_nonexistent_path(tmp_path: Path) -> None:
@@ -261,9 +376,6 @@ def test_site_path_is_under_sites_directory(tmp_path: Path) -> None:
     site_config = SiteConfig(name="site1.localhost", apps=["frappe"])
     site = Site(site_config, bench)
     assert site.path == tmp_path / "sites" / "site1.localhost"
-
-
-# ── Bench tests ───────────────────────────────────────────────────────────────
 
 
 def test_bench_create_directories(tmp_path: Path) -> None:
@@ -321,9 +433,6 @@ def test_bench_init_apps_comes_from_config(tmp_path: Path) -> None:
     init_apps = bench.init_apps()
     assert len(init_apps) == 1
     assert init_apps[0].config.name == "frappe"
-
-
-# ── ProcessManager._process_definitions ──────────────────────────────────────
 
 
 def test_process_definitions_returns_correct_count(tmp_path: Path) -> None:
@@ -486,12 +595,14 @@ def test_honcho_start_writes_per_process_pid_files(tmp_path: Path) -> None:
     def fake_popen(cmd, **kwargs):
         return fake_proc
 
-    with patch("pilot.managers.processes.local.subprocess.Popen", side_effect=fake_popen):
-        with patch.object(process_manager, "_stop_all"):
-            for pd in process_manager._process_definitions():
-                proc = fake_popen(pd.argv)
-                process_manager._procs[pd.name] = proc
-                (bench.pids_path / f"{pd.name}.pid").write_text(str(proc.pid))
+    with (
+        patch("pilot.managers.processes.local.subprocess.Popen", side_effect=fake_popen),
+        patch.object(process_manager, "_stop_all"),
+    ):
+        for pd in process_manager._process_definitions():
+            proc = fake_popen(pd.argv)
+            process_manager._procs[pd.name] = proc
+            (bench.pids_path / f"{pd.name}.pid").write_text(str(proc.pid))
 
     for name in process_manager._procs:
         pid_file = bench.pids_path / f"{name}.pid"
@@ -499,15 +610,11 @@ def test_honcho_start_writes_per_process_pid_files(tmp_path: Path) -> None:
         assert pid_file.read_text().strip() == "12345"
 
 
-# ── Site.create() database engine selection ───────────────────────────────────
-
-
-# ── Site create/restore/reinstall use the bench's single engine ───────────────
-
-
 def _capture_site_cmd(monkeypatch) -> dict:
     captured: dict = {}
-    monkeypatch.setattr("pilot.core.site.run_command", lambda cmd, **kw: captured.setdefault("cmd", cmd))
+    monkeypatch.setattr(
+        "pilot.core.site.commands.run_command", lambda cmd, **kw: captured.setdefault("cmd", cmd)
+    )
     return captured
 
 
@@ -537,12 +644,12 @@ def test_site_create_postgres_builds_db_args(tmp_path: Path, monkeypatch: pytest
 def test_site_create_mariadb_when_bench_is_mariadb(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     bench = make_bench(tmp_path)  # bench db_type defaults to mariadb
     captured = _capture_site_cmd(monkeypatch)
-    monkeypatch.setattr("pilot.managers.mariadb.MariaDBManager._detect_socket", lambda self: "")
+    monkeypatch.setattr("pilot.managers.database.mariadb.MariaDBManager._detect_socket", lambda self: "")
 
     Site(SiteConfig(name="mdb.localhost", apps=["frappe"], admin_password="secret"), bench).create()
 
     cmd = captured["cmd"]
-    # mariadb is frappe's default engine — no --db-type flag is passed
+    # mariadb is frappe's default engine - no --db-type flag is passed
     assert "--db-type" not in cmd
     assert cmd[cmd.index("--db-root-username") + 1] == "root"
     assert "--db-host" in cmd
@@ -618,7 +725,9 @@ def test_site_migrate_skip_failing_adds_flag(tmp_path: Path, monkeypatch: pytest
     assert "--skip-failing" in captured["cmd"]
 
 
-def test_site_migrate_without_skip_failing_omits_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_site_migrate_without_skip_failing_omits_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     bench = make_bench(tmp_path)
     captured = _capture_site_cmd(monkeypatch)
 
@@ -627,8 +736,10 @@ def test_site_migrate_without_skip_failing_omits_flag(tmp_path: Path, monkeypatc
     assert "--skip-failing" not in captured["cmd"]
 
 
-def test_site_create_postgres_empty_password_uses_placeholder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    bench = _postgres_bench(tmp_path, root_password="")  # trust/peer auth — no password
+def test_site_create_postgres_empty_password_uses_placeholder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bench = _postgres_bench(tmp_path, root_password="")  # trust/peer auth - no password
     captured = _capture_site_cmd(monkeypatch)
 
     Site(SiteConfig(name="pg.localhost", apps=[], admin_password="secret"), bench).create()
@@ -640,9 +751,9 @@ def test_site_create_postgres_empty_password_uses_placeholder(tmp_path: Path, mo
 
 def test_bench_db_root_args_postgres(tmp_path: Path) -> None:
     bench = _postgres_bench(tmp_path, root_password="pgpw")
-    assert bench.db_root_args() == ["--db-root-username", "postgres", "--db-root-password", "pgpw"]
+    assert bench.db_root_args == ["--db-root-username", "postgres", "--db-root-password", "pgpw"]
 
 
 def test_bench_db_root_args_mariadb(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
-    assert bench.db_root_args() == ["--db-root-username", "root", "--db-root-password", "root"]
+    assert bench.db_root_args == ["--db-root-username", "root", "--db-root-password", "root"]

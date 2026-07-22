@@ -1,10 +1,5 @@
-"""Local git-clone cache of the external marketplace registry repo.
+"""Tamper-checked local clone of the marketplace registry."""
 
-The registry (apps.json) lives in a separate, community-editable GitHub
-repo rather than in this codebase. `RegistryCache` keeps one shared clone of
-it per pilot install (under `<cli_root>/registry-cache/`), refreshed at most
-once an hour, and refuses to serve a clone that's been edited by hand.
-"""
 from __future__ import annotations
 
 import shlex
@@ -13,8 +8,8 @@ import sys
 import time
 from pathlib import Path
 
-from pilot.managers.cron import CronManager
 from pilot.exceptions import CommandError, RegistryUnavailableError
+from pilot.managers.cron import CronManager
 from pilot.utils import run_command
 
 REGISTRY_URL = "https://github.com/frappe/marketplace"
@@ -26,9 +21,7 @@ _CRON_SCHEDULE = "0 3 * * *"  # once a day, 03:00
 
 
 class RegistryCache:
-    """Shallow, read-only clone of REGISTRY_URL at `cli_root/registry-cache`.
-    Refresh-tracking file lives beside the clone, not inside it, so it can't
-    itself trip the tamper check."""
+    """Shallow, read-only clone at <cli_root>/registry-cache."""
 
     def __init__(self, cli_root: Path) -> None:
         self._cli_root = cli_root
@@ -46,8 +39,7 @@ class RegistryCache:
         return self._cli_root / "registry-cache.last_checked"
 
     def ensure_fresh(self) -> None:
-        """Clone on first use; otherwise verify the clone hasn't been hand-edited
-        and pull if the 1hr refresh window has elapsed."""
+        """Clone on first use; later reject tampering and refresh hourly."""
         if not self._is_cloned():
             self._clone()
             self._touch_last_checked()
@@ -66,20 +58,20 @@ class RegistryCache:
         try:
             run_command(["git", "clone", "--depth", "1", REGISTRY_URL, str(self.path)])
         except CommandError as exc:
-            raise RegistryUnavailableError(f"Could not clone marketplace registry:\n{exc.message}")
+            raise RegistryUnavailableError(f"Could not clone marketplace registry:\n{exc.message}") from exc
         self.install_daily_refresh_cron()
 
     def _reject_if_tampered(self) -> None:
         try:
             result = run_command(["git", "-C", str(self.path), "status", "--porcelain"])
-        except CommandError:
+        except CommandError as exc:
             raise RegistryUnavailableError(
-                "The marketplace registry cache is corrupted (git status failed) — "
+                "The marketplace registry cache is corrupted (git status failed) - "
                 f"restore it before using get-app/marketplace: {self.path}"
-            )
+            ) from exc
         if result.stdout.decode().strip():
             raise RegistryUnavailableError(
-                "The marketplace registry cache has been modified manually — "
+                "The marketplace registry cache has been modified manually - "
                 f"restore it before using get-app/marketplace: {self.path}"
             )
 
@@ -92,17 +84,17 @@ class RegistryCache:
     def _refresh(self) -> None:
         remote_head = self._remote_head_sha()
         if remote_head is None:
-            return  # offline — keep serving the existing clone
+            return  # offline - keep serving the existing clone
         try:
-            local_head = run_command(
-                ["git", "-C", str(self.path), "rev-parse", "HEAD"]
-            ).stdout.decode().strip()
+            local_head = (
+                run_command(["git", "-C", str(self.path), "rev-parse", "HEAD"]).stdout.decode().strip()
+            )
             if remote_head == local_head:
                 return
             run_command(["git", "-C", str(self.path), "fetch", "--depth", "1", "origin", "HEAD"])
             run_command(["git", "-C", str(self.path), "reset", "--hard", "FETCH_HEAD"])
         except CommandError:
-            return  # local git trouble or network dropped mid-fetch — keep serving the existing clone
+            return  # local git trouble or network dropped mid-fetch - keep serving the existing clone
 
     def _remote_head_sha(self) -> str | None:
         try:
@@ -120,9 +112,7 @@ class RegistryCache:
         self._last_checked_path.touch()
 
     def install_daily_refresh_cron(self) -> None:
-        """Idempotently register a system cron entry that runs `ensure_fresh`
-        once a day, so the cache stays warm even between get-app/marketplace
-        calls. Safe to call repeatedly — CronManager upserts by job key."""
+        """Register the daily cache refresh cron entry."""
         log_file = self._cli_root / "logs" / "registry-refresh.log"
         log_file.parent.mkdir(parents=True, exist_ok=True)
         python, cli_root, log = (shlex.quote(str(p)) for p in (sys.executable, self._cli_root, log_file))

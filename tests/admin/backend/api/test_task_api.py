@@ -5,12 +5,11 @@ from unittest.mock import patch
 
 from flask import Flask
 
-from pilot.tasks.manager.task_state import TaskStatus
-from pilot.tasks.manager.task_store import TaskStore
-from pilot.tasks.manager.worker_state import WorkerIntent, WorkerStore
 from admin.backend.api.v1.tasks import task_worker_bp, tasks_bp
 from pilot.exceptions import TaskConflictError, TaskNotFoundError
-
+from pilot.internal.tasks.store import TaskStore
+from pilot.internal.tasks.worker_state import WorkerIntent, WorkerStore
+from pilot.managers.task.models import TaskStatus
 
 TASK_ID = "20260715-120000-aabbcc"
 RETRY_TASK_ID = "20260715-120100-ddeeff"
@@ -193,9 +192,7 @@ def test_retry_returns_queued_task_and_location(tmp_path: Path) -> None:
         return RETRY_TASK_ID
 
     with patch("admin.backend.api.v1.tasks.TaskRunner.run", side_effect=retry):
-        response = client(tmp_path).post(
-            f"/api/v1/tasks/{TASK_ID}/actions/retry"
-        )
+        response = client(tmp_path).post(f"/api/v1/tasks/{TASK_ID}/actions/retry")
 
     assert response.status_code == 202
     assert response.headers["Location"] == f"/api/v1/tasks/{RETRY_TASK_ID}"
@@ -285,9 +282,9 @@ def test_stop_task_worker_persists_intent_without_signalling_processes(
     tmp_path: Path,
 ) -> None:
     with (
-        patch("admin.backend.api.v1.tasks.task_workers.wake", return_value=True) as wake,
-        patch("admin.backend.api.v1.tasks.task_workers.start") as start,
-        patch("admin.backend.api.v1.tasks.task_workers.request_drain") as drain,
+        patch("pilot.internal.tasks.worker.task_workers.wake", return_value=True) as wake,
+        patch("pilot.internal.tasks.worker.task_workers.start") as start,
+        patch("pilot.internal.tasks.worker.task_workers.request_drain") as drain,
     ):
         response = client(tmp_path).post("/api/v1/task-worker/actions/stop")
 
@@ -305,8 +302,8 @@ def test_start_task_worker_persists_intent_and_wakes_existing_thread(
 ) -> None:
     WorkerStore(tmp_path).write_intent(WorkerIntent.STOPPED)
     with (
-        patch("admin.backend.api.v1.tasks.task_workers.wake", return_value=True) as wake,
-        patch("admin.backend.api.v1.tasks.task_workers.start") as start,
+        patch("pilot.internal.tasks.worker.task_workers.wake", return_value=True) as wake,
+        patch("pilot.internal.tasks.worker.task_workers.start") as start,
     ):
         response = client(tmp_path).post("/api/v1/task-worker/actions/start")
 

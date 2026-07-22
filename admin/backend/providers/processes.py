@@ -43,11 +43,9 @@ class ProcessProvider:
         self._bench_root = bench_root
 
     def get_all(self) -> list[ProcessInfo]:
-        from pilot.config.toml_store import BenchTomlStore
         from pilot.core.bench import Bench
 
-        config = BenchTomlStore.for_bench(self._bench_root).read()
-        bench = Bench(config, self._bench_root)
+        bench = Bench(self._bench_root)
 
         from pilot.managers.processes.supervisor import SupervisorProcessManager
         from pilot.managers.processes.systemd import SystemdProcessManager
@@ -73,7 +71,11 @@ class ProcessProvider:
             text=True,
             env=systemd._systemctl_env(),
         )
-        return [info for block in result.stdout.strip().split("\n\n") if (info := self._get_systemd_process(block.strip(), bench_name))]
+        return [
+            info
+            for block in result.stdout.strip().split("\n\n")
+            if (info := self._get_systemd_process(block.strip(), bench_name))
+        ]
 
     def _get_systemd_process(self, block: str, bench_name: str) -> ProcessInfo | None:
         """Parses one blank-line-separated `systemctl show` property block."""
@@ -84,7 +86,11 @@ class ProcessProvider:
 
         name = unit_id.removesuffix(".service").removeprefix(f"{bench_name}-")
         state = props.get("ActiveState", "")
-        status = "running" if state == "active" else ("stopped" if state in ("inactive", "failed", "deactivating") else "unknown")
+        status = (
+            "running"
+            if state == "active"
+            else ("stopped" if state in ("inactive", "failed", "deactivating") else "unknown")
+        )
         pid_str = props.get("MainPID", "0")
         pid = int(pid_str) if pid_str.isdigit() and pid_str != "0" else None
         return self._build_info(name, status, pid)
@@ -109,7 +115,11 @@ class ProcessProvider:
             return None
 
         full_name, state, rest = m.group(1), m.group(2).lower(), m.group(3)
-        status = "running" if state == "running" else ("stopped" if state in ("stopped", "exited", "fatal", "backoff") else "unknown")
+        status = (
+            "running"
+            if state == "running"
+            else ("stopped" if state in ("stopped", "exited", "fatal", "backoff") else "unknown")
+        )
 
         pid: int | None = None
         if pid_m := re.search(r"pid (\d+)", rest):
@@ -140,7 +150,9 @@ class ProcessProvider:
             status = "stopped"
         return self._build_info(name, status, pid)
 
-    def _build_info(self, name: str, status: str, pid: int | None, log_name: str | None = None) -> ProcessInfo:
+    def _build_info(
+        self, name: str, status: str, pid: int | None, log_name: str | None = None
+    ) -> ProcessInfo:
         log_file = self._bench_root / "logs" / f"{log_name or name}.log"
         if pid and status == "running":
             cpu, rss, pss = self._get_process_stats(pid)
@@ -148,8 +160,14 @@ class ProcessProvider:
         else:
             cpu = rss = pss = uptime = None
         return ProcessInfo(
-            name=name, status=status, pid=pid, uptime=uptime, log_file=log_file,
-            cpu_percent=cpu, rss_mb=rss, pss_mb=pss,
+            name=name,
+            status=status,
+            pid=pid,
+            uptime=uptime,
+            log_file=log_file,
+            cpu_percent=cpu,
+            rss_mb=rss,
+            pss_mb=pss,
         )
 
     @classmethod
@@ -181,9 +199,7 @@ class ProcessProvider:
 
     @staticmethod
     def _get_subtree_pids(pid: int) -> list[int]:
-        """pid plus every descendant pid — gunicorn/supervisord run workers as
-        children of the main PID, so the whole subtree is a service's real
-        footprint, not just the MainPID systemd/supervisor hand us."""
+        """Return pid plus descendants for a service's real footprint."""
         children: dict[int, list[int]] = {}
         try:
             proc_entries = os.listdir("/proc")
@@ -196,7 +212,7 @@ class ProcessProvider:
                 with open(f"/proc/{entry}/stat") as f:
                     data = f.read()
                 # ppid is 2 fields after comm's closing ')' (comm may contain "( )").
-                ppid = int(data[data.rindex(")") + 2:].split()[1])
+                ppid = int(data[data.rindex(")") + 2 :].split()[1])
             except (OSError, ValueError, IndexError):
                 continue
             children.setdefault(ppid, []).append(int(entry))
@@ -210,8 +226,7 @@ class ProcessProvider:
 
     @staticmethod
     def _get_pss_kb(pid: int) -> int | None:
-        """Proportional Set Size in KB from /proc/<pid>/smaps_rollup (Linux 4.14+);
-        None if the kernel lacks it or we can't read it (e.g. wrong user)."""
+        """Return PSS in KB from /proc/<pid>/smaps_rollup, if readable."""
         try:
             with open(f"/proc/{pid}/smaps_rollup") as f:
                 for line in f:
@@ -223,8 +238,7 @@ class ProcessProvider:
 
     @staticmethod
     def _get_proc_uptime(pid: int) -> str | None:
-        """Wall-clock uptime from /proc/<pid>/stat's start-time field; works for
-        any manager since it only needs the PID. None if /proc is unreadable."""
+        """Return wall-clock uptime from /proc/<pid>/stat, if readable."""
         try:
             with open("/proc/uptime") as f:
                 system_uptime = float(f.read().split()[0])
@@ -232,7 +246,7 @@ class ProcessProvider:
                 data = f.read()
             # Start time is field 22 (clock ticks since boot); fields after comm
             # ')' start at field 3, so it's index 19 in the post-comm split.
-            starttime_ticks = int(data[data.rindex(")") + 2:].split()[19])
+            starttime_ticks = int(data[data.rindex(")") + 2 :].split()[19])
             elapsed = system_uptime - starttime_ticks / os.sysconf("SC_CLK_TCK")
             return _format_duration(elapsed) if elapsed >= 0 else None
         except (OSError, ValueError, IndexError):

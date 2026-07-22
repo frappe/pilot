@@ -1,34 +1,81 @@
-Guidelines for writing good code for a developer
+# Agent Guide
 
-1. Choose clean code over clever code.
-2. Write object oriented code as much as possible.
-3. Keep function sizes small, ideally 10 lines.
-4. Try and keep files between 100 and 300 lines.
-5. Don't keep too many files in a folder or module. Try and keep it under 15.
-6. Avoid abbreviations.
-7. Use standard API as much as possible.
-8. Reuse. Write as little code as possible.
-9. Use Frappe UI, espresso design system for UI styling.
-10. Always write tests, and make sure they work.
-11. Build the minimum working app, then iterate towards your goals.
-12. Keep the verbosity less in new changes (inline comments, docstrings etc). 
-    Explain only what's absolutely needed in inline comments.
-    Actual changes explanation can be part of commit message.
-13. For a no-argument method that just computes/returns one value (a noun,
-    e.g. nginx_version), use @property. For everything else (takes
-    arguments, or does multi-step work), name it get_<what-it-returns>()
-    so the name alone explains what it does, e.g. get_commit_sha().
-14. Default to public (no leading underscore). Mark something private
-    only when it's a genuinely internal/weird implementation detail
-    (raw format parsing, security-sensitive validation, OS/plumbing
-    internals) that callers should never reach for directly. Don't
-    privatize a method just because it currently has one caller.
-15. Don't split code into more functions/methods than necessary. Before
-    extracting a helper, check it's reused or non-trivial enough to
-    earn its own name — a single-use one-liner usually reads better
-    inlined at its call site.
-16. Name boolean-returning properties/methods with an is_/has_ prefix
-    (e.g. is_workload_running, has_passwordless_sudo), never a bare
-    verb or adjective (e.g. not workload_running). This applies even
-    when the value can be None for "unknown" — the name still describes
-    the yes/no question being answered.
+This repo is a Python CLI plus Flask Admin backend for managing Frappe benches. Prefer small, direct changes that keep the object model easy to use.
+
+## Main Rules
+
+- Put real behavior in `pilot.core`, managers, or tasks.
+- Keep CLI commands and API routes thin.
+- Use `Server`, `Bench`, `Site`, and `App` as the main entry points.
+- Group related files in folders instead of adding many same-prefix modules.
+- Avoid lazy re-exports in package `__init__.py` when autocomplete matters.
+- Keep comments short. Remove comments that restate the code.
+- Do not create refactor planning markdown files.
+
+## Useful Entry Points
+
+- `pilot/core/server/__init__.py`: host-level operations.
+- `pilot/core/bench/__init__.py`: bench object and bench-level operations.
+- `pilot/core/site/__init__.py`: site object and site-level operations.
+- `pilot/core/app/__init__.py`: app object and repository operations.
+- `pilot/tasks/__init__.py`: public task API and task exports.
+- `pilot/internal/cli`: argparse and command dispatch internals.
+- `admin/backend/api/v1`: Admin API route groups.
+
+## Design Expectations
+
+Use object-owned syntax when adding features:
+
+```python
+bench = Server().bench("main")
+site = bench.site("site.local")
+InstallAppTask.queue(bench, site="site.local", apps=["erpnext"])
+```
+
+Avoid new APIs that pass a bench and site into unrelated helper objects when the operation can live under `bench`, `site`, `app`, or `server`.
+
+## Code Taste
+
+These rules are mandatory for agents changing this repo:
+
+- Choose clean code over clever code.
+- Prefer explicit config over implicit behavior.
+- Prefer object-oriented code where it maps to the domain.
+- Keep functions small. Around 25 lines is a useful target, not a reason to split readable code blindly.
+- Keep cyclomatic complexity <= 8
+- Keep files between 100 and 500 lines when practical.
+- Avoid crowded modules. If a folder grows too large, group related files into a subfolder instead of adding more same-prefix files.
+- Avoid abbreviations.
+- Use standard APIs and existing repo helpers before adding custom logic.
+- Reuse existing patterns. Write as little new code as the change needs.
+- Delete before adding when existing code can be simplified.
+- For Admin UI, use Frappe UI and the Espresso design system by default.
+- Always add or update tests for behavior changes, and make sure they pass.
+- Build the minimum working change, then iterate.
+- Keep comments and docstrings terse. Explain only what the code does not already make obvious.
+- Put detailed change explanation in commit messages or docs, not inline comments.
+- Keep one owner for state that can drift out of sync.
+- Keep state scoped. Do not let temporary state leak across object or module boundaries.
+- Fail loudly near the bug. Do not hide corrupt or partial state behind broad fallbacks.
+- Retry only operations that are safe to repeat.
+- For a no-argument method that computes and returns one noun-like value, use `@property`, such as `nginx_version`.
+- For methods with arguments or multi-step work, prefer `get_<what_it_returns>()`, such as `get_commit_sha()`.
+- Default to public methods. Use a leading underscore only for raw parsing, security-sensitive validation, OS plumbing, or genuinely internal details callers should not reach for.
+- Do not make a method private just because it currently has one caller.
+- Do not split code into more helpers than necessary. A single-use one-liner usually reads better inline.
+- Name boolean-returning properties and methods with `is_` or `has_`, such as `is_workload_running` or `has_passwordless_sudo`.
+
+## Working Rules
+
+- Read `SPEC.md` before starting changes.
+- Do not touch unrelated dirty files.
+- Do not delete data directories.
+- The top-level `benches/` directory is local data and must stay ignored.
+- Use `apply_patch` for manual edits.
+- Run `uv run ruff check admin pilot tests` after Python changes.
+- Run targeted tests for narrow behavior changes and `uv run pytest` before committing broad refactors.
+- For bug fixes, identify the root cause before attempting a fix.
+
+## Docs
+
+Keep docs concise and current. Human readers should find the workflow quickly. LLMs should find the source of truth, object boundaries, and safe edit locations without scanning long prose.

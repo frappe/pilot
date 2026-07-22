@@ -1,4 +1,5 @@
 """Tests for GitRepo against real, throwaway git repositories."""
+
 from __future__ import annotations
 
 import subprocess

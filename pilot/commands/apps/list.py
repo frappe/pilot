@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar
 
-from pilot.commands.base import Command
+from pilot.commands import Command
 
 
 @dataclass(kw_only=True)
@@ -18,4 +18,4 @@ class ListAppsCommand(Command):
         else:
             apps = [a.config.name for a in self.bench.apps()]
         for app in apps:
-            self.print(app)
+            self.report(app)

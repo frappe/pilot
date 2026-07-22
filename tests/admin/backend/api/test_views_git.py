@@ -1,4 +1,5 @@
 """Tests for the admin Git integration view helpers."""
+
 from __future__ import annotations
 
 from admin.backend.api.v1.git import _mask_token, _status
@@ -15,7 +16,11 @@ def test_mask_token_masks_middle_of_long_tokens() -> None:
 
 
 def test_status_includes_token_preview_when_connected() -> None:
-    record = {"provider": "github", "username": "octocat", "token": "ghp_abcdefghijklmnopqrstuvwxyz"}
+    record = {
+        "provider": "github",
+        "username": "octocat",
+        "token": "ghp_abcdefghijklmnopqrstuvwxyz",
+    }
     status = _status(record)
     assert status["connected"] is True
     assert status["token_preview"] == _mask_token(record["token"])

@@ -1,20 +1,15 @@
-"""Tests for pilot.tasks.jobs.install_app_task.InstallAppTask.
+"""Tests for InstallAppTask."""
 
-Must delegate to Site.install_app (the standard install-app path — it also
-reloads workers afterward), not a hand-rolled subprocess call. Site's own
-install-app cascades required_apps onto the site, but never builds their
-assets, so this task still builds assets for the app and every required app.
-"""
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from pilot.tasks.jobs.install_app_task import InstallAppTask
 from pilot.core.site import Site
 from pilot.exceptions import CommandError
+from pilot.tasks.install_app import InstallAppTask
 from tests.pilot.commands.test_commands import make_bench
 
 
@@ -26,18 +21,19 @@ def make_app_dir(bench, name: str, required_apps: list[str] | None = None) -> No
 
 
 def make_task(bench_root: Path, site: str, app: str) -> InstallAppTask:
-    args = MagicMock(site=site, app=app)
     bench = make_bench(bench_root)
     bench.create_directories()
-    return InstallAppTask(bench, bench_root, args)
+    return InstallAppTask(bench=bench, bench_root=bench_root, site=site, app=app)
 
 
 def test_install_app_task_uses_site_install_app(tmp_path: Path) -> None:
     task = make_task(tmp_path, "site1.localhost", "helpdesk")
     make_app_dir(task.bench, "helpdesk")
 
-    with patch.object(Site, "install_app") as mock_install, \
-            patch("pilot.managers.python_environment.PythonEnvManager.build_assets_for_app"):
+    with (
+        patch.object(Site, "install_app") as mock_install,
+        patch("pilot.managers.environment.PythonEnvManager.build_assets_for_app"),
+    ):
         task.run()
 
     mock_install.assert_called_once()
@@ -50,8 +46,10 @@ def test_install_app_task_builds_assets_for_app_and_required_apps(tmp_path: Path
     make_app_dir(task.bench, "helpdesk", required_apps=["telephony"])
     make_app_dir(task.bench, "telephony")
 
-    with patch.object(Site, "install_app"), \
-            patch("pilot.managers.python_environment.PythonEnvManager.build_assets_for_app") as mock_build:
+    with (
+        patch.object(Site, "install_app"),
+        patch("pilot.managers.environment.PythonEnvManager.build_assets_for_app") as mock_build,
+    ):
         task.run()
 
     built = [call.args[0].config.name for call in mock_build.call_args_list]
@@ -62,8 +60,10 @@ def test_install_app_task_skips_required_app_missing_from_bench(tmp_path: Path) 
     task = make_task(tmp_path, "site1.localhost", "helpdesk")
     make_app_dir(task.bench, "helpdesk", required_apps=["not_on_bench"])
 
-    with patch.object(Site, "install_app"), \
-            patch("pilot.managers.python_environment.PythonEnvManager.build_assets_for_app") as mock_build:
+    with (
+        patch.object(Site, "install_app"),
+        patch("pilot.managers.environment.PythonEnvManager.build_assets_for_app") as mock_build,
+    ):
         task.run()
 
     built = [call.args[0].config.name for call in mock_build.call_args_list]
@@ -74,8 +74,10 @@ def test_install_app_task_exits_nonzero_when_site_install_fails(tmp_path: Path) 
     task = make_task(tmp_path, "site1.localhost", "helpdesk")
     make_app_dir(task.bench, "helpdesk")
 
-    with patch.object(Site, "install_app", side_effect=CommandError("boom")):
-        with pytest.raises(SystemExit) as exc:
-            task.run()
+    with (
+        patch.object(Site, "install_app", side_effect=CommandError("boom")),
+        pytest.raises(SystemExit) as exc,
+    ):
+        task.run()
 
     assert exc.value.code == 1

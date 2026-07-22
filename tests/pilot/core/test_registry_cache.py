@@ -1,6 +1,5 @@
-"""Tests for pilot.core.registry_cache.RegistryCache — the local git-clone
-cache of the external marketplace registry, using a real local git repo as
-the fake "remote" so clone/fetch/reset all run for real."""
+"""Tests for RegistryCache using a real local git remote."""
+
 from __future__ import annotations
 
 import os
@@ -39,8 +38,10 @@ def _git(cwd: Path, *args: str) -> None:
 @pytest.fixture(autouse=True)
 def _point_at_local_remote(tmp_path):
     remote = make_remote(tmp_path)
-    with patch("pilot.core.registry_cache.REGISTRY_URL", str(remote)), \
-            patch("pilot.core.registry_cache.CronManager"):  # never touch the real system crontab
+    with (
+        patch("pilot.core.registry_cache.REGISTRY_URL", str(remote)),
+        patch("pilot.core.registry_cache.CronManager"),
+    ):  # never touch the real system crontab
         yield remote
 
 
@@ -63,7 +64,7 @@ def test_ensure_fresh_skips_network_within_refresh_window(tmp_path: Path, _point
         cache.ensure_fresh()
 
     mock_head.assert_not_called()
-    assert cache.apps_json_path.read_text() == '{"apps": []}'  # unchanged — stale check skipped
+    assert cache.apps_json_path.read_text() == '{"apps": []}'  # unchanged - stale check skipped
 
 
 def test_ensure_fresh_pulls_when_refresh_window_elapsed(tmp_path: Path, _point_at_local_remote) -> None:
@@ -98,9 +99,7 @@ def test_ensure_fresh_falls_back_to_local_clone_when_offline(tmp_path: Path) -> 
 
 
 def test_ensure_fresh_falls_back_when_fetch_fails_mid_refresh(tmp_path: Path, _point_at_local_remote) -> None:
-    """ls-remote can succeed (remote reachable) while the subsequent fetch
-    still fails (connection dropped mid-transfer) — that must fall back too,
-    not propagate and take down every marketplace/get-app call."""
+    """A mid-refresh fetch failure keeps serving the local clone."""
     from pilot.exceptions import CommandError
     from pilot.utils import run_command as real_run_command
 
@@ -114,30 +113,36 @@ def test_ensure_fresh_falls_back_when_fetch_fails_mid_refresh(tmp_path: Path, _p
             raise CommandError("connection reset")
         return real_run_command(argv, *args, **kwargs)
 
-    with patch.object(RegistryCache, "_remote_head_sha", return_value="deadbeef" * 5), \
-            patch("pilot.core.registry_cache.run_command", side_effect=flaky_run_command):
+    with (
+        patch.object(RegistryCache, "_remote_head_sha", return_value="deadbeef" * 5),
+        patch("pilot.core.registry_cache.run_command", side_effect=flaky_run_command),
+    ):
         cache.ensure_fresh()  # must not raise
 
     assert cache.apps_json_path.read_text() == '{"apps": []}'
 
 
 def test_ensure_fresh_raises_bench_error_when_git_status_fails(tmp_path: Path) -> None:
-    """A corrupted .git dir (e.g. a partial clone) makes `git status` itself
-    fail with CommandError — that must surface as a clear BenchError, not
-    propagate uncaught and break every marketplace/get-app call."""
+    """A corrupted local clone raises a clear BenchError."""
     from pilot.exceptions import CommandError
 
     cache = make_cache(tmp_path)
     cache.ensure_fresh()
 
-    with patch("pilot.core.registry_cache.run_command", side_effect=CommandError("fatal: not a git repository")):
-        with pytest.raises(BenchError, match="corrupted"):
-            cache.ensure_fresh()
+    with (
+        patch(
+            "pilot.core.registry_cache.run_command",
+            side_effect=CommandError("fatal: not a git repository"),
+        ),
+        pytest.raises(BenchError, match="corrupted"),
+    ):
+        cache.ensure_fresh()
 
 
-def test_ensure_fresh_falls_back_when_rev_parse_fails_mid_refresh(tmp_path: Path, _point_at_local_remote) -> None:
-    """A corrupted local clone can make `git rev-parse HEAD` fail even
-    though the remote is reachable — that must fall back too, not propagate."""
+def test_ensure_fresh_falls_back_when_rev_parse_fails_mid_refresh(
+    tmp_path: Path, _point_at_local_remote
+) -> None:
+    """rev-parse failure during refresh keeps serving the local clone."""
     from pilot.exceptions import CommandError
     from pilot.utils import run_command as real_run_command
 
@@ -150,8 +155,10 @@ def test_ensure_fresh_falls_back_when_rev_parse_fails_mid_refresh(tmp_path: Path
             raise CommandError("fatal: bad object HEAD")
         return real_run_command(argv, *args, **kwargs)
 
-    with patch.object(RegistryCache, "_remote_head_sha", return_value="deadbeef" * 5), \
-            patch("pilot.core.registry_cache.run_command", side_effect=flaky_run_command):
+    with (
+        patch.object(RegistryCache, "_remote_head_sha", return_value="deadbeef" * 5),
+        patch("pilot.core.registry_cache.run_command", side_effect=flaky_run_command),
+    ):
         cache.ensure_fresh()  # must not raise
 
     assert cache.apps_json_path.read_text() == '{"apps": []}'
@@ -173,9 +180,7 @@ def test_first_clone_installs_daily_refresh_cron(tmp_path: Path) -> None:
 
 
 def test_daily_refresh_cron_command_quotes_paths_with_spaces(tmp_path: Path) -> None:
-    """Regression: an unquoted cli_root with a space breaks argv parsing for
-    the cron-invoked refresh command permanently — the command string must
-    survive a shell round-trip via shlex.split()."""
+    """Cron refresh command quotes cli_root paths with spaces."""
     import shlex
 
     spaced_root = tmp_path / "cli root with spaces"
@@ -191,7 +196,7 @@ def test_daily_refresh_cron_command_quotes_paths_with_spaces(tmp_path: Path) -> 
 
 def test_subsequent_ensure_fresh_does_not_reinstall_cron(tmp_path: Path) -> None:
     cache = make_cache(tmp_path)
-    cache.ensure_fresh()  # first clone — installs cron (via autouse-patched CronManager)
+    cache.ensure_fresh()  # first clone - installs cron (via autouse-patched CronManager)
 
     with patch("pilot.core.registry_cache.CronManager") as mock_cron_cls:
         cache.ensure_fresh()  # already cloned, within refresh window

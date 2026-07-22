@@ -2,7 +2,7 @@ import { computed } from 'vue'
 
 // [\w-]+, not \w+: step keys may contain hyphens (e.g. "clear-cache"), and
 // \w+ alone would silently fail to match, which reads as "no step" rather
-// than a parse error — the STEP_MARKER_RE filter would still hide the raw
+// than a parse error - the STEP_MARKER_RE filter would still hide the raw
 // line, so the fold would just vanish with no visible symptom.
 const STEP_RE = /^STEP\s([\w-]+),([\d.]+)\s*(.*)/
 const STEP_FAILED_RE = /^STEP-FAILED\s([\w-]+),([\d.]+)/

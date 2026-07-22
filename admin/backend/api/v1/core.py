@@ -7,19 +7,18 @@ from pathlib import Path
 from flask import Blueprint, current_app, g, jsonify, request, url_for
 
 from admin.backend.api.responses import created_response, error_response, no_content_response
+from admin.backend.api.v1.setup import wizard_marker_path
 from admin.backend.middleware import (
     allow_unauthenticated,
-    authenticate_request,
     decode_session_token,
+    is_request_authenticated,
     rate_limit,
     set_session_cookie,
 )
-from pilot.tasks.manager.activity import TaskActivityReader
-from admin.backend.api.v1.setup import wizard_marker_path
-from pilot.config.bench import BenchConfig
-from pilot.config.toml_store import BenchTomlStore
+from pilot.config import BenchConfig
 from pilot.internal.atomic_file import exclusive_file_lock
 from pilot.managers.platform import native_process_manager
+from pilot.managers.task import TaskActivityReader
 
 core_bp = Blueprint("core", __name__)
 
@@ -36,11 +35,10 @@ def health():
 @allow_unauthenticated
 def bootstrap():
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    config_store = BenchTomlStore.for_bench(bench_root)
     try:
-        config = config_store.read()
+        config = BenchConfig.read(bench_root)
     except Exception:
-        if not config_store.exists():
+        if not BenchConfig.exists(bench_root):
             return jsonify(_setup_bootstrap(bench_root))
         return error_response(
             "configuration_unavailable",
@@ -56,7 +54,7 @@ def bootstrap():
         with exclusive_file_lock(marker):
             if marker.exists():
                 handoff_task_id = marker.read_text(encoding="utf-8").strip()
-                if not handoff_task_id and _setup_complete(bench_root, config):
+                if not handoff_task_id and _is_setup_complete(bench_root, config):
                     marker.unlink(missing_ok=True)
                 else:
                     return jsonify(_setup_bootstrap(bench_root))
@@ -69,7 +67,7 @@ def bootstrap():
             "production": config.production.enabled,
             "native_process_manager": native_process_manager(),
             "allow_bench_management": config.admin.allow_bench_management,
-            "task_worker": TaskActivityReader(bench_root).read().public_dict(),
+            "task_worker": TaskActivityReader(bench_root).read().public_dict,
         }
     )
 
@@ -77,18 +75,18 @@ def bootstrap():
 @core_bp.get("/session")
 @allow_unauthenticated
 def get_session():
-    config_store = _config_store()
+    bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
-        config = config_store.read()
+        config = BenchConfig.read(bench_root)
     except Exception:
-        if not config_store.exists():
+        if not BenchConfig.exists(bench_root):
             return jsonify({"authenticated": False})
         return error_response(
             "configuration_unavailable",
             "Bench configuration is unavailable.",
             503,
         )
-    authenticated = authenticate_request(config)
+    authenticated = is_request_authenticated(config)
     response = {"authenticated": authenticated}
     if authenticated:
         response["scope"] = g.jwt_claims.get("scope", "bench")
@@ -99,9 +97,9 @@ def get_session():
 @allow_unauthenticated
 @rate_limit(5, 60, user_ip=True)
 def create_session():
-    config_store = _config_store()
+    bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
-        config = config_store.read()
+        config = BenchConfig.read(bench_root)
     except Exception:
         return error_response(
             "configuration_unavailable",
@@ -121,13 +119,13 @@ def create_session():
     if error is not None:
         return error
 
-    from pilot.core.admin_auth import ensure_jwt_secret, issue_token
+    from admin.backend.auth import ensure_jwt_secret, issue_token
 
     response = created_response(
         {"authenticated": True, "scope": "bench"},
         url_for("core.get_session"),
     )
-    token = issue_token(ensure_jwt_secret(config_store.path))
+    token = issue_token(ensure_jwt_secret(BenchConfig.toml_path(bench_root)))
     set_session_cookie(
         response,
         token,
@@ -169,21 +167,16 @@ def _validate_login(data: dict, config: BenchConfig):
     return None
 
 
-def _config_store() -> BenchTomlStore:
-    return BenchTomlStore.for_bench(Path(current_app.config["BENCH_ROOT"]))
-
-
 def _setup_bootstrap(bench_root: Path) -> dict:
     name = bench_root.name
     try:
-        raw = BenchTomlStore.for_bench(bench_root).read_raw()
-        name = raw.get("bench", {}).get("name", name)
+        name = BenchConfig.read(bench_root, validate=False).name or name
     except Exception as exc:
         logging.debug("Could not read bench name during setup bootstrap: %s", exc)
     return {"mode": "setup", "name": name, "enabled": True}
 
 
-def _setup_complete(bench_root: Path, config: BenchConfig) -> bool:
+def _is_setup_complete(bench_root: Path, config: BenchConfig) -> bool:
     if not (bench_root / "env" / "bin" / "python").exists():
         return False
     if not config.admin.password:
@@ -191,12 +184,9 @@ def _setup_complete(bench_root: Path, config: BenchConfig) -> bool:
     if config.production.process_manager and not config.production.enabled:
         return False
     try:
-        from pilot.tasks.manager.task_reader import TaskReader
-        from pilot.tasks.manager.task_state import ACTIVE_TASK_STATUSES
+        from pilot.managers.task import TaskReader
 
         tasks = TaskReader(bench_root).list_tasks(limit=20)
-        return not any(
-            task.command == "wizard-setup" and task.status in ACTIVE_TASK_STATUSES for task in tasks
-        )
+        return not any(task.command == "wizard-setup" and task.status.is_active for task in tasks)
     except Exception:
         return True

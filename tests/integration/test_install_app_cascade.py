@@ -1,18 +1,5 @@
-"""Integration test: installing helpdesk on a site auto-installs telephony.
+"""Integration test for Frappe's install-app dependency cascade."""
 
-`bench --site <site> install-app helpdesk` routes through pilot's own
-InstallAppCommand -> Site.install_app -> a single subprocess call into the
-bench's real `bench frappe --site <site> install-app helpdesk`. That's the
-actual frappe.installer.install_app function (see
-frappe/installer.py:install_app), which reads hooks.py's `required_apps`
-and recursively calls itself for each one before installing the app —
-telephony is declared there for helpdesk. No fixture apps are created here;
-this uses helpdesk/telephony however they already exist on the target bench,
-so it needs no network fetch and skips cleanly if they're not present.
-
-Requires BENCH_TEST_ROOT (or the default test-bench) to already have
-helpdesk and telephony cloned onto it — e.g. via `bench get-app helpdesk`.
-"""
 from __future__ import annotations
 
 import subprocess
@@ -37,7 +24,8 @@ def _uninstall_if_present(bench_bin: str, bench_root: Path, site: str, app: str)
     if app in _installed_apps(bench_bin, bench_root, site):
         subprocess.run(
             [bench_bin, "--site", site, "uninstall-app", app, "--yes", "--no-backup"],
-            cwd=bench_root, capture_output=True,
+            cwd=bench_root,
+            capture_output=True,
         )
 
 
@@ -47,11 +35,11 @@ def test_install_app_cascades_telephony_for_helpdesk(
 ) -> None:
     if not (bench_root / "apps" / HELPDESK).is_dir() or not (bench_root / "apps" / TELEPHONY).is_dir():
         pytest.skip(
-            f"{HELPDESK}/{TELEPHONY} not cloned on this bench — run "
+            f"{HELPDESK}/{TELEPHONY} not cloned on this bench - run "
             f"'bench get-app {HELPDESK}' first to exercise this cascade check."
         )
 
-    # Both start uninstalled on the site — telephony must come back purely
+    # Both start uninstalled on the site - telephony must come back purely
     # from helpdesk's own required_apps cascade, not from us installing it.
     _uninstall_if_present(bench_bin, bench_root, site_name, HELPDESK)
     _uninstall_if_present(bench_bin, bench_root, site_name, TELEPHONY)

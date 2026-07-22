@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
-from pilot.config.toml_store import BenchTomlStore
 from pilot.core.bench import Bench
+from pilot.core.site.backups import parse_backup_timestamp
 from pilot.integrations.s3.backups import OffsiteBackup
-
-_TIMESTAMP_PATTERN = re.compile(r"^(\d{8}_\d{6})")
 
 _OFFSITE_FILE_KINDS = {
     "database": "database",
@@ -44,8 +41,8 @@ class BackupProvider:
 
     def __init__(self, bench_root: Path, site_name: str) -> None:
         self._site_name = site_name
-        self._backups_dir = bench_root / "sites" / site_name / "private" / "backups"
-        self._bench = Bench(BenchTomlStore.for_bench(bench_root).read(), bench_root)
+        self._bench = Bench(bench_root)
+        self._site = self._bench.site(site_name)
 
     def get_all(self, limit: int | None = None) -> list[Backup]:
         backups = self.merge_backups(self.local_backups, self.get_offsite_backups(limit))
@@ -54,11 +51,11 @@ class BackupProvider:
 
     @property
     def local_backups(self) -> dict[str, Backup]:
-        if not self._backups_dir.is_dir():
+        if not self._site.backups.directory.is_dir():
             return {}
 
         files_by_timestamp: dict[str, list[BackupFile]] = {}
-        for path in self._backups_dir.iterdir():
+        for path in self._site.backups.directory.iterdir():
             if path.is_file():
                 backup_file = self.get_local_file(path)
                 files_by_timestamp.setdefault(backup_file.timestamp, []).append(backup_file)
@@ -105,9 +102,8 @@ class BackupProvider:
     def get_local_file(self, path: Path) -> BackupFile:
         stat = path.stat()
         name = path.name
-        match = _TIMESTAMP_PATTERN.match(name)
-        timestamp = match.group(1) if match else "unknown"
-        default_created_at = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+        timestamp = parse_backup_timestamp(name) or "unknown"
+        default_created_at = datetime.fromtimestamp(stat.st_mtime, tz=UTC)
         created_at = self.get_timestamp(timestamp) or default_created_at
 
         return BackupFile(
@@ -142,10 +138,10 @@ class BackupProvider:
     @staticmethod
     def get_timestamp(timestamp: str) -> datetime | None:
         try:
-            return datetime.strptime(timestamp, "%Y%m%d_%H%M%S").replace(tzinfo=timezone.utc)
+            return datetime.strptime(timestamp, "%Y%m%d_%H%M%S").replace(tzinfo=UTC)
         except ValueError:
             return None
 
     @classmethod
     def _get_timestamp_or_now(cls, timestamp: str) -> datetime:
-        return cls.get_timestamp(timestamp) or datetime.now(timezone.utc)
+        return cls.get_timestamp(timestamp) or datetime.now(UTC)

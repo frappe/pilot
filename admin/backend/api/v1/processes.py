@@ -5,17 +5,16 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify
 
-from pilot.config.toml_store import BenchTomlStore
-
 from admin.backend.api.responses import error_response
 from admin.backend.providers.processes import ProcessProvider
+from pilot.config import BenchConfig
 
 processes_bp = Blueprint("processes", __name__)
 
 
 def _bench_name(bench_root: Path) -> str:
     try:
-        return BenchTomlStore.for_bench(bench_root).read_raw().get("bench", {}).get("name", "bench")
+        return BenchConfig.read(bench_root, validate=False).name or "bench"
     except Exception:
         return "bench"
 
@@ -28,7 +27,9 @@ def _supervisor_conf(bench_root: Path) -> Path | None:
 def _supervisorctl(conf: Path, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["supervisorctl", "-c", str(conf), *args],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
 
 
@@ -54,22 +55,24 @@ def _process_list_response():
         return error_response("processes_unavailable", "Could not read process status.", 500)
 
     conf = _supervisor_conf(bench_root)
-    return jsonify({
-        "processes": [
-            {
-                "name": p.name,
-                "status": p.status,
-                "pid": p.pid,
-                "uptime": p.uptime,
-                "cpu_percent": p.cpu_percent,
-                "rss_mb": p.rss_mb,
-                "pss_mb": p.pss_mb,
-                "log_filename": p.log_file.name,
-            }
-            for p in processes
-        ],
-        "production": conf is not None,
-    })
+    return jsonify(
+        {
+            "processes": [
+                {
+                    "name": p.name,
+                    "status": p.status,
+                    "pid": p.pid,
+                    "uptime": p.uptime,
+                    "cpu_percent": p.cpu_percent,
+                    "rss_mb": p.rss_mb,
+                    "pss_mb": p.pss_mb,
+                    "log_filename": p.log_file.name,
+                }
+                for p in processes
+            ],
+            "production": conf is not None,
+        }
+    )
 
 
 @processes_bp.get("/processes")

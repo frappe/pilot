@@ -4,15 +4,23 @@ from pathlib import Path
 
 from flask import current_app, jsonify, request, send_file
 
+from admin.backend.api.responses import accepted_task_response, error_response, no_content_response
+from admin.backend.api.v1.sites import sites_bp
+from admin.backend.api.v1.sites.shared import (
+    internal_error,
+    invalid_fields,
+    malformed_body,
+    site_name,
+    site_not_found,
+    task_failure,
+    text_fields,
+)
+from admin.backend.middleware import require_scope
+from pilot.core.bench import Bench
+from pilot.exceptions import BenchError
 from pilot.internal.site_paths import site_exists
 from pilot.internal.validators import validate_cron_expression
-from pilot.tasks.manager.task_runner import TaskRunner
-
-from admin.backend.api.responses import accepted_task_response, error_response, no_content_response
-from admin.backend.middleware import require_scope
-
-from admin.backend.api.v1.sites import sites_bp
-from admin.backend.api.v1.sites.shared import internal_error, invalid_fields, malformed_body, site_name, site_not_found, task_failure, text_fields
+from pilot.tasks.backup_site import BackupSiteTask
 
 _DEFAULT_BACKUPS_PAGE_SIZE = 20
 
@@ -24,7 +32,7 @@ def backup_site(name: str):
     if not site_exists(bench_root, name):
         return site_not_found()
     try:
-        task_id = TaskRunner(bench_root).run("backup-site", {"site": name, "with_files": True})
+        task_id = BackupSiteTask.queue(Bench(bench_root), site=name, with_files=True)
     except Exception as error:
         return task_failure(error)
     return accepted_task_response(bench_root, task_id)
@@ -81,38 +89,30 @@ def _backup_set_resource(s) -> dict:
 @require_scope(site_name)
 def download_backup_file(name: str, timestamp: str, file_id: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    if not file_id.startswith(timestamp) or "/" in file_id or "\\" in file_id or file_id.startswith("."):
+    try:
+        target = Bench(bench_root).site(name).backups.download_file_path(timestamp, file_id)
+    except BenchError:
         return error_response("invalid_filename", "Backup filename is invalid.", 422)
-
-    backups_dir = (bench_root / "sites" / name / "private" / "backups").resolve()
-    target = (backups_dir / file_id).resolve()
-    if backups_dir not in target.parents or not target.is_file():
+    except Exception:
         return error_response("backup_not_found", "Backup file not found.", 404)
 
     return send_file(target, as_attachment=True, download_name=file_id)
 
 
+def _site_backups_dir(bench_root: Path, name: str) -> Path:
+    return Bench(bench_root).site(name).backups.directory
+
+
 @sites_bp.get("/<name>/backups/<timestamp>/download-links")
 @require_scope(site_name)
 def backup_download_links(name: str, timestamp: str):
-    """Pre-signed S3 URLs for a backup run's files — the user downloads
+    """Pre-signed S3 URLs for a backup run's files - the user downloads
     straight from the bucket, so this server never proxies the transfer."""
-    from pilot.config.toml_store import BenchTomlStore
-    from pilot.integrations.s3.backups import OffsiteBackup
-
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
-        config = BenchTomlStore.for_bench(bench_root).read()
-        offsite_backup = OffsiteBackup.from_config(config.s3, bench_root)
-        files = offsite_backup.get_backup(name, timestamp)
-        if not files:
-            return error_response(
-                "backup_not_found", "Offsite backup not found.", 404
-            )
-        links = {
-            kind: offsite_backup.presigned_url(name, timestamp, filename)
-            for kind, filename in files.items()
-        }
+        links = Bench(bench_root).site(name).backups.download_links(timestamp)
+    except FileNotFoundError:
+        return error_response("backup_not_found", "Offsite backup not found.", 404)
     except Exception:
         return internal_error("Could not create offsite backup URLs.")
 
@@ -120,93 +120,57 @@ def backup_download_links(name: str, timestamp: str):
 
 
 def _backup_cron_command(bench_root: Path, site: str) -> str:
-    import sys
-
-    log_file = bench_root / "logs" / f"backup-{site}.log"
-    return f"{sys.executable} -m pilot.tasks.jobs.backup_site_task {bench_root} {site} --with-files >> {log_file} 2>&1"
+    return Bench(bench_root).site(site).backups._cron_command()
 
 
 def _retention_from_payload(block: dict | None):
-    """Build a validated BackupConfig from the UI payload, defaulting to GFS.
-    Returns the config, or an error string."""
-    from pilot.config.backup import VALID_SCHEMES, BackupConfig
+    from pilot.core.site.backups import retention_from_payload
 
-    block = block or {}
-    config = BackupConfig()
-    scheme = str(block.get("scheme", config.scheme)).strip()
-    if scheme not in VALID_SCHEMES:
-        return f"Retention scheme must be one of: {', '.join(VALID_SCHEMES)}."
-    config.scheme = scheme
-    for key in config.counts:
-        if key not in block:
-            continue
-        try:
-            value = int(block[key])
-        except (TypeError, ValueError):
-            return f"{key} must be a whole number."
-        if value < 0:
-            return f"{key} must be zero or more."
-        setattr(config, key, value)
-    return config
+    return retention_from_payload(block)
 
 
 @sites_bp.get("/<name>/backup-schedule")
 @require_scope(site_name)
 def get_backup_schedule(name: str):
-    from dataclasses import asdict
-
-    from pilot.config.site_backup import read_retention
-    from pilot.managers.cron import CronManager
-
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
-        schedule = CronManager(bench_root).get_schedule(name)
-        retention = read_retention(bench_root / "sites" / name / "site_config.json")
+        schedule = Bench(bench_root).site(name).backups.schedule()
     except Exception:
         return internal_error("Could not read the backup schedule.")
-    return jsonify({"schedule": schedule, "retention": asdict(retention) if retention else None})
+    return jsonify(schedule)
 
 
 @sites_bp.put("/<name>/backup-schedule")
 @require_scope(site_name)
 def set_backup_schedule(name: str):
-    from pilot.config.site_backup import write_retention
-    from pilot.managers.cron import CronManager
-
     bench_root = Path(current_app.config["BENCH_ROOT"])
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return malformed_body()
     fields = text_fields(data, "schedule")
     retention_value = data.get("retention")
-    if fields is None or (
-        retention_value is not None and not isinstance(retention_value, dict)
-    ):
+    if fields is None or (retention_value is not None and not isinstance(retention_value, dict)):
         return invalid_fields()
     schedule = fields["schedule"]
     if err := validate_cron_expression(schedule):
         return error_response("invalid_schedule", err, 422)
-    retention = _retention_from_payload(retention_value)
+    backups = Bench(bench_root).site(name).backups
+    retention = backups.retention_from_payload(retention_value)
     if isinstance(retention, str):
         return error_response("invalid_retention", retention, 422)
     try:
-        CronManager(bench_root).set_schedule(name, schedule, _backup_cron_command(bench_root, name))
-        write_retention(bench_root / "sites" / name / "site_config.json", retention)
+        saved = backups.set_schedule(schedule, retention)
     except Exception:
         return internal_error("Could not update the backup schedule.")
-    return get_backup_schedule(name)
+    return jsonify(saved)
 
 
 @sites_bp.delete("/<name>/backup-schedule")
 @require_scope(site_name)
 def delete_backup_schedule(name: str):
-    from pilot.config.site_backup import clear_retention
-    from pilot.managers.cron import CronManager
-
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
-        CronManager(bench_root).remove_schedule(name)
-        clear_retention(bench_root / "sites" / name / "site_config.json")
+        Bench(bench_root).site(name).backups.clear_schedule()
     except Exception:
         return internal_error("Could not remove the backup schedule.")
     return no_content_response()

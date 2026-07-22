@@ -13,11 +13,7 @@ from pilot.integrations.git.base import (
 
 
 def parse_github_owner_repo(repo_url: str) -> tuple[str, str]:
-    """Extract (owner, repo) from a GitHub HTTPS URL.
-
-    Accepts ``https://github.com/owner/repo`` and ``…/repo.git``.
-    Raises ``GitProviderError`` when the URL cannot be parsed.
-    """
+    """Extract (owner, repo) from a GitHub URL."""
     url = normalize_to_https(repo_url).rstrip("/").removesuffix(".git")
     parts = url.split("/")
     # Expect ['https:', '', 'github.com', 'owner', 'repo']
@@ -58,14 +54,16 @@ class GitHubProvider(GitProvider):
             if not batch:
                 break
             for r in batch:
-                repos.append({
-                    "name": r.get("name"),
-                    "full_name": r.get("full_name"),
-                    "private": r.get("private", False),
-                    "description": r.get("description") or "",
-                    "default_branch": r.get("default_branch") or "",
-                    "clone_url": r.get("clone_url") or "",
-                })
+                repos.append(
+                    {
+                        "name": r.get("name"),
+                        "full_name": r.get("full_name"),
+                        "private": r.get("private", False),
+                        "description": r.get("description") or "",
+                        "default_branch": r.get("default_branch") or "",
+                        "clone_url": r.get("clone_url") or "",
+                    }
+                )
             if len(batch) < 100:
                 break
         return repos

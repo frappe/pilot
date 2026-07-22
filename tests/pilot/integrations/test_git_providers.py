@@ -1,4 +1,5 @@
-"""Tests for pilot.integrations.git — credential storage and URL helpers."""
+"""Tests for pilot.integrations.git - credential storage and URL helpers."""
+
 from __future__ import annotations
 
 import stat
@@ -82,9 +83,11 @@ def test_resolve_app_name_requires_hooks_file(tmp_path: Path) -> None:
         '[project]\nname = "myapp"\n',
         GitProviderError("myapp/hooks.py not found in repository."),
     ]
-    with patch("pilot.integrations.git.provider_for_repo", return_value=provider):
-        with pytest.raises(GitProviderError, match="doesn't look like a Frappe app"):
-            resolve_app_name_from_repo(tmp_path, "https://github.com/acme/myapp")
+    with (
+        patch("pilot.integrations.git.provider_for_repo", return_value=provider),
+        pytest.raises(GitProviderError, match="doesn't look like a Frappe app"),
+    ):
+        resolve_app_name_from_repo(tmp_path, "https://github.com/acme/myapp")
 
 
 def test_resolve_app_name_succeeds_with_hooks_file(tmp_path: Path) -> None:

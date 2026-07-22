@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar
 
-from pilot.commands.base import Command
+from pilot.commands import Command
 
 
 @dataclass(kw_only=True)
@@ -13,4 +13,4 @@ class SetupNginxCommand(Command):
     group: ClassVar[str] = "setup"
 
     def run(self) -> None:
-        self.bench.setup_nginx(on_progress=self.print)
+        self.bench.setup_nginx(on_progress=self.report)

@@ -22,7 +22,7 @@ MODSEC_MODULE_NAME = "ngx_http_modsecurity_module.so"
 _MODULE_DIRS = ("/usr/lib/nginx/modules", "/usr/lib64/nginx/modules")
 
 # Pinned OWASP CRS (the 4.x LTS line) so every host runs an identical,
-# reproducible rule set regardless of what — or whether — the distro packages it.
+# reproducible rule set regardless of what - or whether - the distro packages it.
 # The immutable release asset (not the auto-generated source archive, whose bytes
 # GitHub does not guarantee stable) is verified against a hardcoded SHA-256 before
 # it is extracted into a privileged system directory. The digest was confirmed
@@ -37,9 +37,7 @@ _CRS_SHA256 = "409a0da1f4daed0719150fcee5173c351e08ffa33b5b2f8936f30968b3ad4ff0"
 
 
 class WafManager:
-    """Installs the ModSecurity nginx module (via the system package manager) and
-    the shared OWASP CRS assets. Only the compiled module is distro-specific; the
-    rule set is vendored to SHARED_MODSEC_DIR."""
+    """Installs the ModSecurity nginx module and shared CRS assets."""
 
     # Canonical (apt-style) name; per-distro names live in each package manager's
     # package_aliases map.
@@ -50,7 +48,7 @@ class WafManager:
 
     @staticmethod
     def module_available() -> bool:
-        """True if nginx can load the module — the .so is on disk or a
+        """True if nginx can load the module - the .so is on disk or a
         modules-enabled drop-in (the Debian package's mechanism) references it."""
         if any((Path(base) / MODSEC_MODULE_NAME).exists() for base in _MODULE_DIRS):
             return True
@@ -83,8 +81,7 @@ class WafManager:
             self._install_crs()
 
     def _install_crs(self) -> None:
-        """Download the pinned CRS release and stage crs-setup.conf + rules/ into
-        the shared dir (under /usr/share, so the copies need privilege)."""
+        """Download the pinned CRS release into the shared ModSecurity dir."""
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             archive = tmp_path / "crs.tar.gz"
@@ -99,13 +96,13 @@ class WafManager:
             shutil.copy(extracted / "crs-setup.conf.example", staged_setup)
             run_command(_privileged(["mkdir", "-p", str(SHARED_MODSEC_DIR)]))
             run_command(_privileged(["cp", str(staged_setup), str(SHARED_MODSEC_DIR / "crs-setup.conf")]))
-            run_command(_privileged(["cp", "-rT", str(extracted / "rules"), str(SHARED_MODSEC_DIR / "rules")]))
+            run_command(
+                _privileged(["cp", "-rT", str(extracted / "rules"), str(SHARED_MODSEC_DIR / "rules")])
+            )
 
     @staticmethod
     def _verify_checksum(archive: Path) -> None:
-        """Abort before extraction if the download doesn't match the pinned digest,
-        so a compromised release or a redirect can't plant tampered rules under
-        /usr/share."""
+        """Abort before extraction if the archive digest changed."""
         digest = hashlib.sha256(archive.read_bytes()).hexdigest()
         if digest != _CRS_SHA256:
             raise RuntimeError(

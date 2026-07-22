@@ -1,4 +1,5 @@
 """Tests for shared utilities and the raw bench TOML store interface."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -6,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from pilot.internal.toml import Toml
-from pilot.utils import hosts_line_contains, host_owner, normalize_host
+from pilot.utils import host_owner, hosts_line_contains, normalize_host
 
 
 @pytest.mark.parametrize(
@@ -30,7 +31,7 @@ def _make_bench(benches: Path, name: str, *, admin_domain: str, sites: list[str]
         f'[bench]\nname = "{name}"\npython = "3.14"\n\n'
         '[[apps]]\nname = "frappe"\nrepo = "https://github.com/frappe/frappe"\nbranch = "version-16"\n\n'
         '[mariadb]\nroot_password = "root"\n\n'
-        '[redis]\ncache_port = 13000\nqueue_port = 11000\n\n'
+        "[redis]\ncache_port = 13000\nqueue_port = 11000\n\n"
         f'[admin]\ndomain = "{admin_domain}"\n'
     )
     for site in sites or []:

@@ -16,7 +16,6 @@ from pilot.integrations.git import (
     resolve_app_name_from_repo,
 )
 
-
 git_bp = Blueprint("git", __name__)
 
 
@@ -63,9 +62,7 @@ def save_integration():
             data.get("expires_at"),
         )
     ):
-        return error_response(
-            "invalid_git_integration", "Git integration fields must be strings.", 422
-        )
+        return error_response("invalid_git_integration", "Git integration fields must be strings.", 422)
 
     provider_name = (data.get("provider") or "github").strip().lower()
     token = (data.get("token") or "").strip()
@@ -86,10 +83,10 @@ def save_integration():
             {"token_invalid": True},
         )
     except GitProviderError:
-        return error_response(
-            "git_provider_unavailable", "Could not connect to the git provider.", 500
-        )
-    record = _store().save(provider_name, token, username=username or account.get("login", ""), expires_at=expires_at)
+        return error_response("git_provider_unavailable", "Could not connect to the git provider.", 500)
+    record = _store().save(
+        provider_name, token, username=username or account.get("login", ""), expires_at=expires_at
+    )
     return jsonify(_status(record))
 
 
@@ -150,9 +147,7 @@ def list_branches():
             {"token_invalid": True},
         )
     except GitProviderError:
-        return error_response(
-            "git_provider_unavailable", "Could not list repository branches.", 500
-        )
+        return error_response("git_provider_unavailable", "Could not list repository branches.", 500)
 
     try:
         default_branch = provider.get_default_branch(full_name)
@@ -171,8 +166,7 @@ def resolve_app():
     if not isinstance(data, dict):
         return error_response("malformed_request", "Expected a JSON object.", 400)
     if any(
-        value is not None and not isinstance(value, str)
-        for value in (data.get("repo"), data.get("branch"))
+        value is not None and not isinstance(value, str) for value in (data.get("repo"), data.get("branch"))
     ):
         return error_response("invalid_repository", "Repository fields must be strings.", 422)
     repo_url = (data.get("repo") or "").strip()
@@ -197,7 +191,5 @@ def resolve_app():
             422,
         )
     except Exception:
-        return error_response(
-            "repository_unavailable", "Could not resolve the app repository.", 500
-        )
+        return error_response("repository_unavailable", "Could not resolve the app repository.", 500)
     return jsonify(resolved)

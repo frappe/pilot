@@ -1,17 +1,16 @@
 """Tests for DomainRouteProvider driving a real (dummy) bench-domain-provider."""
+
 import json
 import os
 from pathlib import Path
 
 import pytest
 
-from pilot.config.bench import BenchConfig
-from pilot.config.site import SiteConfig
+from pilot.config import BenchConfig, SiteConfig
+from pilot.core.adapters.domain_provider import DomainRouteProvider
 from pilot.core.bench import Bench
-from pilot.core.domains import DomainRouteProvider
 from pilot.exceptions import BenchError
 from pilot.managers.nginx import NginxConfigRenderer
-
 
 _BENCH_DATA: dict = {
     "bench": {"name": "test-bench", "python": "3.14"},
@@ -68,8 +67,6 @@ def _calls(log: Path) -> list[str]:
     return log.read_text().splitlines()
 
 
-# --- provider installed -------------------------------------------------------
-
 def test_generate_dns_records_returns_provider_output(tmp_path: Path, monkeypatch) -> None:
     _install_provider(tmp_path, monkeypatch)
     bench = _make_bench(tmp_path)
@@ -77,7 +74,10 @@ def test_generate_dns_records_returns_provider_output(tmp_path: Path, monkeypatc
 
     records = DomainRouteProvider(bench).generate_dns_records("mysite", "app.example.com")
 
-    assert records == {"cname": [{"type": "CNAME", "host": "app.example.com", "value": "edge.example.com"}], "a": []}
+    assert records == {
+        "cname": [{"type": "CNAME", "host": "app.example.com", "value": "edge.example.com"}],
+        "a": [],
+    }
 
 
 def test_generate_dns_records_passes_site_then_domain(tmp_path: Path, monkeypatch) -> None:
@@ -91,8 +91,7 @@ def test_generate_dns_records_passes_site_then_domain(tmp_path: Path, monkeypatc
 
 
 def test_generate_dns_records_validates_locally_before_provider(tmp_path: Path, monkeypatch) -> None:
-    """The local basic checks run even with a provider installed: a domain already
-    taken by a sibling site is rejected here, before the provider is ever called."""
+    """Local duplicate checks run before provider calls."""
     log = _install_provider(tmp_path, monkeypatch)
     bench = _make_bench(tmp_path)
     _write_site(bench, "mysite")
@@ -145,8 +144,6 @@ def test_provider_failure_raises_with_stderr(tmp_path: Path, monkeypatch) -> Non
         DomainRouteProvider.proxy_servers()
 
 
-# --- no provider: built-in fallback ------------------------------------------
-
 def test_host_queries_empty_without_provider(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
     assert DomainRouteProvider.wildcard_domains() == []
@@ -161,19 +158,23 @@ def test_builtin_dns_records_without_provider(tmp_path: Path, monkeypatch) -> No
 
     records = DomainRouteProvider(bench).generate_dns_records("mysite", "app.example.com")
 
-    assert records == {"cname": [{"type": "CNAME", "host": "app.example.com", "value": "mysite"}], "a": []}
+    assert records == {
+        "cname": [{"type": "CNAME", "host": "app.example.com", "value": "mysite"}],
+        "a": [],
+    }
 
-
-# --- end to end: provider proxy IPs reach the nginx config -------------------
 
 def test_nginx_gates_tcp_peer_to_provider_proxy_servers(tmp_path: Path, monkeypatch) -> None:
     _install_provider(tmp_path, monkeypatch)
-    config = NginxConfigRenderer(_make_bench(tmp_path)).generate_site_config(
-        SiteConfig(name="site1.example.com", apps=["frappe"]), ssl_ready=False
+    config = NginxConfigRenderer(_make_bench(tmp_path)).generate_bench_config(
+        [(SiteConfig(name="site1.example.com", apps=["frappe"]), False)], admin_ssl=False
     )
 
     assert "set_real_ip_from   203.0.113.10;" in config
-    assert r'if ($realip_remote_addr ~ "^(203\.0\.113\.10|203\.0\.113\.11)$") { set $bench_from_proxy 1; }' in config
+    assert (
+        r'if ($realip_remote_addr ~ "^(203\.0\.113\.10|203\.0\.113\.11)$") { set $bench_from_proxy 1; }'
+        in config
+    )
     assert "if ($bench_from_proxy = 0) { return 403; }" in config
     assert "deny               all;" not in config
     assert "X-Forwarded-For    $http_x_forwarded_for" in config

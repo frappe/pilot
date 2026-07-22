@@ -33,9 +33,7 @@ class AppProvider:
             return []
 
         return [
-            self.get_app(d.name)
-            for d in sorted(apps_path.iterdir())
-            if d.is_dir() and (d / ".git").exists()
+            self.get_app(d.name) for d in sorted(apps_path.iterdir()) if d.is_dir() and (d / ".git").exists()
         ]
 
     def get_app(self, name: str) -> AppInfo:

@@ -1,9 +1,10 @@
-"""Tests for the authorized_keys store (pilot.core.ssh_keys)."""
+"""Tests for the authorized_keys store (pilot.core.server.ssh_keys)."""
+
 from __future__ import annotations
 
 import pytest
 
-from pilot.core.ssh_keys import (
+from pilot.core.server.ssh_keys import (
     AuthorizedKeysStore,
     InvalidSSHKeyError,
     LastSSHKeyError,

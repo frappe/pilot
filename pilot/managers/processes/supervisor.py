@@ -5,17 +5,17 @@ import shlex
 import subprocess
 from pathlib import Path
 
-from pilot.managers.admin_environment import AdminEnvManager
+from pilot.managers.environment import AdminEnvManager
 from pilot.managers.gunicorn import GunicornManager
-from pilot.loader import cli_root
-from pilot.managers.processes.local import ProcessDefinition
 from pilot.managers.processes.base import (
     ManagedProcessManager,
-    UnitGroup,
     ServiceRenderer,
+    UnitGroup,
     override,
 )
-from pilot.utils import run_command
+from pilot.managers.processes.local import ProcessDefinition
+from pilot.utils import cli_root, run_command
+
 
 class SupervisorRenderer(ServiceRenderer):
     """Builds the bench's supervisord.conf and per-program blocks."""
@@ -33,7 +33,7 @@ class SupervisorRenderer(ServiceRenderer):
             env = f"environment={pairs}\n"
         stop = f"stopwaitsecs={pd.stop_timeout}\n" if pd.stop_timeout is not None else ""
         return (
-            f"[program:{self.program_name(pd)}]\n"
+            f"[program:{self.get_program_name(pd)}]\n"
             f"command={shlex.join(pd.argv)}\n"
             f"{env}{directory}"
             f"autostart=true\n"
@@ -46,7 +46,7 @@ class SupervisorRenderer(ServiceRenderer):
             f"{stop}"
         )
 
-    def conf(self, defs: list[ProcessDefinition], sock, pid) -> str:
+    def render_supervisord_conf(self, defs: list[ProcessDefinition], sock, pid) -> str:
         workload = [pd for pd in defs if pd.name != "admin"]
         admin = [pd for pd in defs if pd.name == "admin"]
         admin_group = f"[group:{self.bench_name}-admin]\nprograms={self._csv(admin)}\n\n" if admin else ""
@@ -72,11 +72,12 @@ class SupervisorRenderer(ServiceRenderer):
             f"{programs}"
         )
 
-    def program_name(self, pd: ProcessDefinition) -> str:
+    def get_program_name(self, pd: ProcessDefinition) -> str:
         return f"{self.bench_name}-{pd.name.replace('_', '-')}"
 
     def _csv(self, items: list[ProcessDefinition]) -> str:
-        return ",".join(self.program_name(pd) for pd in items)
+        return ",".join(self.get_program_name(pd) for pd in items)
+
 
 class SupervisorProcessManager(ManagedProcessManager):
     """Manages bench processes via a bench-owned supervisord instance (no sudo required)."""
@@ -113,7 +114,9 @@ class SupervisorProcessManager(ManagedProcessManager):
         GunicornManager(self.bench).generate_admin_config()
         self.supervisor_dir.mkdir(parents=True, exist_ok=True)
         renderer = SupervisorRenderer(self.bench.config.name, self.bench.logs_path)
-        self.supervisor_conf_path.write_text(renderer.conf(self._prod_process_definitions(), self.supervisor_sock, self.supervisor_pid))
+        self.supervisor_conf_path.write_text(
+            renderer.render_supervisord_conf(self._prod_process_definitions(), self.supervisor_sock, self.supervisor_pid)
+        )
 
     @override
     def install_config(self) -> None:

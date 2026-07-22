@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 import time
+from datetime import UTC
 from functools import lru_cache
 from pathlib import Path
 
@@ -10,8 +11,7 @@ import psutil
 from flask import Blueprint, current_app, jsonify, request
 
 from admin.backend.api.responses import error_response
-from pilot.config.bench import BenchConfig
-from pilot.config.toml_store import BenchTomlStore
+from pilot.config import BenchConfig
 
 stats_bp = Blueprint("stats", __name__)
 
@@ -21,8 +21,12 @@ psutil.cpu_percent()
 psutil.cpu_times_percent()
 
 # Network/disk counters are cumulative, so throughput is the delta between polls
-# divided by the elapsed time — this holds the previous reading between requests.
-_io_state = {"time": time.monotonic(), "net": psutil.net_io_counters(), "disk": psutil.disk_io_counters()}
+# divided by the elapsed time - this holds the previous reading between requests.
+_io_state = {
+    "time": time.monotonic(),
+    "net": psutil.net_io_counters(),
+    "disk": psutil.disk_io_counters(),
+}
 
 
 def _cpu_breakdown() -> dict:
@@ -48,8 +52,12 @@ def _io_rates() -> dict:
             "tx_bytes_per_sec": round((net.bytes_sent - _io_state["net"].bytes_sent) / elapsed, 2),
         },
         "disk_io": {
-            "read_bytes_per_sec": round((disk.read_bytes - prev_disk.read_bytes) / elapsed, 2) if disk and prev_disk else 0.0,
-            "write_bytes_per_sec": round((disk.write_bytes - prev_disk.write_bytes) / elapsed, 2) if disk and prev_disk else 0.0,
+            "read_bytes_per_sec": round((disk.read_bytes - prev_disk.read_bytes) / elapsed, 2)
+            if disk and prev_disk
+            else 0.0,
+            "write_bytes_per_sec": round((disk.write_bytes - prev_disk.write_bytes) / elapsed, 2)
+            if disk and prev_disk
+            else 0.0,
         },
     }
     _io_state.update(time=now, net=net, disk=disk)
@@ -78,7 +86,7 @@ def _directory_size(path: str) -> int:
 
 
 def _path_sizes(bench_root: Path, config: BenchConfig) -> list[dict]:
-    from pilot.managers.mariadb import MariaDBManager
+    from pilot.managers.database import MariaDBManager
 
     benches_dir = str(bench_root)
     mariadb_dir = str(MariaDBManager(config.mariadb).data_dir)
@@ -89,9 +97,10 @@ def _path_sizes(bench_root: Path, config: BenchConfig) -> list[dict]:
 
 
 def _log_file_info(description: str, path: Path) -> dict:
-    from datetime import datetime, timezone
+    from datetime import datetime
+
     if path.exists():
-        last_modified = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat(timespec="seconds")
+        last_modified = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC).isoformat(timespec="seconds")
     else:
         last_modified = None
     return {"description": description, "path": str(path), "last_modified": last_modified}
@@ -99,17 +108,19 @@ def _log_file_info(description: str, path: Path) -> dict:
 
 @stats_bp.get("/monitor/status")
 def get_monitor_status():
-    from pilot.config.monitor import MonitorConfig
-    from pilot.config.toml_store import BenchTomlStore
+    from pilot.config import MonitorConfig
+
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
-        config = BenchTomlStore.for_bench(bench_root).read()
+        config = BenchConfig.read(bench_root)
         mon = config.monitor
         log_path = mon.log_path or MonitorConfig.default_log_path(config.name)
-        return jsonify([
-            _log_file_info("System Log", mon.system_log_path),
-            _log_file_info("Application Log", log_path),
-        ])
+        return jsonify(
+            [
+                _log_file_info("System Log", mon.system_log_path),
+                _log_file_info("Application Log", log_path),
+            ]
+        )
     except Exception:
         return error_response(
             "monitor_status_unavailable",
@@ -120,12 +131,12 @@ def get_monitor_status():
 
 @stats_bp.get("/monitor/history")
 def get_monitor_history():
-    from admin.backend.providers.monitor import MonitorProvider
+    from admin.backend.providers.system_monitoring import SystemMonitoringProvider
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
     window = request.args.get("window", "1h")
     try:
-        return jsonify(MonitorProvider(bench_root, window).get_history())
+        return jsonify(SystemMonitoringProvider(bench_root, window).get_history())
     except Exception:
         return error_response(
             "monitor_history_unavailable",
@@ -148,11 +159,11 @@ def get_waf_analytics():
 
 @stats_bp.get("/system")
 def system_info():
-    from pilot.managers.platform import kernel_version, os_version
     from admin.backend.providers.os import OSProvider
+    from pilot.managers.platform import kernel_version, os_version
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    config = BenchTomlStore.for_bench(bench_root).read()
+    config = BenchConfig.read(bench_root)
     mem = psutil.virtual_memory()
     swap = psutil.swap_memory()
     return jsonify(
@@ -171,7 +182,7 @@ def system_info():
 @stats_bp.get("/metrics")
 def stats():
     bench_root = current_app.config["BENCH_ROOT"]
-    config = BenchTomlStore.for_bench(bench_root).read()
+    config = BenchConfig.read(bench_root)
     mem = psutil.virtual_memory()
     swap = psutil.swap_memory()
     disk = psutil.disk_usage("/")

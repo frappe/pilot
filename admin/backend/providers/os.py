@@ -4,20 +4,15 @@ import re
 import subprocess
 from pathlib import Path
 
-from pilot.config.bench import BenchConfig
+from pilot.config import BenchConfig
 from pilot.exceptions import CommandError
-from pilot.managers.redis import RedisManager
 from pilot.managers.platform import which
+from pilot.managers.redis import RedisManager
 from pilot.utils import run_command
 
 
 class OSProvider:
-    """Host-level info for the bench: installed runtime/service versions,
-    with room to grow into other OS-level facts.
-
-    Anything not installed (or not detectable) is left out of the result
-    rather than reported as an error, since not every host runs every
-    service (e.g. postgres may be absent)."""
+    """Host/runtime facts for the admin API."""
 
     def __init__(self, bench_root: Path, config: BenchConfig) -> None:
         self._bench_root = bench_root
@@ -64,6 +59,6 @@ class OSProvider:
     @property
     def bench_admin_commit(self) -> str:
         from pilot.internal.git import GitRepo
-        from pilot.loader import cli_root
+        from pilot.utils import cli_root
 
         return GitRepo(cli_root()).short_head

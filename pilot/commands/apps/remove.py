@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, ClassVar
 
-from pilot.commands.base import Arg, Command
+from pilot.commands import Arg, Command
 
 if TYPE_CHECKING:
     from pilot.core.app import App
@@ -24,4 +24,4 @@ class RemoveAppCommand(Command):
     def run(self) -> None:
         self.app.ensure_removable()
         self.confirm(f"Remove '{self.app_name}' from all sites and the bench?", skip=self.skip_confirm)
-        self.app.remove(force=self.force, on_progress=self.print)
+        self.app.remove(force=self.force, on_progress=self.report)

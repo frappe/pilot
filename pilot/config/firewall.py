@@ -15,12 +15,7 @@ class FirewallRule:
 
 @dataclass
 class FirewallConfig:
-    """IP allow/block list applied to every nginx vhost of the bench.
-
-    ``default`` is the policy for clients no rule matches: "allow" (blocklist
-    mode) or "deny" (allowlist mode). ``enabled`` is a master switch; when off,
-    nginx serves everyone regardless of rules.
-    """
+    """IP allow/block list applied to every nginx vhost."""
 
     enabled: bool = False
     default: str = "allow"  # "allow" | "deny"
@@ -54,5 +49,7 @@ class FirewallConfig:
             try:
                 # strict=False accepts a host address with a prefix (e.g. 10.0.0.5/8).
                 ipaddress.ip_network(rule.ip, strict=False)
-            except ValueError:
-                raise ConfigError(f"{prefix}.ip '{rule.ip}' is not a valid IPv4/IPv6 address or CIDR range.")
+            except ValueError as exc:
+                raise ConfigError(
+                    f"{prefix}.ip '{rule.ip}' is not a valid IPv4/IPv6 address or CIDR range."
+                ) from exc

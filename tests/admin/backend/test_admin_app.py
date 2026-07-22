@@ -8,14 +8,14 @@ import threading
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from unittest.mock import MagicMock, PropertyMock, patch
+from unittest.mock import PropertyMock, patch
 
-from pilot.config.bench_toml_builder import BenchTomlBuilder
+from pilot.config import BenchConfig
 
 
 def _write_bench_toml(bench_dir: Path, name: str, **settings) -> None:
     bench_dir.mkdir(parents=True, exist_ok=True)
-    (bench_dir / "bench.toml").write_text(BenchTomlBuilder(name, settings).render())
+    (bench_dir / "bench.toml").write_text(BenchConfig.from_flat(name, settings).dumps())
 
 
 def _write_raw_bench_toml(bench_dir: Path, name: str, admin_port: int) -> None:
@@ -25,9 +25,11 @@ def _write_raw_bench_toml(bench_dir: Path, name: str, admin_port: int) -> None:
 
 def _client(bench_root: Path, password: str = "secret", **extra_settings):
     from admin.backend.app import create_app
-    from pilot.core.admin_auth import ensure_jwt_secret, issue_token
+    from admin.backend.auth import ensure_jwt_secret, issue_token
 
-    _write_bench_toml(bench_root, bench_root.name, admin_enabled=True, admin_password=password, **extra_settings)
+    _write_bench_toml(
+        bench_root, bench_root.name, admin_enabled=True, admin_password=password, **extra_settings
+    )
     secret = ensure_jwt_secret(bench_root / "bench.toml")
     app = create_app(bench_root)
     app.config["TESTING"] = True
@@ -45,9 +47,6 @@ def _listening_socket():
         yield sock.getsockname()[1]
     finally:
         sock.close()
-
-
-# ── GET /api/v1/benches ─────────────────────────────────────────────────────────
 
 
 def test_api_benches_requires_auth(tmp_path: Path) -> None:
@@ -98,7 +97,11 @@ def test_api_benches_includes_production_metadata(tmp_path: Path) -> None:
             f'[production]\nenabled = true\nprocess_manager = "systemd"\n'
         )
         # https only once the cert is in place; pretend it is for this assertion.
-        with patch("admin.backend.providers.bench.BenchProvider.has_admin_cert", new_callable=PropertyMock, return_value=True):
+        with patch(
+            "admin.backend.providers.bench.BenchProvider.has_admin_cert",
+            new_callable=PropertyMock,
+            return_value=True,
+        ):
             resp = client.get("/api/v1/benches")
 
     entry = next(b for b in resp.get_json() if b["name"] == "prod-bench")
@@ -121,7 +124,11 @@ def test_api_benches_admin_url_is_http_until_cert_exists(tmp_path: Path) -> None
             f'[admin]\nport = {live_port}\ndomain = "admin-prod.example.com"\ntls = true\n\n'
             f'[production]\nenabled = true\nprocess_manager = "systemd"\n'
         )
-        with patch("admin.backend.providers.bench.BenchProvider.has_admin_cert", new_callable=PropertyMock, return_value=False):
+        with patch(
+            "admin.backend.providers.bench.BenchProvider.has_admin_cert",
+            new_callable=PropertyMock,
+            return_value=False,
+        ):
             resp = client.get("/api/v1/benches")
 
     entry = next(b for b in resp.get_json() if b["name"] == "prod-bench")
@@ -144,9 +151,6 @@ def test_api_benches_includes_site_count(tmp_path: Path) -> None:
 
     entry = next(b for b in resp.get_json() if b["name"] == "with-sites")
     assert entry["site_count"] == 2
-
-
-# ── Bench detail, domain options, and creation ──────────────────────────────────
 
 
 def test_api_benches_gets_one_bench(tmp_path: Path) -> None:
@@ -176,7 +180,7 @@ def test_api_benches_domain_options_returns_suffixes(tmp_path: Path) -> None:
     client = _client(tmp_path / "benches" / "current")
 
     with patch(
-        "pilot.core.domains.DomainRouteProvider.wildcard_domains",
+        "pilot.core.adapters.domain_provider.DomainRouteProvider.wildcard_domains",
         return_value=["*.example.com", "*-box.example.net"],
     ):
         resp = client.get("/api/v1/benches/domain-options")
@@ -188,7 +192,7 @@ def test_api_benches_domain_options_reports_provider_failure(tmp_path: Path) -> 
     client = _client(tmp_path / "benches" / "current")
 
     with patch(
-        "pilot.core.domains.DomainRouteProvider.wildcard_domains",
+        "pilot.core.adapters.domain_provider.DomainRouteProvider.wildcard_domains",
         side_effect=RuntimeError("provider detail"),
     ):
         resp = client.get("/api/v1/benches/domain-options")
@@ -202,7 +206,11 @@ def test_api_benches_domain_options_reports_provider_failure(tmp_path: Path) -> 
 
 
 def _new_payload(name: str, **overrides) -> dict:
-    payload = {"name": name, "process_manager": "systemd", "admin_domain": f"{name}-admin.example.com"}
+    payload = {
+        "name": name,
+        "process_manager": "systemd",
+        "admin_domain": f"{name}-admin.example.com",
+    }
     payload.update(overrides)
     return payload
 
@@ -211,8 +219,13 @@ def test_api_benches_create_creates_bench(tmp_path: Path) -> None:
     benches_dir = tmp_path / "benches"
     client = _client(benches_dir / "current")
 
-    with patch("subprocess.Popen") as mock_popen, \
-         patch("pilot.core.domains.DomainRouteProvider.wildcard_domains", return_value=[]):
+    with (
+        patch("subprocess.Popen") as mock_popen,
+        patch(
+            "pilot.core.adapters.domain_provider.DomainRouteProvider.wildcard_domains",
+            return_value=[],
+        ),
+    ):
         resp = client.post("/api/v1/benches", json=_new_payload("fresh"))
 
     assert resp.status_code == 201
@@ -221,44 +234,63 @@ def test_api_benches_create_creates_bench(tmp_path: Path) -> None:
     toml = (benches_dir / "fresh" / "bench.toml").read_text()
     assert 'process_manager = "systemd"' in toml
     assert 'domain = "fresh-admin.example.com"' in toml
-    # Stored as a preference only — not yet deployed.
+    # Stored as a preference only - not yet deployed.
     assert "enabled = false" in toml.split("[production]")[1].split("[")[0]
     mock_popen.assert_called_once()
 
 
 def test_api_benches_create_routes_wizard_at_domain_when_production(tmp_path: Path) -> None:
     # A bench created from a production admin is routed to the setup wizard at its
-    # own domain — not auto-provisioned to a password-protected login. Its process
+    # own domain - not auto-provisioned to a password-protected login. Its process
     # manager and TLS choice are recorded (mirroring the parent bench) but not
-    # brought up yet — that needs the venv/framework app the wizard's init step
+    # brought up yet - that needs the venv/framework app the wizard's init step
     # installs, so WizardSetupTask finishes the job via SetupProductionCommand.
     benches_dir = tmp_path / "benches"
     current = benches_dir / "current"
-    _write_bench_toml(current, "current", admin_enabled=True, admin_password="secret",
-                      admin_domain="current-admin.example.com", admin_tls=True)
+    _write_bench_toml(
+        current,
+        "current",
+        admin_enabled=True,
+        admin_password="secret",
+        admin_domain="current-admin.example.com",
+        admin_tls=True,
+    )
     from admin.backend.app import create_app
+
     toml = (current / "bench.toml").read_text()
     (current / "bench.toml").write_text(
-        toml.replace("enabled = false\nuse_companion_manager",
-                     'enabled = true\nprocess_manager = "systemd"\nuse_companion_manager')
+        toml.replace(
+            "enabled = false\nuse_companion_manager",
+            'enabled = true\nprocess_manager = "systemd"\nuse_companion_manager',
+        )
     )
-    from pilot.core.admin_auth import ensure_jwt_secret, issue_token
+    from admin.backend.auth import ensure_jwt_secret, issue_token
+
     secret = ensure_jwt_secret(current / "bench.toml")
     app = create_app(current)
     app.config["TESTING"] = True
     client = app.test_client()
     client.set_cookie("sid", issue_token(secret))
 
-    with patch("pilot.managers.processes.systemd.SystemdProcessManager.start_admin") as mock_admin, \
-         patch("pilot.managers.processes.systemd.SystemdProcessManager.apply_unit_action") as mock_apply, \
-         patch("pilot.managers.nginx.NginxManager.generate_config") as mock_gen, \
-         patch("pilot.managers.nginx.NginxManager.install_config"), \
-         patch("pilot.managers.nginx.NginxManager.reload"), \
-         patch("pilot.managers.nginx.NginxManager.has_admin_cert", new_callable=PropertyMock, return_value=False), \
-         patch("pilot.core.domains.DomainRouteProvider.register") as mock_register, \
-         patch("pilot.core.domains.DomainRouteProvider.wildcard_domains", return_value=[]), \
-         patch("pilot.managers.platform.has_passwordless_sudo", return_value=True), \
-         patch("subprocess.Popen") as mock_popen:
+    with (
+        patch("pilot.managers.processes.systemd.SystemdProcessManager.start_admin") as mock_admin,
+        patch("pilot.managers.processes.systemd.SystemdProcessManager.apply_unit_action") as mock_apply,
+        patch("pilot.managers.nginx.NginxManager.generate_config") as mock_gen,
+        patch("pilot.managers.nginx.NginxManager.install_config"),
+        patch("pilot.managers.nginx.NginxManager.reload"),
+        patch(
+            "pilot.managers.nginx.NginxManager.has_admin_cert",
+            new_callable=PropertyMock,
+            return_value=False,
+        ),
+        patch("pilot.core.adapters.domain_provider.DomainRouteProvider.register") as mock_register,
+        patch(
+            "pilot.core.adapters.domain_provider.DomainRouteProvider.wildcard_domains",
+            return_value=[],
+        ),
+        patch("pilot.managers.platform.has_passwordless_sudo", return_value=True),
+        patch("subprocess.Popen") as mock_popen,
+    ):
         resp = client.post("/api/v1/benches", json=_new_payload("fresh"))
 
     data = resp.get_json()
@@ -274,7 +306,7 @@ def test_api_benches_create_routes_wizard_at_domain_when_production(tmp_path: Pa
     mock_gen.assert_called_once()
     mock_popen.assert_not_called()
     # The workload (web/worker/socketio) needs the venv and framework app that
-    # only exist once the wizard's init step runs — starting it now would
+    # only exist once the wizard's init step runs - starting it now would
     # crash-loop and permanently rate-limit the units. WizardSetupTask starts
     # it once init actually finishes, not this view.
     mock_apply.assert_not_called()
@@ -285,7 +317,7 @@ def test_api_benches_create_routes_wizard_at_domain_when_production(tmp_path: Pa
     # forced onto plain HTTP.
     assert "tls = true" in fresh_toml
     # production.enabled stays false until the wizard's init + SetupProductionCommand
-    # actually finish — a half-built deployment must never look "done" to the switcher.
+    # actually finish - a half-built deployment must never look "done" to the switcher.
     assert "enabled = false" in fresh_toml.split("[production]")[1].split("[")[0]
     assert 'process_manager = "systemd"' in fresh_toml.split("[production]")[1].split("[")[0]
 
@@ -295,11 +327,15 @@ def test_api_benches_create_does_not_prompt_for_system_privileges(tmp_path: Path
     client = _client(benches_dir / "current")
 
     with (
-        patch("admin.backend.providers.bench.BenchProvider.is_production", new_callable=PropertyMock, return_value=True),
-        patch("pilot.managers.platform.has_passwordless_sudo", return_value=False),
-        patch("admin.backend.api.v1.benches.Bench.create_at") as create,
         patch(
-            "pilot.core.domains.DomainRouteProvider.wildcard_domains",
+            "admin.backend.providers.bench.BenchProvider.is_production",
+            new_callable=PropertyMock,
+            return_value=True,
+        ),
+        patch("pilot.managers.platform.has_passwordless_sudo", return_value=False),
+        patch("admin.backend.api.v1.benches.create.Bench.create_at") as create,
+        patch(
+            "pilot.core.adapters.domain_provider.DomainRouteProvider.wildcard_domains",
             return_value=[],
         ),
     ):
@@ -366,7 +402,14 @@ def test_api_benches_create_rejects_invalid_name(tmp_path: Path) -> None:
     benches_dir = tmp_path / "benches"
     client = _client(benches_dir / "current")
 
-    resp = client.post("/api/v1/benches", json={"name": "bad name!", "process_manager": "systemd", "admin_domain": "x-admin.example.com"})
+    resp = client.post(
+        "/api/v1/benches",
+        json={
+            "name": "bad name!",
+            "process_manager": "systemd",
+            "admin_domain": "x-admin.example.com",
+        },
+    )
 
     assert resp.status_code == 422
     assert not (benches_dir / "bad name!").exists()
@@ -432,15 +475,12 @@ def test_api_benches_create_rejects_duplicate_name(tmp_path: Path) -> None:
     benches_dir = tmp_path / "benches"
     client = _client(benches_dir / "current")
 
-    with patch("pilot.core.domains.DomainRouteProvider.wildcard_domains", return_value=[]):
+    with patch("pilot.core.adapters.domain_provider.DomainRouteProvider.wildcard_domains", return_value=[]):
         resp = client.post("/api/v1/benches", json=_new_payload("current"))
 
     assert resp.status_code == 409
     assert resp.get_json()["error"]["code"] == "bench_already_exists"
     assert "already exists" in resp.get_json()["error"]["message"]
-
-
-# ── POST /api/v1/bench-readiness-checks ─────────────────────────────────────────
 
 
 def test_api_benches_ready_true_when_port_live(tmp_path: Path) -> None:
@@ -503,8 +543,7 @@ def test_api_bench_readiness_strictly_validates_selectors(tmp_path: Path) -> Non
 
 @contextmanager
 def _nginx_stub(health_status: int = 200):
-    """A loopback HTTP server standing in for nginx+admin: answers /api/v1/health with
-    the given status (any Host), so the domain readiness probe can be exercised."""
+    """Loopback nginx/admin health probe stub."""
 
     class _Handler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -598,9 +637,6 @@ def test_api_benches_ready_false_when_nginx_down_at_domain(tmp_path: Path) -> No
     assert resp.get_json() == {"ready": False}
 
 
-# ── Explicit bench lifecycle actions ────────────────────────────────────────────
-
-
 def _write_prod_bench_toml(bench_dir: Path, name: str) -> None:
     bench_dir.mkdir(parents=True, exist_ok=True)
     (bench_dir / "bench.toml").write_text(
@@ -645,21 +681,21 @@ def test_api_benches_explicit_actions_return_updated_resource(tmp_path: Path) ->
     benches_dir = tmp_path / "benches"
     client = _client(benches_dir / "current")
     _write_prod_bench_toml(benches_dir / "prod-bench", "prod-bench")
-    manager = MagicMock()
-    manager.is_running.return_value = True
-    manager.is_admin_running.return_value = True
 
-    with patch("admin.backend.api.v1.benches.ProcessManager.for_bench", return_value=manager):
+    with patch("admin.backend.api.v1.benches.Bench.run_production_action") as run_action:
         responses = {
             action: client.post(f"/api/v1/benches/prod-bench/actions/{action}")
             for action in ("start", "stop", "restart")
         }
 
-    operations = {"start": "start_workload", "stop": "stop", "restart": "restart"}
-    for action, resp in responses.items():
+    for _action, resp in responses.items():
         assert resp.status_code == 200
         assert resp.get_json()["name"] == "prod-bench"
-        getattr(manager, operations[action]).assert_called_once_with()
+    assert [call.args[0] for call in run_action.call_args_list] == [
+        "start",
+        "stop",
+        "restart",
+    ]
 
 
 def test_api_benches_control_reports_failure(tmp_path: Path) -> None:
@@ -667,16 +703,14 @@ def test_api_benches_control_reports_failure(tmp_path: Path) -> None:
     client = _client(benches_dir / "current")
     _write_prod_bench_toml(benches_dir / "prod-bench", "prod-bench")
 
-    manager = MagicMock()
-    manager.stop.side_effect = RuntimeError("manager detail")
-    with patch("admin.backend.api.v1.benches.ProcessManager.for_bench", return_value=manager):
+    with patch(
+        "admin.backend.api.v1.benches.Bench.run_production_action",
+        side_effect=RuntimeError("manager detail"),
+    ):
         resp = client.post("/api/v1/benches/prod-bench/actions/stop")
 
     assert resp.status_code == 500
     assert resp.get_json()["error"]["code"] == "bench_action_failed"
-
-
-# ── DELETE /api/v1/benches/<name> (drop) ────────────────────────────────────────
 
 
 def test_api_benches_drop_rejects_current_bench(tmp_path: Path) -> None:
@@ -697,7 +731,7 @@ def test_api_benches_drop_rejects_bench_with_sites(tmp_path: Path) -> None:
     (bench_dir / "sites" / "a.localhost").mkdir(parents=True)
     (bench_dir / "sites" / "a.localhost" / "site_config.json").write_text("{}")
 
-    with patch("admin.backend.api.v1.benches.subprocess.run") as mock_run:
+    with patch("subprocess.run") as mock_run:
         resp = client.delete("/api/v1/benches/prod-bench")
 
     assert resp.status_code == 409
@@ -745,8 +779,6 @@ def test_api_benches_drop_does_not_prompt_for_system_privileges(tmp_path: Path) 
     assert resp.get_json()["error"]["code"] == "privileged_operation_unavailable"
     drop.assert_not_called()
 
-# ── POST /api/v1/sites — engine is bench-level, not per-site ────────────────────
-
 
 def test_create_site_does_not_carry_db_type(tmp_path: Path) -> None:
     # The engine is fixed per bench, so site creation never passes a db_type.
@@ -756,7 +788,7 @@ def test_create_site_does_not_carry_db_type(tmp_path: Path) -> None:
     with (
         patch("admin.backend.api.v1.sites.core.new_site_name_error", return_value=None),
         patch(
-            "pilot.tasks.manager.task_runner.task_workers.wake",
+            "pilot.internal.tasks.runner.task_workers.wake",
             return_value=False,
         ),
     ):
@@ -770,13 +802,15 @@ def test_create_site_does_not_carry_db_type(tmp_path: Path) -> None:
     assert response.headers["Location"] == f"/api/v1/tasks/{body['task_id']}"
     assert body["command"] == "new-site"
     assert "db_type" not in body["args"]
-    callbacks = json.loads(
-        (bench_root / "tasks" / body["task_id"] / "callbacks.json").read_text()
+    callbacks = json.loads((bench_root / "tasks" / body["task_id"] / "callbacks.json").read_text())
+    assert (
+        callbacks["on_cancel"]
+        == callbacks["on_failure"]
+        == {
+            "operation": "remove-failed-site",
+            "args": {"site": "s.localhost"},
+        }
     )
-    assert callbacks["on_cancel"] == callbacks["on_failure"] == {
-        "operation": "remove-failed-site",
-        "args": {"site": "s.localhost"},
-    }
 
 
 def test_reinstall_site_generates_new_admin_password(tmp_path: Path) -> None:
@@ -787,7 +821,7 @@ def test_reinstall_site_generates_new_admin_password(tmp_path: Path) -> None:
     (site_dir / "site_config.json").write_text("{}")
 
     with patch(
-        "pilot.tasks.manager.task_runner.task_workers.wake",
+        "pilot.internal.tasks.runner.task_workers.wake",
         return_value=False,
     ):
         response = client.post("/api/v1/sites/s.localhost/actions/reinstall", json={})
@@ -796,9 +830,7 @@ def test_reinstall_site_generates_new_admin_password(tmp_path: Path) -> None:
     assert response.status_code == 202
     assert body["command"] == "reinstall-site"
     assert body["args"] == {"site": "s.localhost", "admin_password": "[redacted]"}
-    secrets_payload = json.loads(
-        (bench_root / "tasks" / body["task_id"] / "secrets.json").read_text()
-    )
+    secrets_payload = json.loads((bench_root / "tasks" / body["task_id"] / "secrets.json").read_text())
     assert secrets_payload["admin_password"]
     assert secrets_payload["admin_password"] != "admin"
 
@@ -811,7 +843,7 @@ def test_reinstall_site_submits_new_admin_password_as_secret(tmp_path: Path) -> 
     (site_dir / "site_config.json").write_text("{}")
 
     with patch(
-        "pilot.tasks.manager.task_runner.task_workers.wake",
+        "pilot.internal.tasks.runner.task_workers.wake",
         return_value=False,
     ):
         response = client.post(
@@ -823,9 +855,9 @@ def test_reinstall_site_submits_new_admin_password_as_secret(tmp_path: Path) -> 
     assert response.status_code == 202
     assert body["args"]["admin_password"] == "[redacted]"
     assert "new-secret" not in json.dumps(body)
-    assert json.loads(
-        (bench_root / "tasks" / body["task_id"] / "secrets.json").read_text()
-    ) == {"admin_password": "new-secret"}
+    assert json.loads((bench_root / "tasks" / body["task_id"] / "secrets.json").read_text()) == {
+        "admin_password": "new-secret"
+    }
 
 
 def test_site_actions_return_canonical_task_resources(tmp_path: Path) -> None:
@@ -839,7 +871,7 @@ def test_site_actions_return_canonical_task_resources(tmp_path: Path) -> None:
     ]
 
     with patch(
-        "pilot.tasks.manager.task_runner.task_workers.wake",
+        "pilot.internal.tasks.runner.task_workers.wake",
         return_value=False,
     ):
         for index, (action, command, payload) in enumerate(cases):
@@ -868,7 +900,7 @@ def test_site_action_idempotency_replays_same_task(tmp_path: Path) -> None:
     (site_dir / "site_config.json").write_text("{}")
 
     with patch(
-        "pilot.tasks.manager.task_runner.task_workers.wake",
+        "pilot.internal.tasks.runner.task_workers.wake",
         return_value=False,
     ):
         first = client.post(

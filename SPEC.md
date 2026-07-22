@@ -1,57 +1,74 @@
-# bench — Specification
+# Bench CLI Spec
 
-bench is a command-line tool for setting up and managing a Frappe development environment on Ubuntu and macOS. It replaces the original frappe/bench with a simpler, TOML-driven approach that avoids Docker and keeps everything transparent and hackable.
+Bench CLI manages local and production Frappe benches with a small object model: `Server`, `Bench`, `Site`, `App`, and the database engines behind a bench.
 
----
+The command line and Admin API should stay thin. They parse input, authorize the request, start tasks when needed, and delegate work to `pilot.core`.
 
-## Core ideas
+## Goals
 
-- **One config file** (`bench.toml`) describes the infrastructure: Python version, database, Redis, workers. Apps and sites are managed via commands and discovered from the filesystem.
-- **No Docker.** Services (MariaDB, PostgreSQL, Redis) are installed directly on the host via apt (Ubuntu) or Homebrew (macOS). Each bench picks one database engine (`bench.db_type`: MariaDB or PostgreSQL); `bench init` installs and provisions only that one.
-- **Zero Python dependencies.** The CLI uses only the Python 3.11+ standard library (`tomllib`, `argparse`, `subprocess`, `threading`, `signal`). No click, no yaml, no psutil.
-- **uv for Python environments.** `uv venv` and `uv pip install` manage virtualenvs. uv is auto-installed on first use.
-- **Plain Python OOP.** Classes map directly to real-world concepts (Bench, App, Site, Manager). No clever metaprogramming.
-- **Web admin** (`bench admin`) provides a read/operate interface over the bench without maintaining its own state.
+- Create, run, update, and remove benches from a fixed top-level benches directory.
+- Make the common Frappe workflow predictable: get apps, create sites, install apps, migrate, build assets, and run production services.
+- Keep long work observable through task records, logs, steps, and callbacks.
+- Keep host-level concerns on `Server`, bench concerns on `Bench`, and site concerns on `Site`.
 
----
+## Object Model
 
-## Quick start
+- `Server` owns host-wide state: the benches directory, SSH keys, and monitoring.
+- `Bench` owns a bench path, `bench.toml`, apps, sites, runtime, production setup, audit log, and task runner.
+- `Site` owns site operations: creation, app install/uninstall, domains, backups, restore, retention, rename, and login URLs.
+- `App` owns repository state, dependency install, validation, and revision tracking.
+- Database engines are bench-level services selected by `bench.db_type`.
 
-```bash
-# Install bench-cli (one time)
-git clone https://github.com/frappe/bench-cli
-uv tool install ./bench-cli
+Use `Server().bench("name")`, `Bench("name")`, or `Bench(path)` to load an existing bench. Use `bench.site("site.local")` for site objects.
 
-# Create a bench
-bench new my-bench
-# Edit benches/my-bench/bench.toml — add your db credentials
+## Public Surfaces
 
-bench init -b my-bench # install deps, clone framework app, set up venv
-bench new-site site1.localhost   # create your first site
-bench start            # start all processes
-```
+- CLI commands live under `pilot/commands`.
+- CLI plumbing lives under `pilot/internal/cli`.
+- Admin API routes live under `admin/backend/api/v1`.
+- Background work lives under `pilot/tasks`.
+- Core implementation lives under grouped folders in `pilot/core`.
 
----
+Commands and API handlers must not duplicate Frappe, systemd, nginx, database, or filesystem orchestration. Put that behavior on the closest core object.
 
-## Sub-specifications
+## Configuration
 
-| File | What it covers |
-|------|---------------|
-| [specs/config.md](specs/config.md) | Full `bench.toml` schema with field descriptions and a complete example |
-| [specs/architecture.md](specs/architecture.md) | Python package layout, classes, responsibilities, and relationships |
-| [specs/commands.md](specs/commands.md) | Step-by-step behaviour of each CLI command |
-| [specs/admin.md](specs/admin.md) | Flask admin interface — pages, readers, log streaming |
-| [specs/tasks.md](specs/tasks.md) | Task execution model — forked processes, PID/output files, status tracking |
-| [specs/production.md](specs/production.md) | DNS multitenancy, Nginx config generation, Let's Encrypt SSL, `bench setup` commands |
-| [specs/wireframes.md](specs/wireframes.md) | ASCII wireframes for admin UI — dashboard, sites, database tools, tasks, log viewer |
+Each bench has `bench.toml`. It is read and written through the config model and the TOML store, not by ad hoc string edits.
 
----
+The stable top-level config groups are:
 
-## Guiding constraints
+- `[bench]`
+- `[[apps]]`
+- `[mariadb]`
+- `[postgres]`
+- `[redis]`
+- `[[workers]]`
+- `[production]`
+- `[monitor]`
+- `[nginx]`
+- `[gunicorn]`
+- `[letsencrypt]`
+- `[admin]`
+- `[central]`
+- `[firewall]`
+- `[waf]`
+- `[s3]`
 
-1. **Readable over clever.** A new contributor should be able to understand any class without reading surrounding code.
-2. **Fail loudly.** Validate `bench.toml` up-front and print actionable errors before touching the filesystem.
-3. **Idempotent where possible.** Running `bench init` twice should not break a working bench.
-4. **Ubuntu + macOS.** System package installation targets Ubuntu 22.04 LTS (via apt) and macOS (via Homebrew). Other Debian-based distros are best-effort. Production setup (Nginx, Let's Encrypt) targets Ubuntu/Linux servers; macOS is a development platform only.
-5. **Single virtualenv.** All Python apps share one virtualenv inside the bench directory.
-6. **Filesystem as source of truth for apps/sites.** `bench.toml` only declares infra config and the initial framework app to clone. After `bench init`, apps and sites are tracked on disk (`apps/`, `sites/`) — not in the config file.
+Sites are represented by site directories and bench config records where needed.
+
+## Task Model
+
+Long operations should be `Task` subclasses. Queue them with `SomeTask.queue(bench, ...)` or `SomeTask.queue_submission(bench, ...)`.
+
+Use `@step` for visible progress and `@on_success`, `@on_failure`, or `@on_cancel` methods for task callbacks. Callback decorators take no arguments; the method name becomes the callback operation.
+
+## Documentation Map
+
+- [Architecture](docs/architecture.md)
+- [Commands](docs/commands.md)
+- [Configuration](docs/configuration.md)
+- [Tasks](docs/tasks.md)
+- [Admin API](docs/admin-api.md)
+- [Admin UI](docs/admin-ui.md)
+- [Production](docs/production.md)
+- [Domain Provider](docs/domain-provider.md)

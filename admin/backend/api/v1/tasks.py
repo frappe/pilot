@@ -18,15 +18,16 @@ from admin.backend.api.responses import (
     error_response,
     no_content_response,
 )
-from pilot.tasks.manager.activity import TaskActivityReader
-from pilot.tasks.manager.events import sse_message
-from pilot.tasks.manager.task_args import task_requires_secrets
-from pilot.tasks.manager.task_reader import TaskReader
-from pilot.tasks.manager.task_runner import TaskRunner
-from pilot.tasks.manager.task_state import ACTIVE_TASK_STATUSES, TaskStatus
-from pilot.tasks.manager.worker_registry import task_workers
-from pilot.tasks.manager.worker_state import WorkerIntent, WorkerStore
 from pilot.exceptions import TaskConflictError, TaskNotFoundError, TaskNotRunningError
+from pilot.managers.task import (
+    TaskActivityReader,
+    TaskReader,
+    TaskStatus,
+    TaskWorkerControl,
+    sse_message,
+    task_has_secrets,
+)
+from pilot.tasks import TaskRunner
 
 tasks_bp = Blueprint("tasks", __name__)
 task_worker_bp = Blueprint("task_worker", __name__)
@@ -114,13 +115,13 @@ def retry_task(task_id: str):
         return error_response("task_not_found", str(error), 404)
     except Exception:
         return error_response("task_unavailable", "Could not read task.", 500)
-    if task_requires_secrets(task.command):
+    if task_has_secrets(task.command):
         return error_response(
             "fresh_credentials_required",
             "This task requires fresh credentials and cannot be retried.",
             409,
         )
-    if task.status in ACTIVE_TASK_STATUSES:
+    if task.status.is_active:
         return error_response(
             "task_not_finished",
             "An active task cannot be retried.",
@@ -184,9 +185,7 @@ def task_output(task_id: str):
     return Response(
         stream_with_context(reader.iter_output(task_id)),
         mimetype="text/plain",
-        headers={
-            "Content-Disposition": f'attachment; filename="{task_id}_output.log"'
-        },
+        headers={"Content-Disposition": f'attachment; filename="{task_id}_output.log"'},
     )
 
 
@@ -198,16 +197,14 @@ def get_task_worker():
 @task_worker_bp.post("/task-worker/actions/start")
 def start_task_worker():
     bench_root = _bench_root()
-    WorkerStore(bench_root).write_intent(WorkerIntent.RUNNING)
-    task_workers.wake(bench_root)
+    TaskWorkerControl(bench_root).request_start()
     return _accepted_worker()
 
 
 @task_worker_bp.post("/task-worker/actions/stop")
 def stop_task_worker():
     bench_root = _bench_root()
-    WorkerStore(bench_root).write_intent(WorkerIntent.STOPPED)
-    task_workers.wake(bench_root)
+    TaskWorkerControl(bench_root).request_stop()
     return _accepted_worker()
 
 
@@ -221,7 +218,7 @@ def _accepted_worker():
 def _worker_resource() -> dict:
     activity = TaskActivityReader(_bench_root()).read()
     return {
-        **activity.public_dict(),
+        **activity.public_dict,
         "queued_tasks": activity.queued_tasks,
         "running_tasks": activity.running_tasks,
     }

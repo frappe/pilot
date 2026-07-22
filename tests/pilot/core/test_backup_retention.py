@@ -1,9 +1,7 @@
 from datetime import date, timedelta
 
-from pilot.config.backup import BackupConfig
-from pilot.core.backup_retention import BackupRetentionPolicy
-
-# ── Retention policy ────────────────────────────────────────────────────────────
+from pilot.config import BackupConfig
+from pilot.core.site.retention import BackupRetentionPolicy
 
 
 def _daily_runs(days: int, start=date(2026, 1, 1)) -> list[str]:
@@ -45,7 +43,9 @@ def test_gfs_keeps_daily_weekly_monthly_yearly() -> None:
 
 def test_gfs_multiple_runs_same_day_keeps_latest_of_day() -> None:
     runs = ["20260110_010000", "20260110_230000", "20260111_020000"]
-    policy = BackupRetentionPolicy(BackupConfig(scheme="gfs", keep_daily=2, keep_weekly=0, keep_monthly=0, keep_yearly=0))
+    policy = BackupRetentionPolicy(
+        BackupConfig(scheme="gfs", keep_daily=2, keep_weekly=0, keep_monthly=0, keep_yearly=0)
+    )
     deletions = policy.select_deletions(runs)
     assert deletions == ["20260110_010000"]  # earlier run of the 10th is dropped
 
@@ -60,7 +60,9 @@ def test_unparseable_timestamps_are_ignored() -> None:
 def test_gfs_yearly_tier_keeps_one_run_per_year() -> None:
     """Runs spanning a year boundary: the yearly tier keeps the latest of each year."""
     runs = _daily_runs(400)  # ~13 months, Jan 2026 into Feb 2027
-    policy = BackupRetentionPolicy(BackupConfig(scheme="gfs", keep_daily=0, keep_weekly=0, keep_monthly=0, keep_yearly=2))
+    policy = BackupRetentionPolicy(
+        BackupConfig(scheme="gfs", keep_daily=0, keep_weekly=0, keep_monthly=0, keep_yearly=2)
+    )
     kept = sorted(set(runs) - set(policy.select_deletions(runs)))
     latest_2026 = max(r for r in runs if r.startswith("2026"))
     latest_2027 = max(r for r in runs if r.startswith("2027"))

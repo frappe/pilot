@@ -1,16 +1,19 @@
 from types import SimpleNamespace
 
-from pilot.tasks.jobs.delete_backup_task import DeleteBackupTask
-from pilot.core.audit_log import AuditLog
+from pilot.config import SiteConfig
+from pilot.core.bench.audit_log import AuditLog
+from pilot.core.site import Site
+from pilot.tasks.delete_backup import DeleteBackupTask
 
 
 def _task(tmp_path, filenames):
     bench = SimpleNamespace(
         logs_path=tmp_path / "logs",
+        sites_path=tmp_path / "sites",
         config=SimpleNamespace(s3=SimpleNamespace(is_configured=False)),
     )
-    args = SimpleNamespace(site="site1", filenames=filenames)
-    return DeleteBackupTask(bench, tmp_path, args), bench
+    bench.site = lambda name: Site(SiteConfig(name=name, apps=[]), bench)
+    return DeleteBackupTask(bench=bench, bench_root=tmp_path, site="site1", filenames=filenames), bench
 
 
 def test_delete_removes_local_files_and_logs(tmp_path) -> None:

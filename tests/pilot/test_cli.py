@@ -1,4 +1,4 @@
-"""Tests for pilot.cli — argument parsing helpers."""
+"""Tests for the console entrypoint and internal CLI dispatch."""
 
 from __future__ import annotations
 
@@ -8,46 +8,50 @@ import sys
 import pytest
 
 import pilot.cli as cli
-import pilot.registry as registry
-from pilot.cli import _is_frappe_passthrough, _strip_bench_flag
+import pilot.internal.cli.dispatch as dispatch
+import pilot.internal.cli.registry as registry
 
 
-# ── _strip_bench_flag ─────────────────────────────────────────────────────────
+def test_cli_module_is_only_the_console_entrypoint() -> None:
+    assert cli.__all__ == ["main"]
+    assert cli.main is dispatch.main
+    assert not hasattr(cli, "strip_bench_flag")
+    assert not hasattr(cli, "is_frappe_passthrough")
 
 
 def test_strip_bench_flag_long_form() -> None:
-    bench_name, remaining = _strip_bench_flag(["--bench", "my-bench", "start"])
+    bench_name, remaining = dispatch.strip_bench_flag(["--bench", "my-bench", "start"])
     assert bench_name == "my-bench"
     assert remaining == ["start"]
 
 
 def test_strip_bench_flag_short_form() -> None:
-    bench_name, remaining = _strip_bench_flag(["-b", "my-bench", "start"])
+    bench_name, remaining = dispatch.strip_bench_flag(["-b", "my-bench", "start"])
     assert bench_name == "my-bench"
     assert remaining == ["start"]
 
 
 def test_strip_bench_flag_equals_form() -> None:
-    bench_name, remaining = _strip_bench_flag(["--bench=my-bench", "start"])
+    bench_name, remaining = dispatch.strip_bench_flag(["--bench=my-bench", "start"])
     assert bench_name == "my-bench"
     assert remaining == ["start"]
 
 
 def test_strip_bench_flag_short_equals_form() -> None:
-    bench_name, remaining = _strip_bench_flag(["-b=my-bench", "stop"])
+    bench_name, remaining = dispatch.strip_bench_flag(["-b=my-bench", "stop"])
     assert bench_name == "my-bench"
     assert remaining == ["stop"]
 
 
 def test_strip_bench_flag_no_bench_flag() -> None:
-    bench_name, remaining = _strip_bench_flag(["start", "--verbose"])
+    bench_name, remaining = dispatch.strip_bench_flag(["start", "--verbose"])
     assert bench_name is None
     assert remaining == ["start", "--verbose"]
 
 
 def test_strip_bench_flag_preserves_frappe_sub_options() -> None:
     """--site and other frappe sub-options must survive stripping."""
-    bench_name, remaining = _strip_bench_flag(
+    bench_name, remaining = dispatch.strip_bench_flag(
         ["-b", "my-bench", "frappe", "--site", "s.localhost", "migrate"]
     )
     assert bench_name == "my-bench"
@@ -55,41 +59,38 @@ def test_strip_bench_flag_preserves_frappe_sub_options() -> None:
 
 
 def test_strip_bench_flag_empty_args() -> None:
-    bench_name, remaining = _strip_bench_flag([])
+    bench_name, remaining = dispatch.strip_bench_flag([])
     assert bench_name is None
     assert remaining == []
 
 
-# ── _is_frappe_passthrough ────────────────────────────────────────────────────
-
-
 def test_passthrough_own_commands_are_not_forwarded() -> None:
     for cmd in ("start", "stop", "init", "new", "get-app", "new-site", "build", "update"):
-        assert _is_frappe_passthrough([cmd]) is False, f"{cmd!r} should not be a passthrough"
+        assert not dispatch.is_frappe_passthrough([cmd]), f"{cmd!r} should not be a passthrough"
 
 
 def test_passthrough_unknown_commands_are_forwarded() -> None:
-    assert _is_frappe_passthrough(["--site", "s.localhost", "migrate"]) is True
+    assert dispatch.is_frappe_passthrough(["--site", "s.localhost", "migrate"]) is True
 
 
 def test_passthrough_bench_flag_does_not_trigger_passthrough() -> None:
-    assert _is_frappe_passthrough(["--bench", "my-bench", "start"]) is False
+    assert dispatch.is_frappe_passthrough(["--bench", "my-bench", "start"]) is False
+
+
+def test_passthrough_inline_bench_flag_does_not_trigger_passthrough() -> None:
+    assert dispatch.is_frappe_passthrough(["--bench=my-bench", "start"]) is False
+
+
+def test_passthrough_unknown_inline_option_is_forwarded() -> None:
+    assert dispatch.is_frappe_passthrough(["--verbose=1", "migrate"]) is True
 
 
 def test_passthrough_empty_args() -> None:
-    assert _is_frappe_passthrough([]) is False
-
-
-# ── discovery stays light ─────────────────────────────────────────────────────
+    assert dispatch.is_frappe_passthrough([]) is False
 
 
 def test_discovery_does_not_import_heavy_layers() -> None:
-    """Command discovery imports every module under pilot/commands/, so command
-    modules must keep their managers/core/config imports scoped to point of use.
-    If any of those heavy layers loads at discovery time, CLI startup grows with
-    every command added. Run in a clean interpreter so other tests' imports don't
-    pollute sys.modules.
-    """
+    """Command discovery does not import heavy manager/core/config layers."""
     # Patch __import__ to record the pilot call-site responsible for each
     # heavy import: (leaked_module, importer_file, importer_line).
     code = """
@@ -109,7 +110,7 @@ def _tracing_import(name, *args, **kwargs):
     return result
 
 builtins.__import__ = _tracing_import
-import pilot.registry as r; r._discover()
+import pilot.internal.cli.registry as r; r._discover()
 builtins.__import__ = _orig
 print('\\n'.join(_leaks))
 """
@@ -123,12 +124,13 @@ def test_command_discovery_matches_baseline() -> None:
     commands = registry._discover()
     identities = {(command.group, command.name) for command in commands}
 
-    assert len(commands) == 33
-    assert len(identities) == 33
+    assert len(commands) == 34
+    assert len(identities) == 34
     assert registry.command_names() == {
         "build",
         "build-admin",
         "drop",
+        "enroll",
         "frappe",
         "generate-admin-session",
         "get-app",
@@ -173,7 +175,9 @@ def test_main_dispatches_native_command(monkeypatch: pytest.MonkeyPatch) -> None
     dispatched = []
     monkeypatch.setattr(sys, "argv", ["bench", "--bench", "demo", "restart"])
     monkeypatch.setattr(
-        registry, "dispatch", lambda args, parser, context: dispatched.append((args.command, context.bench_name))
+        registry,
+        "dispatch",
+        lambda args, parser, context: dispatched.append((args.command, context.bench_name)),
     )
 
     cli.main()
@@ -184,7 +188,9 @@ def test_main_dispatches_native_command(monkeypatch: pytest.MonkeyPatch) -> None
 def test_main_forwards_unknown_command_to_frappe(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = []
     monkeypatch.setattr(
-        cli, "_run_frappe", lambda context, args: calls.append((context.bench_name, args, context.verbose))
+        dispatch,
+        "run_frappe",
+        lambda context, args: calls.append((context.bench_name, args, context.verbose)),
     )
     monkeypatch.setattr(
         sys,
@@ -200,7 +206,9 @@ def test_main_forwards_unknown_command_to_frappe(monkeypatch: pytest.MonkeyPatch
 def test_main_forwards_explicit_frappe_command(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = []
     monkeypatch.setattr(
-        cli, "_run_frappe", lambda context, args: calls.append((context.bench_name, args, context.verbose))
+        dispatch,
+        "run_frappe",
+        lambda context, args: calls.append((context.bench_name, args, context.verbose)),
     )
     monkeypatch.setattr(
         sys,
@@ -219,7 +227,9 @@ def test_main_dispatches_all_benches_without_selecting_one(
     dispatched = []
     monkeypatch.setattr(sys, "argv", ["bench", "-b", "all", "restart"])
     monkeypatch.setattr(
-        registry, "dispatch_all", lambda args, parser, context: dispatched.append((args.command, context.bench_name))
+        registry,
+        "dispatch_all",
+        lambda args, parser, context: dispatched.append((args.command, context.bench_name)),
     )
 
     cli.main()

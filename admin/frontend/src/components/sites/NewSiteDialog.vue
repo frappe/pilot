@@ -109,7 +109,7 @@ const selectedApps = ref([])
 const appSearch = ref('')
 
 // Apps already cloned onto this bench but not published to the marketplace
-// (e.g. a private/custom app) — offer those too, alongside the catalog.
+// (e.g. a private/custom app) - offer those too, alongside the catalog.
 const customApps = computed(() => {
   const registryNames = new Set(registry.value.map((app) => app.name))
   return benchApps.value

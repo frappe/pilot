@@ -1,0 +1,38 @@
+{% if companion %}
+import os
+
+# Allow the Python socketio companion to run gevent by skipping
+# frappe.app's eager mysqlclient import before preload.
+os.environ.setdefault("FRAPPE_GUNICORN_COMPANION", "1")
+
+wsgi_app = "frappe.app:application"
+
+{% endif %}
+bind = "{{ bind }}"
+workers = {{ workers }}
+threads = {{ threads }}
+worker_class = "{{ worker_class }}"
+timeout = {{ timeout }}
+preload_app = True
+{% if max_requests > 0 %}
+max_requests = {{ max_requests }}
+max_requests_jitter = {{ max_requests_jitter }}
+{% endif %}
+{% if companion %}
+graceful_timeout = 30
+companion_control_socket = "{{ control_socket }}"
+companion_control_socket_mode = 0o660
+companion_manager_shutdown_buffer = 15
+
+companion_workers = {{ companion_workers }}
+
+
+def on_starting(server):
+    import frappe.gunicorn_companion as companion
+    companion.warmup()
+
+
+def when_ready(server):
+    from frappe._optimizations import freeze_gc
+    freeze_gc()
+{% endif %}

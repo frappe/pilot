@@ -56,14 +56,18 @@ def test_site_configuration_preserves_custom_keys_without_exposing_secrets(tmp_p
     client = _client(bench_root)
     site_dir = bench_root / "sites" / "s.localhost"
     site_dir.mkdir(parents=True)
-    (site_dir / "site_config.json").write_text(json.dumps({
-        "installed_apps": [],
-        "db_name": "private-database-name",
-        "db_host": "private-database-host",
-        "developer_mode": 1,
-        "custom_app_mode": "strict",
-        "future_provider_api_token": "unknown-secret",
-    }))
+    (site_dir / "site_config.json").write_text(
+        json.dumps(
+            {
+                "installed_apps": [],
+                "db_name": "private-database-name",
+                "db_host": "private-database-host",
+                "developer_mode": 1,
+                "custom_app_mode": "strict",
+                "future_provider_api_token": "unknown-secret",
+            }
+        )
+    )
 
     response = client.get("/api/v1/sites/s.localhost/configuration")
 
@@ -182,7 +186,11 @@ def test_site_config_patch_rejects_protected_keys_and_hidden_container_changes(t
         json={"regions": [{"name": "us"}]},
     )
 
-    assert [protected.status_code, type_change.status_code, list_change.status_code] == [422, 422, 422]
+    assert [protected.status_code, type_change.status_code, list_change.status_code] == [
+        422,
+        422,
+        422,
+    ]
     assert json.loads(config_path.read_text()) == original
 
 

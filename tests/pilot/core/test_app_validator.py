@@ -1,4 +1,5 @@
 """Tests for Validator's pre-install static checks on a cloned app."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -6,13 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from pilot.config.app import AppConfig
+from pilot.config import AppConfig
 from pilot.core.app import App
-from pilot.core.app_validator import Validator
-from pilot.core.app_validator.dependency_declarations import DependencyDeclarationsCheck
-from pilot.core.app_validator.imports import ImportCheck
-from pilot.core.app_validator.repo_structure import RepoStructureCheck
-from pilot.core.app_validator.syntax import SyntaxCheck
+from pilot.core.app.validator import Validator
+from pilot.core.app.validator.dependency_declarations import DependencyDeclarationsCheck
+from pilot.core.app.validator.imports import ImportCheck
+from pilot.core.app.validator.repo_structure import RepoStructureCheck
+from pilot.core.app.validator.syntax import SyntaxCheck
 from pilot.exceptions import AppValidationError
 
 
@@ -35,9 +36,7 @@ def _make_app(bench_root: Path, name: str, pyproject: str, files: dict[str, str]
 
 
 def _static_checks() -> list:
-    """RepoStructureCheck, SyntaxCheck and DependencyDeclarationsCheck only —
-    excludes ImportCheck, which installs into a real throwaway venv and needs
-    a real frappe checkout, making it an integration concern, not a unit test."""
+    """Static checks only; ImportCheck needs a real throwaway venv."""
     return [RepoStructureCheck(), SyntaxCheck(), DependencyDeclarationsCheck()]
 
 
@@ -45,9 +44,7 @@ _SETUPTOOLS_BUILD = '[build-system]\nrequires = ["setuptools>=61"]\nbuild-backen
 
 
 def _make_fake_frappe(bench_root: Path) -> None:
-    """A minimal, locally-buildable stand-in for the real frappe package,
-    installed into the bench's apps/ dir so TmpEnv.create() has something
-    real to pip install without needing network access to PyPI for frappe."""
+    """Create a local fake frappe package for TmpEnv tests."""
     frappe_path = bench_root / "apps" / "frappe"
     frappe_path.mkdir(parents=True)
     (frappe_path / "pyproject.toml").write_text(
@@ -81,13 +78,13 @@ def test_validate_repo_structure_fails_without_pyproject(tmp_path: Path) -> None
     app_path.mkdir(parents=True)
     bench = _FakeBench(apps_path=tmp_path / "apps", env_path=tmp_path / "env")
     app = App(AppConfig(name="myapp", repo="https://example.com/myapp.git", branch="main"), bench)
-    with pytest.raises(AppValidationError, match="pyproject.toml"):
+    with pytest.raises(AppValidationError, match=r"pyproject\.toml"):
         Validator(app).validate()
 
 
 def test_validate_repo_structure_fails_without_hooks(tmp_path: Path) -> None:
     app = _make_app(tmp_path, "myapp", '[project]\nname = "myapp"\n', {"myapp/__init__.py": ""})
-    with pytest.raises(AppValidationError, match="hooks.py"):
+    with pytest.raises(AppValidationError, match=r"hooks\.py"):
         Validator(app).validate()
 
 
@@ -126,7 +123,9 @@ def test_dependency_declarations_fails_when_required_app_is_missing(tmp_path: Pa
         Validator(app, checks=_static_checks()).validate()
 
 
-def test_dependency_declarations_fails_when_frappe_dependencies_missing_entirely(tmp_path: Path) -> None:
+def test_dependency_declarations_fails_when_frappe_dependencies_missing_entirely(
+    tmp_path: Path,
+) -> None:
     app = _make_app(
         tmp_path,
         "myapp",
@@ -137,7 +136,9 @@ def test_dependency_declarations_fails_when_frappe_dependencies_missing_entirely
         Validator(app, checks=_static_checks()).validate()
 
 
-def test_dependency_declarations_fails_when_frappe_dependencies_omits_frappe(tmp_path: Path) -> None:
+def test_dependency_declarations_fails_when_frappe_dependencies_omits_frappe(
+    tmp_path: Path,
+) -> None:
     app = _make_app(
         tmp_path,
         "myapp",
@@ -149,7 +150,7 @@ def test_dependency_declarations_fails_when_frappe_dependencies_omits_frappe(tmp
 
 
 def test_dependency_declarations_excludes_frappe_from_hooks_comparison(tmp_path: Path) -> None:
-    """pyproject always declares frappe; hooks.py's required_apps never does —
+    """pyproject always declares frappe; hooks.py's required_apps never does -
     frappe being present in pyproject alone must not cause any false failure."""
     app = _make_app(
         tmp_path,
@@ -192,9 +193,7 @@ def test_import_check_fails_on_genuinely_missing_import(tmp_path: Path) -> None:
 def test_import_check_resolves_external_package_published_under_different_dist_name(
     tmp_path: Path,
 ) -> None:
-    """beautifulsoup4 is published on PyPI under that dist name but installs
-    an import-name folder of `bs4` — proves resolution goes off what's
-    actually on disk in site-packages, not the pyproject dependency string."""
+    """Import resolution uses installed modules, not distribution names."""
     _make_fake_frappe(tmp_path)
     app = _make_app(
         tmp_path,
@@ -220,7 +219,7 @@ def _modules_for(app: App, relpath: str, source: str) -> set[str]:
 
 def test_import_check_skips_stdlib_imports(tmp_path: Path) -> None:
     # Stdlib filtering happens in _imported_module_locations (across all
-    # files), not per-file — os/sys/json show up in the raw per-file parse.
+    # files), not per-file - os/sys/json show up in the raw per-file parse.
     app = _make_app(
         tmp_path,
         "myapp",
@@ -278,7 +277,10 @@ def test_import_check_skips_type_checking_only_imports(tmp_path: Path) -> None:
         "import required_dependency\n"
     )
     app = _make_app(
-        tmp_path, "myapp", '[project]\nname = "myapp"\n', {"myapp/hooks.py": "", "myapp/utils.py": source}
+        tmp_path,
+        "myapp",
+        '[project]\nname = "myapp"\n',
+        {"myapp/hooks.py": "", "myapp/utils.py": source},
     )
     # `typing` itself is stdlib, filtered out at the _imported_module_locations level.
     assert list(ImportCheck()._imported_module_locations(app)) == ["required_dependency"]

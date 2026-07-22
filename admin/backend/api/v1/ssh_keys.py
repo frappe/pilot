@@ -3,10 +3,10 @@ from __future__ import annotations
 from flask import Blueprint, jsonify, request
 
 from admin.backend.api.responses import created_response, error_response, no_content_response
-from pilot.core.ssh_keys import (
-    AuthorizedKeysStore,
+from pilot.core.server import (
     InvalidSSHKeyError,
     LastSSHKeyError,
+    Server,
     SSHKey,
     SSHKeyAlreadyExistsError,
     SSHKeyNotFoundError,
@@ -21,7 +21,7 @@ def _serialize(key: SSHKey) -> dict:
 
 @ssh_keys_bp.get("")
 def list_keys():
-    return jsonify({"keys": [_serialize(key) for key in AuthorizedKeysStore().list()]})
+    return jsonify({"keys": [_serialize(key) for key in Server().ssh_keys.list()]})
 
 
 @ssh_keys_bp.post("")
@@ -36,7 +36,7 @@ def add_key():
     if not public_key:
         return error_response("invalid_ssh_key", "A public key is required.", 422)
     try:
-        key = AuthorizedKeysStore().add(public_key)
+        key = Server().ssh_keys.add(public_key)
     except SSHKeyAlreadyExistsError:
         return error_response("ssh_key_already_exists", "That key is already authorized.", 409)
     except InvalidSSHKeyError as error:
@@ -47,7 +47,7 @@ def add_key():
 @ssh_keys_bp.delete("/<fingerprint>")
 def remove_key(fingerprint: str):
     try:
-        AuthorizedKeysStore().remove(fingerprint)
+        Server().ssh_keys.remove(fingerprint)
     except SSHKeyNotFoundError:
         return error_response("ssh_key_not_found", "SSH key was not found.", 404)
     except LastSSHKeyError as error:

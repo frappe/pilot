@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, ClassVar, Literal
 
-from pilot.commands.base import Arg, BenchMode, Command
+from pilot.commands import Arg, BenchMode, Command
 
 
 @dataclass(kw_only=True)
@@ -11,8 +11,8 @@ class NewCommand(Command):
     help: ClassVar[str] = "Create a new bench."
     bench_mode: ClassVar[BenchMode] = BenchMode.NONE
 
-    target_directory: Annotated[Path, Arg(cli=False)]
     bench_name: Annotated[str, Arg(help="Name for the new bench.", metavar="name")]
+    target_directory: Annotated[Path | None, Arg(cli=False)] = None
     process_manager: Annotated[str, Arg(cli=False)] = ""
     admin_domain: Annotated[
         str,
@@ -28,16 +28,12 @@ class NewCommand(Command):
         Arg(help="Database engine for this bench's sites (default: mariadb)."),
     ] = "mariadb"
 
-    @classmethod
-    def from_args(cls, args, bench) -> "NewCommand":
-        from pilot.loader import cli_root
+    def __post_init__(self) -> None:
+        if self.target_directory is not None:
+            return
+        from pilot.utils import cli_root
 
-        return cls(
-            target_directory=cli_root() / "benches" / args.bench_name,
-            bench_name=args.bench_name,
-            admin_domain=args.admin_domain,
-            database=args.database,
-        )
+        self.target_directory = cli_root() / "benches" / self.bench_name
 
     def run(self) -> None:
         from pilot.core.bench import Bench
@@ -49,5 +45,5 @@ class NewCommand(Command):
             admin_domain=self.admin_domain,
             admin_tls=self.admin_tls,
             db_type=self.database,
-            on_progress=self.print,
+            on_progress=self.report,
         )

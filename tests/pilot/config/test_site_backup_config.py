@@ -3,7 +3,7 @@ import stat
 
 import pytest
 
-from pilot.config.backup import BackupConfig
+from pilot.config import BackupConfig
 from pilot.config.site_backup import clear_retention, read_retention, write_retention
 
 

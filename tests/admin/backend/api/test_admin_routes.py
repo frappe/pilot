@@ -5,10 +5,10 @@ from admin.backend.api.routes import API_ROOT_PREFIX, API_V1_PREFIX
 from admin.backend.app import create_app
 from admin.backend.middleware import AuthPolicy, get_auth_policy
 
-
 SITE_SCOPED_ENDPOINTS = {
     "sites.add_domain",
     "sites.backup_site",
+    "sites.central_proxy",
     "sites.clear_cache",
     "sites.delete_backup_schedule",
     "sites.backup_download_links",
@@ -23,6 +23,8 @@ SITE_SCOPED_ENDPOINTS = {
     "sites.get_configuration",
     "sites.get_domain",
     "sites.install_site_app",
+    "sites.get_monitoring",
+    "sites.get_uptime",
     "sites.list_backups",
     "sites.list_domains",
     "sites.migrate_site",
@@ -60,31 +62,27 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         for rule in app.url_map.iter_rules()
         if rule.rule.startswith(API_V1_PREFIX)
     ]
-    areas = [
-        path.removeprefix(f"{API_V1_PREFIX}/").split("/", 1)[0]
-        for _, path, _, _ in routes
-    ]
+    areas = [path.removeprefix(f"{API_V1_PREFIX}/").split("/", 1)[0] for _, path, _, _ in routes]
     unversioned = [
         rule.rule
         for rule in app.url_map.iter_rules()
-        if rule.rule.startswith(f"{API_ROOT_PREFIX}/")
-        and not rule.rule.startswith(f"{API_V1_PREFIX}/")
+        if rule.rule.startswith(f"{API_ROOT_PREFIX}/") and not rule.rule.startswith(f"{API_V1_PREFIX}/")
     ]
 
-    assert len(routes) == 99
+    assert len(routes) == 103
     assert unversioned == []
-    assert len({(method, path) for method, path, _, _ in routes}) == 99
+    assert len({(method, path) for method, path, _, _ in routes}) == 103
     assert Counter(method for method, _, _, _ in routes) == {
         "DELETE": 10,
-        "GET": 50,
+        "GET": 53,
         "PATCH": 4,
-        "POST": 32,
+        "POST": 33,
         "PUT": 3,
     }
     assert Counter(policy for _, _, _, policy in routes) == {
         "authenticated": 53,
         "authenticated+bench-management": 9,
-        "authenticated+site-scope": 26,
+        "authenticated+site-scope": 30,
         "open": 5,
         "setup-conditional": 6,
     }
@@ -108,7 +106,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         "runtime": 4,
         "settings": 2,
         "setup": 6,
-        "sites": 29,
+        "sites": 33,
         "ssh-keys": 3,
         "metrics": 1,
         "session": 3,
@@ -168,6 +166,8 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         ("GET", "/api/v1/sites/<name>/backup-schedule"),
         ("PUT", "/api/v1/sites/<name>/backup-schedule"),
         ("DELETE", "/api/v1/sites/<name>/backup-schedule"),
+        ("GET", "/api/v1/sites/<name>/central/<path:method_path>"),
+        ("POST", "/api/v1/sites/<name>/central/<path:method_path>"),
     } <= route_keys
     assert {
         ("GET", "/api/v1/tasks"),
@@ -225,7 +225,8 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
     assert not {
         path
         for _, path, _, _ in routes
-        if path in {
+        if path
+        in {
             "/api/v1/tasks/",
             "/api/v1/tasks/run",
             "/api/v1/tasks/<task_id>/kill",

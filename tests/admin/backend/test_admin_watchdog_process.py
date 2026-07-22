@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import os
 import signal
 import subprocess
@@ -7,8 +8,8 @@ import sys
 import time
 from pathlib import Path
 
-from pilot.tasks.manager.task_state import TaskStatus
-from pilot.tasks.manager.task_store import TaskStore
+from pilot.internal.tasks.store import TaskStore
+from pilot.managers.task.models import TaskStatus
 
 TASK_ID = "20260715-120000-aabbcc"
 
@@ -50,10 +51,8 @@ def pid_is_running(pid: int) -> bool:
 
 
 def stop_group(pgid: int) -> None:
-    try:
+    with contextlib.suppress(ProcessLookupError):
         os.killpg(pgid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
 
 
 def test_watchdog_defers_for_tasks_and_signals_only_admin_owner(

@@ -7,11 +7,10 @@ from enum import StrEnum
 
 from flask import Flask, current_app, g, request
 
-from pilot.config.toml_store import BenchTomlStore
-
 from admin.backend.api.responses import error_response
 from admin.backend.api.routes import is_api_path
 from admin.backend.internal.rate_limiter import SlidingWindow
+from pilot.config import BenchConfig
 
 _AUTH_POLICY = "_auth_policy"
 _SITE_SCOPE_RESOLVER = "_site_scope_resolver"
@@ -39,7 +38,7 @@ def get_auth_policy(view) -> AuthPolicy:
     return getattr(view, _AUTH_POLICY, AuthPolicy.AUTHENTICATED)
 
 
-def authenticate_request(config) -> bool:
+def is_request_authenticated(config) -> bool:
     authorization = request.headers.get("Authorization", "")
     token = authorization[7:] if authorization.startswith("Bearer ") else None
     token = token or request.cookies.get("sid")
@@ -65,7 +64,7 @@ def set_session_cookie(response, token: str, secure: bool) -> None:
 
 def decode_session_token(token: str, config) -> dict | None:
     """Decode via the local HS256 secret, falling back to remote JWKS keys."""
-    from pilot.core.admin_auth import decode_token
+    from admin.backend.auth import decode_token
 
     claims = decode_token(token, config.admin.jwt_secret)
     if claims is not None:
@@ -98,61 +97,78 @@ def require_scope(site):
 
 
 def get_authorization_error(claims: dict | None, view, view_args: dict) -> str | None:
-    from pilot.core.admin_auth import has_scope
+    from admin.backend.auth import has_scope
 
     resolve_site = getattr(view, _SITE_SCOPE_RESOLVER, None)
     if resolve_site is not None:
-        return (
-            None if has_scope(claims, resolve_site(view_args)) else "Not authorized for this site"
-        )
+        return None if has_scope(claims, resolve_site(view_args)) else "Not authorized for this site"
     if claims and claims.get("scope") == "bench":
         return None
     return "Not authorized for this bench"
 
 
-def install_auth_guard(app: Flask, config_store: BenchTomlStore) -> None:
-    """Reject every API request that its endpoint's AuthPolicy doesn't allow."""
-
+def install_auth_guard(app: Flask, bench_root) -> None:
     @app.before_request
     def check_auth():
         g.jwt_claims = None
-        if not is_api_path(request.path):
-            return None
+        return _check_auth_request(app, bench_root)
 
-        view = app.view_functions.get(request.endpoint) if request.endpoint else None
-        if view is None:
-            return None
 
-        policy = get_auth_policy(view)
-        if policy == AuthPolicy.OPEN:
-            return None
+def _check_auth_request(app: Flask, bench_root):
+    if not is_api_path(request.path):
+        return None
 
-        allowed_before_setup = policy == AuthPolicy.SETUP_CONDITIONAL
-        try:
-            config = config_store.read()
-        except Exception:
-            if allowed_before_setup and not config_store.exists():
-                return None
-            return error_response(
-                "configuration_unavailable",
-                "Bench configuration is unavailable.",
-                503,
-                {"enabled": False},
-            )
+    view = app.view_functions.get(request.endpoint) if request.endpoint else None
+    if view is None:
+        return None
 
-        if allowed_before_setup and not config.admin.password:
-            return None
-        if not config.admin.enabled:
-            return error_response("admin_disabled", "Admin is disabled.", 503, {"enabled": False})
-        if not config.admin.password:
-            return error_response(
-                "session_unavailable", "No admin password is configured.", 503, {"enabled": False}
-            )
-        if not authenticate_request(config):
-            return error_response("authentication_required", "Authentication is required.", 401)
+    policy = get_auth_policy(view)
+    if policy == AuthPolicy.OPEN:
+        return None
 
-        error = get_authorization_error(g.jwt_claims, view, request.view_args or {})
-        return error_response("forbidden", error, 403) if error else None
+    config, response = _auth_config(bench_root, policy)
+    if response is not None:
+        return response
+    if config is None:
+        return None
+
+    response = _admin_session_response(config)
+    if response is not None:
+        return response
+
+    error = get_authorization_error(g.jwt_claims, view, request.view_args or {})
+    return error_response("forbidden", error, 403) if error else None
+
+
+def _auth_config(bench_root, policy: AuthPolicy):
+    allowed_before_setup = policy == AuthPolicy.SETUP_CONDITIONAL
+    try:
+        config = BenchConfig.read(bench_root)
+    except Exception:
+        if allowed_before_setup and not BenchConfig.exists(bench_root):
+            return None, None
+        return None, error_response(
+            "configuration_unavailable",
+            "Bench configuration is unavailable.",
+            503,
+            {"enabled": False},
+        )
+
+    if allowed_before_setup and not config.admin.password:
+        return None, None
+    return config, None
+
+
+def _admin_session_response(config):
+    if not config.admin.enabled:
+        return error_response("admin_disabled", "Admin is disabled.", 503, {"enabled": False})
+    if not config.admin.password:
+        return error_response(
+            "session_unavailable", "No admin password is configured.", 503, {"enabled": False}
+        )
+    if not is_request_authenticated(config):
+        return error_response("authentication_required", "Authentication is required.", 401)
+    return None
 
 
 def client_ip(default: str = "unknown") -> str:

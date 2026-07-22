@@ -7,9 +7,7 @@ _MARKER_PREFIX = "# bench-cron:"
 
 
 class CronManager:
-    """One cron entry per (bench, job_key) in the system crontab. Callers own
-    naming their job_key (e.g. a site name for site backups, a fixed key for a
-    bench-wide job like snapshots) and building the shell command to run."""
+    """One marked cron entry per (bench, job_key)."""
 
     def __init__(self, bench_root: Path) -> None:
         self._bench_root = bench_root

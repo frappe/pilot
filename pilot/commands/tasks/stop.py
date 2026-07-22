@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar
 
-from pilot.commands.base import Command
+from pilot.commands import Command
 
 
 @dataclass(kw_only=True)
@@ -13,7 +13,7 @@ class StopTaskWorkerCommand(Command):
     group: ClassVar[str] = "tasks"
 
     def run(self) -> None:
-        from pilot.tasks.manager.worker_state import WorkerIntent, WorkerStore
+        from pilot.managers.task import TaskWorkerControl
 
-        WorkerStore(self.bench.path).write_intent(WorkerIntent.STOPPED)
-        self.print("Task worker will stop after its current task.")
+        TaskWorkerControl(self.bench.path).request_stop()
+        self.report("Task worker will stop after its current task.")

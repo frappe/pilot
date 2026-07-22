@@ -3,15 +3,14 @@ from __future__ import annotations
 from flask import current_app, request
 from werkzeug.exceptions import HTTPException, InternalServerError
 
+from admin.backend.api.responses import error_response
+from admin.backend.api.routes import is_api_path
 from pilot.exceptions import (
     ConfigError,
     TaskConflictError,
     TaskNotFoundError,
     TaskNotRunningError,
 )
-
-from admin.backend.api.responses import error_response
-from admin.backend.api.routes import is_api_path
 
 _HTTP_ERROR_CODES = {
     400: "malformed_request",
@@ -86,11 +85,7 @@ def _handle_http_error(error: HTTPException):
     if not is_api_path(request.path):
         return error
     status = error.code or 500
-    message = (
-        "Request payload is too large."
-        if status == 413
-        else error.description or "Request failed."
-    )
+    message = "Request payload is too large." if status == 413 else error.description or "Request failed."
     return error_response(_HTTP_ERROR_CODES.get(status, "http_error"), message, status)
 
 

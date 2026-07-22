@@ -9,19 +9,14 @@ WINDOW_SECONDS = {"30m": 1800, "1h": 3600, "6h": 21600, "12h": 43200, "24h": 864
 _MAX_BUCKETS = 48
 _TOP_LIMIT = 10
 # CRS scoring/correlation rules (949xxx inbound anomaly, 980xxx reporting) are
-# bookkeeping, not attacks — keep them out of the "top rules" breakdown.
+# bookkeeping, not attacks - keep them out of the "top rules" breakdown.
 _SUMMARY_RULE_PREFIXES = ("949", "980")
 _INBOUND_ANOMALY_RULE = "949110"
 _TIME_FORMATS = ("%a %b %d %H:%M:%S %Y", "%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S")
 
 
 class WafProvider:
-    """Aggregates the ModSecurity JSON audit log into WAF analytics for a window.
-
-    The audit log is JSON Lines: one transaction per line, written only for
-    requests that tripped a rule (SecAuditEngine RelevantOnly). Field names vary
-    slightly across ModSecurity builds, so extraction is deliberately lenient.
-    """
+    """Aggregates ModSecurity JSON audit logs for one time window."""
 
     def __init__(self, bench_root: Path, window: str) -> None:
         self._log_path = bench_root / "logs" / "modsec_audit.log"
@@ -41,7 +36,7 @@ class WafProvider:
             transaction = record.get("transaction", record)
             when = self._parse_time(self._first(transaction, "time_stamp", "timestamp", "time"))
             if when is None:
-                continue  # can't place it in the window — skip, don't inflate totals
+                continue  # can't place it in the window - skip, don't inflate totals
             if when < self._cutoff:
                 break  # older than the window; the rest is older still
             messages = self._first(transaction, "messages") or []
@@ -82,10 +77,10 @@ class WafProvider:
         }
 
     def _mode(self) -> str:
-        from pilot.config.toml_store import BenchTomlStore
+        from pilot.config import BenchConfig
 
         try:
-            return BenchTomlStore.for_bench(self._bench_root).read().waf.mode
+            return BenchConfig.read(self._bench_root).waf.mode
         except Exception:
             return "DetectionOnly"
 
@@ -133,8 +128,7 @@ class WafProvider:
 
     @staticmethod
     def _iter_records_reversed(path: Path, block_size: int = 65536):
-        """Yield JSON records newest-first, reading the file from the end so a short
-        window never touches the whole log. Malformed lines are skipped."""
+        """Yield JSON records newest first, skipping malformed lines."""
         if not path.exists():
             return
         with path.open("rb") as handle:

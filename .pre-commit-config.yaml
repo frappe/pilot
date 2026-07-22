@@ -7,8 +7,9 @@ repos:
     rev: v0.15.22
     hooks:
       - id: ruff-check
-        args: [--fix]
+        args: [--fix, --config=ruff.toml]
       - id: ruff-format
+        args: [--config=ruff.toml]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v2.3.0

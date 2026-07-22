@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Annotated, ClassVar, Literal
 
-from pilot.commands.base import Arg, Command
+from pilot.commands import Arg, Command
 
 
 @dataclass(kw_only=True)
@@ -14,11 +14,15 @@ class SetupProductionCommand(Command):
 
     process_manager: Annotated[
         Literal["systemd", "supervisord"] | None,
-        Arg(help="Process manager to deploy with (defaults to production.process_manager in bench.toml, or systemd)."),
+        Arg(
+            help="Process manager to deploy with (defaults to production.process_manager in bench.toml, or systemd)."
+        ),
     ] = None
     admin_domain: Annotated[
         str | None,
-        Arg(help="Admin domain the deployment is reached at (required: pass it here or set admin.domain in bench.toml)."),
+        Arg(
+            help="Admin domain the deployment is reached at (required: pass it here or set admin.domain in bench.toml)."
+        ),
     ] = None
     # None = leave the bench.toml value untouched; only --tls turns it on.
     tls: Annotated[
@@ -30,7 +34,9 @@ class SetupProductionCommand(Command):
     ] = None
     letsencrypt_email: Annotated[
         str | None,
-        Arg(help="Contact email for Let's Encrypt (required with --tls unless letsencrypt.email is already set in bench.toml)."),
+        Arg(
+            help="Contact email for Let's Encrypt (required with --tls unless letsencrypt.email is already set in bench.toml)."
+        ),
     ] = None
     best_effort_tls: Annotated[bool, Arg(cli=False)] = False
 
@@ -41,5 +47,5 @@ class SetupProductionCommand(Command):
             admin_tls=self.tls,
             letsencrypt_email=self.letsencrypt_email,
             best_effort_tls=self.best_effort_tls,
-            on_progress=self.print,
+            on_progress=self.report,
         )

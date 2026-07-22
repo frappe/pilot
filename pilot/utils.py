@@ -1,25 +1,229 @@
+import contextlib
 import os
 import shutil
 import signal
 import subprocess
+import tarfile
 from collections.abc import Iterator
-from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
+from typing import IO, TYPE_CHECKING
 
 from pilot.exceptions import BenchError, CommandError
 
 if TYPE_CHECKING:
     from pilot.core.bench import BenchConfig
 
+PRIVATE_FILE_MODE = 0o600
+PRIVATE_DIRECTORY_MODE = 0o700
+
+
+def open_private(path: Path, mode: str = "w", *, exclusive: bool = False) -> IO:
+    path = Path(path)
+    if mode not in {"w", "wb", "a", "ab"}:
+        raise ValueError(f"Unsupported private file mode: {mode!r}")
+
+    flags = os.O_WRONLY | os.O_CREAT
+    flags |= os.O_APPEND if mode.startswith("a") else os.O_TRUNC
+    if exclusive:
+        flags |= os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+
+    descriptor = os.open(path, flags, PRIVATE_FILE_MODE)
+    try:
+        os.fchmod(descriptor, PRIVATE_FILE_MODE)
+        return os.fdopen(descriptor, mode)
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
+def write_private_text(path: Path, content: str) -> None:
+    with open_private(path) as handle:
+        handle.write(content)
+
+
+def make_private_directory(path: Path, *, parents: bool = False) -> None:
+    path = Path(path)
+    path.mkdir(mode=PRIVATE_DIRECTORY_MODE, parents=parents, exist_ok=True)
+    if path.is_symlink():
+        raise OSError(f"Refusing to secure a symbolic-link directory: {path}")
+    path.chmod(PRIVATE_DIRECTORY_MODE)
+
+
+def admin_url(config: "BenchConfig", dev_host: str = "localhost") -> str:
+    admin = config.admin
+    if config.production.enabled:
+        scheme = "https" if admin.tls else "http"
+        return f"{scheme}://{admin.domain}"
+    return f"http://{dev_host}:{admin.port}"
+
+
+def cli_root() -> Path:
+    import pilot as package
+
+    return Path(package.__file__).parent.parent
+
+
+def benches_dir() -> Path:
+    return cli_root() / "benches"
+
+
+@dataclass(frozen=True)
+class ArchiveLimits:
+    max_members: int = 100_000
+    max_member_bytes: int = 8 * 1024**3
+    max_total_bytes: int = 32 * 1024**3
+
+
+class UnsafeArchiveError(BenchError):
+    pass
+
+
+DEFAULT_ARCHIVE_LIMITS = ArchiveLimits()
+
+
+def validate_tar_archive(path: Path, limits: ArchiveLimits = DEFAULT_ARCHIVE_LIMITS) -> None:
+    try:
+        with tarfile.open(path) as archive:
+            _validated_members(archive, limits)
+    except (OSError, tarfile.TarError) as exc:
+        raise UnsafeArchiveError("File is not a readable tar archive.") from exc
+
+
+def extract_tar_archive(
+    path: Path,
+    destination: Path,
+    limits: ArchiveLimits = DEFAULT_ARCHIVE_LIMITS,
+) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
+    root = destination.resolve()
+    try:
+        with tarfile.open(path) as archive:
+            members = _validated_members(archive, limits)
+            targets = [(member, _safe_target(root, member.name)) for member in members]
+            for member, target in targets:
+                _reject_symlink_path(root, target)
+                if target.exists() and member.isdir() != target.is_dir():
+                    raise UnsafeArchiveError(f"Archive member conflicts with {target}.")
+
+            directories = [
+                (member, target) for member, target in targets if member.isdir() and target != root
+            ]
+            for _, target in directories:
+                target.mkdir(parents=True, exist_ok=True)
+            for member, target in targets:
+                if member.isfile():
+                    _write_archive_member(archive, member, root, target)
+            for member, target in reversed(directories):
+                target.chmod(member.mode & 0o777)
+    except (OSError, tarfile.TarError) as exc:
+        raise UnsafeArchiveError(f"Archive extraction failed: {exc}") from exc
+
+
+def _validated_members(
+    archive: tarfile.TarFile,
+    limits: ArchiveLimits,
+) -> list[tarfile.TarInfo]:
+    members = []
+    paths: dict[tuple[str, ...], bool] = {}
+    total_size = 0
+    for index, member in enumerate(archive, start=1):
+        if index > limits.max_members:
+            raise UnsafeArchiveError("Archive exceeds the member count limit.")
+
+        parts = _safe_parts(member.name)
+        if member.issym() or member.islnk():
+            raise UnsafeArchiveError(f"Archive links are not allowed: {member.name}")
+        if not member.isfile() and not member.isdir():
+            raise UnsafeArchiveError("Archive may contain only regular files and directories.")
+        if member.size > limits.max_member_bytes:
+            raise UnsafeArchiveError(f"Archive member size exceeds the limit: {member.name}")
+
+        total_size += member.size
+        if total_size > limits.max_total_bytes:
+            raise UnsafeArchiveError("Archive expanded size exceeds the limit.")
+        _check_path_conflict(paths, parts, member.isdir())
+        paths[parts] = member.isdir()
+        members.append(member)
+    return members
+
+
+def _safe_parts(name: str) -> tuple[str, ...]:
+    path = PurePosixPath(name)
+    if not name or path.is_absolute() or ".." in path.parts or "\0" in name:
+        raise UnsafeArchiveError(f"Archive contains an unsafe path: {name}")
+    parts = tuple(part for part in path.parts if part not in ("", "."))
+    if not parts and name not in (".", "./"):
+        raise UnsafeArchiveError(f"Archive contains an unsafe path: {name}")
+    return parts
+
+
+def _check_path_conflict(
+    paths: dict[tuple[str, ...], bool],
+    parts: tuple[str, ...],
+    is_directory: bool,
+) -> None:
+    if parts in paths:
+        raise UnsafeArchiveError(f"Archive contains a duplicate path: {'/'.join(parts)}")
+    if any(paths.get(parts[:index]) is False for index in range(1, len(parts))):
+        raise UnsafeArchiveError(f"Archive path crosses a regular file: {'/'.join(parts)}")
+    if not is_directory and any(path[: len(parts)] == parts for path in paths):
+        raise UnsafeArchiveError(f"Archive path conflicts with a directory: {'/'.join(parts)}")
+
+
+def _safe_target(root: Path, name: str) -> Path:
+    target = root.joinpath(*_safe_parts(name))
+    _reject_symlink_path(root, target)
+    target = target.resolve(strict=False)
+    if not target.is_relative_to(root):
+        raise UnsafeArchiveError(f"Archive contains an unsafe path: {name}")
+    return target
+
+
+def _reject_symlink_path(root: Path, target: Path) -> None:
+    current = root
+    for part in target.relative_to(root).parts:
+        current /= part
+        if current.is_symlink():
+            raise UnsafeArchiveError(f"Archive target crosses a symlink: {current}")
+
+
+def _write_archive_member(
+    archive: tarfile.TarFile,
+    member: tarfile.TarInfo,
+    root: Path,
+    target: Path,
+) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _reject_symlink_path(root, target)
+    if target.exists():
+        target.unlink()
+
+    source = archive.extractfile(member)
+    if source is None:
+        raise UnsafeArchiveError(f"Could not read archive member: {member.name}")
+
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(target, flags, 0o600)
+    try:
+        with os.fdopen(descriptor, "wb") as output:
+            remaining = member.size
+            while remaining:
+                chunk = source.read(min(1024**2, remaining))
+                if not chunk:
+                    raise UnsafeArchiveError(f"Archive member is truncated: {member.name}")
+                output.write(chunk)
+                remaining -= len(chunk)
+        target.chmod(member.mode & 0o777)
+    except Exception:
+        target.unlink(missing_ok=True)
+        raise
+
 
 def iter_sibling_benches(bench_path: Path) -> Iterator[tuple[Path, "BenchConfig"]]:
-    """Yield ``(bench_dir, parsed bench.toml)`` for every *other* bench that
-    shares this bench's parent ``benches/`` directory.
-
-    Parse-only (no validation) so half-configured benches are still seen.
-    Skips ``bench_path`` itself and any directory without a readable
-    ``bench.toml``. ``bench_path`` need not exist yet (e.g. during ``bench new``).
-    """
+    """Yield parse-only configs for sibling benches."""
     import tomllib
 
     from pilot.core.bench import BenchConfig
@@ -35,26 +239,19 @@ def iter_sibling_benches(bench_path: Path) -> Iterator[tuple[Path, "BenchConfig"
         if not toml_path.exists():
             continue
         try:
-            # Parse-only (no validate) so half-configured siblings are still
-            # seen — important for port-offset collision avoidance and
-            # cross-bench hostname checks.
+            # Half-configured siblings still count for ports and hostnames.
             yield sibling, BenchConfig._from_dict(tomllib.loads(toml_path.read_text()))
         except Exception:
             continue
 
 
 def normalize_host(host: str) -> str:
-    """Canonical form for hostname comparison: lowercased, trailing dot stripped,
-    internationalized labels reduced to their ASCII (IDNA) form. Returns an empty
-    string for falsy input. Best-effort — a name that cannot be IDNA-encoded is
-    returned lowercased/stripped so comparison still works for ASCII domains."""
+    """Canonical hostname for comparisons: lowercase, no trailing dot, IDNA."""
     if not host:
         return ""
     h = host.strip().lower().rstrip(".")
-    try:
+    with contextlib.suppress(UnicodeError, ValueError):
         h = h.encode("idna").decode("ascii")
-    except (UnicodeError, ValueError):
-        pass
     return h
 
 
@@ -68,21 +265,18 @@ def hosts_line_contains(
 
 
 def wildcard_suffix(pattern: str) -> str:
-    """The fixed part of a wildcard domain pattern, e.g. '*.example.com' -> '.example.com',
-    '*-box1.example.com' -> '-box1.example.com'."""
+    """Return the fixed suffix of a wildcard domain pattern."""
     return pattern[1:] if pattern.startswith("*") else pattern
 
 
 def matches_wildcard(domain: str, patterns: list[str]) -> bool:
-    """Whether ``domain`` ends with the fixed part of one of the wildcard ``patterns``
-    and has something before it (a bare suffix with no label doesn't match)."""
+    """Return whether a domain matches any wildcard pattern."""
     domain = normalize_host(domain)
     return any(domain != (suffix := wildcard_suffix(p)) and domain.endswith(suffix) for p in patterns)
 
 
 def _bench_hosts(bench_dir: Path, config: "BenchConfig") -> Iterator[str]:
-    """Yield every hostname a bench claims: its admin domain, each site's name,
-    and each site's configured ``domains`` aliases — all normalized."""
+    """Yield every normalized hostname claimed by a bench."""
     import json
 
     if config.admin.domain:
@@ -104,14 +298,8 @@ def _bench_hosts(bench_dir: Path, config: "BenchConfig") -> Iterator[str]:
             continue
 
 
-def host_owner(bench_path: Path, host: str) -> Optional[str]:
-    """Return the name of *another* bench that already claims ``host`` — as one of
-    its sites (name or alias) or as its ``admin.domain`` — or ``None`` if the host
-    is free across all sibling benches.
-
-    Hosts are compared in normalized form (lowercase, no trailing dot, IDNA), so
-    two benches can never fight over the same hostname served by the same nginx.
-    """
+def host_owner(bench_path: Path, host: str) -> str | None:
+    """Return the sibling bench that already claims host, if any."""
     target = normalize_host(host)
     if not target:
         return None
@@ -122,7 +310,7 @@ def host_owner(bench_path: Path, host: str) -> Optional[str]:
 
 
 def installed_app_version(env_path: Path, name: str) -> str:
-    """Version of an installed app read from its dist-info METADATA — no subprocess."""
+    """Version of an installed app read from its dist-info METADATA - no subprocess."""
     lib_dir = env_path / "lib"
     if not lib_dir.is_dir():
         return ""
@@ -154,7 +342,7 @@ def get_yarn_bin() -> str:
     local_yarn = Path.home() / ".local" / "bin" / "yarn"
     if local_yarn.exists():
         return str(local_yarn)
-    raise BenchError("yarn not found — run bench init to install it.")
+    raise BenchError("yarn not found - run bench init to install it.")
 
 
 def redact_text(text: str, secrets: list[str] | None) -> str:
@@ -179,7 +367,9 @@ def run_command(
     return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
 
 
-def _start_process(argv: list[str], cwd: Path | None, env: dict | None, stream_output: bool) -> subprocess.Popen:
+def _start_process(
+    argv: list[str], cwd: Path | None, env: dict | None, stream_output: bool
+) -> subprocess.Popen:
     inherited = {
         key: os.environ[key]
         for key in ("BENCH_TASK_LAUNCH_ID", "PILOT_NONINTERACTIVE_PRIVILEGES")
@@ -187,22 +377,26 @@ def _start_process(argv: list[str], cwd: Path | None, env: dict | None, stream_o
     }
     if env is not None and inherited:
         env = {**env, **inherited}
+
+    detach_session = not (argv and (argv[0] == "sudo" or argv[0].endswith("/sudo")))
     return subprocess.Popen(
         argv,
         cwd=cwd,
         env=env,
         stdout=None if stream_output else subprocess.PIPE,
         stderr=None if stream_output else subprocess.PIPE,
-        start_new_session=True,
+        start_new_session=detach_session,
     )
 
 
 def _wait_for_process(process: subprocess.Popen, argv: list[str], timeout: float | None):
     try:
         return process.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
         _terminate_process_group(process)
-        raise CommandError(f"Command {argv[0]!r} timed out after {timeout}s and was terminated.", returncode=-1)
+        raise CommandError(
+            f"Command {argv[0]!r} timed out after {timeout}s and was terminated.", returncode=-1
+        ) from exc
     except KeyboardInterrupt:
         _terminate_process_group(process)
         raise
@@ -210,10 +404,8 @@ def _wait_for_process(process: subprocess.Popen, argv: list[str], timeout: float
 
 def _terminate_process_group(process: subprocess.Popen) -> None:
     # The child leads its own session, so killing its pgid reaches descendants too.
-    try:
+    with contextlib.suppress(ProcessLookupError):
         os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
     process.wait()
 
 

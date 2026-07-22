@@ -1,9 +1,9 @@
 """Tests for the admin Settings firewall (allow/block list) endpoints."""
+
 from __future__ import annotations
 
-from pilot.config.bench import BenchConfig
-
-from admin.backend.api.v1.settings import ConfigPatcher, _build_settings_response, _firewall_payload
+from admin.backend.api.v1.settings import ConfigPatcher, build_settings_response, firewall_payload
+from pilot.config import BenchConfig
 
 
 def _config() -> BenchConfig:
@@ -18,34 +18,39 @@ def _config() -> BenchConfig:
 
 
 def test_settings_response_defaults_to_open_firewall() -> None:
-    payload = _build_settings_response(_config())
+    payload = build_settings_response(_config())
     assert payload["firewall"] == {"enabled": False, "default": "allow", "rules": []}
 
 
 def test_patcher_applies_firewall_rules() -> None:
     config = _config()
-    error = ConfigPatcher(config, {
-        "firewall": {
-            "enabled": True,
-            "default": "deny",
-            "rules": [
-                {"ip": "203.0.113.4", "action": "allow", "description": "office"},
-                {"ip": "", "action": "deny"},  # blank IP is dropped
-            ],
-        }
-    }).apply()
+    error = ConfigPatcher(
+        config,
+        {
+            "firewall": {
+                "enabled": True,
+                "default": "deny",
+                "rules": [
+                    {"ip": "203.0.113.4", "action": "allow", "description": "office"},
+                    {"ip": "", "action": "deny"},  # blank IP is dropped
+                ],
+            }
+        },
+    ).apply()
 
     assert error is None
     assert config.firewall.enabled is True
     assert config.firewall.default == "deny"
     assert len(config.firewall.rules) == 1
     assert config.firewall.rules[0].ip == "203.0.113.4"
-    assert _firewall_payload(config)["rules"][0]["description"] == "office"
+    assert firewall_payload(config)["rules"][0]["description"] == "office"
 
 
 def test_patcher_rejects_invalid_ip() -> None:
     config = _config()
-    error = ConfigPatcher(config, {"firewall": {"enabled": True, "rules": [{"ip": "nope", "action": "deny"}]}}).apply()
+    error = ConfigPatcher(
+        config, {"firewall": {"enabled": True, "rules": [{"ip": "nope", "action": "deny"}]}}
+    ).apply()
     assert error is not None and "nope" in error
 
 
@@ -57,8 +62,9 @@ def test_patcher_leaves_firewall_untouched_when_absent() -> None:
 
 
 def test_my_ip_route_ignores_x_real_ip_from_untrusted_peer() -> None:
-    from admin.backend.api.v1.settings import network_bp
     from flask import Flask
+
+    from admin.backend.api.v1.settings import network_bp
 
     app = Flask(__name__)
     app.config["TRUSTED_PROXY_PEERS"] = ()
@@ -70,8 +76,9 @@ def test_my_ip_route_ignores_x_real_ip_from_untrusted_peer() -> None:
 
 
 def test_my_ip_route_reads_x_real_ip_from_trusted_peer() -> None:
-    from admin.backend.api.v1.settings import network_bp
     from flask import Flask
+
+    from admin.backend.api.v1.settings import network_bp
 
     app = Flask(__name__)
     app.config["TRUSTED_PROXY_PEERS"] = ("127.0.0.1",)

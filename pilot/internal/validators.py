@@ -2,23 +2,25 @@ from __future__ import annotations
 
 import re
 
-_APP_NAME_RE = re.compile(r'^[A-Za-z][A-Za-z0-9_\-]*$')
-_BRANCH_RE = re.compile(r'^[A-Za-z0-9._/\-]+$')
-_SITE_NAME_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9\-\.]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$')
+_APP_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_\-]*$")
+_BRANCH_RE = re.compile(r"^[A-Za-z0-9._/\-]+$")
+_SITE_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9\-\.]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$")
 _CRON_RE = re.compile(
-    r'^(\*|[0-9,\-*/]+)\s+(\*|[0-9,\-*/]+)\s+(\*|[0-9,\-*/]+)\s+(\*|[0-9,\-*/]+)\s+(\*|[0-9,\-*/]+)$'
+    r"^(\*|[0-9,\-*/]+)\s+(\*|[0-9,\-*/]+)\s+(\*|[0-9,\-*/]+)\s+(\*|[0-9,\-*/]+)\s+(\*|[0-9,\-*/]+)$"
 )
-_EMAIL_RE = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
-_GIT_HTTP_RE = re.compile(r'^https?://.+')
-_GIT_SSH_RE = re.compile(r'^git@.+:.+')
-_GIT_LOCAL_RE = re.compile(r'^(/|~|\.\.?/).+')
+_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+_GIT_HTTP_RE = re.compile(r"^https?://.+")
+_GIT_SSH_RE = re.compile(r"^git@.+:.+")
+_GIT_LOCAL_RE = re.compile(r"^(/|~|\.\.?/).+")
 
 
 def validate_app_name(name: str) -> str | None:
     if not name:
         return "App name is required."
     if not _APP_NAME_RE.match(name):
-        return "App name must start with a letter and contain only letters, numbers, hyphens, and underscores."
+        return (
+            "App name must start with a letter and contain only letters, numbers, hyphens, and underscores."
+        )
     return None
 
 

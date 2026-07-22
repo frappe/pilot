@@ -6,20 +6,19 @@ from unittest.mock import patch
 from flask import Flask
 
 from admin.backend.api.v1.settings import settings_bp
-from pilot.config.bench import BenchConfig
-from pilot.config.bench_toml_builder import BenchTomlBuilder
+from pilot.config import BenchConfig
 
 
 def _client(bench_root: Path):
     bench_root.mkdir()
     (bench_root / "bench.toml").write_text(
-        BenchTomlBuilder(
+        BenchConfig.from_flat(
             bench_root.name,
             {
                 "admin_domain": "admin.example.com",
                 "admin_password": "secret",
             },
-        ).render()
+        ).dumps()
     )
     app = Flask(__name__)
     app.config["BENCH_ROOT"] = bench_root
@@ -35,7 +34,7 @@ def test_settings_report_config_generation_failure_after_save(tmp_path: Path) ->
     bench_root = tmp_path / "bench"
     client = _client(bench_root)
     with patch(
-        "admin.backend.api.v1.settings._regenerate_configs",
+        "pilot.core.bench.settings.regenerate_configs",
         side_effect=RuntimeError("secret generator detail"),
     ):
         response = client.patch("/api/v1/settings", json=_worker_update())
@@ -55,9 +54,9 @@ def test_settings_report_config_generation_failure_after_save(tmp_path: Path) ->
 def test_settings_report_restart_failure_without_stderr(tmp_path: Path) -> None:
     client = _client(tmp_path / "bench")
     with (
-        patch("admin.backend.api.v1.settings._regenerate_configs"),
+        patch("pilot.core.bench.settings.regenerate_configs"),
         patch(
-            "admin.backend.api.v1.settings._do_restart",
+            "pilot.core.bench.settings.restart_running_workload",
             side_effect=RuntimeError("secret supervisor stderr"),
         ),
     ):
@@ -83,10 +82,10 @@ def test_settings_report_nginx_failure_without_exception_text(tmp_path: Path) ->
         },
     }
     with (
-        patch("admin.backend.api.v1.settings._regenerate_configs"),
-        patch("admin.backend.api.v1.settings._do_restart", return_value=False),
+        patch("pilot.core.bench.settings.regenerate_configs"),
+        patch("pilot.core.bench.settings.restart_running_workload", return_value=False),
         patch(
-            "admin.backend.api.v1.settings._regenerate_nginx",
+            "pilot.core.bench.settings.regenerate_nginx",
             side_effect=RuntimeError("secret nginx detail"),
         ),
     ):
@@ -104,8 +103,8 @@ def test_settings_report_nginx_failure_without_exception_text(tmp_path: Path) ->
 def test_settings_success_has_no_legacy_error_fields(tmp_path: Path) -> None:
     client = _client(tmp_path / "bench")
     with (
-        patch("admin.backend.api.v1.settings._regenerate_configs"),
-        patch("admin.backend.api.v1.settings._do_restart", return_value=True),
+        patch("pilot.core.bench.settings.regenerate_configs"),
+        patch("pilot.core.bench.settings.restart_running_workload", return_value=True),
     ):
         response = client.patch("/api/v1/settings", json=_worker_update())
 

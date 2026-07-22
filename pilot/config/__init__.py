@@ -1,6 +1,6 @@
 from pilot.config.admin import AdminConfig
 from pilot.config.app import AppConfig
-from pilot.config.backup import BackupConfig, SCHEME_FIFO, SCHEME_GFS, VALID_SCHEMES
+from pilot.config.backup import SCHEME_FIFO, SCHEME_GFS, VALID_SCHEMES, BackupConfig
 from pilot.config.bench import BenchConfig
 from pilot.config.central import CentralConfig
 from pilot.config.firewall import FirewallConfig, FirewallRule
@@ -10,21 +10,36 @@ from pilot.config.mariadb import MariaDBConfig
 from pilot.config.monitor import MonitorConfig
 from pilot.config.nginx import NginxConfig
 from pilot.config.postgres import PostgresConfig
-from pilot.config.production import ProductionConfig, VALID_PROCESS_MANAGERS
+from pilot.config.production import VALID_PROCESS_MANAGERS, ProductionConfig
 from pilot.config.redis import RedisConfig
 from pilot.config.s3 import S3Config
 from pilot.config.site import SiteConfig
-from pilot.config.toml_store import BenchTomlStore
-from pilot.config.waf import WafConfig, WAF_MODES, parse_nginx_size
+from pilot.config.waf import (
+    WAF_MODES,
+    WAF_RULE_ACTIONS,
+    WAF_RULE_FIELDS,
+    WAF_RULE_MATCH,
+    WAF_RULE_OPERATORS,
+    WafCondition,
+    WafConfig,
+    WafRule,
+    parse_nginx_size,
+)
 from pilot.config.worker import WorkerConfig, WorkerGroup
 
 __all__ = [
+    "SCHEME_FIFO",
+    "SCHEME_GFS",
+    "VALID_PROCESS_MANAGERS",
+    "VALID_SCHEMES",
+    "WAF_MODES",
+    "WAF_RULE_ACTIONS",
+    "WAF_RULE_FIELDS",
+    "WAF_RULE_MATCH",
+    "WAF_RULE_OPERATORS",
     "AdminConfig",
     "AppConfig",
     "BackupConfig",
-    "SCHEME_FIFO",
-    "SCHEME_GFS",
-    "VALID_SCHEMES",
     "BenchConfig",
     "CentralConfig",
     "FirewallConfig",
@@ -36,14 +51,13 @@ __all__ = [
     "NginxConfig",
     "PostgresConfig",
     "ProductionConfig",
-    "VALID_PROCESS_MANAGERS",
     "RedisConfig",
     "S3Config",
     "SiteConfig",
-    "BenchTomlStore",
+    "WafCondition",
     "WafConfig",
-    "WAF_MODES",
-    "parse_nginx_size",
+    "WafRule",
     "WorkerConfig",
     "WorkerGroup",
+    "parse_nginx_size",
 ]

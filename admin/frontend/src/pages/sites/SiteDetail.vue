@@ -25,7 +25,7 @@
             </div>
             <div class="hidden sm:flex items-center gap-1.5 mt-1 text-ink-gray-5 text-sm">
               <span class="size-3.5 lucide-box" />
-              {{ version || 'Version —' }}
+              {{ version || 'Version -' }}
             </div>
           </div>
         </div>
@@ -51,6 +51,7 @@
     <!-- Sections -->
     <SiteApps v-if="activeTab === 'apps'" :site-name="siteName" />
     <SiteBackups v-else-if="activeTab === 'backups'" :site-name="siteName" />
+    <SiteMonitoring v-else-if="activeTab === 'analytics'" :site-name="siteName" />
     <SiteConfig v-else-if="activeTab === 'config'" :site-name="siteName" />
     <SiteSettings v-else-if="activeTab === 'settings'" :site-name="siteName" />
   </div>
@@ -71,6 +72,7 @@ import { Badge, Button, Dropdown, ErrorMessage, LoadingText, TabButtons, toast }
 import UpdatesAvailableButton from '@/components/common/UpdatesAvailableButton.vue'
 import SiteApps from '@/components/sites/Apps.vue'
 import SiteBackups from '@/components/sites/Backups.vue'
+import SiteMonitoring from '@/components/sites/Monitoring.vue'
 import SiteConfig from '@/components/sites/Config.vue'
 import SiteSettings from '@/components/sites/Settings.vue'
 import { apiErrorMessage } from '@/api/client'
@@ -102,6 +104,7 @@ const statusBadgeTheme = computed(() => STATUS_THEMES[status.value] ?? 'gray')
 const tabs = [
   { value: 'apps', label: 'Apps' },
   { value: 'backups', label: 'Backups' },
+  { value: 'analytics', label: 'Analytics' },
   { value: 'config', label: 'Config' },
   { value: 'settings', label: 'Settings' },
 ]

@@ -1,4 +1,5 @@
 """Tests for WafManager CRS install integrity (pinned SHA-256 verification)."""
+
 from __future__ import annotations
 
 import hashlib
@@ -40,6 +41,7 @@ def fake_download(monkeypatch):
 
         def _urlretrieve(url, dest):
             Path(dest).write_bytes(payload)
+
         monkeypatch.setattr(waf.urllib.request, "urlretrieve", _urlretrieve)
         return ran
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, ClassVar
 
-from pilot.commands.base import Arg, Command
+from pilot.commands import Arg, Command
 from pilot.exceptions import BenchError
 
 if TYPE_CHECKING:
@@ -32,6 +32,10 @@ class NewSiteCommand(Command):
         from pilot.core.site import Site
 
         self.site = Site.provision(
-            self.bench, self.site_name, self.apps, self.admin_password,
-            db_type=self.db_type, on_progress=self.print,
+            self.bench,
+            self.site_name,
+            self.apps,
+            self.admin_password,
+            db_type=self.db_type,
+            on_progress=self.report,
         )

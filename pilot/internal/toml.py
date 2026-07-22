@@ -43,12 +43,12 @@ class Toml:
         scalars, tables, arrays = self._partition(data)
         self._write_scalars(scalars)
         for key, table in tables:
-            self._write_header(path + (key,), array=False)
-            self._write_table(table, path + (key,))
+            self._write_header((*path, key), array=False)
+            self._write_table(table, (*path, key))
         for key, entries in arrays:
             for entry in entries:
-                self._write_header(path + (key,), array=True)
-                self._write_table(entry, path + (key,))
+                self._write_header((*path, key), array=True)
+                self._write_table(entry, (*path, key))
 
     def _partition(self, data: Mapping[str, Any]):
         scalars = []
@@ -79,19 +79,19 @@ class Toml:
             return self._string(value)
         if isinstance(value, bool):
             return "true" if value else "false"
-        if isinstance(value, int):
-            return str(value)
         if isinstance(value, float):
             return self._float(value)
-        if isinstance(value, datetime):
-            return value.isoformat()
-        if isinstance(value, date):
-            return value.isoformat()
         if isinstance(value, time):
             return self._time(value)
         if isinstance(value, list):
             return self._array(value)
+        if isinstance(value, (int, datetime, date)):
+            return self._scalar(value)
         raise TypeError(f"Unsupported TOML value: {type(value).__name__}")
+
+    @staticmethod
+    def _scalar(value: int | datetime | date) -> str:
+        return str(value) if isinstance(value, int) else value.isoformat()
 
     def _array(self, values: list[Any]) -> str:
         if any(isinstance(value, Mapping) for value in values):

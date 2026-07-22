@@ -4,7 +4,7 @@ import re
 import subprocess
 from typing import TYPE_CHECKING
 
-from pilot.config.redis import RedisConfig
+from pilot.config import RedisConfig
 from pilot.managers.packages import get_package_manager
 from pilot.managers.platform import is_macos, which
 
@@ -13,10 +13,7 @@ if TYPE_CHECKING:
 
 
 def redis_server_binary() -> str | None:
-    """Path to the redis server binary, or None if not installed.
-
-    Fedora and Arch ship valkey (a redis fork) whose binary keeps redis'
-    CLI and version-output format."""
+    """Return redis-server or valkey-server when installed."""
     return which("redis-server") or which("valkey-server")
 
 
@@ -65,9 +62,5 @@ class RedisManager:
 
     def _write_config(self, filename: str, port: int) -> None:
         self.bench.config_path.mkdir(parents=True, exist_ok=True)
-        content = (
-            f"port {port}\n"
-            "bind 127.0.0.1\n"
-            'save ""\n'
-        )
+        content = f'port {port}\nbind 127.0.0.1\nsave ""\n'
         (self.bench.config_path / filename).write_text(content)

@@ -1,4 +1,5 @@
 """Tests for distro detection and system package managers."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -28,12 +29,10 @@ def _force_linux(monkeypatch) -> None:
     monkeypatch.setattr(platform, "detect", lambda: platform.Platform.LINUX)
 
 
-# ── detect_distro ─────────────────────────────────────────────────────────────
-
 @pytest.mark.parametrize("distro_id", ["debian", "ubuntu", "fedora", "arch"])
 def test_detect_distro_by_id(tmp_path: Path, monkeypatch, distro_id: str) -> None:
     _force_linux(monkeypatch)
-    _write_os_release(tmp_path, monkeypatch, f'ID={distro_id}\n')
+    _write_os_release(tmp_path, monkeypatch, f"ID={distro_id}\n")
     assert platform.detect_distro() == Distro(distro_id)
 
 
@@ -51,13 +50,13 @@ def test_detect_distro_id_like_fallback(tmp_path: Path, monkeypatch) -> None:
 
 def test_detect_distro_id_like_arch_derivative(tmp_path: Path, monkeypatch) -> None:
     _force_linux(monkeypatch)
-    _write_os_release(tmp_path, monkeypatch, 'ID=endeavouros\nID_LIKE=arch\n')
+    _write_os_release(tmp_path, monkeypatch, "ID=endeavouros\nID_LIKE=arch\n")
     assert platform.detect_distro() == Distro.ARCH
 
 
 def test_detect_distro_unknown(tmp_path: Path, monkeypatch) -> None:
     _force_linux(monkeypatch)
-    _write_os_release(tmp_path, monkeypatch, 'ID=slackware\n')
+    _write_os_release(tmp_path, monkeypatch, "ID=slackware\n")
     assert platform.detect_distro() == Distro.UNKNOWN
 
 
@@ -71,8 +70,6 @@ def test_detect_distro_not_linux(monkeypatch) -> None:
     monkeypatch.setattr(platform, "detect", lambda: platform.Platform.MACOS)
     assert platform.detect_distro() == Distro.UNKNOWN
 
-
-# ── get_package_manager dispatch ──────────────────────────────────────────────
 
 @pytest.mark.parametrize(
     ("distro", "manager_class"),
@@ -95,8 +92,6 @@ def test_get_package_manager_macos(monkeypatch) -> None:
     assert isinstance(get_package_manager(), BrewPackageManager)
 
 
-# ── alias resolution ──────────────────────────────────────────────────────────
-
 def test_resolve_passes_unmapped_names_through() -> None:
     assert DnfPackageManager()._resolve("nginx", "certbot") == ["nginx", "certbot"]
 
@@ -110,8 +105,6 @@ def test_resolve_deduplicates() -> None:
     # Pacman aliases mariadb-server onto the same package as a bare mariadb.
     assert PacmanPackageManager()._resolve("mariadb-server", "mariadb") == ["mariadb"]
 
-
-# ── install/is_installed/update argv ──────────────────────────────────────────
 
 def _run_as_root(monkeypatch) -> None:
     monkeypatch.setattr(platform, "is_root", lambda: True)
@@ -169,14 +162,13 @@ def test_install_uses_sudo_when_not_root(monkeypatch) -> None:
     assert run.call_args[0][0] == ["sudo", "dnf", "install", "-y", "git"]
 
 
-# ── node install branching ────────────────────────────────────────────────────
 # Node.js is installed once by install.sh's root bootstrap now, not per bench
-# init — _install_node only covers macOS (brew); everywhere else it fails loud
+# init - _install_node only covers macOS (brew); everywhere else it fails loud
 # rather than shelling out to sudo.
 
 
 def test_install_node_uses_brew_on_macos(monkeypatch) -> None:
-    from pilot.managers import python_environment as module
+    from pilot.managers import environment as module
 
     manager = module.PythonEnvManager(bench=None)
     commands: list[list[str]] = []
@@ -188,9 +180,9 @@ def test_install_node_uses_brew_on_macos(monkeypatch) -> None:
 
 def test_install_node_raises_on_other_linux(monkeypatch) -> None:
     from pilot.exceptions import BenchError
-    from pilot.managers import python_environment as module
+    from pilot.managers import environment as module
 
     manager = module.PythonEnvManager(bench=None)
     monkeypatch.setattr(module, "is_macos", lambda: False)
-    with pytest.raises(BenchError, match="install.sh"):
+    with pytest.raises(BenchError, match=r"install\.sh"):
         manager._install_node()

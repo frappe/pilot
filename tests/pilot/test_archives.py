@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from pilot.archive import (
+from pilot.utils import (
     ArchiveLimits,
     UnsafeArchiveError,
     extract_tar_archive,
@@ -137,7 +137,7 @@ def test_admin_frontend_download_rejects_unsafe_archive(
 def test_prebuilt_asset_download_rejects_unsafe_archive(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from pilot.managers.python_environment import PythonEnvManager
+    from pilot.managers.environment import PythonEnvManager
 
     archive = _archive(tmp_path / "assets.tar", [_file("../escape.txt")])
 
@@ -148,9 +148,7 @@ def test_prebuilt_asset_download_rejects_unsafe_archive(
     monkeypatch.setattr(urllib.request, "urlretrieve", retrieve)
 
     assert (
-        PythonEnvManager._download_and_extract(
-            "https://example.test/assets.tar", tmp_path / "public"
-        )
+        PythonEnvManager._download_and_extract("https://example.test/assets.tar", tmp_path / "public")
         is False
     )
     assert not (tmp_path / "escape.txt").exists()

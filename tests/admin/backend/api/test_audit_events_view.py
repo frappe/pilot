@@ -1,19 +1,20 @@
 """Tests for cursor pagination on GET /api/v1/audit-events."""
+
 from __future__ import annotations
 
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from pilot.config.bench_toml_builder import BenchTomlBuilder
+from pilot.config import BenchConfig
 
 
 def _client(bench_root: Path, password: str = "secret"):
     from admin.backend.app import create_app
-    from pilot.core.admin_auth import ensure_jwt_secret, issue_token
+    from admin.backend.auth import ensure_jwt_secret, issue_token
 
     bench_root.mkdir(parents=True, exist_ok=True)
     (bench_root / "bench.toml").write_text(
-        BenchTomlBuilder(bench_root.name, {"admin_enabled": True, "admin_password": password}).render()
+        BenchConfig.from_flat(bench_root.name, {"admin_enabled": True, "admin_password": password}).dumps()
     )
     secret = ensure_jwt_secret(bench_root / "bench.toml")
     app = create_app(bench_root)
@@ -34,7 +35,7 @@ def test_first_page_reports_a_next_cursor_when_more_remain(tmp_path: Path) -> No
     client = _client(bench_root)
     entries = [{"type": "site.create", "logged_at": str(i)} for i in range(5)]
 
-    with patch("pilot.core.audit_log.AuditLog", return_value=_mock_log(entries)):
+    with patch("pilot.core.bench.audit_log.AuditLog", return_value=_mock_log(entries)):
         response = client.get("/api/v1/audit-events", query_string={"limit": 2})
 
     body = response.get_json()
@@ -51,7 +52,7 @@ def test_following_the_cursor_walks_the_full_log(tmp_path: Path) -> None:
 
     collected = []
     cursor = None
-    with patch("pilot.core.audit_log.AuditLog", return_value=_mock_log(entries)):
+    with patch("pilot.core.bench.audit_log.AuditLog", return_value=_mock_log(entries)):
         for _ in range(10):
             params = {"limit": 2}
             if cursor:
@@ -72,7 +73,7 @@ def test_limit_is_capped_at_the_hard_maximum(tmp_path: Path) -> None:
     client = _client(bench_root)
     entries = [{"type": "site.create", "logged_at": str(i)} for i in range(600)]
 
-    with patch("pilot.core.audit_log.AuditLog", return_value=_mock_log(entries)):
+    with patch("pilot.core.bench.audit_log.AuditLog", return_value=_mock_log(entries)):
         response = client.get("/api/v1/audit-events", query_string={"limit": 10000})
 
     body = response.get_json()
@@ -85,7 +86,7 @@ def test_an_invalid_cursor_is_treated_as_the_start(tmp_path: Path) -> None:
     client = _client(bench_root)
     entries = [{"type": "site.create", "logged_at": str(i)} for i in range(3)]
 
-    with patch("pilot.core.audit_log.AuditLog", return_value=_mock_log(entries)):
+    with patch("pilot.core.bench.audit_log.AuditLog", return_value=_mock_log(entries)):
         response = client.get(
             "/api/v1/audit-events", query_string={"limit": 2, "cursor": "not-a-real-cursor"}
         )

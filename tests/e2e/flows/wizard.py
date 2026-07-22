@@ -1,9 +1,4 @@
-"""Drives Setup.vue to completion for a development bench.
-
-Mirrors the step machine in admin/frontend/src/pages/Setup.vue. Selectors are
-label/role based (frappe-ui FormControl associates labels with inputs); if the
-UI copy changes, update the strings here in one place.
-"""
+"""Drive Setup.vue to completion for a development bench."""
 
 from __future__ import annotations
 
@@ -30,26 +25,11 @@ def complete_dev_wizard(
     postgres_admin_user: str = "postgres",
     framework_branch: str | None = None,
 ) -> None:
-    """Complete the wizard for a development bench. The wizard only configures a
-    dev bench — production is a separate `bench setup production` step — so there
-    are no domain/TLS/process-manager prompts to drive here.
-
-    db_type:
-        'mariadb'   — drive the MariaDB fields.
-        'postgres'  — drive the PostgreSQL fields (superuser + password).
-
-    Every bench for this OS user shares one MariaDB/PostgreSQL server (see
-    MariaDBManager/PostgresManager) — there's no per-bench deployment mode to
-    choose, just whether that shared server still needs to be installed.
-    """
+    """Complete the development-only setup wizard."""
     # The wizard mounts in a 'loading' state, then resolves to the first step.
     expect(page.get_by_text("Step 1 of", exact=False)).to_be_visible(timeout=30_000)
-
-    # ── Step 1: Admin password ──────────────────────────────────────────────────
     page.get_by_label("Admin password").fill(admin_password)
     page.get_by_role("button", name="Next").click()
-
-    # ── Step 2: Database ────────────────────────────────────────────────────────
     # MariaDB and PostgreSQL share one set of fields: generic "Root username" /
     # "Root user password" fields (Setup.vue's showRootUsername).
     _choose_select(page, "Database engine", "PostgreSQL" if db_type == "postgres" else "MariaDB")
@@ -57,23 +37,21 @@ def complete_dev_wizard(
     # defaults to root/postgres).
     if page.get_by_label("Root username").is_visible():
         page.get_by_label("Root username").fill(postgres_admin_user if db_type == "postgres" else "root")
-    page.get_by_label("Root user password").fill(postgres_password if db_type == "postgres" else mariadb_password)
+    page.get_by_label("Root user password").fill(
+        postgres_password if db_type == "postgres" else mariadb_password
+    )
     page.get_by_role("button", name="Verify credentials").click()
     # A wrong password surfaces inline and keeps us on this step.
     expect(page.get_by_text("Incorrect MariaDB credentials.")).to_be_hidden()
     expect(page.get_by_text("Incorrect PostgreSQL credentials.")).to_be_hidden()
-
-    # ── Step 3: Customize ───────────────────────────────────────────────────────
     # The wizard always provisions a development bench (no production/process-manager
-    # choice — that's a separate `bench setup production` step run from the terminal
+    # choice - that's a separate `bench setup production` step run from the terminal
     # afterwards). We keep the repo default.
     expect(page.get_by_text("Customize your bench")).to_be_visible(timeout=30_000)
     if framework_branch:
         _choose_select(page, "Frappe branch", framework_branch)
 
     page.get_by_role("button", name="Set up bench").click()
-
-    # ── Running → (Done | Failed) ───────────────────────────────────────────────
     # bench init clones the framework and builds the venv; this is the long pole.
     expect(page.get_by_text("Setting up your bench")).to_be_visible(timeout=60_000)
 
@@ -91,10 +69,7 @@ def complete_dev_wizard(
 
 
 def _wizard_error_text(page: Page) -> str:
-    """Best-effort scrape of the on-screen failure detail. Setup.vue auto-expands
-    the streamed terminal ("Show details") when it fails, so its text usually
-    carries the underlying error; the spec augments this with the task's
-    output.log."""
+    """Best-effort scrape of the on-screen failure detail."""
     candidates = [
         page.get_by_text("Setup failed", exact=False),
         page.locator("pre, code"),
@@ -111,12 +86,6 @@ def _wizard_error_text(page: Page) -> str:
 
 
 def _choose_select(page: Page, label: str, option_name: str) -> None:
-    """frappe-ui's FormControl ``type="select"`` is a reka-ui Select: a
-    ``<button role="combobox">`` trigger (labelled via a separate ``<label for>``)
-    plus a portalled listbox of ``role="option"`` items — not a native
-    ``<select>``. ``get_by_label`` won't target the button, so open it by its
-    combobox role + accessible name (the accname comes from the ``<label for>``),
-    then click the option. ``option_name`` matches by substring (labels carry
-    hints like "(recommended)"), so pass a distinctive fragment."""
+    """Choose a reka-ui Select option by combobox label."""
     page.get_by_role("combobox", name=label).click()
     page.get_by_role("option", name=option_name).click()

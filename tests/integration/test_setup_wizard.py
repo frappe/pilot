@@ -1,14 +1,4 @@
-"""
-Integration test: complete the Frappe setup wizard via HTTP on site1.localhost.
-
-Starts a single-worker gunicorn process, hits the setup_complete endpoint as
-Administrator, and confirms the site is flagged as setup-complete.  Frappe's
-setup_complete returns early with {"status": "ok"} if the wizard was already
-run, so re-runs are safe.
-
-Prerequisites (once per developer machine / CI):
-    bench init && bench new-site site1.localhost --admin-password admin
-"""
+"""Integration test for completing Frappe's setup wizard over HTTP."""
 
 from __future__ import annotations
 
@@ -27,10 +17,6 @@ GUNICORN_PORT = 8000
 BASE_URL = f"http://127.0.0.1:{GUNICORN_PORT}"
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 def _wait_for_port(host: str, port: int, timeout: float = 60.0) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -42,10 +28,7 @@ def _wait_for_port(host: str, port: int, timeout: float = 60.0) -> bool:
     return False
 
 
-# ---------------------------------------------------------------------------
 # Fixtures
-# ---------------------------------------------------------------------------
-
 @pytest.fixture(scope="module")
 def gunicorn_proc(bench_root: Path):
     """Start a single-worker gunicorn serving frappe, yield, then stop it."""
@@ -53,9 +36,12 @@ def gunicorn_proc(bench_root: Path):
     proc = subprocess.Popen(
         [
             str(gunicorn_bin),
-            "--bind", f"127.0.0.1:{GUNICORN_PORT}",
-            "--workers", "1",
-            "--timeout", "120",
+            "--bind",
+            f"127.0.0.1:{GUNICORN_PORT}",
+            "--workers",
+            "1",
+            "--timeout",
+            "120",
             "frappe.app:application",
         ],
         cwd=bench_root / "sites",
@@ -84,19 +70,11 @@ def gunicorn_proc(bench_root: Path):
         proc.kill()
 
 
-# ---------------------------------------------------------------------------
 # Tests
-# ---------------------------------------------------------------------------
-
 @pytest.mark.integration
 class TestSetupWizard:
-
     def test_setup_wizard_completes(self, bench_root: Path, gunicorn_proc) -> None:
-        """
-        POST setup_complete with minimal valid args.
-        Either completes the wizard or returns the early-exit {"status": "ok"}
-        if it was already run.  Both outcomes are valid — neither should raise.
-        """
+        """setup_complete succeeds or returns the idempotent ok response."""
         session = requests.Session()
         # Frappe routes the request to the correct site via the Host header.
         session.headers["Host"] = SITE
@@ -106,40 +84,32 @@ class TestSetupWizard:
             f"{BASE_URL}/api/method/login",
             data={"usr": "Administrator", "pwd": ADMIN_PASSWORD},
         )
-        assert login.status_code == 200, (
-            f"Login failed ({login.status_code}): {login.text}"
-        )
+        assert login.status_code == 200, f"Login failed ({login.status_code}): {login.text}"
 
         # Run the setup wizard.
         response = session.post(
-            f"{BASE_URL}/api/method/"
-            "frappe.desk.page.setup_wizard.setup_wizard.setup_complete",
+            f"{BASE_URL}/api/method/frappe.desk.page.setup_wizard.setup_wizard.setup_complete",
             data={
-                "args": json.dumps({
-                    "language": "English",
-                    "country": "United States",
-                    "timezone": "America/New_York",
-                    "currency": "USD",
-                    "full_name": "Test Administrator",
-                    "email": "admin@example.com",
-                    "password": ADMIN_PASSWORD,
-                })
+                "args": json.dumps(
+                    {
+                        "language": "English",
+                        "country": "United States",
+                        "timezone": "America/New_York",
+                        "currency": "USD",
+                        "full_name": "Test Administrator",
+                        "email": "admin@example.com",
+                        "password": ADMIN_PASSWORD,
+                    }
+                )
             },
         )
-        assert response.status_code == 200, (
-            f"setup_complete returned {response.status_code}: {response.text}"
-        )
+        assert response.status_code == 200, f"setup_complete returned {response.status_code}: {response.text}"
 
         body = response.json()
-        assert not body.get("exc"), (
-            f"setup_complete raised a server-side exception:\n{body.get('exc')}"
-        )
+        assert not body.get("exc"), f"setup_complete raised a server-side exception:\n{body.get('exc')}"
 
     def test_setup_wizard_idempotent(self, bench_root: Path, gunicorn_proc) -> None:
-        """
-        A second call to setup_complete must return early with status 'ok'
-        rather than re-running the wizard or erroring.
-        """
+        """A second setup_complete call returns ok without rerunning."""
         session = requests.Session()
         session.headers["Host"] = SITE
 
@@ -150,8 +120,7 @@ class TestSetupWizard:
         assert login.status_code == 200
 
         response = session.post(
-            f"{BASE_URL}/api/method/"
-            "frappe.desk.page.setup_wizard.setup_wizard.setup_complete",
+            f"{BASE_URL}/api/method/frappe.desk.page.setup_wizard.setup_wizard.setup_complete",
             data={"args": json.dumps({})},
         )
         assert response.status_code == 200, (
@@ -159,9 +128,7 @@ class TestSetupWizard:
         )
 
         body = response.json()
-        assert not body.get("exc"), (
-            f"Second call raised a server-side exception:\n{body.get('exc')}"
-        )
+        assert not body.get("exc"), f"Second call raised a server-side exception:\n{body.get('exc')}"
         assert body.get("message", {}).get("status") == "ok", (
-            f"Expected {{\"status\": \"ok\"}} on second call, got: {body.get('message')}"
+            f'Expected {{"status": "ok"}} on second call, got: {body.get("message")}'
         )

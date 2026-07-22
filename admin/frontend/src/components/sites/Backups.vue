@@ -147,7 +147,7 @@ const columns = [
 
 const fmt = (iso) => new Date(iso).toLocaleString()
 const fileOf = (set, kind) => set.files?.find((f) => f.kind === kind) ?? null
-const fmtSize = (b) => !b ? '—' : b < 1024 ** 2 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1024 ** 2).toFixed(1)} MB`
+const fmtSize = (b) => !b ? '-' : b < 1024 ** 2 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1024 ** 2).toFixed(1)} MB`
 
 const rows = computed(() => backups.value.map((set) => ({
   name: set.created_at,
@@ -189,7 +189,7 @@ async function downloadFile(set, kind) {
     window.location.href = sitesApi.backups.download(props.siteName, set.timestamp, file.filename)
     return
   }
-  // Offsite-only file: fetch a direct, time-limited S3 link and open it —
+  // Offsite-only file: fetch a direct, time-limited S3 link and open it -
   // this server never proxies or re-downloads the transfer.
   error.value = ''
   try {

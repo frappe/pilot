@@ -5,11 +5,7 @@ from pathlib import Path
 
 
 class GitRepo:
-    """A robust wrapper over the ``git`` CLI for one working tree.
-
-    Read accessors degrade to an empty/default value on any failure, so callers
-    stay free of try/except noise. Only network/mutating helpers surface failure.
-    """
+    """Git CLI wrapper with quiet read accessors."""
 
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
@@ -79,6 +75,23 @@ class GitRepo:
         """Best-effort fetch from origin; returns False instead of raising on failure."""
         return self._run("fetch", "origin", *refspecs, "--quiet", timeout=timeout).returncode == 0
 
+    def abort_merge_rebase(self) -> None:
+        """Best-effort cleanup of an in-progress merge/rebase, e.g. before switching branches."""
+        self._run("merge", "--abort")
+        self._run("rebase", "--abort")
+
+    def stash_all(self) -> bool:
+        """Stash tracked and untracked changes; returns whether anything was stashed."""
+        result = self._run("stash", "--include-untracked")
+        return "No local changes" not in result.stdout
+
+    def stash_pop(self) -> None:
+        self._run("stash", "pop")
+
+    def checkout_new_branch(self, branch: str, start_point: str) -> bool:
+        """Create (or reset) `branch` to start at `start_point` and check it out."""
+        return self._run("checkout", "-B", branch, start_point).returncode == 0
+
     def set_remote_url(self, url: str) -> bool:
         """Point origin at *url*; returns False instead of raising on failure."""
         return self._run("remote", "set-url", "origin", url).returncode == 0
@@ -106,7 +119,9 @@ class GitRepo:
         try:
             return subprocess.run(
                 ["git", "-C", str(self.path), *args],
-                capture_output=True, text=True, timeout=timeout,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
             )
         except (OSError, subprocess.SubprocessError):
             return subprocess.CompletedProcess(args, returncode=1, stdout="", stderr="")

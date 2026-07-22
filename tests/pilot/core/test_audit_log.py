@@ -1,7 +1,8 @@
 import stat
+from datetime import UTC
 from types import SimpleNamespace
 
-from pilot.core.audit_log import AuditLog
+from pilot.core.bench.audit_log import AuditLog
 
 
 def _bench(tmp_path):
@@ -38,12 +39,12 @@ def test_entries_survive_site_removal(tmp_path) -> None:
 
 
 def test_appends_to_current_iso_week_file(tmp_path) -> None:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     bench = _bench(tmp_path)
     AuditLog(bench).append("backup", {"site": "a"})
 
-    year, week, _ = datetime.now(timezone.utc).isocalendar()
+    year, week, _ = datetime.now(UTC).isocalendar()
     path = bench.logs_path / f"audit_{year}_{week:02d}.jsonl"
     assert path.is_file()
     assert stat.S_IMODE(path.stat().st_mode) == 0o600

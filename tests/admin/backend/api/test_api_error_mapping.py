@@ -6,9 +6,9 @@ from unittest.mock import Mock, patch
 import pytest
 
 from admin.backend.app import create_app
-from pilot.core.admin_auth import ensure_jwt_secret, issue_token
-from pilot.config.bench_toml_builder import BenchTomlBuilder
-from pilot.core.ssh_keys import (
+from admin.backend.auth import ensure_jwt_secret, issue_token
+from pilot.config import BenchConfig
+from pilot.core.server.ssh_keys import (
     InvalidSSHKeyError,
     LastSSHKeyError,
     SSHKeyAlreadyExistsError,
@@ -25,10 +25,10 @@ from pilot.exceptions import (
 def _client(bench_root: Path):
     bench_root.mkdir(parents=True)
     (bench_root / "bench.toml").write_text(
-        BenchTomlBuilder(
+        BenchConfig.from_flat(
             bench_root.name,
             {"admin_enabled": True, "admin_password": "secret"},
-        ).render()
+        ).dumps()
     )
     secret = ensure_jwt_secret(bench_root / "bench.toml")
     app = create_app(bench_root)
@@ -52,8 +52,8 @@ def test_ssh_key_add_errors_have_distinct_statuses(
     code: str,
 ) -> None:
     client = _client(tmp_path / "bench")
-    with patch("admin.backend.api.v1.ssh_keys.AuthorizedKeysStore") as store:
-        store.return_value.add.side_effect = error
+    with patch("admin.backend.api.v1.ssh_keys.Server") as server:
+        server.return_value.ssh_keys.add.side_effect = error
         response = client.post(
             "/api/v1/ssh-keys",
             json={"public_key": "ssh-ed25519 AAAA"},
@@ -77,8 +77,8 @@ def test_ssh_key_remove_errors_have_distinct_statuses(
     code: str,
 ) -> None:
     client = _client(tmp_path / "bench")
-    with patch("admin.backend.api.v1.ssh_keys.AuthorizedKeysStore") as store:
-        store.return_value.remove.side_effect = error
+    with patch("admin.backend.api.v1.ssh_keys.Server") as server:
+        server.return_value.ssh_keys.remove.side_effect = error
         response = client.delete("/api/v1/ssh-keys/SHA256:value")
 
     assert response.status_code == status
@@ -131,10 +131,10 @@ def test_domain_failures_preserve_their_semantics(
     site_dir = bench_root / "sites" / "site.test"
     site_dir.mkdir(parents=True)
     (site_dir / "site_config.json").write_text("{}")
-    routes = Mock()
-    routes.domains.side_effect = error
+    site_domains = Mock()
+    site_domains.names.side_effect = error
 
-    with patch("admin.backend.api.v1.sites.domains._domain_routes", return_value=routes):
+    with patch("admin.backend.api.v1.sites.domains._site_domains", return_value=site_domains):
         response = client.get("/api/v1/sites/site.test/domains")
 
     assert response.status_code == status

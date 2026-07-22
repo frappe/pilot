@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
 
-from pilot.commands.base import BenchMode, Command
+from pilot.commands import BenchMode, Command
 
 
 @dataclass(kw_only=True)
@@ -15,12 +15,12 @@ class ListCommand(Command):
     bench_mode: ClassVar[BenchMode] = BenchMode.NONE
 
     def run(self) -> None:
-        from pilot.loader import cli_root
+        from pilot.utils import cli_root
 
         benches_dir = cli_root() / "benches"
         rows = self._collect(benches_dir)
         if not rows:
-            self.print("No benches yet. Create one with: bench new <name>")
+            self.report("No benches yet. Create one with: bench new <name>")
             return
 
         # Column widths sized to content (with sensible minimums).
@@ -33,12 +33,12 @@ class ListCommand(Command):
             f"  {'':1} {'NAME':<{name_w}}  {'MODE':<{mode_w}}  "
             f"{'MANAGER':<{mgr_w}}  {'SITES':<{sites_w}}  ADDRESS"
         )
-        self.print(_dim(header))
+        self.report(_dim(header))
         for r in rows:
             dot = {"running": _ok("●"), "admin": _warn("●")}.get(r["state"], _dim("○"))
-            self.print(
+            self.report(
                 f"  {dot} {r['name']:<{name_w}}  {r['mode']:<{mode_w}}  "
-                f"{r['manager']:<{mgr_w}}  {str(r['sites']):<{sites_w}}  {r['address']}"
+                f"{r['manager']:<{mgr_w}}  {r['sites']!s:<{sites_w}}  {r['address']}"
             )
 
     def _collect(self, benches_dir: Path) -> list[dict]:
@@ -53,14 +53,14 @@ class ListCommand(Command):
         return rows
 
     def _describe(self, bench_dir: Path, toml_path: Path) -> dict:
-        from pilot.config.toml_store import BenchTomlStore
+        from pilot.config import BenchConfig
         from pilot.core.bench import Bench
 
         name = bench_dir.name
         mode, manager, address, state, sites = "unknown", "-", "", "stopped", 0
         try:
             # Parse-only (no validate) so a half-configured bench still lists.
-            config = BenchTomlStore(toml_path).read(validate=False)
+            config = BenchConfig.read(toml_path, validate=False)
             name = config.name or name
             prod = config.production
             if prod.enabled:
@@ -69,14 +69,21 @@ class ListCommand(Command):
             else:
                 mode = "development"
                 manager = "foreground"
-            from pilot.admin_url import admin_url
+            from pilot.utils import admin_url
 
             address = admin_url(config)
             state = self._state(Bench(config, bench_dir), prod.enabled)
             sites = self._site_count(bench_dir)
         except Exception as exc:
             logging.debug("Failed to describe bench %s: %s", bench_dir, exc)
-        return {"name": name, "mode": mode, "manager": manager, "address": address, "state": state, "sites": sites}
+        return {
+            "name": name,
+            "mode": mode,
+            "manager": manager,
+            "address": address,
+            "state": state,
+            "sites": sites,
+        }
 
     def _site_count(self, bench_dir: Path) -> int:
         """A sites/ subdir counts as a site iff it has a site_config.json."""
@@ -86,10 +93,7 @@ class ListCommand(Command):
         return sum(1 for d in sites_dir.iterdir() if d.is_dir() and (d / "site_config.json").exists())
 
     def _state(self, bench, production: bool) -> str:
-        """Match the admin UI's view: 'running' when the workload is up, 'admin'
-        when only the (socket-activated) admin control plane is up — e.g. a bench
-        provisioned but not yet set up — and 'stopped' otherwise. A dev bench is
-        'running' iff its foreground admin is reachable."""
+        """Return running/admin/stopped using the same states as the admin UI."""
         from pilot.managers.processes.local import ProcessManager
 
         try:

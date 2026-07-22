@@ -5,8 +5,6 @@ from pathlib import Path
 
 from flask import Flask, send_file
 
-from pilot.config.toml_store import BenchTomlStore
-
 from admin.backend.api.errors import install_api_error_handlers
 from admin.backend.api.responses import error_response
 from admin.backend.api.routes import API_V1_PREFIX
@@ -18,15 +16,14 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 def create_app(bench_root: Path) -> Flask:
     app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="/static")
-    config_store = BenchTomlStore.for_bench(bench_root)
     app.config["BENCH_ROOT"] = bench_root
     app.config["TEMPLATES_AUTO_RELOAD"] = False
-    app.config["TRUSTED_PROXY_PEERS"] = trusted_proxy_peers(config_store)
-    app.config["SESSION_COOKIE_SECURE"] = secure_cookie_setting(config_store)
+    app.config["TRUSTED_PROXY_PEERS"] = trusted_proxy_peers(bench_root)
+    app.config["SESSION_COOKIE_SECURE"] = is_secure_cookie(bench_root)
 
     app.extensions["used_logins"] = UsedTokens()
 
-    install_auth_guard(app, config_store)
+    install_auth_guard(app, bench_root)
     register_blueprints(app)
     register_frontend(app)
     install_api_error_handlers(app)
@@ -82,7 +79,7 @@ def register_frontend(app: Flask) -> None:
             return error_response("not_found", "API route not found.", 404)
         dist = STATIC_DIR / "dist"
         if not dist.exists():
-            return "Frontend not built. Run: cd admin/frontend && npm install && npm run build", 503
+            return "Frontend not built. Run: cd admin/frontend && yarn install && yarn build", 503
         candidate = dist / path
         if path and candidate.exists() and candidate.is_file():
             return send_file(str(candidate))
@@ -115,10 +112,12 @@ def configure_idle_watchdog(
     )
 
 
-def trusted_proxy_peers(config_store: BenchTomlStore) -> tuple[str, ...]:
+def trusted_proxy_peers(bench_root: Path) -> tuple[str, ...]:
     """Immediate peers allowed to supply nginx's forwarded client headers."""
+    from pilot.config import BenchConfig
+
     try:
-        production_enabled = config_store.read().production.enabled
+        production_enabled = BenchConfig.read(bench_root).production.enabled
     except Exception:
         production_enabled = False
     if not production_enabled:
@@ -128,10 +127,12 @@ def trusted_proxy_peers(config_store: BenchTomlStore) -> tuple[str, ...]:
     return ("127.0.0.1", "::1", "")
 
 
-def secure_cookie_setting(config_store: BenchTomlStore) -> bool:
+def is_secure_cookie(bench_root: Path) -> bool:
     """Whether the browser reaches Admin over explicitly configured HTTPS."""
+    from pilot.config import BenchConfig
+
     try:
-        config = config_store.read()
+        config = BenchConfig.read(bench_root)
     except Exception:
         return False
     if not config.production.enabled:
@@ -139,7 +140,7 @@ def secure_cookie_setting(config_store: BenchTomlStore) -> bool:
     if config.admin.tls:
         return True
 
-    from pilot.core.domains import DomainRouteProvider
+    from pilot.core.adapters.domain_provider import DomainRouteProvider
 
     try:
         return bool(DomainRouteProvider.proxy_servers())

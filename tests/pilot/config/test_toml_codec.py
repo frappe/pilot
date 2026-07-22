@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta, timezone
 import math
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, time, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -52,7 +52,7 @@ def test_toml_string_round_trip_preserves_escaped_and_unicode_text() -> None:
         "backslashes": r"C:\Program Files\Pilot\bench.toml",
         "multiline": "first line\nsecond line\r\nthird line",
         "controls": "tab:\t backspace:\b form-feed:\f nul:\x00 unit-separator:\x1f",
-        "unicode": "café — 東京 🚀",
+        "unicode": "café - 東京 🚀",
     }
 
     assert Toml.loads(Toml.dumps(data)) == data
@@ -100,7 +100,7 @@ def test_toml_nested_tables_and_arrays_of_tables_round_trip() -> None:
 
 
 def test_toml_native_date_time_and_float_values_round_trip() -> None:
-    utc = timezone.utc
+    utc = UTC
     india = timezone(timedelta(hours=5, minutes=30))
     data = {
         "local_date": date(2026, 7, 15),

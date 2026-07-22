@@ -4,11 +4,11 @@ import fcntl
 import os
 import stat
 import tempfile
-from contextlib import contextmanager
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Iterator
 
-from pilot.secure_files import PRIVATE_FILE_MODE, open_private
+from pilot.utils import PRIVATE_FILE_MODE, open_private
 
 
 def _lock_path(path: Path) -> Path:
@@ -64,10 +64,8 @@ def replace_private_text_locked(path: Path, content: str) -> None:
         _fsync_directory(path.parent)
     finally:
         if temporary_path is not None:
-            try:
+            with suppress(OSError):
                 temporary_path.unlink(missing_ok=True)
-            except OSError:
-                pass
 
 
 def _existing_file_metadata(path: Path) -> os.stat_result | None:

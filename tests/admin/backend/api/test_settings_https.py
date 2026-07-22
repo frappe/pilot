@@ -1,9 +1,9 @@
 """Tests for the admin Settings HTTPS toggle (admin.tls + Let's Encrypt email)."""
+
 from __future__ import annotations
 
-from pilot.config.bench import BenchConfig
-
-from admin.backend.api.v1.settings import ConfigPatcher, _build_settings_response
+from admin.backend.api.v1.settings import ConfigPatcher, build_settings_response
+from pilot.config import BenchConfig
 
 
 def _config() -> BenchConfig:
@@ -22,7 +22,7 @@ def test_settings_response_exposes_tls_and_email() -> None:
     config.admin.tls = True
     config.letsencrypt.email = "ops@example.com"
 
-    payload = _build_settings_response(config)
+    payload = build_settings_response(config)
 
     assert payload["admin"]["tls"] is True
     assert payload["admin"]["domain"] == "admin.example.com"
@@ -33,7 +33,9 @@ def test_patcher_enables_tls_and_sets_email() -> None:
     config = _config()
     assert config.admin.tls is False  # opt-in: off by default
 
-    error = ConfigPatcher(config, {"admin": {"tls": True}, "letsencrypt": {"email": "ops@example.com"}}).apply()
+    error = ConfigPatcher(
+        config, {"admin": {"tls": True}, "letsencrypt": {"email": "ops@example.com"}}
+    ).apply()
 
     assert error is None
     assert config.admin.tls is True

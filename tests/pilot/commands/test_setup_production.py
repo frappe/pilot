@@ -1,8 +1,5 @@
-"""Tests for ProductionSetup helpers and letsencrypt gating.
+"""Tests for ProductionSetup helpers and letsencrypt gating."""
 
-The full `run()` touches sudo/systemd, so these exercise the pure helpers:
-admin-domain handling, in-place toml persistence, and the cert-needed check.
-"""
 from __future__ import annotations
 
 import tomllib
@@ -10,15 +7,22 @@ from pathlib import Path
 
 import pytest
 
-from pilot.core.production_setup import ProductionSetup
-from pilot.config.bench import BenchConfig
+from pilot.config import BenchConfig
 from pilot.core.bench import Bench
+from pilot.core.bench.setup import ProductionSetup
 from pilot.exceptions import BenchError
-from pilot.managers.letsencrypt import needs_letsencrypt
+from pilot.managers.letsencrypt import is_letsencrypt_required
 
 
-def _make_bench(tmp_path: Path, name: str = "prod", *, admin_domain: str = "prod-admin.localhost",
-                email: str = "", process_manager: str = "supervisor", tls: bool = True) -> Bench:
+def _make_bench(
+    tmp_path: Path,
+    name: str = "prod",
+    *,
+    admin_domain: str = "prod-admin.localhost",
+    email: str = "",
+    process_manager: str = "supervisor",
+    tls: bool = True,
+) -> Bench:
     bench_dir = tmp_path / "benches" / name
     (bench_dir / "sites").mkdir(parents=True, exist_ok=True)
     le = f'\n[letsencrypt]\nemail = "{email}"\n' if email else ""
@@ -26,9 +30,9 @@ def _make_bench(tmp_path: Path, name: str = "prod", *, admin_domain: str = "prod
         f'[bench]\nname = "{name}"\npython = "3.14"\n\n'
         '[[apps]]\nname = "frappe"\nrepo = "https://github.com/frappe/frappe"\nbranch = "version-16"\n\n'
         '[mariadb]\nroot_password = "root"\n\n'
-        '[redis]\ncache_port = 13000\nqueue_port = 11000\n\n'
+        "[redis]\ncache_port = 13000\nqueue_port = 11000\n\n"
         f'[admin]\ndomain = "{admin_domain}"\ntls = {"true" if tls else "false"}\n'
-        f'{le}\n'
+        f"{le}\n"
         f'[production]\nprocess_manager = "{process_manager}"\n'
     )
     config = BenchConfig.from_file(bench_dir / "bench.toml")
@@ -64,9 +68,11 @@ def test_check_admin_domain_rejects_sibling_owned(tmp_path: Path) -> None:
 
 
 def test_check_admin_domain_grandfathers_existing_non_matching(tmp_path: Path, monkeypatch) -> None:
-    from pilot.core.domains import DomainRouteProvider
+    from pilot.core.adapters.domain_provider import DomainRouteProvider
 
-    monkeypatch.setattr(DomainRouteProvider, "wildcard_domains", staticmethod(lambda: ["*.node1.example.com"]))
+    monkeypatch.setattr(
+        DomainRouteProvider, "wildcard_domains", staticmethod(lambda: ["*.node1.example.com"])
+    )
     bench = _make_bench(tmp_path, admin_domain="node1.example.com")  # apex, can't match wildcard
     ProductionSetup(bench)._check_admin_domain()  # existing -> no raise
 
@@ -76,20 +82,21 @@ def test_check_admin_domain_grandfathers_existing_non_matching(tmp_path: Path, m
         cmd._check_admin_domain()
 
 
-def test_needs_letsencrypt(tmp_path: Path) -> None:
+def test_is_letsencrypt_required(tmp_path: Path) -> None:
     # Public admin domain + email → cert needed.
-    assert needs_letsencrypt(_make_bench(tmp_path, name="a", admin_domain="admin.example.com", email="x@y.com"))
+    assert is_letsencrypt_required(
+        _make_bench(tmp_path, name="a", admin_domain="admin.example.com", email="x@y.com")
+    )
     # No email → never.
-    assert not needs_letsencrypt(_make_bench(tmp_path, name="b", admin_domain="admin.example.com"))
+    assert not is_letsencrypt_required(_make_bench(tmp_path, name="b", admin_domain="admin.example.com"))
     # Local dev domain → not obtainable.
-    assert not needs_letsencrypt(_make_bench(tmp_path, name="c", admin_domain="c-admin.localhost", email="x@y.com"))
+    assert not is_letsencrypt_required(
+        _make_bench(tmp_path, name="c", admin_domain="c-admin.localhost", email="x@y.com")
+    )
     # TLS disabled (central proxy terminates TLS) → no admin cert needed.
-    assert not needs_letsencrypt(
+    assert not is_letsencrypt_required(
         _make_bench(tmp_path, name="d", admin_domain="admin.example.com", email="x@y.com", tls=False)
     )
-
-
-# ── --process-manager / persist-last / migration ────────────────────────────────
 
 
 def test_resolve_target_uses_flag_over_config(tmp_path: Path) -> None:
@@ -162,11 +169,8 @@ def test_require_production_inputs_passes_with_domain_and_email(tmp_path: Path) 
     cmd._require_production_inputs()  # no raise
 
 
-# ── monitor log path resolution ───────────────────────────────────────────────
-
-
 def test_resolve_monitor_log_path_default(tmp_path: Path) -> None:
-    from pilot.core.monitoring import resolve_monitor_log_path
+    from pilot.core.server.monitoring import resolve_monitor_log_path
 
     bench = _make_bench(tmp_path)
     result = resolve_monitor_log_path(bench.config)
@@ -175,13 +179,18 @@ def test_resolve_monitor_log_path_default(tmp_path: Path) -> None:
 
 def test_setup_monitoring_persists_log_path_to_toml(tmp_path: Path, monkeypatch) -> None:
     import tomllib
-    from pilot.core.monitoring import MonitorConfigurator
+
+    from pilot.core.server.monitoring import MonitorConfigurator
+    from pilot.core.site.uptime_monitoring_config import UptimeMonitorConfigurator
 
     bench = _make_bench(tmp_path, process_manager="systemd")
     bench.config.production.enabled = True
     cmd = ProductionSetup(bench)
 
     monkeypatch.setattr(MonitorConfigurator, "install", lambda self: None)
+    monkeypatch.setattr(UptimeMonitorConfigurator, "install", lambda self: None)
+    monkeypatch.setattr(MonitorConfigurator, "setup", lambda self: None)
+    monkeypatch.setattr(UptimeMonitorConfigurator, "setup", lambda self: None)
 
     cmd._setup_monitoring()
 
@@ -191,13 +200,17 @@ def test_setup_monitoring_persists_log_path_to_toml(tmp_path: Path, monkeypatch)
 
 
 def test_setup_monitoring_log_path_is_path_on_config(tmp_path: Path, monkeypatch) -> None:
-    from pilot.core.monitoring import MonitorConfigurator
+    from pilot.core.server.monitoring import MonitorConfigurator
+    from pilot.core.site.uptime_monitoring_config import UptimeMonitorConfigurator
 
     bench = _make_bench(tmp_path, process_manager="systemd")
     bench.config.production.enabled = True
     cmd = ProductionSetup(bench)
 
     monkeypatch.setattr(MonitorConfigurator, "install", lambda self: None)
+    monkeypatch.setattr(UptimeMonitorConfigurator, "install", lambda self: None)
+    monkeypatch.setattr(MonitorConfigurator, "setup", lambda self: None)
+    monkeypatch.setattr(UptimeMonitorConfigurator, "setup", lambda self: None)
 
     cmd._setup_monitoring()
 
@@ -205,15 +218,35 @@ def test_setup_monitoring_log_path_is_path_on_config(tmp_path: Path, monkeypatch
     assert bench.config.monitor.log_path.name == f"{bench.config.name}-stats.log"
 
 
-# ── best-effort TLS (wizard hand-off) ───────────────────────────────────────
+def test_setup_monitoring_runs_privileged_setup_at_provision_time(tmp_path: Path, monkeypatch) -> None:
+    """Privileged log-dir/logrotate setup must run here, not in the user-service daemons."""
+    from pilot.core.server.monitoring import MonitorConfigurator
+    from pilot.core.site.uptime_monitoring_config import UptimeMonitorConfigurator
+
+    bench = _make_bench(tmp_path, process_manager="systemd")
+    bench.config.production.enabled = True
+    cmd = ProductionSetup(bench)
+
+    called = []
+    monkeypatch.setattr(MonitorConfigurator, "install", lambda self: None)
+    monkeypatch.setattr(UptimeMonitorConfigurator, "install", lambda self: None)
+    monkeypatch.setattr(MonitorConfigurator, "setup", lambda self: called.append("monitor"))
+    monkeypatch.setattr(UptimeMonitorConfigurator, "setup", lambda self: called.append("uptime"))
+
+    cmd._setup_monitoring()
+
+    assert called == ["monitor", "uptime"]
 
 
 def test_setup_letsencrypt_reraises_by_default(tmp_path: Path, monkeypatch) -> None:
     from pilot.core.bench import Bench
 
     bench = _make_bench(tmp_path, admin_domain="admin.example.com", email="x@y.com")
-    monkeypatch.setattr(Bench, "setup_letsencrypt",
-                         lambda self: (_ for _ in ()).throw(RuntimeError("dns not ready")))
+    monkeypatch.setattr(
+        Bench,
+        "setup_letsencrypt",
+        lambda self: (_ for _ in ()).throw(RuntimeError("dns not ready")),
+    )
     cmd = ProductionSetup(bench)
 
     with pytest.raises(RuntimeError, match="dns not ready"):
@@ -221,15 +254,15 @@ def test_setup_letsencrypt_reraises_by_default(tmp_path: Path, monkeypatch) -> N
 
 
 def test_setup_letsencrypt_swallows_when_best_effort(tmp_path: Path, monkeypatch, capsys) -> None:
-    """The wizard's automatic hand-off (unlike an explicit CLI --tls request)
-    shouldn't roll back an otherwise-working deployment just because a cert
-    can't issue yet - e.g. DNS for a domain created moments ago hasn't
-    propagated. The bench should stay live on HTTP instead."""
+    """Wizard handoff keeps HTTP live when TLS is not ready yet."""
     from pilot.core.bench import Bench
 
     bench = _make_bench(tmp_path, admin_domain="admin.example.com", email="x@y.com")
-    monkeypatch.setattr(Bench, "setup_letsencrypt",
-                         lambda self: (_ for _ in ()).throw(RuntimeError("dns not ready")))
+    monkeypatch.setattr(
+        Bench,
+        "setup_letsencrypt",
+        lambda self: (_ for _ in ()).throw(RuntimeError("dns not ready")),
+    )
     cmd = ProductionSetup(bench, best_effort_tls=True)
 
     cmd._setup_letsencrypt_if_needed()  # must not raise
@@ -241,10 +274,12 @@ def test_persist_production_state_writes_enabled_and_drops_nginx(tmp_path: Path)
     bench = _make_bench(tmp_path, process_manager="supervisor")
     # legacy nginx key present in toml
     toml_path = bench.path / "bench.toml"
-    toml_path.write_text(toml_path.read_text().replace(
-        '[production]\nprocess_manager = "supervisor"\n',
-        '[production]\nprocess_manager = "supervisor"\nnginx = true\n',
-    ))
+    toml_path.write_text(
+        toml_path.read_text().replace(
+            '[production]\nprocess_manager = "supervisor"\n',
+            '[production]\nprocess_manager = "supervisor"\nnginx = true\n',
+        )
+    )
     cmd = ProductionSetup(bench, process_manager="systemd")
     cmd._resolve_target()
     cmd._persist_production_state()

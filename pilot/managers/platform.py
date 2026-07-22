@@ -3,11 +3,11 @@ import platform
 import shutil
 import subprocess
 import sys
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from enum import Enum
 from pathlib import Path
-from typing import Iterator
 
 # sbin/bin dirs a minimal PATH often omits (e.g. /usr/sbin for mariadbd/nginx).
 _EXTRA_BIN_DIRS = ("/usr/local/sbin", "/usr/sbin", "/sbin", "/usr/local/bin", "/usr/bin", "/bin")
@@ -65,10 +65,7 @@ def _read_os_release() -> dict[str, str]:
 
 
 def detect_distro() -> Distro:
-    """Identify the Linux distribution from /etc/os-release.
-
-    Falls back to ID_LIKE so derivatives map onto their parent (e.g. Linux
-    Mint -> UBUNTU, EndeavourOS -> ARCH)."""
+    """Identify the Linux distro, falling back to ID_LIKE."""
     if not is_linux():
         return Distro.UNKNOWN
     fields = _read_os_release()
@@ -82,11 +79,7 @@ def detect_distro() -> Distro:
 
 
 def os_version() -> str:
-    """Best-effort human-readable OS name and version.
-
-    e.g. 'Ubuntu 22.04.4 LTS', 'Debian GNU/Linux 12 (bookworm)', or 'macOS 14.5'.
-    Falls back to the bare platform/release string when nothing more specific
-    is available."""
+    """Best-effort human-readable OS name and version."""
     if is_macos():
         version = platform.mac_ver()[0]
         return f"macOS {version}" if version else "macOS"
@@ -109,10 +102,7 @@ def _privileged(command: list[str]) -> list[str]:
     """Prefix a command with sudo unless we are already root."""
     if is_root():
         return command
-    noninteractive = (
-        _NONINTERACTIVE_PRIVILEGES.get()
-        or os.environ.get(NONINTERACTIVE_PRIVILEGES_ENV) == "1"
-    )
+    noninteractive = _NONINTERACTIVE_PRIVILEGES.get() or os.environ.get(NONINTERACTIVE_PRIVILEGES_ENV) == "1"
     sudo = ["sudo", "-n"] if noninteractive else ["sudo"]
     return [*sudo, *command]
 
@@ -128,8 +118,7 @@ def noninteractive_privileges() -> Iterator[None]:
 
 
 def has_passwordless_sudo() -> bool:
-    """True if no password prompt blocks privileged commands — already root, or
-    sudo runs non-interactively."""
+    """True when privileged commands can run without prompting."""
     if is_root():
         return True
     if which("sudo") is None:
@@ -155,20 +144,18 @@ def service_disable_command(name: str) -> list[str]:
 def service_running(name: str) -> bool:
     """Return True if the named system service is currently running."""
     try:
-        return subprocess.run(
-            ["systemctl", "is-active", "--quiet", name], capture_output=True, timeout=5
-        ).returncode == 0
+        return (
+            subprocess.run(
+                ["systemctl", "is-active", "--quiet", name], capture_output=True, timeout=5
+            ).returncode
+            == 0
+        )
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
 
 
 def native_process_manager() -> str:
-    """The init system used to manage production benches on this host.
-
-    systemd is the recommended native manager; the supervisor manager is the
-    cross-platform alternative and is never the platform default. UI and CLI
-    deploy paths use this to offer the right default instead of assuming systemd.
-    """
+    """Return the platform's default production process manager."""
     return "systemd"
 
 
@@ -181,9 +168,7 @@ _HOSTS_PATH = Path("/etc/hosts")
 
 
 def add_hosts_entry(hostname: str, hosts_path: Path = _HOSTS_PATH) -> None:
-    """Add a 127.0.0.1 entry for `hostname` to /etc/hosts, unless already
-    present. Always non-interactive (sudo -n): a best-effort dev convenience,
-    it must never block on a password prompt."""
+    """Best-effort noninteractive /etc/hosts entry for local dev."""
     from pilot.utils import hosts_line_contains
 
     entry = f"127.0.0.1 {hostname}"
@@ -225,16 +210,7 @@ def remove_hosts_entry(hostname: str, hosts_path: Path = _HOSTS_PATH) -> None:
 
 
 def unmount_legacy_bind_mount(target: Path, fstab_path: Path = Path("/etc/fstab")) -> None:
-    """Unmount `target` and drop its fstab entry if present.
-
-    Benches created before ZFS/volume support was removed may still have
-    their directory (or a dedicated MariaDB datadir) bind-mounted from an
-    old dataset, with a matching fstab line so it survived reboots. This
-    doesn't depend on ZFS or any volume-management code being present —
-    it only looks at whether `target` is currently a mountpoint — so it's
-    a no-op, and safe to call unconditionally, for any bench that was
-    never volume-backed.
-    """
+    """Unmount a legacy bench bind mount and remove its fstab line."""
     try:
         is_mounted = target.is_mount()
     except OSError:
@@ -251,11 +227,10 @@ def unmount_legacy_bind_mount(target: Path, fstab_path: Path = Path("/etc/fstab"
     except OSError:
         return
     kept = [
-        line for line in lines
+        line
+        for line in lines
         if not (
-            len(line.split()) >= 2
-            and not line.lstrip().startswith("#")
-            and line.split()[1] == str(target)
+            len(line.split()) >= 2 and not line.lstrip().startswith("#") and line.split()[1] == str(target)
         )
     ]
     if len(kept) == len(lines):

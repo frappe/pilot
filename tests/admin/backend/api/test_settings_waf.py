@@ -1,11 +1,11 @@
 """Tests for the admin Settings WAF endpoints."""
+
 from __future__ import annotations
 
 import pytest
 
-from pilot.config.bench import BenchConfig
-
-from admin.backend.api.v1.settings import ConfigPatcher, _build_settings_response, _waf_payload
+from admin.backend.api.v1.settings import ConfigPatcher, build_settings_response, waf_payload
+from pilot.config import BenchConfig
 
 
 def _config() -> BenchConfig:
@@ -20,7 +20,7 @@ def _config() -> BenchConfig:
 
 
 def test_settings_response_defaults_to_disabled_waf() -> None:
-    waf = _build_settings_response(_config())["waf"]
+    waf = build_settings_response(_config())["waf"]
     assert waf["enabled"] is False and waf["mode"] == "DetectionOnly"
     assert waf["modes"] == ["Off", "DetectionOnly", "On"]
     assert "installed" in waf
@@ -28,19 +28,26 @@ def test_settings_response_defaults_to_disabled_waf() -> None:
 
 def test_patcher_applies_waf() -> None:
     config = _config()
-    error = ConfigPatcher(config, {
-        "waf": {
-            "enabled": True, "mode": "On", "paranoia": 3, "inbound_threshold": 8,
-            "body_limit": "100m", "inspect_responses": True,
-            "exclusions": ["SecRuleRemoveById 942100", "   "],  # blank dropped
-            "exempt_paths": ["/api/method/ping"],
-        }
-    }).apply()
+    error = ConfigPatcher(
+        config,
+        {
+            "waf": {
+                "enabled": True,
+                "mode": "On",
+                "paranoia": 3,
+                "inbound_threshold": 8,
+                "body_limit": "100m",
+                "inspect_responses": True,
+                "exclusions": ["SecRuleRemoveById 942100", "   "],  # blank dropped
+                "exempt_paths": ["/api/method/ping"],
+            }
+        },
+    ).apply()
 
     assert error is None
     assert config.waf.enabled and config.waf.mode == "On" and config.waf.paranoia == 3
     assert config.waf.exclusions == ["SecRuleRemoveById 942100"]
-    assert _waf_payload(config)["exempt_paths"] == ["/api/method/ping"]
+    assert waf_payload(config)["exempt_paths"] == ["/api/method/ping"]
 
 
 def test_patcher_rejects_invalid_mode() -> None:
@@ -70,13 +77,29 @@ def test_patcher_leaves_waf_untouched_when_absent() -> None:
 
 def test_patcher_applies_custom_rule_and_drops_blank_conditions() -> None:
     config = _config()
-    error = ConfigPatcher(config, {"waf": {"custom_rules": [{
-        "name": "Block admin abroad", "action": "block", "match": "all", "enabled": True,
-        "conditions": [
-            {"field": "uri_path", "operator": "starts_with", "value": "/admin"},
-            {"field": "", "operator": "", "value": ""},  # trailing blank row dropped
-        ],
-    }]}}).apply()
+    error = ConfigPatcher(
+        config,
+        {
+            "waf": {
+                "custom_rules": [
+                    {
+                        "name": "Block admin abroad",
+                        "action": "block",
+                        "match": "all",
+                        "enabled": True,
+                        "conditions": [
+                            {"field": "uri_path", "operator": "starts_with", "value": "/admin"},
+                            {
+                                "field": "",
+                                "operator": "",
+                                "value": "",
+                            },  # trailing blank row dropped
+                        ],
+                    }
+                ]
+            }
+        },
+    ).apply()
     assert error is None
     rule = config.waf.custom_rules[0]
     assert rule.name == "Block admin abroad" and len(rule.conditions) == 1
@@ -84,13 +107,23 @@ def test_patcher_applies_custom_rule_and_drops_blank_conditions() -> None:
 
 def test_patcher_rejects_malicious_custom_rule_cleanly() -> None:
     # An injection attempt must yield a clean error string, never an unhandled 500.
-    error = ConfigPatcher(_config(), {"waf": {"custom_rules": [{
-        "name": "x", "conditions": [{"field": "uri_path", "operator": "is", "value": '/a" "deny"'}],
-    }]}}).apply()
+    error = ConfigPatcher(
+        _config(),
+        {
+            "waf": {
+                "custom_rules": [
+                    {
+                        "name": "x",
+                        "conditions": [{"field": "uri_path", "operator": "is", "value": '/a" "deny"'}],
+                    }
+                ]
+            }
+        },
+    ).apply()
     assert error is not None and "value" in error
 
 
 def test_settings_response_exposes_rule_vocabulary() -> None:
-    waf = _build_settings_response(_config())["waf"]
+    waf = build_settings_response(_config())["waf"]
     assert waf["rule_fields"] and waf["rule_operators"] and waf["rule_actions"]
     assert "block" in waf["rule_actions"] and "uri_path" in waf["rule_fields"]

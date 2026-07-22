@@ -6,7 +6,7 @@ from pathlib import Path
 
 from flask import current_app, jsonify, request, url_for
 
-from pilot.tasks.manager.task_reader import TaskReader
+from pilot.managers.task import TaskReader
 
 _MAX_PAGE_OFFSET = 10_000
 
@@ -59,9 +59,7 @@ def _resource_response(resource: dict, status: int, location: str):
 
 
 def parse_pagination(default_limit: int, max_limit: int) -> tuple[int, int]:
-    """Read limit/cursor query params for a growing collection. Invalid or
-    out-of-range values fall back to safe defaults rather than erroring,
-    since pagination inputs are advisory, not semantic."""
+    """Read limit/cursor query params with safe fallbacks."""
     try:
         limit = int(request.args.get("limit", default_limit))
     except (TypeError, ValueError):
@@ -71,9 +69,7 @@ def parse_pagination(default_limit: int, max_limit: int) -> tuple[int, int]:
 
 
 def paginated_response(fetch_newest: Callable[[int], list], limit: int, offset: int):
-    """fetch_newest(n) returns the newest n matching items. Fetches one past
-    the requested page to tell whether a next cursor should be reported,
-    without requiring the caller to know the collection's total size."""
+    """Return one cursor page from a newest-first fetcher."""
     fetched = fetch_newest(min(offset + limit + 1, _MAX_PAGE_OFFSET + limit + 1))
     page = fetched[offset : offset + limit]
     next_cursor = _encode_cursor(offset + limit) if len(fetched) > offset + limit else None

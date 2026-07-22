@@ -1,5 +1,8 @@
 # Benches (created by `bench new`)
-benches/
+/benches/
+
+# Local agent scratch files
+/plan_refactor.md
 
 # Git provider PAT store (plaintext token — never commit)
 .bench.git.info

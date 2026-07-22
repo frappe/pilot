@@ -5,7 +5,7 @@ import subprocess
 import time
 from collections.abc import Generator
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mKJHfABCDGsu]")
@@ -14,9 +14,7 @@ _MAX_STREAM_LINES = 5000  # cap on lines a single log tail-stream connection emi
 
 
 def _read_tail_text(path: Path, min_lines: int, block_size: int = 65536) -> str:
-    """Read only as much of the file's end as needed for at least min_lines
-    newlines, doubling the window each attempt so a bounded tail read never
-    touches a large file's full size."""
+    """Read a bounded tail window large enough for min_lines."""
     size = path.stat().st_size
     read_size = min(block_size, size)
     with path.open("rb") as handle:
@@ -49,13 +47,15 @@ class LogProvider:
         infos = []
         for path in sorted(logs_dir.glob("*.log")):
             stat = path.stat()
-            infos.append(LogFileInfo(
-                filename=path.name,
-                size_bytes=stat.st_size,
-                last_modified=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
-                process_name=path.stem,
-                line_count=self.count_lines(path),
-            ))
+            infos.append(
+                LogFileInfo(
+                    filename=path.name,
+                    size_bytes=stat.st_size,
+                    last_modified=datetime.fromtimestamp(stat.st_mtime, tz=UTC),
+                    process_name=path.stem,
+                    line_count=self.count_lines(path),
+                )
+            )
         return infos
 
     def tail_file(self, filename: str, lines: int = 200) -> list[str]:

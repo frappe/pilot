@@ -1,11 +1,10 @@
 """Tests for Site.drop()'s provider domain capture/release driving a dummy provider."""
+
 import json
 import os
 from pathlib import Path
 
-from pilot.config.bench import BenchConfig
-from pilot.config.site import SiteConfig
-from pilot.config.toml_store import BenchTomlStore
+from pilot.config import BenchConfig, SiteConfig
 from pilot.core.bench import Bench
 from pilot.core.site import Site
 
@@ -54,8 +53,14 @@ def _write_site(bench: Bench, name: str, config: dict) -> None:
 def test_collects_site_name_and_custom_domains(tmp_path: Path, monkeypatch) -> None:
     _install_provider(tmp_path, monkeypatch)
     bench = _make_bench(tmp_path)
-    _write_site(bench, "mysite", {"domains": ["app.example.com", "shop.example.com"],
-                                  "host_name": "https://app.example.com"})
+    _write_site(
+        bench,
+        "mysite",
+        {
+            "domains": ["app.example.com", "shop.example.com"],
+            "host_name": "https://app.example.com",
+        },
+    )
 
     assert Site(SiteConfig(name="mysite", apps=[]), bench)._provider_domains() == [
         "mysite",
@@ -100,7 +105,7 @@ def test_no_op_for_missing_site(tmp_path: Path, monkeypatch) -> None:
 
 
 def _capture_drop_cmd(tmp_path: Path, monkeypatch, bench: Bench) -> dict:
-    BenchTomlStore.for_bench(bench.path).write(bench.config)
+    bench.config.write(bench.path)
     _write_site(bench, "mysite", {})
     captured: dict = {}
     monkeypatch.setattr("pilot.core.site.run_command", lambda cmd, **kw: captured.setdefault("cmd", cmd))
@@ -110,7 +115,7 @@ def _capture_drop_cmd(tmp_path: Path, monkeypatch, bench: Bench) -> dict:
 
 def test_drop_uses_postgres_root_creds(tmp_path: Path, monkeypatch) -> None:
     # The drop connects to the server as root to drop the database, so it must pass
-    # the bench engine's credentials — postgres password auth fails without them.
+    # the bench engine's credentials - postgres password auth fails without them.
     _install_provider(tmp_path, monkeypatch)
     bench = _make_bench(tmp_path)
     bench.config.db_type = "postgres"

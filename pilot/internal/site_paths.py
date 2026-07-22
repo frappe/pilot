@@ -4,9 +4,7 @@ from pilot.internal.validators import validate_site_name
 
 
 def resolve_site_path(bench_root: Path, name: str) -> Path | None:
-    """Resolve ``name`` under ``bench_root/sites``, or None if it's a symlink
-    or would resolve outside that directory. Does not check the name's
-    format or whether the site actually exists."""
+    """Resolve a site path without following symlinks outside sites/."""
     raw_sites_path = bench_root / "sites"
     if raw_sites_path.is_symlink():
         return None

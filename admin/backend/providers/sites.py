@@ -4,10 +4,9 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from pilot.tasks.manager.task_reader import TaskReader
-from pilot.tasks.manager.task_state import ACTIVE_TASK_STATUSES
 from pilot.core.site import query_installed_apps_via_db
 from pilot.internal.site_paths import resolve_site_path
+from pilot.managers.task import TaskReader
 
 # These write site_config.json well before the DB is queryable, so a failed
 # DB probe during one means "not ready yet", not "broken".
@@ -52,7 +51,7 @@ class SiteProvider:
 
     @property
     def provisioning_site_names(self) -> set[str]:
-        """Sites with an active provisioning task — cheap local file reads,
+        """Sites with an active provisioning task - cheap local file reads,
         versus the DB probe they let us skip."""
         try:
             tasks = TaskReader(self._bench_root).list_tasks()
@@ -61,10 +60,7 @@ class SiteProvider:
 
         names = set()
         for task in tasks:
-            if (
-                task.status not in ACTIVE_TASK_STATUSES
-                or task.command not in _PROVISIONING_COMMANDS
-            ):
+            if not task.status.is_active or task.command not in _PROVISIONING_COMMANDS:
                 continue
             for key in _PROVISIONING_ARG_KEYS:
                 if name := task.args.get(key):

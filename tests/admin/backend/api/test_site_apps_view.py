@@ -1,21 +1,22 @@
 """Tests for /api/v1/sites/<name>/apps: listing, install, and uninstall."""
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
 from unittest.mock import patch
 
-from pilot.config.bench_toml_builder import BenchTomlBuilder
+from pilot.config import BenchConfig
 
 
 def _write_bench_toml(bench_dir: Path, name: str, **settings) -> None:
     bench_dir.mkdir(parents=True, exist_ok=True)
-    (bench_dir / "bench.toml").write_text(BenchTomlBuilder(name, settings).render())
+    (bench_dir / "bench.toml").write_text(BenchConfig.from_flat(name, settings).dumps())
 
 
 def _client(bench_root: Path, password: str = "secret"):
     from admin.backend.app import create_app
-    from pilot.core.admin_auth import ensure_jwt_secret, issue_token
+    from admin.backend.auth import ensure_jwt_secret, issue_token
 
     _write_bench_toml(bench_root, bench_root.name, admin_enabled=True, admin_password=password)
     secret = ensure_jwt_secret(bench_root / "bench.toml")
@@ -73,7 +74,7 @@ def test_site_apps_falls_back_to_name_when_app_missing(tmp_path: Path) -> None:
 
 def _post_install(client, site: str, **payload):
     with patch(
-        "pilot.tasks.manager.task_runner.task_workers.wake",
+        "pilot.internal.tasks.runner.task_workers.wake",
         return_value=False,
     ):
         return client.post(f"/api/v1/sites/{site}/apps", json=payload)
@@ -81,7 +82,7 @@ def _post_install(client, site: str, **payload):
 
 def _delete_app(client, site: str, app: str, **query):
     with patch(
-        "pilot.tasks.manager.task_runner.task_workers.wake",
+        "pilot.internal.tasks.runner.task_workers.wake",
         return_value=False,
     ):
         return client.delete(f"/api/v1/sites/{site}/apps/{app}", query_string=query)
@@ -119,6 +120,26 @@ def test_install_app_fetches_by_repo_when_not_cloned(tmp_path: Path) -> None:
     assert body["command"] == "get-and-install-app"
     assert body["args"]["repo"] == "https://github.com/frappe/suite"
     assert body["args"]["branch"] == "develop"
+
+
+def test_install_app_does_not_resolve_repo_before_queueing(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    _make_site(bench_root, "site1.localhost", [])
+    client = _client(bench_root)
+
+    response = _post_install(
+        client,
+        "site1.localhost",
+        app="blog",
+        repo="https://github.com/frappe/blog",
+        branch="",
+    )
+
+    body = response.get_json()
+    assert response.status_code == 202
+    assert body["command"] == "get-and-install-app"
+    assert body["args"]["repo"] == "https://github.com/frappe/blog"
+    assert body["args"]["site"] == "site1.localhost"
 
 
 def test_install_app_treats_bare_name_as_marketplace_when_not_cloned(tmp_path: Path) -> None:

@@ -68,9 +68,10 @@ def test_watchdog_rechecks_request_and_task_activity_before_shutdown() -> None:
     activities = iter([inactive(), active()])
     watchdog._activity.read = lambda: next(activities)
 
-    with patch("admin.backend.watchdog.time.monotonic", return_value=1000), patch(
-        "admin.backend.watchdog.os.kill"
-    ) as kill:
+    with (
+        patch("admin.backend.watchdog.time.monotonic", return_value=1000),
+        patch("admin.backend.watchdog.os.kill") as kill,
+    ):
         watchdog._last_request = 0
         assert watchdog.check_once() is False
 
@@ -82,9 +83,11 @@ def test_watchdog_waits_for_active_request_to_finish() -> None:
     watchdog = AdminIdleWatchdog(Path("/bench"), 60, owner)
     watchdog._activity.read = inactive
 
-    with patch("admin.backend.watchdog.time.monotonic", return_value=1000), patch(
-        "admin.backend.watchdog.os.getppid", return_value=4242
-    ), patch("admin.backend.watchdog.os.kill") as kill:
+    with (
+        patch("admin.backend.watchdog.time.monotonic", return_value=1000),
+        patch("admin.backend.watchdog.os.getppid", return_value=4242),
+        patch("admin.backend.watchdog.os.kill") as kill,
+    ):
         watchdog._last_request = 0
         watchdog.request_started()
         assert watchdog.check_once() is False
@@ -103,9 +106,11 @@ def test_watchdog_does_not_signal_when_parent_ownership_changes() -> None:
     )
     watchdog._activity.read = inactive
 
-    with patch("admin.backend.watchdog.time.monotonic", return_value=1000), patch(
-        "admin.backend.watchdog.os.getppid", return_value=9999
-    ), patch("admin.backend.watchdog.os.kill") as kill:
+    with (
+        patch("admin.backend.watchdog.time.monotonic", return_value=1000),
+        patch("admin.backend.watchdog.os.getppid", return_value=9999),
+        patch("admin.backend.watchdog.os.kill") as kill,
+    ):
         watchdog._last_request = 0
         assert watchdog.check_once() is False
 

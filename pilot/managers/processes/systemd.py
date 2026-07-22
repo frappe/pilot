@@ -1,88 +1,24 @@
 from __future__ import annotations
 
 import os
-import shlex
 import subprocess
 from pathlib import Path
 
-from pilot.managers.admin_environment import AdminEnvManager
+from pilot.managers.environment import AdminEnvManager
 from pilot.managers.gunicorn import GunicornManager
-from pilot.loader import cli_root
-from pilot.managers.processes.local import ProcessDefinition
+from pilot.managers.platform import _privileged
 from pilot.managers.processes.base import (
     ManagedProcessManager,
     UnitGroup,
-    ServiceRenderer,
     override,
 )
-from pilot.managers.platform import _privileged
-from pilot.utils import run_command
+from pilot.managers.processes.local import ProcessDefinition
+from pilot.managers.processes.systemd_render import SystemdRenderer
+from pilot.utils import cli_root, run_command
 
 _ADMIN_IDLE_TIMEOUT = 60  # seconds of inactivity before socket-activated admin stops
 _SYSTEMCTL_TIMEOUT = 90
 
-class SystemdRenderer(ServiceRenderer):
-    """Builds systemd --user unit/socket/target text for a bench."""
-
-    @override
-    def render(self, pd: ProcessDefinition) -> str:
-        working_dir = f"WorkingDirectory={pd.working_dir}\n" if pd.working_dir else ""
-        env = "".join(f"Environment={k}={v}\n" for k, v in pd.env.items())
-        stop = f"TimeoutStopSec={pd.stop_timeout}\n" if pd.stop_timeout is not None else ""
-        return (
-            f"[Unit]\n"
-            f"Description={self.bench_name} {pd.name}\n"
-            f"PartOf={self.bench_name}.target\n\n"
-            f"[Service]\n"
-            f"Type=simple\n"
-            f"{working_dir}{env}"
-            f"ExecStart={shlex.join(pd.argv)}\n"
-            f"Restart=on-failure\n"
-            f"{stop}"
-            f"StandardOutput=append:{pd.log_file}\n"
-            f"StandardError=append:{pd.log_file}.error.log\n"
-        )
-
-    def admin_socket(self, port: int) -> str:
-        # No PartOf: admin stays reachable while the workload is stopped.
-        return (
-            f"[Unit]\n"
-            f"Description={self.bench_name} admin (socket)\n\n"
-            f"[Socket]\n"
-            f"ListenStream=127.0.0.1:{port}\n\n"
-            f"[Install]\n"
-            f"WantedBy=default.target\n"
-        )
-
-    def admin_service(self, pd: ProcessDefinition, socket_name: str) -> str:
-        env = "".join(f"Environment={k}={v}\n" for k, v in pd.env.items())
-        return (
-            f"[Unit]\n"
-            f"Description={self.bench_name} admin\n"
-            f"Requires={socket_name}\n"
-            f"After={socket_name}\n\n"
-            f"[Service]\n"
-            f"Type=simple\n"
-            f"WorkingDirectory={pd.working_dir}\n"
-            f"{env}"
-            f"ExecStart={shlex.join(pd.argv)}\n"
-            # Re-activation is via the socket, not a restart loop.
-            f"Restart=no\n"
-            # Signal gunicorn only; never cgroup-kill - tasks run as its children
-            # and must outlive it idle-stopping or restarting its socket.
-            f"KillMode=process\n"
-            f"StandardOutput=append:{pd.log_file}\n"
-            f"StandardError=append:{pd.log_file}.error.log\n"
-        )
-
-    def target(self, unit_names: list[str]) -> str:
-        return (
-            f"[Unit]\n"
-            f"Description={self.bench_name} bench\n"
-            f"Wants={' '.join(unit_names)}\n\n"
-            f"[Install]\n"
-            f"WantedBy=default.target\n"
-        )
 
 class SystemdProcessManager(ManagedProcessManager):
     """Manages bench processes via systemd --user (no sudo required)."""
@@ -113,11 +49,13 @@ class SystemdProcessManager(ManagedProcessManager):
         for pd in self._prod_process_definitions():
             if pd.name == "admin":
                 (self.systemd_conf_dir / self._unit_name("admin")).write_text(self._admin_service_text())
-                (self.systemd_conf_dir / self._admin_socket_name()).write_text(renderer.admin_socket(self.bench.config.admin.internal_port))
+                (self.systemd_conf_dir / self._admin_socket_name()).write_text(
+                    renderer.render_admin_socket(self.bench.config.admin.internal_port)
+                )
             else:
                 (self.systemd_conf_dir / self._unit_name(pd.name)).write_text(renderer.render(pd))
                 workload_units.append(self._unit_name(pd.name))
-        (self.systemd_conf_dir / self._target_name()).write_text(renderer.target(workload_units))
+        (self.systemd_conf_dir / self._target_name()).write_text(renderer.render_target(workload_units))
 
     @override
     def install_config(self) -> None:
@@ -125,7 +63,10 @@ class SystemdProcessManager(ManagedProcessManager):
 
         self.user_unit_dir.mkdir(parents=True, exist_ok=True)
         defs = self._prod_process_definitions()
-        units = set(self._unit_name(pd.name) for pd in defs) | {self._target_name(), self._admin_socket_name()}
+        units = set(self._unit_name(pd.name) for pd in defs) | {
+            self._target_name(),
+            self._admin_socket_name(),
+        }
 
         # Stop dropped units so they release ports before relinking.
         self._reap_stale_units(units)
@@ -197,7 +138,9 @@ class SystemdProcessManager(ManagedProcessManager):
                     return True
             return False
         try:
-            result = subprocess.run(self._systemctl("is-active", self._target_name()), capture_output=True, env=env)
+            result = subprocess.run(
+                self._systemctl("is-active", self._target_name()), capture_output=True, env=env
+            )
             return result.returncode == 0
         except FileNotFoundError:
             return False
@@ -269,7 +212,7 @@ class SystemdProcessManager(ManagedProcessManager):
             },
             working_dir=root,
         )
-        return SystemdRenderer(self.bench.config.name).admin_service(pd, self._admin_socket_name())
+        return SystemdRenderer(self.bench.config.name).render_admin_service(pd, self._admin_socket_name())
 
     def _control_admin(self, action: str, env: dict) -> None:
         if action == "start":

@@ -72,8 +72,8 @@ const actionError = ref('')
 const metadata = computed(() => {
   const items = [
     { label: 'Started', value: fmtDateTime(task.value.started_at) },
-    { label: 'Finished', value: task.value.finished_at ? fmtDateTime(task.value.finished_at) : '—' },
-    { label: 'Duration', value: fmtDuration(task.value.duration_seconds) || '—' },
+    { label: 'Finished', value: task.value.finished_at ? fmtDateTime(task.value.finished_at) : '-' },
+    { label: 'Duration', value: fmtDuration(task.value.duration_seconds) || '-' },
   ]
   if (task.value.status === 'queued' && task.value.queue_position) {
     items.unshift({ label: 'Queue position', value: `#${task.value.queue_position}` })

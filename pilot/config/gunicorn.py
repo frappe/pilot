@@ -36,8 +36,14 @@ class GunicornConfig:
         if not self.worker_class:
             raise ConfigError("gunicorn.worker_class must not be empty.")
         if not isinstance(self.malloc_arena_max, int) or self.malloc_arena_max < 0:
-            raise ConfigError(f"gunicorn.malloc_arena_max must be a non-negative integer, got '{self.malloc_arena_max}'.")
+            raise ConfigError(
+                f"gunicorn.malloc_arena_max must be a non-negative integer, got '{self.malloc_arena_max}'."
+            )
         if not isinstance(self.max_requests, int) or self.max_requests < 0:
-            raise ConfigError(f"gunicorn.max_requests must be a non-negative integer, got '{self.max_requests}'.")
+            raise ConfigError(
+                f"gunicorn.max_requests must be a non-negative integer, got '{self.max_requests}'."
+            )
         if not isinstance(self.max_requests_jitter, int) or self.max_requests_jitter < 0:
-            raise ConfigError(f"gunicorn.max_requests_jitter must be a non-negative integer, got '{self.max_requests_jitter}'.")
+            raise ConfigError(
+                f"gunicorn.max_requests_jitter must be a non-negative integer, got '{self.max_requests_jitter}'."
+            )

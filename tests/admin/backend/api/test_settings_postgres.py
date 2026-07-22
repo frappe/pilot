@@ -1,9 +1,9 @@
 """Tests for editing the [postgres] connection on the admin Settings page."""
+
 from __future__ import annotations
 
-from pilot.config.bench import BenchConfig
-
-from admin.backend.api.v1.settings import ConfigPatcher, _build_settings_response
+from admin.backend.api.v1.settings import ConfigPatcher, build_settings_response
+from pilot.config import BenchConfig
 
 
 def _config() -> BenchConfig:
@@ -21,7 +21,7 @@ def test_response_hides_password_but_flags_when_set() -> None:
     config = _config()
     config.postgres.root_password = "secret"
 
-    payload = _build_settings_response(config)
+    payload = build_settings_response(config)
 
     assert payload["postgres"]["admin_user"] == "postgres"
     assert payload["postgres"]["password_set"] is True
@@ -31,7 +31,9 @@ def test_response_hides_password_but_flags_when_set() -> None:
 def test_patcher_updates_connection_fields() -> None:
     config = _config()
 
-    error = ConfigPatcher(config, {"postgres": {"host": "db.internal", "port": 5433, "admin_user": "pgroot"}}).apply()
+    error = ConfigPatcher(
+        config, {"postgres": {"host": "db.internal", "port": 5433, "admin_user": "pgroot"}}
+    ).apply()
 
     assert error is None
     assert config.postgres.host == "db.internal"

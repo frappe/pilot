@@ -1,11 +1,5 @@
-"""End-to-end: a real edge nginx in front of the bench nginx, exercising the
-trusted-proxy gate and firewall together over live HTTP.
+"""Trusted-proxy and firewall integration test over live HTTP."""
 
-The edge binds a fixed loopback source (127.0.0.55) and rewrites X-Forwarded-For
-from an X-Test-Client request header, so one host can play both "via proxy"
-(peer 127.0.0.55) and "direct" (peer 127.0.0.1). A tiny backend echoes the
-X-Real-IP it receives, proving the real client IP survives real_ip. Non-destructive:
-runs unprivileged nginx in a tmp prefix, no sudo, no machine config touched."""
 from __future__ import annotations
 
 import contextlib
@@ -21,7 +15,7 @@ from threading import Thread
 
 import pytest
 
-from pilot.config.bench import BenchConfig
+from pilot.config import BenchConfig
 from pilot.core.bench import Bench
 from pilot.managers.nginx import NginxManager
 
@@ -92,11 +86,12 @@ def _run_nginx(prefix: Path, body: str) -> subprocess.Popen:
     prefix.mkdir(parents=True, exist_ok=True)
     conf = prefix / "nginx.conf"
     conf.write_text(body)
-    proc = subprocess.Popen(
+    return subprocess.Popen(
         ["nginx", "-p", str(prefix), "-c", str(conf), "-g", "daemon off;"],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
     )
-    return proc
 
 
 def _stop(proc: subprocess.Popen) -> None:
@@ -106,11 +101,15 @@ def _stop(proc: subprocess.Popen) -> None:
 
 
 def _http_wrapper(prefix: Path, http_body: str) -> str:
+    log_format = (
+        "    log_format pilot_access '$remote_addr [$time_local] \"$request_method $uri\" "
+        "$status \"$host\" $request_time';\n"
+    )
     return (
         f"pid {prefix}/nginx.pid;\n"
         f"error_log {prefix}/error.log;\n"
         "events {}\n"
-        f"http {{\n    access_log off;\n{http_body}}}\n"
+        f"http {{\n{log_format}    access_log off;\n{http_body}}}\n"
     )
 
 
@@ -143,6 +142,7 @@ def _bench_nginx(tmp_path: Path, firewall: dict | None):
         data = {**data, "firewall": firewall}
     bench = Bench(BenchConfig._from_dict(data), tmp_path / "bench")
     bench.config.nginx.http_port = _BENCH_PORT
+    bench.create_directories()
     site = bench.sites_path / "site1.localhost"
     site.mkdir(parents=True, exist_ok=True)
     (site / "site_config.json").write_text("{}")
@@ -189,8 +189,8 @@ def test_direct_connection_is_blocked_only_proxy_gets_through(tmp_path, backend,
 def test_allowlist_filters_client_but_never_the_proxy(tmp_path, backend, edge):
     firewall = {"enabled": True, "default": "deny", "rules": [{"ip": "1.2.3.4", "action": "allow"}]}
     with _bench_nginx(tmp_path, firewall):
-        assert _get(_EDGE_PORT, "1.2.3.4")[0] == 200   # allowed client
-        assert _get(_EDGE_PORT, "9.9.9.9")[0] == 403   # client not on the allowlist
+        assert _get(_EDGE_PORT, "1.2.3.4")[0] == 200  # allowed client
+        assert _get(_EDGE_PORT, "9.9.9.9")[0] == 403  # client not on the allowlist
         # No X-Forwarded-For: $remote_addr stays the proxy IP; the allowlist must
         # not block it, or the whole bench goes dark.
         assert _get(_EDGE_PORT, None)[0] == 200
@@ -203,8 +203,8 @@ def test_blocklist_cannot_block_the_proxy_even_when_denied(tmp_path, backend, ed
         "rules": [{"ip": "9.9.9.9", "action": "deny"}, {"ip": _PROXY_SRC, "action": "deny"}],
     }
     with _bench_nginx(tmp_path, firewall):
-        assert _get(_EDGE_PORT, "1.2.3.4")[0] == 200   # client allowed by default
-        assert _get(_EDGE_PORT, "9.9.9.9")[0] == 403   # client explicitly denied
+        assert _get(_EDGE_PORT, "1.2.3.4")[0] == 200  # client allowed by default
+        assert _get(_EDGE_PORT, "9.9.9.9")[0] == 403  # client explicitly denied
         # Proxy IP is explicitly denied, yet an XFF-less request still passes: the
         # proxy allow is emitted first and access rules are first-match.
         assert _get(_EDGE_PORT, None)[0] == 200

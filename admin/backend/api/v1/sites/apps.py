@@ -4,17 +4,7 @@ from pathlib import Path
 
 from flask import current_app, jsonify, request
 
-from pilot.exceptions import BenchError
-from pilot.integrations.git import GitProviderError, resolve_app_name_from_repo
-from pilot.internal.site_paths import site_exists
-from pilot.internal.validators import validate_app_name
-from pilot.tasks.manager.task_runner import TaskRunner
-
 from admin.backend.api.responses import accepted_task_response, error_response
-from admin.backend.middleware import require_scope
-
-from admin.backend.providers.apps import AppProvider
-from admin.backend.providers.sites import SiteProvider
 from admin.backend.api.v1.sites import sites_bp
 from admin.backend.api.v1.sites.shared import (
     internal_error,
@@ -25,6 +15,16 @@ from admin.backend.api.v1.sites.shared import (
     task_failure,
     text_fields,
 )
+from admin.backend.middleware import require_scope
+from admin.backend.providers.apps import AppProvider
+from admin.backend.providers.sites import SiteProvider
+from pilot.core.bench import Bench
+from pilot.exceptions import BenchError
+from pilot.internal.site_paths import site_exists
+from pilot.internal.validators import validate_app_name, validate_repo_url
+from pilot.tasks.get_and_install_app import GetAndInstallAppTask
+from pilot.tasks.install_app import InstallAppTask
+from pilot.tasks.uninstall_app import UninstallAppTask
 
 
 @sites_bp.get("/<name>/apps")
@@ -86,44 +86,30 @@ def install_site_app(name: str):
     app, repo, branch = fields["app"], fields["repo"], fields["branch"]
     if not app and not repo:
         return error_response("missing_app", "App name or repository is required.", 422)
+    if repo and (err := validate_repo_url(repo)):
+        return error_response("invalid_repository", err, 422)
 
     try:
         task_id = _submit_install_task(bench_root, name, app, repo, branch)
-    except GitProviderError:
-        return error_response(
-            "invalid_repository", "Could not determine the application name.", 422
-        )
     except Exception as error:
         return task_failure(error)
     return accepted_task_response(bench_root, task_id)
 
 
-def _submit_install_task(
-    bench_root: Path, site: str, app: str, repo: str, branch: str
-) -> str:
+def _submit_install_task(bench_root: Path, site: str, app: str, repo: str, branch: str) -> str:
     """An app already cloned into the bench installs directly; otherwise it is
     fetched first, by repository URL or by marketplace name."""
-    runner = TaskRunner(bench_root)
+    bench = Bench(bench_root)
     if app and _is_app_cloned(bench_root, app):
-        return runner.run("install-app", {"site": site, "app": app})
+        return InstallAppTask.queue(bench, site=site, app=app)
     if repo:
-        app = app or resolve_app_name_from_repo(bench_root, repo, branch)["name"]
-        task_args = {"site": site, "app": app, "repo": repo}
-        if branch:
-            task_args["branch"] = branch
-        return runner.run("get-and-install-app", task_args)
-    return runner.run(
-        "get-and-install-app", {"site": site, "app": app, "marketplace_app": app}
-    )
+        return GetAndInstallAppTask.queue(bench, repo=repo, branch=branch, site=site)
+    return GetAndInstallAppTask.queue(bench, marketplace_app=app, site=site)
 
 
 def _is_app_cloned(bench_root: Path, app: str) -> bool:
-    from pilot.config.toml_store import BenchTomlStore
-    from pilot.core.bench import Bench
-
-    bench = Bench(BenchTomlStore.for_bench(bench_root).read(), bench_root)
     try:
-        return bench.app(app).is_cloned
+        return Bench(bench_root).app(app).is_cloned
     except BenchError:
         return False
 
@@ -140,9 +126,7 @@ def delete_site_app(name: str, app: str):
 
     force = request.args.get("force") == "true"
     try:
-        task_id = TaskRunner(bench_root).run(
-            "uninstall-app", {"site": name, "app": app, "force": force}
-        )
+        task_id = UninstallAppTask.queue(Bench(bench_root), site=name, app=app, force=force)
     except Exception as error:
         return task_failure(error)
     return accepted_task_response(bench_root, task_id)

@@ -17,7 +17,8 @@ except ImportError:
     class EndpointConnectionError(Exception):  # type: ignore[no-redef]
         pass
 
-from pilot.config.s3 import S3Config
+
+from pilot.config import S3Config
 from pilot.exceptions import BenchError
 
 # Non-seekable streams (e.g. a subprocess's stdin pipe) still get parallel
@@ -61,8 +62,8 @@ SUPPORTED_REGIONS = {
 def build_endpoint_url(provider: str, region: str) -> str:
     try:
         return ENDPOINT_TEMPLATES[provider].format(region=region)
-    except KeyError:
-        raise ValueError(f"Unsupported provider: {provider}")
+    except KeyError as exc:
+        raise ValueError(f"Unsupported provider: {provider}") from exc
 
 
 class S3IntegrationError(BenchError):
@@ -116,15 +117,21 @@ class S3:
         try:
             self.client.head_bucket(Bucket=bucket_name)
         except EndpointConnectionError as error:
-            raise S3IntegrationError(f"Could not reach S3 endpoint '{self.endpoint_url}'. Check the endpoint URL and network access.") from error
+            raise S3IntegrationError(
+                f"Could not reach S3 endpoint '{self.endpoint_url}'. Check the endpoint URL and network access."
+            ) from error
         except ClientError as error:
             code = error.response["Error"]["Code"]
             if code == "404":
                 self.create_bucket(bucket_name)
             elif code in ("401", "403"):
-                raise S3IntegrationError(f"Access to bucket '{bucket_name}' was denied. Check the S3 credentials.") from error
+                raise S3IntegrationError(
+                    f"Access to bucket '{bucket_name}' was denied. Check the S3 credentials."
+                ) from error
             else:
-                raise S3IntegrationError(f"Could not verify bucket '{bucket_name}': {error.response['Error'].get('Message', code)}") from error
+                raise S3IntegrationError(
+                    f"Could not verify bucket '{bucket_name}': {error.response['Error'].get('Message', code)}"
+                ) from error
 
     def create_bucket(self, bucket_name: str) -> None:
         try:
@@ -136,7 +143,9 @@ class S3:
             else:
                 self.client.create_bucket(Bucket=bucket_name)
         except ClientError as error:
-            raise S3IntegrationError(f"Failed to create bucket '{bucket_name}': {error.response['Error'].get('Message', error)}") from error
+            raise S3IntegrationError(
+                f"Failed to create bucket '{bucket_name}': {error.response['Error'].get('Message', error)}"
+            ) from error
 
     def upload_file(self, bucket_name: str, local_path: Path, remote_key: str) -> None:
         try:
@@ -147,8 +156,7 @@ class S3:
             ) from error
 
     def upload_stream(self, bucket_name: str, remote_key: str, fileobj) -> None:
-        """Multipart-uploads any readable file-like object — e.g. a subprocess's
-        stdout pipe — without ever buffering the whole thing in memory or on disk."""
+        """Multipart-upload a stream without local buffering."""
         try:
             self.client.upload_fileobj(fileobj, bucket_name, remote_key, Config=_STREAM_TRANSFER)
         except ClientError as error:
@@ -157,9 +165,7 @@ class S3:
             ) from error
 
     def download_stream(self, bucket_name: str, remote_key: str, fileobj) -> None:
-        """Streams an S3 object into any writable file-like object — e.g. a
-        subprocess's stdin pipe — without ever buffering the whole thing in
-        memory or on disk."""
+        """Stream an S3 object into a writable file-like object."""
         try:
             self.client.download_fileobj(bucket_name, remote_key, fileobj, Config=_STREAM_TRANSFER)
         except ClientError as error:
@@ -176,7 +182,7 @@ class S3:
             ) from error
 
     def presigned_url(self, bucket_name: str, remote_key: str, expires_in: int = 25_200) -> str:
-        """A time-limited URL the caller can hand straight to a browser/curl —
+        """A time-limited URL the caller can hand straight to a browser/curl -
         the download streams directly from S3, never through this server."""
         try:
             return self.client.generate_presigned_url(
@@ -209,7 +215,7 @@ class S3:
                 f"Failed to list '{bucket_name}/{prefix}': {error.response['Error'].get('Message', error)}",
             ) from error
 
-    def object_exists(self, bucket_name: str, remote_key: str) -> bool:
+    def has_object(self, bucket_name: str, remote_key: str) -> bool:
         try:
             self.client.head_object(Bucket=bucket_name, Key=remote_key)
             return True

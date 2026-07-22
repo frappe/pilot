@@ -5,14 +5,7 @@ from pathlib import Path
 
 from flask import current_app, jsonify, request
 
-from pilot.exceptions import BenchError, ConfigError, DomainConflictError, DomainProviderError
-from pilot.internal.site_paths import site_config_path, site_exists
-from pilot.internal.validators import validate_email, validate_site_name
-from pilot.tasks.manager.task_runner import TaskCallback, TaskRunner
-
 from admin.backend.api.responses import accepted_task_response, error_response
-from admin.backend.middleware import require_scope
-
 from admin.backend.api.v1.sites import sites_bp
 from admin.backend.api.v1.sites.shared import (
     internal_error,
@@ -23,6 +16,12 @@ from admin.backend.api.v1.sites.shared import (
     task_failure,
     text_fields,
 )
+from admin.backend.middleware import require_scope
+from pilot.core.bench import Bench
+from pilot.exceptions import BenchError, ConfigError, DomainConflictError, DomainProviderError
+from pilot.internal.site_paths import site_config_path, site_exists
+from pilot.internal.validators import validate_email, validate_site_name
+from pilot.tasks.setup_letsencrypt import SetupLetsEncryptTask
 
 
 @sites_bp.post("/<name>/actions/enable-tls")
@@ -33,58 +32,19 @@ def enable_tls(name: str):
     if config_path is None:
         return site_not_found()
 
-    from pilot.config.toml_store import BenchTomlStore
+    email, response = _tls_email_request(bench_root)
+    if response is not None:
+        return response
 
-    store = BenchTomlStore.for_bench(bench_root)
-    data = request.get_json(silent=True)
-    if data is None:
-        data = {}
-    elif not isinstance(data, dict):
-        return malformed_body()
-    fields = text_fields(data, "email")
-    if fields is None:
-        return invalid_fields()
-    email = fields["email"]
-    if email:
-        if err := validate_email(email):
-            return error_response(
-                "invalid_email", err, 422, {"needs_email": True}
-            )
-    else:
-        try:
-            config = store.read()
-        except Exception:
-            return internal_error("Could not read certificate configuration.")
-
-    if not email and not config.letsencrypt.email:
-        return error_response(
-            "missing_certificate_email",
-            "A Let's Encrypt account email is required to issue certificates.",
-            422,
-            {"needs_email": True},
-        )
+    response = _validate_tls_not_enabled(config_path)
+    if response is not None:
+        return response
 
     try:
-        current = json.loads(config_path.read_text())
-    except Exception:
-        return internal_error("Could not read the site configuration.")
-    if not isinstance(current, dict):
-        return internal_error("Could not read the site configuration.")
-    if current.get("ssl"):
-        return error_response("tls_already_enabled", "TLS is already enabled.", 409)
-
-    rollback: TaskCallback = {"operation": "disable-site-ssl", "args": {"site": name}}
-    task_args = {"site": name}
-    if email:
-        task_args["email"] = email
-    try:
-        task_id = TaskRunner(bench_root).run(
-            "setup-letsencrypt",
-            task_args,
-            callbacks={
-                "on_failure": rollback,
-                "on_cancel": rollback,
-            },
+        task_id = SetupLetsEncryptTask.queue(
+            Bench(bench_root),
+            site=name,
+            email=email,
             idempotency_key=request.headers.get("Idempotency-Key"),
             resource_key=f"site:{name.lower()}",
         )
@@ -93,19 +53,58 @@ def enable_tls(name: str):
     return accepted_task_response(bench_root, task_id)
 
 
-def _domain_routes(bench_root: Path):
-    from pilot.config.toml_store import BenchTomlStore
-    from pilot.core.bench import Bench
-    from pilot.core.domains import DomainRouteProvider
+def _tls_email_request(bench_root: Path):
+    from pilot.config import BenchConfig
 
-    bench = Bench(BenchTomlStore.for_bench(bench_root).read(), bench_root)
-    return DomainRouteProvider(bench)
+    data = request.get_json(silent=True)
+    if data is None:
+        data = {}
+    elif not isinstance(data, dict):
+        return "", malformed_body()
+
+    fields = text_fields(data, "email")
+    if fields is None:
+        return "", invalid_fields()
+
+    email = fields["email"]
+    if email:
+        if err := validate_email(email):
+            return "", error_response("invalid_email", err, 422, {"needs_email": True})
+        return email, None
+
+    try:
+        config = BenchConfig.read(bench_root)
+    except Exception:
+        return "", internal_error("Could not read certificate configuration.")
+
+    if config.letsencrypt.email:
+        return "", None
+    return "", error_response(
+        "missing_certificate_email",
+        "A Let's Encrypt account email is required to issue certificates.",
+        422,
+        {"needs_email": True},
+    )
+
+
+def _validate_tls_not_enabled(config_path: Path):
+    try:
+        current = json.loads(config_path.read_text())
+    except Exception:
+        return internal_error("Could not read the site configuration.")
+    if not isinstance(current, dict):
+        return internal_error("Could not read the site configuration.")
+    if current.get("ssl"):
+        return error_response("tls_already_enabled", "TLS is already enabled.", 409)
+    return None
+
+
+def _site_domains(bench_root: Path, name: str):
+    return Bench(bench_root).site(name).domains
 
 
 def _apply_domains(bench_root: Path, name: str) -> str:
-    """Re-run the right task so nginx (and certs, for SSL sites) pick up the change."""
-    ssl = bool(json.loads((bench_root / "sites" / name / "site_config.json").read_text()).get("ssl"))
-    return TaskRunner(bench_root).run("setup-letsencrypt" if ssl else "setup-nginx", {})
+    return _site_domains(bench_root, name).apply_task()
 
 
 @sites_bp.route("/<name>/domains", methods=["GET"])
@@ -115,8 +114,8 @@ def list_domains(name: str):
     if not site_exists(bench_root, name):
         return site_not_found()
     try:
-        routes = _domain_routes(bench_root)
-        return jsonify({"domains": routes.domains(name), "primary": routes.primary(name)})
+        domains = _site_domains(bench_root, name)
+        return jsonify({"domains": domains.names(), "primary": domains.primary()})
     except BenchError as error:
         return _domain_failure(error, "Could not read site domains.")
     except Exception:
@@ -133,7 +132,7 @@ def domain_dns_records(name: str, domain: str):
     if err := validate_site_name(domain):
         return error_response("invalid_domain", err, 422)
     try:
-        records = _domain_routes(bench_root).generate_dns_records(name, domain)
+        records = _site_domains(bench_root, name).generate_dns_records(domain)
     except BenchError as error:
         return _domain_failure(error, "Could not generate DNS records.")
     except Exception:
@@ -157,7 +156,7 @@ def add_domain(name: str):
     if err := validate_site_name(domain):
         return error_response("invalid_domain", err, 422)
     try:
-        _domain_routes(bench_root).register(name, domain)
+        _site_domains(bench_root, name).register(domain)
         task_id = _apply_domains(bench_root, name)
     except BenchError as error:
         return _domain_failure(error, "Could not attach the domain.")
@@ -175,7 +174,7 @@ def get_domain(name: str, domain: str):
     if err := validate_site_name(domain):
         return error_response("invalid_domain", err, 422)
     try:
-        attached, is_primary = _domain_status(_domain_routes(bench_root), name, domain)
+        attached, is_primary = _site_domains(bench_root, name).status(domain)
     except BenchError as error:
         return _domain_failure(error, "Could not read the domain.")
     except Exception:
@@ -195,11 +194,9 @@ def update_domain(name: str, domain: str):
         return error_response("invalid_domain", err, 422)
     data = request.get_json(silent=True)
     if not isinstance(data, dict) or data.get("primary") is not True:
-        return error_response(
-            "invalid_fields", 'Only setting {"primary": true} is supported.', 422
-        )
+        return error_response("invalid_fields", 'Only setting {"primary": true} is supported.', 422)
     try:
-        _domain_routes(bench_root).set_primary(name, domain)
+        _site_domains(bench_root, name).set_primary(domain)
         task_id = _apply_domains(bench_root, name)
     except BenchError as error:
         return _domain_failure(error, "Could not change the primary domain.")
@@ -218,7 +215,7 @@ def remove_domain(name: str, domain: str):
     if err := validate_site_name(domain):
         return error_response("invalid_domain", err, 422)
     try:
-        _domain_routes(bench_root).deregister(name, domain)
+        _site_domains(bench_root, name).deregister(domain)
         task_id = _apply_domains(bench_root, name)
     except BenchError as error:
         return _domain_failure(error, "Could not detach the domain.")
@@ -227,21 +224,8 @@ def remove_domain(name: str, domain: str):
     return accepted_task_response(bench_root, task_id)
 
 
-def _domain_status(routes, site_name: str, domain: str) -> tuple[bool, bool]:
-    from pilot.utils import normalize_host
-
-    normalized = normalize_host(domain)
-    primary = routes.primary(site_name)
-    if normalized == normalize_host(site_name):
-        return True, not primary or normalize_host(primary) == normalized
-    attached = normalized in {normalize_host(d) for d in routes.domains(site_name)}
-    return attached, bool(primary) and normalize_host(primary) == normalized
-
-
 def _domain_conflict():
-    return error_response(
-        "domain_conflict", "The domain conflicts with the current site state.", 409
-    )
+    return error_response("domain_conflict", "The domain conflicts with the current site state.", 409)
 
 
 def _domain_failure(error: BenchError, message: str):

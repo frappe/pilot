@@ -1,4 +1,5 @@
 """Tests for the rename-site command."""
+
 from __future__ import annotations
 
 import json
@@ -7,12 +8,9 @@ from pathlib import Path
 import pytest
 
 from pilot.commands.sites.rename import RenameSiteCommand
-from pilot.config.app import AppConfig
-from pilot.config.bench import BenchConfig
-from pilot.config.mariadb import MariaDBConfig
-from pilot.config.redis import RedisConfig
-from pilot.config.worker import WorkerConfig, WorkerGroup
+from pilot.config import AppConfig, BenchConfig, MariaDBConfig, RedisConfig, WorkerConfig, WorkerGroup
 from pilot.core.bench import Bench
+from pilot.core.site.rename import SiteRename
 from pilot.exceptions import BenchError
 
 
@@ -43,7 +41,7 @@ def _make_site(bench: Bench, name: str, ssl: bool = False) -> None:
 def test_rename_raises_if_old_missing(tmp_path: Path) -> None:
     bench = _bench(tmp_path, "b1")
     with pytest.raises(BenchError, match="does not exist"):
-        RenameSiteCommand(bench, old_name="nope.localhost", new_name="new.localhost")._validate()
+        SiteRename(bench.site("nope.localhost"), "new.localhost").validate()
 
 
 def test_rename_raises_if_new_already_exists(tmp_path: Path) -> None:
@@ -51,14 +49,14 @@ def test_rename_raises_if_new_already_exists(tmp_path: Path) -> None:
     _make_site(bench, "old.localhost")
     _make_site(bench, "taken.localhost")
     with pytest.raises(BenchError, match="already exists"):
-        RenameSiteCommand(bench, old_name="old.localhost", new_name="taken.localhost")._validate()
+        SiteRename(bench.site("old.localhost"), "taken.localhost").validate()
 
 
 def test_rename_raises_if_new_equals_admin_domain(tmp_path: Path) -> None:
     bench = _bench(tmp_path, "b1", admin_domain="admin.localhost")
     _make_site(bench, "old.localhost")
     with pytest.raises(BenchError, match="admin domain"):
-        RenameSiteCommand(bench, old_name="old.localhost", new_name="admin.localhost")._validate()
+        SiteRename(bench.site("old.localhost"), "admin.localhost").validate()
 
 
 def test_rename_raises_if_new_claimed_by_sibling_bench(tmp_path: Path) -> None:
@@ -68,7 +66,7 @@ def test_rename_raises_if_new_claimed_by_sibling_bench(tmp_path: Path) -> None:
     sibling = _bench(tmp_path, "b2")
     _make_site(sibling, "wanted.localhost")
     with pytest.raises(BenchError, match="already used by bench 'b2'"):
-        RenameSiteCommand(bench, old_name="old.localhost", new_name="wanted.localhost")._validate()
+        SiteRename(bench.site("old.localhost"), "wanted.localhost").validate()
 
 
 def test_rename_moves_dir_and_updates_default_site(tmp_path: Path) -> None:
@@ -88,32 +86,36 @@ def test_rename_followup_runs_setup_production_when_prod(tmp_path: Path, monkeyp
     bench = _bench(tmp_path, "b1")
     bench.config.production.enabled = True
     calls = []
-    monkeypatch.setattr(
-        "pilot.commands.setup.production.SetupProductionCommand.run", lambda self: calls.append("prod")
+    monkeypatch.setattr(Bench, "setup_production", lambda self, **kwargs: calls.append("prod"))
+    SiteRename(bench.site("old.localhost"), "new.localhost").run_followups(
+        ssl_enabled=True, on_progress=print
     )
-    RenameSiteCommand(bench, old_name="old.localhost", new_name="new.localhost")._run_followups(ssl_enabled=True)
     assert calls == ["prod"]  # prod path covers TLS; letsencrypt not run separately
 
 
 def test_rename_followup_runs_letsencrypt_when_ssl_and_not_prod(tmp_path: Path, monkeypatch) -> None:
     bench = _bench(tmp_path, "b1")
     calls = []
-    monkeypatch.setattr(
-        "pilot.commands.setup.letsencrypt.SetupLetsEncryptCommand.run", lambda self: calls.append("le")
+    monkeypatch.setattr(Bench, "setup_letsencrypt", lambda self: calls.append("le"))
+    SiteRename(bench.site("old.localhost"), "new.localhost").run_followups(
+        ssl_enabled=True, on_progress=print
     )
-    RenameSiteCommand(bench, old_name="old.localhost", new_name="new.localhost")._run_followups(ssl_enabled=True)
     assert calls == ["le"]
 
 
-def test_rename_followup_advises_on_failure(tmp_path: Path, monkeypatch, capsys: pytest.CaptureFixture) -> None:
+def test_rename_followup_advises_on_failure(
+    tmp_path: Path, monkeypatch, capsys: pytest.CaptureFixture
+) -> None:
     bench = _bench(tmp_path, "b1")
     bench.config.production.enabled = True
 
     def boom(self):
         raise BenchError("nginx exploded")
 
-    monkeypatch.setattr("pilot.commands.setup.production.SetupProductionCommand.run", boom)
-    RenameSiteCommand(bench, old_name="old.localhost", new_name="new.localhost")._run_followups(ssl_enabled=False)
+    monkeypatch.setattr(Bench, "setup_production", boom)
+    SiteRename(bench.site("old.localhost"), "new.localhost").run_followups(
+        ssl_enabled=False, on_progress=print
+    )
     out = capsys.readouterr().out
     assert "did not complete" in out
     assert "bench setup production -b b1" in out

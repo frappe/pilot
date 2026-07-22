@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar
 
-from pilot.commands.base import Command
+from pilot.commands import Command
 
 
 @dataclass(kw_only=True)
@@ -13,17 +13,13 @@ class TaskWorkerStatusCommand(Command):
     group: ClassVar[str] = "tasks"
 
     def run(self) -> None:
-        from pilot.tasks.manager.activity import TaskActivityReader
+        from pilot.managers.task import TaskActivityReader
 
         activity = TaskActivityReader(self.bench.path).read()
-        self.print(
-            f"Task worker: {activity.worker_status} "
-            f"(desired: {activity.desired_status})"
-        )
-        state = activity.worker_state
-        if state is not None and state.current_task_id:
-            self.print(f"Current task: {state.current_task_id}")
-        self.print(
+        self.report(f"Task worker: {activity.worker_status} (desired: {activity.desired_status})")
+        if activity.current_task_id:
+            self.report(f"Current task: {activity.current_task_id}")
+        self.report(
             f"Task activity: {'active' if activity.active else 'idle'} "
             f"(queued: {activity.queued_tasks}, running: {activity.running_tasks})"
         )

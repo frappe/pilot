@@ -67,7 +67,7 @@ class Resolver:
         result: list["Resolver"],
     ):
         if app in path:
-            cycle = " -> ".join(path[path.index(app) :] + [app])
+            cycle = " -> ".join([*path[path.index(app) :], app])
             raise DependencyResolutionError(f"Circular dependency detected: {cycle}")
         if app in visited:
             if required_spec and Version(visited[app]) not in SpecifierSet(required_spec):
@@ -125,14 +125,18 @@ class Marketplace:
     @staticmethod
     def _read_apps_json() -> str:
         from pilot.core.registry_cache import RegistryCache
-        from pilot.loader import cli_root
+        from pilot.utils import cli_root
 
         cache = RegistryCache(cli_root())
         cache.ensure_fresh()
         return cache.apps_json_path.read_text()
 
     def get_current_frappe_version(self) -> str:
-        cmd = [str(self.bench.env_path / "bin" / "python"), "-c", "import frappe; print(frappe.__version__)"]
+        cmd = [
+            str(self.bench.env_path / "bin" / "python"),
+            "-c",
+            "import frappe; print(frappe.__version__)",
+        ]
         result = run_command(cmd)
         return result.stdout.strip().decode()
 
@@ -151,7 +155,7 @@ class Marketplace:
 
     @staticmethod
     def _safe_spec(frappe_core: str | None) -> SpecifierSet | None:
-        """None means unparseable — excluded from compatibility matching."""
+        """None means unparseable - excluded from compatibility matching."""
         try:
             return SpecifierSet(frappe_core or "", prereleases=True)
         except InvalidSpecifier:
@@ -201,7 +205,7 @@ class Marketplace:
         return resolvers
 
     def find_app(self, name: str) -> Resolver:
-        """Look up a marketplace app by name, or raise AppNotFoundError — the
+        """Look up a marketplace app by name, or raise AppNotFoundError - the
         single place every caller resolves a marketplace name to its Resolver."""
         resolver = next((r for r in self.read_all_apps() if r.app == name), None)
         if resolver is None:

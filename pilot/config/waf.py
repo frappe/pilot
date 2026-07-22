@@ -3,16 +3,20 @@ from dataclasses import dataclass, field
 
 from pilot.exceptions import ConfigError
 
-# The only accepted values for WafConfig.mode, in UI order. Single source of
-# truth: WafConfig.validate(), the settings API, and the admin UI all
-# reference this rather than repeating the literals.
+# Accepted WAF modes, in UI order.
 WAF_MODES = ("Off", "DetectionOnly", "On")
 
-# Custom-rule vocabulary. Single source of truth shared by validation, the
-# SecRule compiler (nginx renderer), the settings API, and the builder UI.
-# ``field`` -> the request part matched; ``operator`` -> how; ``action`` -> what
-# happens on a match; ``match`` -> how a rule's conditions combine.
-WAF_RULE_FIELDS = ("uri_path", "uri_full", "query", "method", "source_ip", "user_agent", "header", "host")
+# Custom-rule vocabulary shared by validation, rendering, API, and UI.
+WAF_RULE_FIELDS = (
+    "uri_path",
+    "uri_full",
+    "query",
+    "method",
+    "source_ip",
+    "user_agent",
+    "header",
+    "host",
+)
 WAF_RULE_OPERATORS = ("is", "is_not", "contains", "not_contains", "starts_with", "matches")
 WAF_RULE_ACTIONS = ("block", "log", "skip")
 WAF_RULE_MATCH = ("all", "any")
@@ -34,8 +38,7 @@ _WAF_MAX_VALUE_LEN = 1024
 
 
 def parse_nginx_size(value: str) -> int:
-    """Bytes for an nginx size string ('50m', '1g', '13107200'). Suffixes k/m/g
-    are powers of 1024; a bare number is bytes. Raises ValueError on garbage."""
+    """Parse nginx sizes like '50m', '1g', or raw byte counts."""
     text = str(value).strip().lower()
     if not text:
         raise ValueError("empty size")
@@ -46,9 +49,7 @@ def parse_nginx_size(value: str) -> int:
 
 @dataclass
 class WafCondition:
-    """One predicate of a custom rule: match ``field`` against ``value`` with
-    ``operator``. ``header_name`` names the request header when ``field`` is
-    "header" (ignored otherwise)."""
+    """One predicate in a custom WAF rule."""
 
     field: str
     operator: str
@@ -58,10 +59,7 @@ class WafCondition:
 
 @dataclass
 class WafRule:
-    """A Cloudflare-style custom rule that compiles to ModSecurity SecRule(s):
-    when the ``conditions`` match (all of them for ``match`` "all", any of them
-    for "any"), apply ``action`` ("block" | "log" | "skip"). ``name`` is a label
-    surfaced in the audit log; ``enabled`` toggles the rule without deleting it."""
+    """A custom rule compiled to ModSecurity SecRule(s)."""
 
     name: str
     action: str = "block"
@@ -72,21 +70,7 @@ class WafRule:
 
 @dataclass
 class WafConfig:
-    """ModSecurity (layer-7 WAF) settings applied to every nginx vhost of the bench.
-
-    Runs the OWASP Core Rule Set. ``mode`` maps to ``SecRuleEngine``:
-    "DetectionOnly" logs matches without blocking (the safe default for a
-    monitor-first rollout), "On" enforces, "Off" disables inspection. ``enabled``
-    is the master switch; when off, no ModSecurity directives are emitted at all.
-
-    ``paranoia`` is the CRS blocking paranoia level (1 = fewest false positives,
-    4 = most aggressive). ``inbound_threshold`` is the anomaly score at which a
-    request is blocked. ``body_limit`` caps the request body ModSecurity buffers
-    for inspection and must be >= nginx's ``client_max_body_size``. ``exclusions``
-    are raw SecLang lines (e.g. ``SecRuleRemoveById``) applied after the CRS to
-    silence false positives; ``exempt_paths`` are location prefixes that bypass
-    the WAF entirely.
-    """
+    """ModSecurity/OWASP CRS settings applied to every nginx vhost."""
 
     enabled: bool = False
     mode: str = "DetectionOnly"  # "DetectionOnly" | "On" | "Off"
@@ -102,9 +86,7 @@ class WafConfig:
     def from_dict(cls, data: dict | None) -> "WafConfig":
         if not data:
             return cls()
-        # paranoia/inbound_threshold pass through unconverted so a hand-edited
-        # non-integer surfaces as a clean ConfigError in validate() rather
-        # than a raw ValueError here.
+        # Let validate() report non-integers as ConfigError.
         return cls(
             enabled=bool(data.get("enabled", False)),
             mode=str(data.get("mode", "DetectionOnly")),
@@ -140,13 +122,19 @@ class WafConfig:
         if self.mode not in WAF_MODES:
             raise ConfigError(f"waf.mode '{self.mode}' is invalid. Must be one of: {', '.join(WAF_MODES)}.")
         if not isinstance(self.paranoia, int) or not 1 <= self.paranoia <= 4:
-            raise ConfigError(f"waf.paranoia '{self.paranoia}' is invalid. Must be an integer between 1 and 4.")
+            raise ConfigError(
+                f"waf.paranoia '{self.paranoia}' is invalid. Must be an integer between 1 and 4."
+            )
         if not isinstance(self.inbound_threshold, int) or self.inbound_threshold < 1:
-            raise ConfigError(f"waf.inbound_threshold '{self.inbound_threshold}' is invalid. Must be a positive integer.")
+            raise ConfigError(
+                f"waf.inbound_threshold '{self.inbound_threshold}' is invalid. Must be a positive integer."
+            )
         try:
             body_limit = parse_nginx_size(self.body_limit)
-        except ValueError:
-            raise ConfigError(f"waf.body_limit '{self.body_limit}' is not a valid size (e.g. '50m', '13107200').")
+        except ValueError as exc:
+            raise ConfigError(
+                f"waf.body_limit '{self.body_limit}' is not a valid size (e.g. '50m', '13107200')."
+            ) from exc
         # Coupling only matters when the WAF is on: a body larger than what
         # ModSecurity buffers would be proxied to the app uninspected.
         if self.enabled and body_limit < parse_nginx_size(nginx_max_body_size):
@@ -163,42 +151,69 @@ class WafConfig:
         self._validate_custom_rules()
 
     def _validate_custom_rules(self) -> None:
-        """Every condition value is interpolated into a SecLang rule, so this is
-        the authoritative check for both bench.toml and the settings API."""
         if len(self.custom_rules) > _WAF_MAX_RULES:
             raise ConfigError(f"waf.custom_rules has too many rules (max {_WAF_MAX_RULES}).")
         for i, rule in enumerate(self.custom_rules):
-            prefix = f"waf.custom_rules[{i}]"
-            if rule.action not in WAF_RULE_ACTIONS:
-                raise ConfigError(f"{prefix}.action '{rule.action}' is invalid. Must be one of: {', '.join(WAF_RULE_ACTIONS)}.")
-            if rule.match not in WAF_RULE_MATCH:
-                raise ConfigError(f"{prefix}.match '{rule.match}' is invalid. Must be one of: {', '.join(WAF_RULE_MATCH)}.")
-            if _WAF_RULE_NAME_FORBIDDEN.search(rule.name) or len(rule.name) > 128:
-                raise ConfigError(f"{prefix}.name is invalid. Must be under 128 chars with no quotes or newlines.")
-            if not rule.conditions:
-                raise ConfigError(f"{prefix} must have at least one condition.")
-            if len(rule.conditions) > _WAF_MAX_CONDITIONS:
-                raise ConfigError(f"{prefix} has too many conditions (max {_WAF_MAX_CONDITIONS}).")
-            for j, cond in enumerate(rule.conditions):
-                self._validate_condition(f"{prefix}.conditions[{j}]", cond)
+            self._validate_custom_rule(f"waf.custom_rules[{i}]", rule)
+
+    def _validate_custom_rule(self, prefix: str, rule: WafRule) -> None:
+        if rule.action not in WAF_RULE_ACTIONS:
+            raise ConfigError(
+                f"{prefix}.action '{rule.action}' is invalid. Must be one of: {', '.join(WAF_RULE_ACTIONS)}."
+            )
+        if rule.match not in WAF_RULE_MATCH:
+            raise ConfigError(
+                f"{prefix}.match '{rule.match}' is invalid. Must be one of: {', '.join(WAF_RULE_MATCH)}."
+            )
+        if _WAF_RULE_NAME_FORBIDDEN.search(rule.name) or len(rule.name) > 128:
+            raise ConfigError(
+                f"{prefix}.name is invalid. Must be under 128 chars with no quotes or newlines."
+            )
+        self._validate_rule_conditions(prefix, rule.conditions)
+
+    def _validate_rule_conditions(self, prefix: str, conditions: list[WafCondition]) -> None:
+        if not conditions:
+            raise ConfigError(f"{prefix} must have at least one condition.")
+        if len(conditions) > _WAF_MAX_CONDITIONS:
+            raise ConfigError(f"{prefix} has too many conditions (max {_WAF_MAX_CONDITIONS}).")
+        for j, cond in enumerate(conditions):
+            self._validate_condition(f"{prefix}.conditions[{j}]", cond)
 
     @staticmethod
     def _validate_condition(prefix: str, cond: WafCondition) -> None:
         if cond.field not in WAF_RULE_FIELDS:
-            raise ConfigError(f"{prefix}.field '{cond.field}' is invalid. Must be one of: {', '.join(WAF_RULE_FIELDS)}.")
+            raise ConfigError(
+                f"{prefix}.field '{cond.field}' is invalid. Must be one of: {', '.join(WAF_RULE_FIELDS)}."
+            )
         if cond.operator not in WAF_RULE_OPERATORS:
-            raise ConfigError(f"{prefix}.operator '{cond.operator}' is invalid. Must be one of: {', '.join(WAF_RULE_OPERATORS)}.")
+            raise ConfigError(
+                f"{prefix}.operator '{cond.operator}' is invalid. Must be one of: {', '.join(WAF_RULE_OPERATORS)}."
+            )
         if not cond.value:
             raise ConfigError(f"{prefix}.value is required.")
         if len(cond.value) > _WAF_MAX_VALUE_LEN or _WAF_RULE_VALUE_FORBIDDEN.search(cond.value):
-            raise ConfigError(f"{prefix}.value is invalid. Must be under {_WAF_MAX_VALUE_LEN} chars with no double quotes or newlines.")
-        if cond.field == "header" and not _WAF_HEADER_NAME_PATTERN.match(cond.header_name):
-            raise ConfigError(f"{prefix}.header_name '{cond.header_name}' is invalid. Must be an HTTP header token (letters, digits, hyphen).")
-        if cond.field == "source_ip":
-            import ipaddress
+            raise ConfigError(
+                f"{prefix}.value is invalid. Must be under {_WAF_MAX_VALUE_LEN} chars with no double quotes or newlines."
+            )
+        _validate_header_condition(prefix, cond)
+        _validate_source_ip_condition(prefix, cond)
 
-            for entry in cond.value.split(","):
-                try:
-                    ipaddress.ip_network(entry.strip(), strict=False)
-                except ValueError:
-                    raise ConfigError(f"{prefix}.value '{entry.strip()}' is not a valid IP or CIDR range.")
+
+def _validate_header_condition(prefix: str, cond: WafCondition) -> None:
+    if cond.field == "header" and not _WAF_HEADER_NAME_PATTERN.match(cond.header_name):
+        raise ConfigError(
+            f"{prefix}.header_name '{cond.header_name}' is invalid. Must be an HTTP header token (letters, digits, hyphen)."
+        )
+
+
+def _validate_source_ip_condition(prefix: str, cond: WafCondition) -> None:
+    if cond.field != "source_ip":
+        return
+
+    import ipaddress
+
+    for entry in cond.value.split(","):
+        try:
+            ipaddress.ip_network(entry.strip(), strict=False)
+        except ValueError as exc:
+            raise ConfigError(f"{prefix}.value '{entry.strip()}' is not a valid IP or CIDR range.") from exc

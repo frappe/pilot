@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar
 
-from pilot.commands.base import Command
+from pilot.commands import Command
 
 
 @dataclass(kw_only=True)
@@ -13,9 +13,4 @@ class StopCommand(Command):
     supports_all_benches: ClassVar[bool] = True
 
     def run(self) -> None:
-        from pilot.managers.processes.local import ProcessManager
-
-        manager = ProcessManager.detect_running(self.bench)
-        manager.stop()
-        manager.stop_admin()
-        self.print(f"Stopped bench {self.bench.config.name}.")
+        self.bench.stop(on_progress=self.report)

@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-
 import os
 from pathlib import Path
 
 from admin.backend.app import configure_idle_watchdog, create_app
-from pilot.tasks.manager.worker_registry import task_workers
+from pilot.managers.task import TaskWorkerControl
 
 """WSGI entrypoint for running the admin under gunicorn.
 
@@ -17,5 +16,4 @@ than invoking a main() with argv.
 bench_root = Path(os.environ["BENCH_ADMIN_ROOT"])
 application = create_app(bench_root)
 configure_idle_watchdog(application, bench_root)
-task_workers.start(bench_root)
-task_workers.install_signal_handlers()
+TaskWorkerControl(bench_root).start_background_worker()

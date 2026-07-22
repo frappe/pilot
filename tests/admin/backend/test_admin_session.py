@@ -7,42 +7,38 @@ from types import SimpleNamespace
 
 import pytest
 
-from pilot.core.admin_auth import (
+from admin.backend.auth import (
     decode_token,
     has_scope,
+    is_token_valid,
     issue_login_token,
     issue_site_token,
     issue_token,
-    verify_token,
 )
-from pilot.config.bench import BenchConfig
-from pilot.config.bench_toml_builder import BenchTomlBuilder
+from pilot.config import BenchConfig
 from pilot.core.bench import Bench
 from pilot.exceptions import BenchError
 
 
-# ── JWT module ────────────────────────────────────────────────────────────────
-
-
 def test_round_trip_is_valid() -> None:
-    assert verify_token(issue_token("k3y"), "k3y")
+    assert is_token_valid(issue_token("k3y"), "k3y")
 
 
 def test_wrong_secret_rejected() -> None:
-    assert not verify_token(issue_token("k3y"), "other")
+    assert not is_token_valid(issue_token("k3y"), "other")
 
 
 def test_tampered_token_rejected() -> None:
-    assert not verify_token(issue_token("k3y") + "x", "k3y")
+    assert not is_token_valid(issue_token("k3y") + "x", "k3y")
 
 
 def test_expired_token_rejected() -> None:
-    assert not verify_token(issue_token("k3y", ttl=10, issued_at=time.time() - 100), "k3y")
+    assert not is_token_valid(issue_token("k3y", ttl=10, issued_at=time.time() - 100), "k3y")
 
 
 def test_empty_inputs_rejected() -> None:
-    assert not verify_token("", "k3y")
-    assert not verify_token(issue_token("k3y"), "")
+    assert not is_token_valid("", "k3y")
+    assert not is_token_valid(issue_token("k3y"), "")
 
 
 def test_issue_requires_secret() -> None:
@@ -54,12 +50,9 @@ def test_login_token_carries_jti() -> None:
     assert decode_token(issue_login_token("k3y"), "k3y").get("jti")
 
 
-# ── CLI command ───────────────────────────────────────────────────────────────
-
-
 def _bench(tmp_path: Path, password: str = "secret") -> Bench:
     toml_path = tmp_path / "bench.toml"
-    toml_path.write_text(BenchTomlBuilder(tmp_path.name, {"admin_password": password}).render())
+    toml_path.write_text(BenchConfig.from_flat(tmp_path.name, {"admin_password": password}).dumps())
     return _load_bench(tmp_path)
 
 
@@ -73,7 +66,7 @@ def test_command_issues_verifiable_token_and_persists_secret(tmp_path, capsys) -
     GenerateSessionCommand(_bench(tmp_path)).run()
     token = capsys.readouterr().out.strip()
     secret = tomllib.loads((tmp_path / "bench.toml").read_text())["admin"]["jwt_secret"]
-    assert secret and verify_token(token, secret)
+    assert secret and is_token_valid(token, secret)
 
 
 def test_command_reuses_existing_secret(tmp_path) -> None:
@@ -99,22 +92,15 @@ def test_command_requires_password(tmp_path) -> None:
         GenerateSessionCommand(_bench(tmp_path, password="")).run()
 
 
-# ── backend cookie auth ───────────────────────────────────────────────────────
-
-
 def _initialized_bench(bench_dir: Path, password: str, jwt_secret: str) -> None:
-    from pilot.config.toml_store import BenchTomlStore
-
     bench_dir.mkdir(parents=True, exist_ok=True)
     toml_path = bench_dir / "bench.toml"
     toml_path.write_text(
-        BenchTomlBuilder(
-            bench_dir.name, {"admin_enabled": True, "admin_password": password}
-        ).render()
+        BenchConfig.from_flat(bench_dir.name, {"admin_enabled": True, "admin_password": password}).dumps()
     )
     config = BenchConfig.from_file(toml_path)
     config.admin.jwt_secret = jwt_secret
-    BenchTomlStore(toml_path).write(config)
+    config.write(toml_path)
     python = bench_dir / "env" / "bin" / "python"
     python.parent.mkdir(parents=True, exist_ok=True)
     python.touch()
@@ -202,14 +188,12 @@ def test_bootstrap_reports_sanitized_task_activity(tmp_path: Path) -> None:
 
 def test_bootstrap_reports_postgres_engine(tmp_path: Path) -> None:
     from admin.backend.app import create_app
-    from pilot.config.toml_store import BenchTomlStore
-
     bench_root = tmp_path / "benches" / "pg"
     _initialized_bench(bench_root, "secret", "k3y")
     toml_path = bench_root / "bench.toml"
     config = BenchConfig.from_file(toml_path)
     config.db_type = "postgres"
-    BenchTomlStore(toml_path).write(config)
+    config.write(toml_path)
 
     app = create_app(bench_root)
     app.config["TESTING"] = True
@@ -223,14 +207,12 @@ def test_bootstrap_reports_allow_bench_management_default_true(tmp_path: Path) -
 
 def test_bootstrap_reports_allow_bench_management_when_disabled(tmp_path: Path) -> None:
     from admin.backend.app import create_app
-    from pilot.config.toml_store import BenchTomlStore
-
     bench_root = tmp_path / "benches" / "current"
     _initialized_bench(bench_root, "secret", "k3y")
     toml_path = bench_root / "bench.toml"
     config = BenchConfig.from_file(toml_path)
     config.admin.allow_bench_management = False
-    BenchTomlStore(toml_path).write(config)
+    config.write(toml_path)
 
     app = create_app(bench_root)
     app.config["TESTING"] = True
@@ -249,7 +231,7 @@ def test_login_with_sid_sets_httponly_cookie(tmp_path: Path) -> None:
     assert client.get("/api/v1/benches").status_code != 401
 
 
-def test_login_cookie_uses_explicit_secure_cookie_setting(tmp_path: Path) -> None:
+def test_login_cookie_uses_explicit_is_secure_cookie(tmp_path: Path) -> None:
     client = _client(tmp_path)
     client.application.config["SESSION_COOKIE_SECURE"] = True
 
@@ -261,7 +243,7 @@ def test_login_cookie_uses_explicit_secure_cookie_setting(tmp_path: Path) -> Non
     assert "Secure" in cookie
 
 
-def test_setup_session_cookie_uses_explicit_secure_cookie_setting(tmp_path: Path) -> None:
+def test_setup_session_cookie_uses_explicit_is_secure_cookie(tmp_path: Path) -> None:
     from admin.backend.app import create_app
 
     app = create_app(tmp_path)
@@ -281,31 +263,28 @@ def test_setup_session_cookie_uses_explicit_secure_cookie_setting(tmp_path: Path
     assert "SameSite=Lax" in cookie
 
 
-def test_secure_cookie_setting_requires_tls_or_configured_proxy(monkeypatch) -> None:
-    from admin.backend.app import secure_cookie_setting
+def test_is_secure_cookie_requires_tls_or_configured_proxy(monkeypatch) -> None:
+    from admin.backend.app import is_secure_cookie
 
     config = SimpleNamespace(
         production=SimpleNamespace(enabled=True),
         admin=SimpleNamespace(tls=False),
     )
-    store = SimpleNamespace(read=lambda: config)
+    monkeypatch.setattr(BenchConfig, "read", lambda bench_root: config)
+    unused_root = Path("unused")
+
+    monkeypatch.setattr("pilot.core.adapters.domain_provider.DomainRouteProvider.proxy_servers", lambda: [])
+    assert is_secure_cookie(unused_root) is False
 
     monkeypatch.setattr(
-        "pilot.core.domains.DomainRouteProvider.proxy_servers", lambda: []
-    )
-    assert secure_cookie_setting(store) is False
-
-    monkeypatch.setattr(
-        "pilot.core.domains.DomainRouteProvider.proxy_servers",
+        "pilot.core.adapters.domain_provider.DomainRouteProvider.proxy_servers",
         lambda: ["203.0.113.10"],
     )
-    assert secure_cookie_setting(store) is True
+    assert is_secure_cookie(unused_root) is True
 
     config.admin.tls = True
-    monkeypatch.setattr(
-        "pilot.core.domains.DomainRouteProvider.proxy_servers", lambda: []
-    )
-    assert secure_cookie_setting(store) is True
+    monkeypatch.setattr("pilot.core.adapters.domain_provider.DomainRouteProvider.proxy_servers", lambda: [])
+    assert is_secure_cookie(unused_root) is True
 
 
 def test_login_with_invalid_sid_rejected(tmp_path: Path) -> None:
@@ -381,18 +360,18 @@ def test_login_rate_limit_ignores_spoofed_forwarded_ips(tmp_path: Path) -> None:
     assert response.status_code == 429
 
 
-def test_forwarded_headers_are_trusted_only_behind_production_nginx() -> None:
+def test_forwarded_headers_are_trusted_only_behind_production_nginx(monkeypatch) -> None:
     from admin.backend.app import trusted_proxy_peers
 
-    development = SimpleNamespace(
-        read=lambda: SimpleNamespace(production=SimpleNamespace(enabled=False))
-    )
-    production = SimpleNamespace(
-        read=lambda: SimpleNamespace(production=SimpleNamespace(enabled=True))
-    )
+    development = SimpleNamespace(production=SimpleNamespace(enabled=False))
+    production = SimpleNamespace(production=SimpleNamespace(enabled=True))
+    unused_root = Path("unused")
 
-    assert trusted_proxy_peers(development) == ()
-    assert trusted_proxy_peers(production) == ("127.0.0.1", "::1", "")
+    monkeypatch.setattr(BenchConfig, "read", lambda bench_root: development)
+    assert trusted_proxy_peers(unused_root) == ()
+
+    monkeypatch.setattr(BenchConfig, "read", lambda bench_root: production)
+    assert trusted_proxy_peers(unused_root) == ("127.0.0.1", "::1", "")
 
 
 def test_setup_endpoint_requires_auth_once_password_set(tmp_path: Path) -> None:
@@ -428,9 +407,6 @@ def test_setup_endpoint_fails_closed_when_config_is_corrupt(tmp_path: Path) -> N
     )
 
     assert response.status_code == 503
-
-
-# ── scoped JWT ────────────────────────────────────────────────────────────────
 
 
 def test_issue_token_defaults_to_bench_scope() -> None:
@@ -504,6 +480,7 @@ def test_non_bench_token_cannot_access_bench_route(
 
 def test_require_scope_allows_unscoped_token(tmp_path: Path) -> None:
     from flask import jsonify
+
     from admin.backend.app import create_app
     from admin.backend.middleware import require_scope
 
@@ -524,6 +501,7 @@ def test_require_scope_allows_unscoped_token(tmp_path: Path) -> None:
 
 def test_require_scope_allows_matching_scoped_token(tmp_path: Path) -> None:
     from flask import jsonify
+
     from admin.backend.app import create_app
     from admin.backend.middleware import require_scope
 
@@ -544,6 +522,7 @@ def test_require_scope_allows_matching_scoped_token(tmp_path: Path) -> None:
 
 def test_require_scope_rejects_mismatched_scoped_token(tmp_path: Path) -> None:
     from flask import jsonify
+
     from admin.backend.app import create_app
     from admin.backend.middleware import require_scope
 
@@ -564,6 +543,7 @@ def test_require_scope_rejects_mismatched_scoped_token(tmp_path: Path) -> None:
 
 def test_current_site_scope_returns_site_from_claims(tmp_path: Path) -> None:
     from flask import jsonify
+
     from admin.backend.app import create_app
     from admin.backend.middleware import current_site_scope, require_scope
 
@@ -584,6 +564,7 @@ def test_current_site_scope_returns_site_from_claims(tmp_path: Path) -> None:
 
 def test_current_site_scope_returns_none_for_unscoped(tmp_path: Path) -> None:
     from flask import jsonify
+
     from admin.backend.app import create_app
     from admin.backend.middleware import current_site_scope
 
@@ -610,6 +591,7 @@ def test_bearer_token_authenticates(tmp_path: Path) -> None:
 
 def test_bearer_token_with_site_scope(tmp_path: Path) -> None:
     from flask import jsonify
+
     from admin.backend.app import create_app
     from admin.backend.middleware import require_scope
 
@@ -631,6 +613,7 @@ def test_bearer_token_with_site_scope(tmp_path: Path) -> None:
 
 def test_bearer_token_wrong_site_rejected(tmp_path: Path) -> None:
     from flask import jsonify
+
     from admin.backend.app import create_app
     from admin.backend.middleware import require_scope
 
@@ -652,6 +635,7 @@ def test_bearer_token_wrong_site_rejected(tmp_path: Path) -> None:
 
 def test_require_scope_with_callable(tmp_path: Path) -> None:
     from flask import jsonify
+
     from admin.backend.app import create_app
     from admin.backend.middleware import require_scope
 

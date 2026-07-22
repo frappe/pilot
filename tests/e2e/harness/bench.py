@@ -1,17 +1,8 @@
-"""Owns the full lifecycle of one bench for an e2e run.
-
-    new            create()        -> writes benches/<name>/bench.toml
-    start (wizard) start_wizard()  -> foreground admin in --wizard mode
-    <browser drives the setup wizard; the wizard server SIGTERMs itself>
-    start (bench)  start_full()    -> the initialized bench + admin
-    stop/destroy   stop() / destroy()
-
-Each start spawns ``bench ... start`` in its own session (process group) so
-stop() can tear down the whole tree (admin, workers, redis, gunicorn).
-"""
+"""Owns one e2e bench lifecycle and its spawned process tree."""
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import secrets
@@ -56,12 +47,10 @@ class Bench:
         # wizard's first step and persisted by PUT /api/v1/setup/configuration).
         # So the harness chooses it, the wizard enters it, and login reuses it.
         # A bare token_urlsafe() isn't guaranteed to satisfy the wizard's password
-        # policy (upper + lower + digit + symbol) — fixed affixes guarantee it.
+        # policy (upper + lower + digit + symbol) - fixed affixes guarantee it.
         self._admin_password = admin_password or f"Aa1!{secrets.token_urlsafe(12)}"
         self._proc: subprocess.Popen | None = None
         self._info: dict | None = None
-
-    # ── identity ───────────────────────────────────────────────────────────────
 
     @property
     def dir(self) -> Path:
@@ -70,25 +59,22 @@ class Bench:
     @property
     def admin_port(self) -> int:
         if not self._info:
-            raise RuntimeError("Bench not created yet — call create() first")
+            raise RuntimeError("Bench not created yet - call create() first")
         return self._info["admin_port"]
 
     @property
     def admin_password(self) -> str:
-        """The admin password the harness will set via the wizard and log in with
-        (the fresh bench.toml has none until the wizard saves it)."""
+        """Admin password entered by the wizard and reused for login."""
         return self._admin_password
 
     @property
     def admin_url(self) -> str:
         return f"http://127.0.0.1:{self.admin_port}"
 
-    # ── lifecycle ──────────────────────────────────────────────────────────────
-
     def create(self) -> None:
         """`bench new <name>` then read the generated admin port."""
         if self.dir.exists():
-            raise RuntimeError(f'Bench "{self.name}" already exists at {self.dir} — clean it up first')
+            raise RuntimeError(f'Bench "{self.name}" already exists at {self.dir} - clean it up first')
         self._run(["new", self.name])
         if not (self.dir / "bench.toml").exists():
             # `bench` resolves its benches dir as <dir containing pilot>/benches.
@@ -106,8 +92,7 @@ class Bench:
         self._info = self._read_config()
 
     def start_wizard(self) -> None:
-        """`bench -b <name> start` on an un-initialized bench boots the standalone
-        setup-wizard server. Returns once it answers on the admin port."""
+        """Start the standalone setup-wizard server."""
         # No-op unless E2E_BUILD_ADMIN is set; otherwise `bench start` downloads
         # the prebuilt wizard UI itself.
         self._build_admin_ui()
@@ -115,9 +100,7 @@ class Bench:
         self._wait_for_admin(expect_wizard=True)
 
     def wait_for_wizard_exit(self, timeout: float = 5 * 60) -> None:
-        """After the wizard finishes it shuts its own server down, which makes the
-        foreground ``bench start`` exit. Wait for that so the next start gets a
-        clean port."""
+        """Wait for the wizard server to exit after setup."""
         deadline = time.time() + timeout
         start = time.time()
         next_log = start + 15
@@ -126,7 +109,10 @@ class Bench:
             if now > deadline:
                 raise TimeoutError("Wizard server did not exit in time")
             if now >= next_log:
-                print(f"[harness] waiting for wizard server to exit, {int(now - start)}s elapsed", flush=True)
+                print(
+                    f"[harness] waiting for wizard server to exit, {int(now - start)}s elapsed",
+                    flush=True,
+                )
                 next_log = now + 15
             time.sleep(1)
         self._proc = None
@@ -135,7 +121,7 @@ class Bench:
         """`bench -b <name> start` on the initialized bench: full admin + workload."""
         # `bench init` (run by the wizard) re-downloads the prebuilt admin dist,
         # clobbering any local build. Rebuild from source only when E2E_BUILD_ADMIN
-        # is set (no-op otherwise) — e.g. to exercise *this* branch's admin UI
+        # is set (no-op otherwise) - e.g. to exercise *this* branch's admin UI
         # rather than the released bundle.
         self._build_admin_ui()
         self._spawn_start()
@@ -153,13 +139,7 @@ class Bench:
         self._kill_child()
 
     def destroy(self) -> None:
-        """Fully tear the bench down and leave no trace.
-
-        Prefer `bench drop`: it removes production services and the dedicated
-        MariaDB instance, then the bench dir. It refuses when sites remain (e.g.
-        a run that failed mid-lifecycle, or pre-clean of a leftover bench), so
-        fall back to manual cleanup whenever the dir survives.
-        """
+        """Fully tear the bench down and leave no trace."""
         self.stop()
         self._drop_bench()
         if self.dir.exists():
@@ -167,7 +147,7 @@ class Bench:
             self.remove_dir()
 
     def _drop_bench(self) -> None:
-        """`bench -b <name> drop --yes` — best-effort. No-op if the bench has no
+        """`bench -b <name> drop --yes` - best-effort. No-op if the bench has no
         config yet (nothing to drop)."""
         if not (self.dir / "bench.toml").exists():
             return
@@ -180,12 +160,7 @@ class Bench:
         )
 
     def remove_dir(self) -> None:
-        """Remove the bench directory. Guarded by the e2e- prefix.
-
-        A dedicated bench's dir may hold bind mounts (and root-owned files), so a
-        plain rmtree can fail with "device busy" and leave the folder behind.
-        Unmount anything mounted under it first, then remove the dir (with
-        privileges if needed)."""
+        """Remove the guarded e2e bench directory, unmounting first if needed."""
         if not (self.name.startswith(E2E_PREFIX) and self.dir.exists()):
             return
         # Guard every sudo/rm below: only ever an e2e- bench right under
@@ -203,8 +178,7 @@ class Bench:
             )
 
     def _teardown_mounts_under(self, root: Path) -> None:
-        """Unmount every mountpoint at/under ``root`` (deepest first), so a
-        dropped/failed bench leaves no busy mountpoint. Best-effort."""
+        """Best-effort unmount of every mountpoint under root."""
         quiet = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
         for _, mountpoint, _ in self._mounts_under(root):
             subprocess.run(["sudo", "umount", "-l", mountpoint], **quiet)
@@ -226,12 +200,8 @@ class Bench:
         ]
         return sorted(found, key=lambda entry: len(entry[1]), reverse=True)
 
-    # ── diagnostics ────────────────────────────────────────────────────────────
-
     def setup_task_error(self, max_lines: int = 40) -> str | None:
-        """Tail of the most recently failed task's output.log (e.g. the
-        wizard-setup task), for surfacing *why* a wizard run failed. Returns None
-        when there is no failed task or no readable log."""
+        """Return the newest failed setup task log tail, if readable."""
         tasks_dir = self.dir / "tasks"
         if not tasks_dir.exists():
             return None
@@ -261,32 +231,21 @@ class Bench:
         except OSError:
             return None
 
-    # ── internals ──────────────────────────────────────────────────────────────
-
     def _build_admin_ui(self) -> None:
-        """Build the admin UI from source into admin/backend/static/dist so the
-        server serves *this branch's* code instead of the prebuilt bundle.
-
-        Opt-in via E2E_BUILD_ADMIN: off by default, in which case the harness
-        never builds and `bench start` serves the prebuilt bundle it downloads
-        (the wizard) / already has from bench init (the full bench). Turn it on
-        to exercise local frontend changes end to end. Installs frontend deps
-        once if missing."""
+        """Optionally build the admin UI from source for E2E_BUILD_ADMIN."""
         if not _env_truthy("E2E_BUILD_ADMIN"):
             return
         print("[e2e] Building admin UI from source (E2E_BUILD_ADMIN)...")
         frontend = REPO_ROOT / "admin" / "frontend"
-        if not (frontend / "node_modules").exists():
-            if subprocess.run(["npm", "install"], cwd=frontend).returncode != 0:
-                raise RuntimeError("admin frontend `npm install` failed")
-        if subprocess.run(["npm", "run", "build"], cwd=frontend).returncode != 0:
-            raise RuntimeError("admin frontend `npm run build` failed")
+        if not (frontend / "node_modules").exists() and (
+            subprocess.run(["yarn", "install"], cwd=frontend).returncode != 0
+        ):
+            raise RuntimeError("admin frontend `yarn install` failed")
+        if subprocess.run(["yarn", "build"], cwd=frontend).returncode != 0:
+            raise RuntimeError("admin frontend `yarn build` failed")
 
     def _teardown_dedicated_instance(self) -> None:
-        """Best-effort: a dedicated-DB bench provisions its own MariaDB instance
-        (systemd unit + datadir) which lives outside the bench dir, so
-        remove_dir() alone would orphan it. Read the instance from bench.toml and
-        tear it down. No-op for shared-DB benches (no instance configured)."""
+        """Best-effort cleanup for legacy dedicated MariaDB instances."""
         toml = self.dir / "bench.toml"
         if not toml.exists():
             return
@@ -350,10 +309,8 @@ class Bench:
             # Negative pgid targets the whole process group.
             os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
         except OSError:
-            try:
+            with contextlib.suppress(OSError):
                 proc.terminate()
-            except OSError:
-                pass  # already gone
         self._proc = None
 
     def _wait_for_admin(self, expect_wizard: bool, timeout: float = 5 * 60) -> None:
@@ -392,7 +349,7 @@ class Bench:
 
     def _read_config(self) -> dict:
         """Read admin.port from the generated bench.toml. (admin.password is empty
-        on a fresh bench — the wizard sets it; see admin_password.)"""
+        on a fresh bench - the wizard sets it; see admin_password.)"""
         with open(self.dir / "bench.toml", "rb") as f:
             data = tomllib.load(f)
         return {"admin_port": int(data["admin"]["port"])}

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, ClassVar
 
-from pilot.commands.base import Arg, Command
+from pilot.commands import Arg, Command
 
 if TYPE_CHECKING:
     from pilot.core.app import App
@@ -29,7 +29,7 @@ class GetAppCommand(Command):
         result = self.app.install(
             install_dependencies=self.install_dependencies,
             skip_validations=self.skip_validations,
-            on_progress=self.print,
+            on_progress=self.report,
         )
         self.app = result.app
         self.installed_dependencies = result.installed_dependencies

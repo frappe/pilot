@@ -6,6 +6,7 @@ Requires Python 3.11+. No installation, no venv activation needed.
 All dependencies are stdlib only. Admin UI uses its own isolated venv
 (created automatically on first 'bench build-admin' or 'bench start').
 """
+
 import os
 import sys
 

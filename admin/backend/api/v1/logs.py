@@ -20,16 +20,18 @@ def index():
     except Exception:
         return error_response("logs_unavailable", "Could not read logs.", 500)
 
-    return jsonify([
-        {
-            "filename": lf.filename,
-            "size_bytes": lf.size_bytes,
-            "last_modified": lf.last_modified.isoformat(),
-            "process_name": lf.process_name,
-            "line_count": lf.line_count,
-        }
-        for lf in log_files
-    ])
+    return jsonify(
+        [
+            {
+                "filename": lf.filename,
+                "size_bytes": lf.size_bytes,
+                "last_modified": lf.last_modified.isoformat(),
+                "process_name": lf.process_name,
+                "line_count": lf.line_count,
+            }
+            for lf in log_files
+        ]
+    )
 
 
 @logs_bp.route("/<filename>")
@@ -54,12 +56,14 @@ def viewer(filename: str):
     except Exception:
         return error_response("log_unavailable", "Could not read the log.", 500)
 
-    return jsonify({
-        "filename": filename,
-        "lines": lines,
-        "lines_count": lines_param,
-        "search": search,
-    })
+    return jsonify(
+        {
+            "filename": filename,
+            "lines": lines,
+            "lines_count": lines_param,
+            "search": search,
+        }
+    )
 
 
 @logs_bp.get("/<filename>/content")

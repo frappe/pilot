@@ -1,20 +1,21 @@
 """Tests for /api/v1/sites/<name>/backups and /backup-schedule routes."""
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from pilot.config.bench_toml_builder import BenchTomlBuilder
+from pilot.config import BenchConfig
 
 
 def _client(bench_root: Path, password: str = "secret"):
     from admin.backend.app import create_app
-    from pilot.core.admin_auth import ensure_jwt_secret, issue_token
+    from admin.backend.auth import ensure_jwt_secret, issue_token
 
     bench_root.mkdir(parents=True, exist_ok=True)
     (bench_root / "bench.toml").write_text(
-        BenchTomlBuilder(bench_root.name, {"admin_enabled": True, "admin_password": password}).render()
+        BenchConfig.from_flat(bench_root.name, {"admin_enabled": True, "admin_password": password}).dumps()
     )
     secret = ensure_jwt_secret(bench_root / "bench.toml")
     app = create_app(bench_root)
@@ -40,7 +41,7 @@ def _make_backup_file(bench_root: Path, site: str, timestamp: str, suffix: str) 
 
 def _request(client, method, path, **kwargs):
     with patch(
-        "pilot.tasks.manager.task_runner.task_workers.wake",
+        "pilot.internal.tasks.runner.task_workers.wake",
         return_value=False,
     ):
         return getattr(client, method)(path, **kwargs)
@@ -138,9 +139,7 @@ def test_download_backup_file_rejects_a_dotfile(tmp_path: Path) -> None:
     _make_site(bench_root, "site.localhost")
     client = _client(bench_root)
 
-    response = client.get(
-        "/api/v1/sites/site.localhost/backups/20240101_000000/files/.hidden/content"
-    )
+    response = client.get("/api/v1/sites/site.localhost/backups/20240101_000000/files/.hidden/content")
 
     assert response.status_code == 422
 
@@ -157,9 +156,7 @@ def test_backup_download_links_returns_urls_directly(tmp_path: Path) -> None:
         "pilot.integrations.s3.backups.OffsiteBackup.from_config",
         return_value=offsite,
     ):
-        response = client.get(
-            "/api/v1/sites/site.localhost/backups/20240101_000000/download-links"
-        )
+        response = client.get("/api/v1/sites/site.localhost/backups/20240101_000000/download-links")
 
     assert response.status_code == 200
     assert response.get_json() == {"database": "https://bucket.example/signed"}
@@ -170,8 +167,10 @@ def test_backup_schedule_put_returns_the_saved_resource(tmp_path: Path) -> None:
     _make_site(bench_root, "site.localhost")
     client = _client(bench_root)
 
-    with patch("pilot.managers.cron.CronManager.get_schedule", return_value="0 2 * * *"), \
-         patch("pilot.managers.cron.CronManager.set_schedule") as set_schedule:
+    with (
+        patch("pilot.managers.cron.CronManager.get_schedule", return_value="0 2 * * *"),
+        patch("pilot.managers.cron.CronManager.set_schedule") as set_schedule,
+    ):
         response = client.put(
             "/api/v1/sites/site.localhost/backup-schedule",
             json={"schedule": "0 2 * * *", "retention": {"scheme": "fifo", "keep_last": 5}},

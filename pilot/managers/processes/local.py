@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import shlex
@@ -8,14 +9,14 @@ import subprocess
 import sys
 import threading
 import time
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.exceptions import BenchError
-from pilot.loader import cli_root
-from pilot.managers.admin_environment import AdminEnvManager
+from pilot.managers.environment import AdminEnvManager
 from pilot.managers.gunicorn import GunicornManager
+from pilot.managers.processes.definitions import ProcessDefinition, ProcessDefinitionBuilder
+from pilot.utils import cli_root
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -45,19 +46,17 @@ def _pids_listening(port: int) -> set[int]:
     return {int(m) for m in re.findall(r"pid=(\d+)", result.stdout)}
 
 
-_COLORS = ["\033[36m", "\033[32m", "\033[33m", "\033[35m", "\033[34m", "\033[96m", "\033[92m", "\033[93m"]
+_COLORS = [
+    "\033[36m",
+    "\033[32m",
+    "\033[33m",
+    "\033[35m",
+    "\033[34m",
+    "\033[96m",
+    "\033[92m",
+    "\033[93m",
+]
 _RESET = "\033[0m"
-
-
-@dataclass
-class ProcessDefinition:
-    name: str
-    argv: list[str]  # executable + args - no shell, no `cd`, no inline env prefix
-    log_file: Path
-    env: dict = field(default_factory=dict)
-    working_dir: Path | None = None  # was `cd {dir} &&`
-    stop_timeout: int | None = None  # graceful-stop seconds (redis=300, web+companion=1600)
-    critical: bool = True  # dev runner stops the whole bench when this process exits
 
 
 class ProcessManager:
@@ -104,6 +103,10 @@ class ProcessManager:
     def python(self) -> Path:
         return self.bench.env_path / "bin" / "python"
 
+    @property
+    def _definitions(self) -> ProcessDefinitionBuilder:
+        return ProcessDefinitionBuilder(self.bench, self.python, self.watch_admin_js)
+
     def write_config(self) -> None:
         AdminEnvManager(cli_root()).ensure()
         self._ensure_redis_config()
@@ -142,8 +145,8 @@ class ProcessManager:
             self.pid_file.unlink(missing_ok=True)
             try:
                 os.kill(pid, signal.SIGTERM)
-            except ProcessLookupError:
-                raise BenchError(f"Process {pid} is not running. Removed stale PID file.")
+            except ProcessLookupError as exc:
+                raise BenchError(f"Process {pid} is not running. Removed stale PID file.") from exc
             return
 
         # No pid file (e.g. pre-init setup wizard): stop by port.
@@ -154,10 +157,8 @@ class ProcessManager:
         if not pids:
             raise BenchError("Bench is not running.")
         for pid in pids:
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 os.kill(pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
 
     def is_running(self) -> bool:
         if not self.pid_file.exists():
@@ -236,218 +237,57 @@ class ProcessManager:
 
     def _stop_all(self) -> None:
         for proc in self._procs.values():
-            try:
+            with contextlib.suppress(ProcessLookupError, OSError):
                 os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-            except (ProcessLookupError, OSError):
-                pass
         for proc in self._procs.values():
             try:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                try:
+                with contextlib.suppress(ProcessLookupError, OSError):
                     os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                except (ProcessLookupError, OSError):
-                    pass
 
     def _cleanup_proc_pid_files(self) -> None:
         for name in self._procs:
             (self.bench.pids_path / f"{name}.pid").unlink(missing_ok=True)
 
     def _prod_process_definitions(self) -> list[ProcessDefinition]:
-        if self.bench.config.production.use_companion_manager:
-            defs = [self._web_definition(), self._admin_definition()]
-        elif self.bench.config.production.process_manager == "systemd":
-            all_queues = ",".join(q for group in self.bench.config.workers.groups for q in group.queues)
-            num_workers = sum(group.count for group in self.bench.config.workers.groups)
-            worker_defs: list[ProcessDefinition] = [self._worker_pool_definition(all_queues, num_workers)]
-            defs = [
-                self._web_definition(),
-                self._socketio_definition(),
-                self._admin_definition(),
-                *worker_defs,
-            ]
-        else:
-            worker_defs = [pd for group in self.bench.config.workers.groups for pd in self._worker_definitions(",".join(group.queues), group.count)]
-            defs = [
-                self._web_definition(),
-                self._socketio_definition(),
-                self._admin_definition(),
-                *worker_defs,
-            ]
-        defs.append(self._redis_definition("redis_cache", "redis_cache.conf"))
-        defs.append(self._redis_definition("redis_queue", "redis_queue.conf"))
-        return defs
+        return self._definitions.prod_process_definitions()
 
     def _process_definitions(self) -> list[ProcessDefinition]:
-        defs = [self._to_dev(pd) for pd in self._prod_process_definitions()]
-        if self.bench.config.watch_apps_js:
-            defs.append(self._watch_definition())
-        if self.watch_admin_js:
-            defs.append(self._admin_frontend_dev_definition())
-        return defs
+        return self._definitions.process_definitions()
 
     def _to_dev(self, pd: ProcessDefinition) -> ProcessDefinition:
-        """Map a production process definition to its dev-mode variant."""
-        if pd.name == "admin":
-            return self._watch_admin_definition() if self.watch_admin_js else self._build_admin_definition("--no-timeout")
-        if pd.name == "web":
-            return self._web_definition(dev=True)
-        return pd
+        return self._definitions.to_dev(pd)
 
     def _py_memory_env(self) -> dict:
-        arenas = self.bench.config.gunicorn.malloc_arena_max
-        if arenas and arenas > 0:
-            return {"MALLOC_ARENA_MAX": str(arenas)}
-        return {}
+        return self._definitions.py_memory_env()
 
     def _web_definition(self, dev: bool = False) -> ProcessDefinition:
-        sites = self.bench.sites_path
-        if dev:
-            port = self.bench.config.http_port
-            argv = [str(self.python), "-m", "frappe.utils.bench_helper", "frappe", "serve", "--port", str(port)]
-            if not self.bench.config.reload_python:
-                argv.append("--noreload")
-            return ProcessDefinition(
-                name="web",
-                argv=argv,
-                log_file=self.bench.logs_path / "web.log",
-                env={"DEV_SERVER": "1"},
-                working_dir=sites,
-            )
-        gunicorn = self.bench.env_path / "bin" / "gunicorn"
-        companion = self.bench.config.production.use_companion_manager
-        return ProcessDefinition(
-            name="web",
-            argv=[str(gunicorn), "-c", "../config/gunicorn.conf.py", "frappe.app:application"],
-            log_file=self.bench.logs_path / "web.log",
-            env=self._py_memory_env(),
-            working_dir=sites,
-            stop_timeout=1600 if companion else None,
-        )
+        return self._definitions.web_definition(dev)
 
     def _socketio_definition(self) -> ProcessDefinition:
-        if self.bench.config.socketio_backend == "python":
-            argv = [str(self.python), "-m", "frappe.realtime.server"]
-            working_dir = self.bench.path
-            backend_env = self._py_memory_env()
-        else:
-            argv = ["node", f"{self.bench.apps_path}/frappe/socketio.js"]
-            working_dir = self.bench.sites_path
-            backend_env = {}
-        return ProcessDefinition(
-            name="socketio",
-            argv=argv,
-            log_file=self.bench.logs_path / "socketio.log",
-            env=backend_env,
-            working_dir=working_dir,
-        )
+        return self._definitions.socketio_definition()
 
     def _watch_definition(self) -> ProcessDefinition:
-        # Non-critical: frappe watch dies when the initial esbuild build fails
-        # (e.g. unbuilt assets on a fresh bench); the bench must outlive it.
-        return ProcessDefinition(
-            name="watch",
-            argv=[str(self.python), "-m", "frappe.utils.bench_helper", "frappe", "watch"],
-            log_file=self.bench.logs_path / "watch.log",
-            working_dir=self.bench.sites_path,
-            critical=False,
-        )
+        return self._definitions.watch_definition()
 
     def _worker_pool_definition(self, queues: str, num_workers: int) -> ProcessDefinition:
-        return ProcessDefinition(
-            name="worker_pool",
-            argv=[
-                str(self.python),
-                "-m",
-                "frappe.utils.bench_helper",
-                "frappe",
-                "worker-pool",
-                "--num-workers",
-                str(num_workers),
-                "--queue",
-                queues,
-            ],
-            log_file=self.bench.logs_path / "worker_pool.log",
-            env=self._py_memory_env(),
-            working_dir=self.bench.sites_path,
-        )
+        return self._definitions.worker_pool_definition(queues, num_workers)
 
     def _worker_definitions(self, queue: str, count: int) -> list[ProcessDefinition]:
-        sites = self.bench.sites_path
-        # Commas in queue names break supervisor's programs= list; slug them.
-        slug = re.sub(r"[^A-Za-z0-9]+", "_", queue).strip("_") or "default"
-        return [
-            ProcessDefinition(
-                name=f"worker_{slug}_{i}",
-                argv=[str(self.python), "-m", "frappe.utils.bench_helper", "frappe", "worker", "--queue", queue],
-                log_file=self.bench.logs_path / f"worker_{slug}_{i}.log",
-                env=self._py_memory_env(),
-                working_dir=sites,
-            )
-            for i in range(1, count + 1)
-        ]
+        return self._definitions.worker_definitions(queue, count)
 
     def _redis_definition(self, name: str, config_filename: str) -> ProcessDefinition:
-        from pilot.managers.redis import redis_server_binary
-
-        return ProcessDefinition(
-            name=name,
-            argv=[redis_server_binary() or "redis-server", f"{self.bench.config_path}/{config_filename}"],
-            log_file=self.bench.logs_path / f"{name}.log",
-            stop_timeout=300,
-        )
+        return self._definitions.redis_definition(name, config_filename)
 
     def _admin_definition(self) -> ProcessDefinition:
-        root = cli_root()
-        admin = AdminEnvManager(root)
-        return ProcessDefinition(
-            name="admin",
-            argv=[
-                str(admin.gunicorn),
-                "-c",
-                str(self.bench.config_path / "admin-gunicorn.conf.py"),
-                "admin.backend.wsgi:application",
-            ],
-            log_file=self.bench.logs_path / "admin.log",
-            env={
-                "BENCH_ADMIN_ROOT": str(self.bench.path),
-                "PYTHONPATH": str(root),
-                "MALLOC_ARENA_MAX": "2",
-            },
-            working_dir=root,
-        )
+        return self._definitions.admin_definition()
 
     def _watch_admin_definition(self) -> ProcessDefinition:
-        return self._build_admin_definition("--dev")
+        return self._definitions.watch_admin_definition()
 
     def _build_admin_definition(self, mode_flag: str) -> ProcessDefinition:
-        root = cli_root()
-        python = AdminEnvManager(root).python
-        cfg = self.bench.config.admin
-        return ProcessDefinition(
-            name="admin",
-            argv=[
-                str(python),
-                "-m",
-                "admin.backend.run_server",
-                "--bench-root",
-                str(self.bench.path),
-                "--port",
-                str(cfg.port),
-                "--timeout",
-                str(cfg.timeout),
-                mode_flag,
-            ],
-            log_file=self.bench.logs_path / "admin.log",
-            env={"PYTHONPATH": str(root)},
-        )
+        return self._definitions.build_admin_definition(mode_flag)
 
     def _admin_frontend_dev_definition(self) -> ProcessDefinition:
-        frontend_dir = cli_root() / "admin" / "frontend"
-        cfg = self.bench.config.admin
-        return ProcessDefinition(
-            name="admin-ui",
-            argv=["npm", "run", "dev", "--prefix", str(frontend_dir)],
-            log_file=self.bench.logs_path / "admin-ui.log",
-            env={"VITE_ADMIN_PORT": str(cfg.port)},
-        )
+        return self._definitions.admin_frontend_dev_definition()

@@ -1,4 +1,5 @@
 """Tests for pilot.managers.cron.CronManager."""
+
 from __future__ import annotations
 
 from pathlib import Path

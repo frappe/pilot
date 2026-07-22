@@ -19,7 +19,7 @@ def test_create_login_link_returns_url_with_sid(tmp_path: Path) -> None:
     _write_site(bench_root)
 
     with patch(
-        "admin.backend.api.v1.sites.core.create_site_session",
+        "pilot.core.site.login.SiteLogin.create_session",
         return_value="frappe-session-id",
     ) as create_session:
         response = client.post("/api/v1/sites/s.localhost/login")
@@ -29,7 +29,7 @@ def test_create_login_link_returns_url_with_sid(tmp_path: Path) -> None:
     assert response.headers["Location"] == body["url"]
     assert response.headers["Cache-Control"] == "no-store"
     assert body["url"] == "http://s.localhost:8000/desk?sid=frappe-session-id"
-    create_session.assert_called_once_with(bench_root, "s.localhost")
+    create_session.assert_called_once_with()
 
 
 def test_create_login_link_fails_when_session_creation_fails(tmp_path: Path) -> None:
@@ -38,7 +38,7 @@ def test_create_login_link_fails_when_session_creation_fails(tmp_path: Path) -> 
     _write_site(bench_root)
 
     with patch(
-        "admin.backend.api.v1.sites.core.create_site_session",
+        "pilot.core.site.login.SiteLogin.create_session",
         return_value=None,
     ):
         response = client.post("/api/v1/sites/s.localhost/login")
