@@ -119,6 +119,9 @@ export function useSetup() {
     isInstalling.value && showStreamDetails.value ? 'max-w-2xl' : 'max-w-lg',
   )
   const isDone = computed(() => currentStep.value === 'done')
+  const benchCommand = computed(() =>
+    benchName.value ? `bench -b ${benchName.value}` : 'bench',
+  )
   const stepTitle = computed(() => {
     if (isDone.value && isProductionHandoff.value) return 'Finishing setup'
     return STEP_TITLES[currentStep.value] || benchName.value
@@ -377,6 +380,7 @@ export function useSetup() {
     isLinux,
     isProductionHandoff,
     isDone,
+    benchCommand,
     terminal,
     streamUrl,
     streamStatus,
