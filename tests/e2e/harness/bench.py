@@ -238,11 +238,11 @@ class Bench:
         print("[e2e] Building admin UI from source (E2E_BUILD_ADMIN)...")
         frontend = REPO_ROOT / "admin" / "frontend"
         if not (frontend / "node_modules").exists() and (
-            subprocess.run(["npm", "install"], cwd=frontend).returncode != 0
+            subprocess.run(["yarn", "install"], cwd=frontend).returncode != 0
         ):
-            raise RuntimeError("admin frontend `npm install` failed")
-        if subprocess.run(["npm", "run", "build"], cwd=frontend).returncode != 0:
-            raise RuntimeError("admin frontend `npm run build` failed")
+            raise RuntimeError("admin frontend `yarn install` failed")
+        if subprocess.run(["yarn", "build"], cwd=frontend).returncode != 0:
+            raise RuntimeError("admin frontend `yarn build` failed")
 
     def _teardown_dedicated_instance(self) -> None:
         """Best-effort cleanup for legacy dedicated MariaDB instances."""

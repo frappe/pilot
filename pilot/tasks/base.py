@@ -159,9 +159,9 @@ class Task:
 
     def require_production_privileges(self) -> None:
         from pilot.exceptions import BenchError
-        from pilot.managers.platform import has_passwordless_sudo
+        from pilot.managers.nginx import NginxManager
 
-        if self.bench.config.production.enabled and not has_passwordless_sudo():
+        if self.bench.config.production.enabled and not NginxManager(self.bench).has_passwordless_sudo:
             raise BenchError("Production site operations require non-interactive system privileges.")
 
     def record_audit(self, category: str, fields: dict) -> None:

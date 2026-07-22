@@ -68,7 +68,7 @@ const header = computed(() => ({
 </script>
 
 <template>
-  <Sidebar :header="header" :sections="sections" class="border-outline-alpha-gray-1">
+  <Sidebar :header="header" :sections="sections" class="dark:border-outline-gray-2">
     <template #sidebar-item="{ item }">
       <SidebarItem v-bind="item" :isActive="isActive(item.to)"
         :class="isActive(item.to) ? '!text-ink-gray-9' : '!text-ink-gray-7'" />

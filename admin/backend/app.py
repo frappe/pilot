@@ -81,7 +81,7 @@ def register_frontend(app: Flask) -> None:
             return error_response("not_found", "API route not found.", 404)
         dist = STATIC_DIR / "dist"
         if not dist.exists():
-            return "Frontend not built. Run: cd admin/frontend && npm install && npm run build", 503
+            return "Frontend not built. Run: cd admin/frontend && yarn install && yarn build", 503
         candidate = dist / path
         if path and candidate.exists() and candidate.is_file():
             return send_file(str(candidate))

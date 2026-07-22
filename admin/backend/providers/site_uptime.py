@@ -47,21 +47,25 @@ class SiteUptimeProvider(WindowedLogProvider):
             return False
 
     def _buckets(self, entries: list[dict]) -> list[dict]:
+        """Every bucket in the window, empty ones included, so a site with a
+        short history charts as bars over the window instead of a few fat ones
+        stretched across it."""
         bucket_ms = self.bucket_seconds * 1000
         grouped: dict[int, list[dict]] = {}
         for entry in entries:
             when = self.get_time(entry.get("time"))
             if when is None or not isinstance(entry.get("up"), bool):
                 continue
-            bucket_start = self.to_epoch_ms(when) // bucket_ms * bucket_ms
-            grouped.setdefault(bucket_start, []).append(entry)
+            grouped.setdefault(self.to_epoch_ms(when) // bucket_ms * bucket_ms, []).append(entry)
+        first = self.to_epoch_ms(self.cutoff) // bucket_ms * bucket_ms
+        current = self.now_ms() // bucket_ms * bucket_ms
         return [
             {
                 "time": start,
-                "percent": self._percent(bucket_entries),
-                "checks": len(bucket_entries),
+                "percent": self._percent(grouped.get(start, [])),
+                "checks": len(grouped.get(start, [])),
             }
-            for start, bucket_entries in sorted(grouped.items())
+            for start in range(first, current + bucket_ms, bucket_ms)
         ]
 
     @staticmethod

@@ -33,7 +33,7 @@ def test_all_up_gives_hundred_percent(tmp_path: Path) -> None:
     result = SiteUptimeProvider(root, "site-a.local", "1h").get_uptime()
 
     assert result["overall_percent"] == 100.0
-    assert all(bucket["percent"] == 100.0 for bucket in result["buckets"])
+    assert all(bucket["percent"] == 100.0 for bucket in result["buckets"] if bucket["checks"])
 
 
 def test_mixed_results_give_partial_percent(tmp_path: Path) -> None:
@@ -83,7 +83,18 @@ def test_no_data_gives_none_overall_and_empty_buckets(tmp_path: Path) -> None:
     result = SiteUptimeProvider(tmp_path, "site-a.local", "1h").get_uptime()
 
     assert result["overall_percent"] is None
-    assert result["buckets"] == []
+    assert all(bucket["percent"] is None and bucket["checks"] == 0 for bucket in result["buckets"])
+
+
+def test_buckets_cover_whole_window_even_with_short_history(tmp_path: Path) -> None:
+    now = datetime.now(UTC)
+    root = _write_log(tmp_path, [_record("site-a.local", now - timedelta(seconds=i * 5), True) for i in range(5)])
+
+    result = SiteUptimeProvider(root, "site-a.local", "1h").get_uptime()
+
+    assert len(result["buckets"]) >= 60
+    assert sum(bucket["checks"] for bucket in result["buckets"]) == 5
+    assert result["buckets"][0]["percent"] is None
 
 
 def test_bucket_seconds_scales_with_window(tmp_path: Path) -> None:

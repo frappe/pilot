@@ -468,6 +468,64 @@ def test_write_nginx_logrotate_content(tmp_path: Path) -> None:
     assert "rotate 3" in content
 
 
+def test_stage_and_copy_creates_missing_nginx_config_dir(tmp_path: Path) -> None:
+    """install() runs setup_sudoers() before generate_config() ever mkdirs
+    config/nginx - staging must not assume that directory already exists."""
+    bench = _make_bench(tmp_path, _BASE_DATA)
+    manager = NginxManager(bench)
+    nginx_dir = bench.config_path / "nginx"
+    assert not nginx_dir.exists()
+
+    with patch("pilot.managers.sudoers.run_command") as mock_run:
+        manager._stage_and_copy("content", Path("/etc/logrotate.d/test-bench-nginx"))
+
+    mock_run.assert_called_once()
+    assert nginx_dir.is_dir()
+
+
+def test_stage_and_copy_validates_staged_file_before_copying(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, _BASE_DATA)
+    manager = NginxManager(bench)
+    target = Path("/etc/sudoers.d/test-bench-pilot-nginx")
+
+    with patch("pilot.managers.sudoers.run_command") as mock_run:
+        manager._stage_and_copy("content", target, validate=["visudo", "-cf"])
+
+    assert mock_run.call_count == 2
+    validate_call, cp_call = (call.args[0] for call in mock_run.call_args_list)
+    staged = bench.config_path / "nginx" / target.name
+    assert validate_call[-3:] == ["visudo", "-cf", str(staged)]
+    assert cp_call[-3:] == ["cp", str(staged), str(target)]
+
+
+def test_setup_sudoers_grants_only_start_stop_reload(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, _BASE_DATA)
+    manager = NginxManager(bench)
+    sudoers_file = Path("/etc/sudoers.d/runner-pilot-nginx")
+
+    with (
+        patch("pwd.getpwuid") as mock_getpwuid,
+        patch("pilot.managers.sudoers.stage_and_copy") as mock_stage,
+        patch("pilot.managers.sudoers.run_command") as mock_run,
+    ):
+        mock_getpwuid.return_value.pw_name = "runner"
+        manager.setup_sudoers()
+
+    content, target = mock_stage.call_args.args[1:3]
+    assert mock_stage.call_args.kwargs == {"validate": ["visudo", "-cf"]}
+    assert target == sudoers_file
+    assert "runner ALL=(ALL) NOPASSWD:" in content
+    assert "-t," in content
+    assert "-T," in content
+    assert "start nginx," in content
+    assert "stop nginx," in content
+    assert content.rstrip().endswith("reload nginx")
+    assert "ALL=(ALL) NOPASSWD: ALL" not in content
+
+    mock_run.assert_called_once()
+    assert mock_run.call_args.args[0][-3:] == ["chmod", "440", str(sudoers_file)]
+
+
 def test_install_config_writes_nginx_logrotate(tmp_path: Path) -> None:
     bench = _make_bench(tmp_path, _BASE_DATA)
     manager = NginxManager(bench)
@@ -511,3 +569,26 @@ def test_config_dir_honors_explicit_value(tmp_path: Path) -> None:
     bench = _make_bench(tmp_path, _BASE_DATA)
     bench.config.nginx.config_dir = Path("/custom/nginx/dir")
     assert NginxManager(bench).config_dir == Path("/custom/nginx/dir")
+
+
+def test_cert_files_exist_falls_back_to_http_on_failure() -> None:
+    """Any failure - cert absent, or sudo denied - renders the vhost HTTP-only."""
+    from pilot.managers.nginx import cert_files_exist
+
+    denied = CommandError("Command 'sudo' failed with exit code 1.\nsudo: a password is required")
+    with patch("pilot.managers.nginx.run_command", side_effect=denied):
+        assert cert_files_exist("site.example.com") is False
+
+
+def test_cert_files_exist_true_when_both_files_present() -> None:
+    from pilot.managers.nginx import cert_files_exist
+
+    with patch("pilot.managers.nginx.run_command") as mock_run:
+        assert cert_files_exist("site.example.com") is True
+    argv = mock_run.call_args.args[0]
+    assert argv[-4:] == [
+        "/etc/letsencrypt/live/site.example.com/fullchain.pem",
+        "-a",
+        "-f",
+        "/etc/letsencrypt/live/site.example.com/privkey.pem",
+    ]

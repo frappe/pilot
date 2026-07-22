@@ -48,7 +48,6 @@ const COMMAND_LABELS = {
   'add-and-install-app': 'Fetch & Install App on All Sites',
   'switch-branch': 'Switch Branch',
   'setup-nginx': 'Setup Nginx',
-  'setup-production': 'Setup Production',
   'setup-letsencrypt': "Setup Let's Encrypt",
   'new-site-from-backup': 'Restore Site',
   'reinstall-site': 'Reinstall Site',

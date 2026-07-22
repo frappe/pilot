@@ -6,6 +6,7 @@ from pathlib import Path
 
 from admin.backend.internal.timeline import TimelinePoint, build_timeline
 from admin.backend.providers.windowed_log import WindowedLogProvider
+from pilot.core.site.uptime_monitoring import PING_PATH
 
 _MAX_BUCKETS = 48
 _TOP_LIMIT = 5
@@ -47,6 +48,9 @@ class SiteAccessLogProvider(WindowedLogProvider):
             if when < self.cutoff:
                 break
             if match["host"] != self._site_name:
+                continue
+            # Uptime checks hit the ping endpoint constantly and would drown out real client IPs.
+            if match["uri"].split("?", 1)[0] == PING_PATH:
                 continue
             duration = self._parse_duration(match["request_time"])
             points.append(TimelinePoint(self.to_epoch_ms(when), match["ip"], duration))

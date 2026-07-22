@@ -3,12 +3,12 @@ from __future__ import annotations
 import pwd
 import re
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
+from pilot.exceptions import CommandError
 from pilot.internal.template import Template
 from pilot.managers.gunicorn import GunicornManager
 from pilot.managers.nginx.waf_render import ModSecurityRenderer
@@ -19,7 +19,9 @@ from pilot.managers.platform import (
     is_linux,
     service_command,
     service_running,
+    which,
 )
+from pilot.managers.sudoers import has_passwordless_sudo_for, install_sudoers_grant, stage_and_copy
 from pilot.managers.waf import WafManager
 from pilot.utils import run_command
 
@@ -70,23 +72,14 @@ def live_key_path(domain: str) -> Path:
 
 
 def cert_files_exist(domain: str) -> bool:
+    """Ensure a missing sudo grant does not take the whole bench to http."""
     # /etc/letsencrypt/live is root-only (0700), so stat with privilege.
-    return (
-        subprocess.run(
-            _privileged(
-                [
-                    "test",
-                    "-f",
-                    str(live_cert_path(domain)),
-                    "-a",
-                    "-f",
-                    str(live_key_path(domain)),
-                ]
-            ),
-            capture_output=True,
-        ).returncode
-        == 0
-    )
+    command = ["test", "-f", str(live_cert_path(domain)), "-a", "-f", str(live_key_path(domain))]
+    try:
+        run_command(_privileged(command))
+    except CommandError:
+        return False
+    return True
 
 
 class NginxConfigRenderer:
@@ -194,6 +187,32 @@ class NginxManager:
     def install(self) -> None:
         if not self.is_installed():
             get_package_manager().install("nginx")
+
+    def setup_sudoers(self):
+        """Give nginx passwordless sudo for exactly the commands reload needs.
+        Idempotent: same deterministic content every call."""
+        bench_user = pwd.getpwuid(self.bench.path.stat().st_uid).pw_name
+        systemctl = which("systemctl") or "/bin/systemctl"
+        nginx = which("nginx") or "/usr/sbin/nginx"
+        install_sudoers_grant(
+            self.bench.config_path / "nginx",
+            bench_user,
+            "nginx",
+            [
+                f"{nginx} -t",
+                f"{nginx} -T",
+                f"{systemctl} start nginx",
+                f"{systemctl} stop nginx",
+                f"{systemctl} reload nginx",
+            ],
+        )
+
+    @property
+    def has_passwordless_sudo(self) -> bool:
+        """True when the sudoers grant from `setup_sudoers` lets this user run
+        nginx commands without a password prompt."""
+        nginx = which("nginx") or "/usr/sbin/nginx"
+        return has_passwordless_sudo_for([nginx, "-t"])
 
     def generate_config(self, ssl_ready: bool = False) -> None:
         nginx_dir = self.bench.config_path / "nginx"
@@ -310,12 +329,9 @@ class NginxManager:
 """
         self._stage_and_copy(config, target)
 
-    def _stage_and_copy(self, content: str, target: Path) -> None:
+    def _stage_and_copy(self, content: str, target: Path, validate: list[str] | None = None) -> None:
         """Sudo-copy content into a root-owned target via a bench-owned staging file."""
-        staged = self.bench.config_path / "nginx" / target.name
-        staged.write_text(content)
-        run_command(_privileged(["cp", str(staged), str(target)]))
-        staged.unlink()
+        stage_and_copy(self.bench.config_path / "nginx", content, target, validate)
 
     def _ensure_modsecurity_module(self) -> None:
         """Debian auto-enables the module; elsewhere inject a load_module line.

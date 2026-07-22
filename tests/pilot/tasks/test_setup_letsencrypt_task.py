@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import PropertyMock, patch
 
 import pytest
 
 from pilot.config import BenchConfig
 from pilot.exceptions import BenchError
+from pilot.managers.nginx import NginxManager
 from pilot.tasks.setup_letsencrypt import SetupLetsEncryptTask
 from tests.pilot.commands.test_commands import make_bench
 
@@ -33,7 +34,7 @@ def test_production_preflight_runs_before_tls_configuration_changes(tmp_path: Pa
     original_bench_config = (tmp_path / "bench.toml").read_bytes()
 
     with (
-        patch("pilot.managers.platform.has_passwordless_sudo", return_value=False),
+        patch.object(NginxManager, "has_passwordless_sudo", new_callable=PropertyMock, return_value=False),
         patch("pilot.core.bench.Bench.setup_letsencrypt") as run,
         pytest.raises(BenchError, match="non-interactive system privileges"),
     ):
