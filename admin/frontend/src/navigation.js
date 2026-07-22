@@ -37,11 +37,6 @@ export const navigation = {
   },
   'Dev tools': {
     children: {
-      // 'DB analyzer': {
-      //   path: '/database/analyzer',
-      //   icon: 'lucide-database',
-      //   component: Placeholder,
-      // },
       'SQL playground': {
         path: '/database/sql-playground',
         icon: 'lucide-terminal',

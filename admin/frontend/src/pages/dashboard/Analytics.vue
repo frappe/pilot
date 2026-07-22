@@ -8,21 +8,33 @@
         <p class="mt-1 text-ink-gray-5 text-sm sm:hidden">System and app metrics.</p>
         <p class="mt-1 text-ink-gray-5 text-sm hidden sm:block">System and application metrics for this bench.</p>
       </div>
-      <Dropdown :options="windowOptions" placement="bottom-end">
-        <template #default="{ open }">
-          <Button variant="outline" size="sm" :active="open">
-            <template #prefix>
-              <span v-if="!isHistorical" class="bg-surface-green-8 rounded-full size-1.5 animate-pulse" />
-            </template>
-            <template #suffix><span class="size-4 lucide-chevron-down" /></template>
-            {{ windowLabel }}
-          </Button>
-        </template>
-      </Dropdown>
+      <div class="flex items-center gap-2">
+        <Dropdown :options="windowOptions" placement="bottom-end">
+          <template #default="{ open }">
+            <Button variant="outline" size="sm" :active="open">
+              <template #prefix>
+                <span v-if="!isHistorical" class="bg-surface-green-8 rounded-full size-1.5 animate-pulse" />
+              </template>
+              <template #suffix><span class="size-4 lucide-chevron-down" /></template>
+              {{ windowLabel }}
+            </Button>
+          </template>
+        </Dropdown>
+        <Dropdown :options="viewOptions" placement="bottom-end">
+          <template #default="{ open }">
+            <Button variant="outline" size="sm" :active="open">
+              <template #suffix><span class="size-4 lucide-chevron-down" /></template>
+              {{ viewLabel }}
+            </Button>
+          </template>
+        </Dropdown>
+      </div>
     </div>
 
+    <DatabaseInsights v-if="view === 'database'" :window="dbWindow" />
+
     <!-- Loading state -->
-    <div v-if="pageLoading" class="flex justify-center h-[50vh]">
+    <div v-else-if="pageLoading" class="flex justify-center h-[50vh]">
       <LoadingText />
     </div>
 
@@ -85,10 +97,12 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { Button, Dropdown, LoadingText, ErrorMessage, AxisChart } from 'frappe-ui'
 import ChartCard from '@/components/common/ChartCard.vue'
 import WafAnalytics from '@/components/common/WafAnalytics.vue'
+import DatabaseInsights from '@/components/dashboard/DatabaseInsights.vue'
 import { apiErrorMessage } from '@/api/client'
 import { monitorApi } from '@/api/monitor'
 
@@ -123,10 +137,44 @@ const MEMORY_COLORS = {
 
 // State
 
-const activeWindow = ref('live')
+const route = useRoute()
+const router = useRouter()
+
+const VIEWS = [{ key: 'system', label: 'System' }, { key: 'database', label: 'Database' }]
+const WINDOW_KEYS = WINDOWS.map(w => w.key)
+
+const view = ref(route.query.view === 'database' ? 'database' : 'system')
+const initialWindow = WINDOW_KEYS.includes(route.query.window) ? route.query.window : 'live'
+const activeWindow = ref(view.value === 'database' && initialWindow === 'live' ? '1h' : initialWindow)
 const isHistorical = computed(() => activeWindow.value !== 'live')
+
+const viewLabel = computed(() => VIEWS.find(v => v.key === view.value)?.label ?? '')
+const viewOptions = computed(() => VIEWS.map(v => ({ label: v.label, onClick: () => setView(v.key) })))
+
+// The database view has no live mode, so hide it there.
 const windowLabel = computed(() => WINDOWS.find(w => w.key === activeWindow.value)?.label ?? '')
-const windowOptions = computed(() => WINDOWS.map(w => ({ label: w.label, onClick: () => setWindow(w.key) })))
+const windowOptions = computed(() =>
+  WINDOWS.filter(w => view.value === 'system' || w.key !== 'live')
+    .map(w => ({ label: w.label, onClick: () => selectWindow(w.key) })),
+)
+// Database charts never receive 'live'.
+const dbWindow = computed(() => (activeWindow.value === 'live' ? '1h' : activeWindow.value))
+
+function setView(key) {
+  view.value = key
+  if (key === 'database' && activeWindow.value === 'live') selectWindow('1h')
+  else if (key === 'system') setWindow(activeWindow.value)
+}
+
+function selectWindow(key) {
+  if (view.value === 'database') activeWindow.value = key
+  else setWindow(key)
+}
+
+// Persist view + window so a reload restores the same chart.
+watch([view, activeWindow], () => {
+  router.replace({ query: { view: view.value, window: activeWindow.value } })
+})
 
 // Live mode state
 const stats = ref(null)
@@ -177,7 +225,7 @@ function setWindow(key) {
 }
 
 async function loadStats() {
-  if (isHistorical.value) return
+  if (view.value !== 'system' || isHistorical.value) return
   try {
     const s = await monitorApi.stats()
     stats.value = s
@@ -457,9 +505,11 @@ function formatBytes(bytes) {
 // Lifecycle
 
 let statsTimer
-onMounted(async () => {
-  await seedLiveHistory()
-  await loadStats()
+onMounted(() => {
+  if (view.value === 'system') {
+    if (isHistorical.value) loadHistory(activeWindow.value)
+    else { seedLiveHistory(); loadStats() }
+  }
   statsTimer = setInterval(loadStats, 10000)
 })
 onUnmounted(() => clearInterval(statsTimer))

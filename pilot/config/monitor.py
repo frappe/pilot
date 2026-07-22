@@ -5,6 +5,8 @@ from pathlib import Path
 @dataclass
 class MonitorConfig:
     system_log_path: Path = Path("/var/log/bench-system-stats.log")
+    db_log_path: Path = Path("/var/log/bench-db-stats.log")
+    slow_query_log_path: Path = Path("/var/log/bench-slow-queries.json")
     authority_file_path: Path = Path("/var/log/.bench-authority")
     system_log_max_size: str = "500M"
     application_log_max_size: str = "500M"
@@ -14,6 +16,8 @@ class MonitorConfig:
     def from_dict(cls, data: dict) -> "MonitorConfig":
         return cls(
             system_log_path=Path(data.get("system_log_path", "/var/log/bench-system-stats.log")),
+            db_log_path=Path(data.get("db_log_path", "/var/log/bench-db-stats.log")),
+            slow_query_log_path=Path(data.get("slow_query_log_path", "/var/log/bench-slow-queries.json")),
             authority_file_path=Path(data.get("authority_file_path", "/var/log/.bench-authority")),
             system_log_max_size=data.get("system_log_max_size", "500M"),
             application_log_max_size=data.get("application_log_max_size", "500M"),

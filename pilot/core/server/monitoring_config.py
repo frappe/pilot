@@ -85,6 +85,14 @@ class MonitorConfigurator:
     def system_log_path(self) -> Path:
         return self._require_bench().config.monitor.system_log_path
 
+    @property
+    def db_log_path(self) -> Path:
+        return self._require_bench().config.monitor.db_log_path
+
+    @property
+    def slow_query_log_path(self) -> Path:
+        return self._require_bench().config.monitor.slow_query_log_path
+
     def setup(self) -> None:
         if not is_linux():
             raise BenchError("Monitoring is only supported on linux based machines.")
@@ -105,6 +113,11 @@ class MonitorConfigurator:
         self._write_logrotate_config(
             "/etc/logrotate.d/bench-system-stats",
             self.system_log_path,
+            monitor_config.system_log_max_size,
+        )
+        self._write_logrotate_config(
+            "/etc/logrotate.d/bench-db-stats",
+            self.db_log_path,
             monitor_config.system_log_max_size,
         )
 

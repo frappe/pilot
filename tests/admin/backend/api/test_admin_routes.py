@@ -69,18 +69,18 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         if rule.rule.startswith(f"{API_ROOT_PREFIX}/") and not rule.rule.startswith(f"{API_V1_PREFIX}/")
     ]
 
-    assert len(routes) == 110
+    assert len(routes) == 111
     assert unversioned == []
-    assert len({(method, path) for method, path, _, _ in routes}) == 110
+    assert len({(method, path) for method, path, _, _ in routes}) == 111
     assert Counter(method for method, _, _, _ in routes) == {
         "DELETE": 10,
-        "GET": 56,
+        "GET": 57,
         "PATCH": 4,
         "POST": 37,
         "PUT": 3,
     }
     assert Counter(policy for _, _, _, policy in routes) == {
-        "authenticated": 60,
+        "authenticated": 61,
         "authenticated+bench-management": 9,
         "authenticated+site-scope": 30,
         "open": 5,
@@ -95,7 +95,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         "benches": 8,
         "cli-update-checks": 1,
         "cli-updates": 1,
-        "database": 3,
+        "database": 4,
         "git": 6,
         "bootstrap": 1,
         "health": 1,

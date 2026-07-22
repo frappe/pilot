@@ -111,6 +111,57 @@ class MariaDB(Database):
         finally:
             conn.close()
 
+    def get_global_status(self) -> dict[str, str]:
+        return self._name_value_pairs("SHOW GLOBAL STATUS")
+
+    def get_global_variables(self) -> dict[str, str]:
+        return self._name_value_pairs("SHOW GLOBAL VARIABLES")
+
+    def is_slow_log_enabled(self) -> bool:
+        variables = self.get_global_variables()
+        return variables.get("slow_query_log") == "ON" and "TABLE" in (variables.get("log_output") or "")
+
+    def enable_slow_log(self, long_query_time: float = 1.0) -> None:
+        """Mutates shared server globals; only call on an explicit user action."""
+        conn = self._connect()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SET GLOBAL slow_query_log = ON")
+                cursor.execute("SET GLOBAL log_output = 'TABLE'")
+                cursor.execute("SET GLOBAL long_query_time = %s", (long_query_time,))
+        finally:
+            conn.close()
+
+    def scan_slow_queries(self, since: str | None = None, limit: int = 5000) -> list[dict]:
+        """New mysql.slow_log rows across all schemas, oldest first, for aggregation."""
+        conn = self._connect()
+        try:
+            with conn.cursor() as cursor:
+                if since:
+                    cursor.execute(
+                        "SELECT db, sql_text, query_time, start_time FROM mysql.slow_log "
+                        "WHERE start_time > %s ORDER BY start_time ASC LIMIT %s",
+                        (since, int(limit)),
+                    )
+                else:
+                    cursor.execute(
+                        "SELECT db, sql_text, query_time, start_time FROM mysql.slow_log "
+                        "ORDER BY start_time ASC LIMIT %s",
+                        (int(limit),),
+                    )
+                return list(cursor.fetchall())
+        finally:
+            conn.close()
+
+    def _name_value_pairs(self, query: str) -> dict[str, str]:
+        conn = self._connect()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(query)
+                return {r["Variable_name"]: r["Value"] for r in cursor.fetchall()}
+        finally:
+            conn.close()
+
 
 class PostgreSQL(Database):
     def __init__(self, host: str, port: int, user: str, password: str, database: str) -> None:
