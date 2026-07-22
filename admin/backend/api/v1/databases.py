@@ -97,7 +97,7 @@ def get_process_list():
     if forbidden is not None:
         return forbidden
     try:
-        return jsonify(_provider().get_process_list())
+        return jsonify(_provider().get_process_list(request.args.get("site", "")))
     except DatabaseError as exc:
         return error_response("processlist_unavailable", str(exc), 422)
     except Exception:
@@ -127,7 +127,7 @@ def kill_process():
 @database_bp.get("/lockwaits")
 def get_lock_wait_rows():
     try:
-        return jsonify(_provider().get_lock_wait_rows())
+        return jsonify(_provider().get_lock_wait_rows(request.args.get("site", "")))
     except DatabaseError as exc:
         return error_response("lockwaits_unavailable", str(exc), 422)
     except Exception:

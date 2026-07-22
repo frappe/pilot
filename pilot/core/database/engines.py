@@ -205,8 +205,11 @@ class MariaDB(Database):
         finally:
             conn.close()
 
-    def get_process_list(self) -> list[dict]:
-        return _rows_as_dicts(self.execute("SHOW FULL PROCESSLIST"))
+    def get_process_list(self, database: str = "") -> list[dict]:
+        rows = _rows_as_dicts(self.execute("SHOW FULL PROCESSLIST"))
+        if not database:
+            return rows
+        return [row for row in rows if row.get("db") == database]
 
     def kill_process(self, process_id: int) -> None:
         """Drop a connection and roll back whatever it was running."""
@@ -222,16 +225,19 @@ class MariaDB(Database):
             timeout_seconds=int(self.get_scalar("SELECT @@innodb_lock_wait_timeout")),
         )
 
-    def get_lock_wait_rows(self) -> list[LockWaitRow]:
+    def get_lock_wait_rows(self, database: str = "") -> list[LockWaitRow]:
         """Each row is the waiting side of a lock wait, joined to its own
-        transaction for state/query/row-count context."""
+        transaction for state/query/row-count context. INNODB_TRX has no
+        database column, so the owning connection supplies it."""
         result = self.execute(
             "SELECT w.requesting_trx_id, l.lock_type, l.lock_mode, l.lock_table, l.lock_index, "
-            "t.trx_state, t.trx_started, t.trx_query, t.trx_rows_locked, t.trx_rows_modified "
+            "t.trx_state, t.trx_started, t.trx_query, t.trx_rows_locked, t.trx_rows_modified, p.DB "
             "FROM information_schema.INNODB_LOCK_WAITS w "
             "JOIN information_schema.INNODB_LOCKS l ON l.lock_id = w.requested_lock_id "
-            "JOIN information_schema.INNODB_TRX t ON t.trx_id = w.requesting_trx_id"
+            "JOIN information_schema.INNODB_TRX t ON t.trx_id = w.requesting_trx_id "
+            "LEFT JOIN information_schema.PROCESSLIST p ON p.ID = t.trx_mysql_thread_id"
         )
+        rows = [row for row in result.rows if not database or row[10] == database]
         return [
             LockWaitRow(
                 id=str(row[0]),
@@ -245,7 +251,7 @@ class MariaDB(Database):
                 rows_locked=int(row[8]) if row[8] is not None else None,
                 rows_modified=int(row[9]) if row[9] is not None else None,
             )
-            for row in result.rows
+            for row in rows
         ]
 
     def get_binlog_status(self) -> BinlogStatus:
@@ -396,14 +402,17 @@ class PostgreSQL(Database):
         finally:
             conn.close()
 
-    def get_process_list(self) -> list[dict]:
-        return _rows_as_dicts(
+    def get_process_list(self, database: str = "") -> list[dict]:
+        rows = _rows_as_dicts(
             self.execute(
                 'SELECT pid, usename AS "user", datname AS "database", state, '
                 "EXTRACT(EPOCH FROM (now() - query_start)) AS duration_seconds, query "
                 "FROM pg_stat_activity WHERE pid <> pg_backend_pid()"
             )
         )
+        if not database:
+            return rows
+        return [row for row in rows if row.get("database") == database]
 
     def kill_process(self, process_id: int) -> None:
         """pg_terminate_backend reports a missing backend by returning false."""
@@ -425,16 +434,17 @@ class PostgreSQL(Database):
             timeout_seconds=timeout_ms // 1000 if timeout_ms else None,
         )
 
-    def get_lock_wait_rows(self) -> list[LockWaitRow]:
+    def get_lock_wait_rows(self, database: str = "") -> list[LockWaitRow]:
         """PostgreSQL has no lock-index concept and no per-transaction row
         counters, so index/rows_locked/rows_modified are always None."""
         result = self.execute(
             "SELECT blocked.pid, blocked.locktype, blocked.mode, "
-            "blocked.relation::regclass::text, a.state, a.query_start, a.query "
+            "blocked.relation::regclass::text, a.state, a.query_start, a.query, a.datname "
             "FROM pg_locks blocked "
             "JOIN pg_stat_activity a ON a.pid = blocked.pid "
             "WHERE NOT blocked.granted"
         )
+        rows = [row for row in result.rows if not database or row[7] == database]
         return [
             LockWaitRow(
                 id=str(row[0]),
@@ -448,7 +458,7 @@ class PostgreSQL(Database):
                 rows_locked=None,
                 rows_modified=None,
             )
-            for row in result.rows
+            for row in rows
         ]
 
     # No binary log: WAL archiving is configured server-side. Falls back to

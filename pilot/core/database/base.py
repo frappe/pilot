@@ -66,7 +66,8 @@ class Database(ABC):
     def get_schema(self) -> list[dict]:
         return [{"name": t, "columns": self.get_table_columns(t)} for t in self.get_tables()]
 
-    def get_process_list(self) -> list[dict]:
+    def get_process_list(self, database: str = "") -> list[dict]:
+        """`database` narrows the result to one database; empty means server-wide."""
         raise NotImplementedError
 
     def kill_process(self, process_id: int) -> None:
@@ -78,7 +79,8 @@ class Database(ABC):
     def get_lock_waits(self) -> LockWaitStatus:
         raise NotImplementedError
 
-    def get_lock_wait_rows(self) -> list[LockWaitRow]:
+    def get_lock_wait_rows(self, database: str = "") -> list[LockWaitRow]:
+        """`database` narrows the result to one database; empty means server-wide."""
         raise NotImplementedError
 
     def get_binlog_status(self) -> BinlogStatus:

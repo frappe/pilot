@@ -4,7 +4,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from pilot.config import BenchConfig
-from pilot.core.database import Database, make_database
+from pilot.core.database import Database, make_database, site_database_name
 from pilot.exceptions import DatabaseError
 
 NO_DATABASE_SERVER = (
@@ -25,6 +25,7 @@ class DatabaseDiagnosticsProvider:
     """
 
     def __init__(self, bench_root: Path, database: Database | None = None, engine: str = "mariadb") -> None:
+        self._bench_root = bench_root
         if database is not None:
             self._db: Database | None = database
             self._engine = engine
@@ -45,14 +46,15 @@ class DatabaseDiagnosticsProvider:
             "binlog": asdict(self._call(database.get_binlog_status)),
         }
 
-    def get_process_list(self) -> list[dict]:
-        return self._call(self._require_server().get_process_list)
+    def get_process_list(self, site: str = "") -> list[dict]:
+        return self._call(self._require_server().get_process_list, self._database_for(site))
 
     def kill_process(self, process_id: int) -> None:
         self._call(self._require_server().kill_process, process_id)
 
-    def get_lock_wait_rows(self) -> list[dict]:
-        return [asdict(row) for row in self._call(self._require_server().get_lock_wait_rows)]
+    def get_lock_wait_rows(self, site: str = "") -> list[dict]:
+        rows = self._call(self._require_server().get_lock_wait_rows, self._database_for(site))
+        return [asdict(row) for row in rows]
 
     def get_binlog_files(self) -> list[dict]:
         return [asdict(file) for file in self._call(self._require_server().get_binlog_files)]
@@ -64,6 +66,17 @@ class DatabaseDiagnosticsProvider:
         if self._db is None:
             raise DatabaseError(NO_DATABASE_SERVER)
         return self._db
+
+    def _database_for(self, site: str) -> str:
+        """Resolve a site to the database it owns. Callers pass a site name, never
+        a database name - the mapping is a server-side lookup so a client can't
+        point diagnostics at an arbitrary database."""
+        if not site:
+            return ""
+        try:
+            return site_database_name(self._bench_root, site)
+        except (FileNotFoundError, ValueError) as exc:
+            raise DatabaseError(f"Site '{site}' not found on this bench.") from exc
 
     @staticmethod
     def _call(fn, *args):
