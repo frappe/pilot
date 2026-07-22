@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from datetime import datetime, timedelta
@@ -40,6 +41,14 @@ def to_iso(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def fingerprint(db: str, raw_text: str, query_time: float) -> str:
+    """Identifies a row by content rather than position, since `mysql.slow_log`
+    has no stable ordering for rows tied on `start_time` - a rescan can return
+    them in a different order, so position-based de-duplication is unsafe."""
+    digest = hashlib.sha1(f"{db}\n{raw_text}\n{query_time}".encode()).hexdigest()
+    return digest[:16]
+
+
 MAX_RECORDS = 20000
 
 
@@ -57,31 +66,37 @@ class SlowQueryLog:
         records = self._read()
         return records[-1]["time"] if records else None
 
-    def count_at(self, time: str) -> int:
-        """How many already-recorded rows share the watermark timestamp, so a
-        rescan can skip exactly those instead of using a strict `>` that would
-        silently drop the rest of a same-timestamp group at a batch boundary."""
-        return sum(1 for record in self._read() if record["time"] == time)
-
     def records(self) -> list[dict]:
         return self._read()
 
     def append(self, rows: list[dict]) -> None:
+        existing = self._read()
+        # A rescan re-fetches everything from the watermark onward (`>=`), so
+        # rows already recorded at that exact timestamp must be skipped by
+        # content, not position - see fingerprint()'s docstring.
+        seen = {(record["time"], record["fp"]) for record in existing if "fp" in record}
         new_records = []
         for row in rows:
-            normalized = normalize(to_text(row.get("sql_text")))
+            raw_text = to_text(row.get("sql_text"))
+            normalized = normalize(raw_text)
             when = to_iso(row.get("start_time"))
+            seconds = round(to_seconds(row.get("query_time")), 3)
             if not normalized or not when:
                 continue
+            fp = fingerprint(row.get("db") or "", raw_text, seconds)
+            if (when, fp) in seen:
+                continue
+            seen.add((when, fp))
             new_records.append({
                 "time": when,
                 "db": row.get("db") or "",
                 "query": normalized,
-                "query_time": round(to_seconds(row.get("query_time")), 3),
+                "query_time": seconds,
+                "fp": fp,
             })
         if not new_records:
             return
-        records = self._read() + new_records
+        records = existing + new_records
         records.sort(key=lambda r: r["time"])
         self.path.write_text(json.dumps(records[-MAX_RECORDS:]))
 

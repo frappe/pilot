@@ -36,17 +36,34 @@ def test_append_separates_by_db(tmp_path: Path) -> None:
     assert {r["db"] for r in log.records()} == {"a", "b"}
 
 
-def test_count_at_returns_ties_sharing_the_watermark(tmp_path: Path) -> None:
+def test_rescan_does_not_duplicate_ties_at_the_watermark(tmp_path: Path) -> None:
+    # First poll: two rows tied on start_time.
     log = SlowQueryLog(tmp_path / "slow.json")
     log.append([
         _row("SELECT 1", 1.0, started="2026-01-01T00:00:00"),
         _row("SELECT 2", 1.0, started="2026-01-01T00:00:00"),
-        _row("SELECT 3", 1.0, started="2026-01-01T00:00:01"),
     ])
 
-    assert log.count_at("2026-01-01T00:00:00") == 2
-    assert log.count_at("2026-01-01T00:00:01") == 1
-    assert log.count_at("2026-01-01T00:00:02") == 0
+    # Rescan (mysql.slow_log has no stable secondary order, so a `>=` rescan
+    # can legitimately return the same tied rows back in reversed order) plus
+    # one genuinely new row at the same timestamp.
+    log.append([
+        _row("SELECT 2", 1.0, started="2026-01-01T00:00:00"),
+        _row("SELECT 1", 1.0, started="2026-01-01T00:00:00"),
+        _row("SELECT 3", 1.0, started="2026-01-01T00:00:00"),
+    ])
+
+    records = log.records()
+    assert sorted(r["query"] for r in records) == ["SELECT ?", "SELECT ?", "SELECT ?"]
+    assert len(records) == 3  # no duplicates from the reordered rescan, and the new row wasn't dropped
+
+
+def test_identical_content_at_different_times_is_not_deduped(tmp_path: Path) -> None:
+    log = SlowQueryLog(tmp_path / "slow.json")
+    log.append([_row("SELECT SLEEP(2)", 2.0, started="2026-01-01T00:00:00")])
+    log.append([_row("SELECT SLEEP(2)", 2.0, started="2026-01-01T00:00:05")])
+
+    assert len(log.records()) == 2
 
 
 def test_records_sorted_and_capped_to_max_records(tmp_path: Path) -> None:

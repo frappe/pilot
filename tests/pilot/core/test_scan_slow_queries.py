@@ -1,4 +1,5 @@
-"""MariaDB.scan_slow_queries: the since/since_count cursor must not drop ties."""
+"""MariaDB.scan_slow_queries: `>=` includes ties at the watermark; the caller
+(SlowQueryLog.append) is responsible for de-duplicating them by content."""
 
 from __future__ import annotations
 
@@ -31,19 +32,16 @@ def test_first_scan_has_no_since_clause() -> None:
     assert "ORDER BY start_time ASC" in query
 
 
-def test_rescan_uses_gte_and_skips_already_seen_ties() -> None:
-    # Simulate: DB returns 2 rows still sitting at the watermark timestamp,
-    # since_count=2 means both were already recorded last scan.
+def test_rescan_uses_gte_and_returns_ties_unfiltered() -> None:
     conn, cursor = _mock_connection([
         {"db": "a", "sql_text": "SELECT 1", "query_time": 1.0, "start_time": "2026-01-01T00:00:00"},
         {"db": "a", "sql_text": "SELECT 2", "query_time": 1.0, "start_time": "2026-01-01T00:00:00"},
-        {"db": "a", "sql_text": "SELECT 3", "query_time": 1.0, "start_time": "2026-01-01T00:00:01"},
     ])
     with patch.object(MariaDB, "_connect", return_value=conn):
-        rows = _mariadb().scan_slow_queries(since="2026-01-01T00:00:00", since_count=2)
+        rows = _mariadb().scan_slow_queries(since="2026-01-01T00:00:00")
 
     query, params = cursor.execute.call_args[0]
     assert "start_time >= %s" in query
-    assert params == ("2026-01-01T00:00:00", 5002)
-    # The 2 already-seen ties are skipped; only the genuinely new row remains.
-    assert [r["sql_text"] for r in rows] == ["SELECT 3"]
+    assert params == ("2026-01-01T00:00:00", 5000)
+    # scan_slow_queries itself never filters; both ties come back as-is.
+    assert [r["sql_text"] for r in rows] == ["SELECT 1", "SELECT 2"]

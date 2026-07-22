@@ -155,8 +155,14 @@ class MariaDB(Database):
         finally:
             conn.close()
 
-    def scan_slow_queries(self, since: str | None = None, since_count: int = 0, limit: int = 5000) -> list[dict]:
-        """New mysql.slow_log rows across all schemas, oldest first, for aggregation."""
+    def scan_slow_queries(self, since: str | None = None, limit: int = 5000) -> list[dict]:
+        """New mysql.slow_log rows across all schemas, oldest first, for aggregation.
+
+        Uses `>=` rather than a strict `>` so rows tied with `since` on
+        `start_time` are always included; `mysql.slow_log` has no stable
+        secondary ordering key to break ties consistently across scans, so
+        the caller (SlowQueryLog.append) de-duplicates by content instead of
+        relying on row order."""
         conn = self._connect()
         try:
             with conn.cursor() as cursor:
@@ -164,14 +170,14 @@ class MariaDB(Database):
                     cursor.execute(
                         "SELECT db, sql_text, query_time, start_time FROM mysql.slow_log "
                         "WHERE start_time >= %s ORDER BY start_time ASC LIMIT %s",
-                        (since, int(limit + since_count)),
+                        (since, int(limit)),
                     )
-                    return list(cursor.fetchall())[since_count:]
-                cursor.execute(
-                    "SELECT db, sql_text, query_time, start_time FROM mysql.slow_log "
-                    "ORDER BY start_time ASC LIMIT %s",
-                    (int(limit),),
-                )
+                else:
+                    cursor.execute(
+                        "SELECT db, sql_text, query_time, start_time FROM mysql.slow_log "
+                        "ORDER BY start_time ASC LIMIT %s",
+                        (int(limit),),
+                    )
                 return list(cursor.fetchall())
         finally:
             conn.close()
