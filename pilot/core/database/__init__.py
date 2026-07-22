@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pilot.core.database.base import Database, QueryResult
+from pilot.core.database.base import BinlogFile, BinlogStatus, Database, LockWaitStatus, QueryResult
 from pilot.core.database.engines import MariaDB, PostgreSQL, SQLite
 from pilot.exceptions import DatabaseError
 
@@ -12,7 +12,10 @@ if TYPE_CHECKING:
     from pilot.config import BenchConfig
 
 __all__ = [
+    "BinlogFile",
+    "BinlogStatus",
     "Database",
+    "LockWaitStatus",
     "MariaDB",
     "PostgreSQL",
     "QueryResult",

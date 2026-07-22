@@ -1,11 +1,24 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
-from pilot.core.database.base import Database, QueryResult
+from pilot.core.database.base import BinlogFile, BinlogStatus, Database, LockWaitStatus, QueryResult
 from pilot.exceptions import DatabaseError
 
 _MAX_ROWS = 5000
+
+
+def _rows_as_dicts(result: QueryResult) -> list[dict]:
+    return [dict(zip(result.columns, row, strict=True)) for row in result.rows]
+
+
+def _file_modified_ms(path: Path) -> int | None:
+    """Best-effort: the server may be remote or its datadir unreadable."""
+    try:
+        return int(path.stat().st_mtime * 1000)
+    except OSError:
+        return None
 
 
 class MariaDB(Database):
@@ -111,6 +124,69 @@ class MariaDB(Database):
         finally:
             conn.close()
 
+    def get_process_list(self) -> list[dict]:
+        return _rows_as_dicts(self.execute("SHOW FULL PROCESSLIST"))
+
+    def get_active_connections(self) -> int:
+        return self.get_status_value("Threads_connected")
+
+    def get_lock_waits(self) -> LockWaitStatus:
+        return LockWaitStatus(
+            current_waits=self.get_status_value("Innodb_row_lock_current_waits"),
+            total_waits=self.get_status_value("Innodb_row_lock_waits"),
+            timeout_seconds=int(self.get_scalar("SELECT @@innodb_lock_wait_timeout")),
+        )
+
+    def get_binlog_status(self) -> BinlogStatus:
+        files = self.get_binlog_files()
+        if not files:
+            return BinlogStatus(enabled=False, file_count=0, size_bytes=0)
+        return BinlogStatus(
+            enabled=True,
+            file_count=len(files),
+            size_bytes=sum(file.size_bytes for file in files),
+        )
+
+    def get_binlog_files(self) -> list[BinlogFile]:
+        """An enabled binlog always has at least one file (the active one),
+        so an empty list doubles as "binlog is off"."""
+        if not int(self.get_scalar("SELECT @@log_bin")):
+            return []
+        directory = Path(str(self.get_scalar("SELECT @@log_bin_basename"))).parent
+        logs = self.execute("SHOW BINARY LOGS")
+        name_column = logs.columns.index("Log_name")
+        size_column = logs.columns.index("File_size")
+        return [
+            BinlogFile(
+                name=row[name_column],
+                size_bytes=int(row[size_column]),
+                modified_ms=_file_modified_ms(directory / row[name_column]),
+            )
+            for row in logs.rows
+        ]
+
+    def purge_binlogs(self, up_to: str) -> None:
+        """Delete binlogs older than up_to; the named file itself is kept.
+
+        PURGE is server-managed: it refuses the active file and updates the
+        binlog index, so it is safe where deleting files on disk is not."""
+        names = [file.name for file in self.get_binlog_files()]
+        if up_to not in names:
+            raise DatabaseError(f"Unknown binlog file: {up_to}")
+        self.execute(f"PURGE BINARY LOGS TO '{up_to}'", read_only=False)
+
+    def get_status_value(self, variable: str) -> int:
+        result = self.execute(f"SHOW GLOBAL STATUS LIKE '{variable}'")
+        if not result.rows:
+            raise DatabaseError(f"Unknown status variable: {variable}")
+        return int(result.rows[0][1])
+
+    def get_scalar(self, query: str):
+        result = self.execute(query)
+        if not result.rows:
+            raise DatabaseError(f"Query returned no rows: {query}")
+        return result.rows[0][0]
+
 
 class PostgreSQL(Database):
     def __init__(self, host: str, port: int, user: str, password: str, database: str) -> None:
@@ -209,6 +285,37 @@ class PostgreSQL(Database):
         finally:
             conn.close()
 
+    def get_process_list(self) -> list[dict]:
+        return _rows_as_dicts(
+            self.execute(
+                'SELECT pid, usename AS "user", datname AS "database", state, '
+                "EXTRACT(EPOCH FROM (now() - query_start)) AS duration_seconds, query "
+                "FROM pg_stat_activity WHERE pid <> pg_backend_pid()"
+            )
+        )
+
+    def get_active_connections(self) -> int:
+        return int(self.execute("SELECT COUNT(*) FROM pg_stat_activity").rows[0][0])
+
+    def get_lock_waits(self) -> LockWaitStatus:
+        current = int(self.execute("SELECT COUNT(*) FROM pg_locks WHERE NOT granted").rows[0][0])
+        timeout_ms = int(self.execute("SELECT setting FROM pg_settings WHERE name = 'lock_timeout'").rows[0][0])
+        # PostgreSQL keeps no cumulative lock-wait counter; lock_timeout of 0 means disabled.
+        return LockWaitStatus(
+            current_waits=current,
+            total_waits=None,
+            timeout_seconds=timeout_ms // 1000 if timeout_ms else None,
+        )
+
+    def get_binlog_status(self) -> BinlogStatus:
+        raise DatabaseError("PostgreSQL has no binary log; WAL archiving is configured server-side")
+
+    def get_binlog_files(self) -> list[BinlogFile]:
+        raise DatabaseError("PostgreSQL has no binary log; WAL archiving is configured server-side")
+
+    def purge_binlogs(self, up_to: str) -> None:
+        raise DatabaseError("PostgreSQL has no binary log; WAL archiving is configured server-side")
+
 
 class SQLite(Database):
     def __init__(self, db_path: str) -> None:
@@ -284,3 +391,21 @@ class SQLite(Database):
             return [{"name": t, "columns": cols} for t, cols in columns_by_table.items()]
         finally:
             conn.close()
+
+    def get_process_list(self) -> list[dict]:
+        raise DatabaseError("SQLite has no server; there is no process list")
+
+    def get_active_connections(self) -> int:
+        raise DatabaseError("SQLite has no server; there are no client connections")
+
+    def get_lock_waits(self) -> LockWaitStatus:
+        raise DatabaseError("SQLite has no server; lock waits are not observable")
+
+    def get_binlog_status(self) -> BinlogStatus:
+        raise DatabaseError("SQLite has no binary log")
+
+    def get_binlog_files(self) -> list[BinlogFile]:
+        raise DatabaseError("SQLite has no binary log")
+
+    def purge_binlogs(self, up_to: str) -> None:
+        raise DatabaseError("SQLite has no binary log")
