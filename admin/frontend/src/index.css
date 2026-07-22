@@ -4,6 +4,11 @@
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 }
 
+
+body {
+  @apply bg-surface-base text-ink-gray-9;
+}
+
 /* Reduced motion: keep transitions near-instant, drop movement */
 @media (prefers-reduced-motion: reduce) {
   *,
