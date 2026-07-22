@@ -30,9 +30,10 @@ function breadcrumbsFromRouteMeta({ title = '', group }) {
       <header
         class="top-0 z-10 sticky flex items-center gap-2 px-4 sm:px-6 py-2.5 border-b border-outline-alpha-gray-1 shrink-0">
         <Breadcrumbs :items="breadcrumbs" />
-        <MigrationStatusButton />
         <div id="header-badge" class="flex items-center" />
-        <div id="header-actions" class="flex items-center gap-2 ml-auto" />
+        <div id="header-actions" class="flex items-center gap-2 ml-auto">
+          <MigrationStatusButton />
+        </div>
       </header>
       <div class="flex-1 p-4 sm:p-6 min-h-0 overflow-auto [scrollbar-gutter:stable]">
         <slot />
