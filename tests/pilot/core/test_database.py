@@ -234,6 +234,179 @@ def test_postgres_get_schema_uses_one_connection() -> None:
     assert [c["name"] for c in by_name["beta"]] == ["id"]
 
 
+def _canned_execute(responses: dict, calls: list | None = None):
+    """Fake Database.execute keyed on a substring of the query."""
+
+    def execute(self, query: str, read_only: bool = True) -> "QueryResult":
+        from pilot.core.database import QueryResult
+
+        if calls is not None:
+            calls.append((query, read_only))
+        for pattern, (columns, rows) in responses.items():
+            if pattern in query:
+                return QueryResult(columns=columns, rows=rows, duration_ms=0)
+        raise AssertionError(f"Unexpected query: {query}")
+
+    return execute
+
+
+def test_mariadb_get_process_list_maps_rows_to_dicts() -> None:
+    db = MariaDB(host="h", port=3306, user="u", password="p", database="")
+    responses = {
+        "PROCESSLIST": (
+            ["Id", "User", "db", "Command", "Time", "State", "Info"],
+            [[7, "app", "mydb", "Query", 3, "Sending data", "SELECT 1"]],
+        )
+    }
+    with patch.object(MariaDB, "execute", _canned_execute(responses)):
+        processes = db.get_process_list()
+
+    assert processes == [
+        {"Id": 7, "User": "app", "db": "mydb", "Command": "Query", "Time": 3, "State": "Sending data", "Info": "SELECT 1"}
+    ]
+
+
+def test_mariadb_get_active_connections_reads_threads_connected() -> None:
+    db = MariaDB(host="h", port=3306, user="u", password="p", database="")
+    responses = {"Threads_connected": (["Variable_name", "Value"], [["Threads_connected", "12"]])}
+    with patch.object(MariaDB, "execute", _canned_execute(responses)):
+        assert db.get_active_connections() == 12
+
+
+def test_mariadb_get_lock_waits_combines_status_and_timeout() -> None:
+    db = MariaDB(host="h", port=3306, user="u", password="p", database="")
+    responses = {
+        "Innodb_row_lock_current_waits": (["Variable_name", "Value"], [["Innodb_row_lock_current_waits", "2"]]),
+        "Innodb_row_lock_waits": (["Variable_name", "Value"], [["Innodb_row_lock_waits", "95"]]),
+        "@@innodb_lock_wait_timeout": (["@@innodb_lock_wait_timeout"], [[50]]),
+    }
+    with patch.object(MariaDB, "execute", _canned_execute(responses)):
+        waits = db.get_lock_waits()
+
+    assert waits.current_waits == 2
+    assert waits.total_waits == 95
+    assert waits.timeout_seconds == 50
+
+
+def test_mariadb_get_lock_waits_raises_on_unknown_status_variable() -> None:
+    db = MariaDB(host="h", port=3306, user="u", password="p", database="")
+    responses = {"SHOW GLOBAL STATUS": (["Variable_name", "Value"], [])}
+    with patch.object(MariaDB, "execute", _canned_execute(responses)), pytest.raises(DatabaseError, match="status"):
+        db.get_lock_waits()
+
+
+def test_mariadb_get_binlog_status_disabled() -> None:
+    db = MariaDB(host="h", port=3306, user="u", password="p", database="")
+    responses = {"@@log_bin": (["@@log_bin"], [[0]])}
+    with patch.object(MariaDB, "execute", _canned_execute(responses)):
+        status = db.get_binlog_status()
+
+    assert status.enabled is False
+    assert status.file_count == 0
+    assert status.size_bytes == 0
+
+
+def _binlog_responses(tmp_path: Path) -> dict:
+    return {
+        "@@log_bin_basename": (["@@log_bin_basename"], [[str(tmp_path / "mysql-bin")]]),
+        "@@log_bin": (["@@log_bin"], [[1]]),
+        "SHOW BINARY LOGS": (
+            ["Log_name", "File_size"],
+            [["mysql-bin.000001", 1024], ["mysql-bin.000002", 2048]],
+        ),
+    }
+
+
+def test_mariadb_get_binlog_status_sums_file_sizes(tmp_path: Path) -> None:
+    db = MariaDB(host="h", port=3306, user="u", password="p", database="")
+    with patch.object(MariaDB, "execute", _canned_execute(_binlog_responses(tmp_path))):
+        status = db.get_binlog_status()
+
+    assert status.enabled is True
+    assert status.file_count == 2
+    assert status.size_bytes == 3072
+
+
+def test_mariadb_get_binlog_files_stats_local_files(tmp_path: Path) -> None:
+    db = MariaDB(host="h", port=3306, user="u", password="p", database="")
+    (tmp_path / "mysql-bin.000001").write_bytes(b"x")
+
+    with patch.object(MariaDB, "execute", _canned_execute(_binlog_responses(tmp_path))):
+        files = db.get_binlog_files()
+
+    assert [f.name for f in files] == ["mysql-bin.000001", "mysql-bin.000002"]
+    assert [f.size_bytes for f in files] == [1024, 2048]
+    assert files[0].modified_ms is not None  # exists on disk
+    assert files[1].modified_ms is None  # unreadable/missing -> best-effort None
+
+
+def test_mariadb_get_binlog_files_empty_when_disabled() -> None:
+    db = MariaDB(host="h", port=3306, user="u", password="p", database="")
+    responses = {"@@log_bin": (["@@log_bin"], [[0]])}
+    with patch.object(MariaDB, "execute", _canned_execute(responses)):
+        assert db.get_binlog_files() == []
+
+
+def test_mariadb_purge_binlogs_issues_purge_for_known_file(tmp_path: Path) -> None:
+    db = MariaDB(host="h", port=3306, user="u", password="p", database="")
+    calls: list = []
+    responses = _binlog_responses(tmp_path)
+    responses["PURGE BINARY LOGS"] = ([], [])
+    with patch.object(MariaDB, "execute", _canned_execute(responses, calls)):
+        db.purge_binlogs("mysql-bin.000002")
+
+    purge_calls = [(q, ro) for q, ro in calls if "PURGE" in q]
+    assert purge_calls == [("PURGE BINARY LOGS TO 'mysql-bin.000002'", False)]
+
+
+def test_mariadb_purge_binlogs_rejects_unknown_file(tmp_path: Path) -> None:
+    db = MariaDB(host="h", port=3306, user="u", password="p", database="")
+    with (
+        patch.object(MariaDB, "execute", _canned_execute(_binlog_responses(tmp_path))),
+        pytest.raises(DatabaseError, match="Unknown binlog"),
+    ):
+        db.purge_binlogs("mysql-bin.999999'; DROP TABLE x")
+
+
+def test_postgres_get_active_connections_counts_pg_stat_activity() -> None:
+    db = PostgreSQL(host="h", port=5432, user="u", password="p", database="d")
+    responses = {"pg_stat_activity": (["count"], [[4]])}
+    with patch.object(PostgreSQL, "execute", _canned_execute(responses)):
+        assert db.get_active_connections() == 4
+
+
+def test_postgres_get_lock_waits_treats_zero_timeout_as_disabled() -> None:
+    db = PostgreSQL(host="h", port=5432, user="u", password="p", database="d")
+    responses = {
+        "pg_locks": (["count"], [[1]]),
+        "pg_settings": (["setting"], [["0"]]),
+    }
+    with patch.object(PostgreSQL, "execute", _canned_execute(responses)):
+        waits = db.get_lock_waits()
+
+    assert waits.current_waits == 1
+    assert waits.total_waits is None
+    assert waits.timeout_seconds is None
+
+
+def test_postgres_get_binlog_status_raises() -> None:
+    db = PostgreSQL(host="h", port=5432, user="u", password="p", database="d")
+    with pytest.raises(DatabaseError, match="binary log"):
+        db.get_binlog_status()
+
+
+def test_sqlite_server_diagnostics_raise(tmp_path: Path) -> None:
+    db = SQLite(str(tmp_path / "x.db"))
+    with pytest.raises(DatabaseError, match="no server"):
+        db.get_process_list()
+    with pytest.raises(DatabaseError, match="no server"):
+        db.get_active_connections()
+    with pytest.raises(DatabaseError, match="no server"):
+        db.get_lock_waits()
+    with pytest.raises(DatabaseError, match="binary log"):
+        db.get_binlog_status()
+
+
 def test_make_database_returns_mariadb_for_mariadb_bench() -> None:
     db = make_database(_bench_config("mariadb"))
     assert isinstance(db, MariaDB)
