@@ -81,16 +81,16 @@ def test_config_without_apps_is_valid() -> None:
     assert config.apps == []
 
 
-def test_watch_apps_js_defaults_to_disabled() -> None:
+def test_watch_apps_js_defaults_to_enabled() -> None:
     config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
-    assert config.watch_apps_js is False
-
-
-def test_watch_apps_js_can_be_enabled() -> None:
-    data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["bench"]["watch_apps_js"] = True
-    config = load_from_dict(data)
     assert config.watch_apps_js is True
+
+
+def test_watch_apps_js_can_be_disabled() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["bench"]["watch_apps_js"] = False
+    config = load_from_dict(data)
+    assert config.watch_apps_js is False
 
 
 def test_toml_writer_includes_watch_apps_js() -> None:
@@ -100,16 +100,16 @@ def test_toml_writer_includes_watch_apps_js() -> None:
     assert "watch_apps_js = true" in toml
 
 
-def test_reload_python_defaults_to_disabled() -> None:
+def test_reload_python_defaults_to_enabled() -> None:
     config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
-    assert config.reload_python is False
-
-
-def test_reload_python_can_be_enabled() -> None:
-    data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["bench"]["reload_python"] = True
-    config = load_from_dict(data)
     assert config.reload_python is True
+
+
+def test_reload_python_can_be_disabled() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["bench"]["reload_python"] = False
+    config = load_from_dict(data)
+    assert config.reload_python is False
 
 
 def test_toml_writer_includes_reload_python() -> None:

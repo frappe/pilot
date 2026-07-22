@@ -17,7 +17,7 @@ from pilot.core.bench import Bench
 from pilot.core.server import Server
 from pilot.core.site import Site
 from pilot.exceptions import BenchError
-from pilot.managers.processes.local import ProcessManager
+from pilot.managers.processes.local import ProcessDefinition, ProcessManager
 
 FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures"
 
@@ -439,12 +439,12 @@ def test_process_definitions_returns_correct_count(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     # workers: default=2, short=1, long=1 => 4 worker processes
     # plus web, socketio, redis_cache, redis_queue = 4
-    # plus admin = 1
-    # total = 9
+    # plus admin, watch (on by default in dev) = 2
+    # total = 10
     process_manager = ProcessManager(bench)
     definitions = process_manager._process_definitions()
-    assert len(definitions) == 9
-    assert "watch" not in [pd.name for pd in definitions]
+    assert len(definitions) == 10
+    assert "watch" in [pd.name for pd in definitions]
     assert "admin-ui" not in [pd.name for pd in definitions]
 
 
@@ -452,18 +452,41 @@ def test_process_definitions_watch_admin_js_adds_vite_ui(tmp_path: Path) -> None
     bench = make_bench(tmp_path)
     definitions = ProcessManager(bench, watch_admin_js=True)._process_definitions()
     assert "admin-ui" in [pd.name for pd in definitions]
-    assert len(definitions) == 10
+    assert len(definitions) == 11
 
 
-def test_process_definitions_can_enable_app_watch(tmp_path: Path) -> None:
+def test_process_definitions_can_disable_app_watch(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
-    bench.config.watch_apps_js = True
+    bench.config.watch_apps_js = False
     definitions = ProcessManager(bench)._process_definitions()
-    assert "watch" in [pd.name for pd in definitions]
+    assert "watch" not in [pd.name for pd in definitions]
+    assert len(definitions) == 9
+
+
+def test_run_processes_survives_noncritical_exit(tmp_path: Path) -> None:
+    import time
+
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    log = tmp_path / "logs"
+    defs = [
+        ProcessDefinition(name="flaky", argv=["true"], log_file=log / "flaky.log", critical=False),
+        ProcessDefinition(name="main", argv=["sleep", "1.2"], log_file=log / "main.log"),
+    ]
+    started = time.monotonic()
+    ProcessManager(bench)._run_processes(defs)
+    assert time.monotonic() - started >= 1.0
+    assert not (bench.pids_path / "flaky.pid").exists()
+
+
+def test_watch_definition_is_noncritical_frappe_watch(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    definitions = ProcessManager(bench)._process_definitions()
     watch = next(pd for pd in definitions if pd.name == "watch")
     assert "frappe watch" in shlex.join(watch.argv)
     assert watch.working_dir == bench.sites_path
-    assert len(definitions) == 10
+    assert watch.critical is False
+    assert all(pd.critical for pd in definitions if pd.name != "watch")
 
 
 def test_process_definitions_worker_names_are_numbered(tmp_path: Path) -> None:
@@ -494,19 +517,22 @@ def test_process_definitions_order_starts_with_web(tmp_path: Path) -> None:
     assert definitions[0].name == "web"
 
 
-def test_dev_web_disables_python_reloader_by_default(tmp_path: Path) -> None:
+def test_dev_web_enables_python_reloader_by_default(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
+    web = ProcessManager(bench)._process_definitions()[0]
+    assert web.name == "web"
+    assert "--noreload" not in web.argv
+
+
+def test_dev_web_can_disable_python_reloader(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.config.reload_python = False
     web = ProcessManager(bench)._process_definitions()[0]
     assert web.name == "web"
     assert "--noreload" in web.argv
 
 
-def test_dev_web_can_enable_python_reloader(tmp_path: Path) -> None:
-    bench = make_bench(tmp_path)
-    bench.config.reload_python = True
-    web = ProcessManager(bench)._process_definitions()[0]
-    assert web.name == "web"
-    assert "--noreload" not in web.argv
+# ── ProcessManager tests ───────────────────────────────────────────────
 
 
 def test_honcho_generate_config_writes_procfile(tmp_path: Path) -> None:
@@ -521,7 +547,7 @@ def test_honcho_generate_config_writes_procfile(tmp_path: Path) -> None:
     assert "web:" in content
     assert "socketio:" in content
     assert "worker_default_1:" in content
-    assert "watch:" not in content
+    assert "watch:" in content
     assert "redis_cache:" in content
 
 

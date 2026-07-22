@@ -209,12 +209,18 @@ class ProcessManager:
             (self.bench.pids_path / f"{pd.name}.pid").write_text(str(proc.pid))
             threading.Thread(target=self._stream, args=(pd.name, proc, color), daemon=True).start()
 
+        is_critical = {pd.name: pd.critical for pd in defs}
         while not self._stopping:
             for name, proc in list(self._procs.items()):
-                if proc.poll() is not None:
+                if proc.poll() is None:
+                    continue
+                if is_critical[name]:
                     print(f"[{name}] exited with code {proc.returncode}", file=sys.stderr)
                     self._stopping = True
                     break
+                print(f"[{name}] exited with code {proc.returncode}; continuing without it", file=sys.stderr)
+                del self._procs[name]
+                (self.bench.pids_path / f"{name}.pid").unlink(missing_ok=True)
             if not self._stopping:
                 time.sleep(0.5)
 
