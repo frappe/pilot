@@ -1,5 +1,4 @@
 <template>
-  <UpdatesAvailableButton />
 
   <div class="mx-auto">
     <!-- Header with time window selector -->
@@ -88,7 +87,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Button, Dropdown, LoadingText, ErrorMessage, AxisChart } from 'frappe-ui'
-import UpdatesAvailableButton from '@/components/common/UpdatesAvailableButton.vue'
 import ChartCard from '@/components/common/ChartCard.vue'
 import WafAnalytics from '@/components/common/WafAnalytics.vue'
 import { apiErrorMessage } from '@/api/client'

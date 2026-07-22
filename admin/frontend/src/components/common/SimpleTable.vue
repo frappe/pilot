@@ -1,8 +1,8 @@
 <template>
   <div :class="bordered ? 'border rounded-lg border-outline-gray-2 overflow-hidden' : ''">
-    <div :class="maxHeight ? 'overflow-auto hover-scrollbar' : ''" :style="maxHeight ? { maxHeight } : {}">
+    <div :style="minHeight && !rows.length ? { minHeight } : {}">
       <table class="w-full min-w-max text-sm">
-        <thead :class="maxHeight ? 'top-0 z-10 sticky' : ''">
+        <thead>
           <tr class="bg-surface-gray-2 text-ink-gray-5 text-xs text-left uppercase">
             <th v-if="showIndex" class="px-3 py-2 w-8">#</th>
             <th v-for="column in columns" :key="column.key" class="px-3 py-2 whitespace-nowrap">
@@ -40,7 +40,7 @@ defineProps({
   bordered: { type: Boolean, default: true },
   showIndex: { type: Boolean, default: false },
   indexOffset: { type: Number, default: 0 },
-  maxHeight: { type: String, default: '' },
+  minHeight: { type: String, default: '' },
   mono: { type: Boolean, default: true },
   truncate: { type: Boolean, default: false },
   showNull: { type: Boolean, default: false },

@@ -41,11 +41,24 @@ class AppRepository:
 
     def has_marketplace_update(self, marketplace_entry: dict | None) -> bool:
         """Whether a newer version is available, per this app's marketplace entry."""
+        pin = self.update_target(marketplace_entry)
+        return pin is not None and not self.is_on_revision(pin)
+
+    def update_target(self, marketplace_entry: dict | None) -> RevisionPin | None:
+        """The fixed revision this app would update to: a marketplace pin, or the
+        live branch tip captured as a commit pin. None when unresolved.
+
+        Pinning the tip here (rather than resetting to origin/<branch> at update
+        time) is what lets callers know the exact target commit before updating.
+        """
         target = self._matching_marketplace_target(marketplace_entry)
         pin = RevisionPin.from_marketplace_target(target) if target else None
         if pin is not None:
-            return not self.is_on_revision(pin)
-        return self.app.has_remote_update()
+            return pin
+        if not self.app.config.branch:
+            return None
+        tip = self.repo.remote_branch_sha(self.app.config.branch)
+        return RevisionPin(kind="commit", ref=tip) if tip else None
 
     def _matching_marketplace_target(self, marketplace_entry: dict | None) -> dict | None:
         if not marketplace_entry or self.app.config.repo != marketplace_entry["repo"]:
@@ -122,6 +135,7 @@ class AppRepository:
                 ],
                 stream_output=True,
             )
+            self.app.config.branch = target
 
     @property
     def is_shallow(self) -> bool:
@@ -137,12 +151,25 @@ class AppRepository:
             return 1
         return max(1, cpus // 2)
 
+    def _sync_remote_url(self) -> None:
+        """Refresh origin's URL with the current stored token before fetching.
+
+        No-op when no token is on file, so repos without stored credentials
+        keep whatever origin URL they were cloned with.
+        """
+        from pilot.integrations.git.credentials import GitCredentialStore
+
+        if not GitCredentialStore(self.app.bench.path).load():
+            return
+        self.repo.set_remote_url(self.remote_url)
+
     def update(self, pin: RevisionPin | None = None) -> None:
         """Pull the latest code or move to a pinned revision."""
         if pin is not None:
             self.checkout_pinned_target(pin)
             return
 
+        self._sync_remote_url()
         cmd = [
             "git",
             "-c",
@@ -172,6 +199,7 @@ class AppRepository:
             raise BenchError(f"'{self.app.config.name}' is not cloned at {self.app.path}")
 
         repo = self.repo
+        self._sync_remote_url()
         repo.fetch("+refs/heads/*:refs/remotes/origin/*")
         repo.abort_merge_rebase()
         stashed = repo.stash_all()
@@ -183,6 +211,7 @@ class AppRepository:
 
     def checkout_pinned_target(self, pin: RevisionPin) -> None:
         if pin.kind == "tag":
+            self._sync_remote_url()
             run_command(["git", "-C", str(self.app.path), "fetch", "--depth", "1", "origin", pin.ref])
             run_command(["git", "-C", str(self.app.path), "checkout", "FETCH_HEAD"])
         else:
@@ -190,6 +219,7 @@ class AppRepository:
 
     def checkout_pinned_commit(self, sha: str) -> None:
         """Check out a specific commit SHA."""
+        self._sync_remote_url()
         try:
             run_command(["git", "-C", str(self.app.path), "fetch", "--depth", "1", "origin", sha])
             run_command(["git", "-C", str(self.app.path), "checkout", "FETCH_HEAD"])

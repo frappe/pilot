@@ -99,11 +99,12 @@ class ImportCheck:
         return modules
 
     def _runtime_imports(self, nodes: Iterable[ast.AST]) -> Iterator[ast.Import | ast.ImportFrom]:
-        """Yield imports that must resolve at runtime."""
+        """Yield imports that must resolve at module import time. Imports inside
+        functions are lazy and often intentionally dynamic, so they're skipped."""
         for node in nodes:
             if isinstance(node, (ast.Import, ast.ImportFrom)):
                 yield node
-            elif isinstance(node, ast.Try):
+            elif isinstance(node, (ast.Try, ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
             elif isinstance(node, ast.If) and self._is_type_checking(node.test):
                 yield from self._runtime_imports(node.orelse)

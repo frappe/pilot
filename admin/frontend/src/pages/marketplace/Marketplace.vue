@@ -1,5 +1,4 @@
 <template>
-  <UpdatesAvailableButton />
 
   <div class="mx-auto max-w-3xl">
     <!-- Header -->
@@ -94,7 +93,6 @@ import ChooseSiteDialog from '@/components/sites/ChooseSiteDialog.vue'
 import InstallAppDialog from '@/components/apps/InstallAppDialog.vue'
 import MarketplaceAppCard from '@/components/marketplace/MarketplaceAppCard.vue'
 import MarketplaceFilters from '@/components/marketplace/MarketplaceFilters.vue'
-import UpdatesAvailableButton from '@/components/common/UpdatesAvailableButton.vue'
 import { useMarketplace } from '@/composables/apps/useMarketplace'
 
 const route = useRoute()

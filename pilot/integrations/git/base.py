@@ -100,3 +100,18 @@ def inject_https_token(repo_url: str, username: str, token: str) -> str:
         rest = rest.split("@", 1)[1]
     quoted = urllib.parse.quote(token, safe="")
     return f"https://{username}:{quoted}@{rest}"
+
+
+def same_repository(url_a: str, url_b: str) -> bool:
+    """Whether two repo URLs name the same repository, ignoring credentials,
+    scp-vs-https style, and a trailing ``.git``."""
+    key_a = _repository_key(url_a)
+    return bool(key_a) and key_a == _repository_key(url_b)
+
+
+def _repository_key(repo_url: str) -> str:
+    parsed = urllib.parse.urlsplit(normalize_to_https(repo_url))
+    if not parsed.hostname:
+        return ""
+    path = parsed.path.removesuffix(".git").strip("/")
+    return f"{parsed.hostname}/{path}".lower()

@@ -31,11 +31,12 @@ def task_argv(tmp_path: Path, command: str, args: dict) -> list[str]:
 
 
 def test_command_argv_migrate(tmp_path: Path) -> None:
-    argv = task_argv(tmp_path, "migrate", {"site": "mysite.localhost"})
+    argv = task_argv(tmp_path, "migrate", {"operation_id": "op123", "site": "mysite.localhost"})
     assert argv[0] == sys.executable
     assert argv[1:3] == ["-m", "pilot.tasks.migrate"]
     assert str(tmp_path) in argv
     assert "mysite.localhost" in argv
+
 
 
 def test_command_argv_clear_cache(tmp_path: Path) -> None:
@@ -166,20 +167,11 @@ def test_command_argv_build_with_app(tmp_path: Path) -> None:
 
 
 def test_command_argv_update(tmp_path: Path) -> None:
-    argv = task_argv(tmp_path, "update", {})
+    argv = task_argv(tmp_path, "update", {"operation_id": "op123"})
     assert argv[0] == sys.executable
     assert argv[1:3] == ["-m", "pilot.tasks.update"]
     assert str(tmp_path) in argv
 
-
-def test_command_argv_update_skip_failing_patches(tmp_path: Path) -> None:
-    argv = task_argv(tmp_path, "update", {"skip_failing_patches": True})
-    assert "--skip-failing-patches" in argv
-
-
-def test_command_argv_update_without_skip_failing_patches(tmp_path: Path) -> None:
-    argv = task_argv(tmp_path, "update", {"skip_failing_patches": False})
-    assert "--skip-failing-patches" not in argv
 
 
 def test_command_argv_switch_branch(tmp_path: Path) -> None:
@@ -207,7 +199,8 @@ def test_command_argv_unknown_command_raises(tmp_path: Path) -> None:
 
 def test_command_argv_missing_site_raises(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="site"):
-        TaskRunner(tmp_path).run("migrate", {})
+        TaskRunner(tmp_path).run("migrate", {"operation_id": "op123"})
+
 
 
 def test_command_argv_install_app_requires_app(tmp_path: Path) -> None:

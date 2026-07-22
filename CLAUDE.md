@@ -10,7 +10,8 @@ This repo is a Python CLI plus Flask Admin backend for managing Frappe benches. 
 - Group related files in folders instead of adding many same-prefix modules.
 - Avoid lazy re-exports in package `__init__.py` when autocomplete matters.
 - Keep comments short. Remove comments that restate the code.
-- Do not create refactor planning markdown files.
+- Do not put comments at the top of a file. Use a short, terse class or method docstring instead.
+- Do not create or commit plan/planning markdown files (e.g. `plan_*.md`); keep them out of git.
 
 ## Useful Entry Points
 

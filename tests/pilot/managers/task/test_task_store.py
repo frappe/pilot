@@ -253,7 +253,37 @@ def test_active_resource_rejects_another_task(tmp_path: Path) -> None:
             resource_key="site:example.test",
         )
 
-    assert store.read_metadata(TASK_ID)["resource_key"] == "site:example.test"
+    assert store.read_metadata(TASK_ID)["resource_keys"] == ["site:example.test"]
+
+
+def test_active_resource_can_be_handed_to_successor(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    store.create_queued(metadata(), resource_key=["bench:update", "site:example.test"])
+    store.transition(TASK_ID, TaskStatus.QUEUED, TaskStatus.RUNNING)
+    successor_id = "20260715-120001-bbccdd"
+
+    store.create_queued(
+        {**metadata(), "task_id": successor_id},
+        resource_key=["bench:update", "site:example.test"],
+        resource_handoff_from=TASK_ID,
+    )
+
+    assert store.read_metadata(successor_id)["resource_keys"] == [
+        "bench:update",
+        "site:example.test",
+    ]
+
+
+def test_resource_handoff_does_not_ignore_another_owner(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    store.create_queued(metadata(), resource_key="site:example.test")
+
+    with pytest.raises(TaskConflictError, match="already using resource"):
+        store.create_queued(
+            {**metadata(), "task_id": "20260715-120001-bbccdd"},
+            resource_key="site:example.test",
+            resource_handoff_from="not-the-active-task",
+        )
 
 
 def test_idempotent_replay_precedes_resource_conflict(tmp_path: Path) -> None:
@@ -309,7 +339,7 @@ def test_terminal_task_releases_resource(tmp_path: Path) -> None:
         resource_key="site:example.test",
     )
 
-    assert store.read_metadata(retry_id)["resource_key"] == "site:example.test"
+    assert store.read_metadata(retry_id)["resource_keys"] == ["site:example.test"]
 
 
 @pytest.mark.parametrize("pending_file", ["callbacks.json", "process.json"])

@@ -1,5 +1,4 @@
 <template>
-  <UpdatesAvailableButton />
 
   <div class="flex flex-col h-full">
     <!-- Header: hidden on mobile once a log is open, to leave more room for the viewer -->
@@ -121,7 +120,6 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Button, ErrorMessage, FormControl, LoadingText } from 'frappe-ui'
-import UpdatesAvailableButton from '@/components/common/UpdatesAvailableButton.vue'
 import LogView from '@/components/logs/LogView.vue'
 import { logsApi } from '@/api/logs'
 import { escapeHtml, processLine } from '@/utils/ansi'

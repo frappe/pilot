@@ -1,5 +1,4 @@
 <template>
-  <UpdatesAvailableButton />
 
   <div v-if="loading" class="flex justify-center py-12">
     <LoadingText />
@@ -51,7 +50,6 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Badge, Button, ErrorMessage, LoadingText } from 'frappe-ui'
-import UpdatesAvailableButton from '@/components/common/UpdatesAvailableButton.vue'
 import { apiErrorMessage } from '@/api/client'
 import { tasksApi } from '@/api/tasks'
 import { useBreadcrumbs } from '@/composables/common/useBreadcrumbs'

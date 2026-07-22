@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from pilot.core.bench import Bench
     from pilot.core.site.backups import SiteBackups
     from pilot.core.site.domains import SiteDomains
+    from pilot.core.site.migration_backup import SiteMigrationBackup
 
 
 class Site:
@@ -39,6 +40,44 @@ class Site:
         from pilot.core.site.domains import SiteDomains
 
         return SiteDomains(self)
+
+    @cached_property
+    def migration_backup(self) -> "SiteMigrationBackup":
+        from pilot.core.site.migration_backup import SiteMigrationBackup
+
+        return SiteMigrationBackup(self)
+
+    @property
+    def maintenance_mode(self) -> bool:
+        return bool(self.maintenance_settings["maintenance_mode"])
+
+    @property
+    def maintenance_settings(self) -> dict[str, int]:
+        from pilot.core.site.config import read_site_config
+
+        config = read_site_config(self.path)
+        return {
+            "maintenance_mode": int(bool(config.get("maintenance_mode"))),
+            "pause_scheduler": int(bool(config.get("pause_scheduler"))),
+        }
+
+    def set_maintenance_mode(self, enabled: bool) -> None:
+        value = 1 if enabled else 0
+        self.set_maintenance_settings(
+            {"maintenance_mode": value, "pause_scheduler": value}
+        )
+
+    def set_maintenance_settings(self, settings: dict[str, int]) -> None:
+        import json
+
+        from pilot.core.site.config import safe_site_config_path
+        from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
+
+        config_path = safe_site_config_path(self.bench.sites_path, self.config.name)
+        with exclusive_file_lock(config_path):
+            config = json.loads(config_path.read_text())
+            config.update(settings)
+            replace_private_text_locked(config_path, json.dumps(config, indent=1))
 
     def _frappe_call(self, *args: str) -> list[str]:
         """Build a frappe bench_helper command."""
@@ -88,10 +127,16 @@ class Site:
 
         return SiteApps(self).installed_apps()
 
-    def migrate(self, skip_failing: bool = False) -> None:
+    def migrate(self, skip_failing: bool = False) -> str:
+        """Run migration through the shared path, returning the full captured output."""
         from pilot.core.site.commands import SiteCommands
 
-        SiteCommands(self).migrate(skip_failing)
+        return SiteCommands(self).migrate(skip_failing)
+
+    def clear_cache(self) -> None:
+        from pilot.core.site.commands import SiteCommands
+
+        SiteCommands(self).clear_cache()
 
     def uninstall_apps(
         self,

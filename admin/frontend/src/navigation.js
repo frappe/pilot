@@ -18,6 +18,11 @@ export const navigation = {
         icon: 'lucide-chart-line',
         component: () => import('./pages/dashboard/Analytics.vue'),
       },
+      Migrations: {
+        path: '/migrations',
+        icon: 'lucide-git-pull-request-arrow',
+        component: () => import('./pages/migrations/Migrations.vue'),
+      },
       Logs: {
         path: '/insights/logs',
         icon: 'lucide-scroll-text',

@@ -70,7 +70,7 @@
 
         <template v-else>
           <SimpleTable :columns="resultColumns" :rows="paginatedRowObjects" :show-index="true"
-            :index-offset="(page - 1) * perPage" max-height="320px" :mono="false" truncate show-null
+            :index-offset="(page - 1) * perPage" min-height="320px" :mono="false" truncate show-null
             empty-text="No rows returned." :bordered="false" />
 
           <!-- Table footer -->

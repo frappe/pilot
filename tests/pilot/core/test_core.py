@@ -1,4 +1,5 @@
 import shlex
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -218,6 +219,42 @@ def _clone_at_tag(remote: Path, clone_dir: Path, tag: str, shallow: bool = True)
     subprocess.run(["git", "-C", str(clone_dir), "checkout", "-q", tag], check=True)
 
 
+def test_sync_remote_url_refreshes_origin_with_stored_token(tmp_path: Path) -> None:
+    from pilot.integrations.git.credentials import GitCredentialStore
+
+    bench = make_bench(tmp_path)
+    repo_url = "https://github.com/frappe/myapp"
+    app = App(AppConfig(name="myapp", repo=repo_url, branch="master"), bench)
+    app.path.mkdir(parents=True)
+    _init_git_repo(app.path)
+    subprocess.run(["git", "-C", str(app.path), "remote", "add", "origin", repo_url], check=True)
+
+    GitCredentialStore(tmp_path).save("github", "fresh-token")
+
+    app._repository._sync_remote_url()
+
+    origin_url = subprocess.run(
+        ["git", "-C", str(app.path), "remote", "get-url", "origin"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    assert "fresh-token" in origin_url
+
+
+def test_sync_remote_url_leaves_origin_untouched_without_stored_token(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    app = App(AppConfig(name="myapp", repo="https://github.com/frappe/myapp", branch="master"), bench)
+    app.path.mkdir(parents=True)
+    _init_git_repo(app.path)
+    original_url = "https://example.com/some/other/path.git"
+    subprocess.run(["git", "-C", str(app.path), "remote", "add", "origin", original_url], check=True)
+
+    app._repository._sync_remote_url()
+
+    origin_url = subprocess.run(
+        ["git", "-C", str(app.path), "remote", "get-url", "origin"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    assert origin_url == original_url
+
+
 def test_app_update_with_tag_target_checks_out_advertised_tag_not_latest(tmp_path: Path) -> None:
     remote = tmp_path / "remote"
     remote.mkdir()
@@ -300,13 +337,22 @@ def test_app_has_marketplace_update_true_when_marketplace_tag_moved(
     assert app.has_marketplace_update(entry) is True
 
 
-def test_app_has_marketplace_update_falls_back_to_remote_check_on_repo_mismatch(
+def _app_on_branch(tmp_path: Path, repo: str, branch: str = "main") -> App:
+    bench = make_bench(tmp_path)
+    app = App(AppConfig(name="myapp", repo=repo, branch=branch), bench)
+    app.path.mkdir(parents=True)
+    _init_git_repo(app.path)
+    _commit(app.path, "c1")
+    return app
+
+
+def test_app_has_marketplace_update_falls_back_to_branch_tip_on_repo_mismatch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A fork with a different repo URL isn't the marketplace's app.
-    bench = make_bench(tmp_path)
-    app = App(AppConfig(name="myapp", repo="https://github.com/someone/fork", branch=""), bench)
-    monkeypatch.setattr(App, "has_remote_update", lambda self: True)
+    # A fork with a different repo URL isn't the marketplace's app; detection
+    # falls through to comparing the branch tip.
+    app = _app_on_branch(tmp_path, "https://github.com/someone/fork")
+    monkeypatch.setattr("pilot.internal.git.GitRepo.remote_branch_sha", lambda self, branch: "0" * 40)
     entry = {
         "repo": "https://github.com/frappe/myapp",
         "targets": [{"version": "1.0.0", "target_type": "tag", "target": "v1.0.0"}],
@@ -315,23 +361,23 @@ def test_app_has_marketplace_update_falls_back_to_remote_check_on_repo_mismatch(
     assert app.has_marketplace_update(entry) is True
 
 
-def test_app_has_marketplace_update_falls_back_to_remote_check_when_not_in_marketplace(
+def test_app_has_marketplace_update_false_when_branch_tip_matches(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    bench = make_bench(tmp_path)
-    app = App(AppConfig(name="myapp", repo="https://github.com/frappe/myapp", branch=""), bench)
-    monkeypatch.setattr(App, "has_remote_update", lambda self: False)
+    app = _app_on_branch(tmp_path, "https://github.com/frappe/myapp")
+    monkeypatch.setattr(
+        "pilot.internal.git.GitRepo.remote_branch_sha", lambda self, branch: app.installed_hash
+    )
 
     assert app.has_marketplace_update(None) is False
 
 
-def test_app_has_marketplace_update_falls_back_to_remote_check_for_branch_target(
+def test_app_has_marketplace_update_falls_back_to_branch_tip_for_branch_target(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    bench = make_bench(tmp_path)
-    app = App(AppConfig(name="myapp", repo="https://github.com/frappe/myapp", branch="main"), bench)
+    app = _app_on_branch(tmp_path, "https://github.com/frappe/myapp")
     monkeypatch.setattr("pilot.core.app.installed_app_version", lambda *_: "3.0.0")
-    monkeypatch.setattr(App, "has_remote_update", lambda self: True)
+    monkeypatch.setattr("pilot.internal.git.GitRepo.remote_branch_sha", lambda self, branch: "0" * 40)
     entry = {
         "repo": "https://github.com/frappe/myapp",
         "targets": [{"version": "3.0.0", "target_type": "branch", "target": "main"}],
@@ -345,6 +391,52 @@ def test_app_path_is_under_apps_directory(tmp_path: Path) -> None:
     app_config = AppConfig(name="frappe", repo="https://example.com", branch="main")
     app = App(app_config, bench)
     assert app.path == tmp_path / "apps" / "frappe"
+
+
+def test_record_branch_appends_new_app_entry(tmp_path: Path) -> None:
+    bench_dir = tmp_path / "bench1"
+    _write_bench_toml(bench_dir, "test-bench")
+    bench = Bench(BenchConfig.from_file(bench_dir / "bench.toml"), bench_dir)
+    app = App(AppConfig(name="myapp", repo="https://example.com/myapp", branch="develop"), bench)
+
+    app.record_branch()
+
+    apps = BenchConfig.from_file(bench_dir / "bench.toml").apps
+    entry = next(a for a in apps if a.name == "myapp")
+    assert entry.branch == "develop"
+    assert entry.repo == "https://example.com/myapp"
+
+
+def test_record_branch_updates_existing_app_entry(tmp_path: Path) -> None:
+    bench_dir = tmp_path / "bench1"
+    _write_bench_toml(bench_dir, "test-bench")
+    bench = Bench(BenchConfig.from_file(bench_dir / "bench.toml"), bench_dir)
+    app = App(AppConfig(name="frappe", repo="https://github.com/frappe/frappe", branch="develop"), bench)
+
+    app.record_branch()
+
+    apps = BenchConfig.from_file(bench_dir / "bench.toml").apps
+    assert len(apps) == 1
+    assert apps[0].branch == "develop"
+
+
+def test_record_branch_skips_when_branch_is_commit_hash(tmp_path: Path) -> None:
+    bench_dir = tmp_path / "bench1"
+    _write_bench_toml(bench_dir, "test-bench")
+    bench = Bench(BenchConfig.from_file(bench_dir / "bench.toml"), bench_dir)
+    app = App(AppConfig(name="myapp", repo="https://example.com/myapp", branch="a" * 40), bench)
+
+    app.record_branch()
+
+    apps = BenchConfig.from_file(bench_dir / "bench.toml").apps
+    assert not any(a.name == "myapp" for a in apps)
+
+
+def test_record_branch_no_op_without_bench_toml(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    app = App(AppConfig(name="myapp", repo="https://example.com/myapp", branch="develop"), bench)
+
+    app.record_branch()  # should not raise even though bench.toml doesn't exist on disk
 
 
 def test_site_exists_returns_false_for_nonexistent_path(tmp_path: Path) -> None:
@@ -611,10 +703,15 @@ def test_honcho_start_writes_per_process_pid_files(tmp_path: Path) -> None:
 
 
 def _capture_site_cmd(monkeypatch) -> dict:
+    import subprocess
+
     captured: dict = {}
-    monkeypatch.setattr(
-        "pilot.core.site.commands.run_command", lambda cmd, **kw: captured.setdefault("cmd", cmd)
-    )
+
+    def stub(cmd, **kw):
+        captured["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr("pilot.core.site.commands.run_command", stub)
     return captured
 
 

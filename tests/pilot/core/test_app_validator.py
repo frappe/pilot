@@ -269,6 +269,26 @@ def test_import_check_skips_imports_inside_any_try_except(tmp_path: Path) -> Non
     assert _modules_for(app, "myapp/utils.py", source) == {"required_dependency"}
 
 
+def test_import_check_skips_imports_inside_functions(tmp_path: Path) -> None:
+    app = _make_app(tmp_path, "myapp", '[project]\nname = "myapp"\n', {"myapp/hooks.py": ""})
+    source = (
+        "import required_dependency\n"
+        "def lazy():\n"
+        "    import definitely_missing_a\n"
+        "    from definitely_missing_b import thing\n"
+        "async def lazy_async():\n"
+        "    import definitely_missing_c\n"
+        "class Config:\n"
+        "    import class_level_dependency\n"
+        "    def method(self):\n"
+        "        import definitely_missing_d\n"
+    )
+    assert _modules_for(app, "myapp/utils.py", source) == {
+        "required_dependency",
+        "class_level_dependency",
+    }
+
+
 def test_import_check_skips_type_checking_only_imports(tmp_path: Path) -> None:
     source = (
         "from typing import TYPE_CHECKING\n"

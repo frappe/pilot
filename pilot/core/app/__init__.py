@@ -68,6 +68,9 @@ class App:
     def has_marketplace_update(self, marketplace_entry: dict | None) -> bool:
         return self._repository.has_marketplace_update(marketplace_entry)
 
+    def update_target(self, marketplace_entry: dict | None) -> RevisionPin | None:
+        return self._repository.update_target(marketplace_entry)
+
     def has_remote_update(self) -> bool:
         return self._repository.has_remote_update()
 
@@ -111,6 +114,10 @@ class App:
 
     def switch_branch(self, branch: str) -> None:
         self._repository.switch_branch(branch)
+
+    def checkout_commit(self, sha: str) -> None:
+        """Check out a specific commit SHA, refetching it from origin if needed."""
+        self._repository.checkout_pinned_commit(sha)
 
     def _checkout_pinned_target(self, pin: RevisionPin) -> None:
         self._repository.checkout_pinned_target(pin)
@@ -161,6 +168,7 @@ class App:
             return AppInstallResult(app, already_installed=True, installed_dependencies=dependencies)
 
         app, cloned_this_run = self._clone_and_normalize(on_progress)
+        app.record_branch()
         try:
             dependencies = app._install_dependencies(on_progress) if install_dependencies else []
             if not skip_validations:
@@ -216,6 +224,23 @@ class App:
         existing = self.bench.registered_apps()
         if self.config.name not in existing:
             (self.bench.sites_path / "apps.txt").write_text("\n".join([*existing, self.config.name]) + "\n")
+
+    def record_branch(self) -> None:
+        """Persist this app's tracked branch to bench.toml so it survives a
+        detached HEAD after a later commit pin (see BenchInventory._configured_branch)."""
+        if not self.config.branch or self.is_commit_hash(self.config.branch):
+            return
+        from pilot.config import BenchConfig
+
+        if not BenchConfig.toml_path(self.bench.path).exists():
+            return
+        with BenchConfig.open(self.bench.path, mode="raw") as raw:
+            apps = raw.setdefault("apps", [])
+            entry = next((a for a in apps if a.get("name") == self.config.name), None)
+            if entry is None:
+                apps.append({"name": self.config.name, "repo": self.config.repo, "branch": self.config.branch})
+            else:
+                entry["branch"] = self.config.branch
 
     def _build_assets_via_env_manager(self) -> None:
         from pilot.managers.environment import PythonEnvManager

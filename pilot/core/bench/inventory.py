@@ -31,7 +31,7 @@ class BenchInventory:
             AppConfig(
                 name=app_path.name,
                 repo=self._git_remote(app_path),
-                branch=self._git_branch(app_path),
+                branch=self._git_branch(app_path) or self._configured_branch(app_path.name),
             ),
             self.bench,
         )
@@ -50,7 +50,7 @@ class BenchInventory:
                         AppConfig(
                             name=app_path.name,
                             repo=self._git_remote(app_path),
-                            branch=self._git_branch(app_path),
+                            branch=self._git_branch(app_path) or self._configured_branch(app_path.name),
                         ),
                         self.bench,
                     )
@@ -125,3 +125,7 @@ class BenchInventory:
         from pilot.internal.git import GitRepo
 
         return GitRepo(path).branch
+
+    def _configured_branch(self, name: str) -> str:
+        """The branch bench.toml records for this app, used when a pinned checkout leaves it detached."""
+        return next((app.branch for app in self.bench.config.apps if app.name == name), "")

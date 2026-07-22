@@ -19,9 +19,10 @@
   <Dialog v-model="showMigrate" :options="{ title: 'Migrate this site', size: 'md' }">
     <template #body-content>
       <p class="text-ink-gray-7 text-p-sm">
-        This runs <span class="font-mono text-ink-gray-8">bench migrate</span> on
-        <span class="font-semibold text-ink-gray-8 break-all">{{ siteName }}</span> without taking a backup first.
-        If the migration fails partway, you'll need an existing backup to recover.
+        This takes a recovery backup of
+        <span class="font-semibold text-ink-gray-8 break-all">{{ siteName }}</span>, then runs
+        <span class="font-mono text-ink-gray-8">bench migrate</span>. If the migration fails, you can retry it or
+        restore the backup from the migration page.
       </p>
       <ErrorMessage v-if="migrateError" :message="migrateError" class="mt-2" />
       <div class="flex justify-end gap-2 mt-4">
@@ -84,7 +85,6 @@ import { useRouter } from 'vue-router'
 import { Button, Dialog, ErrorMessage, TextInput } from 'frappe-ui'
 import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
-import { openTaskDetailPage } from '@/utils/taskRoute'
 
 const props = defineProps({ siteName: { type: String, required: true } })
 
@@ -99,9 +99,9 @@ async function confirmMigrate() {
   migrateError.value = ''
   try {
     const data = await sitesApi.migrate(props.siteName)
-    if (data.task_id) {
+    if (data.operation_id) {
       showMigrate.value = false
-      openTaskDetailPage(router, data.task_id)
+      router.push({ name: 'MigrationDetail', params: { operationId: data.operation_id } })
     } else migrateError.value = apiErrorMessage(data, 'Failed to migrate site.')
   } catch (e) {
     migrateError.value = e.message || 'Failed to migrate site.'
@@ -115,7 +115,7 @@ const DangerActions = [
     key: 'migrate',
     label: 'Migrate site',
     buttonLabel: 'Migrate',
-    description: 'Runs bench migrate for this site without taking a backup first.',
+    description: 'Creates a recovery backup, then migrates this site.',
     action: () => { migrateError.value = ''; showMigrate.value = true },
   },
   {

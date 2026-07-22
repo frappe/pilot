@@ -21,6 +21,6 @@ __all__ = [
     "core",
     "domains",
     "monitoring",
-    "uptime",
     "sites_bp",
+    "uptime",
 ]

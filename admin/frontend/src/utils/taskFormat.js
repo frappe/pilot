@@ -62,6 +62,7 @@ export function commandLabel(command) {
 
 const SITE_ARG_KEY = {
   migrate: 'site',
+  'migration-backup': 'site',
   'clear-cache': 'site',
   'install-app': 'site',
   'uninstall-app': 'site',

@@ -3,6 +3,7 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
 import tarfile
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -360,29 +361,65 @@ def run_command(
     stream_output: bool = False,
     timeout: float | None = None,
     redactions: list[str] | None = None,
+    tee_output: bool = False,
 ) -> subprocess.CompletedProcess:
+    if tee_output:
+        if timeout is not None:
+            raise ValueError("tee_output does not support timeout")
+        return _run_command_tee(argv, cwd, env)
     process = _start_process(argv, cwd, env, stream_output)
     stdout, stderr = _wait_for_process(process, argv, timeout)
     _raise_on_failure(argv, process, stderr, stream_output, redactions)
     return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
 
 
-def _start_process(
-    argv: list[str], cwd: Path | None, env: dict | None, stream_output: bool
-) -> subprocess.Popen:
+def _run_command_tee(
+    argv: list[str], cwd: Path | None, env: dict | None
+) -> subprocess.CompletedProcess:
+    """Stream combined output live while capturing it for later classification."""
+    process = subprocess.Popen(
+        argv,
+        cwd=cwd,
+        env=_inherit_task_env(env),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+        text=True,
+    )
+    captured: list[str] = []
+    if process.stdout is None:
+        raise RuntimeError("Command output pipe was not created")
+    try:
+        for line in process.stdout:
+            sys.stdout.write(line)
+            sys.stdout.flush()
+            captured.append(line)
+    except KeyboardInterrupt:
+        _terminate_process_group(process)
+        raise
+    process.wait()
+    return subprocess.CompletedProcess(argv, process.returncode, "".join(captured), "")
+
+
+def _inherit_task_env(env: dict | None) -> dict | None:
     inherited = {
         key: os.environ[key]
         for key in ("BENCH_TASK_LAUNCH_ID", "PILOT_NONINTERACTIVE_PRIVILEGES")
         if key in os.environ
     }
     if env is not None and inherited:
-        env = {**env, **inherited}
+        return {**env, **inherited}
+    return env
 
+
+def _start_process(
+    argv: list[str], cwd: Path | None, env: dict | None, stream_output: bool
+) -> subprocess.Popen:
     detach_session = not (argv and (argv[0] == "sudo" or argv[0].endswith("/sudo")))
     return subprocess.Popen(
         argv,
         cwd=cwd,
-        env=env,
+        env=_inherit_task_env(env),
         stdout=None if stream_output else subprocess.PIPE,
         stderr=None if stream_output else subprocess.PIPE,
         start_new_session=detach_session,

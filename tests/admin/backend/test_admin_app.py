@@ -866,9 +866,10 @@ def test_site_actions_return_canonical_task_resources(tmp_path: Path) -> None:
     cases = [
         ("reinstall", "reinstall-site", {}),
         ("clear-cache", "clear-cache", {}),
-        ("migrate", "migrate", {}),
+        ("migrate", "migration-backup", {}),
         ("enable-tls", "setup-letsencrypt", {"email": "ops@example.com"}),
     ]
+
 
     with patch(
         "pilot.internal.tasks.runner.task_workers.wake",
@@ -887,6 +888,14 @@ def test_site_actions_return_canonical_task_resources(tmp_path: Path) -> None:
 
             body = response.get_json()
             assert response.status_code == 202
+            if action == "migrate":
+                assert response.headers["Location"] == f"/api/v1/migrations/{body['operation_id']}"
+                task_metadata = json.loads(
+                    (bench_root / "tasks" / body["task_id"] / "meta.json").read_text()
+                )
+                assert task_metadata["command"] == command
+                assert task_metadata["args"]["site"] == site
+                continue
             assert response.headers["Location"] == f"/api/v1/tasks/{body['task_id']}"
             assert body["command"] == command
             assert body["args"]["site"] == site

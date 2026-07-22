@@ -32,10 +32,10 @@ test('navigates the pre-opened window to the login link', async () => {
     return link
   })
 
-  assert.deepEqual(events[0], ['open', '', 'site-login-login-id'])
-  assert.equal(events[1], 'request')
+  assert.equal(events[0], 'request')
+  assert.equal(events[1][0], 'open')
+  assert.equal(events[1][1], link.url)
   assert.equal(popup.opener, null)
-  assert.equal(popup.location, link.url)
 })
 
 
@@ -49,7 +49,7 @@ test('closes the pre-opened window when link creation fails', async () => {
     /failed/,
   )
 
-  assert.equal(events.at(-1), 'close')
+  assert.equal(events.length, 0)
 })
 
 
@@ -61,5 +61,6 @@ test('closes the pre-opened window when the link has no url', async () => {
     /invalid/,
   )
 
-  assert.equal(events.at(-1), 'close')
+  assert.equal(events.length, 0)
 })
+

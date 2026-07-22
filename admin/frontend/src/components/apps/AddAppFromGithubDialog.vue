@@ -6,7 +6,7 @@
           <TabButtons v-model="tab" :options="tabOptions" type="underline" size="md" class="[&>div]:!border-b-0" />
         </div>
 
-        <div class="min-h-32">
+        <div>
           <template v-if="tab === 'public'">
             <div class="flex items-end gap-2">
               <FormControl label="Repository URL" type="text" v-model="repo" class="flex-1"

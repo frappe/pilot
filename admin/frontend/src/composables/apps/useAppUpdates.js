@@ -40,6 +40,7 @@ export function useAppUpdates() {
   const updatesAvailable = computed(() => appsWithUpdates.value.length > 0)
 
   return {
+    updates,
     updatesAvailable,
     appsWithUpdates,
     checking,

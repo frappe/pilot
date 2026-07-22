@@ -11,6 +11,7 @@ from pilot.exceptions import BenchError
 if TYPE_CHECKING:
     from pilot.config import S3Config
     from pilot.core.app import App, RevisionPin
+    from pilot.core.bench.migration.store import MigrationStore
     from pilot.core.database import Database
     from pilot.core.site import Site
     from pilot.tasks import TaskRunner
@@ -82,6 +83,12 @@ class Bench:
         from pilot.tasks import TaskRunner
 
         return TaskRunner(self.path)
+
+    @cached_property
+    def migrations(self) -> "MigrationStore":
+        from pilot.core.bench.migration.store import MigrationStore
+
+        return MigrationStore(self)
 
     @property
     def apps_path(self) -> Path:
@@ -343,10 +350,15 @@ class Bench:
         self.reload_workers()
         on_step("done", "Done")
 
-    def _update_apps(self, apps_filter: set | None, on_progress: Callable[[str], None]) -> None:
+    def _update_apps(
+        self,
+        apps_filter: set | None,
+        on_progress: Callable[[str], None],
+        pins: dict[str, RevisionPin] | None = None,
+    ) -> None:
         from pilot.core.bench.update import BenchUpdater
 
-        BenchUpdater(self).update_apps(apps_filter, on_progress)
+        BenchUpdater(self).update_apps(apps_filter, on_progress, pins)
 
     def _reinstall_apps(self, apps_filter: set | None, on_progress: Callable[[str], None]) -> None:
         from pilot.core.bench.update import BenchUpdater

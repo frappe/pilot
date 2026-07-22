@@ -1,5 +1,4 @@
 <template>
-  <UpdatesAvailableButton />
 
   <div v-if="loading" class="flex justify-center py-12">
     <LoadingText />
@@ -69,7 +68,6 @@
 import { computed, onMounted, onUnmounted, ref, watch, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Badge, Button, Dropdown, ErrorMessage, LoadingText, TabButtons, toast } from 'frappe-ui'
-import UpdatesAvailableButton from '@/components/common/UpdatesAvailableButton.vue'
 import SiteApps from '@/components/sites/Apps.vue'
 import SiteBackups from '@/components/sites/Backups.vue'
 import SiteMonitoring from '@/components/sites/Monitoring.vue'
