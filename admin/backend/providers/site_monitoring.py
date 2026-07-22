@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from pathlib import Path
 
@@ -7,6 +8,7 @@ from admin.backend.internal.timeline import TimelinePoint, build_timeline
 from admin.backend.providers.site_access_log import SiteAccessLogProvider
 from admin.backend.providers.windowed_log import WindowedLogProvider
 from pilot.core.site.uptime_monitoring import PING_PATH
+from pilot.internal.site_paths import site_config_path
 
 _MAX_BUCKETS = 48
 _TOP_LIMIT = 5
@@ -22,10 +24,12 @@ class SiteMonitoringProvider(WindowedLogProvider):
 
     def __init__(self, bench_root: Path, site_name: str, window: str) -> None:
         super().__init__(window)
+        self._bench_root = bench_root
         self._log_path = bench_root / "logs" / "monitor.json.log"
         self._site_name = site_name
         self._bucket_seconds = max(60, self.window_seconds // _MAX_BUCKETS)
         self._access_log = SiteAccessLogProvider(bench_root, site_name, window)
+        self._db_name = self._read_db_name(bench_root, site_name)
 
     def get_analytics(self) -> dict:
         entries = list(self._entries_in_window())
@@ -39,7 +43,35 @@ class SiteMonitoringProvider(WindowedLogProvider):
             "slowest_jobs": self._timeline(entries, "job", self._job_method, "duration"),
             "top_ips": self._top_ips(entries),
             "slowest_reports": self._timeline(entries, "request", self._report_name, "duration"),
+            "frequent_slow_queries": self._slow_query_timeline("count"),
+            "slowest_queries": self._slow_query_timeline("duration"),
         }
+
+    def _slow_query_timeline(self, by: str) -> dict:
+        from pilot.config import BenchConfig
+        from pilot.core.database.slow_queries import SlowQueryLog
+
+        if not self._db_name:
+            return build_timeline([], _TOP_LIMIT, self._bucket_seconds, by)
+        config = BenchConfig.read(self._bench_root)
+        points = [
+            TimelinePoint(self.to_epoch_ms(when), record["query"], (record.get("query_time") or 0) * 1_000_000)
+            for record in SlowQueryLog(config.monitor.slow_query_log_path).records()
+            if record.get("db") == self._db_name
+            and (when := self.get_time(record.get("time"))) is not None
+            and when >= self.cutoff
+        ]
+        return build_timeline(points, _TOP_LIMIT, self._bucket_seconds, by)
+
+    @staticmethod
+    def _read_db_name(bench_root: Path, site_name: str) -> str | None:
+        config_path = site_config_path(bench_root, site_name)
+        if not config_path:
+            return None
+        try:
+            return json.loads(config_path.read_text()).get("db_name")
+        except (OSError, ValueError):
+            return None
 
     def _top_ips(self, entries: list[dict]) -> dict:
         if self._access_log.is_available():

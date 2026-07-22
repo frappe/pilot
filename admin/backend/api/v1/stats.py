@@ -145,6 +145,22 @@ def get_monitor_history():
         )
 
 
+@stats_bp.get("/database/history")
+def get_db_history():
+    from admin.backend.providers.database_monitoring import DatabaseMonitoringProvider
+
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    window = request.args.get("window", "1h")
+    try:
+        return jsonify(DatabaseMonitoringProvider(bench_root, window).get_history())
+    except Exception:
+        return error_response(
+            "db_history_unavailable",
+            "Could not read database history.",
+            500,
+        )
+
+
 @stats_bp.get("/waf")
 def get_waf_analytics():
     from admin.backend.providers.waf import WafProvider

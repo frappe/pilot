@@ -93,7 +93,7 @@ function tooltipFormatter(paramsInput) {
     `)
     .join('')
   const date = new Date(params[0].value[0]).toLocaleString(undefined, dateFormat)
-  return `<div style="max-width:280px;white-space:normal;"><div class="mb-1">${date}</div>${rows}</div>`
+  return `<div style="max-width:420px;white-space:normal;"><div class="mb-1">${date}</div>${rows}</div>`
 }
 
 // series.name must match the data key holding that category's value.
@@ -116,6 +116,8 @@ const charts = computed(() => [
   { key: 'slowest_jobs', title: 'Slowest background jobs', config: timelineConfig(data.value?.slowest_jobs, 'Duration (s)') },
   { key: 'top_ips', title: 'Frequent IPs', config: timelineConfig(data.value?.top_ips, 'Requests') },
   { key: 'slowest_reports', title: 'Slowest reports', config: timelineConfig(data.value?.slowest_reports, 'Duration (s)') },
+  { key: 'frequent_slow_queries', title: 'Frequent slow queries', config: timelineConfig(data.value?.frequent_slow_queries, 'Count') },
+  { key: 'slowest_queries', title: 'Slowest queries', config: timelineConfig(data.value?.slowest_queries, 'Duration (s)') },
 ])
 
 const empty = computed(() => !data.value || charts.value.every((chart) => !chart.config.series.length))

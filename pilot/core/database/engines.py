@@ -134,6 +134,70 @@ class MariaDB(Database):
         finally:
             conn.close()
 
+    def get_global_status(self) -> dict[str, str]:
+        return self._name_value_pairs("SHOW GLOBAL STATUS")
+
+    def get_global_variables(self) -> dict[str, str]:
+        return self._name_value_pairs("SHOW GLOBAL VARIABLES")
+
+    def is_slow_log_enabled(self) -> bool:
+        variables = self.get_global_variables()
+        return variables.get("slow_query_log") == "ON" and "TABLE" in (variables.get("log_output") or "")
+
+    def enable_slow_log(self, long_query_time: float = 1.0) -> None:
+        """Mutates shared server globals; only call on an explicit user action."""
+        conn = self._connect()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SET GLOBAL slow_query_log = ON")
+                cursor.execute("SET GLOBAL log_output = 'TABLE'")
+                cursor.execute("SET GLOBAL long_query_time = %s", (long_query_time,))
+        finally:
+            conn.close()
+
+    def scan_slow_queries(self, since: tuple[str, str, int] | None = None, limit: int = 5000) -> list[dict]:
+        """New mysql.slow_log rows across all schemas, oldest first, for aggregation.
+
+        `mysql.slow_log` has no auto-increment id, so `start_time` alone can't
+        page past a batch boundary that lands mid-group of same-timestamp rows:
+        a strict `>` drops the rest of the group, and `>=` with no secondary
+        key can return the same arbitrary rows forever if a group exceeds
+        `limit`. `(start_time, sql_text)` alone still ties for the same query
+        text logged at the same instant against a different db (or, on the
+        same connection, back-to-back); `thread_id` (the connection) breaks
+        that too, so `(start_time, sql_text, thread_id)` is as unique a
+        composite key as this table can give us. Row-constructor comparison
+        keyset-pages past ties in a stable order, so every row is eventually
+        reached exactly once."""
+        conn = self._connect()
+        try:
+            with conn.cursor() as cursor:
+                if since:
+                    cursor.execute(
+                        "SELECT db, sql_text, query_time, start_time, thread_id FROM mysql.slow_log "
+                        "WHERE (start_time, sql_text, thread_id) > (%s, %s, %s) "
+                        "ORDER BY start_time ASC, sql_text ASC, thread_id ASC LIMIT %s",
+                        (since[0], since[1], since[2], int(limit)),
+                    )
+                else:
+                    cursor.execute(
+                        "SELECT db, sql_text, query_time, start_time, thread_id FROM mysql.slow_log "
+                        "ORDER BY start_time ASC, sql_text ASC, thread_id ASC LIMIT %s",
+                        (int(limit),),
+                    )
+                return list(cursor.fetchall())
+        finally:
+            conn.close()
+
+    def _name_value_pairs(self, query: str) -> dict[str, str]:
+        conn = self._connect()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(query)
+                return {r["Variable_name"]: r["Value"] for r in cursor.fetchall()}
+        finally:
+            conn.close()
+
     def get_process_list(self) -> list[dict]:
         return _rows_as_dicts(self.execute("SHOW FULL PROCESSLIST"))
 
