@@ -220,7 +220,8 @@ bootstrap_packages() {
 # bench runs one MariaDB server and one PostgreSQL server per bench user
 # (rootless, systemctl --user) shared across that user's benches, so the
 # engines must already be installed system-wide before `bench init` ever
-# runs — the runtime never installs packages itself. Root, one-time.
+# runs — the runtime never installs packages itself, and the bench user has
+# no privileges to. Root, one-time.
 _MARIADB_REPO_SETUP_URL="https://r.mariadb.com/downloads/mariadb_repo_setup"
 _MARIADB_VERSION="11.8"
 _POSTGRES_VERSION="16"
@@ -247,13 +248,13 @@ install_database_engines() {
             # (MariaDBManager/PostgresManager _DEFAULT_VERSION), so the formula
             # this installs is the same one BrewPackageManager would lazily
             # reach for later.
-            pkg_install "mariadb@$_MARIADB_VERSION" "postgresql@$_POSTGRES_VERSION" ;;
+            pkg_install "mariadb@$_MARIADB_VERSION" "postgresql@$_POSTGRES_VERSION" redis ;;
         debian|ubuntu)
-            pkg_install mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config ;;
+            pkg_install mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config redis-server ;;
         fedora)
-            pkg_install mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config ;;
+            pkg_install mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config redis ;;
         arch)
-            pkg_install mariadb mariadb-clients mariadb-libs postgresql postgresql-libs pkgconf ;;
+            pkg_install mariadb mariadb-clients mariadb-libs postgresql postgresql-libs pkgconf redis ;;
     esac
 }
 
@@ -267,6 +268,8 @@ disable_system_db_services() {
         *)
             run_sudo systemctl disable --now mariadb 2>/dev/null || true
             run_sudo systemctl disable --now postgresql 2>/dev/null || true
+            run_sudo systemctl disable --now redis-server 2>/dev/null || true
+            run_sudo systemctl disable --now redis 2>/dev/null || true
             ;;
     esac
 }
