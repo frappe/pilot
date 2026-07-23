@@ -56,6 +56,7 @@ class LLMIntegration:
         """Selectable models for a provider slug; empty means free-text entry."""
         return []
 
+    @property
     def _litellm_model(self) -> str:
         """The model string handed to litellm.completion (routing lives here)."""
         return f"{self.litellm_provider or self.provider}/{self.model}"
@@ -68,7 +69,7 @@ class LLMIntegration:
         ]
         try:
             return litellm.completion(
-                model=self._litellm_model(),
+                model=self._litellm_model,
                 messages=messages,
                 api_key=self.api_key,
                 api_base=self.api_base or None,
