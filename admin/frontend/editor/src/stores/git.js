@@ -40,9 +40,6 @@ export const useGitStore = defineStore('git', {
         this.repo = false
       }
     },
-    async fileDiff(path, staged) {
-      return api.gitFileDiff(path, staged)
-    },
     async log(skip = 0, limit = 50) {
       return api.gitLog(skip, limit)
     },
@@ -64,11 +61,6 @@ export const useGitStore = defineStore('git', {
     },
     async discard(path) {
       const r = await api.gitDiscard(path)
-      await this.refresh()
-      return r
-    },
-    async apply(patch, cached, reverse) {
-      const r = await api.gitApply(patch, cached, reverse)
       await this.refresh()
       return r
     },

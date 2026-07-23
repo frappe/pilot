@@ -3,7 +3,7 @@ from __future__ import annotations
 from flask import jsonify, request
 
 from admin.backend.api.responses import error_response
-from admin.backend.api.v1.editor import editor_bp, json_body, query_flag, with_workspace
+from admin.backend.api.v1.editor import editor_bp, json_body, with_workspace
 
 
 @editor_bp.get("/git/status")
@@ -54,13 +54,6 @@ def git_commit(ws):
     return _git_result(*ws.git.commit(body["message"], bool(body.get("all"))))
 
 
-@editor_bp.get("/git/filediff")
-@with_workspace
-def git_filediff(ws):
-    rel = ws.rel(ws.safe(request.args.get("path", "")))
-    return jsonify(ws.git.file_diff(ws, rel, query_flag("staged")))
-
-
 @editor_bp.get("/git/log")
 @with_workspace
 def git_log(ws):
@@ -90,7 +83,7 @@ def git_commit_diff(ws):
     if not ws.git.is_sha(sha):
         return error_response("bad_request", "Invalid commit sha.", 400)
     rel = ws.rel(ws.safe(request.args.get("path", "")))
-    return jsonify({"diff": ws.git.commit_diff(sha, rel)})
+    return jsonify(ws.git.commit_file(sha, rel))
 
 
 @editor_bp.post("/git/stage")
@@ -112,15 +105,6 @@ def git_discard(ws):
     if not path:
         return error_response("bad_request", "Path is required.", 400)
     return _git_result(*ws.git.discard(ws, ws.rel(ws.safe(path))))
-
-
-@editor_bp.post("/git/apply")
-@with_workspace
-def git_apply(ws):
-    body = json_body()
-    if not body.get("patch"):
-        return error_response("bad_request", "Patch is required.", 400)
-    return _git_result(*ws.git.apply_patch(body["patch"], bool(body.get("cached")), bool(body.get("reverse"))))
 
 
 @editor_bp.post("/git/push")

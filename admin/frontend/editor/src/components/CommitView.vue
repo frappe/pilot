@@ -91,7 +91,7 @@
           Select a file to view its changes.
         </div>
         <div v-else-if="loadingDiff" class="p-4 text-xs text-ink-gray-4">loading…</div>
-        <DiffLines v-else :parsed="diff" empty-text="No changes in this file for this commit." />
+        <DiffEditor v-else :original="diff.old" :modified="diff.new" :path="selectedPath" />
       </div>
     </div>
   </div>
@@ -100,11 +100,10 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import FileIcon from '@/components/FileIcon.vue'
-import DiffLines from '@/components/DiffLines.vue'
+import DiffEditor from '@/components/DiffEditor.vue'
 import { useEditorStore } from '@/stores/editor'
 import { useGitStore } from '@/stores/git'
 import { useMobile } from '@/composables/useMobile'
-import { parseDiff } from '@/lib/gitdiff'
 import { baseName, dirName, relTime } from '@/utils'
 
 const editor = useEditorStore()
@@ -114,7 +113,7 @@ const { isMobile } = useMobile()
 const info = ref(null)
 const loadingInfo = ref(false)
 const selectedPath = ref(null)
-const diff = ref({ hunks: [] })
+const diff = ref({ old: '', new: '' })
 const loadingDiff = ref(false)
 const copied = ref(false)
 
@@ -176,10 +175,9 @@ async function loadDiff() {
   if (!selectedPath.value) return
   loadingDiff.value = true
   try {
-    const d = await git.commitFileDiff(sha.value, selectedPath.value)
-    diff.value = parseDiff(d.diff || '')
+    diff.value = await git.commitFileDiff(sha.value, selectedPath.value)
   } catch {
-    diff.value = { hunks: [] }
+    diff.value = { old: '', new: '' }
   }
   loadingDiff.value = false
 }
@@ -189,7 +187,7 @@ async function loadInfo() {
   loadingInfo.value = true
   info.value = null
   selectedPath.value = null
-  diff.value = { hunks: [] }
+  diff.value = { old: '', new: '' }
   try {
     info.value = await git.commitInfo(sha.value)
   } catch {

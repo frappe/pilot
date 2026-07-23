@@ -149,15 +149,6 @@ class EditorGit:
                 return False, out
         return self._combined("commit", "-m", message)
 
-    def file_diff(self, workspace, rel: str, staged: bool) -> dict:
-        if not self.is_repo:
-            return {"diff": ""}
-        if not staged and not self.is_tracked(rel):
-            content = workspace.safe(rel).read_text("utf-8", "replace")
-            return {"untracked": True, "diff": _new_file_diff(rel, content)}
-        args = ["diff", "--no-color"] + (["--cached"] if staged else []) + ["--", rel]
-        return {"diff": self._run(*args).stdout}
-
     def stage(self, rel: str) -> tuple[bool, str]:
         return self._combined("add", "--", rel)
 
@@ -169,14 +160,6 @@ class EditorGit:
             workspace.safe(rel).unlink()
             return True, ""
         return self._combined("restore", "--", rel)
-
-    def apply_patch(self, patch: str, cached: bool, reverse: bool) -> tuple[bool, str]:
-        args = ["apply", "--recount"]
-        if cached:
-            args.append("--cached")
-        if reverse:
-            args.append("--reverse")
-        return self._combined(*args, input=patch)
 
     def push(self, force: bool) -> tuple[bool, str]:
         base = ["push"] + (["--force-with-lease"] if force else [])
@@ -266,10 +249,14 @@ class EditorGit:
             files.append({"path": path, "code": code[0]})
         return files
 
-    def commit_diff(self, sha: str, rel: str) -> str:
+    def commit_file(self, sha: str, rel: str) -> dict:
+        """File contents before and after a commit, for a two-sided diff view."""
         if not self.is_repo:
-            return ""
-        return self._run("show", sha, "--no-color", "--format=", "--", rel).stdout
+            return {"old": "", "new": ""}
+        return {
+            "old": self._text("show", f"{sha}^:./{rel}"),
+            "new": self._text("show", f"{sha}:./{rel}"),
+        }
 
     def _text(self, *args: str) -> str:
         result = self._run(*args)
@@ -293,27 +280,6 @@ class EditorGit:
             )
         except (OSError, subprocess.SubprocessError):
             return subprocess.CompletedProcess(args, 1, "", "")
-
-
-def _new_file_diff(rel: str, content: str) -> str:
-    if not content:
-        return ""
-    no_newline = not content.endswith("\n")
-    lines = content.split("\n")
-    if not no_newline:
-        lines = lines[:-1]
-    out = [
-        f"diff --git a/{rel} b/{rel}",
-        "new file mode 100644",
-        "--- /dev/null",
-        f"+++ b/{rel}",
-        f"@@ -0,0 +1,{len(lines)} @@",
-    ]
-    for i, line in enumerate(lines):
-        out.append("+" + line)
-        if no_newline and i == len(lines) - 1:
-            out.append("\\ No newline at end of file")
-    return "\n".join(out) + "\n"
 
 
 def _status_entry(line: str, prefix: str) -> tuple[str, str, str] | None:

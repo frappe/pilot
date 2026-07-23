@@ -65,9 +65,6 @@ export const api = {
   gitCommit(message, all) {
     return req('POST', '/api/git/commit', { message, all: !!all }).then(json)
   },
-  gitFileDiff(path, staged) {
-    return req('GET', `/api/git/filediff?path=${encodeURIComponent(path)}&staged=${staged ? 1 : 0}`).then(jsonOr({ diff: '' }))
-  },
   gitLog(skip = 0, limit = 50) {
     return req('GET', `/api/git/log?skip=${skip}&limit=${limit}`).then(jsonOr({ repo: false, commits: [], more: false }))
   },
@@ -75,7 +72,7 @@ export const api = {
     return req('GET', `/api/git/commit-info?sha=${encodeURIComponent(sha)}`).then(okJSON)
   },
   gitCommitDiff(sha, path) {
-    return req('GET', `/api/git/commit-diff?sha=${encodeURIComponent(sha)}&path=${encodeURIComponent(path)}`).then(jsonOr({ diff: '' }))
+    return req('GET', `/api/git/commit-diff?sha=${encodeURIComponent(sha)}&path=${encodeURIComponent(path)}`).then(jsonOr({ old: '', new: '' }))
   },
   gitStage(path) {
     return req('POST', '/api/git/stage', { path }).then(json)
@@ -85,9 +82,6 @@ export const api = {
   },
   gitDiscard(path) {
     return req('POST', '/api/git/discard', { path }).then(json)
-  },
-  gitApply(patch, cached, reverse) {
-    return req('POST', '/api/git/apply', { patch, cached: !!cached, reverse: !!reverse }).then(json)
   },
   gitPush(force) {
     return req('POST', '/api/git/push', { force: !!force }).then(json)
