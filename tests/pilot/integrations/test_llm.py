@@ -97,7 +97,7 @@ def test_frappe_llm_uses_fixed_base_api(fake_litellm) -> None:
     integration.prompt("hi", bench_root=Path("/tmp/bench"))
     kwargs = fake_litellm.completion.call_args.kwargs
     assert kwargs["model"] == "hosted_vllm/qwen3.6-27b-fp8"
-    assert kwargs["api_base"] == "http://54.251.169.42/v1"
+    assert kwargs["api_base"] == "http://x.x.x.x/v1"
 
 
 # -- responses / errors -----------------------------------------------------
