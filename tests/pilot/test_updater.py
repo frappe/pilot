@@ -90,20 +90,19 @@ def test_swap_in_prunes_stale_files_and_keeps_data(tmp_path: Path) -> None:
 
 def test_swap_in_rolls_back_on_failure(tmp_path: Path) -> None:
     root, staging = _make_install(tmp_path)
-    (staging / "extra").mkdir()  # a second entry, so the swap loops more than once
 
     real_rename = updater.os.rename
-    calls = {"n": 0}
 
     def flaky_rename(src, dst):
-        calls["n"] += 1
-        if calls["n"] == 3:  # fail after the first entry is fully swapped
+        # Fail the move-into-place of `pilot` *after* its original was backed up.
+        if Path(src).name == "pilot" and Path(src).parent == staging:
             raise OSError("boom")
         return real_rename(src, dst)
 
     with patch.object(updater.os, "rename", flaky_rename), pytest.raises(OSError):
         updater._swap_in(root, staging, lambda _m: None)
 
-    assert (root / "pilot" / "old.py").read_text() == "old"  # original restored
+    assert (root / "pilot" / "old.py").read_text() == "old"  # backed-up original restored
     assert not (root / "pilot" / "new.py").exists()
+    assert not root.with_name("pilot.backup").exists()
     assert (root / "benches" / "data.txt").read_text() == "keep me"

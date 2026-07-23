@@ -73,6 +73,8 @@ const updateAvailable = computed(() => Boolean(latestVersion.value) && latestVer
 onMounted(async () => {
   try {
     status.value = await cliUpdatesApi.status()
+  } catch {
+    error.value = 'Could not load version information.'
   } finally {
     loading.value = false
   }
@@ -110,20 +112,29 @@ async function update() {
 }
 
 async function pollTask(taskId) {
+  // The admin service restarts mid-update, so detail requests fail transiently.
+  // Give it a bounded window to come back before declaring the update lost.
+  const MAX_CONSECUTIVE_FAILURES = 40 // ~60s at POLL_INTERVAL_MS
+  let failures = 0
   while (true) {
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
     let task
     try {
       task = await tasksApi.detail(taskId)
+      failures = 0
     } catch {
-      // Admin service restarts mid-update; keep polling until it is back.
+      failures += 1
+      if (failures >= MAX_CONSECUTIVE_FAILURES) {
+        error.value = 'Lost contact with the admin service after the update. Check the Tasks view.'
+        return
+      }
       continue
     }
     log.value = (await tasksApi.output(taskId)) || log.value
     if (isTaskActive(task)) continue
     if (task.status !== 'success') error.value = 'Update did not complete successfully.'
-    else status.value = await cliUpdatesApi.status()
-    break
+    else status.value = await cliUpdatesApi.status().catch(() => status.value)
+    return
   }
 }
 </script>
