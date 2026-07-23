@@ -3,7 +3,7 @@ from __future__ import annotations
 from flask import Response, stream_with_context
 
 from admin.backend.api.v1.editor import editor_bp, with_workspace
-from admin.core.editor import events as events_service
+from admin.backend.core.editor import events as events_service
 
 
 @editor_bp.get("/events")

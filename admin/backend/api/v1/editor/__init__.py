@@ -6,7 +6,7 @@ from pathlib import Path
 from flask import Blueprint, current_app, request
 
 from admin.backend.api.responses import error_response
-from admin.core.editor.workspace import (
+from admin.backend.core.editor.workspace import (
     BinaryFileError,
     EditorPathError,
     EditorWorkspace,

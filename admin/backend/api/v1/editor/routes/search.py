@@ -4,7 +4,7 @@ from flask import jsonify, request
 
 from admin.backend.api.responses import error_response
 from admin.backend.api.v1.editor import editor_bp, json_body, query_flag, with_workspace
-from admin.core.editor import search as search_service
+from admin.backend.core.editor import search as search_service
 
 
 @editor_bp.get("/search")

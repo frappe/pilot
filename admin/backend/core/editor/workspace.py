@@ -6,7 +6,7 @@ import posixpath
 import shutil
 from pathlib import Path
 
-from admin.core.editor.git import EditorGit
+from admin.backend.core.editor.git import EditorGit
 
 _FILE_LIST_CAP = 20000
 
