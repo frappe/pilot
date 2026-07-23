@@ -36,7 +36,6 @@ def stream_task_debug(
     response = integration.prompt(
         build_debug_prompt(task, output),
         bench_root=bench_root,
-        model=llm_config.model or None,
         max_tokens=llm_config.max_tokens,
     )
     try:
