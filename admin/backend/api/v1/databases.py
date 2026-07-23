@@ -97,7 +97,7 @@ def get_process_list():
     if forbidden is not None:
         return forbidden
     try:
-        return jsonify(_provider().get_process_list())
+        return jsonify(_provider().get_process_list(request.args.get("site", "")))
     except DatabaseError as exc:
         return error_response("processlist_unavailable", str(exc), 422)
     except Exception:
@@ -122,6 +122,36 @@ def kill_process():
         return error_response("kill_failed", str(exc), 422)
     except Exception:
         return error_response("kill_failed", "Could not kill the database process.", 500)
+
+
+@database_bp.get("/lockwaits")
+def get_lock_wait_rows():
+    try:
+        return jsonify(_provider().get_lock_wait_rows(request.args.get("site", "")))
+    except DatabaseError as exc:
+        return error_response("lockwaits_unavailable", str(exc), 422)
+    except Exception:
+        return error_response("lockwaits_unavailable", "Could not read database lock waits.", 500)
+
+
+@database_bp.get("/size")
+def get_database_size():
+    try:
+        return jsonify(_provider().get_database_size(request.args.get("site", "")))
+    except DatabaseError as exc:
+        return error_response("size_unavailable", str(exc), 422)
+    except Exception:
+        return error_response("size_unavailable", "Could not read the database size.", 500)
+
+
+@database_bp.get("/table-sizes")
+def get_table_sizes():
+    try:
+        return jsonify(_provider().get_table_sizes(request.args.get("site", "")))
+    except DatabaseError as exc:
+        return error_response("table_sizes_unavailable", str(exc), 422)
+    except Exception:
+        return error_response("table_sizes_unavailable", "Could not read table sizes.", 500)
 
 
 @database_bp.get("/binlogs")

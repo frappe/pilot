@@ -362,13 +362,14 @@ def run_command(
     timeout: float | None = None,
     redactions: list[str] | None = None,
     tee_output: bool = False,
+    stdin_text: str | None = None,
 ) -> subprocess.CompletedProcess:
     if tee_output:
         if timeout is not None:
             raise ValueError("tee_output does not support timeout")
         return _run_command_tee(argv, cwd, env)
-    process = _start_process(argv, cwd, env, stream_output)
-    stdout, stderr = _wait_for_process(process, argv, timeout)
+    process = _start_process(argv, cwd, env, stream_output, stdin_text is not None)
+    stdout, stderr = _wait_for_process(process, argv, timeout, stdin_text)
     _raise_on_failure(argv, process, stderr, stream_output, redactions)
     return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
 
@@ -413,22 +414,26 @@ def _inherit_task_env(env: dict | None) -> dict | None:
 
 
 def _start_process(
-    argv: list[str], cwd: Path | None, env: dict | None, stream_output: bool
+    argv: list[str], cwd: Path | None, env: dict | None, stream_output: bool, pipe_stdin: bool = False
 ) -> subprocess.Popen:
     detach_session = not (argv and (argv[0] == "sudo" or argv[0].endswith("/sudo")))
     return subprocess.Popen(
         argv,
         cwd=cwd,
         env=_inherit_task_env(env),
+        stdin=subprocess.PIPE if pipe_stdin else None,
         stdout=None if stream_output else subprocess.PIPE,
         stderr=None if stream_output else subprocess.PIPE,
         start_new_session=detach_session,
     )
 
 
-def _wait_for_process(process: subprocess.Popen, argv: list[str], timeout: float | None):
+def _wait_for_process(
+    process: subprocess.Popen, argv: list[str], timeout: float | None, stdin_text: str | None = None
+):
+    stdin_bytes = stdin_text.encode() if stdin_text is not None else None
     try:
-        return process.communicate(timeout=timeout)
+        return process.communicate(input=stdin_bytes, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
         _terminate_process_group(process)
         raise CommandError(

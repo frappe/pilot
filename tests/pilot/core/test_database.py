@@ -266,6 +266,24 @@ def test_mariadb_get_process_list_maps_rows_to_dicts() -> None:
     ]
 
 
+def test_mariadb_get_process_list_filters_by_database() -> None:
+    db = MariaDB(host="h", port=3306, user="u", password="p", database="")
+    responses = {
+        "PROCESSLIST": (
+            ["Id", "User", "db", "Command", "Time", "State", "Info"],
+            [
+                [7, "app", "site_one", "Query", 3, "Sending data", "SELECT 1"],
+                [8, "app", "site_two", "Query", 1, "Sending data", "SELECT 2"],
+                [9, "root", None, "Sleep", 0, "", None],
+            ],
+        )
+    }
+    with patch.object(MariaDB, "execute", _canned_execute(responses)):
+        assert [p["Id"] for p in db.get_process_list("site_one")] == [7]
+        # No database means server-wide, including connections with no database.
+        assert [p["Id"] for p in db.get_process_list()] == [7, 8, 9]
+
+
 def test_mariadb_kill_process_issues_kill_connection() -> None:
     db = MariaDB(host="h", port=3306, user="u", password="p", database="")
     calls: list = []
@@ -330,6 +348,97 @@ def test_mariadb_get_lock_waits_raises_on_unknown_status_variable() -> None:
     responses = {"SHOW GLOBAL STATUS": (["Variable_name", "Value"], [])}
     with patch.object(MariaDB, "execute", _canned_execute(responses)), pytest.raises(DatabaseError, match="status"):
         db.get_lock_waits()
+
+
+def test_mariadb_get_lock_wait_rows_maps_joined_columns() -> None:
+    db = MariaDB(host="h", port=3306, user="u", password="p", database="")
+    responses = {
+        "INNODB_LOCK_WAITS": (
+            ["requesting_trx_id", "lock_type", "lock_mode", "lock_table", "lock_index",
+             "trx_state", "trx_started", "trx_query", "trx_rows_locked", "trx_rows_modified", "DB"],
+            [[42, "RECORD", "X", "`db`.`tabDoc`", "PRIMARY", "LOCK WAIT",
+              "2026-01-01 00:00:00", "UPDATE tabDoc SET x=1", 3, 1, "db"]],
+        )
+    }
+    with patch.object(MariaDB, "execute", _canned_execute(responses)):
+        rows = db.get_lock_wait_rows()
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.id == "42"
+    assert row.type == "RECORD"
+    assert row.mode == "X"
+    assert row.table == "`db`.`tabDoc`"
+    assert row.index == "PRIMARY"
+    assert row.state == "LOCK WAIT"
+    assert row.started == "2026-01-01 00:00:00"
+    assert row.query == "UPDATE tabDoc SET x=1"
+    assert row.rows_locked == 3
+    assert row.rows_modified == 1
+
+
+def test_mariadb_get_lock_wait_rows_filters_by_database() -> None:
+    db = MariaDB(host="h", port=3306, user="u", password="p", database="")
+    responses = {
+        "INNODB_LOCK_WAITS": (
+            ["requesting_trx_id", "lock_type", "lock_mode", "lock_table", "lock_index",
+             "trx_state", "trx_started", "trx_query", "trx_rows_locked", "trx_rows_modified", "DB"],
+            [
+                [42, "RECORD", "X", "t", "PRIMARY", "LOCK WAIT", None, None, 1, 0, "site_one"],
+                [43, "RECORD", "X", "t", "PRIMARY", "LOCK WAIT", None, None, 1, 0, "site_two"],
+            ],
+        )
+    }
+    with patch.object(MariaDB, "execute", _canned_execute(responses)):
+        assert [r.id for r in db.get_lock_wait_rows("site_one")] == ["42"]
+        assert [r.id for r in db.get_lock_wait_rows()] == ["42", "43"]
+
+
+def test_mariadb_get_database_size_splits_data_index_and_claimable(tmp_path: Path) -> None:
+    db = MariaDB(host="localhost", port=3306, user="u", password="p", database="site_one")
+    responses = {
+        "information_schema.TABLES": ([], [[8855552, 6696960, 6291456]]),
+        "@@datadir": (["@@datadir"], [[str(tmp_path)]]),
+    }
+    with patch.object(MariaDB, "execute", _canned_execute(responses)):
+        size = db.get_database_size()
+
+    assert size.data_bytes == 8855552
+    assert size.index_bytes == 6696960
+    assert size.claimable_bytes == 6291456
+    assert size.free_bytes > 0  # tmp_path is a real local disk
+
+
+def test_mariadb_size_scope_follows_the_connections_database() -> None:
+    bound = MariaDB(host="h", port=3306, user="u", password="p", database="site_one")
+    server_wide = MariaDB(host="h", port=3306, user="u", password="p", database="")
+
+    # The database name is never interpolated into the query.
+    assert bound._size_scope == "table_schema = DATABASE()"
+    assert "site_one" not in bound._size_scope
+    assert "information_schema" in server_wide._size_scope
+
+
+def test_mariadb_free_space_is_none_for_a_remote_server() -> None:
+    db = MariaDB(host="db.internal", port=3306, user="u", password="p", database="site_one")
+    responses = {"information_schema.TABLES": ([], [[1, 2, 3]])}
+    with patch.object(MariaDB, "execute", _canned_execute(responses)):
+        # A local data directory path would be meaningless for a remote host.
+        assert db.get_database_size().free_bytes is None
+
+
+def test_mariadb_get_table_sizes_orders_largest_first() -> None:
+    db = MariaDB(host="h", port=3306, user="u", password="p", database="site_one")
+    responses = {
+        "information_schema.TABLES": ([], [["tabDocField", 800, 400, 100], ["tabVersion", 500, 200, 0]]),
+    }
+    with patch.object(MariaDB, "execute", _canned_execute(responses)):
+        tables = db.get_table_sizes()
+
+    assert [t.name for t in tables] == ["tabDocField", "tabVersion"]
+    assert tables[0].data_bytes == 800
+    assert tables[0].index_bytes == 400
+    assert tables[0].claimable_bytes == 100
 
 
 def test_mariadb_get_binlog_status_disabled() -> None:
@@ -426,23 +535,94 @@ def test_postgres_get_lock_waits_treats_zero_timeout_as_disabled() -> None:
     assert waits.timeout_seconds is None
 
 
-def test_postgres_get_binlog_status_raises() -> None:
+def test_postgres_get_lock_wait_rows_leaves_unsupported_fields_none() -> None:
     db = PostgreSQL(host="h", port=5432, user="u", password="p", database="d")
-    with pytest.raises(DatabaseError, match="binary log"):
+    responses = {
+        "blocked.granted": (
+            ["pid", "locktype", "mode", "relation", "state", "query_start", "query", "datname"],
+            [[123, "relation", "RowExclusiveLock", "tabDoc", "active",
+              "2026-01-01 00:00:00", "UPDATE tabDoc SET x=1", "site_one"]],
+        )
+    }
+    with patch.object(PostgreSQL, "execute", _canned_execute(responses)):
+        rows = db.get_lock_wait_rows()
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.id == "123"
+    assert row.type == "relation"
+    assert row.mode == "RowExclusiveLock"
+    assert row.table == "tabDoc"
+    assert row.index is None
+    assert row.state == "active"
+    assert row.started == "2026-01-01 00:00:00"
+    assert row.query == "UPDATE tabDoc SET x=1"
+    assert row.rows_locked is None
+    assert row.rows_modified is None
+
+
+def test_postgres_diagnostics_filter_by_database() -> None:
+    db = PostgreSQL(host="h", port=5432, user="u", password="p", database="d")
+    lock_rows = (
+        ["pid", "locktype", "mode", "relation", "state", "query_start", "query", "datname"],
+        [
+            [1, "relation", "RowExclusiveLock", "t", "active", None, None, "site_one"],
+            [2, "relation", "RowExclusiveLock", "t", "active", None, None, "site_two"],
+        ],
+    )
+    processes = (
+        ["pid", "user", "database", "state", "duration_seconds", "query"],
+        [[1, "app", "site_one", "active", 1, "SELECT 1"], [2, "app", "site_two", "active", 1, "SELECT 2"]],
+    )
+    with patch.object(PostgreSQL, "execute", _canned_execute({"blocked.granted": lock_rows})):
+        assert [r.id for r in db.get_lock_wait_rows("site_one")] == ["1"]
+    with patch.object(PostgreSQL, "execute", _canned_execute({"pg_stat_activity": processes})):
+        assert [p["pid"] for p in db.get_process_list("site_two")] == [2]
+
+
+def test_postgres_get_database_size_leaves_claimable_space_unknown() -> None:
+    db = PostgreSQL(host="db.internal", port=5432, user="u", password="p", database="site_one")
+    responses = {"pg_table_size": ([], [[8897315, 4096]])}
+    with patch.object(PostgreSQL, "execute", _canned_execute(responses)):
+        size = db.get_database_size()
+
+    assert size.data_bytes == 8897315
+    assert size.index_bytes == 4096
+    # Reclaimable bloat needs the pgstattuple extension; remote host has no readable datadir.
+    assert size.claimable_bytes is None
+    assert size.free_bytes is None
+
+
+def test_postgres_get_table_sizes_reports_per_relation() -> None:
+    db = PostgreSQL(host="h", port=5432, user="u", password="p", database="site_one")
+    responses = {"c.relname": ([], [["tabDocField", 800, 400]])}
+    with patch.object(PostgreSQL, "execute", _canned_execute(responses)):
+        tables = db.get_table_sizes()
+
+    assert [(t.name, t.data_bytes, t.index_bytes, t.claimable_bytes) for t in tables] == [
+        ("tabDocField", 800, 400, None)
+    ]
+
+
+def test_postgres_get_binlog_status_falls_back_to_not_implemented() -> None:
+    # PostgreSQL doesn't override the binlog trio - it inherits Database's default.
+    db = PostgreSQL(host="h", port=5432, user="u", password="p", database="d")
+    with pytest.raises(NotImplementedError):
         db.get_binlog_status()
 
 
-def test_sqlite_server_diagnostics_raise(tmp_path: Path) -> None:
+def test_sqlite_server_diagnostics_fall_back_to_not_implemented(tmp_path: Path) -> None:
+    # SQLite has no server - it inherits every server-only op from Database's default.
     db = SQLite(str(tmp_path / "x.db"))
-    with pytest.raises(DatabaseError, match="no server"):
+    with pytest.raises(NotImplementedError):
         db.get_process_list()
-    with pytest.raises(DatabaseError, match="no server"):
+    with pytest.raises(NotImplementedError):
         db.kill_process(1)
-    with pytest.raises(DatabaseError, match="no server"):
+    with pytest.raises(NotImplementedError):
         db.get_active_connections()
-    with pytest.raises(DatabaseError, match="no server"):
+    with pytest.raises(NotImplementedError):
         db.get_lock_waits()
-    with pytest.raises(DatabaseError, match="binary log"):
+    with pytest.raises(NotImplementedError):
         db.get_binlog_status()
 
 

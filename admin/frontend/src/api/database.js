@@ -13,7 +13,15 @@ export const databaseApi = {
 
   diagnostics: () => request.get('database/diagnostics').json(),
 
-  processList: () => request.get('database/processlist').json(),
+  processList: (site = '') =>
+    request.get('database/processlist', { searchParams: site ? { site } : {} }).json(),
+
+  lockWaitRows: (site = '') =>
+    request.get('database/lockwaits', { searchParams: site ? { site } : {} }).json(),
+
+  size: (site = '') => request.get('database/size', { searchParams: site ? { site } : {} }).json(),
+
+  tableSizes: (site) => request.get('database/table-sizes', { searchParams: { site } }).json(),
 
   killProcess: (processId) =>
     request.post('database/processlist/kill', { json: { process_id: processId } }).json(),

@@ -85,6 +85,31 @@ def test_binlogs_lists_files(tmp_path: Path) -> None:
     assert response.get_json() == files
 
 
+def test_lockwaits_lists_rows(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+    rows = [{"id": "42", "type": "RECORD", "mode": "X", "table": "tabDoc", "index": "PRIMARY",
+             "state": "LOCK WAIT", "started": "2026-01-01T00:00:00", "query": "UPDATE tabDoc SET x=1",
+             "rows_locked": 3, "rows_modified": 1}]
+    patcher, _ = _patched_provider(**{"get_lock_wait_rows.return_value": rows})
+    with patcher:
+        response = client.get("/api/v1/database/lockwaits")
+
+    assert response.status_code == 200
+    assert response.get_json() == rows
+
+
+def test_lockwaits_maps_unsupported_engine_to_422(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+    patcher, _ = _patched_provider(
+        **{"get_lock_wait_rows.side_effect": DatabaseError("The selected engine does not support this operation")}
+    )
+    with patcher:
+        response = client.get("/api/v1/database/lockwaits")
+
+    assert response.status_code == 422
+    assert response.get_json()["error"]["code"] == "lockwaits_unavailable"
+
+
 def test_kill_process_succeeds(tmp_path: Path) -> None:
     client = _client(tmp_path / "benches" / "current")
     patcher, provider = _patched_provider()

@@ -10,7 +10,7 @@ from pilot.exceptions import BenchError
 
 if TYPE_CHECKING:
     from pilot.config import S3Config
-    from pilot.core.app import App, RevisionPin
+    from pilot.core.app import App, NewAppOptions, RevisionPin
     from pilot.core.bench.migration.store import MigrationStore
     from pilot.core.database import Database
     from pilot.core.site import Site
@@ -139,6 +139,13 @@ class Bench:
         from pilot.core.bench.inventory import BenchInventory
 
         return BenchInventory(self).app(name)
+
+    def new_app(
+        self, app_name: str, options: "NewAppOptions | None" = None, on_progress=lambda message: None
+    ) -> "App":
+        from pilot.core.app import App
+
+        return App.scaffold(self, app_name, options, on_progress=on_progress)
 
     def apps(self) -> list["App"]:
         from pilot.core.bench.inventory import BenchInventory
