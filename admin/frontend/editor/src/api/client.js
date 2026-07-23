@@ -11,10 +11,10 @@ export const request = ky.create({
   timeout: 60_000,
   hooks: {
     beforeRequest: [
-      (req) => {
-        const url = new URL(req.url)
+      ({ request }) => {
+        const url = new URL(request.url)
         if (!url.searchParams.has('app')) url.searchParams.set('app', APP)
-        return new Request(url, req)
+        return new Request(url, request)
       },
     ],
   },
