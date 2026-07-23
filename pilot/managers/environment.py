@@ -79,8 +79,7 @@ class AdminEnvManager:
         from pilot import is_dev_build
 
         frontend = self.venv_path.parent / "admin" / "frontend"
-        # Only dev builds compile the frontend; releases serve the prebuilt dist
-        # and never need its Node deps, even though the source ships with them.
+        # Releases ship the source but serve the prebuilt dist, so they skip its Node deps.
         if not is_dev_build or not (frontend / "package.json").exists():
             return
         if (frontend / "node_modules").exists():
