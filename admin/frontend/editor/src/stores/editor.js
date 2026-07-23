@@ -39,13 +39,17 @@ export const useEditorStore = defineStore('editor', {
       let t = this.tabs.find((t) => t.path === path)
       if (!t) {
         const data = await api.read(path)
-        t = { path, name: baseName(path), content: data.content, saved: data.content, etag: data.etag, dirty: false, preview }
-        const slot = preview ? this.tabs.findIndex((x) => x.preview) : -1
-        if (slot !== -1) this.tabs.splice(slot, 1, t)
-        else this.tabs.push(t)
-      } else if (!preview) {
-        t.preview = false
+        // Re-check after the await: a double click fires click (preview) and
+        // dblclick (permanent) which race here; without this they'd both push.
+        t = this.tabs.find((t) => t.path === path)
+        if (!t) {
+          t = { path, name: baseName(path), content: data.content, saved: data.content, etag: data.etag, dirty: false, preview }
+          const slot = preview ? this.tabs.findIndex((x) => x.preview) : -1
+          if (slot !== -1) this.tabs.splice(slot, 1, t)
+          else this.tabs.push(t)
+        }
       }
+      if (!preview && t.preview) t.preview = false
       this.activePath = path
       this.openTick++
       if (line) this.reveal = { path, line, col: col || 1, ts: Date.now() }
