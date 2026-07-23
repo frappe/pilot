@@ -77,3 +77,27 @@ def test_ensure_reinstalls_when_deps_change(tmp_path: Path, uv_runs) -> None:
 
     installed = [call.args[0] for call in uv_runs.call_args_list if "pip" in call.args[0]]
     assert installed and "flask" in installed[0]
+
+
+def _with_frontend_source(root: Path) -> None:
+    frontend = root / "admin" / "frontend"
+    frontend.mkdir(parents=True)
+    (frontend / "package.json").write_text("{}")
+
+
+def test_released_install_skips_frontend_deps(tmp_path: Path, uv_runs) -> None:
+    _existing_venv(tmp_path)
+    _with_frontend_source(tmp_path)
+    with patch("pilot.is_dev_build", False):
+        _make_manager(tmp_path).ensure()
+
+    assert not [call for call in uv_runs.call_args_list if call.args[0][:1] == ["npm"]]
+
+
+def test_dev_build_installs_frontend_deps(tmp_path: Path, uv_runs) -> None:
+    _existing_venv(tmp_path)
+    _with_frontend_source(tmp_path)
+    with patch("pilot.is_dev_build", True):
+        _make_manager(tmp_path).ensure()
+
+    assert [call for call in uv_runs.call_args_list if call.args[0][:1] == ["npm"]]

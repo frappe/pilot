@@ -76,9 +76,13 @@ class AdminEnvManager:
         print("done")
 
     def _ensure_frontend_deps(self) -> None:
+        from pilot import is_dev_build
+
         frontend = self.venv_path.parent / "admin" / "frontend"
-        if not (frontend / "package.json").exists():
-            return  # not running from the bench-cli source tree
+        # Only dev builds compile the frontend; releases serve the prebuilt dist
+        # and never need its Node deps, even though the source ships with them.
+        if not is_dev_build or not (frontend / "package.json").exists():
+            return
         if (frontend / "node_modules").exists():
             return
         print("  Installing admin frontend Node.js dependencies...", flush=True)
