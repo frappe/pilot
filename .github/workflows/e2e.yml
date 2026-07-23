@@ -81,13 +81,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: admin/frontend/node_modules
-          key: admin-yarn-${{ runner.os }}-${{ hashFiles('admin/frontend/yarn.lock') }}
+          key: admin-npm-${{ runner.os }}-${{ hashFiles('admin/frontend/package-lock.json') }}
 
       - name: Install admin frontend deps
         # The harness builds the admin UI from source (E2E_BUILD_ADMIN below)
         # around the bench lifecycle, so it just needs node_modules.
         working-directory: admin/frontend
-        run: yarn install --frozen-lockfile
+        run: npm ci
 
       - name: Cache Playwright browser
         uses: actions/cache@v4
