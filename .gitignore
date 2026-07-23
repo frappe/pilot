@@ -24,6 +24,9 @@ build/
 wheels/
 uv.lock
 
+# Written only into release tarballs, never committed
+/VERSION
+
 # Virtual environments
 env/
 venv/
