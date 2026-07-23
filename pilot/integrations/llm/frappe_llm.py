@@ -9,7 +9,7 @@ class FrappeLLMIntegration(SelfHostedIntegration):
     """Frappe-hosted, OpenAI-compatible LLM at a fixed endpoint and model set."""
 
     # Keeping the IP hardcoded for now; will move to a domain once available.
-    base_api: ClassVar[str] = "http://54.251.169.42/v1"
+    base_api: ClassVar[str] = "http://x.x.x.x/v1"
     requires_api_base: ClassVar[bool] = False
     free_text_model: ClassVar[bool] = False
 
