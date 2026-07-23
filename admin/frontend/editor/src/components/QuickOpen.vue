@@ -1,60 +1,46 @@
 <template>
-  <div
-    v-if="state.visible"
-    class="fixed inset-0 z-50 flex items-stretch justify-center sm:items-start sm:pt-[10vh]"
-    @click="close"
-  >
-    <div class="fixed inset-0 bg-black/20"></div>
-    <div
-      class="relative z-10 flex h-full w-full flex-col overflow-hidden bg-surface-white shadow-2xl sm:h-auto sm:max-h-[70vh] sm:w-[560px] sm:max-w-[90vw] sm:rounded-xl sm:border sm:border-outline-gray-2"
-      @click.stop
-    >
-      <div class="flex items-center gap-2 border-b border-outline-gray-1 px-3 py-3 sm:py-2">
-        <span class="lucide-search h-4 w-4 text-ink-gray-4"></span>
-        <input
-          ref="input"
-          v-model="query"
-          placeholder="Search files by name…"
-          class="min-w-0 flex-1 border-0 bg-transparent text-base text-ink-gray-8 outline-none focus:ring-0 sm:text-sm"
-          @keydown.down.prevent="move(1)"
-          @keydown.up.prevent="move(-1)"
-          @keydown.enter.prevent="choose()"
-          @keydown.esc.prevent="close"
-        />
-        <span class="text-2xs text-ink-gray-4">{{ results.length }}</span>
-        <button
-          class="-mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-ink-gray-5 hover:bg-surface-gray-2 hover:text-ink-gray-8"
-          aria-label="Close"
-          @click="close"
-        >
-          <span class="lucide-x h-5 w-5 text-current sm:h-4 sm:w-4"></span>
-        </button>
+  <Modal v-if="state.visible" width-class="sm:max-h-[70vh] sm:w-[560px] sm:max-w-[90vw]" @close="close">
+    <template #input>
+      <input
+        ref="input"
+        v-model="query"
+        placeholder="Search files by name…"
+        class="min-w-0 flex-1 border-0 bg-transparent text-sm text-ink-gray-8 outline-none focus:ring-0"
+        @keydown.down.prevent="move(1)"
+        @keydown.up.prevent="move(-1)"
+        @keydown.enter.prevent="choose()"
+        @keydown.esc.prevent="close"
+      />
+    </template>
+    <template #actions>
+      <span class="ed-meta w-16 text-right tabular-nums">{{ countLabel }}</span>
+    </template>
+
+    <div ref="list" class="min-h-0 flex-1 overflow-auto px-1.5 py-1">
+      <div
+        v-for="(p, i) in results"
+        :key="p"
+        :data-i="i"
+        class="ed-row"
+        :class="{ 'ed-row-selected': i === sel }"
+        @click="choose(i)"
+        @mousemove="sel = i"
+      >
+        <FileIcon :name="baseName(p)" class="ed-lane" />
+        <span class="ed-name">{{ baseName(p) }}</span>
+        <span class="ed-path">{{ dirName(p) }}</span>
       </div>
-      <div ref="list" class="min-h-0 flex-1 overflow-auto py-1">
-        <div
-          v-for="(p, i) in results"
-          :key="p"
-          :data-i="i"
-          class="flex cursor-pointer items-center gap-2 px-3 py-3 text-base sm:py-1.5 sm:text-sm"
-          :class="{ 'bg-surface-gray-3': i === sel, 'hover:bg-surface-gray-2': i !== sel }"
-          @click="choose(i)"
-          @mousemove="sel = i"
-        >
-          <FileIcon :name="baseName(p)" class="h-5 w-5 sm:h-4 sm:w-4" />
-          <span class="truncate text-ink-gray-8">{{ baseName(p) }}</span>
-          <span class="truncate text-sm text-ink-gray-4 sm:text-2xs">{{ dirName(p) }}</span>
-        </div>
-        <div v-if="!results.length" class="px-3 py-4 text-center text-xs text-ink-gray-4">
-          {{ loading ? 'loading…' : 'No matching files' }}
-        </div>
+      <div v-if="!results.length" class="ed-empty">
+        {{ loading ? 'Loading…' : 'No matching files' }}
       </div>
     </div>
-  </div>
+  </Modal>
 </template>
 
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue'
 import FileIcon from '@/components/FileIcon.vue'
+import Modal from '@/components/ui/Modal.vue'
 import { filesApi } from '@/api/files'
 import { useEditorStore } from '@/stores/editor'
 import { useQuickOpen } from '@/composables/useQuickOpen'
@@ -99,6 +85,8 @@ const results = computed(() => {
   scored.sort((a, b) => b[1] - a[1] || a[0].length - b[0].length)
   return scored.slice(0, 300).map((r) => r[0])
 })
+
+const countLabel = computed(() => (results.value.length ? `${sel.value + 1}/${results.value.length}` : ''))
 
 watch(results, () => {
   sel.value = 0

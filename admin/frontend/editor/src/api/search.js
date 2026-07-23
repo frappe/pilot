@@ -1,14 +1,15 @@
 import { request, body } from './client'
 
 export const searchApi = {
-  find: ({ q, regex, caseSensitive, word }) =>
+  // opts is the { case, word, regex } shape the search UI keeps in state.
+  find: (q, opts) =>
     request
       .get('search', {
         searchParams: {
           q,
-          ...(caseSensitive ? { case: 1 } : {}),
-          ...(word ? { word: 1 } : {}),
-          ...(regex ? { regex: 1 } : {}),
+          ...(opts.case ? { case: 1 } : {}),
+          ...(opts.word ? { word: 1 } : {}),
+          ...(opts.regex ? { regex: 1 } : {}),
         },
       })
       .then((r) => body(r, [])),

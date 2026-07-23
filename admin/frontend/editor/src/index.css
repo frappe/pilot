@@ -1,5 +1,52 @@
 @import 'frappe-ui/style.css';
 
+/*
+ * One scale for every list in the editor: explorer, search, source control,
+ * commit files, quick open. Rows share a height and a lane grid so names,
+ * icons and trailing actions line up across panels.
+ */
+@layer components {
+  .ed-row {
+    @apply flex h-10 cursor-pointer select-none items-center gap-2 rounded-md px-2 text-ink-gray-7 sm:h-7;
+  }
+  .ed-row:hover {
+    @apply bg-surface-gray-2;
+  }
+  .ed-row-selected,
+  .ed-row-selected:hover {
+    @apply bg-surface-gray-3 text-ink-gray-9;
+  }
+  /* Fixed lane so chevrons, file icons and status letters align down the list. */
+  .ed-lane {
+    @apply flex h-4 w-4 shrink-0 items-center justify-center;
+  }
+  .ed-name {
+    @apply min-w-0 truncate text-sm;
+  }
+  .ed-path {
+    @apply min-w-0 truncate text-xs text-ink-gray-5;
+  }
+  .ed-meta {
+    @apply shrink-0 text-xs text-ink-gray-5;
+  }
+  .ed-code {
+    @apply min-w-0 truncate font-mono text-xs text-ink-gray-8;
+  }
+  .ed-lineno {
+    @apply w-9 shrink-0 text-right font-mono text-xs tabular-nums text-ink-gray-4;
+  }
+  .ed-section {
+    @apply flex items-center gap-1 px-3 pb-1 pt-3 text-2xs font-medium uppercase tracking-wide text-ink-gray-5;
+  }
+  .ed-empty {
+    @apply px-3 py-4 text-center text-xs text-ink-gray-5;
+  }
+  /* Square icon button used in panel headers and row hover actions. */
+  .ed-icon-button {
+    @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-ink-gray-6 hover:bg-surface-gray-2 hover:text-ink-gray-8 disabled:opacity-40 sm:h-6 sm:w-6;
+  }
+}
+
 html,
 body,
 #app {
@@ -98,6 +145,11 @@ body {
 /* Read-only (mobile default): no blinking caret on tap. */
 .editor-readonly .monaco-editor .cursors-layer {
   display: none !important;
+}
+
+/* Match line in the search preview */
+.monaco-editor .search-hit-line {
+  background: rgba(227, 179, 65, 0.16);
 }
 
 .monaco-editor .blame-inline {
