@@ -278,6 +278,22 @@ def test_admin_only_vhost_has_no_access_log(tmp_path: Path) -> None:
     assert "access_log" not in config
 
 
+def test_admin_vhost_offloads_editor_and_dashboard_assets(tmp_path: Path) -> None:
+    # Static bundles served straight from disk by nginx, off the single admin worker.
+    data = copy.deepcopy(_BASE_DATA)
+    data["admin"] = {"domain": "admin.example.com"}
+    config = _renderer(tmp_path, data).generate_bench_config([], admin_ssl=False)
+
+    assert "location /editor-assets/" in config
+    assert "location /assets/" in config
+    assert "/static/editor/;" in config
+    assert "/static/dashboard/assets/;" in config
+    assert 'add_header Cache-Control "public, immutable";' in config
+    # Assets + API JSON compressed on the wire (nginx's default gzip_types is html-only).
+    assert "gzip on;" in config
+    assert "application/javascript text/javascript text/css application/json" in config
+
+
 def test_every_vhost_gets_error_log_including_admin(tmp_path: Path) -> None:
     # Unlike access_log (app requests only, site vhosts only), error_log covers
     # every vhost - admin included - since operational errors matter there too.

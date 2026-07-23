@@ -72,6 +72,9 @@ admin/frontend/editor/components.d.ts
 
 registry-cache*
 
+# Downloaded OWASP CRS ruleset (local data)
+/modsecurity-crs/
+
 # Agent Skills
 .agents
 skills-lock.json

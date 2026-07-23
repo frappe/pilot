@@ -179,6 +179,13 @@ server {
     }
 
     {% else %}
+    {# compress assets + API JSON on the wire; the ~15MB editor bundle gzips to ~4MB #}
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_min_length 1024;
+    gzip_types application/javascript text/javascript text/css application/json image/svg+xml;
+
     {# health/bootstrap answered with open CORS regardless of the app #}
     {% for path in cors_paths %}
     location = {{ path }} {
@@ -194,6 +201,21 @@ server {
     }
 
     {% endfor %}
+    {# editor + dashboard static assets served straight from disk, off the admin worker #}
+    location /editor-assets/ {
+        alias {{ admin_static }}/editor/;
+        try_files $uri =404;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location /assets/ {
+        alias {{ admin_static }}/dashboard/assets/;
+        try_files $uri =404;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
     {# everything else to the local admin process #}
     location / {
         proxy_pass         http://127.0.0.1:{{ vhost.port }};

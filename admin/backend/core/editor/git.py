@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+from functools import cached_property
 from pathlib import Path
 
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
@@ -21,8 +22,9 @@ class EditorGit:
     def __init__(self, root: Path) -> None:
         self.root = Path(root)
 
-    @property
+    @cached_property
     def is_repo(self) -> bool:
+        """Cached per request: EditorGit is rebuilt per request, so repo-ness is stable here."""
         return self._text("rev-parse", "--is-inside-work-tree") == "true"
 
     def is_sha(self, sha: str) -> bool:

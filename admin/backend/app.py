@@ -15,6 +15,12 @@ from admin.backend.middleware import allow_unauthenticated, install_auth_guard
 STATIC_DIR = Path(__file__).parent / "static"
 
 
+def _immutable(response):
+    """Mark a content-hashed asset as cacheable forever."""
+    response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return response
+
+
 def create_app(bench_root: Path) -> Flask:
     app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="/static")
     app.config["BENCH_ROOT"] = bench_root
@@ -94,7 +100,7 @@ def register_editor_frontend(app: Flask) -> None:
     @allow_unauthenticated
     def serve_editor_assets(path):
         try:
-            return send_from_directory(editor_dist, path)
+            return _immutable(send_from_directory(editor_dist, path))
         except NotFound:
             return error_response("not_found", "Asset not found.", 404)
 
@@ -116,7 +122,8 @@ def register_frontend(app: Flask) -> None:
             )
         candidate = dashboard_dir / path
         if path and candidate.exists() and candidate.is_file():
-            return send_file(str(candidate))
+            response = send_file(str(candidate))
+            return _immutable(response) if path.startswith("assets/") else response
         return send_file(str(dashboard_dir / "index.html"))
 
 

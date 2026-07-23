@@ -67,7 +67,7 @@ import ContextMenu from '@/components/ContextMenu.vue'
 import { api } from '@/api'
 import { useEditorStore } from '@/stores/editor'
 import { useGitStore } from '@/stores/git'
-import { useTreeStore, parentOf } from '@/stores/tree'
+import { useTreeStore } from '@/stores/tree'
 import { useQuickOpen } from '@/composables/useQuickOpen'
 import { useSearchModal } from '@/composables/useSearchModal'
 import { useMobile } from '@/composables/useMobile'
@@ -83,10 +83,6 @@ const { openQuick } = useQuickOpen()
 const { openSearchModal } = useSearchModal()
 const { isMobile } = useMobile()
 const panel = ref('files')
-
-let es = null
-let fsTimer = null
-const dirtyDirs = new Set()
 
 function select(id) {
   panel.value = panel.value === id ? '' : id
@@ -116,35 +112,6 @@ function onKey(e) {
     e.preventDefault()
     openQuick()
   }
-}
-
-function onFsEvent(ev) {
-  if (!ev || !ev.path) return
-  dirtyDirs.add(parentOf(ev.path))
-  const tab = store.tabs.find((t) => t.path === ev.path)
-  if (tab && !tab.dirty && (ev.op === 'write' || ev.op === 'create')) {
-    store.refreshTab(ev.path).catch(() => {})
-  }
-  clearTimeout(fsTimer)
-  fsTimer = setTimeout(() => {
-    git.refresh()
-    for (const d of dirtyDirs) {
-      if (tree.nodes[d]?.loaded) tree.reload(d)
-    }
-    dirtyDirs.clear()
-  }, 200)
-}
-
-function connectEvents() {
-  if (new URLSearchParams(location.search).get('live') === '0') return
-  try {
-    es = new EventSource('/api/events')
-    es.onmessage = (e) => {
-      try {
-        onFsEvent(JSON.parse(e.data))
-      } catch {}
-    }
-  } catch {}
 }
 
 let saveTimer = null
@@ -196,7 +163,6 @@ onMounted(async () => {
   if (diff) store.openDiff(diff)
 
   window.addEventListener('keydown', onKey)
-  connectEvents()
 
   window.addEventListener('beforeunload', saveSession)
   document.addEventListener('visibilitychange', onHidden)
@@ -204,7 +170,6 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey)
-  es?.close()
   clearTimeout(saveTimer)
   window.removeEventListener('beforeunload', saveSession)
   document.removeEventListener('visibilitychange', onHidden)

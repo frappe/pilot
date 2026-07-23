@@ -76,7 +76,6 @@ def _exists_error(_):
 
 # Route modules attach their handlers to editor_bp; import last to avoid a cycle.
 from admin.backend.api.v1.editor.routes import (  # noqa: E402,F401
-    events,
     files,
     git,
     search,
