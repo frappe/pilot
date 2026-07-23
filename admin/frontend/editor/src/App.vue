@@ -46,13 +46,14 @@
       <ConflictDialog />
       <PromptDialog />
       <ContextMenu />
+      <Dialogs />
     </div>
   </FrappeUIProvider>
 </template>
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount, watch, defineAsyncComponent } from 'vue'
-import { FrappeUIProvider } from 'frappe-ui'
+import { FrappeUIProvider, Dialogs } from 'frappe-ui'
 import ActivityBar from '@/components/ActivityBar.vue'
 import MobileNav from '@/components/MobileNav.vue'
 import ExplorerPanel from '@/components/ExplorerPanel.vue'

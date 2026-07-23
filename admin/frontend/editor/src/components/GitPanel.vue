@@ -182,7 +182,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { Button, Dropdown } from 'frappe-ui'
+import { Button, Dropdown, confirmDialog, toast } from 'frappe-ui'
 import FileIcon from '@/components/FileIcon.vue'
 import { api } from '@/api'
 import { useEditorStore } from '@/stores/editor'
@@ -266,11 +266,17 @@ async function stage(path) {
 async function unstage(path) {
   await git.unstage(path)
 }
-async function discard(path) {
-  if (!confirm(`Discard changes to ${baseName(path)}?`)) return
-  const r = await git.discard(path)
-  if (r?.ok === false) alert(r.message || 'Discard failed')
-  if (editor.diff?.path === path) editor.closeDiff()
+function discard(path) {
+  confirmDialog({
+    title: 'Discard changes',
+    message: `Discard changes to ${baseName(path)}?`,
+    onConfirm: async ({ hideDialog }) => {
+      hideDialog()
+      const r = await git.discard(path)
+      if (r?.ok === false) toast.error(r.message || 'Discard failed')
+      else if (editor.diff?.path === path) editor.closeDiff()
+    },
+  })
 }
 async function stageAll() {
   for (const f of git.unstaged) await api.gitStage(f.path)
@@ -287,7 +293,7 @@ async function commit() {
   try {
     const all = git.staged.length === 0
     const r = await git.commit(message.value.trim(), all)
-    if (r?.ok === false) alert(r.message || 'Commit failed')
+    if (r?.ok === false) toast.error(r.message || 'Commit failed')
     else {
       message.value = ''
       if (showHistory.value) loadCommits()
@@ -300,7 +306,7 @@ async function commit() {
 async function switchBranch(branch, create) {
   const r = await git.checkout(branch, create)
   if (r?.ok === false) {
-    alert(r.message || 'Checkout failed')
+    toast.error(r.message || 'Checkout failed')
     return
   }
   await loadBranches()
@@ -315,25 +321,34 @@ async function createBranch() {
 
 async function push() {
   pushing.value = true
+  let r
   try {
-    const r = await git.push(false)
-    if (r?.ok === false) {
-      const force = confirm(r.message + '\n\nForce push?')
-      if (force) {
-        const fr = await git.push(true)
-        if (fr?.ok === false) alert(fr.message || 'Force push failed')
-      }
-    }
+    r = await git.push(false)
   } finally {
     pushing.value = false
   }
+  if (r?.ok !== false) return
+  confirmDialog({
+    title: 'Force push',
+    message: `${r.message} Force push?`,
+    onConfirm: async ({ hideDialog }) => {
+      hideDialog()
+      pushing.value = true
+      try {
+        const fr = await git.push(true)
+        if (fr?.ok === false) toast.error(fr.message || 'Force push failed')
+      } finally {
+        pushing.value = false
+      }
+    },
+  })
 }
 
 async function pull() {
   pulling.value = true
   try {
     const r = await git.pull()
-    if (r?.ok === false) alert(r.message || 'Pull failed')
+    if (r?.ok === false) toast.error(r.message || 'Pull failed')
     else if (showHistory.value) loadCommits()
   } finally {
     pulling.value = false

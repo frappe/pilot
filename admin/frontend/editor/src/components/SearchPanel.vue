@@ -97,6 +97,7 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue'
+import { confirmDialog } from 'frappe-ui'
 import FileIcon from '@/components/FileIcon.vue'
 import { useEditorStore } from '@/stores/editor'
 import { useGitStore } from '@/stores/git'
@@ -182,27 +183,33 @@ function goto(m, file) {
   editor.open(file, { line: m.line, col: (m.start || 0) + 1, preview: true }).catch(() => {})
 }
 
-async function replaceAll() {
+function replaceAll() {
   if (!query.value || !results.value.length) return
-  if (!confirm(`Replace ${totalMatches.value} occurrence(s) across ${results.value.length} file(s)?`)) return
-  const files = results.value.map((f) => f.file)
-  await fetch('/api/replace', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      query: query.value,
-      replace: replace.value,
-      regex: opts.regex,
-      case: opts.case,
-      word: opts.word,
-      files,
-    }),
+  confirmDialog({
+    title: 'Replace all',
+    message: `Replace ${totalMatches.value} occurrence(s) across ${results.value.length} file(s)?`,
+    onConfirm: async ({ hideDialog }) => {
+      hideDialog()
+      const files = results.value.map((f) => f.file)
+      await fetch('/api/replace', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: query.value,
+          replace: replace.value,
+          regex: opts.regex,
+          case: opts.case,
+          word: opts.word,
+          files,
+        }),
+      })
+      for (const p of files) {
+        if (editor.tabs.find((t) => t.path === p)) await editor.refreshTab(p)
+      }
+      git.refresh()
+      run()
+    },
   })
-  for (const p of files) {
-    if (editor.tabs.find((t) => t.path === p)) await editor.refreshTab(p)
-  }
-  git.refresh()
-  run()
 }
 
 onMounted(() => {

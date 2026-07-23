@@ -77,7 +77,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { Spinner } from 'frappe-ui'
+import { Spinner, toast } from 'frappe-ui'
 import FileIcon from '@/components/FileIcon.vue'
 import TreeInput from '@/components/TreeInput.vue'
 import { useTreeStore } from '@/stores/tree'
@@ -143,7 +143,7 @@ async function openFile(preview) {
     editor.closeDiff()
     await editor.open(props.entry.path, { preview })
   } catch (e) {
-    alert(e.message)
+    toast.error(e.message)
   }
 }
 
@@ -180,7 +180,7 @@ function onDrop(e) {
   e.stopPropagation()
   const from = tree.dragPath
   tree.dragPath = null
-  tree.move(from, props.entry.path).catch((err) => alert(err.message))
+  tree.move(from, props.entry.path).catch((err) => toast.error(err.message))
 }
 
 function onContext(e) {

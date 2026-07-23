@@ -53,7 +53,7 @@
 
 <script setup>
 import { computed, onMounted, ref, nextTick, watch } from 'vue'
-import { Spinner } from 'frappe-ui'
+import { Spinner, toast } from 'frappe-ui'
 import TreeNode from '@/components/TreeNode.vue'
 import TreeInput from '@/components/TreeInput.vue'
 import { useTreeStore, parentOf } from '@/stores/tree'
@@ -155,7 +155,7 @@ function onRootDrop(e) {
   e.preventDefault()
   const from = tree.dragPath
   tree.dragPath = null
-  tree.move(from, '').catch((err) => alert(err.message))
+  tree.move(from, '').catch((err) => toast.error(err.message))
 }
 function onRootContext(e) {
   open(e, [

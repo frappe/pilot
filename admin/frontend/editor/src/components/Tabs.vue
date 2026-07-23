@@ -78,6 +78,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { confirmDialog } from 'frappe-ui'
 import FileIcon from '@/components/FileIcon.vue'
 import { useEditorStore } from '@/stores/editor'
 import { useContextMenu } from '@/composables/useContextMenu'
@@ -92,8 +93,18 @@ let longPressTriggered = false
 const dirtyCount = computed(() => store.tabs.filter((t) => t.dirty).length)
 
 function close(t) {
-  if (t.dirty && !confirm(`Discard unsaved changes to ${t.name}?`)) return
-  store.close(t.path)
+  if (!t.dirty) {
+    store.close(t.path)
+    return
+  }
+  confirmDialog({
+    title: 'Discard changes',
+    message: `Discard unsaved changes to ${t.name}?`,
+    onConfirm: ({ hideDialog }) => {
+      hideDialog()
+      store.close(t.path)
+    },
+  })
 }
 
 function tabMenu(e, t) {

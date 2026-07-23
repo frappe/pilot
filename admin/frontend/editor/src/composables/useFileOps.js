@@ -1,3 +1,4 @@
+import { confirmDialog } from 'frappe-ui'
 import { api } from '@/api'
 import { useTreeStore, parentOf } from '@/stores/tree'
 import { useEditorStore } from '@/stores/editor'
@@ -18,13 +19,19 @@ export function useFileOps() {
   function rename(path) {
     tree.startRename(path)
   }
-  async function remove(path, isDir) {
-    if (!confirm(`Delete ${baseName(path)}?`)) return
-    await api.del(path)
-    if (isDir) editor.closeUnder(path)
-    else editor.close(path)
-    await tree.reload(parentOf(path))
-    git.refresh()
+  function remove(path, isDir) {
+    confirmDialog({
+      title: 'Delete',
+      message: `Delete ${baseName(path)}?`,
+      onConfirm: async ({ hideDialog }) => {
+        hideDialog()
+        await api.del(path)
+        if (isDir) editor.closeUnder(path)
+        else editor.close(path)
+        await tree.reload(parentOf(path))
+        git.refresh()
+      },
+    })
   }
 
   return { newFile, newFolder, rename, remove }
