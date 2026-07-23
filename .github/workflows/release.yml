@@ -31,14 +31,14 @@ jobs:
       - name: Package release tarball
         run: |
           tar -czf /tmp/pilot.tar.gz \
-            --exclude=.git \
-            --exclude=.github \
+            --exclude=./.git \
+            --exclude=./.github \
             --exclude=node_modules \
-            --exclude=benches \
-            --exclude=.venv \
-            --exclude=.admin-venv \
+            --exclude=./benches \
+            --exclude=./.venv \
+            --exclude=./.admin-venv \
             --exclude='*.egg-info' \
-            --exclude=build \
+            --exclude=./build \
             --exclude=__pycache__ \
             -C "$GITHUB_WORKSPACE" .
 
