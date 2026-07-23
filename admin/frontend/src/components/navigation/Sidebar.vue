@@ -36,7 +36,7 @@ function isActive(to) {
           :active="isActive(item.to)" class="mb-0.5">
           {{ item.label }}
 
-          <lucide-chevron-right v-if='isMobile' class="size-4 text-ink-gray-4 ml-auto" />
+          <lucide-chevron-right v-if='isMobile' class="size-4 text-ink-gray-4 ml-auto mr-1" />
         </SidebarItem>
       </template>
     </nav>
