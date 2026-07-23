@@ -402,6 +402,17 @@ EOF
     chmod 644 /etc/logrotate.d/pilot
 }
 
+# `command -v` returns the bare name for shell builtins like `test`, but a
+# sudoers Cmnd must be a fully-qualified path or visudo rejects the whole file.
+# Mirror the runtime's shutil.which by taking only an absolute PATH match.
+resolve_binary() {
+    resolved="$(command -v "$1" 2>/dev/null || true)"
+    case "$resolved" in
+        /*) echo "$resolved" ;;
+        *) echo "$2" ;;
+    esac
+}
+
 # Reloading nginx and running certbot need root every time a bench deploys or a
 # cert renews. These mirror NginxManager.setup_sudoers and
 # LetsEncryptManager.setup_sudoers, which check whether a grant works before
@@ -409,12 +420,12 @@ EOF
 install_sudoers_grants() {
     [ -d /etc/sudoers.d ] || return 0
     command -v visudo >/dev/null 2>&1 || return 0
-    nginx_bin="$(command -v nginx || echo /usr/sbin/nginx)"
-    certbot_bin="$(command -v certbot || echo /usr/bin/certbot)"
-    openssl_bin="$(command -v openssl || echo /usr/bin/openssl)"
-    systemctl_bin="$(command -v systemctl || echo /bin/systemctl)"
-    mkdir_bin="$(command -v mkdir || echo /bin/mkdir)"
-    test_bin="$(command -v test || echo /usr/bin/test)"
+    nginx_bin="$(resolve_binary nginx /usr/sbin/nginx)"
+    certbot_bin="$(resolve_binary certbot /usr/bin/certbot)"
+    openssl_bin="$(resolve_binary openssl /usr/bin/openssl)"
+    systemctl_bin="$(resolve_binary systemctl /bin/systemctl)"
+    mkdir_bin="$(resolve_binary mkdir /bin/mkdir)"
+    test_bin="$(resolve_binary test /usr/bin/test)"
     webroot=/var/www/letsencrypt
     live=/etc/letsencrypt/live
     hook="systemctl reload nginx"
