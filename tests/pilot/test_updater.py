@@ -94,7 +94,6 @@ def test_swap_in_rolls_back_on_failure(tmp_path: Path) -> None:
     real_rename = updater.os.rename
 
     def flaky_rename(src, dst):
-        # Fail the move-into-place of `pilot` *after* its original was backed up.
         if Path(src).name == "pilot" and Path(src).parent == staging:
             raise OSError("boom")
         return real_rename(src, dst)
@@ -102,7 +101,25 @@ def test_swap_in_rolls_back_on_failure(tmp_path: Path) -> None:
     with patch.object(updater.os, "rename", flaky_rename), pytest.raises(OSError):
         updater._swap_in(root, staging, lambda _m: None)
 
-    assert (root / "pilot" / "old.py").read_text() == "old"  # backed-up original restored
+    assert (root / "pilot" / "old.py").read_text() == "old"
     assert not (root / "pilot" / "new.py").exists()
     assert not root.with_name("pilot.backup").exists()
     assert (root / "benches" / "data.txt").read_text() == "keep me"
+
+
+def test_swap_in_keeps_backup_when_rollback_fails(tmp_path: Path) -> None:
+    root, staging = _make_install(tmp_path)
+    backup = root.with_name("pilot.backup")
+
+    real_rename = updater.os.rename
+
+    def flaky_rename(src, dst):
+        src_path = Path(src)
+        if src_path.name == "pilot" and src_path.parent in (staging, backup):
+            raise OSError("boom")
+        return real_rename(src, dst)
+
+    with patch.object(updater.os, "rename", flaky_rename), pytest.raises(OSError):
+        updater._swap_in(root, staging, lambda _m: None)
+
+    assert (backup / "pilot" / "old.py").read_text() == "old"

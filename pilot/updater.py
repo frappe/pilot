@@ -115,9 +115,7 @@ def _swap_in(root: Path, staging: Path, on_progress: Progress) -> None:
             had_original = target.exists()
             if had_original:
                 os.rename(target, backup / entry.name)
-            # Record before the move-in: if it fails, rollback must still restore
-            # the original we just backed up.
-            swapped.append((entry.name, had_original))
+            swapped.append((entry.name, had_original))  # record before move-in so rollback covers it
             os.rename(entry, target)
     except Exception:
         on_progress("Update failed; rolling back...")
@@ -125,9 +123,9 @@ def _swap_in(root: Path, staging: Path, on_progress: Progress) -> None:
             _remove(root / name)
             if had_original:
                 os.rename(backup / name, root / name)
+        _remove(backup)  # rollback succeeded; a raise above keeps the backup for recovery
         raise
-    finally:
-        _remove(backup)
+    _remove(backup)
 
 
 def _reset_dir(path: Path) -> None:
