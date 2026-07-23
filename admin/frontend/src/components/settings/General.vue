@@ -8,37 +8,60 @@
       :model-value="allowDeveloperMode" :disabled="savingDeveloperMode"
       @update:model-value="toggleAllowDeveloperMode" />
 
-    <div class="flex sm:flex-row sm:justify-between sm:items-center flex-col gap-3">
-      <div>
-        <p class="flex items-center gap-2 font-medium text-ink-gray-8 text-sm">
-          {{ status.current_version || 'Unknown version' }}
-          <span v-if="status.is_dev"
-            class="px-1.5 py-0.5 rounded bg-surface-gray-3 font-normal text-ink-gray-6 text-xs">dev</span>
-        </p>
-        <p class="text-ink-gray-5 text-p-sm">{{ subtitle }}</p>
-      </div>
-      <div v-if="!status.is_dev" class="flex items-center gap-2">
-        <Button class="flex-1 sm:flex-none" variant="subtle" :loading="checking"
-          icon-left="lucide-refresh-cw" @click="check">Check for updates</Button>
-        <Button v-if="updateAvailable" class="flex-1 sm:flex-none" variant="solid" :loading="updating"
-          icon-left="lucide-download" @click="update">Update to {{ latestVersion }}</Button>
+    <div>
+      <p class="mb-2 font-medium text-ink-gray-5 text-xs uppercase tracking-wide">Version</p>
+      <div class="flex justify-between items-center gap-3">
+        <p class="font-medium text-ink-gray-8 text-sm">{{ versionLabel }}</p>
+        <Button variant="subtle" :loading="checking" @click="check">Check updates</Button>
       </div>
     </div>
 
-    <p v-if="status.is_dev" class="text-ink-gray-5 text-p-sm">
-      Development install — update with <code class="text-xs">git pull</code> or
-      <code class="text-xs">bench admin upgrade</code>.
-    </p>
-
-    <pre v-if="log"
-      class="p-3 bg-surface-gray-2 rounded max-h-48 overflow-auto text-ink-gray-7 text-xs whitespace-pre-wrap">{{ log }}</pre>
     <ErrorMessage v-if="error" :message="error" />
+
+    <Dialog v-model="dialogOpen" :options="{ title: 'Update', size: 'md' }">
+      <template #body-content>
+        <div v-if="isDev" class="flex flex-col gap-3">
+          <p class="text-ink-gray-7 text-sm">This is a development install. Update it from a terminal:</p>
+          <pre
+            class="p-3 bg-surface-gray-2 rounded overflow-x-auto text-ink-gray-8 text-xs">git pull
+bench admin build
+bench admin upgrade</pre>
+          <p class="text-ink-gray-5 text-p-sm">The last step restarts the admin service.</p>
+        </div>
+
+        <div v-else-if="updating" class="flex flex-col gap-3">
+          <p class="text-ink-gray-7 text-sm">Updating to {{ latestVersion }}…</p>
+          <pre v-if="log"
+            class="p-3 bg-surface-gray-2 rounded max-h-64 overflow-auto text-ink-gray-7 text-xs whitespace-pre-wrap">{{ log }}</pre>
+        </div>
+
+        <div v-else-if="updateAvailable" class="flex flex-col gap-3">
+          <p class="text-ink-gray-7 text-sm">
+            Version <strong>{{ latestVersion }}</strong> is available. You are on
+            {{ status.current_version || 'an unknown version' }}.
+          </p>
+          <p class="text-ink-gray-5 text-p-sm">
+            Pilot updates itself and restarts the admin service. Your benches keep running.
+          </p>
+        </div>
+
+        <p v-else class="py-4 text-ink-gray-5 text-sm text-center">You are on the latest version.</p>
+
+        <ErrorMessage v-if="dialogError" :message="dialogError" class="mt-3" />
+      </template>
+
+      <template v-if="!isDev && updateAvailable" #actions>
+        <Button variant="solid" class="w-full" :loading="updating" @click="update">
+          Update to {{ latestVersion }}
+        </Button>
+      </template>
+    </Dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { Button, ErrorMessage, Switch, toast } from 'frappe-ui'
+import { Button, Dialog, ErrorMessage, Switch, toast } from 'frappe-ui'
 import { cliUpdatesApi, settingsApi } from '@/api/settings'
 import { tasksApi } from '@/api/tasks'
 import { isTaskActive } from '@/utils/taskFormat'
@@ -47,24 +70,21 @@ const POLL_INTERVAL_MS = 1500
 
 const loading = ref(true)
 const checking = ref(false)
-const checked = ref(false)
 const updating = ref(false)
 const status = ref({ current_version: '', is_dev: true })
 const latestVersion = ref(null)
 const log = ref('')
 const error = ref(null)
+const dialogOpen = ref(false)
+const dialogError = ref(null)
 const allowDeveloperMode = ref(false)
 const savingDeveloperMode = ref(false)
 
-const updateAvailable = computed(() => Boolean(latestVersion.value) && latestVersion.value !== status.value.current_version)
-
-const subtitle = computed(() => {
-  if (status.value.is_dev) return 'Development build'
-  if (updating.value) return 'Updating…'
-  if (updateAvailable.value) return `Update available: ${latestVersion.value}`
-  if (checked.value) return 'You are on the latest version'
-  return 'Released build'
-})
+const isDev = computed(() => status.value.is_dev || !status.value.current_version)
+const versionLabel = computed(() => (isDev.value ? 'Development' : status.value.current_version))
+const updateAvailable = computed(
+  () => Boolean(latestVersion.value) && latestVersion.value !== status.value.current_version,
+)
 
 onMounted(async () => {
   const [versionResult, settingsResult] = await Promise.allSettled([
@@ -95,13 +115,20 @@ async function toggleAllowDeveloperMode(value) {
 
 async function check() {
   if (checking.value) return
+  dialogError.value = null
+  log.value = ''
+  if (isDev.value) {
+    dialogOpen.value = true
+    return
+  }
+
   checking.value = true
   error.value = null
   try {
     const result = await cliUpdatesApi.check()
     status.value = { ...status.value, ...result }
     latestVersion.value = result.latest_version
-    checked.value = true
+    dialogOpen.value = true
   } catch {
     error.value = 'Could not check for updates.'
   } finally {
@@ -112,13 +139,13 @@ async function check() {
 async function update() {
   if (updating.value) return
   updating.value = true
-  error.value = null
+  dialogError.value = null
   log.value = 'Starting update...'
   try {
     const { task_id } = await tasksApi.run('update-cli')
     await pollTask(task_id)
   } catch {
-    error.value = 'Update failed. Check the Tasks view for details.'
+    dialogError.value = 'Update failed. Check the Tasks view for details.'
   } finally {
     updating.value = false
   }
@@ -138,15 +165,21 @@ async function pollTask(taskId) {
     } catch {
       failures += 1
       if (failures >= MAX_CONSECUTIVE_FAILURES) {
-        error.value = 'Lost contact with the admin service after the update. Check the Tasks view.'
+        dialogError.value = 'Lost contact with the admin service after the update. Check the Tasks view.'
         return
       }
       continue
     }
     log.value = (await tasksApi.output(taskId)) || log.value
     if (isTaskActive(task)) continue
-    if (task.status !== 'success') error.value = 'Update did not complete successfully.'
-    else status.value = await cliUpdatesApi.status().catch(() => status.value)
+    if (task.status !== 'success') {
+      dialogError.value = 'Update did not complete successfully.'
+      return
+    }
+    status.value = await cliUpdatesApi.status().catch(() => status.value)
+    latestVersion.value = null
+    dialogOpen.value = false
+    toast.success('Updated successfully')
     return
   }
 }
