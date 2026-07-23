@@ -7,7 +7,7 @@
       <div
         v-for="t in store.tabs"
         :key="t.path"
-        class="group flex min-w-0 flex-shrink-0 cursor-pointer items-center gap-1.5 border-r border-outline-gray-1 pl-3 pr-2 text-xs"
+        class="group flex min-w-0 flex-shrink-0 cursor-pointer items-center gap-2 border-r border-outline-gray-1 pl-3 pr-2 text-sm"
         :class="{
           'bg-panel text-ink-gray-9': t.path === store.activePath && !store.diff,
           'text-ink-gray-6 hover:bg-surface-gray-3': t.path !== store.activePath || store.diff,
@@ -21,7 +21,7 @@
         @touchmove="onTouchMove"
         @touchend="onTouchEnd"
       >
-        <FileIcon :name="t.name" class="h-4 w-4 shrink-0" />
+        <FileIcon :name="t.name" class="ed-lane" />
         <span class="truncate" :class="{ 'text-ink-amber-3': t.dirty, italic: t.preview }">{{ t.name }}</span>
         <span
           class="flex h-6 w-6 items-center justify-center rounded hover:bg-surface-gray-4 sm:h-4 sm:w-4"
@@ -50,14 +50,14 @@
       </button>
       <span
         v-if="dirtyCount && !store.autosave"
-        class="hidden items-center gap-1 text-2xs text-ink-amber-3 sm:flex"
+        class="hidden items-center gap-1 text-xs text-ink-amber-3 sm:flex"
         :title="`${dirtyCount} unsaved file(s)`"
       >
         <span class="h-2 w-2 rounded-full bg-ink-amber-3"></span>
         {{ dirtyCount }} unsaved
       </span>
       <button
-        class="rounded-md px-1.5 py-1 text-2xs"
+        class="rounded-md px-1.5 py-1 text-xs"
         :class="store.autosave ? 'text-ink-green-3' : 'text-ink-gray-5 hover:text-ink-gray-8'"
         :title="store.autosave ? 'Auto-save on' : 'Auto-save off'"
         @click="store.toggleAutosave()"
@@ -65,7 +65,7 @@
         Auto-save
       </button>
       <button
-        class="rounded-md px-1.5 py-1 text-2xs"
+        class="rounded-md px-1.5 py-1 text-xs"
         :class="store.blame ? 'text-ink-green-3' : 'text-ink-gray-5 hover:text-ink-gray-8'"
         :title="store.blame ? 'Blame on' : 'Blame off'"
         @click="store.toggleBlame()"

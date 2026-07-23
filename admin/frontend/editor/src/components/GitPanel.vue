@@ -1,26 +1,14 @@
 <template>
   <div class="flex h-full flex-col">
-    <div
-      class="group flex h-11 shrink-0 items-center justify-between border-b border-outline-gray-1 px-3 sm:h-9 sm:border-b-0">
-      <span class="text-sm font-semibold text-ink-gray-8 sm:text-2xs sm:uppercase sm:tracking-wider sm:text-ink-gray-5">
-        Source Control
-      </span>
-      <div class="flex items-center gap-0.5">
-        <button
-          class="rounded p-1.5 text-ink-gray-6 transition hover:bg-surface-gray-2 sm:p-1 sm:opacity-0 sm:group-hover:opacity-100"
-          title="Refresh" @click="refresh">
-          <span class="lucide-refresh-cw h-[18px] w-[18px] text-current sm:h-3.5 sm:w-3.5"></span>
+    <PanelHeader title="Source Control" @close="emit('close')">
+      <template #actions>
+        <button class="ed-icon-button" title="Refresh" @click="refresh">
+          <span class="lucide-refresh-cw h-4 w-4 text-current"></span>
         </button>
-        <button class="ml-1 rounded p-1.5 text-ink-gray-6 hover:bg-surface-gray-2 sm:hidden" aria-label="Close"
-          @click="emit('close')">
-          <span class="lucide-x h-[18px] w-[18px] text-current"></span>
-        </button>
-      </div>
-    </div>
+      </template>
+    </PanelHeader>
 
-    <div v-if="!git.repo" class="px-3 py-2 text-sm text-ink-gray-4 sm:text-xs">
-      Not a git repository.
-    </div>
+    <div v-if="!git.repo" class="ed-empty">Not a git repository.</div>
 
     <template v-else>
       <div class="px-3 pb-2">
@@ -28,29 +16,28 @@
           <div class="min-w-0 flex-1">
             <Dropdown :options="branchOptions" placement="left">
               <button
-                class="flex w-full items-center gap-1.5 rounded-md border border-outline-gray-2 px-2 py-2 text-sm text-ink-gray-7 hover:bg-surface-gray-2 sm:py-1 sm:text-xs"
+                class="flex h-9 w-full items-center gap-2 rounded-md border border-outline-gray-2 px-2 text-sm text-ink-gray-7 hover:bg-surface-gray-2 sm:h-8"
                 title="Switch branch">
-                <span class="lucide-git-branch h-4 w-4 flex-shrink-0 text-current sm:h-3.5 sm:w-3.5"></span>
-                <span class="min-w-0 truncate font-medium text-ink-gray-8">{{ git.branch }}</span>
-                <span
-                  class="lucide-chevron-down ml-auto h-4 w-4 flex-shrink-0 text-ink-gray-4 sm:h-3.5 sm:w-3.5"></span>
+                <span class="lucide-git-branch ed-lane text-current"></span>
+                <span class="ed-name font-medium text-ink-gray-8">{{ git.branch }}</span>
+                <span class="lucide-chevron-down ed-lane ml-auto text-ink-gray-4"></span>
               </button>
             </Dropdown>
           </div>
-          <div class="flex items-center gap-1">
+          <div class="flex items-center gap-0.5">
             <button
-              class="flex items-center gap-1 rounded px-2 py-1 text-xs text-ink-gray-6 transition hover:bg-surface-gray-2 disabled:cursor-not-allowed disabled:opacity-40"
+              class="ed-icon-button w-auto gap-1 px-1.5 text-xs sm:w-auto"
               :disabled="pulling" title="Pull from remote" @click="pull">
-              <span v-if="pulling" class="lucide-loader-2 h-3.5 w-3.5 animate-spin"></span>
-              <span v-else class="lucide-arrow-down h-3.5 w-3.5"></span>
-              <span v-if="git.behind" class="font-medium">{{ git.behind }}</span>
+              <span v-if="pulling" class="lucide-loader-2 h-4 w-4 animate-spin"></span>
+              <span v-else class="lucide-arrow-down h-4 w-4"></span>
+              <span v-if="git.behind" class="font-medium tabular-nums">{{ git.behind }}</span>
             </button>
             <button
-              class="flex items-center gap-1 rounded px-2 py-1 text-xs text-ink-gray-6 transition hover:bg-surface-gray-2 disabled:cursor-not-allowed disabled:opacity-40"
+              class="ed-icon-button w-auto gap-1 px-1.5 text-xs sm:w-auto"
               :disabled="pushing || (!git.ahead && git.hasUpstream)" title="Push to remote" @click="push">
-              <span v-if="pushing" class="lucide-loader-2 h-3.5 w-3.5 animate-spin"></span>
-              <span v-else class="lucide-arrow-up h-3.5 w-3.5"></span>
-              <span v-if="git.ahead" class="font-medium">{{ git.ahead }}</span>
+              <span v-if="pushing" class="lucide-loader-2 h-4 w-4 animate-spin"></span>
+              <span v-else class="lucide-arrow-up h-4 w-4"></span>
+              <span v-if="git.ahead" class="font-medium tabular-nums">{{ git.ahead }}</span>
             </button>
           </div>
         </div>
@@ -58,7 +45,7 @@
 
       <div class="px-3 pb-2">
         <textarea v-model="message" rows="2" :placeholder="commitPlaceholder"
-          class="w-full resize-none rounded-md border border-outline-gray-2 bg-surface-gray-2 px-2 py-2 text-base text-ink-gray-8 outline-none focus:border-outline-gray-3 sm:py-1 sm:text-sm"
+          class="w-full resize-none rounded-md border border-outline-gray-2 bg-surface-gray-2 px-2 py-1.5 text-sm text-ink-gray-8 outline-none focus:border-outline-gray-3"
           @keydown.ctrl.enter.prevent="commit" @keydown.meta.enter.prevent="commit"></textarea>
         <Button class="mt-1 w-full" variant="solid" icon-left="lucide-check" :disabled="!message.trim() || committing"
           :loading="committing" @click="commit">
@@ -68,107 +55,84 @@
 
       <div class="min-h-0 flex-1 overflow-auto pb-24 sm:pb-2">
         <!-- staged -->
-        <div v-if="git.staged.length" class="group/sec flex items-center px-3 pb-1 pt-2 sm:pt-1.5">
-          <span class="text-xs uppercase tracking-wider text-ink-gray-4 sm:text-2xs">
-            Staged Changes: {{ git.staged.length }}
-          </span>
+        <div v-if="git.staged.length" class="group/sec ed-section">
+          <span>Staged Changes</span>
+          <span class="tabular-nums">{{ git.staged.length }}</span>
           <button
-            class="ml-auto rounded p-1.5 text-ink-gray-5 opacity-100 transition hover:bg-surface-gray-2 sm:p-0.5 sm:opacity-0 sm:group-hover/sec:opacity-100"
+            class="ed-icon-button ml-auto transition sm:opacity-0 sm:group-hover/sec:opacity-100"
             title="Unstage all" @click="unstageAll">
-            <span class="lucide-minus h-4 w-4 text-current sm:h-3.5 sm:w-3.5"></span>
+            <span class="lucide-minus h-4 w-4 text-current"></span>
           </button>
         </div>
         <div class="px-1.5">
-          <div v-for="f in git.staged" :key="'s' + f.path"
-            class="group/row flex cursor-pointer items-center gap-1.5 rounded-md py-2 pl-1.5 pr-2 text-sm hover:bg-surface-gray-2 sm:py-1"
-            :title="f.path" @click="editor.openDiff(f.path, true)">
-            <FileIcon :name="baseName(f.path)" class="h-4 w-4" />
-            <span class="truncate text-ink-gray-7">{{ baseName(f.path) }}</span>
-            <span class="truncate text-xs text-ink-gray-4 sm:text-2xs">{{ dirName(f.path) }}</span>
-            <div class="ml-auto flex items-center gap-1">
-              <button
-                class="rounded p-1.5 text-ink-gray-5 opacity-100 transition hover:bg-surface-gray-3 sm:p-0.5 sm:opacity-0 sm:group-hover/row:opacity-100"
-                title="Unstage" @click.stop="unstage(f.path)">
-                <span class="lucide-minus h-4 w-4 text-current sm:h-3.5 sm:w-3.5"></span>
-              </button>
-              <span class="w-3 text-center text-xs font-semibold sm:text-2xs" :class="statusColor(f.code)">{{
-                letter(f.code) }}</span>
-            </div>
+          <div v-for="f in git.staged" :key="'s' + f.path" class="group/row ed-row" :title="f.path"
+            @click="editor.openDiff(f.path, true)">
+            <FileIcon :name="baseName(f.path)" class="ed-lane" />
+            <span class="ed-name">{{ baseName(f.path) }}</span>
+            <span class="ed-path">{{ dirName(f.path) }}</span>
+            <button
+              class="ed-icon-button ml-auto transition sm:opacity-0 sm:group-hover/row:opacity-100"
+              title="Unstage" @click.stop="unstage(f.path)">
+              <span class="lucide-minus h-4 w-4 text-current"></span>
+            </button>
+            <span class="ed-lane text-xs font-semibold" :class="statusColor(f.code)">{{ letter(f.code) }}</span>
           </div>
         </div>
 
         <!-- unstaged -->
-        <div class="group/sec flex items-center px-3 pb-1 pt-3 sm:pt-2">
-          <span class="text-xs uppercase tracking-wider text-ink-gray-4 sm:text-2xs">
-            Changes: {{ git.unstaged.length }}
-          </span>
+        <div class="group/sec ed-section">
+          <span>Changes</span>
+          <span class="tabular-nums">{{ git.unstaged.length }}</span>
           <button v-if="git.unstaged.length"
-            class="ml-auto rounded p-1.5 text-ink-gray-5 opacity-100 transition hover:bg-surface-gray-2 sm:p-0.5 sm:opacity-0 sm:group-hover/sec:opacity-100"
+            class="ed-icon-button ml-auto transition sm:opacity-0 sm:group-hover/sec:opacity-100"
             title="Stage all" @click="stageAll">
-            <span class="lucide-plus h-4 w-4 text-current sm:h-3.5 sm:w-3.5"></span>
+            <span class="lucide-plus h-4 w-4 text-current"></span>
           </button>
         </div>
         <div class="px-1.5">
-          <div v-for="f in git.unstaged" :key="'u' + f.path"
-            class="group/row flex cursor-pointer items-center gap-1.5 rounded-md py-2 pl-1.5 pr-2 text-sm hover:bg-surface-gray-2 sm:py-1"
-            :title="f.path" @click="editor.openDiff(f.path, false)">
-            <FileIcon :name="baseName(f.path)" class="h-4 w-4" />
-            <span class="truncate text-ink-gray-7">{{ baseName(f.path) }}</span>
-            <span class="truncate text-xs text-ink-gray-4 sm:text-2xs">{{ dirName(f.path) }}</span>
-            <div class="ml-auto flex items-center gap-1">
-              <button
-                class="rounded p-1.5 text-ink-gray-5 opacity-100 transition hover:bg-surface-gray-3 sm:p-0.5 sm:opacity-0 sm:group-hover/row:opacity-100"
-                title="Discard changes" @click.stop="discard(f.path)">
-                <span class="lucide-rotate-ccw h-4 w-4 text-current sm:h-3.5 sm:w-3.5"></span>
+          <div v-for="f in git.unstaged" :key="'u' + f.path" class="group/row ed-row" :title="f.path"
+            @click="editor.openDiff(f.path, false)">
+            <FileIcon :name="baseName(f.path)" class="ed-lane" />
+            <span class="ed-name">{{ baseName(f.path) }}</span>
+            <span class="ed-path">{{ dirName(f.path) }}</span>
+            <div class="ml-auto flex items-center transition sm:opacity-0 sm:group-hover/row:opacity-100">
+              <button class="ed-icon-button" title="Discard changes" @click.stop="discard(f.path)">
+                <span class="lucide-rotate-ccw h-4 w-4 text-current"></span>
               </button>
-              <button
-                class="rounded p-1.5 text-ink-gray-5 opacity-100 transition hover:bg-surface-gray-3 sm:p-0.5 sm:opacity-0 sm:group-hover/row:opacity-100"
-                title="Stage" @click.stop="stage(f.path)">
-                <span class="lucide-plus h-4 w-4 text-current sm:h-3.5 sm:w-3.5"></span>
+              <button class="ed-icon-button" title="Stage" @click.stop="stage(f.path)">
+                <span class="lucide-plus h-4 w-4 text-current"></span>
               </button>
-              <span class="w-3 text-center text-xs font-semibold sm:text-2xs" :class="statusColor(f.code)">{{
-                letter(f.code) }}</span>
             </div>
+            <span class="ed-lane text-xs font-semibold" :class="statusColor(f.code)">{{ letter(f.code) }}</span>
           </div>
-          <div v-if="!git.staged.length && !git.unstaged.length" class="px-2 py-2 text-sm text-ink-gray-4 sm:text-xs">
-            No changes.
-          </div>
+          <div v-if="!git.staged.length && !git.unstaged.length" class="ed-empty">No changes.</div>
         </div>
 
         <!-- commit history -->
-        <button
-          class="flex w-full items-center gap-1 px-3 pb-1 pt-4 text-xs uppercase tracking-wider text-ink-gray-4 hover:text-ink-gray-6 sm:pt-3 sm:text-2xs"
-          @click="toggleHistory"
-        >
-          <span
-            class="lucide-chevron-right h-3.5 w-3.5 transition-transform"
-            :class="{ 'rotate-90': showHistory }"
-          ></span>
+        <button class="ed-section w-full hover:text-ink-gray-7" @click="toggleHistory">
+          <span class="lucide-chevron-right h-3.5 w-3.5 transition-transform" :class="{ 'rotate-90': showHistory }">
+          </span>
           Commits
         </button>
         <div v-if="showHistory" class="px-1.5">
           <div
             v-for="c in commits"
             :key="c.sha"
-            class="group/row flex cursor-pointer items-start gap-2 rounded-md py-2 pl-2 pr-2 text-sm hover:bg-surface-gray-2 sm:py-1.5"
+            class="ed-row h-auto py-1.5"
             :title="c.subject"
             @click="editor.openCommit(c.sha)"
           >
-            <span class="lucide-git-commit-horizontal mt-0.5 h-4 w-4 shrink-0 text-ink-gray-4 sm:h-3.5 sm:w-3.5"></span>
+            <span class="lucide-git-commit-horizontal ed-lane self-start text-ink-gray-4"></span>
             <div class="min-w-0 flex-1">
-              <div class="truncate text-ink-gray-7">{{ c.subject }}</div>
-              <div class="truncate text-xs text-ink-gray-4 sm:text-2xs">
-                {{ c.author }} · {{ relTime(c.time) }}
-              </div>
+              <div class="ed-name">{{ c.subject }}</div>
+              <div class="ed-path">{{ c.author }} · {{ relTime(c.time) }}</div>
             </div>
-            <code class="shrink-0 text-2xs text-ink-gray-4">{{ c.short }}</code>
+            <code class="ed-meta font-mono">{{ c.short }}</code>
           </div>
-          <div v-if="!commits.length && !loadingCommits" class="px-2 py-2 text-sm text-ink-gray-4 sm:text-xs">
-            No commits yet.
-          </div>
+          <div v-if="!commits.length && !loadingCommits" class="ed-empty">No commits yet.</div>
           <button
             v-if="moreCommits"
-            class="w-full rounded-md py-2 text-xs text-ink-gray-5 hover:bg-surface-gray-2 sm:py-1"
+            class="ed-row w-full justify-center text-xs text-ink-gray-5"
             :disabled="loadingCommits"
             @click="loadCommits(false)"
           >
@@ -184,6 +148,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { Button, Dropdown, confirmDialog, toast } from 'frappe-ui'
 import FileIcon from '@/components/FileIcon.vue'
+import PanelHeader from '@/components/ui/PanelHeader.vue'
 import { gitApi } from '@/api/git'
 import { useEditorStore } from '@/stores/editor'
 import { useGitStore } from '@/stores/git'

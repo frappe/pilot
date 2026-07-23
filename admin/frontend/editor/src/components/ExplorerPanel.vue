@@ -1,29 +1,18 @@
 <template>
   <div class="flex h-full flex-col">
-    <div
-      class="group flex h-11 shrink-0 items-center justify-between border-b border-outline-gray-1 px-3 sm:h-9 sm:border-b-0"
-      @contextmenu="onRootContext"
-    >
-      <span class="text-sm font-semibold text-ink-gray-8 sm:text-2xs sm:uppercase sm:tracking-wider sm:text-ink-gray-5">
-        Explorer
-      </span>
-      <div class="flex items-center gap-0.5">
-        <div class="flex items-center gap-0.5 transition sm:opacity-0 sm:group-hover:opacity-100">
-          <button class="rounded p-1.5 text-ink-gray-6 hover:bg-surface-gray-2 sm:p-1" title="New file" @click="ops.newFile('')">
-            <span class="lucide-file-plus h-[18px] w-[18px] text-current sm:h-3.5 sm:w-3.5"></span>
-          </button>
-          <button class="rounded p-1.5 text-ink-gray-6 hover:bg-surface-gray-2 sm:p-1" title="New folder" @click="ops.newFolder('')">
-            <span class="lucide-folder-plus h-[18px] w-[18px] text-current sm:h-3.5 sm:w-3.5"></span>
-          </button>
-          <button class="rounded p-1.5 text-ink-gray-6 hover:bg-surface-gray-2 sm:p-1" title="Refresh" @click="refresh">
-            <span class="lucide-refresh-cw h-[18px] w-[18px] text-current sm:h-3.5 sm:w-3.5"></span>
-          </button>
-        </div>
-        <button class="ml-1 rounded p-1.5 text-ink-gray-6 hover:bg-surface-gray-2 sm:hidden" aria-label="Close" @click="emit('close')">
-          <span class="lucide-x h-[18px] w-[18px] text-current"></span>
+    <PanelHeader title="Explorer" @close="emit('close')" @contextmenu="onRootContext">
+      <template #actions>
+        <button class="ed-icon-button" title="New file" @click="ops.newFile('')">
+          <span class="lucide-file-plus h-4 w-4 text-current"></span>
         </button>
-      </div>
-    </div>
+        <button class="ed-icon-button" title="New folder" @click="ops.newFolder('')">
+          <span class="lucide-folder-plus h-4 w-4 text-current"></span>
+        </button>
+        <button class="ed-icon-button" title="Refresh" @click="refresh">
+          <span class="lucide-refresh-cw h-4 w-4 text-current"></span>
+        </button>
+      </template>
+    </PanelHeader>
 
     <div
       ref="scroller"
@@ -37,8 +26,8 @@
       @dragleave="rootDragOver = false"
       @drop="onRootDrop"
     >
-      <div v-if="root.loading && !root.loaded" class="flex items-center gap-2 p-2 text-xs text-ink-gray-4">
-        <Spinner class="h-3 w-3" /> loading
+      <div v-if="root.loading && !root.loaded" class="ed-empty flex items-center justify-center gap-2">
+        <Spinner class="h-3 w-3" /> Loading…
       </div>
       <TreeInput
         v-if="tree.draft?.parent === ''"
@@ -54,6 +43,7 @@
 <script setup>
 import { computed, onMounted, ref, nextTick, watch } from 'vue'
 import { Spinner, toast } from 'frappe-ui'
+import PanelHeader from '@/components/ui/PanelHeader.vue'
 import TreeNode from '@/components/TreeNode.vue'
 import TreeInput from '@/components/TreeInput.vue'
 import { useTreeStore, parentOf } from '@/stores/tree'

@@ -1,17 +1,17 @@
 <template>
-  <div class="flex items-center gap-1.5 py-2 px-1.5 sm:py-1">
-    <span class="w-5 shrink-0 sm:w-3.5" />
+  <div class="ed-row cursor-default hover:bg-transparent">
+    <span class="ed-lane" />
     <FileIcon
       :name="type === 'dir' ? '' : val || 'new.txt'"
       :dir="type === 'dir'"
-      class="h-5 w-5 shrink-0 sm:h-4 sm:w-4"
+      class="ed-lane"
     />
     <input
       ref="el"
       v-model="val"
       spellcheck="false"
       autocomplete="off"
-      class="min-w-0 flex-1 rounded border border-outline-gray-3 bg-surface-white px-1 py-1 text-base text-ink-gray-8 outline-none focus:border-outline-gray-4 sm:py-px sm:text-sm"
+      class="min-w-0 flex-1 rounded border border-outline-gray-3 bg-surface-white px-1 py-0.5 text-sm text-ink-gray-8 outline-none focus:border-outline-gray-4"
       @keydown.enter.prevent="commit"
       @keydown.esc.prevent="$emit('cancel')"
       @blur="commit"

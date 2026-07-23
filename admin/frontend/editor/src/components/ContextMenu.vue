@@ -13,11 +13,11 @@
       <button
         v-for="(it, i) in state.items"
         :key="i"
-        class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-ink-gray-7 hover:bg-surface-gray-2"
+        class="flex h-8 w-full items-center gap-2 px-3 text-left text-sm text-ink-gray-7 hover:bg-surface-gray-2"
         :class="{ 'text-ink-red-4 hover:bg-surface-red-1': it.danger }"
         @click="run(it)"
       >
-        <span v-if="it.icon" :class="it.icon" class="h-3.5 w-3.5 text-current"></span>
+        <span v-if="it.icon" :class="it.icon" class="ed-lane text-current"></span>
         <span>{{ it.label }}</span>
       </button>
     </div>
@@ -31,15 +31,15 @@
       <button
         v-for="(it, i) in state.items"
         :key="i"
-        class="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-base text-ink-gray-7 active:bg-surface-gray-2"
+        class="flex h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm text-ink-gray-7 active:bg-surface-gray-2"
         :class="{ 'text-ink-red-4': it.danger }"
         @click="run(it)"
       >
-        <span v-if="it.icon" :class="it.icon" class="h-5 w-5 text-current"></span>
+        <span v-if="it.icon" :class="it.icon" class="ed-lane text-current"></span>
         <span>{{ it.label }}</span>
       </button>
       <button
-        class="mt-2 flex w-full items-center justify-center rounded-lg bg-surface-gray-2 px-3 py-3 text-base text-ink-gray-7"
+        class="mt-2 flex h-11 w-full items-center justify-center rounded-lg bg-surface-gray-2 px-3 text-sm text-ink-gray-7"
         @click="close"
       >
         Cancel

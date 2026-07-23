@@ -11,11 +11,9 @@
     <div
       v-else
       :data-path="entry.path"
-      class="group/row relative flex cursor-pointer select-none items-center gap-1.5 rounded-md p-1.5 text-sm leading-tight sm:py-1"
+      class="group/row ed-row relative"
       :class="{
         'text-ink-gray-9': active,
-        'text-ink-gray-7': !active,
-        'hover:bg-surface-gray-2': true,
         'ring-1 ring-inset ring-outline-gray-3': focused,
         'ring-1 ring-inset ring-outline-gray-4 bg-surface-gray-2': dragOver,
         'opacity-50': entry.ignored,
@@ -40,21 +38,12 @@
       <span
         v-if="isDir"
         :class="node.expanded ? 'lucide-chevron-down' : 'lucide-chevron-right'"
-        class="h-4 w-4 shrink-0 text-ink-gray-4 sm:h-3.5 sm:w-3.5"
+        class="ed-lane text-ink-gray-4"
       ></span>
-      <span v-else class="w-4 shrink-0 sm:w-3.5"></span>
-      <FileIcon
-        :name="entry.name"
-        :dir="isDir"
-        :open="isDir && node.expanded"
-        class="h-4 w-4 shrink-0"
-      />
-      <span class="truncate" :class="statusColor">{{ entry.name }}</span>
-      <span class="ml-auto flex items-center gap-1 pl-1">
-        <span v-if="status" class="text-2xs font-semibold" :class="statusColor">
-          {{ status }}
-        </span>
-      </span>
+      <span v-else class="ed-lane"></span>
+      <FileIcon :name="entry.name" :dir="isDir" :open="isDir && node.expanded" class="ed-lane" />
+      <span class="ed-name" :class="statusColor">{{ entry.name }}</span>
+      <span class="ed-lane ml-auto text-xs font-semibold" :class="statusColor">{{ status }}</span>
     </div>
 
     <div v-if="isDir && node.expanded" class="ml-[15px] border-l border-outline-gray-1">
@@ -64,11 +53,8 @@
         @commit="tree.commitDraft"
         @cancel="tree.cancelDraft"
       />
-      <div
-        v-if="node.loading"
-        class="flex items-center gap-1.5 py-2 pl-2 text-xs text-ink-gray-4 sm:py-1"
-      >
-        <Spinner class="h-3 w-3" /> loading
+      <div v-if="node.loading" class="ed-row cursor-default gap-2 text-xs hover:bg-transparent">
+        <Spinner class="h-3 w-3" /> Loading…
       </div>
       <TreeNode v-for="c in node.children" :key="c.path" :entry="c" />
     </div>

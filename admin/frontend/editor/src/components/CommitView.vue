@@ -5,23 +5,19 @@
       v-show="!isMobile || !selectedPath"
       class="flex min-h-0 w-full flex-col sm:w-72 sm:shrink-0 sm:border-r sm:border-outline-gray-1"
     >
-      <div class="flex items-center gap-2 border-b border-outline-gray-1 px-2 py-2 sm:py-1.5">
-        <button
-          class="rounded p-2 text-ink-gray-5 hover:bg-surface-gray-2 hover:text-ink-gray-8 sm:p-1"
-          title="Back"
-          @click="goBack"
-        >
-          <span class="lucide-chevron-left h-5 w-5 text-current sm:hidden"></span>
+      <div class="flex h-11 shrink-0 items-center gap-2 border-b border-outline-gray-1 px-2 sm:h-9">
+        <button class="ed-icon-button" title="Back" @click="goBack">
+          <span class="lucide-chevron-left h-[18px] w-[18px] text-current sm:hidden"></span>
           <span class="lucide-x hidden h-4 w-4 text-current sm:block"></span>
         </button>
-        <span class="lucide-git-commit-horizontal h-4 w-4 shrink-0 text-ink-gray-5"></span>
-        <span class="truncate text-sm font-medium text-ink-gray-8">{{ info?.subject || 'Commit' }}</span>
+        <span class="lucide-git-commit-horizontal ed-lane text-ink-gray-5"></span>
+        <span class="ed-name font-medium text-ink-gray-8">{{ info?.subject || 'Commit' }}</span>
       </div>
 
       <div class="min-h-0 flex-1 overflow-auto pb-24 sm:pb-2">
-        <div v-if="loadingInfo" class="p-4 text-xs text-ink-gray-4">loading…</div>
+        <div v-if="loadingInfo" class="ed-empty">Loading…</div>
 
-        <div v-else-if="!info" class="p-4 text-xs text-ink-gray-4">Commit unavailable.</div>
+        <div v-else-if="!info" class="ed-empty">Commit unavailable.</div>
 
         <template v-else>
           <div class="border-b border-outline-gray-1 px-3 py-3">
@@ -39,26 +35,26 @@
             <p v-if="info.body" class="mt-2 whitespace-pre-wrap text-sm text-ink-gray-7">{{ info.body }}</p>
           </div>
 
-          <div class="px-3 pb-1 pt-3 text-xs uppercase tracking-wider text-ink-gray-4 sm:text-2xs">
+          <div class="ed-section">
             {{ info.files.length }} {{ info.files.length === 1 ? 'file changed' : 'files changed' }}
           </div>
           <div class="px-1.5">
             <div
               v-for="f in info.files"
               :key="f.path"
-              class="group/row flex cursor-pointer items-center gap-1.5 rounded-md py-2 pl-1.5 pr-2 text-sm hover:bg-surface-gray-2 sm:py-1"
-              :class="{ 'bg-surface-gray-2': !isMobile && f.path === selectedPath }"
+              class="ed-row"
+              :class="{ 'ed-row-selected': !isMobile && f.path === selectedPath }"
               :title="f.path"
               @click="selectFile(f.path)"
             >
-              <FileIcon :name="baseName(f.path)" class="h-4 w-4" />
-              <span class="truncate text-ink-gray-7">{{ baseName(f.path) }}</span>
-              <span class="truncate text-xs text-ink-gray-4 sm:text-2xs">{{ dirName(f.path) }}</span>
-              <span class="ml-auto w-3 text-center text-xs font-semibold sm:text-2xs" :class="statusColor(f.code)">
+              <FileIcon :name="baseName(f.path)" class="ed-lane" />
+              <span class="ed-name">{{ baseName(f.path) }}</span>
+              <span class="ed-path">{{ dirName(f.path) }}</span>
+              <span class="ed-lane ml-auto text-xs font-semibold" :class="statusColor(f.code)">
                 {{ letter(f.code) }}
               </span>
             </div>
-            <div v-if="!info.files.length" class="px-2 py-2 text-sm text-ink-gray-4 sm:text-xs">No file changes.</div>
+            <div v-if="!info.files.length" class="ed-empty">No file changes.</div>
           </div>
         </template>
       </div>
@@ -66,31 +62,23 @@
 
     <!-- diff; on mobile this is the second page, shown only when a file is open -->
     <div v-show="!isMobile || selectedPath" class="flex min-h-0 w-full flex-1 flex-col">
-      <div v-if="selectedPath" class="flex items-center gap-2 border-b border-outline-gray-1 px-2 py-2 sm:py-1.5">
-        <button
-          class="rounded p-2 text-ink-gray-5 hover:bg-surface-gray-2 hover:text-ink-gray-8 sm:hidden"
-          title="Back"
-          @click="backToFiles"
-        >
-          <span class="lucide-chevron-left h-5 w-5 text-current"></span>
+      <div v-if="selectedPath" class="flex h-11 shrink-0 items-center gap-2 border-b border-outline-gray-1 px-2 sm:h-9">
+        <button class="ed-icon-button sm:hidden" title="Back" @click="backToFiles">
+          <span class="lucide-chevron-left h-[18px] w-[18px] text-current"></span>
         </button>
-        <FileIcon :name="baseName(selectedPath)" class="h-4 w-4 shrink-0" />
-        <span class="truncate text-sm font-medium text-ink-gray-8">{{ baseName(selectedPath) }}</span>
-        <span class="hidden truncate text-2xs text-ink-gray-4 sm:inline">{{ dirName(selectedPath) }}</span>
-        <button
-          class="ml-auto rounded p-2 text-ink-gray-5 hover:bg-surface-gray-2 hover:text-ink-gray-8 sm:p-1"
-          title="Open file"
-          @click="openFile"
-        >
-          <span class="lucide-external-link h-5 w-5 text-current sm:h-3.5 sm:w-3.5"></span>
+        <FileIcon :name="baseName(selectedPath)" class="ed-lane" />
+        <span class="ed-name font-medium text-ink-gray-8">{{ baseName(selectedPath) }}</span>
+        <span class="ed-path hidden sm:inline">{{ dirName(selectedPath) }}</span>
+        <button class="ed-icon-button ml-auto" title="Open file" @click="openFile">
+          <span class="lucide-external-link h-4 w-4 text-current"></span>
         </button>
       </div>
 
       <div class="min-h-0 flex-1 overflow-auto pb-24 sm:pb-2">
-        <div v-if="!selectedPath" class="hidden h-full items-center justify-center p-6 text-sm text-ink-gray-4 sm:flex">
+        <div v-if="!selectedPath" class="ed-empty hidden h-full items-center justify-center sm:flex">
           Select a file to view its changes.
         </div>
-        <div v-else-if="loadingDiff" class="p-4 text-xs text-ink-gray-4">loading…</div>
+        <div v-else-if="loadingDiff" class="ed-empty">Loading…</div>
         <DiffEditor v-else :original="diff.old" :modified="diff.new" :path="selectedPath" />
       </div>
     </div>
