@@ -204,6 +204,8 @@ class ConfigPatcher:
             llm_config.provider = str(llm["provider"]).strip()
         if "model" in llm:
             llm_config.model = str(llm["model"]).strip()
+        if "api_base" in llm:
+            llm_config.api_base = str(llm["api_base"]).strip()
         api_key = str(llm.get("api_key", "")).strip()
         if api_key:
             llm_config.api_key = api_key
@@ -213,8 +215,12 @@ class ConfigPatcher:
 
     @staticmethod
     def _validate_llm_provider(llm_config: LLMConfig) -> str | None:
-        from pilot.integrations.llm.registry import INTEGRATIONS
+        from pilot.integrations.llm.registry import INTEGRATIONS, SELF_HOSTED_PROVIDERS
 
-        if llm_config.provider and llm_config.provider not in INTEGRATIONS:
+        if not llm_config.provider:
+            return None
+        if llm_config.provider not in INTEGRATIONS:
             return f"llm.provider must be one of: {', '.join(INTEGRATIONS)}"
+        if llm_config.provider in SELF_HOSTED_PROVIDERS and not llm_config.api_base:
+            return "llm.api_base is required for a self-hosted provider."
         return None

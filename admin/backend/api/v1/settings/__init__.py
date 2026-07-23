@@ -126,10 +126,15 @@ def s3_provider_options() -> list[dict]:
 
 
 def llm_provider_options() -> list[dict]:
-    from pilot.integrations.llm.registry import INTEGRATIONS, PROVIDER_LABELS
+    from pilot.integrations.llm.registry import INTEGRATIONS, PROVIDER_LABELS, SELF_HOSTED_PROVIDERS
 
     return [
-        {"value": provider, "label": PROVIDER_LABELS[provider], "default_model": integration.default_model}
+        {
+            "value": provider,
+            "label": PROVIDER_LABELS[provider],
+            "default_model": integration.default_model,
+            "self_hosted": provider in SELF_HOSTED_PROVIDERS,
+        }
         for provider, integration in INTEGRATIONS.items()
     ]
 
