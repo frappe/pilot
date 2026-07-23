@@ -82,15 +82,76 @@ def test_save_writes_with_wildcard_etag(tmp_path: Path) -> None:
     assert (bench_root / "apps" / "widgets" / "sub" / "new.txt").read_text() == "data"
 
 
-def test_path_traversal_is_neutralized(tmp_path: Path) -> None:
+def test_path_traversal_is_rejected(tmp_path: Path) -> None:
     bench_root = _bench(tmp_path)
     (bench_root / "secret.txt").write_text("top secret")
     client = _client(bench_root)
     response = client.get(
         "/api/v1/editor/file", query_string={"app": "widgets", "path": "../../secret.txt"}
     )
-    # ".." is collapsed to the root, so it maps to a nonexistent in-app file.
-    assert response.status_code == 404
+    assert response.status_code == 400
+    assert response.get_json()["error"]["code"] == "invalid_path"
+
+
+def test_absolute_path_is_rejected(tmp_path: Path) -> None:
+    bench_root = _bench(tmp_path)
+    (bench_root / "secret.txt").write_text("top secret")
+    client = _client(bench_root)
+    for path in ("/etc/passwd", str(bench_root / "secret.txt")):
+        response = client.get(
+            "/api/v1/editor/file", query_string={"app": "widgets", "path": path}
+        )
+        assert response.status_code == 400, path
+        assert response.get_json()["error"]["code"] == "invalid_path"
+
+
+def test_write_routes_reject_escaping_paths(tmp_path: Path) -> None:
+    bench_root = _bench(tmp_path)
+    client = _client(bench_root)
+    calls = [
+        client.put(
+            "/api/v1/editor/file",
+            query_string={"app": "widgets", "path": "/tmp/pwned.txt"},
+            json={"content": "x"},
+        ),
+        client.post(
+            "/api/v1/editor/create",
+            query_string={"app": "widgets"},
+            json={"path": "../pwned.txt", "type": "file"},
+        ),
+        client.post(
+            "/api/v1/editor/rename",
+            query_string={"app": "widgets"},
+            json={"from": "hello.py", "to": "../pwned.py"},
+        ),
+        client.delete(
+            "/api/v1/editor/delete", query_string={"app": "widgets", "path": "../../secret.txt"}
+        ),
+        client.post(
+            "/api/v1/editor/replace",
+            query_string={"app": "widgets"},
+            json={"query": "hi", "replace": "bye", "files": ["../../secret.txt"]},
+        ),
+    ]
+    assert [r.status_code for r in calls] == [400] * len(calls)
+    assert not (tmp_path / "pwned.txt").exists()
+    assert (bench_root / "apps" / "widgets" / "hello.py").exists()
+
+
+def test_git_routes_reject_escaping_paths(tmp_path: Path) -> None:
+    client = _client(_bench(tmp_path))
+    for route in ("git/blame", "git/diff", "git/show"):
+        response = client.get(
+            f"/api/v1/editor/{route}", query_string={"app": "widgets", "path": "../../secret.txt"}
+        )
+        assert response.status_code == 400, route
+    for route in ("git/stage", "git/unstage", "git/discard"):
+        response = client.post(
+            f"/api/v1/editor/{route}",
+            query_string={"app": "widgets"},
+            json={"path": "/etc/passwd"},
+        )
+        assert response.status_code == 400, route
 
 
 def test_symlink_escape_is_rejected(tmp_path: Path) -> None:

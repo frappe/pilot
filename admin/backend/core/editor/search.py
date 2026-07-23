@@ -73,10 +73,10 @@ def replace(workspace, query: str, replacement: str, regex: bool, case: bool, wo
 
     changed = 0
     for name in files:
+        target = workspace.safe(name)
         try:
-            target = workspace.safe(name)
             src = target.read_text("utf-8")
-        except (ValueError, OSError, UnicodeDecodeError):
+        except (OSError, UnicodeDecodeError):
             continue
         try:
             out = subprocess.run(

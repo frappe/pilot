@@ -15,19 +15,19 @@ def git_status(ws):
 @editor_bp.get("/git/blame")
 @with_workspace
 def git_blame(ws):
-    return jsonify({"lines": ws.git.blame(ws.rel(ws.safe(request.args.get("path", ""))))})
+    return jsonify({"lines": ws.git.blame(ws.relative(request.args.get("path", "")))})
 
 
 @editor_bp.get("/git/diff")
 @with_workspace
 def git_diff(ws):
-    return jsonify(ws.git.diff_gutters(ws.rel(ws.safe(request.args.get("path", "")))))
+    return jsonify(ws.git.diff_gutters(ws.relative(request.args.get("path", ""))))
 
 
 @editor_bp.get("/git/show")
 @with_workspace
 def git_show(ws):
-    return jsonify({"content": ws.git.show_head(ws.rel(ws.safe(request.args.get("path", ""))))})
+    return jsonify({"content": ws.git.show_head(ws.relative(request.args.get("path", "")))})
 
 
 @editor_bp.get("/git/branches")
@@ -82,7 +82,7 @@ def git_commit_diff(ws):
     sha = request.args.get("sha", "")
     if not ws.git.is_sha(sha):
         return error_response("bad_request", "Invalid commit sha.", 400)
-    rel = ws.rel(ws.safe(request.args.get("path", "")))
+    rel = ws.relative(request.args.get("path", ""))
     return jsonify(ws.git.commit_file(sha, rel))
 
 
@@ -104,7 +104,7 @@ def git_discard(ws):
     path = (json_body().get("path") or "").strip()
     if not path:
         return error_response("bad_request", "Path is required.", 400)
-    return _git_result(*ws.git.discard(ws, ws.rel(ws.safe(path))))
+    return _git_result(*ws.git.discard(ws, ws.relative(path)))
 
 
 @editor_bp.post("/git/push")
@@ -123,7 +123,7 @@ def _git_path_op(ws, op):
     path = (json_body().get("path") or "").strip()
     if not path:
         return error_response("bad_request", "Path is required.", 400)
-    return _git_result(*op(ws.rel(ws.safe(path))))
+    return _git_result(*op(ws.relative(path)))
 
 
 def _git_result(ok: bool, message: str):

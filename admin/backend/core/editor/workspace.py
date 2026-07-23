@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import posixpath
 import shutil
 from pathlib import Path
 
@@ -29,12 +28,16 @@ class EditorWorkspace:
 
     def safe(self, rel: str) -> Path:
         """Resolve a client path against the root, rejecting traversal and symlink escapes."""
-        clean = posixpath.normpath("/" + (rel or "").strip()).lstrip("/")
+        clean = _clean_relative(rel)
         target = self.root / clean if clean else self.root
         resolved = target.resolve()
         if resolved != self.root_real and self.root_real not in resolved.parents:
             raise EditorPathError(rel)
         return target
+
+    def relative(self, rel: str) -> str:
+        """Validated in-app path, as git and the API expect to see it."""
+        return self.rel(self.safe(rel))
 
     def rel(self, abs_path: Path) -> str:
         if abs_path == self.root:
@@ -134,6 +137,24 @@ class EditorWorkspace:
                 if len(out) >= _FILE_LIST_CAP:
                     return out
         return out
+
+
+def _clean_relative(rel: str) -> str:
+    """Normalize a client path to an in-app relative path.
+
+    Absolute paths and ".." are rejected rather than collapsed: a request that
+    tries to leave the app should fail, not silently land on a different file.
+    """
+    text = (rel or "").strip()
+    if "\x00" in text or text.startswith("/"):
+        raise EditorPathError(rel)
+    segments = []
+    for segment in text.split("/"):
+        if segment == "..":
+            raise EditorPathError(rel)
+        if segment not in ("", "."):
+            segments.append(segment)
+    return "/".join(segments)
 
 
 def _etag(data: bytes) -> str:
