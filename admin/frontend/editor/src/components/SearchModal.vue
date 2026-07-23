@@ -228,7 +228,7 @@ function choose() {
   if (!c) return
   close()
   editor.closeDiff()
-  editor.open(c.file, c.line, (c.start || 0) + 1).catch(() => {})
+  editor.open(c.file, { line: c.line, col: (c.start || 0) + 1, preview: true }).catch(() => {})
 }
 
 async function loadPreview() {

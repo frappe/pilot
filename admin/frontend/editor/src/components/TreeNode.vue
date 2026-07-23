@@ -22,6 +22,7 @@
       }"
       draggable="true"
       @click="onClick"
+      @dblclick="onDblClick"
       @contextmenu.stop="onContext"
       @touchstart="onTouchStart"
       @touchend="onTouchEnd"
@@ -130,13 +131,19 @@ async function onClick() {
   }
   tree.focusPath = props.entry.path
   if (isDir.value) tree.toggle(props.entry.path)
-  else {
-    try {
-      editor.closeDiff()
-      await editor.open(props.entry.path)
-    } catch (e) {
-      alert(e.message)
-    }
+  else openFile(true)
+}
+
+function onDblClick() {
+  if (!isDir.value) openFile(false)
+}
+
+async function openFile(preview) {
+  try {
+    editor.closeDiff()
+    await editor.open(props.entry.path, { preview })
+  } catch (e) {
+    alert(e.message)
   }
 }
 

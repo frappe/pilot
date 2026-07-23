@@ -126,7 +126,7 @@ function onKeydown(e) {
     if (node.type === 'dir') tree.toggle(node.path)
     else {
       editor.closeDiff()
-      editor.open(node.path).catch(() => {})
+      editor.open(node.path, { preview: true }).catch(() => {})
     }
   } else if (e.key === 'ArrowRight') {
     const node = list[i]

@@ -14,6 +14,7 @@
         }"
         :title="t.path"
         @click="onTabClick(t)"
+        @dblclick="store.pin(t.path)"
         @mousedown.middle.prevent="close(t)"
         @contextmenu.stop.prevent="tabMenu($event, t)"
         @touchstart="onTouchStart($event, t)"
@@ -21,7 +22,7 @@
         @touchend="onTouchEnd"
       >
         <FileIcon :name="t.name" class="h-4 w-4 shrink-0" />
-        <span class="truncate" :class="{ 'text-ink-amber-3': t.dirty }">{{ t.name }}</span>
+        <span class="truncate" :class="{ 'text-ink-amber-3': t.dirty, italic: t.preview }">{{ t.name }}</span>
         <span
           class="flex h-6 w-6 items-center justify-center rounded hover:bg-surface-gray-4 sm:h-4 sm:w-4"
           @click.stop="close(t)"

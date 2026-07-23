@@ -179,7 +179,7 @@ async function run() {
 }
 
 function goto(m, file) {
-  editor.open(file, m.line, (m.start || 0) + 1).catch(() => {})
+  editor.open(file, { line: m.line, col: (m.start || 0) + 1, preview: true }).catch(() => {})
 }
 
 async function replaceAll() {

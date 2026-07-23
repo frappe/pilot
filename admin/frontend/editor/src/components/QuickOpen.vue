@@ -118,7 +118,7 @@ function choose(i) {
   if (!p) return
   close()
   editor.closeDiff()
-  editor.open(p).catch(() => {})
+  editor.open(p, { preview: true }).catch(() => {})
 }
 
 async function loadFiles() {

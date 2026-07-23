@@ -33,22 +33,26 @@ export const useEditorStore = defineStore('editor', {
     active: (s) => s.tabs.find((t) => t.path === s.activePath) || null,
   },
   actions: {
-    async open(path, line, col) {
-      const existing = this.tabs.find((t) => t.path === path)
-      if (!existing) {
+    // preview: open in the single reusable preview slot (single click); a
+    // permanent open (double click, or editing) pins the tab in place.
+    async open(path, { line, col, preview = false } = {}) {
+      let t = this.tabs.find((t) => t.path === path)
+      if (!t) {
         const data = await api.read(path)
-        this.tabs.push({
-          path,
-          name: baseName(path),
-          content: data.content,
-          saved: data.content,
-          etag: data.etag,
-          dirty: false,
-        })
+        t = { path, name: baseName(path), content: data.content, saved: data.content, etag: data.etag, dirty: false, preview }
+        const slot = preview ? this.tabs.findIndex((x) => x.preview) : -1
+        if (slot !== -1) this.tabs.splice(slot, 1, t)
+        else this.tabs.push(t)
+      } else if (!preview) {
+        t.preview = false
       }
       this.activePath = path
       this.openTick++
       if (line) this.reveal = { path, line, col: col || 1, ts: Date.now() }
+    },
+    pin(path) {
+      const t = this.tabs.find((t) => t.path === path)
+      if (t) t.preview = false
     },
     async refreshTab(path) {
       const t = this.tabs.find((t) => t.path === path)
@@ -65,6 +69,7 @@ export const useEditorStore = defineStore('editor', {
       if (!t) return
       t.content = content
       t.dirty = content !== t.saved
+      if (t.dirty) t.preview = false
       if (this.autosave && t.dirty) {
         clearTimeout(autosaveTimers.get(path))
         autosaveTimers.set(
@@ -223,7 +228,7 @@ export const useEditorStore = defineStore('editor', {
           : this.tabs[0]?.path || null
       if (act) {
         const c = this.cursors[act]
-        await this.open(act, c?.line, c?.col).catch(() => {})
+        await this.open(act, { line: c?.line, col: c?.col }).catch(() => {})
       }
     },
   },
