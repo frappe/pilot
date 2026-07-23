@@ -5,7 +5,9 @@
       <div v-for="s in GeneralSettings" :key="s.key"
         class="py-4 border-b last:border-b-0 border-outline-alpha-gray-1">
         <Switch :label="s.label" :description="s.description" :model-value="getValue(s)"
-          :disabled="savingKey === s.key" @update:model-value="(v) => toggle(s, v)" />
+          :disabled="savingKey === s.key" @update:model-value="(v) => toggle(s, v)"
+          class="[&_label]:text-ink-gray-9"
+          />
       </div>
     </div>
     <ErrorMessage v-if="error" :message="error" class="mt-4" />
