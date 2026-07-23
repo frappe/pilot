@@ -433,6 +433,19 @@ ensure_tzdata() {
 
 ensure_tzdata
 
+# ── systemd user instance ─────────────────────────────────────────────────────
+# Benches run their services as `systemctl --user` units, which need this user's
+# systemd instance alive even with no login session. Do it here while sudo is
+# available; background tasks later can't prompt for it.
+ensure_user_systemd() {
+    [ "$DISTRO" = "macos" ] && return 0
+    command -v loginctl >/dev/null 2>&1 || return 0
+    run_sudo loginctl enable-linger "$(id -un)" || return 0
+    run_sudo systemctl start "user@$(id -u).service" 2>/dev/null || true
+}
+
+ensure_user_systemd
+
 # ── add bench to PATH ─────────────────────────────────────────────────────────
 add_to_path() {
     rc="$1"
