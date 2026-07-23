@@ -1,7 +1,7 @@
 <template>
   <Dialog v-model="open" bare size="3xl">
     <template #default="{ close }">
-      <div class="relative flex sm:h-[39rem] max-h-[85vh]">
+      <div class="relative flex sm:h-[70vh] max-h-[85vh]">
         <div class="flex-col p-4 sm:border-r border-outline-gray-2 w-full sm:w-52 shrink-0"
           :class="activeSection ? 'hidden sm:flex' : 'flex'">
           <h3
