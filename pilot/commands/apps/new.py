@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass
-from typing import Annotated, ClassVar
+from typing import TYPE_CHECKING, Annotated, ClassVar
 
 from pilot.commands import Arg, Command
-from pilot.core.app import App, NewAppOptions
 from pilot.exceptions import BenchError, CommandError
 from pilot.utils import run_command
+
+if TYPE_CHECKING:
+    from pilot.core.app import App, NewAppOptions
 
 
 @dataclass(kw_only=True)
@@ -30,11 +32,15 @@ class NewAppCommand(Command):
     github_workflow: Annotated[bool, Arg(help="Add a GitHub Actions unittest workflow.")] = False
 
     def run(self) -> None:
+        from pilot.core.app import App
+
         if not App.is_available_on_bench(self.bench, self.app_name):
             raise BenchError(f"App '{self.app_name}' already exists in this bench.")
         self.app: "App" = self.bench.new_app(self.app_name, self._collect_options(), on_progress=self.report)
 
-    def _collect_options(self) -> NewAppOptions:
+    def _collect_options(self) -> "NewAppOptions":
+        from pilot.core.app import NewAppOptions
+
         default_title = self.app_name.replace("-", " ").replace("_", " ").title()
         return NewAppOptions(
             title=self._ask("App Title", self.title, default_title),

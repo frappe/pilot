@@ -124,8 +124,8 @@ def test_command_discovery_matches_baseline() -> None:
     commands = registry._discover()
     identities = {(command.group, command.name) for command in commands}
 
-    assert len(commands) == 34
-    assert len(identities) == 34
+    assert len(commands) == 35
+    assert len(identities) == 35
     assert registry.command_names() == {
         "build",
         "build-admin",
@@ -141,6 +141,7 @@ def test_command_discovery_matches_baseline() -> None:
         "list-site-apps",
         "ls",
         "new",
+        "new-app",
         "new-site",
         "remove",
         "remove-app",
