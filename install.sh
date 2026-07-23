@@ -460,6 +460,7 @@ if [ "$(id -u)" -eq 0 ]; then
     install_nginx_include "$BENCH_USER"
     set_nginx_worker_user "$BENCH_USER"
     install_logrotate "$BENCH_USER"
+    install_sudoers_grants "$BENCH_USER"
 
     echo ""
     echo "========================================================================"

@@ -200,6 +200,8 @@ class NginxManager:
     def setup_sudoers(self):
         """Give nginx passwordless sudo for exactly the commands reload needs.
         Idempotent: same deterministic content every call."""
+        if self.has_passwordless_sudo:
+            return
         bench_user = pwd.getpwuid(self.bench.path.stat().st_uid).pw_name
         systemctl = which("systemctl") or "/bin/systemctl"
         nginx = which("nginx") or "/usr/sbin/nginx"

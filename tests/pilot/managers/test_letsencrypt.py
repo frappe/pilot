@@ -28,6 +28,7 @@ def test_setup_sudoers_grants_only_certbot_and_cert_reads(tmp_path: Path) -> Non
         patch("pwd.getpwuid") as mock_getpwuid,
         patch("pilot.managers.sudoers.stage_and_copy") as mock_stage,
         patch("pilot.managers.sudoers.run_command") as mock_run,
+        patch.object(LetsEncryptManager, "has_passwordless_sudo", False),
     ):
         mock_getpwuid.return_value.pw_name = "runner"
         manager.setup_sudoers()
