@@ -405,6 +405,50 @@ EOF
     done
 }
 
+# Reloading nginx and running certbot are the two things a deployed bench needs
+# root for, every time. Granting them here is what keeps `bench setup
+# production` from having to ask: writing to /etc/sudoers.d is itself a
+# root-only act, so the runtime could never do it unprompted.
+#
+# These mirror NginxManager.setup_sudoers and LetsEncryptManager.setup_sudoers.
+# They only have to be functionally equivalent, not textually identical - both
+# check whether the grant already works before rewriting it.
+install_sudoers_grants() {
+    [ -d /etc/sudoers.d ] || return 0
+    command -v visudo >/dev/null 2>&1 || return 0
+    nginx_bin="$(command -v nginx || echo /usr/sbin/nginx)"
+    certbot_bin="$(command -v certbot || echo /usr/bin/certbot)"
+    openssl_bin="$(command -v openssl || echo /usr/bin/openssl)"
+    systemctl_bin="$(command -v systemctl || echo /bin/systemctl)"
+    mkdir_bin="$(command -v mkdir || echo /bin/mkdir)"
+    test_bin="$(command -v test || echo /usr/bin/test)"
+    webroot=/var/www/letsencrypt
+    live=/etc/letsencrypt/live
+    hook="systemctl reload nginx"
+
+    echo "Granting '$1' passwordless sudo for nginx and certbot..."
+    write_sudoers_file "$1-pilot-nginx" \
+"$1 ALL=(ALL) NOPASSWD: $nginx_bin -t,$nginx_bin -T,$systemctl_bin start nginx,$systemctl_bin stop nginx,$systemctl_bin reload nginx"
+    # Domain and email tokens stay wildcarded (sites arrive long after this is
+    # written), but each wildcard is anchored between fixed literal text, so no
+    # extra flag can be smuggled in before or after the match.
+    write_sudoers_file "$1-pilot-certbot" \
+"$1 ALL=(ALL) NOPASSWD: $certbot_bin certonly --webroot -w $webroot * --cert-name * --expand --email * --agree-tos --non-interactive --deploy-hook $hook,$certbot_bin certonly --webroot -w $webroot -d * --email * --agree-tos --non-interactive --deploy-hook $hook,$certbot_bin renew --quiet,$mkdir_bin -p $webroot,$test_bin -f $live/*/fullchain.pem -a -f $live/*/privkey.pem,$openssl_bin x509 -noout -ext subjectAltName -in $live/*/fullchain.pem,$openssl_bin x509 -enddate -noout -in $live/*/fullchain.pem"
+}
+
+# Validate before installing: a malformed file in /etc/sudoers.d breaks sudo
+# for everyone, including the recovery path.
+write_sudoers_file() {
+    staged="$(mktemp)"
+    echo "$2" > "$staged"
+    if visudo -cf "$staged" >/dev/null 2>&1; then
+        install -m 440 "$staged" "/etc/sudoers.d/$1"
+    else
+        echo "Refusing to install a malformed sudoers grant ($1)." >&2
+    fi
+    rm -f "$staged"
+}
+
 # logrotate refuses to read a config it doesn't own, so these can't be written
 # by the bench user at runtime. One root-owned config globbing the log dirs
 # covers every bench and every monitor, present and future.
@@ -460,6 +504,7 @@ if [ "$(id -u)" -eq 0 ]; then
     install_nginx_include "$BENCH_USER"
     set_nginx_worker_user "$BENCH_USER"
     install_logrotate "$BENCH_USER"
+    install_sudoers_grants "$BENCH_USER"
     install_sudoers_grants "$BENCH_USER"
 
     echo ""
