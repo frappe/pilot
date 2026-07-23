@@ -55,6 +55,7 @@ htmlcov/
 admin/frontend/node_modules/
 admin/frontend2/node_modules/
 admin/backend/static/dist/
+admin/frontend/components.d.ts
 *.timestamp-*
 .env
 .env.local
