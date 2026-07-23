@@ -252,24 +252,43 @@ install_database_engines() {
         debian|ubuntu)
             pkg_install mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config redis-server ;;
         fedora)
-            pkg_install mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config redis ;;
+            # Fedora 41+ ships valkey in place of redis (same alias the runtime uses).
+            pkg_install mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config valkey ;;
         arch)
             pkg_install mariadb mariadb-clients mariadb-libs postgresql postgresql-libs pkgconf redis ;;
+    esac
+}
+
+# ── production stack ──────────────────────────────────────────────────────────
+# nginx, certbot and supervisor are what `bench setup production` needs. Same
+# reasoning as the database engines: installed here, as root, so deploying a
+# bench never has to install a package as the bench user — which cannot,
+# by design.
+install_production_packages() {
+    case "$DISTRO" in
+        macos)  pkg_install nginx certbot ;;
+        debian|ubuntu)
+            # libnginx-mod-http-modsecurity is the WAF module; installing it
+            # up front keeps enabling the WAF later a non-root operation.
+            pkg_install nginx certbot supervisor libnginx-mod-http-modsecurity ;;
+        fedora) pkg_install nginx certbot supervisor ;;
+        arch)   pkg_install nginx certbot supervisor ;;
     esac
 }
 
 # Distro packages auto-start/enable a system-wide service on the default
 # port (3306/5432). bench never uses that — it runs a per-user instance
 # instead — so free the ports right away rather than have every `bench
-# init` fight over them.
-disable_system_db_services() {
+# init` fight over them. nginx and supervisor are stopped for the same
+# reason: `bench setup production` starts nginx itself (a grant covers it),
+# and benches are supervised by their own config, not the distro's.
+disable_system_services() {
     case "$DISTRO" in
         macos|unknown) ;;
         *)
-            run_sudo systemctl disable --now mariadb 2>/dev/null || true
-            run_sudo systemctl disable --now postgresql 2>/dev/null || true
-            run_sudo systemctl disable --now redis-server 2>/dev/null || true
-            run_sudo systemctl disable --now redis 2>/dev/null || true
+            for service in mariadb postgresql redis-server redis valkey nginx supervisor; do
+                run_sudo systemctl disable --now "$service" 2>/dev/null || true
+            done
             ;;
     esac
 }
@@ -330,7 +349,8 @@ bootstrap() {
     pkg_update
     bootstrap_packages
     install_database_engines
-    disable_system_db_services
+    install_production_packages
+    disable_system_services
     install_node
 }
 
