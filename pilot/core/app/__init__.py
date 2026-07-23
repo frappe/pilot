@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import re
 import shutil
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -15,6 +17,32 @@ from pilot.utils import installed_app_version, run_command
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
     from pilot.internal.git import GitRepo
+
+
+@dataclass
+class NewAppOptions:
+    """Answers fed to `make-app`'s prompts. Empty title/license/branch accept
+    frappe's defaults; description, publisher and email must be non-empty."""
+
+    title: str = ""
+    description: str = ""
+    publisher: str = ""
+    email: str = ""
+    license: str = ""
+    branch: str = ""
+    github_workflow: bool = False
+
+    def as_answers(self) -> str:
+        answers = [
+            self.title,
+            self.description,
+            self.publisher,
+            self.email,
+            self.license,
+            "y" if self.github_workflow else "n",
+            self.branch,
+        ]
+        return "\n".join(answers) + "\n"
 
 
 class App:
@@ -36,6 +64,57 @@ class App:
                 "with get-app. It's set up when the bench itself is created."
             )
         return cls(AppConfig(name=name, repo=repo, branch=branch), bench)
+
+    @classmethod
+    def scaffold(
+        cls,
+        bench: "Bench",
+        app_name: str,
+        options: "NewAppOptions | None" = None,
+        *,
+        on_progress: Callable[[str], None] = lambda message: None,
+    ) -> "App":
+        """Create a new Frappe app under apps/ via `make-app`, then install it.
+        With `options`, `make-app`'s prompts are answered from it; without, they
+        run interactively against the terminal."""
+        name = cls._normalize_new_app_name(app_name)
+        if not cls.is_available_on_bench(bench, app_name):
+            raise BenchError(f"App '{name}' already exists in this bench.")
+
+        args = [*bench.frappe_call, "frappe", "make-app", str(bench.apps_path), name]
+        on_progress(f"Creating new app '{name}'...")
+        # Answers are piped, so keep make-app quiet - its echoed prompts are noise.
+        run_command(
+            args, cwd=bench.sites_path, stream_output=options is None,
+            stdin_text=options.as_answers() if options else None,
+        )
+
+        app = cls(AppConfig(name=name, repo="", branch=options.branch if options else ""), bench)
+        on_progress(f"Installing '{name}'...")
+        try:
+            app._install_into_environment()
+            app._register()
+        except Exception:
+            shutil.rmtree(app.path, ignore_errors=True)
+            raise
+        on_progress(f"\n'{name}' created and installed successfully.")
+        return app
+
+    @classmethod
+    def is_available_on_bench(cls, bench: "Bench", app_name: str) -> bool:
+        """Whether `app_name` is free to create - not registered and not on disk."""
+        name = cls._normalize_new_app_name(app_name)
+        return not bench.is_app_installed(name) and not (bench.apps_path / name).exists()
+
+    @staticmethod
+    def _normalize_new_app_name(app_name: str) -> str:
+        name = app_name.strip().lower().replace(" ", "_").replace("-", "_")
+        if not re.fullmatch(r"[a-z][a-z0-9_]*", name):
+            raise BenchError(
+                "App name must start with a letter and contain only lowercase "
+                "letters, numbers, and underscores."
+            )
+        return name
 
     @property
     def path(self) -> Path:

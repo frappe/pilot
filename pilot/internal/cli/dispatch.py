@@ -152,6 +152,9 @@ def main() -> None:
 def error_boundary(context: CliContext) -> Iterator[None]:
     try:
         yield
+    except KeyboardInterrupt:
+        print("\n\033[31mAborted by user.\033[0m", file=sys.stderr)
+        sys.exit(130)
     except BenchError as error:
         print(str(error), file=sys.stderr)
         sys.exit(1)
