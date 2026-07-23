@@ -185,7 +185,7 @@ def test_build_integration_picks_owning_class(fake_litellm) -> None:
         SimpleNamespace(provider="frappe-llm", api_key="k", model="qwen3.6-27b-fp8", api_base="")
     )
     assert isinstance(frappe, FrappeLLMIntegration)
-    assert frappe.api_base == "http://54.251.169.42/v1"
+    assert frappe.api_base == "http://x.x.x.x/v1"
 
 
 def test_unknown_provider_raises(fake_litellm) -> None:
