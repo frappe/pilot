@@ -21,7 +21,6 @@ class AdminConfig:
     domain: str = ""
     tls: bool = False
     allow_bench_management: bool = True
-    developer_mode: bool = False  # gates the integrated code editor
 
     @classmethod
     def from_dict(cls, data: dict) -> "AdminConfig":
@@ -36,7 +35,6 @@ class AdminConfig:
             domain=data.get("domain", ""),
             tls=data.get("tls", False),
             allow_bench_management=data.get("allow_bench_management", True),
-            developer_mode=data.get("developer_mode", False),
         )
 
     @property

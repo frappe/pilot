@@ -138,22 +138,22 @@ def test_toml_writer_includes_watch_admin_js() -> None:
     assert "watch_admin_js = true" in toml
 
 
-def test_developer_mode_defaults_to_disabled() -> None:
+def test_allow_developer_mode_defaults_to_disabled() -> None:
     config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
-    assert config.admin.developer_mode is False
+    assert config.allow_developer_mode is False
 
 
-def test_developer_mode_can_be_enabled() -> None:
+def test_allow_developer_mode_can_be_enabled() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["admin"]["developer_mode"] = True
+    data["bench"]["allow_developer_mode"] = True
     config = load_from_dict(data)
-    assert config.admin.developer_mode is True
+    assert config.allow_developer_mode is True
 
 
-def test_toml_writer_includes_developer_mode() -> None:
+def test_toml_writer_includes_allow_developer_mode() -> None:
     config = BenchConfig._from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
-    config.admin.developer_mode = True
-    assert "developer_mode = true" in config.dumps()
+    config.allow_developer_mode = True
+    assert "allow_developer_mode = true" in config.dumps()
 
 
 def test_rule_1_required_fields_bench_name_missing() -> None:

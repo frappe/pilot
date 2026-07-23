@@ -22,7 +22,6 @@ class ConfigPatcher:
         self._apply_workers()
         self._apply_firewall()
         self._apply_waf()
-        self._apply_admin()
         if error := self._apply_llm():
             return error
         if error := self._apply_s3():
@@ -142,11 +141,6 @@ class ConfigPatcher:
             enabled=bool(data.get("enabled", True)),
             conditions=conditions,
         )
-
-    def _apply_admin(self) -> None:
-        admin = self.data.get("admin") or {}
-        if "developer_mode" in admin:
-            self.config.admin.developer_mode = bool(admin["developer_mode"])
 
     def _apply_s3(self) -> str | None:
         s3 = self.data.get("s3") or {}

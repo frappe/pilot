@@ -66,7 +66,6 @@ FLAT_KEYS = {
     "admin_jwks_url": "admin.jwks_url",
     "admin_jwks_audience": "admin.jwks_audience",
     "admin_allow_bench_management": "admin.allow_bench_management",
-    "admin_developer_mode": "admin.developer_mode",
     "letsencrypt_email": "letsencrypt.email",
     "production_process_manager": "production.process_manager",
 }
@@ -494,7 +493,6 @@ class BenchConfig:
             "domain": self.admin.domain,
             "tls": self.admin.tls,
             "allow_bench_management": self.admin.allow_bench_management,
-            "developer_mode": self.admin.developer_mode,
         }
         optional_admin = {
             "jwt_secret": self.admin.jwt_secret,

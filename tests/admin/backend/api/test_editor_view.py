@@ -19,7 +19,7 @@ def _bench(tmp_path: Path, developer_mode: bool = True) -> Path:
             {
                 "admin_enabled": True,
                 "admin_password": "secret",
-                "admin_developer_mode": developer_mode,
+                "allow_developer_mode": developer_mode,
             },
         ).dumps()
     )

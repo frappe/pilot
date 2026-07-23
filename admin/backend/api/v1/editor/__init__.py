@@ -41,7 +41,7 @@ def is_developer_mode_enabled(bench_root: Path) -> bool:
     from pilot.config import BenchConfig
 
     try:
-        return BenchConfig.read(bench_root).admin.developer_mode
+        return BenchConfig.read(bench_root).allow_developer_mode
     except Exception:
         return False
 
