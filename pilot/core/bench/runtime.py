@@ -147,14 +147,14 @@ class BenchRuntime:
         from pilot.utils import cli_root
 
         root = cli_root()
-        dist = root / "admin" / "backend" / "static" / "dist"
-        frontend = root / "admin" / "frontend"
+        dist = root / "admin" / "backend" / "static" / "dashboard"
+        frontend = root / "admin" / "frontend" / "dashboard"
         has_source = (frontend / "package.json").exists()
 
         if not (dist / "assets").exists():
             on_progress("Admin UI not built yet; building it now...")
             if has_source:
-                build_admin_frontend(True, on_progress=on_progress)
+                build_admin_frontend(on_progress=on_progress)
             else:
                 download_admin_frontend(root)
             return
@@ -167,7 +167,7 @@ class BenchRuntime:
 
         on_progress("Admin UI source changed since last build; rebuilding...")
         try:
-            build_admin_frontend(True, on_progress=on_progress)
+            build_admin_frontend(on_progress=on_progress)
         except BenchError as error:
             on_progress(f"  Could not rebuild the admin UI ({error}); serving the existing build.")
 
@@ -180,7 +180,7 @@ class BenchRuntime:
         admin_mgr = AdminEnvManager(root)
         admin_mgr.ensure()
 
-        assets = root / "admin" / "backend" / "static" / "dist" / "assets"
+        assets = root / "admin" / "backend" / "static" / "dashboard" / "assets"
         if not assets.exists():
             on_progress("Downloading admin frontend...")
             download_admin_frontend(root)

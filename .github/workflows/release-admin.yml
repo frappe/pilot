@@ -19,7 +19,7 @@ jobs:
 
       - name: Build admin frontend
         run: |
-          cd admin/frontend
+          cd admin/frontend/dashboard
           yarn install --frozen-lockfile
           yarn build
 

@@ -66,7 +66,7 @@ These commands control the task worker, not individual Frappe workers.
 
 ## Admin Commands
 
-- `bench build-admin`: download or rebuild Admin frontend assets.
+- `bench build-admin`: build Admin frontend assets from source.
 - `bench set-central-config`: store Central endpoint and Pilot auth token.
 - `bench generate-admin-session`: create an Admin session token.
 - `bench issue-site-token`: issue a scoped site-to-bench API token.

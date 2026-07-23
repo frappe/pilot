@@ -1314,11 +1314,11 @@ def _admin_source_checkout(tmp_path: Path, src_mtime: int, built_mtime: int) -> 
     import os
 
     cli_root = tmp_path / "repo"
-    frontend = cli_root / "admin" / "frontend"
+    frontend = cli_root / "admin" / "frontend" / "dashboard"
     (frontend / "src").mkdir(parents=True)
     package_json = frontend / "package.json"
     package_json.write_text("{}")
-    dist = cli_root / "admin" / "backend" / "static" / "dist"
+    dist = cli_root / "admin" / "backend" / "static" / "dashboard"
     (dist / "assets").mkdir(parents=True)
     (dist / "index.html").write_text("built")
     src_file = frontend / "src" / "App.vue"
@@ -1334,8 +1334,8 @@ def test_admin_source_is_newer_detects_edits(tmp_path: Path) -> None:
     from pilot.core.bench.runtime import BenchRuntime
 
     cli_root = _admin_source_checkout(tmp_path, src_mtime=100, built_mtime=1)
-    frontend = cli_root / "admin" / "frontend"
-    dist = cli_root / "admin" / "backend" / "static" / "dist"
+    frontend = cli_root / "admin" / "frontend" / "dashboard"
+    dist = cli_root / "admin" / "backend" / "static" / "dashboard"
     assert BenchRuntime._admin_source_is_newer(frontend, dist) is True
 
     import os
@@ -1354,7 +1354,7 @@ def test_start_rebuilds_admin_when_source_changed(tmp_path: Path, monkeypatch: p
 
     BenchRuntime(make_bench(tmp_path))._ensure_admin_dist(lambda _message: None)
 
-    build.assert_called_once_with(True, on_progress=ANY)
+    build.assert_called_once_with(on_progress=ANY)
 
 
 def test_start_skips_admin_rebuild_when_fresh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -23,7 +23,7 @@ admin/backend/
   api/v1/        Flask route groups
   providers/     backend provider integrations
 
-admin/frontend/  Vue Admin UI
+admin/frontend/dashboard/  Vue Admin UI
 ```
 
 ## Main Objects

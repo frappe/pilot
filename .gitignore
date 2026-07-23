@@ -49,10 +49,9 @@ htmlcov/
 *~
 
 # Admin
-admin/frontend/node_modules/
-admin/editor/node_modules/
-admin/backend/static/dist/
-admin/backend/static/editor/
+admin/frontend/dashboard/node_modules/
+admin/frontend/editor/node_modules/
+admin/backend/static/dashboard/
 admin/backend/static/editor/
 *.timestamp-*
 .env

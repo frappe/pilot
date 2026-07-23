@@ -24,7 +24,7 @@ exclude = ["benches*", "tests*", "docs*", "admin.frontend*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests/admin", "tests/pilot"]
-norecursedirs = ["benches", "admin/frontend/node_modules", ".hypothesis", ".*"]
+norecursedirs = ["benches", "admin/frontend/dashboard/node_modules", ".hypothesis", ".*"]
 markers = [
   "incremental: run tests in order and stop dependent checks after a failure",
   "integration: requires local services or a full bench environment",
@@ -47,7 +47,7 @@ markers = [
 python_version = "3.11"
 ignore_missing_imports = true
 warn_unused_ignores = true
-exclude = ["^build/", "^benches/", "^admin/frontend/"]
+exclude = ["^build/", "^benches/", "^admin/frontend/dashboard/"]
 
 # Every requires_bench=True command's self.bench is guaranteed non-None by the
 # CLI dispatch layer (pilot/registry.py) before run() executes - an invariant

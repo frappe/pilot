@@ -271,9 +271,11 @@ class ProductionSetup:
             )
 
     def _build_admin_for_production(self) -> None:
-        from admin.backend.frontend import build_admin_frontend
+        from admin.backend.frontend import build_admin_frontend, download_admin_frontend
+        from pilot.utils import cli_root
 
-        build_admin_frontend()
+        if not download_admin_frontend(cli_root()):
+            build_admin_frontend()
 
     def _report_summary(self, on_progress: Callable[[str], None]) -> None:
         from pilot.managers.nginx import NginxManager

@@ -46,19 +46,10 @@ def download_admin_frontend(cli_root: Path) -> bool:
         tmp.unlink(missing_ok=True)
 
 
-def build_admin_frontend(
-    force_build: bool = False, on_progress: Callable[[str], None] = lambda message: None
-) -> None:
-    from pilot.utils import cli_root
-
-    if not force_build and download_admin_frontend(cli_root()):
-        return
-    if force_build:
-        on_progress("Skipping download, building from source...")
-    else:
-        on_progress("Download failed, building from source...")
+def build_admin_frontend(on_progress: Callable[[str], None] = lambda message: None) -> None:
+    """Build the admin frontend and editor from source. Requires Node.js."""
     _check_node_version()
-    _build_frontend(_find_frontend(), "admin", on_progress)
+    _build_frontend(_find_frontend(), "dashboard", on_progress)
     _build_frontend(_find_editor(), "editor", on_progress)
     on_progress("\nAdmin frontend rebuilt successfully.")
 
@@ -77,22 +68,24 @@ def _build_frontend(frontend: Path, label: str, on_progress: Callable[[str], Non
 def _find_frontend() -> Path:
     from pilot.utils import cli_root
 
-    candidate = cli_root() / "admin" / "frontend"
+    candidate = cli_root() / "admin" / "frontend" / "dashboard"
     if (candidate / "package.json").exists():
         return candidate
     raise BenchError(
-        "admin/frontend not found. This command requires the bench-cli source directory with admin/frontend/."
+        "admin/frontend/dashboard not found. This command requires the bench-cli source directory "
+        "with admin/frontend/dashboard/."
     )
 
 
 def _find_editor() -> Path:
     from pilot.utils import cli_root
 
-    candidate = cli_root() / "admin" / "editor"
+    candidate = cli_root() / "admin" / "frontend" / "editor"
     if (candidate / "package.json").exists():
         return candidate
     raise BenchError(
-        "admin/editor not found. This command requires the bench-cli source directory with admin/editor/."
+        "admin/frontend/editor not found. This command requires the bench-cli source directory "
+        "with admin/frontend/editor/."
     )
 
 
@@ -117,8 +110,7 @@ def _check_node_version() -> None:
         ).stdout.strip()
     except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
         raise BenchError(
-            "Node.js is required to build the admin frontend but was not found. "
-            "Install Node.js >= 20.11, or run `bench build-admin` (without --force) to download the pre-built frontend."
+            "Node.js is required to build the admin frontend but was not found. Install Node.js >= 20.11."
         ) from error
     parts = output.lstrip("v").split(".")
     try:
@@ -129,6 +121,5 @@ def _check_node_version() -> None:
         major, minor = _MIN_NODE
         raise BenchError(
             f"Building the admin frontend requires Node.js >= {major}.{minor}, but found {output}. "
-            "Switch to a newer Node (e.g. `nvm use 20`) and retry, or run `bench build-admin` "
-            "without --force to download the pre-built frontend instead."
+            "Switch to a newer Node (e.g. `nvm use 20`) and retry."
         )

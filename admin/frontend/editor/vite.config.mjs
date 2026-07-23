@@ -10,7 +10,7 @@ export default defineConfig({
   },
   base: '/editor-assets/',
   build: {
-    outDir: '../backend/static/editor',
+    outDir: '../../backend/static/editor',
     emptyOutDir: true,
     target: 'es2020',
     chunkSizeWarningLimit: 4000,

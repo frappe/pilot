@@ -18,7 +18,7 @@ export default defineConfig(({ mode }) => {
       vue(),
     ],
     build: {
-      outDir: '../backend/static/dist',
+      outDir: '../../backend/static/dashboard',
       emptyOutDir: true,
       sourcemap: mode === 'development',
       minify: mode !== 'development',
