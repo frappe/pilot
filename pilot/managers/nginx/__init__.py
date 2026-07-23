@@ -4,6 +4,7 @@ import pwd
 import re
 import shutil
 import sys
+from fnmatch import fnmatch
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
 _NGINX_CONF = Path("/etc/nginx/nginx.conf")
+_PILOT_INCLUDE = Path("/etc/nginx/conf.d/00-pilot.conf")
 _USER_DIRECTIVE = re.compile(r"^[ \t]*user[ \t]+[^;\n]+;", re.MULTILINE)
 
 _SHARED_ERROR_DIR = Path("/usr/share/nginx/bench-error-pages")
@@ -294,15 +296,32 @@ class NginxManager:
         configured = self.bench.config.nginx.config_dir
         return configured if configured != Path("") else default_nginx_config_dir()
 
+    @property
+    def include_path(self) -> Path:
+        return self.bench.config_path / "nginx" / "include.conf"
+
+    @property
+    def has_shared_include(self) -> bool:
+        """True when the installer's 00-pilot.conf already globs this bench in,
+        so publishing a vhost needs no privileges at all."""
+        try:
+            directives = _PILOT_INCLUDE.read_text()
+        except OSError:
+            return False
+        patterns = re.findall(r"^\s*include\s+([^;]+);", directives, re.MULTILINE)
+        return any(fnmatch(str(self.include_path), pattern.strip()) for pattern in patterns)
+
     def install_config(self) -> None:
         nginx_dir = self.config_dir
         symlink_path = nginx_dir / f"{self.bench.config.name}.conf"
-        source_path = self.bench.config_path / "nginx" / "include.conf"
 
-        self._prune_dangling_symlinks(nginx_dir)
+        # A symlink from before the shared include would load the same vhost
+        # twice, so it goes either way.
         if symlink_path.exists() or symlink_path.is_symlink():
             run_command(_privileged(["unlink", str(symlink_path)]))
-        run_command(_privileged(["ln", "-s", str(source_path), str(symlink_path)]))
+        if not self.has_shared_include:
+            self._prune_dangling_symlinks(nginx_dir)
+            run_command(_privileged(["ln", "-s", str(self.include_path), str(symlink_path)]))
         self._set_worker_user()
         if self.bench.config.waf.enabled:
             self._ensure_modsecurity_module()
@@ -366,12 +385,19 @@ class NginxManager:
 
     def _reload_or_rollback(self, symlink_path: Path) -> None:
         """A bad config for this bench must not take nginx down for every
-        other bench on the box - undo the symlink and re-raise."""
+        other bench on the box - unpublish it and re-raise."""
         try:
             self.reload()
         except Exception:
-            run_command(_privileged(["unlink", str(symlink_path)]))
+            self._unpublish(symlink_path)
             raise
+
+    def _unpublish(self, symlink_path: Path) -> None:
+        """Take this bench's vhost out of nginx's view, however it got there."""
+        if self.has_shared_include:
+            self.include_path.rename(self.include_path.with_name("include.conf.broken"))
+        elif symlink_path.exists() or symlink_path.is_symlink():
+            run_command(_privileged(["unlink", str(symlink_path)]))
 
     def _set_worker_user(self) -> None:
         """Run nginx workers as the bench owner. Idempotent."""
@@ -387,10 +413,8 @@ class NginxManager:
         self._stage_and_copy(updated, _NGINX_CONF)
 
     def uninstall_config(self) -> None:
-        """Remove this bench's vhost symlink and reload. Certs are kept."""
-        symlink_path = self.config_dir / f"{self.bench.config.name}.conf"
-        if symlink_path.exists() or symlink_path.is_symlink():
-            run_command(_privileged(["unlink", str(symlink_path)]))
+        """Take this bench's vhost out of nginx and reload. Certs are kept."""
+        self._unpublish(self.config_dir / f"{self.bench.config.name}.conf")
         self.reload()
 
     def reload(self) -> None:

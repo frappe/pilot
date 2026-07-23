@@ -379,6 +379,22 @@ linger_enabled() {
     [ "$(loginctl show-user "$1" --property=Linger 2>/dev/null)" = "Linger=yes" ]
 }
 
+# nginx reads each bench's vhost from a file the bench user owns. Root drops
+# the one glob that pulls them in, so publishing a vhost afterwards is an
+# ordinary file write instead of a privileged symlink into /etc/nginx.
+install_nginx_include() {
+    bench_home="$(getent passwd "$1" | cut -d: -f6)"
+    [ -n "$bench_home" ] && [ -d /etc/nginx/conf.d ] || return 0
+    echo "Installing the nginx include for '$1'..."
+    cat > /etc/nginx/conf.d/00-pilot.conf <<EOF
+include $bench_home/pilot/benches/*/config/nginx/include.conf;
+EOF
+    chmod 644 /etc/nginx/conf.d/00-pilot.conf
+    # The distro's stock default site also claims default_server on :80;
+    # nginx rejects a duplicate, so drop it and let a bench's vhost win.
+    rm -f /etc/nginx/sites-enabled/default
+}
+
 # ── Path A: running as root → create the bench user, then stop ───────────────
 # We do NOT switch users on the fly. We prepare the account and ask the operator
 # to re-run the installer as that user.
@@ -395,6 +411,8 @@ if [ "$(id -u)" -eq 0 ]; then
         echo "Enabling systemd lingering for '$BENCH_USER'..."
         loginctl enable-linger "$BENCH_USER"
     fi
+
+    install_nginx_include "$BENCH_USER"
 
     echo ""
     echo "========================================================================"

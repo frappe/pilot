@@ -440,6 +440,7 @@ def test_install_config_rolls_back_symlink_when_reload_fails(tmp_path: Path) -> 
     bench = _make_bench(tmp_path, _BASE_DATA)
     manager = NginxManager(bench)
     symlink_path = tmp_path / "test-bench.conf"
+    symlink_path.symlink_to(tmp_path / "include.conf")
 
     with (
         patch.object(manager, "reload", side_effect=CommandError("nginx -t failed", returncode=1)),
