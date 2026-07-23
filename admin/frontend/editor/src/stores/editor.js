@@ -98,17 +98,34 @@ export const useEditorStore = defineStore('editor', {
     async save(path) {
       const t = this.tabs.find((t) => t.path === path)
       if (!t) return
-      const r = await api.save(t.path, t.content, t.etag)
-      if (r.conflict) {
-        this.conflict = { path: t.path, disk: r.content, etag: r.etag }
+      // Serialize saves per file. Overlapping saves (autosave + manual, or
+      // save-on-close) share a stale etag, so the second one 409s against the
+      // content the first just wrote. Coalesce instead.
+      if (t.saving) {
+        t.saveAgain = true
         return
       }
-      t.etag = r.etag
-      t.saved = t.content
-      t.dirty = false
-      const git = useGitStore()
-      git.invalidateBlame(t.path)
-      git.refresh()
+      t.saving = true
+      try {
+        const sent = t.content
+        const r = await api.save(t.path, sent, t.etag)
+        if (r.conflict) {
+          this.conflict = { path: t.path, disk: r.content, etag: r.etag }
+          return
+        }
+        t.etag = r.etag
+        t.saved = sent
+        t.dirty = t.content !== sent
+        const git = useGitStore()
+        git.invalidateBlame(t.path)
+        git.refresh()
+      } finally {
+        t.saving = false
+        if (t.saveAgain) {
+          t.saveAgain = false
+          if (t.dirty) this.save(path)
+        }
+      }
     },
     async resolveConflict(action) {
       const c = this.conflict
