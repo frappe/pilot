@@ -11,107 +11,104 @@
     <div v-if="!git.repo" class="ed-empty">Not a git repository.</div>
 
     <template v-else>
-      <div class="px-3 pb-2">
-        <div class="flex items-center gap-2">
+      <div class="flex flex-col gap-2 px-3 pb-3">
+        <div class="flex items-center gap-1">
+          <!-- Dropdown does not forward classes, so the flex sizing lives on a wrapper. -->
           <div class="min-w-0 flex-1">
             <Dropdown :options="branchOptions" placement="left">
-              <button
-                class="flex h-9 w-full items-center gap-2 rounded-md border border-outline-gray-2 px-2 text-sm text-ink-gray-7 hover:bg-surface-gray-2 sm:h-8"
-                title="Switch branch">
-                <span class="lucide-git-branch ed-lane text-current"></span>
-                <span class="ed-name font-medium text-ink-gray-8">{{ git.branch }}</span>
-                <span class="lucide-chevron-down ed-lane ml-auto text-ink-gray-4"></span>
-              </button>
+              <Button class="w-full justify-start" icon-left="lucide-git-branch" :label="git.branch" />
             </Dropdown>
           </div>
-          <div class="flex items-center gap-0.5">
-            <button
-              class="ed-icon-button w-auto gap-1 px-1.5 text-xs sm:w-auto"
-              :disabled="pulling" title="Pull from remote" @click="pull">
-              <span v-if="pulling" class="lucide-loader-2 h-4 w-4 animate-spin"></span>
-              <span v-else class="lucide-arrow-down h-4 w-4"></span>
-              <span v-if="git.behind" class="font-medium tabular-nums">{{ git.behind }}</span>
-            </button>
-            <button
-              class="ed-icon-button w-auto gap-1 px-1.5 text-xs sm:w-auto"
-              :disabled="pushing || (!git.ahead && git.hasUpstream)" title="Push to remote" @click="push">
-              <span v-if="pushing" class="lucide-loader-2 h-4 w-4 animate-spin"></span>
-              <span v-else class="lucide-arrow-up h-4 w-4"></span>
-              <span v-if="git.ahead" class="font-medium tabular-nums">{{ git.ahead }}</span>
-            </button>
-          </div>
+          <Button
+            class="shrink-0"
+            variant="ghost"
+            icon-left="lucide-arrow-down"
+            :label="git.behind ? String(git.behind) : ''"
+            :loading="pulling"
+            :title="pullTitle"
+            @click="pull"
+          />
+          <Button
+            class="shrink-0"
+            variant="ghost"
+            icon-left="lucide-arrow-up"
+            :label="git.ahead ? String(git.ahead) : ''"
+            :loading="pushing"
+            :disabled="!git.ahead && git.hasUpstream"
+            :title="pushTitle"
+            @click="push"
+          />
         </div>
-      </div>
 
-      <div class="px-3 pb-2">
-        <textarea v-model="message" rows="2" :placeholder="commitPlaceholder"
-          class="w-full resize-none rounded-md border border-outline-gray-2 bg-surface-gray-2 px-2 py-1.5 text-sm text-ink-gray-8 outline-none focus:border-outline-gray-3"
-          @keydown.ctrl.enter.prevent="commit" @keydown.meta.enter.prevent="commit"></textarea>
-        <Button class="mt-1 w-full" variant="solid" icon-left="lucide-check" :disabled="!message.trim() || committing"
-          :loading="committing" @click="commit">
-          {{ commitLabel }}
-        </Button>
+        <Textarea
+          v-model="message"
+          :rows="2"
+          :placeholder="commitPlaceholder"
+          @keydown.ctrl.enter.prevent="commit"
+          @keydown.meta.enter.prevent="commit"
+        />
+        <Button
+          variant="solid"
+          icon-left="lucide-check"
+          :label="commitLabel"
+          :disabled="!message.trim() || committing"
+          :loading="committing"
+          @click="commit"
+        />
       </div>
 
       <div class="min-h-0 flex-1 overflow-auto pb-24 sm:pb-2">
-        <!-- staged -->
-        <div v-if="git.staged.length" class="group/sec ed-section">
-          <span>Staged Changes</span>
-          <span class="tabular-nums">{{ git.staged.length }}</span>
-          <button
-            class="ed-icon-button ml-auto transition sm:opacity-0 sm:group-hover/sec:opacity-100"
-            title="Unstage all" @click="unstageAll">
-            <span class="lucide-minus h-4 w-4 text-current"></span>
-          </button>
-        </div>
-        <div class="px-1.5">
-          <div v-for="f in git.staged" :key="'s' + f.path" class="group/row ed-row" :title="f.path"
-            @click="editor.openDiff(f.path, true)">
-            <FileIcon :name="baseName(f.path)" class="ed-lane" />
-            <span class="ed-name">{{ baseName(f.path) }}</span>
-            <span class="ed-path">{{ dirName(f.path) }}</span>
-            <button
-              class="ed-icon-button ml-auto transition sm:opacity-0 sm:group-hover/row:opacity-100"
-              title="Unstage" @click.stop="unstage(f.path)">
-              <span class="lucide-minus h-4 w-4 text-current"></span>
-            </button>
-            <span class="ed-lane text-xs font-semibold" :class="statusColor(f.code)">{{ letter(f.code) }}</span>
+        <template v-for="section in fileSections" :key="section.id">
+          <div v-if="section.files.length" class="ed-section">
+            <span>{{ section.title }}</span>
+            <span class="tabular-nums">{{ section.files.length }}</span>
+            <Button
+              class="ml-auto"
+              variant="ghost"
+              :icon="section.bulkIcon"
+              :title="section.bulkTitle"
+              @click="section.bulk()"
+            />
           </div>
-        </div>
-
-        <!-- unstaged -->
-        <div class="group/sec ed-section">
-          <span>Changes</span>
-          <span class="tabular-nums">{{ git.unstaged.length }}</span>
-          <button v-if="git.unstaged.length"
-            class="ed-icon-button ml-auto transition sm:opacity-0 sm:group-hover/sec:opacity-100"
-            title="Stage all" @click="stageAll">
-            <span class="lucide-plus h-4 w-4 text-current"></span>
-          </button>
-        </div>
-        <div class="px-1.5">
-          <div v-for="f in git.unstaged" :key="'u' + f.path" class="group/row ed-row" :title="f.path"
-            @click="editor.openDiff(f.path, false)">
-            <FileIcon :name="baseName(f.path)" class="ed-lane" />
-            <span class="ed-name">{{ baseName(f.path) }}</span>
-            <span class="ed-path">{{ dirName(f.path) }}</span>
-            <div class="ml-auto flex items-center transition sm:opacity-0 sm:group-hover/row:opacity-100">
-              <button class="ed-icon-button" title="Discard changes" @click.stop="discard(f.path)">
-                <span class="lucide-rotate-ccw h-4 w-4 text-current"></span>
-              </button>
-              <button class="ed-icon-button" title="Stage" @click.stop="stage(f.path)">
-                <span class="lucide-plus h-4 w-4 text-current"></span>
-              </button>
+          <div class="px-1.5">
+            <div
+              v-for="file in section.files"
+              :key="section.id + file.path"
+              class="group/row ed-row"
+              :title="file.path"
+              @click="editor.openDiff(file.path, section.id === 'staged')"
+            >
+              <FileIcon :name="baseName(file.path)" class="ed-lane" />
+              <span class="ed-name">{{ baseName(file.path) }}</span>
+              <span class="ed-path">{{ dirName(file.path) }}</span>
+              <div
+                class="ml-auto flex items-center transition sm:opacity-0 sm:group-focus-within/row:opacity-100 sm:group-hover/row:opacity-100"
+              >
+                <Button
+                  v-for="action in section.actions"
+                  :key="action.title"
+                  variant="ghost"
+                  :icon="action.icon"
+                  :title="action.title"
+                  @click.stop="action.run(file.path)"
+                />
+              </div>
+              <span class="ed-lane text-xs font-semibold" :class="statusColor(file.code)">
+                {{ letter(file.code) }}
+              </span>
             </div>
-            <span class="ed-lane text-xs font-semibold" :class="statusColor(f.code)">{{ letter(f.code) }}</span>
           </div>
-          <div v-if="!git.staged.length && !git.unstaged.length" class="ed-empty">No changes.</div>
+        </template>
+
+        <div v-if="!git.staged.length && !git.unstaged.length" class="ed-empty">
+          No changes in this working tree.
         </div>
 
-        <!-- commit history -->
         <button class="ed-section w-full hover:text-ink-gray-7" @click="toggleHistory">
-          <span class="lucide-chevron-right h-3.5 w-3.5 transition-transform" :class="{ 'rotate-90': showHistory }">
-          </span>
+          <span
+            class="lucide-chevron-right h-3.5 w-3.5 transition-transform"
+            :class="{ 'rotate-90': showHistory }"
+          ></span>
           Commits
         </button>
         <div v-if="showHistory" class="px-1.5">
@@ -130,14 +127,14 @@
             <code class="ed-meta font-mono">{{ c.short }}</code>
           </div>
           <div v-if="!commits.length && !loadingCommits" class="ed-empty">No commits yet.</div>
-          <button
+          <Button
             v-if="moreCommits"
-            class="ed-row w-full justify-center text-xs text-ink-gray-5"
-            :disabled="loadingCommits"
+            class="w-full"
+            variant="ghost"
+            :loading="loadingCommits"
+            label="Load more"
             @click="loadCommits(false)"
-          >
-            {{ loadingCommits ? 'Loading…' : 'Load more' }}
-          </button>
+          />
         </div>
       </div>
     </template>
@@ -146,7 +143,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { Button, Dropdown, confirmDialog, toast } from 'frappe-ui'
+import { Button, Dropdown, Textarea, confirmDialog, toast } from 'frappe-ui'
 import FileIcon from '@/components/FileIcon.vue'
 import PanelHeader from '@/components/ui/PanelHeader.vue'
 import { gitApi } from '@/api/git'
@@ -177,12 +174,40 @@ const loadingCommits = ref(false)
 const COMMIT_PAGE = 30
 
 const commitPlaceholder = computed(() =>
-  git.staged.length ? 'Commit staged changes' : 'Commit message (stages all changes)',
+  git.staged.length ? 'Message for staged changes' : 'Message (stages everything)',
 )
 const commitLabel = computed(() => {
   const n = git.staged.length || git.unstaged.length
   return `Commit${n ? ` (${n})` : ''}`
 })
+
+const pullTitle = computed(() => (git.behind ? `Pull ${git.behind} commit(s)` : 'Pull from remote'))
+const pushTitle = computed(() => (git.ahead ? `Push ${git.ahead} commit(s)` : 'Push to remote'))
+
+// Staged and unstaged rows differ only in their actions, so describe them once.
+const fileSections = computed(() => [
+  {
+    id: 'staged',
+    title: 'Staged Changes',
+    files: git.staged,
+    bulkIcon: 'lucide-minus',
+    bulkTitle: 'Unstage all',
+    bulk: unstageAll,
+    actions: [{ icon: 'lucide-minus', title: 'Unstage', run: unstage }],
+  },
+  {
+    id: 'unstaged',
+    title: 'Changes',
+    files: git.unstaged,
+    bulkIcon: 'lucide-plus',
+    bulkTitle: 'Stage all',
+    bulk: stageAll,
+    actions: [
+      { icon: 'lucide-rotate-ccw', title: 'Discard changes', run: discard },
+      { icon: 'lucide-plus', title: 'Stage', run: stage },
+    ],
+  },
+])
 
 const branchOptions = computed(() => {
   const items = branchList.value.map((b) => ({

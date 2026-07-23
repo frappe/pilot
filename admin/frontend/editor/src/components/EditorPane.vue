@@ -26,7 +26,7 @@
 
 <script setup>
 import { onMounted, onBeforeUnmount, ref, watch, computed, nextTick } from 'vue'
-import { monaco, languageFor } from '@/monaco'
+import { monaco, languageFor, editorThemeName, applyEditorTheme } from '@/monaco'
 import { useTheme } from '@/composables/useTheme'
 import { useMobile } from '@/composables/useMobile'
 import { useMergeConflicts } from '@/composables/useMergeConflicts'
@@ -49,10 +49,6 @@ let applying = false
 let blameDecos = null
 let gitDecos = null
 let blameData = []
-
-function themeName() {
-  return isDark.value ? 'vs-dark' : 'vs'
-}
 
 function modelFor(tab) {
   let m = models.get(tab.path)
@@ -180,7 +176,7 @@ function renderBlame() {
 onMounted(() => {
   editor = monaco.editor.create(host.value, {
     model: null,
-    theme: themeName(),
+    theme: editorThemeName(),
     automaticLayout: true,
     readOnly: readOnly.value,
     domReadOnly: readOnly.value,
@@ -302,7 +298,7 @@ watch(
 )
 
 watch(isDark, () => {
-  monaco.editor.setTheme(themeName())
+  applyEditorTheme()
   // Re-render conflict zones so they pick up the new theme
   setActiveMergeHandler(store.active)
 })

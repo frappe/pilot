@@ -4,7 +4,7 @@
 
 <script setup>
 import { onMounted, onBeforeUnmount, ref, watch, nextTick } from 'vue'
-import { monaco, languageFor } from '@/monaco'
+import { monaco, languageFor, editorThemeName, applyEditorTheme } from '@/monaco'
 import { useTheme } from '@/composables/useTheme'
 import { useEditorStore } from '@/stores/editor'
 
@@ -20,8 +20,6 @@ const host = ref(null)
 let editor = null
 let model = null
 let decorations = null
-
-const themeName = () => (isDark.value ? 'vs-dark' : 'vs')
 
 function setModel() {
   const next = monaco.editor.createModel(props.content, languageFor(props.path))
@@ -52,7 +50,7 @@ function highlight() {
 
 onMounted(() => {
   editor = monaco.editor.create(host.value, {
-    theme: themeName(),
+    theme: editorThemeName(),
     readOnly: true,
     domReadOnly: true,
     automaticLayout: true,
@@ -77,7 +75,7 @@ onBeforeUnmount(() => {
 
 watch(() => [props.content, props.path], () => nextTick(setModel))
 watch(() => props.line, highlight)
-watch(isDark, () => monaco.editor.setTheme(themeName()))
+watch(isDark, applyEditorTheme)
 watch(
   () => store.fontSize,
   (size) => editor?.updateOptions({ fontSize: size }),

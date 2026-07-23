@@ -65,9 +65,10 @@ html {
 }
 
 /*
- * Layered surface contrast (VSCode-like):
- *   chrome  = activity bar + tab strip  -> darkest "dark black"
- *   panel   = sidebar + editor          -> lighter "light black" (matches Monaco vs-dark #1e1e1e)
+ * Layered surface contrast:
+ *   chrome = activity bar + tab strip -> the darker step
+ *   panel  = sidebar + editor         -> the editor background
+ * These match editorTheme.js, so Monaco and the panels around it never seam.
  */
 :root {
   --surface-chrome: #f3f3f3;
@@ -76,8 +77,8 @@ html {
   --sb-thumb-hover: rgba(0, 0, 0, 0.32);
 }
 [data-theme='dark'] {
-  --surface-chrome: #181818;
-  --surface-panel: #1e1e1e;
+  --surface-chrome: #0d0d0d;
+  --surface-panel: #171717;
   --sb-thumb: rgba(255, 255, 255, 0.13);
   --sb-thumb-hover: rgba(255, 255, 255, 0.26);
 }

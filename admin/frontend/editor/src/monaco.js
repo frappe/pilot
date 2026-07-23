@@ -15,5 +15,8 @@ self.MonacoEnvironment = {
   },
 }
 
+// Registers the espresso themes and selects one; importing monaco is enough.
+export { editorThemeName, applyEditorTheme } from '@/editorTheme'
+
 export { monaco }
 export { languageFor } from '@/lang'

@@ -80,18 +80,19 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, defineAsyncComponent } from 'vue'
 import FileIcon from '@/components/FileIcon.vue'
 import Modal from '@/components/ui/Modal.vue'
 import SearchToggles from '@/components/ui/SearchToggles.vue'
 import MatchLine from '@/components/ui/MatchLine.vue'
-import CodePreview from '@/components/ui/CodePreview.vue'
 import { filesApi } from '@/api/files'
 import { searchApi } from '@/api/search'
 import { useEditorStore } from '@/stores/editor'
 import { useSearchModal } from '@/composables/useSearchModal'
 import { useMobile } from '@/composables/useMobile'
 import { baseName, dirName } from '@/utils'
+
+const CodePreview = defineAsyncComponent(() => import('@/components/ui/CodePreview.vue'))
 
 const editor = useEditorStore()
 const { state, close } = useSearchModal()

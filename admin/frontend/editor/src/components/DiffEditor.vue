@@ -4,7 +4,7 @@
 
 <script setup>
 import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
-import { monaco, languageFor } from '@/monaco'
+import { monaco, languageFor, editorThemeName, applyEditorTheme } from '@/monaco'
 import { useTheme } from '@/composables/useTheme'
 import { useMobile } from '@/composables/useMobile'
 import { useEditorStore } from '@/stores/editor'
@@ -23,8 +23,6 @@ let editor = null
 let originalModel = null
 let modifiedModel = null
 
-const themeName = () => (isDark.value ? 'vs-dark' : 'vs')
-
 function setModels() {
   const lang = languageFor(props.path)
   originalModel?.dispose()
@@ -36,7 +34,7 @@ function setModels() {
 
 onMounted(() => {
   editor = monaco.editor.createDiffEditor(host.value, {
-    theme: themeName(),
+    theme: editorThemeName(),
     readOnly: true,
     automaticLayout: true,
     fontSize: store.fontSize,
@@ -56,7 +54,7 @@ onBeforeUnmount(() => {
 })
 
 watch(() => [props.original, props.modified, props.path], setModels)
-watch(isDark, () => monaco.editor.setTheme(themeName()))
+watch(isDark, applyEditorTheme)
 watch(() => store.fontSize, (s) => editor?.updateOptions({ fontSize: s }))
 watch(isMobile, (m) => editor?.updateOptions({ renderSideBySide: !m }))
 </script>

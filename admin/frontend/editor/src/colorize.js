@@ -1,10 +1,16 @@
-import { monaco } from '@/monaco'
+// Loaded on the first colorized line, not at import: the search panel mounts
+// eagerly and Monaco is a multi-megabyte chunk that first paint does not need.
+let monacoModule = null
+async function loadMonaco() {
+  if (!monacoModule) monacoModule = await import('@/monaco')
+  return monacoModule.monaco
+}
 
 const loaders = new Map()
 
 // colorize() can resolve before a lazily registered language's tokenizer exists,
 // which silently yields unhighlighted HTML. Run the loader once per language.
-function loadLanguage(language) {
+function loadLanguage(monaco, language) {
   if (!loaders.has(language)) {
     const entry = monaco.languages.getLanguages().find((l) => l.id === language)
     loaders.set(language, Promise.resolve(entry?.loader ? entry.loader() : null))
@@ -31,7 +37,8 @@ export async function colorizeLine(text, language, match) {
   const raw = text.replace(/\r?\n$/, '').replaceAll('\t', ' ')
   const indent = raw.length - raw.trimStart().length
   const line = raw.slice(indent)
-  await loadLanguage(language)
+  const monaco = await loadMonaco()
+  await loadLanguage(monaco, language)
   const html = (await monaco.editor.colorize(line, language, { tabSize: 1 })).replace(/<br\/?>$/, '')
   return {
     html,

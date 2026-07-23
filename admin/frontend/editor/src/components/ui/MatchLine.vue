@@ -9,7 +9,7 @@
 <script setup>
 import { ref, computed, watchEffect, nextTick } from 'vue'
 import { colorizeLine, markMatch } from '@/colorize'
-import { languageFor } from '@/monaco'
+import { languageFor } from '@/lang'
 import { useTheme } from '@/composables/useTheme'
 
 const props = defineProps({
