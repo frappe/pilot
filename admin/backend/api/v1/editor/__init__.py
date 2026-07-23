@@ -23,13 +23,14 @@ def with_workspace(view):
     @wraps(view)
     def wrapper(*args, **kwargs):
         bench_root = Path(current_app.config["BENCH_ROOT"])
-        if not is_developer_mode_enabled(bench_root):
+        config = _read_config(bench_root)
+        if config is None or not config.allow_developer_mode:
             return error_response("editor_disabled", "Code editor is disabled. Enable Developer Mode in Settings.", 403)
         name = (request.args.get("app") or "").strip()
         if validate_app_name(name) is not None:
             return error_response("editor_app_not_found", "Unknown or missing app.", 404)
         try:
-            root = Bench(bench_root).app(name).path
+            root = Bench(config, bench_root).app(name).path
         except Exception:
             return error_response("editor_app_not_found", "Unknown or missing app.", 404)
         return view(EditorWorkspace(root), *args, **kwargs)
@@ -38,12 +39,18 @@ def with_workspace(view):
 
 
 def is_developer_mode_enabled(bench_root: Path) -> bool:
+    config = _read_config(bench_root)
+    return bool(config and config.allow_developer_mode)
+
+
+def _read_config(bench_root: Path):
+    """Parse bench.toml without validation: the editor reads a couple of fields on a hot path."""
     from pilot.config import BenchConfig
 
     try:
-        return BenchConfig.read(bench_root).allow_developer_mode
+        return BenchConfig.read(bench_root, validate=False)
     except Exception:
-        return False
+        return None
 
 
 def query_flag(name: str) -> bool:
