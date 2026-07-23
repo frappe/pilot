@@ -8,6 +8,7 @@ except ImportError:
     litellm = None
 
 from pilot.exceptions import BenchError
+from pilot.integrations.llm import read_system_prompt
 
 
 class LLMError(BenchError):
@@ -41,15 +42,14 @@ class LLMIntegration:
         self,
         prompt: str,
         *,
+        bench_root: str,
         model: str | None = None,
-        system_prompt: str | None = None,
         max_tokens: int = 4096,
         **kwargs,
     ):
         """Send a single-turn prompt and return the litellm response."""
         messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "system", "content": read_system_prompt(bench_root)})
         messages.append({"role": "user", "content": prompt})
         try:
             return litellm.completion(

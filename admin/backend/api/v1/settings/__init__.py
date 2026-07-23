@@ -15,7 +15,6 @@ from pilot.config import (
     WAF_RULE_OPERATORS,
     BenchConfig,
 )
-from pilot.config.llm import clear_system_prompt, read_system_prompt, write_system_prompt
 from pilot.core.bench import Bench
 from pilot.core.bench.settings import (
     SettingsApplyFailed,
@@ -27,6 +26,7 @@ from pilot.core.bench.settings import (
     waf_payload,
     worker_groups_payload,
 )
+from pilot.integrations.llm import clear_system_prompt, read_system_prompt, write_system_prompt
 from pilot.managers.platform import is_linux, native_process_manager
 from pilot.managers.redis import RedisManager
 from pilot.managers.waf import WafManager

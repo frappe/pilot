@@ -12,7 +12,7 @@ from admin.backend.api.v1.settings import (
     settings_bp,
 )
 from pilot.config import BenchConfig
-from pilot.config.llm import DEFAULT_SYSTEM_PROMPT, system_prompt_path
+from pilot.integrations.llm import DEFAULT_SYSTEM_PROMPT, system_prompt_path
 
 
 def _config() -> BenchConfig:
