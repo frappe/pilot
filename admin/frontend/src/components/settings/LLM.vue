@@ -40,7 +40,7 @@
       />
 
       <FormControl
-        v-if="selfHosted"
+        v-if="freeTextModel"
         label="Model"
         type="text"
         v-model="model"
@@ -57,7 +57,7 @@
       />
 
       <FormControl
-        v-if="selfHosted"
+        v-if="needsApiBase"
         label="API Base URL"
         type="text"
         v-model="apiBase"
@@ -88,7 +88,7 @@
         </summary>
         <div class="space-y-4 pt-4">
           <FormControl
-            v-if="!selfHosted"
+            v-if="!needsApiBase"
             label="API Base URL"
             type="text"
             v-model="apiBase"
@@ -132,7 +132,8 @@ const models = ref([])
 const connected = computed(() => Boolean(provider.value && apiKeySet.value))
 const selectedProvider = computed(() => providers.value.find((p) => p.value === provider.value))
 const providerLabel = computed(() => selectedProvider.value?.label || provider.value)
-const selfHosted = computed(() => Boolean(selectedProvider.value?.self_hosted))
+const needsApiBase = computed(() => Boolean(selectedProvider.value?.requires_api_base))
+const freeTextModel = computed(() => Boolean(selectedProvider.value?.free_text_model))
 
 const providerOptions = computed(() =>
   providers.value.map((p) => ({ label: p.label, value: p.value })),
@@ -147,7 +148,7 @@ const modelSelection = computed(() =>
 
 async function fetchModels(providerValue) {
   models.value = []
-  if (!providerValue || selfHosted.value) return
+  if (!providerValue || freeTextModel.value) return
   modelsLoading.value = true
   try {
     models.value = (await settingsApi.llmModels(providerValue)) || []
@@ -189,7 +190,7 @@ async function save() {
     error.value = 'Model is required.'
     return
   }
-  if (selfHosted.value && !apiBase.value.trim()) {
+  if (needsApiBase.value && !apiBase.value.trim()) {
     error.value = 'API base URL is required for a self-hosted provider.'
     return
   }
