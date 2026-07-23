@@ -27,6 +27,7 @@ Some runtime commands support all benches when invoked with the CLI option for a
 
 ## App Commands
 
+- `bench new-app APP`: scaffold a new Frappe app under `apps/` and install it. Prompts for title, description, publisher, email, license, GitHub workflow, and branch; pass any of `--title/--description/--publisher/--email/--license/--branch/--github-workflow` to skip prompts (branch defaults to `develop`).
 - `bench get-app REPO_OR_NAME`: clone and install an app into the bench.
 - `bench list-apps`: list apps present in the bench.
 - `bench install-app APP --site SITE`: install apps on a site.
