@@ -1,7 +1,7 @@
 // Scope the copied editor to one app without touching component code.
 // The app name comes from the URL path (/editor/<app>), and every /api/*
 // call is rewritten to the admin backend's scoped, admin-only endpoints.
-const APP = decodeURIComponent((location.pathname.match(/\/editor\/([^/]+)/) || [])[1] || '')
+export const APP = decodeURIComponent((location.pathname.match(/\/editor\/([^/]+)/) || [])[1] || '')
 const BASE = '/api/v1/editor'
 
 export function scopedUrl(url) {

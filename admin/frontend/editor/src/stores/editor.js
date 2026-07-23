@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
-import { api } from '@/api'
+import { filesApi } from '@/api/files'
+import { sessionApi } from '@/api/session'
 import { useGitStore } from '@/stores/git'
 import { baseName } from '@/utils'
 
@@ -38,7 +39,7 @@ export const useEditorStore = defineStore('editor', {
     async open(path, { line, col, preview = false } = {}) {
       let t = this.tabs.find((t) => t.path === path)
       if (!t) {
-        const data = await api.read(path)
+        const data = await filesApi.read(path)
         // Re-check after the await: a double click fires click (preview) and
         // dblclick (permanent) which race here; without this they'd both push.
         t = this.tabs.find((t) => t.path === path)
@@ -61,7 +62,7 @@ export const useEditorStore = defineStore('editor', {
     async refreshTab(path) {
       const t = this.tabs.find((t) => t.path === path)
       if (!t) return
-      const data = await api.read(path)
+      const data = await filesApi.read(path)
       t.content = data.content
       t.saved = data.content
       t.etag = data.etag
@@ -117,7 +118,7 @@ export const useEditorStore = defineStore('editor', {
       t.saving = true
       try {
         const sent = t.content
-        const r = await api.save(t.path, sent, t.etag)
+        const r = await filesApi.save(t.path, sent, t.etag)
         if (r.conflict) {
           this.conflict = { path: t.path, disk: r.content, etag: r.etag }
           return
@@ -143,7 +144,7 @@ export const useEditorStore = defineStore('editor', {
       const t = this.tabs.find((t) => t.path === c.path)
       if (!t) return
       if (action === 'override') {
-        const r = await api.save(t.path, t.content, '*')
+        const r = await filesApi.save(t.path, t.content, '*')
         t.etag = r.etag
         t.saved = t.content
         t.dirty = false

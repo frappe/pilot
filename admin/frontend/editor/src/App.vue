@@ -65,7 +65,7 @@ import SearchModal from '@/components/SearchModal.vue'
 import ConflictDialog from '@/components/ConflictDialog.vue'
 import PromptDialog from '@/components/PromptDialog.vue'
 import ContextMenu from '@/components/ContextMenu.vue'
-import { api } from '@/api'
+import { sessionApi } from '@/api/session'
 import { useEditorStore } from '@/stores/editor'
 import { useGitStore } from '@/stores/git'
 import { useTreeStore } from '@/stores/tree'
@@ -121,14 +121,14 @@ function saveSession() {
   savePending = true
   clearTimeout(saveTimer)
   saveTimer = setTimeout(() => {
-    api.putState(store.snapshot())
+    sessionApi.put(store.snapshot())
     savePending = false
   }, 1000)
 }
 function onHidden() {
   if (document.hidden && savePending) {
     clearTimeout(saveTimer)
-    api.putState(store.snapshot())
+    sessionApi.put(store.snapshot())
     savePending = false
   }
 }
@@ -158,7 +158,7 @@ onMounted(async () => {
     store.open(open).catch(() => {})
   } else {
     try {
-      await store.restore(await api.getState())
+      await store.restore(await sessionApi.get())
     } catch {}
   }
   if (diff) store.openDiff(diff)

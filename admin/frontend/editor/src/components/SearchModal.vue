@@ -116,7 +116,8 @@
 <script setup>
 import { ref, reactive, computed, watch, nextTick } from 'vue'
 import FileIcon from '@/components/FileIcon.vue'
-import { api } from '@/api'
+import { filesApi } from '@/api/files'
+import { searchApi } from '@/api/search'
 import { useEditorStore } from '@/stores/editor'
 import { useSearchModal } from '@/composables/useSearchModal'
 import { useMobile } from '@/composables/useMobile'
@@ -193,13 +194,8 @@ async function run() {
     return
   }
   loading.value = true
-  const params = new URLSearchParams({ q })
-  if (opts.case) params.set('case', '1')
-  if (opts.word) params.set('word', '1')
-  if (opts.regex) params.set('regex', '1')
   try {
-    const res = await fetch('/api/search?' + params)
-    results.value = await res.json()
+    results.value = await searchApi.find({ q, caseSensitive: opts.case, word: opts.word, regex: opts.regex })
   } catch {
     results.value = []
   }
@@ -241,7 +237,7 @@ async function loadPreview() {
   if (content == null) {
     previewLoading.value = true
     try {
-      const d = await api.read(c.file)
+      const d = await filesApi.read(c.file)
       content = d.content || ''
     } catch {
       content = ''

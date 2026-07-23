@@ -34,7 +34,8 @@
 import { ref, computed, watch } from 'vue'
 import FileIcon from '@/components/FileIcon.vue'
 import DiffEditor from '@/components/DiffEditor.vue'
-import { api } from '@/api'
+import { filesApi } from '@/api/files'
+import { gitApi } from '@/api/git'
 import { useEditorStore } from '@/stores/editor'
 import { baseName, dirName } from '@/utils'
 
@@ -50,8 +51,8 @@ async function load() {
   if (!path.value) return
   loading.value = true
   const [head, file] = await Promise.all([
-    api.gitShow(path.value),
-    api.read(path.value).catch(() => ({ content: '' })),
+    gitApi.show(path.value),
+    filesApi.read(path.value).catch(() => ({ content: '' })),
   ])
   original.value = head.content || ''
   modified.value = file.content || ''

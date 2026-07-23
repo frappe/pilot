@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { api } from '@/api'
+import { filesApi } from '@/api/files'
 import { useEditorStore } from '@/stores/editor'
 import { useGitStore } from '@/stores/git'
 import { baseName } from '@/utils'
@@ -37,7 +37,7 @@ export const useTreeStore = defineStore('tree', {
       const n = this.node(path)
       n.loading = true
       try {
-        n.children = await api.tree(path)
+        n.children = await filesApi.tree(path)
         n.loaded = true
       } finally {
         n.loading = false
@@ -83,7 +83,7 @@ export const useTreeStore = defineStore('tree', {
       name = (name || '').trim()
       if (!d || !name) return
       const path = join(d.parent, name)
-      await api.create(path, d.type)
+      await filesApi.create(path, d.type)
       await this.reload(d.parent)
       useGitStore().refresh()
       if (d.type === 'file') useEditorStore().open(path).catch(() => {})
@@ -101,7 +101,7 @@ export const useTreeStore = defineStore('tree', {
       name = (name || '').trim()
       if (!name || name === baseName(path)) return
       const to = join(parentOf(path), name)
-      await api.rename(path, to)
+      await filesApi.rename(path, to)
       useEditorStore().renamePath(path, to)
       await this.reload(parentOf(path))
       useGitStore().refresh()
@@ -112,7 +112,7 @@ export const useTreeStore = defineStore('tree', {
       if (parentOf(from) === toDir) return
       const to = join(toDir, baseName(from))
       if (from === to || to.startsWith(from + '/')) return
-      await api.rename(from, to)
+      await filesApi.rename(from, to)
       useEditorStore().renamePath(from, to)
       await this.reload(parentOf(from))
       const n = this.node(toDir)

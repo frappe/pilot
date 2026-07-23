@@ -55,7 +55,7 @@
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue'
 import FileIcon from '@/components/FileIcon.vue'
-import { api } from '@/api'
+import { filesApi } from '@/api/files'
 import { useEditorStore } from '@/stores/editor'
 import { useQuickOpen } from '@/composables/useQuickOpen'
 import { baseName, dirName } from '@/utils'
@@ -124,7 +124,7 @@ function choose(i) {
 async function loadFiles() {
   if (loadedOnce) return
   loading.value = true
-  files.value = await api.files()
+  files.value = await filesApi.list()
   loadedOnce = true
   loading.value = false
 }

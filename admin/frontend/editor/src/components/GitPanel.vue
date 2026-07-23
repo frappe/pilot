@@ -184,7 +184,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { Button, Dropdown, confirmDialog, toast } from 'frappe-ui'
 import FileIcon from '@/components/FileIcon.vue'
-import { api } from '@/api'
+import { gitApi } from '@/api/git'
 import { useEditorStore } from '@/stores/editor'
 import { useGitStore } from '@/stores/git'
 import { useTreeStore } from '@/stores/tree'
@@ -279,11 +279,11 @@ function discard(path) {
   })
 }
 async function stageAll() {
-  for (const f of git.unstaged) await api.gitStage(f.path)
+  for (const f of git.unstaged) await gitApi.stage(f.path)
   await git.refresh()
 }
 async function unstageAll() {
-  for (const f of git.staged) await api.gitUnstage(f.path)
+  for (const f of git.staged) await gitApi.unstage(f.path)
   await git.refresh()
 }
 

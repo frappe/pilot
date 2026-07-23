@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { api } from '@/api'
+import { gitApi } from '@/api/git'
 
 export const useGitStore = defineStore('git', {
   state: () => ({
@@ -23,7 +23,7 @@ export const useGitStore = defineStore('git', {
     },
     async refresh() {
       try {
-        const d = await api.gitStatus()
+        const d = await gitApi.status()
         this.repo = !!d.repo
         this.branch = d.branch || ''
         this.ahead = d.ahead || 0
@@ -41,33 +41,32 @@ export const useGitStore = defineStore('git', {
       }
     },
     async log(skip = 0, limit = 50) {
-      return api.gitLog(skip, limit)
+      return gitApi.log(skip, limit)
     },
     async commitInfo(sha) {
-      return api.gitCommitInfo(sha)
+      return gitApi.commitInfo(sha)
     },
     async commitFileDiff(sha, path) {
-      return api.gitCommitDiff(sha, path)
+      return gitApi.commitDiff(sha, path)
     },
     async stage(path) {
-      const r = await api.gitStage(path)
+      const r = await gitApi.stage(path)
       await this.refresh()
       return r
     },
     async unstage(path) {
-      const r = await api.gitUnstage(path)
+      const r = await gitApi.unstage(path)
       await this.refresh()
       return r
     },
     async discard(path) {
-      const r = await api.gitDiscard(path)
+      const r = await gitApi.discard(path)
       await this.refresh()
       return r
     },
     async getBlame(path) {
       if (this.blame[path]) return this.blame[path]
-      const res = await fetch(`/api/git/blame?path=${encodeURIComponent(path)}`)
-      const d = await res.json().catch(() => ({}))
+      const d = await gitApi.blame(path)
       const lines = d.lines || []
       this.blame[path] = lines
       return lines
@@ -77,28 +76,28 @@ export const useGitStore = defineStore('git', {
     },
     async getDiff(path) {
       if (!this.repo) return { added: [], modified: [], deleted: [] }
-      return api.gitDiff(path)
+      return gitApi.diff(path)
     },
     async branches() {
-      return api.gitBranches()
+      return gitApi.branches()
     },
     async checkout(branch, create) {
-      const r = await api.gitCheckout(branch, create)
+      const r = await gitApi.checkout(branch, create)
       await this.refresh()
       return r
     },
     async commit(message, all = true) {
-      const r = await api.gitCommit(message, all)
+      const r = await gitApi.commit(message, all)
       await this.refresh()
       return r
     },
     async push(force = false) {
-      const r = await api.gitPush(force)
+      const r = await gitApi.push(force)
       await this.refresh()
       return r
     },
     async pull() {
-      const r = await api.gitPull()
+      const r = await gitApi.pull()
       await this.refresh()
       return r
     },

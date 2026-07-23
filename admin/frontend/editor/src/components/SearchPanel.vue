@@ -98,6 +98,7 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue'
 import { confirmDialog } from 'frappe-ui'
+import { searchApi } from '@/api/search'
 import FileIcon from '@/components/FileIcon.vue'
 import { useEditorStore } from '@/stores/editor'
 import { useGitStore } from '@/stores/git'
@@ -166,13 +167,8 @@ async function run() {
     return
   }
   loading.value = true
-  const params = new URLSearchParams({ q })
-  if (opts.case) params.set('case', '1')
-  if (opts.word) params.set('word', '1')
-  if (opts.regex) params.set('regex', '1')
   try {
-    const res = await fetch('/api/search?' + params)
-    results.value = await res.json()
+    results.value = await searchApi.find({ q, caseSensitive: opts.case, word: opts.word, regex: opts.regex })
   } catch {
     results.value = []
   }
@@ -191,17 +187,13 @@ function replaceAll() {
     onConfirm: async ({ hideDialog }) => {
       hideDialog()
       const files = results.value.map((f) => f.file)
-      await fetch('/api/replace', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: query.value,
-          replace: replace.value,
-          regex: opts.regex,
-          case: opts.case,
-          word: opts.word,
-          files,
-        }),
+      await searchApi.replace({
+        query: query.value,
+        replace: replace.value,
+        regex: opts.regex,
+        case: opts.case,
+        word: opts.word,
+        files,
       })
       for (const p of files) {
         if (editor.tabs.find((t) => t.path === p)) await editor.refreshTab(p)
