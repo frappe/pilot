@@ -44,6 +44,17 @@ class BenchConfigFiles:
         config["maintenance_mode"] = 1 if enabled else 0
         write_private_text(config_path, json.dumps(config, indent=2))
 
+    def set_developer_mode(self, enabled: bool) -> None:
+        config_path = self.bench.sites_path / "common_site_config.json"
+        if not config_path.exists():
+            return  # written with the right value on the next write_common_site_config
+        config = json.loads(config_path.read_text())
+        value = 1 if enabled else 0
+        if config.get("developer_mode") == value:
+            return
+        config["developer_mode"] = value
+        write_private_text(config_path, json.dumps(config, indent=2) + "\n")
+
     def sync_s3_credentials(self, s3_config: "S3Config") -> None:
         config_path = self.bench.sites_path / "common_site_config.json"
         if not config_path.exists():
@@ -74,6 +85,7 @@ class BenchConfigFiles:
                 "webserver_port": self.bench.config.http_port,
                 "socketio_backend": self.bench.config.socketio_backend,
                 "monitor": True,
+                "developer_mode": 1 if self.bench.config.developer_mode else 0,
             }
         )
         write_private_text(config_path, json.dumps(config, indent=2) + "\n")

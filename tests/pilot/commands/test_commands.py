@@ -1120,6 +1120,36 @@ def test_write_common_site_config_preserves_custom_keys(tmp_path: Path) -> None:
     assert config["redis_cache"] == "redis://localhost:13000"
 
 
+def test_write_common_site_config_syncs_developer_mode(tmp_path: Path) -> None:
+    import json
+
+    bench = make_bench(tmp_path)
+    bench.sites_path.mkdir(parents=True)
+    config_path = bench.sites_path / "common_site_config.json"
+
+    bench.write_common_site_config()
+    assert json.loads(config_path.read_text())["developer_mode"] == 0
+
+    bench.config.developer_mode = True
+    bench.write_common_site_config()
+    assert json.loads(config_path.read_text())["developer_mode"] == 1
+
+
+def test_set_developer_mode_updates_only_that_key(tmp_path: Path) -> None:
+    import json
+
+    bench = make_bench(tmp_path)
+    bench.sites_path.mkdir(parents=True)
+    config_path = bench.sites_path / "common_site_config.json"
+    config_path.write_text('{"server_script_enabled": 1, "developer_mode": 0}')
+
+    bench.set_developer_mode(True)
+
+    config = json.loads(config_path.read_text())
+    assert config["developer_mode"] == 1
+    assert config["server_script_enabled"] == 1
+
+
 def _drop_config(name: str) -> BenchConfig:
     return BenchConfig(
         name=name,

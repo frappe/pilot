@@ -62,6 +62,7 @@ def build_settings_response(config: BenchConfig) -> dict:
             "socketio_port": config.socketio_port,
             "default_branch": config.default_branch,
             "db_type": config.db_type,
+            "developer_mode": config.developer_mode,
         },
         "mariadb": {
             "host": config.mariadb.host,

@@ -47,6 +47,7 @@ class BenchSettings:
         restarted = self._regenerate_and_restart_if_needed(old_restart)
         waf_warning = self._apply_nginx_if_needed(old_firewall, old_waf)
         self._sync_s3_if_needed(old_s3_config)
+        self.bench.set_developer_mode(self.bench.config.developer_mode)
         return restarted, waf_warning
 
     def _regenerate_and_restart_if_needed(self, old_restart: dict) -> bool:

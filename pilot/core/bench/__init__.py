@@ -199,6 +199,11 @@ class Bench:
 
         BenchConfigFiles(self).set_maintenance_mode(enabled)
 
+    def set_developer_mode(self, enabled: bool) -> None:
+        from pilot.core.bench.config_files import BenchConfigFiles
+
+        BenchConfigFiles(self).set_developer_mode(enabled)
+
     def sync_s3_credentials(self, s3_config: S3Config):
         from pilot.core.bench.config_files import BenchConfigFiles
 

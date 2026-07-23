@@ -45,6 +45,7 @@ FLAT_KEYS = {
     "reload_python": "reload_python",
     "watch_admin_js": "watch_admin_js",
     "db_type": "db_type",
+    "developer_mode": "developer_mode",
     "mariadb_password": "mariadb.root_password",
     "mariadb_admin_user": "mariadb.admin_user",
     "mariadb_socket_path": "mariadb.socket_path",
@@ -110,6 +111,8 @@ class BenchConfig:
     # The single database engine for this bench's sites: "mariadb" or "postgres".
     db_type: str = "mariadb"
     default_branch: str = ""
+    # Enables Frappe developer_mode bench-wide via common_site_config.
+    developer_mode: bool = False
     production: ProductionConfig = field(default_factory=ProductionConfig)
     monitor: MonitorConfig = field(default_factory=MonitorConfig)
     nginx: NginxConfig = field(default_factory=NginxConfig)
@@ -180,6 +183,7 @@ class BenchConfig:
             watch_admin_js=bench_data.get("watch_admin_js", False),
             db_type=bench_data.get("db_type", "mariadb"),
             default_branch=bench_data.get("default_branch", ""),
+            developer_mode=bench_data.get("developer_mode", False),
             apps=apps,
             **sections,
         )
@@ -405,6 +409,7 @@ class BenchConfig:
             "reload_python": self.reload_python,
             "watch_admin_js": self.watch_admin_js,
             "db_type": self.db_type,
+            "developer_mode": self.developer_mode,
         }
         if self.default_branch:
             bench["default_branch"] = self.default_branch
@@ -791,6 +796,7 @@ _BENCH_KEYS = {
     "watch_admin_js",
     "db_type",
     "default_branch",
+    "developer_mode",
 }
 # Keys older bench-cli versions wrote that the parser still tolerates.
 _PRODUCTION_LEGACY = {"lightweight", "nginx"}

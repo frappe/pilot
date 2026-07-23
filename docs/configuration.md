@@ -51,6 +51,7 @@ count = 1
 - `socketio_backend`: `node` or `python`.
 - `db_type`: `mariadb`, `postgres`, or `sqlite`.
 - `default_branch`: optional branch default for new apps.
+- `developer_mode`: enables Frappe developer mode for every site in the bench (written to `common_site_config.json`).
 - `watch_apps_js`, `watch_admin_js`, `reload_python`: development toggles.
 
 ## Apps

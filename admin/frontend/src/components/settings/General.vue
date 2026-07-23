@@ -3,6 +3,11 @@
     <span class="size-5 text-ink-gray-4 animate-spin lucide-loader-circle"></span>
   </div>
   <div v-else class="space-y-6">
+    <Switch label="Developer mode"
+      description="Lets developers customise doctypes on every site in this bench."
+      :model-value="developerMode" :disabled="savingDeveloperMode"
+      @update:model-value="toggleDeveloperMode" />
+
     <div class="flex sm:flex-row sm:justify-between sm:items-center flex-col gap-3">
       <div>
         <p class="flex items-center gap-2 font-medium text-ink-gray-8 text-sm">
@@ -33,8 +38,8 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { Button, ErrorMessage } from 'frappe-ui'
-import { cliUpdatesApi } from '@/api/settings'
+import { Button, ErrorMessage, Switch, toast } from 'frappe-ui'
+import { cliUpdatesApi, settingsApi } from '@/api/settings'
 import { tasksApi } from '@/api/tasks'
 import { isTaskActive } from '@/utils/taskFormat'
 
@@ -48,6 +53,8 @@ const status = ref({ current_version: '', is_dev: true })
 const latestVersion = ref(null)
 const log = ref('')
 const error = ref(null)
+const developerMode = ref(false)
+const savingDeveloperMode = ref(false)
 
 const updateAvailable = computed(() => Boolean(latestVersion.value) && latestVersion.value !== status.value.current_version)
 
@@ -60,14 +67,31 @@ const subtitle = computed(() => {
 })
 
 onMounted(async () => {
-  try {
-    status.value = await cliUpdatesApi.status()
-  } catch {
-    error.value = 'Could not load version information.'
-  } finally {
-    loading.value = false
+  const [versionResult, settingsResult] = await Promise.allSettled([
+    cliUpdatesApi.status(),
+    settingsApi.get(),
+  ])
+  if (versionResult.status === 'fulfilled') status.value = versionResult.value
+  else error.value = 'Could not load version information.'
+  if (settingsResult.status === 'fulfilled') {
+    developerMode.value = Boolean(settingsResult.value?.bench?.developer_mode)
   }
+  loading.value = false
 })
+
+async function toggleDeveloperMode(value) {
+  savingDeveloperMode.value = true
+  error.value = null
+  try {
+    await settingsApi.update({ bench: { developer_mode: value } })
+    developerMode.value = value
+    toast.success(`Developer mode ${value ? 'enabled' : 'disabled'}`)
+  } catch (e) {
+    error.value = e.message || 'Could not update developer mode.'
+  } finally {
+    savingDeveloperMode.value = false
+  }
+}
 
 async function check() {
   if (checking.value) return
