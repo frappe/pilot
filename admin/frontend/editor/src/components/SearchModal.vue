@@ -33,7 +33,7 @@
             v-for="(match, index) in group.matches"
             :key="index"
             :data-i="group.base + index"
-            class="ed-row pl-6"
+            class="ed-row gap-1.5 pl-3"
             :class="{ 'ed-row-selected': group.base + index === sel }"
             @click="onResultClick(group.base + index)"
             @dblclick="choose()"
@@ -42,8 +42,8 @@
             <MatchLine :text="match.text" :path="group.file" :start="match.start" :end="match.end" />
           </div>
         </template>
-        <div v-if="!flat.length" class="ed-empty">
-          {{ loading ? 'Searching…' : query ? 'No matches' : 'Type to search' }}
+        <div v-if="!flat.length" class="ed-empty" :class="{ 'text-ink-red-4': error }">
+          {{ loading ? 'Searching…' : error || (query ? 'No matches' : 'Type to search') }}
         </div>
         <div v-else-if="limit < flat.length" class="ed-empty">
           Showing {{ limit }} of {{ flat.length }} matches
@@ -58,7 +58,8 @@
           <div class="flex h-9 shrink-0 items-center gap-2 border-b border-outline-gray-1 px-3">
             <FileIcon :name="baseName(current.file)" class="ed-lane" />
             <span class="ed-name text-ink-gray-8">{{ baseName(current.file) }}</span>
-            <span class="ed-path">{{ current.file }}:{{ current.line }}</span>
+            <span class="ed-path">{{ dirName(current.file) }}</span>
+            <span class="ed-meta">Line {{ current.line }}</span>
             <button class="ed-icon-button ml-auto" title="Open file" @click="choose()">
               <span class="lucide-external-link h-4 w-4 text-current"></span>
             </button>
@@ -101,6 +102,7 @@ const PAGE = 80
 const query = ref('')
 const loading = ref(false)
 const results = ref([])
+const error = ref('')
 const sel = ref(0)
 const input = ref(null)
 const listBox = ref(null)
@@ -151,10 +153,12 @@ async function run() {
     return
   }
   loading.value = true
+  error.value = ''
   try {
     results.value = await searchApi.find(q, opts.value)
-  } catch {
+  } catch (e) {
     results.value = []
+    error.value = e.message || 'Search failed.'
   }
   sel.value = 0
   limit.value = PAGE

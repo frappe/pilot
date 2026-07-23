@@ -41,8 +41,13 @@ function highlight() {
       options: { isWholeLine: true, className: 'search-hit-line' },
     },
   ])
-  editor.revealLineInCenter(line, monaco.editor.ScrollType.Immediate)
   editor.setPosition({ lineNumber: line, column: 1 })
+  // automaticLayout measures via a ResizeObserver that has not fired yet on
+  // mount, so revealing would scroll against a zero-height viewport. Measure the
+  // host ourselves first.
+  const { width, height } = host.value.getBoundingClientRect()
+  if (width && height) editor.layout({ width, height })
+  editor.revealLineInCenter(line, monaco.editor.ScrollType.Immediate)
 }
 
 onMounted(() => {

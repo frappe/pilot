@@ -166,6 +166,21 @@ def test_symlink_escape_is_rejected(tmp_path: Path) -> None:
     assert response.get_json()["error"]["code"] == "invalid_path"
 
 
+def test_search_reports_a_broken_ripgrep(tmp_path: Path, monkeypatch) -> None:
+    from admin.backend.core.editor import search as search_service
+
+    def missing(*args, **kwargs):
+        raise FileNotFoundError("rg")
+
+    monkeypatch.setattr(search_service.subprocess, "run", missing)
+    client = _client(_bench(tmp_path))
+    response = client.get(
+        "/api/v1/editor/search", query_string={"app": "widgets", "q": "hi"}
+    )
+    assert response.status_code == 503
+    assert response.get_json()["error"]["code"] == "search_unavailable"
+
+
 def test_delete_refuses_root(tmp_path: Path) -> None:
     client = _client(_bench(tmp_path))
     response = client.delete(

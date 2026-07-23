@@ -1,14 +1,14 @@
 <template>
-  <!-- Colorized markup is produced by Monaco's tokenizer, which escapes the source. -->
-  <span v-if="html" class="ed-code" v-html="html"></span>
+  <!-- Colorized markup comes from Monaco's tokenizer, which escapes the source. -->
+  <span v-if="colored" ref="host" class="ed-code" v-html="colored.html"></span>
   <span v-else class="ed-code">
-    {{ plain.pre }}<mark class="rounded-sm bg-surface-amber-2 text-ink-gray-9">{{ plain.hit }}</mark>{{ plain.post }}
+    {{ plain.pre }}<mark class="ed-mark">{{ plain.hit }}</mark>{{ plain.post }}
   </span>
 </template>
 
 <script setup>
-import { ref, computed, watchEffect } from 'vue'
-import { colorizeLine } from '@/colorize'
+import { ref, computed, watchEffect, nextTick } from 'vue'
+import { colorizeLine, markMatch } from '@/colorize'
 import { languageFor } from '@/monaco'
 import { useTheme } from '@/composables/useTheme'
 
@@ -20,16 +20,16 @@ const props = defineProps({
 })
 
 const { isDark } = useTheme()
-const html = ref('')
+const host = ref(null)
+const colored = ref(null)
 
 // Shown until the tokenizer resolves, and whenever colorizing fails.
 const plain = computed(() => {
-  const line = props.text.replace(/\r?\n$/, '')
-  return {
-    pre: line.slice(0, props.start).replace(/^\s+/, ''),
-    hit: line.slice(props.start, props.end),
-    post: line.slice(props.end),
-  }
+  const line = props.text.replace(/\r?\n$/, '').trimStart()
+  const shift = props.text.replace(/\r?\n$/, '').length - line.length
+  const start = Math.max(0, props.start - shift)
+  const end = Math.max(0, props.end - shift)
+  return { pre: line.slice(0, start), hit: line.slice(start, end), post: line.slice(end) }
 })
 
 watchEffect(async () => {
@@ -37,9 +37,11 @@ watchEffect(async () => {
   void isDark.value
   const { text, path, start, end } = props
   try {
-    html.value = await colorizeLine(text, languageFor(path), { start, end })
+    colored.value = await colorizeLine(text, languageFor(path), { start, end })
+    await nextTick()
+    markMatch(host.value, colored.value.start, colored.value.end)
   } catch {
-    html.value = ''
+    colored.value = null
   }
 })
 </script>

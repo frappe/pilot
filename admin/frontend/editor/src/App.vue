@@ -9,7 +9,7 @@
 
       <aside
         v-show="panel"
-        class="bg-panel fixed inset-0 z-30 flex w-full flex-col sm:static sm:inset-auto sm:z-auto sm:w-64 sm:border-r sm:border-outline-gray-1"
+        class="bg-panel fixed inset-0 z-30 flex w-full flex-col sm:static sm:inset-auto sm:z-auto sm:w-72 sm:border-r sm:border-outline-gray-1"
       >
         <div class="min-h-0 flex-1">
           <ExplorerPanel v-show="panel === 'files'" @close="panel = ''" />

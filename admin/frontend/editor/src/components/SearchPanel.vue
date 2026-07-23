@@ -50,7 +50,8 @@
 
     <div class="flex h-7 shrink-0 items-center px-3 text-xs text-ink-gray-5">
       <span v-if="loading">Searching…</span>
-      <span v-else-if="query">{{ summary }}</span>
+      <span v-else-if="error" class="truncate text-ink-red-4" :title="error">{{ error }}</span>
+      <span v-else-if="results.length">{{ summary }}</span>
     </div>
 
     <div class="min-h-0 flex-1 overflow-auto px-1.5 pb-24 sm:pb-2" @scroll="onScroll">
@@ -73,7 +74,7 @@
           <div
             v-for="(match, index) in file.matches"
             :key="index"
-            class="ed-row pl-8"
+            class="ed-row gap-1.5 pl-3"
             @click="goto(file.path, match)"
           >
             <span class="ed-lineno">{{ match.line }}</span>
@@ -81,7 +82,9 @@
           </div>
         </div>
       </div>
-      <div v-if="query && !loading && !results.length" class="ed-empty">No matches</div>
+      <div v-if="query && !loading && !results.length" class="ed-empty">
+        {{ error || 'No matches' }}
+      </div>
       <div v-else-if="rendered < results.length" class="ed-empty">
         Showing {{ rendered }} of {{ results.length }} files
       </div>
@@ -115,6 +118,7 @@ const replace = ref('')
 const showReplace = ref(false)
 const loading = ref(false)
 const results = ref([])
+const error = ref('')
 const rendered = ref(PAGE)
 const collapsed = reactive(new Set())
 const queryInput = ref(null)
@@ -123,7 +127,6 @@ const opts = ref({ case: false, word: false, regex: false })
 const totalMatches = computed(() => results.value.reduce((n, f) => n + f.matches.length, 0))
 const summary = computed(() => {
   const files = results.value.length
-  if (!files) return 'No matches'
   const hits = totalMatches.value
   return `${hits} ${hits === 1 ? 'result' : 'results'} in ${files} ${files === 1 ? 'file' : 'files'}`
 })
@@ -163,11 +166,13 @@ async function run() {
     return
   }
   loading.value = true
+  error.value = ''
   try {
     const found = await searchApi.find(q, opts.value)
     results.value = found.map((f) => ({ path: f.file, matches: f.matches }))
-  } catch {
+  } catch (e) {
     results.value = []
+    error.value = e.message || 'Search failed.'
   }
   rendered.value = PAGE
   loading.value = false

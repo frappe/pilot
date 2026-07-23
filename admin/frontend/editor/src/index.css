@@ -33,13 +33,18 @@
     @apply min-w-0 truncate font-mono text-xs text-ink-gray-8;
   }
   .ed-lineno {
-    @apply w-9 shrink-0 text-right font-mono text-xs tabular-nums text-ink-gray-4;
+    @apply w-8 shrink-0 text-right font-mono text-xs tabular-nums text-ink-gray-4;
   }
   .ed-section {
     @apply flex items-center gap-1 px-3 pb-1 pt-3 text-2xs font-medium uppercase tracking-wide text-ink-gray-5;
   }
   .ed-empty {
     @apply px-3 py-4 text-center text-xs text-ink-gray-5;
+  }
+  /* Search hit. The amber surface alone is too close to white, so it carries a
+     ring to stay legible on both panel backgrounds. */
+  .ed-mark {
+    @apply rounded-[2px] bg-surface-amber-1 text-ink-gray-9 ring-1 ring-outline-amber-2;
   }
   /* Square icon button used in panel headers and row hover actions. */
   .ed-icon-button {

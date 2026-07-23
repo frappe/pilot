@@ -10,11 +10,13 @@ from admin.backend.core.editor import search as search_service
 @editor_bp.get("/search")
 @with_workspace
 def search_files(ws):
-    return jsonify(
-        search_service.search(
+    try:
+        matches = search_service.search(
             ws.root, request.args.get("q", ""), query_flag("regex"), query_flag("word"), query_flag("case")
         )
-    )
+    except search_service.SearchUnavailable as error:
+        return error_response("search_unavailable", str(error), 503)
+    return jsonify(matches)
 
 
 @editor_bp.post("/replace")

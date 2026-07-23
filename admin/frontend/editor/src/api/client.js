@@ -26,10 +26,21 @@ export async function body(res, fallback) {
   const hasFallback = arguments.length > 1
   if (!res.ok) {
     if (hasFallback) return fallback
-    throw new Error((await res.text()) || res.statusText)
+    throw new Error(await errorMessage(res))
   }
   const text = await res.text()
   return text ? JSON.parse(text) : hasFallback ? fallback : null
+}
+
+// Unwrap the { error: { message } } envelope the admin API uses, so callers can
+// show the server's own wording instead of a blob of JSON.
+async function errorMessage(res) {
+  const text = await res.text()
+  try {
+    return JSON.parse(text).error?.message || text || res.statusText
+  } catch {
+    return text || res.statusText
+  }
 }
 
 // Parse the body regardless of status: endpoints that answer with

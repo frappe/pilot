@@ -12,7 +12,8 @@ export const searchApi = {
           ...(opts.regex ? { regex: 1 } : {}),
         },
       })
-      .then((r) => body(r, [])),
+      // No fallback: a broken search must surface, not read as "no matches".
+      .then((r) => body(r)),
 
   replace: (payload) => request.post('replace', { json: payload }).then((r) => body(r, {})),
 }

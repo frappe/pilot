@@ -6,12 +6,30 @@ import subprocess
 
 _MATCH_CAP = 2000
 _SED_DELIM = "\x01"
+_TIMEOUT = 30
+
+
+class SearchUnavailable(RuntimeError):
+    """ripgrep could not run; the caller must not report this as "no matches"."""
 
 
 def search(root, query: str, regex: bool, word: bool, case: bool) -> list[dict]:
     """Project-wide ripgrep search, grouped by file."""
     if not query:
         return []
+    results: list[dict] = []
+    by_file: dict[str, int] = {}
+    total = 0
+    for raw in _run_ripgrep(root, query, regex, word, case).split("\n"):
+        if total >= _MATCH_CAP or not raw:
+            break
+        if _consume_match(raw, results, by_file):
+            total += 1
+    return results
+
+
+def _run_ripgrep(root, query: str, regex: bool, word: bool, case: bool) -> str:
+    """Raw --json stdout, or SearchUnavailable if ripgrep could not do the search."""
     args = ["--json", "--max-count", "500", "--max-columns", "500", "--max-filesize", "2M"]
     if not regex:
         args.append("--fixed-strings")
@@ -22,20 +40,18 @@ def search(root, query: str, regex: bool, word: bool, case: bool) -> list[dict]:
 
     try:
         proc = subprocess.run(
-            ["rg", *args], cwd=root, text=True, capture_output=True, timeout=10
+            ["rg", *args], cwd=root, text=True, capture_output=True, timeout=_TIMEOUT
         )
-    except (OSError, subprocess.SubprocessError):
-        return []
-
-    results: list[dict] = []
-    by_file: dict[str, int] = {}
-    total = 0
-    for raw in proc.stdout.split("\n"):
-        if total >= _MATCH_CAP or not raw:
-            break
-        if _consume_match(raw, results, by_file):
-            total += 1
-    return results
+    except FileNotFoundError as error:
+        raise SearchUnavailable("ripgrep (rg) is not installed on this server.") from error
+    except subprocess.TimeoutExpired as error:
+        raise SearchUnavailable(f"Search timed out after {_TIMEOUT}s. Try a narrower query.") from error
+    except (OSError, subprocess.SubprocessError) as error:
+        raise SearchUnavailable(f"Search could not run: {error}") from error
+    # rg exits 1 on "no matches" and 2 on a bad pattern or unreadable tree.
+    if proc.returncode > 1:
+        raise SearchUnavailable(proc.stderr.strip().split("\n")[-1] or "Search failed.")
+    return proc.stdout
 
 
 def _consume_match(raw: str, results: list[dict], by_file: dict[str, int]) -> bool:
