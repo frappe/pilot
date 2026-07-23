@@ -25,7 +25,7 @@ class LLMIntegration:
     provider: str = ""
     default_model: str = ""
 
-    def __init__(self, api_key: str, stream: bool = False) -> None:
+    def __init__(self, api_key: str, stream: bool = False, api_base: str = "") -> None:
         if litellm is None:
             raise RuntimeError(
                 "Required dependency `litellm` is not installed. Please install it to use LLMIntegration. "
@@ -33,6 +33,8 @@ class LLMIntegration:
             )
         self.api_key = api_key
         self.stream = stream
+        # Endpoint URL for self-hosted providers (e.g., vLLM).
+        self.api_base = api_base
 
     def get_models(self) -> list[str]:
         """Return the model IDs litellm knows for this provider."""
@@ -56,6 +58,7 @@ class LLMIntegration:
                 model=f"{self.provider}/{model or self.default_model}",
                 messages=messages,
                 api_key=self.api_key,
+                api_base=self.api_base or None,
                 max_tokens=max_tokens,
                 stream=self.stream,
                 **kwargs,
