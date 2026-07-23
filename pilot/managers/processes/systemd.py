@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import getpass
 import os
 import subprocess
 from pathlib import Path
@@ -59,7 +60,6 @@ class SystemdProcessManager(ManagedProcessManager):
 
     @override
     def install_config(self) -> None:
-        import getpass
 
         self.user_unit_dir.mkdir(parents=True, exist_ok=True)
         defs = self._prod_process_definitions()
@@ -88,16 +88,7 @@ class SystemdProcessManager(ManagedProcessManager):
                 dst.unlink()
             dst.symlink_to(src)
 
-        subprocess.run(
-            _privileged(["loginctl", "enable-linger", getpass.getuser()]),
-            capture_output=True,
-            check=False,
-        )
-        subprocess.run(
-            _privileged(["systemctl", "start", f"user@{os.getuid()}.service"]),
-            capture_output=True,
-            check=False,
-        )
+        self._ensure_linger()
 
         env = self._systemctl_env()
         run_command(self._systemctl("daemon-reload"), env=env)
@@ -105,6 +96,25 @@ class SystemdProcessManager(ManagedProcessManager):
         subprocess.run(self._systemctl("reset-failed", *units), capture_output=True, env=env)
         run_command(self._systemctl("enable", self._target_name()), env=env)
         self._activate_admin_socket(env)
+
+    @staticmethod
+    def _ensure_linger() -> None:
+        """Units must survive logout. The installer enables this, so only reach
+        for sudo - which cannot prompt from a task - when it somehow did not."""
+        user = getpass.getuser()
+        state = subprocess.run(
+            ["loginctl", "show-user", user, "--property=Linger"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if state.stdout.strip() == "Linger=yes":
+            return
+        for command in (
+            ["loginctl", "enable-linger", user],
+            ["systemctl", "start", f"user@{os.getuid()}.service"],
+        ):
+            subprocess.run(_privileged(command), capture_output=True, check=False)
 
     @override
     def reload_manager_config(self) -> None:
