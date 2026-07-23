@@ -5,7 +5,7 @@ import { APP } from '@/scope'
 // ?app= query param (see scope.js). ky passes Request objects, which the global
 // fetch shim leaves untouched, so we scope here in a beforeRequest hook instead.
 export const request = ky.create({
-  prefixUrl: '/api/v1/editor',
+  prefix: '/api/v1/editor',
   throwHttpErrors: false,
   // ky defaults to 10s; git/mariadb operations can legitimately run longer.
   timeout: 60_000,
