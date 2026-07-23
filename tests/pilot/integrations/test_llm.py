@@ -40,7 +40,7 @@ def fake_litellm(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
 
 def test_missing_litellm_raises_at_construction(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(base, "litellm", None)
-    with pytest.raises(RuntimeError, match="litellm is not installed"):
+    with pytest.raises(RuntimeError, match="litellm` is not installed"):
         AnthropicIntegration("sk-key")
 
 
