@@ -9,15 +9,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.managers.packages import get_package_manager
-from pilot.managers.platform import _privileged, is_linux
-from pilot.utils import run_command
+from pilot.managers.platform import is_linux
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
-# Shared, read-only CRS assets; every bench's generated main.conf Includes these,
-# so the layout is fixed and identical across distros.
-SHARED_MODSEC_DIR = Path("/usr/share/nginx/modsecurity-crs")
+# Shared, read-only CRS assets; every bench's generated main.conf Includes these.
+# Bench-user owned, so installing them never needs privileges.
+def shared_modsec_dir() -> Path:
+    from pilot.utils import cli_root
+
+    return cli_root() / "modsecurity-crs"
+
 MODSEC_MODULE_NAME = "ngx_http_modsecurity_module.so"
 _MODULE_DIRS = ("/usr/lib/nginx/modules", "/usr/lib64/nginx/modules")
 
@@ -65,7 +68,8 @@ class WafManager:
 
     @staticmethod
     def crs_available() -> bool:
-        return (SHARED_MODSEC_DIR / "crs-setup.conf").exists() and (SHARED_MODSEC_DIR / "rules").is_dir()
+        shared = shared_modsec_dir()
+        return (shared / "crs-setup.conf").exists() and (shared / "rules").is_dir()
 
     @classmethod
     def is_installed(cls) -> bool:
@@ -94,11 +98,10 @@ class WafManager:
             extracted = next(entry for entry in tmp_path.iterdir() if entry.is_dir())
             staged_setup = tmp_path / "crs-setup.conf"
             shutil.copy(extracted / "crs-setup.conf.example", staged_setup)
-            run_command(_privileged(["mkdir", "-p", str(SHARED_MODSEC_DIR)]))
-            run_command(_privileged(["cp", str(staged_setup), str(SHARED_MODSEC_DIR / "crs-setup.conf")]))
-            run_command(
-                _privileged(["cp", "-rT", str(extracted / "rules"), str(SHARED_MODSEC_DIR / "rules")])
-            )
+            shared = shared_modsec_dir()
+            shared.mkdir(parents=True, exist_ok=True)
+            shutil.copy(staged_setup, shared / "crs-setup.conf")
+            shutil.copytree(extracted / "rules", shared / "rules", dirs_exist_ok=True)
 
     @staticmethod
     def _verify_checksum(archive: Path) -> None:
