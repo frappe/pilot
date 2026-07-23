@@ -1,7 +1,7 @@
 export const sidebarSections = [
   {
     items: [
-      { label: 'Sites', icon: 'lucide-layout-grid', to: '/sites' },
+      { label: 'Sites', icon: 'lucide-globe', to: '/sites' },
       { label: 'Marketplace', icon: 'lucide-store', to: '/marketplace' },
     ],
   },

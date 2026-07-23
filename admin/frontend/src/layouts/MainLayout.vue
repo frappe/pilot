@@ -82,9 +82,7 @@ function breadcrumbsFromRouteMeta({ title = '', group }) {
     </template>
 
     <BottomSheet v-model:open="mobileNavDrawer">
-      <div class="px-4 pb-6">
-        <Sidebar is-mobile />
-      </div>
+     <Sidebar is-mobile class='p-2' />
     </BottomSheet>
   </MobileShell>
 

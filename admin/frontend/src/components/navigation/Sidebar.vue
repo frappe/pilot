@@ -1,7 +1,6 @@
 <script setup>
-import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { Sidebar, SidebarItem } from 'frappe-ui'
+import { Sidebar, SidebarHeader, SidebarLabel, SidebarItem } from 'frappe-ui'
 import { sidebarSections } from './list'
 import { useAppMenu } from './useAppMenu'
 import PilotLogo from '@/components/common/PilotLogo.vue'
@@ -18,20 +17,28 @@ const { menuItems } = useAppMenu()
 function isActive(to) {
   return route.path === to || route.path.startsWith(`${to}/`)
 }
-
-const header = computed(() => ({ title: 'Pilot', menuItems: menuItems.value }))
 </script>
 
 <template>
-  <Sidebar :header="isMobile ? undefined : header" :sections="sidebarSections" :disable-collapse="isMobile"
-    class="dark:border-outline-gray-2" :class="isMobile ? '!w-full !border-r-0 mobile-sidebar bg-transparent' : ''">
-    <template #sidebar-item="{ item }">
-      <SidebarItem :label="item.label" :icon="item.icon" :to="item.to" :isActive="isActive(item.to)"
-        :class="isActive(item.to) ? '!text-ink-gray-9' : '!text-ink-gray-7'" />
-    </template>
+  <Sidebar :disable-collapse="isMobile" class="border-r dark:border-outline-gray-2"
+    :class="isMobile ? '!w-full !border-r-0 mobile-sidebar bg-transparent' : ''">
 
-    <template v-if="!isMobile" #header-logo>
-      <PilotLogo class="size-8" />
-    </template>
+    <SidebarHeader v-if="!isMobile" title="Pilot" :menu-items="menuItems">
+      <template #logo>
+        <PilotLogo class="size-8" />
+      </template>
+    </SidebarHeader>
+
+    <nav class="flex-1 overflow-y-auto px-2 pt-2">
+      <template v-for="section in sidebarSections" :key="section.label || 'main'">
+        <SidebarLabel v-if="section.label" class="mt-2">{{ section.label }}</SidebarLabel>
+        <SidebarItem v-for="item in section.items" :key="item.to" :icon="item.icon" :to="item.to"
+          :active="isActive(item.to)" class="mb-0.5">
+          {{ item.label }}
+
+          <lucide-chevron-right v-if='isMobile' class="size-4 text-ink-gray-4 ml-auto mr-1" />
+        </SidebarItem>
+      </template>
+    </nav>
   </Sidebar>
 </template>
