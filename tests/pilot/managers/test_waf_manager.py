@@ -29,11 +29,11 @@ def _crs_tarball() -> bytes:
 
 
 @pytest.fixture
-def fake_download(monkeypatch):
-    """Make urlretrieve write chosen bytes, and record any privileged commands so a
-    test can assert none ran."""
-    ran: list = []
-    monkeypatch.setattr(waf, "run_command", lambda cmd: ran.append(cmd))
+def fake_download(monkeypatch, tmp_path):
+    """Make urlretrieve write chosen bytes, and land the CRS under a temp root."""
+    import pilot.utils
+
+    monkeypatch.setattr(pilot.utils, "cli_root", lambda: tmp_path)
 
     def _install(payload: bytes, expected_sha: str | None = None):
         if expected_sha is not None:
@@ -43,27 +43,26 @@ def fake_download(monkeypatch):
             Path(dest).write_bytes(payload)
 
         monkeypatch.setattr(waf.urllib.request, "urlretrieve", _urlretrieve)
-        return ran
+        return tmp_path / "modsecurity-crs"
 
     return _install
 
 
 def test_install_crs_rejects_tampered_archive(fake_download) -> None:
-    ran = fake_download(b"not the real crs")  # hash won't match the pin
+    shared = fake_download(b"not the real crs")  # hash won't match the pin
     with pytest.raises(RuntimeError, match="checksum mismatch"):
         WafManager()._install_crs()
-    assert ran == []  # nothing extracted, nothing copied under /usr/share
+    assert not shared.exists()  # nothing extracted, nothing installed
 
 
 def test_install_crs_accepts_matching_archive(fake_download) -> None:
     payload = _crs_tarball()
-    ran = fake_download(payload, expected_sha=hashlib.sha256(payload).hexdigest())
+    shared = fake_download(payload, expected_sha=hashlib.sha256(payload).hexdigest())
 
     WafManager()._install_crs()
 
-    # crs-setup.conf + rules/ copied into the shared dir via privileged commands.
-    assert any("crs-setup.conf" in " ".join(map(str, cmd)) for cmd in ran)
-    assert any(str(waf.SHARED_MODSEC_DIR / "rules") in " ".join(map(str, cmd)) for cmd in ran)
+    assert (shared / "crs-setup.conf").exists()
+    assert (shared / "rules" / "REQUEST-942.conf").exists()
 
 
 def test_pinned_digest_is_a_sha256() -> None:

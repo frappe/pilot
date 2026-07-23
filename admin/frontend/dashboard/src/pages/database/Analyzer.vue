@@ -1,8 +1,13 @@
 <template>
   <Teleport defer to="#header-actions">
     <div class="flex items-center gap-2">
-      <FormControl v-if="siteOptions.length > 1" type="select" v-model="selectedSite" :options="siteOptions"
-        class="w-32 sm:w-44" />
+      <FormControl
+        v-if="siteOptions.length > 1"
+        type="select"
+        v-model="selectedSite"
+        :options="siteOptions"
+        class="w-32 sm:w-44"
+      />
       <FormControl type="select" v-model="engine" :options="engineOptions" class="w-32 sm:w-40" />
     </div>
   </Teleport>
@@ -12,18 +17,23 @@
       <LoadingText />
     </div>
 
-    <div v-else-if="engine !== configuredEngine"
-      class="flex flex-col items-center gap-1 bg-surface-white py-14 border rounded-lg border-outline-gray-2 text-center">
+    <div
+      v-else-if="engine !== configuredEngine"
+      class="flex flex-col items-center gap-1 bg-surface-white py-14 border rounded-lg border-outline-gray-2 text-center"
+    >
       <span class="size-6 text-ink-gray-3 lucide-database-zap" />
       <p class="font-medium text-ink-gray-7 text-sm">Not configured on this bench</p>
       <p class="max-w-sm text-ink-gray-5 text-xs">
         This bench runs {{ engineLabel(configuredEngine) }}. Switch the selector back to
-        {{ engineLabel(configuredEngine) }} to see its diagnostics.
+        {{ engineLabel(configuredEngine) }}
+        to see its diagnostics.
       </p>
     </div>
 
-    <div v-else-if="diagnostics && !diagnostics.supported"
-      class="flex flex-col items-center gap-1 bg-surface-white py-14 border rounded-lg border-outline-gray-2 text-center">
+    <div
+      v-else-if="diagnostics && !diagnostics.supported"
+      class="flex flex-col items-center gap-1 bg-surface-white py-14 border rounded-lg border-outline-gray-2 text-center"
+    >
       <span class="size-6 text-ink-gray-3 lucide-database" />
       <p class="font-medium text-ink-gray-7 text-sm">No database server</p>
       <p class="max-w-sm text-ink-gray-5 text-xs">{{ diagnostics.reason }}</p>
@@ -32,24 +42,48 @@
     <ErrorMessage v-else-if="error" :message="error" />
 
     <template v-else-if="diagnostics">
-      <DatabasePanel title="Database Size Breakup" subtitle="Analyze how storage is used"
-        :badge="selectedSite ? scopeBadge : 'Server-wide'" :loading="sizeLoading" @refresh="loadSize">
+      <DatabasePanel
+        title="Database Size Breakup"
+        subtitle="Analyze how storage is used"
+        :badge="selectedSite ? scopeBadge : 'Server-wide'"
+        :loading="sizeLoading"
+        @refresh="loadSize"
+      >
         <template v-if="selectedSite" #actions>
           <Button variant="subtle" size="sm" @click="showTableSizes = true">View Details</Button>
         </template>
         <ErrorMessage v-if="sizeError" :message="sizeError" class="m-4" />
-        <p v-else-if="!size" class="py-6 text-ink-gray-5 text-sm text-center">No results to display</p>
+        <p v-else-if="!size" class="py-6 text-ink-gray-5 text-sm text-center">
+          No results to display
+        </p>
         <SizeBreakup v-else :size="size" />
       </DatabasePanel>
 
-      <DatabasePanel title="Database Processes" subtitle="Analyze the processes of the database"
-        :badge="scopeBadge" :loading="processesLoading" @refresh="loadProcesses">
+      <DatabasePanel
+        title="Database Processes"
+        subtitle="Analyze the processes of the database"
+        :badge="scopeBadge"
+        :loading="processesLoading"
+        @refresh="loadProcesses"
+      >
         <ErrorMessage v-if="processesError" :message="processesError" class="m-4" />
-        <ListView v-else class="p-4 !w-full" :columns="processColumns" :rows="processRows" row-key="number"
-          :options="{ selectable: false, showTooltip: false }">
+        <ListView
+          v-else
+          class="p-4 !w-full"
+          :columns="processColumns"
+          :rows="processRows"
+          row-key="number"
+          :options="{ selectable: false, showTooltip: false }"
+        >
           <template #cell="{ column, row, item }">
             <div v-if="column.key === 'actions'" class="flex justify-end">
-              <Button variant="ghost" theme="red" size="sm" iconLeft="lucide-x" @click="confirmKill(row.process)">
+              <Button
+                variant="ghost"
+                theme="red"
+                size="sm"
+                iconLeft="lucide-x"
+                @click="confirmKill(row.process)"
+              >
                 Kill
               </Button>
             </div>
@@ -61,13 +95,25 @@
         </ListView>
       </DatabasePanel>
 
-      <DatabasePanel title="Database Locks" subtitle="Analyze the lock waits of the database"
-        :badge="[scopeBadge, lockColumnsBadge]" :loading="lockWaitsLoading" show-auto-refresh
-        :auto-refresh="autoRefreshLocks" @update:auto-refresh="autoRefreshLocks = $event"
-        @refresh="loadLockWaits">
+      <DatabasePanel
+        title="Database Locks"
+        subtitle="Analyze the lock waits of the database"
+        :badge="[scopeBadge, lockColumnsBadge]"
+        :loading="lockWaitsLoading"
+        show-auto-refresh
+        :auto-refresh="autoRefreshLocks"
+        @update:auto-refresh="autoRefreshLocks = $event"
+        @refresh="loadLockWaits"
+      >
         <ErrorMessage v-if="lockWaitsError" :message="lockWaitsError" class="m-4" />
-        <ListView v-else class="p-4 !w-full" :columns="lockColumns" :rows="lockRows" row-key="number"
-          :options="{ selectable: false, showTooltip: false }">
+        <ListView
+          v-else
+          class="p-4 !w-full"
+          :columns="lockColumns"
+          :rows="lockRows"
+          row-key="number"
+          :options="{ selectable: false, showTooltip: false }"
+        >
           <template #cell="{ column, row, item }">
             <ListRowItem :column="column" :row="row" :item="item" :align="column.align" />
           </template>
@@ -77,15 +123,29 @@
         </ListView>
       </DatabasePanel>
 
-      <DatabasePanel title="Database Binary Logs" subtitle="Manage the binary logs of the database"
-        :badge="selectedSite ? 'Server-wide' : ''" :loading="binlogsLoading" @refresh="loadBinlogs">
+      <DatabasePanel
+        title="Database Binary Logs"
+        subtitle="Manage the binary logs of the database"
+        :badge="selectedSite ? 'Server-wide' : ''"
+        :loading="binlogsLoading"
+        @refresh="loadBinlogs"
+      >
         <ErrorMessage v-if="binlogsError" :message="binlogsError" class="m-4" />
         <div v-else class="p-4">
-          <ListView class="!w-full" :columns="binlogColumns" :rows="binlogRows" row-key="number"
-            :options="{ selectable: false, showTooltip: false }">
+          <ListView
+            class="!w-full"
+            :columns="binlogColumns"
+            :rows="binlogRows"
+            row-key="number"
+            :options="{ selectable: false, showTooltip: false }"
+          >
             <template #cell="{ column, row, item }">
-              <Checkbox v-if="column.key === 'selected'" :modelValue="row.index <= selectedIndex"
-                :disabled="row.isActive" @update:modelValue="toggle(row.index, $event)" />
+              <Checkbox
+                v-if="column.key === 'selected'"
+                :modelValue="row.index <= selectedIndex"
+                :disabled="row.isActive"
+                @update:modelValue="toggle(row.index, $event)"
+              />
               <div v-else-if="column.key === 'actions'" class="flex justify-end">
                 <Tooltip v-if="!row.isActive" text="Delete this file and every older one">
                   <Button variant="ghost" theme="red" size="sm" @click="confirmPurge(row.index)">
@@ -105,8 +165,14 @@
               The newest log is in use and cannot be deleted. Selecting a file also selects every
               older one, because the server can only purge them together.
             </p>
-            <Button v-if="selectedIndex >= 0" variant="subtle" theme="red" size="sm"
-              iconLeft="lucide-trash-2" @click="confirmPurge(selectedIndex)">
+            <Button
+              v-if="selectedIndex >= 0"
+              variant="subtle"
+              theme="red"
+              size="sm"
+              iconLeft="lucide-trash-2"
+              @click="confirmPurge(selectedIndex)"
+            >
               Delete {{ selectedIndex + 1 }} file{{ selectedIndex === 0 ? '' : 's' }}
             </Button>
           </div>
@@ -125,7 +191,11 @@
       </p>
 
       <dl class="space-y-1.5 bg-surface-gray-1 mt-3 p-3 rounded-lg text-xs">
-        <div v-for="item in killDetails" :key="item.label" class="flex justify-between items-baseline gap-4">
+        <div
+          v-for="item in killDetails"
+          :key="item.label"
+          class="flex justify-between items-baseline gap-4"
+        >
           <dt class="text-ink-gray-5 shrink-0">{{ item.label }}</dt>
           <dd class="font-medium text-ink-gray-8 truncate">{{ item.value }}</dd>
         </div>
@@ -148,14 +218,20 @@
   <Dialog v-model="showPurgeDialog" :options="{ title: 'Delete binary logs', size: 'sm' }">
     <template #body-content>
       <p class="text-ink-gray-7 text-sm">
-        Permanently delete <strong>{{ pendingFiles.length }}
-        file{{ pendingFiles.length === 1 ? '' : 's' }}</strong>, freeing {{ pendingSize }}? Binary
-        logs are shared by every bench on this server and are used for point-in-time recovery and
-        replication.
+        Permanently delete
+        <strong
+          >{{ pendingFiles.length }}
+          file{{ pendingFiles.length === 1 ? '' : 's' }}</strong
+        >, freeing {{ pendingSize }}? Binary logs are shared by every bench on this server and are
+        used for point-in-time recovery and replication.
       </p>
 
       <dl class="space-y-1.5 bg-surface-gray-1 mt-3 p-3 rounded-lg text-xs">
-        <div v-for="item in purgeDetails" :key="item.label" class="flex justify-between items-baseline gap-4">
+        <div
+          v-for="item in purgeDetails"
+          :key="item.label"
+          class="flex justify-between items-baseline gap-4"
+        >
           <dt class="text-ink-gray-5 shrink-0">{{ item.label }}</dt>
           <dd class="font-mono font-medium text-ink-gray-8 truncate">{{ item.value }}</dd>
         </div>
@@ -439,7 +515,8 @@ async function loadProcesses() {
   processesError.value = ''
   try {
     const result = await databaseApi.processList(selectedSite.value)
-    if (result?.error) throw new Error(apiErrorMessage(result, 'Could not load database processes.'))
+    if (result?.error)
+      throw new Error(apiErrorMessage(result, 'Could not load database processes.'))
     processes.value = Array.isArray(result) ? result : []
   } catch (e) {
     processesError.value = e.message || 'Could not load database processes.'
@@ -453,7 +530,8 @@ async function loadLockWaits() {
   lockWaitsError.value = ''
   try {
     const result = await databaseApi.lockWaitRows(selectedSite.value)
-    if (result?.error) throw new Error(apiErrorMessage(result, 'Could not load database lock waits.'))
+    if (result?.error)
+      throw new Error(apiErrorMessage(result, 'Could not load database lock waits.'))
     lockWaits.value = Array.isArray(result) ? result : []
   } catch (e) {
     lockWaitsError.value = e.message || 'Could not load database lock waits.'
@@ -521,7 +599,8 @@ async function load() {
   error.value = ''
   try {
     const result = await databaseApi.diagnostics()
-    if (result.error) throw new Error(apiErrorMessage(result, 'Could not load database diagnostics.'))
+    if (result.error)
+      throw new Error(apiErrorMessage(result, 'Could not load database diagnostics.'))
     diagnostics.value = result
     configuredEngine.value = result.engine || 'mariadb'
     engine.value = configuredEngine.value

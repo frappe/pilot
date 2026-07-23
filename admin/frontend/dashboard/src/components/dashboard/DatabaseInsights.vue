@@ -4,19 +4,30 @@
       <LoadingText />
     </div>
     <ErrorMessage v-else-if="error" :message="error" />
-    <div v-else-if="unsupported" class="flex flex-col justify-center items-center gap-2 h-[40vh] text-center">
+    <div
+      v-else-if="unsupported"
+      class="flex flex-col justify-center items-center gap-2 h-[40vh] text-center"
+    >
       <span class="size-10 text-ink-gray-3 lucide-database" />
       <p class="font-medium text-ink-gray-7 text-sm">DB analyzer supports MariaDB only</p>
     </div>
-    <div v-else-if="empty" class="flex flex-col justify-center items-center gap-2 h-[40vh] text-center">
+    <div
+      v-else-if="empty"
+      class="flex flex-col justify-center items-center gap-2 h-[40vh] text-center"
+    >
       <span class="size-10 text-ink-gray-3 lucide-database" />
       <p class="font-medium text-ink-gray-7 text-sm">No data for the selected range</p>
-      <p class="text-ink-gray-5 text-xs">The monitor hasn't sampled the database in this range yet.</p>
+      <p class="text-ink-gray-5 text-xs">
+        The monitor hasn't sampled the database in this range yet.
+      </p>
     </div>
 
     <div v-else class="gap-4 grid grid-cols-1 sm:grid-cols-2">
       <ChartCard v-for="chart in charts" :key="chart.title" :title="chart.title">
-        <AxisChart :config="chart.config" class="w-full min-w-0 h-full min-h-[300px] px-2 sm:px-4 py-2" />
+        <AxisChart
+          :config="chart.config"
+          class="w-full min-w-0 h-full min-h-[300px] px-2 sm:px-4 py-2"
+        />
       </ChartCard>
       <SlowQueries v-if="!unsupported" :overview="data?.slow_queries" />
     </div>
@@ -34,7 +45,14 @@ import { formatBytes } from '@/utils/format'
 
 const props = defineProps({ window: { type: String, default: '1h' } })
 
-const TIME_GRAIN = { '30m': 'minute', '1h': 'minute', '6h': 'hour', '12h': 'hour', '24h': 'hour', '1w': 'day' }
+const TIME_GRAIN = {
+  '30m': 'minute',
+  '1h': 'minute',
+  '6h': 'hour',
+  '12h': 'hour',
+  '24h': 'hour',
+  '1w': 'day',
+}
 const PALETTE = ['#2490ef', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444', '#06b6d4']
 const QUERY_SERIES = ['Insert', 'Update', 'Delete', 'Select', 'Other']
 
@@ -83,16 +101,28 @@ function transparent(hex, opacity) {
 
 // Full formatter (frappe-ui overrides valueFormatter) so bytes read as GB/MB.
 function bytesTooltip(paramsInput) {
-  const params = (Array.isArray(paramsInput) ? paramsInput : [paramsInput]).filter((p) => p.value?.[1] != null)
+  const params = (Array.isArray(paramsInput) ? paramsInput : [paramsInput]).filter(
+    (p) => p.value?.[1] != null,
+  )
   if (!params.length) return ''
   const date = new Date(params[0].value[0]).toLocaleString()
   const rows = params
-    .map((p) => `<div class="flex items-center gap-2">${p.marker}<span class="flex-1">${p.seriesName}</span><b>${formatBytes(p.value[1])}</b></div>`)
+    .map(
+      (p) =>
+        `<div class="flex items-center gap-2">${p.marker}<span class="flex-1">${p.seriesName}</span><b>${formatBytes(p.value[1])}</b></div>`,
+    )
     .join('')
   return `<div>${date}${rows}</div>`
 }
 
-const bytesAxis = { yMin: 0, echartOptions: { name: 'bytes', axisLabel: { formatter: (v) => formatBytes(v) }, splitLine: GRID } }
+const bytesAxis = {
+  yMin: 0,
+  echartOptions: {
+    name: 'bytes',
+    axisLabel: { formatter: (v) => formatBytes(v) },
+    splitLine: GRID,
+  },
+}
 
 // frappe-ui only auto-shows the legend when a chart has more than one series; force it on for all charts.
 const LEGEND_OPTIONS = { legend: { show: true }, grid: { bottom: 40 } }
@@ -205,7 +235,13 @@ async function load() {
 }
 
 // Reset on window change so the spinner shows for the new range.
-watch(() => props.window, () => { data.value = null; load() })
+watch(
+  () => props.window,
+  () => {
+    data.value = null
+    load()
+  },
+)
 
 // Daemon samples every ~10s; a 5-minute refresh keeps charts current.
 let refreshTimer

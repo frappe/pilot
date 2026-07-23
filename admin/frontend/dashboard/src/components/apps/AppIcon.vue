@@ -18,7 +18,11 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { FRAPPE_LOGO_URL, isFrappeFramework, useAppRegistry } from '@/composables/apps/useAppRegistry'
+import {
+  FRAPPE_LOGO_URL,
+  isFrappeFramework,
+  useAppRegistry,
+} from '@/composables/apps/useAppRegistry'
 
 const props = defineProps({
   name: { type: String, required: true },

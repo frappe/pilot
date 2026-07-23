@@ -36,7 +36,9 @@ export function useAppUpdates() {
     }
   }
 
-  const appsWithUpdates = computed(() => Object.keys(updates.value).filter((name) => updates.value[name]))
+  const appsWithUpdates = computed(() =>
+    Object.keys(updates.value).filter((name) => updates.value[name]),
+  )
   const updatesAvailable = computed(() => appsWithUpdates.value.length > 0)
 
   return {

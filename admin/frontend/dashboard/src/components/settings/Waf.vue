@@ -4,59 +4,112 @@
   </div>
   <div v-else class="space-y-8">
     <div class="space-y-6">
-      <Switch label="Enable WAF"
+      <Switch
+        label="Enable WAF"
         description="ModSecurity + OWASP Core Rule Set inspects request contents (SQLi, XSS, path traversal) for all sites and the admin."
-        :model-value="enabled" @update:model-value="(v) => (enabled = v)" />
+        :model-value="enabled"
+        @update:model-value="(v) => (enabled = v)"
+      />
 
       <Alert v-if="!production" title="Not enforced yet" theme="yellow" :dismissible="false">
         <template #description>
-          <span class="text-ink-gray-6 text-p-sm">The WAF takes effect only in production (it's applied by nginx).
-            This bench isn't deployed, so nothing is enforced until you run
-            <span class="font-mono text-xs">bench setup production</span>.</span>
+          <span class="text-ink-gray-6 text-p-sm"
+            >The WAF takes effect only in production (it's applied by nginx). This bench isn't
+            deployed, so nothing is enforced until you run
+            <span class="font-mono text-xs">bench setup production</span>.</span
+          >
         </template>
       </Alert>
 
-      <Alert v-if="production && enabled && !installed" title="ModSecurity not installed" theme="yellow" :dismissible="false">
+      <Alert
+        v-if="production && enabled && !installed"
+        title="ModSecurity not installed"
+        theme="yellow"
+        :dismissible="false"
+      >
         <template #description>
-          <span class="text-ink-gray-6 text-p-sm">The ModSecurity module isn't installed on this host, so the WAF
-            stays inactive even when enabled. Redeploy production
-            (<span class="font-mono text-xs">bench setup production</span>) to install it, then it takes effect.</span>
+          <span class="text-ink-gray-6 text-p-sm"
+            >The ModSecurity module isn't installed on this host, so the WAF stays inactive even
+            when enabled. Redeploy production (<span class="font-mono text-xs"
+              >bench setup production</span
+            >) to install it, then it takes effect.</span
+          >
         </template>
       </Alert>
 
       <div>
-        <p class="mb-3 font-medium text-ink-gray-8 text-base leading-normal">Managed ruleset (OWASP CRS)</p>
+        <p class="mb-3 font-medium text-ink-gray-8 text-base leading-normal">
+          Managed ruleset (OWASP CRS)
+        </p>
         <div class="gap-4 grid grid-cols-2">
           <FormControl type="select" label="Action" :options="ACTION_OPTIONS" v-model="mode" />
-          <FormControl type="select" label="Sensitivity" :options="SENSITIVITY_OPTIONS" v-model="paranoia" />
+          <FormControl
+            type="select"
+            label="Sensitivity"
+            :options="SENSITIVITY_OPTIONS"
+            v-model="paranoia"
+          />
         </div>
       </div>
 
-      <Alert v-if="enabled && mode === 'DetectionOnly'" title="Log only" theme="yellow" :dismissible="false">
+      <Alert
+        v-if="enabled && mode === 'DetectionOnly'"
+        title="Log only"
+        theme="yellow"
+        :dismissible="false"
+      >
         <template #description>
-          <span class="text-ink-gray-6 text-p-sm">Matches (managed <b>and</b> custom rules) are <b>logged, not
-            blocked</b>. Review the WAF analytics, then switch Action to <b>Block</b> to enforce.</span>
+          <span class="text-ink-gray-6 text-p-sm"
+            >Matches (managed <b>and</b> custom rules) are <b>logged, not blocked</b>. Review the
+            WAF analytics, then switch Action to <b>Block</b> to enforce.</span
+          >
         </template>
       </Alert>
     </div>
 
-    <WafCustomRules v-model="customRules" :fields="ruleFields" :operators="ruleOperators" :actions="ruleActions" />
+    <WafCustomRules
+      v-model="customRules"
+      :fields="ruleFields"
+      :operators="ruleOperators"
+      :actions="ruleActions"
+    />
 
     <details class="group">
       <summary class="flex items-center gap-1.5 text-ink-gray-6 text-sm cursor-pointer select-none">
-        <span class="size-4 transition-transform group-open:rotate-90 lucide-chevron-right"></span>Advanced
+        <span
+          class="size-4 transition-transform group-open:rotate-90 lucide-chevron-right"
+        ></span>Advanced
       </summary>
       <div class="space-y-4 mt-4">
         <div class="gap-4 grid grid-cols-2 items-start">
           <FormControl type="number" label="Anomaly threshold" min="1" v-model="inboundThreshold" />
-          <FormControl type="text" label="Max inspected body size" placeholder="50m" v-model="bodyLimit" />
+          <FormControl
+            type="text"
+            label="Max inspected body size"
+            placeholder="50m"
+            v-model="bodyLimit"
+          />
         </div>
-        <Switch label="Inspect responses" description="Scan outbound responses for leaks. Adds latency."
-          :model-value="inspectResponses" @update:model-value="(v) => (inspectResponses = v)" />
-        <FormControl type="textarea" label="Exclusions" :rows="3" v-model="exclusionsText"
-          placeholder="One SecLang rule per line, e.g. SecRuleRemoveById 942100" />
-        <FormControl type="textarea" label="Exempt paths" :rows="2" v-model="exemptPathsText"
-          placeholder="One path prefix per line, e.g. /api/method/frappe.ping" />
+        <Switch
+          label="Inspect responses"
+          description="Scan outbound responses for leaks. Adds latency."
+          :model-value="inspectResponses"
+          @update:model-value="(v) => (inspectResponses = v)"
+        />
+        <FormControl
+          type="textarea"
+          label="Exclusions"
+          :rows="3"
+          v-model="exclusionsText"
+          placeholder="One SecLang rule per line, e.g. SecRuleRemoveById 942100"
+        />
+        <FormControl
+          type="textarea"
+          label="Exempt paths"
+          :rows="2"
+          v-model="exemptPathsText"
+          placeholder="One path prefix per line, e.g. /api/method/frappe.ping"
+        />
       </div>
     </details>
 
@@ -80,8 +133,10 @@ const ACTION_OPTIONS = [
   { label: 'Block', value: 'On' },
 ]
 const SENSITIVITY_OPTIONS = [
-  { label: 'Low', value: 1 }, { label: 'Medium', value: 2 },
-  { label: 'High', value: 3 }, { label: 'Very High', value: 4 },
+  { label: 'Low', value: 1 },
+  { label: 'Medium', value: 2 },
+  { label: 'High', value: 3 },
+  { label: 'Very High', value: 4 },
 ]
 
 const loading = ref(true)
@@ -104,12 +159,16 @@ const ruleOperators = ref([])
 const ruleActions = ref([])
 
 function linesToArray(text) {
-  return text.split('\n').map((line) => line.trim()).filter(Boolean)
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
 }
 
 function validate() {
   const threshold = Number(inboundThreshold.value)
-  if (!Number.isInteger(threshold) || threshold < 1) return 'Anomaly threshold must be a positive whole number.'
+  if (!Number.isInteger(threshold) || threshold < 1)
+    return 'Anomaly threshold must be a positive whole number.'
   if (!bodyLimit.value.trim()) return 'Max inspected body size is required (e.g. 50m).'
   return ''
 }
@@ -163,6 +222,8 @@ onMounted(async () => {
     ruleFields.value = waf.rule_fields || []
     ruleOperators.value = waf.rule_operators || []
     ruleActions.value = waf.rule_actions || []
+  } catch (e) {
+    error.value = e.message || 'Could not load settings.'
   } finally {
     loading.value = false
   }

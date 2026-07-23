@@ -9,21 +9,34 @@
         </div>
       </div>
       <div class="flex flex-col gap-3 w-full">
-        <TextInput v-model="password" label="Password" :type="showPassword ? 'text' : 'password'"
-          placeholder="Enter password" autofocus @keydown.enter="login">
+        <TextInput
+          v-model="password"
+          label="Password"
+          :type="showPassword ? 'text' : 'password'"
+          placeholder="Enter password"
+          autofocus
+          @keydown.enter="login"
+        >
           <template #prefix>
             <LucideLock class="size-4 text-ink-gray-5" />
           </template>
           <template #suffix>
-            <button type="button" tabindex="-1" class="text-ink-gray-5 hover:text-ink-gray-7"
-              @click="showPassword = !showPassword">
+            <button
+              type="button"
+              tabindex="-1"
+              class="text-ink-gray-5 hover:text-ink-gray-7"
+              @click="showPassword = !showPassword"
+            >
               <LucideEyeOff v-if="showPassword" class="size-4" />
               <LucideEye v-else class="size-4" />
             </button>
           </template>
         </TextInput>
-        <button type="button" class="self-end text-ink-gray-6 text-p-sm hover:text-ink-gray-8 hover:underline"
-          @click="showForgotPassword = true">
+        <button
+          type="button"
+          class="self-end text-ink-gray-6 text-p-sm hover:text-ink-gray-8 hover:underline"
+          @click="showForgotPassword = true"
+        >
           Forgot password?
         </button>
         <ErrorMessage v-if="errorMessage" :message="errorMessage" />
@@ -35,14 +48,19 @@
 
     <p class="bottom-6 absolute text-ink-gray-3 text-xs">Frappe Bench Administrator</p>
 
-    <Dialog v-model="showForgotPassword" :options="{ title: 'Reset password' }" :position="isMobile ? 'top' : 'center'">
+    <Dialog
+      v-model="showForgotPassword"
+      :options="{ title: 'Reset password' }"
+      :position="isMobile ? 'top' : 'center'"
+    >
       <template #body-content>
         <ol class="space-y-2 pl-4 text-ink-gray-7 text-p-base list-decimal">
           <li>SSH into the server.</li>
           <li>
             Run
-            <code
-              class="bg-surface-gray-2 px-1 py-0.5 rounded font-mono text-ink-gray-8">bench -b {{ session.benchName }} set-admin-password</code>
+            <code class="bg-surface-gray-2 px-1 py-0.5 rounded font-mono text-ink-gray-8"
+              >bench -b {{ session.benchName }} set-admin-password</code
+            >
           </li>
         </ol>
       </template>

@@ -26,6 +26,19 @@ admin/backend/
 admin/frontend/dashboard/  Vue Admin UI
 ```
 
+## Install Modes
+
+`install.sh` installs one of two ways, distinguished at runtime by a repo-root
+`VERSION` file (`pilot.is_dev_build`):
+
+- **Released** (default): a prebuilt release tarball. It carries the compiled
+  Admin UI in `admin/backend/static/dist/` and a `VERSION` file. The frontend
+  source ships too, but released installs never build it or install its Node
+  deps — they serve the bundled dist. A missing dist is a hard error.
+- **Dev** (`--dev`): a `git clone` of `main`, with no `VERSION` file. Node.js is
+  required; the Admin UI is compiled from `admin/frontend/` and rebuilt when the
+  source changes.
+
 ## Main Objects
 
 `Server` is the host entry point. It resolves the fixed benches directory, returns benches with `Server().bench("name")`, and owns host-wide SSH keys and monitoring concerns.

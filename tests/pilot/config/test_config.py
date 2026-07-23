@@ -742,6 +742,12 @@ def test_every_field_survives_a_round_trip(tmp_path: Path) -> None:
     config.s3.provider = "aws"
     config.s3.region = "us-east-1"
 
+    config.llm.provider = "self-hosted"
+    config.llm.api_key = "sk-llm-secret"
+    config.llm.model = "my-served-model"
+    config.llm.max_tokens = 2048
+    config.llm.api_base = "http://vllm:8000/v1"
+
     config.monitor.system_log_path = Path("/var/log/custom-system.log")
     config.monitor.authority_file_path = Path("/var/log/.custom-authority")
     config.monitor.system_log_max_size = "600M"

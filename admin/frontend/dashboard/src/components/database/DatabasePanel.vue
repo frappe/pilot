@@ -11,12 +11,20 @@
       <div class="flex items-center gap-3 shrink-0">
         <slot name="actions" />
         <label v-if="showAutoRefresh" class="flex items-center gap-2 cursor-pointer">
-          <Switch size="sm" :model-value="autoRefresh"
-            @update:model-value="$emit('update:autoRefresh', $event)" />
+          <Switch
+            size="sm"
+            :model-value="autoRefresh"
+            @update:model-value="$emit('update:autoRefresh', $event)"
+          />
           <span class="text-ink-gray-7 text-sm">Auto Refresh</span>
         </label>
-        <Button variant="subtle" size="sm" iconLeft="lucide-refresh-cw" :loading="loading"
-          @click="$emit('refresh')">
+        <Button
+          variant="subtle"
+          size="sm"
+          iconLeft="lucide-refresh-cw"
+          :loading="loading"
+          @click="$emit('refresh')"
+        >
           Refresh
         </Button>
       </div>

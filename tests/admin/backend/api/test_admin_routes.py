@@ -69,18 +69,18 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         if rule.rule.startswith(f"{API_ROOT_PREFIX}/") and not rule.rule.startswith(f"{API_V1_PREFIX}/")
     ]
 
-    assert len(routes) == 149
+    assert len(routes) == 151
     assert unversioned == []
-    assert len({(method, path) for method, path, _, _ in routes}) == 149
+    assert len({(method, path) for method, path, _, _ in routes}) == 151
     assert Counter(method for method, _, _, _ in routes) == {
         "DELETE": 11,
-        "GET": 79,
+        "GET": 81,
         "PATCH": 4,
         "POST": 50,
         "PUT": 5,
     }
     assert Counter(policy for _, _, _, policy in routes) == {
-        "authenticated": 99,
+        "authenticated": 101,
         "authenticated+bench-management": 9,
         "authenticated+site-scope": 30,
         "open": 5,
@@ -107,7 +107,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         "network": 1,
         "updates": 1,
         "runtime": 4,
-        "settings": 2,
+        "settings": 3,
         "setup": 6,
         "sites": 33,
         "ssh-keys": 3,
@@ -115,7 +115,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         "session": 3,
         "system": 1,
         "task-worker": 3,
-        "tasks": 7,
+        "tasks": 8,
         "waf": 1,
     }
 
@@ -180,6 +180,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         ("POST", "/api/v1/tasks/<task_id>/actions/retry"),
         ("GET", "/api/v1/tasks/<task_id>/events"),
         ("GET", "/api/v1/tasks/<task_id>/output/content"),
+        ("GET", "/api/v1/tasks/<task_id>/debug"),
         ("GET", "/api/v1/task-worker"),
         ("POST", "/api/v1/task-worker/actions/start"),
         ("POST", "/api/v1/task-worker/actions/stop"),
@@ -205,6 +206,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
     assert {
         ("GET", "/api/v1/settings"),
         ("PATCH", "/api/v1/settings"),
+        ("GET", "/api/v1/settings/llm/models"),
         ("GET", "/api/v1/audit-events"),
         ("GET", "/api/v1/network/client"),
         ("GET", "/api/v1/ssh-keys"),

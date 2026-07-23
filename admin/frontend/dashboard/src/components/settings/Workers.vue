@@ -12,9 +12,13 @@
         <p v-if="index === 0" class="font-medium text-ink-gray-7 text-sm">Queues</p>
         <TextInput v-model="group.queues" placeholder="default, short, long" class="w-full" />
       </div>
-      <Button variant="subtle" icon="lucide-x" :disabled="groups.length === 1" @click="removeGroup(index)" />
+      <Button
+        variant="subtle"
+        icon="lucide-x"
+        :disabled="groups.length === 1"
+        @click="removeGroup(index)"
+      />
     </div>
-
 
     <ErrorMessage v-if="error" :message="error" />
 
@@ -58,9 +62,11 @@ function queueList(value) {
 
 function validate() {
   for (const [index, group] of groups.value.entries()) {
-    if (!queueList(group.queues).length) return `Worker group ${index + 1} needs at least one queue.`
+    if (!queueList(group.queues).length)
+      return `Worker group ${index + 1} needs at least one queue.`
     const count = Number(group.count)
-    if (!Number.isInteger(count) || count < 1) return `Worker group ${index + 1} count must be at least 1.`
+    if (!Number.isInteger(count) || count < 1)
+      return `Worker group ${index + 1} count must be at least 1.`
   }
   return ''
 }
@@ -71,7 +77,10 @@ async function save() {
 
   saving.value = true
   try {
-    const payload = groups.value.map((group) => ({ queues: queueList(group.queues), count: Number(group.count) }))
+    const payload = groups.value.map((group) => ({
+      queues: queueList(group.queues),
+      count: Number(group.count),
+    }))
     const result = await settingsApi.update({ workers: payload })
     if (result.error) {
       error.value = apiErrorMessage(result, 'Failed to save.')
@@ -89,6 +98,8 @@ onMounted(async () => {
   try {
     const data = await settingsApi.get()
     groups.value = (data.workers || []).map(toGroupForm)
+  } catch (e) {
+    error.value = e.message || 'Could not load settings.'
   } finally {
     loading.value = false
   }

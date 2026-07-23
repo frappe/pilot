@@ -14,7 +14,10 @@ export function patchSkipped(op) {
   const patch = op?.diagnosis?.patch
   if (!patch) return false
   return (op.decisions || []).some(
-    (decision) => decision.action === 'bypass_patch' && decision.patch === patch && decision.site === op.failed_site,
+    (decision) =>
+      decision.action === 'bypass_patch' &&
+      decision.patch === patch &&
+      decision.site === op.failed_site,
   )
 }
 
@@ -59,7 +62,10 @@ const STATE_ICON = {
   green: { icon: 'lucide-check', iconBg: 'bg-surface-green-2 text-ink-green-8' },
   red: { icon: 'lucide-x', iconBg: 'bg-surface-red-2 text-ink-red-8' },
   blue: { icon: 'lucide-rotate-ccw', iconBg: 'bg-surface-blue-2 text-ink-blue-8' },
-  orange: { icon: 'lucide-loader-circle animate-spin', iconBg: 'bg-surface-amber-2 text-ink-amber-8' },
+  orange: {
+    icon: 'lucide-loader-circle animate-spin',
+    iconBg: 'bg-surface-amber-2 text-ink-amber-8',
+  },
   gray: { icon: 'lucide-clock-3', iconBg: 'bg-surface-gray-3 text-ink-gray-6' },
 }
 
@@ -77,15 +83,21 @@ export function stateLabel(state) {
 
 // Per-site lifecycle: pending -> backing up -> running -> success / failed / recovered
 export function siteStatus(site) {
-  if (site.migration_status === 'recovering') return { label: 'Recovering', tone: 'orange', busy: true, value: 'recovering' }
-  if (site.migration_status === 'recovered') return { label: 'Recovered', tone: 'green', value: 'recovered' }
-  if (site.migration_status === 'success') return { label: 'Success', tone: 'green', value: 'success' }
-  if (site.migration_status === 'running') return { label: 'Running', tone: 'orange', busy: true, value: 'running' }
+  if (site.migration_status === 'recovering')
+    return { label: 'Recovering', tone: 'orange', busy: true, value: 'recovering' }
+  if (site.migration_status === 'recovered')
+    return { label: 'Recovered', tone: 'green', value: 'recovered' }
+  if (site.migration_status === 'success')
+    return { label: 'Success', tone: 'green', value: 'success' }
+  if (site.migration_status === 'running')
+    return { label: 'Running', tone: 'orange', busy: true, value: 'running' }
   if (site.migration_status === 'failed') return { label: 'Failed', tone: 'red', value: 'failed' }
-  if (site.backup_status === 'backing_up') return { label: 'Backing up', tone: 'orange', busy: true, value: 'backing_up' }
+  if (site.backup_status === 'backing_up')
+    return { label: 'Backing up', tone: 'orange', busy: true, value: 'backing_up' }
   if (site.backup_status === 'failed') return { label: 'Failed', tone: 'red', value: 'failed' }
-  if (site.backup_status === 'backed_up') return { label: 'Backed up', tone: 'blue', value: 'backed_up' }
-  if (site.backup_status === 'unsupported') return { label: 'Backup skipped', tone: 'gray', value: 'unsupported' }
+  if (site.backup_status === 'backed_up')
+    return { label: 'Backed up', tone: 'blue', value: 'backed_up' }
+  if (site.backup_status === 'unsupported')
+    return { label: 'Backup skipped', tone: 'gray', value: 'unsupported' }
   return { label: 'Pending', tone: 'gray', value: 'pending' }
 }
-

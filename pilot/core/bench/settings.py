@@ -164,6 +164,16 @@ def s3_payload(config: BenchConfig) -> dict:
     }
 
 
+def llm_payload(config: BenchConfig) -> dict:
+    return {
+        "provider": config.llm.provider,
+        "api_key_set": bool(config.llm.api_key),
+        "model": config.llm.model,
+        "max_tokens": config.llm.max_tokens,
+        "api_base": config.llm.api_base,
+    }
+
+
 def restart_trigger_values(config: BenchConfig) -> dict:
     return {
         "bench": {

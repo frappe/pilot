@@ -31,7 +31,9 @@ export PILOT_REPO_URL="file://$WORK_DIR/src"
 export PILOT_BRANCH="main"
 
 echo "=== macOS smoke test ==="
-sh "$REPO_ROOT/install.sh"
+# --dev clones the mounted source checkout; the default path would fetch a
+# release tarball, which does not exist for an unreleased commit under test.
+sh "$REPO_ROOT/install.sh" --dev
 
 echo "--- assertions ---"
 test -x "$HOME/pilot/bench"

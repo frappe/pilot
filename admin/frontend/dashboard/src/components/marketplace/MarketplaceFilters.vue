@@ -1,7 +1,12 @@
 <template>
   <div class="mt-6">
     <div class="flex sm:flex-row flex-col gap-2">
-      <FormControl v-model="searchModel" class="flex-1" type="text" placeholder="Search for any app">
+      <FormControl
+        v-model="searchModel"
+        class="flex-1"
+        type="text"
+        placeholder="Search for any app"
+      >
         <template #prefix>
           <LucideSearch class="size-4 text-ink-gray-5" />
         </template>
@@ -25,11 +30,16 @@
     </div>
 
     <div class="flex flex-wrap gap-1.5 mt-3">
-      <button v-for="pill in PILLS" :key="pill" type="button"
+      <button
+        v-for="pill in PILLS"
+        :key="pill"
+        type="button"
         class="px-3 py-0.5 border rounded-full text-p-sm transition duration-150 ease-[var(--ease-out)] active:scale-[0.97]"
         :class="pill === pillModel
           ? 'bg-surface-gray-3 border-outline-gray-2 text-ink-gray-9'
-          : 'border-outline-gray-2 text-ink-gray-6 hover:bg-surface-gray-1 hover:text-ink-gray-8'" @click="pillModel = pill">
+          : 'border-outline-gray-2 text-ink-gray-6 hover:bg-surface-gray-1 hover:text-ink-gray-8'"
+        @click="pillModel = pill"
+      >
         {{ pill }}
       </button>
     </div>

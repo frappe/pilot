@@ -42,7 +42,8 @@ export function useTaskSteps(rawLines, streaming, task) {
       let status
       if (failedKeys.has(m.key)) status = 'failed'
       else if (next) status = 'done'
-      else if (!streaming.value && task.value?.status === 'failed' && failedKeys.size === 0) status = 'failed'
+      else if (!streaming.value && task.value?.status === 'failed' && failedKeys.size === 0)
+        status = 'failed'
       else if (!streaming.value) status = 'done'
       else status = 'running'
 

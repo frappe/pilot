@@ -3,24 +3,42 @@
     <span class="size-5 text-ink-gray-4 animate-spin lucide-loader-circle"></span>
   </div>
   <template v-else>
-    <div v-if="loadError"
-      class="py-12 border border-dashed rounded-xl border-outline-red-2 text-ink-red-3 text-p-sm text-center">
+    <div
+      v-if="loadError"
+      class="py-12 border border-dashed rounded-xl border-outline-red-2 text-ink-red-3 text-p-sm text-center"
+    >
       {{ loadError }}
     </div>
-    <div v-else-if="!rows.length"
-      class="py-12 border border-dashed rounded-xl border-outline-gray-2 text-ink-gray-5 text-p-sm text-center">
+    <div
+      v-else-if="!rows.length"
+      class="py-12 border border-dashed rounded-xl border-outline-gray-2 text-ink-gray-5 text-p-sm text-center"
+    >
       No SSH keys.
     </div>
-    <ListView v-else :columns="columns" :rows="rows" row-key="fingerprint"
-      :options="{ selectable: false, showTooltip: false }">
+    <ListView
+      v-else
+      :columns="columns"
+      :rows="rows"
+      row-key="fingerprint"
+      :options="{ selectable: false, showTooltip: false }"
+    >
       <template #cell="{ column, row, item }">
-        <button v-if="column.key === 'fingerprint'"
-          class="block w-full font-mono text-ink-gray-6 text-xs text-left truncate" title="Click to copy"
-          @click="copy(row.fingerprint)">
+        <button
+          v-if="column.key === 'fingerprint'"
+          class="block w-full font-mono text-ink-gray-6 text-xs text-left truncate"
+          title="Click to copy"
+          @click="copy(row.fingerprint)"
+        >
           {{ row.fingerprint }}
         </button>
         <div v-else-if="column.key === 'actions'" class="flex justify-end">
-          <Button variant="ghost" size="sm" theme="red" icon="lucide-trash-2" @click="promptRemove(row)" />
+          <Button
+            variant="ghost"
+            size="sm"
+            theme="red"
+            icon="lucide-trash-2"
+            @click="promptRemove(row)"
+          />
         </div>
         <ListRowItem v-else :column="column" :row="row" :item="item" :align="column.align" />
       </template>
@@ -29,8 +47,13 @@
 
   <Dialog v-model="showAdd" :options="{ title: 'Add SSH key', size: 'md' }">
     <template #body-content>
-      <FormControl type="textarea" label="Public key" v-model="newKey" :rows="3"
-        placeholder="ssh-ed25519 AAAA… user@host" />
+      <FormControl
+        type="textarea"
+        label="Public key"
+        v-model="newKey"
+        :rows="3"
+        placeholder="ssh-ed25519 AAAA… user@host"
+      />
       <ErrorMessage v-if="error" :message="error" class="mt-2" />
       <div class="flex justify-end gap-2 mt-4">
         <Button variant="ghost" @click="showAdd = false">Cancel</Button>
@@ -42,15 +65,18 @@
   <Dialog v-model="showRemove" :options="{ title: 'Remove SSH key', size: 'md' }">
     <template #body-content>
       <p v-if="isLastKey" class="text-ink-gray-7 text-p-sm">
-        This is the last authorized key. It can't be removed, or you'd lose SSH access to this server.
+        This is the last authorized key. It can't be removed, or you'd lose SSH access to this
+        server.
       </p>
       <p v-else class="text-ink-gray-7 text-p-sm">
-        Remove <span class="font-semibold text-ink-gray-8 break-all">{{ removing?.label }}</span>? Whoever holds
-        the matching private key loses SSH access.
+        Remove <span class="font-semibold text-ink-gray-8 break-all">{{ removing?.label }}</span>?
+        Whoever holds the matching private key loses SSH access.
       </p>
       <div v-if="!isLastKey" class="flex justify-end gap-2 mt-4">
         <Button variant="ghost" @click="showRemove = false">Cancel</Button>
-        <Button variant="solid" theme="red" :loading="removingBusy" @click="confirmRemove">Remove</Button>
+        <Button variant="solid" theme="red" :loading="removingBusy" @click="confirmRemove"
+          >Remove</Button
+        >
       </div>
     </template>
   </Dialog>
@@ -113,7 +139,10 @@ function openAdd() {
 }
 
 async function add() {
-  if (!newKey.value.trim()) { error.value = 'Paste a public key to add.'; return }
+  if (!newKey.value.trim()) {
+    error.value = 'Paste a public key to add.'
+    return
+  }
   adding.value = true
   error.value = ''
   try {

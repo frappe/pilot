@@ -5,12 +5,16 @@
         <h3 class="font-medium text-ink-gray-8 text-base">Uptime</h3>
         <span class="size-3.5 text-ink-gray-4 lucide-link" />
       </div>
-      <div v-if="data && data.production_enabled && data.overall_percent !== null"
-        class="flex items-center gap-1 text-sm">
+      <div
+        v-if="data && data.production_enabled && data.overall_percent !== null"
+        class="flex items-center gap-1 text-sm"
+      >
         <span class="font-semibold text-ink-gray-8">{{ formatPercent(data.overall_percent) }}</span>
         <span class="text-ink-gray-5">Overall Uptime</span>
-        <span class="size-3.5 text-ink-gray-4 lucide-circle-help"
-          title="Percentage of successful pings to /api/method/ping in this window" />
+        <span
+          class="size-3.5 text-ink-gray-4 lucide-circle-help"
+          title="Percentage of successful pings to /api/method/ping in this window"
+        />
       </div>
     </div>
 
@@ -18,8 +22,10 @@
       <LoadingText />
     </div>
     <ErrorMessage v-else-if="error" :message="error" class="m-4" />
-    <div v-else-if="data && !data.production_enabled"
-      class="flex flex-col items-center gap-1 py-10 text-center">
+    <div
+      v-else-if="data && !data.production_enabled"
+      class="flex flex-col items-center gap-1 py-10 text-center"
+    >
       <span class="size-6 text-ink-gray-3 lucide-server-off" />
       <p class="font-medium text-ink-gray-7 text-sm">Uptime monitoring is production-only</p>
       <p class="max-w-xs text-ink-gray-5 text-xs">
@@ -27,28 +33,39 @@
         tracking uptime.
       </p>
     </div>
-    <div v-else-if="!data || data.overall_percent === null" class="flex flex-col items-center gap-1 py-10 text-center">
+    <div
+      v-else-if="!data || data.overall_percent === null"
+      class="flex flex-col items-center gap-1 py-10 text-center"
+    >
       <span class="size-6 text-ink-gray-3 lucide-activity" />
       <p class="text-ink-gray-5 text-xs">No uptime data yet</p>
     </div>
     <div v-else ref="chartRef" class="relative px-4 pt-4 pb-3">
       <div ref="barsRef" class="flex items-end gap-[3px] h-10">
-        <div v-for="(bucket, i) in data.buckets" :key="bucket.time"
+        <div
+          v-for="(bucket, i) in data.buckets"
+          :key="bucket.time"
           class="flex-1 rounded-full min-w-[3px] h-full cursor-pointer"
           :class="{ 'bg-surface-gray-3': bucket.percent === null }"
           :style="bucket.percent === null ? {} : { backgroundColor: barColor(bucket.percent) }"
-          @mouseenter="hovered = i" @mouseleave="hovered = null" />
+          @mouseenter="hovered = i"
+          @mouseleave="hovered = null"
+        />
       </div>
       <div class="flex justify-between mt-2 text-ink-gray-5 text-xs">
         <span>{{ formatAxisTime(data.buckets[0].time) }}</span>
         <span>{{ formatAxisTime(data.buckets[data.buckets.length - 1].time) }}</span>
       </div>
 
-      <div v-if="hovered !== null" ref="tooltipRef"
+      <div
+        v-if="hovered !== null"
+        ref="tooltipRef"
         class="bottom-full left-0 z-10 absolute bg-surface-gray-8 shadow-lg mb-2 px-3 py-2 rounded-lg max-w-[calc(100%_-_16px)] text-xs"
-        :style="{ transform: `translateX(${tooltipLeft}px)` }">
+        :style="{ transform: `translateX(${tooltipLeft}px)` }"
+      >
         <div class="font-semibold text-ink-white">
-          {{ formatPercent(data.buckets[hovered].percent) }} · {{ formatFullTime(data.buckets[hovered].time) }}
+          {{ formatPercent(data.buckets[hovered].percent) }}
+          · {{ formatFullTime(data.buckets[hovered].time) }}
         </div>
         <div class="text-ink-gray-4">{{ formatRange(data.buckets[hovered]) }}</div>
       </div>
@@ -93,7 +110,14 @@ function formatPercent(percent) {
   return percent === null || percent === undefined ? 'No data' : `${percent.toFixed(2)}%`
 }
 
-const FULL_FORMAT = { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }
+const FULL_FORMAT = {
+  weekday: 'short',
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+}
 const TIME_ONLY_FORMAT = { hour: 'numeric', minute: '2-digit' }
 
 function formatFullTime(ms) {

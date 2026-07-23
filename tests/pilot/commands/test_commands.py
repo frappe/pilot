@@ -680,50 +680,13 @@ def test_requirements_installs_js_for_app_with_package_json(tmp_path: Path) -> N
         assert mock_rc.call_args[0][0] == ["yarn", "install"]
 
 
-def test_upgrade_command_installs_admin_python_deps() -> None:
-    from pilot.commands.runtime.upgrade import UpgradeCommand
+def test_upgrade_command_performs_upgrade() -> None:
+    from pilot.commands.admin.upgrade import UpgradeCommand
 
-    with (
-        patch("pilot.utils.cli_root", return_value=Path("/tmp/pilot")),
-        patch("pilot.utils.run_command") as mock_run_command,
-        patch("pilot.commands.admin.start.download_admin_frontend", return_value=True),
-        patch("pilot.managers.environment.AdminEnvManager") as mock_admin_env,
-    ):
+    with patch("pilot.updater.perform_upgrade") as mock_upgrade:
         UpgradeCommand().run()
 
-    mock_run_command.assert_called_once_with(["git", "-C", "/tmp/pilot", "pull"], stream_output=True)
-    mock_admin_env.assert_called_once_with(Path("/tmp/pilot"))
-    mock_admin_env.return_value.install_python_deps.assert_called_once_with()
-
-
-def test_update_command_runs_all_steps(tmp_path: Path) -> None:
-    from pilot.commands.runtime.update import UpdateCommand
-    from pilot.core.bench import Bench
-
-    bench = make_bench(tmp_path)
-    bench.create_directories()
-    cmd = UpdateCommand(bench, skip_confirm=True)
-
-    with (
-        patch.object(cmd, "_warn_if_running"),
-        patch.object(Bench, "_update_apps"),
-        patch.object(Bench, "_reinstall_apps"),
-        patch.object(Bench, "_rebuild_assets"),
-        patch.object(Bench, "_migrate_sites"),
-        patch.object(Bench, "reload_workers"),
-    ):
-        cmd.run()
-
-
-def test_update_command_skips_confirm_when_bench_not_running(tmp_path: Path) -> None:
-    from pilot.commands.runtime.update import UpdateCommand
-
-    bench = make_bench(tmp_path)
-    bench.create_directories()
-    cmd = UpdateCommand(bench, skip_confirm=False)
-
-    with patch("pilot.managers.processes.local.ProcessManager.is_running", return_value=False):
-        cmd._warn_if_running()  # no raise, no prompt
+    mock_upgrade.assert_called_once()
 
 
 def test_bench_update_apps_raises_on_command_error(tmp_path: Path) -> None:
@@ -1157,6 +1120,19 @@ def test_write_common_site_config_preserves_custom_keys(tmp_path: Path) -> None:
     assert config["redis_cache"] == "redis://localhost:13000"
 
 
+def test_write_common_site_config_leaves_developer_mode_to_sites(tmp_path: Path) -> None:
+    import json
+
+    bench = make_bench(tmp_path)
+    bench.sites_path.mkdir(parents=True)
+    config_path = bench.sites_path / "common_site_config.json"
+    bench.config.allow_developer_mode = True
+
+    bench.write_common_site_config()
+
+    assert "developer_mode" not in json.loads(config_path.read_text())
+
+
 def _drop_config(name: str) -> BenchConfig:
     return BenchConfig(
         name=name,
@@ -1262,51 +1238,51 @@ def test_build_admin_errors_when_node_missing(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_build_admin_installs_when_node_modules_missing(tmp_path: Path) -> None:
-    from admin.backend.frontend import _is_yarn_install_stale
+    from admin.backend.frontend import _is_npm_install_stale
 
     (tmp_path / "package.json").write_text("{}")
 
-    assert _is_yarn_install_stale(tmp_path) is True
+    assert _is_npm_install_stale(tmp_path) is True
 
 
 def test_build_admin_installs_when_manifest_is_newer_than_installed_deps(tmp_path: Path) -> None:
     import os
 
-    from admin.backend.frontend import _is_yarn_install_stale
+    from admin.backend.frontend import _is_npm_install_stale
 
     node_modules = tmp_path / "node_modules"
     node_modules.mkdir()
-    install_state = node_modules / ".yarn-integrity"
+    install_state = node_modules / ".package-lock.json"
     install_state.write_text("{}")
     package_json = tmp_path / "package.json"
     package_json.write_text("{}")
-    yarn_lock = tmp_path / "yarn.lock"
-    yarn_lock.write_text("{}")
+    package_lock = tmp_path / "package-lock.json"
+    package_lock.write_text("{}")
     os.utime(install_state, (100, 100))
     os.utime(package_json, (200, 200))
-    os.utime(yarn_lock, (100, 100))
+    os.utime(package_lock, (100, 100))
 
-    assert _is_yarn_install_stale(tmp_path) is True
+    assert _is_npm_install_stale(tmp_path) is True
 
 
 def test_build_admin_skips_install_when_installed_deps_are_current(tmp_path: Path) -> None:
     import os
 
-    from admin.backend.frontend import _is_yarn_install_stale
+    from admin.backend.frontend import _is_npm_install_stale
 
     package_json = tmp_path / "package.json"
     package_json.write_text("{}")
-    yarn_lock = tmp_path / "yarn.lock"
-    yarn_lock.write_text("{}")
+    package_lock = tmp_path / "package-lock.json"
+    package_lock.write_text("{}")
     node_modules = tmp_path / "node_modules"
     node_modules.mkdir()
-    install_state = node_modules / ".yarn-integrity"
+    install_state = node_modules / ".package-lock.json"
     install_state.write_text("{}")
     os.utime(package_json, (100, 100))
-    os.utime(yarn_lock, (100, 100))
+    os.utime(package_lock, (100, 100))
     os.utime(install_state, (200, 200))
 
-    assert _is_yarn_install_stale(tmp_path) is False
+    assert _is_npm_install_stale(tmp_path) is False
 
 
 def _admin_source_checkout(tmp_path: Path, src_mtime: int, built_mtime: int) -> Path:

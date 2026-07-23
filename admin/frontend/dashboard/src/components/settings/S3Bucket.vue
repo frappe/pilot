@@ -11,13 +11,22 @@
       </template>
     </Alert>
 
-    <div v-if="connected" class="flex sm:flex-row flex-col sm:justify-between sm:items-center gap-3">
+    <div
+      v-if="connected"
+      class="flex sm:flex-row flex-col sm:justify-between sm:items-center gap-3"
+    >
       <div>
         <p class="font-medium text-ink-gray-8 text-sm">Connected to {{ bucket }}</p>
         <p class="text-ink-gray-5 text-p-sm">{{ providerLabel }} · Access key {{ accessKey }}</p>
       </div>
-      <Button class="flex-1 sm:flex-none" variant="subtle" theme="red" :loading="disconnecting"
-        @click="disconnect">Disconnect</Button>
+      <Button
+        class="flex-1 sm:flex-none"
+        variant="subtle"
+        theme="red"
+        :loading="disconnecting"
+        @click="disconnect"
+        >Disconnect</Button
+      >
     </div>
 
     <div class="space-y-4">
@@ -27,9 +36,20 @@
         <Select label="Region" v-model="region" :options="regionOptions" class="w-full" />
       </div>
       <div class="flex sm:flex-row flex-col gap-4">
-        <FormControl label="Access Key" type="text" v-model="accessKey" placeholder="AKIA…" class="w-full" />
-        <FormControl label="Secret Key" type="password" v-model="secretKey"
-          :placeholder="secretKeySet ? '••••••••' : 'Secret key'" class="w-full" />
+        <FormControl
+          label="Access Key"
+          type="text"
+          v-model="accessKey"
+          placeholder="AKIA…"
+          class="w-full"
+        />
+        <FormControl
+          label="Secret Key"
+          type="password"
+          v-model="secretKey"
+          :placeholder="secretKeySet ? '••••••••' : 'Secret key'"
+          class="w-full"
+        />
       </div>
       <ErrorMessage v-if="error" :message="error" />
       <div class="flex justify-end">
@@ -60,10 +80,17 @@ const secretKeySet = ref(false)
 const providers = ref([])
 
 const connected = computed(() => Boolean(accessKey.value && bucket.value && secretKeySet.value))
-const providerLabel = computed(() => providers.value.find((p) => p.value === provider.value)?.label || provider.value)
-const providerOptions = computed(() => providers.value.map((p) => ({ label: p.label, value: p.value })))
+const providerLabel = computed(
+  () => providers.value.find((p) => p.value === provider.value)?.label || provider.value,
+)
+const providerOptions = computed(() =>
+  providers.value.map((p) => ({ label: p.label, value: p.value })),
+)
 const regionOptions = computed(
-  () => providers.value.find((p) => p.value === provider.value)?.regions.map((r) => ({ label: r, value: r })) || [],
+  () =>
+    providers.value
+      .find((p) => p.value === provider.value)
+      ?.regions.map((r) => ({ label: r, value: r })) || [],
 )
 
 watch(provider, () => {
@@ -83,6 +110,8 @@ async function load() {
     provider.value = s3.provider || providers.value[0]?.value || ''
     region.value = s3.region || ''
     secretKeySet.value = !!s3.secret_key_set
+  } catch (e) {
+    error.value = e.message || 'Could not load settings.'
   } finally {
     loading.value = false
   }

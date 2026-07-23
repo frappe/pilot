@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { appsSummary, kindLabel, opTitle, patchSkipped, siteStatus, stateLabel, stateTone } from './migrationFormat.js'
+import {
+  appsSummary,
+  kindLabel,
+  opTitle,
+  patchSkipped,
+  siteStatus,
+  stateLabel,
+  stateTone,
+} from './migrationFormat.js'
 import { fmtDateTime } from './taskFormat.js'
 
 test('kindLabel formats update and site_migrate', () => {
@@ -14,7 +22,10 @@ test('opTitle names the operation', () => {
   assert.equal(opTitle(op), fmtDateTime(op.started_at))
   const queued = { kind: 'update', created_at: '2026-07-21T13:00:00+00:00' }
   assert.equal(opTitle(queued), fmtDateTime(queued.created_at))
-  assert.equal(opTitle({ kind: 'site_migrate', sites: [{ name: 's1.localhost' }] }), 'Migrate s1.localhost')
+  assert.equal(
+    opTitle({ kind: 'site_migrate', sites: [{ name: 's1.localhost' }] }),
+    'Migrate s1.localhost',
+  )
   assert.equal(opTitle({ kind: 'site_migrate', sites: [] }), 'Migrate site')
 })
 
@@ -22,7 +33,10 @@ test('appsSummary formats app list', () => {
   assert.equal(appsSummary({ apps: [] }), '')
   assert.equal(appsSummary({ apps: [{ name: 'erpnext' }] }), 'erpnext')
   assert.equal(appsSummary({ apps: [{ name: 'erpnext' }, { name: 'hrms' }] }), 'erpnext, hrms')
-  assert.equal(appsSummary({ apps: [{ name: 'erpnext' }, { name: 'hrms' }, { name: 'crm' }] }), 'erpnext, hrms +1')
+  assert.equal(
+    appsSummary({ apps: [{ name: 'erpnext' }, { name: 'hrms' }, { name: 'crm' }] }),
+    'erpnext, hrms +1',
+  )
 })
 
 test('stateTone and stateLabel format operation states', () => {
@@ -35,7 +49,9 @@ test('patchSkipped detects a matching bypass_patch decision for the current diag
   const op = {
     failed_site: 'site1.localhost',
     diagnosis: { patch: 'app.patches.some_patch' },
-    decisions: [{ action: 'bypass_patch', patch: 'app.patches.some_patch', site: 'site1.localhost' }],
+    decisions: [
+      { action: 'bypass_patch', patch: 'app.patches.some_patch', site: 'site1.localhost' },
+    ],
   }
   assert.equal(patchSkipped(op), true)
 })
@@ -48,7 +64,9 @@ test('patchSkipped is false when the decision is for a different patch', () => {
   const op = {
     failed_site: 'site1.localhost',
     diagnosis: { patch: 'app.patches.some_patch' },
-    decisions: [{ action: 'bypass_patch', patch: 'app.patches.other_patch', site: 'site1.localhost' }],
+    decisions: [
+      { action: 'bypass_patch', patch: 'app.patches.other_patch', site: 'site1.localhost' },
+    ],
   }
   assert.equal(patchSkipped(op), false)
 })
@@ -57,7 +75,9 @@ test('patchSkipped is false when the decision is for a different site', () => {
   const op = {
     failed_site: 'site1.localhost',
     diagnosis: { patch: 'app.patches.some_patch' },
-    decisions: [{ action: 'bypass_patch', patch: 'app.patches.some_patch', site: 'site2.localhost' }],
+    decisions: [
+      { action: 'bypass_patch', patch: 'app.patches.some_patch', site: 'site2.localhost' },
+    ],
   }
   assert.equal(patchSkipped(op), false)
 })

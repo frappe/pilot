@@ -20,11 +20,13 @@ from pilot.core.bench.settings import (
     SettingsApplyFailed,
     firewall_payload,
     is_restart_needed,
+    llm_payload,
     restart_trigger_values,
     s3_payload,
     waf_payload,
     worker_groups_payload,
 )
+from pilot.integrations.llm import clear_system_prompt, read_system_prompt, write_system_prompt
 from pilot.managers.platform import is_linux, native_process_manager
 from pilot.managers.redis import RedisManager
 from pilot.managers.waf import WafManager
@@ -39,6 +41,7 @@ __all__ = [
     "build_settings_response",
     "firewall_payload",
     "is_restart_needed",
+    "llm_payload",
     "network_bp",
     "restart_trigger_values",
     "s3_payload",
@@ -51,7 +54,7 @@ class _SettingsUpdateRejected(Exception):
     pass
 
 
-def build_settings_response(config: BenchConfig) -> dict:
+def build_settings_response(config: BenchConfig, bench_root: Path | None = None) -> dict:
     return {
         "is_linux": is_linux(),
         "native_process_manager": native_process_manager(),
@@ -62,6 +65,7 @@ def build_settings_response(config: BenchConfig) -> dict:
             "socketio_port": config.socketio_port,
             "default_branch": config.default_branch,
             "db_type": config.db_type,
+            "allow_developer_mode": config.allow_developer_mode,
         },
         "mariadb": {
             "host": config.mariadb.host,
@@ -103,6 +107,11 @@ def build_settings_response(config: BenchConfig) -> dict:
         "letsencrypt": {"email": config.letsencrypt.email},
         "s3": s3_payload(config),
         "s3_providers": s3_provider_options(),
+        "llm": {
+            **llm_payload(config),
+            "system_prompt": read_system_prompt(bench_root) if bench_root else "",
+        },
+        "llm_providers": llm_provider_options(),
         "monitor": {
             "system_log_path": str(config.monitor.system_log_path),
             "log_path": str(config.monitor.log_path) if config.monitor.log_path else "",
@@ -121,6 +130,23 @@ def s3_provider_options() -> list[dict]:
     ]
 
 
+def llm_provider_options() -> list[dict]:
+    from pilot.integrations.llm.registry import provider_options
+
+    return provider_options()
+
+
+@settings_bp.get("/llm/models")
+def llm_models():
+    """Models litellm knows for a provider — powers the model combobox."""
+    from pilot.integrations.llm.registry import models_for
+
+    provider = request.args.get("provider", "").strip()
+    if not provider:
+        return jsonify([])
+    return jsonify(models_for(provider))
+
+
 @settings_bp.get("")
 def get_settings():
     bench_root = Path(current_app.config["BENCH_ROOT"])
@@ -128,7 +154,7 @@ def get_settings():
         config = BenchConfig.read(bench_root)
     except Exception:
         return error_response("settings_unavailable", "Could not read settings.", 500)
-    return jsonify(build_settings_response(config))
+    return jsonify(build_settings_response(config, bench_root))
 
 
 _AUDIT_LOG_DEFAULT_LIMIT = 50
@@ -205,6 +231,8 @@ def _save_settings_update(bench_root: Path, data: dict) -> dict:
             raise _SettingsUpdateRejected(error)
         _verify_s3_update(config, old_s3_config)
 
+    _apply_system_prompt(bench_root, data.get("llm") or {})
+
     return {
         "config": config,
         "old_restart": old_restart,
@@ -212,6 +240,14 @@ def _save_settings_update(bench_root: Path, data: dict) -> dict:
         "old_waf": old_waf,
         "old_s3_config": old_s3_config,
     }
+
+
+def _apply_system_prompt(bench_root: Path, llm: dict) -> None:
+    """Persist the system prompt to its sidecar file (not bench.toml)."""
+    if llm.get("disconnect"):
+        clear_system_prompt(bench_root)
+    elif "system_prompt" in llm:
+        write_system_prompt(bench_root, str(llm["system_prompt"]))
 
 
 def _verify_s3_update(config: BenchConfig, old_s3_config: dict) -> None:

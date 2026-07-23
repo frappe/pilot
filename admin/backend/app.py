@@ -87,7 +87,7 @@ def register_editor_frontend(app: Flask) -> None:
             return "Code editor is disabled. Enable Developer Mode in Settings.", 404
         index = editor_dist / "index.html"
         if not index.exists():
-            return "Editor not built. Run: cd admin/frontend/editor && yarn install && yarn build", 503
+            return "Editor not built. Run: cd admin/frontend/editor && npm install && npm run build", 503
         return send_file(str(index))
 
     @app.route("/editor-assets/<path:path>")
@@ -110,7 +110,10 @@ def register_frontend(app: Flask) -> None:
             return error_response("not_found", "API route not found.", 404)
         dashboard_dir = STATIC_DIR / "dashboard"
         if not dashboard_dir.exists():
-            return "Frontend not built. Run: cd admin/frontend/dashboard && yarn install && yarn build", 503
+            return (
+                "Frontend not built. Run: cd admin/frontend/dashboard && npm install && npm run build",
+                503,
+            )
         candidate = dashboard_dir / path
         if path and candidate.exists() and candidate.is_file():
             return send_file(str(candidate))

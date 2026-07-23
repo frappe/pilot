@@ -1,19 +1,23 @@
 <template>
-
   <div class="mx-auto">
     <!-- Header with time window selector -->
     <div class="flex justify-between items-start gap-3 mb-6">
       <div>
         <h1 class="font-semibold text-ink-gray-9 text-xl">Analytics</h1>
         <p class="mt-1 text-ink-gray-5 text-sm sm:hidden">System and app metrics.</p>
-        <p class="mt-1 text-ink-gray-5 text-sm hidden sm:block">System and application metrics for this bench.</p>
+        <p class="mt-1 text-ink-gray-5 text-sm hidden sm:block">
+          System and application metrics for this bench.
+        </p>
       </div>
       <div class="flex items-center gap-2">
         <Dropdown :options="windowOptions" placement="bottom-end">
           <template #default="{ open }">
             <Button variant="outline" size="sm" :active="open">
               <template #prefix>
-                <span v-if="!isHistorical" class="bg-surface-green-8 rounded-full size-1.5 animate-pulse" />
+                <span
+                  v-if="!isHistorical"
+                  class="bg-surface-green-8 rounded-full size-1.5 animate-pulse"
+                />
               </template>
               <template #suffix><span class="size-4 lucide-chevron-down" /></template>
               {{ windowLabel }}
@@ -40,34 +44,53 @@
 
     <template v-else>
       <!-- Live stats bar: CPU / Memory / Storage -->
-      <div v-if="liveStats" class="bg-surface-white mb-6 border rounded-lg border-outline-gray-2 overflow-hidden">
+      <div
+        v-if="liveStats"
+        class="bg-surface-white mb-6 border rounded-lg border-outline-gray-2 overflow-hidden"
+      >
         <div class="flex sm:flex-row flex-col divide-outline-gray-2 sm:divide-x">
           <div class="flex-1 px-4 sm:px-5 py-3 sm:py-4">
             <div class="mb-2 text-ink-gray-6 text-sm">CPU</div>
             <div class="bg-surface-gray-2 mb-2 rounded-full h-1 overflow-hidden">
-              <div class="bg-surface-gray-7 rounded-full h-full"
-                :style="{ width: Math.min(liveStats.cpu_percent, 100) + '%' }" />
+              <div
+                class="bg-surface-gray-7 rounded-full h-full"
+                :style="{ width: Math.min(liveStats.cpu_percent, 100) + '%' }"
+              />
             </div>
-            <div class="text-ink-gray-6 text-sm">{{ liveStats.cpu_percent.toFixed(1) }}% of {{ liveStats.cpu_count }}
-              vCPUs</div>
+            <div class="text-ink-gray-6 text-sm">
+              {{ liveStats.cpu_percent.toFixed(1) }}% of {{ liveStats.cpu_count }}
+              vCPUs
+            </div>
           </div>
-          <div class="flex-1 px-4 sm:px-5 py-3 sm:py-4 border-t sm:border-t-0 border-outline-gray-2">
+          <div
+            class="flex-1 px-4 sm:px-5 py-3 sm:py-4 border-t sm:border-t-0 border-outline-gray-2"
+          >
             <div class="mb-2 text-ink-gray-6 text-sm">Memory</div>
             <div class="bg-surface-gray-2 mb-2 rounded-full h-1 overflow-hidden">
-              <div class="bg-surface-gray-7 rounded-full h-full"
-                :style="{ width: Math.min(liveStats.memory_percent, 100) + '%' }" />
+              <div
+                class="bg-surface-gray-7 rounded-full h-full"
+                :style="{ width: Math.min(liveStats.memory_percent, 100) + '%' }"
+              />
             </div>
-            <div class="text-ink-gray-6 text-sm">{{ formatBytes(liveStats.memory_used) }} of {{
-              formatBytes(liveStats.memory_total) }}</div>
+            <div class="text-ink-gray-6 text-sm">
+              {{ formatBytes(liveStats.memory_used) }}
+              of {{ formatBytes(liveStats.memory_total) }}
+            </div>
           </div>
-          <div class="flex-1 px-4 sm:px-5 py-3 sm:py-4 border-t sm:border-t-0 border-outline-gray-2">
+          <div
+            class="flex-1 px-4 sm:px-5 py-3 sm:py-4 border-t sm:border-t-0 border-outline-gray-2"
+          >
             <div class="mb-2 text-ink-gray-6 text-sm">Storage</div>
             <div class="bg-surface-gray-2 mb-2 rounded-full h-1 overflow-hidden">
-              <div class="bg-surface-gray-7 rounded-full h-full"
-                :style="{ width: Math.min(liveStats.disk_percent, 100) + '%' }" />
+              <div
+                class="bg-surface-gray-7 rounded-full h-full"
+                :style="{ width: Math.min(liveStats.disk_percent, 100) + '%' }"
+              />
             </div>
-            <div class="text-ink-gray-6 text-sm">{{ formatBytes(liveStats.disk_used) }} of {{
-              formatBytes(liveStats.disk_total) }}</div>
+            <div class="text-ink-gray-6 text-sm">
+              {{ formatBytes(liveStats.disk_used) }}
+              of {{ formatBytes(liveStats.disk_total) }}
+            </div>
           </div>
         </div>
       </div>
@@ -76,17 +99,25 @@
       <template v-if="isHistorical">
         <LoadingText v-if="historyLoading" />
         <ErrorMessage v-else-if="historyError" :message="historyError" />
-        <div v-else-if="allEmpty" class="flex flex-col justify-center items-center gap-2 h-[50vh] text-center">
+        <div
+          v-else-if="allEmpty"
+          class="flex flex-col justify-center items-center gap-2 h-[50vh] text-center"
+        >
           <span class="size-10 text-ink-gray-3 lucide-chart-line" />
           <p class="font-medium text-ink-gray-7 text-sm">No data for the last {{ windowLabel }}</p>
-          <p class="text-ink-gray-5 text-xs">Monitoring hasn't collected metrics in this range yet.</p>
+          <p class="text-ink-gray-5 text-xs">
+            Monitoring hasn't collected metrics in this range yet.
+          </p>
         </div>
       </template>
 
       <!-- Charts grid -->
       <div v-if="showCharts" class="gap-4 grid grid-cols-1 sm:grid-cols-2 mb-6">
         <ChartCard v-for="chart in charts" :key="chart.title" :title="chart.title">
-          <AxisChart :config="chart.config" class="w-full min-w-0 h-full min-h-[300px] px-2 sm:px-4 py-2" />
+          <AxisChart
+            :config="chart.config"
+            class="w-full min-w-0 h-full min-h-[300px] px-2 sm:px-4 py-2"
+          />
         </ChartCard>
       </div>
 
@@ -115,8 +146,23 @@ const WINDOWS = [
   { key: '24h', label: '24 hours' },
   { key: '1w', label: '1 week' },
 ]
-const WINDOW_SECONDS = { '30m': 1800, '1h': 3600, '6h': 21600, '12h': 43200, '24h': 86400, '1w': 604800 }
-const TIME_GRAIN = { live: 'second', '30m': 'minute', '1h': 'minute', '6h': 'hour', '12h': 'hour', '24h': 'hour', '1w': 'day' }
+const WINDOW_SECONDS = {
+  '30m': 1800,
+  '1h': 3600,
+  '6h': 21600,
+  '12h': 43200,
+  '24h': 86400,
+  '1w': 604800,
+}
+const TIME_GRAIN = {
+  live: 'second',
+  '30m': 'minute',
+  '1h': 'minute',
+  '6h': 'hour',
+  '12h': 'hour',
+  '24h': 'hour',
+  '1w': 'day',
+}
 const PALETTE = ['#2490ef', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444', '#06b6d4', '#ec4899']
 const LIVE_WINDOW_MS = 1800 * 1000
 
@@ -128,11 +174,17 @@ const DISK_IO_SERIES = ['Read', 'Write']
 const DISK_SERIES = 'Root Disk'
 
 const CPU_COLORS = {
-  'Busy User': '#2490ef', 'Busy System': '#f59e0b', 'Busy IOWait': '#ef4444',
-  'Busy IRQ': '#8b5cf6', 'Busy Other': '#ec4899',
+  'Busy User': '#2490ef',
+  'Busy System': '#f59e0b',
+  'Busy IOWait': '#ef4444',
+  'Busy IRQ': '#8b5cf6',
+  'Busy Other': '#ec4899',
 }
 const MEMORY_COLORS = {
-  Used: '#f59e0b', 'Cached + Buffers': '#2490ef', Free: '#10b981', 'Swap Used': '#ef4444',
+  Used: '#f59e0b',
+  'Cached + Buffers': '#2490ef',
+  Free: '#10b981',
+  'Swap Used': '#ef4444',
 }
 
 // State
@@ -140,22 +192,31 @@ const MEMORY_COLORS = {
 const route = useRoute()
 const router = useRouter()
 
-const VIEWS = [{ key: 'system', label: 'System' }, { key: 'database', label: 'Database' }]
-const WINDOW_KEYS = WINDOWS.map(w => w.key)
+const VIEWS = [
+  { key: 'system', label: 'System' },
+  { key: 'database', label: 'Database' },
+]
+const WINDOW_KEYS = WINDOWS.map((w) => w.key)
 
 const view = ref(route.query.view === 'database' ? 'database' : 'system')
 const initialWindow = WINDOW_KEYS.includes(route.query.window) ? route.query.window : 'live'
-const activeWindow = ref(view.value === 'database' && initialWindow === 'live' ? '1h' : initialWindow)
+const activeWindow = ref(
+  view.value === 'database' && initialWindow === 'live' ? '1h' : initialWindow,
+)
 const isHistorical = computed(() => activeWindow.value !== 'live')
 
-const viewLabel = computed(() => VIEWS.find(v => v.key === view.value)?.label ?? '')
-const viewOptions = computed(() => VIEWS.map(v => ({ label: v.label, onClick: () => setView(v.key) })))
+const viewLabel = computed(() => VIEWS.find((v) => v.key === view.value)?.label ?? '')
+const viewOptions = computed(() =>
+  VIEWS.map((v) => ({ label: v.label, onClick: () => setView(v.key) })),
+)
 
 // The database view has no live mode, so hide it there.
-const windowLabel = computed(() => WINDOWS.find(w => w.key === activeWindow.value)?.label ?? '')
+const windowLabel = computed(() => WINDOWS.find((w) => w.key === activeWindow.value)?.label ?? '')
 const windowOptions = computed(() =>
-  WINDOWS.filter(w => view.value === 'system' || w.key !== 'live')
-    .map(w => ({ label: w.label, onClick: () => selectWindow(w.key) })),
+  WINDOWS.filter((w) => view.value === 'system' || w.key !== 'live').map((w) => ({
+    label: w.label,
+    onClick: () => selectWindow(w.key),
+  })),
 )
 // Database charts never receive 'live'.
 const dbWindow = computed(() => (activeWindow.value === 'live' ? '1h' : activeWindow.value))
@@ -195,7 +256,9 @@ function serverTime() {
   return Date.now() + timeOffset.value
 }
 
-const axisMin = computed(() => historyNow.value - (WINDOW_SECONDS[activeWindow.value] || 3600) * 1000)
+const axisMin = computed(
+  () => historyNow.value - (WINDOW_SECONDS[activeWindow.value] || 3600) * 1000,
+)
 const axisMax = computed(() => historyNow.value)
 
 function isPartial(earliest) {
@@ -233,7 +296,7 @@ async function loadStats() {
     appendLivePoint(s)
     trimLiveHistory()
     await refreshAppData()
-  } catch { }
+  } catch {}
 }
 
 function appendLivePoint(s) {
@@ -244,19 +307,29 @@ function appendLivePoint(s) {
   const diskIo = s.disk_io || {}
   liveHistory.value.push({
     time: serverTime(),
-    'Busy User': cpu.user, 'Busy System': cpu.system, 'Busy IOWait': cpu.iowait,
-    'Busy IRQ': cpu.irq, 'Busy Other': cpu.other,
-    Used: mem.used_mb, 'Cached + Buffers': mem.cached_mb, Free: mem.free_mb, 'Swap Used': mem.swap_used_mb,
-    Load1: load1, Load5: load5, Load15: load15,
+    'Busy User': cpu.user,
+    'Busy System': cpu.system,
+    'Busy IOWait': cpu.iowait,
+    'Busy IRQ': cpu.irq,
+    'Busy Other': cpu.other,
+    Used: mem.used_mb,
+    'Cached + Buffers': mem.cached_mb,
+    Free: mem.free_mb,
+    'Swap Used': mem.swap_used_mb,
+    Load1: load1,
+    Load5: load5,
+    Load15: load15,
     [DISK_SERIES]: s.disk_percent,
-    Received: network.rx_bytes_per_sec, Sent: network.tx_bytes_per_sec,
-    Read: diskIo.read_bytes_per_sec, Write: diskIo.write_bytes_per_sec,
+    Received: network.rx_bytes_per_sec,
+    Sent: network.tx_bytes_per_sec,
+    Read: diskIo.read_bytes_per_sec,
+    Write: diskIo.write_bytes_per_sec,
   })
 }
 
 function trimLiveHistory() {
   const cutoff = liveNow.value - LIVE_WINDOW_MS - 60000
-  liveHistory.value = liveHistory.value.filter(p => p.time >= cutoff)
+  liveHistory.value = liveHistory.value.filter((p) => p.time >= cutoff)
 }
 
 async function refreshAppData() {
@@ -265,7 +338,7 @@ async function refreshAppData() {
     if (!d.error && d.application) {
       application.value = d.application
     }
-  } catch { }
+  } catch {}
 }
 
 async function seedLiveHistory() {
@@ -282,7 +355,7 @@ async function seedLiveHistory() {
     if (d.application) {
       application.value = d.application
     }
-  } catch { }
+  } catch {}
 }
 
 async function loadHistory(window) {
@@ -303,14 +376,29 @@ async function loadHistory(window) {
 
 // Derived state
 
-const liveStats = computed(() => !isHistorical.value ? stats.value : null)
-const systemEmpty = computed(() => isHistorical.value && !historyLoading.value && !system.value.points.length)
-const appEmpty = computed(() => isHistorical.value && !historyLoading.value && !application.value.cpu.length)
-const allEmpty = computed(() => isHistorical.value && !historyLoading.value && !historyError.value && systemEmpty.value && appEmpty.value)
-const pageLoading = computed(() => isHistorical.value ? historyLoading.value : (!stats.value || liveHistory.value.length < 2))
-const showCharts = computed(() => isHistorical.value
-  ? (!historyLoading.value && !historyError.value && !systemEmpty.value)
-  : liveHistory.value.length > 1)
+const liveStats = computed(() => (!isHistorical.value ? stats.value : null))
+const systemEmpty = computed(
+  () => isHistorical.value && !historyLoading.value && !system.value.points.length,
+)
+const appEmpty = computed(
+  () => isHistorical.value && !historyLoading.value && !application.value.cpu.length,
+)
+const allEmpty = computed(
+  () =>
+    isHistorical.value &&
+    !historyLoading.value &&
+    !historyError.value &&
+    systemEmpty.value &&
+    appEmpty.value,
+)
+const pageLoading = computed(() =>
+  isHistorical.value ? historyLoading.value : !stats.value || liveHistory.value.length < 2,
+)
+const showCharts = computed(() =>
+  isHistorical.value
+    ? !historyLoading.value && !historyError.value && !systemEmpty.value
+    : liveHistory.value.length > 1,
+)
 
 // Chart helpers
 
@@ -330,8 +418,8 @@ const liveXAxis = computed(() => ({
   echartOptions: { min: liveNow.value - LIVE_WINDOW_MS, max: liveNow.value, splitLine: GRID },
 }))
 
-const currentPoints = computed(() => isHistorical.value ? system.value.points : liveHistory.value)
-const currentXAxis = computed(() => isHistorical.value ? fixedXAxis.value : liveXAxis.value)
+const currentPoints = computed(() => (isHistorical.value ? system.value.points : liveHistory.value))
+const currentXAxis = computed(() => (isHistorical.value ? fixedXAxis.value : liveXAxis.value))
 
 function lineSeries(name, color, stacked) {
   return {
@@ -357,11 +445,17 @@ function transparent(hex, opacity) {
 }
 
 function scaleFields(points, keys, divisor) {
-  return points.map(p => ({ ...p, ...Object.fromEntries(keys.map(k => [k, p[k] != null ? p[k] / divisor : p[k]])) }))
+  return points.map((p) => ({
+    ...p,
+    ...Object.fromEntries(keys.map((k) => [k, p[k] != null ? p[k] / divisor : p[k]])),
+  }))
 }
 
 function normalizeAppData(points, services) {
-  return points.map(p => ({ time: p.time, ...Object.fromEntries(services.map(s => [s, p[s] ?? 0])) }))
+  return points.map((p) => ({
+    time: p.time,
+    ...Object.fromEntries(services.map((s) => [s, p[s] ?? 0])),
+  }))
 }
 
 // Chart configs
@@ -369,7 +463,7 @@ function normalizeAppData(points, services) {
 const cpuChartConfig = computed(() => ({
   title: 'CPU',
   config: {
-    data: currentPoints.value.map(p => ({
+    data: currentPoints.value.map((p) => ({
       time: p.time,
       'Busy User': p['Busy User'] ?? 0,
       'Busy System': p['Busy System'] ?? 0,
@@ -379,14 +473,14 @@ const cpuChartConfig = computed(() => ({
     })),
     xAxis: currentXAxis.value,
     yAxis: { yMin: 0, yMax: 100, echartOptions: { name: '%', splitLine: GRID } },
-    series: CPU_SERIES.map(name => lineSeries(name, CPU_COLORS[name], true)),
+    series: CPU_SERIES.map((name) => lineSeries(name, CPU_COLORS[name], true)),
   },
 }))
 
 const loadChartConfig = computed(() => ({
   title: 'Load Average',
   config: {
-    data: currentPoints.value.map(p => ({
+    data: currentPoints.value.map((p) => ({
       time: p.time,
       'Load Average 1': p.Load1 ?? 0,
       'Load Average 5': p.Load5 ?? 0,
@@ -404,21 +498,36 @@ const loadChartConfig = computed(() => ({
 
 const memChartConfig = computed(() => {
   const data = scaleFields(currentPoints.value, MEMORY_SERIES, 1024)
-  const peak = data.reduce((max, p) => Math.max(max, MEMORY_SERIES.reduce((sum, k) => sum + (p[k] || 0), 0)), 0)
+  const peak = data.reduce(
+    (max, p) =>
+      Math.max(
+        max,
+        MEMORY_SERIES.reduce((sum, k) => sum + (p[k] || 0), 0),
+      ),
+    0,
+  )
   return {
     title: 'Memory',
     config: {
       data,
       xAxis: currentXAxis.value,
-      yAxis: { yMin: 0, yMax: peak > 0 ? peak * 1.1 : undefined, echartOptions: { name: 'GB', splitLine: GRID } },
-      series: MEMORY_SERIES.map(name => lineSeries(name, MEMORY_COLORS[name], true)),
+      yAxis: {
+        yMin: 0,
+        yMax: peak > 0 ? peak * 1.1 : undefined,
+        echartOptions: { name: 'GB', splitLine: GRID },
+      },
+      series: MEMORY_SERIES.map((name) => lineSeries(name, MEMORY_COLORS[name], true)),
     },
   }
 })
 
-const diskInfo = computed(() => isHistorical.value
-  ? system.value.storage?.disk
-  : (stats.value ? { used_mb: stats.value.disk_used / 1024 ** 2, total_mb: stats.value.disk_total / 1024 ** 2 } : null))
+const diskInfo = computed(() =>
+  isHistorical.value
+    ? system.value.storage?.disk
+    : stats.value
+      ? { used_mb: stats.value.disk_used / 1024 ** 2, total_mb: stats.value.disk_total / 1024 ** 2 }
+      : null,
+)
 
 const diskChartConfig = computed(() => ({
   title: 'Disk',
@@ -454,12 +563,12 @@ const appWindowData = computed(() => {
   const data = application.value
   if (!data.services.length) return { services: [], cpu: [], memory: [] }
   if (isHistorical.value) return data
-  const latest = data.cpu.length ? Math.max(...data.cpu.map(p => p.time)) : 0
+  const latest = data.cpu.length ? Math.max(...data.cpu.map((p) => p.time)) : 0
   const cutoff = latest ? latest - LIVE_WINDOW_MS : 0
   return {
     services: data.services,
-    cpu: cutoff ? data.cpu.filter(p => p.time >= cutoff) : data.cpu,
-    memory: cutoff ? data.memory.filter(p => p.time >= cutoff) : data.memory,
+    cpu: cutoff ? data.cpu.filter((p) => p.time >= cutoff) : data.cpu,
+    memory: cutoff ? data.memory.filter((p) => p.time >= cutoff) : data.memory,
   }
 })
 
@@ -508,7 +617,10 @@ let statsTimer
 onMounted(() => {
   if (view.value === 'system') {
     if (isHistorical.value) loadHistory(activeWindow.value)
-    else { seedLiveHistory(); loadStats() }
+    else {
+      seedLiveHistory()
+      loadStats()
+    }
   }
   statsTimer = setInterval(loadStats, 10000)
 })

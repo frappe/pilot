@@ -6,29 +6,52 @@
     <Alert v-if="!connected" theme="blue" title="Why connect GitHub?" :dismissible="false">
       <template #description>
         <p class="text-ink-gray-6 text-p-sm">
-          Connecting a GitHub account lets you install private apps and browse your repositories from
-          the "Add app from GitHub" dialog. Generate a
-          <a :href="tokenHelpUrl" target="_blank" rel="noopener" class="underline underline-offset-2">
-            personal access token</a> with <code class="text-xs">repo</code> scope, then paste it below.
+          Connecting a GitHub account lets you install private apps and browse your repositories
+          from the "Add app from GitHub" dialog. Generate a
+          <a
+            :href="tokenHelpUrl"
+            target="_blank"
+            rel="noopener"
+            class="underline underline-offset-2"
+          >
+            personal access token</a
+          >
+          with <code class="text-xs">repo</code> scope, then paste it below.
         </p>
       </template>
     </Alert>
 
-    <div v-if="connected" class="flex sm:flex-row sm:justify-between sm:items-center flex-col gap-3">
+    <div
+      v-if="connected"
+      class="flex sm:flex-row sm:justify-between sm:items-center flex-col gap-3"
+    >
       <div>
         <p class="font-medium text-ink-gray-8 text-sm">Connected as {{ username }}</p>
         <p class="text-ink-gray-5 text-p-sm">GitHub · Personal access token</p>
       </div>
       <div class="flex items-center gap-2">
-        <Button class="flex-1 sm:flex-none" variant="subtle" :loading="verifying" @click="verifyConnection">Verify</Button>
-        <Button class="flex-1 sm:flex-none" variant="subtle" theme="red" @click="disconnect">Disconnect</Button>
+        <Button
+          class="flex-1 sm:flex-none"
+          variant="subtle"
+          :loading="verifying"
+          @click="verifyConnection"
+          >Verify</Button
+        >
+        <Button class="flex-1 sm:flex-none" variant="subtle" theme="red" @click="disconnect"
+          >Disconnect</Button
+        >
       </div>
     </div>
 
     <div class="space-y-4">
       <FormControl label="GitHub Username" type="text" v-model="username" placeholder="octocat" />
-      <FormControl label="Personal Access Token" type="password" v-model="token"
-        :placeholder="connected ? status.token_preview : 'ghp_…'" @keydown.enter="verifyAndConnect" />
+      <FormControl
+        label="Personal Access Token"
+        type="password"
+        v-model="token"
+        :placeholder="connected ? status.token_preview : 'ghp_…'"
+        @keydown.enter="verifyAndConnect"
+      />
       <ErrorMessage v-if="error" :message="error" />
       <div class="flex justify-end">
         <Button variant="solid" :loading="connecting" @click="verifyAndConnect">
@@ -55,7 +78,9 @@ const token = ref('')
 
 const connected = computed(() => Boolean(status.value?.connected && status.value?.is_token_valid))
 const tokenHelpUrl = computed(
-  () => status.value?.providers?.github || 'https://github.com/settings/tokens/new?scopes=repo&description=Bench+CLI',
+  () =>
+    status.value?.providers?.github ||
+    'https://github.com/settings/tokens/new?scopes=repo&description=Bench+CLI',
 )
 
 async function load() {
@@ -69,7 +94,10 @@ async function load() {
 }
 
 async function verifyAndConnect() {
-  if (!token.value.trim()) { error.value = 'Paste a personal access token to connect.'; return }
+  if (!token.value.trim()) {
+    error.value = 'Paste a personal access token to connect.'
+    return
+  }
   connecting.value = true
   error.value = ''
   try {

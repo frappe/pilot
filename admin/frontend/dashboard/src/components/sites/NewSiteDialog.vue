@@ -1,33 +1,53 @@
 <template>
   <Dialog v-model="open" title="New Site" size="lg">
     <template #default>
-
       <div v-if="loading" class="flex justify-center items-center h-80">
         <span class="size-6 text-ink-gray-4 animate-spin lucide-loader-circle"></span>
       </div>
       <div v-else @pointerdown.stop class="space-y-5">
-
         <!-- Site name -->
         <div>
           <!-- Without wildcard site name -->
-          <FormControl v-if="!wildcardDomains.length" v-model="newSiteName" label="Site name" type="text"
-            placeholder="mysite.localhost" @keyup.enter="submit" />
+          <FormControl
+            v-if="!wildcardDomains.length"
+            v-model="newSiteName"
+            label="Site name"
+            type="text"
+            placeholder="mysite.localhost"
+            @keyup.enter="submit"
+          />
           <div v-else class="space-y-1.5">
             <span class="text-ink-gray-7 text-p-sm-medium">Site name</span>
             <div class="flex items-stretch gap-2">
               <!-- Site prefix -->
-              <FormControl v-model="sitePrefix" class="flex-1 min-w-0" type="text" placeholder="mysite"
-                @keyup.enter="submit" />
+              <FormControl
+                v-model="sitePrefix"
+                class="flex-1 min-w-0"
+                type="text"
+                placeholder="mysite"
+                @keyup.enter="submit"
+              />
               <!-- Multiple wildcards available -->
-              <FormControl v-if="wildcardDomains.length > 1" v-model="selectedSuffix" class="w-48 shrink-0"
-                type="select" :options="wildcardDomains.map((d) => ({ label: d, value: d }))" />
-              <span v-else class="flex items-center text-ink-gray-6 text-sm whitespace-nowrap shrink-0">
+              <FormControl
+                v-if="wildcardDomains.length > 1"
+                v-model="selectedSuffix"
+                class="w-48 shrink-0"
+                type="select"
+                :options="wildcardDomains.map((d) => ({ label: d, value: d }))"
+              />
+              <span
+                v-else
+                class="flex items-center text-ink-gray-6 text-sm whitespace-nowrap shrink-0"
+              >
                 {{ wildcardDomains[0] }}
               </span>
             </div>
             <!-- Example site name -->
-            <p class="mt-1.5 text-ink-gray-5 text-p-sm"> Web address:
-              <span class="font-medium text-ink-gray-7">{{ newSiteName || `mysite${selectedSuffix}` }}</span>
+            <p class="mt-1.5 text-ink-gray-5 text-p-sm">
+              Web address:
+              <span class="font-medium text-ink-gray-7"
+                >{{ newSiteName || `mysite${selectedSuffix}` }}</span
+              >
             </p>
           </div>
         </div>
@@ -36,24 +56,33 @@
         <div v-if="!loading && combinedApps.length">
           <div class="flex justify-between items-center mb-2">
             <span class="text-ink-gray-7 text-p-sm-medium">Choose apps</span>
-            <span class="text-ink-gray-5 text-xs">
-              {{ selectedApps.length }} selected
-            </span>
+            <span class="text-ink-gray-5 text-xs"> {{ selectedApps.length }} selected </span>
           </div>
           <FormControl v-model="appSearch" type="text" placeholder="Search apps..." class="mb-2" />
           <div class="gap-2 grid grid-cols-1 sm:grid-cols-2 p-1 max-h-72 overflow-y-auto">
-            <button v-for="app in filteredRegistry" :key="app.name" type="button"
+            <button
+              v-for="app in filteredRegistry"
+              :key="app.name"
+              type="button"
               class="flex items-center gap-3 p-3 border rounded-lg min-w-0 overflow-hidden text-left transition-colors"
               :class="selectedApps.includes(app.name)
                 ? 'border-outline-gray-4 bg-surface-gray-1 ring-1 ring-outline-gray-4'
-                : 'border-outline-gray-2 hover:bg-surface-gray-1'" @click="toggleApp(app.name)">
+                : 'border-outline-gray-2 hover:bg-surface-gray-1'"
+              @click="toggleApp(app.name)"
+            >
               <AppIcon :name="app.name" class="size-8 shrink-0" />
               <span class="flex-1 min-w-0 font-medium text-ink-gray-9 text-sm truncate">
                 {{ app.title || app.name }}
               </span>
-              <Checkbox :model-value="selectedApps.includes(app.name)" class="pointer-events-none shrink-0" />
+              <Checkbox
+                :model-value="selectedApps.includes(app.name)"
+                class="pointer-events-none shrink-0"
+              />
             </button>
-            <p v-if="!filteredRegistry.length" class="col-span-2 py-4 text-ink-gray-5 text-sm text-center">
+            <p
+              v-if="!filteredRegistry.length"
+              class="col-span-2 py-4 text-ink-gray-5 text-sm text-center"
+            >
               No apps match "{{ appSearch }}"
             </p>
           </div>
@@ -70,7 +99,9 @@
 
         <div class="flex justify-end gap-2">
           <Button variant="subtle" @click="open = false">Cancel</Button>
-          <Button variant="solid" :loading="creating" @click="submit" :disabled="!newSiteName">Create Site</Button>
+          <Button variant="solid" :loading="creating" @click="submit" :disabled="!newSiteName"
+            >Create Site</Button
+          >
         </div>
       </div>
     </template>

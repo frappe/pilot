@@ -20,7 +20,15 @@ const show = computed({
   set: (val) => emit('update:modelValue', val),
 })
 
-const { benches, loading, controlLoading, error: controlError, load: loadBenches, control: controlBench, drop: dropBenchByName } = useBenches()
+const {
+  benches,
+  loading,
+  controlLoading,
+  error: controlError,
+  load: loadBenches,
+  control: controlBench,
+  drop: dropBenchByName,
+} = useBenches()
 const currentPort = window.location.port
 const currentHost = window.location.hostname
 
@@ -29,7 +37,9 @@ const dropping = ref(false)
 
 const showDropConfirm = computed({
   get: () => !!benchToDrop.value,
-  set: (v) => { if (!v) benchToDrop.value = null },
+  set: (v) => {
+    if (!v) benchToDrop.value = null
+  },
 })
 
 const columns = [
@@ -41,14 +51,16 @@ const columns = [
   { label: '', key: 'actions', align: 'right', width: '3rem' },
 ]
 
-const rows = computed(() => benches.value.map((b) => ({
-  name: b.name,
-  mode: benchMode(b),
-  manager: benchManager(b),
-  sites: b.site_count ?? 0,
-  status: statusLabel(b),
-  bench: b,
-})))
+const rows = computed(() =>
+  benches.value.map((b) => ({
+    name: b.name,
+    mode: benchMode(b),
+    manager: benchManager(b),
+    sites: b.site_count ?? 0,
+    status: statusLabel(b),
+    bench: b,
+  })),
+)
 
 function isCurrentBench(bench) {
   if (bench.domain) return bench.domain === currentHost
@@ -69,7 +81,7 @@ function benchMode(bench) {
 
 function benchManager(bench) {
   // Mirrors `bench ls`: dev benches run their processes in the foreground.
-  const mgr = bench.production ? (bench.process_manager || 'supervisor') : 'foreground'
+  const mgr = bench.production ? bench.process_manager || 'supervisor' : 'foreground'
   return mgr.charAt(0).toUpperCase() + mgr.slice(1)
 }
 
@@ -118,16 +130,34 @@ function menuOptions(bench) {
     const running = bench.workload_running
     const current = isCurrentBench(bench)
     if (running !== true && !current)
-      opts.push({ label: 'Start', icon: LucidePlay, onClick: () => controlBench(bench.name, 'start') })
+      opts.push({
+        label: 'Start',
+        icon: LucidePlay,
+        onClick: () => controlBench(bench.name, 'start'),
+      })
     if (running !== false)
-      opts.push({ label: 'Restart', icon: LucideRotateCw, onClick: () => controlBench(bench.name, 'restart') })
+      opts.push({
+        label: 'Restart',
+        icon: LucideRotateCw,
+        onClick: () => controlBench(bench.name, 'restart'),
+      })
     // Stopping the bench you're currently using would kill this very session.
     if (running !== false && !current)
-      opts.push({ label: 'Stop', icon: LucideSquare, theme: 'red', onClick: () => controlBench(bench.name, 'stop') })
+      opts.push({
+        label: 'Stop',
+        icon: LucideSquare,
+        theme: 'red',
+        onClick: () => controlBench(bench.name, 'stop'),
+      })
   }
   // Only an empty bench can be dropped, and never the one you're using.
   if (!isCurrentBench(bench) && (bench.site_count ?? 0) === 0)
-    opts.push({ label: 'Drop bench', icon: LucideTrash2, theme: 'red', onClick: () => confirmDrop(bench) })
+    opts.push({
+      label: 'Drop bench',
+      icon: LucideTrash2,
+      theme: 'red',
+      onClick: () => confirmDrop(bench),
+    })
   return opts
 }
 
@@ -177,14 +207,24 @@ watch(show, (open) => {
 
         <ErrorMessage v-if="controlError" :message="controlError" class="mb-2" />
 
-        <div v-if="loading && !benches.length" class="py-10 text-ink-gray-5 text-sm text-center">Loading…</div>
+        <div v-if="loading && !benches.length" class="py-10 text-ink-gray-5 text-sm text-center">
+          Loading…
+        </div>
         <div v-else-if="!benches.length" class="py-10 text-ink-gray-4 text-sm text-center">
           No benches found.
         </div>
-        <ListView v-else :columns="columns" :rows="rows" row-key="name"
-          :options="{ selectable: false, showTooltip: false, rowHeight: 48 }">
+        <ListView
+          v-else
+          :columns="columns"
+          :rows="rows"
+          row-key="name"
+          :options="{ selectable: false, showTooltip: false, rowHeight: 48 }"
+        >
           <template #cell="{ column, row, item }">
-            <div v-if="column.key === 'name'" class="flex items-center gap-2 w-full min-w-0 text-left">
+            <div
+              v-if="column.key === 'name'"
+              class="flex items-center gap-2 w-full min-w-0 text-left"
+            >
               <span class="font-medium text-ink-gray-9 text-sm truncate">{{ row.name }}</span>
               <Badge v-if="isCurrentBench(row.bench)" theme="green" size="sm" label="Current" />
             </div>
@@ -196,10 +236,16 @@ watch(show, (open) => {
 
             <!-- Per-bench actions -->
             <div v-else-if="column.key === 'actions'" class="flex justify-end w-full">
-              <span v-if="controlLoading === row.name" class="flex justify-center items-center w-7 h-7">
+              <span
+                v-if="controlLoading === row.name"
+                class="flex justify-center items-center w-7 h-7"
+              >
                 <LucideLoader2 class="w-4 h-4 text-ink-gray-5 animate-spin" />
               </span>
-              <ActionMenu v-else-if="menuOptions(row.bench).length" :options="menuOptions(row.bench)" />
+              <ActionMenu
+                v-else-if="menuOptions(row.bench).length"
+                :options="menuOptions(row.bench)"
+              />
             </div>
 
             <!-- Mode / Manager -->
@@ -214,16 +260,20 @@ watch(show, (open) => {
     <template #default>
       <div class="flex flex-col gap-4" @pointerdown.stop>
         <div class="flex flex-col gap-2 text-ink-gray-7 text-sm leading-relaxed">
-          <p>Permanently delete <strong class="text-ink-gray-9">{{ benchToDrop?.name }}</strong>?</p>
           <p>
-            This tears down its production services, nginx config and MariaDB instance, then
-            removes the bench directory. This action cannot be undone.
+            Permanently delete <strong class="text-ink-gray-9">{{ benchToDrop?.name }}</strong>?
+          </p>
+          <p>
+            This tears down its production services, nginx config and MariaDB instance, then removes
+            the bench directory. This action cannot be undone.
           </p>
         </div>
         <ErrorMessage v-if="controlError" :message="controlError" />
         <div class="flex justify-end gap-2">
           <Button variant="ghost" @click="showDropConfirm = false">Cancel</Button>
-          <Button variant="solid" theme="red" :loading="dropping" @click="dropBench">Drop Bench</Button>
+          <Button variant="solid" theme="red" :loading="dropping" @click="dropBench"
+            >Drop Bench</Button
+          >
         </div>
       </div>
     </template>

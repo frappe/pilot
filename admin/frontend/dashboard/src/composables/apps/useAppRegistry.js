@@ -2,7 +2,8 @@ import { ref, computed } from 'vue'
 import { appsApi } from '@/api/apps'
 
 const COLORS = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed']
-export const FRAPPE_LOGO_URL = 'https://raw.githubusercontent.com/frappe/frappe/refs/heads/develop/.github/framework-logo-new.svg'
+export const FRAPPE_LOGO_URL =
+  'https://raw.githubusercontent.com/frappe/frappe/refs/heads/develop/.github/framework-logo-new.svg'
 
 const registry = ref([])
 const loaded = ref(false)
@@ -31,38 +32,28 @@ export function useAppRegistry() {
 
   const logoMap = computed(() => ({
     ...Object.fromEntries(
-      registry.value
-        .filter((app) => app.logo_url)
-        .map((app) => [app.name, app.logo_url]),
+      registry.value.filter((app) => app.logo_url).map((app) => [app.name, app.logo_url]),
     ),
     frappe: FRAPPE_LOGO_URL,
   }))
 
   const titleMap = computed(() =>
-    Object.fromEntries(
-      registry.value.map((app) => [app.name, app.title || app.name]),
-    ),
+    Object.fromEntries(registry.value.map((app) => [app.name, app.title || app.name])),
   )
 
   const descriptionMap = computed(() =>
-    Object.fromEntries(
-      registry.value.map((app) => [app.name, app.description || '']),
-    ),
+    Object.fromEntries(registry.value.map((app) => [app.name, app.description || ''])),
   )
 
   const documentationMap = computed(() =>
     Object.fromEntries(
-      registry.value
-        .filter((app) => app.documentation)
-        .map((app) => [app.name, app.documentation]),
+      registry.value.filter((app) => app.documentation).map((app) => [app.name, app.documentation]),
     ),
   )
 
   const websiteMap = computed(() =>
     Object.fromEntries(
-      registry.value
-        .filter((app) => app.website)
-        .map((app) => [app.name, app.website]),
+      registry.value.filter((app) => app.website).map((app) => [app.name, app.website]),
     ),
   )
 

@@ -1,9 +1,16 @@
 <template>
   <ChartCard v-for="chart in charts" :key="chart.title" :title="chart.title">
-    <div v-if="!chart.keys.length" class="flex justify-center items-center min-h-[280px] text-ink-gray-5 text-xs">
+    <div
+      v-if="!chart.keys.length"
+      class="flex justify-center items-center min-h-[280px] text-ink-gray-5 text-xs"
+    >
       No slow queries recorded yet
     </div>
-    <AxisChart v-else :config="chart.config" class="w-full min-w-0 h-full min-h-[320px] px-2 sm:px-4 py-2" />
+    <AxisChart
+      v-else
+      :config="chart.config"
+      class="w-full min-w-0 h-full min-h-[320px] px-2 sm:px-4 py-2"
+    />
   </ChartCard>
 </template>
 
@@ -43,9 +50,21 @@ const charts = computed(() => {
   const sites = props.overview?.sites ?? []
   const queries = props.overview?.queries ?? []
   return [
-    { title: 'Slow queries by site', keys: sites, config: seriesConfig(props.overview?.counts ?? [], sites, 'count') },
-    { title: 'Slowest queries by site', keys: sites, config: seriesConfig(props.overview?.durations ?? [], sites, 'seconds') },
-    { title: 'Frequent slow queries', keys: queries, config: seriesConfig(props.overview?.query_counts ?? [], queries, 'count') },
+    {
+      title: 'Slow queries by site',
+      keys: sites,
+      config: seriesConfig(props.overview?.counts ?? [], sites, 'count'),
+    },
+    {
+      title: 'Slowest queries by site',
+      keys: sites,
+      config: seriesConfig(props.overview?.durations ?? [], sites, 'seconds'),
+    },
+    {
+      title: 'Frequent slow queries',
+      keys: queries,
+      config: seriesConfig(props.overview?.query_counts ?? [], queries, 'count'),
+    },
   ]
 })
 </script>

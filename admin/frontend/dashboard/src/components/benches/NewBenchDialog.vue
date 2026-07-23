@@ -49,7 +49,10 @@ function openWizardInNewTab() {
 }
 
 function stopElapsed() {
-  if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null }
+  if (elapsedTimer) {
+    clearInterval(elapsedTimer)
+    elapsedTimer = null
+  }
 }
 
 // Whether the *current* bench is running in production. A dev bench (started
@@ -60,7 +63,11 @@ const isProduction = ref(null)
 
 // Native manager is recommended; supervisor is the cross-platform alternative.
 const processManagerOptions = computed(() => [
-  { value: nativeProcessManager.value, label: PM_LABELS[nativeProcessManager.value] || nativeProcessManager.value, hint: 'Recommended' },
+  {
+    value: nativeProcessManager.value,
+    label: PM_LABELS[nativeProcessManager.value] || nativeProcessManager.value,
+    hint: 'Recommended',
+  },
   { value: 'supervisor', label: 'Supervisor', hint: 'Alternative' },
 ])
 
@@ -96,7 +103,10 @@ watch([adminPrefix, selectedSuffix], () => {
 
 watch(show, (open) => {
   stopElapsed()
-  if (!open) { provisioning.value = false; return }
+  if (!open) {
+    provisioning.value = false
+    return
+  }
   name.value = ''
   processManager.value = nativeProcessManager.value
   adminDomain.value = ''
@@ -116,7 +126,9 @@ function startProvisioning(url) {
   wizardUrl.value = url
   elapsed.value = 0
   stopElapsed()
-  elapsedTimer = setInterval(() => { elapsed.value += 1 }, 1000)
+  elapsedTimer = setInterval(() => {
+    elapsed.value += 1
+  }, 1000)
 }
 
 // Don't redirect before this, even when everything reports ready — gives DNS a
@@ -134,7 +146,10 @@ const MAX_WAIT_SECONDS = 120
 async function dnsResolved(domain, expectedIp) {
   try {
     const url = `https://dns.google/resolve?name=${domain}&type=A&_=${elapsed.value}`
-    const response = await fetch(url, { headers: { accept: 'application/dns-json' }, cache: 'no-store' })
+    const response = await fetch(url, {
+      headers: { accept: 'application/dns-json' },
+      cache: 'no-store',
+    })
     const aRecords = ((await response.json()).Answer || []).filter((a) => a.type === 1)
     if (!aRecords.length) return false
     return expectedIp ? aRecords.some((a) => a.data === expectedIp) : true
@@ -153,7 +168,7 @@ async function pollReady(params, domain = '', serverIp = '') {
   let serverReady = false
   try {
     serverReady = (await benchesApi.ready(params)).ready
-  } catch { }
+  } catch {}
 
   const dns = domain ? await dnsResolved(domain, serverIp) : true
   const minWaited = !domain || elapsed.value >= MIN_WAIT_SECONDS
@@ -184,7 +199,11 @@ async function createBench() {
   error.value = ''
   creating.value = true
   try {
-    const data = await benchesApi.create({ name: benchName, process_manager: processManager.value, admin_domain: domain })
+    const data = await benchesApi.create({
+      name: benchName,
+      process_manager: processManager.value,
+      admin_domain: domain,
+    })
     if (data.error) {
       error.value = apiErrorMessage(data, 'Could not create bench.')
       creating.value = false
@@ -211,7 +230,12 @@ async function createBench() {
 </script>
 
 <template>
-  <Dialog v-model="show" :title="provisioning ? 'Setting Up Bench' : 'New Bench'" size="lg" :showCloseButton="true">
+  <Dialog
+    v-model="show"
+    :title="provisioning ? 'Setting Up Bench' : 'New Bench'"
+    size="lg"
+    :showCloseButton="true"
+  >
     <template #default>
       <div class="flex flex-col gap-5">
         <!-- Provisioning: the bench exists; wait until its wizard answers. -->
@@ -221,14 +245,19 @@ async function createBench() {
             <p class="font-semibold text-ink-gray-9 text-lg">This may take a few minutes</p>
             <p class="max-w-xs text-ink-gray-6 text-sm">Opens automatically when ready.</p>
           </div>
-          <span class="bg-surface-gray-2 px-2.5 py-1 rounded-full font-medium text-ink-gray-6 text-xs">
+          <span
+            class="bg-surface-gray-2 px-2.5 py-1 rounded-full font-medium text-ink-gray-6 text-xs"
+          >
             Elapsed {{ elapsedLabel }}
           </span>
           <Button variant="subtle" @click="openWizardInNewTab">Open setup now</Button>
         </div>
 
         <!-- Loading -->
-        <div v-else-if="isProduction === null" class="flex flex-col justify-center items-center gap-3 py-16">
+        <div
+          v-else-if="isProduction === null"
+          class="flex flex-col justify-center items-center gap-3 py-16"
+        >
           <LoadingIndicator class="w-6 h-6 text-ink-gray-5" />
         </div>
 
@@ -236,25 +265,38 @@ async function createBench() {
              managed bench the host probably can't run. -->
         <div v-else-if="isProduction === false" class="flex flex-col gap-3">
           <p class="text-ink-gray-7 text-sm">
-            This bench is running in development mode, so new benches can be
-            created from the command line :
+            This bench is running in development mode, so new benches can be created from the
+            command line :
           </p>
           <pre
-            class="bg-surface-gray-2 px-3 py-2.5 rounded-lg text-ink-gray-8 text-sm select-all">bench new my-bench</pre>
+            class="bg-surface-gray-2 px-3 py-2.5 rounded-lg text-ink-gray-8 text-sm select-all"
+          >bench new my-bench</pre>
         </div>
 
         <!-- Production bench: a process manager is configured, so we create the
              bench and route its domain to the setup wizard. -->
         <template v-else-if="isProduction === true">
-          <FormControl label="Bench name" type="text" v-model="name" placeholder="my-bench" @input="error = ''"
-            @keyup.enter="createBench" />
+          <FormControl
+            label="Bench name"
+            type="text"
+            v-model="name"
+            placeholder="my-bench"
+            @input="error = ''"
+            @keyup.enter="createBench"
+          />
           <div>
             <span class="block mb-1.5 text-ink-gray-5 text-xs">Process manager</span>
             <div class="gap-2 grid grid-cols-2">
-              <button v-for="opt in processManagerOptions" :key="opt.value" type="button"
-                class="px-3 py-2 border rounded-lg text-left transition-colors" :class="processManager === opt.value
+              <button
+                v-for="opt in processManagerOptions"
+                :key="opt.value"
+                type="button"
+                class="px-3 py-2 border rounded-lg text-left transition-colors"
+                :class="processManager === opt.value
                   ? 'border-outline-gray-3 bg-surface-gray-2'
-                  : 'border-outline-gray-2 hover:bg-surface-gray-1'" @click="processManager = opt.value">
+                  : 'border-outline-gray-2 hover:bg-surface-gray-1'"
+                @click="processManager = opt.value"
+              >
                 <span class="block font-medium text-ink-gray-9 text-sm">{{ opt.label }}</span>
                 <span class="block text-ink-gray-5 text-xs">{{ opt.hint }}</span>
               </button>
@@ -262,24 +304,41 @@ async function createBench() {
           </div>
           <div>
             <template v-if="wildcardDomains.length === 0">
-              <FormControl label="Admin domain" type="text" v-model="adminDomain" placeholder="my-admin.example.com"
-                @input="error = ''" @keyup.enter="createBench" />
+              <FormControl
+                label="Admin domain"
+                type="text"
+                v-model="adminDomain"
+                placeholder="my-admin.example.com"
+                @input="error = ''"
+                @keyup.enter="createBench"
+              />
               <p class="bg-surface-gray-2 mt-1.5 px-2.5 py-2 rounded text-ink-gray-6 text-xs">
-                Point this domain's DNS A record to this server <b>before</b> creating the
-                bench. It isn't provisioned automatically, so setup can't be reached until
-                it resolves here.
+                Point this domain's DNS A record to this server <b>before</b> creating the bench. It
+                isn't provisioned automatically, so setup can't be reached until it resolves here.
               </p>
             </template>
             <div v-else>
               <span class="block mb-1.5 text-ink-gray-5 text-xs">Admin domain</span>
               <div class="flex items-stretch gap-2">
-                <FormControl class="flex-1 min-w-0" type="text" v-model="adminPrefix" placeholder="my-admin"
-                  @input="error = ''" @keyup.enter="createBench" />
-                <Select v-if="wildcardDomains.length > 1" class="w-48 shrink-0" v-model="selectedSuffix"
-                  :options="wildcardDomains.map(d => ({ label: d, value: d }))" />
-                <span v-else class="flex items-center text-ink-gray-6 text-sm whitespace-nowrap shrink-0">{{
-                  wildcardDomains[0]
-                  }}</span>
+                <FormControl
+                  class="flex-1 min-w-0"
+                  type="text"
+                  v-model="adminPrefix"
+                  placeholder="my-admin"
+                  @input="error = ''"
+                  @keyup.enter="createBench"
+                />
+                <Select
+                  v-if="wildcardDomains.length > 1"
+                  class="w-48 shrink-0"
+                  v-model="selectedSuffix"
+                  :options="wildcardDomains.map(d => ({ label: d, value: d }))"
+                />
+                <span
+                  v-else
+                  class="flex items-center text-ink-gray-6 text-sm whitespace-nowrap shrink-0"
+                  >{{ wildcardDomains[0] }}</span
+                >
               </div>
             </div>
             <p class="mt-1.5 text-ink-gray-5 text-xs">
@@ -296,7 +355,13 @@ async function createBench() {
         <Button variant="ghost" @click="show = false">
           {{ isProduction === false ? 'Close' : 'Cancel' }}
         </Button>
-        <Button v-if="isProduction === true" variant="solid" :loading="creating" @click="createBench">Create</Button>
+        <Button
+          v-if="isProduction === true"
+          variant="solid"
+          :loading="creating"
+          @click="createBench"
+          >Create</Button
+        >
       </div>
     </template>
   </Dialog>

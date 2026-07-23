@@ -1,5 +1,4 @@
 <template>
-
   <div v-if="loading" class="flex justify-center py-12">
     <LoadingText />
   </div>
@@ -10,22 +9,61 @@
     <!-- Header -->
     <div class="flex justify-between items-center gap-3">
       <div class="flex items-center gap-2 min-w-0">
-        <Button variant="subtle" size="sm" class="shrink-0" icon="lucide-arrow-left" @click="router.push({ name: 'Tasks' })" />
-        <h1 class="flex-1 min-w-0 font-semibold text-ink-gray-9 text-xl truncate">{{ commandLabel(task.command) }}</h1>
-        <Badge class="shrink-0" :label="statusConfig(task).label" :theme="statusConfig(task).theme" variant="subtle" size="md" />
+        <Button
+          variant="subtle"
+          size="sm"
+          class="shrink-0"
+          icon="lucide-arrow-left"
+          @click="router.push({ name: 'Tasks' })"
+        />
+        <h1 class="flex-1 min-w-0 font-semibold text-ink-gray-9 text-xl truncate">
+          {{ commandLabel(task.command) }}
+        </h1>
+        <Badge
+          class="shrink-0"
+          :label="statusConfig(task).label"
+          :theme="statusConfig(task).theme"
+          variant="subtle"
+          size="md"
+        />
       </div>
       <div class="flex items-center gap-2 shrink-0">
-        <Button variant="subtle" size="sm" :loading="loading" icon="lucide-refresh-cw" @click="load" />
-        <Button v-if="isTaskActive(task)" variant="subtle" size="sm" theme="red" icon-left="lucide-x"
-          @click="cancelTask">
+        <Button
+          variant="subtle"
+          size="sm"
+          :loading="loading"
+          icon="lucide-refresh-cw"
+          @click="load"
+        />
+        <Button
+          v-if="task.status === 'failed' && aiConnected"
+          variant="subtle"
+          size="sm"
+          icon-left="lucide-sparkles"
+          @click="showDebug = true"
+        >
+          Debug with AI
+        </Button>
+        <Button
+          v-if="isTaskActive(task)"
+          variant="subtle"
+          size="sm"
+          theme="red"
+          icon-left="lucide-x"
+          @click="cancelTask"
+        >
           Cancel
         </Button>
       </div>
     </div>
 
+    <TaskDebugDialog v-model="showDebug" :task-id="taskId" />
+
     <!-- Metadata -->
-    <div class="gap-4 grid grid-cols-2 bg-surface-elevation-1 mt-4 px-0 py-4 rounded-xl"
-      :class="metadata.length > 3 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'">
+    <div
+      class="gap-4 grid grid-cols-2 bg-surface-elevation-1 mt-4 px-0 py-4 rounded-xl"
+      :class="metadata.length > 3 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'"
+    >
       <div v-for="item in metadata" :key="item.label">
         <p class="text-ink-gray-4 text-xs">{{ item.label }}</p>
         <p class="mt-1 text-ink-gray-8 text-sm truncate">{{ item.value }}</p>
@@ -34,9 +72,14 @@
 
     <!-- Steps -->
     <div class="mt-4">
-      <TaskStream v-if="isTaskActive(task)" :url="tasksApi.streamUrl(taskId)"
+      <TaskStream
+        v-if="isTaskActive(task)"
+        :url="tasksApi.streamUrl(taskId)"
         :empty-text="task.status === 'queued' ? 'Waiting for this task to start…' : 'No output yet…'"
-        v-slot="{ rawLines: streamedLines, streaming }" @status="updateStatus" @done="load">
+        v-slot="{ rawLines: streamedLines, streaming }"
+        @status="updateStatus"
+        @done="load"
+      >
         <TaskSteps :raw-lines="streamedLines" :streaming="streaming" :task-status="task.status" />
       </TaskStream>
       <TaskSteps v-else :raw-lines="rawLines" :task-status="task.status" />
@@ -52,9 +95,18 @@ import { useRoute, useRouter } from 'vue-router'
 import { Badge, Button, ErrorMessage, LoadingText } from 'frappe-ui'
 import { apiErrorMessage } from '@/api/client'
 import { tasksApi } from '@/api/tasks'
+import { settingsApi } from '@/api/settings'
+import TaskDebugDialog from '@/components/tasks/TaskDebugDialog.vue'
 import { useBreadcrumbs } from '@/composables/common/useBreadcrumbs'
 import { useTaskDetail } from '@/composables/tasks/useTaskDetail'
-import { commandLabel, fmtDateTime, fmtDuration, isTaskActive, siteLabel, statusConfig } from '@/utils/taskFormat'
+import {
+  commandLabel,
+  fmtDateTime,
+  fmtDuration,
+  isTaskActive,
+  siteLabel,
+  statusConfig,
+} from '@/utils/taskFormat'
 
 const route = useRoute()
 const router = useRouter()
@@ -66,11 +118,25 @@ const { task, rawLines, loading, error, load } = useTaskDetail(taskId)
 setBreadcrumbs([{ label: 'Tasks', route: { name: 'Tasks' } }, { label: taskId }])
 
 const actionError = ref('')
+const showDebug = ref(false)
+const aiConnected = ref(false)
+
+async function loadAiStatus() {
+  try {
+    const data = await settingsApi.get()
+    aiConnected.value = Boolean(data.llm?.provider && data.llm?.api_key_set)
+  } catch {
+    aiConnected.value = false
+  }
+}
 
 const metadata = computed(() => {
   const items = [
     { label: 'Started', value: fmtDateTime(task.value.started_at) },
-    { label: 'Finished', value: task.value.finished_at ? fmtDateTime(task.value.finished_at) : '-' },
+    {
+      label: 'Finished',
+      value: task.value.finished_at ? fmtDateTime(task.value.finished_at) : '-',
+    },
     { label: 'Duration', value: fmtDuration(task.value.duration_seconds) || '-' },
   ]
   if (task.value.status === 'queued' && task.value.queue_position) {
@@ -102,5 +168,8 @@ async function cancelTask() {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadAiStatus()
+})
 </script>

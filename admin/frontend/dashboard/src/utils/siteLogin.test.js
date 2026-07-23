@@ -3,7 +3,6 @@ import test from 'node:test'
 
 import { openSiteLogin } from './siteLogin.js'
 
-
 function installBrowser() {
   const events = []
   const popup = {
@@ -22,7 +21,6 @@ function installBrowser() {
   return { events, popup }
 }
 
-
 test('navigates the pre-opened window to the login link', async () => {
   const { events, popup } = installBrowser()
   const link = { url: 'http://site.localhost:7000/desk?sid=one-time-sid' }
@@ -38,7 +36,6 @@ test('navigates the pre-opened window to the login link', async () => {
   assert.equal(popup.opener, null)
 })
 
-
 test('closes the pre-opened window when link creation fails', async () => {
   const { events } = installBrowser()
 
@@ -52,7 +49,6 @@ test('closes the pre-opened window when link creation fails', async () => {
   assert.equal(events.length, 0)
 })
 
-
 test('closes the pre-opened window when the link has no url', async () => {
   const { events } = installBrowser()
 
@@ -63,4 +59,3 @@ test('closes the pre-opened window when the link has no url', async () => {
 
   assert.equal(events.length, 0)
 })
-

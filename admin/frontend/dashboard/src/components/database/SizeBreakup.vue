@@ -1,13 +1,20 @@
 <template>
   <div class="p-4">
     <div class="flex bg-surface-gray-2 rounded-md w-full h-7 overflow-hidden">
-      <div v-for="part in barParts" :key="part.label" :style="{ width: `${part.percent}%`, backgroundColor: part.color }"
-        :title="`${part.label}: ${part.text}`" />
+      <div
+        v-for="part in barParts"
+        :key="part.label"
+        :style="{ width: `${part.percent}%`, backgroundColor: part.color }"
+        :title="`${part.label}: ${part.text}`"
+      />
     </div>
 
     <dl class="mt-3">
-      <div v-for="part in parts" :key="part.label"
-        class="flex justify-between items-center gap-4 py-2.5 border-b border-outline-gray-1 last:border-b-0">
+      <div
+        v-for="part in parts"
+        :key="part.label"
+        class="flex justify-between items-center gap-4 py-2.5 border-b border-outline-gray-1 last:border-b-0"
+      >
         <dt class="flex items-center gap-2 min-w-0">
           <span class="rounded-full size-2 shrink-0" :style="{ backgroundColor: part.color }" />
           <span class="text-ink-gray-7 text-sm truncate">{{ part.label }}</span>
@@ -34,12 +41,14 @@ const COLORS = {
   free: '#d1d5db',
 }
 
-const parts = computed(() => [
-  { label: 'Data Size', bytes: props.size.data_bytes, color: COLORS.data },
-  { label: 'Index Size', bytes: props.size.index_bytes, color: COLORS.index },
-  { label: 'Claimable Space', bytes: props.size.claimable_bytes, color: COLORS.claimable },
-  { label: 'Free Space', bytes: props.size.free_bytes, color: COLORS.free },
-].map((part) => ({ ...part, text: part.bytes == null ? '—' : formatBytes(part.bytes) })))
+const parts = computed(() =>
+  [
+    { label: 'Data Size', bytes: props.size.data_bytes, color: COLORS.data },
+    { label: 'Index Size', bytes: props.size.index_bytes, color: COLORS.index },
+    { label: 'Claimable Space', bytes: props.size.claimable_bytes, color: COLORS.claimable },
+    { label: 'Free Space', bytes: props.size.free_bytes, color: COLORS.free },
+  ].map((part) => ({ ...part, text: part.bytes == null ? '—' : formatBytes(part.bytes) })),
+)
 
 // A metric the engine could not report has no share of the bar.
 const barParts = computed(() => {

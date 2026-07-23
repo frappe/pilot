@@ -10,13 +10,22 @@
         </p>
         <template v-else>
           <div class="flex flex-col gap-1 max-h-80 overflow-y-auto">
-            <button v-for="name in appNames" :key="name" type="button"
+            <button
+              v-for="name in appNames"
+              :key="name"
+              type="button"
               class="flex items-center gap-3 hover:bg-surface-gray-1 p-2 rounded-lg text-left transition-colors"
-              @click="toggle(name)">
+              @click="toggle(name)"
+            >
               <AppIcon :name="name" class="rounded-lg size-8 shrink-0" />
               <span class="flex-1 min-w-0">
-                <p class="font-medium text-ink-gray-8 text-sm truncate">{{ titleMap[name] || name }}</p>
-                <p v-if="updates[name]" class="mt-1 flex items-center gap-1 font-mono text-ink-gray-5 text-xs truncate">
+                <p class="font-medium text-ink-gray-8 text-sm truncate">
+                  {{ titleMap[name] || name }}
+                </p>
+                <p
+                  v-if="updates[name]"
+                  class="mt-1 flex items-center gap-1 font-mono text-ink-gray-5 text-xs truncate"
+                >
                   {{ updates[name].current }}
                   <span class="lucide-arrow-right size-3 shrink-0 text-ink-gray-4" />
                   <span class="text-ink-green-7">{{ updates[name].target }}</span>
@@ -38,16 +47,19 @@
 
         <div class="flex justify-end gap-2 pt-4 border-t border-outline-gray-1">
           <Button variant="ghost" @click="open = false">Cancel</Button>
-          <Button v-if="appNames.length" variant="solid" :loading="updating" :disabled="!selected.size"
-            @click="runUpdate">
-            {{
-              selected.size == 0 ? 'Update' : (
+          <Button
+            v-if="appNames.length"
+            variant="solid"
+            :loading="updating"
+            :disabled="!selected.size"
+            @click="runUpdate"
+          >
+            {{ selected.size == 0 ? 'Update' : (
                 appNames.length == selected.size ? 'Update all' :
                   (
                     selected.size == 1 ? 'Update 1 app' : `Update ${selected.size} apps`
                   )
-              )
-            }}
+              ) }}
           </Button>
         </div>
       </div>
@@ -85,8 +97,16 @@ const safeguard = ref(true)
 const updating = ref(false)
 const error = ref('')
 
-watch(open, (isOpen) => { if (isOpen) loadRegistry() })
-watch(appNames, (names) => { selected.value = new Set(names) }, { immediate: true })
+watch(open, (isOpen) => {
+  if (isOpen) loadRegistry()
+})
+watch(
+  appNames,
+  (names) => {
+    selected.value = new Set(names)
+  },
+  { immediate: true },
+)
 
 function toggle(name) {
   const next = new Set(selected.value)

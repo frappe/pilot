@@ -12,19 +12,30 @@
         </thead>
         <tbody>
           <tr v-for="(row, i) in rows" :key="i">
-            <td v-if="showIndex" class="px-3 py-2 border-t border-outline-gray-2 tabular-nums text-ink-gray-4 text-xs">
+            <td
+              v-if="showIndex"
+              class="px-3 py-2 border-t border-outline-gray-2 tabular-nums text-ink-gray-4 text-xs"
+            >
               {{ indexOffset + i + 1 }}
             </td>
-            <td v-for="(column, j) in columns" :key="column.key"
+            <td
+              v-for="(column, j) in columns"
+              :key="column.key"
               class="px-3 py-2 border-t border-outline-gray-2 text-ink-gray-8"
-              :class="[mono && 'font-mono', truncate ? 'max-w-xs' : j > 0 && !showIndex && 'break-all']">
-              <span v-if="showNull && row[column.key] === null" class="text-ink-gray-3 italic">null</span>
+              :class="[mono && 'font-mono', truncate ? 'max-w-xs' : j > 0 && !showIndex && 'break-all']"
+            >
+              <span v-if="showNull && row[column.key] === null" class="text-ink-gray-3 italic"
+                >null</span
+              >
               <span v-else :class="truncate && 'block truncate'">{{ row[column.key] }}</span>
             </td>
           </tr>
         </tbody>
       </table>
-      <div v-if="emptyText && !rows.length" class="flex justify-center items-center py-16 text-ink-gray-4 text-sm">
+      <div
+        v-if="emptyText && !rows.length"
+        class="flex justify-center items-center py-16 text-ink-gray-4 text-sm"
+      >
         {{ emptyText }}
       </div>
     </div>

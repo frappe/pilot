@@ -12,6 +12,7 @@ class SetCentralConfigCommand(Command):
     """Persist the Central endpoint and pilot auth token in bench.toml."""
 
     name: ClassVar[str] = "set-central-config"
+    group: ClassVar[str] = "admin"
     help: ClassVar[str] = "Store the Central endpoint + pilot auth token in bench.toml."
 
     endpoint: Annotated[str, Arg(help="Central API base URL the pilot calls back on", required=True)]

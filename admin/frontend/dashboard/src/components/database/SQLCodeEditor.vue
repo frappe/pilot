@@ -15,8 +15,13 @@ import { MariaSQL, PostgreSQL, SQLite as SQLiteDialect, sql } from '@codemirror/
 import { autocompletion } from '@codemirror/autocomplete'
 import { history, historyKeymap, defaultKeymap, indentWithTab } from '@codemirror/commands'
 import {
-  keymap, EditorView, lineNumbers, drawSelection,
-  highlightActiveLine, highlightActiveLineGutter, placeholder,
+  keymap,
+  EditorView,
+  lineNumbers,
+  drawSelection,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  placeholder,
 } from '@codemirror/view'
 import { Compartment, Prec } from '@codemirror/state'
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
@@ -128,7 +133,11 @@ const theme = EditorView.theme({
     color: 'var(--ink-gray-9, #0f172a)',
   },
   '.cm-completionDetail': { color: 'var(--ink-gray-5, #64748b)', fontStyle: 'italic' },
-  '.cm-completionMatchedText': { color: 'var(--ink-blue-6, #2563eb)', textDecoration: 'none', fontWeight: '600' },
+  '.cm-completionMatchedText': {
+    color: 'var(--ink-blue-6, #2563eb)',
+    textDecoration: 'none',
+    fontWeight: '600',
+  },
 })
 
 // CodeMirror's basicSetup falls back to a fixed, non-theme-aware highlight
@@ -139,19 +148,33 @@ const theme = EditorView.theme({
 const sqlHighlightStyle = HighlightStyle.define([
   { tag: [tags.keyword, tags.standard(tags.name)], color: 'var(--ink-blue-6, #2563eb)' },
   { tag: [tags.string, tags.special(tags.string)], color: 'var(--ink-green-6, #16a34a)' },
-  { tag: [tags.lineComment, tags.blockComment], color: 'var(--ink-gray-5, #64748b)', fontStyle: 'italic' },
+  {
+    tag: [tags.lineComment, tags.blockComment],
+    color: 'var(--ink-gray-5, #64748b)',
+    fontStyle: 'italic',
+  },
   { tag: [tags.number, tags.bool, tags.null], color: 'var(--ink-amber-6, #d97706)' },
   { tag: tags.typeName, color: 'var(--ink-amber-6, #d97706)' },
   { tag: tags.special(tags.name), color: 'var(--ink-violet-6, #7c3aed)' },
   { tag: tags.name, color: 'var(--ink-gray-8, #1e293b)' },
-  { tag: [tags.operator, tags.punctuation, tags.paren, tags.brace, tags.squareBracket], color: 'var(--ink-gray-6, #5f6368)' },
+  {
+    tag: [tags.operator, tags.punctuation, tags.paren, tags.brace, tags.squareBracket],
+    color: 'var(--ink-gray-6, #5f6368)',
+  },
 ])
 
-const runKeymap = Prec.highest(keymap.of([{
-  key: 'Ctrl-Enter',
-  mac: 'Cmd-Enter',
-  run: (v) => { emit('run', getSelectedOrAll(v)); return true },
-}]))
+const runKeymap = Prec.highest(
+  keymap.of([
+    {
+      key: 'Ctrl-Enter',
+      mac: 'Cmd-Enter',
+      run: (v) => {
+        emit('run', getSelectedOrAll(v))
+        return true
+      },
+    },
+  ]),
+)
 
 const extensions = [
   theme,
@@ -163,7 +186,12 @@ const extensions = [
   history(),
   keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
   placeholder('SELECT name, creation FROM `tabUser` ORDER BY creation DESC LIMIT 5;'),
-  autocompletion({ activateOnTyping: true, closeOnBlur: false, maxRenderedOptions: 10, icons: false }),
+  autocompletion({
+    activateOnTyping: true,
+    closeOnBlur: false,
+    maxRenderedOptions: 10,
+    icons: false,
+  }),
   sqlCompartment.of(sql({ dialect: cmDialect.value, upperCaseKeywords: true })),
   runKeymap,
 ]

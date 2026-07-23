@@ -74,6 +74,14 @@ def check_cli_update():
 
 
 def _cli_update(*, fetch: bool) -> dict:
+    import pilot
+
+    if pilot.is_dev_build:
+        return _cli_update_dev(fetch=fetch)
+    return _cli_update_release(fetch=fetch)
+
+
+def _cli_update_dev(*, fetch: bool) -> dict:
     repo = GitRepo(cli_root())
     branch = repo.branch
     if fetch:
@@ -81,6 +89,8 @@ def _cli_update(*, fetch: bool) -> dict:
 
     behind = repo.count(f"HEAD..origin/{branch}")
     return {
+        "current_version": "dev",
+        "is_dev": True,
         "branch": branch,
         "commits_behind": behind,
         "update_available": behind > 0,
@@ -88,3 +98,21 @@ def _cli_update(*, fetch: bool) -> dict:
         "remote_commit": repo.commit_subject(f"origin/{branch}"),
         "last_fetched": repo.last_fetched,
     }
+
+
+def _cli_update_release(*, fetch: bool) -> dict:
+    import pilot
+
+    result = {
+        "current_version": pilot.__version__,
+        "is_dev": False,
+        "update_available": False,
+        "latest_version": None,
+    }
+    if fetch:
+        from pilot.updater import update_available
+
+        available, latest = update_available()
+        result["update_available"] = available
+        result["latest_version"] = latest
+    return result

@@ -5,10 +5,23 @@
         Keys passed to this site's <code class="font-mono text-ink-gray-7">site_config.json</code>.
       </p>
       <div class="flex items-center gap-2 shrink-0">
-        <Button size="sm" variant="ghost" :loading="refreshing" icon="lucide-refresh-cw" class="hidden sm:flex"
-          @click="refresh" />
-        <Button size="sm" variant="ghost" :loading="refreshing" icon-left="lucide-refresh-cw" class="sm:hidden"
-          @click="refresh">Refresh</Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          :loading="refreshing"
+          icon="lucide-refresh-cw"
+          class="hidden sm:flex"
+          @click="refresh"
+        />
+        <Button
+          size="sm"
+          variant="ghost"
+          :loading="refreshing"
+          icon-left="lucide-refresh-cw"
+          class="sm:hidden"
+          @click="refresh"
+          >Refresh</Button
+        >
         <Button size="sm" @click="openDialog()">
           <template #prefix><span class="size-4 lucide-plus" /></template>
           Add config
@@ -17,17 +30,26 @@
     </div>
 
     <!-- Config table -->
-    <div v-if="!rows.length"
-      class="py-12 border border-dashed rounded-xl border-outline-gray-2 text-ink-gray-5 text-sm text-center">
+    <div
+      v-if="!rows.length"
+      class="py-12 border border-dashed rounded-xl border-outline-gray-2 text-ink-gray-5 text-sm text-center"
+    >
       No config keys.
     </div>
-    <ListView v-else :columns="columns" :rows="rows" row-key="name"
-      :options="{ selectable: false, showTooltip: false }">
+    <ListView
+      v-else
+      :columns="columns"
+      :rows="rows"
+      row-key="name"
+      :options="{ selectable: false, showTooltip: false }"
+    >
       <template #cell="{ column, row, item }">
         <div v-if="column.key === 'actions'" class="flex justify-end">
           <Dropdown v-if="!row.readonly" :options="menuOptions(row)" placement="left">
             <template #default="{ open }">
-              <Button variant="ghost" size="sm" :active="open"><span class="size-4 lucide-ellipsis" /></Button>
+              <Button variant="ghost" size="sm" :active="open"
+                ><span class="size-4 lucide-ellipsis" /></Button
+              >
             </template>
           </Dropdown>
         </div>
@@ -76,13 +98,15 @@
   <Dialog v-model="showDelete" :options="{ title: 'Remove config', size: 'sm' }">
     <template #body-content>
       <p class="text-ink-gray-7 text-sm">
-        Remove <code class="text-ink-gray-9">{{ deleteKey }}</code> from <code
-          class="text-ink-gray-9">site_config.json</code>?
+        Remove <code class="text-ink-gray-9">{{ deleteKey }}</code> from
+        <code class="text-ink-gray-9">site_config.json</code>?
       </p>
       <ErrorMessage v-if="deleteError" :message="deleteError" class="mt-2" />
       <div class="flex justify-end gap-2 mt-4">
         <Button variant="ghost" @click="showDelete = false">Cancel</Button>
-        <Button variant="solid" theme="red" :loading="deleting" @click="confirmDelete">Remove</Button>
+        <Button variant="solid" theme="red" :loading="deleting" @click="confirmDelete"
+          >Remove</Button
+        >
       </div>
     </template>
   </Dialog>
@@ -111,7 +135,7 @@ const rows = computed(() => {
   const entries = Object.entries(config).map(([key, val]) => ({
     name: key,
     key,
-    value: isPassword(key) ? '•••••••' : (typeof val === 'string' ? val : JSON.stringify(val)),
+    value: isPassword(key) ? '•••••••' : typeof val === 'string' ? val : JSON.stringify(val),
     readonly: false,
   }))
   return entries
@@ -120,7 +144,16 @@ const rows = computed(() => {
 function menuOptions(row) {
   return [
     { label: 'Edit', icon: 'lucide-pencil', onClick: () => openDialog(row.key) },
-    { label: 'Remove', icon: 'lucide-trash-2', theme: 'red', onClick: () => { deleteKey.value = row.key; deleteError.value = ''; showDelete.value = true } },
+    {
+      label: 'Remove',
+      icon: 'lucide-trash-2',
+      theme: 'red',
+      onClick: () => {
+        deleteKey.value = row.key
+        deleteError.value = ''
+        showDelete.value = true
+      },
+    },
   ]
 }
 
@@ -147,14 +180,22 @@ function openDialog(key = null) {
 }
 
 function parseValue(raw) {
-  try { return JSON.parse(raw) } catch { return raw }
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return raw
+  }
 }
 
 async function save() {
   const key = entryKey.value.trim()
-  if (!key) { dialogError.value = 'Key is required.'; return }
+  if (!key) {
+    dialogError.value = 'Key is required.'
+    return
+  }
   if (isNew.value && key in (site.value.site_config || {})) {
-    dialogError.value = 'Key already exists.'; return
+    dialogError.value = 'Key already exists.'
+    return
   }
   saving.value = true
   dialogError.value = ''
@@ -191,6 +232,10 @@ async function confirmDelete() {
 
 async function refresh() {
   refreshing.value = true
-  try { await reload() } finally { refreshing.value = false }
+  try {
+    await reload()
+  } finally {
+    refreshing.value = false
+  }
 }
 </script>

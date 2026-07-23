@@ -440,6 +440,7 @@ def test_install_config_rolls_back_symlink_when_reload_fails(tmp_path: Path) -> 
     bench = _make_bench(tmp_path, _BASE_DATA)
     manager = NginxManager(bench)
     symlink_path = tmp_path / "test-bench.conf"
+    symlink_path.symlink_to(tmp_path / "include.conf")
 
     with (
         patch.object(manager, "reload", side_effect=CommandError("nginx -t failed", returncode=1)),
@@ -450,24 +451,6 @@ def test_install_config_rolls_back_symlink_when_reload_fails(tmp_path: Path) -> 
 
     mock_run.assert_called_once()
     assert mock_run.call_args[0][0][-2:] == ["unlink", str(symlink_path)]
-
-
-def test_write_nginx_logrotate_content(tmp_path: Path) -> None:
-    bench = _make_bench(tmp_path, _BASE_DATA)
-    manager = NginxManager(bench)
-
-    with patch.object(manager, "_stage_and_copy") as mock_stage:
-        manager._write_nginx_logrotate()
-
-    mock_stage.assert_called_once()
-    content, target = mock_stage.call_args[0]
-    assert target == Path("/etc/logrotate.d/test-bench-nginx")
-    assert str(bench.logs_path / "nginx-access.log") in content
-    assert str(bench.logs_path / "nginx-error.log") in content
-    assert "copytruncate" in content
-    assert "rotate 3" in content
-
-
 def test_stage_and_copy_creates_missing_nginx_config_dir(tmp_path: Path) -> None:
     """install() runs setup_sudoers() before generate_config() ever mkdirs
     config/nginx - staging must not assume that directory already exists."""
@@ -507,6 +490,7 @@ def test_setup_sudoers_grants_only_start_stop_reload(tmp_path: Path) -> None:
         patch("pwd.getpwuid") as mock_getpwuid,
         patch("pilot.managers.sudoers.stage_and_copy") as mock_stage,
         patch("pilot.managers.sudoers.run_command") as mock_run,
+        patch.object(NginxManager, "has_passwordless_sudo", False),
     ):
         mock_getpwuid.return_value.pw_name = "runner"
         manager.setup_sudoers()
@@ -524,25 +508,6 @@ def test_setup_sudoers_grants_only_start_stop_reload(tmp_path: Path) -> None:
 
     mock_run.assert_called_once()
     assert mock_run.call_args.args[0][-3:] == ["chmod", "440", str(sudoers_file)]
-
-
-def test_install_config_writes_nginx_logrotate(tmp_path: Path) -> None:
-    bench = _make_bench(tmp_path, _BASE_DATA)
-    manager = NginxManager(bench)
-
-    with (
-        patch.object(manager, "_write_nginx_logrotate") as mock_logrotate,
-        patch.object(manager, "install_default_server"),
-        patch.object(manager, "_set_worker_user"),
-        patch.object(manager, "_reload_or_rollback"),
-        patch.object(manager, "_prune_dangling_symlinks"),
-        patch("pilot.managers.nginx.run_command"),
-    ):
-        manager.install_config()
-
-    mock_logrotate.assert_called_once()
-
-
 def test_prune_dangling_symlinks_removes_only_broken_ones(tmp_path: Path) -> None:
     nginx_dir = tmp_path / "conf.d"
     nginx_dir.mkdir()

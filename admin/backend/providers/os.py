@@ -27,7 +27,6 @@ class OSProvider:
             "Redis": RedisManager.installed_version() or self._config.redis.version or "",
             "Nginx": self.get_flag_version("nginx", ["-v"], r"nginx/([\d.]+)"),
             "Frappe": self.frappe_version,
-            "Pilot": self.bench_admin_commit,
         }
         return {label: value for label, value in versions.items() if value}
 
@@ -56,9 +55,3 @@ class OSProvider:
 
         return result.stdout.decode().strip()
 
-    @property
-    def bench_admin_commit(self) -> str:
-        from pilot.internal.git import GitRepo
-        from pilot.utils import cli_root
-
-        return GitRepo(cli_root()).short_head

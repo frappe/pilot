@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  release:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Build admin frontend
+        run: |
+          cd admin/frontend/dashboard
+          npm ci
+          npm run build
+
+      - name: Build admin editor
+        run: |
+          cd admin/frontend/editor
+          npm ci
+          npm run build
+
+      - name: Stamp version
+        run: echo "${{ github.event.release.tag_name }}" > VERSION
+
+      - name: Package release tarball
+        run: |
+          tar -czf /tmp/pilot.tar.gz \
+            --exclude=./.git \
+            --exclude=./.github \
+            --exclude=node_modules \
+            --exclude=./benches \
+            --exclude=./.venv \
+            --exclude=./.admin-venv \
+            --exclude='*.egg-info' \
+            --exclude=./build \
+            --exclude=__pycache__ \
+            -C "$GITHUB_WORKSPACE" .
+
+      - name: Upload to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" /tmp/pilot.tar.gz --clobber

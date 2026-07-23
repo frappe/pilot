@@ -1,6 +1,9 @@
 # Benches (created by `bench new`)
 /benches/
 
+# Monitor logs (written beside the install)
+/logs/
+
 # Local agent scratch files
 /plan_refactor.md
 
@@ -23,6 +26,9 @@ build/
 .eggs/
 wheels/
 uv.lock
+
+# Written only into release tarballs, never committed
+/VERSION
 
 # Virtual environments
 env/
@@ -53,6 +59,8 @@ admin/frontend/dashboard/node_modules/
 admin/frontend/editor/node_modules/
 admin/backend/static/dashboard/
 admin/backend/static/editor/
+admin/frontend/dashboard/components.d.ts
+admin/frontend/editor/components.d.ts
 *.timestamp-*
 .env
 .env.local

@@ -6,7 +6,10 @@ import { API_V1_PREFIX, apiErrorMessage, apiUrl, unwrap } from '../api/client.js
 test('builds relative and cross-origin v1 API URLs', () => {
   assert.equal(API_V1_PREFIX, '/api/v1')
   assert.equal(apiUrl('tasks/task-id/events'), '/api/v1/tasks/task-id/events')
-  assert.equal(apiUrl('/health', 'https://admin.example.com'), 'https://admin.example.com/api/v1/health')
+  assert.equal(
+    apiUrl('/health', 'https://admin.example.com'),
+    'https://admin.example.com/api/v1/health',
+  )
 })
 
 test('reads canonical and transitional API error messages', () => {
@@ -17,7 +20,11 @@ test('reads canonical and transitional API error messages', () => {
 
 test('unwrap rethrows a resolved error body as a rejection', async () => {
   await assert.rejects(
-    unwrap(Promise.resolve({ error: { message: 'System-managed and secret-like configuration keys cannot be changed.' } })),
+    unwrap(
+      Promise.resolve({
+        error: { message: 'System-managed and secret-like configuration keys cannot be changed.' },
+      }),
+    ),
     { message: 'System-managed and secret-like configuration keys cannot be changed.' },
   )
 })

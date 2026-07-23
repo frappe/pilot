@@ -8,7 +8,13 @@
           App updates across your sites, with backup and recovery.
         </p>
       </div>
-      <Button variant="subtle" size="sm" :loading="loading" icon-left="lucide-refresh-cw" @click="load">
+      <Button
+        variant="subtle"
+        size="sm"
+        :loading="loading"
+        icon-left="lucide-refresh-cw"
+        @click="load"
+      >
         Refresh
       </Button>
     </div>
@@ -20,12 +26,21 @@
       <ErrorMessage :message="error" />
     </div>
 
-    <div v-else-if="operations.length" class="bg-surface-elevation-1 mt-4 divide-outline-gray-1 divide-y overflow-hidden">
-      <RouterLink v-for="op in operations" :key="op.id"
+    <div
+      v-else-if="operations.length"
+      class="bg-surface-elevation-1 mt-4 divide-outline-gray-1 divide-y overflow-hidden"
+    >
+      <RouterLink
+        v-for="op in operations"
+        :key="op.id"
         :to="{ name: 'MigrationDetail', params: { operationId: op.id } }"
-        class="flex items-center gap-3 py-3 no-underline transition-colors">
+        class="flex items-center gap-3 py-3 no-underline transition-colors"
+      >
         <!-- Status icon -->
-        <span class="place-items-center grid rounded-full size-8 shrink-0" :class="stateIcon(op.state).iconBg">
+        <span
+          class="place-items-center grid rounded-full size-8 shrink-0"
+          :class="stateIcon(op.state).iconBg"
+        >
           <span class="size-4" :class="stateIcon(op.state).icon" />
         </span>
 

@@ -13,6 +13,7 @@ from pilot.internal.cli.dispatch import CliContext, load_bench
 
 # Help text for command groups (e.g. `bench setup ...`).
 GROUP_HELP = {
+    "admin": "Admin control-plane commands.",
     "setup": "Production setup commands.",
     "remove": "Teardown commands.",
     "tasks": "Admin task worker controls.",

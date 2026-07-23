@@ -11,9 +11,18 @@ export function useBench() {
 
   async function load() {
     if (cached) return
-    const settings = await settingsApi.get()
+    let settings
+    try {
+      settings = await settingsApi.get()
+    } catch {
+      return // labels only; callers render fine without them
+    }
     const branch = settings.bench?.default_branch ?? ''
-    cached = { name: settings.bench?.name || 'this bench', defaultBranch: branch, version: parseBranchVersion(branch) }
+    cached = {
+      name: settings.bench?.name || 'this bench',
+      defaultBranch: branch,
+      version: parseBranchVersion(branch),
+    }
     name.value = cached.name
     defaultBranch.value = cached.defaultBranch
     version.value = cached.version

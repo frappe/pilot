@@ -12,8 +12,13 @@
       </p>
 
       <div v-else class="max-h-[60vh] overflow-y-auto">
-        <ListView class="!w-full" :columns="columns" :rows="rows" row-key="name"
-          :options="{ selectable: false, showTooltip: false }" />
+        <ListView
+          class="!w-full"
+          :columns="columns"
+          :rows="rows"
+          row-key="name"
+          :options="{ selectable: false, showTooltip: false }"
+        />
       </div>
     </template>
   </Dialog>

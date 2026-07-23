@@ -3,9 +3,15 @@
     <template #body-content>
       <template v-if="step === 'input'">
         <p class="text-ink-gray-7 text-sm">
-          To add a custom domain, you must already own it. If you don't have one, buy it and come back here.
+          To add a custom domain, you must already own it. If you don't have one, buy it and come
+          back here.
         </p>
-        <TextInput v-model="domain" placeholder="www.example.com" class="mt-4 w-full" @keydown.enter="continueAdd">
+        <TextInput
+          v-model="domain"
+          placeholder="www.example.com"
+          class="mt-4 w-full"
+          @keydown.enter="continueAdd"
+        >
           <template #label>
             <span class="text-sm">Domain</span>
           </template>
@@ -13,7 +19,12 @@
         <ErrorMessage v-if="error" :message="error" class="mt-2" />
         <div class="flex justify-end gap-2 mt-4">
           <Button variant="subtle" @click="show = false">Cancel</Button>
-          <Button variant="solid" :loading="continuing" :disabled="!domain.trim()" @click="continueAdd">
+          <Button
+            variant="solid"
+            :loading="continuing"
+            :disabled="!domain.trim()"
+            @click="continueAdd"
+          >
             Continue
           </Button>
         </div>
@@ -22,8 +33,8 @@
         <template v-if="dnsRecordGroups.length">
           <p class="text-ink-gray-7 text-sm">
             <template v-if="dnsRecordGroups.length > 1">
-              Add <span class="font-medium text-ink-gray-8">either one</span> of these records at your domain
-              provider.
+              Add <span class="font-medium text-ink-gray-8">either one</span> of these records at
+              your domain provider.
             </template>
             <template v-else>Add this record at your domain provider.</template>
           </p>
@@ -33,7 +44,9 @@
             </p>
             <SimpleTable class="mt-2" :columns="DNS_RECORD_COLUMNS" :rows="group.records" />
           </div>
-          <p class="mt-3 text-ink-gray-5 text-xs">DNS changes can take a few minutes to propagate.</p>
+          <p class="mt-3 text-ink-gray-5 text-xs">
+            DNS changes can take a few minutes to propagate.
+          </p>
         </template>
         <div v-else class="flex flex-col items-center gap-3 py-8">
           <div class="flex justify-center items-center bg-surface-green-2 rounded-full size-12">
@@ -101,7 +114,10 @@ async function continueAdd() {
   continuing.value = true
   try {
     const data = await sitesApi.domains.dnsRecords(props.siteName, value)
-    if (data.error) { error.value = apiErrorMessage(data, 'Could not generate DNS records.'); return }
+    if (data.error) {
+      error.value = apiErrorMessage(data, 'Could not generate DNS records.')
+      return
+    }
     dnsRecordGroups.value = toRecordGroups(data)
     step.value = 'records'
   } catch (e) {
@@ -116,7 +132,10 @@ async function confirmAdd() {
   adding.value = true
   try {
     const data = await sitesApi.domains.add(props.siteName, domain.value.trim())
-    if (!data.task_id) { error.value = apiErrorMessage(data, 'Failed to add domain.'); return }
+    if (!data.task_id) {
+      error.value = apiErrorMessage(data, 'Failed to add domain.')
+      return
+    }
     show.value = false
     emit('added')
   } catch (e) {

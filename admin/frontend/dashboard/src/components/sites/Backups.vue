@@ -6,7 +6,9 @@
         <p class="mt-0.5 text-ink-gray-5 text-sm">{{ scheduleSummary }}</p>
       </div>
       <div class="flex items-center gap-2 shrink-0">
-        <Button variant="subtle" size="sm" @click="configRef.open()">{{ enabled ? 'Configure' : 'Enable' }}</Button>
+        <Button variant="subtle" size="sm" @click="configRef.open()"
+          >{{ enabled ? 'Configure' : 'Enable' }}</Button
+        >
         <Button size="sm" :loading="backingUp" @click="backupNow">
           <template #prefix><span class="size-4 lucide-archive" /></template>
           Back up now
@@ -23,13 +25,17 @@
         <LoadingText />
       </div>
       <div v-else-if="!backups.length" class="flex flex-col items-center gap-4 py-12 text-center">
-        <span class="place-items-center grid bg-surface-gray-2 rounded-full size-10 text-ink-gray-5">
+        <span
+          class="place-items-center grid bg-surface-gray-2 rounded-full size-10 text-ink-gray-5"
+        >
           <span class="size-5 lucide-archive" />
         </span>
         <div>
           <p class="font-medium text-ink-gray-7 text-sm">No backups yet</p>
           <p class="mt-1 max-w-xs text-ink-gray-5 text-p-sm">
-            <template v-if="!enabled">Enable automatic backups to start protecting your site.</template>
+            <template v-if="!enabled"
+              >Enable automatic backups to start protecting your site.</template
+            >
             <template v-else>Automatic backups run on schedule. You can also back up now.</template>
           </p>
         </div>
@@ -38,25 +44,42 @@
           Back up now
         </Button>
       </div>
-      <ListView v-else :columns="columns" :rows="rows" row-key="name"
-        :options="{ selectable: false, showTooltip: false }">
+      <ListView
+        v-else
+        :columns="columns"
+        :rows="rows"
+        row-key="name"
+        :options="{ selectable: false, showTooltip: false }"
+      >
         <template #cell="{ column, row, item }">
           <div v-if="column.key === 'actions'" class="flex justify-end">
             <Dropdown :options="menuOptions(row.set)" placement="left">
               <template #default="{ open }">
-                <Button variant="ghost" size="sm" :active="open"><span class="size-4 lucide-ellipsis" /></Button>
+                <Button variant="ghost" size="sm" :active="open"
+                  ><span class="size-4 lucide-ellipsis" /></Button
+                >
               </template>
             </Dropdown>
           </div>
           <div v-else-if="column.key === 'offsite'" class="flex justify-center">
-            <span v-if="row.set.is_offsite" class="size-4 text-ink-gray-6 lucide-check" title="Backed up offsite" />
+            <span
+              v-if="row.set.is_offsite"
+              class="size-4 text-ink-gray-6 lucide-check"
+              title="Backed up offsite"
+            />
             <span v-else class="size-4 text-ink-gray-4 lucide-x" title="Not backed up offsite" />
           </div>
           <ListRowItem v-else :column="column" :row="row" :item="item" :align="column.align" />
         </template>
       </ListView>
-      <ListFooter v-if="backupsHasMore || backups.length > 20" class="mt-2 px-1" :model-value="backupsLimit"
-        :options="footerOptions" @update:model-value="setBackupsPageLength" @load-more="loadMoreBackups" />
+      <ListFooter
+        v-if="backupsHasMore || backups.length > 20"
+        class="mt-2 px-1"
+        :model-value="backupsLimit"
+        :options="footerOptions"
+        @update:model-value="setBackupsPageLength"
+        @load-more="loadMoreBackups"
+      />
     </div>
   </div>
 
@@ -64,13 +87,16 @@
   <Dialog v-model="showDelete" :options="{ title: 'Delete Backup', size: 'sm' }">
     <template #body-content>
       <p class="text-ink-gray-7 text-sm">
-        Delete the backup from <strong>{{ deleteTarget ? fmt(deleteTarget.created_at) : '' }}</strong>? This cannot be
+        Delete the backup from
+        <strong>{{ deleteTarget ? fmt(deleteTarget.created_at) : '' }}</strong>? This cannot be
         undone.
       </p>
       <ErrorMessage v-if="deleteError" :message="deleteError" class="mt-2" />
       <div class="flex justify-end gap-2 mt-4">
         <Button variant="ghost" @click="showDelete = false">Cancel</Button>
-        <Button variant="solid" theme="red" :loading="deleting" @click="confirmDelete">Delete</Button>
+        <Button variant="solid" theme="red" :loading="deleting" @click="confirmDelete"
+          >Delete</Button
+        >
       </div>
     </template>
   </Dialog>
@@ -79,7 +105,16 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Button, Dialog, Dropdown, ErrorMessage, ListFooter, ListView, ListRowItem, LoadingText } from 'frappe-ui'
+import {
+  Button,
+  Dialog,
+  Dropdown,
+  ErrorMessage,
+  ListFooter,
+  ListView,
+  ListRowItem,
+  LoadingText,
+} from 'frappe-ui'
 import BackupConfigDialog from '@/components/sites/BackupConfigDialog.vue'
 import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
@@ -91,8 +126,15 @@ import { cronToLabel } from '@/utils/backup'
 const props = defineProps({ siteName: { type: String, required: true } })
 const router = useRouter()
 
-const { backups, backupsLoading, backupsHasMore, backupsLimit, loadBackups, loadMoreBackups, setBackupsPageLength } =
-  useSite(props.siteName)
+const {
+  backups,
+  backupsLoading,
+  backupsHasMore,
+  backupsLimit,
+  loadBackups,
+  loadMoreBackups,
+  setBackupsPageLength,
+} = useSite(props.siteName)
 
 const footerOptions = computed(() => ({
   rowCount: backups.value.length,
@@ -111,7 +153,9 @@ const config = ref(null)
 const enabled = computed(() => !!config.value?.schedule)
 
 const scheduleSummary = computed(() =>
-  enabled.value ? `${cronToLabel(config.value.schedule)}.` : 'Manual backups are kept until you delete them.',
+  enabled.value
+    ? `${cronToLabel(config.value.schedule)}.`
+    : 'Manual backups are kept until you delete them.',
 )
 
 async function loadConfig() {
@@ -147,16 +191,19 @@ const columns = [
 
 const fmt = (iso) => new Date(iso).toLocaleString()
 const fileOf = (set, kind) => set.files?.find((f) => f.kind === kind) ?? null
-const fmtSize = (b) => !b ? '-' : b < 1024 ** 2 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1024 ** 2).toFixed(1)} MB`
+const fmtSize = (b) =>
+  !b ? '-' : b < 1024 ** 2 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1024 ** 2).toFixed(1)} MB`
 
-const rows = computed(() => backups.value.map((set) => ({
-  name: set.created_at,
-  timestamp: fmt(set.created_at),
-  database: fmtSize(fileOf(set, 'database')?.size_bytes),
-  public: fmtSize(fileOf(set, 'public-file')?.size_bytes),
-  private: fmtSize(fileOf(set, 'private-file')?.size_bytes),
-  set,
-})))
+const rows = computed(() =>
+  backups.value.map((set) => ({
+    name: set.created_at,
+    timestamp: fmt(set.created_at),
+    database: fmtSize(fileOf(set, 'database')?.size_bytes),
+    public: fmtSize(fileOf(set, 'public-file')?.size_bytes),
+    private: fmtSize(fileOf(set, 'private-file')?.size_bytes),
+    set,
+  })),
+)
 
 // The offsite metadata's file_type keys don't match the UI's kind names;
 // this is the same mapping BackupReader uses to merge remote-only files in.
@@ -175,11 +222,22 @@ function menuOptions(set) {
     ['site_config', 'Download Config'],
   ]
   return [
-    ...kinds.filter(([k]) => fileOf(set, k)).map(([k, label]) => ({
-      label, icon: 'lucide-download',
-      onClick: () => downloadFile(set, k),
-    })),
-    { label: 'Delete backup', icon: 'lucide-trash-2', theme: 'red', onClick: () => { deleteTarget.value = set; showDelete.value = true } },
+    ...kinds
+      .filter(([k]) => fileOf(set, k))
+      .map(([k, label]) => ({
+        label,
+        icon: 'lucide-download',
+        onClick: () => downloadFile(set, k),
+      })),
+    {
+      label: 'Delete backup',
+      icon: 'lucide-trash-2',
+      theme: 'red',
+      onClick: () => {
+        deleteTarget.value = set
+        showDelete.value = true
+      },
+    },
   ]
 }
 

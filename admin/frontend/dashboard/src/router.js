@@ -1,5 +1,4 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { navigationRoutes } from './navigation'
 import { useSession } from './composables/auth/useSession'
 import { safeRedirect } from './utils/redirect'
 import { authApi } from './api/auth'
@@ -19,10 +18,46 @@ const routes = [
   },
   { path: '/', redirect: '/sites' },
   {
+    path: '/home',
+    name: 'Home',
+    component: () => import('./pages/home/Home.vue'),
+    meta: { title: 'Home' },
+  },
+  {
+    path: '/sites',
+    name: 'Sites',
+    component: () => import('./pages/sites/Sites.vue'),
+    meta: { title: 'Sites' },
+  },
+  {
     path: '/sites/:name/:tab?',
     name: 'SiteDetail',
     component: () => import('./pages/sites/SiteDetail.vue'),
     meta: { group: 'Sites' },
+  },
+  {
+    path: '/marketplace',
+    name: 'Marketplace',
+    component: () => import('./pages/marketplace/Marketplace.vue'),
+    meta: { title: 'Marketplace' },
+  },
+  {
+    path: '/insights/analytics',
+    name: 'Analytics',
+    component: () => import('./pages/dashboard/Analytics.vue'),
+    meta: { title: 'Analytics', group: 'Insights' },
+  },
+  {
+    path: '/insights/logs',
+    name: 'Logs',
+    component: () => import('./pages/logs/Logs.vue'),
+    meta: { title: 'Logs', group: 'Insights' },
+  },
+  {
+    path: '/insights/tasks',
+    name: 'Tasks',
+    component: () => import('./pages/tasks/Tasks.vue'),
+    meta: { title: 'Tasks', group: 'Insights' },
   },
   {
     path: '/insights/tasks/:taskId',
@@ -31,13 +66,42 @@ const routes = [
     meta: { group: 'Insights' },
   },
   {
+    path: '/migrations',
+    name: 'Migrations',
+    component: () => import('./pages/migrations/Migrations.vue'),
+    meta: { title: 'Migrations', group: 'Insights' },
+  },
+  {
     path: '/migrations/:operationId',
     name: 'MigrationDetail',
     component: () => import('./pages/migrations/MigrationDetail.vue'),
     props: true,
     meta: { title: 'Migration', group: 'Insights' },
   },
-  ...navigationRoutes(),
+  {
+    path: '/database/analyzer',
+    name: 'DB analyzer',
+    component: () => import('./pages/database/Analyzer.vue'),
+    meta: { title: 'DB analyzer', group: 'Dev tools' },
+  },
+  {
+    path: '/database/sql-playground',
+    name: 'SQL playground',
+    component: () => import('./pages/database/SQLPlayground.vue'),
+    meta: { title: 'SQL playground', group: 'Dev tools' },
+  },
+  {
+    path: '/editor',
+    name: 'Code editor',
+    component: () => import('./pages/editor/Launcher.vue'),
+    meta: { title: 'Code editor', group: 'Dev tools' },
+  },
+  {
+    path: '/settings',
+    name: 'Settings',
+    component: () => import('./pages/settings/Settings.vue'),
+    meta: { title: 'Settings' },
+  },
 ]
 
 export const router = createRouter({
@@ -55,7 +119,9 @@ router.beforeEach(async (to) => {
   if (to.query.sid) {
     try {
       await authApi.loginWithSid(to.query.sid)
-    } catch { /* fall through to the unauthenticated redirect below */ }
+    } catch {
+      /* fall through to the unauthenticated redirect below */
+    }
     const { sid: _sid, ...query } = to.query
     return { path: to.path, query, replace: true }
   }
@@ -66,8 +132,7 @@ router.beforeEach(async (to) => {
   if (to.name === 'Setup') return { path: '/' }
   if (!session.authenticated && to.name !== 'Login')
     return { name: 'Login', query: { redirect: to.fullPath } }
-  if (session.authenticated && to.name === 'Login')
-    return { path: safeRedirect(to.query.redirect) }
+  if (session.authenticated && to.name === 'Login') return { path: safeRedirect(to.query.redirect) }
   return true
 })
 

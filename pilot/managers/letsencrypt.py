@@ -85,6 +85,8 @@ class LetsEncryptManager:
     def setup_sudoers(self) -> None:
         """Give certbot passwordless sudo for exactly the commands issuing and
         renewing certs needs. Idempotent: same deterministic content every call."""
+        if self.has_passwordless_sudo:
+            return
         bench_user = pwd.getpwuid(self.bench.path.stat().st_uid).pw_name
         certbot = which("certbot") or "/usr/bin/certbot"
         openssl = which("openssl") or "/usr/bin/openssl"

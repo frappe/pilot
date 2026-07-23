@@ -58,7 +58,9 @@ export function useSite(name) {
       store.installable.value = data.installable_apps || []
       store.nginxEnabled.value = data.nginx_enabled ?? false
       store.adminTls.value = data.admin_tls ?? false
-    } catch { /* silent */ }
+    } catch {
+      /* silent */
+    }
   }
 
   async function loadApps() {

@@ -48,7 +48,7 @@ class BenchInitializer:
             ("Install Node.js", python_env_manager.install_node),
             ("Install Node.js dependencies", python_env_manager.install_node_dependencies),
             ("Configure Redis", self._configure_redis),
-            ("Download admin frontend", lambda: self._download_admin_frontend(on_progress)),
+            ("Prepare admin frontend", lambda: self._ensure_admin_frontend(on_progress)),
             ("Generate process config", self._generate_process_config),
         ]
 
@@ -116,13 +116,10 @@ class BenchInitializer:
 
         ProcessManager.for_bench(self.bench).write_config()
 
-    def _download_admin_frontend(self, on_progress: Callable[[str], None]) -> None:
-        from admin.backend.frontend import build_admin_frontend, download_admin_frontend
-        from pilot.utils import cli_root
+    def _ensure_admin_frontend(self, on_progress: Callable[[str], None]) -> None:
+        from admin.backend.frontend import ensure_admin_frontend
 
-        if not download_admin_frontend(cli_root()):
-            on_progress("  Pre-built download failed - building from source (requires Node.js)...")
-            build_admin_frontend(on_progress=on_progress)
+        ensure_admin_frontend(on_progress)
 
     def _install_system_packages(self) -> None:
         from pilot.managers.environment import PythonEnvManager

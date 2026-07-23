@@ -10,7 +10,8 @@ from pilot.exceptions import BenchError
 
 @dataclass(kw_only=True)
 class GenerateSessionCommand(Command):
-    name: ClassVar[str] = "generate-admin-session"
+    name: ClassVar[str] = "generate-session"
+    group: ClassVar[str] = "admin"
     help: ClassVar[str] = "Issue a 5-minute one-time sign-in token (use --full-path for a sign-in URL)."
 
     full_path: Annotated[bool, Arg(help="Print the full admin URL with ?sid= instead of the bare token.")] = (
@@ -48,6 +49,7 @@ def _default_ttl() -> int:
 @dataclass(kw_only=True)
 class IssueSiteTokenCommand(Command):
     name: ClassVar[str] = "issue-site-token"
+    group: ClassVar[str] = "admin"
     help: ClassVar[str] = "Issue a scoped JWT for site-to-bench API calls."
 
     site: Annotated[str, Arg(help="Site name to scope the token to.")]
