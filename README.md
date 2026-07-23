@@ -43,6 +43,13 @@ curl -fsSL https://raw.githubusercontent.com/frappe/pilot/main/install.sh | bash
 
 On a root-only VPS, run it as root; the installer creates a non-root bench user.
 
+This installs the latest release (prebuilt admin UI, no build step). Contributors
+who want a source checkout that compiles the admin UI locally can pass `--dev`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/frappe/pilot/main/install.sh | bash -s -- --dev
+```
+
 ## Basic Usage
 
 Create a bench and launch the setup wizard:
