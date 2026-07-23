@@ -45,8 +45,10 @@ id frappe
 git config --system safe.directory '*' 2>/dev/null || \
     git config --global safe.directory '*'
 
+# --dev clones the mounted source checkout; the default path would fetch a
+# release tarball, which does not exist for an unreleased commit under test.
 echo "--- path B: bench user run installs everything ---"
-su - frappe -c "PILOT_REPO_URL=$PILOT_REPO_URL PILOT_BRANCH=$PILOT_BRANCH sh /pilot-src/install.sh"
+su - frappe -c "PILOT_REPO_URL=$PILOT_REPO_URL PILOT_BRANCH=$PILOT_BRANCH sh /pilot-src/install.sh --dev"
 
 echo "--- assertions ---"
 su - frappe -c 'test -x "$HOME/pilot/bench"'

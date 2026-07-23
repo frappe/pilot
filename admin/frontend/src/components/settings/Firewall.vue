@@ -162,6 +162,8 @@ onMounted(async () => {
     } catch {
       myIp.value = ''
     }
+  } catch (e) {
+    error.value = e.message || 'Could not load settings.'
   } finally {
     loading.value = false
   }

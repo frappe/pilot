@@ -2,10 +2,12 @@
   <div>
     <p class="font-semibold text-ink-gray-8 text-base">General</p>
     <div class="mt-1 [&_[data-slot='label']]:text-sm [&_div:has([data-slot='description'])]:mt-0.5">
-      <div v-for="s in GeneralSettings" :key="s.key"
+      <div v-for="s in visibleSettings" :key="s.key"
         class="py-4 border-b last:border-b-0 border-outline-alpha-gray-1">
         <Switch :label="s.label" :description="s.description" :model-value="getValue(s)"
-          :disabled="savingKey === s.key" @update:model-value="(v) => toggle(s, v)" />
+          :disabled="savingKey === s.key" @update:model-value="(v) => toggle(s, v)"
+          class="[&_label]:text-ink-gray-9"
+          />
       </div>
     </div>
     <ErrorMessage v-if="error" :message="error" class="mt-4" />
@@ -13,10 +15,11 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ErrorMessage, Switch } from 'frappe-ui'
 import { useSite } from '@/composables/sites/useSite'
 import { sitesApi } from '@/api/sites'
+import { settingsApi } from '@/api/settings'
 
 const props = defineProps({ siteName: { type: String, required: true } })
 
@@ -48,6 +51,20 @@ const GeneralSettings = [
 
 const savingKey = ref(null)
 const error = ref('')
+const allowDeveloperMode = ref(false)
+
+const visibleSettings = computed(() =>
+  GeneralSettings.filter((s) => s.key !== 'developer_mode' || allowDeveloperMode.value),
+)
+
+onMounted(async () => {
+  try {
+    const settings = await settingsApi.get()
+    allowDeveloperMode.value = Boolean(settings?.bench?.allow_developer_mode)
+  } catch {
+    allowDeveloperMode.value = false
+  }
+})
 
 const getValue = (s) => s.get(site.value?.site_config)
 

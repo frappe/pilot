@@ -143,7 +143,7 @@ class BenchRuntime:
         self.bench.write_common_site_config()
 
     def _ensure_admin_dist(self, on_progress: Callable[[str], None]) -> None:
-        from admin.backend.frontend import build_admin_frontend, download_admin_frontend
+        from admin.backend.frontend import build_admin_frontend
         from pilot.utils import cli_root
 
         root = cli_root()
@@ -152,11 +152,13 @@ class BenchRuntime:
         has_source = (frontend / "package.json").exists()
 
         if not (dist / "assets").exists():
+            if not has_source:
+                raise BenchError(
+                    "Admin UI is missing from this release. Reinstall bench-cli, "
+                    "or run it from a source checkout."
+                )
             on_progress("Admin UI not built yet; building it now...")
-            if has_source:
-                build_admin_frontend(True, on_progress=on_progress)
-            else:
-                download_admin_frontend(root)
+            build_admin_frontend(on_progress=on_progress)
             return
 
         if has_source and self._admin_source_is_newer(frontend, dist):
@@ -167,12 +169,12 @@ class BenchRuntime:
 
         on_progress("Admin UI source changed since last build; rebuilding...")
         try:
-            build_admin_frontend(True, on_progress=on_progress)
+            build_admin_frontend(on_progress=on_progress)
         except BenchError as error:
             on_progress(f"  Could not rebuild the admin UI ({error}); serving the existing build.")
 
     def _start_wizard(self, on_progress: Callable[[str], None]) -> None:
-        from admin.backend.frontend import download_admin_frontend
+        from admin.backend.frontend import ensure_admin_frontend
         from pilot.managers.environment import AdminEnvManager
         from pilot.utils import cli_root
 
@@ -182,8 +184,7 @@ class BenchRuntime:
 
         assets = root / "admin" / "backend" / "static" / "dist" / "assets"
         if not assets.exists():
-            on_progress("Downloading admin frontend...")
-            download_admin_frontend(root)
+            ensure_admin_frontend(on_progress)
 
         port = self._admin_port()
         on_progress("\nBench not initialized. Starting setup wizard...")

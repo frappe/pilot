@@ -83,6 +83,8 @@ async function load() {
     provider.value = s3.provider || providers.value[0]?.value || ''
     region.value = s3.region || ''
     secretKeySet.value = !!s3.secret_key_set
+  } catch (e) {
+    error.value = e.message || 'Could not load settings.'
   } finally {
     loading.value = false
   }

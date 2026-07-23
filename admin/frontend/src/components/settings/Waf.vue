@@ -163,6 +163,8 @@ onMounted(async () => {
     ruleFields.value = waf.rule_fields || []
     ruleOperators.value = waf.rule_operators || []
     ruleActions.value = waf.rule_actions || []
+  } catch (e) {
+    error.value = e.message || 'Could not load settings.'
   } finally {
     loading.value = false
   }

@@ -48,7 +48,7 @@ function breadcrumbsFromRouteMeta({ title = '', group }) {
 
 <template>
   <MobileShell v-if="isMobile">
-    <header class="z-10 flex min-h-12 flex-col justify-center border-b bg-surface-base px-3 sm:px-5">
+    <header class="sticky top-0 z-10 flex min-h-12 flex-col justify-center border-b bg-surface-base px-3 sm:px-5">
       <div class="flex items-center justify-between">
         <template v-if="route.name == 'Home'">
           <PilotLogo class="size-6 rounded-sm" />
@@ -93,7 +93,7 @@ function breadcrumbsFromRouteMeta({ title = '', group }) {
       <Sidebar />
     </template>
 
-    <header class="z-10 flex min-h-12 flex-col justify-center border-b bg-surface-base px-3 sm:px-5">
+    <header class="sticky top-0 z-10 flex min-h-12 flex-col justify-center border-b bg-surface-base px-3 sm:px-5">
       <div class="flex items-center justify-between">
         <div class="flex flex-1 items-center gap-2">
           <Breadcrumbs :items="breadcrumbs" />

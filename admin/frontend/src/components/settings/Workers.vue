@@ -89,6 +89,8 @@ onMounted(async () => {
   try {
     const data = await settingsApi.get()
     groups.value = (data.workers || []).map(toGroupForm)
+  } catch (e) {
+    error.value = e.message || 'Could not load settings.'
   } finally {
     loading.value = false
   }

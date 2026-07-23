@@ -24,7 +24,7 @@ const header = computed(() => ({ title: 'Pilot', menuItems: menuItems.value }))
 
 <template>
   <Sidebar :header="isMobile ? undefined : header" :sections="sidebarSections" :disable-collapse="isMobile"
-    class="dark:border-outline-gray-2" :class="isMobile ? '!w-full !border-r-0 mobile-sidebar' : ''">
+    class="dark:border-outline-gray-2" :class="isMobile ? '!w-full !border-r-0 mobile-sidebar bg-transparent' : ''">
     <template #sidebar-item="{ item }">
       <SidebarItem :label="item.label" :icon="item.icon" :to="item.to" :isActive="isActive(item.to)"
         :class="isActive(item.to) ? '!text-ink-gray-9' : '!text-ink-gray-7'" />

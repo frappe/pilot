@@ -19,8 +19,6 @@ Bench commands with `--bench NAME` can run from outside the bench directory. `Be
 - `bench stop`: stop bench processes.
 - `bench restart`: restart the production workload.
 - `bench build`: build assets or download prebuilt assets when available.
-- `bench update`: pull app code and migrate sites.
-- `bench upgrade`: update bench-cli and admin frontend assets.
 - `bench frappe -- ...`: pass through to Frappe's bench helper.
 
 Some runtime commands support all benches when invoked with the CLI option for all-bench execution.
@@ -66,10 +64,12 @@ These commands control the task worker, not individual Frappe workers.
 
 ## Admin Commands
 
-- `bench build-admin`: download or rebuild Admin frontend assets.
-- `bench set-central-config`: store Central endpoint and Pilot auth token.
-- `bench generate-admin-session`: create an Admin session token.
-- `bench issue-site-token`: issue a scoped site-to-bench API token.
+- `bench admin build`: rebuild Admin frontend assets from source.
+- `bench admin upgrade`: update bench-cli to the latest version and restart the admin service.
+- `bench admin enroll`: exchange the bootstrap token for this bench's Central credential.
+- `bench admin set-central-config`: store Central endpoint and Pilot auth token.
+- `bench admin generate-session`: create an Admin session token.
+- `bench admin issue-site-token`: issue a scoped site-to-bench API token.
 
 Admin commands live in `pilot/commands/admin`. Backend route behavior lives under `admin/backend/api/v1`.
 

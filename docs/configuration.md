@@ -51,6 +51,7 @@ count = 1
 - `socketio_backend`: `node` or `python`.
 - `db_type`: `mariadb`, `postgres`, or `sqlite`.
 - `default_branch`: optional branch default for new apps.
+- `allow_developer_mode`: allows developer mode to be toggled per site. Developer mode itself stays in each site's `site_config.json`.
 - `watch_apps_js`, `watch_admin_js`, `reload_python`: development toggles.
 
 ## Apps

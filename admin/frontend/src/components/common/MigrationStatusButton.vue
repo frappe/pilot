@@ -4,7 +4,7 @@
       <template #prefix>
         <span class="size-4" :class="[status.icon, { 'animate-spin': status.kind === 'active' }]" />
       </template>
-      <span class="hidden sm:inline">{{ status.label }}</span>
+      {{ status.label }}
     </Button>
     <UpdateAppsDialog v-model="showDialog" />
   </template>

@@ -11,6 +11,7 @@ class EnrollCommand(Command):
     """Enroll this bench with Central."""
 
     name: ClassVar[str] = "enroll"
+    group: ClassVar[str] = "admin"
     help: ClassVar[str] = "Exchange the bootstrap token for this bench's Central credential."
 
     endpoint: Annotated[str, Arg(help="Central API base URL.")] = ""

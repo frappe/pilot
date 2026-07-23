@@ -1,7 +1,12 @@
-import { request } from './client'
+import { request, unwrap } from './client'
 
 export const settingsApi = {
-  get: () => request.get('settings').json(),
-  update: (data) => request.patch('settings', { json: data }).json(),
+  get: () => unwrap(request.get('settings').json()),
+  update: (data) => unwrap(request.patch('settings', { json: data }).json()),
   myIp: () => request.get('network/client').json(),
+}
+
+export const cliUpdatesApi = {
+  status: () => unwrap(request.get('cli-updates').json()),
+  check: () => unwrap(request.post('cli-update-checks').json()),
 }

@@ -18,6 +18,7 @@ class ConfigPatcher:
         self.data = data
 
     def apply(self) -> str | None:
+        self._apply_bench()
         self._apply_workers()
         self._apply_firewall()
         self._apply_waf()
@@ -30,6 +31,17 @@ class ConfigPatcher:
         except Exception as error:
             return str(error)
         return None
+
+    def _apply_bench(self) -> None:
+        bench = self.data.get("bench") or {}
+        if "http_port" in bench:
+            self.config.http_port = int(bench["http_port"])
+        if "socketio_port" in bench:
+            self.config.socketio_port = int(bench["socketio_port"])
+        if "default_branch" in bench:
+            self.config.default_branch = str(bench["default_branch"]).strip()
+        if "allow_developer_mode" in bench:
+            self.config.allow_developer_mode = bool(bench["allow_developer_mode"])
 
     def _apply_workers(self) -> None:
         workers = self.data.get("workers")

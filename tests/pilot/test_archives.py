@@ -116,24 +116,6 @@ def test_extract_rejects_existing_symlink_parent(tmp_path: Path) -> None:
     assert not (outside / "escape.txt").exists()
 
 
-def test_admin_frontend_download_rejects_unsafe_archive(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from pilot.commands.admin.start import download_admin_frontend
-
-    archive = _archive(tmp_path / "admin.tar", [_file("../../escape.txt")])
-
-    def retrieve(_url: str, destination: str | Path):
-        Path(destination).write_bytes(archive.read_bytes())
-        return str(destination), None
-
-    monkeypatch.setattr(urllib.request, "urlretrieve", retrieve)
-    cli_root = tmp_path / "cli"
-
-    assert download_admin_frontend(cli_root) is False
-    assert not (cli_root / "admin" / "escape.txt").exists()
-
-
 def test_prebuilt_asset_download_rejects_unsafe_archive(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

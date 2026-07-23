@@ -22,6 +22,9 @@ BENCH_USER="${BENCH_USER:-$DEFAULT_USER}"
 # that fallback still shells out to sudo, and unattended runs (e.g. CI) can't
 # answer its password prompt.
 SUDO_PASS="${SUDO_PASS:-}"
+# Default install pulls a prebuilt release tarball; --dev git-clones main and
+# compiles the admin frontend from source (for contributors).
+DEV_MODE="${PILOT_DEV:-}"
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -29,6 +32,7 @@ while [ $# -gt 0 ]; do
         --user=*) BENCH_USER="${1#*=}"; shift ;;
         --sudo-password|--sudo-pass) SUDO_PASS="$2"; shift 2 ;;
         --sudo-password=*|--sudo-pass=*) SUDO_PASS="${1#*=}"; shift ;;
+        --dev) DEV_MODE=1; shift ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
@@ -216,7 +220,8 @@ bootstrap_packages() {
 # bench runs one MariaDB server and one PostgreSQL server per bench user
 # (rootless, systemctl --user) shared across that user's benches, so the
 # engines must already be installed system-wide before `bench init` ever
-# runs — the runtime never installs packages itself. Root, one-time.
+# runs — the runtime never installs packages itself, and the bench user has
+# no privileges to. Root, one-time.
 _MARIADB_REPO_SETUP_URL="https://r.mariadb.com/downloads/mariadb_repo_setup"
 _MARIADB_VERSION="11.8"
 _POSTGRES_VERSION="16"
@@ -243,13 +248,13 @@ install_database_engines() {
             # (MariaDBManager/PostgresManager _DEFAULT_VERSION), so the formula
             # this installs is the same one BrewPackageManager would lazily
             # reach for later.
-            pkg_install "mariadb@$_MARIADB_VERSION" "postgresql@$_POSTGRES_VERSION" ;;
+            pkg_install "mariadb@$_MARIADB_VERSION" "postgresql@$_POSTGRES_VERSION" redis ;;
         debian|ubuntu)
-            pkg_install mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config ;;
+            pkg_install mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config redis-server ;;
         fedora)
-            pkg_install mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config ;;
+            pkg_install mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config redis ;;
         arch)
-            pkg_install mariadb mariadb-clients mariadb-libs postgresql postgresql-libs pkgconf ;;
+            pkg_install mariadb mariadb-clients mariadb-libs postgresql postgresql-libs pkgconf redis ;;
     esac
 }
 
@@ -263,6 +268,8 @@ disable_system_db_services() {
         *)
             run_sudo systemctl disable --now mariadb 2>/dev/null || true
             run_sudo systemctl disable --now postgresql 2>/dev/null || true
+            run_sudo systemctl disable --now redis-server 2>/dev/null || true
+            run_sudo systemctl disable --now redis 2>/dev/null || true
             ;;
     esac
 }
@@ -341,6 +348,17 @@ admin_group() {
     esac
 }
 
+# Bench services run as `systemctl --user` units, so the bench user's systemd
+# instance must stay alive with no login session. Enabling lingering also
+# starts it, creating the D-Bus socket every `systemctl --user` call needs.
+systemd_booted() {
+    [ -d /run/systemd/system ] && command -v loginctl >/dev/null 2>&1
+}
+
+linger_enabled() {
+    [ "$(loginctl show-user "$1" --property=Linger 2>/dev/null)" = "Linger=yes" ]
+}
+
 # ── Path A: running as root → create the bench user, then stop ───────────────
 # We do NOT switch users on the fly. We prepare the account and ask the operator
 # to re-run the installer as that user.
@@ -351,6 +369,11 @@ if [ "$(id -u)" -eq 0 ]; then
         echo "Creating user '$BENCH_USER'..."
         useradd -m -s /bin/bash "$BENCH_USER"
         usermod -aG "$(admin_group)" "$BENCH_USER" 2>/dev/null || true
+    fi
+
+    if systemd_booted && ! linger_enabled "$BENCH_USER"; then
+        echo "Enabling systemd lingering for '$BENCH_USER'..."
+        loginctl enable-linger "$BENCH_USER"
     fi
 
     echo ""
@@ -371,15 +394,55 @@ fi
 # All system-wide, privileged setup (base tools, database engines, Node.js)
 # already happened in bootstrap() above — as root, or earlier in this same
 # run if a base tool was missing — so nothing below here needs sudo.
+# Lingering is normally enabled by the root pass above. If this user was
+# prepared some other way, only root can turn it on — fail here rather than
+# midway through `bench init`, where systemctl --user has no bus to talk to.
+if systemd_booted && ! linger_enabled "$(id -un)"; then
+    if ! sudo -n loginctl enable-linger "$(id -un)" 2>/dev/null; then
+        echo "systemd lingering is not enabled for '$(id -un)', and this user cannot" >&2
+        echo "enable it without a password. Bench services run as systemctl --user" >&2
+        echo "units, which need it." >&2
+        echo "" >&2
+        echo "Run this as root, then re-run the installer:" >&2
+        echo "" >&2
+        echo "   loginctl enable-linger $(id -un)" >&2
+        exit 1
+    fi
+fi
+
 echo "Setting up your environment..."
 
-# ── clone or update the repo ──────────────────────────────────────────────────
-if [ -d "$PILOT_DIR" ]; then
-    echo "Updating pilot..."
-    git -C "$PILOT_DIR" pull
+# ── fetch pilot: release tarball (default) or git clone (--dev) ────────────────
+# The release tarball ships the compiled admin frontend and a VERSION file;
+# --dev clones the source so contributors always build the frontend locally.
+install_release_tarball() {
+    releases_api="https://api.github.com/repos/frappe/pilot/releases?per_page=1"
+    echo "Fetching the latest pilot release..."
+    asset_url=$(curl -fsSL --proto '=https' --tlsv1.2 "$releases_api" \
+        | grep -o 'https://[^"]*/pilot\.tar\.gz' | head -n1)
+    if [ -z "$asset_url" ]; then
+        echo "Could not find a pilot.tar.gz release asset." >&2
+        echo "Install a development checkout instead with: $INSTALL_URL --dev" >&2
+        exit 1
+    fi
+    tmp="$(mktemp)"
+    curl -fsSL --proto '=https' --tlsv1.2 "$asset_url" -o "$tmp"
+    # tar only writes archived paths, so an existing benches/ (local data) is left intact.
+    mkdir -p "$PILOT_DIR"
+    tar -xzf "$tmp" -C "$PILOT_DIR"
+    rm -f "$tmp"
+}
+
+if [ -n "$DEV_MODE" ]; then
+    if [ -d "$PILOT_DIR/.git" ]; then
+        echo "Updating pilot (dev)..."
+        git -C "$PILOT_DIR" pull
+    else
+        echo "Cloning pilot ($BRANCH_NAME branch)..."
+        git clone -b "$BRANCH_NAME" "$REPO_URL" "$PILOT_DIR"
+    fi
 else
-    echo "Cloning pilot ($BRANCH_NAME branch)..."
-    git clone -b "$BRANCH_NAME" "$REPO_URL" "$PILOT_DIR"
+    install_release_tarball
 fi
 
 chmod +x "$PILOT_DIR/bench"

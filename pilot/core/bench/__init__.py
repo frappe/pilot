@@ -337,26 +337,6 @@ class Bench:
             if raises:
                 raise
 
-    def update(
-        self,
-        apps_filter: set | None = None,
-        skip_failing_patches: bool = False,
-        on_step: Callable[[str, str], None] = lambda key, label: None,
-        on_progress: Callable[[str], None] = lambda message: None,
-    ) -> None:
-        """Update apps, dependencies, assets, sites, and workers."""
-        on_step("fetch", "Fetching latest code")
-        self._update_apps(apps_filter, on_progress)
-        on_step("install", "Installing dependencies")
-        self._reinstall_apps(apps_filter, on_progress)
-        on_step("assets", "Building assets")
-        self._rebuild_assets(apps_filter, on_progress)
-        on_step("migrate", "Migrating sites")
-        self._migrate_sites(skip_failing_patches, on_progress)
-        on_step("restart", "Restarting services")
-        self.reload_workers()
-        on_step("done", "Done")
-
     def _update_apps(
         self,
         apps_filter: set | None,
