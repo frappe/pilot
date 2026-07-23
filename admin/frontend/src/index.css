@@ -6,20 +6,20 @@
 
 
 body {
-  @apply bg-surface-base text-ink-gray-9;
+  @apply bg-surface-base text-ink-gray-9 text-base;
 }
 
-.text-base,
-.text-base-medium {
-  @apply !text-[16px];
-}
+/* .text-base, */
+/* .text-base-medium { */
+/*   @apply !text-[16px]; */
+/* } */
 
-@screen sm {
-  .text-base,
-  .text-base-medium {
-    @apply !text-[14px];
-  }
-}
+/* @screen sm { */
+/*   .text-base, */
+/*   .text-base-medium { */
+/*     @apply !text-[14px]; */
+/*   } */
+/* } */
 
 .mobile-sidebar [data-slot='sidebar-item'] .text-sm {
   @apply !text-[16px];
