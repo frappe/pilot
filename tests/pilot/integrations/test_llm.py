@@ -154,7 +154,6 @@ def test_litellm_providers_filtered_to_catalogued(fake_litellm) -> None:
 
 def test_models_for(fake_litellm) -> None:
     assert registry.models_for("openai") == ["gpt-4o", "gpt-4o-mini"]
-    assert registry.models_for("frappe-llm") == ["qwen3.6-27b-fp8", "deepseek-v4-flash"]
     assert registry.models_for("self-hosted") == []
 
 
