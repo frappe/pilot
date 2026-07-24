@@ -18,17 +18,21 @@ export const request = ky.create({
   prefix: '/api/v1/editor',
   searchParams: { app: APP },
   throwHttpErrors: false,
-  // ky defaults to 10s; git/mariadb operations can legitimately run longer.
   timeout: 60_000,
   hooks: {
     afterResponse: [
-      // 401 only: a 403 (editor disabled, wrong token scope) is not fixed by a login.
       ({ response }) => {
-        if (response.status === 401) redirectToLogin()
+        if (response.status === 401 || isLoginRedirect(response)) redirectToLogin()
       },
     ],
   },
 })
+
+function isLoginRedirect(response) {
+  if (!response.redirected) return false
+  const type = response.headers.get('content-type') || ''
+  return type.includes('text/html')
+}
 
 // Parse a JSON body. With a fallback, returns it on any failed request; without
 // one, throws the server's message. Empty bodies yield the fallback or null.
