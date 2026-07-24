@@ -3,7 +3,10 @@
     v-if="store.tabs.length"
     class="bg-chrome flex h-10 shrink-0 items-stretch border-b border-outline-gray-1 sm:h-9"
   >
-    <div class="flex min-w-0 flex-1 items-stretch overflow-x-auto no-scrollbar">
+    <div
+      class="flex min-w-0 flex-1 items-stretch overflow-x-auto no-scrollbar"
+      @wheel="onWheel"
+    >
       <div
         v-for="t in store.tabs"
         :key="t.path"
@@ -91,6 +94,12 @@ const longPressTimer = ref(null)
 let longPressTriggered = false
 
 const dirtyCount = computed(() => store.tabs.filter((t) => t.dirty).length)
+
+function onWheel(e) {
+  if (e.deltaY === 0) return
+  e.currentTarget.scrollLeft += e.deltaY
+  e.preventDefault()
+}
 
 function close(t) {
   if (!t.dirty) {
