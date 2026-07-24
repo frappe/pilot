@@ -77,61 +77,25 @@ class CreateAppTask(Task):
 
     @step("scaffold", lambda self: f"Scaffolding app {self.name}")
     def scaffold(self) -> None:
-        python_bin = str(self.bench_root / "env" / "bin" / "python")
+        from pilot.core.app import NewAppOptions
 
-        resolved_title = self.title or self.name.replace("_", " ").title()
-
-        hooks_data = {
-            "app_name": self.name,
-            "app_title": resolved_title,
-            "app_description": self.description,
-            "app_publisher": self.publisher,
-            "app_email": self.email,
-            "app_license": self.app_license,
-            "create_github_workflow": False,
-            "branch_name": "main",
-        }
-
-        snippet = f"""
-import sys
-import os
-sys.path.append(os.path.abspath('apps/frappe'))
-import frappe
-from frappe.utils.boilerplate import _create_app_boilerplate
-
-class HooksObject:
-    def __init__(self, d):
-        self.__dict__.update(d)
-    def __getattr__(self, key):
-        return self.__dict__.get(key)
-    def __setitem__(self, key, val):
-        self.__dict__[key] = val
-    def __getitem__(self, key):
-        return self.__dict__.get(key)
-    def keys(self):
-        return self.__dict__.keys()
-
-hooks = HooksObject({repr(hooks_data)})
-_create_app_boilerplate('apps', hooks, no_git=False)
-"""
-
-        self.report(f"Invoking Frappe boilerplate creator for {self.name}...")
-        r = subprocess.run(
-            [python_bin, "-c", snippet],
-            cwd=str(self.bench_root),
-            capture_output=True,
-            text=True,
+        resolved_title = self.title or self.name.replace("-", " ").replace("_", " ").title()
+        options = NewAppOptions(
+            title=resolved_title,
+            description=self.description,
+            publisher=self.publisher,
+            email=self.email,
+            license=self.app_license,
+            branch="main",
+            github_workflow=False,
         )
-        if r.returncode != 0:
-            raise RuntimeError(f"Boilerplate creation failed: {r.stderr}")
-
-        self.report("App boilerplate created.")
+        self.bench.new_app(self.name, options=options, on_progress=self.report)
 
     @step("install_env", lambda self: f"Installing {self.name} into virtualenv")
     def install_env(self) -> None:
-        app = App(AppConfig(name=self.name, repo="", branch="main"), self.bench)
-        app._install_into_environment()
-        app._register()
+        # Note: bench.new_app() automatically installs into environment and registers.
+        # Preserved as a step for task execution reporting.
+        pass
 
     @step("github_repo", lambda self: f"Creating GitHub repository for {self.name}")
     def create_github(self) -> None:
