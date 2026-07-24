@@ -232,3 +232,51 @@ def test_app_update_checks_fetches_each_cloned_app(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert response.get_json() == {"apps": [{"name": "suite"}]}
     repo.fetch.assert_called_once_with("develop", timeout=60)
+
+
+def test_create_app_queues_task_with_empty_sites(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+
+    payload = {
+        "name": "custom_app",
+        "title": "Custom App",
+        "description": "Test description",
+        "publisher": "Test Publisher",
+        "email": "test@example.com",
+        "app_license": "mit",
+        "create_github_repo": False,
+        "sites": [],
+    }
+
+    with patch("pilot.internal.tasks.runner.task_workers.wake", return_value=False):
+        response = client.post("/api/v1/apps/create", json=payload)
+
+    assert response.status_code == 202
+    body = response.get_json()
+    assert body["command"] == "create-app"
+    assert body["args"]["name"] == "custom_app"
+    assert body["args"]["title"] == "Custom App"
+    assert body["args"]["sites"] == []
+
+
+def test_create_app_rejects_missing_name(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+
+    response = client.post("/api/v1/apps/create", json={"title": "No Name"})
+
+    assert response.status_code == 422
+    assert response.get_json()["error"]["code"] == "invalid_app"
+
+
+def test_create_app_rejects_already_existing_app(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    (bench_root / "apps" / "existing_app").mkdir(parents=True)
+    client = _client(bench_root)
+
+    response = client.post("/api/v1/apps/create", json={"name": "existing_app"})
+
+    assert response.status_code == 409
+    assert response.get_json()["error"]["code"] == "app_already_exists"
+

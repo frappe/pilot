@@ -13,6 +13,7 @@ from pilot.internal.validators import validate_app_name, validate_repo_url
 from pilot.tasks.fetch_app_updates import FetchAppUpdatesTask
 from pilot.tasks.get_and_install_app import GetAndInstallAppTask
 from pilot.tasks.get_app import GetAppTask
+from pilot.tasks.create_app import CreateAppTask
 from pilot.tasks.remove_app import RemoveAppTask
 
 apps_bp = Blueprint("apps", __name__)
@@ -114,6 +115,57 @@ def _queue_install_task(bench_root: Path, task_args: dict, sites: list[str]) -> 
         branch=task_args.get("branch", ""),
         marketplace_app=task_args.get("marketplace_app", ""),
     )
+
+
+@apps_bp.post("/create")
+def create_app():
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response("malformed_request", "Expected a JSON object.", 400)
+        
+    name = (data.get("name") or "").strip()
+    if not name:
+        return error_response("invalid_app", "App name is required.", 422)
+        
+    err = validate_app_name(name)
+    if err:
+        return error_response("invalid_app", err, 422)
+        
+    if (bench_root / "apps" / name).exists():
+        return error_response("app_already_exists", f"'{name}' already exists in bench.", 409)
+        
+    task_args = {
+        "name": name,
+        "title": (data.get("title") or "").strip(),
+        "description": (data.get("description") or "").strip(),
+        "publisher": (data.get("publisher") or "").strip(),
+        "email": (data.get("email") or "").strip(),
+        "app_license": (data.get("app_license") or "mit").strip(),
+        "create_github_repo": bool(data.get("create_github_repo", False)),
+        "github_repo_private": bool(data.get("github_repo_private", False)),
+        "sites": sites if isinstance(sites := (data.get("sites") or []), list) else []
+    }
+    
+    try:
+        bench = Bench(bench_root)
+        task_id = CreateAppTask.queue(
+            bench,
+            name=task_args["name"],
+            title=task_args["title"],
+            description=task_args["description"],
+            publisher=task_args["publisher"],
+            email=task_args["email"],
+            app_license=task_args["app_license"],
+            create_github_repo=task_args["create_github_repo"],
+            github_repo_private=task_args["github_repo_private"],
+            sites=task_args["sites"]
+        )
+    except Exception as e:
+        return error_response("app_creation_failed", f"Could not start app creation: {e}", 500)
+        
+    return accepted_task_response(bench_root, task_id)
+
 
 
 @apps_bp.get("/<name>")

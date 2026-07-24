@@ -5,4 +5,5 @@ export const appsApi = {
   installed: () => unwrap(request.get('apps').json()),
   fetchUpdates: () => request.post('apps/fetch').json(),
   add: (payload) => request.post('apps', { json: payload }).json(),
+  create: (payload) => request.post('apps/create', { json: payload }).json(),
 }
