@@ -153,6 +153,16 @@ body {
   z-index: 40 !important;
 }
 
+/*
+ * frappe-ui's Dialog sets no z-index (stacks at auto), but Monaco's own
+ * widgets do (e.g. the read-only "Cannot edit" bubble is z-index: 10000).
+ * Clear Monaco's max so confirm dialogs stay on top of an open diff view.
+ */
+.dialog-overlay,
+.dialog-content {
+  z-index: 10050 !important;
+}
+
 .monaco-editor,
 .monaco-editor .overflow-guard {
   border-radius: 0;
