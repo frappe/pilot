@@ -132,7 +132,14 @@ router.beforeEach(async (to) => {
   if (to.name === 'Setup') return { path: '/' }
   if (!session.authenticated && to.name !== 'Login')
     return { name: 'Login', query: { redirect: to.fullPath } }
-  if (session.authenticated && to.name === 'Login') return { path: safeRedirect(to.query.redirect) }
+  if (session.authenticated && to.name === 'Login') {
+    const target = safeRedirect(to.query.redirect)
+    if (!router.resolve(target).matched.length) {
+      window.location.assign(target)
+      return false
+    }
+    return { path: target }
+  }
   return true
 })
 

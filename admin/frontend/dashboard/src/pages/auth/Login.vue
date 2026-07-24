@@ -79,7 +79,7 @@ import PilotLogo from '@/components/common/PilotLogo.vue'
 import { apiErrorMessage } from '../../api/client'
 import { authApi } from '../../api/auth'
 import { useSession } from '../../composables/auth/useSession'
-import { safeRedirect } from '../../utils/redirect'
+import { redirectAfterLogin } from '../../utils/redirect'
 import { useIsMobile } from '../../composables/common/useIsMobile'
 
 const route = useRoute()
@@ -103,7 +103,7 @@ async function login() {
       return
     }
     await loadSession()
-    router.replace(safeRedirect(route.query.redirect))
+    redirectAfterLogin(router, route.query.redirect)
   } catch (e) {
     console.error(e)
     errorMessage.value = 'Could not reach the server'

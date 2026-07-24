@@ -4,6 +4,15 @@ import { APP } from '@/scope'
 // The editor backend lives under /api/v1/editor and is scoped per app via an
 // ?app= query param (see scope.js). ky passes Request objects, which the global
 // fetch shim leaves untouched, so we scope here in a beforeRequest hook instead.
+let redirectingToLogin = false
+
+function redirectToLogin() {
+  if (redirectingToLogin) return
+  redirectingToLogin = true
+  const back = encodeURIComponent(location.pathname + location.search)
+  location.assign(`/login?redirect=${back}`)
+}
+
 export const request = ky.create({
   prefix: '/api/v1/editor',
   throwHttpErrors: false,
@@ -15,6 +24,12 @@ export const request = ky.create({
         const url = new URL(request.url)
         if (!url.searchParams.has('app')) url.searchParams.set('app', APP)
         return new Request(url, request)
+      },
+    ],
+    afterResponse: [
+      // 401 only: a 403 (editor disabled, wrong token scope) is not fixed by a login.
+      ({ response }) => {
+        if (response.status === 401) redirectToLogin()
       },
     ],
   },
