@@ -143,6 +143,16 @@ body {
   scrollbar-width: none;
 }
 
+/*
+ * frappe-ui/reka portals dropdowns to <body> and leaves the popper wrapper at
+ * z-auto. On mobile the sidebar panel is fixed inset-0 z-30 and opaque, so it
+ * paints over any dropdown opened inside it (branch/remote menus). Lift the
+ * wrapper above the panel; still below modals (z-50) and context menus (z-50).
+ */
+[data-reka-popper-content-wrapper] {
+  z-index: 40 !important;
+}
+
 .monaco-editor,
 .monaco-editor .overflow-guard {
   border-radius: 0;
