@@ -64,7 +64,7 @@ def test_ensure_fresh_skips_network_within_refresh_window(tmp_path: Path, _point
         cache.ensure_fresh()
 
     mock_head.assert_not_called()
-    assert cache.apps_json_path.read_text() == '{"apps": []}'  # unchanged — stale check skipped
+    assert cache.apps_json_path.read_text() == '{"apps": []}'  # unchanged - stale check skipped
 
 
 def test_ensure_fresh_pulls_when_refresh_window_elapsed(tmp_path: Path, _point_at_local_remote) -> None:
@@ -196,7 +196,7 @@ def test_daily_refresh_cron_command_quotes_paths_with_spaces(tmp_path: Path) -> 
 
 def test_subsequent_ensure_fresh_does_not_reinstall_cron(tmp_path: Path) -> None:
     cache = make_cache(tmp_path)
-    cache.ensure_fresh()  # first clone — installs cron (via autouse-patched CronManager)
+    cache.ensure_fresh()  # first clone - installs cron (via autouse-patched CronManager)
 
     with patch("pilot.core.registry_cache.CronManager") as mock_cron_cls:
         cache.ensure_fresh()  # already cloned, within refresh window

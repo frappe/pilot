@@ -7,5 +7,6 @@ export const gitApi = {
   disconnect: () => request.delete('git/connection'),
   repos: () => request.get('git/repositories').json(),
   branches: (repo) => request.get('git/branches', { searchParams: { repo } }).json(),
-  resolve: (repo, branch) => request.post('git/repository-resolutions', { json: { repo, branch: branch || '' } }).json(),
+  resolve: (repo, branch) =>
+    request.post('git/repository-resolutions', { json: { repo, branch: branch || '' } }).json(),
 }

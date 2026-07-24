@@ -1,4 +1,4 @@
-"""Tests for pilot.integrations.git — credential storage and URL helpers."""
+"""Tests for pilot.integrations.git - credential storage and URL helpers."""
 
 from __future__ import annotations
 

@@ -1,9 +1,21 @@
 // Catppuccin Mocha palette for ANSI colours
 const ANSI_FG = {
-  30: '#45475a', 31: '#f38ba8', 32: '#a6e3a1', 33: '#f9e2af',
-  34: '#89b4fa', 35: '#cba6f7', 36: '#89dceb', 37: '#cdd6f4',
-  90: '#585b70', 91: '#f38ba8', 92: '#a6e3a1', 93: '#f9e2af',
-  94: '#89b4fa', 95: '#cba6f7', 96: '#89dceb', 97: '#ffffff',
+  30: '#45475a',
+  31: '#f38ba8',
+  32: '#a6e3a1',
+  33: '#f9e2af',
+  34: '#89b4fa',
+  35: '#cba6f7',
+  36: '#89dceb',
+  37: '#cdd6f4',
+  90: '#585b70',
+  91: '#f38ba8',
+  92: '#a6e3a1',
+  93: '#f9e2af',
+  94: '#89b4fa',
+  95: '#cba6f7',
+  96: '#89dceb',
+  97: '#ffffff',
 }
 
 export function escapeHtml(text) {
@@ -20,9 +32,11 @@ export function ansiToHtml(text) {
           html += '</span>'.repeat(openSpans)
           openSpans = 0
         } else if (code === '1') {
-          html += '<span style="font-weight:bold">'; openSpans++
+          html += '<span style="font-weight:bold">'
+          openSpans++
         } else if (ANSI_FG[code]) {
-          html += `<span style="color:${ANSI_FG[code]}">`;  openSpans++
+          html += `<span style="color:${ANSI_FG[code]}">`
+          openSpans++
         }
       }
     } else if (!part.startsWith('\x1b[')) {

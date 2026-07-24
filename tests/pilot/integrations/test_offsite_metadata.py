@@ -14,7 +14,7 @@ class _FakeS3:
         self.max_active = 0
         self._guard = threading.Lock()
 
-    def object_exists(self, bucket: str, key: str) -> bool:
+    def has_object(self, bucket: str, key: str) -> bool:
         return key in self.objects
 
     def read_json(self, bucket: str, key: str) -> dict:
@@ -54,7 +54,7 @@ def test_concurrent_adds_keep_every_run(tmp_path) -> None:
         lambda i: metadata.add(timestamps[i], f"{timestamps[i]}-database.sql.gz"), len(timestamps)
     )
 
-    stored = s3.objects[BackupKeys("site").month(timestamps[0])]
+    stored = s3.objects[BackupKeys("site").get_month_key(timestamps[0])]
     assert set(stored) == set(timestamps)
     assert s3.max_active == 1
 
@@ -69,6 +69,6 @@ def test_concurrent_add_and_remove_do_not_corrupt(tmp_path) -> None:
 
     _run_concurrently(lambda i: metadata.remove(timestamps[i], f"{timestamps[i]}-database.sql.gz"), 3)
 
-    stored = s3.objects[keys.month(timestamps[0])]
+    stored = s3.objects[keys.get_month_key(timestamps[0])]
     assert set(stored) == set(timestamps[3:])
     assert s3.max_active == 1

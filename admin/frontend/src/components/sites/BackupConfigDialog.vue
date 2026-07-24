@@ -5,10 +5,23 @@
         <Checkbox v-model="isEnabled" label="Enable automated backups" />
 
         <template v-if="isEnabled">
-          <div class="gap-4 grid grid-cols-1" :class="frequency === 'daily' ? 'sm:grid-cols-2' : 'sm:grid-cols-3'">
+          <div
+            class="gap-4 grid grid-cols-1"
+            :class="frequency === 'daily' ? 'sm:grid-cols-2' : 'sm:grid-cols-3'"
+          >
             <Select label="Frequency" v-model="frequency" :options="FREQ_OPTIONS" />
-            <Select v-if="frequency === 'weekly'" label="Day of week" v-model.number="weekday" :options="weekdayOptions" />
-            <Select v-if="frequency === 'monthly'" label="Day of month" v-model.number="monthDay" :options="monthDayOptions" />
+            <Select
+              v-if="frequency === 'weekly'"
+              label="Day of week"
+              v-model.number="weekday"
+              :options="weekdayOptions"
+            />
+            <Select
+              v-if="frequency === 'monthly'"
+              label="Day of month"
+              v-model.number="monthDay"
+              :options="monthDayOptions"
+            />
             <Select label="Time" v-model.number="hour" :options="hourOptions" />
           </div>
 
@@ -18,7 +31,13 @@
               <p class="text-ink-gray-5 text-p-sm">{{ schemeHint }}</p>
             </div>
 
-            <FormControl v-if="scheme === 'fifo'" label="Backups to keep" type="number" min="0" v-model.number="keepLast" />
+            <FormControl
+              v-if="scheme === 'fifo'"
+              label="Backups to keep"
+              type="number"
+              min="0"
+              v-model.number="keepLast"
+            />
             <div v-else class="gap-4 grid grid-cols-2 sm:grid-cols-4">
               <FormControl label="Daily" type="number" min="0" v-model.number="keepDaily" />
               <FormControl label="Weekly" type="number" min="0" v-model.number="keepWeekly" />
@@ -58,8 +77,15 @@ const SCHEME_OPTIONS = [
   { label: 'GFS (daily / weekly / monthly / yearly)', value: 'gfs' },
   { label: 'FIFO (keep newest N)', value: 'fifo' },
 ]
-const weekdayOptions = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-  .map((label, value) => ({ label, value }))
+const weekdayOptions = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+].map((label, value) => ({ label, value }))
 // Cap at 28 so the chosen day exists in every month.
 const monthDayOptions = Array.from({ length: 28 }, (_, i) => ({ label: `${i + 1}`, value: i + 1 }))
 const hourOptions = Array.from({ length: 24 }, (_, h) => ({ label: formatHour(h), value: h }))
@@ -96,9 +122,13 @@ function applySchedule(schedule) {
   if (!schedule) return
   const [, h, dom, , dow] = schedule.split(' ')
   hour.value = parseInt(h) || 0
-  if (dom !== '*') { frequency.value = 'monthly'; monthDay.value = parseInt(dom) || 1 }
-  else if (dow !== '*') { frequency.value = 'weekly'; weekday.value = parseInt(dow) || 0 }
-  else frequency.value = 'daily'
+  if (dom !== '*') {
+    frequency.value = 'monthly'
+    monthDay.value = parseInt(dom) || 1
+  } else if (dow !== '*') {
+    frequency.value = 'weekly'
+    weekday.value = parseInt(dow) || 0
+  } else frequency.value = 'daily'
 }
 
 function applyRetention(retention) {
@@ -130,8 +160,14 @@ async function save() {
   error.value = ''
   try {
     if (isEnabled.value) {
-      const result = await sitesApi.backups.schedule.set(props.siteName, { schedule: cron.value, retention: retentionPayload() })
-      if (result.error) { error.value = apiErrorMessage(result, 'Could not save.'); return }
+      const result = await sitesApi.backups.schedule.set(props.siteName, {
+        schedule: cron.value,
+        retention: retentionPayload(),
+      })
+      if (result.error) {
+        error.value = apiErrorMessage(result, 'Could not save.')
+        return
+      }
     } else {
       const response = await sitesApi.backups.schedule.remove(props.siteName)
       if (!response.ok) {

@@ -58,7 +58,9 @@ export function useSite(name) {
       store.installable.value = data.installable_apps || []
       store.nginxEnabled.value = data.nginx_enabled ?? false
       store.adminTls.value = data.admin_tls ?? false
-    } catch { /* silent */ }
+    } catch {
+      /* silent */
+    }
   }
 
   async function loadApps() {
@@ -93,13 +95,13 @@ export function useSite(name) {
     await _fetchBackups()
   }
 
-  /** Re-fetches with a larger `limit` — ListFooter's page-length control. */
+  /** Re-fetches with a larger `limit` - ListFooter's page-length control. */
   async function setBackupsPageLength(pageLength) {
     store.backupsLimit.value = pageLength
     await _fetchBackups()
   }
 
-  /** ListFooter's "Load More" — grows the page by one more page-length step. */
+  /** ListFooter's "Load More" - grows the page by one more page-length step. */
   async function loadMoreBackups() {
     store.backupsLimit.value += BACKUPS_PAGE_SIZE
     await _fetchBackups()

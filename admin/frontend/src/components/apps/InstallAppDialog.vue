@@ -4,35 +4,48 @@
       <div class="space-y-5">
         <p v-if="presetSite" class="text-ink-gray-7 text-sm">
           Install <strong>{{ appLabel }}</strong> on <strong>{{ presetSite.name }}</strong>?
-          <span v-if="presetInstalled" class="block mt-1 text-ink-gray-5">Already installed on this site.</span>
+          <span v-if="presetInstalled" class="block mt-1 text-ink-gray-5"
+            >Already installed on this site.</span
+          >
         </p>
 
         <div v-else class="gap-2 grid max-h-96 overflow-y-auto">
-          <button type="button"
+          <button
+            type="button"
             class="flex items-center gap-3 p-3 border rounded-lg text-left transition duration-150 ease-[var(--ease-out)] active:scale-[0.98]"
-            :class="rowClass('all')" :disabled="!installableSites.length" @click="selection = 'all'">
+            :class="rowClass('all')"
+            :disabled="!installableSites.length"
+            @click="selection = 'all'"
+          >
             <span class="place-items-center grid bg-surface-gray-2 rounded-md size-8 shrink-0">
               <span class="lucide-layout-grid size-4 text-ink-gray-6" />
             </span>
             <div class="flex-1 min-w-0">
               <p class="font-medium text-ink-gray-8 text-sm">All sites</p>
               <p class="text-ink-gray-5 text-p-sm truncate">
-                Installs on {{ installableSites.length }} site{{ installableSites.length === 1 ? '' : 's' }}
+                Installs on
+                {{ installableSites.length }} site{{ installableSites.length === 1 ? '' : 's' }}
               </p>
             </div>
           </button>
 
-          <button v-for="s in sites" :key="s.name" type="button"
+          <button
+            v-for="s in sites"
+            :key="s.name"
+            type="button"
             class="flex items-center gap-3 p-3 border rounded-lg min-w-0 text-left transition duration-150 ease-[var(--ease-out)] active:scale-[0.98]"
             :class="isInstalled(s) ? 'border-outline-gray-2 opacity-60 cursor-not-allowed' : rowClass(s.name)"
-            :disabled="isInstalled(s)" @click="selection = s.name">
+            :disabled="isInstalled(s)"
+            @click="selection = s.name"
+          >
             <span class="place-items-center grid bg-surface-gray-2 rounded-md size-8 shrink-0">
               <span class="size-4 text-ink-gray-6 lucide-globe" />
             </span>
             <div class="flex-1 min-w-0">
               <p class="font-medium text-ink-gray-8 text-sm truncate">{{ s.name }}</p>
               <p class="text-ink-gray-5 text-p-sm truncate">
-                {{ s.name }} · {{ isInstalled(s) ? 'already installed' : siteVersion(s) || 'latest' }}
+                {{ s.name }}
+                · {{ isInstalled(s) ? 'already installed' : siteVersion(s) || 'latest' }}
               </p>
             </div>
           </button>
@@ -46,8 +59,12 @@
 
         <div class="flex justify-end gap-2">
           <Button variant="subtle" @click="open = false">Cancel</Button>
-          <Button variant="solid" :disabled="!selection || presetInstalled" :loading="installing"
-            @click="confirmInstall">
+          <Button
+            variant="solid"
+            :disabled="!selection || presetInstalled"
+            :loading="installing"
+            @click="confirmInstall"
+          >
             Install
           </Button>
         </div>
@@ -107,10 +124,9 @@ function rowClass(value) {
 async function startInstall(site) {
   const result = await sitesApi.apps.install(site.name, {
     app: props.app.name,
-    repo: props.app.repo,
-    branch: props.app.branch || '',
   })
-  if (!result.task_id) throw new Error(apiErrorMessage(result, `Could not install on ${site.name}.`))
+  if (!result.task_id)
+    throw new Error(apiErrorMessage(result, `Could not install on ${site.name}.`))
   return result.task_id
 }
 

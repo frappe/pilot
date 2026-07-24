@@ -20,7 +20,7 @@ def task_secret_args(command: str, args: dict) -> dict:
     return {key: args[key] for key in _SECRET_ARGS.get(command, ()) if key in args}
 
 
-def task_requires_secrets(command: str) -> bool:
+def task_has_secrets(command: str) -> bool:
     return bool(_SECRET_ARGS.get(command))
 
 

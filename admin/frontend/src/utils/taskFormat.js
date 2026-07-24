@@ -5,15 +5,30 @@ export const STATUS_CONFIG = {
     icon: 'lucide-clock-3',
     iconBg: 'bg-surface-blue-2 text-ink-blue-8',
   },
-  success: { label: 'Success', theme: 'green', icon: 'lucide-check', iconBg: 'bg-surface-green-2 text-ink-green-8' },
-  failed: { label: 'Failed', theme: 'red', icon: 'lucide-x', iconBg: 'bg-surface-red-2 text-ink-red-8' },
+  success: {
+    label: 'Success',
+    theme: 'green',
+    icon: 'lucide-check',
+    iconBg: 'bg-surface-green-2 text-ink-green-8',
+  },
+  failed: {
+    label: 'Failed',
+    theme: 'red',
+    icon: 'lucide-x',
+    iconBg: 'bg-surface-red-2 text-ink-red-8',
+  },
   running: {
     label: 'Running',
     theme: 'amber',
     icon: 'lucide-loader-circle animate-spin',
     iconBg: 'bg-surface-amber-2 text-ink-amber-8',
   },
-  killed: { label: 'Killed', theme: 'gray', icon: 'lucide-square', iconBg: 'bg-surface-gray-2 text-ink-gray-6' },
+  killed: {
+    label: 'Killed',
+    theme: 'gray',
+    icon: 'lucide-square',
+    iconBg: 'bg-surface-gray-2 text-ink-gray-6',
+  },
 }
 
 export function statusConfig(task) {
@@ -48,7 +63,6 @@ const COMMAND_LABELS = {
   'add-and-install-app': 'Fetch & Install App on All Sites',
   'switch-branch': 'Switch Branch',
   'setup-nginx': 'Setup Nginx',
-  'setup-production': 'Setup Production',
   'setup-letsencrypt': "Setup Let's Encrypt",
   'new-site-from-backup': 'Restore Site',
   'reinstall-site': 'Reinstall Site',
@@ -58,11 +72,14 @@ const COMMAND_LABELS = {
 }
 
 export function commandLabel(command) {
-  return COMMAND_LABELS[command] || command.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+  return (
+    COMMAND_LABELS[command] || command.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+  )
 }
 
 const SITE_ARG_KEY = {
   migrate: 'site',
+  'migration-backup': 'site',
   'clear-cache': 'site',
   'install-app': 'site',
   'uninstall-app': 'site',
@@ -99,6 +116,6 @@ export function fmtDuration(seconds) {
 }
 
 export function fmtDateTime(iso) {
-  if (!iso) return '—'
+  if (!iso) return '-'
   return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }

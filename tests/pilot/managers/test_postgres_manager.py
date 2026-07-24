@@ -67,7 +67,7 @@ def test_install_uses_brew_formula_on_macos() -> None:
 def test_secure_skips_when_no_password() -> None:
     m = _mgr(root_password="")
     with (
-        patch.object(m, "check_credentials") as cc,
+        patch.object(m, "has_valid_credentials") as cc,
         patch.object(m, "_run_sql_as_superuser") as run,
     ):
         m.secure()
@@ -78,7 +78,7 @@ def test_secure_skips_when_no_password() -> None:
 def test_secure_noop_when_credentials_already_work() -> None:
     m = _mgr(root_password="pw")
     with (
-        patch.object(m, "check_credentials", return_value=True),
+        patch.object(m, "has_valid_credentials", return_value=True),
         patch.object(m, "_run_sql_as_superuser") as run,
     ):
         m.secure()
@@ -88,7 +88,7 @@ def test_secure_noop_when_credentials_already_work() -> None:
 def test_secure_sets_password_then_verifies() -> None:
     m = _mgr(root_password="pw")
     with (
-        patch.object(m, "check_credentials", side_effect=[False, True]),
+        patch.object(m, "has_valid_credentials", side_effect=[False, True]),
         patch.object(m, "_run_sql_as_superuser") as run,
     ):
         m.secure()
@@ -98,7 +98,7 @@ def test_secure_sets_password_then_verifies() -> None:
 def test_secure_raises_when_still_unauthenticated() -> None:
     m = _mgr(root_password="pw")
     with (
-        patch.object(m, "check_credentials", side_effect=[False, False]),
+        patch.object(m, "has_valid_credentials", side_effect=[False, False]),
         patch.object(m, "_run_sql_as_superuser"),
         pytest.raises(DatabaseError, match="authenticate"),
     ):
@@ -112,7 +112,7 @@ def test_ensure_role_sql_creates_or_alters_with_quoting() -> None:
     assert "'p''w'" in sql  # single quote doubled for the SQL literal
 
 
-def test_check_credentials_uses_pgpassword_and_tcp() -> None:
+def test_has_valid_credentials_uses_pgpassword_and_tcp() -> None:
     m = _mgr(root_password="pw", host="h", port=5440, admin_user="pg")
     captured: dict = {}
 
@@ -125,7 +125,7 @@ def test_check_credentials_uses_pgpassword_and_tcp() -> None:
         patch(f"{MODULE}.which", return_value="/usr/bin/psql"),
         patch(f"{MODULE}.subprocess.run", side_effect=fake_run),
     ):
-        assert m.check_credentials() is True
+        assert m.has_valid_credentials() is True
     assert captured["env"]["PGPASSWORD"] == "pw"
     assert captured["env"]["PGCONNECT_TIMEOUT"] == "5"
     assert captured["timeout"] == 5
@@ -135,15 +135,15 @@ def test_check_credentials_uses_pgpassword_and_tcp() -> None:
     assert cmd[cmd.index("-h") + 1] == "h"
 
 
-def test_check_credentials_false_without_psql() -> None:
+def test_has_valid_credentials_false_without_psql() -> None:
     with (
         patch(f"{MODULE}.which", return_value=None),
         patch(f"{MODULE}.is_macos", return_value=False),
     ):
-        assert _mgr(root_password="pw").check_credentials() is False
+        assert _mgr(root_password="pw").has_valid_credentials() is False
 
 
-def test_check_credentials_times_out() -> None:
+def test_has_valid_credentials_times_out() -> None:
     with (
         patch(f"{MODULE}.which", return_value="/usr/bin/psql"),
         patch(
@@ -151,7 +151,7 @@ def test_check_credentials_times_out() -> None:
             side_effect=subprocess.TimeoutExpired("psql", 5),
         ),
     ):
-        assert _mgr(root_password="pw").check_credentials() is False
+        assert _mgr(root_password="pw").has_valid_credentials() is False
 
 
 def test_start_targets_systemctl_user_on_linux() -> None:

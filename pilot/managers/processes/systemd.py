@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import getpass
 import os
 import subprocess
 from pathlib import Path
@@ -50,16 +51,15 @@ class SystemdProcessManager(ManagedProcessManager):
             if pd.name == "admin":
                 (self.systemd_conf_dir / self._unit_name("admin")).write_text(self._admin_service_text())
                 (self.systemd_conf_dir / self._admin_socket_name()).write_text(
-                    renderer.admin_socket(self.bench.config.admin.internal_port)
+                    renderer.render_admin_socket(self.bench.config.admin.internal_port)
                 )
             else:
                 (self.systemd_conf_dir / self._unit_name(pd.name)).write_text(renderer.render(pd))
                 workload_units.append(self._unit_name(pd.name))
-        (self.systemd_conf_dir / self._target_name()).write_text(renderer.target(workload_units))
+        (self.systemd_conf_dir / self._target_name()).write_text(renderer.render_target(workload_units))
 
     @override
     def install_config(self) -> None:
-        import getpass
 
         self.user_unit_dir.mkdir(parents=True, exist_ok=True)
         defs = self._prod_process_definitions()
@@ -88,16 +88,7 @@ class SystemdProcessManager(ManagedProcessManager):
                 dst.unlink()
             dst.symlink_to(src)
 
-        subprocess.run(
-            _privileged(["loginctl", "enable-linger", getpass.getuser()]),
-            capture_output=True,
-            check=False,
-        )
-        subprocess.run(
-            _privileged(["systemctl", "start", f"user@{os.getuid()}.service"]),
-            capture_output=True,
-            check=False,
-        )
+        self._ensure_linger()
 
         env = self._systemctl_env()
         run_command(self._systemctl("daemon-reload"), env=env)
@@ -105,6 +96,25 @@ class SystemdProcessManager(ManagedProcessManager):
         subprocess.run(self._systemctl("reset-failed", *units), capture_output=True, env=env)
         run_command(self._systemctl("enable", self._target_name()), env=env)
         self._activate_admin_socket(env)
+
+    @staticmethod
+    def _ensure_linger() -> None:
+        """Units must survive logout. The installer enables this, so only reach
+        for sudo - which cannot prompt from a task - when it somehow did not."""
+        user = getpass.getuser()
+        state = subprocess.run(
+            ["loginctl", "show-user", user, "--property=Linger"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if state.stdout.strip() == "Linger=yes":
+            return
+        for command in (
+            ["loginctl", "enable-linger", user],
+            ["systemctl", "start", f"user@{os.getuid()}.service"],
+        ):
+            subprocess.run(_privileged(command), capture_output=True, check=False)
 
     @override
     def reload_manager_config(self) -> None:
@@ -212,7 +222,7 @@ class SystemdProcessManager(ManagedProcessManager):
             },
             working_dir=root,
         )
-        return SystemdRenderer(self.bench.config.name).admin_service(pd, self._admin_socket_name())
+        return SystemdRenderer(self.bench.config.name).render_admin_service(pd, self._admin_socket_name())
 
     def _control_admin(self, action: str, env: dict) -> None:
         if action == "start":

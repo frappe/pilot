@@ -2,33 +2,25 @@ import sys
 from dataclasses import dataclass
 from typing import ClassVar
 
-from pilot.exceptions import MigrateError
 from pilot.tasks import Task
 
 
 @dataclass(kw_only=True)
 class UpdateTask(Task):
-    command: ClassVar[str] = "update"
-    # Bench.update() emits its own on_step("done", ...) as its last phase.
-    has_done_step: ClassVar[bool] = False
+    """Chain link: update/reinstall/rebuild apps, then queue the first site migration."""
 
-    apps: list[str] | None = None
-    skip_failing_patches: bool = False
+    command: ClassVar[str] = "update"
+
+    operation_id: str
 
     def run(self) -> None:
+        operation = self.bench.migrations.get(self.operation_id)
         try:
-            self.bench.update(
-                apps_filter=set(self.apps) if self.apps else None,
-                skip_failing_patches=self.skip_failing_patches,
-                on_step=self._start_step,
-                on_progress=self.report,
-            )
-        except MigrateError:
+            operation.update_apps(on_step=self.step, on_progress=self.report)
+        except Exception:
             self.step_failed()
             sys.exit(1)
-
-    def _start_step(self, key: str, label: str) -> None:
-        self.step(key, label)
+        operation.enqueue_next(handoff_from=operation.chain[-1]["task_id"])
 
 
 if __name__ == "__main__":

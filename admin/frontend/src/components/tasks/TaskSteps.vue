@@ -1,8 +1,15 @@
 <template>
   <div v-if="hasSteps" class="space-y-2.5">
-    <TaskStep v-for="section in stepSections" :key="section.key" :label="section.label" :status="section.status"
-      :duration="stepDuration(section)" :lines="sectionLines(section)" :has-output="sectionHasOutput(section)"
-      :streaming="streaming && section.status === 'running'" />
+    <TaskStep
+      v-for="section in stepSections"
+      :key="section.key"
+      :label="section.label"
+      :status="section.status"
+      :duration="stepDuration(section)"
+      :lines="sectionLines(section)"
+      :has-output="sectionHasOutput(section)"
+      :streaming="streaming && section.status === 'running'"
+    />
   </div>
   <LogView v-else :lines="processedLines" :streaming="streaming" :empty-text="emptyText" />
 </template>
@@ -36,6 +43,8 @@ function sectionLines(section) {
 }
 
 function sectionHasOutput(section) {
-  return props.rawLines.slice(section.lineStart, section.lineEnd).some((line) => line.trim() && !STEP_MARKER_RE.test(line))
+  return props.rawLines
+    .slice(section.lineStart, section.lineEnd)
+    .some((line) => line.trim() && !STEP_MARKER_RE.test(line))
 }
 </script>

@@ -60,7 +60,7 @@ def decode_token(token: str, secret: str) -> dict | None:
     return payload if isinstance(exp, int) and time.time() < exp else None
 
 
-def verify_token(token: str, secret: str) -> bool:
+def is_token_valid(token: str, secret: str) -> bool:
     return decode_token(token, secret) is not None
 
 
@@ -88,10 +88,9 @@ def issue_site_token(secret: str, site: str, ttl: int = DEFAULT_TTL) -> str:
 
 
 def ensure_jwt_secret(toml_path) -> str:
-    from pilot.config import BenchTomlStore
+    from pilot.config import BenchConfig
 
-    store = BenchTomlStore(toml_path)
-    with store.edit_raw() as data:
+    with BenchConfig.open(toml_path, mode="raw") as data:
         secret = data.get("admin", {}).get("jwt_secret")
         if not secret:
             secret = secrets.token_urlsafe(32)

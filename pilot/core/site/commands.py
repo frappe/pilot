@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pilot.exceptions import BenchError
+from pilot.exceptions import BenchError, MigrateError
 from pilot.utils import run_command
 
 if TYPE_CHECKING:
@@ -41,7 +41,7 @@ class SiteCommands:
             cmd += ["--with-public-files", public_files]
         if private_files:
             cmd += ["--with-private-files", private_files]
-        cmd += self.site.bench.db_root_args()
+        cmd += self.site.bench.db_root_args
         run_command(cmd, cwd=self.site.bench.sites_path, stream_output=True)
 
     def reinstall(self, admin_password: str) -> None:
@@ -56,14 +56,28 @@ class SiteCommands:
             "--admin-password",
             admin_password,
         )
-        cmd += self.site.bench.db_root_args()
+        cmd += self.site.bench.db_root_args
         run_command(cmd, cwd=self.site.bench.sites_path, stream_output=True)
 
-    def migrate(self, skip_failing: bool) -> None:
+    def migrate(self, skip_failing: bool) -> str:
+        """Run migration, streaming output live and returning the full captured output."""
         cmd = self.site._frappe_call("frappe", "--site", self.site.config.name, "migrate")
         if skip_failing:
             cmd.append("--skip-failing")
-        run_command(cmd, cwd=self.site.bench.sites_path, stream_output=True)
+        result = run_command(cmd, cwd=self.site.bench.sites_path, tee_output=True)
+        if result.returncode != 0:
+            raise MigrateError(
+                f"Migration failed for {self.site.config.name}",
+                output=result.stdout,
+                returncode=result.returncode,
+            )
+        return result.stdout
+
+    def clear_cache(self) -> None:
+        cmd = self.site._frappe_call("frappe", "--site", self.site.config.name, "clear-cache")
+        result = run_command(cmd, cwd=self.site.bench.sites_path, stream_output=True)
+        if result.returncode != 0:
+            raise BenchError(f"Failed to clear cache for {self.site.config.name}")
 
     def db_args(self, db_type: str) -> list[str]:
         if db_type == "postgres":
@@ -100,5 +114,5 @@ class SiteCommands:
             "--db-root-username",
             postgres.admin_user,
             "--db-root-password",
-            self.site.bench.postgres_root_password(),
+            self.site.bench.postgres_root_password,
         ]

@@ -19,11 +19,11 @@ def _is_allowed(method_path: str) -> bool:
 
 
 def _central() -> CentralClient:
-    from pilot.config.toml_store import BenchTomlStore
+    from pilot.config.bench import BenchConfig
     from pilot.core.bench import Bench
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    bench = Bench(BenchTomlStore.for_bench(bench_root).read(), bench_root)
+    bench = Bench(BenchConfig.read(bench_root), bench_root)
     return CentralClient(bench)
 
 

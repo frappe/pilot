@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from pilot.internal.tasks.files import TaskFiles
+from pilot.internal.tasks.models import TaskStatus
 from pilot.internal.tasks.store import TaskStore
-from pilot.managers.task.models import TaskStatus
 
 
 class TaskQueue:

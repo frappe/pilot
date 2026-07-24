@@ -46,11 +46,11 @@ class SiteDomains:
         from pilot.tasks.setup_letsencrypt import SetupLetsEncryptTask
         from pilot.tasks.setup_nginx import SetupNginxTask
 
-        if self._ssl_enabled():
+        if self._is_ssl_enabled():
             return SetupLetsEncryptTask.queue(self.site.bench, idempotency_key=idempotency_key)
         return SetupNginxTask.queue(self.site.bench, idempotency_key=idempotency_key)
 
-    def _ssl_enabled(self) -> bool:
+    def _is_ssl_enabled(self) -> bool:
         try:
             config = json.loads((self.site.path / "site_config.json").read_text())
         except Exception:

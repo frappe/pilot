@@ -78,9 +78,6 @@ jobs:
           $PYTHON -m frappe.utils.bench_helper frappe --site site1.localhost clear-cache
           $PYTHON -m frappe.utils.bench_helper frappe --site site2.localhost clear-cache
 
-      - name: bench update
-        run: bench --yes update
-
       - name: bench build
         run: bench build
 

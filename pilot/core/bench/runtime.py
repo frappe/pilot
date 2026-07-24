@@ -143,23 +143,27 @@ class BenchRuntime:
         self.bench.write_common_site_config()
 
     def _ensure_admin_dist(self, on_progress: Callable[[str], None]) -> None:
-        from admin.backend.frontend import build_admin_frontend, download_admin_frontend
+        from admin.backend.frontend import build_admin_frontend
+        from pilot import is_dev_build
         from pilot.utils import cli_root
 
         root = cli_root()
         dist = root / "admin" / "backend" / "static" / "dist"
         frontend = root / "admin" / "frontend"
-        has_source = (frontend / "package.json").exists()
+        # Releases ship the source too; only dev builds may (re)compile it.
+        can_build = is_dev_build and (frontend / "package.json").exists()
 
         if not (dist / "assets").exists():
+            if not can_build:
+                raise BenchError(
+                    "Admin UI is missing from this release. Reinstall bench-cli, "
+                    "or run it from a source checkout."
+                )
             on_progress("Admin UI not built yet; building it now...")
-            if has_source:
-                build_admin_frontend(True, on_progress=on_progress)
-            else:
-                download_admin_frontend(root)
+            build_admin_frontend(on_progress=on_progress)
             return
 
-        if has_source and self._admin_source_is_newer(frontend, dist):
+        if can_build and self._admin_source_is_newer(frontend, dist):
             self._rebuild_admin(on_progress)
 
     def _rebuild_admin(self, on_progress: Callable[[str], None]) -> None:
@@ -167,12 +171,12 @@ class BenchRuntime:
 
         on_progress("Admin UI source changed since last build; rebuilding...")
         try:
-            build_admin_frontend(True, on_progress=on_progress)
+            build_admin_frontend(on_progress=on_progress)
         except BenchError as error:
             on_progress(f"  Could not rebuild the admin UI ({error}); serving the existing build.")
 
     def _start_wizard(self, on_progress: Callable[[str], None]) -> None:
-        from admin.backend.frontend import download_admin_frontend
+        from admin.backend.frontend import ensure_admin_frontend
         from pilot.managers.environment import AdminEnvManager
         from pilot.utils import cli_root
 
@@ -182,8 +186,7 @@ class BenchRuntime:
 
         assets = root / "admin" / "backend" / "static" / "dist" / "assets"
         if not assets.exists():
-            on_progress("Downloading admin frontend...")
-            download_admin_frontend(root)
+            ensure_admin_frontend(on_progress)
 
         port = self._admin_port()
         on_progress("\nBench not initialized. Starting setup wizard...")
@@ -212,10 +215,10 @@ class BenchRuntime:
     def _admin_port(self) -> int:
         import tomllib
 
-        from pilot.config import BenchTomlStore
+        from pilot.config import BenchConfig
 
         try:
-            return BenchTomlStore.for_bench(self.bench.path).read_raw().get("admin", {}).get("port", 7000)
+            return BenchConfig.read(self.bench.path, validate=False).admin.port
         except (OSError, tomllib.TOMLDecodeError):
             return 7000
 

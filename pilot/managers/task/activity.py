@@ -26,6 +26,7 @@ class TaskActivity:
     queued_tasks: int
     running_tasks: int
 
+    @property
     def public_dict(self) -> dict[str, bool | str]:
         return {
             "active": self.active,

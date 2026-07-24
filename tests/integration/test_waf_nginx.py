@@ -37,6 +37,7 @@ def _make_bench(tmp_path: Path) -> Bench:
     config.nginx.http_port = _HTTP_PORT
     config.waf = WafConfig(enabled=True, mode="DetectionOnly")
     bench = Bench(config, tmp_path)
+    bench.create_directories()
     site = bench.sites_path / "site1.localhost"
     site.mkdir(parents=True, exist_ok=True)
     (site / "site_config.json").write_text("{}")
@@ -51,6 +52,8 @@ def _wrapper_conf(tmp_path: Path, include_conf: Path, module: str) -> Path:
         f"error_log {tmp_path}/error.log;\n"
         "events {}\n"
         "http {\n"
+        "    log_format pilot_access '$remote_addr [$time_local] \"$request_method $uri\" "
+        "$status \"$host\" $request_time';\n"
         f"    access_log {tmp_path}/access.log;\n"
         f"    include {include_conf};\n"
         "}\n"

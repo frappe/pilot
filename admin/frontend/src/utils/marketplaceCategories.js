@@ -1,4 +1,12 @@
-export const PILLS = ['All', 'Integrations', 'Utility', 'Payments', 'Localization', 'Business', 'Dev Tools']
+export const PILLS = [
+  'All',
+  'Integrations',
+  'Utility',
+  'Payments',
+  'Localization',
+  'Business',
+  'Dev Tools',
+]
 
 const PILL_BY_CATEGORY = {
   Integrations: 'Integrations',

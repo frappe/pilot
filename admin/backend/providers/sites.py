@@ -51,7 +51,7 @@ class SiteProvider:
 
     @property
     def provisioning_site_names(self) -> set[str]:
-        """Sites with an active provisioning task — cheap local file reads,
+        """Sites with an active provisioning task - cheap local file reads,
         versus the DB probe they let us skip."""
         try:
             tasks = TaskReader(self._bench_root).list_tasks()

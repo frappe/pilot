@@ -25,7 +25,7 @@ from pilot.managers.task import (
     TaskStatus,
     TaskWorkerControl,
     sse_message,
-    task_requires_secrets,
+    task_has_secrets,
 )
 from pilot.tasks import TaskRunner
 
@@ -115,7 +115,7 @@ def retry_task(task_id: str):
         return error_response("task_not_found", str(error), 404)
     except Exception:
         return error_response("task_unavailable", "Could not read task.", 500)
-    if task_requires_secrets(task.command):
+    if task_has_secrets(task.command):
         return error_response(
             "fresh_credentials_required",
             "This task requires fresh credentials and cannot be retried.",
@@ -189,6 +189,46 @@ def task_output(task_id: str):
     )
 
 
+@tasks_bp.get("/<task_id>/debug")
+def debug_task(task_id: str):
+    """Stream an AI explanation of why a failed task failed (SSE)."""
+    reader = _reader()
+    try:
+        task = reader.read_task(task_id)
+    except TaskNotFoundError as error:
+        return error_response("task_not_found", str(error), 404)
+    except Exception:
+        return error_response("task_unavailable", "Could not read task.", 500)
+    if task.status != TaskStatus.FAILED:
+        return error_response("task_not_failed", "Only failed tasks can be debugged.", 409)
+
+    from pilot.config import BenchConfig
+    from pilot.integrations.llm.base import LLMError
+    from pilot.integrations.llm.registry import is_configured
+    from pilot.managers.task.debug import stream_task_debug
+
+    bench_root = _bench_root()
+    config = BenchConfig.read(bench_root)
+    if not is_configured(config.llm):
+        return error_response("ai_not_configured", "Connect an AI assistant in Settings first.", 409)
+
+    output = "".join(reader.iter_output(task_id)) if task.output_path.exists() else ""
+
+    def generate():
+        try:
+            for text in stream_task_debug(config.llm, task, output, bench_root=bench_root):
+                yield sse_message({"type": "delta", "text": text})
+            yield sse_message({"type": "done"})
+        except LLMError as error:
+            yield sse_message({"type": "error", "message": str(error)})
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
+
+
 @task_worker_bp.get("/task-worker")
 def get_task_worker():
     return jsonify(_worker_resource())
@@ -218,7 +258,7 @@ def _accepted_worker():
 def _worker_resource() -> dict:
     activity = TaskActivityReader(_bench_root()).read()
     return {
-        **activity.public_dict(),
+        **activity.public_dict,
         "queued_tasks": activity.queued_tasks,
         "running_tasks": activity.running_tasks,
     }

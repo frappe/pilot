@@ -38,13 +38,13 @@ class AdminEnvManager:
     def uv(self) -> str:
         uv = shutil.which("uv")
         if not uv:
-            raise RuntimeError("uv not found — run the bench-cli install script to set it up")
+            raise RuntimeError("uv not found - run the bench-cli install script to set it up")
         return uv
 
     def ensure(self) -> None:
-        """Create the admin venv and install admin dependencies if not already done."""
-        if self._ensure_venv():
-            self.install_python_deps()
+        """Create the admin venv and install admin dependencies when they change."""
+        self._ensure_venv()
+        self.install_python_deps()
         self._ensure_frontend_deps()
 
     def _ensure_venv(self) -> bool:
@@ -57,23 +57,31 @@ class AdminEnvManager:
         return True
 
     def install_python_deps(self) -> None:
-        """Install any missing admin Python dependencies into the admin venv."""
+        """Install admin Python dependencies when the declared set changed."""
         self._ensure_venv()
         deps = self._read_admin_deps()
         if not deps:
             print("  No admin dependencies specified, skipping installation.")
             return
 
+        installed = self.venv_path / ".admin-deps"
+        if installed.exists() and installed.read_text().splitlines() == deps:
+            return
+
         print(f"  Installing {', '.join(deps)}...", end=" ", flush=True)
         subprocess.run(
             [self.uv, "pip", "install", "--python", str(self.python), "--quiet", *deps], check=True
         )
+        installed.write_text("\n".join(deps))
         print("done")
 
     def _ensure_frontend_deps(self) -> None:
+        from pilot import is_dev_build
+
         frontend = self.venv_path.parent / "admin" / "frontend"
-        if not (frontend / "package.json").exists():
-            return  # not running from the bench-cli source tree
+        # Releases ship the source but serve the prebuilt dist, so they skip its Node deps.
+        if not is_dev_build or not (frontend / "package.json").exists():
+            return
         if (frontend / "node_modules").exists():
             return
         print("  Installing admin frontend Node.js dependencies...", flush=True)
@@ -249,14 +257,14 @@ class PythonEnvManager:
         if uv:
             return uv
 
-        print("uv not found — installing via official installer...", flush=True)
+        print("uv not found - installing via official installer...", flush=True)
         try:
             run_command(
                 ["sh", "-c", "curl -LsSf https://astral.sh/uv/install.sh | sh"],
                 stream_output=True,
             )
         except Exception:
-            print("curl installer failed — falling back to pip install uv...", flush=True)
+            print("curl installer failed - falling back to pip install uv...", flush=True)
             run_command(
                 [sys.executable, "-m", "pip", "install", "--user", "uv"],
                 stream_output=True,

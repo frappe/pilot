@@ -1,6 +1,4 @@
 <template>
-  <UpdatesAvailableButton />
-
   <div class="mx-auto max-w-3xl">
     <!-- Header -->
     <div class="flex justify-between items-center">
@@ -18,7 +16,12 @@
         </template>
       </FormControl>
       <!-- Status filter -->
-      <FormControl v-model="statusFilter" type="select" :options="statusOptions" class="max-w-24 sm:max-w-32" />
+      <FormControl
+        v-model="statusFilter"
+        type="select"
+        :options="statusOptions"
+        class="max-w-24 sm:max-w-32"
+      />
       <!-- List view type -->
       <TabButtons v-model="view" :options="viewOptions" class="hidden sm:block" />
     </div>
@@ -34,12 +37,19 @@
       <!-- Grid view -->
       <div v-if="view === 'grid'" class="gap-3 grid grid-cols-1 md:grid-cols-2">
         <!-- Site Card -->
-        <div v-for="site in filteredSites" :key="site.name"
-          class="flex items-center gap-3 bg-surface-elevation-1 hover:bg-surface-gray-1 p-2 sm:p-4 border rounded-xl border-outline-gray-2 hover:border-outline-gray-3 transition-colors">
-          <RouterLink :to="{ name: 'SiteDetail', params: { name: site.name } }"
-            class="flex flex-1 items-center gap-3 min-w-0 no-underline">
+        <div
+          v-for="site in filteredSites"
+          :key="site.name"
+          class="flex items-center gap-3 bg-surface-elevation-1 hover:bg-surface-gray-1 p-2 sm:p-4 border rounded-xl border-outline-gray-2 hover:border-outline-gray-3 transition-colors"
+        >
+          <RouterLink
+            :to="{ name: 'SiteDetail', params: { name: site.name } }"
+            class="flex flex-1 items-center gap-3 min-w-0 no-underline"
+          >
             <!-- Icon -->
-            <div class="place-items-center grid bg-surface-elevation-1 rounded-lg size-10 text-ink-gray-6 shrink-0">
+            <div
+              class="place-items-center grid bg-surface-elevation-1 rounded-lg size-10 text-ink-gray-6 shrink-0"
+            >
               <span class="size-5 lucide-globe"></span>
             </div>
             <div class="flex-1 min-w-0">
@@ -52,8 +62,13 @@
                   </span>
 
                   <!-- Status -->
-                  <Badge :label="statusLabel(site)" :theme="statusTheme(site)" variant="subtle" size="sm"
-                    class="shrink-0" />
+                  <Badge
+                    :label="statusLabel(site)"
+                    :theme="statusTheme(site)"
+                    variant="subtle"
+                    size="sm"
+                    class="shrink-0"
+                  />
                 </div>
 
                 <div class="flex justify-end">
@@ -78,21 +93,35 @@
       </div>
 
       <!-- List view -->
-      <ListView v-else :columns="listColumns" :rows="listRows" row-key="name"
-        :options="{ selectable: false, showTooltip: false }">
+      <ListView
+        v-else
+        :columns="listColumns"
+        :rows="listRows"
+        row-key="name"
+        :options="{ selectable: false, showTooltip: false }"
+      >
         <template #cell="{ column, row, item }">
           <div v-if="column.key === 'site'" class="flex items-center gap-3">
             <!-- Icon -->
-            <div class="place-items-center grid bg-surface-elevation-1 rounded-lg size-10 text-ink-gray-6 shrink-0">
+            <div
+              class="place-items-center grid bg-surface-elevation-1 rounded-lg size-10 text-ink-gray-6 shrink-0"
+            >
               <span class="size-5 lucide-globe" />
             </div>
-            <RouterLink :to="{ name: 'SiteDetail', params: { name: row.site.name } }"
-              class="font-medium text-ink-gray-9 text-sm no-underline truncate">
+            <RouterLink
+              :to="{ name: 'SiteDetail', params: { name: row.site.name } }"
+              class="font-medium text-ink-gray-9 text-sm no-underline truncate"
+            >
               {{ row.site.name }}
             </RouterLink>
           </div>
           <div v-else-if="column.key === 'status'">
-            <Badge :label="statusLabel(row.site)" :theme="statusTheme(row.site)" variant="subtle" size="sm" />
+            <Badge
+              :label="statusLabel(row.site)"
+              :theme="statusTheme(row.site)"
+              variant="subtle"
+              size="sm"
+            />
           </div>
           <div v-else-if="column.key === 'apps'" class="text-ink-gray-6 text-sm">
             {{ item }}
@@ -124,7 +153,11 @@
     </Button>
   </Teleport>
 
-  <NewSiteDialog v-model="showCreate" :sites="sites" @started="(taskId) => openTaskDetailPage(router, taskId)" />
+  <NewSiteDialog
+    v-model="showCreate"
+    :sites="sites"
+    @started="(taskId) => openTaskDetailPage(router, taskId)"
+  />
 </template>
 
 <script setup>
@@ -142,7 +175,6 @@ import {
   toast,
 } from 'frappe-ui'
 import NewSiteDialog from '@/components/sites/NewSiteDialog.vue'
-import UpdatesAvailableButton from '@/components/common/UpdatesAvailableButton.vue'
 import { useBreadcrumbs } from '@/composables/common/useBreadcrumbs'
 import { useSites } from '@/composables/sites/useSites'
 import { apiErrorMessage } from '@/api/client'
@@ -247,6 +279,11 @@ function siteMenuOptions(site) {
   return [
     { label: 'Open site', icon: 'lucide-external-link', onClick: () => openSite(site) },
     { label: 'Back up now', icon: 'lucide-archive', onClick: () => backupNow(site) },
+    {
+      label: 'View jobs',
+      icon: 'lucide-list-checks',
+      onClick: () => router.push({ name: 'Tasks', query: { site: site.name } }),
+    },
   ]
 }
 

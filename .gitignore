@@ -1,6 +1,9 @@
 # Benches (created by `bench new`)
 /benches/
 
+# Monitor logs (written beside the install)
+/logs/
+
 # Local agent scratch files
 /plan_refactor.md
 
@@ -23,6 +26,9 @@ build/
 .eggs/
 wheels/
 uv.lock
+
+# Written only into release tarballs, never committed
+/VERSION
 
 # Virtual environments
 env/
@@ -52,6 +58,7 @@ htmlcov/
 admin/frontend/node_modules/
 admin/frontend2/node_modules/
 admin/backend/static/dist/
+admin/frontend/components.d.ts
 *.timestamp-*
 .env
 .env.local
@@ -66,3 +73,6 @@ registry-cache*
 # Agent Skills
 .agents
 skills-lock.json
+
+# Local planning docs, never commit
+plan_*.md

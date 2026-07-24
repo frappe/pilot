@@ -73,5 +73,13 @@ watch(
   },
 )
 
-defineExpose({ start, stop: stream.stop, scrollToBottom: stream.scrollToBottom, seed, lines, rawLines, streaming })
+defineExpose({
+  start,
+  stop: stream.stop,
+  scrollToBottom: stream.scrollToBottom,
+  seed,
+  lines,
+  rawLines,
+  streaming,
+})
 </script>

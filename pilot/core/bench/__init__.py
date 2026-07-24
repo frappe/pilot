@@ -10,7 +10,8 @@ from pilot.exceptions import BenchError
 
 if TYPE_CHECKING:
     from pilot.config import S3Config
-    from pilot.core.app import App, RevisionPin
+    from pilot.core.app import App, NewAppOptions, RevisionPin
+    from pilot.core.bench.migration.store import MigrationStore
     from pilot.core.database import Database
     from pilot.core.site import Site
     from pilot.tasks import TaskRunner
@@ -31,9 +32,7 @@ class Bench:
             if path is not None:
                 raise TypeError("Use Bench(config, path) or Bench(path_or_name).")
             bench_path = self._resolve_path(config_or_path)
-            from pilot.config import BenchTomlStore
-
-            config = BenchTomlStore.for_bench(bench_path).read()
+            config = BenchConfig.read(bench_path)
 
         self.config = config
         self.path = bench_path
@@ -85,6 +84,12 @@ class Bench:
 
         return TaskRunner(self.path)
 
+    @cached_property
+    def migrations(self) -> "MigrationStore":
+        from pilot.core.bench.migration.store import MigrationStore
+
+        return MigrationStore(self)
+
     @property
     def apps_path(self) -> Path:
         return self.path / "apps"
@@ -118,20 +123,29 @@ class Bench:
         """Command prefix to invoke frappe's bench helper via the venv Python."""
         return [str(self.python), "-m", "frappe.utils.bench_helper"]
 
+    @property
     def db_root_args(self) -> list[str]:
         from pilot.core.bench.config_files import BenchConfigFiles
 
-        return BenchConfigFiles(self).db_root_args()
+        return BenchConfigFiles(self).db_root_args
 
+    @property
     def postgres_root_password(self) -> str:
         from pilot.core.bench.config_files import BenchConfigFiles
 
-        return BenchConfigFiles(self).postgres_root_password()
+        return BenchConfigFiles(self).postgres_root_password
 
     def app(self, name: str) -> "App":
         from pilot.core.bench.inventory import BenchInventory
 
         return BenchInventory(self).app(name)
+
+    def new_app(
+        self, app_name: str, options: "NewAppOptions | None" = None, on_progress=lambda message: None
+    ) -> "App":
+        from pilot.core.app import App
+
+        return App.scaffold(self, app_name, options, on_progress=on_progress)
 
     def apps(self) -> list["App"]:
         from pilot.core.bench.inventory import BenchInventory
@@ -323,30 +337,15 @@ class Bench:
             if raises:
                 raise
 
-    def update(
+    def _update_apps(
         self,
-        apps_filter: set | None = None,
-        skip_failing_patches: bool = False,
-        on_step: Callable[[str, str], None] = lambda key, label: None,
-        on_progress: Callable[[str], None] = lambda message: None,
+        apps_filter: set | None,
+        on_progress: Callable[[str], None],
+        pins: dict[str, RevisionPin] | None = None,
     ) -> None:
-        """Update apps, dependencies, assets, sites, and workers."""
-        on_step("fetch", "Fetching latest code")
-        self._update_apps(apps_filter, on_progress)
-        on_step("install", "Installing dependencies")
-        self._reinstall_apps(apps_filter, on_progress)
-        on_step("assets", "Building assets")
-        self._rebuild_assets(apps_filter, on_progress)
-        on_step("migrate", "Migrating sites")
-        self._migrate_sites(skip_failing_patches, on_progress)
-        on_step("restart", "Restarting services")
-        self.reload_workers()
-        on_step("done", "Done")
-
-    def _update_apps(self, apps_filter: set | None, on_progress: Callable[[str], None]) -> None:
         from pilot.core.bench.update import BenchUpdater
 
-        BenchUpdater(self).update_apps(apps_filter, on_progress)
+        BenchUpdater(self).update_apps(apps_filter, on_progress, pins)
 
     def _reinstall_apps(self, apps_filter: set | None, on_progress: Callable[[str], None]) -> None:
         from pilot.core.bench.update import BenchUpdater

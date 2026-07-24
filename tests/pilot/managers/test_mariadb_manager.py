@@ -128,7 +128,7 @@ def test_sql_quote_escapes_backslash() -> None:
 def test_secure_installation_noop_when_credentials_valid() -> None:
     manager = _manager()
     with (
-        patch.object(manager, "check_credentials", return_value=True),
+        patch.object(manager, "has_valid_credentials", return_value=True),
         patch.object(manager, "_run_sql_as_superuser") as run_sql,
     ):
         manager.secure_installation()
@@ -138,7 +138,7 @@ def test_secure_installation_noop_when_credentials_valid() -> None:
 def test_secure_installation_creates_and_grants() -> None:
     manager = _manager("s3cret")
     with (
-        patch.object(manager, "check_credentials", return_value=False),
+        patch.object(manager, "has_valid_credentials", return_value=False),
         patch.object(manager, "_run_sql_as_superuser") as run_sql,
     ):
         manager.secure_installation()
@@ -157,7 +157,7 @@ def test_secure_installation_escapes_malicious_admin_user() -> None:
     config = MariaDBConfig(root_password="pw", admin_user="root'; DROP TABLE mysql.user; --")
     manager = MariaDBManager(config)
     with (
-        patch.object(manager, "check_credentials", return_value=False),
+        patch.object(manager, "has_valid_credentials", return_value=False),
         patch.object(manager, "_run_sql_as_superuser") as run_sql,
     ):
         manager.secure_installation()
@@ -177,7 +177,7 @@ def test_run_sql_as_superuser_no_sudo() -> None:
 
 
 def test_is_reachable_on_macos_ignores_local_socket_path() -> None:
-    """socket_path() (our own _STATE_DIR) is never created on macOS — only
+    """socket_path() (our own _STATE_DIR) is never created on macOS - only
     is_running() is a meaningful signal there."""
     m = _manager()
     with (
@@ -188,7 +188,7 @@ def test_is_reachable_on_macos_ignores_local_socket_path() -> None:
 
 
 def test_run_sql_as_superuser_omits_local_socket_on_macos() -> None:
-    """Homebrew's mariadb client owns socket resolution on macOS —
+    """Homebrew's mariadb client owns socket resolution on macOS -
     socket_path() (our own _STATE_DIR) is never created there."""
     m = _manager()
     with patch(f"{MODULE}.is_macos", return_value=True), patch(f"{MODULE}.subprocess.run") as run:
@@ -197,31 +197,31 @@ def test_run_sql_as_superuser_omits_local_socket_on_macos() -> None:
     assert cmd == ["mariadb"]
 
 
-def test_check_credentials_true_on_successful_connect() -> None:
+def test_has_valid_credentials_true_on_successful_connect() -> None:
     manager = _manager()
     with patch(f"{MODULE}.subprocess.run") as run:
         run.return_value = subprocess.CompletedProcess([], 0)
-        assert manager.check_credentials("pw") is True
+        assert manager.has_valid_credentials("pw") is True
     # Password is passed via MYSQL_PWD env, never argv.
     args, kwargs = run.call_args
     assert "pw" not in args[0]
     assert kwargs["env"]["MYSQL_PWD"] == "pw"
 
 
-def test_check_credentials_false_on_error() -> None:
+def test_has_valid_credentials_false_on_error() -> None:
     manager = _manager()
     with patch(f"{MODULE}.subprocess.run") as run:
         run.return_value = subprocess.CompletedProcess([], 1)
-        assert manager.check_credentials("wrong") is False
+        assert manager.has_valid_credentials("wrong") is False
 
 
-def test_check_credentials_times_out() -> None:
+def test_has_valid_credentials_times_out() -> None:
     manager = _manager()
     with patch(
         f"{MODULE}.subprocess.run",
         side_effect=subprocess.TimeoutExpired("mariadb", 5),
     ):
-        assert manager.check_credentials("wrong") is False
+        assert manager.has_valid_credentials("wrong") is False
 
 
 def _client(tmp_path):
@@ -258,7 +258,7 @@ def test_validate_endpoint_valid(tmp_path) -> None:
     with (
         patch(f"{MODULE}.MariaDBManager.is_installed", return_value=True),
         patch(f"{MODULE}.MariaDBManager.is_provisioned", return_value=True),
-        patch(f"{MODULE}.MariaDBManager.check_credentials", return_value=True),
+        patch(f"{MODULE}.MariaDBManager.has_valid_credentials", return_value=True),
     ):
         resp = _post_validate(_client(tmp_path), "correct")
     assert resp.get_json() == {"engine": "mariadb", "state": "valid"}
@@ -268,7 +268,7 @@ def test_validate_endpoint_invalid(tmp_path) -> None:
     with (
         patch(f"{MODULE}.MariaDBManager.is_installed", return_value=True),
         patch(f"{MODULE}.MariaDBManager.is_provisioned", return_value=True),
-        patch(f"{MODULE}.MariaDBManager.check_credentials", return_value=False),
+        patch(f"{MODULE}.MariaDBManager.has_valid_credentials", return_value=False),
     ):
         resp = _post_validate(_client(tmp_path), "wrong")
     assert resp.get_json() == {"engine": "mariadb", "state": "invalid"}
@@ -281,7 +281,7 @@ def test_validate_endpoint_on_macos_checks_password_for_already_secured_server(t
         patch(f"{MODULE}.MariaDBManager.is_installed", return_value=True),
         patch(f"{MODULE}.MariaDBManager.is_running", return_value=True),
         patch(f"{MODULE}.MariaDBManager.is_unsecured", return_value=False),
-        patch(f"{MODULE}.MariaDBManager.check_credentials", return_value=False),
+        patch(f"{MODULE}.MariaDBManager.has_valid_credentials", return_value=False),
     ):
         resp = _post_validate(_client(tmp_path), "wrong")
     assert resp.get_json() == {"engine": "mariadb", "state": "invalid"}

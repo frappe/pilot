@@ -11,7 +11,7 @@ import psutil
 from flask import Blueprint, current_app, jsonify, request
 
 from admin.backend.api.responses import error_response
-from pilot.config import BenchConfig, BenchTomlStore
+from pilot.config import BenchConfig
 
 stats_bp = Blueprint("stats", __name__)
 
@@ -21,7 +21,7 @@ psutil.cpu_percent()
 psutil.cpu_times_percent()
 
 # Network/disk counters are cumulative, so throughput is the delta between polls
-# divided by the elapsed time — this holds the previous reading between requests.
+# divided by the elapsed time - this holds the previous reading between requests.
 _io_state = {
     "time": time.monotonic(),
     "net": psutil.net_io_counters(),
@@ -108,11 +108,11 @@ def _log_file_info(description: str, path: Path) -> dict:
 
 @stats_bp.get("/monitor/status")
 def get_monitor_status():
-    from pilot.config import BenchTomlStore, MonitorConfig
+    from pilot.config import MonitorConfig
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
-        config = BenchTomlStore.for_bench(bench_root).read()
+        config = BenchConfig.read(bench_root)
         mon = config.monitor
         log_path = mon.log_path or MonitorConfig.default_log_path(config.name)
         return jsonify(
@@ -131,16 +131,32 @@ def get_monitor_status():
 
 @stats_bp.get("/monitor/history")
 def get_monitor_history():
-    from admin.backend.providers.monitor import MonitorProvider
+    from admin.backend.providers.system_monitoring import SystemMonitoringProvider
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
     window = request.args.get("window", "1h")
     try:
-        return jsonify(MonitorProvider(bench_root, window).get_history())
+        return jsonify(SystemMonitoringProvider(bench_root, window).get_history())
     except Exception:
         return error_response(
             "monitor_history_unavailable",
             "Could not read monitor history.",
+            500,
+        )
+
+
+@stats_bp.get("/database/history")
+def get_db_history():
+    from admin.backend.providers.database_monitoring import DatabaseMonitoringProvider
+
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    window = request.args.get("window", "1h")
+    try:
+        return jsonify(DatabaseMonitoringProvider(bench_root, window).get_history())
+    except Exception:
+        return error_response(
+            "db_history_unavailable",
+            "Could not read database history.",
             500,
         )
 
@@ -163,7 +179,7 @@ def system_info():
     from pilot.managers.platform import kernel_version, os_version
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    config = BenchTomlStore.for_bench(bench_root).read()
+    config = BenchConfig.read(bench_root)
     mem = psutil.virtual_memory()
     swap = psutil.swap_memory()
     return jsonify(
@@ -182,7 +198,7 @@ def system_info():
 @stats_bp.get("/metrics")
 def stats():
     bench_root = current_app.config["BENCH_ROOT"]
-    config = BenchTomlStore.for_bench(bench_root).read()
+    config = BenchConfig.read(bench_root)
     mem = psutil.virtual_memory()
     swap = psutil.swap_memory()
     disk = psutil.disk_usage("/")

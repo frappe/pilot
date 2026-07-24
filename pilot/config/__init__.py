@@ -14,7 +14,6 @@ from pilot.config.production import VALID_PROCESS_MANAGERS, ProductionConfig
 from pilot.config.redis import RedisConfig
 from pilot.config.s3 import S3Config
 from pilot.config.site import SiteConfig
-from pilot.config.toml_store import BenchTomlStore
 from pilot.config.waf import (
     WAF_MODES,
     WAF_RULE_ACTIONS,
@@ -42,7 +41,6 @@ __all__ = [
     "AppConfig",
     "BackupConfig",
     "BenchConfig",
-    "BenchTomlStore",
     "CentralConfig",
     "FirewallConfig",
     "FirewallRule",

@@ -11,7 +11,7 @@ export async function openSiteLogin(createLink) {
   try {
     popup.opener = null
   } catch {
-    // cross-origin already — nothing to clear
+    // cross-origin already - nothing to clear
   }
   return link
 }

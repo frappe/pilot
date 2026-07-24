@@ -81,7 +81,7 @@ def test_systemd_admin_shutdown_signals_only_the_admin_process(tmp_path: Path) -
         working_dir=tmp_path,
     )
 
-    service = SystemdRenderer("test-bench").admin_service(
+    service = SystemdRenderer("test-bench").render_admin_service(
         process,
         "test-bench-admin.socket",
     )
@@ -100,7 +100,7 @@ def test_supervisor_admin_shutdown_signals_only_the_admin_group(tmp_path: Path) 
     renderer = SupervisorRenderer("test-bench", tmp_path)
 
     program = renderer.render(process)
-    config = renderer.conf([process], tmp_path / "supervisor.sock", tmp_path / "supervisor.pid")
+    config = renderer.render_supervisord_conf([process], tmp_path / "supervisor.sock", tmp_path / "supervisor.pid")
 
     assert "stopasgroup=true" in program
     assert "killasgroup=true" in program

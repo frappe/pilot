@@ -22,7 +22,7 @@ class SwitchBranchTask(Task):
         self.install(env, app)
         self.build_assets(env, app)
 
-        self.update_bench_toml_branch()
+        app.record_branch()
         print(f"'{self.name}' switched to '{self.branch}' successfully.")
 
     @step("checkout", lambda self: f"Switch to branch '{self.branch}'")
@@ -42,16 +42,6 @@ class SwitchBranchTask(Task):
     @step("assets", "Build assets")
     def build_assets(self, env, app) -> None:
         env.build_assets_for_app(app)
-
-    def update_bench_toml_branch(self) -> None:
-        from pilot.config import BenchTomlStore
-
-        store = BenchTomlStore.for_bench(self.bench_root)
-        with store.edit_raw() as raw:
-            for app_entry in raw.get("apps", []):
-                if app_entry.get("name") == self.name:
-                    app_entry["branch"] = self.branch
-                    break
 
 
 if __name__ == "__main__":

@@ -10,13 +10,26 @@
         </p>
         <template v-else>
           <div class="flex flex-col gap-1 max-h-80 overflow-y-auto">
-            <button v-for="name in appNames" :key="name" type="button"
+            <button
+              v-for="name in appNames"
+              :key="name"
+              type="button"
               class="flex items-center gap-3 hover:bg-surface-gray-1 p-2 rounded-lg text-left transition-colors"
-              @click="toggle(name)">
+              @click="toggle(name)"
+            >
               <AppIcon :name="name" class="rounded-lg size-8 shrink-0" />
               <span class="flex-1 min-w-0">
-                <p class="font-medium text-ink-gray-8 text-sm truncate">{{ titleMap[name] || name }}</p>
-                <p class="text-ink-gray-5 text-p-sm truncate">Update available</p>
+                <p class="font-medium text-ink-gray-8 text-sm truncate">
+                  {{ titleMap[name] || name }}
+                </p>
+                <p
+                  v-if="updates[name]"
+                  class="mt-1 flex items-center gap-1 font-mono text-ink-gray-5 text-xs truncate"
+                >
+                  {{ updates[name].current }}
+                  <span class="lucide-arrow-right size-3 shrink-0 text-ink-gray-4" />
+                  <span class="text-ink-green-7">{{ updates[name].target }}</span>
+                </p>
               </span>
               <Checkbox :model-value="selected.has(name)" class="pointer-events-none shrink-0" />
             </button>
@@ -24,8 +37,8 @@
 
           <div class="flex flex-col gap-2 pt-2">
             <label class="flex items-center gap-2 cursor-pointer">
-              <Checkbox v-model="skipFailingPatches" />
-              <span class="text-ink-gray-7 text-sm">Skip failing patches</span>
+              <Checkbox v-model="safeguard" />
+              <span class="text-ink-gray-7 text-sm">Take backup of sites</span>
             </label>
           </div>
         </template>
@@ -34,16 +47,19 @@
 
         <div class="flex justify-end gap-2 pt-4 border-t border-outline-gray-1">
           <Button variant="ghost" @click="open = false">Cancel</Button>
-          <Button v-if="appNames.length" variant="solid" :loading="updating" :disabled="!selected.size"
-            @click="runUpdate">
-            {{
-              selected.size == 0 ? 'Update' : (
+          <Button
+            v-if="appNames.length"
+            variant="solid"
+            :loading="updating"
+            :disabled="!selected.size"
+            @click="runUpdate"
+          >
+            {{ selected.size == 0 ? 'Update' : (
                 appNames.length == selected.size ? 'Update all' :
                   (
                     selected.size == 1 ? 'Update 1 app' : `Update ${selected.size} apps`
                   )
-              )
-            }}
+              ) }}
           </Button>
         </div>
       </div>
@@ -55,17 +71,15 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, Checkbox, Dialog, ErrorMessage, LoadingText } from 'frappe-ui'
-import { apiErrorMessage } from '@/api/client'
-import { tasksApi } from '@/api/tasks'
+import { migrationsApi } from '@/api/migrations'
 import AppIcon from '@/components/apps/AppIcon.vue'
 import { useAppRegistry } from '@/composables/apps/useAppRegistry'
 import { useAppUpdates } from '@/composables/apps/useAppUpdates'
-import { openTaskDetailPage } from '@/utils/taskRoute'
 
 const open = defineModel()
 const router = useRouter()
 
-const { appsWithUpdates, checking } = useAppUpdates()
+const { updates, appsWithUpdates, checking } = useAppUpdates()
 const { titleMap, load: loadRegistry } = useAppRegistry()
 
 const appNames = computed(() => {
@@ -79,12 +93,20 @@ const appNames = computed(() => {
 })
 
 const selected = ref(new Set())
-const skipFailingPatches = ref(false)
+const safeguard = ref(true)
 const updating = ref(false)
 const error = ref('')
 
-watch(open, (isOpen) => { if (isOpen) loadRegistry() })
-watch(appNames, (names) => { selected.value = new Set(names) }, { immediate: true })
+watch(open, (isOpen) => {
+  if (isOpen) loadRegistry()
+})
+watch(
+  appNames,
+  (names) => {
+    selected.value = new Set(names)
+  },
+  { immediate: true },
+)
 
 function toggle(name) {
   const next = new Set(selected.value)
@@ -97,16 +119,12 @@ async function runUpdate() {
   updating.value = true
   error.value = ''
   try {
-    const res = await tasksApi.run('update', {
+    const res = await migrationsApi.createUpdate({
       apps: [...selected.value],
-      skip_failing_patches: skipFailingPatches.value,
+      disable_safeguards: !safeguard.value,
     })
-    if (res.task_id) {
-      open.value = false
-      openTaskDetailPage(router, res.task_id)
-    } else {
-      error.value = apiErrorMessage(res, 'Failed to start update.')
-    }
+    open.value = false
+    router.push({ name: 'MigrationDetail', params: { operationId: res.operation.id } })
   } catch (e) {
     error.value = e.message || 'Failed to start update.'
   } finally {

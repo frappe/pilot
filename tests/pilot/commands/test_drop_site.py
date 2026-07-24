@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 
-from pilot.config import BenchConfig, BenchTomlStore, SiteConfig
+from pilot.config import BenchConfig, SiteConfig
 from pilot.core.bench import Bench
 from pilot.core.site import Site
 
@@ -105,7 +105,7 @@ def test_no_op_for_missing_site(tmp_path: Path, monkeypatch) -> None:
 
 
 def _capture_drop_cmd(tmp_path: Path, monkeypatch, bench: Bench) -> dict:
-    BenchTomlStore.for_bench(bench.path).write(bench.config)
+    bench.config.write(bench.path)
     _write_site(bench, "mysite", {})
     captured: dict = {}
     monkeypatch.setattr("pilot.core.site.run_command", lambda cmd, **kw: captured.setdefault("cmd", cmd))
@@ -115,7 +115,7 @@ def _capture_drop_cmd(tmp_path: Path, monkeypatch, bench: Bench) -> dict:
 
 def test_drop_uses_postgres_root_creds(tmp_path: Path, monkeypatch) -> None:
     # The drop connects to the server as root to drop the database, so it must pass
-    # the bench engine's credentials — postgres password auth fails without them.
+    # the bench engine's credentials - postgres password auth fails without them.
     _install_provider(tmp_path, monkeypatch)
     bench = _make_bench(tmp_path)
     bench.config.db_type = "postgres"

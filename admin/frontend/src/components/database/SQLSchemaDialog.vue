@@ -1,12 +1,7 @@
 <template>
   <Dialog v-model="show" :options="{ title: 'Tables', size: '3xl' }">
     <template #body-content>
-      <FormControl
-        v-model="search"
-        type="text"
-        placeholder="Search tables"
-        autocomplete="off"
-      >
+      <FormControl v-model="search" type="text" placeholder="Search tables" autocomplete="off">
         <template #prefix>
           <span class="size-4 text-ink-gray-5 lucide-search" />
         </template>
@@ -15,7 +10,8 @@
       <div class="flex flex-col sm:flex-row gap-4 mt-3 sm:h-[380px]">
         <!-- Table list -->
         <div
-          class="border-b sm:border-b-0 sm:border-r border-outline-gray-2 sm:w-52 shrink-0 pb-2 sm:pb-0 max-h-40 sm:max-h-none overflow-y-auto">
+          class="border-b sm:border-b-0 sm:border-r border-outline-gray-2 sm:w-52 shrink-0 pb-2 sm:pb-0 max-h-40 sm:max-h-none overflow-y-auto"
+        >
           <button
             v-for="table in filteredTables"
             :key="table.name"
@@ -38,7 +34,10 @@
             <div class="flex items-center justify-between mb-2">
               <h3 class="font-medium text-ink-gray-8 text-sm truncate">
                 {{ selected.name }}
-                <span class="font-normal text-ink-gray-5">({{ selected.columns.length }} columns)</span>
+                <span class="font-normal text-ink-gray-5"
+                  >({{ selected.columns.length }}
+                  columns)</span
+                >
               </h3>
               <Button variant="outline" size="sm" @click="preview(selected)">
                 <template #prefix>
@@ -52,7 +51,10 @@
               :rows="selected.columns"
             />
           </template>
-          <p v-else class="flex justify-center items-center min-h-[120px] sm:h-full text-ink-gray-4 text-sm">
+          <p
+            v-else
+            class="flex justify-center items-center min-h-[120px] sm:h-full text-ink-gray-4 text-sm"
+          >
             Select a table to view its columns.
           </p>
         </div>
@@ -81,7 +83,12 @@ const filteredTables = computed(() => {
   return props.schema.filter((t) => !query || t.name.toLowerCase().includes(query))
 })
 
-watch(show, (open) => { if (open) { search.value = ''; selected.value = null } })
+watch(show, (open) => {
+  if (open) {
+    search.value = ''
+    selected.value = null
+  }
+})
 
 function preview(table) {
   emit('preview', table.name)

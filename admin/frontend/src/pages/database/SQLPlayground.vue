@@ -1,12 +1,20 @@
 <template>
   <!-- Site selector on the right of the header -->
   <Teleport defer to="#header-actions">
-    <FormControl type="select" v-model="selectedSite" :options="siteOptions"
-      class="w-28 sm:w-44 max-w-[140px] sm:max-w-[180px]" />
+    <FormControl
+      type="select"
+      v-model="selectedSite"
+      :options="siteOptions"
+      class="w-28 sm:w-44 max-w-[140px] sm:max-w-[180px]"
+    />
   </Teleport>
 
   <!-- No site selected -->
-  <div v-if="!selectedSite" class="flex flex-col justify-center items-center gap-2 text-center" style="height: 75vh;">
+  <div
+    v-if="!selectedSite"
+    class="flex flex-col justify-center items-center gap-2 text-center"
+    style="height: 75vh;"
+  >
     <span class="size-8 text-ink-gray-3 lucide-database" />
     <p class="text-ink-gray-5 text-sm">Select a site from the dropdown to get started.</p>
   </div>
@@ -15,10 +23,17 @@
     <!-- Editor card -->
     <div class="border rounded-lg border-outline-gray-2 overflow-hidden transition-colors">
       <div class="h-44 sm:h-[220px]">
-        <SQLCodeEditor ref="editorRef" v-model="query" :schema="schema" :db-type="selectedSiteDbType" @run="runQuery" />
+        <SQLCodeEditor
+          ref="editorRef"
+          v-model="query"
+          :schema="schema"
+          :db-type="selectedSiteDbType"
+          @run="runQuery"
+        />
       </div>
       <div
-        class="flex flex-wrap justify-between items-center gap-2 bg-surface-base px-2 py-2 border-t border-outline-gray-2">
+        class="flex flex-wrap justify-between items-center gap-2 bg-surface-base px-2 py-2 border-t border-outline-gray-2"
+      >
         <div class="flex flex-wrap items-center gap-2">
           <div class="sm:hidden">
             <FormControl type="select" v-model="modeStr" :options="modeOptions" />
@@ -27,8 +42,13 @@
             <TabButtons v-model="modeStr" :options="modeOptions" />
           </div>
           <div class="hidden sm:block">
-            <Button variant="outline" size="sm" iconLeft="lucide-table" :disabled="!schema.length"
-              @click="showSchema = true">
+            <Button
+              variant="outline"
+              size="sm"
+              iconLeft="lucide-table"
+              :disabled="!schema.length"
+              @click="showSchema = true"
+            >
               Tables
               <template v-if="schema.length" #suffix>
                 <span class="text-ink-gray-4 text-xs">{{ schema.length }}</span>
@@ -37,8 +57,14 @@
           </div>
         </div>
         <div class="flex items-center gap-3 ml-auto">
-          <Button variant="solid" size="sm" iconLeft="lucide-play" :loading="running"
-            :disabled="!selectedSite || !query.trim()" @click="runQuery">
+          <Button
+            variant="solid"
+            size="sm"
+            iconLeft="lucide-play"
+            :loading="running"
+            :disabled="!selectedSite || !query.trim()"
+            @click="runQuery"
+          >
             Execute
           </Button>
         </div>
@@ -61,38 +87,73 @@
 
       <div v-if="currentResult" class="border rounded-lg border-outline-gray-2 overflow-hidden">
         <!-- Write query success (no result set) -->
-        <div v-if="!currentResult.columns.length"
-          class="flex justify-center items-center gap-2 py-8 text-ink-gray-6 text-sm">
+        <div
+          v-if="!currentResult.columns.length"
+          class="flex justify-center items-center gap-2 py-8 text-ink-gray-6 text-sm"
+        >
           <span class="size-4 text-ink-green-4 lucide-check-circle" />
           Query executed successfully
-          <span v-if="currentResult.affected_rows != null">· {{ currentResult.affected_rows }} row(s) affected</span>
+          <span v-if="currentResult.affected_rows != null"
+            >· {{ currentResult.affected_rows }} row(s) affected</span
+          >
         </div>
 
         <template v-else>
-          <SimpleTable :columns="resultColumns" :rows="paginatedRowObjects" :show-index="true"
-            :index-offset="(page - 1) * perPage" max-height="320px" :mono="false" truncate show-null
-            empty-text="No rows returned." :bordered="false" />
+          <SimpleTable
+            :columns="resultColumns"
+            :rows="paginatedRowObjects"
+            :show-index="true"
+            :index-offset="(page - 1) * perPage"
+            min-height="320px"
+            :mono="false"
+            truncate
+            show-null
+            empty-text="No rows returned."
+            :bordered="false"
+          />
 
           <!-- Table footer -->
-          <div v-if="currentResult.row_count"
-            class="flex flex-wrap justify-between items-center gap-2 bg-surface-base px-1 py-1 border-t border-outline-gray-2">
+          <div
+            v-if="currentResult.row_count"
+            class="flex flex-wrap justify-between items-center gap-2 bg-surface-base px-1 py-1 border-t border-outline-gray-2"
+          >
             <Button variant="ghost" size="xs" iconLeft="lucide-download" @click="exportCsv">
               Download as CSV
             </Button>
             <div class="flex items-center gap-3">
-              <div class="hidden sm:flex items-center gap-1.5 pr-3 border-r-2 border-outline-gray-2">
+              <div
+                class="hidden sm:flex items-center gap-1.5 pr-3 border-r-2 border-outline-gray-2"
+              >
                 <span class="text-ink-gray-5 text-xs">Per Page</span>
-                <FormControl type="select" v-model="perPage" class="max-w-16" :options="pageOptions" />
+                <FormControl
+                  type="select"
+                  v-model="perPage"
+                  class="max-w-16"
+                  :options="pageOptions"
+                />
               </div>
               <span class="hidden sm:inline tabular-nums text-ink-gray-5 text-xs whitespace-nowrap">
-                {{ rowRange }} of {{ currentResult.row_count }} rows
+                {{ rowRange }}
+                of {{ currentResult.row_count }} rows
                 <span v-if="currentResult.truncated">(truncated)</span>
               </span>
               <div class="flex items-center gap-1">
-                <Button variant="ghost" size="xs" iconLeft="lucide-arrow-left" :disabled="page <= 1"
-                  @click="page--">Prev</Button>
-                <Button variant="ghost" size="xs" iconRight="lucide-arrow-right" :disabled="page >= totalPages"
-                  @click="page++">Next</Button>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  iconLeft="lucide-arrow-left"
+                  :disabled="page <= 1"
+                  @click="page--"
+                  >Prev</Button
+                >
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  iconRight="lucide-arrow-right"
+                  :disabled="page >= totalPages"
+                  @click="page++"
+                  >Next</Button
+                >
               </div>
             </div>
           </div>
@@ -101,14 +162,18 @@
 
       <!-- View SQL Query -->
       <div v-if="currentResult">
-        <button class="flex items-center gap-1.5 text-ink-gray-5 hover:text-ink-gray-8 text-xs transition-colors"
-          @click="showSql = !showSql">
+        <button
+          class="flex items-center gap-1.5 text-ink-gray-5 hover:text-ink-gray-8 text-xs transition-colors"
+          @click="showSql = !showSql"
+        >
           <span class="size-3" :class="showSql ? 'lucide-chevron-down' : 'lucide-chevron-right'" />
           View SQL Query
         </button>
-        <pre v-if="showSql"
+        <pre
+          v-if="showSql"
           class="bg-surface-gray-1 mt-1.5 px-3 py-2 border rounded-lg border-outline-gray-2 overflow-x-auto text-ink-gray-7 text-xs break-words whitespace-pre-wrap"
-          style="font-family: ui-monospace, SFMono-Regular, monospace;">{{ currentResult.query }}</pre>
+          style="font-family: ui-monospace, SFMono-Regular, monospace;"
+        >{{ currentResult.query }}</pre>
       </div>
     </template>
   </div>
@@ -120,12 +185,13 @@
   <Dialog v-model="showConfirm" :options="{ title: 'Run in Read/Write mode', size: 'lg' }">
     <template #body-content>
       <p class="text-ink-gray-7 text-sm">
-        This query will run in <strong>Read/Write</strong> mode and any changes will be committed to the database.
-        Are you sure you want to continue?
+        This query will run in <strong>Read/Write</strong> mode and any changes will be committed to
+        the database. Are you sure you want to continue?
       </p>
       <pre
         class="bg-surface-gray-1 mt-3 px-3 py-2 border rounded-lg border-outline-gray-2 max-h-40 overflow-y-auto text-ink-gray-7 text-xs break-words whitespace-pre-wrap"
-        style="font-family: ui-monospace, SFMono-Regular, monospace;">{{ pendingQuery }}</pre>
+        style="font-family: ui-monospace, SFMono-Regular, monospace;"
+      >{{ pendingQuery }}</pre>
       <div class="flex justify-end gap-2 mt-4">
         <Button variant="outline" @click="showConfirm = false">Cancel</Button>
         <Button variant="solid" @click="confirmRunQuery">Execute</Button>
@@ -253,7 +319,10 @@ function previewTable(tableName) {
 
 async function executeQuery(raw) {
   if (!selectedSite.value || !raw?.trim()) return
-  const statements = raw.split(';').map((s) => s.trim()).filter(Boolean)
+  const statements = raw
+    .split(';')
+    .map((s) => s.trim())
+    .filter(Boolean)
   if (!statements.length) return
 
   running.value = true
@@ -312,24 +381,32 @@ async function refreshSchema() {
 
 // ── Watchers ──────────────────────────────────────────────────────────────────
 
-watch(selectedSite, (site) => {
-  if ((route.query.site || '') !== site) {
-    router.replace({ path: route.path, query: site ? { site } : {} })
-  }
-  query.value = site ? localStorage.getItem(`last_sql_query_${site}`) || '' : ''
-  results.value = []
-  error.value = ''
-  schema.value = []
-  if (!site) return
-  refreshSchema()
-}, { immediate: true })
+watch(
+  selectedSite,
+  (site) => {
+    if ((route.query.site || '') !== site) {
+      router.replace({ path: route.path, query: site ? { site } : {} })
+    }
+    query.value = site ? localStorage.getItem(`last_sql_query_${site}`) || '' : ''
+    results.value = []
+    error.value = ''
+    schema.value = []
+    if (!site) return
+    refreshSchema()
+  },
+  { immediate: true },
+)
 
 watch(query, (value) => {
   if (selectedSite.value) localStorage.setItem(`last_sql_query_${selectedSite.value}`, value)
 })
 
-watch(activeTab, () => { page.value = 1 })
-watch(perPage, () => { page.value = 1 })
+watch(activeTab, () => {
+  page.value = 1
+})
+watch(perPage, () => {
+  page.value = 1
+})
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
@@ -337,6 +414,6 @@ onMounted(async () => {
   try {
     sites.value = await databaseApi.sites()
     if (!selectedSite.value && sites.value.length === 1) selectedSite.value = sites.value[0].name
-  } catch { }
+  } catch {}
 })
 </script>

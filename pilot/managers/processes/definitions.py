@@ -20,6 +20,7 @@ class ProcessDefinition:
     env: dict = field(default_factory=dict)
     working_dir: Path | None = None  # was `cd {dir} &&`
     stop_timeout: int | None = None  # graceful-stop seconds (redis=300, web+companion=1600)
+    critical: bool = True  # dev runner stops the whole bench when this process exits
 
 
 class ProcessDefinitionBuilder:
@@ -132,11 +133,14 @@ class ProcessDefinitionBuilder:
         )
 
     def watch_definition(self) -> ProcessDefinition:
+        # Non-critical: frappe watch dies when the initial esbuild build fails
+        # (e.g. unbuilt assets on a fresh bench); the bench must outlive it.
         return ProcessDefinition(
             name="watch",
             argv=[str(self.python), "-m", "frappe.utils.bench_helper", "frappe", "watch"],
             log_file=self.bench.logs_path / "watch.log",
             working_dir=self.bench.sites_path,
+            critical=False,
         )
 
     def worker_pool_definition(self, queues: str, num_workers: int) -> ProcessDefinition:
@@ -244,7 +248,7 @@ class ProcessDefinitionBuilder:
         cfg = self.bench.config.admin
         return ProcessDefinition(
             name="admin-ui",
-            argv=["npm", "run", "dev", "--prefix", str(frontend_dir)],
+            argv=["npm", "--prefix", str(frontend_dir), "run", "dev"],
             log_file=self.bench.logs_path / "admin-ui.log",
             env={"VITE_ADMIN_PORT": str(cfg.port)},
         )

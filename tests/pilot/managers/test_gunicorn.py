@@ -307,10 +307,9 @@ def test_nginx_upstream_uses_gunicorn_bind(tmp_path: Path) -> None:
 
 
 def test_toml_writer_includes_gunicorn_section(tmp_path: Path) -> None:
-    from pilot.config.bench_toml import dumps_config as bench_config_to_toml
 
     bench = make_bench(tmp_path, GunicornConfig(workers=8, threads=16))
-    toml = bench_config_to_toml(bench.config)
+    toml = bench.config.dumps()
 
     assert "[gunicorn]" in toml
     assert "workers = 8" in toml
@@ -336,11 +335,10 @@ def test_production_config_parses_use_companion_manager(tmp_path: Path) -> None:
 
 
 def test_toml_writer_includes_use_companion_manager(tmp_path: Path) -> None:
-    from pilot.config.bench_toml import dumps_config as bench_config_to_toml
 
     bench = make_bench(tmp_path)
     bench.config.production.use_companion_manager = True
-    toml = bench_config_to_toml(bench.config)
+    toml = bench.config.dumps()
 
     assert "use_companion_manager = true" in toml
 
@@ -625,9 +623,8 @@ def test_max_requests_validation(tmp_path: Path) -> None:
 
 
 def test_toml_writer_includes_max_requests(tmp_path: Path) -> None:
-    from pilot.config.bench_toml import dumps_config as bench_config_to_toml
 
     bench = make_bench(tmp_path, GunicornConfig(max_requests=2000, max_requests_jitter=200))
-    toml = bench_config_to_toml(bench.config)
+    toml = bench.config.dumps()
     assert "max_requests = 2000" in toml
     assert "max_requests_jitter = 200" in toml

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from importlib import import_module
+from pilot.managers.task.activity import TaskActivityReader
+from pilot.managers.task.control import TaskWorkerControl
+from pilot.managers.task.models import TaskStatus
+from pilot.managers.task.policy import task_has_secrets
+from pilot.managers.task.reader import TaskReader, sse_message
 
 __all__ = [
     "TaskActivityReader",
@@ -8,23 +12,5 @@ __all__ = [
     "TaskStatus",
     "TaskWorkerControl",
     "sse_message",
-    "task_requires_secrets",
+    "task_has_secrets",
 ]
-
-_EXPORTS = {
-    "TaskActivityReader": ("pilot.managers.task.activity", "TaskActivityReader"),
-    "TaskReader": ("pilot.managers.task.reader", "TaskReader"),
-    "TaskStatus": ("pilot.managers.task.models", "TaskStatus"),
-    "TaskWorkerControl": ("pilot.managers.task.control", "TaskWorkerControl"),
-    "sse_message": ("pilot.managers.task.reader", "sse_message"),
-    "task_requires_secrets": ("pilot.managers.task.policy", "task_requires_secrets"),
-}
-
-
-def __getattr__(name: str):
-    if name not in _EXPORTS:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    module_name, attr_name = _EXPORTS[name]
-    value = getattr(import_module(module_name), attr_name)
-    globals()[name] = value
-    return value

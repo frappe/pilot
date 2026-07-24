@@ -116,8 +116,6 @@ class SiteProvisioner:
         site.set_ssl(True)
         on_progress("Obtaining SSL certificate...")
         nginx_manager = NginxManager(self.bench)
-        nginx_manager.generate_config(ssl_ready=False)
-        nginx_manager.reload()
         LetsEncryptManager(self.bench).obtain(site.config)
         nginx_manager.generate_config(ssl_ready=True)
         nginx_manager.reload()

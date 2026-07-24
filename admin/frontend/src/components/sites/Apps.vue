@@ -9,7 +9,11 @@
     <div v-else class="gap-x-6 gap-y-4 grid grid-cols-1 md:grid-cols-2">
       <MarketplaceAppCard v-for="app in appObjects" :key="app.name" :app="app">
         <template #actions>
-          <Dropdown v-if="menuOptions(app).length" :options="menuOptions(app)" placement="bottom-end">
+          <Dropdown
+            v-if="menuOptions(app).length"
+            :options="menuOptions(app)"
+            placement="bottom-end"
+          >
             <template #default="{ open }">
               <Button variant="ghost" size="sm" :active="open">
                 <span class="size-4 lucide-ellipsis" />
@@ -55,7 +59,14 @@ const props = defineProps({
 const router = useRouter()
 
 const { apps, installedApps, appsLoading, loadApps, uninstallApp } = useSite(props.siteName)
-const { titleMap, descriptionMap, logoMap, documentationMap, websiteMap, load: loadRegistry } = useAppRegistry()
+const {
+  titleMap,
+  descriptionMap,
+  logoMap,
+  documentationMap,
+  websiteMap,
+  load: loadRegistry,
+} = useAppRegistry()
 
 const appDetailMap = computed(() => Object.fromEntries(apps.value.map((a) => [a.name, a])))
 
@@ -86,14 +97,28 @@ function menuOptions(app) {
       ? [{ label: 'Website', icon: 'lucide-globe', onClick: () => openLink(app.website) }]
       : []),
     ...(app.documentation
-      ? [{ label: 'Documentation', icon: 'lucide-book-open', onClick: () => openLink(app.documentation) }]
+      ? [
+          {
+            label: 'Documentation',
+            icon: 'lucide-book-open',
+            onClick: () => openLink(app.documentation),
+          },
+        ]
       : []),
-    ...(app.name !== 'frappe' ? [{
-      label: 'Uninstall',
-      icon: 'lucide-trash-2',
-      theme: 'red',
-      onClick: () => { uninstallTarget.value = app.name; uninstallError.value = ''; showUninstall.value = true },
-    }] : []),
+    ...(app.name !== 'frappe'
+      ? [
+          {
+            label: 'Uninstall',
+            icon: 'lucide-trash-2',
+            theme: 'red',
+            onClick: () => {
+              uninstallTarget.value = app.name
+              uninstallError.value = ''
+              showUninstall.value = true
+            },
+          },
+        ]
+      : []),
   ]
 }
 

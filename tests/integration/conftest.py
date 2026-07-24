@@ -19,7 +19,7 @@ def pytest_configure(config):
     )
     config.addinivalue_line(
         "markers",
-        "production: deploys to production and manages its own redis — run "
+        "production: deploys to production and manages its own redis - run "
         "separately from tests that rely on an externally-started redis.",
     )
 
@@ -43,7 +43,7 @@ def bench_root() -> Path:
 def bench_bin() -> str:
     b = shutil.which("bench")
     if b is None:
-        pytest.skip("'bench' binary not found in PATH — install bench-cli first")
+        pytest.skip("'bench' binary not found in PATH - install bench-cli first")
     return b
 
 

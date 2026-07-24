@@ -28,7 +28,7 @@ def main() -> None:
     args = parser.parse_args()
 
     from admin.backend.app import create_app
-    from pilot.config import BenchTomlStore
+    from pilot.config import BenchConfig
 
     bench_root = Path(args.bench_root)
     app = create_app(bench_root)
@@ -37,8 +37,8 @@ def main() -> None:
     skip_watchdog = args.no_timeout or args.dev
     if not skip_watchdog:
         try:
-            cfg = BenchTomlStore.for_bench(bench_root).read()
-            skip_watchdog = cfg.admin.enabled
+            config = BenchConfig.read(bench_root)
+            skip_watchdog = config.admin.enabled
         except Exception as exc:
             logging.debug("Could not read bench.toml to decide the watchdog: %s", exc)
 

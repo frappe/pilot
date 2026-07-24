@@ -68,7 +68,8 @@ class Task:
         bench: "Bench",
         callbacks: "TaskCallbacks | None" = None,
         idempotency_key: str | None = None,
-        resource_key: str | None = None,
+        resource_key: str | list[str] | None = None,
+        resource_handoff_from: str | None = None,
         **args,
     ) -> str:
         callbacks = cls._queue_callbacks(bench, args, callbacks)
@@ -77,6 +78,7 @@ class Task:
             callbacks=callbacks,
             idempotency_key=idempotency_key,
             resource_key=resource_key,
+            resource_handoff_from=resource_handoff_from,
             **args,
         )
 
@@ -86,7 +88,8 @@ class Task:
         bench: "Bench",
         callbacks: "TaskCallbacks | None" = None,
         idempotency_key: str | None = None,
-        resource_key: str | None = None,
+        resource_key: str | list[str] | None = None,
+        resource_handoff_from: str | None = None,
         **args,
     ) -> TaskSubmission:
         callbacks = cls._queue_callbacks(bench, args, callbacks)
@@ -95,6 +98,7 @@ class Task:
             callbacks=callbacks,
             idempotency_key=idempotency_key,
             resource_key=resource_key,
+            resource_handoff_from=resource_handoff_from,
             **args,
         )
 
@@ -155,9 +159,9 @@ class Task:
 
     def require_production_privileges(self) -> None:
         from pilot.exceptions import BenchError
-        from pilot.managers.platform import has_passwordless_sudo
+        from pilot.managers.nginx import NginxManager
 
-        if self.bench.config.production.enabled and not has_passwordless_sudo():
+        if self.bench.config.production.enabled and not NginxManager(self.bench).has_passwordless_sudo:
             raise BenchError("Production site operations require non-interactive system privileges.")
 
     def record_audit(self, category: str, fields: dict) -> None:
@@ -189,7 +193,8 @@ class TaskRunner:
         task_type: type[Task],
         callbacks: "TaskCallbacks | None" = None,
         idempotency_key: str | None = None,
-        resource_key: str | None = None,
+        resource_key: str | list[str] | None = None,
+        resource_handoff_from: str | None = None,
         **args,
     ) -> str:
         return self.run(
@@ -198,6 +203,7 @@ class TaskRunner:
             callbacks=callbacks,
             idempotency_key=idempotency_key,
             resource_key=resource_key,
+            resource_handoff_from=resource_handoff_from,
         )
 
     def submit_task(
@@ -205,7 +211,8 @@ class TaskRunner:
         task_type: type[Task],
         callbacks: "TaskCallbacks | None" = None,
         idempotency_key: str | None = None,
-        resource_key: str | None = None,
+        resource_key: str | list[str] | None = None,
+        resource_handoff_from: str | None = None,
         **args,
     ) -> TaskSubmission:
         return self.submit(
@@ -214,6 +221,7 @@ class TaskRunner:
             callbacks=callbacks,
             idempotency_key=idempotency_key,
             resource_key=resource_key,
+            resource_handoff_from=resource_handoff_from,
         )
 
     def run(
@@ -222,7 +230,8 @@ class TaskRunner:
         args: dict,
         callbacks: "TaskCallbacks | None" = None,
         idempotency_key: str | None = None,
-        resource_key: str | None = None,
+        resource_key: str | list[str] | None = None,
+        resource_handoff_from: str | None = None,
     ) -> str:
         return self.__engine.run(
             command,
@@ -230,6 +239,7 @@ class TaskRunner:
             callbacks=callbacks,
             idempotency_key=idempotency_key,
             resource_key=resource_key,
+            resource_handoff_from=resource_handoff_from,
         )
 
     def submit(
@@ -238,7 +248,8 @@ class TaskRunner:
         args: dict,
         callbacks: "TaskCallbacks | None" = None,
         idempotency_key: str | None = None,
-        resource_key: str | None = None,
+        resource_key: str | list[str] | None = None,
+        resource_handoff_from: str | None = None,
     ) -> TaskSubmission:
         result = self.__engine.submit(
             command,
@@ -246,6 +257,7 @@ class TaskRunner:
             callbacks=callbacks,
             idempotency_key=idempotency_key,
             resource_key=resource_key,
+            resource_handoff_from=resource_handoff_from,
         )
         return TaskSubmission(result.task_id, result.created)
 

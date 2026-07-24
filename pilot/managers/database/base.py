@@ -55,7 +55,7 @@ class UserOwnedDBManager:
 
     def is_running(self) -> bool:
         if is_macos():
-            return self._brew_service_running()
+            return self._is_brew_service_running()
         result = subprocess.run(
             self._systemctl("is-active", self._UNIT_NAME),
             env=self._systemctl_env(),
@@ -105,7 +105,7 @@ class UserOwnedDBManager:
             return self._BREW_FORMULA_BASE
         return next((f for f in formulae if f.startswith(f"{self._BREW_FORMULA_BASE}@")), None)
 
-    def _brew_service_running(self) -> bool:
+    def _is_brew_service_running(self) -> bool:
         result = subprocess.run(["brew", "services", "list"], capture_output=True, text=True, timeout=10)
         for line in result.stdout.splitlines():
             parts = line.split()

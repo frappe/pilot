@@ -5,24 +5,37 @@
   <div v-else class="space-y-6">
     <Alert v-if="!production" title="Not enforced yet" theme="yellow" :dismissible="false">
       <template #description>
-        <span class="text-ink-gray-6 text-p-sm">These rules take effect only in production (they're applied by
-          nginx). This bench isn't deployed, so nothing is enforced until you run
-          <span class="font-mono text-xs">bench setup production</span>.</span>
+        <span class="text-ink-gray-6 text-p-sm"
+          >These rules take effect only in production (they're applied by nginx). This bench isn't
+          deployed, so nothing is enforced until you run
+          <span class="font-mono text-xs">bench setup production</span>.</span
+        >
       </template>
     </Alert>
 
-    <Switch label="Enable firewall" description="Restrict who can reach Pilot and deployed sites; off means open."
-      :model-value="enabled" @update:model-value="(v) => (enabled = v)" />
+    <Switch
+      label="Enable firewall"
+      description="Restrict who can reach Pilot and deployed sites; off means open."
+      :model-value="enabled"
+      @update:model-value="(v) => (enabled = v)"
+    />
 
-    <Switch label="Block by default"
+    <Switch
+      label="Block by default"
       description="Only allowed IPs below can reach the server; off allows all except blocked ones."
-      :model-value="defaultPolicy === 'deny'" @update:model-value="(v) => (defaultPolicy = v ? 'deny' : 'allow')" />
+      :model-value="defaultPolicy === 'deny'"
+      @update:model-value="(v) => (defaultPolicy = v ? 'deny' : 'allow')"
+    />
 
     <Alert v-if="lockoutRisk" title="Heads up" theme="yellow" :dismissible="false">
       <template #description>
-        <span class="text-ink-gray-6 text-p-sm">Everyone is blocked by default. Add an <b>Allow</b> rule for
-          your own IP<template v-if="myIp"> (<span class="font-mono text-xs">{{ myIp }}</span>)</template>,
-          or you may lock yourself out of the web UI.</span>
+        <span class="text-ink-gray-6 text-p-sm"
+          >Everyone is blocked by default. Add an <b>Allow</b> rule for your own IP<template
+            v-if="myIp"
+          >
+            (<span class="font-mono text-xs">{{ myIp }}</span>)</template
+          >, or you may lock yourself out of the web UI.</span
+        >
       </template>
     </Alert>
 
@@ -32,8 +45,10 @@
         <Button variant="subtle" icon-left="plus" @click="addRule">Add rule</Button>
       </div>
 
-      <div v-if="!rules.length"
-        class="flex flex-col items-center gap-2.5 py-10 border border-dashed rounded-lg border-outline-gray-2 text-center">
+      <div
+        v-if="!rules.length"
+        class="flex flex-col items-center gap-2.5 py-10 border border-dashed rounded-lg border-outline-gray-2 text-center"
+      >
         <div class="flex justify-center items-center bg-surface-gray-2 rounded-full size-11">
           <span class="size-5 text-ink-gray-5 lucide-shield"></span>
         </div>
@@ -97,7 +112,11 @@ const myIp = ref('')
 const lockoutRisk = computed(() => enabled.value && defaultPolicy.value === 'deny')
 
 function addRule() {
-  rules.value.push({ ip: '', action: defaultPolicy.value === 'deny' ? 'allow' : 'deny', description: '' })
+  rules.value.push({
+    ip: '',
+    action: defaultPolicy.value === 'deny' ? 'allow' : 'deny',
+    description: '',
+  })
 }
 
 function removeRule(index) {
@@ -107,11 +126,15 @@ function removeRule(index) {
 function validate() {
   for (const [index, rule] of rules.value.entries()) {
     if (!rule.ip.trim()) return `Rule ${index + 1} needs an IP address or range.`
-    if (!IP_PATTERN.test(rule.ip.trim())) return `Rule ${index + 1}: '${rule.ip}' is not a valid IP or CIDR.`
+    if (!IP_PATTERN.test(rule.ip.trim()))
+      return `Rule ${index + 1}: '${rule.ip}' is not a valid IP or CIDR.`
   }
   // Block-by-default with no Allow rule blocks everyone, including you.
-  if (enabled.value && defaultPolicy.value === 'deny'
-    && !rules.value.some((r) => r.action === 'allow' && r.ip.trim())) {
+  if (
+    enabled.value &&
+    defaultPolicy.value === 'deny' &&
+    !rules.value.some((r) => r.action === 'allow' && r.ip.trim())
+  ) {
     return 'Block by default needs at least one Allow rule, or no one can reach the server.'
   }
   return ''
@@ -162,6 +185,8 @@ onMounted(async () => {
     } catch {
       myIp.value = ''
     }
+  } catch (e) {
+    error.value = e.message || 'Could not load settings.'
   } finally {
     loading.value = false
   }

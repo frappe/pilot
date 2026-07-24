@@ -36,7 +36,7 @@ class PostgresManager(UserOwnedDBManager):
     @property
     def socket_dir(self) -> Path:
         # Postgres' compiled-in default (often /var/run/postgresql) is owned by
-        # the 'postgres' OS user/group, not the bench user — pin a directory
+        # the 'postgres' OS user/group, not the bench user - pin a directory
         # we actually own so both the server and psql can use it.
         return _STATE_DIR / "run"
 
@@ -74,7 +74,7 @@ class PostgresManager(UserOwnedDBManager):
         if result.returncode != 0:
             return False
         output = result.stdout.strip()
-        # Empty output means the role doesn't exist yet at all — also fresh.
+        # Empty output means the role doesn't exist yet at all - also fresh.
         return output in ("", "t")
 
     def provision(self) -> None:
@@ -106,7 +106,7 @@ class PostgresManager(UserOwnedDBManager):
             with socket.create_connection(("127.0.0.1", self.config.port), timeout=0.3):
                 pass
         except OSError:
-            return  # nothing listening there — free to bind
+            return  # nothing listening there - free to bind
         raise DatabaseError(
             f"Port {self.config.port} is already in use by another service "
             f"(e.g. a system-wide PostgreSQL). Free it, or set postgres.port in "
@@ -135,21 +135,21 @@ class PostgresManager(UserOwnedDBManager):
         """Create/update the admin role so Frappe can connect over TCP."""
         if not self.config.root_password:
             print(
-                "  postgres.root_password is empty — skipping superuser setup. "
+                "  postgres.root_password is empty - skipping superuser setup. "
                 "Set it in Settings before creating PostgreSQL sites."
             )
             return
-        if self.check_credentials():
+        if self.has_valid_credentials():
             return
         self._run_sql_as_superuser(self._ensure_role_sql())
-        if not self.check_credentials():
+        if not self.has_valid_credentials():
             raise DatabaseError(
                 f"PostgreSQL is installed but bench could not authenticate as '{self.config.admin_user}' "
                 "over TCP. Ensure the server's pg_hba.conf allows password auth from localhost, or set "
                 "postgres.root_password to the existing superuser password."
             )
 
-    def check_credentials(self, password: str | None = None) -> bool:
+    def has_valid_credentials(self, password: str | None = None) -> bool:
         """Check admin credentials using PGPASSWORD, never argv."""
         pw = self.config.root_password if password is None else password
         psql = self._psql()

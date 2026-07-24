@@ -4,7 +4,16 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pilot.core.database.base import Database, QueryResult
+from pilot.core.database.base import (
+    BinlogFile,
+    BinlogStatus,
+    Database,
+    DatabaseSize,
+    LockWaitRow,
+    LockWaitStatus,
+    QueryResult,
+    TableSize,
+)
 from pilot.core.database.engines import MariaDB, PostgreSQL, SQLite
 from pilot.exceptions import DatabaseError
 
@@ -12,13 +21,21 @@ if TYPE_CHECKING:
     from pilot.config import BenchConfig
 
 __all__ = [
+    "BinlogFile",
+    "BinlogStatus",
     "Database",
+    "DatabaseSize",
+    "LockWaitRow",
+    "LockWaitStatus",
     "MariaDB",
     "PostgreSQL",
     "QueryResult",
     "SQLite",
+    "TableSize",
     "make_database",
     "make_site_database",
+    "read_site_config",
+    "site_database_name",
 ]
 
 
@@ -46,34 +63,44 @@ def make_database(config: "BenchConfig") -> Database:
     )
 
 
-def make_site_database(bench_root: Path | str, site_name: str) -> Database:
-    """Site-specific database connection from site_config.json."""
+def read_site_config(bench_root: Path | str, site_name: str) -> dict:
+    """Read sites/<site>/site_config.json, rejecting names that escape it."""
     # site_name is attacker-controlled. Reject anything that is not a single
     # path segment so it cannot escape sites/<site>/site_config.json.
     if not site_name or "/" in site_name or "\\" in site_name or site_name in (".", ".."):
         raise FileNotFoundError(f"Site '{site_name}' not found")
-    cfg_path = Path(bench_root) / "sites" / site_name / "site_config.json"
-    if not cfg_path.exists():
+    config_path = Path(bench_root) / "sites" / site_name / "site_config.json"
+    if not config_path.exists():
         raise FileNotFoundError(f"Site '{site_name}' not found")
-    cfg = json.loads(cfg_path.read_text())
-    db_type = cfg.get("db_type", "mariadb")
+    return json.loads(config_path.read_text())
+
+
+def site_database_name(bench_root: Path | str, site_name: str) -> str:
+    """The server-side database name a site owns - not the site name itself."""
+    return read_site_config(bench_root, site_name).get("db_name", "")
+
+
+def make_site_database(bench_root: Path | str, site_name: str) -> Database:
+    """Site-specific database connection from site_config.json."""
+    config = read_site_config(bench_root, site_name)
+    db_type = config.get("db_type", "mariadb")
     if db_type == "postgres":
         return PostgreSQL(
-            host=cfg.get("db_host", "localhost"),
-            port=int(cfg.get("db_port", 5432)),
-            user=cfg["db_user"],
-            password=cfg["db_password"],
-            database=cfg["db_name"],
+            host=config.get("db_host", "localhost"),
+            port=int(config.get("db_port", 5432)),
+            user=config["db_user"],
+            password=config["db_password"],
+            database=config["db_name"],
         )
     if db_type == "sqlite":
         # Frappe stores SQLite under sites/<site>/db/, not directly in the site folder.
-        db_file = Path(bench_root) / "sites" / site_name / "db" / f"{cfg.get('db_name', site_name)}.db"
+        db_file = Path(bench_root) / "sites" / site_name / "db" / f"{config.get('db_name', site_name)}.db"
         return SQLite(db_path=str(db_file))
     return MariaDB(
-        host=cfg.get("db_host", "localhost"),
-        port=int(cfg.get("db_port", 3306)),
-        user=cfg["db_user"],
-        password=cfg["db_password"],
-        database=cfg["db_name"],
-        socket=cfg.get("db_socket") or None,
+        host=config.get("db_host", "localhost"),
+        port=int(config.get("db_port", 3306)),
+        user=config["db_user"],
+        password=config["db_password"],
+        database=config["db_name"],
+        socket=config.get("db_socket") or None,
     )

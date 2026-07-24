@@ -1,4 +1,4 @@
-"""Tests for pilot.utils.run_command — timeout, redaction, cancellation."""
+"""Tests for pilot.utils.run_command - timeout, redaction, cancellation."""
 
 from __future__ import annotations
 
@@ -68,3 +68,22 @@ def test_explicit_child_environment_keeps_task_launch_identity(monkeypatch) -> N
 
     assert popen.call_args.kwargs["env"]["BENCH_TASK_LAUNCH_ID"] == "task-launch"
     assert popen.call_args.kwargs["env"]["PILOT_NONINTERACTIVE_PRIVILEGES"] == "1"
+
+
+def test_sudo_command_keeps_controlling_terminal() -> None:
+    """sudo must not be setsid'd away from the tty it caches credentials against."""
+    from pilot.utils import _start_process
+
+    with patch("pilot.utils.subprocess.Popen", return_value=MagicMock()) as popen:
+        _start_process(["sudo", "mkdir", "-p", "/opt/x"], None, None, False)
+
+    assert popen.call_args.kwargs["start_new_session"] is False
+
+
+def test_non_privileged_command_starts_new_session() -> None:
+    from pilot.utils import _start_process
+
+    with patch("pilot.utils.subprocess.Popen", return_value=MagicMock()) as popen:
+        _start_process(["mkdir", "-p", "/opt/x"], None, None, False)
+
+    assert popen.call_args.kwargs["start_new_session"] is True

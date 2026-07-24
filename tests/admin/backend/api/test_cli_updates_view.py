@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from pilot.config.bench_toml_builder import BenchTomlBuilder
+from pilot.config import BenchConfig
 
 
 def _client(bench_root: Path, password: str = "secret"):
@@ -14,7 +14,7 @@ def _client(bench_root: Path, password: str = "secret"):
 
     bench_root.mkdir(parents=True, exist_ok=True)
     (bench_root / "bench.toml").write_text(
-        BenchTomlBuilder(bench_root.name, {"admin_enabled": True, "admin_password": password}).render()
+        BenchConfig.from_flat(bench_root.name, {"admin_enabled": True, "admin_password": password}).dumps()
     )
     secret = ensure_jwt_secret(bench_root / "bench.toml")
     app = create_app(bench_root)
@@ -66,3 +66,37 @@ def test_cli_update_checks_fetches_first(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert body["update_available"] is False
     repo.fetch.assert_called_once_with("main", timeout=60)
+
+
+def test_cli_updates_release_reports_version_without_network(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+
+    with (
+        patch("pilot.is_dev_build", False),
+        patch("pilot.__version__", "v0.0.1-pre-alpha"),
+    ):
+        response = client.get("/api/v1/cli-updates")
+
+    body = response.get_json()
+    assert response.status_code == 200
+    assert body["is_dev"] is False
+    assert body["current_version"] == "v0.0.1-pre-alpha"
+    assert body["update_available"] is False
+
+
+def test_cli_update_checks_release_compares_latest(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+
+    with (
+        patch("pilot.is_dev_build", False),
+        patch("pilot.__version__", "v0.0.1-pre-alpha"),
+        patch("pilot.updater.update_available", return_value=(True, "v0.0.2-pre-alpha")),
+    ):
+        response = client.post("/api/v1/cli-update-checks")
+
+    body = response.get_json()
+    assert response.status_code == 200
+    assert body["update_available"] is True
+    assert body["latest_version"] == "v0.0.2-pre-alpha"

@@ -14,6 +14,12 @@ export function apiErrorMessage(payload, fallback = 'Request failed.') {
   return fallback
 }
 
+export async function unwrap(parsed) {
+  const data = await parsed
+  if (data?.error) throw new Error(apiErrorMessage(data))
+  return data
+}
+
 export const request = ky.create({
   prefix: API_V1_PREFIX,
   throwHttpErrors: false,

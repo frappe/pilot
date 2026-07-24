@@ -25,12 +25,12 @@ class BackupRetentionPolicy:
         return {ts for _, ts in runs[: self.config.keep_last]}
 
     def _keep_gfs(self, runs: list[tuple[datetime, str]]) -> set[str]:
-        cfg = self.config
+        config = self.config
         keep: set[str] = set()
-        keep |= self._keep_tier(runs, cfg.keep_daily, lambda d: (d.year, d.month, d.day))
-        keep |= self._keep_tier(runs, cfg.keep_weekly, lambda d: d.isocalendar()[:2])
-        keep |= self._keep_tier(runs, cfg.keep_monthly, lambda d: (d.year, d.month))
-        keep |= self._keep_tier(runs, cfg.keep_yearly, lambda d: d.year)
+        keep |= self._keep_tier(runs, config.keep_daily, lambda d: (d.year, d.month, d.day))
+        keep |= self._keep_tier(runs, config.keep_weekly, lambda d: d.isocalendar()[:2])
+        keep |= self._keep_tier(runs, config.keep_monthly, lambda d: (d.year, d.month))
+        keep |= self._keep_tier(runs, config.keep_yearly, lambda d: d.year)
         return keep
 
     @staticmethod

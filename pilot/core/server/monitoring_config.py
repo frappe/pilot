@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import getpass
 import os
-import subprocess
 import typing
 from pathlib import Path
 
@@ -35,8 +33,8 @@ Type=oneshot
 WorkingDirectory={cli_root}
 Environment=PYTHONPATH={cli_root}
 ExecStart={python} -m pilot.core.server.monitoring
-StandardOutput=append:/var/log/bench-monitor.log
-StandardError=append:/var/log/bench-monitor.error.log
+StandardOutput=append:{cli_root}/logs/bench-monitor.log
+StandardError=append:{cli_root}/logs/bench-monitor.error.log
 
 [Install]
 WantedBy=default.target
@@ -56,21 +54,12 @@ class MonitorConfigurator:
         self.user_unit_dir = Path.home() / ".config" / "systemd" / "user"
 
     def install(self) -> None:
+        # systemd cannot open the unit's append: targets if this is missing.
+        (cli_root() / "logs").mkdir(parents=True, exist_ok=True)
         self._write_unit()
         self._install_user_unit()
         self._write_timer_unit()
         self._install_user_timer_unit()
-
-        subprocess.run(
-            ["sudo", "loginctl", "enable-linger", getpass.getuser()],
-            capture_output=True,
-            check=False,
-        )
-        subprocess.run(
-            ["sudo", "systemctl", "start", f"user@{os.getuid()}.service"],
-            capture_output=True,
-            check=False,
-        )
 
         env = self._systemctl_env()
         run_command(self._systemctl("daemon-reload"), env=env)
@@ -87,28 +76,19 @@ class MonitorConfigurator:
     def system_log_path(self) -> Path:
         return self._require_bench().config.monitor.system_log_path
 
+    @property
+    def db_log_path(self) -> Path:
+        return self._require_bench().config.monitor.db_log_path
+
+    @property
+    def slow_query_log_path(self) -> Path:
+        return self._require_bench().config.monitor.slow_query_log_path
+
     def setup(self) -> None:
         if not is_linux():
             raise BenchError("Monitoring is only supported on linux based machines.")
 
-        log_dir = self.log_path.parent
-        log_dir.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["sudo", "chown", f"{os.getuid()}:{os.getgid()}", str(log_dir)], check=True)
-        self.setup_log_rotation()
-
-    def setup_log_rotation(self) -> None:
-        bench = self._require_bench()
-        monitor_config = bench.config.monitor
-        self._write_logrotate_config(
-            f"/etc/logrotate.d/{bench.config.name}-stats",
-            self.log_path,
-            monitor_config.application_log_max_size,
-        )
-        self._write_logrotate_config(
-            "/etc/logrotate.d/bench-system-stats",
-            self.system_log_path,
-            monitor_config.system_log_max_size,
-        )
+        self.log_path.parent.mkdir(parents=True, exist_ok=True)
 
     def is_system_log_authority(self) -> bool:
         bench = self._require_bench()
@@ -168,24 +148,6 @@ class MonitorConfigurator:
         if link.is_symlink() or link.exists():
             link.unlink()
         link.symlink_to(target.resolve())
-
-    def _write_logrotate_config(self, target: str, log_path: Path, max_size: str) -> None:
-        config = f"""\
-{log_path} {{
-    size {max_size}
-    rotate 3
-    compress
-    missingok
-    notifempty
-    copytruncate
-}}
-"""
-        subprocess.run(
-            ["sudo", "tee", target],
-            input=config.encode(),
-            capture_output=True,
-            check=True,
-        )
 
     def _require_bench(self) -> "Bench":
         assert self.bench is not None, "MonitorConfigurator needs a bench for this operation"

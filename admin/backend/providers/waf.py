@@ -9,7 +9,7 @@ WINDOW_SECONDS = {"30m": 1800, "1h": 3600, "6h": 21600, "12h": 43200, "24h": 864
 _MAX_BUCKETS = 48
 _TOP_LIMIT = 10
 # CRS scoring/correlation rules (949xxx inbound anomaly, 980xxx reporting) are
-# bookkeeping, not attacks — keep them out of the "top rules" breakdown.
+# bookkeeping, not attacks - keep them out of the "top rules" breakdown.
 _SUMMARY_RULE_PREFIXES = ("949", "980")
 _INBOUND_ANOMALY_RULE = "949110"
 _TIME_FORMATS = ("%a %b %d %H:%M:%S %Y", "%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S")
@@ -36,7 +36,7 @@ class WafProvider:
             transaction = record.get("transaction", record)
             when = self._parse_time(self._first(transaction, "time_stamp", "timestamp", "time"))
             if when is None:
-                continue  # can't place it in the window — skip, don't inflate totals
+                continue  # can't place it in the window - skip, don't inflate totals
             if when < self._cutoff:
                 break  # older than the window; the rest is older still
             messages = self._first(transaction, "messages") or []
@@ -77,10 +77,10 @@ class WafProvider:
         }
 
     def _mode(self) -> str:
-        from pilot.config import BenchTomlStore
+        from pilot.config import BenchConfig
 
         try:
-            return BenchTomlStore.for_bench(self._bench_root).read().waf.mode
+            return BenchConfig.read(self._bench_root).waf.mode
         except Exception:
             return "DetectionOnly"
 

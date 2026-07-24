@@ -26,6 +26,8 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, 'src'),
+        // frappe-ui's markdown util isn't exported; alias the source file directly.
+        'frappe-ui/markdown': path.resolve(__dirname, 'node_modules/frappe-ui/src/utils/markdown.ts'),
       },
     },
     server: {

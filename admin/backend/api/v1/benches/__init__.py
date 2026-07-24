@@ -18,7 +18,7 @@ from admin.backend.api.v1.benches.support import (
     target_bench_dir,
 )
 from admin.backend.providers.bench import BenchProvider
-from pilot.config import BenchTomlStore
+from pilot.config import BenchConfig
 from pilot.core.bench import Bench
 from pilot.internal.atomic_file import exclusive_file_lock
 
@@ -104,7 +104,7 @@ def _run_action_locked(target_dir: Path, toml_path: Path, name: str, action: str
     if not toml_path.exists():
         return error_response("bench_not_found", f"Bench '{name}' not found.", 404)
     try:
-        target_config = BenchTomlStore(toml_path).read()
+        target_config = BenchConfig.read(toml_path)
     except Exception:
         return error_response(
             "bench_unavailable",
@@ -166,7 +166,7 @@ def _delete_bench_locked(target_dir: Path, toml_path: Path, name: str):
         )
 
     try:
-        target_config = BenchTomlStore(toml_path).read()
+        target_config = BenchConfig.read(toml_path)
     except Exception:
         return error_response(
             "bench_unavailable",

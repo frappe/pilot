@@ -53,7 +53,7 @@ class TmpEnv:
 
     def resolve_modules(self, module_names: list[str]) -> dict[str, str]:
         """Return {module: reason} for names that don't resolve via find_spec
-        (no code runs — this just confirms what the stat-based check found)."""
+        (no code runs - this just confirms what the stat-based check found)."""
         try:
             result = run_command(
                 [str(self.path / "bin" / "python"), "-c", self._resolve_check_script(module_names)]
@@ -96,4 +96,4 @@ class TmpEnv:
         ):
             if candidate.exists():
                 return str(candidate)
-        raise BenchError("uv not found — run the pilot install script to set it up")
+        raise BenchError("uv not found - run the pilot install script to set it up")

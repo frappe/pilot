@@ -74,9 +74,11 @@ export function useMarketplace(initialSiteName = '') {
 
       sites.value = siteList.filter((site) => site.exists && !site.broken)
       if (currentSiteName.value) {
-        if (!sites.value.some((site) => site.name === currentSiteName.value)) currentSiteName.value = ''
+        if (!sites.value.some((site) => site.name === currentSiteName.value))
+          currentSiteName.value = ''
       } else if (initialSiteName) {
-        currentSiteName.value = sites.value.find((site) => site.name === initialSiteName)?.name || ''
+        currentSiteName.value =
+          sites.value.find((site) => site.name === initialSiteName)?.name || ''
       }
     } catch (caught) {
       error.value = caught.message || 'Failed to load marketplace'
@@ -85,7 +87,9 @@ export function useMarketplace(initialSiteName = '') {
     }
   }
 
-  const currentSite = computed(() => sites.value.find((site) => site.name === currentSiteName.value) || null)
+  const currentSite = computed(
+    () => sites.value.find((site) => site.name === currentSiteName.value) || null,
+  )
   const installedOnCurrentSite = computed(() => new Set(currentSite.value?.installed_apps || []))
 
   // Only Frappe-made apps that some marketplace app depends on.

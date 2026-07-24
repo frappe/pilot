@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from pilot.managers.task.models import TaskFailure, TaskStatus
-
-_TERMINAL_TASK_STATUSES = frozenset({TaskStatus.SUCCESS, TaskStatus.FAILED, TaskStatus.KILLED})
+from pilot.internal.tasks.models import TERMINAL_TASK_STATUSES, TaskFailure, TaskStatus
 
 _ALLOWED_TASK_TRANSITIONS = {
     TaskStatus.QUEUED: frozenset({TaskStatus.RUNNING, TaskStatus.KILLED}),
-    TaskStatus.RUNNING: _TERMINAL_TASK_STATUSES,
+    TaskStatus.RUNNING: TERMINAL_TASK_STATUSES,
     TaskStatus.SUCCESS: frozenset(),
     TaskStatus.FAILED: frozenset(),
     TaskStatus.KILLED: frozenset(),

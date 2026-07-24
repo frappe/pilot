@@ -83,7 +83,7 @@ class TestAppLifecycle:
     def test_install_app_on_site(self, bench_root: Path, bench_bin: str, site_name: str) -> None:
         """install-app registers testapp on the site."""
         if not (bench_root / "apps" / APP_NAME).is_dir():
-            pytest.skip(f"{APP_NAME} not in apps/ — run test_get_app first")
+            pytest.skip(f"{APP_NAME} not in apps/ - run test_get_app first")
 
         result = _run(
             bench_bin,
@@ -114,7 +114,7 @@ class TestAppLifecycle:
         """uninstall-app removes testapp from the site."""
         installed = _installed_apps(bench_bin, bench_root, site_name)
         if APP_NAME not in installed:
-            pytest.skip(f"{APP_NAME} not installed on {site_name} — run test_install_app first")
+            pytest.skip(f"{APP_NAME} not installed on {site_name} - run test_install_app first")
 
         result = _run(
             bench_bin,

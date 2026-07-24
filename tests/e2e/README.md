@@ -1,7 +1,7 @@
 # End-to-end tests (Playwright for Python)
 
 Browser-driven tests that exercise the real bench lifecycle through the **admin
-UI** — the same path a user takes:
+UI** - the same path a user takes:
 
 ```
 bench new  →  setup wizard  →  login  →  create site
@@ -9,7 +9,7 @@ bench new  →  setup wizard  →  login  →  create site
 ```
 
 Unlike `tests/integration/` (HTTP-level), these drive the actual Vue admin in a
-browser and run each mutation as the UI does — as a background task, waited to
+browser and run each mutation as the UI does - as a background task, waited to
 completion. Built on **pytest + pytest-playwright** (sync API).
 
 ## Layout
@@ -18,7 +18,7 @@ completion. Built on **pytest + pytest-playwright** (sync API).
 |------|---------|
 | `harness/bench.py`  | `Bench` class: wraps `bench new` / `bench start` (wizard + full), stop, destroy (via `bench drop`). Reads the admin port from `bench.toml`; the admin password is harness-chosen (the wizard sets it). |
 | `harness/tasks.py`  | Capture a UI action's `task_id` and poll `/api/v1/tasks/:id` to success. |
-| `flows/wizard.py`   | `complete_dev_wizard()` — drives `Setup.vue` for the chosen engine (`db_type="mariadb"`/`"postgres"`), dev mode. |
+| `flows/wizard.py`   | `complete_dev_wizard()` - drives `Setup.vue` for the chosen engine (`db_type="mariadb"`/`"postgres"`), dev mode. |
 | `flows/admin.py`    | `login`, `create_site`, `install_custom_app`, `uninstall_app`, `drop_site` + API-based assertions. |
 | `conftest.py`       | `bench` + `page` fixtures (module-scoped) and the serial-skip wiring. |
 | `specs/test_bench_lifecycle.py` | The one serial lifecycle; the engine (`mariadb` / `postgres`) is selected by env. |
@@ -30,8 +30,8 @@ the remaining steps once one fails.
 ## Running locally
 
 Prerequisites: MariaDB and/or PostgreSQL packages installed (bench provisions
-its own rootless, per-user server from them — see `MariaDBManager`/
-`PostgresManager` — so no running system service or pre-set password is
+its own rootless, per-user server from them - see `MariaDBManager`/
+`PostgresManager` - so no running system service or pre-set password is
 needed), Redis, and `bench` on `PATH` (or set `BENCH_BIN`).
 
 ```bash
@@ -53,11 +53,11 @@ full trace (DOM snapshots, screenshots, network) with:
 playwright show-trace test-results/<module>/trace.zip
 ```
 
-By default the harness does **not** build the admin UI — `bench start` serves the
+By default the harness does **not** build the admin UI - `bench start` serves the
 prebuilt bundle (downloaded for the wizard, fetched by `bench init` for the full
 bench). Set `E2E_BUILD_ADMIN=1` to build the admin UI from source instead, so the
 run exercises *this branch's* frontend (slower, but required to catch frontend
-changes — this is what CI does).
+changes - this is what CI does).
 
 Useful env vars:
 
@@ -89,10 +89,10 @@ a **matrix** of parallel jobs:
 
 To add another variant, add a row to the matrix `include` (and any system deps
 its `if:` step needs). To widen what a variant exercises, flip the env knobs
-above — no new spec file required.
+above - no new spec file required.
 
 ## Selector note
 
 Selectors are label/role/text based against the existing markup (no
-`data-testid`). If UI copy changes, update the strings in `flows/` — they are
+`data-testid`). If UI copy changes, update the strings in `flows/` - they are
 centralized there.

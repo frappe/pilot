@@ -3,6 +3,7 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
 import tarfile
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -310,7 +311,7 @@ def host_owner(bench_path: Path, host: str) -> str | None:
 
 
 def installed_app_version(env_path: Path, name: str) -> str:
-    """Version of an installed app read from its dist-info METADATA — no subprocess."""
+    """Version of an installed app read from its dist-info METADATA - no subprocess."""
     lib_dir = env_path / "lib"
     if not lib_dir.is_dir():
         return ""
@@ -342,7 +343,7 @@ def get_yarn_bin() -> str:
     local_yarn = Path.home() / ".local" / "bin" / "yarn"
     if local_yarn.exists():
         return str(local_yarn)
-    raise BenchError("yarn not found — run bench init to install it.")
+    raise BenchError("yarn not found - run bench init to install it.")
 
 
 def redact_text(text: str, secrets: list[str] | None) -> str:
@@ -360,36 +361,79 @@ def run_command(
     stream_output: bool = False,
     timeout: float | None = None,
     redactions: list[str] | None = None,
+    tee_output: bool = False,
+    stdin_text: str | None = None,
 ) -> subprocess.CompletedProcess:
-    process = _start_process(argv, cwd, env, stream_output)
-    stdout, stderr = _wait_for_process(process, argv, timeout)
+    if tee_output:
+        if timeout is not None:
+            raise ValueError("tee_output does not support timeout")
+        return _run_command_tee(argv, cwd, env)
+    process = _start_process(argv, cwd, env, stream_output, stdin_text is not None)
+    stdout, stderr = _wait_for_process(process, argv, timeout, stdin_text)
     _raise_on_failure(argv, process, stderr, stream_output, redactions)
     return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
 
 
-def _start_process(
-    argv: list[str], cwd: Path | None, env: dict | None, stream_output: bool
-) -> subprocess.Popen:
+def _run_command_tee(
+    argv: list[str], cwd: Path | None, env: dict | None
+) -> subprocess.CompletedProcess:
+    """Stream combined output live while capturing it for later classification."""
+    process = subprocess.Popen(
+        argv,
+        cwd=cwd,
+        env=_inherit_task_env(env),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+        text=True,
+    )
+    captured: list[str] = []
+    if process.stdout is None:
+        raise RuntimeError("Command output pipe was not created")
+    try:
+        for line in process.stdout:
+            sys.stdout.write(line)
+            sys.stdout.flush()
+            captured.append(line)
+    except KeyboardInterrupt:
+        _terminate_process_group(process)
+        raise
+    process.wait()
+    return subprocess.CompletedProcess(argv, process.returncode, "".join(captured), "")
+
+
+def _inherit_task_env(env: dict | None) -> dict | None:
     inherited = {
         key: os.environ[key]
         for key in ("BENCH_TASK_LAUNCH_ID", "PILOT_NONINTERACTIVE_PRIVILEGES")
         if key in os.environ
     }
     if env is not None and inherited:
-        env = {**env, **inherited}
+        return {**env, **inherited}
+    return env
+
+
+def _start_process(
+    argv: list[str], cwd: Path | None, env: dict | None, stream_output: bool, pipe_stdin: bool = False
+) -> subprocess.Popen:
+    detach_session = not (argv and (argv[0] == "sudo" or argv[0].endswith("/sudo")))
     return subprocess.Popen(
         argv,
         cwd=cwd,
-        env=env,
+        env=_inherit_task_env(env),
+        stdin=subprocess.PIPE if pipe_stdin else None,
         stdout=None if stream_output else subprocess.PIPE,
         stderr=None if stream_output else subprocess.PIPE,
-        start_new_session=True,
+        start_new_session=detach_session,
     )
 
 
-def _wait_for_process(process: subprocess.Popen, argv: list[str], timeout: float | None):
+def _wait_for_process(
+    process: subprocess.Popen, argv: list[str], timeout: float | None, stdin_text: str | None = None
+):
+    stdin_bytes = stdin_text.encode() if stdin_text is not None else None
     try:
-        return process.communicate(timeout=timeout)
+        return process.communicate(input=stdin_bytes, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
         _terminate_process_group(process)
         raise CommandError(

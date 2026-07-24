@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import re
 import shutil
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -15,6 +17,32 @@ from pilot.utils import installed_app_version, run_command
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
     from pilot.internal.git import GitRepo
+
+
+@dataclass
+class NewAppOptions:
+    """Answers fed to `make-app`'s prompts. Empty title/license/branch accept
+    frappe's defaults; description, publisher and email must be non-empty."""
+
+    title: str = ""
+    description: str = ""
+    publisher: str = ""
+    email: str = ""
+    license: str = ""
+    branch: str = ""
+    github_workflow: bool = False
+
+    def as_answers(self) -> str:
+        answers = [
+            self.title,
+            self.description,
+            self.publisher,
+            self.email,
+            self.license,
+            "y" if self.github_workflow else "n",
+            self.branch,
+        ]
+        return "\n".join(answers) + "\n"
 
 
 class App:
@@ -32,10 +60,61 @@ class App:
             name = name[:-4]
         if name.replace("-", "_").lower() == "frappe":
             raise BenchError(
-                "'frappe' is the base framework, not an app — it can't be added "
+                "'frappe' is the base framework, not an app - it can't be added "
                 "with get-app. It's set up when the bench itself is created."
             )
         return cls(AppConfig(name=name, repo=repo, branch=branch), bench)
+
+    @classmethod
+    def scaffold(
+        cls,
+        bench: "Bench",
+        app_name: str,
+        options: "NewAppOptions | None" = None,
+        *,
+        on_progress: Callable[[str], None] = lambda message: None,
+    ) -> "App":
+        """Create a new Frappe app under apps/ via `make-app`, then install it.
+        With `options`, `make-app`'s prompts are answered from it; without, they
+        run interactively against the terminal."""
+        name = cls._normalize_new_app_name(app_name)
+        if not cls.is_available_on_bench(bench, app_name):
+            raise BenchError(f"App '{name}' already exists in this bench.")
+
+        args = [*bench.frappe_call, "frappe", "make-app", str(bench.apps_path), name]
+        on_progress(f"Creating new app '{name}'...")
+        # Answers are piped, so keep make-app quiet - its echoed prompts are noise.
+        run_command(
+            args, cwd=bench.sites_path, stream_output=options is None,
+            stdin_text=options.as_answers() if options else None,
+        )
+
+        app = cls(AppConfig(name=name, repo="", branch=options.branch if options else ""), bench)
+        on_progress(f"Installing '{name}'...")
+        try:
+            app._install_into_environment()
+            app._register()
+        except Exception:
+            shutil.rmtree(app.path, ignore_errors=True)
+            raise
+        on_progress(f"\n'{name}' created and installed successfully.")
+        return app
+
+    @classmethod
+    def is_available_on_bench(cls, bench: "Bench", app_name: str) -> bool:
+        """Whether `app_name` is free to create - not registered and not on disk."""
+        name = cls._normalize_new_app_name(app_name)
+        return not bench.is_app_installed(name) and not (bench.apps_path / name).exists()
+
+    @staticmethod
+    def _normalize_new_app_name(app_name: str) -> str:
+        name = app_name.strip().lower().replace(" ", "_").replace("-", "_")
+        if not re.fullmatch(r"[a-z][a-z0-9_]*", name):
+            raise BenchError(
+                "App name must start with a letter and contain only lowercase "
+                "letters, numbers, and underscores."
+            )
+        return name
 
     @property
     def path(self) -> Path:
@@ -68,6 +147,9 @@ class App:
     def has_marketplace_update(self, marketplace_entry: dict | None) -> bool:
         return self._repository.has_marketplace_update(marketplace_entry)
 
+    def update_target(self, marketplace_entry: dict | None) -> RevisionPin | None:
+        return self._repository.update_target(marketplace_entry)
+
     def has_remote_update(self) -> bool:
         return self._repository.has_remote_update()
 
@@ -87,7 +169,7 @@ class App:
         return self._repository.remote_url
 
     def _detect_default_branch(self) -> str:
-        return self._repository.detect_default_branch()
+        return self._repository.get_default_branch()
 
     def is_commit_hash(self, ref: str) -> bool:
         return AppRepository.is_commit_hash(ref)
@@ -111,6 +193,10 @@ class App:
 
     def switch_branch(self, branch: str) -> None:
         self._repository.switch_branch(branch)
+
+    def checkout_commit(self, sha: str) -> None:
+        """Check out a specific commit SHA, refetching it from origin if needed."""
+        self._repository.checkout_pinned_commit(sha)
 
     def _checkout_pinned_target(self, pin: RevisionPin) -> None:
         self._repository.checkout_pinned_target(pin)
@@ -161,6 +247,7 @@ class App:
             return AppInstallResult(app, already_installed=True, installed_dependencies=dependencies)
 
         app, cloned_this_run = self._clone_and_normalize(on_progress)
+        app.record_branch()
         try:
             dependencies = app._install_dependencies(on_progress) if install_dependencies else []
             if not skip_validations:
@@ -216,6 +303,23 @@ class App:
         existing = self.bench.registered_apps()
         if self.config.name not in existing:
             (self.bench.sites_path / "apps.txt").write_text("\n".join([*existing, self.config.name]) + "\n")
+
+    def record_branch(self) -> None:
+        """Persist this app's tracked branch to bench.toml so it survives a
+        detached HEAD after a later commit pin (see BenchInventory._configured_branch)."""
+        if not self.config.branch or self.is_commit_hash(self.config.branch):
+            return
+        from pilot.config import BenchConfig
+
+        if not BenchConfig.toml_path(self.bench.path).exists():
+            return
+        with BenchConfig.open(self.bench.path, mode="raw") as raw:
+            apps = raw.setdefault("apps", [])
+            entry = next((a for a in apps if a.get("name") == self.config.name), None)
+            if entry is None:
+                apps.append({"name": self.config.name, "repo": self.config.repo, "branch": self.config.branch})
+            else:
+                entry["branch"] = self.config.branch
 
     def _build_assets_via_env_manager(self) -> None:
         from pilot.managers.environment import PythonEnvManager

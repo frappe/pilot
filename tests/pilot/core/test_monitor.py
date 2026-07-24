@@ -21,7 +21,7 @@ def _make_bench(path: Path, name: str = "my-bench") -> Bench:
 def _make_monitor(bench: Bench, authority_file: Path | None = None) -> Monitor:
     with patch.object(MonitorConfigurator, "setup"):
         monitor = Monitor(bench)
-    # Keep the authority sentinel inside tmp_path — never touch /var/log in tests.
+    # Keep the authority sentinel inside tmp_path - never touch /var/log in tests.
     monitor.bench.config.monitor.authority_file_path = authority_file or (
         bench.path.parent / ".bench-authority"
     )

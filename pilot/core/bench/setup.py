@@ -88,7 +88,7 @@ class ProductionSetup:
             )
         self.bench.config.production.process_manager = pm
         self.bench.config.production.enabled = True
-        # Production serves the admin behind its domain, so it must be enabled —
+        # Production serves the admin behind its domain, so it must be enabled -
         # otherwise the API answers 503 "Admin is disabled". The wizard sets this
         # too; do it here so pure-CLI deploys are reachable as well.
         self.bench.config.admin.enabled = True
@@ -141,13 +141,18 @@ class ProductionSetup:
             SystemdProcessManager(self.bench).remove_units()
 
     def _setup_monitoring(self):
-        """Install the shared bench-monitor timer unit and persist monitor config to bench.toml."""
-        from pilot.config import BenchTomlStore
         from pilot.core.server.monitoring import MonitorConfigurator, resolve_monitor_log_path
+        from pilot.core.site.uptime_monitoring_config import UptimeMonitorConfigurator
 
-        MonitorConfigurator().install()
+        monitor = MonitorConfigurator(self.bench)
+        monitor.install()
         self.bench.config.monitor.log_path = resolve_monitor_log_path(self.bench.config)
-        BenchTomlStore(self.bench.path).write(self.bench.config)
+        self.bench.config.write(self.bench.path)
+        monitor.setup()
+
+        uptime = UptimeMonitorConfigurator(self.bench)
+        uptime.install()
+        uptime.setup()
 
     def _persist_production_state(self) -> None:
         """Write the production state to bench.toml LAST, so the switcher never
@@ -172,10 +177,13 @@ class ProductionSetup:
             sys.exit(1)
 
     def _check_sudo_available(self) -> None:
-        """Fail early when production setup cannot get root privileges."""
+        """Fail early when production setup cannot get the privileges it needs.
+        The installer's scoped nginx/certbot grants are enough and need no tty;
+        only fall back to a password prompt when they are absent."""
+        from pilot.managers.nginx import NginxManager
         from pilot.managers.platform import has_passwordless_sudo, is_root, which
 
-        if is_root() or has_passwordless_sudo():
+        if is_root() or has_passwordless_sudo() or NginxManager(self.bench).has_passwordless_sudo:
             return
         if which("sudo") is None:
             raise BenchError(
@@ -184,8 +192,8 @@ class ProductionSetup:
         if not sys.stdin.isatty():
             raise BenchError(
                 "Deploying to production needs root (nginx, certbot, systemd) and there's no "
-                "terminal to prompt for a sudo password. Run this interactively, or configure "
-                "passwordless sudo for this user first."
+                "terminal to prompt for a sudo password. Re-run the installer as root to grant "
+                "this user what production needs, then deploy again."
             )
 
     def _check_admin_domain(self) -> None:
@@ -202,13 +210,12 @@ class ProductionSetup:
 
     def _persist(self, updates: dict) -> None:
         """Merge ``updates`` into bench.toml in place, preserving all other fields."""
-        from pilot.config import BenchTomlStore
+        from pilot.config import BenchConfig
 
-        store = BenchTomlStore.for_bench(self.bench.path)
-        with store.edit_raw() as data:
+        with BenchConfig.open(self.bench.path, mode="raw") as data:
             for section, values in updates.items():
                 data.setdefault(section, {}).update(values)
-            # Drop the deprecated production.nginx key — nginx is always on in prod.
+            # Drop the deprecated production.nginx key - nginx is always on in prod.
             data.get("production", {}).pop("nginx", None)
 
     def _write_dns_multitenancy(self) -> None:
@@ -230,30 +237,30 @@ class ProductionSetup:
             subprocess.run(["sudo", "systemctl", "disable", "--now", "supervisor"], check=False)
         from pilot.managers.processes.supervisor import SupervisorProcessManager
 
-        mgr = SupervisorProcessManager(self.bench)
-        mgr.write_config()
-        mgr.install_config()
-        mgr.reload_manager_config()
+        manager = SupervisorProcessManager(self.bench)
+        manager.write_config()
+        manager.install_config()
+        manager.reload_manager_config()
 
     def _setup_systemd(self) -> None:
         from pilot.managers.processes.systemd import SystemdProcessManager
 
-        mgr = SystemdProcessManager(self.bench)
-        mgr.write_config()
-        mgr.install_config()
-        mgr.reload_manager_config()
+        manager = SystemdProcessManager(self.bench)
+        manager.write_config()
+        manager.install_config()
+        manager.reload_manager_config()
 
     def _start_workload(self) -> None:
         """Start the workload (and admin) so the bench is actually serving once
-        setup completes — otherwise sites 502 until a separate `bench start`."""
+        setup completes - otherwise sites 502 until a separate `bench start`."""
         from pilot.managers.processes.local import ProcessManager
 
         ProcessManager.for_bench(self.bench).start()
 
     def _setup_letsencrypt_if_needed(self) -> None:
-        from pilot.managers.letsencrypt import needs_letsencrypt
+        from pilot.managers.letsencrypt import is_letsencrypt_required
 
-        if not needs_letsencrypt(self.bench):
+        if not is_letsencrypt_required(self.bench):
             return
         try:
             self.bench.setup_letsencrypt()
@@ -267,9 +274,9 @@ class ProductionSetup:
             )
 
     def _build_admin_for_production(self) -> None:
-        from admin.backend.frontend import build_admin_frontend
+        from admin.backend.frontend import ensure_admin_frontend
 
-        build_admin_frontend()
+        ensure_admin_frontend()
 
     def _report_summary(self, on_progress: Callable[[str], None]) -> None:
         from pilot.managers.nginx import NginxManager

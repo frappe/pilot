@@ -54,7 +54,7 @@ def enable_tls(name: str):
 
 
 def _tls_email_request(bench_root: Path):
-    from pilot.config import BenchTomlStore
+    from pilot.config import BenchConfig
 
     data = request.get_json(silent=True)
     if data is None:
@@ -73,7 +73,7 @@ def _tls_email_request(bench_root: Path):
         return email, None
 
     try:
-        config = BenchTomlStore.for_bench(bench_root).read()
+        config = BenchConfig.read(bench_root)
     except Exception:
         return "", internal_error("Could not read certificate configuration.")
 

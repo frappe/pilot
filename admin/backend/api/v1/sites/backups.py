@@ -106,7 +106,7 @@ def _site_backups_dir(bench_root: Path, name: str) -> Path:
 @sites_bp.get("/<name>/backups/<timestamp>/download-links")
 @require_scope(site_name)
 def backup_download_links(name: str, timestamp: str):
-    """Pre-signed S3 URLs for a backup run's files — the user downloads
+    """Pre-signed S3 URLs for a backup run's files - the user downloads
     straight from the bucket, so this server never proxies the transfer."""
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:

@@ -9,7 +9,9 @@
         </p>
       </div>
       <div class="flex items-center gap-2 shrink-0">
-        <Button v-if="disabled" size="sm" :loading="loading" @click="enable">Enable {{ noun }}</Button>
+        <Button v-if="disabled" size="sm" :loading="loading" @click="enable"
+          >Enable {{ noun }}</Button
+        >
         <Dropdown v-else :options="scheduleOptions" placement="bottom-end">
           <template #default="{ open }">
             <Button variant="subtle" size="sm" :loading="loading" :active="open">
@@ -50,7 +52,9 @@
       </div>
       <div class="flex justify-end gap-2 mt-4">
         <Button variant="ghost" @click="showCustomDialog = false">Cancel</Button>
-        <Button variant="solid" :loading="scheduleSaving" @click="saveCustomSchedule">Save schedule</Button>
+        <Button variant="solid" :loading="scheduleSaving" @click="saveCustomSchedule"
+          >Save schedule</Button
+        >
       </div>
     </template>
   </Dialog>
@@ -92,13 +96,21 @@ const FREQ_OPTIONS = [
   { label: 'Monthly', value: 'monthly' },
 ]
 
-const WEEKDAY_OPTIONS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-  .map((label, value) => ({ label, value }))
+const WEEKDAY_OPTIONS = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+].map((label, value) => ({ label, value }))
 
 const monthDayOptions = Array.from({ length: 31 }, (_, i) => ({ label: `${i + 1}`, value: i + 1 }))
 
 const hourOptions = Array.from({ length: 24 }, (_, h) => {
-  const label = h === 0 ? '12:00 AM' : h < 12 ? `${h}:00 AM` : h === 12 ? '12:00 PM' : `${h - 12}:00 PM`
+  const label =
+    h === 0 ? '12:00 AM' : h < 12 ? `${h}:00 AM` : h === 12 ? '12:00 PM' : `${h - 12}:00 PM`
   return { label, value: h }
 })
 
@@ -127,7 +139,8 @@ function formatHour(h) {
 
 const customScheduleLabel = computed(() => {
   const time = formatHour(schedHour.value)
-  if (schedFrequency.value === 'weekly') return `Weekly, ${WEEKDAY_FULL[schedWeekday.value]} ${time}`
+  if (schedFrequency.value === 'weekly')
+    return `Weekly, ${WEEKDAY_FULL[schedWeekday.value]} ${time}`
   if (schedFrequency.value === 'monthly') return `Monthly, ${schedMonthDay.value} ${time}`
   return `Daily, ${time}`
 })
@@ -142,13 +155,21 @@ const currentScheduleLabel = computed(() => {
 const scheduleOptions = computed(() => {
   const customEntry = {
     label: schedulePreset.value === 'custom' ? customScheduleLabel.value : 'Custom...',
-    onClick: () => { showCustomDialog.value = true },
+    onClick: () => {
+      showCustomDialog.value = true
+    },
   }
   const presets = [
     { label: 'Daily, 2:00 AM', onClick: () => setPreset('0 2 * * *') },
     { label: 'Weekly, Sunday 2:00 AM', onClick: () => setPreset('0 2 * * 0') },
   ]
-  const disableEntry = { label: `Disable ${props.noun}`, theme: 'red', onClick: () => { showDisableConfirm.value = true } }
+  const disableEntry = {
+    label: `Disable ${props.noun}`,
+    theme: 'red',
+    onClick: () => {
+      showDisableConfirm.value = true
+    },
+  }
   return schedulePreset.value === 'custom'
     ? [customEntry, ...presets, disableEntry]
     : [...presets, customEntry, disableEntry]
@@ -164,15 +185,22 @@ const schedCron = computed(() => {
 function parseCronToState(cron) {
   const [, h, dom, , dow] = cron.split(' ')
   schedHour.value = isNaN(parseInt(h)) ? 0 : parseInt(h)
-  if (dom !== '*') { schedFrequency.value = 'monthly'; schedMonthDay.value = parseInt(dom) || 1 }
-  else if (dow !== '*') { schedFrequency.value = 'weekly'; schedWeekday.value = parseInt(dow) || 0 }
-  else schedFrequency.value = 'daily'
+  if (dom !== '*') {
+    schedFrequency.value = 'monthly'
+    schedMonthDay.value = parseInt(dom) || 1
+  } else if (dow !== '*') {
+    schedFrequency.value = 'weekly'
+    schedWeekday.value = parseInt(dow) || 0
+  } else schedFrequency.value = 'daily'
 }
 
 async function load() {
   try {
     const data = await props.fetchSchedule()
-    if (!data.schedule) { disabled.value = true; return }
+    if (!data.schedule) {
+      disabled.value = true
+      return
+    }
     disabled.value = false
     parseCronToState(data.schedule)
     schedulePreset.value = PRESET_CRONS.includes(data.schedule) ? data.schedule : 'custom'

@@ -87,7 +87,7 @@ jobs:
         # The harness builds the admin UI from source (E2E_BUILD_ADMIN below)
         # around the bench lifecycle, so it just needs node_modules.
         working-directory: admin/frontend
-        run: npm install
+        run: npm ci
 
       - name: Cache Playwright browser
         uses: actions/cache@v4

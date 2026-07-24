@@ -50,7 +50,7 @@ class BenchSettings:
         return restarted, waf_warning
 
     def _regenerate_and_restart_if_needed(self, old_restart: dict) -> bool:
-        if not needs_restart(old_restart, restart_trigger_values(self.bench.config)):
+        if not is_restart_needed(old_restart, restart_trigger_values(self.bench.config)):
             return False
         try:
             regenerate_configs(self.bench)
@@ -101,7 +101,7 @@ class BenchSettings:
             ) from error
 
 
-def needs_restart(old: dict, new: dict) -> bool:
+def is_restart_needed(old: dict, new: dict) -> bool:
     return any(
         old.get(section, {}).get(key) != new.get(section, {}).get(key) for section, key in _RESTART_KEYS
     )
@@ -161,6 +161,16 @@ def s3_payload(config: BenchConfig) -> dict:
         "bucket": config.s3.bucket,
         "provider": config.s3.provider,
         "region": config.s3.region,
+    }
+
+
+def llm_payload(config: BenchConfig) -> dict:
+    return {
+        "provider": config.llm.provider,
+        "api_key_set": bool(config.llm.api_key),
+        "model": config.llm.model,
+        "max_tokens": config.llm.max_tokens,
+        "api_base": config.llm.api_base,
     }
 
 

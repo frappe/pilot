@@ -7,20 +7,20 @@ from flask import Flask
 
 from admin.backend.api.v1.settings import settings_bp
 from pilot.config import BenchConfig
-from pilot.config.bench_toml_builder import BenchTomlBuilder
 
 
-def _client(bench_root: Path):
+def _client(bench_root: Path, configure=None):
     bench_root.mkdir()
-    (bench_root / "bench.toml").write_text(
-        BenchTomlBuilder(
-            bench_root.name,
-            {
-                "admin_domain": "admin.example.com",
-                "admin_password": "secret",
-            },
-        ).render()
+    config = BenchConfig.from_flat(
+        bench_root.name,
+        {
+            "admin_domain": "admin.example.com",
+            "admin_password": "secret",
+        },
     )
+    if configure:
+        configure(config)
+    (bench_root / "bench.toml").write_text(config.dumps())
     app = Flask(__name__)
     app.config["BENCH_ROOT"] = bench_root
     app.register_blueprint(settings_bp, url_prefix="/api/v1/settings")
@@ -73,9 +73,14 @@ def test_settings_report_restart_failure_without_stderr(tmp_path: Path) -> None:
 
 
 def test_settings_report_nginx_failure_without_exception_text(tmp_path: Path) -> None:
-    client = _client(tmp_path / "bench")
+    def enable_production(config: BenchConfig) -> None:
+        config.production.enabled = True
+        config.production.process_manager = "systemd"
+
+    # nginx is only regenerated on a production bench; production is set up out
+    # of band (`bench setup production`), not via the settings patcher.
+    client = _client(tmp_path / "bench", enable_production)
     update = {
-        "production": {"process_manager": "systemd"},
         "firewall": {
             "enabled": True,
             "default": "allow",

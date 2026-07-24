@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pilot.managers.waf import SHARED_MODSEC_DIR
+from pilot.managers.waf import shared_modsec_dir
 
 if TYPE_CHECKING:
     from pilot.config import WafCondition, WafConfig, WafRule
@@ -45,10 +45,10 @@ class ModSecurityRenderer:
     def render_main(self, modsec_dir: Path) -> str:
         return (
             f"Include {modsec_dir}/modsecurity.conf\n"
-            f"Include {SHARED_MODSEC_DIR}/crs-setup.conf\n"
+            f"Include {shared_modsec_dir()}/crs-setup.conf\n"
             f"Include {modsec_dir}/overrides.conf\n"
             f"Include {modsec_dir}/custom_rules.conf\n"
-            f"Include {SHARED_MODSEC_DIR}/rules/*.conf\n"
+            f"Include {shared_modsec_dir()}/rules/*.conf\n"
             f"Include {modsec_dir}/exclusions.conf\n"
         )
 

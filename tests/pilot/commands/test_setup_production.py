@@ -11,7 +11,7 @@ from pilot.config import BenchConfig
 from pilot.core.bench import Bench
 from pilot.core.bench.setup import ProductionSetup
 from pilot.exceptions import BenchError
-from pilot.managers.letsencrypt import needs_letsencrypt
+from pilot.managers.letsencrypt import is_letsencrypt_required
 
 
 def _make_bench(
@@ -82,19 +82,19 @@ def test_check_admin_domain_grandfathers_existing_non_matching(tmp_path: Path, m
         cmd._check_admin_domain()
 
 
-def test_needs_letsencrypt(tmp_path: Path) -> None:
+def test_is_letsencrypt_required(tmp_path: Path) -> None:
     # Public admin domain + email → cert needed.
-    assert needs_letsencrypt(
+    assert is_letsencrypt_required(
         _make_bench(tmp_path, name="a", admin_domain="admin.example.com", email="x@y.com")
     )
     # No email → never.
-    assert not needs_letsencrypt(_make_bench(tmp_path, name="b", admin_domain="admin.example.com"))
+    assert not is_letsencrypt_required(_make_bench(tmp_path, name="b", admin_domain="admin.example.com"))
     # Local dev domain → not obtainable.
-    assert not needs_letsencrypt(
+    assert not is_letsencrypt_required(
         _make_bench(tmp_path, name="c", admin_domain="c-admin.localhost", email="x@y.com")
     )
     # TLS disabled (central proxy terminates TLS) → no admin cert needed.
-    assert not needs_letsencrypt(
+    assert not is_letsencrypt_required(
         _make_bench(tmp_path, name="d", admin_domain="admin.example.com", email="x@y.com", tls=False)
     )
 
@@ -181,12 +181,16 @@ def test_setup_monitoring_persists_log_path_to_toml(tmp_path: Path, monkeypatch)
     import tomllib
 
     from pilot.core.server.monitoring import MonitorConfigurator
+    from pilot.core.site.uptime_monitoring_config import UptimeMonitorConfigurator
 
     bench = _make_bench(tmp_path, process_manager="systemd")
     bench.config.production.enabled = True
     cmd = ProductionSetup(bench)
 
     monkeypatch.setattr(MonitorConfigurator, "install", lambda self: None)
+    monkeypatch.setattr(UptimeMonitorConfigurator, "install", lambda self: None)
+    monkeypatch.setattr(MonitorConfigurator, "setup", lambda self: None)
+    monkeypatch.setattr(UptimeMonitorConfigurator, "setup", lambda self: None)
 
     cmd._setup_monitoring()
 
@@ -197,17 +201,41 @@ def test_setup_monitoring_persists_log_path_to_toml(tmp_path: Path, monkeypatch)
 
 def test_setup_monitoring_log_path_is_path_on_config(tmp_path: Path, monkeypatch) -> None:
     from pilot.core.server.monitoring import MonitorConfigurator
+    from pilot.core.site.uptime_monitoring_config import UptimeMonitorConfigurator
 
     bench = _make_bench(tmp_path, process_manager="systemd")
     bench.config.production.enabled = True
     cmd = ProductionSetup(bench)
 
     monkeypatch.setattr(MonitorConfigurator, "install", lambda self: None)
+    monkeypatch.setattr(UptimeMonitorConfigurator, "install", lambda self: None)
+    monkeypatch.setattr(MonitorConfigurator, "setup", lambda self: None)
+    monkeypatch.setattr(UptimeMonitorConfigurator, "setup", lambda self: None)
 
     cmd._setup_monitoring()
 
     assert isinstance(bench.config.monitor.log_path, Path)
     assert bench.config.monitor.log_path.name == f"{bench.config.name}-stats.log"
+
+
+def test_setup_monitoring_runs_privileged_setup_at_provision_time(tmp_path: Path, monkeypatch) -> None:
+    """Privileged log-dir/logrotate setup must run here, not in the user-service daemons."""
+    from pilot.core.server.monitoring import MonitorConfigurator
+    from pilot.core.site.uptime_monitoring_config import UptimeMonitorConfigurator
+
+    bench = _make_bench(tmp_path, process_manager="systemd")
+    bench.config.production.enabled = True
+    cmd = ProductionSetup(bench)
+
+    called = []
+    monkeypatch.setattr(MonitorConfigurator, "install", lambda self: None)
+    monkeypatch.setattr(UptimeMonitorConfigurator, "install", lambda self: None)
+    monkeypatch.setattr(MonitorConfigurator, "setup", lambda self: called.append("monitor"))
+    monkeypatch.setattr(UptimeMonitorConfigurator, "setup", lambda self: called.append("uptime"))
+
+    cmd._setup_monitoring()
+
+    assert called == ["monitor", "uptime"]
 
 
 def test_setup_letsencrypt_reraises_by_default(tmp_path: Path, monkeypatch) -> None:

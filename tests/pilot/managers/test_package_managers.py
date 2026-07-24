@@ -163,7 +163,7 @@ def test_install_uses_sudo_when_not_root(monkeypatch) -> None:
 
 
 # Node.js is installed once by install.sh's root bootstrap now, not per bench
-# init — _install_node only covers macOS (brew); everywhere else it fails loud
+# init - _install_node only covers macOS (brew); everywhere else it fails loud
 # rather than shelling out to sudo.
 
 

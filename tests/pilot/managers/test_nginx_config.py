@@ -245,6 +245,50 @@ def test_no_admin_vhost_without_domain(tmp_path: Path) -> None:
     assert "location = /api/v1/health" not in config
 
 
+# --- access log --------------------------------------------------------------
+
+
+def test_site_vhost_logs_real_ip_via_pilot_access_format(tmp_path: Path) -> None:
+    config = _site_config(tmp_path, _BASE_SITE)
+
+    assert "access_log" in config
+    assert "pilot_access" in config
+    assert "nginx-access.log" in config
+
+
+def test_only_the_app_location_gets_request_logging(tmp_path: Path) -> None:
+    config = _site_config(tmp_path, _BASE_SITE)
+
+    # Exactly one access_log directive: the proxied app location, not
+    # /assets, /files, or /socket.io - those aren't measured by monitor.json.log
+    # either, so keep the two IP sources comparable.
+    assert config.count("access_log") == 1
+    assets_block = config[config.index("location /assets") : config.index("location /socket.io")]
+    assert "access_log" not in assets_block
+    socketio_block = config[config.index("location /socket.io") :]
+    socketio_block = socketio_block[: socketio_block.index("location /")]
+    assert "access_log" not in socketio_block
+
+
+def test_admin_only_vhost_has_no_access_log(tmp_path: Path) -> None:
+    data = copy.deepcopy(_BASE_DATA)
+    data["admin"] = {"domain": "admin.example.com"}
+    config = _renderer(tmp_path, data).generate_bench_config([], admin_ssl=False)
+
+    assert "access_log" not in config
+
+
+def test_every_vhost_gets_error_log_including_admin(tmp_path: Path) -> None:
+    # Unlike access_log (app requests only, site vhosts only), error_log covers
+    # every vhost - admin included - since operational errors matter there too.
+    data = copy.deepcopy(_BASE_DATA)
+    data["admin"] = {"domain": "admin.example.com"}
+    config = _renderer(tmp_path, data).generate_bench_config([(_BASE_SITE, False)], admin_ssl=False)
+
+    assert config.count("error_log") == 2  # one site vhost + one admin vhost
+    assert "nginx-error.log" in config
+
+
 # --- server-wide catch-all --------------------------------------------------
 
 
@@ -260,6 +304,13 @@ def test_server_config_is_default_server(tmp_path: Path) -> None:
     # serving the first TLS vhost's cert.
     assert "listen 443 ssl http2 default_server;" in conf
     assert "ssl_reject_handshake on;" in conf
+
+
+def test_server_config_declares_pilot_access_log_format(tmp_path: Path) -> None:
+    conf = _renderer(tmp_path).generate_server_config(Path("/usr/share/nginx/bench-error-pages"))
+
+    assert "log_format pilot_access" in conf
+    assert "$remote_addr" in conf
 
 
 # --- NginxManager: files and TLS decisions ----------------------------------
@@ -342,7 +393,7 @@ def test_site_without_ssl_flag_stays_http_even_with_cert(tmp_path: Path) -> None
     bench = _bench_with_site(tmp_path, data)
 
     manager = NginxManager(bench)
-    manager.cert_covers = lambda site: True
+    manager.has_covering_cert = lambda site: True
     manager.generate_config(ssl_ready=True)
 
     content = (tmp_path / "config" / "nginx" / "include.conf").read_text()
@@ -389,6 +440,7 @@ def test_install_config_rolls_back_symlink_when_reload_fails(tmp_path: Path) -> 
     bench = _make_bench(tmp_path, _BASE_DATA)
     manager = NginxManager(bench)
     symlink_path = tmp_path / "test-bench.conf"
+    symlink_path.symlink_to(tmp_path / "include.conf")
 
     with (
         patch.object(manager, "reload", side_effect=CommandError("nginx -t failed", returncode=1)),
@@ -399,8 +451,63 @@ def test_install_config_rolls_back_symlink_when_reload_fails(tmp_path: Path) -> 
 
     mock_run.assert_called_once()
     assert mock_run.call_args[0][0][-2:] == ["unlink", str(symlink_path)]
+def test_stage_and_copy_creates_missing_nginx_config_dir(tmp_path: Path) -> None:
+    """install() runs setup_sudoers() before generate_config() ever mkdirs
+    config/nginx - staging must not assume that directory already exists."""
+    bench = _make_bench(tmp_path, _BASE_DATA)
+    manager = NginxManager(bench)
+    nginx_dir = bench.config_path / "nginx"
+    assert not nginx_dir.exists()
+
+    with patch("pilot.managers.sudoers.run_command") as mock_run:
+        manager._stage_and_copy("content", Path("/etc/logrotate.d/test-bench-nginx"))
+
+    mock_run.assert_called_once()
+    assert nginx_dir.is_dir()
 
 
+def test_stage_and_copy_validates_staged_file_before_copying(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, _BASE_DATA)
+    manager = NginxManager(bench)
+    target = Path("/etc/sudoers.d/test-bench-pilot-nginx")
+
+    with patch("pilot.managers.sudoers.run_command") as mock_run:
+        manager._stage_and_copy("content", target, validate=["visudo", "-cf"])
+
+    assert mock_run.call_count == 2
+    validate_call, cp_call = (call.args[0] for call in mock_run.call_args_list)
+    staged = bench.config_path / "nginx" / target.name
+    assert validate_call[-3:] == ["visudo", "-cf", str(staged)]
+    assert cp_call[-3:] == ["cp", str(staged), str(target)]
+
+
+def test_setup_sudoers_grants_only_start_stop_reload(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, _BASE_DATA)
+    manager = NginxManager(bench)
+    sudoers_file = Path("/etc/sudoers.d/runner-pilot-nginx")
+
+    with (
+        patch("pwd.getpwuid") as mock_getpwuid,
+        patch("pilot.managers.sudoers.stage_and_copy") as mock_stage,
+        patch("pilot.managers.sudoers.run_command") as mock_run,
+        patch.object(NginxManager, "has_passwordless_sudo", False),
+    ):
+        mock_getpwuid.return_value.pw_name = "runner"
+        manager.setup_sudoers()
+
+    content, target = mock_stage.call_args.args[1:3]
+    assert mock_stage.call_args.kwargs == {"validate": ["visudo", "-cf"]}
+    assert target == sudoers_file
+    assert "runner ALL=(ALL) NOPASSWD:" in content
+    assert "-t," in content
+    assert "-T," in content
+    assert "start nginx," in content
+    assert "stop nginx," in content
+    assert content.rstrip().endswith("reload nginx")
+    assert "ALL=(ALL) NOPASSWD: ALL" not in content
+
+    mock_run.assert_called_once()
+    assert mock_run.call_args.args[0][-3:] == ["chmod", "440", str(sudoers_file)]
 def test_prune_dangling_symlinks_removes_only_broken_ones(tmp_path: Path) -> None:
     nginx_dir = tmp_path / "conf.d"
     nginx_dir.mkdir()
@@ -427,3 +534,26 @@ def test_config_dir_honors_explicit_value(tmp_path: Path) -> None:
     bench = _make_bench(tmp_path, _BASE_DATA)
     bench.config.nginx.config_dir = Path("/custom/nginx/dir")
     assert NginxManager(bench).config_dir == Path("/custom/nginx/dir")
+
+
+def test_cert_files_exist_falls_back_to_http_on_failure() -> None:
+    """Any failure - cert absent, or sudo denied - renders the vhost HTTP-only."""
+    from pilot.managers.nginx import cert_files_exist
+
+    denied = CommandError("Command 'sudo' failed with exit code 1.\nsudo: a password is required")
+    with patch("pilot.managers.nginx.run_command", side_effect=denied):
+        assert cert_files_exist("site.example.com") is False
+
+
+def test_cert_files_exist_true_when_both_files_present() -> None:
+    from pilot.managers.nginx import cert_files_exist
+
+    with patch("pilot.managers.nginx.run_command") as mock_run:
+        assert cert_files_exist("site.example.com") is True
+    argv = mock_run.call_args.args[0]
+    assert argv[-4:] == [
+        "/etc/letsencrypt/live/site.example.com/fullchain.pem",
+        "-a",
+        "-f",
+        "/etc/letsencrypt/live/site.example.com/privkey.pem",
+    ]

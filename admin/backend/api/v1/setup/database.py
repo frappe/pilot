@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pilot.config import BenchTomlStore
+from pilot.config import BenchConfig
 
 if TYPE_CHECKING:
     from pilot.managers.database import MariaDBManager, PostgresManager
@@ -62,10 +62,10 @@ def database_validation(bench_root: Path, data: dict):
 
 def database_validation_state(manager, password: str, existing: bool) -> str:
     if existing:
-        return "valid" if manager.check_credentials(password) else "invalid"
+        return "valid" if manager.has_valid_credentials(password) else "invalid"
     if _is_fresh_install(manager):
         return "will_install"
-    return "valid" if manager.check_credentials(password) else "invalid"
+    return "valid" if manager.has_valid_credentials(password) else "invalid"
 
 
 def _is_fresh_install(manager: PostgresManager | MariaDBManager) -> bool:
@@ -95,7 +95,7 @@ def _mariadb_config(
     toml_path = bench_root / "bench.toml"
     if toml_path.exists():
         try:
-            settings = BenchTomlStore(toml_path).read_flat()
+            settings = BenchConfig.read_flat(toml_path)
             config.socket_path = settings.get("mariadb_socket_path", "") or ""
         except Exception as exc:
             logging.debug("Could not read the existing mariadb socket path: %s", exc)

@@ -31,7 +31,7 @@ class BenchInitializer:
         python_env_manager = PythonEnvManager(self.bench)
 
         # Production deployment (process manager, nginx, TLS) is intentionally
-        # NOT done here — it's a separate `bench setup production` step. bench
+        # NOT done here - it's a separate `bench setup production` step. bench
         # init never needs root: system packages/services are installed once
         # by install.sh, and MariaDB/PostgreSQL run as a rootless per-user
         # server (see MariaDBManager/PostgresManager).
@@ -48,7 +48,7 @@ class BenchInitializer:
             ("Install Node.js", python_env_manager.install_node),
             ("Install Node.js dependencies", python_env_manager.install_node_dependencies),
             ("Configure Redis", self._configure_redis),
-            ("Download admin frontend", lambda: self._download_admin_frontend(on_progress)),
+            ("Prepare admin frontend", lambda: self._ensure_admin_frontend(on_progress)),
             ("Generate process config", self._generate_process_config),
         ]
 
@@ -70,8 +70,8 @@ class BenchInitializer:
             try:
                 fn()
             except Exception as e:
-                on_progress(f"    Warning: rollback step failed — {e}")
-        on_progress("\nRollback complete. bench.toml is preserved — fix the issue and run init again.")
+                on_progress(f"    Warning: rollback step failed - {e}")
+        on_progress("\nRollback complete. bench.toml is preserved - fix the issue and run init again.")
 
     def _remove_bench_dirs(self) -> None:
         for name in _BENCH_DIRS:
@@ -100,13 +100,11 @@ class BenchInitializer:
     def _ensure_admin_password(self) -> None:
         import secrets
 
-        from pilot.config import BenchTomlStore
-
         admin = self.bench.config.admin
         if not admin.enabled or admin.password:
             return
         admin.password = secrets.token_hex(nbytes=5)
-        BenchTomlStore.for_bench(self.bench.path).write(self.bench.config)
+        self.bench.config.write(self.bench.path)
 
     def _configure_redis(self) -> None:
         from pilot.managers.redis import RedisManager
@@ -118,13 +116,10 @@ class BenchInitializer:
 
         ProcessManager.for_bench(self.bench).write_config()
 
-    def _download_admin_frontend(self, on_progress: Callable[[str], None]) -> None:
-        from admin.backend.frontend import build_admin_frontend, download_admin_frontend
-        from pilot.utils import cli_root
+    def _ensure_admin_frontend(self, on_progress: Callable[[str], None]) -> None:
+        from admin.backend.frontend import ensure_admin_frontend
 
-        if not download_admin_frontend(cli_root()):
-            on_progress("  Pre-built download failed — building from source (requires Node.js)...")
-            build_admin_frontend(on_progress=on_progress)
+        ensure_admin_frontend(on_progress)
 
     def _install_system_packages(self) -> None:
         from pilot.managers.environment import PythonEnvManager
@@ -149,7 +144,7 @@ class BenchInitializer:
         if not manager.config.existing:
             manager.provision()
             return
-        if not manager.check_credentials():
+        if not manager.has_valid_credentials():
             from pilot.exceptions import BenchError
 
             raise BenchError(

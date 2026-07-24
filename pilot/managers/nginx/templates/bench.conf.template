@@ -65,6 +65,7 @@ server {
     listen [::]:{{ http_port }};
     {% endif %}
     server_name {{ vhost.server_name }};
+    error_log   {{ logs_path }}/nginx-error.log warn;
 
     {# trust known reverse proxies: adopt their client IP, reject direct hits #}
     {% if proxy_servers %}
@@ -160,6 +161,7 @@ server {
 
     {# everything else to the app upstream #}
     location / {
+        access_log {{ logs_path }}/nginx-access.log pilot_access;
         {% if vhost.canonical %}
         if ($host != "{{ vhost.canonical }}") {
             return 301 $scheme://{{ vhost.canonical }}$request_uri;

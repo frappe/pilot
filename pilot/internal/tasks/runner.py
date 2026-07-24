@@ -11,13 +11,11 @@ from pathlib import Path
 
 from pilot.exceptions import TaskNotRunningError
 from pilot.internal.tasks.authoring import required_task_args
+from pilot.internal.tasks.models import TaskStatus
 from pilot.internal.tasks.payload import TaskPayloadBuilder
 from pilot.internal.tasks.process import TaskProcess
 from pilot.internal.tasks.store import TaskStore
 from pilot.internal.tasks.worker import task_workers
-from pilot.managers.task.models import (
-    TaskStatus,
-)
 from pilot.tasks import Task
 from pilot.tasks.callbacks import TaskCallback as TaskCallback
 from pilot.tasks.callbacks import TaskCallbacks
@@ -64,7 +62,8 @@ class TaskRunner:
         args: dict,
         callbacks: TaskCallbacks | None = None,
         idempotency_key: str | None = None,
-        resource_key: str | None = None,
+        resource_key: str | list[str] | None = None,
+        resource_handoff_from: str | None = None,
     ) -> str:
         return self.submit(
             command,
@@ -72,6 +71,7 @@ class TaskRunner:
             callbacks=callbacks,
             idempotency_key=idempotency_key,
             resource_key=resource_key,
+            resource_handoff_from=resource_handoff_from,
         ).task_id
 
     def submit(
@@ -80,7 +80,8 @@ class TaskRunner:
         args: dict,
         callbacks: TaskCallbacks | None = None,
         idempotency_key: str | None = None,
-        resource_key: str | None = None,
+        resource_key: str | list[str] | None = None,
+        resource_handoff_from: str | None = None,
     ) -> SubmissionResult:
         payload = self._payloads.build(command, args, callbacks)
         if idempotency_key is None:
@@ -88,6 +89,7 @@ class TaskRunner:
                 payload.metadata,
                 payload.private_files,
                 resource_key=resource_key,
+                resource_handoff_from=resource_handoff_from,
             )
             submission = SubmissionResult(payload.task_id, True)
         else:

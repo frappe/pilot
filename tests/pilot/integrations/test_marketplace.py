@@ -1,4 +1,4 @@
-"""Tests for pilot.integrations.marketplace — Resolver and Marketplace classes."""
+"""Tests for pilot.integrations.marketplace - Resolver and Marketplace classes."""
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -185,7 +185,7 @@ def test_resolve_raises_when_no_dep_version_satisfies_spec():
 
 
 def test_resolve_raises_on_version_conflict_in_diamond():
-    # B picks payments 1.5.0, A requires payments >=2.0.0 — conflict
+    # B picks payments 1.5.0, A requires payments >=2.0.0 - conflict
     payments_old = make_resolver(app="payments", version="1.5.0")
     payments_new = make_resolver(app="payments", version="2.0.0")
     b = make_resolver(app="B", dependencies={"payments": ">=1.0.0,<2.0.0"})
@@ -217,7 +217,7 @@ def test_resolve_raises_when_dep_not_in_registry():
 
 def test_resolve_raises_when_registry_empty_and_has_deps():
     root = make_resolver(app="erpnext", dependencies={"someapp": ">=1.0.0"})
-    # _registry defaults to {} — no injection needed
+    # _registry defaults to {} - no injection needed
 
     with pytest.raises(BenchError):
         root.resolve()

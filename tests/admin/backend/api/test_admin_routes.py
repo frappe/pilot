@@ -23,6 +23,8 @@ SITE_SCOPED_ENDPOINTS = {
     "sites.get_configuration",
     "sites.get_domain",
     "sites.install_site_app",
+    "sites.get_monitoring",
+    "sites.get_uptime",
     "sites.list_backups",
     "sites.list_domains",
     "sites.migrate_site",
@@ -67,20 +69,20 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         if rule.rule.startswith(f"{API_ROOT_PREFIX}/") and not rule.rule.startswith(f"{API_V1_PREFIX}/")
     ]
 
-    assert len(routes) == 102
+    assert len(routes) == 121
     assert unversioned == []
-    assert len({(method, path) for method, path, _, _ in routes}) == 102
+    assert len({(method, path) for method, path, _, _ in routes}) == 121
     assert Counter(method for method, _, _, _ in routes) == {
         "DELETE": 10,
-        "GET": 51,
+        "GET": 65,
         "PATCH": 4,
-        "POST": 34,
+        "POST": 39,
         "PUT": 3,
     }
     assert Counter(policy for _, _, _, policy in routes) == {
-        "authenticated": 54,
+        "authenticated": 71,
         "authenticated+bench-management": 9,
-        "authenticated+site-scope": 28,
+        "authenticated+site-scope": 30,
         "open": 5,
         "setup-conditional": 6,
     }
@@ -93,24 +95,26 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         "benches": 8,
         "cli-update-checks": 1,
         "cli-updates": 1,
-        "database": 3,
+        "database": 12,
         "git": 6,
         "bootstrap": 1,
         "health": 1,
         "logs": 4,
         "marketplace": 1,
+        "migrations": 6,
         "monitor": 2,
         "network": 1,
+        "updates": 1,
         "runtime": 4,
-        "settings": 2,
+        "settings": 3,
         "setup": 6,
-        "sites": 31,
+        "sites": 33,
         "ssh-keys": 3,
         "metrics": 1,
         "session": 3,
         "system": 1,
         "task-worker": 3,
-        "tasks": 7,
+        "tasks": 8,
         "waf": 1,
     }
 
@@ -175,6 +179,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         ("POST", "/api/v1/tasks/<task_id>/actions/retry"),
         ("GET", "/api/v1/tasks/<task_id>/events"),
         ("GET", "/api/v1/tasks/<task_id>/output/content"),
+        ("GET", "/api/v1/tasks/<task_id>/debug"),
         ("GET", "/api/v1/task-worker"),
         ("POST", "/api/v1/task-worker/actions/start"),
         ("POST", "/api/v1/task-worker/actions/stop"),
@@ -200,6 +205,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
     assert {
         ("GET", "/api/v1/settings"),
         ("PATCH", "/api/v1/settings"),
+        ("GET", "/api/v1/settings/llm/models"),
         ("GET", "/api/v1/audit-events"),
         ("GET", "/api/v1/network/client"),
         ("GET", "/api/v1/ssh-keys"),

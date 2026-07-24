@@ -11,8 +11,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from pilot.internal.tasks.callbacks import run_callback, trigger_for_task_status
+from pilot.internal.tasks.models import TaskStatus
 from pilot.internal.tasks.store import TaskStore
-from pilot.managers.task.models import TaskStatus
 from pilot.utils import open_private
 
 _HOSTNAME = socket.gethostname()

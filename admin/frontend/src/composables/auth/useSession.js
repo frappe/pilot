@@ -12,10 +12,7 @@ const session = reactive({
 
 async function loadSession() {
   try {
-    const [bootstrap, currentSession] = await Promise.all([
-      authApi.bootstrap(),
-      authApi.session(),
-    ])
+    const [bootstrap, currentSession] = await Promise.all([authApi.bootstrap(), authApi.session()])
     session.authenticated = currentSession.authenticated === true
     session.wizard = bootstrap.mode === 'setup'
     session.enabled = bootstrap.enabled === true

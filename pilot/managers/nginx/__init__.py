@@ -3,12 +3,13 @@ from __future__ import annotations
 import pwd
 import re
 import shutil
-import subprocess
 import sys
+from fnmatch import fnmatch
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
+from pilot.exceptions import CommandError
 from pilot.internal.template import Template
 from pilot.managers.gunicorn import GunicornManager
 from pilot.managers.nginx.waf_render import ModSecurityRenderer
@@ -19,7 +20,9 @@ from pilot.managers.platform import (
     is_linux,
     service_command,
     service_running,
+    which,
 )
+from pilot.managers.sudoers import has_passwordless_sudo_for, install_sudoers_grant, stage_and_copy
 from pilot.managers.waf import WafManager
 from pilot.utils import run_command
 
@@ -28,6 +31,7 @@ if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
 _NGINX_CONF = Path("/etc/nginx/nginx.conf")
+_PILOT_INCLUDE = Path("/etc/nginx/conf.d/00-pilot.conf")
 _USER_DIRECTIVE = re.compile(r"^[ \t]*user[ \t]+[^;\n]+;", re.MULTILINE)
 
 _SHARED_ERROR_DIR = Path("/usr/share/nginx/bench-error-pages")
@@ -57,6 +61,13 @@ ERROR_PAGES = {
 LETSENCRYPT_LIVE = Path("/etc/letsencrypt/live")
 
 
+def _shared_nginx_dir() -> Path:
+    """Host-wide nginx artifacts the bench user owns, globbed in by 00-pilot.conf."""
+    from pilot.utils import cli_root
+
+    return cli_root() / "nginx"
+
+
 def render_error_html(code: int, title: str, message: str) -> str:
     return _ERROR_PAGE_TEMPLATE.render(code=code, title=title, message=message)
 
@@ -70,23 +81,14 @@ def live_key_path(domain: str) -> Path:
 
 
 def cert_files_exist(domain: str) -> bool:
+    """Ensure a missing sudo grant does not take the whole bench to http."""
     # /etc/letsencrypt/live is root-only (0700), so stat with privilege.
-    return (
-        subprocess.run(
-            _privileged(
-                [
-                    "test",
-                    "-f",
-                    str(live_cert_path(domain)),
-                    "-a",
-                    "-f",
-                    str(live_key_path(domain)),
-                ]
-            ),
-            capture_output=True,
-        ).returncode
-        == 0
-    )
+    command = ["test", "-f", str(live_cert_path(domain)), "-a", "-f", str(live_key_path(domain))]
+    try:
+        run_command(_privileged(command))
+    except CommandError:
+        return False
+    return True
 
 
 class NginxConfigRenderer:
@@ -166,6 +168,7 @@ class NginxConfigRenderer:
             "client_max_body_size": nginx.client_max_body_size,
             "socketio_port": config.socketio_port,
             "sites_root": f"{self.bench.path}/sites",
+            "logs_path": str(self.bench.logs_path),
             "acme_root": config.letsencrypt.webroot_path,
             "error_dir": self.bench.config_path / "nginx" / "error_pages",
             "error_codes": list(ERROR_PAGES),
@@ -194,6 +197,34 @@ class NginxManager:
         if not self.is_installed():
             get_package_manager().install("nginx")
 
+    def setup_sudoers(self):
+        """Give nginx passwordless sudo for exactly the commands reload needs.
+        Idempotent: same deterministic content every call."""
+        if self.has_passwordless_sudo:
+            return
+        bench_user = pwd.getpwuid(self.bench.path.stat().st_uid).pw_name
+        systemctl = which("systemctl") or "/bin/systemctl"
+        nginx = which("nginx") or "/usr/sbin/nginx"
+        install_sudoers_grant(
+            self.bench.config_path / "nginx",
+            bench_user,
+            "nginx",
+            [
+                f"{nginx} -t",
+                f"{nginx} -T",
+                f"{systemctl} start nginx",
+                f"{systemctl} stop nginx",
+                f"{systemctl} reload nginx",
+            ],
+        )
+
+    @property
+    def has_passwordless_sudo(self) -> bool:
+        """True when the sudoers grant from `setup_sudoers` lets this user run
+        nginx commands without a password prompt."""
+        nginx = which("nginx") or "/usr/sbin/nginx"
+        return has_passwordless_sudo_for([nginx, "-t"])
+
     def generate_config(self, ssl_ready: bool = False) -> None:
         nginx_dir = self.bench.config_path / "nginx"
         nginx_dir.mkdir(parents=True, exist_ok=True)
@@ -203,7 +234,7 @@ class NginxManager:
         # terminates TLS, so neither sites nor the admin serve HTTPS here.
         tls = self.bench.config.admin.tls
         sites = [
-            (site.config, tls and ssl_ready and site.config.ssl and self.cert_covers(site.config))
+            (site.config, tls and ssl_ready and site.config.ssl and self.has_covering_cert(site.config))
             for site in self.bench.sites()
         ]
         admin_ssl = tls and ssl_ready and self.has_admin_cert
@@ -225,6 +256,15 @@ class NginxManager:
 
     def install_default_server(self) -> None:
         """Install the shared catch-all vhost and error pages. Idempotent."""
+        if self.has_shared_include:
+            error_dir = _shared_nginx_dir() / "error_pages"
+            error_dir.mkdir(parents=True, exist_ok=True)
+            for code, (title, message) in ERROR_PAGES.items():
+                (error_dir / f"{code}.html").write_text(render_error_html(code, title, message))
+            catchall = _shared_nginx_dir() / "00-bench-default.conf"
+            catchall.write_text(self._renderer.generate_server_config(error_dir))
+            return
+
         staging = self.bench.config_path / "nginx"
         for code, (title, message) in ERROR_PAGES.items():
             staged = staging / f"_catchall_{code}.html"
@@ -274,27 +314,41 @@ class NginxManager:
         configured = self.bench.config.nginx.config_dir
         return configured if configured != Path("") else default_nginx_config_dir()
 
+    @property
+    def include_path(self) -> Path:
+        return self.bench.config_path / "nginx" / "include.conf"
+
+    @property
+    def has_shared_include(self) -> bool:
+        """True when the installer's 00-pilot.conf already globs this bench in,
+        so publishing a vhost needs no privileges at all."""
+        try:
+            directives = _PILOT_INCLUDE.read_text()
+        except OSError:
+            return False
+        patterns = re.findall(r"^\s*include\s+([^;]+);", directives, re.MULTILINE)
+        return any(fnmatch(str(self.include_path), pattern.strip()) for pattern in patterns)
+
     def install_config(self) -> None:
         nginx_dir = self.config_dir
         symlink_path = nginx_dir / f"{self.bench.config.name}.conf"
-        source_path = self.bench.config_path / "nginx" / "include.conf"
 
-        self._prune_dangling_symlinks(nginx_dir)
+        # A symlink from before the shared include would load the same vhost
+        # twice, so it goes either way.
         if symlink_path.exists() or symlink_path.is_symlink():
             run_command(_privileged(["unlink", str(symlink_path)]))
-        run_command(_privileged(["ln", "-s", str(source_path), str(symlink_path)]))
+        if not self.has_shared_include:
+            self._prune_dangling_symlinks(nginx_dir)
+            run_command(_privileged(["ln", "-s", str(self.include_path), str(symlink_path)]))
         self._set_worker_user()
         if self.bench.config.waf.enabled:
             self._ensure_modsecurity_module()
         self.install_default_server()
         self._reload_or_rollback(symlink_path)
 
-    def _stage_and_copy(self, content: str, target: Path) -> None:
+    def _stage_and_copy(self, content: str, target: Path, validate: list[str] | None = None) -> None:
         """Sudo-copy content into a root-owned target via a bench-owned staging file."""
-        staged = self.bench.config_path / "nginx" / target.name
-        staged.write_text(content)
-        run_command(_privileged(["cp", str(staged), str(target)]))
-        staged.unlink()
+        stage_and_copy(self.bench.config_path / "nginx", content, target, validate)
 
     def _ensure_modsecurity_module(self) -> None:
         """Debian auto-enables the module; elsewhere inject a load_module line.
@@ -329,12 +383,19 @@ class NginxManager:
 
     def _reload_or_rollback(self, symlink_path: Path) -> None:
         """A bad config for this bench must not take nginx down for every
-        other bench on the box - undo the symlink and re-raise."""
+        other bench on the box - unpublish it and re-raise."""
         try:
             self.reload()
         except Exception:
-            run_command(_privileged(["unlink", str(symlink_path)]))
+            self._unpublish(symlink_path)
             raise
+
+    def _unpublish(self, symlink_path: Path) -> None:
+        """Take this bench's vhost out of nginx's view, however it got there."""
+        if self.has_shared_include:
+            self.include_path.rename(self.include_path.with_name("include.conf.broken"))
+        elif symlink_path.exists() or symlink_path.is_symlink():
+            run_command(_privileged(["unlink", str(symlink_path)]))
 
     def _set_worker_user(self) -> None:
         """Run nginx workers as the bench owner. Idempotent."""
@@ -350,10 +411,8 @@ class NginxManager:
         self._stage_and_copy(updated, _NGINX_CONF)
 
     def uninstall_config(self) -> None:
-        """Remove this bench's vhost symlink and reload. Certs are kept."""
-        symlink_path = self.config_dir / f"{self.bench.config.name}.conf"
-        if symlink_path.exists() or symlink_path.is_symlink():
-            run_command(_privileged(["unlink", str(symlink_path)]))
+        """Take this bench's vhost out of nginx and reload. Certs are kept."""
+        self._unpublish(self.config_dir / f"{self.bench.config.name}.conf")
         self.reload()
 
     def reload(self) -> None:
@@ -371,16 +430,17 @@ class NginxManager:
     def has_cert(self, site: "SiteConfig") -> bool:
         return cert_files_exist(site.name)
 
-    def cert_covers(self, site: "SiteConfig") -> bool:
+    def has_covering_cert(self, site: "SiteConfig") -> bool:
         """Cert exists and its SAN list covers every public domain, if any -
         so a failed --expand can't serve a stale cert over HTTPS."""
-        from pilot.managers.letsencrypt import cert_covers, public_domains
+        from pilot.managers.letsencrypt import has_domain_coverage, public_domains
 
         if not self.has_cert(site):
             return False
         public = public_domains(site)
-        return cert_covers(self.cert_path(site), public) if public else True
+        return has_domain_coverage(self.cert_path(site), public) if public else True
 
+    @property
     def admin_cert_path(self) -> Path:
         return live_cert_path(self.bench.config.admin.domain)
 

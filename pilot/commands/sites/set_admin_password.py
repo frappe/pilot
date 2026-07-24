@@ -16,14 +16,13 @@ class SetAdminPasswordCommand(Command):
     password: Annotated[str | None, Arg(help="New password; omit to be prompted securely.")] = None
 
     def run(self) -> None:
-        from pilot.config import BenchTomlStore
+        from pilot.config import BenchConfig
 
         password = self.password or self._prompt()
         if not password:
             raise BenchError("Password must not be empty.")
 
-        store = BenchTomlStore.for_bench(self.bench.path)
-        with store.edit_raw() as data:
+        with BenchConfig.open(self.bench.path, mode="raw") as data:
             data.setdefault("admin", {})["password"] = password
         self.bench.config.admin.password = password
         self.report("Admin password updated.")

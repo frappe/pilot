@@ -101,11 +101,15 @@ def _stop(proc: subprocess.Popen) -> None:
 
 
 def _http_wrapper(prefix: Path, http_body: str) -> str:
+    log_format = (
+        "    log_format pilot_access '$remote_addr [$time_local] \"$request_method $uri\" "
+        "$status \"$host\" $request_time';\n"
+    )
     return (
         f"pid {prefix}/nginx.pid;\n"
         f"error_log {prefix}/error.log;\n"
         "events {}\n"
-        f"http {{\n    access_log off;\n{http_body}}}\n"
+        f"http {{\n{log_format}    access_log off;\n{http_body}}}\n"
     )
 
 
@@ -138,6 +142,7 @@ def _bench_nginx(tmp_path: Path, firewall: dict | None):
         data = {**data, "firewall": firewall}
     bench = Bench(BenchConfig._from_dict(data), tmp_path / "bench")
     bench.config.nginx.http_port = _BENCH_PORT
+    bench.create_directories()
     site = bench.sites_path / "site1.localhost"
     site.mkdir(parents=True, exist_ok=True)
     (site / "site_config.json").write_text("{}")

@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from pilot.config.toml_store import BenchTomlStore
+from pilot.config.bench import BenchConfig
 from pilot.integrations.central import CentralClientError, enroll_if_needed, seed, seed_from_metadata
 from tests.pilot.integrations.test_central_client import _bench, _FakeResponse
 
@@ -19,15 +19,14 @@ _ENROLL_RESULT = {
 
 
 def _seed(bench, *, endpoint="https://central.test", bootstrap_token="boot-xyz", auth_token=""):
-    store = BenchTomlStore.for_bench(bench.path)
-    config = store.read_raw()
+    config = BenchConfig.read_raw(bench.path)
     central = config.setdefault("central", {})
     central["endpoint"] = endpoint
     if bootstrap_token:
         central["bootstrap_token"] = bootstrap_token
     if auth_token:
         central["auth_token"] = auth_token
-    store.write_raw(config)
+    BenchConfig.write_raw(bench.path, config)
     bench.config.central.endpoint = endpoint
     bench.config.central.bootstrap_token = bootstrap_token
     bench.config.central.auth_token = auth_token
@@ -54,7 +53,7 @@ def test_enroll_exchanges_seed_and_persists_credential_and_jwks(tmp_path: Path) 
     assert captured["body"] == {"bootstrap_token": "boot-xyz"}
     assert "X-Pilot-Token" not in captured["headers"]
 
-    saved = BenchTomlStore.for_bench(bench.path).read_raw()
+    saved = BenchConfig.read_raw(bench.path)
     assert saved["central"]["auth_token"] == "pilot-token-abc"
     assert "bootstrap_token" not in saved["central"]
     assert saved["admin"]["jwks_url"] == _ENROLL_RESULT["jwks_url"]

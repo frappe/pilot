@@ -15,7 +15,7 @@ def test_which_searches_sbin_when_path_is_minimal(tmp_path: Path, monkeypatch) -
     daemon.write_text("#!/bin/sh\n")
     daemon.chmod(0o755)
 
-    # Minimal PATH without the sbin dir — shutil.which alone would miss it.
+    # Minimal PATH without the sbin dir - shutil.which alone would miss it.
     monkeypatch.setenv("PATH", str(tmp_path / "bin"))
     monkeypatch.setattr(platform, "_EXTRA_BIN_DIRS", (str(sbin),))
 

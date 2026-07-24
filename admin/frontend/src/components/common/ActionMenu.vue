@@ -6,11 +6,21 @@
       </template>
     </Button>
     <Teleport to="body">
-      <div v-if="open" ref="panel" data-dismissable-layer
+      <div
+        v-if="open"
+        ref="panel"
+        data-dismissable-layer
         class="z-[60] fixed bg-surface-elevation-1 shadow-2xl p-1 border rounded-lg border-outline-gray-2 w-40 pointer-events-auto"
-        :style="panelStyle">
-        <Button v-for="option in options" :key="option.label" variant="ghost" :theme="option.theme"
-          class="!justify-start w-full" @click="select(option)">
+        :style="panelStyle"
+      >
+        <Button
+          v-for="option in options"
+          :key="option.label"
+          variant="ghost"
+          :theme="option.theme"
+          class="!justify-start w-full"
+          @click="select(option)"
+        >
           <template #prefix>
             <component :is="option.icon" class="size-4 shrink-0" />
           </template>
@@ -43,7 +53,10 @@ function toggle() {
   const rect = root.value.getBoundingClientRect()
   const opensUp = rect.bottom + props.options.length * 36 + 12 > window.innerHeight
   panelStyle.value = opensUp
-    ? { right: `${window.innerWidth - rect.right}px`, bottom: `${window.innerHeight - rect.top + 4}px` }
+    ? {
+        right: `${window.innerWidth - rect.right}px`,
+        bottom: `${window.innerHeight - rect.top + 4}px`,
+      }
     : { right: `${window.innerWidth - rect.right}px`, top: `${rect.bottom + 4}px` }
   open.value = true
   document.addEventListener('pointerdown', onOutside, true)

@@ -37,7 +37,7 @@ class AppDependencyInstaller:
                 raise BenchError(
                     f"'{self.app.config.name}' isn't in the marketplace registry, so its "
                     f"dependencies can't be installed automatically. It requires {missing} "
-                    "— run 'bench get-app <repo>' for each of them first, then retry."
+                    "- run 'bench get-app <repo>' for each of them first, then retry."
                 ) from exc
             return None
 
@@ -69,7 +69,7 @@ class AppDependencyInstaller:
             names = [dep.app for dep in resolver.resolve()[:-1]]  # exclude self (last entry)
         except DependencyResolutionError:
             # A deeper transitive conflict shouldn't hide direct deps we
-            # already know are installed — fall back to those.
+            # already know are installed - fall back to those.
             names = list(resolver.dependencies)
 
         apps = []

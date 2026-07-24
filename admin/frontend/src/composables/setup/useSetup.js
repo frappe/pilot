@@ -73,17 +73,21 @@ export function useSetup() {
   })
 
   // Derived database state. Every bench for this OS user shares one
-  // MariaDB/PostgreSQL server (see MariaDBManager/PostgresManager) — there's
+  // MariaDB/PostgreSQL server (see MariaDBManager/PostgresManager) - there's
   // no per-bench deployment mode to choose, just whether that shared server
   // still needs to be installed and secured, or already exists.
   const dbWillInstall = computed(
-    () => !useExistingDb.value && (dbType.value === 'postgres' ? postgresWillInstall.value : mariadbWillInstall.value),
+    () =>
+      !useExistingDb.value &&
+      (dbType.value === 'postgres' ? postgresWillInstall.value : mariadbWillInstall.value),
   )
   const isAdminPasswordValid = computed(
     () => adminPasswordConfigured.value || meetsPasswordRequirements(adminPassword.value),
   )
   const dbPasswordConfigured = computed(() =>
-    dbType.value === 'postgres' ? postgresPasswordConfigured.value : mariadbPasswordConfigured.value,
+    dbType.value === 'postgres'
+      ? postgresPasswordConfigured.value
+      : mariadbPasswordConfigured.value,
   )
 
   const showRootUsername = computed(() => useExistingDb.value || !dbWillInstall.value)
@@ -96,10 +100,11 @@ export function useSetup() {
   )
   const rootPasswordDescription = computed(() => {
     const engine = dbType.value === 'mariadb' ? 'MariaDB' : 'PostgreSQL'
-    if (useExistingDb.value) return `Credentials for the existing ${engine} server at ${dbHost.value || 'the given host'}.`
+    if (useExistingDb.value)
+      return `Credentials for the existing ${engine} server at ${dbHost.value || 'the given host'}.`
     if (dbWillInstall.value)
       return `${engine} will be installed and its ${dbType.value === 'mariadb' ? 'root' : 'superuser'} password set to this value.`
-    return `Using the ${engine} server pilot already manages for this user — enter its existing password.`
+    return `Using the ${engine} server pilot already manages for this user - enter its existing password.`
   })
 
   const branchOptions = computed(() => {
@@ -119,6 +124,7 @@ export function useSetup() {
     isInstalling.value && showStreamDetails.value ? 'max-w-2xl' : 'max-w-lg',
   )
   const isDone = computed(() => currentStep.value === 'done')
+  const benchCommand = computed(() => (benchName.value ? `bench -b ${benchName.value}` : 'bench'))
   const stepTitle = computed(() => {
     if (isDone.value && isProductionHandoff.value) return 'Finishing setup'
     return STEP_TITLES[currentStep.value] || benchName.value
@@ -149,7 +155,7 @@ export function useSetup() {
       mariadbPasswordConfigured.value = config.mariadb_password_configured === true
       postgresPasswordConfigured.value = config.postgres_password_configured === true
       // Bench arrived with production already chosen (the admin UI's "New Bench"
-      // flow) — the wizard's task will bring up production itself, so the 'done'
+      // flow) - the wizard's task will bring up production itself, so the 'done'
       // step shouldn't tell the user to run `bench setup production` by hand.
       // The flattened config renders an unset manager as the literal string
       // "none" (see BenchTomlBuilder._flatten), not an empty value.
@@ -243,7 +249,8 @@ export function useSetup() {
 
   async function validateDatabaseStep() {
     const databaseName = dbType.value === 'postgres' ? 'PostgreSQL' : 'MariaDB'
-    if (!dbPassword.value && !dbPasswordConfigured.value) return `${databaseName} password is required`
+    if (!dbPassword.value && !dbPasswordConfigured.value)
+      return `${databaseName} password is required`
     if (!dbPassword.value) return null
     if (useExistingDb.value && !dbHost.value) return 'Host is required for an existing database'
     isSubmitting.value = true
@@ -254,7 +261,9 @@ export function useSetup() {
         admin_user: resolvedDbUser.value,
         existing: useExistingDb.value,
         host: useExistingDb.value ? dbHost.value : '',
-        port: useExistingDb.value ? Number(dbPort.value) || Number(dbPortPlaceholder.value) : undefined,
+        port: useExistingDb.value
+          ? Number(dbPort.value) || Number(dbPortPlaceholder.value)
+          : undefined,
       })
       if (result.error) {
         return apiErrorMessage(result, `Could not validate the ${databaseName} configuration.`)
@@ -305,7 +314,7 @@ export function useSetup() {
       ...(adminPassword.value ? { admin_password: adminPassword.value } : {}),
     }
     const existing = useExistingDb.value
-    // 'localhost', not '', when off — an empty host breaks check_credentials'
+    // 'localhost', not '', when off - an empty host breaks check_credentials'
     // TCP fallback on systems where the local socket isn't detected.
     const host = existing ? dbHost.value : 'localhost'
     const port = existing ? Number(dbPort.value) || undefined : undefined
@@ -377,6 +386,7 @@ export function useSetup() {
     isLinux,
     isProductionHandoff,
     isDone,
+    benchCommand,
     terminal,
     streamUrl,
     streamStatus,

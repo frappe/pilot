@@ -66,12 +66,12 @@ class RegistryCache:
             result = run_command(["git", "-C", str(self.path), "status", "--porcelain"])
         except CommandError as exc:
             raise RegistryUnavailableError(
-                "The marketplace registry cache is corrupted (git status failed) — "
+                "The marketplace registry cache is corrupted (git status failed) - "
                 f"restore it before using get-app/marketplace: {self.path}"
             ) from exc
         if result.stdout.decode().strip():
             raise RegistryUnavailableError(
-                "The marketplace registry cache has been modified manually — "
+                "The marketplace registry cache has been modified manually - "
                 f"restore it before using get-app/marketplace: {self.path}"
             )
 
@@ -84,7 +84,7 @@ class RegistryCache:
     def _refresh(self) -> None:
         remote_head = self._remote_head_sha()
         if remote_head is None:
-            return  # offline — keep serving the existing clone
+            return  # offline - keep serving the existing clone
         try:
             local_head = (
                 run_command(["git", "-C", str(self.path), "rev-parse", "HEAD"]).stdout.decode().strip()
@@ -94,7 +94,7 @@ class RegistryCache:
             run_command(["git", "-C", str(self.path), "fetch", "--depth", "1", "origin", "HEAD"])
             run_command(["git", "-C", str(self.path), "reset", "--hard", "FETCH_HEAD"])
         except CommandError:
-            return  # local git trouble or network dropped mid-fetch — keep serving the existing clone
+            return  # local git trouble or network dropped mid-fetch - keep serving the existing clone
 
     def _remote_head_sha(self) -> str | None:
         try:

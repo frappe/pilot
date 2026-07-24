@@ -52,7 +52,7 @@ def test_toml_string_round_trip_preserves_escaped_and_unicode_text() -> None:
         "backslashes": r"C:\Program Files\Pilot\bench.toml",
         "multiline": "first line\nsecond line\r\nthird line",
         "controls": "tab:\t backspace:\b form-feed:\f nul:\x00 unit-separator:\x1f",
-        "unicode": "café — 東京 🚀",
+        "unicode": "café - 東京 🚀",
     }
 
     assert Toml.loads(Toml.dumps(data)) == data

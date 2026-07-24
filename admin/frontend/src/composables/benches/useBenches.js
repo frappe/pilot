@@ -12,7 +12,8 @@ export function useBenches() {
     loading.value = true
     try {
       benches.value = await benchesApi.list()
-    } catch { } finally {
+    } catch {
+    } finally {
       loading.value = false
     }
   }

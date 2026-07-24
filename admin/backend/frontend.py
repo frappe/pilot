@@ -5,67 +5,51 @@ from pathlib import Path
 
 from pilot.exceptions import BenchError
 
-_ADMIN_RELEASE_URL = (
-    "https://github.com/frappe/bench-cli/releases/download/latest-build/admin-frontend.tar.gz"
-)
 # The frontend toolchain (unplugin via frappe-ui/vite) uses import.meta.dirname,
 # which only exists in Node 20.11+. Older Node fails the build with an opaque
 # "paths[0] ... undefined" error, so we check up-front.
 _MIN_NODE = (20, 11)
 
 
-def download_admin_frontend(cli_root: Path) -> bool:
-    """Download and extract the pre-built admin frontend. Returns True on success."""
-    import tempfile
-    import urllib.error
-    import urllib.request
+def ensure_admin_frontend(on_progress: Callable[[str], None] = lambda message: None) -> None:
+    """Build the admin UI from source in dev checkouts; released installs ship it prebuilt.
+    Released tarballs carry the source too, so the version - not source presence -
+    decides: only dev builds compile, releases always serve the bundled dist."""
+    from pilot import is_dev_build
+    from pilot.utils import cli_root
 
-    from pilot.utils import extract_tar_archive
-
-    static_dir = cli_root / "admin" / "backend" / "static"
-    with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp_file:
-        tmp = Path(tmp_file.name)
-
-    print("Downloading admin frontend from GitHub release...", flush=True)
-    try:
-        urllib.request.urlretrieve(_ADMIN_RELEASE_URL, tmp)
-    except urllib.error.URLError as e:
-        print(f"  Download failed: {e}", flush=True)
-        tmp.unlink(missing_ok=True)
-        return False
-
-    try:
-        static_dir.mkdir(parents=True, exist_ok=True)
-        extract_tar_archive(tmp, static_dir)
-        print("  Admin frontend downloaded successfully.", flush=True)
-        return True
-    except Exception as e:
-        print(f"  Extraction failed: {e}", flush=True)
-        return False
-    finally:
-        tmp.unlink(missing_ok=True)
-
-
-def build_admin_frontend(
-    force_build: bool = False, on_progress: Callable[[str], None] = lambda message: None
-) -> None:
-    from pilot.utils import cli_root, run_command
-
-    if not force_build and download_admin_frontend(cli_root()):
+    root = cli_root()
+    if is_dev_build and _has_frontend_source(root):
+        build_admin_frontend(on_progress=on_progress)
         return
-    if force_build:
-        on_progress("Skipping download, building from source...")
-    else:
-        on_progress("Download failed, building from source...")
+    if _has_admin_dist(root):
+        return
+    raise BenchError(
+        "Admin UI is missing from this release. Reinstall bench-cli, or run it from a source checkout."
+    )
+
+
+def build_admin_frontend(on_progress: Callable[[str], None] = lambda message: None) -> None:
+    """Compile the admin frontend from source. Requires the admin/frontend/ source and Node.js."""
+    from pilot.utils import run_command
+
     frontend = _find_frontend()
     _check_node_version()
     on_progress(f"Building admin frontend at {frontend}...")
-    if _needs_npm_install(frontend):
+    if _is_npm_install_stale(frontend):
         on_progress("Running npm install...")
         run_command(["npm", "install"], cwd=frontend, stream_output=True)
-    on_progress("Running npm build")
+    on_progress("Running npm run build")
     run_command(["npm", "run", "build"], cwd=frontend, stream_output=True)
-    on_progress("\nAdmin frontend rebuilt successfully.")
+    on_progress("\nAdmin frontend built successfully.")
+
+
+def _has_frontend_source(root: Path) -> bool:
+    return (root / "admin" / "frontend" / "package.json").exists()
+
+
+def _has_admin_dist(root: Path) -> bool:
+    return (root / "admin" / "backend" / "static" / "dist" / "assets").exists()
 
 
 def _find_frontend() -> Path:
@@ -79,7 +63,7 @@ def _find_frontend() -> Path:
     )
 
 
-def _needs_npm_install(frontend: Path) -> bool:
+def _is_npm_install_stale(frontend: Path) -> bool:
     install_state = frontend / "node_modules" / ".package-lock.json"
     if not install_state.exists():
         return True
@@ -101,17 +85,16 @@ def _check_node_version() -> None:
     except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
         raise BenchError(
             "Node.js is required to build the admin frontend but was not found. "
-            "Install Node.js >= 20.11, or run `bench build-admin` (without --force) to download the pre-built frontend."
+            "Install Node.js >= 20.11, or install a released build that ships the prebuilt frontend."
         ) from error
     parts = output.lstrip("v").split(".")
     try:
         version = (int(parts[0]), int(parts[1]))
     except (IndexError, ValueError):
-        return  # unparseable — let the build run and surface its own error
+        return  # unparseable - let the build run and surface its own error
     if version < _MIN_NODE:
         major, minor = _MIN_NODE
         raise BenchError(
             f"Building the admin frontend requires Node.js >= {major}.{minor}, but found {output}. "
-            "Switch to a newer Node (e.g. `nvm use 20`) and retry, or run `bench build-admin` "
-            "without --force to download the pre-built frontend instead."
+            "Switch to a newer Node (e.g. `nvm use 20`) and retry."
         )

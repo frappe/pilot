@@ -6,6 +6,8 @@ from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request
 
 from admin.backend.api.responses import error_response
+from admin.backend.api.v1.benches.support import guard_bench_management
+from pilot.exceptions import DatabaseError
 
 database_bp = Blueprint("database", __name__)
 
@@ -20,10 +22,10 @@ def list_query_sites():
     sites = []
     for d in site_dirs:
         try:
-            cfg = json.loads((d / "site_config.json").read_text())
+            config = json.loads((d / "site_config.json").read_text())
         except (OSError, ValueError):
-            cfg = {}
-        sites.append({"name": d.name, "db_type": cfg.get("db_type", "mariadb")})
+            config = {}
+        sites.append({"name": d.name, "db_type": config.get("db_type", "mariadb")})
     return jsonify(sites)
 
 
@@ -71,6 +73,115 @@ def execute_query():
         return error_response("site_not_found", "Site was not found.", 404)
     except Exception:
         return error_response("query_failed", "Could not execute query.", 500)
+
+
+def _provider():
+    from admin.backend.providers.database import DatabaseDiagnosticsProvider
+
+    return DatabaseDiagnosticsProvider(current_app.config["BENCH_ROOT"])
+
+
+@database_bp.get("/diagnostics")
+def get_diagnostics():
+    try:
+        return jsonify(_provider().get_diagnostics())
+    except DatabaseError as exc:
+        return error_response("diagnostics_unavailable", str(exc), 422)
+    except Exception:
+        return error_response("diagnostics_unavailable", "Could not read database diagnostics.", 500)
+
+
+@database_bp.get("/processlist")
+def get_process_list():
+    forbidden = guard_bench_management()
+    if forbidden is not None:
+        return forbidden
+    try:
+        return jsonify(_provider().get_process_list(request.args.get("site", "")))
+    except DatabaseError as exc:
+        return error_response("processlist_unavailable", str(exc), 422)
+    except Exception:
+        return error_response("processlist_unavailable", "Could not read the database process list.", 500)
+
+
+@database_bp.post("/processlist/kill")
+def kill_process():
+    # A killed connection can belong to any bench sharing this server.
+    forbidden = guard_bench_management()
+    if forbidden is not None:
+        return forbidden
+
+    data = request.get_json(silent=True)
+    process_id = data.get("process_id") if isinstance(data, dict) else None
+    if not isinstance(process_id, int) or isinstance(process_id, bool) or process_id <= 0:
+        return error_response("invalid_process_id", "process_id must be a positive integer.", 422)
+    try:
+        _provider().kill_process(process_id)
+        return jsonify({"status": "ok"})
+    except DatabaseError as exc:
+        return error_response("kill_failed", str(exc), 422)
+    except Exception:
+        return error_response("kill_failed", "Could not kill the database process.", 500)
+
+
+@database_bp.get("/lockwaits")
+def get_lock_wait_rows():
+    try:
+        return jsonify(_provider().get_lock_wait_rows(request.args.get("site", "")))
+    except DatabaseError as exc:
+        return error_response("lockwaits_unavailable", str(exc), 422)
+    except Exception:
+        return error_response("lockwaits_unavailable", "Could not read database lock waits.", 500)
+
+
+@database_bp.get("/size")
+def get_database_size():
+    try:
+        return jsonify(_provider().get_database_size(request.args.get("site", "")))
+    except DatabaseError as exc:
+        return error_response("size_unavailable", str(exc), 422)
+    except Exception:
+        return error_response("size_unavailable", "Could not read the database size.", 500)
+
+
+@database_bp.get("/table-sizes")
+def get_table_sizes():
+    try:
+        return jsonify(_provider().get_table_sizes(request.args.get("site", "")))
+    except DatabaseError as exc:
+        return error_response("table_sizes_unavailable", str(exc), 422)
+    except Exception:
+        return error_response("table_sizes_unavailable", "Could not read table sizes.", 500)
+
+
+@database_bp.get("/binlogs")
+def get_binlogs():
+    try:
+        return jsonify(_provider().get_binlog_files())
+    except DatabaseError as exc:
+        return error_response("binlogs_unavailable", str(exc), 422)
+    except Exception:
+        return error_response("binlogs_unavailable", "Could not list binary logs.", 500)
+
+
+@database_bp.post("/binlogs/purge")
+def purge_binlogs():
+    # Binlogs are server-wide state shared by every bench on this host.
+    forbidden = guard_bench_management()
+    if forbidden is not None:
+        return forbidden
+
+    data = request.get_json(silent=True)
+    up_to = data.get("up_to", "") if isinstance(data, dict) else ""
+    if not isinstance(up_to, str) or not up_to.strip():
+        return error_response("invalid_up_to", "up_to is required.", 422)
+    try:
+        _provider().purge_binlogs(up_to.strip())
+        return jsonify({"status": "ok"})
+    except DatabaseError as exc:
+        return error_response("purge_failed", str(exc), 422)
+    except Exception:
+        return error_response("purge_failed", "Could not purge binary logs.", 500)
 
 
 def _query_request(data):

@@ -7,6 +7,7 @@ from admin.backend.api.responses import error_response
 from admin.backend.api.routes import is_api_path
 from pilot.exceptions import (
     ConfigError,
+    MigrationConflictError,
     TaskConflictError,
     TaskNotFoundError,
     TaskNotRunningError,
@@ -43,6 +44,7 @@ def install_api_error_handlers(app) -> None:
     app.register_error_handler(TaskNotFoundError, _handle_task_not_found)
     app.register_error_handler(TaskNotRunningError, _handle_task_not_active)
     app.register_error_handler(TaskConflictError, _handle_task_conflict)
+    app.register_error_handler(MigrationConflictError, _handle_migration_conflict)
     app.register_error_handler(ConfigError, _handle_config_unavailable)
     app.register_error_handler(405, _handle_method_not_allowed)
     app.register_error_handler(HTTPException, _handle_http_error)
@@ -63,6 +65,10 @@ def _handle_task_not_active(error: TaskNotRunningError):
 
 def _handle_task_conflict(error: TaskConflictError):
     return error_response("task_conflict", str(error), 409)
+
+
+def _handle_migration_conflict(error: MigrationConflictError):
+    return error_response("migration_conflict", str(error), 409)
 
 
 def _handle_method_not_allowed(error: HTTPException):

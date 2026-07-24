@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from admin.backend.api.v1.settings import ConfigPatcher, build_settings_response
+from admin.backend.api.v1.settings import build_settings_response
 from pilot.config import BenchConfig
 
 
@@ -26,28 +26,3 @@ def test_response_hides_password_but_flags_when_set() -> None:
     assert payload["postgres"]["admin_user"] == "postgres"
     assert payload["postgres"]["password_set"] is True
     assert "root_password" not in payload["postgres"]
-
-
-def test_patcher_updates_connection_fields() -> None:
-    config = _config()
-
-    error = ConfigPatcher(
-        config, {"postgres": {"host": "db.internal", "port": 5433, "admin_user": "pgroot"}}
-    ).apply()
-
-    assert error is None
-    assert config.postgres.host == "db.internal"
-    assert config.postgres.port == 5433
-    assert config.postgres.admin_user == "pgroot"
-
-
-def test_patcher_sets_password_only_when_provided() -> None:
-    config = _config()
-    config.postgres.root_password = "original"
-
-    # blank password is preserved, not cleared (write-only field)
-    ConfigPatcher(config, {"postgres": {"root_password": ""}}).apply()
-    assert config.postgres.root_password == "original"
-
-    ConfigPatcher(config, {"postgres": {"root_password": "changed"}}).apply()
-    assert config.postgres.root_password == "changed"

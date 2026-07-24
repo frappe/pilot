@@ -45,7 +45,7 @@ def complete_dev_wizard(
     expect(page.get_by_text("Incorrect MariaDB credentials.")).to_be_hidden()
     expect(page.get_by_text("Incorrect PostgreSQL credentials.")).to_be_hidden()
     # The wizard always provisions a development bench (no production/process-manager
-    # choice — that's a separate `bench setup production` step run from the terminal
+    # choice - that's a separate `bench setup production` step run from the terminal
     # afterwards). We keep the repo default.
     expect(page.get_by_text("Customize your bench")).to_be_visible(timeout=30_000)
     if framework_branch:

@@ -149,7 +149,7 @@ def test_task_manager_package_exports_only_admin_runtime_api() -> None:
         "TaskStatus",
         "TaskWorkerControl",
         "sse_message",
-        "task_requires_secrets",
+        "task_has_secrets",
     }
 
 
@@ -168,7 +168,7 @@ def test_task_manager_public_exports_resolve_lazily() -> None:
         TaskReader,
         TaskStatus,
         TaskWorkerControl,
-        task_requires_secrets,
+        task_has_secrets,
     )
 
     assert TaskReader.__name__ == "TaskReader"
@@ -176,11 +176,11 @@ def test_task_manager_public_exports_resolve_lazily() -> None:
     assert TaskStatus.QUEUED.is_active is True
     assert TaskWorkerControl.__name__ == "TaskWorkerControl"
     assert TaskWorkerControl.__module__ == "pilot.managers.task.control"
-    assert task_requires_secrets.__module__ == "pilot.managers.task.policy"
+    assert task_has_secrets.__module__ == "pilot.managers.task.policy"
 
 
 def test_task_retry_secret_policy_is_public() -> None:
-    from pilot.managers.task import task_requires_secrets
+    from pilot.managers.task import task_has_secrets
 
-    assert task_requires_secrets("new-site") is True
-    assert task_requires_secrets("migrate") is False
+    assert task_has_secrets("new-site") is True
+    assert task_has_secrets("migrate") is False

@@ -155,7 +155,7 @@ class Marketplace:
 
     @staticmethod
     def _safe_spec(frappe_core: str | None) -> SpecifierSet | None:
-        """None means unparseable — excluded from compatibility matching."""
+        """None means unparseable - excluded from compatibility matching."""
         try:
             return SpecifierSet(frappe_core or "", prereleases=True)
         except InvalidSpecifier:
@@ -205,7 +205,7 @@ class Marketplace:
         return resolvers
 
     def find_app(self, name: str) -> Resolver:
-        """Look up a marketplace app by name, or raise AppNotFoundError — the
+        """Look up a marketplace app by name, or raise AppNotFoundError - the
         single place every caller resolves a marketplace name to its Resolver."""
         resolver = next((r for r in self.read_all_apps() if r.app == name), None)
         if resolver is None:

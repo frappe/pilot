@@ -80,7 +80,7 @@ def test_new_command_first_bench_uses_default_ports(tmp_path: Path, monkeypatch:
 
 
 def test_new_command_second_bench_gets_next_offset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Every port field must shift by the same offset — a regression guard
+    """Every port field must shift by the same offset - a regression guard
     for a bug where admin_port got the offset applied twice."""
     from pilot.commands.bench.create import NewCommand
     from pilot.core.bench.creator import BenchCreator
@@ -106,19 +106,18 @@ def test_new_command_inherits_sibling_jwks_url_and_audience(
     """The remote JWKS issuer is server-wide, so a new bench carries both the
     URL and the audience forward from a sibling that already trusts one."""
     from pilot.commands.bench.create import NewCommand
-    from pilot.config import BenchTomlStore
+    from pilot.config import BenchConfig
     from pilot.core.bench.creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
     benches_dir = tmp_path / "benches"
     NewCommand(target_directory=benches_dir / "first", bench_name="first").run()
-    store = BenchTomlStore.for_bench(benches_dir / "first")
-    data = store.read_raw()
+    data = BenchConfig.read_raw(benches_dir / "first")
     admin = data.setdefault("admin", {})
     admin["jwks_url"] = "https://issuer.example.com/jwks.json"
     admin["jwks_audience"] = "bench-fleet"
-    store.write_raw(data)
+    BenchConfig.write_raw(benches_dir / "first", data)
 
     NewCommand(target_directory=benches_dir / "second", bench_name="second").run()
     with open(benches_dir / "second" / "bench.toml", "rb") as f:
@@ -313,7 +312,7 @@ def test_new_command_skips_offset_with_live_admin_internal_port(
     from pilot.core.bench.creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
-    # 7001 is admin.port(7000) + 1 at offset 0 — without the internal-port
+    # 7001 is admin.port(7000) + 1 at offset 0 - without the internal-port
     # check, offset 0 would be wrongly accepted since nothing else probes it.
     # (It also collides with the plain admin.port base check one offset later,
     # at offset 1, which is why the picker lands on offset 2, not 1.)
@@ -380,7 +379,7 @@ def test_build_missing_assets_skips_cloned_but_unregistered_apps(tmp_path: Path)
     bench.create_directories()
     for name in ("frappe", "builder"):
         (bench.apps_path / name / ".git").mkdir(parents=True)
-    # builder is cloned on disk but never registered — it isn't installed.
+    # builder is cloned on disk but never registered - it isn't installed.
     (bench.sites_path / "apps.txt").write_text("frappe\n")
 
     with patch("pilot.managers.environment.PythonEnvManager.build_assets_for_app") as build:
@@ -458,7 +457,7 @@ def test_remove_app_removes_from_apps_txt_missing_file(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     bench.create_directories()
     (bench.apps_path / "myapp").mkdir()
-    # apps.txt does not exist — should not raise
+    # apps.txt does not exist - should not raise
 
     bench.app("myapp")._deregister()
 
@@ -681,50 +680,13 @@ def test_requirements_installs_js_for_app_with_package_json(tmp_path: Path) -> N
         assert mock_rc.call_args[0][0] == ["yarn", "install"]
 
 
-def test_upgrade_command_installs_admin_python_deps() -> None:
-    from pilot.commands.runtime.upgrade import UpgradeCommand
+def test_upgrade_command_performs_upgrade() -> None:
+    from pilot.commands.admin.upgrade import UpgradeCommand
 
-    with (
-        patch("pilot.utils.cli_root", return_value=Path("/tmp/pilot")),
-        patch("pilot.utils.run_command") as mock_run_command,
-        patch("pilot.commands.admin.start.download_admin_frontend", return_value=True),
-        patch("pilot.managers.environment.AdminEnvManager") as mock_admin_env,
-    ):
+    with patch("pilot.updater.perform_upgrade") as mock_upgrade:
         UpgradeCommand().run()
 
-    mock_run_command.assert_called_once_with(["git", "-C", "/tmp/pilot", "pull"], stream_output=True)
-    mock_admin_env.assert_called_once_with(Path("/tmp/pilot"))
-    mock_admin_env.return_value.install_python_deps.assert_called_once_with()
-
-
-def test_update_command_runs_all_steps(tmp_path: Path) -> None:
-    from pilot.commands.runtime.update import UpdateCommand
-    from pilot.core.bench import Bench
-
-    bench = make_bench(tmp_path)
-    bench.create_directories()
-    cmd = UpdateCommand(bench, skip_confirm=True)
-
-    with (
-        patch.object(cmd, "_warn_if_running"),
-        patch.object(Bench, "_update_apps"),
-        patch.object(Bench, "_reinstall_apps"),
-        patch.object(Bench, "_rebuild_assets"),
-        patch.object(Bench, "_migrate_sites"),
-        patch.object(Bench, "reload_workers"),
-    ):
-        cmd.run()
-
-
-def test_update_command_skips_confirm_when_bench_not_running(tmp_path: Path) -> None:
-    from pilot.commands.runtime.update import UpdateCommand
-
-    bench = make_bench(tmp_path)
-    bench.create_directories()
-    cmd = UpdateCommand(bench, skip_confirm=False)
-
-    with patch("pilot.managers.processes.local.ProcessManager.is_running", return_value=False):
-        cmd._warn_if_running()  # no raise, no prompt
+    mock_upgrade.assert_called_once()
 
 
 def test_bench_update_apps_raises_on_command_error(tmp_path: Path) -> None:
@@ -854,8 +816,31 @@ def test_bench_update_apps_passes_marketplace_pin_to_app_update(tmp_path: Path) 
     mock_update.assert_called_once_with(pin=RevisionPin(kind="tag", ref="v2.0.0"))
 
 
+def test_bench_update_apps_uses_captured_target_for_unpinned_app(tmp_path: Path) -> None:
+    import subprocess
+
+    from pilot.core.app import RevisionPin
+    from pilot.integrations.marketplace import Marketplace
+
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    app_dir = bench.apps_path / "helpdesk"
+    app_dir.mkdir()
+    subprocess.run(["git", "init", "-q", str(app_dir)], check=True)
+
+    with (
+        patch.object(Marketplace, "registry", return_value=[]) as mock_registry,
+        patch("pilot.core.app.App.update") as mock_update,
+    ):
+        # A captured pin is used exactly as given - never re-resolved live.
+        bench._update_apps(None, lambda message: None, {"helpdesk": RevisionPin(kind="commit", ref="deadbeef")})
+
+    mock_update.assert_called_once_with(pin=RevisionPin(kind="commit", ref="deadbeef"))
+    mock_registry.assert_not_called()
+
+
 def test_bench_migrate_sites_raises_on_failure(tmp_path: Path) -> None:
-    from pilot.exceptions import CommandError, MigrateError
+    from pilot.exceptions import MigrateError
 
     bench = make_bench(tmp_path)
     bench.create_directories()
@@ -864,7 +849,7 @@ def test_bench_migrate_sites_raises_on_failure(tmp_path: Path) -> None:
     (site_dir / "site_config.json").write_text("{}")
 
     with (
-        patch("pilot.core.site.Site.migrate", side_effect=CommandError("migrate failed")),
+        patch("pilot.core.site.Site.migrate", side_effect=MigrateError("migrate failed")),
         pytest.raises(MigrateError),
     ):
         bench._migrate_sites(False, lambda message: None)
@@ -1135,6 +1120,19 @@ def test_write_common_site_config_preserves_custom_keys(tmp_path: Path) -> None:
     assert config["redis_cache"] == "redis://localhost:13000"
 
 
+def test_write_common_site_config_leaves_developer_mode_to_sites(tmp_path: Path) -> None:
+    import json
+
+    bench = make_bench(tmp_path)
+    bench.sites_path.mkdir(parents=True)
+    config_path = bench.sites_path / "common_site_config.json"
+    bench.config.allow_developer_mode = True
+
+    bench.write_common_site_config()
+
+    assert "developer_mode" not in json.loads(config_path.read_text())
+
+
 def _drop_config(name: str) -> BenchConfig:
     return BenchConfig(
         name=name,
@@ -1148,7 +1146,7 @@ def _drop_config(name: str) -> BenchConfig:
 
 def test_unmount_legacy_bind_mount_noop_when_not_mounted(tmp_path: Path) -> None:
     """A bench that was never volume-backed has nothing mounted at its dir, so
-    this must be a silent no-op — no sudo calls, no fstab rewrite."""
+    this must be a silent no-op - no sudo calls, no fstab rewrite."""
     from pilot.managers.platform import unmount_legacy_bind_mount
 
     target = tmp_path / "not-a-mountpoint"
@@ -1240,17 +1238,17 @@ def test_build_admin_errors_when_node_missing(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_build_admin_installs_when_node_modules_missing(tmp_path: Path) -> None:
-    from admin.backend.frontend import _needs_npm_install
+    from admin.backend.frontend import _is_npm_install_stale
 
     (tmp_path / "package.json").write_text("{}")
 
-    assert _needs_npm_install(tmp_path) is True
+    assert _is_npm_install_stale(tmp_path) is True
 
 
 def test_build_admin_installs_when_manifest_is_newer_than_installed_deps(tmp_path: Path) -> None:
     import os
 
-    from admin.backend.frontend import _needs_npm_install
+    from admin.backend.frontend import _is_npm_install_stale
 
     node_modules = tmp_path / "node_modules"
     node_modules.mkdir()
@@ -1264,13 +1262,13 @@ def test_build_admin_installs_when_manifest_is_newer_than_installed_deps(tmp_pat
     os.utime(package_json, (200, 200))
     os.utime(package_lock, (100, 100))
 
-    assert _needs_npm_install(tmp_path) is True
+    assert _is_npm_install_stale(tmp_path) is True
 
 
 def test_build_admin_skips_install_when_installed_deps_are_current(tmp_path: Path) -> None:
     import os
 
-    from admin.backend.frontend import _needs_npm_install
+    from admin.backend.frontend import _is_npm_install_stale
 
     package_json = tmp_path / "package.json"
     package_json.write_text("{}")
@@ -1284,7 +1282,7 @@ def test_build_admin_skips_install_when_installed_deps_are_current(tmp_path: Pat
     os.utime(package_lock, (100, 100))
     os.utime(install_state, (200, 200))
 
-    assert _needs_npm_install(tmp_path) is False
+    assert _is_npm_install_stale(tmp_path) is False
 
 
 def _admin_source_checkout(tmp_path: Path, src_mtime: int, built_mtime: int) -> Path:
@@ -1332,7 +1330,7 @@ def test_start_rebuilds_admin_when_source_changed(tmp_path: Path, monkeypatch: p
 
     BenchRuntime(make_bench(tmp_path))._ensure_admin_dist(lambda _message: None)
 
-    build.assert_called_once_with(True, on_progress=ANY)
+    build.assert_called_once_with(on_progress=ANY)
 
 
 def test_start_skips_admin_rebuild_when_fresh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

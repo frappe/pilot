@@ -1,8 +1,16 @@
 <template>
   <div class="flex items-center gap-3">
-    <div class="place-items-center grid rounded-[10px] size-9 overflow-hidden shrink-0" :style="logoStyle">
-      <img v-if="app.logo_url && !imageFailed" :src="app.logo_url" :alt="app.title" class="size-full object-contain"
-        @error="imageFailed = true" />
+    <div
+      class="place-items-center grid rounded-[10px] size-9 overflow-hidden shrink-0"
+      :style="logoStyle"
+    >
+      <img
+        v-if="app.logo_url && !imageFailed"
+        :src="app.logo_url"
+        :alt="app.title"
+        class="size-full object-contain"
+        @error="imageFailed = true"
+      />
       <span v-else class="font-bold text-white text-base leading-none">
         {{ app.title?.[0]?.toUpperCase() || app.name?.[0]?.toUpperCase() }}
       </span>
@@ -25,9 +33,16 @@
             <span class="size-4 text-ink-green-6 lucide-check"></span>
           </span>
         </Tooltip>
-        <Tooltip v-else-if="!app.compatible"
-          :text="`Requires ${app.needs ? `Frappe ${props.app.needs}` : 'a newer Frappe'} version`">
-          <Button variant="ghost" label="Install" class="!text-ink-gray-4" @click="showIncompatible = true">
+        <Tooltip
+          v-else-if="!app.compatible"
+          :text="`Requires ${app.needs ? `Frappe ${props.app.needs}` : 'a newer Frappe'} version`"
+        >
+          <Button
+            variant="ghost"
+            label="Install"
+            class="!text-ink-gray-4"
+            @click="showIncompatible = true"
+          >
             <template #icon><LucideDownload class="size-4" /></template>
           </Button>
         </Tooltip>
@@ -35,7 +50,8 @@
           <Button variant="ghost" label="Install" class="group" @click="$emit('install', app)">
             <template #icon>
               <LucideDownload
-                class="size-4 transition-transform duration-150 ease-[var(--ease-out)] [@media(hover:hover)]:group-hover:translate-y-0.5 group-active:scale-95 group-active:duration-100" />
+                class="size-4 transition-transform duration-150 ease-[var(--ease-out)] [@media(hover:hover)]:group-hover:translate-y-0.5 group-active:scale-95 group-active:duration-100"
+              />
             </template>
           </Button>
         </Tooltip>
@@ -75,7 +91,8 @@ const imageFailed = ref(false)
 const showIncompatible = ref(false)
 
 const incompatibleReason = computed(
-  () => `${props.app.title} requires ${props.app.needs ? `Frappe ${props.app.needs}` : 'a newer Frappe version'} to install.`,
+  () =>
+    `${props.app.title} requires ${props.app.needs ? `Frappe ${props.app.needs}` : 'a newer Frappe version'} to install.`,
 )
 
 const logoStyle = computed(() => {

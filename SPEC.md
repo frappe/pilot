@@ -68,6 +68,7 @@ Use `@step` for visible progress and `@on_success`, `@on_failure`, or `@on_cance
 - [Commands](docs/commands.md)
 - [Configuration](docs/configuration.md)
 - [Tasks](docs/tasks.md)
+- [Migrations](docs/migration.md)
 - [Admin API](docs/admin-api.md)
 - [Admin UI](docs/admin-ui.md)
 - [Production](docs/production.md)

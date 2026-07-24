@@ -3,18 +3,41 @@
     <template #default>
       <div class="space-y-4">
         <div class="border-b border-outline-gray-1">
-          <TabButtons v-model="tab" :options="tabOptions" type="underline" size="md" class="[&>div]:!border-b-0" />
+          <TabButtons
+            v-model="tab"
+            :options="tabOptions"
+            type="underline"
+            size="md"
+            class="[&>div]:!border-b-0"
+          />
         </div>
 
-        <div class="min-h-32">
+        <div>
           <template v-if="tab === 'public'">
             <div class="flex items-end gap-2">
-              <FormControl label="Repository URL" type="text" v-model="repo" class="flex-1"
-                placeholder="https://github.com/frappe/crm" />
-              <Combobox v-if="fetched" label="Branch" v-model="branch" :options="branchOptions"
-                placeholder="Search branches…" class="w-40 shrink-0" />
-              <Button v-else variant="subtle" class="shrink-0" :loading="fetching" :disabled="!repo.trim()"
-                @click="fetchBranches">
+              <FormControl
+                label="Repository URL"
+                type="text"
+                v-model="repo"
+                class="flex-1"
+                placeholder="https://github.com/frappe/crm"
+              />
+              <Combobox
+                v-if="fetched"
+                label="Branch"
+                v-model="branch"
+                :options="branchOptions"
+                placeholder="Search branches…"
+                class="w-40 shrink-0"
+              />
+              <Button
+                v-else
+                variant="subtle"
+                class="shrink-0"
+                :loading="fetching"
+                :disabled="!repo.trim()"
+                @click="fetchBranches"
+              >
                 Fetch branches
               </Button>
             </div>
@@ -22,27 +45,49 @@
 
           <template v-else>
             <p v-if="!gitStatus" class="text-ink-gray-5 text-sm">Loading…</p>
-            <Alert v-else-if="!gitConnected" theme="yellow" title="No GitHub account connected" :dismissible="false">
+            <Alert
+              v-else-if="!gitConnected"
+              theme="yellow"
+              title="No GitHub account connected"
+              :dismissible="false"
+            >
               <template #description>
                 <p class="text-ink-gray-6 text-p-sm">
-                  Connect a personal access token from Settings → GitHub to browse your repositories.
+                  Connect a personal access token from Settings → GitHub to browse your
+                  repositories.
                 </p>
               </template>
             </Alert>
             <template v-else>
-              <div class="flex items-center gap-2 bg-surface-gray-1 px-3 py-2 border rounded-lg border-outline-gray-2">
+              <div
+                class="flex items-center gap-2 bg-surface-gray-1 px-3 py-2 border rounded-lg border-outline-gray-2"
+              >
                 <span class="text-ink-gray-7 text-p-sm">
-                  Connected as <span class="font-medium text-ink-gray-9">{{ gitStatus.username }}</span>
+                  Connected as
+                  <span class="font-medium text-ink-gray-9">{{ gitStatus.username }}</span>
                 </span>
               </div>
               <div v-if="reposLoading" class="flex justify-center items-center h-32">
                 <LoadingText />
               </div>
               <div v-else class="flex items-end gap-2 mt-2">
-                <Combobox label="Repository" v-model="repo" :options="repoOptions" class="flex-1"
-                  placeholder="Search repositories…" emptyText="No repositories found." />
-                <Combobox v-if="fetched" label="Branch" v-model="branch" :options="branchOptions" :loading="fetching"
-                  placeholder="Search branches…" class="w-40 shrink-0" />
+                <Combobox
+                  label="Repository"
+                  v-model="repo"
+                  :options="repoOptions"
+                  class="flex-1"
+                  placeholder="Search repositories…"
+                  emptyText="No repositories found."
+                />
+                <Combobox
+                  v-if="fetched"
+                  label="Branch"
+                  v-model="branch"
+                  :options="branchOptions"
+                  :loading="fetching"
+                  placeholder="Search branches…"
+                  class="w-40 shrink-0"
+                />
               </div>
             </template>
           </template>
@@ -58,7 +103,9 @@
 
         <div class="flex justify-end gap-2">
           <Button variant="subtle" @click="open = false">Cancel</Button>
-          <Button variant="solid" :disabled="!canSubmit" :loading="adding" @click="submit">Import app</Button>
+          <Button variant="solid" :disabled="!canSubmit" :loading="adding" @click="submit"
+            >Import app</Button
+          >
         </div>
       </div>
     </template>
@@ -68,7 +115,16 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Alert, Button, Combobox, Dialog, ErrorMessage, FormControl, LoadingText, TabButtons } from 'frappe-ui'
+import {
+  Alert,
+  Button,
+  Combobox,
+  Dialog,
+  ErrorMessage,
+  FormControl,
+  LoadingText,
+  TabButtons,
+} from 'frappe-ui'
 import { apiErrorMessage } from '@/api/client'
 import { appsApi } from '@/api/apps'
 import { gitApi } from '@/api/git'
@@ -90,17 +146,23 @@ const branches = ref([])
 const branchOptions = computed(() => branches.value.map((b) => ({ label: b, value: b })))
 
 const gitStatus = ref(null)
-const gitConnected = computed(() => Boolean(gitStatus.value?.connected && gitStatus.value?.is_token_valid))
+const gitConnected = computed(() =>
+  Boolean(gitStatus.value?.connected && gitStatus.value?.is_token_valid),
+)
 const repos = ref([])
 const reposLoading = ref(false)
-const repoOptions = computed(() => repos.value.map((r) => ({ label: r.full_name, value: r.clone_url })))
+const repoOptions = computed(() =>
+  repos.value.map((r) => ({ label: r.full_name, value: r.clone_url })),
+)
 
 const adding = ref(false)
 const error = ref('')
 
 const resolving = ref(false)
 const foundName = ref('')
-const canSubmit = computed(() => Boolean(repo.value.trim() && branch.value.trim() && foundName.value && !resolving.value))
+const canSubmit = computed(() =>
+  Boolean(repo.value.trim() && branch.value.trim() && foundName.value && !resolving.value),
+)
 
 watch(open, (isOpen) => {
   if (isOpen) reset()
@@ -190,7 +252,11 @@ async function submit() {
   adding.value = true
   error.value = ''
   try {
-    const result = await appsApi.add({ name: foundName.value, repo: repo.value.trim(), branch: branch.value.trim() })
+    const result = await appsApi.add({
+      name: foundName.value,
+      repo: repo.value.trim(),
+      branch: branch.value.trim(),
+    })
     if (!result.task_id) throw new Error(apiErrorMessage(result, 'Could not import app.'))
     open.value = false
     openTaskDetailPage(router, result.task_id)

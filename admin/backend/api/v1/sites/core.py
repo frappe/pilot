@@ -3,9 +3,14 @@ from __future__ import annotations
 import secrets
 from pathlib import Path
 
-from flask import current_app, jsonify, request
+from flask import current_app, jsonify, request, url_for
 
-from admin.backend.api.responses import accepted_task_response, created_response, error_response
+from admin.backend.api.responses import (
+    accepted_response,
+    accepted_task_response,
+    created_response,
+    error_response,
+)
 from admin.backend.api.v1.sites import sites_bp
 from admin.backend.api.v1.sites.login import no_store as _no_store
 from admin.backend.api.v1.sites.shared import (
@@ -27,7 +32,6 @@ from pilot.internal.site_paths import site_config_path, site_exists
 from pilot.internal.validators import validate_site_name
 from pilot.tasks.clear_cache import ClearCacheTask
 from pilot.tasks.drop_site import DropSiteTask
-from pilot.tasks.migrate import MigrateTask
 from pilot.tasks.new_site import NewSiteTask
 from pilot.tasks.reinstall_site import ReinstallSiteTask
 
@@ -205,16 +209,17 @@ def migrate_site(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     if not site_exists(bench_root, name):
         return site_not_found()
+    bench = Bench(bench_root)
+    operation = bench.migrations.create_site_migrate(name)
     try:
-        task_id = MigrateTask.queue(
-            Bench(bench_root),
-            site=name,
-            idempotency_key=request.headers.get("Idempotency-Key"),
-            resource_key=f"site:{name.lower()}",
-        )
+        task_id = operation.begin()
     except Exception as error:
+        bench.migrations.delete(operation.id)
         return task_failure(error)
-    return accepted_task_response(bench_root, task_id)
+    return accepted_response(
+        {"operation_id": operation.id, "task_id": task_id},
+        url_for("migrations.get_migration", operation_id=operation.id),
+    )
 
 
 @sites_bp.post("/<name>/login")

@@ -30,6 +30,17 @@ class TaskConflictError(BenchError):
 
 
 class MigrateError(BenchError):
+    def __init__(self, message: str, output: str = "", returncode: int = 1):
+        super().__init__(message)
+        self.output = output
+        self.returncode = returncode
+
+
+class MigrationNotFoundError(BenchError):
+    pass
+
+
+class MigrationConflictError(BenchError):
     pass
 
 

@@ -165,23 +165,23 @@ def _http_redirect(domain: str) -> tuple[str, str]:
 def _set_admin_password(bench_root: Path, password: str) -> None:
     import tomllib
 
-    from pilot.config import BenchTomlStore
+    from pilot.config import BenchConfig
 
     toml_path = bench_root / "bench.toml"
     data = tomllib.loads(toml_path.read_text())
     data.setdefault("admin", {})["password"] = password
-    BenchTomlStore(toml_path).write_raw(data)
+    BenchConfig.write_raw(toml_path, data)
 
 
 def _set_admin_tls(bench_root: Path, enabled: bool) -> None:
     import tomllib
 
-    from pilot.config import BenchTomlStore
+    from pilot.config import BenchConfig
 
     toml_path = bench_root / "bench.toml"
     data = tomllib.loads(toml_path.read_text())
     data.setdefault("admin", {})["tls"] = enabled
-    BenchTomlStore(toml_path).write_raw(data)
+    BenchConfig.write_raw(toml_path, data)
 
 
 def _served_cert_org(domain: str) -> str:
