@@ -19,25 +19,12 @@
               <Button class="w-full justify-start" icon-left="lucide-git-branch" :label="git.branch" />
             </Dropdown>
           </div>
-          <Button
-            class="shrink-0"
-            variant="ghost"
-            icon-left="lucide-arrow-down"
-            :label="git.behind ? String(git.behind) : ''"
-            :loading="pulling"
-            :title="pullTitle"
-            @click="pull"
-          />
-          <Button
-            class="shrink-0"
-            variant="ghost"
-            icon-left="lucide-arrow-up"
-            :label="git.ahead ? String(git.ahead) : ''"
-            :loading="pushing"
-            :disabled="!git.ahead && git.hasUpstream"
-            :title="pushTitle"
-            @click="push"
-          />
+          <span v-if="trackingLabel" class="ed-meta shrink-0 tabular-nums" :title="trackingTitle">
+            {{ trackingLabel }}
+          </span>
+          <Dropdown :options="remoteOptions" placement="right">
+            <Button class="shrink-0" variant="ghost" icon="lucide-ellipsis" title="Remote actions" />
+          </Dropdown>
         </div>
 
         <Textarea
@@ -47,13 +34,15 @@
           @keydown.ctrl.enter.prevent="commit"
           @keydown.meta.enter.prevent="commit"
         />
+        <!-- One primary action, as in VS Code: commit while there is something to
+             commit, otherwise sync whatever is waiting on the remote. -->
         <Button
           variant="solid"
-          icon-left="lucide-check"
-          :label="commitLabel"
-          :disabled="!message.trim() || committing"
-          :loading="committing"
-          @click="commit"
+          :icon-left="primary.icon"
+          :label="primary.label"
+          :disabled="primary.disabled"
+          :loading="primary.loading"
+          @click="primary.run()"
         />
       </div>
 
@@ -164,6 +153,7 @@ const message = ref('')
 const committing = ref(false)
 const pushing = ref(false)
 const pulling = ref(false)
+const syncing = ref(false)
 const branchList = ref([])
 const branchCurrent = ref('')
 const showHistory = ref(false)
@@ -181,8 +171,48 @@ const commitLabel = computed(() => {
   return `Commit${n ? ` (${n})` : ''}`
 })
 
-const pullTitle = computed(() => (git.behind ? `Pull ${git.behind} commit(s)` : 'Pull from remote'))
-const pushTitle = computed(() => (git.ahead ? `Push ${git.ahead} commit(s)` : 'Push to remote'))
+const hasChanges = computed(() => git.staged.length > 0 || git.unstaged.length > 0)
+const hasRemoteWork = computed(() => git.ahead > 0 || git.behind > 0)
+
+const trackingLabel = computed(() => {
+  const parts = []
+  if (git.behind) parts.push(`↓${git.behind}`)
+  if (git.ahead) parts.push(`↑${git.ahead}`)
+  return parts.join(' ')
+})
+const trackingTitle = computed(() =>
+  [
+    git.behind ? `${git.behind} commit(s) to pull` : '',
+    git.ahead ? `${git.ahead} commit(s) to push` : '',
+  ]
+    .filter(Boolean)
+    .join(', '),
+)
+
+const primary = computed(() => {
+  if (!hasChanges.value && hasRemoteWork.value) {
+    return {
+      label: `Sync Changes${trackingLabel.value ? ` ${trackingLabel.value}` : ''}`,
+      icon: 'lucide-refresh-cw',
+      disabled: syncing.value,
+      loading: syncing.value,
+      run: sync,
+    }
+  }
+  return {
+    label: commitLabel.value,
+    icon: 'lucide-check',
+    disabled: !message.value.trim() || committing.value,
+    loading: committing.value,
+    run: commit,
+  }
+})
+
+const remoteOptions = computed(() => [
+  { label: 'Sync Changes', icon: 'lucide-refresh-cw', onClick: sync },
+  { label: 'Pull', icon: 'lucide-arrow-down', onClick: pull },
+  { label: 'Push', icon: 'lucide-arrow-up', onClick: push },
+])
 
 // Staged and unstaged rows differ only in their actions, so describe them once.
 const fileSections = computed(() => [
@@ -338,10 +368,25 @@ async function pull() {
   pulling.value = true
   try {
     const r = await git.pull()
-    if (r?.ok === false) toast.error(r.message || 'Pull failed')
-    else if (showHistory.value) loadCommits()
+    if (r?.ok === false) {
+      toast.error(r.message || 'Pull failed')
+      return false
+    }
+    if (showHistory.value) loadCommits()
+    return true
   } finally {
     pulling.value = false
+  }
+}
+
+// Pull before push, so a sync on a diverged branch does not just fail the push.
+async function sync() {
+  syncing.value = true
+  try {
+    if (git.behind && !(await pull())) return
+    await push()
+  } finally {
+    syncing.value = false
   }
 }
 

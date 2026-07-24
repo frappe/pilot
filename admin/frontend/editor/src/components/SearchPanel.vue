@@ -22,7 +22,9 @@
             v-model="query"
             placeholder="Search"
             class="min-w-0 flex-1 border-0 bg-transparent px-2 text-sm text-ink-gray-8 outline-none focus:ring-0"
-            @keydown.enter="run"
+            @keydown.down.prevent="move(1)"
+            @keydown.up.prevent="move(-1)"
+            @keydown.enter.prevent="onEnter"
           />
           <SearchToggles v-model="opts" @change="run" />
         </div>
@@ -54,32 +56,32 @@
       <span v-else-if="results.length">{{ summary }}</span>
     </div>
 
-    <div class="min-h-0 flex-1 overflow-auto px-1.5 pb-24 sm:pb-2" @scroll="onScroll">
-      <div v-for="file in visibleResults" :key="file.path">
-        <div class="ed-row" @click="toggleCollapse(file.path)">
+    <div ref="scroller" class="min-h-0 flex-1 overflow-auto px-1.5 pb-24 sm:pb-2" @scroll="onScroll">
+      <div v-for="group in groups" :key="group.path">
+        <div class="ed-row" @click="toggleCollapse(group.path)">
           <span class="ed-lane">
             <span
-              :class="collapsed.has(file.path) ? 'lucide-chevron-right' : 'lucide-chevron-down'"
+              :class="group.collapsed ? 'lucide-chevron-right' : 'lucide-chevron-down'"
               class="h-4 w-4 text-ink-gray-4"
             ></span>
           </span>
-          <FileIcon :name="baseName(file.path)" class="ed-lane" />
-          <span class="ed-name">{{ baseName(file.path) }}</span>
-          <span class="ed-path">{{ dirName(file.path) }}</span>
+          <FileIcon :name="baseName(group.path)" class="ed-lane" />
+          <span class="ed-name">{{ baseName(group.path) }}</span>
+          <span class="ed-path">{{ dirName(group.path) }}</span>
           <span class="ed-meta ml-auto rounded-full bg-surface-gray-3 px-1.5 text-ink-gray-6">
-            {{ file.matches.length }}
+            {{ group.count }}
           </span>
         </div>
-        <div v-show="!collapsed.has(file.path)">
-          <div
-            v-for="(match, index) in file.matches"
-            :key="index"
-            class="ed-row gap-1.5 pl-3"
-            @click="goto(file.path, match)"
-          >
-            <span class="ed-lineno">{{ match.line }}</span>
-            <MatchLine :text="match.text" :path="file.path" :start="match.start" :end="match.end" />
-          </div>
+        <div
+          v-for="match in group.matches"
+          :key="match.index"
+          :data-i="match.index"
+          class="ed-row gap-1.5 pl-3"
+          :class="{ 'ed-row-selected': match.index === selected }"
+          @click="open(match.index)"
+        >
+          <span class="ed-lineno">{{ match.line }}</span>
+          <MatchLine :text="match.text" :path="group.path" :start="match.start" :end="match.end" />
         </div>
       </div>
       <div v-if="query && !loading && !results.length" class="ed-empty">
@@ -122,6 +124,8 @@ const error = ref('')
 const rendered = ref(PAGE)
 const collapsed = reactive(new Set())
 const queryInput = ref(null)
+const scroller = ref(null)
+const selected = ref(-1)
 const opts = ref({ case: false, word: false, regex: false })
 
 const totalMatches = computed(() => results.value.reduce((n, f) => n + f.matches.length, 0))
@@ -140,6 +144,49 @@ function onScroll(event) {
   }
 }
 
+// Every rendered match carries its position in one flat list, so the arrow keys
+// can walk across files without the template needing to count.
+const groups = computed(() => {
+  let index = 0
+  return visibleResults.value.map((file) => {
+    const isCollapsed = collapsed.has(file.path)
+    return {
+      path: file.path,
+      count: file.matches.length,
+      collapsed: isCollapsed,
+      matches: isCollapsed ? [] : file.matches.map((match) => ({ ...match, index: index++ })),
+    }
+  })
+})
+const flat = computed(() => groups.value.flatMap((g) => g.matches.map((m) => ({ path: g.path, match: m }))))
+
+function move(step) {
+  // Step past the rendered window and it grows, so long result sets stay walkable.
+  if (selected.value + step >= flat.value.length && rendered.value < results.value.length) {
+    rendered.value = Math.min(rendered.value + PAGE, results.value.length)
+  }
+  const total = flat.value.length
+  if (!total) return
+  selected.value = (((selected.value + step) % total) + total) % total
+  nextTick(() => {
+    scroller.value?.querySelector(`[data-i="${selected.value}"]`)?.scrollIntoView({ block: 'nearest' })
+  })
+}
+
+function onEnter() {
+  if (selected.value >= 0) open(selected.value)
+  else run()
+}
+
+function open(index) {
+  const hit = flat.value[index]
+  if (!hit) return
+  selected.value = index
+  editor
+    .open(hit.path, { line: hit.match.line, col: (hit.match.start || 0) + 1, preview: true })
+    .catch(() => {})
+}
+
 function focusQuery() {
   nextTick(() => {
     queryInput.value?.focus()
@@ -156,6 +203,8 @@ watch(query, () => {
 
 function toggleCollapse(path) {
   collapsed.has(path) ? collapsed.delete(path) : collapsed.add(path)
+  // Collapsing renumbers everything below it; start the walk over.
+  selected.value = -1
 }
 
 async function run() {
@@ -175,11 +224,8 @@ async function run() {
     error.value = e.message || 'Search failed.'
   }
   rendered.value = PAGE
+  selected.value = -1
   loading.value = false
-}
-
-function goto(path, match) {
-  editor.open(path, { line: match.line, col: (match.start || 0) + 1, preview: true }).catch(() => {})
 }
 
 function replaceAll() {
