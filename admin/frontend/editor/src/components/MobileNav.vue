@@ -94,7 +94,7 @@ const props = defineProps({
   editable: { type: Boolean, default: false },
   fontSize: { type: Number, default: 13 },
 })
-const emit = defineEmits(['select', 'goto', 'find', 'toggle-edit', 'font'])
+const emit = defineEmits(['select', 'goto', 'toggle-edit', 'font'])
 
 const open = ref(false)
 
@@ -103,7 +103,6 @@ const items = [
   { id: 'search', icon: 'lucide-search', label: 'Search', kind: 'panel' },
   { id: 'git', icon: 'lucide-git-branch', label: 'Source Control', kind: 'panel' },
   { id: 'goto', icon: 'lucide-file-text', label: 'Go to File', kind: 'command' },
-  { id: 'find', icon: 'lucide-zoom-in', label: 'Find in Files', kind: 'command' },
 ]
 
 const R = 164

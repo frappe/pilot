@@ -21,4 +21,4 @@ window.EventSource = function (url, options) {
 }
 window.EventSource.prototype = NativeEventSource.prototype
 
-if (APP) document.title = `${APP} — Editor`
+if (APP) document.title = `${APP} · Editor`

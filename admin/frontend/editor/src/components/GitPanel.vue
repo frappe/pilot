@@ -2,18 +2,14 @@
   <div class="flex h-full flex-col">
     <PanelHeader title="Source Control" @close="emit('close')">
       <template v-if="git.repo" #context>
-        <!-- One control for the branch and everything that acts on it. Dropdown
-             renders the trigger as-child, so the Button is the trigger itself. -->
         <Dropdown :options="branchMenu" placement="bottom-end">
           <template #default="{ open }">
             <Button
-              class="max-w-full"
+              class="min-w-0"
               variant="ghost"
               :title="branchTitle"
               @click="loadBranches"
             >
-              <!-- No branch icon: the panel is already Source Control, and the
-                   header only has ~120px to share with the title. -->
               <span class="ed-name">{{ branchLabel }}</span>
               <template #suffix>
                 <span v-if="trackingLabel" class="ed-meta tabular-nums">{{ trackingLabel }}</span>
@@ -25,9 +21,7 @@
             </Button>
           </template>
         </Dropdown>
-      </template>
-      <template #actions>
-        <button class="ed-icon-button" title="Refresh" @click="refresh">
+        <button class="ed-icon-button ml-1 shrink-0" title="Refresh" @click="refresh">
           <span class="lucide-refresh-cw h-4 w-4 text-current"></span>
         </button>
       </template>

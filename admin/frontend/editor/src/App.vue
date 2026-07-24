@@ -36,7 +36,6 @@
         :font-size="store.fontSize"
         @select="openPanel"
         @goto="openQuick"
-        @find="openSearchModal"
         @toggle-edit="store.toggleMobileEdit()"
         @font="store.bumpFont($event)"
       />
@@ -143,6 +142,13 @@ watch(
   () => store.openTick,
   () => {
     if (isMobile.value && panel.value) panel.value = ''
+  },
+)
+
+watch(
+  () => store.activePath,
+  (path) => {
+    if (isMobile.value && !path && !store.diff && !store.commit) panel.value = 'files'
   },
 )
 

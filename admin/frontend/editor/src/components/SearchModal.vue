@@ -23,11 +23,15 @@
         class="flex w-full flex-col overflow-auto border-b border-outline-gray-1 px-1.5 sm:w-[420px] sm:shrink-0 sm:border-b-0 sm:border-r"
         @scroll="onListScroll"
       >
-        <template v-for="group in limitedResults" :key="group.file">
+        <div v-for="group in limitedResults" :key="group.file">
           <div class="ed-row cursor-default hover:bg-transparent">
+            <span class="ed-lane"></span>
             <FileIcon :name="baseName(group.file)" class="ed-lane" />
-            <span class="ed-name text-ink-gray-8">{{ baseName(group.file) }}</span>
+            <span class="ed-name">{{ baseName(group.file) }}</span>
             <span class="ed-path">{{ dirName(group.file) }}</span>
+            <span class="ed-meta ml-auto rounded-full bg-surface-gray-3 px-1.5 text-ink-gray-6">
+              {{ group.count }}
+            </span>
           </div>
           <div
             v-for="(match, index) in group.matches"
@@ -41,7 +45,7 @@
             <span class="ed-lineno">{{ match.line }}</span>
             <MatchLine :text="match.text" :path="group.file" :start="match.start" :end="match.end" />
           </div>
-        </template>
+        </div>
         <div v-if="!flat.length" class="ed-empty m-auto" :class="{ 'text-ink-red-4': error }">
           {{ loading ? 'Searching…' : error || (query ? 'No matches' : 'Type to search') }}
         </div>
@@ -127,7 +131,7 @@ const limitedResults = computed(() => {
   for (const g of results.value) {
     if (n >= limit.value) break
     const take = g.matches.slice(0, limit.value - n)
-    out.push({ file: g.file, matches: take, base: n })
+    out.push({ file: g.file, matches: take, base: n, count: g.matches.length })
     n += take.length
   }
   return out
