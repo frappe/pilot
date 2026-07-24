@@ -19,4 +19,4 @@ class FrappeLLMIntegration(SelfHostedIntegration):
 
     @classmethod
     def get_models(cls, provider: str) -> list[str]:
-        return ["qwen3.6-27b-fp8", "deepseek-v4-flash"]
+        return ["deepseek-flask-v4", "gpt-oss", "gpt-oss-120b", "qwen3.6-27b-fp8"]
