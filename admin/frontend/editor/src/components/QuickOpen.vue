@@ -1,5 +1,5 @@
 <template>
-  <Modal v-if="state.visible" width-class="sm:max-h-[70vh] sm:w-[560px] sm:max-w-[90vw]" @close="close">
+  <Modal v-if="state.visible" size-class="sm:h-auto sm:max-h-[70vh] sm:w-[560px] sm:max-w-[90vw]" @close="close">
     <template #input>
       <input
         ref="input"
@@ -13,7 +13,7 @@
       />
     </template>
     <template #actions>
-      <span class="ed-meta w-16 text-right tabular-nums">{{ countLabel }}</span>
+      <span v-if="countLabel" class="ed-meta shrink-0 tabular-nums">{{ countLabel }}</span>
     </template>
 
     <div ref="list" class="min-h-0 flex-1 overflow-auto px-1.5 py-1">

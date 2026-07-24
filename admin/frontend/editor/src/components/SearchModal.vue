@@ -1,5 +1,5 @@
 <template>
-  <Modal v-if="state.visible" width-class="sm:h-[78vh] sm:w-[1100px] sm:max-w-[94vw]" @close="close">
+  <Modal v-if="state.visible" size-class="sm:h-[78vh] sm:w-[1100px] sm:max-w-[94vw]" @close="close">
     <template #input>
       <input
         ref="input"
@@ -14,7 +14,7 @@
     </template>
     <template #actions>
       <SearchToggles v-model="opts" @change="run" />
-      <span class="ed-meta w-16 text-right tabular-nums">{{ countLabel }}</span>
+      <span v-if="countLabel" class="ed-meta shrink-0 tabular-nums">{{ countLabel }}</span>
     </template>
 
     <div class="flex min-h-0 flex-1 flex-col sm:flex-row">
@@ -42,7 +42,7 @@
             <MatchLine :text="match.text" :path="group.file" :start="match.start" :end="match.end" />
           </div>
         </template>
-        <div v-if="!flat.length" class="ed-empty" :class="{ 'text-ink-red-4': error }">
+        <div v-if="!flat.length" class="ed-empty m-auto" :class="{ 'text-ink-red-4': error }">
           {{ loading ? 'Searching…' : error || (query ? 'No matches' : 'Type to search') }}
         </div>
         <div v-else-if="limit < flat.length" class="ed-empty">

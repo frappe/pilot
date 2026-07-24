@@ -2,8 +2,8 @@
   <div class="fixed inset-0 z-50 flex items-stretch justify-center sm:items-start sm:pt-[9vh]" @click="emit('close')">
     <div class="fixed inset-0 bg-black/25"></div>
     <div
-      class="relative z-10 flex h-full w-full flex-col overflow-hidden bg-surface-white shadow-2xl sm:h-auto sm:rounded-xl sm:border sm:border-outline-gray-2"
-      :class="widthClass"
+      class="relative z-10 flex flex-col overflow-hidden bg-surface-white shadow-2xl max-sm:h-full max-sm:w-full sm:rounded-xl sm:border sm:border-outline-gray-2"
+      :class="sizeClass"
       @click.stop
     >
       <div class="flex h-12 shrink-0 items-center gap-2 border-b border-outline-gray-1 px-3 sm:h-10">
@@ -20,6 +20,6 @@
 </template>
 
 <script setup>
-defineProps({ widthClass: { type: String, default: '' } })
+defineProps({ sizeClass: { type: String, default: '' } })
 const emit = defineEmits(['close'])
 </script>
