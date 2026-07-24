@@ -12,6 +12,7 @@ from admin.backend.core.editor.workspace import (
     EditorWorkspace,
 )
 from pilot.core.bench import Bench
+from pilot.exceptions import BenchError
 from pilot.internal.validators import validate_app_name
 
 editor_bp = Blueprint("editor", __name__)
@@ -31,7 +32,7 @@ def with_workspace(view):
             return error_response("editor_app_not_found", "Unknown or missing app.", 404)
         try:
             root = Bench(config, bench_root).app(name).path
-        except Exception:
+        except BenchError:
             return error_response("editor_app_not_found", "Unknown or missing app.", 404)
         return view(EditorWorkspace(root), *args, **kwargs)
 

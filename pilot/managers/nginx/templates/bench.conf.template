@@ -179,7 +179,6 @@ server {
     }
 
     {% else %}
-    {# compress assets + API JSON on the wire; the ~15MB editor bundle gzips to ~4MB #}
     gzip on;
     gzip_vary on;
     gzip_proxied any;
