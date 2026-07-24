@@ -15,6 +15,13 @@ self.MonacoEnvironment = {
   },
 }
 
+// Files are opened individually with no real project/tsconfig, so the TS
+// service can never resolve imports (aliases, node_modules, sibling files).
+// Semantic validation would just flag every import as an error.
+for (const defaults of [monaco.languages.typescript.typescriptDefaults, monaco.languages.typescript.javascriptDefaults]) {
+  defaults.setDiagnosticsOptions({ noSemanticValidation: true, noSyntaxValidation: false })
+}
+
 // Registers the espresso themes and selects one; importing monaco is enough.
 export { editorThemeName, applyEditorTheme } from '@/editorTheme'
 
