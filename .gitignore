@@ -1,6 +1,9 @@
 # Benches (created by `bench new`)
 /benches/
 
+# Local ad-hoc screenshots
+/screenshots/
+
 # Monitor logs (written beside the install)
 /logs/
 

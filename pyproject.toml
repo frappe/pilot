@@ -33,8 +33,8 @@ markers = [
 
 [tool.setuptools.package-data]
 "admin.backend" = [
-  "static/dist/**/*",
-  "static/dist/index.html",
+  "static/dashboard/**/*",
+  "static/editor/**/*",
 ]
 "pilot.managers.nginx" = [
   "templates/*.template",
