@@ -315,7 +315,7 @@ pilot/tasks/
 admin/backend/api/v1/migrations.py
   migration history, detail, and recovery endpoints
 
-admin/frontend/src/pages/migrations/
+admin/frontend/dashboard/src/pages/migrations/
   migration history and detail pages
 ```
 

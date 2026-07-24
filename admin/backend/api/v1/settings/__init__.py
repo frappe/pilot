@@ -99,7 +99,10 @@ def build_settings_response(config: BenchConfig, bench_root: Path | None = None)
             "process_manager": config.production.process_manager or "none",
             "enabled": config.production.enabled,
         },
-        "admin": {"domain": config.admin.domain, "tls": config.admin.tls},
+        "admin": {
+            "domain": config.admin.domain,
+            "tls": config.admin.tls,
+        },
         "letsencrypt": {"email": config.letsencrypt.email},
         "s3": s3_payload(config),
         "s3_providers": s3_provider_options(),

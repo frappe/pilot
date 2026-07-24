@@ -1290,11 +1290,11 @@ def _admin_source_checkout(tmp_path: Path, src_mtime: int, built_mtime: int) -> 
     import os
 
     cli_root = tmp_path / "repo"
-    frontend = cli_root / "admin" / "frontend"
+    frontend = cli_root / "admin" / "frontend" / "dashboard"
     (frontend / "src").mkdir(parents=True)
     package_json = frontend / "package.json"
     package_json.write_text("{}")
-    dist = cli_root / "admin" / "backend" / "static" / "dist"
+    dist = cli_root / "admin" / "backend" / "static" / "dashboard"
     (dist / "assets").mkdir(parents=True)
     (dist / "index.html").write_text("built")
     src_file = frontend / "src" / "App.vue"
@@ -1310,8 +1310,8 @@ def test_admin_source_is_newer_detects_edits(tmp_path: Path) -> None:
     from pilot.core.bench.runtime import BenchRuntime
 
     cli_root = _admin_source_checkout(tmp_path, src_mtime=100, built_mtime=1)
-    frontend = cli_root / "admin" / "frontend"
-    dist = cli_root / "admin" / "backend" / "static" / "dist"
+    frontend = cli_root / "admin" / "frontend" / "dashboard"
+    dist = cli_root / "admin" / "backend" / "static" / "dashboard"
     assert BenchRuntime._admin_source_is_newer(frontend, dist) is True
 
     import os

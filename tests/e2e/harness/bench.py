@@ -236,7 +236,7 @@ class Bench:
         if not _env_truthy("E2E_BUILD_ADMIN"):
             return
         print("[e2e] Building admin UI from source (E2E_BUILD_ADMIN)...")
-        frontend = REPO_ROOT / "admin" / "frontend"
+        frontend = REPO_ROOT / "admin" / "frontend" / "dashboard"
         if not (frontend / "node_modules").exists() and (
             subprocess.run(["npm", "ci"], cwd=frontend).returncode != 0
         ):

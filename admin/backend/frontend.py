@@ -30,36 +30,53 @@ def ensure_admin_frontend(on_progress: Callable[[str], None] = lambda message: N
 
 
 def build_admin_frontend(on_progress: Callable[[str], None] = lambda message: None) -> None:
-    """Compile the admin frontend from source. Requires the admin/frontend/ source and Node.js."""
-    from pilot.utils import run_command
-
-    frontend = _find_frontend()
+    """Build the admin frontend and editor from source. Requires Node.js."""
     _check_node_version()
-    on_progress(f"Building admin frontend at {frontend}...")
-    if _is_npm_install_stale(frontend):
-        on_progress("Running npm install...")
-        run_command(["npm", "install"], cwd=frontend, stream_output=True)
-    on_progress("Running npm run build")
-    run_command(["npm", "run", "build"], cwd=frontend, stream_output=True)
+    _build_frontend(_find_frontend(), "dashboard", on_progress)
+    _build_frontend(_find_editor(), "editor", on_progress)
     on_progress("\nAdmin frontend built successfully.")
 
 
+def _build_frontend(frontend: Path, label: str, on_progress: Callable[[str], None]) -> None:
+    from pilot.utils import run_command
+
+    on_progress(f"Building {label} frontend at {frontend}...")
+    if _is_npm_install_stale(frontend):
+        on_progress(f"Running npm install for {label}...")
+        run_command(["npm", "install"], cwd=frontend, stream_output=True)
+    on_progress(f"Running npm run build for {label}")
+    run_command(["npm", "run", "build"], cwd=frontend, stream_output=True)
+
+
 def _has_frontend_source(root: Path) -> bool:
-    return (root / "admin" / "frontend" / "package.json").exists()
+    return (root / "admin" / "frontend" / "dashboard" / "package.json").exists()
 
 
 def _has_admin_dist(root: Path) -> bool:
-    return (root / "admin" / "backend" / "static" / "dist" / "assets").exists()
+    return (root / "admin" / "backend" / "static" / "dashboard" / "assets").exists()
 
 
 def _find_frontend() -> Path:
     from pilot.utils import cli_root
 
-    candidate = cli_root() / "admin" / "frontend"
+    candidate = cli_root() / "admin" / "frontend" / "dashboard"
     if (candidate / "package.json").exists():
         return candidate
     raise BenchError(
-        "admin/frontend not found. This command requires the bench-cli source directory with admin/frontend/."
+        "admin/frontend/dashboard not found. This command requires the bench-cli source directory "
+        "with admin/frontend/dashboard/."
+    )
+
+
+def _find_editor() -> Path:
+    from pilot.utils import cli_root
+
+    candidate = cli_root() / "admin" / "frontend" / "editor"
+    if (candidate / "package.json").exists():
+        return candidate
+    raise BenchError(
+        "admin/frontend/editor not found. This command requires the bench-cli source directory "
+        "with admin/frontend/editor/."
     )
 
 

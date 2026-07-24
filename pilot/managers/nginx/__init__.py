@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import pwd
 import re
 import shutil
@@ -42,6 +43,13 @@ _SERVER_TEMPLATE = Template.from_path(_TEMPLATES / "server.conf.template")
 _ERROR_PAGE_TEMPLATE = Template.from_path(_TEMPLATES / "error_page.html.template")
 
 _CORS_PATHS = ["/api/v1/health", "/api/v1/bootstrap"]
+
+
+def _admin_static_dir() -> Path:
+    spec = importlib.util.find_spec("admin.backend")
+    if spec is None or spec.submodule_search_locations is None:
+        raise ModuleNotFoundError("admin.backend")
+    return Path(spec.submodule_search_locations[0]) / "static"
 
 # Custom pages for nginx-generated errors (downed upstream, missing static
 # file). App responses pass through unchanged - proxy_intercept_errors is off.
@@ -178,6 +186,7 @@ class NginxConfigRenderer:
             "waf_active": self._is_waf_active(),
             "waf_rules_file": self.bench.config_path / "modsecurity" / "main.conf",
             "cors_paths": _CORS_PATHS,
+            "admin_static": _admin_static_dir(),
             "vhosts": vhosts,
         }
 

@@ -1,0 +1,270 @@
+@import 'frappe-ui/style.css';
+
+/*
+ * One scale for every list in the editor: explorer, search, source control,
+ * commit files, quick open. Rows share a height and a lane grid so names,
+ * icons and trailing actions line up across panels.
+ */
+@layer components {
+  .ed-row {
+    @apply flex h-10 cursor-pointer select-none items-center gap-2 rounded-md px-2 text-ink-gray-7 sm:h-7;
+  }
+  .ed-row:hover {
+    @apply bg-surface-gray-2;
+  }
+  .ed-row-selected,
+  .ed-row-selected:hover {
+    @apply bg-surface-gray-3 text-ink-gray-9;
+  }
+  /* Fixed lane so chevrons, file icons and status letters align down the list. */
+  .ed-lane {
+    @apply flex h-4 w-4 shrink-0 items-center justify-center;
+  }
+  .ed-name {
+    @apply min-w-0 truncate text-sm;
+  }
+  .ed-path {
+    @apply min-w-0 truncate text-xs text-ink-gray-5;
+  }
+  .ed-meta {
+    @apply shrink-0 text-xs text-ink-gray-5;
+  }
+  .ed-code {
+    @apply min-w-0 truncate font-mono text-xs text-ink-gray-8;
+  }
+  .ed-lineno {
+    @apply w-8 shrink-0 text-right font-mono text-xs tabular-nums text-ink-gray-4;
+  }
+  .ed-section {
+    @apply flex items-center gap-1 px-3 pb-1 pt-3 text-2xs font-medium uppercase tracking-wide text-ink-gray-5;
+  }
+  .ed-empty {
+    @apply px-3 py-4 text-center text-xs text-ink-gray-5;
+  }
+  /* Search hit. The amber surface alone is too close to white, so it carries a
+     ring to stay legible on both panel backgrounds. */
+  .ed-mark {
+    @apply rounded-[2px] bg-surface-amber-1 text-ink-gray-9 ring-1 ring-outline-amber-2;
+  }
+  /* Square icon button used in panel headers and row hover actions. */
+  .ed-icon-button {
+    @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-ink-gray-6 hover:bg-surface-gray-2 hover:text-ink-gray-8 disabled:opacity-40 sm:h-6 sm:w-6;
+  }
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  touch-action: manipulation;
+}
+
+/*
+ * Layered surface contrast:
+ *   chrome = activity bar + tab strip -> the darker step
+ *   panel  = sidebar + editor         -> the editor background
+ * These match editorTheme.js, so Monaco and the panels around it never seam.
+ */
+:root {
+  --surface-chrome: #f3f3f3;
+  --surface-panel: #ffffff;
+  --sb-thumb: rgba(0, 0, 0, 0.18);
+  --sb-thumb-hover: rgba(0, 0, 0, 0.32);
+}
+[data-theme='dark'] {
+  --surface-chrome: #0d0d0d;
+  --surface-panel: #171717;
+  --sb-thumb: rgba(255, 255, 255, 0.13);
+  --sb-thumb-hover: rgba(255, 255, 255, 0.26);
+}
+.bg-chrome {
+  background-color: var(--surface-chrome);
+}
+.bg-panel {
+  background-color: var(--surface-panel);
+}
+
+/* High-contrast circular action button (FAB): inverts with theme */
+.fab-solid {
+  background-color: #1f1f1f;
+  color: #ffffff;
+}
+[data-theme='dark'] .fab-solid {
+  background-color: #f4f4f4;
+  color: #1b1b1b;
+}
+
+body {
+  overscroll-behavior: none;
+}
+
+/* Minimal scrollbars: thin, transparent until the area is hovered */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+*:hover {
+  scrollbar-color: var(--sb-thumb) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*:hover::-webkit-scrollbar-thumb {
+  background-color: var(--sb-thumb);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--sb-thumb-hover);
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Hide scrollbars while keeping scroll functionality */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/*
+ * frappe-ui/reka portals dropdowns to <body> and leaves the popper wrapper at
+ * z-auto. On mobile the sidebar panel is fixed inset-0 z-30 and opaque, so it
+ * paints over any dropdown opened inside it (branch/remote menus). Lift the
+ * wrapper above the panel; still below modals (z-50) and context menus (z-50).
+ */
+[data-reka-popper-content-wrapper] {
+  z-index: 40 !important;
+}
+
+/*
+ * frappe-ui's Dialog sets no z-index (stacks at auto), but Monaco's own
+ * widgets do (e.g. the read-only "Cannot edit" bubble is z-index: 10000).
+ * Clear Monaco's max so confirm dialogs stay on top of an open diff view.
+ */
+.dialog-overlay,
+.dialog-content {
+  z-index: 10050 !important;
+}
+
+.monaco-editor,
+.monaco-editor .overflow-guard {
+  border-radius: 0;
+}
+
+/* Read-only (mobile default): no blinking caret on tap. */
+.editor-readonly .monaco-editor .cursors-layer {
+  display: none !important;
+}
+
+/* Match line in the search preview */
+.monaco-editor .search-hit-line {
+  background: rgba(227, 179, 65, 0.16);
+}
+
+.monaco-editor .blame-inline {
+  opacity: 0.5;
+  font-style: italic;
+}
+
+.monaco-editor .git-gutter {
+  margin-left: 3px;
+  width: 3px !important;
+}
+.monaco-editor .git-gutter-add {
+  background: #2da44e;
+}
+.monaco-editor .git-gutter-mod {
+  background: #4c8bf5;
+}
+.monaco-editor .git-gutter-del {
+  background: #cf222e;
+}
+
+/* Merge conflict decorations */
+.monaco-editor .mc-gutter-marker {
+  margin-left: 3px;
+  width: 3px !important;
+  background: #e3b341;
+}
+.monaco-editor .mc-current-region {
+  background: rgba(45, 164, 78, 0.08);
+}
+.monaco-editor .mc-incoming-region {
+  background: rgba(76, 139, 245, 0.08);
+}
+
+/* Editor with banner: offset to avoid overlap */
+.has-banner {
+  top: 41px !important;
+}
+@media (max-width: 639px) {
+  .has-banner {
+    top: 37px !important;
+  }
+}
+.monaco-editor .mc-current-region {
+  background: rgba(45, 164, 78, 0.08);
+}
+.monaco-editor .mc-incoming-region {
+  background: rgba(76, 139, 245, 0.08);
+}
+
+/* Merge conflict inline actions */
+.monaco-editor .mc-zone {
+  display: flex !important;
+  align-items: center;
+  gap: 16px;
+  height: 100%;
+  padding-left: 12px;
+  font-size: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  position: relative;
+  z-index: 10;
+}
+.monaco-editor .mc-btn {
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  color: #0969da;
+}
+.monaco-editor .mc-zone.mc-dark .mc-btn {
+  color: #4daafc;
+}
+.monaco-editor .mc-btn:hover {
+  text-decoration: underline;
+}
+
+/* Mobile-safe form controls: keep iOS from auto-zooming on focus */
+@media (max-width: 639px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 639px) {
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}

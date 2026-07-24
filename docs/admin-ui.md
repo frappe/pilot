@@ -4,14 +4,14 @@ The Admin UI is the browser surface for benches, sites, apps, tasks, logs, and s
 
 ## Layout
 
-The Vue app lives under `admin/frontend`. Backend API routes live under `admin/backend/api/v1`.
+The Vue app lives under `admin/frontend/dashboard`. Backend API routes live under `admin/backend/api/v1`.
 
 Keep UI code organized by feature area: benches, sites, apps, tasks, logs, settings, setup, and shared utilities.
 
 Frontend source structure:
 
 ```text
-admin/frontend/src/
+admin/frontend/dashboard/src/
   api/          endpoint wrappers and API URL/error helpers
   composables/  reusable state, loading, polling, stream, and workflow logic
   components/   reusable UI pieces grouped by feature

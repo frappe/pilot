@@ -12,11 +12,11 @@ from pilot.exceptions import BenchError
 
 def _layout(root: Path, *, source: bool, dist: bool) -> None:
     if source:
-        pkg = root / "admin" / "frontend" / "package.json"
+        pkg = root / "admin" / "frontend" / "dashboard" / "package.json"
         pkg.parent.mkdir(parents=True, exist_ok=True)
         pkg.write_text("{}")
     if dist:
-        assets = root / "admin" / "backend" / "static" / "dist" / "assets"
+        assets = root / "admin" / "backend" / "static" / "dashboard" / "assets"
         assets.mkdir(parents=True, exist_ok=True)
 
 

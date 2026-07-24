@@ -148,8 +148,8 @@ class BenchRuntime:
         from pilot.utils import cli_root
 
         root = cli_root()
-        dist = root / "admin" / "backend" / "static" / "dist"
-        frontend = root / "admin" / "frontend"
+        dist = root / "admin" / "backend" / "static" / "dashboard"
+        frontend = root / "admin" / "frontend" / "dashboard"
         # Releases ship the source too; only dev builds may (re)compile it.
         can_build = is_dev_build and (frontend / "package.json").exists()
 
@@ -184,7 +184,7 @@ class BenchRuntime:
         admin_mgr = AdminEnvManager(root)
         admin_mgr.ensure()
 
-        assets = root / "admin" / "backend" / "static" / "dist" / "assets"
+        assets = root / "admin" / "backend" / "static" / "dashboard" / "assets"
         if not assets.exists():
             ensure_admin_frontend(on_progress)
 

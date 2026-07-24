@@ -1,6 +1,9 @@
 # Benches (created by `bench new`)
 /benches/
 
+# Local ad-hoc screenshots
+/screenshots/
+
 # Monitor logs (written beside the install)
 /logs/
 
@@ -55,10 +58,12 @@ htmlcov/
 *~
 
 # Admin
-admin/frontend/node_modules/
-admin/frontend2/node_modules/
-admin/backend/static/dist/
-admin/frontend/components.d.ts
+admin/frontend/dashboard/node_modules/
+admin/frontend/editor/node_modules/
+admin/backend/static/dashboard/
+admin/backend/static/editor/
+admin/frontend/dashboard/components.d.ts
+admin/frontend/editor/components.d.ts
 *.timestamp-*
 .env
 .env.local
@@ -69,6 +74,9 @@ admin/frontend/components.d.ts
 .opencode
 
 registry-cache*
+
+# Downloaded OWASP CRS ruleset (local data)
+/modsecurity-crs/
 
 # Agent Skills
 .agents

@@ -21,7 +21,13 @@ jobs:
 
       - name: Build admin frontend
         run: |
-          cd admin/frontend
+          cd admin/frontend/dashboard
+          npm ci
+          npm run build
+
+      - name: Build admin editor
+        run: |
+          cd admin/frontend/editor
           npm ci
           npm run build
 
