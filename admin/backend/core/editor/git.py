@@ -103,7 +103,9 @@ class EditorGit:
         return lines
 
     def diff_gutters(self, rel: str) -> dict:
-        added, modified, deleted = [], [], []
+        added: list[int] = []
+        modified: list[int] = []
+        deleted: list[int] = []
         if self.is_repo:
             out = self._text("diff", "HEAD", "--no-color", "-U0", "--", rel)
             for line in out.split("\n"):

@@ -47,6 +47,8 @@ _CORS_PATHS = ["/api/v1/health", "/api/v1/bootstrap"]
 
 def _admin_static_dir() -> Path:
     spec = importlib.util.find_spec("admin.backend")
+    if spec is None or spec.submodule_search_locations is None:
+        raise ModuleNotFoundError("admin.backend")
     return Path(spec.submodule_search_locations[0]) / "static"
 
 # Custom pages for nginx-generated errors (downed upstream, missing static
