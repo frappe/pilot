@@ -1,6 +1,31 @@
 <template>
   <div class="flex h-full flex-col">
     <PanelHeader title="Source Control" @close="emit('close')">
+      <template v-if="git.repo" #context>
+        <!-- One control for the branch and everything that acts on it. Dropdown
+             renders the trigger as-child, so the Button is the trigger itself. -->
+        <Dropdown :options="branchMenu" placement="bottom-end">
+          <template #default="{ open }">
+            <Button
+              class="max-w-full"
+              variant="ghost"
+              :title="branchTitle"
+              @click="loadBranches"
+            >
+              <!-- No branch icon: the panel is already Source Control, and the
+                   header only has ~120px to share with the title. -->
+              <span class="ed-name">{{ branchLabel }}</span>
+              <template #suffix>
+                <span v-if="trackingLabel" class="ed-meta tabular-nums">{{ trackingLabel }}</span>
+                <span
+                  class="size-4 shrink-0 text-ink-gray-5 transition-transform lucide-chevron-down"
+                  :class="{ 'rotate-180': open }"
+                ></span>
+              </template>
+            </Button>
+          </template>
+        </Dropdown>
+      </template>
       <template #actions>
         <button class="ed-icon-button" title="Refresh" @click="refresh">
           <span class="lucide-refresh-cw h-4 w-4 text-current"></span>
@@ -11,41 +36,18 @@
     <div v-if="!git.repo" class="ed-empty">Not a git repository.</div>
 
     <template v-else>
-      <div class="flex flex-col gap-2 px-3 pb-3">
-        <div class="flex items-center gap-1">
-          <!-- Dropdown does not forward classes, so the flex sizing lives on a wrapper. -->
-          <div class="min-w-0 flex-1">
-            <Dropdown :options="branchOptions" placement="left">
-              <Button
-                class="w-full justify-start"
-                icon-left="lucide-git-branch"
-                :label="branchLabel"
-                :title="`On ${branchLabel}`"
-                @click="loadBranches"
-              >
-                <template #suffix>
-                  <span class="lucide-chevron-down size-4 shrink-0 text-ink-gray-5"></span>
-                </template>
-              </Button>
-            </Dropdown>
-          </div>
-          <span v-if="trackingLabel" class="ed-meta shrink-0 tabular-nums" :title="trackingTitle">
-            {{ trackingLabel }}
-          </span>
-          <Dropdown :options="remoteOptions" placement="right">
-            <Button class="shrink-0" variant="ghost" icon="lucide-ellipsis" title="Remote actions" />
-          </Dropdown>
-        </div>
-
+      <!-- Only what is usable right now: the message box appears when there is
+           something to commit, the action when there is anything to do at all. -->
+      <div v-if="hasChanges || hasRemoteWork" class="flex flex-col items-end gap-2 px-3 pb-3">
         <Textarea
+          v-if="hasChanges"
+          class="w-full"
           v-model="message"
           :rows="2"
           :placeholder="commitPlaceholder"
           @keydown.ctrl.enter.prevent="commit"
           @keydown.meta.enter.prevent="commit"
         />
-        <!-- One primary action, as in VS Code: commit while there is something to
-             commit, otherwise sync whatever is waiting on the remote. -->
         <Button
           variant="solid"
           :icon-left="primary.icon"
@@ -250,11 +252,17 @@ const fileSections = computed(() => [
 
 // git.branch is the one owner of "where we are"; the dropdown only lists what
 // else we could check out.
-const branchLabel = computed(() => (git.branch === 'HEAD' ? 'Detached HEAD' : git.branch || 'No branch'))
+// Kept short: the header shares its width with the panel title.
+const branchLabel = computed(() => (git.branch === 'HEAD' ? 'Detached' : git.branch || 'No branch'))
 
-const branchOptions = computed(() => [
+const branchTitle = computed(() =>
+  [`On ${branchLabel.value}`, trackingTitle.value].filter(Boolean).join(' · '),
+)
+
+const branchMenu = computed(() => [
   { group: 'Branches', items: branchItems.value },
   { group: '', items: [{ label: 'Create new branch…', icon: 'lucide-plus', onClick: createBranch }] },
+  { group: 'Remote', items: remoteOptions.value },
 ])
 
 const branchItems = computed(() =>
