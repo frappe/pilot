@@ -1,8 +1,15 @@
-"""Provider-agnostic chat-completion contract backed by litellm."""
+"""Base contract for an LLM provider integration, backed by litellm.
+
+Each integration is fully self-describing: it declares its identity (`provider`,
+`label`), how the settings form should treat it (`requires_api_base`,
+`free_text_model`), and its selectable models (`get_models`). The registry relies
+only on these class-level APIs, so a new provider is just a new subclass.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import ClassVar
 
 import litellm
 
@@ -19,27 +26,40 @@ class LLMAuthError(LLMError):
 
 
 class LLMIntegration:
-    """Any litellm-supported chat provider, addressed as ``provider/model``."""
+    """One kind of LLM integration. Subclasses declare the provider slugs they
+    handle (`providers`), their models (`get_models`), and the class attributes
+    below. The registry relies only on these class APIs."""
+
+    base_api: ClassVar[str] = ""  # fixed endpoint baked into the provider
+    requires_api_base: ClassVar[bool] = False  # user must supply an api_base
+    free_text_model: ClassVar[bool] = False  # user types the model, not a picklist
+    # litellm route prefix. Blank => use the config `provider` slug (litellm-native
+    # providers); set it when the UI slug differs from the litellm route.
+    litellm_provider: ClassVar[str] = ""
 
     def __init__(
-        self,
-        api_key: str,
-        *,
-        provider: str,
-        model: str,
-        stream: bool = False,
-        api_base: str = "",
+        self, api_key: str, *, provider: str, model: str, stream: bool = False, api_base: str = ""
     ) -> None:
         self.api_key = api_key
         self.provider = provider
         self.model = model
         self.stream = stream
-        # Endpoint URL for self-hosted providers (e.g., vLLM).
-        self.api_base = api_base
+        self.api_base = api_base or self.base_api
 
-    def get_models(self) -> list[str]:
-        """Return the model IDs litellm knows for this provider."""
-        return sorted(litellm.models_by_provider.get(self.provider, set()))
+    @classmethod
+    def providers(cls) -> dict[str, str]:
+        """Provider slug -> display label handled by this integration."""
+        return {}
+
+    @classmethod
+    def get_models(cls, provider: str) -> list[str]:
+        """Selectable models for a provider slug; empty means free-text entry."""
+        return []
+
+    @property
+    def _litellm_model(self) -> str:
+        """The model string handed to litellm.completion (routing lives here)."""
+        return f"{self.litellm_provider or self.provider}/{self.model}"
 
     def prompt(self, prompt: str, *, bench_root: Path, max_tokens: int = 4096, **kwargs):
         """Send a single-turn prompt and return the litellm response."""
@@ -49,7 +69,7 @@ class LLMIntegration:
         ]
         try:
             return litellm.completion(
-                model=f"{self.provider}/{self.model}",
+                model=self._litellm_model,
                 messages=messages,
                 api_key=self.api_key,
                 api_base=self.api_base or None,

@@ -104,9 +104,9 @@ def test_response_exposes_llm_without_secret() -> None:
     assert payload["llm"]["api_key_set"] is True
     assert "api_key" not in payload["llm"]
     options = {p["value"]: p for p in payload["llm_providers"]}
-    assert {"anthropic", "openai", "self-hosted"} <= options.keys()
-    assert options["self-hosted"]["self_hosted"] is True
-    assert options["anthropic"]["self_hosted"] is False
+    assert {"anthropic", "openai", "self-hosted", "frappe-llm"} <= options.keys()
+    assert options["self-hosted"]["requires_api_base"] is True
+    assert options["anthropic"]["requires_api_base"] is False
 
 
 def test_system_prompt_persists_to_sidecar_not_toml(tmp_path: Path) -> None:

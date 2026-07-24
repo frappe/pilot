@@ -227,7 +227,7 @@ class ConfigPatcher:
 
     @staticmethod
     def _validate_llm_provider(llm_config: LLMConfig) -> str | None:
-        from pilot.integrations.llm.registry import is_self_hosted, known_providers
+        from pilot.integrations.llm.registry import known_providers, requires_api_base
 
         if not llm_config.provider:
             return None
@@ -235,6 +235,6 @@ class ConfigPatcher:
             return f"llm.provider {llm_config.provider!r} is not a supported provider."
         if not llm_config.model:
             return "llm.model is required. Select a model for the provider."
-        if is_self_hosted(llm_config.provider) and not llm_config.api_base:
+        if requires_api_base(llm_config.provider) and not llm_config.api_base:
             return "llm.api_base is required for a self-hosted provider."
         return None
