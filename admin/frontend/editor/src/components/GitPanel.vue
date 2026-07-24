@@ -16,7 +16,17 @@
           <!-- Dropdown does not forward classes, so the flex sizing lives on a wrapper. -->
           <div class="min-w-0 flex-1">
             <Dropdown :options="branchOptions" placement="left">
-              <Button class="w-full justify-start" icon-left="lucide-git-branch" :label="git.branch" />
+              <Button
+                class="w-full justify-start"
+                icon-left="lucide-git-branch"
+                :label="branchLabel"
+                :title="`On ${branchLabel}`"
+                @click="loadBranches"
+              >
+                <template #suffix>
+                  <span class="lucide-chevron-down size-4 shrink-0 text-ink-gray-5"></span>
+                </template>
+              </Button>
             </Dropdown>
           </div>
           <span v-if="trackingLabel" class="ed-meta shrink-0 tabular-nums" :title="trackingTitle">
@@ -155,7 +165,6 @@ const pushing = ref(false)
 const pulling = ref(false)
 const syncing = ref(false)
 const branchList = ref([])
-const branchCurrent = ref('')
 const showHistory = ref(false)
 const commits = ref([])
 const moreCommits = ref(false)
@@ -239,15 +248,23 @@ const fileSections = computed(() => [
   },
 ])
 
-const branchOptions = computed(() => {
-  const items = branchList.value.map((b) => ({
-    label: b,
-    icon: b === branchCurrent.value ? 'lucide-check' : 'lucide-git-branch',
-    onClick: () => b !== branchCurrent.value && switchBranch(b, false),
-  }))
-  items.push({ label: 'Create new branch', icon: 'lucide-plus', onClick: createBranch })
-  return items
-})
+// git.branch is the one owner of "where we are"; the dropdown only lists what
+// else we could check out.
+const branchLabel = computed(() => (git.branch === 'HEAD' ? 'Detached HEAD' : git.branch || 'No branch'))
+
+const branchOptions = computed(() => [
+  { group: 'Branches', items: branchItems.value },
+  { group: '', items: [{ label: 'Create new branch…', icon: 'lucide-plus', onClick: createBranch }] },
+])
+
+const branchItems = computed(() =>
+  branchList.value.map((name) => ({
+    label: name,
+    icon: 'lucide-git-branch',
+    selected: name === git.branch,
+    onClick: () => name !== git.branch && switchBranch(name, false),
+  })),
+)
 
 function letter(code) {
   return code.includes('?') ? 'U' : code[0]
@@ -257,9 +274,7 @@ function statusColor(code) {
 }
 
 async function loadBranches() {
-  const { current, branches } = await git.branches()
-  branchCurrent.value = current
-  branchList.value = branches
+  branchList.value = (await git.branches()).branches
 }
 
 async function loadCommits(reset = true) {
@@ -332,6 +347,11 @@ async function switchBranch(branch, create) {
   await loadBranches()
   if (showHistory.value) loadCommits()
   tree.reload('')
+  // Open files now point at the other branch's content. Only reload saved tabs:
+  // refreshTab drops unsaved edits, and a checkout is no reason to lose them.
+  for (const tab of editor.tabs) {
+    if (!tab.dirty) editor.refreshTab(tab.path).catch(() => {})
+  }
 }
 
 async function createBranch() {
