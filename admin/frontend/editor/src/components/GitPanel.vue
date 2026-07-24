@@ -238,7 +238,7 @@ const fileSections = computed(() => [
     bulkTitle: 'Stage all',
     bulk: stageAll,
     actions: [
-      { icon: 'lucide-rotate-ccw', title: 'Discard changes', run: discard },
+      { icon: 'lucide-undo-2', title: 'Discard changes', run: discard },
       { icon: 'lucide-plus', title: 'Stage', run: stage },
     ],
   },

@@ -1,9 +1,6 @@
 import ky from 'ky'
 import { APP } from '@/scope'
 
-// The editor backend lives under /api/v1/editor and is scoped per app via an
-// ?app= query param (see scope.js). ky passes Request objects, which the global
-// fetch shim leaves untouched, so we scope here in a beforeRequest hook instead.
 let redirectingToLogin = false
 
 function redirectToLogin() {
@@ -13,19 +10,17 @@ function redirectToLogin() {
   location.assign(`/login?redirect=${back}`)
 }
 
+// Every editor endpoint is scoped to one app via ?app=. ky merges these instance
+// searchParams onto each request, so we never rebuild the Request ourselves —
+// `new Request(url, request)` drops the body on some browsers, which silently
+// turned writes (save, discard, commit) into empty payloads.
 export const request = ky.create({
   prefix: '/api/v1/editor',
+  searchParams: { app: APP },
   throwHttpErrors: false,
   // ky defaults to 10s; git/mariadb operations can legitimately run longer.
   timeout: 60_000,
   hooks: {
-    beforeRequest: [
-      ({ request }) => {
-        const url = new URL(request.url)
-        if (!url.searchParams.has('app')) url.searchParams.set('app', APP)
-        return new Request(url, request)
-      },
-    ],
     afterResponse: [
       // 401 only: a 403 (editor disabled, wrong token scope) is not fixed by a login.
       ({ response }) => {

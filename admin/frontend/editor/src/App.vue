@@ -124,12 +124,16 @@ function saveSession() {
     savePending = false
   }, 1000)
 }
+// The debounced timer never fires once the page starts unloading, so write the
+// snapshot synchronously (keepalive) on hide/unload instead.
+function flushSession() {
+  if (!savePending) return
+  clearTimeout(saveTimer)
+  sessionApi.put(store.snapshot())
+  savePending = false
+}
 function onHidden() {
-  if (document.hidden && savePending) {
-    clearTimeout(saveTimer)
-    sessionApi.put(store.snapshot())
-    savePending = false
-  }
+  if (document.hidden) flushSession()
 }
 
 watch(
@@ -171,15 +175,14 @@ onMounted(async () => {
 
   window.addEventListener('keydown', onKey)
 
-  window.addEventListener('beforeunload', saveSession)
+  window.addEventListener('pagehide', flushSession)
   document.addEventListener('visibilitychange', onHidden)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey)
-  clearTimeout(saveTimer)
-  window.removeEventListener('beforeunload', saveSession)
+  window.removeEventListener('pagehide', flushSession)
   document.removeEventListener('visibilitychange', onHidden)
-  saveSession()
+  flushSession()
 })
 </script>
