@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pilot.config.logs import LogsConfig
+from pilot.exceptions import BenchError
 from pilot.managers.fluentbit import LogsConfigurator
 
 
@@ -94,6 +95,38 @@ def test_logs_install_restarts_when_already_installed(tmp_path: Path) -> None:
 
     token_file = tmp_path / "system" / "fluent-bit" / "token.env"
     assert "DATUM_LOG_TOKEN=test-token" in token_file.read_text()
+
+
+def test_logs_install_falls_back_to_default_binary_path(tmp_path: Path) -> None:
+    configurator = _configurator(tmp_path)
+    config = LogsConfig(endpoint="https://datum.internal", token="secret")
+
+    with (
+        patch("pilot.managers.fluentbit.cli_root", return_value=tmp_path),
+        patch("pilot.managers.fluentbit.shutil.which", return_value=None),
+        patch("pilot.managers.fluentbit.Path.exists", return_value=True),
+        patch("pilot.managers.fluentbit.user_service_installed", return_value=False),
+        patch("pilot.managers.fluentbit.install_user_service") as install,
+        patch("pilot.managers.fluentbit.run_command"),
+    ):
+        configurator.install(config)
+
+    unit_text = install.call_args.kwargs["unit_text"]
+    assert "/opt/fluent-bit/bin/fluent-bit" in unit_text
+
+
+def test_logs_install_fails_loudly_when_binary_not_found(tmp_path: Path) -> None:
+    configurator = _configurator(tmp_path)
+    config = LogsConfig(endpoint="https://datum.internal", token="secret")
+
+    with (
+        patch("pilot.managers.fluentbit.cli_root", return_value=tmp_path),
+        patch("pilot.managers.fluentbit.shutil.which", return_value=None),
+        patch("pilot.managers.fluentbit.Path.exists", return_value=False),
+        patch("pilot.managers.fluentbit.user_service_installed", return_value=False),
+        pytest.raises(BenchError, match="fluent-bit binary not found"),
+    ):
+        configurator.install(config)
 
 
 def test_logs_setup_installs_fluent_bit_when_missing(tmp_path: Path) -> None:
