@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import PropertyMock, patch
 
 import pytest
 
 from pilot import updater
+from pilot.exceptions import BenchError
 
 
 def test_update_available_true_when_tag_differs() -> None:
@@ -90,6 +91,92 @@ def test_perform_upgrade_skips_post_update_patches_when_upgrade_fails() -> None:
 
     assert run_patches.call_count == 1
     assert run_patches.call_args.args[0] == "pre_update"
+
+
+def _patch_git_state(branch: str, tag_at_head: str = ""):
+    return (
+        patch.object(updater.GitRepo, "branch", new_callable=PropertyMock, return_value=branch),
+        patch.object(updater.GitRepo, "tag_at_head", new_callable=PropertyMock, return_value=tag_at_head),
+        patch.object(updater.GitRepo, "fetch", return_value=True),
+    )
+
+
+def test_upgrade_dev_pulls_when_on_a_branch() -> None:
+    branch, tag, fetch = _patch_git_state("develop")
+    with (
+        patch.object(updater, "cli_root", return_value=Path("/opt/pilot")),
+        branch, tag, fetch,
+        patch("pilot.utils.run_command") as run,
+        patch.object(updater, "_rebuild_dev_install") as rebuild,
+    ):
+        updater._upgrade_dev(lambda _m: None)
+
+    assert run.call_args.args[0] == ["git", "-C", "/opt/pilot", "pull"]
+    rebuild.assert_called_once()
+
+
+def test_upgrade_dev_moves_tag_pinned_checkout_to_latest_release() -> None:
+    branch, tag, fetch = _patch_git_state("", tag_at_head="v0.0.1-pre-alpha")
+    with (
+        patch.object(updater, "cli_root", return_value=Path("/opt/pilot")),
+        branch, tag, fetch as fetched,
+        patch.object(updater, "latest_release", return_value={"tag": "v0.0.2-pre-alpha", "asset_url": None}),
+        patch("pilot.utils.run_command") as run,
+        patch.object(updater, "_rebuild_dev_install") as rebuild,
+    ):
+        updater._upgrade_dev(lambda _m: None)
+
+    fetched.assert_called_once_with("--tags")
+    assert run.call_args.args[0] == ["git", "-C", "/opt/pilot", "checkout", "v0.0.2-pre-alpha"]
+    rebuild.assert_called_once()
+
+
+def test_upgrade_dev_skips_rebuild_when_already_on_latest_tag() -> None:
+    branch, tag, fetch = _patch_git_state("", tag_at_head="v0.0.2-pre-alpha")
+    messages: list[str] = []
+    with (
+        patch.object(updater, "cli_root", return_value=Path("/opt/pilot")),
+        branch, tag, fetch,
+        patch.object(updater, "latest_release", return_value={"tag": "v0.0.2-pre-alpha", "asset_url": None}),
+        patch.object(updater, "_rebuild_dev_install") as rebuild,
+    ):
+        updater._upgrade_dev(messages.append)
+
+    rebuild.assert_not_called()
+    assert messages == ["Already on the latest version (v0.0.2-pre-alpha)."]
+
+
+def test_upgrade_dev_rejects_a_detached_commit() -> None:
+    branch, tag, fetch = _patch_git_state("")
+    with (
+        patch.object(updater, "cli_root", return_value=Path("/opt/pilot")),
+        branch,
+        tag,
+        fetch,
+        patch.object(updater, "latest_release") as latest,
+        patch.object(updater, "_rebuild_dev_install") as rebuild,
+        pytest.raises(BenchError, match="not on a release tag"),
+    ):
+        updater._upgrade_dev(lambda _m: None)
+
+    latest.assert_not_called()
+    rebuild.assert_not_called()
+
+
+def test_upgrade_dev_fails_when_tag_cannot_be_fetched() -> None:
+    branch, tag, _fetch = _patch_git_state("", tag_at_head="v0.0.1-pre-alpha")
+    with (
+        patch.object(updater, "cli_root", return_value=Path("/opt/pilot")),
+        branch, tag,
+        patch.object(updater.GitRepo, "fetch", return_value=False),
+        patch.object(updater.GitRepo, "has_commit", return_value=False),
+        patch.object(updater, "latest_release", return_value={"tag": "v0.0.2-pre-alpha", "asset_url": None}),
+        patch.object(updater, "_rebuild_dev_install") as rebuild,
+        pytest.raises(BenchError, match="Could not fetch"),
+    ):
+        updater._upgrade_dev(lambda _m: None)
+
+    rebuild.assert_not_called()
 
 
 def _make_install(tmp_path: Path) -> tuple[Path, Path]:

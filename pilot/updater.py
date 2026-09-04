@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pilot
 from pilot.exceptions import BenchError
+from pilot.internal.git import GitRepo
 from pilot.utils import cli_root, extract_tar_archive
 
 RELEASE_REPO = "frappe/pilot"
@@ -59,13 +60,44 @@ def perform_upgrade(on_progress: Progress = lambda message: None) -> None:
 
 
 def _upgrade_dev(on_progress: Progress) -> None:
-    from admin.backend.frontend import ensure_admin_frontend
-    from pilot.managers.environment import AdminEnvManager
+    """Update a git checkout: pull when on a branch, else move to the newest release tag."""
     from pilot.utils import run_command
 
     root = cli_root()
-    on_progress("Pulling latest Pilot (dev install)...")
-    run_command(["git", "-C", str(root), "pull"], stream_output=True)
+    repo = GitRepo(root)
+    if repo.branch:
+        on_progress("Pulling latest Pilot (dev install)...")
+        run_command(["git", "-C", str(root), "pull"], stream_output=True)
+    elif not _checkout_latest_tag(repo, on_progress):
+        return
+    _rebuild_dev_install(root, on_progress)
+
+
+def _checkout_latest_tag(repo: GitRepo, on_progress: Progress) -> bool:
+    """Move a tag-pinned checkout to the newest release tag. Returns False when already there."""
+    from pilot.utils import run_command
+
+    current_tag = repo.tag_at_head
+    if not current_tag:
+        raise BenchError("Cannot upgrade a detached checkout that is not on a release tag.")
+    release = latest_release()
+    if not release or not release["tag"]:
+        raise BenchError("Could not determine the latest release tag.")
+    tag = release["tag"]
+    if current_tag == tag:
+        on_progress(f"Already on the latest version ({tag}).")
+        return False
+    on_progress(f"Updating tag-pinned install to {tag}...")
+    if not repo.fetch("--tags") and not repo.has_commit(tag):
+        raise BenchError(f"Could not fetch {tag} from origin.")
+    run_command(["git", "-C", str(repo.path), "checkout", tag], stream_output=True)
+    return True
+
+
+def _rebuild_dev_install(root: Path, on_progress: Progress) -> None:
+    from admin.backend.frontend import ensure_admin_frontend
+    from pilot.managers.environment import AdminEnvManager
+
     on_progress("Installing admin Python dependencies...")
     AdminEnvManager(root).install_python_deps()
     on_progress("Rebuilding admin frontend...")
