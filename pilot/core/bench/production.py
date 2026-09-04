@@ -99,7 +99,9 @@ class BenchProduction:
         from pilot.managers.nginx import NginxManager
 
         if not self.bench.config.letsencrypt.email:
-            raise ConfigError("letsencrypt.email must be set in bench.toml to run setup letsencrypt.")
+            raise ConfigError(
+                "letsencrypt.email must be set in common_config.toml (next to your benches) to run setup letsencrypt."
+            )
         letsencrypt_manager = LetsEncryptManager(self.bench)
         nginx_manager = NginxManager(self.bench)
         letsencrypt_manager.install()

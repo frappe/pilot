@@ -35,7 +35,7 @@ class SetupProductionCommand(Command):
     letsencrypt_email: Annotated[
         str | None,
         Arg(
-            help="Contact email for Let's Encrypt (required with --tls unless letsencrypt.email is already set in bench.toml)."
+            help="Contact email for Let's Encrypt (required with --tls unless letsencrypt.email is already set in common_config.toml)."
         ),
     ] = None
     best_effort_tls: Annotated[bool, Arg(cli=False)] = False
