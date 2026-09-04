@@ -275,6 +275,7 @@ class ProductionSetup:
     def _setup_letsencrypt_if_needed(self) -> None:
         from pilot.managers.letsencrypt import is_letsencrypt_required
 
+        self._enable_public_site_tls()
         if not is_letsencrypt_required(self.bench):
             return
         try:
@@ -287,6 +288,16 @@ class ProductionSetup:
                 f"yet ({exc}). Continuing on HTTP - retry once its DNS resolves.",
                 file=sys.stderr,
             )
+
+    def _enable_public_site_tls(self) -> None:
+        if not self.bench.config.admin.tls:
+            return
+
+        from pilot.managers.letsencrypt import public_domains
+
+        for site in self.bench.sites():
+            if not site.config.ssl and public_domains(site.config):
+                site.set_ssl(True)
 
     def _build_admin_for_production(self) -> None:
         from admin.backend.frontend import ensure_admin_frontend

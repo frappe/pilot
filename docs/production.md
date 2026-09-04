@@ -51,6 +51,18 @@ Nginx config is rendered from bench and site state. Regenerate it with `pilot se
 
 Let's Encrypt setup uses configured domains and should run after nginx is rendered. Site domain changes should reload nginx through site/domain code.
 
+With local TLS enabled, `pilot setup production` enables SSL for each existing site with a public site name or custom domain.
+It then requests a certificate for all public domains on each site. Domains that end in `.localhost` stay excluded.
+
+Public certificate requests need a Let's Encrypt contact email. Pass the email during production setup:
+
+```bash
+pilot setup production --admin-domain admin.example.com --tls --letsencrypt-email ops@example.com
+```
+
+You can also set `letsencrypt.email` in `common_config.toml` before setup.
+When an upstream proxy terminates HTTPS, set `admin.tls = false` so Pilot does not change site SSL settings or request certificates.
+
 ## Admin Domain
 
 The Admin backend runs behind nginx in production. The public Admin port and the internal Gunicorn port come from `[admin]`.

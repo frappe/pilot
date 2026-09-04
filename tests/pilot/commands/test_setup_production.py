@@ -6,6 +6,7 @@ import json
 import sys
 import tomllib
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -47,6 +48,13 @@ def _make_bench(
     )
     config = BenchConfig.from_file(bench_dir / "bench.toml")
     return Bench(config, bench_dir)
+
+
+def _make_site(bench: Bench, name: str, *, ssl: bool = False) -> Path:
+    site_path = bench.sites_path / name
+    site_path.mkdir(parents=True)
+    (site_path / "site_config.json").write_text(json.dumps({"db_name": "site", "ssl": ssl}))
+    return site_path
 
 
 def test_persist_preserves_other_fields(tmp_path: Path) -> None:
@@ -194,6 +202,15 @@ def test_require_production_inputs_passes_with_domain_and_email(tmp_path: Path) 
     cmd._require_production_inputs()  # no raise
 
 
+def test_require_production_inputs_needs_email_for_existing_public_site(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, admin_domain="admin.localhost", email="")
+    _make_site(bench, "site.example.com")
+    cmd = ProductionSetup(bench)
+
+    with pytest.raises(BenchError, match="contact email is required"):
+        cmd._require_production_inputs()
+
+
 def test_setup_monitoring_runs_privileged_setup_at_provision_time(tmp_path: Path, monkeypatch) -> None:
     """Privileged log-dir/logrotate setup must run here, not in the user-service daemons."""
     from pilot.core.server.monitoring import MonitorConfigurator
@@ -273,6 +290,17 @@ def test_setup_letsencrypt_swallows_when_best_effort(tmp_path: Path, monkeypatch
     cmd._setup_letsencrypt_if_needed()  # must not raise
 
     assert "dns not ready" in capsys.readouterr().err
+
+
+def test_setup_letsencrypt_enables_existing_public_sites(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, admin_domain="admin.localhost", email="x@y.com")
+    site_path = _make_site(bench, "site.example.com")
+
+    with patch.object(Bench, "setup_letsencrypt") as setup_letsencrypt:
+        ProductionSetup(bench)._setup_letsencrypt_if_needed()
+
+    setup_letsencrypt.assert_called_once_with()
+    assert json.loads((site_path / "site_config.json").read_text())["ssl"] is True
 
 
 def test_persist_production_state_writes_enabled_and_drops_nginx(tmp_path: Path) -> None:
