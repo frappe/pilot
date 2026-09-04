@@ -291,8 +291,8 @@ class App:
             source = f"branch '{current}'" if current else "a detached commit"
             raise BenchError(
                 f"'{self.config.name}' is already installed from {source}, "
-                f"so this install cannot deliver '{requested}'. Remove the app and "
-                f"add it again to change its branch."
+                f"so this install cannot deliver '{requested}'. Run "
+                f"`pilot switch-branch {self.config.name} {requested}` to change it."
             )
 
     def _skip_already_installed(
