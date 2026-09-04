@@ -23,8 +23,8 @@ def open_root(page: Page, base_url: str) -> None:
 
 
 def login(page: Page, base_url: str, password: str) -> None:
-    # The wizard's own sign-in carries over in this shared browser context, so without
-    # clearing it the login form would never render. Drop it to exercise real login.
+    # Let the setup page finish its restart redirect before starting login.
+    page.wait_for_url(f"{base_url}/sites", timeout=30_000)
     page.context.clear_cookies()
     open_root(page, base_url)
     page.get_by_placeholder("Password").fill(password)
