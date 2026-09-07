@@ -98,6 +98,8 @@ Every `/setup/*` route needs a session, like the rest of the API. The Admin pass
 
 `PUT /setup/configuration` accepts only the fields the wizard owns: `app_repo`, `app_branch`, `db_type`, `db_mode`, and the `mariadb_*`/`postgres_*` connection fields. Any other key gets a 422 - including `admin_password`. Change the remaining `bench.toml` settings through the settings API.
 
+`POST /setup/actions/finish` treats the bench as initialized when its bench Python executable exists (`Bench(...).python`, normally `env/bin/python`). This completion check is intentionally independent of the configured process manager: local benches may use `config/Procfile`, while managed systemd or Supervisor benches generate their own service configuration. Do not use Procfile existence as the setup-completion invariant.
+
 ## Errors
 
 Raise HTTP errors at the route boundary. Core objects should raise domain exceptions such as config or bench errors.
