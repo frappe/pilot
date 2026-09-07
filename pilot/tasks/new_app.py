@@ -10,6 +10,7 @@ class NewAppTask(Task):
     """Scaffold a new Frappe app under apps/ and install it into the bench."""
 
     command: ClassVar[str] = "new-app"
+    required_submit_args: ClassVar[tuple[str, ...]] = ("name", "description", "publisher", "email")
     # make-app writes into apps/ before the install lands, so a kill can leave a half-app.
     is_cancellable_while_running: ClassVar[bool] = False
 
