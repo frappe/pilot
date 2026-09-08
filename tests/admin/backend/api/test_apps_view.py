@@ -268,3 +268,48 @@ def test_app_update_checks_fetches_each_cloned_app(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert response.get_json() == {"apps": [{"name": "suite"}]}
     repo.fetch.assert_called_once_with("develop", timeout=60)
+
+
+def test_marketplace_github_updates_reads_without_refresh(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    checker = Mock()
+    checker.check.return_value = {"summary": {"total": 1}, "apps": [{"name": "suite"}]}
+
+    with patch("admin.backend.api.v1.updates.MarketplaceGitHubUpdates", return_value=checker):
+        response = client.get("/api/v1/marketplace-github-updates")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"summary": {"total": 1}, "apps": [{"name": "suite"}]}
+    checker.check.assert_called_once_with(refresh=False)
+
+
+def test_marketplace_github_update_checks_forces_refresh(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    checker = Mock()
+    checker.check.return_value = {"summary": {"total": 1}, "apps": [{"name": "suite"}]}
+
+    with patch("admin.backend.api.v1.updates.MarketplaceGitHubUpdates", return_value=checker):
+        response = client.post("/api/v1/marketplace-github-update-checks")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"summary": {"total": 1}, "apps": [{"name": "suite"}]}
+    checker.check.assert_called_once_with(refresh=True)
+
+
+def test_marketplace_github_updates_reports_registry_unavailable(tmp_path: Path) -> None:
+    from pilot.exceptions import RegistryUnavailableError
+
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    checker = Mock()
+    checker.check.side_effect = RegistryUnavailableError("registry cache is unusable")
+
+    with patch("admin.backend.api.v1.updates.MarketplaceGitHubUpdates", return_value=checker):
+        response = client.get("/api/v1/marketplace-github-updates")
+
+    assert response.status_code == 503
+    body = response.get_json()["error"]
+    assert body["code"] == "registry_unavailable"
+    assert "unusable" in body["message"]

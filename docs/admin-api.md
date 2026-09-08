@@ -61,6 +61,14 @@ Task-starting endpoints should return:
 
 `GET /git/branches?repo=...` runs local `git ls-remote --heads`, so Git must be available on the Pilot host. It returns all remote branch names and puts the remote default first.
 
+### Updates
+
+`GET /app-updates` and `POST /app-update-checks` compare installed bench apps against each app's tracked git remote branch.
+
+`GET /marketplace-github-updates` and `POST /marketplace-github-update-checks` compare marketplace stable release commits against live GitHub branch heads for all marketplace apps.
+
+The POST variant forces a fresh pull of the marketplace registry cache before comparing.
+
 ### Site Apps
 
 `GET /sites/<name>/apps` returns the apps in use on the site, disabled ones excluded, plus `can_disable` for whether this bench's Frappe supports disabling at all.
