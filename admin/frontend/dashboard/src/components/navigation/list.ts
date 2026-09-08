@@ -24,6 +24,7 @@ export const sidebarSections: SidebarSection[] = [
       { label: 'Analytics', icon: 'lucide-chart-line', to: '/insights/analytics' },
       { label: 'Updates', icon: 'lucide-git-pull-request-arrow', to: '/updates' },
       { label: 'Tasks', icon: 'lucide-list-checks', to: '/insights/tasks' },
+      { label: 'Processes', icon: 'lucide-cpu', to: '/insights/processes' },
       { label: 'Logs', icon: 'lucide-scroll-text', to: '/insights/logs' },
     ],
   },

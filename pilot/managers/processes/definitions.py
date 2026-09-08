@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -10,6 +11,8 @@ from pilot.utils import cli_root
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
+
+CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 
 @dataclass
@@ -21,6 +24,53 @@ class ProcessDefinition:
     working_dir: Path | None = None  # was `cd {dir} &&`
     stop_timeout: int | None = None  # graceful-stop seconds (redis=300)
     critical: bool = True  # dev runner stops the whole bench when this process exits
+    restart_on_failure: bool = True
+    pre_run: list[str] = field(default_factory=list)  # argv run before the process starts
+    post_run: list[str] = field(default_factory=list)  # argv run after it stops
+
+
+def hook_wrapped_argv(pd: ProcessDefinition) -> list[str]:
+    """argv for managers with no native pre/post hooks (supervisor, dev runner).
+
+    Supervisor and the dev runner send SIGTERM to the whole process group. An
+    EXIT-only trap does not reliably fire when `sh` itself is killed by that
+    signal while blocked waiting on the foreground child - only an explicit
+    TERM trap runs before the shell's default disposition takes it down. So
+    TERM is trapped to forward the signal to the child, wait for it, then run
+    post_run and exit; EXIT is also trapped for the self-exit case (post_run
+    or pre_run itself failing)."""
+    if not pd.pre_run and not pd.post_run:
+        return pd.argv
+    script = shlex.join(pd.argv)
+    if pd.pre_run:
+        script = f"{shlex.join(pd.pre_run)} && {script}"
+    if pd.post_run:
+        # Defined as a function rather than inlined into the trap string, since
+        # post_run's own argv is already shlex-quoted and a second layer of
+        # quoting around it (single or double) breaks on any quote it contains.
+        # _post_run runs at most once, guarded by _ran: a TERM trap fires it and
+        # forwards the signal to the backgrounded child, then the shell's own
+        # exit re-fires the EXIT trap - which the guard turns into a no-op.
+        post = shlex.join(pd.post_run)
+        script = (
+            f"_ran=0\n"
+            f"_post_run() {{ [ \"$_ran\" = 1 ] && return; _ran=1; {post}; }}\n"
+            f"trap _post_run EXIT\n"
+            f'trap "kill \\$child 2>/dev/null" TERM\n'
+            f"{script} &\n"
+            f"child=$!\n"
+            f"wait $child"
+        )
+    return ["sh", "-c", script]
+
+
+def reject_control_chars(pd: ProcessDefinition) -> None:
+    """A control character in a declared field would inject directives into a unit file."""
+    fields = [pd.name, str(pd.working_dir or ""), *pd.argv, *pd.pre_run, *pd.post_run]
+    for key, value in pd.env.items():
+        fields += [key, value]
+    if any(CONTROL_RE.search(field) for field in fields):
+        raise ValueError(f"process '{pd.name}' has a control character in a unit field")
 
 
 class ProcessDefinitionBuilder:
@@ -56,6 +106,36 @@ class ProcessDefinitionBuilder:
             ]
         defs.append(self.redis_definition("redis_cache", "redis_cache.conf"))
         defs.append(self.redis_definition("redis_queue", "redis_queue.conf"))
+        defs.extend(self.app_process_definitions())
+        self._reject_name_collisions(defs)
+        return defs
+
+    def _reject_name_collisions(self, defs: list[ProcessDefinition]) -> None:
+        """Supervisor normalizes underscores to dashes in program names, so two
+        distinct pd.name values can render to the same unit/program name."""
+        seen: dict[str, str] = {}
+        for pd in defs:
+            normalized = pd.name.replace("_", "-")
+            if normalized in seen and seen[normalized] != pd.name:
+                raise ValueError(
+                    f"process name '{pd.name}' collides with '{seen[normalized]}' "
+                    f"once normalized to '{normalized}'"
+                )
+            seen[normalized] = pd.name
+
+    def app_process_definitions(self) -> list[ProcessDefinition]:
+        """A malformed declaration raises rather than being skipped - a skipped app
+        reads as "removed" to reconciliation, which would stop its live services.
+
+        An operator can still opt an app out via bench.toml's disabled_app_processes,
+        the escape hatch for a third-party app whose declaration can't be fixed
+        in time - that skip is explicit, not automatic."""
+        disabled = set(self.bench.config.disabled_app_processes)
+        defs: list[ProcessDefinition] = []
+        for app in self.bench.apps():
+            if app.config.name in disabled:
+                continue
+            defs.extend(app.requirements.process_definitions())
         return defs
 
     def process_definitions(self) -> list[ProcessDefinition]:

@@ -339,6 +339,8 @@ def test_only_lite_and_admin_cap_glibc_arenas(tmp_path: Path) -> None:
     assert "MALLOC_ARENA_MAX" not in _definitions(bench).python_env()
     admin = next(pd for pd in _definitions(bench).prod_process_definitions() if pd.name == "admin")
     assert admin.env["MALLOC_ARENA_MAX"] == "2"
+
+
 def test_python_processes_run_unbuffered(tmp_path: Path) -> None:
     bench = make_bench(tmp_path, GunicornConfig())
     definitions = _definitions(bench)
@@ -365,7 +367,8 @@ def test_unbuffered_env_reaches_service_units(tmp_path: Path) -> None:
     bench = make_bench(tmp_path, GunicornConfig())
     web = next(pd for pd in _definitions(bench).prod_process_definitions() if pd.name == "web")
 
-    assert "Environment=PYTHONUNBUFFERED=1" in SystemdRenderer("test-bench").render(web)
+    # Quoted: an unquoted value with a space would split into a second assignment.
+    assert 'Environment="PYTHONUNBUFFERED=1"' in SystemdRenderer("test-bench").render(web)
     assert 'PYTHONUNBUFFERED="1"' in SupervisorRenderer("test-bench", bench.logs_path).render(web)
 
 

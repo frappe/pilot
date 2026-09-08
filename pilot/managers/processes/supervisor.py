@@ -13,8 +13,32 @@ from pilot.managers.processes.base import (
     UnitGroup,
     override,
 )
+from pilot.managers.processes.definitions import hook_wrapped_argv, reject_control_chars
 from pilot.managers.processes.local import ProcessDefinition
 from pilot.utils import cli_root, run_command
+
+
+# supervisorctl status states -> the status vocabulary the admin UI shows.
+_SUPERVISOR_STATE_TO_STATUS = {
+    "RUNNING": "running",
+    "STARTING": "starting",
+    "STOPPING": "stopping",
+    "STOPPED": "stopped",
+    "EXITED": "stopped",
+    "FATAL": "start_failed",
+    "BACKOFF": "start_failed",
+    "UNKNOWN": "unknown",
+}
+
+
+def _escape_percent(value: str) -> str:
+    # supervisord expands %(...)s in every value, quoted or not.
+    return value.replace("%", "%%")
+
+
+def _escape_quoted(value: str) -> str:
+    # Only for a value that will itself be wrapped in "...": also escape its quotes.
+    return _escape_percent(value).replace('"', '\\"')
 
 
 class SupervisorRenderer(ServiceRenderer):
@@ -26,18 +50,22 @@ class SupervisorRenderer(ServiceRenderer):
 
     @override
     def render(self, pd: ProcessDefinition) -> str:
+        reject_control_chars(pd)
         directory = f"directory={pd.working_dir}\n" if pd.working_dir else ""
         env = ""
         if pd.env:
-            pairs = ",".join(f'{k}="{v}"' for k, v in pd.env.items())
+            pairs = ",".join(f'{k}="{_escape_quoted(v)}"' for k, v in pd.env.items())
             env = f"environment={pairs}\n"
         stop = f"stopwaitsecs={pd.stop_timeout}\n" if pd.stop_timeout is not None else ""
         return (
             f"[program:{self.get_program_name(pd)}]\n"
-            f"command={shlex.join(pd.argv)}\n"
+            f"command={_escape_percent(shlex.join(hook_wrapped_argv(pd)))}\n"
             f"{env}{directory}"
             f"autostart=true\n"
-            f"autorestart=true\n"
+            # 'unexpected' restarts only on a non-zero exit, matching systemd's
+            # Restart=on-failure; 'true' would also restart a clean, expected exit.
+            f"autorestart={'unexpected' if pd.restart_on_failure else 'false'}\n"
+            f"exitcodes=0\n"
             f"startretries=3\n"
             f"stdout_logfile={self.log_dir}/{pd.name}.log\n"
             f"stderr_logfile={self.log_dir}/{pd.name}.error.log\n"
@@ -182,3 +210,35 @@ class SupervisorProcessManager(ManagedProcessManager):
         if role is UnitGroup.WEB:
             return f"{self.bench.config.name}:{self.bench.config.name}-web"
         return f"{self.workload_group}:*"
+
+    def apply_process_action(self, action: str, process_name: str) -> None:
+        """start/stop/restart one declared process by its ProcessDefinition name."""
+        program = f"{self.bench.config.name}-{process_name.replace('_', '-')}"
+        run_command([*self._supervisorctl(), action, f"{self.workload_group}:{program}"])
+
+    def live_states(self) -> dict[str, dict]:
+        """{process_name: {status, pid}} for every workload program this bench owns."""
+        if not self.is_configured() or not self.is_alive():
+            return {}
+        result = subprocess.run(
+            [*self._supervisorctl(), "status", f"{self.workload_group}:*"],
+            capture_output=True,
+            text=True,
+        )
+        states: dict[str, dict] = {}
+        prefix = f"{self.bench.config.name}-"
+        for line in result.stdout.splitlines():
+            parts = line.split()
+            if not parts:
+                continue
+            program = parts[0].split(":", 1)[-1]  # "group:program" -> "program"
+            state = parts[1] if len(parts) > 1 else "UNKNOWN"
+            pid = None
+            if state == "RUNNING" and len(parts) > 3 and parts[2] == "pid":
+                pid = int(parts[3].rstrip(","))
+            # Program names have underscores dashed; map back via a stripped key match later.
+            states[program.removeprefix(prefix)] = {
+                "status": _SUPERVISOR_STATE_TO_STATUS.get(state, "unknown"),
+                "pid": pid,
+            }
+        return states

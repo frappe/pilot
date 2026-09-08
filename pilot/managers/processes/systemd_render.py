@@ -3,7 +3,24 @@ from __future__ import annotations
 import shlex
 
 from pilot.managers.processes.base import ServiceRenderer, override
+from pilot.managers.processes.definitions import reject_control_chars
 from pilot.managers.processes.local import ProcessDefinition
+
+
+def _exec(argv: list[str]) -> str:
+    # ExecStart must be absolute, so a bare name goes through `env` for the PATH lookup.
+    if "/" not in argv[0]:
+        argv = ["/usr/bin/env", *argv]
+    return shlex.join(argv)
+
+
+def _escape(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _render_env(env: dict) -> str:
+    # Quoted: an unquoted value with a space becomes a second, bogus assignment.
+    return "".join(f'Environment="{key}={_escape(value)}"\n' for key, value in env.items())
 
 
 class SystemdRenderer(ServiceRenderer):
@@ -11,18 +28,23 @@ class SystemdRenderer(ServiceRenderer):
 
     @override
     def render(self, pd: ProcessDefinition) -> str:
+        reject_control_chars(pd)
         working_dir = f"WorkingDirectory={pd.working_dir}\n" if pd.working_dir else ""
-        env = "".join(f"Environment={k}={v}\n" for k, v in pd.env.items())
+        env = _render_env(pd.env)
         stop = f"TimeoutStopSec={pd.stop_timeout}\n" if pd.stop_timeout is not None else ""
+        pre = f"ExecStartPre={_exec(pd.pre_run)}\n" if pd.pre_run else ""
+        post = f"ExecStopPost={_exec(pd.post_run)}\n" if pd.post_run else ""
+        restart = "on-failure" if pd.restart_on_failure else "no"
         return (
             f"[Unit]\n"
             f"Description={self.bench_name} {pd.name}\n"
             f"PartOf={self.bench_name}.target\n\n"
             f"[Service]\n"
             f"Type=simple\n"
-            f"{working_dir}{env}"
-            f"ExecStart={shlex.join(pd.argv)}\n"
-            f"Restart=on-failure\n"
+            f"{working_dir}{env}{pre}"
+            f"ExecStart={_exec(pd.argv)}\n"
+            f"{post}"
+            f"Restart={restart}\n"
             f"{stop}"
             f"StandardOutput=append:{pd.log_file}\n"
             f"StandardError=append:{pd.log_file}.error.log\n"
@@ -40,7 +62,8 @@ class SystemdRenderer(ServiceRenderer):
         )
 
     def render_admin_service(self, pd: ProcessDefinition, socket_name: str) -> str:
-        env = "".join(f"Environment={k}={v}\n" for k, v in pd.env.items())
+        reject_control_chars(pd)
+        env = _render_env(pd.env)
         return (
             f"[Unit]\n"
             f"Description={self.bench_name} admin\n"

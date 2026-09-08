@@ -66,6 +66,7 @@ def register_blueprints(app: Flask) -> None:
     from admin.backend.api.v1.logs import logs_bp
     from admin.backend.api.v1.migrations import migrations_bp
     from admin.backend.api.v1.notifications import notifications_bp
+    from admin.backend.api.v1.processes import processes_bp
     from admin.backend.api.v1.settings import audit_bp, network_bp, settings_bp
     from admin.backend.api.v1.setup import setup_bp
     from admin.backend.api.v1.sites import sites_bp
@@ -95,6 +96,7 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(editor_bp, url_prefix=f"{API_V1_PREFIX}/editor")
     app.register_blueprint(ssh_keys_bp, url_prefix=f"{API_V1_PREFIX}/ssh-keys")
     app.register_blueprint(stats_bp, url_prefix=API_V1_PREFIX)
+    app.register_blueprint(processes_bp, url_prefix=f"{API_V1_PREFIX}/processes")
     app.register_blueprint(notifications_bp, url_prefix=API_V1_PREFIX)
 
 
