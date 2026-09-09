@@ -6,9 +6,12 @@ import logging
 import re
 import shutil
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pilot.exceptions import BenchError, CommandError
+from pilot.managers.systemd_user import memory_capped
 from pilot.utils import extract_tar_archive, get_yarn_bin, git_has_local_changes, run_command
 
 if TYPE_CHECKING:
@@ -23,16 +26,57 @@ class PythonAssetBuilder:
         self.manager = manager
         self.bench = manager.bench
 
+    @contextmanager
+    def compiling(self):
+        """Hold the host build lock and cap the memory compilers may use. A build
+        outgrows every other process on the host, so it runs alone and bounded."""
+        from pilot.core.build_memory import calculate_build_memory
+        from pilot.core.server import Server
+        from pilot.core.server.monitoring_proc import ProcMetricsReader
+
+        memory = ProcMetricsReader(self.bench.path).memory_usage()
+        sizing = calculate_build_memory(
+            total_memory_mb=memory["total_bytes"] // 1024 // 1024,
+            available_memory_mb=memory["available_bytes"] // 1024 // 1024,
+        )
+        if not sizing.can_build:
+            raise BenchError(sizing.refusal_reason)
+        with Server().build_action_lock():
+            self._memory_max_mb = sizing.limit_mb
+            try:
+                yield
+            finally:
+                self._memory_max_mb = None
+
+    def run_capped(self, argv: list[str], **kwargs) -> None:
+        """Run a compiler under the budget `compiling` set."""
+        limit_mb = getattr(self, "_memory_max_mb", None)
+        if not limit_mb:
+            run_command(argv, **kwargs)
+            return
+        try:
+            run_command(memory_capped(argv, limit_mb), **kwargs)
+        except CommandError as error:
+            # The kernel kills the scope outright, so the runner sees a signal
+            # rather than a compiler error worth showing.
+            if error.returncode < 0:
+                raise BenchError(
+                    f"Build ran out of memory: it may use {limit_mb}MB on this machine. "
+                    "Free up memory or build on a larger machine."
+                ) from error
+            raise
+
     def build_assets(self) -> None:
         for app in self.bench.apps():
             if (app.path / "package.json").exists():
                 self.ensure_yarn_install(app.path)
-        run_command(
-            [*self.bench.frappe_call, "frappe", "build", "--force"],
-            cwd=self.bench.sites_path,
-            env=self.manager._build_env(),
-            stream_output=True,
-        )
+        with self.compiling():
+            self.run_capped(
+                [*self.bench.frappe_call, "frappe", "build", "--force"],
+                cwd=self.bench.sites_path,
+                env=self.manager._build_env(),
+                stream_output=True,
+            )
 
     def build_assets_for_app(self, app: "App", force: bool = False) -> None:
         app_public_dir = app.path / app.config.name / "public"
@@ -52,22 +96,23 @@ class PythonAssetBuilder:
 
         print(f"  Building assets for {app.config.name}...")
         sys.stdout.flush()
-        run_command(
-            [*self.bench.frappe_call, "frappe", "build", "--force", "--app", app.config.name],
-            cwd=self.bench.sites_path,
-            env=self.manager._build_env(),
-            stream_output=True,
-        )
+        with self.compiling():
+            self.run_capped(
+                [*self.bench.frappe_call, "frappe", "build", "--force", "--app", app.config.name],
+                cwd=self.bench.sites_path,
+                env=self.manager._build_env(),
+                stream_output=True,
+            )
 
-        for frontend_dir in ["frontend", "roster"]:
-            if (app.path / frontend_dir / "package.json").exists():
-                print(f"  Building {frontend_dir} for {app.config.name}...")
-                sys.stdout.flush()
-                run_command(
-                    [get_yarn_bin(), "build"],
-                    cwd=app.path / frontend_dir,
-                    stream_output=True,
-                )
+            for frontend_dir in ["frontend", "roster"]:
+                if (app.path / frontend_dir / "package.json").exists():
+                    print(f"  Building {frontend_dir} for {app.config.name}...")
+                    sys.stdout.flush()
+                    self.run_capped(
+                        [get_yarn_bin(), "build"],
+                        cwd=app.path / frontend_dir,
+                        stream_output=True,
+                    )
 
     def ensure_frontend_dependencies(self, app: "App") -> None:
         """frappe's own `bench build` shells into `frontend`/`roster`, so node_modules must

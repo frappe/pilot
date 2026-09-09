@@ -93,6 +93,9 @@ class ProcMetricsReader:
             "used_bytes": used_bytes,
             "cached_bytes": cached_bytes,
             "free_bytes": free_bytes,
+            # What a new process can claim: free plus the cache the kernel would
+            # drop for it. free_bytes alone understates this several-fold.
+            "available_bytes": int(memory.available),
             "swap_used_bytes": int(swap.used),
             "percent": round(used_bytes / total_bytes * 100, 2) if total_bytes else 0.0,
         }
