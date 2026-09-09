@@ -75,7 +75,7 @@ Firewall and WAF config are bench settings. Settings apply code should delegate 
 
 ## Build Memory
 
-A full asset build peaks near 1.1GB while an idle bench is around 300MB, so an
+A full asset build peaks near 1.6GB while an idle bench is around 300MB, so an
 unbounded build can exhaust a small host and leave the kernel to kill an unrelated
 process, usually the database.
 
