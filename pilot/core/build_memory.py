@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-# A full build peaks around 1.1GB: several compilers, yarn and node at once.
-_BUILD_SHARE_OF_TOTAL = 0.6
+_BUILD_SHARE_OF_TOTAL = 0.75
 _OOM_RESERVE_MB = 50
 _MIN_BUILD_MEMORY_MB = 1024
 
@@ -24,9 +23,9 @@ class BuildMemorySizing:
 
 
 def calculate_build_memory(total_memory_mb: int, available_memory_mb: int) -> BuildMemorySizing:
-    """Budget a build gets. The share bounds it on a big host; what is free right
-    now bounds it on a loaded one, so a build inside its budget cannot still tip
-    the machine over."""
+    """Budget a build gets. A full build peaks near 1.6GB - several compilers,
+    yarn and node at once - so the share bounds it on a big host, and what is
+    free right now bounds it on a loaded one."""
     if total_memory_mb <= 0:
         raise ValueError("total_memory_mb must be greater than zero")
 

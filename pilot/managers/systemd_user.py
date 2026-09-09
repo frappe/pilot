@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 from pathlib import Path
@@ -40,6 +41,11 @@ def memory_capped(argv: list[str], memory_max_mb: int) -> list[str]:
     """Run argv in a transient scope the kernel kills past memory_max_mb. Returns
     argv unchanged where scopes cannot cap, so callers stay one code path."""
     if not has_user_memory_control():
+        logging.warning(
+            "Memory control is unavailable here, so this build runs uncapped and "
+            "can exhaust the machine. Needs systemd-run and a delegated memory "
+            "controller on the user slice."
+        )
         return argv
     return [
         "systemd-run",

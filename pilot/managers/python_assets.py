@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import os
 import re
 import shutil
 import sys
@@ -11,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.exceptions import BenchError, CommandError
-from pilot.managers.systemd_user import memory_capped
+from pilot.managers.systemd_user import memory_capped, systemctl_env
 from pilot.utils import extract_tar_archive, get_yarn_bin, git_has_local_changes, run_command
 
 if TYPE_CHECKING:
@@ -34,14 +35,16 @@ class PythonAssetBuilder:
         from pilot.core.server import Server
         from pilot.core.server.monitoring_proc import ProcMetricsReader
 
-        memory = ProcMetricsReader(self.bench.path).memory_usage()
-        sizing = calculate_build_memory(
-            total_memory_mb=memory["total_bytes"] // 1024 // 1024,
-            available_memory_mb=memory["available_bytes"] // 1024 // 1024,
-        )
-        if not sizing.can_build:
-            raise BenchError(sizing.refusal_reason)
+        # Lock first: a build already running is the more useful answer, and
+        # measuring before it would blame memory that build is legitimately using.
         with Server().build_action_lock():
+            memory = ProcMetricsReader(self.bench.path).memory_usage()
+            sizing = calculate_build_memory(
+                total_memory_mb=memory["total_bytes"] // 1024 // 1024,
+                available_memory_mb=memory["available_bytes"] // 1024 // 1024,
+            )
+            if not sizing.can_build:
+                raise BenchError(sizing.refusal_reason)
             self._memory_max_mb = sizing.limit_mb
             try:
                 yield
@@ -54,6 +57,13 @@ class PythonAssetBuilder:
         if not limit_mb:
             run_command(argv, **kwargs)
             return
+        # systemd-run reaches the user bus through these; without them it starts
+        # an uncapped scope and reports success.
+        bus_env = systemctl_env()
+        env = dict(kwargs.pop("env", None) or os.environ)
+        for key in ("XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"):
+            env.setdefault(key, bus_env[key])
+        kwargs["env"] = env
         try:
             run_command(memory_capped(argv, limit_mb), **kwargs)
         except CommandError as error:

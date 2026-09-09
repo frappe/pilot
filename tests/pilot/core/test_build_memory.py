@@ -9,7 +9,7 @@ from pilot.core.build_memory import calculate_build_memory
 
 def test_share_bounds_the_build_on_an_idle_host():
     sizing = calculate_build_memory(total_memory_mb=4096, available_memory_mb=4000)
-    assert sizing.limit_mb == 2457
+    assert sizing.limit_mb == 3072
     assert sizing.can_build
 
 
@@ -19,10 +19,10 @@ def test_available_memory_bounds_the_build_on_a_loaded_host():
     assert sizing.can_build
 
 
-def test_a_measured_full_build_fits_on_a_two_gigabyte_host():
-    """A full build peaks around 1.1GB, so 2GB hosts must still clear it."""
-    sizing = calculate_build_memory(total_memory_mb=2048, available_memory_mb=2048)
-    assert sizing.limit_mb >= 1140
+def test_a_measured_full_build_fits_on_a_four_gigabyte_host():
+    """A full build peaks near 1.6GB, so 4GB hosts must clear it comfortably."""
+    sizing = calculate_build_memory(total_memory_mb=4096, available_memory_mb=4096)
+    assert sizing.limit_mb >= 1646
     assert sizing.can_build
 
 

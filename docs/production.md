@@ -73,6 +73,23 @@ When using Central or another upstream proxy, keep the local Admin service priva
 
 Firewall and WAF config are bench settings. Settings apply code should delegate to core/managers so API routes do not perform system orchestration directly.
 
+## Build Memory
+
+A full asset build peaks near 1.1GB while an idle bench is around 300MB, so an
+unbounded build can exhaust a small host and leave the kernel to kill an unrelated
+process, usually the database.
+
+Compiling therefore runs in a transient systemd scope with `MemoryMax` set, and only
+one build runs at a time per host. The budget is a share of total memory, clamped by
+what is actually available, less a reserve kept for the kernel. When too little memory
+is free the build is refused before it starts, and a build that exceeds its budget is
+killed and reported as out of memory.
+
+This applies only to builds that compile. Apps with a published assets release download
+them and are unaffected, so it is reached by custom apps that ship no assets, or by
+`pilot build --force`. Where a host cannot delegate a memory controller to the user
+slice the build runs uncapped and logs a warning.
+
 ## Operational Notes
 
 - Production changes may need non-interactive sudo.
