@@ -14,6 +14,17 @@ class SystemdRenderer(ServiceRenderer):
         working_dir = f"WorkingDirectory={pd.working_dir}\n" if pd.working_dir else ""
         env = "".join(f"Environment={k}={v}\n" for k, v in pd.env.items())
         stop = f"TimeoutStopSec={pd.stop_timeout}\n" if pd.stop_timeout is not None else ""
+        memory = ""
+        if pd.memory_max_mb is not None:
+            # MemorySwapMax=0 makes the ceiling bite: with swap available a leaking
+            # service spills into it and grinds instead of dying. OOMPolicy=stop
+            # keeps a kill from taking the rest of the unit with it.
+            memory = (
+                f"MemoryHigh={pd.memory_high_mb}M\n"
+                f"MemoryMax={pd.memory_max_mb}M\n"
+                f"MemorySwapMax=0\n"
+                f"OOMPolicy=stop\n"
+            )
         return (
             f"[Unit]\n"
             f"Description={self.bench_name} {pd.name}\n"
@@ -23,7 +34,7 @@ class SystemdRenderer(ServiceRenderer):
             f"{working_dir}{env}"
             f"ExecStart={shlex.join(pd.argv)}\n"
             f"Restart=on-failure\n"
-            f"{stop}"
+            f"{stop}{memory}"
             f"StandardOutput=append:{pd.log_file}\n"
             f"StandardError=append:{pd.log_file}.error.log\n"
         )

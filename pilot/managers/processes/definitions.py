@@ -21,6 +21,8 @@ class ProcessDefinition:
     working_dir: Path | None = None  # was `cd {dir} &&`
     stop_timeout: int | None = None  # graceful-stop seconds (redis=300)
     critical: bool = True  # dev runner stops the whole bench when this process exits
+    memory_high_mb: int | None = None  # throttle point
+    memory_max_mb: int | None = None  # kill point
 
 
 class ProcessDefinitionBuilder:
@@ -56,7 +58,32 @@ class ProcessDefinitionBuilder:
             ]
         defs.append(self.redis_definition("redis_cache", "redis_cache.conf"))
         defs.append(self.redis_definition("redis_queue", "redis_queue.conf"))
-        return defs
+        return [self.with_memory_limits(pd) for pd in defs]
+
+    def with_memory_limits(self, pd: ProcessDefinition) -> ProcessDefinition:
+        """Cap a long-running process so a leak cannot take the host. Admin is left
+        alone: tasks run in its cgroup and must outlive it."""
+        from dataclasses import replace
+
+        from pilot.core.build_memory import host_memory_mb
+        from pilot.core.mariadb_memory import calculate_mariadb_memory
+        from pilot.core.process_memory import calculate_process_memory
+
+        if pd.name == "admin":
+            return pd
+        total_memory_mb = host_memory_mb()
+        sizing = calculate_process_memory(
+            pd.name,
+            total_memory_mb,
+            calculate_mariadb_memory(total_memory_mb).memory_max_mb,
+        )
+        if sizing is None:
+            return pd
+        return replace(
+            pd,
+            memory_high_mb=sizing.memory_high_mb,
+            memory_max_mb=sizing.memory_max_mb,
+        )
 
     def process_definitions(self) -> list[ProcessDefinition]:
         defs = [self.to_dev(pd) for pd in self.prod_process_definitions()]

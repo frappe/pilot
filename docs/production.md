@@ -90,6 +90,21 @@ them and are unaffected, so it is reached by custom apps that ship no assets, or
 `pilot build --force`. Where a host cannot delegate a memory controller to the user
 slice the build runs uncapped and logs a warning.
 
+## Service Memory
+
+Long-running bench units carry `MemoryHigh` and `MemoryMax`, sized from observed peaks
+with room to grow and trimmed to the share of the host left after the database and the
+kernel reserve. `MemoryHigh` throttles first, so pressure shows as slowness before
+anything dies, and `MemorySwapMax=0` keeps a leaking service from spilling into swap
+and grinding instead of failing.
+
+Admin is deliberately uncapped: background tasks run inside its cgroup and must outlive
+it. Processes without a measured profile are left uncapped rather than guessed at. The
+ceilings are limits on a runaway, not reservations - the whole set idles near 300MB, so
+on a small host they may sum past total memory.
+
+Supervisor cannot enforce cgroup limits, so these apply to the systemd process manager.
+
 ## Redis Memory
 
 Both redis instances carry a `maxmemory` ceiling sized from host memory, so a leak
