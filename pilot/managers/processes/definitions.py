@@ -76,6 +76,7 @@ class ProcessDefinitionBuilder:
             pd.name,
             total_memory_mb,
             calculate_mariadb_memory(total_memory_mb).memory_max_mb,
+            worker_count=sum(group.count for group in self.bench.config.workers.groups),
         )
         if sizing is None:
             return pd

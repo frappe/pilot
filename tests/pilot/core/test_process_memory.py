@@ -25,6 +25,23 @@ def test_throttling_starts_before_the_kill(name):
     assert sizing.memory_high_mb < sizing.memory_max_mb
 
 
+@pytest.mark.parametrize("worker_count", [1, 2, 4, 8])
+def test_the_worker_pool_ceiling_scales_with_its_workers(worker_count):
+    """One unit runs every worker, so a fixed ceiling would kill healthy ones."""
+    sizing = calculate_process_memory(
+        "worker_pool", 8192, database_memory_max_mb=3172, worker_count=worker_count
+    )
+    assert sizing is not None
+    assert sizing.memory_max_mb >= _MEASURED_PEAKS["worker_pool"] * worker_count * 2
+
+
+def test_many_workers_still_leave_web_above_its_own_peak():
+    """A bigger pool takes a bigger share, but never below web's working set."""
+    sizing = calculate_process_memory("web", 4096, database_memory_max_mb=1182, worker_count=8)
+    assert sizing is not None
+    assert sizing.memory_max_mb >= _MEASURED_PEAKS["web"] * 2
+
+
 def test_a_process_without_a_measured_profile_is_left_uncapped():
     assert calculate_process_memory("redis_cache", 4096, database_memory_max_mb=1182) is None
 

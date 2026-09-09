@@ -25,6 +25,7 @@ def calculate_process_memory(
     name: str,
     total_memory_mb: int,
     database_memory_max_mb: int,
+    worker_count: int = 1,
 ) -> ProcessMemorySizing | None:
     """Limits for a long-running bench process, or None where it has no measured
     profile. Sized off observed peaks with room to grow, then trimmed to the share
@@ -39,9 +40,16 @@ def calculate_process_memory(
     peak_mb = _MEASURED_PEAK_MB.get(name)
     if peak_mb is None:
         return None
+    # The pool runs every worker in one unit, so its ceiling scales with them.
+    # The profile was measured with a single worker.
+    if name == "worker_pool":
+        peak_mb *= max(1, worker_count)
 
+    total_peak_mb = sum(_MEASURED_PEAK_MB.values()) + _MEASURED_PEAK_MB["worker_pool"] * (
+        max(1, worker_count) - 1
+    )
     budget_mb = total_memory_mb - database_memory_max_mb - _OOM_RESERVE_MB
-    share_mb = int(budget_mb * peak_mb / sum(_MEASURED_PEAK_MB.values()))
+    share_mb = int(budget_mb * peak_mb / total_peak_mb)
     # Never below twice the observed peak: a limit that tight restart-loops the
     # service, which is worse than the leak it would catch.
     floor_mb = max(_MIN_LIMIT_MB, peak_mb * 2)
