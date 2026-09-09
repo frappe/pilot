@@ -35,6 +35,20 @@ def test_the_worker_pool_ceiling_scales_with_its_workers(worker_count):
     assert sizing.memory_max_mb >= _MEASURED_PEAKS["worker_pool"] * worker_count * 2
 
 
+@pytest.mark.parametrize("name", sorted(_MEASURED_PEAKS))
+@pytest.mark.parametrize("total_memory_mb,database_memory_max_mb", [(1024, 512), (2048, 512)])
+@pytest.mark.parametrize("worker_count", [1, 4, 8, 32])
+def test_no_ceiling_exceeds_what_the_host_has_left(
+    name, total_memory_mb, database_memory_max_mb, worker_count
+):
+    """A ceiling above the remaining budget is not a ceiling at all."""
+    sizing = calculate_process_memory(
+        name, total_memory_mb, database_memory_max_mb, worker_count=worker_count
+    )
+    assert sizing is not None
+    assert sizing.memory_max_mb <= total_memory_mb - database_memory_max_mb - 50
+
+
 def test_many_workers_still_leave_web_above_its_own_peak():
     """A bigger pool takes a bigger share, but never below web's working set."""
     sizing = calculate_process_memory("web", 4096, database_memory_max_mb=1182, worker_count=8)

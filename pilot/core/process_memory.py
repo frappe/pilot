@@ -51,8 +51,9 @@ def calculate_process_memory(
     budget_mb = total_memory_mb - database_memory_max_mb - _OOM_RESERVE_MB
     share_mb = int(budget_mb * peak_mb / total_peak_mb)
     # Never below twice the observed peak: a limit that tight restart-loops the
-    # service, which is worse than the leak it would catch.
-    floor_mb = max(_MIN_LIMIT_MB, peak_mb * 2)
+    # service. But a ceiling above what the host has left is not a ceiling, so
+    # the budget wins - there the workload does not fit and is meant to fail.
+    floor_mb = min(max(_MIN_LIMIT_MB, peak_mb * 2), max(_MIN_LIMIT_MB, budget_mb))
     memory_max_mb = max(floor_mb, min(int(peak_mb * _HEADROOM_MULTIPLIER), share_mb))
     return ProcessMemorySizing(
         memory_high_mb=max(1, int(memory_max_mb * _THROTTLE_SHARE)),
