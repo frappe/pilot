@@ -84,6 +84,10 @@ Measuring means a `du` per site directory and one schema-size query, so the rout
 
 `POST /sites/<name>/actions/refresh-storage` queues `refresh-storage-usage` to measure again on demand. One report covers every site on the bench, so the task re-measures all of them and concurrent requests fold into one run.
 
+### Site Rename
+
+`POST /sites/<name>/actions/rename` takes `new_name`, validated like a new-site name - on wildcard hosting it must match one of the bench's wildcard domains - and queues a `rename-site` task holding both hostnames' locks. It needs a bench session: a site's own token is bound to the hostname the rename would retire. The rename also moves the backup schedule, reissues the site's bench token, and on wildcard hosting re-registers managed routing for the new hostname.
+
 ### Database Performance Report
 
 `GET /database/performance-report` returns the read-only findings behind the analyzer's Query Analysis and Index Analysis panels: `time_consuming_queries`, `full_table_scan_queries`, `unused_indexes`, `redundant_indexes`, and the `performance_schema_enabled` flag.

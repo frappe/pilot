@@ -10,8 +10,8 @@ from pilot.managers.task import TaskReader
 
 # These write site_config.json well before the DB is queryable, so a failed
 # DB probe during one means "not ready yet", not "broken".
-_PROVISIONING_COMMANDS = {"new-site", "new-site-from-backup", "reinstall-site"}
-_PROVISIONING_ARG_KEYS = ("name", "site")
+_PROVISIONING_COMMANDS = {"new-site", "new-site-from-backup", "reinstall-site", "rename-site"}
+_PROVISIONING_ARG_KEYS = ("name", "site", "new_name")
 
 
 @dataclass

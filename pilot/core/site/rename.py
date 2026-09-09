@@ -27,6 +27,9 @@ class SiteRename:
 
         self._update_default_site()
         self._rename_in_bench_toml()
+        self._move_backup_schedule(on_progress)
+        self._reissue_site_token(on_progress)
+        self._move_provider_route(on_progress)
         self._add_to_hosts()
         self._reload_nginx()
 
@@ -34,7 +37,7 @@ class SiteRename:
         self.run_followups(ssl_enabled, on_progress)
 
     def validate(self) -> None:
-        from pilot.utils import host_owner, normalize_host
+        from pilot.utils import host_owner, matches_wildcard, normalize_host
 
         if self.new_name == self.old_name:
             raise BenchError("New name is the same as the current name.")
@@ -56,6 +59,14 @@ class SiteRename:
             raise BenchError(
                 f"Site '{self.new_name}' clashes with this bench's admin domain. "
                 f"An admin domain must not match a site domain."
+            )
+
+        from pilot.core.adapters.domain_provider import DomainRouteProvider
+
+        patterns = DomainRouteProvider.wildcard_domains()
+        if patterns and not matches_wildcard(self.new_name, patterns):
+            raise BenchError(
+                f"Site name must match one of this bench's wildcard domains: {', '.join(patterns)}."
             )
 
     def run_followups(self, ssl_enabled: bool, on_progress: Callable[[str], None]) -> None:
@@ -94,6 +105,85 @@ class SiteRename:
             for site in raw.get("sites", []):
                 if site.get("name") == self.old_name:
                     site["name"] = self.new_name
+
+    def _move_backup_schedule(self, on_progress: Callable[[str], None]) -> None:
+        """The backup cron entry embeds the site name in its marker and command."""
+        from pilot.managers.cron import CronManager
+
+        manager = CronManager(self.bench.path)
+        schedule = manager.get_schedule(self.old_name)
+        if not schedule:
+            return
+        # Install the new entry before removing the old one, so a failure midway
+        # leaves a working schedule instead of none. A crontab failure must not
+        # abort a rename that has already moved the site - advise instead.
+        backups = self.bench.site(self.new_name).backups
+        try:
+            manager.set_schedule(self.new_name, schedule, backups._cron_command())
+        except Exception as exc:
+            on_progress(
+                f"\nThe backup schedule could not be moved ({exc}). The old entry for "
+                f"'{self.old_name}' is still installed - remove it with 'crontab -e', "
+                f"then recreate the schedule from the site's Backups tab."
+            )
+            return
+        try:
+            manager.remove_schedule(self.old_name)
+        except Exception as exc:
+            on_progress(
+                f"\nThe new backup schedule is installed, but the old entry for "
+                f"'{self.old_name}' could not be removed ({exc}). Remove it with 'crontab -e'."
+            )
+
+    def _reissue_site_token(self, on_progress: Callable[[str], None]) -> None:
+        """The site-to-bench token embeds the site name; the old one no longer
+        authorizes. A token failure must not abort a rename that has already
+        moved the site - advise instead."""
+        from admin.backend.internal.session import Session
+        from pilot.utils import admin_url
+
+        config_path = self.bench.sites_path / self.new_name / "site_config.json"
+        try:
+            config = json.loads(config_path.read_text())
+            if "pilot_auth_token" not in config:
+                return
+            config["pilot_endpoint"] = admin_url(self.bench.config)
+            config["pilot_auth_token"] = Session(self.bench).issue_site_token(
+                self.new_name, ttl=365 * 24 * 3600
+            )
+            # Write beside and rename over: an I/O failure leaves the original
+            # site_config.json intact instead of truncated.
+            staged = config_path.with_suffix(".json.tmp")
+            write_private_text(staged, json.dumps(config, indent=1))
+            staged.replace(config_path)
+        except Exception as exc:
+            on_progress(
+                f"\nThe site's bench token could not be reissued ({exc}); the old "
+                f"config is unchanged. Once resolved, issue a token and set it as "
+                f"pilot_auth_token in site_config.json:\n"
+                f"  pilot issue-site-token {self.new_name} -b {self.bench.config.name}"
+            )
+
+    def _move_provider_route(self, on_progress: Callable[[str], None]) -> None:
+        """Wildcard-managed routing follows the hostname, mirroring new-site
+        provisioning: sites are provider-registered only on wildcard hosting.
+        Register first: a rejected registration keeps the old route in place for
+        the operator to inspect instead of leaving the site with none."""
+        from pilot.core.adapters.domain_provider import DomainRouteProvider
+
+        if not DomainRouteProvider.wildcard_domains():
+            return
+        routes = DomainRouteProvider(self.bench)
+        try:
+            routes.register(self.new_name, self.new_name)
+        except BenchError as exc:
+            on_progress(
+                f"\nProvider could not register '{self.new_name}' ({exc}). "
+                f"The old route was kept; register it yourself once resolved:\n"
+                f"  bench-domain-provider register {self.new_name}"
+            )
+            return
+        routes.release(self.old_name)
 
     def _add_to_hosts(self) -> None:
         if self.bench.config.production.process_manager != "none":

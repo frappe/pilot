@@ -43,6 +43,29 @@ const confirmMigrate = async () => {
   }
 }
 
+const showRename = ref(false)
+const renaming = ref(false)
+const renameError = ref('')
+const newName = ref('')
+
+const confirmRename = async () => {
+  renaming.value = true
+  renameError.value = ''
+  try {
+    const data = await sitesApi.rename(props.siteName, newName.value.trim())
+    if (data.task_id) {
+      showRename.value = false
+      openTaskDetailPage(router, data.task_id)
+    } else {
+      renameError.value = apiErrorMessage(data, 'Failed to rename site.')
+    }
+  } catch (e) {
+    renameError.value = e.message || 'Failed to rename site.'
+  } finally {
+    renaming.value = false
+  }
+}
+
 const DangerActions = [
   {
     key: 'migrate',
@@ -52,6 +75,17 @@ const DangerActions = [
     action: () => {
       migrateError.value = ''
       showMigrate.value = true
+    },
+  },
+  {
+    key: 'rename',
+    label: 'Rename site',
+    buttonLabel: 'Rename',
+    description: 'Moves the site to a new hostname. The site is briefly unavailable while it runs.',
+    action: () => {
+      newName.value = ''
+      renameError.value = ''
+      showRename.value = true
     },
   },
   {
@@ -155,6 +189,30 @@ const confirmDrop = async () => {
     :loading="migrating"
     @confirm="confirmMigrate"
   />
+
+  <ActionDialog
+    v-model:open="showRename"
+    title="Rename Site"
+    :subject="siteSubject"
+    :warning="{
+      title: 'The site goes down while this runs.',
+      message: `${siteName} moves to the new hostname; links and bookmarks using the old name stop working. On production benches the web server is reconfigured for the new domain.`,
+    }"
+    :error="renameError"
+    confirm-label="Rename site"
+    confirm-theme="red"
+    :loading="renaming"
+    :disabled="!newName.trim() || newName.trim() === siteName"
+    @confirm="confirmRename"
+  >
+    <template #after-warning>
+      <TextInput v-model="newName" placeholder="new-name.example.com" class="w-full">
+        <template #label>
+          <span class="text-sm">New site name</span>
+        </template>
+      </TextInput>
+    </template>
+  </ActionDialog>
 
   <ActionDialog
     v-model:open="showReset"

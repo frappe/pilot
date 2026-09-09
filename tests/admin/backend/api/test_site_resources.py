@@ -105,3 +105,89 @@ def test_site_creation_rejects_symlinked_sites_root(tmp_path: Path) -> None:
 
     assert create.status_code == 422
     queue.assert_not_called()
+
+
+def test_rename_site_returns_accepted_task_resource(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    _write_site(bench_root, "s.localhost")
+
+    with patch(
+        "pilot.internal.tasks.runner.task_workers.wake",
+        return_value=False,
+    ):
+        response = client.post(
+            "/api/v1/sites/s.localhost/actions/rename",
+            json={"new_name": "renamed.localhost"},
+        )
+
+    body = response.get_json()
+    assert response.status_code == 202
+    assert response.headers["Location"] == f"/api/v1/tasks/{body['task_id']}"
+    assert body["command"] == "rename-site"
+    assert body["args"] == {"site": "s.localhost", "new_name": "renamed.localhost"}
+
+
+def test_rename_site_returns_not_found_without_starting_task(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+
+    with patch("admin.backend.api.v1.sites.core.RenameSiteTask.queue") as queue:
+        response = client.post(
+            "/api/v1/sites/missing.localhost/actions/rename",
+            json={"new_name": "renamed.localhost"},
+        )
+
+    assert response.status_code == 404
+    queue.assert_not_called()
+
+
+def test_rename_site_rejects_a_site_scoped_token(tmp_path: Path) -> None:
+    from admin.backend.internal.session import Session
+    from pilot.core.bench import Bench
+
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    _write_site(bench_root, "s.localhost")
+    client.set_cookie("sid", Session(Bench(bench_root)).issue_site_token("s.localhost"))
+
+    with patch("admin.backend.api.v1.sites.core.RenameSiteTask.queue") as queue:
+        response = client.post(
+            "/api/v1/sites/s.localhost/actions/rename",
+            json={"new_name": "renamed.localhost"},
+        )
+
+    assert response.status_code == 403
+    assert response.get_json()["error"]["code"] == "bench_scope_required"
+    queue.assert_not_called()
+
+
+def test_rename_site_rejects_an_invalid_new_name(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    _write_site(bench_root, "s.localhost")
+
+    with patch("admin.backend.api.v1.sites.core.RenameSiteTask.queue") as queue:
+        response = client.post(
+            "/api/v1/sites/s.localhost/actions/rename",
+            json={"new_name": "bad name!"},
+        )
+
+    assert response.status_code == 422
+    queue.assert_not_called()
+
+
+def test_rename_site_rejects_an_occupied_new_name(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    _write_site(bench_root, "s.localhost")
+    _write_site(bench_root, "taken.localhost")
+
+    with patch("admin.backend.api.v1.sites.core.RenameSiteTask.queue") as queue:
+        response = client.post(
+            "/api/v1/sites/s.localhost/actions/rename",
+            json={"new_name": "taken.localhost"},
+        )
+
+    assert response.status_code == 409
+    assert response.get_json()["error"]["code"] == "site_name_conflict"
+    queue.assert_not_called()

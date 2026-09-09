@@ -29,6 +29,10 @@ export const sitesApi = {
     request.post(`sites/${encodeURIComponent(name)}/actions/clear-cache`).json(),
   migrate: (name) => request.post(`sites/${encodeURIComponent(name)}/actions/migrate`).json(),
   reinstall: (name) => request.post(`sites/${encodeURIComponent(name)}/actions/reinstall`).json(),
+  rename: (name, newName) =>
+    request
+      .post(`sites/${encodeURIComponent(name)}/actions/rename`, { json: { new_name: newName } })
+      .json(),
   drop: (name) => request.delete(`sites/${encodeURIComponent(name)}`).json(),
 
   apps: {

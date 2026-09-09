@@ -25,7 +25,7 @@ from admin.backend.api.v1.sites.shared import (
     task_failure,
     text_fields,
 )
-from admin.backend.middleware import rate_limit, require_scope
+from admin.backend.middleware import is_bench_scoped, rate_limit, require_scope
 from admin.backend.providers.apps import AppProvider
 from admin.backend.providers.sites import SiteInfo, SiteProvider
 from pilot.core.bench import Bench
@@ -36,6 +36,7 @@ from pilot.tasks.clear_cache import ClearCacheTask
 from pilot.tasks.drop_site import DropSiteTask
 from pilot.tasks.new_site import NewSiteTask
 from pilot.tasks.reinstall_site import ReinstallSiteTask
+from pilot.tasks.rename_site import RenameSiteTask
 
 
 @sites_bp.get("")
@@ -157,6 +158,45 @@ def drop_site(name: str):
             site=name,
             idempotency_key=request.headers.get("Idempotency-Key"),
             resource_key=f"site:{name.lower()}",
+        )
+    except Exception as error:
+        return task_failure(error)
+    return accepted_task_response(bench_root, task_id)
+
+
+@sites_bp.post("/<name>/actions/rename")
+@require_scope(site_name)
+def rename_site(name: str):
+    """Queue a rename of `name` to the body's `new_name`, validated like a new site."""
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    if not site_exists(bench_root, name):
+        return site_not_found()
+    if not is_bench_scoped():
+        # A site's own token must not rename its site - the token is bound to the
+        # hostname it would be destroying. Renaming is a bench administration action.
+        return error_response(
+            "bench_scope_required",
+            "Renaming a site needs a bench session.",
+            403,
+        )
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return malformed_body()
+    fields = text_fields(data, "new_name")
+    if fields is None:
+        return invalid_fields()
+
+    new_name = fields["new_name"]
+    err = validate_site_name(new_name) or new_site_name_error(bench_root, new_name)
+    if err:
+        return site_name_failure(err)
+    try:
+        task_id = RenameSiteTask.queue(
+            Bench(bench_root),
+            site=name,
+            new_name=new_name,
+            idempotency_key=request.headers.get("Idempotency-Key"),
+            resource_key=[f"site:{name.lower()}", f"site:{new_name.lower()}"],
         )
     except Exception as error:
         return task_failure(error)
