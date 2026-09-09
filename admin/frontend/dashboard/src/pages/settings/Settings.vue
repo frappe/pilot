@@ -14,6 +14,24 @@ const themeModel = computed({
   set: setColorScheme,
 })
 
+const menuRows = computed(() => [
+  {
+    icon: 'lucide-server-cog',
+    label: 'Server settings',
+    onClick: () => router.push({ name: 'Settings' }),
+  },
+  session.allowBenchManagement && {
+    icon: 'lucide-repeat',
+    label: 'Switch Bench',
+    onClick: () => (showBenches.value = true),
+  },
+  {
+    icon: 'lucide-history',
+    label: 'Activity',
+    onClick: () => router.push({ name: 'Activity' }),
+  },
+].filter(Boolean))
+
 const themeOptions = [
   { value: 'system', label: 'System', icon: 'lucide-monitor' },
   { value: 'light', label: 'Light', icon: 'lucide-sun' },
@@ -22,7 +40,7 @@ const themeOptions = [
 </script>
 
 <template>
-  <div class="mx-auto max-w-3xl">
+  <div class="p-3 md:p-4 mx-auto max-w-3xl">
     <div
       class="flex flex-col divide-y divide-outline-gray-1 rounded-6 border border-outline-gray-1"
     >
@@ -32,40 +50,15 @@ const themeOptions = [
       </div>
 
       <Button
+        v-for="row in menuRows"
+        :key="row.label"
         variant="ghost"
         class="w-full !h-auto !justify-between !px-3 !py-2.5"
-        @click="router.push({ name: 'Settings' })"
+        @click="row.onClick"
       >
         <span class="flex items-center gap-3">
-          <span class="size-4 text-ink-gray-6 lucide-server-cog" />
-          Server settings
-        </span>
-
-        <template #suffix><span class="size-4 text-ink-gray-5 lucide-chevron-right" /></template>
-      </Button>
-
-      <Button
-        v-if="session.allowBenchManagement"
-        variant="ghost"
-        class="w-full !h-auto !justify-between !px-3 !py-2.5"
-        @click="showBenches = true"
-      >
-        <span class="flex items-center gap-3">
-          <span class="size-4 text-ink-gray-6 lucide-repeat" />
-          Switch Bench
-        </span>
-
-        <template #suffix><span class="size-4 text-ink-gray-5 lucide-chevron-right" /></template>
-      </Button>
-
-      <Button
-        variant="ghost"
-        class="w-full !h-auto !justify-between !px-3 !py-2.5"
-        @click="router.push({ name: 'Activity' })"
-      >
-        <span class="flex items-center gap-3">
-          <span class="size-4 text-ink-gray-6 lucide-history" />
-          Activity
+          <span class="size-4 text-ink-gray-6" :class="row.icon" />
+          {{ row.label }}
         </span>
 
         <template #suffix><span class="size-4 text-ink-gray-5 lucide-chevron-right" /></template>

@@ -182,6 +182,13 @@ def is_command_cancellable_while_running(command: str) -> bool:
     return task_class.is_cancellable_while_running if task_class else True
 
 
+def is_command_listed(command: str) -> bool:
+    """Whether the command's task class shows up in listings. Unknown commands stay listed."""
+    jobs, _ = task_registry()
+    task_class = jobs.get(command)
+    return task_class.is_listed if task_class else True
+
+
 def discover_tasks() -> list[type[Task]]:
     tasks = []
     for module_info in pkgutil.iter_modules([str(_TASK_PACKAGE_DIR)], prefix="pilot.tasks."):

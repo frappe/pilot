@@ -57,6 +57,10 @@ Task-starting endpoints should return:
 
 `created` is useful for idempotent submissions.
 
+### Git Branches
+
+`GET /git/branches?repo=...` runs local `git ls-remote --heads`, so Git must be available on the Pilot host. It returns all remote branch names and puts the remote default first.
+
 ### Site Apps
 
 `GET /sites/<name>/apps` returns the apps in use on the site, disabled ones excluded, plus `can_disable` for whether this bench's Frappe supports disabling at all.
@@ -83,6 +87,14 @@ Measuring means a `du` per site directory and one schema-size query, so the rout
 ### Site Rename
 
 `POST /sites/<name>/actions/rename` takes `new_name`, validated like a new-site name - on wildcard hosting it must match one of the bench's wildcard domains - and queues a `rename-site` task holding both hostnames' locks. It needs a bench session: a site's own token is bound to the hostname the rename would retire. The rename also moves the backup schedule, reissues the site's bench token, and on wildcard hosting re-registers managed routing for the new hostname.
+
+### Database Performance Report
+
+`GET /database/performance-report` returns the read-only findings behind the analyzer's Query Analysis and Index Analysis panels: `time_consuming_queries`, `full_table_scan_queries`, `unused_indexes`, `redundant_indexes`, and the `performance_schema_enabled` flag.
+
+The first three sections come from MariaDB's Performance Schema, so they are empty and the flag is `false` whenever `performance_schema` is off - the instrumentation is a startup setting, and MariaDB collects nothing until the server restarts with it on. `redundant_indexes` reads `information_schema.STATISTICS` instead and stays populated either way. The UI keys off the flag to explain the empty panels rather than reporting them as an error.
+
+`?site=<name>` narrows every section to that site's schema; without it the report covers every user schema on the server, system schemas excluded. Only MariaDB implements it - other engines raise, and the route answers 422.
 
 ### Setup
 

@@ -37,6 +37,10 @@ markers = [
   "static/dashboard/**/*",
   "static/editor/**/*",
 ]
+"pilot.core" = [
+  "assets/*",
+  "templates/*.template",
+]
 "pilot.managers.nginx" = [
   "templates/*.template",
 ]

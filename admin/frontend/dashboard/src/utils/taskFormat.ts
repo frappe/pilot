@@ -1,4 +1,6 @@
-export const STATUS_CONFIG = {
+import { relativeTime } from './time.ts'
+
+const STATUS_CONFIG = {
   queued: {
     label: 'Queued',
     theme: 'blue',
@@ -64,6 +66,7 @@ const COMMAND_LABELS = {
 export const TASK_TYPES = [
   {
     value: 'sites',
+    icon: 'lucide-globe',
     label: 'Sites',
     commands: [
       'new-site',
@@ -78,6 +81,7 @@ export const TASK_TYPES = [
   },
   {
     value: 'apps',
+    icon: 'lucide-package',
     label: 'Apps',
     commands: [
       'install-app',
@@ -85,18 +89,19 @@ export const TASK_TYPES = [
       'get-app',
       'remove-app',
       'get-and-install-app',
-      'fetch-all-app-updates',
       'switch-branch',
       'revert-apps',
     ],
   },
   {
     value: 'backups',
+    icon: 'lucide-archive',
     label: 'Backups',
     commands: ['backup-site', 'delete-backup', 'migration-backup'],
   },
   {
     value: 'updates',
+    icon: 'lucide-git-pull-request-arrow',
     label: 'Updates',
     commands: [
       'update',
@@ -110,11 +115,12 @@ export const TASK_TYPES = [
   },
   {
     value: 'server',
+    icon: 'lucide-server',
     label: 'Server',
     commands: ['setup-nginx', 'setup-letsencrypt', 'restart-services'],
   },
   // Catch-all for commands this table has not learned.
-  { value: 'other', label: 'Other', commands: [] },
+  { value: 'other', icon: 'lucide-ellipsis', label: 'Other', commands: [] },
 ]
 
 const COMMAND_TYPE = Object.fromEntries(
@@ -162,10 +168,9 @@ export const siteRoute = (task) => {
 }
 
 // What a task ran against, so a detail header reads the same either way.
+// Server-scoped work has no page of its own, so it carries no route.
 export const taskScope = (task) => {
-  const label = siteLabel(task)
-  if (label === SERVER_SCOPE) return { label, route: { name: 'Server' } }
-  return { label, route: siteRoute(task) }
+  return { label: siteLabel(task), route: siteRoute(task) }
 }
 
 const REDIRECT_ON_SUCCESS_COMMANDS = [
@@ -199,18 +204,6 @@ export const redirectRouteOnSuccess = (task) => {
   return { ...route, query: { app, action: APP_ACTION_FOR_COMMAND[task.command] } }
 }
 
-export const relativeTime = (iso) => {
-  if (!iso) return ''
-  const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
-  if (seconds < 5) return 'just now'
-  if (seconds < 60) return `${seconds} sec ago`
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes} min ago`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours} hr ago`
-  return `${Math.floor(hours / 24)} d ago`
-}
-
 /**
  * The one duration format. `precise` keeps a decimal on sub-minute values for
  * step timings, where the difference between 0.4s and 1.2s is worth reading -
@@ -225,23 +218,19 @@ export const fmtDuration = (seconds, { precise = false } = {}) => {
   return `${Math.floor(total / 60)}m ${String(total % 60).padStart(2, '0')}s`
 }
 
-export const fmtDateTime = (iso) => {
-  if (!iso) return '-'
-  return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+export const fmtDateTime = (value) => {
+  if (!value) return '-'
+  return new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
-/**
- * The list's trailing column. A queued task has no duration, so its place in
- * the queue takes that slot - it is the only thing worth knowing about a task
- * that has not started.
- */
-export const taskTiming = (task) => {
+/** A queued task has no duration, so its place in the queue takes that slot. */
+export const taskDuration = (task) => {
   if (task.status === 'queued') {
-    const position = task.queue_position ? `#${task.queue_position} in queue` : ''
-    return [position, relativeTime(task.queued_at)].filter(Boolean).join(' · ')
+    return task.queue_position ? `#${task.queue_position} in queue` : ''
   }
-  const duration = fmtDuration(task.duration_seconds)
-  return [duration ? `took ${duration}` : '', relativeTime(task.started_at || task.queued_at)]
-    .filter(Boolean)
-    .join(' · ')
+  return fmtDuration(task.duration_seconds)
+}
+
+export const taskLastRun = (task) => {
+  return relativeTime(task.status === 'queued' ? task.queued_at : task.started_at || task.queued_at)
 }

@@ -15,6 +15,7 @@ from pilot.config import (
     WAF_RULE_OPERATORS,
     BenchConfig,
 )
+from pilot.config.mail import MailConfig, MalformedSiteConfig
 from pilot.config.monitor import bench_log_path, system_log_path
 from pilot.core.bench import Bench
 from pilot.core.bench.settings import (
@@ -22,6 +23,7 @@ from pilot.core.bench.settings import (
     firewall_payload,
     is_restart_needed,
     llm_payload,
+    mail_payload,
     resource_limits_payload,
     restart_trigger_values,
     s3_payload,
@@ -45,6 +47,7 @@ __all__ = [
     "firewall_payload",
     "is_restart_needed",
     "llm_payload",
+    "mail_payload",
     "network_bp",
     "resource_limits_payload",
     "restart_trigger_values",
@@ -126,6 +129,7 @@ def build_settings_response(config: BenchConfig, bench_root: Path | None = None)
         },
         "llm_providers": llm_provider_options(),
         "resource_limits": resource_limits_payload(config),
+        "mail": mail_payload(MailConfig.read(bench_root / "sites") if bench_root else MailConfig()),
         "monitor": {
             "system_log_path": str(system_log_path()),
             "log_path": str(bench_log_path(config.name)),
@@ -265,16 +269,22 @@ def update_settings():
 
 
 def _save_settings_update(bench_root: Path, data: dict) -> dict:
+    mail = MailConfig.read(bench_root / "sites")
     with BenchConfig.open(bench_root) as config:
         old_restart = restart_trigger_values(config)
         old_firewall = firewall_payload(config)
         old_waf = waf_payload(config)
         old_s3_config = s3_payload(config)
 
-        if error := ConfigPatcher(config, data).apply():
+        patcher = ConfigPatcher(config, data, mail)
+        if error := patcher.apply():
             raise _SettingsUpdateRejected(error)
         _verify_s3_update(config, old_s3_config)
 
+    try:
+        patcher.mail.write(bench_root / "sites")
+    except MalformedSiteConfig as malformed:
+        raise _SettingsUpdateRejected(str(malformed)) from malformed
     _apply_system_prompt(bench_root, data.get("llm") or {})
 
     return {

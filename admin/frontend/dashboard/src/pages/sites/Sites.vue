@@ -2,19 +2,10 @@
 import { useRoute, useRouter } from 'vue-router'
 import { computed, onMounted, ref, watch } from 'vue'
 
-import { ListView } from 'frappe-ui/experimental'
-
-import {
-  Badge,
-  Button,
-  Dropdown,
-  ErrorMessage,
-  FormControl,
-  TabButtons,
-  toast,
-} from 'frappe-ui'
+import { Badge, Button, Dropdown, ErrorMessage, Select, TabButtons, TextInput, toast } from 'frappe-ui'
 
 import EmptyState from '@/components/common/EmptyState.vue'
+import Table from '@/components/common/Table.vue'
 import SiteSkeleton from '@/components/sites/SiteSkeleton.vue'
 import NewSiteDialog from '@/components/sites/NewSiteDialog.vue'
 import StickyToolbar from '@/components/common/StickyToolbar.vue'
@@ -26,12 +17,10 @@ import { openTaskDetailPage } from '@/utils/taskRoute'
 import { useSites } from '@/composables/sites/useSites'
 import { useIsMobile } from '@/composables/common/useIsMobile'
 import { useSiteStorage } from '@/composables/sites/useSiteStorage'
-import { useBreadcrumbs } from '@/composables/common/useBreadcrumbs'
 
 const route = useRoute()
 const router = useRouter()
 const isMobile = useIsMobile()
-const { setBreadcrumbs } = useBreadcrumbs()
 const { sites, loading, error, load } = useSites()
 const { load: loadStorage, storageLabel } = useSiteStorage()
 
@@ -45,9 +34,10 @@ const viewOptions = [
 ]
 
 const SITE_STATUS = {
-  broken: { label: 'Broken', theme: 'red' },
-  offline: { label: 'Paused', theme: 'orange' },
-  provisioning: { label: 'Creating', theme: 'blue' },
+  online: { label: 'Active', dot: 'bg-surface-green-8' },
+  broken: { label: 'Broken', dot: 'bg-surface-red-8' },
+  offline: { label: 'Paused', dot: 'bg-surface-orange-8' },
+  provisioning: { label: 'Creating', dot: 'bg-surface-blue-8' },
 }
 
 const statusOptions = [
@@ -67,7 +57,7 @@ const siteStatus = (site) => {
   return 'online'
 }
 
-const statusBadge = (site) => SITE_STATUS[siteStatus(site)]
+const statusInfo = (site) => SITE_STATUS[siteStatus(site)]
 
 const appsLabel = (site) => {
   const count = site.active_apps?.length || 0
@@ -82,9 +72,6 @@ const metaLabel = (site) => {
 
 const isFiltered = computed(() => Boolean(search.value.trim()) || statusFilter.value !== 'all')
 
-// The total, not the filtered list: filtering down to ten must not hide the controls.
-const showToolbar = computed(() => sites.value.length > 10)
-
 const filteredSites = computed(() => {
   const query = search.value.toLowerCase().trim()
   return sites.value.filter((site) => {
@@ -97,16 +84,16 @@ const filteredSites = computed(() => {
 const hasCount = computed(() => !loading.value || sites.value.length > 0)
 
 const listColumns = [
-  { label: 'Site', key: 'site', align: 'left', width: 3 },
-  { label: 'Status', key: 'status', align: 'left', width: 1.5 },
-  { label: 'Storage', key: 'storage', align: 'left', width: 1.5 },
-  { label: 'Apps', key: 'apps', align: 'left', width: 1.5 },
-  { label: '', key: 'actions', align: 'right', width: '3rem' },
+  { label: 'Site', key: 'site', class: 'w-1/2' },
+  { label: 'Status', key: 'status' },
+  { label: 'Storage', key: 'storage', class: 'text-ink-gray-6 text-sm' },
+  { label: 'Apps', key: 'apps', class: 'text-ink-gray-6 text-sm' },
+  { label: '', key: 'actions' },
 ]
 
 const listRows = computed(() =>
   filteredSites.value.map((site) => ({
-    name: site.name,
+    id: site.name,
     site,
     storage: storageLabel(site.name),
     apps: appsLabel(site),
@@ -144,8 +131,7 @@ const siteMenuOptions = (site) => {
     {
       label: 'View analytics',
       icon: 'lucide-chart-line',
-      onClick: () =>
-        router.push({ name: 'Analytics', query: { view: 'site', site: site.name } }),
+      onClick: () => router.push({ name: 'Analytics', query: { view: 'site', site: site.name } }),
     },
     {
       label: 'View jobs',
@@ -174,13 +160,10 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="mx-auto max-w-3xl">
-    <!-- Bar -->
-    <StickyToolbar v-if="showToolbar" class="flex items-center gap-2">
-      <!-- Search text bar -->
-      <FormControl
+  <div class="p-3 md:p-4 mx-auto max-w-3xl">
+    <StickyToolbar v-if="sites.length > 10" class="flex items-center gap-2">
+      <TextInput
         v-model="search"
-        type="text"
         placeholder="Search"
         :size="isMobile ? 'md' : 'sm'"
         class="flex-1"
@@ -188,17 +171,14 @@ onMounted(() => {
         <template #prefix>
           <span class="size-4 text-ink-gray-5 lucide-search" />
         </template>
-      </FormControl>
+      </TextInput>
 
-      <!-- Status filter -->
-      <FormControl
+      <Select
         v-model="statusFilter"
-        type="select"
         :options="statusOptions"
         :size="isMobile ? 'md' : 'sm'"
         class="max-w-24 sm:max-w-32"
       />
-      <!-- List view type -->
       <TabButtons
         v-model="view"
         :options="viewOptions"
@@ -207,133 +187,95 @@ onMounted(() => {
       />
     </StickyToolbar>
 
-    <!-- Always the grid shape: `view` resets to 'grid' on every mount, and a
-         mount is the only time this is loading. -->
-    <div v-if="loading" class="gap-3 grid grid-cols-1 md:grid-cols-2 mt-1">
-      <SiteSkeleton v-for="index in 4" :key="index" :index="index - 1" />
-    </div>
+    <ErrorMessage v-if="error" class="mt-16" :message="error" />
 
-    <div v-else-if="error" class="mt-16">
-      <ErrorMessage :message="error" />
-    </div>
-
-    <div v-else-if="filteredSites.length" class="mt-1">
-      <!-- A single result keeps the full width. -->
+    <template v-else-if="loading || filteredSites.length">
       <div
-        v-if="view === 'grid'"
-        class="gap-3 grid grid-cols-1"
-        :class="filteredSites.length > 1 ? 'md:grid-cols-2' : ''"
+        v-if="loading || view === 'grid'"
+        class="gap-3 grid mt-1"
+        :class="loading || filteredSites.length > 1 ? 'md:grid-cols-2' : ''"
       >
+        <template v-if="loading">
+          <SiteSkeleton v-for="index in 4" :key="index" :index="index - 1" />
+        </template>
+
         <!-- Site Card -->
-        <div
+        <router-link
           v-for="site in filteredSites"
           :key="site.name"
-          class="flex items-center gap-3 bg-surface-base p-2 sm:px-3 sm:py-2 border rounded-6 border-outline-gray-2 hover:border-outline-gray-3 transition-colors"
+          class="flex items-center gap-3 bg-surface-base p-2 px-3 border rounded-6 border-outline-gray-2 hover:border-outline-gray-4 transition-colors"
+          :to="{ name: 'SiteDetail', params: { name: site.name } }"
         >
-          <RouterLink
-            :to="{ name: 'SiteDetail', params: { name: site.name } }"
-            class="flex flex-1 items-center gap-3 min-w-0 no-underline"
-          >
-            <!-- Icon -->
-            <div
-              class="place-items-center grid bg-surface-gray-2 rounded-4 size-8 text-ink-gray-6 shrink-0"
+          <div class="bg-surface-gray-2 flex rounded-4 p-2 text-ink-gray-6 shrink-0">
+            <span class="size-4 lucide-globe m-auto" />
+          </div>
+
+          <div class="flex flex-1 flex-wrap items-center gap-x-1.5 min-w-0">
+            <span class="flex-1 max-w-fit font-medium truncate">
+              {{ site.name }}
+            </span>
+
+            <span
+              v-if="siteStatus(site) !== 'online'"
+              class="flex items-center gap-1.5 mx-1 text-ink-gray-6 text-p-sm"
             >
-              <span class="size-4 lucide-globe"></span>
-            </div>
+              <span class="rounded-full size-1.5" :class="statusInfo(site).dot" />
+              {{ statusInfo(site).label }}
+            </span>
 
-            <div class="flex-1 min-w-0">
-              <!-- First Line -->
-              <div class="gap-2 grid grid-cols-[3fr_1fr]">
-                <div class="flex items-center gap-1.5 min-w-0">
-                  <!-- Site Name -->
-                  <span class="font-medium text-ink-gray-9 text-base truncate">
-                    {{ site.name }}
-                  </span>
+            <Dropdown :options="siteMenuOptions(site)">
+              <Button
+                variant="ghost"
+                size="xs"
+                icon="lucide-ellipsis"
+                label="Site actions"
+                tooltip="Actions"
+                class="ml-auto"
+              />
+            </Dropdown>
 
-                  <!-- Status -->
-                  <Badge
-                    v-if="statusBadge(site)"
-                    v-bind="statusBadge(site)"
-                    variant="subtle"
-                    size="sm"
-                    class="shrink-0"
-                  />
-                </div>
-
-                <div class="flex justify-end">
-                  <!-- Actions Dropdown -->
-                  <Dropdown :options="siteMenuOptions(site)">
-                    <Button
-                      variant="ghost"
-                      size="xs"
-                      icon="lucide-ellipsis"
-                      label="Site actions"
-                      tooltip="Actions"
-                    />
-                  </Dropdown>
-                </div>
-              </div>
-
-              <!-- Second Line -->
-              <p class="text-ink-gray-5 text-p-sm">
-                {{ metaLabel(site) }}
-              </p>
-            </div>
-          </RouterLink>
-        </div>
+            <p class="w-full text-ink-gray-5 text-p-sm">
+              {{ metaLabel(site) }}
+            </p>
+          </div>
+        </router-link>
       </div>
 
-      <!-- List view -->
-      <ListView
-        v-else
-        :columns="listColumns"
-        :rows="listRows"
-        row-key="name"
-        :options="{ selectable: false, showTooltip: false }"
-      >
-        <template #cell="{ column, row, item }">
-          <div v-if="column.key === 'site'" class="flex items-center min-w-0">
-            <RouterLink
-              :to="{ name: 'SiteDetail', params: { name: row.site.name } }"
-              class="font-medium text-ink-gray-9 text-base no-underline truncate"
-            >
-              {{ row.site.name }}
-            </RouterLink>
-          </div>
-
-          <div v-else-if="column.key === 'status'">
-            <Badge
-              v-if="statusBadge(row.site)"
-              v-bind="statusBadge(row.site)"
-              variant="subtle"
-              size="sm"
-            />
-          </div>
-
-          <div
-            v-else-if="column.key === 'storage' || column.key === 'apps'"
-            class="text-ink-gray-6 text-sm"
+      <Table v-else :columns="listColumns" :rows="listRows" height="h-auto" class="mt-1">
+        <template #site="{ row }">
+          <router-link
+            :to="{ name: 'SiteDetail', params: { name: row.site.name } }"
+            class="font-medium"
           >
-            {{ item }}
-          </div>
-
-          <div v-else-if="column.key === 'actions'" class="flex justify-end">
-            <Dropdown :options="siteMenuOptions(row.site)">
-              <template #default="{ open }">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  :active="open"
-                  icon="lucide-ellipsis"
-                  label="Site actions"
-                  tooltip="Actions"
-                />
-              </template>
-            </Dropdown>
-          </div>
+            {{ row.site.name }}
+          </router-link>
         </template>
-      </ListView>
-    </div>
+
+        <template #status="{ row }">
+          <span
+            v-if="statusInfo(row.site)"
+            class="flex items-center gap-1.5 text-ink-gray-6 text-p-sm"
+          >
+            <span class="rounded-full size-1.5" :class="statusInfo(row.site).dot" />
+            {{ statusInfo(row.site).label }}
+          </span>
+        </template>
+
+        <template #actions="{ row }">
+          <Dropdown :options="siteMenuOptions(row.site)">
+            <template #default="{ open }">
+              <Button
+                variant="ghost"
+                :active="open"
+                icon="lucide-ellipsis"
+                label="Site actions"
+                tooltip="Actions"
+              />
+            </template>
+          </Dropdown>
+        </template>
+      </Table>
+    </template>
 
     <EmptyState
       v-else
@@ -349,10 +291,9 @@ onMounted(() => {
   </div>
 
   <Teleport v-if="hasCount" defer to="#header-badge">
-    <Badge :label="filteredSites.length" theme="gray" variant="subtle" size="md" />
+    <Badge :label="filteredSites.length" />
   </Teleport>
 
-  <!-- New Site Button -->
   <Teleport defer to="#header-actions">
     <Button variant="solid" @click="showCreate = true">
       <template #prefix>

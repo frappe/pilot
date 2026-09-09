@@ -6,5 +6,8 @@
 // biome-ignore lint: disable
 export {}
 declare global {
-
+  const LucideExternalLink: typeof import('~icons/lucide/external-link')['default']
+  const LucidePlay: typeof import('~icons/lucide/play')['default']
+  const LucideRotateCw: typeof import('~icons/lucide/rotate-cw')['default']
+  const LucideSquare: typeof import('~icons/lucide/square')['default']
 }

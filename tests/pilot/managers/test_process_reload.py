@@ -159,3 +159,16 @@ def test_get_and_install_reloads_before_installing_on_the_site(tmp_path: Path) -
         task.run()
 
     assert order.mock_calls == [call.reload(), call.install(ANY)]
+
+
+def test_stop_all_stops_redis_after_the_workload(tmp_path: Path, monkeypatch) -> None:
+    """Redis outlives its clients; killing it first makes them log a lost connection."""
+    manager = _manager(tmp_path, monkeypatch)
+    manager._procs = dict.fromkeys(("web", "redis_cache", "admin", "redis_queue"), "running")
+
+    waves: list[list[str]] = []
+    monkeypatch.setattr(manager, "_stop_group", lambda names: waves.append(names))
+
+    manager._stop_all()
+
+    assert waves == [["web", "admin"], ["redis_cache", "redis_queue"]]

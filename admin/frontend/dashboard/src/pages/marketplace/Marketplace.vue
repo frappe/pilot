@@ -86,8 +86,8 @@ onMounted(load)
 
   <PageHero v-else icon="lucide-store">
     <template #title>
-      <h1 class="font-medium text-ink-gray-9 text-lg truncate">Frappe Marketplace</h1>
-      <Badge v-if="benchVersionLabel" :label="benchVersionLabel" size="md" class="shrink-0">
+      <h1 class="text-lg-medium truncate">Frappe Marketplace</h1>
+      <Badge v-if="benchVersionLabel" :label="benchVersionLabel" class="shrink-0">
         <template #prefix><span class="size-2.5 lucide-box" /></template>
       </Badge>
     </template>
@@ -110,23 +110,21 @@ onMounted(load)
     </template>
   </PageHero>
 
-  <div class="mx-auto max-w-3xl pb-40">
-    <!-- Filters -->
-    <MarketplaceFilters
-      v-model:search="search"
-      v-model:pill="selectedPill"
-      v-model:works-with="worksWith"
-      :works-with-options="worksWithOptions"
-      @add-from-github="showAddFromGithub = true"
-    />
+  <MarketplaceFilters
+    v-model:search="search"
+    v-model:pill="selectedPill"
+    v-model:works-with="worksWith"
+    :works-with-options="worksWithOptions"
+    @add-from-github="showAddFromGithub = true"
+  />
 
-    <!-- Mirrors one section of the real grid so apps land in place. -->
+  <div class="px-3 sm:px-4 mx-auto box-content max-w-3xl pb-40">
     <section v-if="loading" class="mt-12">
       <div class="flex items-center h-4">
         <Skeleton class="rounded-4 w-32 h-3.5" />
       </div>
 
-      <div class="gap-x-6 gap-y-4 grid grid-cols-1 md:grid-cols-2 mt-3">
+      <div class="gap-x-6 gap-y-4 grid md:grid-cols-2 mt-3">
         <MarketplaceAppCardSkeleton v-for="i in 8" :key="i" :index="i - 1" />
       </div>
     </section>
@@ -135,15 +133,13 @@ onMounted(load)
       <ErrorMessage :message="error" />
     </div>
 
-    <!-- Marketplace Apps -->
-
     <template v-else-if="isFiltered">
       <section v-if="filteredApps.length" class="mt-12">
-        <h2 class="font-medium text-ink-gray-9 text-base">
+        <h2 class="font-medium">
           {{ filteredHeading }}
         </h2>
 
-        <div class="gap-x-6 gap-y-4 grid grid-cols-1 md:grid-cols-2 mt-3">
+        <div class="gap-x-6 gap-y-4 grid md:grid-cols-2 mt-3">
           <MarketplaceAppCard
             v-for="app in filteredApps"
             :key="app.name"
@@ -157,9 +153,9 @@ onMounted(load)
     </template>
 
     <template v-else>
-      <section v-if="otherBenchApps.length" class="mt-12">
-        <h2 class="font-medium text-ink-gray-9 text-base">Your custom apps</h2>
-        <div class="gap-x-6 gap-y-4 grid grid-cols-1 md:grid-cols-2 mt-3">
+      <section v-if="otherBenchApps.length" class="mt-4">
+        <h2 class="font-medium">Your custom apps</h2>
+        <div class="gap-x-6 gap-y-4 grid md:grid-cols-2 mt-3">
           <MarketplaceAppCard
             v-for="app in otherBenchApps"
             :key="app.name"
@@ -170,8 +166,8 @@ onMounted(load)
       </section>
 
       <section v-if="frappeApps.length" :class="otherBenchApps.length ? 'mt-10' : 'mt-12'">
-        <h2 class="font-medium text-ink-gray-9 text-base">From Frappe</h2>
-        <div class="gap-x-6 gap-y-4 grid grid-cols-1 md:grid-cols-2 mt-3">
+        <h2 class="font-medium">From Frappe</h2>
+        <div class="gap-x-6 gap-y-4 grid md:grid-cols-2 mt-3">
           <MarketplaceAppCard
             v-for="app in frappeApps"
             :key="app.name"
@@ -182,8 +178,8 @@ onMounted(load)
       </section>
 
       <section v-if="communityApps.length" class="mt-10">
-        <h2 class="font-medium text-ink-gray-9 text-base">Community</h2>
-        <div class="gap-x-6 gap-y-4 grid grid-cols-1 md:grid-cols-2 mt-3">
+        <h2 class="font-medium">Community</h2>
+        <div class="gap-x-6 gap-y-4 grid md:grid-cols-2 mt-3">
           <MarketplaceAppCard
             v-for="app in communityApps"
             :key="app.name"

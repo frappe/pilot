@@ -7,12 +7,23 @@ import SiteRow from '@/components/sites/SiteRow.vue'
 
 import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
-import { openSitePage, openTaskDetailPage } from '@/utils/taskRoute'
+import { openTaskDetailPage } from '@/utils/taskRoute'
 
-const props = defineProps({
-  app: { type: Object, default: null },
-  sites: { type: Array, default: () => [] },
-  siteName: { type: String, default: '' },
+const openSitePage = (router, siteName, app = '') => {
+  const route = { name: 'SiteDetail', params: { name: siteName, tab: 'apps' } }
+  router.push(app ? { ...route, query: { app, action: 'install-app' } } : route)
+}
+
+interface Props {
+  app?: Record<string, any> | null
+  sites?: any[]
+  siteName?: string
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  app: null,
+  sites: () => [],
+  siteName: '',
 })
 const open = defineModel('open')
 const router = useRouter()
@@ -111,7 +122,7 @@ const confirmInstall = async () => {
 
         <span
           v-if="targetInstalled"
-          class="size-4 text-ink-gray-9 shrink-0 lucide-check"
+          class="size-4 shrink-0 lucide-check"
           role="img"
           aria-label="Already installed"
         />
@@ -148,7 +159,7 @@ const confirmInstall = async () => {
 
           <span
             v-if="isInstalled(s)"
-            class="size-4 text-ink-gray-9 shrink-0 lucide-check"
+            class="size-4 shrink-0 lucide-check"
             role="img"
             aria-label="Already installed"
           />

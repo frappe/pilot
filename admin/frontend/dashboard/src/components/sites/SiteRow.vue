@@ -1,12 +1,19 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-const props = defineProps({
-  label: { type: String, required: true },
-  icon: { type: String, default: 'lucide-globe' },
-  selected: { type: Boolean, default: false },
-  disabled: { type: Boolean, default: false },
-  interactive: { type: Boolean, default: true },
+interface Props {
+  label: string
+  icon?: string
+  selected?: boolean
+  disabled?: boolean
+  interactive?: boolean
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  icon: 'lucide-globe',
+  selected: false,
+  disabled: false,
+  interactive: true,
 })
 
 const stateClass = computed(() => {
@@ -25,7 +32,7 @@ const stateClass = computed(() => {
     :disabled="interactive && disabled ? true : null"
   >
     <span class="size-4 text-ink-gray-6 shrink-0" :class="icon" />
-    <p class="flex-1 text-ink-gray-8 text-base truncate">{{ label }}</p>
+    <p class="flex-1 text-ink-gray-8 truncate">{{ label }}</p>
     <slot name="suffix" />
   </component>
 </template>

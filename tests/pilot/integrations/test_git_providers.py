@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import stat
+import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -15,6 +16,7 @@ from pilot.integrations.git import (
     parse_github_owner_repo,
     resolve_app_name_from_repo,
 )
+from pilot.integrations.git.base import GitAuthError
 
 
 def test_github_provider_omits_auth_header_without_token() -> None:
@@ -23,6 +25,76 @@ def test_github_provider_omits_auth_header_without_token() -> None:
 
 def test_github_provider_sends_auth_header_with_token() -> None:
     assert GitHubProvider(token="ghp_token")._headers()["Authorization"] == "Bearer ghp_token"
+
+
+def _ls_remote(returncode: int = 0, stdout: str = "", stderr: str = "") -> subprocess.CompletedProcess:
+    return subprocess.CompletedProcess(args=["git"], returncode=returncode, stdout=stdout, stderr=stderr)
+
+
+def test_list_branches_returns_every_head_from_one_ls_remote() -> None:
+    stdout = (
+        "aaa\trefs/heads/develop\n"
+        "bbb\trefs/heads/l10n_version-16-hotfix\n"
+        "ccc\trefs/heads/mergify/bp/version-13-hotfix/pr-26107\n"
+        "ddd\trefs/heads/version-16-hotfix\n"
+    )
+    with patch(
+        "pilot.integrations.git.github.subprocess.run", return_value=_ls_remote(stdout=stdout)
+    ) as run:
+        branches = GitHubProvider(token="").list_branches("frappe/erpnext")
+    assert branches == [
+        "develop",
+        "l10n_version-16-hotfix",
+        "mergify/bp/version-13-hotfix/pr-26107",
+        "version-16-hotfix",
+    ]
+    assert run.call_args.args[0][:3] == ["git", "ls-remote", "--heads"]
+
+
+def test_list_branches_offers_the_token_as_a_scoped_header() -> None:
+    with patch(
+        "pilot.integrations.git.github.subprocess.run", return_value=_ls_remote()
+    ) as run:
+        GitHubProvider(token="ghp_token").list_branches("acme/private")
+    env = run.call_args.kwargs["env"]
+    values = [env[key] for key in env if key.startswith("GIT_CONFIG_VALUE_")]
+    assert any(value.startswith("Authorization: Basic ") for value in values)
+    assert "ghp_token" not in run.call_args.args[0]
+
+
+def test_list_branches_maps_a_rejected_token_to_auth_error() -> None:
+    failed = _ls_remote(returncode=128, stderr="fatal: Authentication failed for 'https://github.com/acme/private/'")
+    with (
+        patch("pilot.integrations.git.github.subprocess.run", return_value=failed),
+        pytest.raises(GitAuthError),
+    ):
+        GitHubProvider(token="ghp_expired").list_branches("acme/private")
+
+
+def test_list_branches_wraps_other_git_failures() -> None:
+    missing = _ls_remote(returncode=128, stderr="fatal: repository 'https://github.com/acme/gone/' not found")
+    with (
+        patch("pilot.integrations.git.github.subprocess.run", return_value=missing),
+        pytest.raises(GitProviderError),
+    ):
+        GitHubProvider(token="").list_branches("acme/gone")
+
+
+def test_list_branches_wraps_a_timeout() -> None:
+    timeout = subprocess.TimeoutExpired(cmd=["git"], timeout=30)
+    with (
+        patch("pilot.integrations.git.github.subprocess.run", side_effect=timeout),
+        pytest.raises(GitProviderError),
+    ):
+        GitHubProvider(token="").list_branches("acme/slow")
+
+
+def test_list_branches_wraps_a_missing_git_executable() -> None:
+    with (
+        patch("pilot.integrations.git.github.subprocess.run", side_effect=FileNotFoundError),
+        pytest.raises(GitProviderError, match="Git is required"),
+    ):
+        GitHubProvider(token="").list_branches("acme/repo")
 
 
 def test_stored_token_travels_as_git_config_not_in_the_url(tmp_path: Path) -> None:

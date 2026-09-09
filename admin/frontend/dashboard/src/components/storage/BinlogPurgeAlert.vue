@@ -94,7 +94,7 @@ const purge = async () => {
     v-if="show"
     title="Binary logs are taking up space"
     :dismissible="false"
-    class="mt-4 !bg-surface-blue-1"
+    class="mt-4 !bg-surface-blue-1 border border-outline-gray-2"
   >
     <template #description>
       <p class="text-ink-gray-6 prose-sm">
@@ -103,11 +103,9 @@ const purge = async () => {
     </template>
 
     <template #footer>
-      <div class="flex col-span-2 items-center gap-3">
-        <Button  theme='blue' class="ml-auto" @click="openDialog"
-          >Purge binary logs</Button
-        >
-      </div>
+      <Button theme="blue" class="col-span-2 ml-auto" @click="openDialog"
+        >Purge binary logs</Button
+      >
     </template>
   </Alert>
 
@@ -115,11 +113,11 @@ const purge = async () => {
     <p v-if="loading" class="text-ink-gray-6 text-sm">Loading binary logs…</p>
 
     <template v-else-if="!loadError">
-      <p v-if="!canPurge" class="text-ink-gray-7 text-sm">
+      <p v-if="!canPurge" class="text-ink-gray-7 text-p-sm">
         There's only one binary log file right now, so there's nothing to purge yet.
       </p>
 
-      <p v-else class="text-ink-gray-7 text-sm">
+      <p v-else class="text-ink-gray-7 text-p-sm">
         All binary logs except the most recent are deleted, freeing about
         {{ formatBytes(freedBytes) }}. The most recent log is kept so replication and
         point-in-time recovery keep working.
@@ -129,17 +127,19 @@ const purge = async () => {
     <ErrorMessage v-if="loadError" :message="loadError" />
     <ErrorMessage v-if="purgeError" :message="purgeError" class="mt-3" />
 
-    <div class="flex justify-end gap-2 mt-4">
-      <Button variant="ghost" @click="dialogOpen = false">Cancel</Button>
-      <Button
-        v-if="!loading && !loadError"
-        variant="solid"
-        :loading="purging"
-        :disabled="!canPurge"
-        @click="purge"
-      >
-        Purge
-      </Button>
-    </div>
+    <template #actions>
+      <div class="flex justify-end gap-2">
+        <Button variant="ghost" @click="dialogOpen = false">Cancel</Button>
+        <Button
+          v-if="!loading && !loadError"
+          variant="solid"
+          :loading="purging"
+          :disabled="!canPurge"
+          @click="purge"
+        >
+          Purge
+        </Button>
+      </div>
+    </template>
   </Dialog>
 </template>

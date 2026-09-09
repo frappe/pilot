@@ -1,13 +1,15 @@
 <script setup lang="ts">
-defineProps({
-  icon: { type: String, default: '' },
-  title: { type: String, required: true },
-  description: { type: String, default: '' },
+interface Props {
+  icon?: string
+  title: string
+  description?: string
   // Off when the state already sits inside a bordered panel.
-  bordered: { type: Boolean, default: true },
+  bordered?: boolean
   // For empty states that sit among other content rather than filling a page.
-  compact: { type: Boolean, default: false },
-})
+  compact?: boolean
+}
+
+withDefaults(defineProps<Props>(), { bordered: true })
 </script>
 
 <template>
@@ -27,7 +29,7 @@ defineProps({
     </span>
 
     <div>
-      <p class="font-medium text-ink-gray-7 text-base">{{ title }}</p>
+      <p class="font-medium text-ink-gray-7">{{ title }}</p>
       <p v-if="description" class="mt-1 max-w-xs text-ink-gray-5 text-p-sm">{{ description }}</p>
     </div>
 

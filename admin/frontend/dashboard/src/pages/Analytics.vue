@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { LoadingText, ErrorMessage, AxisChart, Skeleton } from 'frappe-ui'
+import { ErrorMessage, Select, Skeleton } from 'frappe-ui'
+import { AreaChart } from 'frappe-ui/charts'
 
 import ChartCard from '@/components/common/ChartCard.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import StickyToolbar from '@/components/common/StickyToolbar.vue'
-import ToolbarSelect from '@/components/common/ToolbarSelect.vue'
 import WafAnalytics from '@/components/common/WafAnalytics.vue'
 import DatabaseInsights from '@/components/dashboard/DatabaseInsights.vue'
 import SiteInsights from '@/components/dashboard/SiteInsights.vue'
@@ -15,6 +15,7 @@ import { apiErrorMessage } from '@/api/client'
 import { monitorApi } from '@/api/monitor'
 import { livePollDelayMs } from '@/utils/livePolling'
 import { useSites } from '@/composables/sites/useSites'
+import { useIsMobile } from '@/composables/common/useIsMobile'
 
 const WINDOWS = [
   { key: 'live', label: 'Live' },
@@ -42,7 +43,15 @@ const TIME_GRAIN = {
   '24h': 'hour',
   '1w': 'day',
 }
-const PALETTE = ['#2490ef', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444', '#06b6d4', '#ec4899']
+const PALETTE = [
+  'var(--ink-blue-5)',
+  'var(--ink-amber-5)',
+  'var(--ink-green-5)',
+  'var(--ink-purple-5)',
+  'var(--ink-red-5)',
+  'var(--ink-cyan-5)',
+  'var(--ink-pink-5)',
+]
 const LIVE_WINDOW_MS = 1800 * 1000
 
 // Series names and colors
@@ -53,17 +62,17 @@ const DISK_IO_SERIES = ['Read', 'Write']
 const DISK_SERIES = 'Root Disk'
 
 const CPU_COLORS = {
-  'Busy User': '#2490ef',
-  'Busy System': '#f59e0b',
-  'Busy IOWait': '#ef4444',
-  'Busy IRQ': '#8b5cf6',
-  'Busy Other': '#ec4899',
+  'Busy User': 'var(--ink-blue-5)',
+  'Busy System': 'var(--ink-amber-5)',
+  'Busy IOWait': 'var(--ink-red-5)',
+  'Busy IRQ': 'var(--ink-purple-5)',
+  'Busy Other': 'var(--ink-pink-5)',
 }
 const MEMORY_COLORS = {
-  Used: '#f59e0b',
-  'Cached + Buffers': '#2490ef',
-  Free: '#10b981',
-  'Swap Used': '#ef4444',
+  Used: 'var(--ink-amber-5)',
+  'Cached + Buffers': 'var(--ink-blue-5)',
+  Free: 'var(--ink-green-5)',
+  'Swap Used': 'var(--ink-red-5)',
 }
 
 // State
@@ -81,48 +90,39 @@ const WINDOW_KEYS = WINDOWS.map((w) => w.key)
 
 const view = ref(VIEW_KEYS.includes(route.query.view) ? route.query.view : 'system')
 const initialWindow = WINDOW_KEYS.includes(route.query.window) ? route.query.window : 'live'
-const activeWindow = ref(
-  view.value !== 'system' && initialWindow === 'live' ? '1h' : initialWindow,
-)
+const activeWindow = ref(view.value !== 'system' && initialWindow === 'live' ? '1h' : initialWindow)
 const isHistorical = computed(() => activeWindow.value !== 'live')
 
-const viewLabel = computed(() => VIEWS.find((v) => v.key === view.value)?.label ?? '')
 const isServerScope = computed(() => view.value !== 'site')
 
-const targetLabel = computed(() =>
-  view.value === 'site' ? activeSite.value || 'Select site' : 'Server',
-)
+// Target, not metric: returning to the server keeps the metric on show. A
+// site has none of its own, so it has to land on System.
 const targetOptions = computed(() => [
-  // Target, not metric: returning to the server keeps the metric on show. A
-  // site has none of its own, so it has to land on System.
-  {
-    label: 'Server',
-    icon: 'lucide-server',
-    onClick: () => setView(isServerScope.value ? view.value : 'system'),
-  },
-  ...sites.value.map((site) => ({
-    label: site.name,
-    icon: 'lucide-globe',
-    onClick: () => selectSite(site.name),
-  })),
+  { label: 'Server', value: 'server', icon: 'lucide-server' },
+  ...sites.value.map((site) => ({ label: site.name, value: site.name, icon: 'lucide-globe' })),
 ])
+const target = computed({
+  get: () => (view.value === 'site' ? activeSite.value : 'server'),
+  set: (value) =>
+    value === 'server' ? setView(isServerScope.value ? view.value : 'system') : selectSite(value),
+})
 
 // Server-level metrics only; a site has one chart set and needs no picker.
-const metricOptions = computed(() =>
-  VIEWS.filter((v) => v.key !== 'site').map((v) => ({
-    label: v.label,
-    onClick: () => setView(v.key),
-  })),
-)
+const metricOptions = VIEWS.filter((v) => v.key !== 'site').map((v) => ({
+  label: v.label,
+  value: v.key,
+}))
+const metric = computed({ get: () => view.value, set: (value) => setView(value) })
 
 // Only the system view has a live mode, so hide it elsewhere.
 const windowLabel = computed(() => WINDOWS.find((w) => w.key === activeWindow.value)?.label ?? '')
 const windowOptions = computed(() =>
   WINDOWS.filter((w) => view.value === 'system' || w.key !== 'live').map((w) => ({
     label: w.label,
-    onClick: () => chooseWindow(w.key),
+    value: w.key,
   })),
 )
+const windowModel = computed({ get: () => activeWindow.value, set: (value) => chooseWindow(value) })
 // Database and site charts never receive 'live'.
 const historyWindow = computed(() => (activeWindow.value === 'live' ? '1h' : activeWindow.value))
 
@@ -155,6 +155,7 @@ const selectWindow = (key) => {
 
 // Site view
 const { sites, loading: sitesLoading, load: loadSites } = useSites()
+const isMobile = useIsMobile()
 const activeSite = ref(typeof route.query.site === 'string' ? route.query.site : '')
 
 // Persist view + window + site so a reload restores the same chart.
@@ -356,8 +357,6 @@ const allEmpty = computed(
     systemEmpty.value &&
     appEmpty.value,
 )
-// Live mode only waits on the stat bar's own data; the charts wait on showCharts.
-const pageLoading = computed(() => (isHistorical.value ? historyLoading.value : !stats.value))
 const showCharts = computed(() =>
   isHistorical.value
     ? !historyLoading.value && !historyError.value && !systemEmpty.value
@@ -367,16 +366,13 @@ const showCharts = computed(() =>
 // Chart helpers
 
 const GRID = { show: true, lineStyle: { type: 'dashed', color: 'var(--outline-gray-2)' } }
-
 const fixedXAxis = computed(() => ({
-  key: 'time',
   type: 'time',
   timeGrain: TIME_GRAIN[activeWindow.value],
   echartOptions: { min: axisMin.value, max: axisMax.value, splitLine: GRID },
 }))
 
 const liveXAxis = computed(() => ({
-  key: 'time',
   type: 'time',
   timeGrain: 'second',
   echartOptions: { min: liveNow.value - LIVE_WINDOW_MS, max: liveNow.value, splitLine: GRID },
@@ -385,28 +381,16 @@ const liveXAxis = computed(() => ({
 const currentPoints = computed(() => (isHistorical.value ? system.value.points : liveHistory.value))
 const currentXAxis = computed(() => (isHistorical.value ? fixedXAxis.value : liveXAxis.value))
 
-const lineSeries = (name, color, stacked) => {
-  return {
-    name,
-    type: 'line',
-    color,
-    echartOptions: {
-      smooth: true,
-      symbol: 'circle',
-      symbolSize: 6,
-      showSymbol: false,
-      stack: stacked ? 'total' : undefined,
-      lineStyle: { width: 1.5 },
-      areaStyle: { color: transparent(color, 0.25) },
-      emphasis: { focus: 'series' },
-    },
-  }
-}
+const lineSeries = (color) => ({
+  color,
+  smooth: true,
+  lineWidth: 1.5,
+  showDataPoints: false,
+  fillOpacity: 0.25,
+})
 
-const transparent = (hex, opacity) => {
-  const v = parseInt(hex.slice(1), 16)
-  return `rgba(${(v >> 16) & 255}, ${(v >> 8) & 255}, ${v & 255}, ${opacity})`
-}
+const styleFor = (names, colorAt) =>
+  Object.fromEntries(names.map((name, i) => [name, lineSeries(colorAt(name, i))]))
 
 const scaleFields = (points, keys, divisor) => {
   return points.map((p) => ({
@@ -436,8 +420,11 @@ const cpuChartConfig = computed(() => ({
       'Busy Other': p['Busy Other'] ?? 0,
     })),
     xAxis: currentXAxis.value,
-    yAxis: { yMin: 0, yMax: 100, echartOptions: { name: '%', splitLine: GRID } },
-    series: CPU_SERIES.map((name) => lineSeries(name, CPU_COLORS[name], true)),
+    yAxis: { min: 0, max: 100, echartOptions: { name: '%', splitLine: GRID } },
+    x: 'time',
+    y: CPU_SERIES,
+    stacked: true,
+    seriesConfig: styleFor(CPU_SERIES, (name) => CPU_COLORS[name]),
   },
 }))
 
@@ -451,12 +438,14 @@ const loadChartConfig = computed(() => ({
       'Load Average 15': p.Load15 ?? 0,
     })),
     xAxis: currentXAxis.value,
-    yAxis: { yMin: 0, echartOptions: { name: '', splitLine: GRID } },
-    series: [
-      lineSeries('Load Average 1', '#46B37E'),
-      lineSeries('Load Average 5', '#F2D14B'),
-      lineSeries('Load Average 15', '#E03636'),
-    ],
+    yAxis: { min: 0, echartOptions: { name: '', splitLine: GRID } },
+    x: 'time',
+    y: ['Load Average 1', 'Load Average 5', 'Load Average 15'],
+    seriesConfig: {
+      'Load Average 1': lineSeries('var(--ink-green-5)'),
+      'Load Average 5': lineSeries('var(--ink-yellow-5)'),
+      'Load Average 15': lineSeries('var(--ink-red-5)'),
+    },
   },
 }))
 
@@ -480,7 +469,10 @@ const memChartConfig = computed(() => {
         yMax: peak > 0 ? peak * 1.1 : undefined,
         echartOptions: { name: 'GB', splitLine: GRID },
       },
-      series: MEMORY_SERIES.map((name) => lineSeries(name, MEMORY_COLORS[name], true)),
+      x: 'time',
+      y: MEMORY_SERIES,
+      stacked: true,
+      seriesConfig: styleFor(MEMORY_SERIES, (name) => MEMORY_COLORS[name]),
     },
   }
 })
@@ -498,8 +490,10 @@ const diskChartConfig = computed(() => ({
   config: {
     data: currentPoints.value,
     xAxis: currentXAxis.value,
-    yAxis: { yMin: 0, yMax: 100, echartOptions: { name: '%', splitLine: GRID } },
-    series: [lineSeries(DISK_SERIES, PALETTE[0])],
+    yAxis: { min: 0, max: 100, echartOptions: { name: '%', splitLine: GRID } },
+    x: 'time',
+    y: DISK_SERIES,
+    seriesConfig: { [DISK_SERIES]: lineSeries(PALETTE[0]) },
   },
 }))
 
@@ -508,8 +502,10 @@ const networkChartConfig = computed(() => ({
   config: {
     data: scaleFields(currentPoints.value, NETWORK_SERIES, 1024 ** 2),
     xAxis: currentXAxis.value,
-    yAxis: { yMin: 0, echartOptions: { name: 'MB/s', splitLine: GRID } },
-    series: NETWORK_SERIES.map((name, i) => lineSeries(name, PALETTE[i])),
+    yAxis: { min: 0, echartOptions: { name: 'MB/s', splitLine: GRID } },
+    x: 'time',
+    y: NETWORK_SERIES,
+    seriesConfig: styleFor(NETWORK_SERIES, (_, i) => PALETTE[i]),
   },
 }))
 
@@ -518,8 +514,10 @@ const diskIoChartConfig = computed(() => ({
   config: {
     data: scaleFields(currentPoints.value, DISK_IO_SERIES, 1024 ** 2),
     xAxis: currentXAxis.value,
-    yAxis: { yMin: 0, echartOptions: { name: 'MB/s', splitLine: GRID } },
-    series: DISK_IO_SERIES.map((name, i) => lineSeries(name, PALETTE[i])),
+    yAxis: { min: 0, echartOptions: { name: 'MB/s', splitLine: GRID } },
+    x: 'time',
+    y: DISK_IO_SERIES,
+    seriesConfig: styleFor(DISK_IO_SERIES, (_, i) => PALETTE[i]),
   },
 }))
 
@@ -541,8 +539,10 @@ const appCpuConfig = computed(() => ({
   config: {
     data: normalizeAppData(appWindowData.value.cpu, appWindowData.value.services),
     xAxis: currentXAxis.value,
-    yAxis: { yMin: 0, yMax: 100, echartOptions: { name: '%', splitLine: GRID } },
-    series: appWindowData.value.services.map((name, i) => lineSeries(name, PALETTE[i])),
+    yAxis: { min: 0, max: 100, echartOptions: { name: '%', splitLine: GRID } },
+    x: 'time',
+    y: appWindowData.value.services,
+    seriesConfig: styleFor(appWindowData.value.services, (_, i) => PALETTE[i]),
   },
 }))
 
@@ -555,8 +555,10 @@ const appMemConfig = computed(() => ({
       1024 ** 2,
     ),
     xAxis: currentXAxis.value,
-    yAxis: { yMin: 0, echartOptions: { name: 'MB', splitLine: GRID } },
-    series: appWindowData.value.services.map((name, i) => lineSeries(name, PALETTE[i])),
+    yAxis: { min: 0, echartOptions: { name: 'MB', splitLine: GRID } },
+    x: 'time',
+    y: appWindowData.value.services,
+    seriesConfig: styleFor(appWindowData.value.services, (_, i) => PALETTE[i]),
   },
 }))
 
@@ -609,38 +611,41 @@ onUnmounted(() => clearTimeout(statsTimer))
 </script>
 
 <template>
-  <div class="mx-auto">
+  <div class="px-4 pb-4">
     <StickyToolbar class="flex items-center gap-2">
-      <div class="flex-1 sm:flex-none min-w-0">
-        <ToolbarSelect
-          :options="targetOptions"
-          class="[&>.truncate]:flex-1 [&>.truncate]:text-left text-base w-full sm:w-auto sm:max-w-[250px] overflow-hidden"
-        >
-          <template #prefix>
-            <span class="size-4" :class="isServerScope ? 'lucide-server' : 'lucide-globe'" />
-          </template>
+      <Select
+        v-model="target"
+        :options="targetOptions"
+        :size="isMobile ? 'md' : 'sm'"
+        side="bottom"
+        align="start"
+        placeholder="Select site"
+        class="flex-1 sm:flex-none min-w-0 sm:max-w-[250px]"
+      />
 
-          <span class="truncate">{{ targetLabel }}</span>
-        </ToolbarSelect>
-      </div>
+      <Select
+        v-if="isServerScope"
+        v-model="metric"
+        :options="metricOptions"
+        :size="isMobile ? 'md' : 'sm'"
+        side="bottom"
+        align="start"
+      />
 
-      <div v-if="isServerScope" class="shrink-0">
-        <ToolbarSelect :options="metricOptions" class="[&>.truncate]:text-left text-base">
-          {{ viewLabel }}
-        </ToolbarSelect>
-      </div>
-
-      <div class="shrink-0">
-        <ToolbarSelect :options="windowOptions" class="[&>.truncate]:text-left text-base">
-          <template #prefix>
-            <span
-              v-if="!isHistorical"
-              class="bg-surface-green-8 rounded-full size-1.5 animate-pulse"
-            />
-          </template>
-          {{ windowLabel }}
-        </ToolbarSelect>
-      </div>
+      <Select
+        v-model="windowModel"
+        :options="windowOptions"
+        :size="isMobile ? 'md' : 'sm'"
+        side="bottom"
+        align="start"
+      >
+        <template #prefix>
+          <span
+            v-if="!isHistorical"
+            class="bg-surface-green-8 rounded-full size-1.5 animate-pulse"
+          />
+        </template>
+      </Select>
     </StickyToolbar>
 
     <DatabaseInsights v-if="view === 'database'" :window="historyWindow" />
@@ -655,45 +660,36 @@ onUnmounted(() => clearTimeout(statsTimer))
       />
     </template>
 
-    <!-- Loading state -->
-    <template v-else-if="pageLoading">
-      <Skeleton v-if="!isHistorical" class="mb-6 rounded-6 h-[88px]" />
-      <div class="gap-4 grid grid-cols-1 sm:grid-cols-2 mb-6">
-        <Skeleton v-for="i in 6" :key="i" class="rounded-6 h-[340px]" />
-      </div>
-    </template>
-
     <template v-else>
+      <Skeleton v-if="!isHistorical && !liveStats" class="mb-4 rounded-6 h-[88px]" />
+
       <!-- Live stats bar: CPU / Memory / Storage -->
       <div
-        v-if="liveStats"
-        class="bg-surface-white mb-6 border rounded-6 border-outline-gray-2 overflow-hidden"
+        v-else-if="liveStats"
+        class="flex sm:flex-row flex-col bg-surface-white mb-4 border rounded-6 border-outline-gray-2 divide-outline-gray-2 sm:divide-x overflow-hidden"
       >
-        <div class="flex sm:flex-row flex-col divide-outline-gray-2 sm:divide-x">
-          <div
-            v-for="meter in liveMeters"
-            :key="meter.label"
-            class="flex-1 px-4 sm:px-5 py-3 sm:py-4 border-t first:border-t-0 sm:border-t-0 border-outline-gray-2"
-          >
-            <div class="flex justify-between items-baseline gap-2 mb-2">
-              <span class="text-ink-gray-6 text-sm">{{ meter.label }}</span>
-              <span class="text-ink-gray-6 text-sm shrink-0">{{ meter.value }}</span>
-            </div>
+        <div
+          v-for="meter in liveMeters"
+          :key="meter.label"
+          class="flex-1 px-4 sm:px-5 py-3 sm:py-4 border-t first:border-t-0 sm:border-t-0 border-outline-gray-2"
+        >
+          <div class="flex justify-between items-baseline gap-2 mb-2">
+            <span class="text-ink-gray-6 text-sm">{{ meter.label }}</span>
+            <span class="text-ink-gray-6 text-sm shrink-0">{{ meter.value }}</span>
+          </div>
 
-            <div class="bg-surface-gray-2 rounded-full h-1 overflow-hidden">
-              <div
-                class="bg-surface-gray-9 rounded-full h-full"
-                :style="{ width: Math.min(meter.percent, 100) + '%' }"
-              />
-            </div>
+          <div class="bg-surface-gray-2 rounded-full h-1 overflow-hidden">
+            <div
+              class="bg-surface-gray-9 rounded-full h-full"
+              :style="{ width: Math.min(meter.percent, 100) + '%' }"
+            />
           </div>
         </div>
       </div>
 
       <!-- Historical empty states -->
-      <template v-if="isHistorical">
-        <LoadingText v-if="historyLoading" />
-        <ErrorMessage v-else-if="historyError" :message="historyError" />
+      <template v-if="isHistorical && !historyLoading">
+        <ErrorMessage v-if="historyError" :message="historyError" />
         <EmptyState
           v-else-if="allEmpty"
           icon="lucide-chart-line"
@@ -702,19 +698,16 @@ onUnmounted(() => clearTimeout(statsTimer))
         />
       </template>
 
-      <!-- Charts grid -->
-      <div v-if="showCharts" class="gap-4 grid grid-cols-1 sm:grid-cols-2 mb-6">
-        <ChartCard v-for="chart in charts" :key="chart.title" :title="chart.title">
-          <AxisChart
-            :config="chart.config"
-            class="w-full min-w-0 h-full min-h-[300px] px-2 sm:px-4 pb-2"
-          />
-        </ChartCard>
-      </div>
+      <div class="gap-4 grid md:grid-cols-2">
+        <template v-if="showCharts">
+          <ChartCard v-for="chart in charts" :key="chart.title" :title="chart.title">
+            <AreaChart v-bind="chart.config" class="min-h-[300px]" />
+          </ChartCard>
+        </template>
 
-      <!-- Live mode collecting its first points, with the stat bar already up -->
-      <div v-else-if="!isHistorical" class="gap-4 grid grid-cols-1 sm:grid-cols-2 mb-6">
-        <Skeleton v-for="i in 6" :key="i" class="rounded-6 h-[340px]" />
+        <template v-else-if="!isHistorical || historyLoading">
+          <Skeleton v-for="i in 6" :key="i" class="rounded-6 h-[340px]" />
+        </template>
       </div>
 
       <!-- WAF analytics (only renders when the WAF has logged activity) -->

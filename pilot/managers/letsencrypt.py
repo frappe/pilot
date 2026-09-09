@@ -61,7 +61,7 @@ def letsencrypt_email_required(bench: "Bench") -> bool:
     """True when local TLS would issue a public cert and needs an email."""
     if not bench.config.admin.tls:
         return False
-    if any(site.config.ssl and _is_public_domain(site.config.name) for site in bench.sites()):
+    if any(public_domains(site.config) for site in bench.sites()):
         return True
     return _is_public_domain(bench.config.admin.domain)
 

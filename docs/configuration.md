@@ -218,7 +218,47 @@ token = ""
 [admin]
 jwks_url = "https://issuer.example.com/jwks.json"
 jwks_audience = "bench-fleet"
+
+[resource_limits]
+cpu_usage_limit = 85
+memory_usage_limit = 90
+disk_space_limit = 0
+site_uptime = true
+webhook_endpoints = { "https://alerts.example.com/pilot" = "bearer-token" }
+email_recipients = ["ops@example.com"]
 ```
+
+### Alert Delivery
+
+`[resource_limits]` sets when an alert is raised and where it goes. A usage percentage of `0` disables that alert; `site_uptime` covers sites that stop answering their ping. A condition must hold for five minutes before anything is sent.
+
+Alerts always go to Central. Each entry in `webhook_endpoints` receives them too, as a POST with an `Authorization: Bearer` header. Mail is a third sink, off until a mail server is configured and `email_recipients` is set.
+
+Outgoing mail lives in the bench's `sites/common_site_config.json`, under the keys the framework's Email Account already reads, so a site picks the same mailbox up without any further setup:
+
+```json
+{
+  "mail_server": "smtp.example.com",
+  "mail_port": 587,
+  "auto_email_id": "alerts@example.com",
+  "mail_login": "alerts@example.com",
+  "mail_password": "secret",
+  "use_tls": 1
+}
+```
+
+- `mail_server` is the outgoing mail server, `mail_port` the port it listens on
+- `use_tls` upgrades the connection with STARTTLS; `0` connects over SSL instead
+- `mail_port` may be left at `0`, which means 465 with SSL and 587 with STARTTLS
+- `auto_email_id` is the address alerts are sent from, and the login name by default
+- `mail_login` only when the server expects a login name that is not that address
+- a relay that takes no credentials gets `disable_mail_smtp_authentication` instead of a password
+
+The certificate is verified in both modes, so a server with a self-signed certificate is refused rather than trusted silently.
+
+Saving these through the Admin UI opens a session against the server first, so a wrong password or an unreachable host is reported then rather than at the first alert. The Admin API never returns the password, reporting only whether one is stored.
+
+`email_recipients` is edited on the notification settings page, the mailbox on its own one, so either may be saved before the other exists.
 
 `BenchConfig` is the only reader/writer of this file - it merges these values into `config.mariadb`, `config.postgres`, `config.letsencrypt`, `config.central`, `config.datum`, and `config.admin.jwks_url`/`jwks_audience` on every read, and writes them back on save. Other code reaches these values through a bench's own `BenchConfig`, never by reading `common_config.toml` directly. `admin.tls` is not part of this file - it stays a per-bench choice in `bench.toml`.
 

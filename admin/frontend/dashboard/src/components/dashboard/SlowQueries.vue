@@ -1,10 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { AxisChart } from 'frappe-ui'
+import { BarChart } from 'frappe-ui/charts'
 
 import ChartCard from '@/components/common/ChartCard.vue'
 
-const props = defineProps({ overview: { type: Object, default: null } })
+interface Props {
+  overview?: Record<string, any> | null
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  overview: null,
+})
 
 const GRID = { show: true, lineStyle: { type: 'dashed', color: 'var(--outline-gray-2)' } }
 const PALETTE = ['#10b981', '#ef4444', '#f59e0b', '#2490ef', '#8b5cf6', '#06b6d4', '#ec4899']
@@ -22,12 +28,14 @@ const seriesConfig = (rows, keys, yLabel) => {
   const bucketMs = rows.length > 1 ? rows[1].bucket - rows[0].bucket : 300_000
   return {
     data: rows.map((row) => ({ ...row, bucket: bucketLabel(row.bucket, bucketMs) })),
+    x: 'bucket',
+    y: keys,
     stacked: true,
-    xAxis: { key: 'bucket', type: 'category', echartOptions: { splitLine: GRID } },
-    yAxis: { yMin: 0, echartOptions: { name: yLabel, splitLine: GRID } },
-    series: keys.map((key, i) => ({ name: key, type: 'bar', color: PALETTE[i % PALETTE.length] })),
-    // frappe-ui only auto-shows the legend when a chart has more than one series; force it on so a single key still gets its legend.
-    echartOptions: { legend: { show: true }, grid: { bottom: 40 } },
+    xAxis: { type: 'category', echartOptions: { splitLine: GRID } },
+    yAxis: { min: 0, title: yLabel, echartOptions: { splitLine: GRID } },
+    seriesConfig: Object.fromEntries(
+      keys.map((key, i) => [key, { color: PALETTE[i % PALETTE.length] }]),
+    ),
   }
 }
 
@@ -63,10 +71,6 @@ const charts = computed(() => {
       No slow queries recorded yet
     </div>
 
-    <AxisChart
-      v-else
-      :config="chart.config"
-      class="w-full min-w-0 h-full min-h-[320px] px-2 sm:px-4 pb-2"
-    />
+    <BarChart v-else v-bind="chart.config" class="min-h-[320px]" />
   </ChartCard>
 </template>

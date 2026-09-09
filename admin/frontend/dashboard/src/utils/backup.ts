@@ -2,15 +2,13 @@
 
 import { cronToPicks } from './cron.ts'
 
-const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+export const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 export const formatTime = (hour, minute = 0) => {
   const suffix = hour < 12 ? 'AM' : 'PM'
   const display = hour % 12 === 0 ? 12 : hour % 12
   return `${display}:${String(minute).padStart(2, '0')} ${suffix}`
 }
-
-export const formatHour = (hour) => formatTime(hour)
 
 /** Label a UTC cron expression in the viewer's local time. */
 export const cronToLabel = (cron) => {

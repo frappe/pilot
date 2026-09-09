@@ -32,9 +32,10 @@ Every check runs on every path - `get-app`, `update`/migration, and `switch-bran
 drop a `pyproject.toml` or a declaration as easily as it can break a hook, so an app that has moved
 is held to the same standard as one being installed.
 
-There is no way past the checks - no flag, no override, on any path, including the marketplace
-dependencies pilot installs on an app's behalf. An app that cannot pass them cannot get onto a
-bench, so everything installed is known to have passed.
+Apart from the file patterns in [Ignoring files](#ignoring-files), there is no way past the
+checks: no flag, no override, on any path, including the marketplace dependencies pilot installs on
+an app's behalf. An app that cannot pass them cannot get onto a bench, so everything installed is
+known to have passed.
 
 Validating on update matters most for resolution: the reinstall that follows runs `uv pip install`
 with no constraints, so it resolves only that app's own requirements and will move a package
@@ -82,6 +83,20 @@ Imports are resolved without running the app's code, in three stages, stopping a
    importing them would run the code being validated.
 3. **Install into a throwaway venv** when something is still missing, which is the case that
    genuinely needs installing - a dependency the bench does not have yet.
+
+### Ignoring files
+
+An app can exclude paths from the file-walking checks - syntax, imports, fixtures, and symlinks:
+
+```toml
+[tool.bench]
+validation-ignore = ["atlas/internal/*", "atlas/generated/**"]
+```
+
+Patterns are globs relative to the app root, and `*` crosses directory separators, so
+`atlas/internal/*` excludes that whole subtree. This is for generated or vendored code the app does
+not own. Nothing else is skippable: the declaration, compatibility, and resolution checks apply to
+the app as a whole and have no override.
 
 ## Reading a failure
 

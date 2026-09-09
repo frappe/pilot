@@ -1,18 +1,11 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
 import { computed, onMounted, ref } from 'vue'
-
-import { ListFooter, ListView, ListRowItem } from 'frappe-ui/experimental'
-
-import {
-  Button,
-  Dialog,
-  Dropdown,
-  ErrorMessage,
-  LoadingText,
-} from 'frappe-ui'
+import { Badge, Button, Dialog, Dropdown, ErrorMessage, Select } from 'frappe-ui'
 
 import EmptyState from '@/components/common/EmptyState.vue'
+import ListSkeleton from '@/components/common/ListSkeleton.vue'
+import Table from '@/components/common/Table.vue'
 import BackupConfigDialog from '@/components/sites/BackupConfigDialog.vue'
 
 import { sitesApi } from '@/api/sites'
@@ -23,7 +16,11 @@ import { fmtDateTime } from '@/utils/taskFormat'
 import { useSite } from '@/composables/sites/useSite'
 import { openTaskDetailPage } from '@/utils/taskRoute'
 
-const props = defineProps({ siteName: { type: String, required: true } })
+interface Props {
+  siteName: string
+}
+
+const props = defineProps<Props>()
 const router = useRouter()
 
 const {
@@ -36,14 +33,7 @@ const {
   setBackupsPageLength,
 } = useSite(props.siteName)
 
-const footerOptions = computed(() => ({
-  rowCount: backups.value.length,
-  // ListFooter shows "Load More" only when rowCount < totalCount; we don't know
-  // the true total (S3 metadata is read lazily), so nudge it past rowCount
-  // whenever the backend signals there may be another page.
-  totalCount: backupsHasMore.value ? backups.value.length + 1 : backups.value.length,
-  pageLengthOptions: [20, 50, 100],
-}))
+const pageLengths = [20, 50, 100].map((n) => ({ label: `${n} per page`, value: n }))
 
 const backingUp = ref(false)
 const error = ref('')
@@ -81,12 +71,12 @@ const backupNow = async () => {
 }
 
 const columns = [
-  { label: 'Date', key: 'timestamp', align: 'left', width: 2 },
-  { label: 'Database', key: 'database', align: 'center', width: 1 },
-  { label: 'Public', key: 'public', align: 'center', width: 1 },
-  { label: 'Private', key: 'private', align: 'center', width: 1 },
-  { label: 'Offsite', key: 'offsite', align: 'center', width: 1 },
-  { label: '', key: 'actions', align: 'right', width: '3rem' },
+  { label: 'Date', key: 'timestamp', class: 'w-1/3' },
+  { label: 'Database', key: 'database', class: 'tabular-nums' },
+  { label: 'Public', key: 'public', class: 'tabular-nums' },
+  { label: 'Private', key: 'private', class: 'tabular-nums' },
+  { label: 'Offsite', key: 'offsite', class: 'text-center' },
+  { label: '', key: 'actions', class: 'w-12' },
 ]
 
 const fileOf = (set, kind) => set.files?.find((f) => f.kind === kind) ?? null
@@ -195,98 +185,86 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="space-y-4 mt-5">
-    <div class="flex sm:flex-row flex-col sm:justify-between sm:items-center gap-3">
-      <div>
-        <p class="font-medium text-ink-gray-8 text-base">Automated backups</p>
-        <p class="mt-0.5 text-ink-gray-5 text-p-sm">{{ scheduleSummary }}</p>
-      </div>
-
-      <div class="flex items-center gap-2 shrink-0">
-        <Button variant="subtle" size="sm" @click="configRef.open()"
-          >{{ enabled ? 'Configure' : 'Enable' }}</Button
-        >
-        <Button size="sm" :loading="backingUp" @click="backupNow">
-          <template #prefix><span class="size-4 lucide-archive" /></template>
-          Back up now
-        </Button>
-      </div>
+  <div class="flex sm:flex-row flex-col sm:justify-between sm:items-center gap-3 mb-4">
+    <div>
+      <p class="font-medium text-ink-gray-8">Automated backups</p>
+      <p class="mt-0.5 text-ink-gray-5 text-p-sm">{{ scheduleSummary }}</p>
     </div>
 
-    <BackupConfigDialog ref="configRef" :site-name="siteName" @saved="loadConfig" />
-
-    <ErrorMessage v-if="error" :message="error" />
-
-    <div :class="backups.length ? '' : 'rounded-7 border border-dashed border-outline-gray-2'">
-      <div v-if="backupsLoading" class="flex justify-center py-12">
-        <LoadingText />
-      </div>
-
-      <EmptyState
-        v-else-if="!backups.length"
-        :bordered="false"
-        icon="lucide-archive"
-        title="No backups yet"
-        :description="
-          enabled
-            ? 'Automatic backups run on schedule. You can also back up now.'
-            : 'Enable automatic backups to start protecting your site.'
-        "
-      >
-        <Button size="sm" :loading="backingUp" @click="backupNow">
-          <template #prefix><span class="size-4 lucide-archive" /></template>
-          Back up now
-        </Button>
-      </EmptyState>
-
-      <ListView
-        v-else
-        :columns="columns"
-        :rows="rows"
-        row-key="name"
-        :options="{ selectable: false, showTooltip: false }"
-      >
-        <template #cell="{ column, row, item }">
-          <div v-if="column.key === 'actions'" class="flex justify-end">
-            <Dropdown :options="menuOptions(row.set)">
-              <template #default="{ open }">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  :active="open"
-                  icon="lucide-ellipsis"
-                  label="Backup actions"
-                  tooltip="Actions"
-                />
-              </template>
-            </Dropdown>
-          </div>
-
-          <div v-else-if="column.key === 'offsite'" class="flex justify-center">
-            <span
-              v-if="row.set.is_offsite"
-              class="size-4 text-ink-gray-6 lucide-check"
-              title="Backed up offsite"
-            />
-            <span v-else class="size-4 text-ink-gray-4 lucide-x" title="Not backed up offsite" />
-          </div>
-
-          <ListRowItem v-else :column="column" :row="row" :item="item" :align="column.align" />
-        </template>
-      </ListView>
-
-      <ListFooter
-        v-if="backupsHasMore || backups.length > 20"
-        class="mt-2 px-1"
-        :model-value="backupsLimit"
-        :options="footerOptions"
-        @update:model-value="setBackupsPageLength"
-        @load-more="loadMoreBackups"
-      />
+    <div class="flex items-center gap-2 shrink-0">
+      <Button @click="configRef.open()">
+        {{ enabled ? 'Configure' : 'Enable' }}
+      </Button>
+      <Button :loading="backingUp" @click="backupNow">
+        <template #prefix><span class="size-4 lucide-archive" /></template>
+        Back up now
+      </Button>
     </div>
   </div>
 
-  <!-- Delete backup dialog -->
+  <BackupConfigDialog ref="configRef" :site-name="siteName" @saved="loadConfig" />
+
+  <ErrorMessage v-if="error" :message="error" class="mb-4" />
+
+  <ListSkeleton v-if="backupsLoading" :rows="5" />
+
+  <EmptyState
+    v-else-if="!backups.length"
+    icon="lucide-archive"
+    title="No backups yet"
+    :description="
+      enabled
+        ? 'Automatic backups run on schedule. You can also back up now.'
+        : 'Enable automatic backups to start protecting your site.'
+    "
+  >
+    <Button :loading="backingUp" @click="backupNow">
+      <template #prefix><span class="size-4 lucide-archive" /></template>
+      Back up now
+    </Button>
+  </EmptyState>
+
+  <template v-else>
+    <Table :columns="columns" :rows="rows" height="max-h-[32rem]">
+      <template #offsite="{ row }">
+        <Badge
+          v-if="row.set.is_offsite"
+          theme="green"
+          size="sm"
+          label="Uploaded"
+        />
+        <Badge v-else theme="gray" size="sm" label="Local only" />
+      </template>
+
+      <template #actions="{ row }">
+        <Dropdown :options="menuOptions(row.set)">
+          <template #default="{ open }">
+            <Button
+              variant="ghost"
+              :active="open"
+              icon="lucide-ellipsis"
+              label="Backup actions"
+              tooltip="Actions"
+            />
+          </template>
+        </Dropdown>
+      </template>
+    </Table>
+
+    <div v-if="backupsHasMore || backups.length > 20" class="flex items-center gap-3 mt-2 px-1">
+      <Select
+        size="sm"
+        :model-value="backupsLimit"
+        :options="pageLengths"
+        @update:model-value="setBackupsPageLength"
+      />
+
+      <span class="text-ink-gray-5 text-sm">{{ backups.length }} backups</span>
+
+      <Button v-if="backupsHasMore" class="ml-auto" @click="loadMoreBackups">Load more</Button>
+    </div>
+  </template>
+
   <Dialog v-model="showDelete" title="Delete Backup" size="sm">
     <p class="text-ink-gray-7 text-sm">
       Delete the backup from
@@ -295,11 +273,13 @@ onMounted(() => {
     </p>
 
     <ErrorMessage v-if="deleteError" :message="deleteError" class="mt-2" />
-    <div class="flex justify-end gap-2 mt-4">
-      <Button variant="ghost" @click="showDelete = false">Cancel</Button>
-      <Button variant="solid" theme="red" :loading="deleting" @click="confirmDelete"
-        >Delete</Button
-      >
-    </div>
+    <template #actions>
+      <div class="flex justify-end gap-2">
+        <Button variant="ghost" @click="showDelete = false">Cancel</Button>
+        <Button variant="solid" theme="red" :loading="deleting" @click="confirmDelete"
+          >Delete</Button
+        >
+      </div>
+    </template>
   </Dialog>
 </template>

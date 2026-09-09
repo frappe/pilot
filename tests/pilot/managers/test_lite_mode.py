@@ -168,11 +168,12 @@ def test_lite_stop_timeout_covers_both_drains(tmp_path: Path) -> None:
     assert _web(bench).stop_timeout == 690
 
 
-def test_lite_serves_assets_only_in_dev(tmp_path: Path) -> None:
+def test_lite_reloads_and_serves_assets_only_in_dev(tmp_path: Path) -> None:
+    """frappe.runner folds asset serving into --dev; there is no --serve-assets."""
     bench = make_bench(tmp_path)
 
-    assert "--serve-assets" not in _web(bench).argv
-    assert "--serve-assets" in _web(bench, dev=True).argv
+    assert "--dev" not in _web(bench).argv
+    assert "--dev" in _web(bench, dev=True).argv
 
 
 def test_lite_dev_keeps_the_single_process(tmp_path: Path) -> None:

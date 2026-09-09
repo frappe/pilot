@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from pilot.config import BenchConfig
-from pilot.integrations.git import GitAuthError
+from pilot.integrations.git import BranchNotFoundError, GitAuthError
 
 
 def _client(bench_root: Path, password: str = "secret"):
@@ -154,6 +154,27 @@ def test_repository_resolutions_returns_the_resolved_app(tmp_path: Path) -> None
     assert response.status_code == 200
     assert body == {"name": "suite", "description": "A suite app"}
     assert "ok" not in body
+
+
+def test_repository_resolutions_rejects_an_unknown_branch(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+
+    with (
+        patch("admin.backend.api.v1.git.provider_for_repo", return_value=Mock()),
+        patch(
+            "admin.backend.api.v1.git.resolve_app_name_from_repo",
+            side_effect=BranchNotFoundError("'missing' is not a branch of this repository."),
+        ),
+    ):
+        response = client.post(
+            "/api/v1/git/repository-resolutions",
+            json={"repo": "https://github.com/frappe/frappe", "branch": "missing"},
+        )
+
+    error = response.get_json()["error"]
+    assert response.status_code == 422
+    assert error["code"] == "branch_not_found"
 
 
 def test_repository_resolutions_requires_a_repo(tmp_path: Path) -> None:

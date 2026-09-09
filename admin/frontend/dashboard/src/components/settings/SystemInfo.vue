@@ -43,8 +43,8 @@ onMounted(async () => {
           :key="label"
           class="flex justify-between items-center py-2.5"
         >
-          <span class="text-ink-gray-7 text-base">{{ label }}</span>
-          <span class="text-ink-gray-9 text-base">{{ value }}</span>
+          <span class="text-ink-gray-7">{{ label }}</span>
+          <span>{{ value }}</span>
         </div>
       </div>
     </div>
@@ -57,8 +57,8 @@ onMounted(async () => {
           :key="label"
           class="flex justify-between items-center py-2.5"
         >
-          <span class="text-ink-gray-7 text-base">{{ label }}</span>
-          <span class="text-ink-gray-9 text-base">{{ value }}</span>
+          <span class="text-ink-gray-7">{{ label }}</span>
+          <span>{{ value }}</span>
         </div>
 
         <p v-if="!Object.keys(info.runtime).length" class="py-2.5 text-ink-gray-5 text-p-sm">

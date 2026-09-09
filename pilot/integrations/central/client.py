@@ -75,7 +75,11 @@ class CentralClient:
     def log_token(self) -> dict[str, Any]:
         """The JWT to present to Datum when shipping logs, plus its TTL and resource id."""
         return self.forward("central.api.pilot.log_token", "GET")
-      
+
+    def metrics_token(self) -> dict[str, Any]:
+        """The JWT to present to Datum when shipping metrics, plus its TTL and resource id."""
+        return self.forward("central.api.pilot.metrics_token", "GET")
+
     def notify_central(self, event: str, message: str, context: dict | None = None) -> dict[str, Any]:
         """Send a notification to Central for a bench event."""
         return self._post(
