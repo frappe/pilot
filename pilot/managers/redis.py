@@ -57,10 +57,21 @@ class RedisManager:
         return "redis"
 
     def generate_configs(self) -> None:
-        self._write_config("redis_cache.conf", self.config.cache_port)
-        self._write_config("redis_queue.conf", self.config.queue_port)
+        # The cache may drop old keys under pressure; the queue holds real jobs,
+        # so it refuses writes instead of losing them.
+        self._write_config("redis_cache.conf", self.config.cache_port, "allkeys-lru")
+        self._write_config("redis_queue.conf", self.config.queue_port, "noeviction")
 
-    def _write_config(self, filename: str, port: int) -> None:
+    def _write_config(self, filename: str, port: int, eviction_policy: str) -> None:
+        from pilot.core.build_memory import calculate_redis_memory, host_memory_mb
+
         self.bench.config_path.mkdir(parents=True, exist_ok=True)
-        content = f'port {port}\nbind 127.0.0.1\nsave ""\n'
+        maxmemory_mb = calculate_redis_memory(host_memory_mb())
+        content = (
+            f"port {port}\n"
+            f"bind 127.0.0.1\n"
+            f'save ""\n'
+            f"maxmemory {maxmemory_mb}mb\n"
+            f"maxmemory-policy {eviction_policy}\n"
+        )
         (self.bench.config_path / filename).write_text(content)

@@ -90,6 +90,14 @@ them and are unaffected, so it is reached by custom apps that ship no assets, or
 `pilot build --force`. Where a host cannot delegate a memory controller to the user
 slice the build runs uncapped and logs a warning.
 
+## Redis Memory
+
+Both redis instances carry a `maxmemory` ceiling sized from host memory, so a leak
+cannot grow without bound on a small host. They differ in what happens at the ceiling:
+the cache uses `allkeys-lru` and drops old keys, while the queue uses `noeviction` and
+refuses writes. Evicting from the queue would silently discard background jobs, so it
+fails the enqueue instead.
+
 ## Operational Notes
 
 - Production changes may need non-interactive sudo.
