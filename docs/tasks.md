@@ -84,12 +84,6 @@ Required submit-only args can be named in `required_submit_args` when the runner
 
 Do not build task command strings by hand when a task class exists.
 
-`BuildTask` delegates to `bench.rebuild_assets()` rather than shelling out itself, so a
-queued build takes the same path as `pilot build`: prebuilt assets where they exist, and
-otherwise a compile that holds the host build lock and runs under a memory ceiling. It
-fails when another build is already running, or when too little memory is free. See
-[Production](production.md#build-memory).
-
 ## Internal Workings
 
 ### 1. Caller writes a task

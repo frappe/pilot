@@ -15,52 +15,38 @@ def systemctl(*args: str) -> list[str]:
 def systemctl_env() -> dict:
     env = dict(os.environ)
     runtime_dir = env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
-    # systemd-run silently ignores resource limits when it cannot reach the user
-    # bus: the scope starts, reports itself running, and stays uncapped.
+    # Without the bus address systemd-run starts an uncapped scope and reports success.
     env.setdefault("DBUS_SESSION_BUS_ADDRESS", f"unix:path={runtime_dir}/bus")
     return env
-
-
-def user_unit_dir() -> Path:
-    return Path.home() / ".config" / "systemd" / "user"
-
-
-def has_user_memory_control() -> bool:
-    """Whether transient scopes can cap memory here. Needs systemd-run and a
-    memory controller delegated to this user's slice."""
-    if not shutil.which("systemd-run"):
-        return False
-    controllers = Path(f"/sys/fs/cgroup/user.slice/user-{os.getuid()}.slice/cgroup.controllers")
-    try:
-        return "memory" in controllers.read_text().split()
-    except OSError:
-        return False
 
 
 def memory_capped(argv: list[str], memory_max_mb: int) -> list[str]:
     """Run argv in a transient scope the kernel kills past memory_max_mb. Returns
     argv unchanged where scopes cannot cap, so callers stay one code path."""
-    if not has_user_memory_control():
-        logging.warning(
-            "Memory control is unavailable here, so this build runs uncapped and "
-            "can exhaust the machine. Needs systemd-run and a delegated memory "
-            "controller on the user slice."
-        )
+    controllers = Path(f"/sys/fs/cgroup/user.slice/user-{os.getuid()}.slice/cgroup.controllers")
+    try:
+        can_cap = bool(shutil.which("systemd-run")) and "memory" in controllers.read_text().split()
+    except OSError:
+        can_cap = False
+    if not can_cap:
+        logging.warning("Memory control unavailable here, so this build runs uncapped.")
         return argv
     return [
         "systemd-run",
         "--user",
         "--scope",
         "--quiet",
-        # Reap the scope when it dies, so a killed build leaves nothing behind.
         "--collect",
         "-p",
         f"MemoryMax={memory_max_mb}M",
-        # Without this the cap is absorbed by swap and the build grinds instead.
         "-p",
         "MemorySwapMax=0",
         *argv,
     ]
+
+
+def user_unit_dir() -> Path:
+    return Path.home() / ".config" / "systemd" / "user"
 
 
 class SystemdUserMixin:

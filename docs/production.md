@@ -73,46 +73,6 @@ When using Central or another upstream proxy, keep the local Admin service priva
 
 Firewall and WAF config are bench settings. Settings apply code should delegate to core/managers so API routes do not perform system orchestration directly.
 
-## Build Memory
-
-A full asset build peaks near 1.6GB while an idle bench is around 300MB, so an
-unbounded build can exhaust a small host and leave the kernel to kill an unrelated
-process, usually the database.
-
-Compiling therefore runs in a transient systemd scope with `MemoryMax` set, and only
-one build runs at a time per host. The budget is a share of total memory, clamped by
-what is actually available, less a reserve kept for the kernel. When too little memory
-is free the build is refused before it starts, and a build that exceeds its budget is
-killed and reported as out of memory.
-
-This applies only to builds that compile. Apps with a published assets release download
-them and are unaffected, so it is reached by custom apps that ship no assets, or by
-`pilot build --force`. Where a host cannot delegate a memory controller to the user
-slice the build runs uncapped and logs a warning.
-
-## Service Memory
-
-Long-running bench units carry `MemoryHigh` and `MemoryMax`, sized from observed peaks
-with room to grow and trimmed to the share of the host left after the database and the
-kernel reserve. `MemoryHigh` throttles first, so pressure shows as slowness before
-anything dies, and `MemorySwapMax=0` keeps a leaking service from spilling into swap
-and grinding instead of failing.
-
-Admin is deliberately uncapped: background tasks run inside its cgroup and must outlive
-it. Processes without a measured profile are left uncapped rather than guessed at. The
-ceilings are limits on a runaway, not reservations - the whole set idles near 300MB, so
-on a small host they may sum past total memory.
-
-Supervisor cannot enforce cgroup limits, so these apply to the systemd process manager.
-
-## Redis Memory
-
-Both redis instances carry a `maxmemory` ceiling sized from host memory, so a leak
-cannot grow without bound on a small host. They differ in what happens at the ceiling:
-the cache uses `allkeys-lru` and drops old keys, while the queue uses `noeviction` and
-refuses writes. Evicting from the queue would silently discard background jobs, so it
-fails the enqueue instead.
-
 ## Operational Notes
 
 - Production changes may need non-interactive sudo.

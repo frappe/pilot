@@ -19,9 +19,7 @@ Bench commands with `--bench NAME` can run from outside the bench directory. `Be
 - `pilot start`: start bench processes.
 - `pilot stop`: stop bench processes.
 - `pilot restart`: restart the production workload.
-- `pilot build`: build assets or download prebuilt assets when available. Compiling
-  runs under a memory limit and one build at a time per host, so a build that outgrows
-  the machine fails instead of freezing it. See [Production](production.md#build-memory).
+- `pilot build`: build assets or download prebuilt assets when available.
 - `pilot frappe -- ...`: pass through to Frappe's bench helper.
 
 Some runtime commands support all benches when invoked with the CLI option for all-bench execution.

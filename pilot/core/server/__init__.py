@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -35,21 +34,6 @@ class Server:
     @property
     def ssh_keys(self) -> AuthorizedKeysStore:
         return AuthorizedKeysStore()
-
-    @contextmanager
-    def build_action_lock(self):
-        """Serialize asset builds host-wide, including across benches. Builds are
-        the largest memory consumer on a host; two at once outgrow any one budget."""
-        from pilot.exceptions import BenchError
-        from pilot.internal.atomic_file import exclusive_file_lock
-
-        benches_dir = self.benches_dir
-        benches_dir.mkdir(parents=True, exist_ok=True)
-        try:
-            with exclusive_file_lock(benches_dir / "build-action", blocking=False):
-                yield
-        except BlockingIOError as exc:
-            raise BenchError("Another build is already running on this server.") from exc
 
 
 __all__ = [
