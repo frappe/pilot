@@ -6,11 +6,14 @@ import FCLogo from '@/components/icons/FC.vue'
 import AppStorageCard from '@/components/storage/AppStorageCard.vue'
 import DBStorageCard from '@/components/storage/DatabaseStorageCard.vue'
 
+import { useSession } from '@/composables/auth/useSession'
+
 import { apiErrorMessage } from '@/api/client'
 import { monitorApi } from '@/api/monitor'
 import type { StorageBreakdown } from '@/types/storage'
 import { formatBytes } from '@/utils/format'
 
+const { session } = useSession()
 const storageData = ref<StorageBreakdown | null>(null)
 const loading = ref(false)
 const error = ref('')
@@ -55,7 +58,9 @@ onMounted(load)
         @click="load"
       />
 
-      <Button :iconLeft="h(FCLogo, { class: 'size-4' })"> Manage Storage </Button>
+      <Button v-if="session.centralEnabled" :iconLeft="h(FCLogo, { class: 'size-4' })">
+        Manage Storage
+      </Button>
     </div>
 
     <div

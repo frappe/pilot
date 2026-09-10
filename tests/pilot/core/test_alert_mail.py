@@ -359,3 +359,32 @@ def test_a_damaged_site_config_reads_as_no_mailbox(tmp_path: Path) -> None:
     (tmp_path / "common_site_config.json").write_text("{ truncated")
 
     assert MailConfig.read(tmp_path).is_configured is False
+
+
+def test_alerts_skip_central_on_a_self_hosted_bench(tmp_path: Path) -> None:
+    """Nothing to report to, and asking would read instance metadata per alert."""
+    from unittest.mock import patch
+
+    from pilot.core import alerts
+
+    bench = _bench(tmp_path, MailConfig())
+    bench.config.central.enabled = False
+
+    with patch.object(alerts, "CentralClient") as client:
+        alerts.notify(bench, {"event": "cpu", "message": "high", "context": {}})
+
+    client.assert_not_called()
+
+
+def test_alerts_reach_central_when_it_is_managed(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    from pilot.core import alerts
+
+    bench = _bench(tmp_path, MailConfig())
+    bench.config.central.enabled = True
+
+    with patch.object(alerts, "CentralClient") as client:
+        assert alerts.notify(bench, {"event": "cpu", "message": "high", "context": {}}) is True
+
+    client.return_value.notify_central.assert_called_once()

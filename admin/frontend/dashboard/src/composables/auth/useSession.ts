@@ -11,6 +11,7 @@ const session = reactive({
   benchName: '',
   allowBenchManagement: false,
   developerMode: false,
+  centralEnabled: false,
 })
 
 const loadSession = async () => {
@@ -23,6 +24,7 @@ const loadSession = async () => {
     session.benchName = bootstrap.name || ''
     session.allowBenchManagement = bootstrap.allow_bench_management === true
     session.developerMode = bootstrap.developer_mode === true
+    session.centralEnabled = bootstrap.central === true
   } catch {
     session.authenticated = false
     session.wizard = false
@@ -31,6 +33,7 @@ const loadSession = async () => {
     session.benchName = ''
     session.allowBenchManagement = false
     session.developerMode = false
+    session.centralEnabled = false
   }
   session.loaded = true
 }

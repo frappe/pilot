@@ -174,6 +174,9 @@ def notify(bench: "Bench", payload: dict[str, typing.Any]) -> bool:
         else:
             delivered = True
 
+    if not bench.config.central.enabled:
+        return delivered
+
     try:
         CentralClient().notify_central(**payload)
     except CentralClientError:

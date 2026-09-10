@@ -1296,3 +1296,24 @@ def test_discarding_an_unknown_jti_does_not_rewrite(tmp_path: Path) -> None:
     ActiveTokens(bench).discard("never-existed")
 
     assert path.stat().st_mtime_ns == before
+
+
+def test_bootstrap_tells_the_ui_central_is_off_by_default(tmp_path: Path) -> None:
+    """The dashboard hides its Central surfaces on a self-hosted bench, so it has
+    to be told which one this is."""
+    client = _signed_in_client(tmp_path)
+
+    assert client.get("/api/v1/bootstrap").get_json()["central"] is False
+
+
+def test_bootstrap_reports_central_when_it_is_managed(tmp_path: Path) -> None:
+    from pilot.config.common import CommonConfig
+
+    client = _signed_in_client(tmp_path)
+    with CommonConfig.open(tmp_path / "benches") as common:
+        # Enabled but not yet bootstrapped is the pending screen, which tells the
+        # caller nothing else - this is a host already configured.
+        common.central.enabled = True
+        common.central.bootstrapped = True
+
+    assert client.get("/api/v1/bootstrap").get_json()["central"] is True

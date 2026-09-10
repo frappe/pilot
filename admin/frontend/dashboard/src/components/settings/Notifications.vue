@@ -5,6 +5,9 @@ import { apiErrorMessage } from '@/api/client'
 import { settingsApi } from '@/api/settings'
 import EmptyState from '@/components/common/EmptyState.vue'
 import SettingsSwitch from '@/components/settings/SettingsSwitch.vue'
+import { useSession } from '@/composables/auth/useSession'
+
+const { session } = useSession()
 
 // Every resource alert starts off; site uptime is the only one on by default.
 const RESOURCE_ALERTS = [
@@ -260,7 +263,8 @@ onMounted(async () => {
         </div>
 
         <p class="text-ink-gray-5 text-p-sm">
-          Alerts go to Central. Endpoints listed here receive them too, as a POST carrying an
+          <template v-if="session.centralEnabled">Alerts go to Central. Endpoints listed here receive them too, as a POST carrying an</template>
+          <template v-else>Endpoints listed here receive alerts as a POST carrying an</template>
           <code>Authorization: Bearer</code>
           header, so the token stays out of the URL.
         </p>
@@ -270,7 +274,11 @@ onMounted(async () => {
           v-if="!webhooks.length"
           icon="lucide-webhook"
           title="No webhook endpoints"
-          description="Alerts are only reported to Central. Add an endpoint to receive them yourself."
+          :description="
+            session.centralEnabled
+              ? 'Alerts are only reported to Central. Add an endpoint to receive them yourself.'
+              : 'Nothing receives alerts yet. Add an endpoint to receive them.'
+          "
         />
 
         <div v-else class="space-y-3">
