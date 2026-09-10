@@ -9,11 +9,17 @@ import {
   useAppRegistry,
 } from '@/composables/apps/useAppRegistry'
 
-const props = defineProps({
-  name: { type: String, required: true },
-  label: { type: String, default: '' },
-  logo: { type: String, default: '' },
-  size: { type: String, default: '2xl' },
+interface Props {
+  name: string
+  label?: string
+  logo?: string
+  size?: string
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  label: '',
+  logo: '',
+  size: '2xl',
 })
 
 const { logoMap } = useAppRegistry()

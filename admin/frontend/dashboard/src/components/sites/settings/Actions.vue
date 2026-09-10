@@ -8,7 +8,11 @@ import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
 import { openTaskDetailPage } from '@/utils/taskRoute'
 
-const props = defineProps({ siteName: { type: String, required: true } })
+interface Props {
+  siteName: string
+}
+
+const props = defineProps<Props>()
 const router = useRouter()
 
 const { site, nginxEnabled } = useSite(props.siteName)
@@ -59,6 +63,22 @@ const clearCache = async () => {
   }
 }
 
+const refreshingStorage = ref(false)
+
+const refreshStorage = async () => {
+  error.value = ''
+  refreshingStorage.value = true
+  try {
+    const data = await sitesApi.refreshStorage(props.siteName)
+    if (data.task_id) openTaskDetailPage(router, data.task_id)
+    else error.value = apiErrorMessage(data, 'Failed to refresh storage usage.')
+  } catch (e) {
+    error.value = e.message || 'Failed to refresh storage usage.'
+  } finally {
+    refreshingStorage.value = false
+  }
+}
+
 // Each action only appears once its `condition` passes.
 const Actions = [
   {
@@ -78,35 +98,40 @@ const Actions = [
     loading: () => clearingCache.value,
     onClick: () => clearCache(),
   },
+  {
+    key: 'refresh_storage',
+    label: 'Refresh usage',
+    buttonLabel: 'Refresh',
+    description: "Measure this bench's sites again. Usage is collected every six hours.",
+    condition: () => true,
+    loading: () => refreshingStorage.value,
+    onClick: () => refreshStorage(),
+  },
 ]
 
 const rows = computed(() => Actions.filter((row) => row.condition()))
 </script>
 
 <template>
-  <div v-if="rows.length">
-    <p class="font-semibold text-ink-gray-8 text-base">Actions</p>
-    <div class="mt-1">
-      <div
-        v-for="row in rows"
-        :key="row.key"
-        class="flex justify-between items-start gap-x-2.5 py-4 border-b last:border-b-0 border-outline-alpha-gray-1"
-      >
-        <div class="flex flex-col gap-1">
-          <p class="font-medium text-ink-gray-8 text-base">{{ row.label }}</p>
-          <p class="text-ink-gray-6 text-p-sm">{{ row.description }}</p>
-        </div>
-
-        <Button
-          size="sm"
-          variant="subtle"
-          class="ml-4 shrink-0"
-          :loading="row.loading()"
-          @click="row.onClick"
-        >
-          {{ row.buttonLabel || row.label }}
-        </Button>
+  <div v-if="rows.length" class="mt-3">
+    <h2 class="mb-3 text-base-semibold text-ink-gray-8">Actions</h2>
+    <div
+      v-for="row in rows"
+      :key="row.key"
+      class="flex justify-between items-start gap-x-2.5 py-4 border-b last:border-b-0 border-outline-alpha-gray-1"
+    >
+      <div class="flex flex-col gap-1">
+        <p class="font-medium text-ink-gray-8">{{ row.label }}</p>
+        <p class="text-ink-gray-6 text-p-sm">{{ row.description }}</p>
       </div>
+
+      <Button
+        class="ml-4 shrink-0"
+        :loading="row.loading()"
+        @click="row.onClick"
+      >
+        {{ row.buttonLabel || row.label }}
+      </Button>
     </div>
 
     <ErrorMessage v-if="error" :message="error" class="mt-2" />
@@ -114,7 +139,7 @@ const rows = computed(() => Actions.filter((row) => row.condition()))
 
   <!-- Let's Encrypt email dialog -->
   <Dialog v-model="showSslEmail" title="Enable SSL" size="md">
-    <p class="text-ink-gray-7 text-sm">
+    <p class="text-ink-gray-7 text-p-sm">
       A Let's Encrypt email is required to issue and renew certificates.
     </p>
 
@@ -131,16 +156,18 @@ const rows = computed(() => Actions.filter((row) => row.condition()))
     </TextInput>
 
     <ErrorMessage v-if="sslEmailError" :message="sslEmailError" class="mt-2" />
-    <div class="flex justify-end gap-2 mt-4">
-      <Button variant="outline" @click="showSslEmail = false">Cancel</Button>
-      <Button
-        variant="solid"
-        :loading="sslLoading"
-        :disabled="!sslEmail"
-        @click="enableSsl(sslEmail)"
-      >
-        Enable SSL
-      </Button>
-    </div>
+    <template #actions>
+      <div class="flex justify-end gap-2">
+        <Button variant="outline" @click="showSslEmail = false">Cancel</Button>
+        <Button
+          variant="solid"
+          :loading="sslLoading"
+          :disabled="!sslEmail"
+          @click="enableSsl(sslEmail)"
+        >
+          Enable SSL
+        </Button>
+      </div>
+    </template>
   </Dialog>
 </template>

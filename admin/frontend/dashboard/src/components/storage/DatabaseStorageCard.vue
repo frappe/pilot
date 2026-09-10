@@ -70,8 +70,8 @@ const isDatabaseListExpandable = computed(
 <template>
   <section class="p-5 min-w-0">
     <div class="flex justify-between items-center gap-3 mb-4">
-      <h3 class="flex items-center gap-2 font-medium text-ink-gray-8 text-base">
-        <lucide-database class="size-4" />
+      <h3 class="flex items-center gap-2 font-medium text-ink-gray-8">
+        <span class="size-4 lucide-database" />
         Database storage
       </h3>
 
@@ -119,8 +119,8 @@ const isDatabaseListExpandable = computed(
                 {{ row.site || row.schema }}
               </span>
 
-              <Badge v-if="row.system" label="system" theme="gray" size="sm" />
-              <lucide-chevron-right v-if="row.site" class="size-3.5 text-ink-gray-5" />
+              <Badge v-if="row.system" label="system" size="sm" />
+              <span v-if="row.site" class="size-3.5 text-ink-gray-5 lucide-chevron-right" />
             </div>
 
             <div class="text-ink-gray-8 text-sm tabular-nums shrink-0">
@@ -136,7 +136,7 @@ const isDatabaseListExpandable = computed(
         @click="showAllDatabases = !showAllDatabases"
         class="flex items-center gap-2 text-sm text-ink-gray-6 hover:text-ink-gray-8 mt-2"
       >
-        <lucide-chevron-up class="size-3.5" :class="{ 'rotate-180': !showAllDatabases }" />
+        <span class="size-3.5 lucide-chevron-up" :class="{ 'rotate-180': !showAllDatabases }" />
 
         <span>
           {{ showAllDatabases ? 'Show less' : `Show ${hiddenCount} more` }}

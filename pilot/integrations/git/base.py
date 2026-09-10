@@ -51,7 +51,7 @@ class GitProvider(abc.ABC):
 
     @abc.abstractmethod
     def list_branches(self, full_name: str) -> list[str]:
-        """Return branch names for *full_name* (``owner/repo``), up to 100."""
+        """Return branch names for *full_name* (``owner/repo``)."""
 
     def has_branch(self, full_name: str, branch: str) -> bool:
         """Whether *branch* exists, asked of the provider rather than of the

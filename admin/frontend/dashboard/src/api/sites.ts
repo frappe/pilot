@@ -5,6 +5,10 @@ const INLINE_TIMEOUT = 120_000
 
 export const sitesApi = {
   list: () => request.get('sites').json(),
+  // The report the site-storage timer refreshes; measuring again is a task.
+  storage: () => request.get('sites/storage').json(),
+  refreshStorage: (name) =>
+    request.post(`sites/${encodeURIComponent(name)}/actions/refresh-storage`).json(),
   detail: (name) => request.get(`sites/${encodeURIComponent(name)}`).json(),
   create: (payload) => request.post('sites', { json: payload }).json(),
   loginLink: (name) => request.post(`sites/${encodeURIComponent(name)}/login`).json(),

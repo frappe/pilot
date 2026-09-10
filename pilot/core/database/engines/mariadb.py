@@ -11,6 +11,7 @@ from pilot.core.database.base import (
     DatabaseSize,
     LockWaitRow,
     LockWaitStatus,
+    PerformanceSection,
     QueryResult,
     StorageComponent,
     TableSize,
@@ -23,6 +24,7 @@ from pilot.core.database.engines.helpers import (
     rows_as_dicts,
     validated_process_id,
 )
+from pilot.core.database.engines.mariadb_performance import MariaDBPerformanceReport
 from pilot.exceptions import DatabaseError
 
 
@@ -296,6 +298,35 @@ class MariaDB(Database):
             for row in rows
         ]
 
+    def get_time_consuming_queries(
+        self, database: str = "", limit: int = 20, offset: int = 0
+    ) -> PerformanceSection:
+        return MariaDBPerformanceReport(self._connect, database).get_time_consuming_queries(limit, offset)
+
+    def get_full_table_scan_queries(
+        self, database: str = "", limit: int = 20, offset: int = 0
+    ) -> PerformanceSection:
+        return MariaDBPerformanceReport(self._connect, database).get_full_table_scan_queries(limit, offset)
+
+    def get_unused_indexes(
+        self, database: str = "", limit: int = 20, offset: int = 0
+    ) -> PerformanceSection:
+        return MariaDBPerformanceReport(self._connect, database).get_unused_indexes(limit, offset)
+
+    def get_redundant_indexes(
+        self, database: str = "", limit: int = 20, offset: int = 0
+    ) -> PerformanceSection:
+        return MariaDBPerformanceReport(self._connect, database).get_redundant_indexes(limit, offset)
+
+    @property
+    def is_performance_schema_enabled(self) -> bool:
+        connection = self._connect()
+        try:
+            with connection.cursor() as cursor:
+                return MariaDBPerformanceReport(self._connect).is_performance_schema_enabled(cursor)
+        finally:
+            connection.close()
+
     def get_binlog_status(self) -> BinlogStatus:
         files = self.get_binlog_files()
         if not files:
@@ -338,6 +369,13 @@ class MariaDB(Database):
         if not is_local_host(self._host, self._socket):
             return None
         return str(self.get_scalar("SELECT @@datadir"))
+
+    def get_schema_sizes(self) -> dict[str, int]:
+        result = self.execute(
+            "SELECT table_schema, COALESCE(SUM(data_length + index_length + data_free), 0) "
+            "FROM information_schema.TABLES GROUP BY table_schema"
+        )
+        return {row[0]: int(row[1]) for row in result.rows if row[0] is not None}
 
     def get_storage_components(self) -> list[StorageComponent]:
         data_dir = Path(self.get_data_directory() or ".")

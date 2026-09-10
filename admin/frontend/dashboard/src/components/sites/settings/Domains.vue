@@ -9,7 +9,11 @@ import { useSite } from '@/composables/sites/useSite'
 import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
 
-const props = defineProps({ siteName: { type: String, required: true } })
+interface Props {
+  siteName: string
+}
+
+const props = defineProps<Props>()
 
 const { site, nginxEnabled } = useSite(props.siteName)
 
@@ -100,59 +104,54 @@ watch(nginxEnabled, (enabled) => {
 
 <template>
   <div v-if="nginxEnabled">
-    <p class="font-semibold text-ink-gray-8 text-base">Domains</p>
-    <div v-if="loading" class="flex justify-center py-8">
-      <LoadingText />
-    </div>
+    <h2 class="mb-3 text-base-semibold text-ink-gray-8">Domains</h2>
+    <LoadingText v-if="loading" class="justify-center py-8" />
 
     <template v-else>
-      <div class="mt-1">
-        <div
-          v-for="row in domainRows"
-          :key="row.domain"
-          class="flex justify-between items-start gap-x-2.5 py-4 border-b border-outline-alpha-gray-1"
-        >
-          <div class="flex items-start gap-2.5 min-w-0">
-            <Tooltip :text="site?.ssl ? 'SSL active' : 'SSL inactive'">
-              <span
-                class="mt-0.5 size-4 text-ink-gray-5 shrink-0"
-                :class="site?.ssl ? 'lucide-lock text-ink-green-5' : 'lucide-lock-open'"
-              />
-            </Tooltip>
+      <div
+        v-for="row in domainRows"
+        :key="row.domain"
+        class="flex justify-between items-start gap-x-2.5 first:mt-1 py-4 border-b border-outline-alpha-gray-1"
+      >
+        <div class="flex items-start gap-2.5 min-w-0">
+          <Tooltip :text="site?.ssl ? 'SSL active' : 'SSL inactive'">
+            <span
+              class="mt-0.5 size-4 text-ink-gray-5 shrink-0"
+              :class="site?.ssl ? 'lucide-lock text-ink-green-5' : 'lucide-lock-open'"
+            />
+          </Tooltip>
 
-            <div class="flex items-center gap-2 min-w-0">
-              <p class="font-medium text-ink-gray-8 text-base truncate">{{ row.domain }}</p>
-              <Badge
-                v-if="row.isPrimary"
-                label="Primary"
-                theme="green"
-                size="sm"
-                class="shrink-0"
-              />
-              <Badge v-else-if="row.isSite" label="Included" size="sm" class="shrink-0" />
-            </div>
+          <div class="flex items-center gap-2 min-w-0">
+            <p class="font-medium text-ink-gray-8 truncate">{{ row.domain }}</p>
+            <Badge
+              v-if="row.isPrimary"
+              label="Primary"
+              theme="green"
+              size="sm"
+              class="shrink-0"
+            />
+            <Badge v-else-if="row.isSite" label="Included" size="sm" class="shrink-0" />
           </div>
-
-          <Dropdown
-            v-if="domainMenuOptions(row).length"
-            :options="domainMenuOptions(row)"
-          >
-            <template #default="{ open }">
-              <Button
-                variant="ghost"
-                size="sm"
-                :active="open"
-                icon="lucide-ellipsis"
-                label="Domain actions"
-                tooltip="Actions"
-              />
-            </template>
-          </Dropdown>
         </div>
+
+        <Dropdown
+          v-if="domainMenuOptions(row).length"
+          :options="domainMenuOptions(row)"
+        >
+          <template #default="{ open }">
+            <Button
+              variant="ghost"
+              :active="open"
+              icon="lucide-ellipsis"
+              label="Domain actions"
+              tooltip="Actions"
+            />
+          </template>
+        </Dropdown>
       </div>
 
       <ErrorMessage v-if="error" :message="error" class="mt-2" />
-      <Button variant="subtle" size="sm" class="mt-4" @click="showAdd = true">
+      <Button class="mt-4" @click="showAdd = true">
         <template #prefix><span class="size-4 lucide-plus" /></template>
         Use your own domain
       </Button>

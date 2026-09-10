@@ -10,6 +10,7 @@ from flows.admin import (
     drop_site,
     installed_apps,
     login,
+    open_root,
     site_exists,
 )
 from flows.wizard import complete_dev_wizard
@@ -25,7 +26,7 @@ BENCH_NAME = f"e2e-{DB_TYPE}"
 SITE = "site1.localhost"
 
 def test_completes_setup_wizard(bench, page):
-    page.goto(bench.admin_url)
+    open_root(page, bench.admin_url)
     try:
         complete_dev_wizard(
             page,

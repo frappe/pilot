@@ -33,9 +33,9 @@ pilot setup letsencrypt
 
 Supported managers are `systemd` and `supervisor`.
 
-The deployed process set is web, socketio, admin, workers, and the two redis
-servers. With `[lite_mode] enabled` it collapses to one bench process plus admin and
-redis - see [Lite Mode](configuration.md#lite-mode).
+A new bench deploys one bench process plus admin and the two redis servers, because
+`[lite_mode] enabled` is the default. Turn lite mode off and the set becomes web,
+socketio, admin, workers, and redis - see [Lite Mode](configuration.md#lite-mode).
 
 Runtime commands:
 
@@ -50,6 +50,18 @@ Runtime commands:
 Nginx config is rendered from bench and site state. Regenerate it with `pilot setup nginx` or `pilot setup config`.
 
 Let's Encrypt setup uses configured domains and should run after nginx is rendered. Site domain changes should reload nginx through site/domain code.
+
+With local TLS enabled, `pilot setup production` enables SSL for each existing site with a public site name or custom domain.
+It then requests a certificate for all public domains on each site. Domains that end in `.localhost` stay excluded.
+
+Public certificate requests need a Let's Encrypt contact email. Pass the email during production setup:
+
+```bash
+pilot setup production --admin-domain admin.example.com --tls --letsencrypt-email ops@example.com
+```
+
+You can also set `letsencrypt.email` in `common_config.toml` before setup.
+When an upstream proxy terminates HTTPS, set `admin.tls = false` so Pilot does not change site SSL settings or request certificates.
 
 ## Admin Domain
 

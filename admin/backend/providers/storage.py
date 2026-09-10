@@ -9,19 +9,11 @@ from pilot.core.bench import Bench
 from pilot.core.database import make_database, site_database_name
 from pilot.core.database.base import StorageComponent
 from pilot.exceptions import CommandError
-from pilot.utils import run_command
+from pilot.utils import directory_bytes
 
 _SYSTEM_SCHEMAS = {"mysql", "performance_schema", "information_schema", "sys"}
 
-_SIZE_QUERY_BY_ENGINE = {
-    "mariadb": (
-        "SELECT table_schema, COALESCE(SUM(data_length + index_length), 0) "
-        "FROM information_schema.TABLES GROUP BY table_schema"
-    ),
-    "postgres": (
-        "SELECT datname, pg_database_size(datname) FROM pg_database WHERE datistemplate = false"
-    ),
-}
+_ENGINES_WITH_SCHEMA_SIZES = {"mariadb", "postgres"}
 
 
 @dataclass
@@ -85,14 +77,9 @@ class StorageBreakdown:
 
 @lru_cache(maxsize=256)
 def directory_size_bytes(path: str) -> int:
-    """`du -sk` reports allocated blocks and is POSIX. GNU-only `-b` fails
-    outright on BSD/macOS, where it used to be swallowed into a silent 0.
-
-    Absent paths are legitimately empty (a site need not have every optional
-    directory). Anything else is a real failure and is left to raise."""
-    if not Path(path).exists():
-        return 0
-    return int(run_command(["du", "-sk", path], timeout=10).stdout.split()[0]) * 1024
+    """Cached for the 10s /metrics poll; see `get_breakdown` for when it is
+    cleared."""
+    return directory_bytes(path)
 
 
 def _data_directory_bytes(path: str | None) -> int | None:
@@ -159,11 +146,11 @@ class StorageProvider:
 
     def _database_breakdown(self) -> DatabaseBreakdown:
         engine = self._config.db_type
-        if engine not in _SIZE_QUERY_BY_ENGINE:
+        if engine not in _ENGINES_WITH_SCHEMA_SIZES:
             return DatabaseBreakdown(engine=engine, supported=False, used_bytes=0, binlog_bytes=0)
 
         database = make_database(self._config)
-        databases = self._schema_sizes(database, _SIZE_QUERY_BY_ENGINE[engine])
+        databases = self._schema_sizes(database)
         components = database.get_storage_components()
         total_bytes = _data_directory_bytes(database.get_data_directory())
         accounted_bytes = sum(row.bytes for row in databases) + sum(
@@ -180,18 +167,16 @@ class StorageProvider:
             databases=databases,
         )
 
-    def _schema_sizes(self, database, query: str) -> list[DatabaseRow]:
+    def _schema_sizes(self, database) -> list[DatabaseRow]:
         site_by_db = self._site_by_database_name()
-        result = database.execute(query)
         return [
             DatabaseRow(
-                schema=row[0],
-                site=site_by_db.get(row[0]),
-                system=row[0] in _SYSTEM_SCHEMAS,
-                bytes=int(row[1]),
+                schema=schema,
+                site=site_by_db.get(schema),
+                system=schema in _SYSTEM_SCHEMAS,
+                bytes=size,
             )
-            for row in result.rows
-            if row[0] is not None
+            for schema, size in database.get_schema_sizes().items()
         ]
 
     def _site_by_database_name(self) -> dict[str, str]:

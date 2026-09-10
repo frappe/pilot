@@ -15,6 +15,7 @@ from pilot.utils import run_command
 
 if typing.TYPE_CHECKING:
     from pilot.core.app import App
+    from pilot.core.bench import Bench
 
 
 class TmpEnv:
@@ -30,16 +31,21 @@ class TmpEnv:
             raise BenchError("Temporary environment not created yet.")
         return Path(self._dir)
 
-    def create(self, frappe_path: Path) -> "TmpEnv":
+    def create(self, bench: "Bench") -> "TmpEnv":
+        """Built on the bench's interpreter, so source the bench can compile does
+        not fail to build here."""
         self._dir = tempfile.mkdtemp(prefix="pilot-app-validate-")
         try:
-            run_command([ensure_uv(), "venv", str(self.path)], stream_output=True)
+            run_command(
+                [ensure_uv(), "venv", "--python", str(bench.python), str(self.path)],
+                stream_output=True,
+            )
         except CommandError as exc:
             raise AppValidationError(
                 f"Failed to create temporary environment for validation:\n{exc.message}"
             ) from exc
         try:
-            self._pip_install([frappe_path])
+            self._pip_install([bench.apps_path / "frappe"])
         except CommandError as exc:
             raise AppValidationError(
                 f"Failed to install frappe into the validation env:\n{exc.message}"

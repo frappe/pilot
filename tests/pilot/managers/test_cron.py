@@ -73,3 +73,39 @@ def test_remove_schedule_deletes_marker_and_entry() -> None:
 
     write_call = mock_run.call_args_list[-1]
     assert write_call.args[0] == ["crontab", "-r"]
+
+
+def test_cron_module_command_pins_pythonpath_to_the_source_root() -> None:
+    """Cron starts in the home directory, where the source tree shadows the `pilot` package."""
+    from pilot.managers.cron import cron_module_command
+    from pilot.utils import cli_root
+
+    command = cron_module_command(
+        "pilot.tasks.backup_site", ["/benches/b1", "site.localhost"], Path("/tmp/b.log")
+    )
+
+    assert command.startswith(f"PYTHONPATH={cli_root()} ")
+    assert " -m pilot.tasks.backup_site /benches/b1 site.localhost " in command
+    assert command.endswith(">> /tmp/b.log 2>&1")
+
+
+def test_cron_module_command_quotes_paths_with_spaces() -> None:
+    from pilot.managers.cron import cron_module_command
+
+    command = cron_module_command(
+        "pilot.core.registry_cache", [Path("/root dir/cli")], Path("/log dir/out.log")
+    )
+
+    assert "'/root dir/cli'" in command
+    assert "'/log dir/out.log'" in command
+
+
+def test_get_schedule_reads_the_expression_ahead_of_the_environment_prefix() -> None:
+    """The five cron fields still lead the line once the command carries a PYTHONPATH prefix."""
+    manager = make_manager()
+    marker = manager._marker("job1")
+    entry = "30 14 * * * PYTHONPATH=/home/frappe/pilot /usr/bin/python -m pilot.tasks.backup_site"
+
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = _crontab_result(f"{marker}\n{entry}\n")
+        assert manager.get_schedule("job1") == "30 14 * * *"

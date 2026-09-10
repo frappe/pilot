@@ -71,6 +71,14 @@ def benches_dir() -> Path:
     return cli_root() / "benches"
 
 
+def directory_bytes(path: Path | str) -> int:
+    """`du -sk` reports allocated blocks and is POSIX; GNU-only `-b` fails on
+    BSD/macOS. A missing path is legitimately empty, not a failure."""
+    if not Path(path).exists():
+        return 0
+    return int(run_command(["du", "-sk", str(path)], timeout=10).stdout.split()[0]) * 1024
+
+
 def pick_free_port(port: int) -> int:
     """First free TCP port at or after `port` (unchanged on macOS)."""
     from pilot.managers.platform import is_macos

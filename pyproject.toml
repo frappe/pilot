@@ -37,17 +37,23 @@ markers = [
   "static/dashboard/**/*",
   "static/editor/**/*",
 ]
+"pilot.core" = [
+  "assets/*",
+  "templates/*.template",
+]
 "pilot.managers.nginx" = [
   "templates/*.template",
 ]
 "pilot.managers.gunicorn" = [
   "templates/*.template",
 ]
+"pilot.managers.fluentbit" = [
+  "templates/*",
+]
 "pilot._vendor.packaging" = [
   "py.typed",
   "LICENSE*",
 ]
-
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true

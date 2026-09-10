@@ -100,18 +100,17 @@ onMounted(async () => {
 
     <div v-for="(group, index) in groups" :key="index" class="flex items-end gap-3">
       <div class="space-y-1.5 w-28">
-        <p v-if="index === 0" class="font-medium text-ink-gray-7 text-base">No of Workers</p>
+        <p v-if="index === 0" class="font-medium text-ink-gray-7">No of Workers</p>
         <TextInput v-model="group.count" type="number" min="1" class="w-full" />
       </div>
 
       <div class="flex-1 space-y-1.5">
-        <p v-if="index === 0" class="font-medium text-ink-gray-7 text-base">Queues</p>
+        <p v-if="index === 0" class="font-medium text-ink-gray-7">Queues</p>
         <TextInput v-model="group.queues" placeholder="default, short, long" class="w-full" />
       </div>
 
       <Button
         v-if="!liteMode"
-        variant="subtle"
         icon="lucide-x"
         label="Remove worker group"
         tooltip="Remove worker group"
@@ -123,9 +122,7 @@ onMounted(async () => {
     <ErrorMessage v-if="error" :message="error" />
 
     <div class="flex justify-end gap-2">
-      <Button v-if="!liteMode" variant="subtle" icon-left="lucide-plus" @click="addGroup">
-        Add
-      </Button>
+      <Button v-if="!liteMode" icon-left="lucide-plus" @click="addGroup">Add</Button>
       <Button variant="solid" :loading="saving" @click="save">Save Changes</Button>
     </div>
   </div>

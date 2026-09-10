@@ -168,7 +168,7 @@ class PythonEnvManager:
         uv = ensure_uv()
         python = str(self.bench.env_path / "bin" / "python")
         run_command(
-            [uv, "pip", "install", "--python", python, "-e", str(app.path)],
+            [uv, "pip", "install", "--python", python, "-e", app.editable_target],
             stream_output=True,
             env=self._build_env(),
         )

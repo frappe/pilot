@@ -134,8 +134,8 @@ class ProcessDefinitionBuilder:
             f"--job-drain-seconds={lite_mode.job_drain_seconds}",
         ]
         if dev:
-            # No nginx in front, so the process serves /assets and /files itself.
-            argv.append("--serve-assets")
+            argv.append("--dev")
+            argv.append("--verbose")
         return ProcessDefinition(
             name="web",
             argv=argv,

@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Button, Dialog, FormControl } from 'frappe-ui'
+import { Button, Dialog, TextInput } from 'frappe-ui'
 
 import Table from '@/components/common/Table.vue'
 
-const props = defineProps({
-  schema: { type: Array, default: () => [] },
+interface Props {
+  schema?: any[]
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  schema: () => [],
 })
 const emit = defineEmits(['preview'])
 
@@ -39,15 +43,15 @@ const preview = (table) => {
 
 <template>
   <Dialog v-model="show" title="Tables" size="3xl">
-    <FormControl v-model="search" type="text" placeholder="Search tables" autocomplete="off">
+    <TextInput v-model="search" placeholder="Search tables" autocomplete="off">
       <template #prefix>
         <span class="size-4 text-ink-gray-5 lucide-search" />
       </template>
-    </FormControl>
+    </TextInput>
 
     <div class="flex flex-col sm:flex-row gap-4 mt-3 sm:h-[380px]">
       <!-- Table list -->
-      <div
+      <aside
         class="border-b sm:border-b-0 sm:border-r border-outline-gray-2 sm:w-52 shrink-0 pb-2 sm:pb-0 max-h-40 sm:max-h-none overflow-y-auto"
       >
         <button
@@ -65,7 +69,7 @@ const preview = (table) => {
         <p v-if="!filteredTables.length" class="px-2 py-1.5 text-ink-gray-4 text-sm">
           No tables found.
         </p>
-      </div>
+      </aside>
 
       <!-- Column details -->
       <div class="flex-1 min-w-0 overflow-y-auto">
@@ -79,7 +83,7 @@ const preview = (table) => {
               >
             </h3>
 
-            <Button variant="outline" size="sm" @click="preview(selected)">
+            <Button variant="outline" @click="preview(selected)">
               <template #prefix>
                 <span class="size-3.5 lucide-eye" />
               </template>

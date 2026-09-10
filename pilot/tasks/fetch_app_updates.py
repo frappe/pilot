@@ -12,6 +12,7 @@ class FetchAppUpdatesTask(Task):
     command: ClassVar[str] = "fetch-all-app-updates"
     # Polled frequently by the UI and read-only; keep it out of the audit log.
     audit_on_queue: ClassVar[bool] = False
+    is_listed: ClassVar[bool] = False
     # Sites.vue reads output[-1] as the JSON result, so the dumped JSON must
     # stay the last line - no trailing "done" step.
     has_done_step: ClassVar[bool] = False

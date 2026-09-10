@@ -52,7 +52,7 @@ const routes = [
   {
     path: '/insights/analytics',
     name: 'Analytics',
-    component: () => import('@/pages/dashboard/Analytics.vue'),
+    component: () => import('@/pages/Analytics.vue'),
     meta: { title: 'Analytics', group: 'Insights' },
   },
   {

@@ -7,11 +7,18 @@ import TaskStep from '@/components/tasks/TaskStep.vue'
 import { STEP_MARKER_RE, useTaskSteps } from '@/composables/tasks/useTaskSteps'
 import { processLine } from '@/utils/ansi'
 
-const props = defineProps({
-  rawLines: { type: Array, default: () => [] },
-  streaming: { type: Boolean, default: false },
-  taskStatus: { type: String, default: '' },
-  emptyText: { type: String, default: 'No output.' },
+interface Props {
+  rawLines?: any[]
+  streaming?: boolean
+  taskStatus?: string
+  emptyText?: string
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  rawLines: () => [],
+  streaming: false,
+  taskStatus: '',
+  emptyText: 'No output.',
 })
 
 const rawLinesRef = toRef(props, 'rawLines')

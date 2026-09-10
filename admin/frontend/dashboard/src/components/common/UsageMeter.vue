@@ -86,7 +86,7 @@ const barParts = computed(() => {
     @click="showAll = !showAll"
     class="flex items-center gap-2 text-sm text-ink-gray-6 hover:text-ink-gray-8 mt-2"
   >
-    <lucide-chevron-up class="size-3.5" :class="{ 'rotate-180': !showAll }" />
+    <span class="size-3.5 lucide-chevron-up" :class="{ 'rotate-180': !showAll }" />
     <span>{{ showAll ? 'Show less' : `Show ${hiddenCount} more` }}</span>
   </button>
 </template>

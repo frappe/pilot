@@ -82,7 +82,7 @@ admin/frontend/dashboard/src/types/
 .ruff_cache
 .claude
 .opencode
-logs/
+/logs/
 
 registry-cache*
 

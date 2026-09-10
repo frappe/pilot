@@ -32,6 +32,51 @@ def test_create_login_link_returns_url_with_sid(tmp_path: Path) -> None:
     create_session.assert_called_once_with()
 
 
+def test_create_login_link_hints_when_the_host_does_not_resolve(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    _write_site(bench_root, "erp.example.test")
+
+    with (
+        patch(
+            "pilot.core.site.login.SiteLogin.create_session",
+            return_value="frappe-session-id",
+        ),
+        patch("pilot.core.site.login.socket.getaddrinfo", side_effect=OSError),
+    ):
+        response = client.post("/api/v1/sites/erp.example.test/login")
+
+    assert response.status_code == 201
+    hint = response.get_json()["hint"]
+    assert "erp.example.test" in hint
+    assert "/etc/hosts" in hint
+
+
+def test_create_login_link_omits_the_hint_for_localhost_names(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    _write_site(bench_root)
+
+    with patch(
+        "pilot.core.site.login.SiteLogin.create_session",
+        return_value="frappe-session-id",
+    ):
+        response = client.post("/api/v1/sites/s.localhost/login")
+
+    assert response.status_code == 201
+    assert "hint" not in response.get_json()
+
+
+def test_site_detail_exposes_the_served_url(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    _write_site(bench_root)
+
+    detail = client.get("/api/v1/sites/s.localhost").get_json()
+
+    assert detail["url"] == "http://s.localhost:8000"
+
+
 def test_create_login_link_fails_when_session_creation_fails(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
     client = _client(bench_root)

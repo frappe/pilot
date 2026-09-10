@@ -150,6 +150,27 @@ def test_forward_unwraps_message_and_targets_method_path(tmp_path: Path) -> None
     assert "tok-7" in captured["headers"].values()
 
 
+def test_log_token_unwraps_message_and_targets_method_path(tmp_path: Path) -> None:
+    bench = _bench(tmp_path)
+    _write_central(bench, "https://central.test", "tok-8")
+    captured: dict = {}
+
+    def fake_urlopen(request, timeout=None):
+        captured["url"] = request.full_url
+        captured["method"] = request.method
+        return _FakeResponse(
+            {"message": {"token": "jwt-123", "expires_in": 604800, "resource_id": "vm-1"}}
+        )
+
+    with patch("pilot.integrations.central.client.urllib.request.urlopen", side_effect=fake_urlopen):
+        result = CentralClient(bench).log_token()
+
+    assert result["token"] == "jwt-123"
+    assert result["resource_id"] == "vm-1"
+    assert captured["url"] == "https://central.test/api/method/central.api.pilot.log_token"
+    assert captured["method"] == "GET"
+
+
 def test_heartbeat_wraps_non_json_response(tmp_path: Path) -> None:
     bench = _bench(tmp_path)
     _write_central(bench, "https://central.test", "tok")

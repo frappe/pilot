@@ -53,6 +53,10 @@ The update-status button is opt-in per route through `meta.showUpdateStatus`.
 
 The UI should treat task ids as the handle for long work.
 
+## Setup
+
+The Frappe branch picker lists the branches reported by the repository. Type a different full branch name and select `Use branch` to choose it. `Set up bench` saves the selection before setup starts. The wizard restores a saved custom branch even when the repository list does not contain it.
+
 ## Settings
 
 Settings screens edit `bench.toml` through the backend. The frontend should not know how to rewrite TOML or infer production side effects.

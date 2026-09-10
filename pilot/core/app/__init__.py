@@ -217,19 +217,35 @@ class App:
         """Check out a specific commit SHA, refetching it from origin if needed."""
         self._repository.checkout_pinned_commit(sha)
 
+    def _pyproject(self) -> dict:
+        """Parsed pyproject.toml, or an empty dict when it is missing or malformed."""
+        import tomllib
+
+        try:
+            return tomllib.loads((self.path / "pyproject.toml").read_text())
+        except (tomllib.TOMLDecodeError, OSError):
+            return {}
+
+    @property
+    def has_dev_extra(self) -> bool:
+        """Whether pyproject declares a `dev` extra, such as frappe's watchdog group."""
+        return "dev" in self._pyproject().get("project", {}).get("optional-dependencies", {})
+
+    @property
+    def editable_target(self) -> str:
+        """Target for `uv pip install -e`. A dev bench also pulls the app's dev extra,
+        which is where frappe keeps watchdog, the reloader `--dev` refuses to start
+        without."""
+        if self.bench.config.production.enabled or not self.has_dev_extra:
+            return str(self.path)
+        return f"{self.path}[dev]"
+
     @property
     def module_name(self) -> str:
         """Return the importable package name, preferring pyproject.toml."""
-        pyproject = self.path / "pyproject.toml"
-        if pyproject.exists():
-            import tomllib
-
-            try:
-                name = tomllib.loads(pyproject.read_text()).get("project", {}).get("name")
-            except (tomllib.TOMLDecodeError, OSError):
-                name = None
-            if name:
-                return name.replace("-", "_")
+        name = self._pyproject().get("project", {}).get("name")
+        if name:
+            return name.replace("-", "_")
 
         conventional = self.config.name.replace("-", "_")
         if (self.path / conventional / "hooks.py").exists():

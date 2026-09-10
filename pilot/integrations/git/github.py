@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -12,6 +13,7 @@ from pilot.integrations.git.base import (
     basic_auth_config,
     normalize_to_https,
 )
+from pilot.internal.git import git_env
 
 GITHUB_HOST = "github.com"
 _OWNER_REPO_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -81,9 +83,28 @@ class GitHubProvider(GitProvider):
         return basic_auth_config(repo_url, "x-access-token", self.token)
 
     def list_branches(self, full_name: str) -> list[str]:
-        url = f"{self.api_base}/repos/{full_name}/branches?per_page=100"
-        data, _ = self._get_json(url, self._headers())
-        return [b["name"] for b in data]
+        repo_url = f"https://{self.host}/{full_name}"
+        try:
+            result = subprocess.run(
+                ["git", "ls-remote", "--heads", repo_url],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                env=git_env(self.auth_config(repo_url)),
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise GitProviderError(f"Timed out listing branches for {full_name}.") from exc
+        except OSError as exc:
+            raise GitProviderError("Git is required to list repository branches.") from exc
+        if result.returncode != 0:
+            if "authentication failed" in result.stderr.lower():
+                raise GitAuthError(f"GitHub rejected the stored token for {full_name}.")
+            raise GitProviderError(f"Could not list branches for {full_name}.")
+        return [
+            line.split("refs/heads/", 1)[1]
+            for line in result.stdout.splitlines()
+            if "refs/heads/" in line
+        ]
 
     def has_branch(self, full_name: str, branch: str) -> bool:
         url = f"{self.api_base}/repos/{full_name}/branches/{urllib.parse.quote(branch, safe='')}"

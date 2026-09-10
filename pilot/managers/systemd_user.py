@@ -71,3 +71,34 @@ def user_timer_installed(timer_unit_name: str) -> bool:
     """True if the timer's already symlinked into ~/.config/systemd/user -
     mirrors UserOwnedDBManager.is_provisioned()'s existence check."""
     return (user_unit_dir() / timer_unit_name).exists()
+
+
+def install_user_service(
+    *,
+    unit_dir: Path,
+    unit_name: str,
+    unit_text: str,
+) -> None:
+    """Write a long-running service unit into unit_dir, symlink it into
+    ~/.config/systemd/user, then reload and enable --now. Sibling of
+    `install_user_timer` for services that run continuously (Fluent Bit),
+    not on a timer."""
+    unit_dir.mkdir(parents=True, exist_ok=True)
+    service_path = unit_dir / unit_name
+    service_path.write_text(unit_text)
+
+    dest_dir = user_unit_dir()
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    link = dest_dir / unit_name
+    if link.is_symlink() or link.exists():
+        link.unlink()
+    link.symlink_to(service_path.resolve())
+
+    env = systemctl_env()
+    run_command(systemctl("daemon-reload"), env=env)
+    run_command(systemctl("enable", "--now", unit_name), env=env)
+
+
+def user_service_installed(unit_name: str) -> bool:
+    """True if the service is already symlinked into ~/.config/systemd/user."""
+    return (user_unit_dir() / unit_name).exists()

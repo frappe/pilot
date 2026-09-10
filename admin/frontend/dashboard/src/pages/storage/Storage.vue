@@ -32,9 +32,9 @@ onMounted(load)
 </script>
 
 <template>
-  <section class="mx-auto max-w-5xl">
+  <section class="p-3 md:p-4 mx-auto max-w-5xl">
     <div class="flex flex-wrap justify-between items-center gap-2 mb-4">
-      <h2 class="flex items-center gap-2 font-medium text-ink-gray-8 text-lg">
+      <h2 class="flex items-center gap-2 text-lg-medium text-ink-gray-8">
         <span class="size-4 lucide-hard-drive" />
         Disk usage
       </h2>
@@ -48,7 +48,6 @@ onMounted(load)
       <Button
         class="ml-auto"
         variant="ghost"
-        size="sm"
         icon="lucide-refresh-cw"
         label="Refresh"
         tooltip="Refresh"
@@ -61,20 +60,16 @@ onMounted(load)
 
     <div
       v-if="loading && !storageData"
-      class="bg-surface-base border border-outline-gray-2 rounded-7 overflow-hidden"
+      class="bg-surface-base divide-y lg:divide-x lg:divide-y-0 grid divide-outline-gray-2 lg:grid-cols-2 border border-outline-gray-2 rounded-7 overflow-hidden"
     >
-      <div
-        class="divide-y lg:divide-x lg:divide-y-0 grid grid-cols-1 divide-outline-gray-2 lg:grid-cols-2"
-      >
-        <div v-for="col in 2" :key="col" class="flex flex-col gap-3 p-5">
-          <Skeleton class="rounded-full w-full h-5" />
-          <Skeleton
-            v-for="row in 4"
-            :key="row"
-            class="h-3.5 rounded-4"
-            :class="row % 2 ? 'w-full' : 'w-2/3'"
-          />
-        </div>
+      <div v-for="col in 2" :key="col" class="flex flex-col gap-3 p-5">
+        <Skeleton class="rounded-full w-full h-5" />
+        <Skeleton
+          v-for="row in 4"
+          :key="row"
+          class="h-3.5 rounded-4"
+          :class="row % 2 ? 'w-full' : 'w-2/3'"
+        />
       </div>
     </div>
 
@@ -82,18 +77,14 @@ onMounted(load)
 
     <div
       v-else-if="storageData"
-      class="bg-surface-base border border-outline-gray-2 rounded-7 fade-in overflow-hidden"
+      class="bg-surface-base divide-y lg:divide-x lg:divide-y-0 grid divide-outline-gray-2 lg:grid-cols-2 border border-outline-gray-2 rounded-7 fade-in overflow-hidden"
     >
-      <div
-        class="divide-y lg:divide-x lg:divide-y-0 grid grid-cols-1 divide-outline-gray-2 lg:grid-cols-2"
-      >
-        <DBStorageCard
-          :data="storageData.database"
-          :disk-total="storageData.disk_total"
-          @purged="load"
-        />
-        <AppStorageCard :data="storageData.bench" :disk-total="storageData.disk_total" />
-      </div>
+      <DBStorageCard
+        :data="storageData.database"
+        :disk-total="storageData.disk_total"
+        @purged="load"
+      />
+      <AppStorageCard :data="storageData.bench" :disk-total="storageData.disk_total" />
     </div>
   </section>
 </template>

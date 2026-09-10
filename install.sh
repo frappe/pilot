@@ -199,7 +199,8 @@ add_distro_repos() {
     case "$DISTRO" in
         debian|ubuntu)
             fetch_and_run_as_root "$MARIADB_REPO_SETUP_URL" \
-                --mariadb-server-version="mariadb-$MARIADB_VERSION" ;;
+                --mariadb-server-version="mariadb-$MARIADB_VERSION" \
+                --skip-maxscale;;
     esac
 }
 
@@ -234,7 +235,16 @@ install_production_packages() {
 
 # NodeSource pins Node 24 on deb/rpm distros; Arch ships a current Node itself.
 install_node() {
-    command -v node >/dev/null 2>&1 && return 0
+    if command -v node >/dev/null 2>&1; then
+        NODE_VERSION=$(node -v | tr -d 'v' | cut -d'.' -f1)
+        if [ "$NODE_VERSION" = "24" ]; then
+            return 0
+        else
+            echo "❌ Error: Found Node.js version $NODE_VERSION, but Pilot strictly requires Node.js 24."
+            echo "Please manually install Node.js 24 and retry."
+            exit 1
+        fi
+    fi
     # An unknown distro only gets Node when apt is there to install it.
     if [ "$DISTRO" = "unknown" ] && ! command -v apt-get >/dev/null 2>&1; then
         return 0
@@ -267,9 +277,10 @@ disable_system_services() {
 install_system_packages() {
     [ "$DISTRO" = "unknown" ] && return 0
     # Root always runs this (idempotent, and bare containers need it before
-    # useradd); the bench user only when a base tool is genuinely missing.
+    # useradd). A non-root install may skip it only when the complete host stack
+    # is already present, such as the second pass after root provisioning.
     if ! is_root; then
-        base_tools_present && return 0
+        system_packages_present && return 0
         if ! command -v sudo >/dev/null 2>&1; then
             echo "sudo is not installed and you are not root, so base packages cannot"
             echo "be installed. Re-run this installer as root first, then as the bench user:"
@@ -298,6 +309,29 @@ base_tools_present() {
     for tool in $tools; do
         command -v "$tool" >/dev/null 2>&1 || return 1
     done
+    return 0
+}
+
+system_packages_present() {
+    base_tools_present || return 1
+
+    case "$DISTRO" in
+        macos)
+            packages="mariadb@$MARIADB_VERSION postgresql@$POSTGRES_VERSION redis nginx certbot" ;;
+        debian|ubuntu)
+            packages="mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config redis-server nginx certbot supervisor libnginx-mod-http-modsecurity" ;;
+        fedora)
+            packages="mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config valkey nginx certbot supervisor" ;;
+        arch)
+            packages="mariadb mariadb-clients mariadb-libs postgresql postgresql-libs pkgconf redis nginx certbot supervisor" ;;
+        *)
+            return 1 ;;
+    esac
+
+    for package in $packages; do
+        pkg_installed "$package" || return 1
+    done
+    command -v node >/dev/null 2>&1 || return 1
     return 0
 }
 

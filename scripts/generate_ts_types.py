@@ -13,9 +13,11 @@ from typing import Union, get_args, get_origin, get_type_hints
 from admin.backend.providers.storage import StorageBreakdown
 from pilot.core.bench.audit_log import AuditEntry
 from pilot.core.notification import Notification
+from pilot.core.site.storage import SiteStorageReport
 
 _TARGETS = (
     ((StorageBreakdown,), "admin/frontend/dashboard/src/types/storage.ts"),
+    ((SiteStorageReport,), "admin/frontend/dashboard/src/types/siteStorage.ts"),
     ((AuditEntry,), "admin/frontend/dashboard/src/types/audit.ts"),
     ((Notification,), "admin/frontend/dashboard/src/types/notification.ts"),
 )

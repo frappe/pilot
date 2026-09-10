@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Dialog, ErrorMessage, FormControl, Spinner, Switch, Tooltip } from 'frappe-ui'
+import { Button, Dialog, ErrorMessage, Spinner, Switch, TextInput, Tooltip } from 'frappe-ui'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -163,85 +163,81 @@ onMounted(load)
     <Spinner size="lg" class="text-ink-gray-4" />
   </div>
 
-  <div v-else>
-    <ErrorMessage v-if="error" :message="error" class="mb-4" />
+  <template v-else>
+  <ErrorMessage v-if="error" :message="error" class="mb-4" />
 
+  <div
+    v-if="snapshot && !snapshot.readable"
+    class="border border-outline-gray-2 bg-surface-gray-1 px-3 py-2 text-ink-gray-7 text-sm"
+  >
+    {{ snapshot.reason }}
+  </div>
+
+  <template v-else-if="snapshot">
     <div
-      v-if="snapshot && !snapshot.readable"
-      class="border border-outline-gray-2 bg-surface-gray-1 px-3 py-2 text-ink-gray-7 text-sm"
+      v-if="snapshot.edit_reason"
+      class="mb-4 border border-outline-gray-2 bg-surface-gray-1 px-3 py-2 text-ink-gray-7 text-sm"
     >
-      {{ snapshot.reason }}
+      {{ snapshot.edit_reason }}
     </div>
 
-    <template v-else-if="snapshot">
-      <div
-        v-if="snapshot.edit_reason"
-        class="mb-4 border border-outline-gray-2 bg-surface-gray-1 px-3 py-2 text-ink-gray-7 text-sm"
-      >
-        {{ snapshot.edit_reason }}
-      </div>
+    <TextInput
+      v-model="search"
+      placeholder="Search variables"
+      autocomplete="off"
+      class="mb-5"
+    />
 
-      <FormControl
-        v-model="search"
-        type="text"
-        placeholder="Search variables"
-        autocomplete="off"
-        class="mb-5"
-      />
+    <div v-if="groups.length" class="space-y-7">
+      <section v-for="group in groups" :key="group.name">
+        <h4 class="mb-1 font-medium text-ink-gray-6 text-sm">
+          {{ group.name }}
+        </h4>
 
-      <div v-if="groups.length" class="space-y-7">
-        <section v-for="group in groups" :key="group.name">
-          <h4 class="mb-1 font-medium text-ink-gray-6 text-sm">
-            {{ group.name }}
-          </h4>
+        <div class="divide-y divide-outline-alpha-gray-1">
+          <div
+            v-for="variable in group.variables"
+            :key="variable.name"
+            class="flex sm:flex-row sm:items-center sm:justify-between flex-col gap-3 py-3"
+          >
+            <code class="min-w-0 font-medium text-ink-gray-8 break-all">
+              {{ variable.name }}
+            </code>
 
-          <div class="divide-y divide-outline-alpha-gray-1">
-            <div
-              v-for="variable in group.variables"
-              :key="variable.name"
-              class="flex sm:flex-row sm:items-center sm:justify-between flex-col gap-3 py-3"
-            >
-              <div class="min-w-0">
-                <code class="font-medium text-ink-gray-8 text-base break-all">
-                  {{ variable.name }}
-                </code>
-              </div>
+            <div class="flex items-center justify-between sm:justify-end gap-3 sm:ml-6 shrink-0">
+              <span
+                class="max-w-48 text-right text-ink-gray-8 text-sm font-mono break-all"
+                :class="{ 'text-ink-gray-5': !variable.supported }"
+              >
+                {{ formatValue(variable) }}
+              </span>
 
-              <div class="flex items-center justify-between sm:justify-end gap-3 sm:ml-6 shrink-0">
+              <Button
+                v-if="variable.editable"
+                variant="ghost"
+                icon="lucide-pencil"
+                :disabled="saving"
+                aria-label="Edit"
+                @click="openEditor(variable)"
+              />
+              <Tooltip v-else :text="variable.reason || 'Read-only in Pilot'">
                 <span
-                  class="max-w-48 text-right text-ink-gray-8 text-sm font-mono break-all"
-                  :class="{ 'text-ink-gray-5': !variable.supported }"
-                >
-                  {{ formatValue(variable) }}
-                </span>
-
-                <Button
-                  v-if="variable.editable"
-                  size="sm"
-                  variant="ghost"
-                  icon="lucide-pencil"
-                  :disabled="saving"
-                  aria-label="Edit"
-                  @click="openEditor(variable)"
+                  class="block size-4 text-ink-gray-4 lucide-lock"
+                  role="img"
+                  :aria-label="variable.reason || 'Read-only in Pilot'"
                 />
-                <Tooltip v-else :text="variable.reason || 'Read-only in Pilot'">
-                  <span
-                    class="block size-4 text-ink-gray-4 lucide-lock"
-                    role="img"
-                    :aria-label="variable.reason || 'Read-only in Pilot'"
-                  />
-                </Tooltip>
-              </div>
+              </Tooltip>
             </div>
           </div>
-        </section>
-      </div>
+        </div>
+      </section>
+    </div>
 
-      <p v-else class="py-10 text-center text-ink-gray-5 text-sm">
-        No database variables match this search.
-      </p>
-    </template>
-  </div>
+    <p v-else class="py-10 text-center text-ink-gray-5 text-sm">
+      No database variables match this search.
+    </p>
+  </template>
+  </template>
 
   <Dialog
     v-model="editorOpen"
@@ -250,7 +246,7 @@ onMounted(load)
   >
     <div v-if="editing && editor" class="space-y-4">
       <div v-if="editor.value_type === 'boolean'" class="flex items-center justify-between gap-4">
-        <p class="font-medium text-ink-gray-8 text-base">Enabled</p>
+        <p class="font-medium text-ink-gray-8">Enabled</p>
         <Switch
           class="[&_[data-slot='label']]:sr-only [&>div]:!gap-x-0 [&>div]:!py-0"
           :label="editing.name"
@@ -259,7 +255,7 @@ onMounted(load)
         />
       </div>
 
-      <FormControl
+      <TextInput
         v-else
         v-model.number="draftValue"
         type="number"

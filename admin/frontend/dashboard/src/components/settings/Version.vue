@@ -2,11 +2,14 @@
 import { ref, computed, onMounted } from 'vue'
 import { Button, Dialog, ErrorMessage, Spinner, toast } from 'frappe-ui'
 
+import CopyBtn from '@/components/common/CopyBtn.vue'
 import SettingsRow from '@/components/settings/SettingsRow.vue'
 
 import { cliUpdatesApi } from '@/api/settings'
 import { tasksApi } from '@/api/tasks'
 import { isTaskActive } from '@/utils/taskFormat'
+
+const DEV_COMMANDS = 'git pull\npilot admin build\npilot admin upgrade'
 
 const POLL_INTERVAL_MS = 1500
 
@@ -118,7 +121,7 @@ const pollTask = async (taskId) => {
 
 <template>
   <SettingsRow label="Pilot Version" :description="loading ? '' : versionLabel">
-    <Button size="sm" variant="subtle" :loading="checking" @click="check">Update</Button>
+    <Button :loading="checking" @click="check">Update</Button>
   </SettingsRow>
 
   <ErrorMessage v-if="versionError" :message="versionError" />
@@ -129,14 +132,21 @@ const pollTask = async (taskId) => {
         This is a development install. Update it from a terminal:
       </p>
 
-      <pre class="p-3 bg-surface-gray-2 rounded-4 overflow-x-auto text-ink-gray-8 text-sm">git pull
-pilot admin build
-pilot admin upgrade</pre>
+      <div class="relative">
+        <pre
+          class="bg-surface-gray-2 p-3 pr-10 rounded-4 overflow-x-auto font-mono text-ink-gray-8 text-sm leading-relaxed"
+        >{{ DEV_COMMANDS }}</pre>
+
+        <CopyBtn
+          :text="DEV_COMMANDS"
+          class="top-2 right-2 absolute text-ink-gray-5 hover:text-ink-gray-8 transition-colors"
+        />
+      </div>
       <p class="text-ink-gray-5 text-p-sm">The last step restarts the admin service.</p>
     </div>
 
     <div v-else-if="updating" class="flex flex-col gap-3">
-      <p class="text-ink-gray-7 text-base">Updating to {{ latestVersion }}…</p>
+      <p class="text-ink-gray-7">Updating to {{ latestVersion }}…</p>
       <div v-if="!log" class="flex justify-center items-center py-8">
         <Spinner size="lg" class="text-ink-gray-4" />
       </div>

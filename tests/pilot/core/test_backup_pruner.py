@@ -114,6 +114,24 @@ def test_prunes_local_and_offsite_when_healthy(tmp_path) -> None:
     assert (backups / "20260103_020000-site1-database.sql.gz").exists()
 
 
+def test_cron_command_quotes_paths_with_spaces(tmp_path) -> None:
+    """Scheduled backup command must quote paths so the shell does not split them."""
+    import shlex
+
+    spaced = tmp_path / "bench with spaces"
+    bench = SimpleNamespace(
+        path=spaced,
+        sites_path=spaced / "sites",
+        logs_path=spaced / "logs",
+    )
+    site = Site(SiteConfig(name="site.localhost", apps=[]), bench)
+    command = site.backups._cron_command()
+    argv = shlex.split(command.split(">>")[0])
+    assert argv[-3] == str(spaced)  # bench_root
+    assert argv[-2] == "site.localhost"  # site name
+    assert argv[-1] == "--with-files"
+
+
 def test_backup_file_names_from_a_request_stay_inside_the_site(tmp_path) -> None:
     """A delete or download names the file, so nothing may point outside the directory."""
     import pytest

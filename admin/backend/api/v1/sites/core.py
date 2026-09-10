@@ -13,6 +13,7 @@ from admin.backend.api.responses import (
 )
 from admin.backend.api.v1.sites import sites_bp
 from admin.backend.api.v1.sites.login import no_store as _no_store
+from admin.backend.api.v1.sites.login import unreachable_host_hint
 from admin.backend.api.v1.sites.shared import (
     internal_error,
     invalid_fields,
@@ -28,6 +29,7 @@ from admin.backend.middleware import rate_limit, require_scope
 from admin.backend.providers.apps import AppProvider
 from admin.backend.providers.sites import SiteInfo, SiteProvider
 from pilot.core.bench import Bench
+from pilot.core.site.login import site_url
 from pilot.internal.site_paths import site_config_path, site_exists
 from pilot.internal.validators import validate_site_name
 from pilot.tasks.clear_cache import ClearCacheTask
@@ -73,10 +75,12 @@ def detail(name: str):
         http_port = bench_config.http_port
         nginx_enabled = bench_config.production.enabled
         admin_tls = bench_config.admin.tls
+        url = site_url(name, site.site_config, bench_config)
     except Exception:
         http_port = 8000
         nginx_enabled = False
         admin_tls = False
+        url = f"http://{name}:8000"
 
     return jsonify(
         {
@@ -86,6 +90,7 @@ def detail(name: str):
             "http_port": http_port,
             "nginx_enabled": nginx_enabled,
             "admin_tls": admin_tls,
+            "url": url,
         }
     )
 
@@ -247,7 +252,10 @@ def create_login_link(name: str):
             503,
         )
 
-    return _no_store(created_response({"url": url}, url))
+    payload = {"url": url}
+    if hint := unreachable_host_hint(url):
+        payload["hint"] = hint
+    return _no_store(created_response(payload, url))
 
 
 def _site_resource(site: SiteInfo) -> dict:

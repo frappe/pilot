@@ -64,6 +64,8 @@ class Task:
     # Turn off for tasks that leave partial state behind when killed mid-run.
     # Queued tasks can always be cancelled - nothing has run yet.
     is_cancellable_while_running: ClassVar[bool] = True
+    # Turn off to keep a task out of listings; it stays readable by task id.
+    is_listed: ClassVar[bool] = True
     # Non-sensitive queue args safe to record in the audit entry.
     _AUDIT_ARG_KEYS: ClassVar[tuple[str, ...]] = ("site", "app", "name", "repo", "branch", "marketplace_app")
 

@@ -1,16 +1,24 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import { Spinner } from 'frappe-ui'
 
 import LogView from '@/components/logs/LogView.vue'
 
-const props = defineProps({
-  label: { type: String, required: true },
-  status: { type: String, default: 'pending' },
-  duration: { type: String, default: null },
-  lines: { type: Array, default: () => [] },
-  hasOutput: { type: Boolean, default: false },
-  streaming: { type: Boolean, default: false },
+interface Props {
+  label: string
+  status?: string
+  duration?: string | null
+  lines?: any[]
+  hasOutput?: boolean
+  streaming?: boolean
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  status: 'pending',
+  duration: null,
+  lines: () => [],
+  hasOutput: false,
+  streaming: false,
 })
 
 // Open while running or failed; anything else settles closed unless toggled.
@@ -33,15 +41,6 @@ const toggle = () => {
   userOverridden = true
   expanded.value = !expanded.value
 }
-
-const STATUS_ICON_BG = {
-  done: 'bg-surface-gray-2 text-ink-gray-6',
-  running: 'bg-surface-amber-2 text-ink-amber-7',
-  failed: 'bg-surface-red-2 text-ink-red-7',
-  pending: 'bg-surface-gray-2',
-}
-
-const iconBg = computed(() => STATUS_ICON_BG[props.status] || STATUS_ICON_BG.pending)
 </script>
 
 <template>
@@ -51,15 +50,13 @@ const iconBg = computed(() => STATUS_ICON_BG[props.status] || STATUS_ICON_BG.pen
       :class="hasOutput ? 'cursor-pointer hover:bg-surface-gray-1' : ''"
       @click="toggle"
     >
-      <span class="place-items-center grid rounded-full size-6 shrink-0" :class="iconBg">
-        <span v-if="status === 'done'" class="size-3.5 lucide-check" />
-        <Spinner v-else-if="status === 'running'" size="sm" />
-        <span v-else-if="status === 'failed'" class="size-3.5 lucide-x" />
-        <span v-else class="bg-ink-gray-3 rounded-full size-1.5" />
-      </span>
+      <span v-if="status === 'done'" class="size-5 text-ink-gray-5 shrink-0 lucide-circle-check" />
+      <Spinner v-else-if="status === 'running'" size="md" class="text-ink-amber-6 shrink-0" />
+      <span v-else-if="status === 'failed'" class="size-5 text-ink-red-6 shrink-0 lucide-circle-x" />
+      <span v-else class="size-5 text-ink-gray-3 shrink-0 lucide-circle-dashed" />
 
       <span
-        class="flex-1 min-w-0 text-base truncate"
+        class="flex-1 min-w-0 truncate"
         :class="status === 'pending' ? 'text-ink-gray-4' : 'font-medium text-ink-gray-9'"
       >
         {{ label }}
@@ -70,14 +67,12 @@ const iconBg = computed(() => STATUS_ICON_BG[props.status] || STATUS_ICON_BG.pen
         <span v-else-if="status === 'running'" class="animate-pulse">running</span>
       </span>
 
-      <!-- Hidden, not omitted: keeps the chevron's space so durations stay aligned. -->
       <span
         class="size-4 text-ink-gray-4 transition-transform shrink-0 lucide-chevron-down"
         :class="[hasOutput ? '' : 'invisible', expanded ? 'rotate-180' : '']"
       />
     </div>
 
-    <!-- The step list insets this by p-1, so its rounding never reaches here. -->
     <LogView v-if="expanded && hasOutput" class="mt-1" :lines="lines" :streaming="streaming" />
   </div>
 </template>

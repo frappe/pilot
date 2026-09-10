@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import Mock
+from unittest.mock import Mock, PropertyMock
 
 from admin.backend.providers.database import DatabaseDiagnosticsProvider
 from pilot.core.database import BinlogFile, BinlogStatus, DatabaseProcess, LockWaitRow, LockWaitStatus
@@ -24,6 +24,7 @@ def test_get_diagnostics_shapes_dataclasses_as_dicts() -> None:
         "active_connections": 3,
         "lock_waits": {"current_waits": 1, "total_waits": 9, "timeout_seconds": 50},
         "binlog": {"enabled": True, "file_count": 2, "size_bytes": 4096},
+        "performance_schema_enabled": db.is_performance_schema_enabled,
     }
 
 
@@ -86,6 +87,7 @@ def test_get_diagnostics_reports_no_binlog_for_an_engine_without_one() -> None:
     db.get_active_connections.return_value = 3
     db.get_lock_waits.return_value = LockWaitStatus(current_waits=0, total_waits=None, timeout_seconds=None)
     db.get_binlog_status.side_effect = NotImplementedError
+    type(db).is_performance_schema_enabled = PropertyMock(side_effect=NotImplementedError)
     provider = DatabaseDiagnosticsProvider(bench_root=None, database=db, engine="postgres")
 
     assert provider.get_diagnostics() == {
@@ -94,6 +96,7 @@ def test_get_diagnostics_reports_no_binlog_for_an_engine_without_one() -> None:
         "active_connections": 3,
         "lock_waits": {"current_waits": 0, "total_waits": None, "timeout_seconds": None},
         "binlog": None,
+        "performance_schema_enabled": False,
     }
 
 
@@ -236,3 +239,45 @@ def test_unsupported_operation_surfaces_generic_message() -> None:
     db.get_binlog_files.side_effect = NotImplementedError
     with pytest.raises(DatabaseError, match=NOT_SUPPORTED):
         _provider(db).get_binlog_files()
+
+
+def _section():
+    from pilot.core.database import PerformanceSection
+
+    return PerformanceSection(data=[], has_next_page=True)
+
+
+def test_a_performance_section_resolves_the_site_to_its_database() -> None:
+    from unittest.mock import patch
+
+    db = Mock()
+    db.get_unused_indexes.return_value = _section()
+    provider = DatabaseDiagnosticsProvider(bench_root=None, database=db)
+
+    with patch("admin.backend.providers.database.site_database_name", return_value="_abc123") as resolve:
+        result = provider.get_unused_indexes("shop.local", 50, 100)
+
+    resolve.assert_called_once_with(None, "shop.local")
+    db.get_unused_indexes.assert_called_once_with("_abc123", 50, 100)
+    assert result == {"data": [], "has_next_page": True}
+
+
+def test_a_performance_section_without_a_site_covers_the_server() -> None:
+    db = Mock()
+    db.get_redundant_indexes.return_value = _section()
+
+    DatabaseDiagnosticsProvider(bench_root=None, database=db).get_redundant_indexes()
+
+    db.get_redundant_indexes.assert_called_once_with("", 20, 0)
+
+
+def test_a_performance_section_maps_unsupported_engine() -> None:
+    import pytest
+
+    from pilot.exceptions import DatabaseError
+
+    db = Mock()
+    db.get_time_consuming_queries.side_effect = NotImplementedError
+
+    with pytest.raises(DatabaseError):
+        DatabaseDiagnosticsProvider(bench_root=None, database=db).get_time_consuming_queries()

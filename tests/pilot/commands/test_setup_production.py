@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import tomllib
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -48,6 +50,13 @@ def _make_bench(
     return Bench(config, bench_dir)
 
 
+def _make_site(bench: Bench, name: str, *, ssl: bool = False) -> Path:
+    site_path = bench.sites_path / name
+    site_path.mkdir(parents=True)
+    (site_path / "site_config.json").write_text(json.dumps({"db_name": "site", "ssl": ssl}))
+    return site_path
+
+
 def test_persist_preserves_other_fields(tmp_path: Path) -> None:
     bench = _make_bench(tmp_path)
     cmd = ProductionSetup(bench)
@@ -60,6 +69,20 @@ def test_persist_preserves_other_fields(tmp_path: Path) -> None:
     assert data["apps"][0]["name"] == "frappe"
     # mariadb lives in common_config.toml now, untouched by this rewrite too.
     assert bench.config.mariadb.root_password == "root"
+
+
+def test_write_dns_multitenancy_creates_missing_sites_directory(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path)
+    bench.sites_path.rmdir()
+
+    assert not bench.sites_path.exists()
+
+    ProductionSetup(bench)._write_dns_multitenancy()
+
+    common_config = bench.sites_path / "common_site_config.json"
+    assert bench.sites_path.is_dir()
+    assert common_config.is_file()
+    assert json.loads(common_config.read_text())["dns_multitenant"] == 1
 
 
 def test_check_admin_domain_uses_toml_value(tmp_path: Path) -> None:
@@ -179,9 +202,19 @@ def test_require_production_inputs_passes_with_domain_and_email(tmp_path: Path) 
     cmd._require_production_inputs()  # no raise
 
 
+def test_require_production_inputs_needs_email_for_existing_public_site(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, admin_domain="admin.localhost", email="")
+    _make_site(bench, "site.example.com")
+    cmd = ProductionSetup(bench)
+
+    with pytest.raises(BenchError, match="contact email is required"):
+        cmd._require_production_inputs()
+
+
 def test_setup_monitoring_runs_privileged_setup_at_provision_time(tmp_path: Path, monkeypatch) -> None:
     """Privileged log-dir/logrotate setup must run here, not in the user-service daemons."""
     from pilot.core.server.monitoring import MonitorConfigurator
+    from pilot.core.site.storage.systemd import SiteStorageConfigurator
     from pilot.core.site.uptime_monitoring_config import UptimeMonitorConfigurator
 
     bench = _make_bench(tmp_path, process_manager="systemd")
@@ -191,6 +224,7 @@ def test_setup_monitoring_runs_privileged_setup_at_provision_time(tmp_path: Path
     called = []
     monkeypatch.setattr(MonitorConfigurator, "install", lambda self: None)
     monkeypatch.setattr(UptimeMonitorConfigurator, "install", lambda self: None)
+    monkeypatch.setattr(SiteStorageConfigurator, "install", lambda self: None)
     monkeypatch.setattr(MonitorConfigurator, "setup", lambda self: called.append("monitor"))
     monkeypatch.setattr(UptimeMonitorConfigurator, "setup", lambda self: called.append("uptime"))
 
@@ -208,11 +242,13 @@ class _BlockPsutil:
 def test_setup_monitoring_runs_without_psutil(tmp_path: Path, monkeypatch) -> None:
     """The CLI runs on the system python, which has no third-party packages."""
     from pilot.core.server.monitoring_config import MonitorConfigurator
+    from pilot.core.site.storage.systemd import SiteStorageConfigurator
     from pilot.core.site.uptime_monitoring_config import UptimeMonitorConfigurator
 
     bench = _make_bench(tmp_path, process_manager="systemd")
     cmd = ProductionSetup(bench)
 
+    monkeypatch.setattr(SiteStorageConfigurator, "install", lambda self: None)
     for configurator in (MonitorConfigurator, UptimeMonitorConfigurator):
         monkeypatch.setattr(configurator, "install", lambda self: None)
         monkeypatch.setattr(configurator, "setup", lambda self: None)
@@ -256,6 +292,17 @@ def test_setup_letsencrypt_swallows_when_best_effort(tmp_path: Path, monkeypatch
     assert "dns not ready" in capsys.readouterr().err
 
 
+def test_setup_letsencrypt_enables_existing_public_sites(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, admin_domain="admin.localhost", email="x@y.com")
+    site_path = _make_site(bench, "site.example.com")
+
+    with patch.object(Bench, "setup_letsencrypt") as setup_letsencrypt:
+        ProductionSetup(bench)._setup_letsencrypt_if_needed()
+
+    setup_letsencrypt.assert_called_once_with()
+    assert json.loads((site_path / "site_config.json").read_text())["ssl"] is True
+
+
 def test_persist_production_state_writes_enabled_and_drops_nginx(tmp_path: Path) -> None:
     bench = _make_bench(tmp_path, process_manager="supervisor")
     # legacy nginx key present in toml
@@ -275,3 +322,202 @@ def test_persist_production_state_writes_enabled_and_drops_nginx(tmp_path: Path)
     assert "nginx" not in data["production"]
     assert data["admin"]["tls"] is True
     assert data["admin"]["enabled"] is True
+
+
+def _enrol_with_central(bench: Bench) -> None:
+    from pilot.config.central import CentralConfig
+    from pilot.config.common import CommonConfig
+
+    common = CommonConfig.read(bench.path.parent)
+    common.central = CentralConfig(endpoint="https://central.test", auth_token="tok-9")
+    common.write(bench.path.parent)
+    bench.config = BenchConfig.read(bench.path)
+
+
+def test_apply_metrics_token_fetches_from_central_and_persists(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    from pilot.config.common import CommonConfig
+
+    bench = _make_bench(tmp_path)
+    _enrol_with_central(bench)
+    setup = ProductionSetup(bench)
+
+    with patch("pilot.integrations.central.CentralClient") as client_cls:
+        client_cls.return_value.metrics_token.return_value = {
+            "token": "jwt-metrics",
+            "endpoint": "https://datum.region.test",
+        }
+        setup._apply_metrics_token(lambda message: None)
+
+    assert bench.config.datum.token == "jwt-metrics"
+    assert bench.config.datum.endpoint == "https://datum.region.test"
+
+    # Persisted, so the next run ships without asking Central again.
+    persisted = CommonConfig.read(bench.path.parent).datum
+    assert (persisted.token, persisted.endpoint) == ("jwt-metrics", "https://datum.region.test")
+
+
+def test_apply_metrics_token_keeps_a_configured_token(tmp_path: Path) -> None:
+    """Configured means both halves: a token names no destination on its own."""
+    from unittest.mock import patch
+
+    bench = _make_bench(tmp_path)
+    _enrol_with_central(bench)
+    bench.config.datum.token = "already-set"
+    bench.config.datum.endpoint = "https://datum.configured.test"
+
+    with patch("pilot.integrations.central.CentralClient") as client_cls:
+        ProductionSetup(bench)._apply_metrics_token(lambda message: None)
+
+    client_cls.return_value.metrics_token.assert_not_called()
+    assert bench.config.datum.token == "already-set"
+
+
+def test_apply_metrics_token_refetches_a_token_with_no_endpoint(tmp_path: Path) -> None:
+    """A token with nowhere to ship is not a working config, so Central is asked again."""
+    from unittest.mock import patch
+
+    bench = _make_bench(tmp_path)
+    _enrol_with_central(bench)
+    bench.config.datum.token = "stranded"
+
+    with patch("pilot.integrations.central.CentralClient") as client_cls:
+        client_cls.return_value.metrics_token.return_value = {
+            "token": "jwt-metrics",
+            "endpoint": "https://datum.region.test",
+        }
+        ProductionSetup(bench)._apply_metrics_token(lambda message: None)
+
+    assert bench.config.datum.token == "jwt-metrics"
+    assert bench.config.datum.endpoint == "https://datum.region.test"
+
+
+def test_apply_metrics_token_reports_and_continues_when_central_is_unreachable(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    from pilot.integrations.central.client import CentralClientError
+
+    bench = _make_bench(tmp_path)
+    _enrol_with_central(bench)
+    reported: list[str] = []
+
+    with patch("pilot.integrations.central.CentralClient") as client_cls:
+        client_cls.return_value.metrics_token.side_effect = CentralClientError("Cannot reach Central")
+        ProductionSetup(bench)._apply_metrics_token(reported.append)
+
+    assert bench.config.datum.token == ""
+    assert "Cannot reach Central" in reported[0]
+
+
+def test_apply_metrics_token_skips_without_central_enrolment(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    bench = _make_bench(tmp_path)
+
+    with patch("pilot.integrations.central.CentralClient") as client_cls:
+        ProductionSetup(bench)._apply_metrics_token(lambda message: None)
+
+    client_cls.assert_not_called()
+
+
+def test_apply_log_token_fetches_from_central_and_persists(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    from pilot.config.common import CommonConfig
+
+    bench = _make_bench(tmp_path)
+    _enrol_with_central(bench)
+
+    with patch("pilot.integrations.central.CentralClient") as client_cls:
+        client_cls.return_value.log_token.return_value = {
+            "token": "jwt-logs",
+            "endpoint": "https://datum.region.test",
+        }
+        ProductionSetup(bench)._apply_log_token(lambda message: None)
+
+    assert bench.config.logs.token == "jwt-logs"
+    assert bench.config.logs.endpoint == "https://datum.region.test"
+
+    persisted = CommonConfig.read(bench.path.parent).logs
+    assert (persisted.token, persisted.endpoint) == ("jwt-logs", "https://datum.region.test")
+
+
+def test_apply_log_token_keeps_a_configured_token(tmp_path: Path) -> None:
+    """Configured means both halves: a token names no destination on its own."""
+    from unittest.mock import patch
+
+    bench = _make_bench(tmp_path)
+    _enrol_with_central(bench)
+    bench.config.logs.token = "already-set"
+    bench.config.logs.endpoint = "https://datum.configured.test"
+
+    with patch("pilot.integrations.central.CentralClient") as client_cls:
+        ProductionSetup(bench)._apply_log_token(lambda message: None)
+
+    client_cls.return_value.log_token.assert_not_called()
+    assert bench.config.logs.token == "already-set"
+
+
+def test_apply_log_token_refetches_a_token_with_no_endpoint(tmp_path: Path) -> None:
+    """A token with nowhere to ship is not a working config, so Central is asked again."""
+    from unittest.mock import patch
+
+    bench = _make_bench(tmp_path)
+    _enrol_with_central(bench)
+    bench.config.logs.token = "stranded"
+
+    with patch("pilot.integrations.central.CentralClient") as client_cls:
+        client_cls.return_value.log_token.return_value = {
+            "token": "jwt-logs",
+            "endpoint": "https://datum.region.test",
+        }
+        ProductionSetup(bench)._apply_log_token(lambda message: None)
+
+    assert bench.config.logs.token == "jwt-logs"
+    assert bench.config.logs.endpoint == "https://datum.region.test"
+
+
+def test_apply_log_token_reports_and_continues_when_central_is_unreachable(tmp_path: Path) -> None:
+    """Log shipping is not worth failing a production deploy over."""
+    from unittest.mock import patch
+
+    from pilot.integrations.central.client import CentralClientError
+
+    bench = _make_bench(tmp_path)
+    _enrol_with_central(bench)
+    reported: list[str] = []
+
+    with patch("pilot.integrations.central.CentralClient") as client_cls:
+        client_cls.return_value.log_token.side_effect = CentralClientError("Cannot reach Central")
+        ProductionSetup(bench)._apply_log_token(reported.append)
+
+    assert bench.config.logs.token == ""
+    assert "Cannot reach Central" in reported[0]
+
+
+def test_apply_log_token_skips_when_central_names_no_datum(tmp_path: Path) -> None:
+    """A region whose Cargo has not reported its Datum yet: a token with nowhere to go
+    would leave Fluent Bit posting into the void."""
+    from unittest.mock import patch
+
+    bench = _make_bench(tmp_path)
+    _enrol_with_central(bench)
+
+    with patch("pilot.integrations.central.CentralClient") as client_cls:
+        client_cls.return_value.log_token.return_value = {"token": "jwt-logs", "endpoint": None}
+        ProductionSetup(bench)._apply_log_token(lambda message: None)
+
+    assert bench.config.logs.token == ""
+    assert bench.config.logs.endpoint == ""
+
+
+def test_apply_log_token_skips_without_central_enrolment(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    bench = _make_bench(tmp_path)
+
+    with patch("pilot.integrations.central.CentralClient") as client_cls:
+        ProductionSetup(bench)._apply_log_token(lambda message: None)
+
+    client_cls.assert_not_called()

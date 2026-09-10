@@ -1,7 +1,6 @@
 """Apply a retention policy to one site's backups, local and offsite."""
 
 import re
-import sys
 from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -154,10 +153,12 @@ class SiteBackups:
         return OffsiteBackup.from_config(self.site.bench.config.s3, self.site.bench.path)
 
     def _cron_command(self) -> str:
-        log_file = self.site.bench.logs_path / f"backup-{self.site.config.name}.log"
-        return (
-            f"{sys.executable} -m pilot.tasks.backup_site {self.site.bench.path} "
-            f"{self.site.config.name} --with-files >> {log_file} 2>&1"
+        from pilot.managers.cron import cron_module_command
+
+        return cron_module_command(
+            "pilot.tasks.backup_site",
+            [self.site.bench.path, self.site.config.name, "--with-files"],
+            self.site.bench.logs_path / f"backup-{self.site.config.name}.log",
         )
 
 

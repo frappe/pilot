@@ -295,6 +295,12 @@ class PostgreSQL(Database):
         result = self.execute("SELECT setting FROM pg_settings WHERE name = 'data_directory'")
         return str(result.rows[0][0]) if result.rows else None
 
+    def get_schema_sizes(self) -> dict[str, int]:
+        result = self.execute(
+            "SELECT datname, pg_database_size(datname) FROM pg_database WHERE NOT datistemplate"
+        )
+        return {row[0]: int(row[1]) for row in result.rows if row[0] is not None}
+
     def get_storage_components(self) -> list[StorageComponent]:
         """PostgreSQL's counterpart to the binary log is the WAL, and it has no
         separate slow-query log - slow statements go to the server log."""

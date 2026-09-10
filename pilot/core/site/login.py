@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import re
+import socket
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
@@ -51,15 +53,19 @@ class SiteLogin:
         return sid if re.fullmatch(r"[A-Za-z0-9._-]+", sid) else None
 
     def redirect_url(self, site_config: dict, proxy_tls: bool = False) -> str:
-        host = primary_host(self.site.config.name, site_config)
-        config = self.site.bench.config
-        if not config.production.enabled:
-            return origin("http", host, config.http_port) + "/desk"
+        return site_url(self.site.config.name, site_config, self.site.bench.config, proxy_tls) + "/desk"
 
-        secure = proxy_tls or (config.admin.tls and bool(site_config.get("ssl")))
-        scheme = "https" if secure else "http"
-        port = 443 if proxy_tls else (config.nginx.https_port if secure else config.nginx.http_port)
-        return origin(scheme, host, port) + "/desk"
+
+def site_url(site_name: str, site_config: dict, bench_config, proxy_tls: bool = False) -> str:
+    """The origin the site is served on, matching how the bench serves it."""
+    host = primary_host(site_name, site_config)
+    if not bench_config.production.enabled:
+        return origin("http", host, bench_config.http_port)
+
+    secure = proxy_tls or (bench_config.admin.tls and bool(site_config.get("ssl")))
+    scheme = "https" if secure else "http"
+    port = 443 if proxy_tls else (bench_config.nginx.https_port if secure else bench_config.nginx.http_port)
+    return origin(scheme, host, port)
 
 
 def primary_host(site: str, site_config: dict) -> str:
@@ -81,3 +87,27 @@ def origin(scheme: str, host: str, port: int) -> str:
     default_port = 443 if scheme == "https" else 80
     suffix = "" if port == default_port else f":{port}"
     return f"{scheme}://{host}{suffix}"
+
+
+# One shared worker: a hung lookup makes later calls queue and time out
+# instead of leaking one resolver thread per request.
+_resolver = ThreadPoolExecutor(max_workers=1, thread_name_prefix="host-resolver")
+
+
+def is_host_resolvable(host: str, timeout: float = 2.0) -> bool:
+    """Whether the host resolves on this machine. Browsers resolve *.localhost
+    names on their own; anything else needs DNS or a hosts-file entry.
+    Resolution runs in a worker thread so a slow DNS server cannot stall the
+    caller; an undecided lookup counts as resolvable."""
+    if host.endswith(".localhost") or host == "localhost":
+        return True
+    future = _resolver.submit(socket.getaddrinfo, host, None)
+    try:
+        future.result(timeout=timeout)
+    except TimeoutError:
+        # Discard the pending lookup so a hung resolver cannot pile up work.
+        future.cancel()
+        return True
+    except OSError:
+        return False
+    return True

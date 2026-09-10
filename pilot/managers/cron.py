@@ -1,9 +1,30 @@
 from __future__ import annotations
 
+import shlex
 import subprocess
+import sys
 from pathlib import Path
 
 _MARKER_PREFIX = "# bench-cron:"
+
+
+def cron_module_command(module: str, arguments: list, log_file: Path) -> str:
+    """A `python -m <module>` line safe to run from cron.
+
+    Cron starts in the user's home directory, which holds the source tree. That directory shadows
+    the real `pilot` package as an empty namespace package, so PYTHONPATH pins the source root.
+    `pilot` itself has no third-party dependencies, so a path is all any interpreter needs.
+    """
+    from pilot.utils import cli_root
+
+    parts = [
+        f"PYTHONPATH={shlex.quote(str(cli_root()))}",
+        shlex.quote(sys.executable),
+        "-m",
+        module,
+        *(shlex.quote(str(argument)) for argument in arguments),
+    ]
+    return f"{' '.join(parts)} >> {shlex.quote(str(log_file))} 2>&1"
 
 
 class CronManager:

@@ -104,6 +104,58 @@ class StorageComponent:
     bytes: int
 
 
+@dataclass
+class TimeConsumingQuery:
+    """A normalized statement ranked by the total time spent running it.
+    `percent` is its share of the scope's total execution time."""
+
+    database: str | None
+    query: str | None
+    percent: float
+    calls: int
+    average_time_ms: float
+    total_time_ms: float
+
+
+@dataclass
+class FullTableScanQuery:
+    """A normalized statement that ran without a usable index."""
+
+    database: str | None
+    query: str | None
+    calls: int
+    rows_sent: int
+    rows_examined: int
+
+
+@dataclass
+class UnusedIndex:
+    database: str | None
+    table: str
+    index: str
+
+
+@dataclass
+class RedundantIndex:
+    """An index whose columns are already covered by `dominant_index`."""
+
+    database: str | None
+    table: str
+    redundant_index: str
+    redundant_index_columns: str
+    dominant_index: str
+    dominant_index_columns: str
+
+
+@dataclass
+class PerformanceSection:
+    """One page of one performance report section. `has_next_page` comes from
+    reading one row past the page, so it costs no extra query."""
+
+    data: list[TimeConsumingQuery | FullTableScanQuery | UnusedIndex | RedundantIndex]
+    has_next_page: bool
+
+
 class Database(ABC):
     @abstractmethod
     def execute(self, query: str, read_only: bool = True) -> QueryResult: ...
@@ -148,6 +200,34 @@ class Database(ABC):
         """`database` narrows the result to one database; empty means server-wide."""
         raise NotImplementedError
 
+    def get_time_consuming_queries(
+        self, database: str = "", limit: int = 20, offset: int = 0
+    ) -> PerformanceSection:
+        """`database` narrows the result to one database; empty means server-wide."""
+        raise NotImplementedError
+
+    def get_full_table_scan_queries(
+        self, database: str = "", limit: int = 20, offset: int = 0
+    ) -> PerformanceSection:
+        """`database` narrows the result to one database; empty means server-wide."""
+        raise NotImplementedError
+
+    def get_unused_indexes(
+        self, database: str = "", limit: int = 20, offset: int = 0
+    ) -> PerformanceSection:
+        """`database` narrows the result to one database; empty means server-wide."""
+        raise NotImplementedError
+
+    def get_redundant_indexes(
+        self, database: str = "", limit: int = 20, offset: int = 0
+    ) -> PerformanceSection:
+        """`database` narrows the result to one database; empty means server-wide."""
+        raise NotImplementedError
+
+    @property
+    def is_performance_schema_enabled(self) -> bool:
+        raise NotImplementedError
+
     def get_binlog_status(self) -> BinlogStatus:
         raise NotImplementedError
 
@@ -159,6 +239,14 @@ class Database(ABC):
 
     def get_storage_components(self) -> list[StorageComponent]:
         """Sizes of the engine's own files, excluding the databases."""
+        raise NotImplementedError
+
+    def get_schema_sizes(self) -> dict[str, int]:
+        """Bytes every database on this server holds on disk, keyed by database
+        name. One round trip for the whole server, system schemas included.
+
+        Allocated-but-unused space counts: it is space the disk cannot hand to
+        anything else until the database is rebuilt."""
         raise NotImplementedError
 
     def get_data_directory(self) -> str | None:

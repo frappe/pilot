@@ -73,13 +73,12 @@ class BenchCreator:
 
         settings = {
             "admin_enabled": True,
-            # The Admin needs a password from the start: the setup wizard authenticates
-            # like every other page, so there is no unprotected window to set one in.
             "admin_password": self.admin_password or secrets.token_urlsafe(12),
             "admin_domain": self.admin_domain,
             # admin.tls is a per-bench choice, not inherited from siblings.
             "admin_tls": bool(self.admin_tls),
             "db_type": self.db_type,
+            "lite_mode_enabled": True,
         }
         if self.process_manager:
             settings["production_process_manager"] = self.process_manager

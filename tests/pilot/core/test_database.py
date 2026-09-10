@@ -443,6 +443,28 @@ def test_mariadb_get_database_size_splits_data_index_and_claimable(tmp_path: Pat
     assert size.free_bytes > 0  # tmp_path is a real local disk
 
 
+def test_mariadb_schema_sizes_count_space_a_rebuild_would_reclaim() -> None:
+    """A schema holds its freed pages until it is rebuilt, so the disk cannot
+    hand that space to anything else - it belongs in the schema's size."""
+    db = MariaDB(host="h", port=3306, user="u", password="p", database="")
+    calls: list = []
+    responses = {"information_schema.TABLES": ([], [["site_one", 500], [None, 7]])}
+
+    with patch.object(MariaDB, "execute", _canned_execute(responses, calls)):
+        sizes = db.get_schema_sizes()
+
+    assert sizes == {"site_one": 500}
+    assert "data_length + index_length + data_free" in calls[0][0]
+
+
+def test_postgres_schema_sizes_skip_template_databases() -> None:
+    db = PostgreSQL(host="h", port=5432, user="u", password="p", database="")
+    responses = {"pg_database_size": ([], [["site_one", 900], ["postgres", 60]])}
+
+    with patch.object(PostgreSQL, "execute", _canned_execute(responses)):
+        assert db.get_schema_sizes() == {"site_one": 900, "postgres": 60}
+
+
 def test_mariadb_size_scope_follows_the_connections_database() -> None:
     bound = MariaDB(host="h", port=3306, user="u", password="p", database="site_one")
     server_wide = MariaDB(host="h", port=3306, user="u", password="p", database="")

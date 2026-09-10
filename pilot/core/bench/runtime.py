@@ -243,7 +243,7 @@ class BenchRuntime:
                 continue
             on_progress(f"Installing Python requirements for {app.config.name}...")
             run_command(
-                [uv, "pip", "install", "--python", python, "-e", str(app.path)],
+                [uv, "pip", "install", "--python", python, "-e", app.editable_target],
                 stream_output=True,
             )
 

@@ -20,6 +20,7 @@ from pilot.config.gunicorn import GunicornConfig
 from pilot.config.letsencrypt import LetsEncryptConfig
 from pilot.config.lite_mode import LiteModeConfig
 from pilot.config.llm import LLMConfig
+from pilot.config.logs import LogsConfig
 from pilot.config.mariadb import MariaDBConfig
 from pilot.config.nginx import NginxConfig
 from pilot.config.postgres import PostgresConfig
@@ -71,6 +72,7 @@ FLAT_KEYS = {
     "admin_allow_bench_management": "admin.allow_bench_management",
     "letsencrypt_email": "letsencrypt.email",
     "production_process_manager": "production.process_manager",
+    "lite_mode_enabled": "lite_mode.enabled",
 }
 
 # Framework branches the setup wizard offers, newest/recommended first.
@@ -127,6 +129,7 @@ class BenchConfig:
     admin: AdminConfig = field(default_factory=AdminConfig)
     central: CentralConfig = field(default_factory=CentralConfig)
     datum: DatumConfig = field(default_factory=DatumConfig)
+    logs: LogsConfig = field(default_factory=LogsConfig)
     firewall: FirewallConfig = field(default_factory=FirewallConfig)
     waf: WafConfig = field(default_factory=WafConfig)
     s3: S3Config = field(default_factory=S3Config)
@@ -215,6 +218,7 @@ class BenchConfig:
             letsencrypt=common.letsencrypt,
             central=common.central,
             datum=common.datum,
+            logs=common.logs,
             resource_limits=common.resource_limits,
             **sections,
         )
@@ -459,6 +463,7 @@ class BenchConfig:
             letsencrypt=self.letsencrypt,
             central=self.central,
             datum=self.datum,
+            logs=self.logs,
             resource_limits=self.resource_limits,
             jwks_url=self.admin.jwks_url,
             jwks_audience=self.admin.jwks_audience,
@@ -742,7 +747,6 @@ _SECTIONS: tuple[_Section, ...] = (
     _Section(
         "lite_mode",
         lambda data: LiteModeConfig.from_dict(data.get("lite_mode", {})),
-        # Off by default, so an ordinary bench.toml never carries the section.
         lambda config: config._lite_mode_section() if config.lite_mode.enabled else None,
     ),
     _Section(

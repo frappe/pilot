@@ -1,4 +1,4 @@
-export const openSiteLogin = async (createLink) => {
+export const openSiteLogin = async (createLink, { onHint } = {}) => {
   const link = await createLink()
   if (typeof link?.url !== 'string') {
     throw new Error('The site login link is invalid.')
@@ -12,6 +12,9 @@ export const openSiteLogin = async (createLink) => {
     popup.opener = null
   } catch {
     // cross-origin already - nothing to clear
+  }
+  if (link.hint && onHint) {
+    onHint(link.hint)
   }
   return link
 }

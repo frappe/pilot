@@ -99,20 +99,20 @@ export const useSite = (name) => {
     await _fetchBackups()
   }
 
-  /** Re-fetches with a larger `limit` - ListFooter's page-length control. */
+  /** Re-fetches with a larger `limit` - the backups page-length control. */
   const setBackupsPageLength = async (pageLength) => {
     store.backupsLimit.value = pageLength
     await _fetchBackups()
   }
 
-  /** ListFooter's "Load More" - grows the page by one more page-length step. */
+  /** "Load more" - grows the page by one more page-length step. */
   const loadMoreBackups = async () => {
     store.backupsLimit.value += BACKUPS_PAGE_SIZE
     await _fetchBackups()
   }
 
-  const login = async () => {
-    return openSiteLogin(() => sitesApi.loginLink(name))
+  const login = async (options = {}) => {
+    return openSiteLogin(() => sitesApi.loginLink(name), options)
   }
 
   const backup = async () => {

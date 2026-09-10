@@ -1,15 +1,17 @@
 <script setup lang="ts">
+import DatabaseConfigurations from '@/components/settings/DatabaseConfigurations.vue'
 import DatabaseQuickActions from '@/components/settings/DatabaseQuickActions.vue'
 import SettingsRow from '@/components/settings/SettingsRow.vue'
 
 import { DATABASE_SECTIONS } from '@/components/settings/sections'
 
-const openSection = defineModel('openSection')
+const openSection = defineModel<{ id: string } | null>('openSection')
 const configurationSection = DATABASE_SECTIONS.find((section) => section.id === 'configurations')
 </script>
 
 <template>
-  <component v-if="openSection" :is="openSection.component" />
+  <DatabaseConfigurations v-if="openSection?.id === 'configurations'" />
+  <DatabaseQuickActions v-else-if="openSection?.id === 'quick-actions'" />
 
   <template v-else>
     <section>
@@ -17,17 +19,15 @@ const configurationSection = DATABASE_SECTIONS.find((section) => section.id === 
       <DatabaseQuickActions />
     </section>
 
-    <div class="mt-2 border-t rounded border-outline-alpha-gray-1">
-      <SettingsRow
-        as="button"
-        interactive
-        :label="configurationSection.label"
-        :description="configurationSection.description"
-        @click="openSection = configurationSection"
-        class="!ps-0"
-      >
-        <span class="size-4 text-ink-gray-5 lucide-chevron-right" aria-hidden="true" />
-      </SettingsRow>
-    </div>
+    <SettingsRow
+      class="-mx-2.5 mt-2 border-t rounded border-outline-alpha-gray-1"
+      as="button"
+      interactive
+      :label="configurationSection.label"
+      :description="configurationSection.description"
+      @click="openSection = configurationSection"
+    >
+      <span class="size-4 text-ink-gray-5 lucide-chevron-right" aria-hidden="true" />
+    </SettingsRow>
   </template>
 </template>

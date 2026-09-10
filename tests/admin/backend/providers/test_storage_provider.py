@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from pilot.config import BenchConfig
-from pilot.core.database.base import QueryResult, StorageComponent
+from pilot.core.database.base import StorageComponent
 
 
 def _write_bench(bench_root: Path, db_type: str = "mariadb") -> None:
@@ -85,11 +85,11 @@ def test_site_storage_splits_private_public_and_backups(tmp_path: Path) -> None:
     assert "backups" not in other_names
 
 
-def _mock_database(rows: list[list], components: list[StorageComponent], data_dir: str) -> Mock:
+def _mock_database(
+    schema_sizes: dict[str, int], components: list[StorageComponent], data_dir: str | None
+) -> Mock:
     db = Mock()
-    db.execute.return_value = QueryResult(
-        columns=["schema", "bytes"], rows=rows, duration_ms=1.0
-    )
+    db.get_schema_sizes.return_value = schema_sizes
     db.get_storage_components.return_value = components
     db.get_data_directory.return_value = data_dir
     return db
@@ -106,7 +106,7 @@ def test_mariadb_breakdown_shapes_schemas_and_reconciles_core(tmp_path: Path) ->
         StorageComponent("slow_log", "slow query log", 0),
         StorageComponent("binlog_index", "binary log index", 0),
     ]
-    db = _mock_database([["site1_db", 500], ["mysql", 100]], components, str(tmp_path))
+    db = _mock_database({"site1_db": 500, "mysql": 100}, components, str(tmp_path))
 
     with (
         patch("admin.backend.providers.storage.make_database", return_value=db),
@@ -139,7 +139,7 @@ def test_postgres_breakdown_reports_wal_and_server_log(tmp_path: Path) -> None:
         StorageComponent("wal", "write-ahead log", 300),
         StorageComponent("server_log", "server log", 100),
     ]
-    db = _mock_database([["site1_db", 500], ["postgres", 60]], components, "/pg/data")
+    db = _mock_database({"site1_db": 500, "postgres": 60}, components, "/pg/data")
 
     with (
         patch("admin.backend.providers.storage.make_database", return_value=db),
@@ -164,7 +164,7 @@ def test_core_bytes_is_unknown_when_the_data_directory_cannot_be_read(tmp_path: 
 
     _write_bench(tmp_path, db_type="postgres")
     components = [StorageComponent("wal", "write-ahead log", 300)]
-    db = _mock_database([["postgres", 60]], components, "/pg/data")
+    db = _mock_database({"postgres": 60}, components, "/pg/data")
 
     with (
         patch("admin.backend.providers.storage.make_database", return_value=db),
@@ -183,7 +183,7 @@ def test_core_bytes_is_unknown_for_a_remote_database_server(tmp_path: Path) -> N
     from admin.backend.providers.storage import StorageProvider
 
     _write_bench(tmp_path)
-    db = _mock_database([["site1_db", 500]], [StorageComponent("binlog", "binary log", 50)], None)
+    db = _mock_database({"site1_db": 500}, [StorageComponent("binlog", "binary log", 50)], None)
 
     with patch("admin.backend.providers.storage.make_database", return_value=db):
         breakdown = StorageProvider(tmp_path)._database_breakdown()
@@ -211,7 +211,7 @@ def test_get_breakdown_remeasures_instead_of_serving_the_cache(tmp_path: Path) -
 
     _write_bench(tmp_path)
     _make_app(tmp_path, "frappe", b"a" * 4096)
-    db = _mock_database([["site1_db", 500]], [], str(tmp_path))
+    db = _mock_database({"site1_db": 500}, [], str(tmp_path))
 
     with patch("admin.backend.providers.storage.make_database", return_value=db):
         provider = StorageProvider(tmp_path)

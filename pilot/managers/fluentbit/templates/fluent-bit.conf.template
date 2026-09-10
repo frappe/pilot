@@ -1,0 +1,221 @@
+[SERVICE]
+    Flush                     1
+    Log_Level                 info
+    Parsers_File              {{ conf_dir }}/parsers.conf
+
+    storage.path              {{ conf_dir }}/state
+    storage.sync              normal
+    storage.checksum          off
+    storage.backlog.mem_limit 50M
+
+
+# ============================================================
+# Python / Frappe logs
+#
+# Bench-level:
+#   {{ cli_root }}/benches/<bench>/logs/*.log
+#
+# Site-level:
+#   {{ cli_root }}/benches/<bench>/sites/<site>/logs/*.log
+#
+# We intentionally use a broad *.log pattern here and exclude
+# formats that have their own dedicated parser or that we have
+# decided not to ingest.
+# ============================================================
+
+[INPUT]
+    Name              tail
+    Tag               pilot.python
+
+    Path              {{ cli_root }}/benches/*/logs/*.log,{{ cli_root }}/benches/*/sites/*/logs/*.log
+
+    Exclude_Path      {{ cli_root }}/benches/*/logs/nginx-access.log,{{ cli_root }}/benches/*/logs/nginx-error.log,{{ cli_root }}/benches/*/logs/*.json.log,{{ cli_root }}/benches/*/logs/redis_*.log,{{ cli_root }}/benches/*/logs/worker_pool.log,{{ cli_root }}/benches/*/logs/*.error.log,{{ cli_root }}/benches/*/logs/socketio.log,{{ cli_root }}/benches/*/logs/web.log,{{ cli_root }}/benches/*/logs/cssutils.log,{{ cli_root }}/benches/*/logs/render-template.log,{{ cli_root }}/benches/*/sites/*/logs/*.json.log,{{ cli_root }}/benches/*/sites/*/logs/redis_*.log,{{ cli_root }}/benches/*/sites/*/logs/worker_pool.log,{{ cli_root }}/benches/*/sites/*/logs/*.error.log,{{ cli_root }}/benches/*/sites/*/logs/socketio.log,{{ cli_root }}/benches/*/sites/*/logs/web.log,{{ cli_root }}/benches/*/sites/*/logs/cssutils.log,{{ cli_root }}/benches/*/sites/*/logs/render-template.log
+
+    Path_Key          filename
+
+    Multiline.Parser  pilot_python_multiline
+
+    DB                {{ conf_dir }}/tail-python.db
+
+    Mem_Buf_Limit     10MB
+    Skip_Long_Lines   On
+    Read_from_Head    Off
+
+    storage.type      filesystem
+
+
+# ============================================================
+# JSON Lines
+#
+# Examples:
+#   uptime.json.log
+#   monitor.json.log
+# ============================================================
+
+[INPUT]
+    Name              tail
+    Tag               pilot.json
+
+    Path              {{ cli_root }}/benches/*/logs/*.json.log,{{ cli_root }}/benches/*/sites/*/logs/*.json.log
+
+    Path_Key          filename
+
+    Parser            pilot_json
+
+    DB                {{ conf_dir }}/tail-json.db
+
+    Mem_Buf_Limit     10MB
+    Skip_Long_Lines   On
+    Read_from_Head    Off
+
+    storage.type      filesystem
+
+
+# ============================================================
+# Nginx access
+# ============================================================
+
+[INPUT]
+    Name              tail
+    Tag               pilot.nginx.access
+
+    Path              {{ cli_root }}/benches/*/logs/nginx-access.log
+
+    Path_Key          filename
+
+    Parser            pilot_nginx_access
+
+    DB                {{ conf_dir }}/tail-nginx-access.db
+
+    Mem_Buf_Limit     10MB
+    Skip_Long_Lines   On
+    Read_from_Head    Off
+
+    storage.type      filesystem
+
+
+# ============================================================
+# Nginx error
+# ============================================================
+
+[INPUT]
+    Name              tail
+    Tag               pilot.nginx.error
+
+    Path              {{ cli_root }}/benches/*/logs/nginx-error.log
+
+    Path_Key          filename
+
+    Parser            pilot_nginx_error
+
+    DB                {{ conf_dir }}/tail-nginx-error.db
+
+    Mem_Buf_Limit     10MB
+    Skip_Long_Lines   On
+    Read_from_Head    Off
+
+    storage.type      filesystem
+
+
+# ============================================================
+# Redis
+#
+# Examples:
+#   redis_cache.log
+#   redis_queue.log
+# ============================================================
+
+[INPUT]
+    Name              tail
+    Tag               pilot.redis
+
+    Path              {{ cli_root }}/benches/*/logs/redis_*.log,{{ cli_root }}/benches/*/sites/*/logs/redis_*.log
+
+    Exclude_Path      {{ cli_root }}/benches/*/logs/redis_*.log.error.log,{{ cli_root }}/benches/*/sites/*/logs/redis_*.log.error.log
+
+    Path_Key          filename
+
+    Parser            pilot_redis
+
+    DB                {{ conf_dir }}/tail-redis.db
+
+    Mem_Buf_Limit     10MB
+    Skip_Long_Lines   On
+    Read_from_Head    Off
+
+    storage.type      filesystem
+
+
+# ============================================================
+# Worker pool
+# ============================================================
+
+[INPUT]
+    Name              tail
+    Tag               pilot.worker_pool
+
+    Path              {{ cli_root }}/benches/*/logs/worker_pool.log,{{ cli_root }}/benches/*/sites/*/logs/worker_pool.log
+
+    Path_Key          filename
+
+    Parser            pilot_worker_pool
+
+    DB                {{ conf_dir }}/tail-worker-pool.db
+
+    Mem_Buf_Limit     10MB
+    Skip_Long_Lines   On
+    Read_from_Head    Off
+
+    storage.type      filesystem
+
+
+# ============================================================
+# Parse the completed Python/Frappe multiline record
+# ============================================================
+
+[FILTER]
+    Name          parser
+    Match         pilot.python
+
+    Key_Name      log
+    Parser        pilot_python
+
+    Preserve_Key  On
+    Reserve_Data  On
+
+
+# ============================================================
+# Normalize every supported format into Datum's schema
+# ============================================================
+
+[FILTER]
+    Name            lua
+    Match           pilot.*
+    Script          {{ conf_dir }}/pilot.lua
+    Call            normalize
+    Protected_Mode  On
+
+
+# ============================================================
+# Datum
+# ============================================================
+
+[OUTPUT]
+    Name          http
+    Match         pilot.*
+
+    Host          {{ host }}
+    Port          {{ port }}
+    URI           {{ uri }}
+    {% if tls %}
+    tls           On
+    tls.verify    On
+    {% endif %}
+
+    Header        Authorization Bearer ${DATUM_LOG_TOKEN}
+
+    Body_Key      body
+    Headers_Key   headers
+
+    Workers       2
+    Retry_Limit   False

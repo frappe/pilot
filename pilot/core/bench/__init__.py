@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from pilot.core.database import Database
     from pilot.core.notification import NotificationStore
     from pilot.core.site import Site
+    from pilot.core.site.storage import SiteStorageCollector
     from pilot.tasks import TaskRunner
 
 
@@ -99,6 +100,12 @@ class Bench:
         from pilot.core.notification import NotificationStore
 
         return NotificationStore(self.logs_path)
+
+    @cached_property
+    def site_storage(self) -> "SiteStorageCollector":
+        from pilot.core.site.storage import SiteStorageCollector
+
+        return SiteStorageCollector(self)
 
     @property
     def apps_path(self) -> Path:
