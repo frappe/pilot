@@ -72,7 +72,7 @@ These commands control the task worker, not individual Frappe workers.
 ## Admin Commands
 
 - `pilot admin build`: rebuild Admin frontend assets from source.
-- `pilot admin upgrade`: update Pilot to the latest version, run pending upgrade patches (pre_update before, post_update after), and restart the admin service.
+- `pilot admin upgrade`: update Pilot to the latest version, run pending upgrade patches (pre_update before, post_update after), and restart the admin service. A source checkout on a branch pulls that branch. A source checkout pinned to a tag checks out the newest release tag. An already-current tag skips dependency installation and the frontend build.
 - `pilot admin enroll`: exchange the bootstrap token for this bench's Central credential.
 - `pilot admin set-central-config`: store Central endpoint and Pilot auth token.
 - `pilot admin issue-site-token`: issue a scoped site-to-bench API token.
