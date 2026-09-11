@@ -10,13 +10,14 @@ from pilot.core.build_memory import BUILD_MEMORY_SHARE, build_memory_limit_mb
 from pilot.managers.systemd_user import systemctl_env
 
 
-def test_the_limit_is_a_share_of_host_memory():
-    total_mb = psutil.virtual_memory().total / (1024 * 1024)
-    assert build_memory_limit_mb() == int(total_mb * BUILD_MEMORY_SHARE)
+def test_the_limit_is_a_share_of_free_memory():
+    available_mb = psutil.virtual_memory().available / (1024 * 1024)
+    assert build_memory_limit_mb() == int(available_mb * BUILD_MEMORY_SHARE)
 
 
-def test_the_limit_leaves_the_rest_of_the_host_alone():
-    assert build_memory_limit_mb() < psutil.virtual_memory().total / (1024 * 1024)
+def test_the_limit_never_exceeds_what_is_free():
+    """A limit above free memory is one the host cannot honour."""
+    assert build_memory_limit_mb() <= psutil.virtual_memory().available / (1024 * 1024)
 
 
 def test_systemctl_env_carries_the_bus_address(monkeypatch):
