@@ -189,6 +189,8 @@ class PythonAssetBuilder:
         node_modules_link = app_link / "node_modules"
 
         if app_node_modules.is_dir():
+            if node_modules_link.is_symlink():
+                node_modules_link.unlink()
             node_modules_link.symlink_to(app_node_modules.resolve())
 
         self.write_assets_json(app_name, dist_dir, assets_dir)

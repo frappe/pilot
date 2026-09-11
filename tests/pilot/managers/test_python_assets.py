@@ -127,3 +127,28 @@ def test_setup_prebuilt_assets_links_node_modules(tmp_path: Path) -> None:
         (tmp_path / "sites" / "assets" / "gameplan" / "node_modules").resolve()
         == node_modules.resolve()
     )
+
+def test_setup_prebuilt_assets_can_be_called_twice(tmp_path: Path) -> None:
+    app_path = tmp_path / "gameplan"
+    app_public_dir = app_path / "gameplan" / "public"
+    dist_dir = app_public_dir / "dist"
+    node_modules = app_path / "node_modules"
+
+    dist_dir.mkdir(parents=True)
+    node_modules.mkdir(parents=True)
+
+    manager = MagicMock()
+    manager.bench.sites_path = tmp_path / "sites"
+    manager.bench.sites_path.mkdir()
+    builder = PythonAssetBuilder(manager)
+
+    with patch.object(builder, "write_assets_json"):
+        builder.setup_prebuilt_assets("gameplan", app_public_dir, dist_dir)
+        builder.setup_prebuilt_assets("gameplan", app_public_dir, dist_dir)
+
+    node_modules_link = (
+        tmp_path / "sites" / "assets" / "gameplan" / "node_modules"
+    )
+
+    assert node_modules_link.is_symlink()
+    assert node_modules_link.resolve() == node_modules.resolve()
