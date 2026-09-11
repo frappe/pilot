@@ -103,3 +103,27 @@ def test_ensure_yarn_install_skips_when_integrity_is_current(tmp_path: Path) -> 
         make_builder().ensure_yarn_install(tmp_path)
 
     run_command.assert_not_called()
+
+def test_setup_prebuilt_assets_links_node_modules(tmp_path: Path) -> None:
+    app_path = tmp_path / "gameplan"
+    app_public_dir = app_path / "gameplan" / "public"
+    dist_dir = app_public_dir / "dist"
+    node_modules = app_path / "node_modules"
+
+    dist_dir.mkdir(parents=True)
+    node_modules.mkdir(parents=True)
+
+    manager = MagicMock()
+    manager.bench.sites_path = tmp_path / "sites"
+    manager.bench.sites_path.mkdir()
+    builder = PythonAssetBuilder(manager)
+
+    with patch.object(builder, "write_assets_json"):
+        builder.setup_prebuilt_assets("gameplan", app_public_dir, dist_dir)
+
+    assert (tmp_path / "sites" / "assets" / "gameplan").is_symlink()
+    assert (tmp_path / "sites" / "assets" / "gameplan" / "node_modules").is_symlink()
+    assert (
+        (tmp_path / "sites" / "assets" / "gameplan" / "node_modules").resolve()
+        == node_modules.resolve()
+    )

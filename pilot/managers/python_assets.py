@@ -185,6 +185,12 @@ class PythonAssetBuilder:
             shutil.rmtree(str(app_link))
         app_link.symlink_to(app_public_dir.resolve())
 
+        app_node_modules = app_public_dir.parent.parent / "node_modules"
+        node_modules_link = app_link / "node_modules"
+
+        if app_node_modules.is_dir():
+            node_modules_link.symlink_to(app_node_modules.resolve())
+
         self.write_assets_json(app_name, dist_dir, assets_dir)
         print(f"  Linked {app_link} -> {app_public_dir.resolve()}")
 
