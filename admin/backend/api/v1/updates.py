@@ -5,7 +5,9 @@ from pathlib import Path
 from flask import Blueprint, current_app, jsonify
 
 from admin.backend.api.responses import error_response
+from admin.backend.providers.marketplace_updates import MarketplaceGitHubUpdates
 from pilot.core.bench import Bench
+from pilot.exceptions import RegistryUnavailableError
 from pilot.internal.git import GitRepo
 from pilot.utils import cli_root
 
@@ -26,6 +28,39 @@ def check_app_updates():
         return jsonify({"apps": _app_updates(fetch=True)})
     except Exception:
         return error_response("app_update_check_failed", "Could not check for app updates.", 500)
+
+
+@updates_bp.get("/marketplace-github-updates")
+def get_marketplace_github_updates():
+    try:
+        return jsonify(_marketplace_github_updates(refresh=False))
+    except RegistryUnavailableError as exc:
+        return error_response("registry_unavailable", str(exc), 503)
+    except Exception:
+        return error_response(
+            "marketplace_github_updates_unavailable",
+            "Could not read marketplace GitHub updates.",
+            500,
+        )
+
+
+@updates_bp.post("/marketplace-github-update-checks")
+def check_marketplace_github_updates():
+    try:
+        return jsonify(_marketplace_github_updates(refresh=True))
+    except RegistryUnavailableError as exc:
+        return error_response("registry_unavailable", str(exc), 503)
+    except Exception:
+        return error_response(
+            "marketplace_github_update_check_failed",
+            "Could not check marketplace GitHub updates.",
+            500,
+        )
+
+
+def _marketplace_github_updates(*, refresh: bool) -> dict:
+    checker = MarketplaceGitHubUpdates(cli_root())
+    return checker.check(refresh=refresh)
 
 
 def _app_updates(*, fetch: bool) -> list[dict]:
