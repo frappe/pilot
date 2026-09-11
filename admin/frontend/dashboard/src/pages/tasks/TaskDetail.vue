@@ -151,7 +151,7 @@ onMounted(() => {
 
     <TaskDebugDialog v-model="showDebug" :task-id="taskId" />
 
-    <div class="flex justify-between items-center gap-4 mt-5 px-2 min-w-0">
+    <div class="flex justify-between items-center gap-4 lg:mt-5 px-2 min-w-0">
       <RouterLink
         :to="scope.route || ''"
         class="group flex items-center gap-2 min-w-0 text-lg-medium text-ink-gray-9 no-underline"
