@@ -112,9 +112,18 @@ class LogsConfigurator(SystemdUserMixin):
     def _render_unit(self) -> str:
         return UNIT_TEMPLATE.format(
             cli_root=cli_root(),
-            fluent_bit=shutil.which("fluent-bit") or "/usr/bin/fluent-bit",
+            fluent_bit=self._fluent_bit_binary,
             conf_dir=self.conf_dir,
         )
+
+    @property
+    def _fluent_bit_binary(self) -> str:
+        if found := shutil.which("fluent-bit"):
+            return found
+        default_path = Path("/opt/fluent-bit/bin/fluent-bit")
+        if default_path.exists():
+            return str(default_path)
+        raise BenchError("fluent-bit binary not found. Install it before setting up log shipping.")
 
     def _restart_service(self) -> None:
         env = self._systemctl_env()
