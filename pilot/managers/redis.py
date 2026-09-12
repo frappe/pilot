@@ -25,6 +25,23 @@ class RedisManager:
     def is_installed(self) -> bool:
         return redis_server_binary() is not None
 
+    def verify_installed(self) -> None:
+        """Verify Redis/Valkey is available without installing system packages.
+
+        Linux hosts are provisioned by install.sh before bench initialization.
+        `pilot init` must therefore remain rootless and only verify the runtime
+        dependency is present.
+        """
+        if self.is_installed():
+            return
+
+        from pilot.exceptions import BenchError
+
+        raise BenchError(
+            "Redis is not installed. Re-run install.sh as root to provision the host, "
+            "or install Redis/Valkey with your system package manager, then re-run this command."
+        )
+
     @staticmethod
     def installed_version() -> str:
         """Return the installed redis-server version (e.g. '7.0.11'), or '' if unavailable."""

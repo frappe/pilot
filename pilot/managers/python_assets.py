@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import os
 import re
 import shutil
 import sys
@@ -16,6 +17,10 @@ if TYPE_CHECKING:
     from pilot.managers.environment import PythonEnvManager
 
 _BUNDLE_RE = re.compile(r"^(.+)\.bundle\.[A-Z0-9]{8}\.(js|css)$")
+_NODE_HEAP_MIN_MB = 2048
+_NODE_HEAP_MAX_MB = 6144
+_NODE_HEAP_AVAILABLE_RATIO = 0.60
+_NODE_HEAP_OVERRIDE = "PILOT_NODE_MAX_OLD_SPACE_SIZE"
 
 
 class PythonAssetBuilder:
@@ -30,7 +35,7 @@ class PythonAssetBuilder:
         run_command(
             [*self.bench.frappe_call, "frappe", "build", "--force"],
             cwd=self.bench.sites_path,
-            env=self.manager._build_env(),
+            env=self.node_build_env(),
             stream_output=True,
         )
 
@@ -55,7 +60,7 @@ class PythonAssetBuilder:
         run_command(
             [*self.bench.frappe_call, "frappe", "build", "--force", "--app", app.config.name],
             cwd=self.bench.sites_path,
-            env=self.manager._build_env(),
+            env=self.node_build_env(),
             stream_output=True,
         )
 
@@ -66,8 +71,60 @@ class PythonAssetBuilder:
                 run_command(
                     [get_yarn_bin(), "build"],
                     cwd=app.path / frontend_dir,
+                    env=self.node_build_env(),
                     stream_output=True,
                 )
+
+    def node_build_env(self) -> dict[str, str]:
+        """Return the normal build environment with a safe Node.js heap limit."""
+        env = self.manager._build_env()
+        override = env.get(_NODE_HEAP_OVERRIDE)
+
+        if override:
+            try:
+                heap_mb = int(override)
+                if heap_mb <= 0:
+                    raise ValueError
+            except ValueError:
+                logging.warning(
+                    "Ignoring invalid %s=%r; using automatic Node heap sizing.",
+                    _NODE_HEAP_OVERRIDE,
+                    override,
+                )
+                heap_mb = self.auto_node_heap_mb()
+        else:
+            heap_mb = self.auto_node_heap_mb()
+
+        node_options = env.get("NODE_OPTIONS", "").strip()
+        heap_option = f"--max-old-space-size={heap_mb}"
+        env["NODE_OPTIONS"] = f"{node_options} {heap_option}".strip()
+        return env
+
+    @classmethod
+    def auto_node_heap_mb(cls) -> int:
+        """Use 60% of currently available memory, bounded for predictable builds."""
+        available_mb = cls.available_memory_mb()
+        heap_mb = int(available_mb * _NODE_HEAP_AVAILABLE_RATIO)
+        return max(_NODE_HEAP_MIN_MB, min(heap_mb, _NODE_HEAP_MAX_MB))
+
+    @staticmethod
+    def available_memory_mb() -> int:
+        """Return currently available system memory in MiB."""
+        meminfo = Path("/proc/meminfo")
+        if meminfo.exists():
+            for line in meminfo.read_text().splitlines():
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) // 1024
+
+        if hasattr(os, "sysconf"):
+            try:
+                pages = int(os.sysconf("SC_AVPHYS_PAGES"))
+                page_size = int(os.sysconf("SC_PAGE_SIZE"))
+                return pages * page_size // (1024 * 1024)
+            except (ValueError, OSError):
+                pass
+
+        return _NODE_HEAP_MIN_MB
 
     def ensure_frontend_dependencies(self, app: "App") -> None:
         """frappe's own `bench build` shells into `frontend`/`roster`, so node_modules must
