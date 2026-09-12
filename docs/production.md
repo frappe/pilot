@@ -27,6 +27,8 @@ pilot setup production --admin-domain admin.example.com
 pilot setup letsencrypt
 ```
 
+`pilot setup letsencrypt` needs `letsencrypt.email`, which is host-shared and lives in `common_config.toml` next to the bench folders (see [Common Config](configuration.md#common-config)), not in `bench.toml`. `pilot setup production --tls --letsencrypt-email <email>` sets it for you.
+
 `pilot setup production` writes process manager config and nginx integration. `pilot remove production` removes production deployment files and services while keeping logs, certificates, and admin domain config.
 
 ## Process Managers

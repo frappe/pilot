@@ -112,7 +112,8 @@ class ProductionSetup:
             )
         if letsencrypt_email_required(self.bench) and not self.bench.config.letsencrypt.email:
             raise BenchError(
-                "A contact email is required with --tls for Let's Encrypt. Pass --letsencrypt-email <email>, or set letsencrypt.email in bench.toml."
+                "A contact email is required with --tls for Let's Encrypt. Pass --letsencrypt-email <email>, "
+                "or set letsencrypt.email in common_config.toml next to your benches."
             )
 
     def _installed_manager(self) -> str | None:
