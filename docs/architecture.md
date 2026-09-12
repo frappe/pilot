@@ -115,3 +115,5 @@ Shared database services use per-user state managed by database managers. The be
 Domain provider binaries are wrapped by `pilot/core/adapters/domain_provider.py`. They expose DNS/domain behavior without leaking provider-specific code into `Site`.
 
 Nginx, systemd, supervisor, Redis, Python environments, and databases are implemented by managers. Core objects use managers to keep system integration code away from command and API layers.
+
+Fluent Bit (`pilot/managers/fluentbit`) tails `benches/*/logs/*.log` only, not the per-site log mirror under `benches/*/sites/*/logs/`. Frappe copies every site-context line into both byte-for-byte, so tailing both would ship each line twice.

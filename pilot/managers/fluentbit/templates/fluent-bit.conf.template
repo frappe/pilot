@@ -12,24 +12,20 @@
 # ============================================================
 # Python / Frappe logs
 #
-# Bench-level:
 #   {{ cli_root }}/benches/<bench>/logs/*.log
 #
-# Site-level:
-#   {{ cli_root }}/benches/<bench>/sites/<site>/logs/*.log
-#
-# We intentionally use a broad *.log pattern here and exclude
-# formats that have their own dedicated parser or that we have
-# decided not to ingest.
+# Broad *.log pattern; formats with their own parser or that we
+# skip are excluded below. See docs/architecture.md for why the
+# site log mirror is not tailed here.
 # ============================================================
 
 [INPUT]
     Name              tail
     Tag               pilot.python
 
-    Path              {{ cli_root }}/benches/*/logs/*.log,{{ cli_root }}/benches/*/sites/*/logs/*.log
+    Path              {{ cli_root }}/benches/*/logs/*.log
 
-    Exclude_Path      {{ cli_root }}/benches/*/logs/nginx-access.log,{{ cli_root }}/benches/*/logs/nginx-error.log,{{ cli_root }}/benches/*/logs/*.json.log,{{ cli_root }}/benches/*/logs/redis_*.log,{{ cli_root }}/benches/*/logs/worker_pool.log,{{ cli_root }}/benches/*/logs/*.error.log,{{ cli_root }}/benches/*/logs/socketio.log,{{ cli_root }}/benches/*/logs/web.log,{{ cli_root }}/benches/*/logs/cssutils.log,{{ cli_root }}/benches/*/logs/render-template.log,{{ cli_root }}/benches/*/sites/*/logs/*.json.log,{{ cli_root }}/benches/*/sites/*/logs/redis_*.log,{{ cli_root }}/benches/*/sites/*/logs/worker_pool.log,{{ cli_root }}/benches/*/sites/*/logs/*.error.log,{{ cli_root }}/benches/*/sites/*/logs/socketio.log,{{ cli_root }}/benches/*/sites/*/logs/web.log,{{ cli_root }}/benches/*/sites/*/logs/cssutils.log,{{ cli_root }}/benches/*/sites/*/logs/render-template.log
+    Exclude_Path      {{ cli_root }}/benches/*/logs/nginx-access.log,{{ cli_root }}/benches/*/logs/nginx-error.log,{{ cli_root }}/benches/*/logs/*.json.log,{{ cli_root }}/benches/*/logs/redis_*.log,{{ cli_root }}/benches/*/logs/worker_pool.log,{{ cli_root }}/benches/*/logs/*.error.log,{{ cli_root }}/benches/*/logs/socketio.log,{{ cli_root }}/benches/*/logs/web.log,{{ cli_root }}/benches/*/logs/cssutils.log,{{ cli_root }}/benches/*/logs/render-template.log
 
     Path_Key          filename
 

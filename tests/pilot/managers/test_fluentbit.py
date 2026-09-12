@@ -58,6 +58,26 @@ def test_logs_install_writes_config_parsers_lua_and_unit(tmp_path: Path) -> None
     assert str(tmp_path / "system" / "fluent-bit" / "fluent-bit.conf") in unit_text
 
 
+def test_python_input_tails_bench_dir_only(tmp_path: Path) -> None:
+    """Site dir mirrors the bench log verbatim; tailing both ships each line twice."""
+    configurator = _configurator(tmp_path)
+    config = LogsConfig(endpoint="https://datum.internal", token="secret")
+
+    with (
+        patch("pilot.managers.fluentbit.cli_root", return_value=tmp_path),
+        patch("pilot.managers.fluentbit.shutil.which", return_value="/usr/bin/fluent-bit"),
+        patch("pilot.managers.fluentbit.user_service_installed", return_value=False),
+        patch("pilot.managers.fluentbit.install_user_service"),
+        patch("pilot.managers.fluentbit.run_command"),
+    ):
+        configurator.install(config)
+
+    conf = (tmp_path / "system" / "fluent-bit" / "fluent-bit.conf").read_text()
+    python_block = conf.split("Tag               pilot.python", 1)[1].split("[INPUT]", 1)[0]
+    assert f"{tmp_path}/benches/*/logs/*.log" in python_block
+    assert "/sites/*/logs/*.log" not in python_block
+
+
 def test_logs_install_disables_tls_for_http_endpoint(tmp_path: Path) -> None:
     configurator = _configurator(tmp_path)
     config = LogsConfig(endpoint="http://datum.internal", token="secret")
