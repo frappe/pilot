@@ -6,6 +6,10 @@ class BenchAlreadyExistsError(BenchError):
     pass
 
 
+class BenchNotRunningError(BenchError):
+    pass
+
+
 class ConfigError(BenchError):
     pass
 

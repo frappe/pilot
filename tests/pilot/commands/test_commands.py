@@ -1124,6 +1124,44 @@ def test_start_dev_initialized_stops_then_starts(tmp_path: Path) -> None:
     start.assert_called_once()
 
 
+def test_start_dev_propagates_stop_failure(tmp_path: Path) -> None:
+    from pilot.core.bench.runtime import BenchRuntime
+
+    bench = make_bench(tmp_path)
+    _mark_initialized(bench)
+    with (
+        patch(
+            "pilot.managers.processes.local.ProcessManager.stop",
+            side_effect=BenchError("Timed out waiting for bench ports."),
+        ),
+        patch("pilot.managers.processes.local.ProcessManager.start") as start,
+        pytest.raises(BenchError, match="Timed out waiting for bench ports"),
+    ):
+        BenchRuntime(bench).start(lambda _message: None)
+
+    start.assert_not_called()
+
+
+def test_start_dev_swallows_not_running_stop(tmp_path: Path) -> None:
+    from pilot.core.bench.runtime import BenchRuntime
+    from pilot.exceptions import BenchNotRunningError
+
+    bench = make_bench(tmp_path)
+    _mark_initialized(bench)
+    with (
+        patch(
+            "pilot.managers.processes.local.ProcessManager.stop",
+            side_effect=BenchNotRunningError("Bench is not running."),
+        ),
+        patch.object(BenchRuntime, "_rebuild_manager_config"),
+        patch.object(BenchRuntime, "_ensure_admin_dist"),
+        patch("pilot.managers.processes.local.ProcessManager.start") as start,
+    ):
+        BenchRuntime(bench).start(lambda _message: None)
+
+    start.assert_called_once()
+
+
 def test_start_dev_watch_admin_js_from_config_skips_static_admin_build(tmp_path: Path) -> None:
     from pilot.core.bench.runtime import BenchRuntime
 

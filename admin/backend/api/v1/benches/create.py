@@ -167,6 +167,8 @@ def _process_manager(bench: Bench):
 
 
 def _start_standalone_setup_wizard(new_dir: Path, name: str, new_port: int):
+    from pilot.managers.processes.local import BENCH_ROOT_ENV
+
     root = cli_root()
     spawn_env = {
         key: value
@@ -174,6 +176,8 @@ def _start_standalone_setup_wizard(new_dir: Path, name: str, new_port: int):
         if not key.startswith("WERKZEUG_") and not key.startswith("BENCH_ADMIN_")
     }
     spawn_env["PYTHONPATH"] = str(root)
+    # The admin process carries its own bench's tag; the new wizard must not inherit it.
+    spawn_env[BENCH_ROOT_ENV] = str(new_dir)
     try:
         subprocess.Popen(
             [

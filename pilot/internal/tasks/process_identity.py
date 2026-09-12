@@ -113,6 +113,9 @@ class _ProcessBackend(Protocol):
     def command_line(self, pid: int) -> str:
         pass
 
+    def get_process_stamp(self, pid: int) -> str:
+        pass
+
 
 class _ProcSysBackend:
     """Reads process identity from /proc, as found on Linux."""
@@ -154,6 +157,12 @@ class _ProcSysBackend:
     def command_line(self, pid: int) -> str:
         raw = (_PROC_ROOT / str(pid) / "cmdline").read_bytes()
         return os.fsdecode(raw.replace(b"\0", b" "))
+
+    def get_process_stamp(self, pid: int) -> str:
+        snapshot = self.read_process(pid)
+        if snapshot.state.startswith("Z"):
+            return ""
+        return f"{self.read_boot_id()}:{snapshot.start_ticks}:{snapshot.uid}"
 
 
 class _DarwinPsBackend:
@@ -205,6 +214,16 @@ class _DarwinPsBackend:
     def command_line(self, pid: int) -> str:
         return self._run(["ps", "-ww", "-p", str(pid), "-o", "command="])
 
+    def get_process_stamp(self, pid: int) -> str:
+        # lstart, not start: `start` switches from clock time to a date as the
+        # process ages, so it cannot identify a long-lived process. lstart is
+        # multi-token, so it is last and split off in one piece.
+        listing = self._run(["ps", "-p", str(pid), "-o", "uid=,stat=,lstart="])
+        parts = listing.split(None, 2)
+        if len(parts) < 3 or parts[1].startswith("Z"):
+            return ""
+        return f"{self.read_boot_id()}:{parts[2]}:{parts[0]}"
+
     @staticmethod
     def _drop_executable(command: str) -> str:
         """Strip the leading executable token.
@@ -227,12 +246,18 @@ class _DarwinPsBackend:
 
     @staticmethod
     def _run(argv: list[str]) -> str:
-        result = subprocess.run(
-            argv,
-            capture_output=True,
-            text=True,
-            env={**os.environ, "LC_ALL": "C"},
-        )
+        # LC_ALL and TZ pin the rendering of dates; identity comparisons
+        # across differently-configured environments depend on it.
+        try:
+            result = subprocess.run(
+                argv,
+                capture_output=True,
+                text=True,
+                timeout=5,
+                env={**os.environ, "LC_ALL": "C", "TZ": "UTC"},
+            )
+        except subprocess.TimeoutExpired as error:
+            raise OSError(str(error)) from error
         if result.returncode != 0 or not result.stdout.strip():
             raise ProcessLookupError(" ".join(argv))
         return result.stdout.strip()
@@ -240,6 +265,17 @@ class _DarwinPsBackend:
 
 def _default_backend() -> _ProcessBackend:
     return _DarwinPsBackend() if is_macos() else _ProcSysBackend()
+
+
+def get_process_stamp(pid: int) -> str | None:
+    """Reboot-safe identity for a live process: a stamp while it runs, "" once it
+    is gone or a zombie, None when inspection failed and liveness is unknown."""
+    try:
+        return _default_backend().get_process_stamp(pid)
+    except (ProcessLookupError, FileNotFoundError):
+        return ""
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
 
 
 class ProcessInspector:
