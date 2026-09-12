@@ -39,6 +39,10 @@ from pilot.internal.atomic_file import (
 from pilot.internal.toml import ConfigDict, Toml
 
 _BENCH_NAME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]*$")
+# Host-wide user units are named "<prefix>-<what>.service" - pilot-mariadb,
+# bench-monitor, site-uptime. A bench of the same name owns "<name>-*", so its
+# units would be indistinguishable from theirs.
+_RESERVED_BENCH_NAMES = frozenset({"bench", "pilot", "site"})
 _PORT_MIN = 1
 _PORT_MAX = 65535
 
@@ -284,6 +288,12 @@ class BenchConfig:
         if not _BENCH_NAME_PATTERN.match(self.name):
             raise ConfigError(
                 f"bench.name '{self.name}' is invalid. Must start with a letter and contain only letters, digits, underscores, or hyphens."
+            )
+        if self.name in _RESERVED_BENCH_NAMES:
+            raise ConfigError(
+                f"bench.name '{self.name}' is reserved: host-wide services are named "
+                f"'{self.name}-<service>', so a bench of this name could not be told apart "
+                f"from them. Reserved names are {', '.join(sorted(_RESERVED_BENCH_NAMES))}."
             )
 
     def _validate_app_names_unique(self) -> None:
