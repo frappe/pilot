@@ -261,6 +261,40 @@ class App:
             return
         run_command(["yarn", "--cwd", str(self.path), "build"])
 
+    def _reject_revision_mismatch(self, commit: str = "") -> None:
+        from pilot.integrations.git.base import repo_host, same_repository
+
+        requested = self.config.branch
+        installed = self.bench.app(self.module_name)
+        if (
+            repo_host(self.config.repo)
+            and repo_host(installed.config.repo)
+            and not same_repository(self.config.repo, installed.config.repo)
+        ):
+            raise BenchError(
+                f"'{self.config.name}' is already installed from a different repository. "
+                "Remove the app and add it again to change its repository."
+            )
+        requested_commit = commit or (requested if self.is_commit_hash(requested) else "")
+        if requested_commit:
+            if not installed.is_on_revision(RevisionPin(kind="commit", ref=requested_commit)):
+                raise BenchError(
+                    f"'{self.config.name}' is already installed at a different commit, "
+                    f"so this install cannot deliver '{requested_commit}'. Remove the app and "
+                    f"add it again to change its revision."
+                )
+            return
+        if not requested:
+            return
+        current = installed.current_branch
+        if requested != current:
+            source = f"branch '{current}'" if current else "a detached commit"
+            raise BenchError(
+                f"'{self.config.name}' is already installed from {source}, "
+                f"so this install cannot deliver '{requested}'. Remove the app and "
+                f"add it again to change its branch."
+            )
+
     def _skip_already_installed(
         self, on_progress: Callable[[str], None], install_dependencies: bool = False
     ) -> AppInstallResult:
@@ -278,6 +312,7 @@ class App:
     ) -> AppInstallResult:
         """Pinned commit based Clone, validate, install, register, and build app assets."""
         if self.bench.is_app_installed(self.config.name):
+            self._reject_revision_mismatch(commit)
             return self._skip_already_installed(on_progress, install_dependencies)
 
         existing_clone = self.existing_clone_path
