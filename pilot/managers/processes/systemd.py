@@ -271,6 +271,20 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         run_command(self._systemctl("enable", socket), env=env, timeout=_SYSTEMCTL_TIMEOUT)
         run_command(self._systemctl("restart", socket), env=env, timeout=_SYSTEMCTL_TIMEOUT)
 
+    def is_own_unit(self, name: str) -> bool:
+        """True when this bench installed the unit. The name glob alone is not
+        ownership: a bench named `pilot` matches pilot-mariadb.service, and
+        reaping would stop and disable the database out from under it."""
+        path = self.user_unit_dir / name
+        if not path.is_symlink():
+            # Never linked from here: either another manager's file, or a unit
+            # systemd still knows about whose symlink an earlier reap removed.
+            return not path.exists()
+        try:
+            return path.resolve(strict=False).parent == self.systemd_conf_dir.resolve()
+        except OSError:
+            return False
+
     def _installed_bench_units(self) -> set[str]:
         result = subprocess.run(
             self._systemctl(
@@ -290,7 +304,7 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
             parts = line.split()
             if parts and (parts[0].endswith(".service") or parts[0].endswith(".socket")):
                 units.add(parts[0])
-        return units
+        return {unit for unit in units if self.is_own_unit(unit)}
 
     def _reap_stale_units(self, desired: set[str]) -> None:
         env = self._systemctl_env()

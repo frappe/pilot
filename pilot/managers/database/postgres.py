@@ -105,11 +105,7 @@ class PostgresManager(UserOwnedDBManager):
             run_command([self._server_binary("initdb"), "-D", str(self.data_dir)])
             self._move_generated_config_into_config_dir()
             self._install_unit()
-            self._reset_failed_state()
-            run_command(self._systemctl("enable", "--now", self._UNIT_NAME), env=self._systemctl_env())
-        elif not self.is_running():
-            self._reset_failed_state()
-            run_command(self._systemctl("start", self._UNIT_NAME), env=self._systemctl_env())
+        self.enable_at_boot()
 
     def _move_generated_config_into_config_dir(self) -> None:
         """initdb writes postgresql.conf/pg_hba.conf/pg_ident.conf into the data

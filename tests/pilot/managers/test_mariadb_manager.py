@@ -163,6 +163,7 @@ def test_provision_initialises_and_installs_unit_when_fresh(tmp_path) -> None:
         patch.object(m, "_wait_until_reachable"),
         patch.object(m, "secure_installation") as secure,
         patch(f"{MODULE}.run_command") as rc,
+        patch(f"{BASE_MODULE}.run_command"),
     ):
         m.provision()
         assert m.my_cnf_path.read_text().startswith("# Managed by Pilot.\n[mysqld]\n")
@@ -827,16 +828,18 @@ def test_provision_resets_failed_state_before_restarting_stopped_unit() -> None:
         patch.object(m, "is_running", return_value=False),
         patch.object(m, "_wait_until_reachable"),
         patch.object(m, "secure_installation"),
-        patch(f"{MODULE}.run_command") as rc,
+        patch(f"{BASE_MODULE}.run_command") as rc,
         patch(f"{BASE_MODULE}.subprocess.run") as reset_run,
     ):
         m.provision()
     reset_run.assert_called_once()
     assert reset_run.call_args.args[0] == ["systemctl", "--user", "reset-failed", "pilot-mariadb.service"]
-    assert rc.call_args.args[0] == ["systemctl", "--user", "start", "pilot-mariadb.service"]
+    assert rc.call_args.args[0] == ["systemctl", "--user", "enable", "--now", "pilot-mariadb.service"]
 
 
-def test_provision_reuses_already_provisioned_server() -> None:
+def test_provision_reuses_already_provisioned_server_but_still_enables_it() -> None:
+    """Nothing is re-initialised, yet enabling still runs: a unit that exists but
+    was never enabled starts here and would otherwise die at the next reboot."""
     m = _manager()
     with (
         patch(f"{MODULE}.is_macos", return_value=False),
@@ -845,14 +848,17 @@ def test_provision_reuses_already_provisioned_server() -> None:
         patch.object(m, "is_running", return_value=True),
         patch.object(m, "_write_config") as write_config,
         patch.object(m, "_install_unit") as install_unit,
+        patch.object(m, "_reset_failed_state"),
         patch.object(m, "_wait_until_reachable"),
         patch.object(m, "secure_installation") as secure,
         patch(f"{MODULE}.run_command") as rc,
+        patch(f"{BASE_MODULE}.run_command") as base_rc,
     ):
         m.provision()
     install_unit.assert_not_called()
     write_config.assert_not_called()
     rc.assert_not_called()
+    assert base_rc.call_args.args[0] == ["systemctl", "--user", "enable", "--now", "pilot-mariadb.service"]
     secure.assert_called_once()
 
 

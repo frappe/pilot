@@ -65,6 +65,12 @@ class UserOwnedDBManager(SystemdUserMixin):
         )
         return result.returncode == 0
 
+    def enable_at_boot(self) -> None:
+        """Run on every provision, not just the first: a unit that exists but was
+        never enabled starts here and would otherwise die at the next reboot."""
+        self._reset_failed_state()
+        run_command(self._systemctl("enable", "--now", self._UNIT_NAME), env=self._systemctl_env())
+
     def start(self) -> None:
         self._control("start")
 

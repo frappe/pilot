@@ -684,3 +684,38 @@ def test_supervised_reload_workers_noop_when_not_running() -> None:
     fake._is_running = False
     fake.manager.reload_workers()
     assert fake.calls == []
+
+
+def test_reaping_leaves_a_database_unit_sharing_the_bench_name_prefix_alone(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A bench named `pilot` makes the list-units glob `pilot-*` match
+    pilot-mariadb.service. Reaping it stops and disables the bench's own database."""
+    from types import SimpleNamespace
+
+    from pilot.managers.processes import systemd as systemd_module
+    from pilot.managers.processes.systemd import SystemdProcessManager
+
+    bench = make_bench(tmp_path)
+    bench.config.name = "pilot"
+    manager = SystemdProcessManager(bench)
+
+    unit_dir = tmp_path / "user-units"
+    unit_dir.mkdir()
+    manager.systemd_conf_dir.mkdir(parents=True, exist_ok=True)
+    # The database manager writes its unit directly; the bench only ever symlinks.
+    (unit_dir / "pilot-mariadb.service").write_text("[Service]\n")
+    dropped = manager.systemd_conf_dir / "pilot-socketio.service"
+    dropped.write_text("[Service]\n")
+    (unit_dir / "pilot-socketio.service").symlink_to(dropped)
+
+    monkeypatch.setattr(type(manager), "user_unit_dir", property(lambda self: unit_dir))
+    listed = "pilot-mariadb.service loaded active running\npilot-socketio.service loaded active running\n"
+    monkeypatch.setattr(
+        systemd_module.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=listed, stderr=""),
+    )
+
+    assert manager._installed_bench_units() == {"pilot-socketio.service"}
+    assert manager.is_own_unit("pilot-mariadb.service") is False

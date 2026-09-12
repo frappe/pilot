@@ -268,6 +268,7 @@ def test_provision_user_owned_initialises_and_installs_unit_when_fresh(tmp_path)
         patch.object(m, "_install_unit") as install_unit,
         patch.object(m, "_server_binary", side_effect=lambda name: name),
         patch(f"{MODULE}.run_command") as rc,
+        patch(f"{BASE_MODULE}.run_command"),
     ):
         m._provision_user_owned()
     install_unit.assert_called_once()
@@ -326,17 +327,22 @@ def test_ensure_port_available_passes_when_free() -> None:
     m._ensure_port_available()  # no raise
 
 
-def test_provision_user_owned_reuses_already_provisioned_server() -> None:
+def test_provision_user_owned_reuses_already_provisioned_server_but_still_enables_it() -> None:
+    """Nothing is re-initialised, yet enabling still runs: a unit that exists but
+    was never enabled starts here and would otherwise die at the next reboot."""
     m = _mgr()
     with (
         patch.object(m, "is_provisioned", return_value=True),
         patch.object(m, "is_running", return_value=True),
         patch.object(m, "_install_unit") as install_unit,
+        patch.object(m, "_reset_failed_state"),
         patch(f"{MODULE}.run_command") as rc,
+        patch(f"{BASE_MODULE}.run_command") as base_rc,
     ):
         m._provision_user_owned()
     install_unit.assert_not_called()
     rc.assert_not_called()
+    assert base_rc.call_args.args[0] == ["systemctl", "--user", "enable", "--now", "pilot-postgres.service"]
 
 
 def test_is_provisioned_false_when_data_dir_wiped_but_unit_still_exists(tmp_path) -> None:
@@ -355,13 +361,13 @@ def test_provision_user_owned_resets_failed_state_before_restarting_stopped_unit
     with (
         patch.object(m, "is_provisioned", return_value=True),
         patch.object(m, "is_running", return_value=False),
-        patch(f"{MODULE}.run_command") as rc,
+        patch(f"{BASE_MODULE}.run_command") as rc,
         patch(f"{BASE_MODULE}.subprocess.run") as reset_run,
     ):
         m._provision_user_owned()
     reset_run.assert_called_once()
     assert reset_run.call_args.args[0] == ["systemctl", "--user", "reset-failed", "pilot-postgres.service"]
-    assert rc.call_args.args[0] == ["systemctl", "--user", "start", "pilot-postgres.service"]
+    assert rc.call_args.args[0] == ["systemctl", "--user", "enable", "--now", "pilot-postgres.service"]
 
 
 def test_run_sql_as_superuser_uses_local_psql() -> None:
@@ -473,6 +479,7 @@ def test_provision_user_owned_creates_socket_dir(tmp_path) -> None:
         patch.object(m, "_move_generated_config_into_config_dir"),
         patch.object(m, "_install_unit"),
         patch(f"{MODULE}.run_command"),
+        patch(f"{BASE_MODULE}.run_command"),
     ):
         m._provision_user_owned()
     assert (tmp_path / "run").is_dir()
