@@ -135,9 +135,13 @@ def _run_for_bench(
     if not bench.config.production.enabled and not cls.supports_dev_benches:
         print(f"== {name} == (skipped: dev mode)")
         return True
+    command = command_from_args(cls, args, bench)
+    if skip_reason := command.prepare_all_sweep():
+        print(f"== {name} == (skipped: {skip_reason})")
+        return True
     print(f"== {name} ==")
     try:
-        command_from_args(cls, args, bench).run()
+        command.run()
     except BenchNotRunningError as e:
         print(str(e))
     except BenchError as e:

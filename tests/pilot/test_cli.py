@@ -190,7 +190,7 @@ def test_dispatch_all_runs_stop_on_dev_benches(tmp_path, monkeypatch, capsys):
     import argparse
     from types import SimpleNamespace
 
-    from pilot.commands.runtime.start import RunCommand
+    from pilot.commands.runtime.restart import RestartCommand
     from pilot.commands.runtime.stop import StopCommand
     from pilot.internal.cli import registry
     from pilot.internal.cli.dispatch import CliContext
@@ -205,7 +205,7 @@ def test_dispatch_all_runs_stop_on_dev_benches(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(
         registry,
         "command_from_args",
-        lambda _cls, _args, bench: SimpleNamespace(run=lambda: ran.append(bench)),
+        lambda _cls, _args, bench: SimpleNamespace(run=lambda: ran.append(bench), prepare_all_sweep=lambda: None),
     )
     context = CliContext(installation_root=tmp_path, bench_name="all")
 
@@ -213,7 +213,7 @@ def test_dispatch_all_runs_stop_on_dev_benches(tmp_path, monkeypatch, capsys):
     assert len(ran) == 2
 
     ran.clear()
-    registry.dispatch_all(argparse.Namespace(_command_cls=RunCommand), argparse.ArgumentParser(), context)
+    registry.dispatch_all(argparse.Namespace(_command_cls=RestartCommand), argparse.ArgumentParser(), context)
     assert ran == []
     assert "skipped: dev mode" in capsys.readouterr().out
 
@@ -241,7 +241,7 @@ def test_dispatch_all_stop_tolerates_stopped_benches(tmp_path, monkeypatch):
     monkeypatch.setattr(
         registry,
         "command_from_args",
-        lambda _cls, _args, _bench: SimpleNamespace(run=not_running),
+        lambda _cls, _args, _bench: SimpleNamespace(run=not_running, prepare_all_sweep=lambda: None),
     )
     registry.dispatch_all(args, argparse.ArgumentParser(), context)
 
@@ -251,7 +251,43 @@ def test_dispatch_all_stop_tolerates_stopped_benches(tmp_path, monkeypatch):
     monkeypatch.setattr(
         registry,
         "command_from_args",
-        lambda _cls, _args, _bench: SimpleNamespace(run=broken),
+        lambda _cls, _args, _bench: SimpleNamespace(run=broken, prepare_all_sweep=lambda: None),
     )
     with pytest.raises(BenchError, match="Failed for: alpha"):
         registry.dispatch_all(args, argparse.ArgumentParser(), context)
+
+
+def test_dispatch_all_start_skips_dev_benches_without_detach(tmp_path, monkeypatch, capsys):
+    import argparse
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from pilot.commands.runtime.start import RunCommand
+    from pilot.internal.cli import registry
+    from pilot.internal.cli.dispatch import CliContext
+
+    bench_dir = tmp_path / "benches" / "alpha"
+    bench_dir.mkdir(parents=True)
+    (bench_dir / "bench.toml").write_text("")
+    dev_bench = SimpleNamespace(
+        config=SimpleNamespace(production=SimpleNamespace(enabled=False)),
+        start=MagicMock(),
+        start_detached=MagicMock(),
+    )
+    monkeypatch.setattr(registry, "load_bench", lambda _context: dev_bench)
+    context = CliContext(installation_root=tmp_path, bench_name="all")
+
+    registry.dispatch_all(
+        argparse.Namespace(_command_cls=RunCommand, detach=False), argparse.ArgumentParser(), context
+    )
+
+    dev_bench.start.assert_not_called()
+    dev_bench.start_detached.assert_not_called()
+    assert "pass --detach" in capsys.readouterr().out
+
+    registry.dispatch_all(
+        argparse.Namespace(_command_cls=RunCommand, detach=True), argparse.ArgumentParser(), context
+    )
+
+    dev_bench.start_detached.assert_called_once()
+    dev_bench.start.assert_not_called()

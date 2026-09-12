@@ -247,6 +247,11 @@ class Bench:
 
         BenchRuntime(self).start(on_progress)
 
+    def start_detached(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        from pilot.core.bench.runtime import BenchRuntime
+
+        BenchRuntime(self).start_detached(on_progress)
+
     def stop(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
         from pilot.core.bench.runtime import BenchRuntime
 
