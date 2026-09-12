@@ -15,7 +15,7 @@ class InstallAppCommand(Command):
     name: ClassVar[str] = "install-app"
     help: ClassVar[str] = "Install one or more apps on a site."
 
-    site_name: Annotated[str, Arg(help="Site name.", metavar="site")]
+    site_name: str
     app_names: Annotated[list[str], Arg(help="App name(s) to install.", metavar="apps")]
     force: Annotated[bool, Arg(help="Reinstall even if already present.")] = False
 

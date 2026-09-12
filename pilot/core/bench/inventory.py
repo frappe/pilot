@@ -90,6 +90,27 @@ class BenchInventory:
                 result.append(Site(self._site_config(site_dir.name, raw), self.bench))
         return result
 
+    def default_site(self) -> "Site":
+        """The site a command acts on when it names none."""
+        sites = self.sites()
+        if not sites:
+            raise BenchError("This bench has no sites. Create one with: pilot new-site <name>")
+
+        configured = self._configured_default_site()
+        if match := next((site for site in sites if site.config.name == configured), None):
+            return match
+        if len(sites) == 1:
+            return sites[0]
+
+        names = ", ".join(sorted(site.config.name for site in sites))
+        raise BenchError(f"Multiple sites found: {names}\nSpecify one with: pilot --site <name> <command>")
+
+    def _configured_default_site(self) -> str:
+        config_path = self.bench.sites_path / "common_site_config.json"
+        if not config_path.exists():
+            return ""
+        return self._read_site_config(config_path).get("default_site", "")
+
     def write_apps_txt(self) -> None:
         apps_txt = self.bench.sites_path / "apps.txt"
         names = [app.config.name for app in self.apps()]

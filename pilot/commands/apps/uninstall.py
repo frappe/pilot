@@ -16,7 +16,7 @@ class UninstallAppCommand(Command):
         "Uninstall one or more apps from a site, also remove app from bench if not installed on any site"
     )
 
-    site_name: Annotated[str, Arg(help="Site name.", metavar="site")]
+    site_name: str
     app_names: Annotated[list[str], Arg(help="App name(s) to uninstall.", metavar="apps")]
     force: Annotated[bool, Arg(help="Uninstall even if not tracked as installed.")] = False
 

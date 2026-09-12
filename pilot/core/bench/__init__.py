@@ -208,6 +208,12 @@ class Bench:
 
         return BenchInventory(self).sites()
 
+    @property
+    def default_site(self) -> "Site":
+        from pilot.core.bench.inventory import BenchInventory
+
+        return BenchInventory(self).default_site()
+
     def site(self, name: str) -> "Site":
         from pilot.config import SiteConfig
         from pilot.core.site import Site

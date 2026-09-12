@@ -15,53 +15,70 @@ import pilot.internal.cli.registry as registry
 def test_cli_module_is_only_the_console_entrypoint() -> None:
     assert cli.__all__ == ["main"]
     assert cli.main is dispatch.main
-    assert not hasattr(cli, "strip_bench_flag")
+    assert not hasattr(cli, "strip_value_flag")
     assert not hasattr(cli, "is_frappe_passthrough")
 
 
+BENCH_FLAGS = ("--bench", "-b")
+
+
 def test_strip_bench_flag_long_form() -> None:
-    bench_name, remaining = dispatch.strip_bench_flag(["--bench", "my-bench", "start"])
+    bench_name, remaining = dispatch.strip_value_flag(["--bench", "my-bench", "start"], *BENCH_FLAGS)
     assert bench_name == "my-bench"
     assert remaining == ["start"]
 
 
 def test_strip_bench_flag_short_form() -> None:
-    bench_name, remaining = dispatch.strip_bench_flag(["-b", "my-bench", "start"])
+    bench_name, remaining = dispatch.strip_value_flag(["-b", "my-bench", "start"], *BENCH_FLAGS)
     assert bench_name == "my-bench"
     assert remaining == ["start"]
 
 
 def test_strip_bench_flag_equals_form() -> None:
-    bench_name, remaining = dispatch.strip_bench_flag(["--bench=my-bench", "start"])
+    bench_name, remaining = dispatch.strip_value_flag(["--bench=my-bench", "start"], *BENCH_FLAGS)
     assert bench_name == "my-bench"
     assert remaining == ["start"]
 
 
 def test_strip_bench_flag_short_equals_form() -> None:
-    bench_name, remaining = dispatch.strip_bench_flag(["-b=my-bench", "stop"])
+    bench_name, remaining = dispatch.strip_value_flag(["-b=my-bench", "stop"], *BENCH_FLAGS)
     assert bench_name == "my-bench"
     assert remaining == ["stop"]
 
 
 def test_strip_bench_flag_no_bench_flag() -> None:
-    bench_name, remaining = dispatch.strip_bench_flag(["start", "--verbose"])
+    bench_name, remaining = dispatch.strip_value_flag(["start", "--verbose"], *BENCH_FLAGS)
     assert bench_name is None
     assert remaining == ["start", "--verbose"]
 
 
-def test_strip_bench_flag_preserves_frappe_sub_options() -> None:
-    """--site and other frappe sub-options must survive stripping."""
-    bench_name, remaining = dispatch.strip_bench_flag(
-        ["-b", "my-bench", "frappe", "--site", "s.localhost", "migrate"]
+def test_strip_bench_flag_leaves_other_options_alone() -> None:
+    bench_name, remaining = dispatch.strip_value_flag(
+        ["-b", "my-bench", "frappe", "--site", "s.localhost", "migrate"], *BENCH_FLAGS
     )
     assert bench_name == "my-bench"
     assert remaining == ["frappe", "--site", "s.localhost", "migrate"]
 
 
 def test_strip_bench_flag_empty_args() -> None:
-    bench_name, remaining = dispatch.strip_bench_flag([])
+    bench_name, remaining = dispatch.strip_value_flag([], *BENCH_FLAGS)
     assert bench_name is None
     assert remaining == []
+
+
+def test_strip_site_flag_after_the_command() -> None:
+    """`pilot install-app --site s app` must reach pilot, not argparse."""
+    site_name, remaining = dispatch.strip_value_flag(
+        ["install-app", "--site", "s.localhost", "erpnext"], "--site"
+    )
+    assert site_name == "s.localhost"
+    assert remaining == ["install-app", "erpnext"]
+
+
+def test_strip_site_flag_equals_form() -> None:
+    site_name, remaining = dispatch.strip_value_flag(["--site=s.localhost", "migrate"], "--site")
+    assert site_name == "s.localhost"
+    assert remaining == ["migrate"]
 
 
 def test_passthrough_own_commands_are_not_forwarded() -> None:
@@ -139,7 +156,7 @@ def test_main_forwards_unknown_command_to_frappe(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(
         dispatch,
         "run_frappe",
-        lambda context, args: calls.append((context.bench_name, args, context.verbose)),
+        lambda context, args: calls.append((context.bench_name, context.site_name, args, context.verbose)),
     )
     monkeypatch.setattr(
         sys,
@@ -149,7 +166,7 @@ def test_main_forwards_unknown_command_to_frappe(monkeypatch: pytest.MonkeyPatch
 
     cli.main()
 
-    assert calls == [("demo", ["--site", "site.localhost", "migrate"], False)]
+    assert calls == [("demo", "site.localhost", ["migrate"], False)]
 
 
 def test_main_forwards_explicit_frappe_command(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -157,7 +174,7 @@ def test_main_forwards_explicit_frappe_command(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(
         dispatch,
         "run_frappe",
-        lambda context, args: calls.append((context.bench_name, args, context.verbose)),
+        lambda context, args: calls.append((context.bench_name, context.site_name, args, context.verbose)),
     )
     monkeypatch.setattr(
         sys,
@@ -167,7 +184,7 @@ def test_main_forwards_explicit_frappe_command(monkeypatch: pytest.MonkeyPatch) 
 
     cli.main()
 
-    assert calls == [("demo", ["--site", "site.localhost", "migrate", "--verbose"], True)]
+    assert calls == [("demo", "site.localhost", ["migrate", "--verbose"], True)]
 
 
 def test_main_dispatches_all_benches_without_selecting_one(

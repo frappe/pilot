@@ -45,7 +45,7 @@ Disabling needs a Frappe that supports it and is exposed through the Admin UI on
 
 - `pilot new-site SITE`: create a site and add it to bench config.
 - `pilot rename-site OLD NEW [--release-old-hostname]`: rename a site, without dropping a request.
-- `pilot list-site-apps SITE`: list the apps in use on a site, disabled ones excluded.
+- `pilot list-site-apps --site SITE`: list the apps in use on a site, disabled ones excluded.
 - `pilot set-admin-password`: set the Admin panel password in `bench.toml`; prompts when `--password` is omitted. The password must meet the same rules the dashboard enforces.
 - `pilot set-admin-domain DOMAIN [--tls]`: move the Admin panel to another hostname, reissuing its certificate and republishing nginx. The old hostname is released once the switch has committed.
 

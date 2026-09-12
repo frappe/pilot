@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Annotated, Literal
 
 import pytest
@@ -9,6 +10,7 @@ import pytest
 from pilot.commands import Arg, Command
 from pilot.exceptions import BenchError
 from pilot.internal.cli.command import add_command_arguments, command_from_args
+from pilot.internal.cli.dispatch import CliContext
 
 
 def test_arg_is_public_authoring_type() -> None:
@@ -65,7 +67,7 @@ def _parse(cls: type[Command], argv: list[str]) -> Command:
     parser = argparse.ArgumentParser()
     parser.add_argument("--yes", "-y", action="store_true")
     add_command_arguments(cls, parser)
-    return command_from_args(cls, parser.parse_args(argv), bench=None)
+    return command_from_args(cls, parser.parse_args(argv), None, CliContext(installation_root=Path(".")))
 
 
 @dataclass(kw_only=True)

@@ -21,8 +21,8 @@ def _run(bench_bin: str, *args: str, cwd: Path) -> subprocess.CompletedProcess:
 
 
 def _installed_apps(bench_bin: str, bench_root: Path, site: str) -> list[str]:
-    """Return app names installed on *site*. list-apps output is '<name> <version> <branch>'."""
-    r = _run(bench_bin, "--site", site, "list-apps", cwd=bench_root)
+    """Return app names installed on *site*."""
+    r = _run(bench_bin, "--site", site, "list-site-apps", cwd=bench_root)
     return [line.split()[0] for line in r.stdout.splitlines() if line.strip()]
 
 
@@ -49,7 +49,7 @@ def _purge_testapp(bench_root: Path, bench_bin: str, site: str) -> None:
     installed = _installed_apps(bench_bin, bench_root, site)
     if APP_NAME in installed:
         subprocess.run(
-            [bench_bin, "--site", site, "uninstall-app", APP_NAME, "--yes", "--no-backup"],
+            [bench_bin, "--site", site, "uninstall-app", APP_NAME, "--yes"],
             cwd=bench_root,
             capture_output=True,
         )
@@ -100,7 +100,7 @@ class TestAppLifecycle:
 
         installed = _installed_apps(bench_bin, bench_root, site_name)
         assert APP_NAME in installed, (
-            f"{APP_NAME} not in list-apps output after install-app.\nInstalled: {installed}"
+            f"{APP_NAME} not in list-site-apps output after install-app.\nInstalled: {installed}"
         )
 
     def test_migrate_after_install(self, bench_root: Path, bench_bin: str, site_name: str) -> None:
@@ -123,7 +123,6 @@ class TestAppLifecycle:
             "uninstall-app",
             APP_NAME,
             "--yes",
-            "--no-backup",
             cwd=bench_root,
         )
         assert result.returncode == 0, (
@@ -133,7 +132,7 @@ class TestAppLifecycle:
 
         installed_after = _installed_apps(bench_bin, bench_root, site_name)
         assert APP_NAME not in installed_after, (
-            f"{APP_NAME} still in list-apps after remove-app.\nInstalled: {installed_after}"
+            f"{APP_NAME} still in list-site-apps after remove-app.\nInstalled: {installed_after}"
         )
 
     def test_migrate_after_remove(self, bench_root: Path, bench_bin: str, site_name: str) -> None:

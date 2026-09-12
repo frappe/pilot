@@ -13,13 +13,15 @@ from pilot.utils import cli_root
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
-_OWN_GROUP_OPTIONS = frozenset(["--verbose", "--yes", "-y", "--bench", "-b", "--help", "-h"])
+_OWN_GROUP_OPTIONS = frozenset(["--verbose", "--yes", "-y", "--bench", "-b", "--site", "--help", "-h"])
+_VALUE_OPTIONS = ("--bench", "-b", "--site")
 
 
 @dataclass(frozen=True)
 class CliContext:
     installation_root: Path
     bench_name: str | None = None
+    site_name: str | None = None
     verbose: bool = False
     assume_yes: bool = False
 
@@ -83,23 +85,25 @@ def load_bench(context: CliContext, require_explicit: bool = False) -> "Bench":
     return Bench(bench_root)
 
 
-def strip_bench_flag(args: list[str]) -> tuple[str | None, list[str]]:
-    bench_name = None
+def strip_value_flag(args: list[str], *aliases: str) -> tuple[str | None, list[str]]:
+    """Pull `--name value` or `--name=value` out of args wherever it sits, so a flag typed
+    after the command still reaches pilot instead of argparse or the frappe passthrough."""
+    value = None
     remaining = []
     skip_next = False
     for arg in args:
         if skip_next:
-            bench_name = arg
+            value = arg
             skip_next = False
             continue
-        if arg in ("--bench", "-b"):
+        if arg in aliases:
             skip_next = True
             continue
-        if arg.startswith(("--bench=", "-b=")):
-            bench_name = arg.split("=", 1)[1]
+        if any(arg.startswith(f"{alias}=") for alias in aliases):
+            value = arg.split("=", 1)[1]
             continue
         remaining.append(arg)
-    return bench_name, remaining
+    return value, remaining
 
 
 def is_frappe_passthrough(args: list[str], own_commands: frozenset[str] | None = None) -> bool:
@@ -115,7 +119,7 @@ def is_frappe_passthrough(args: list[str], own_commands: frozenset[str] | None =
             continue
         if arg.startswith("-"):
             if is_own_group_option(arg):
-                skip_next = arg in ("--bench", "-b")
+                skip_next = arg in _VALUE_OPTIONS
                 continue
             return True
         return arg not in own_commands
@@ -128,15 +132,17 @@ def is_own_group_option(arg: str) -> bool:
     if "=" not in arg:
         return False
     key = arg.split("=", 1)[0]
-    return key in ("--bench", "-b")
+    return key in _VALUE_OPTIONS
 
 
 def main() -> None:
     sys.stdout.reconfigure(line_buffering=True)  # type: ignore[union-attr]
     args_list = sys.argv[1:]
-    bench_name, remaining = strip_bench_flag(args_list)
+    bench_name, remaining = strip_value_flag(args_list, "--bench", "-b")
+    site_name, remaining = strip_value_flag(remaining, "--site")
     context = build_context(
         bench_name,
+        site_name,
         verbose="--verbose" in args_list,
         assume_yes="--yes" in args_list or "-y" in args_list,
     )
@@ -165,10 +171,13 @@ def error_boundary(context: CliContext) -> Iterator[None]:
         sys.exit(1)
 
 
-def build_context(bench_name: str | None, verbose: bool, assume_yes: bool) -> CliContext:
+def build_context(
+    bench_name: str | None, site_name: str | None, verbose: bool, assume_yes: bool
+) -> CliContext:
     return CliContext(
         installation_root=cli_root(),
         bench_name=bench_name,
+        site_name=site_name,
         verbose=verbose,
         assume_yes=assume_yes,
     )
@@ -186,7 +195,19 @@ def run_frappe(context: CliContext, args: list[str]) -> None:
     from pilot.commands.runtime.frappe import FrappeCommand
 
     with error_boundary(context):
-        FrappeCommand(load_bench(context), args=tuple(args)).run()
+        bench = load_bench(context)
+        FrappeCommand(bench, args=tuple(frappe_args(bench, context, args))).run()
+
+
+def frappe_args(bench: "Bench", context: CliContext, args: list[str]) -> list[str]:
+    """Frappe wants --site ahead of its own command, so put the resolved site there."""
+    if context.site_name:
+        return ["--site", context.site_name, *args]
+    try:
+        return ["--site", bench.default_site.config.name, *args]
+    except BenchError:
+        # No site pilot can name on its own - leave the choice to frappe.
+        return args
 
 
 def run_native(context: CliContext, remaining: list[str]) -> None:

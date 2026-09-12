@@ -16,14 +16,14 @@ def _run(bench_bin: str, *args: str, cwd: Path) -> subprocess.CompletedProcess:
 
 
 def _installed_apps(bench_bin: str, bench_root: Path, site: str) -> list[str]:
-    r = _run(bench_bin, "--site", site, "list-apps", cwd=bench_root)
+    r = _run(bench_bin, "--site", site, "list-site-apps", cwd=bench_root)
     return [line.split()[0] for line in r.stdout.splitlines() if line.strip()]
 
 
 def _uninstall_if_present(bench_bin: str, bench_root: Path, site: str, app: str) -> None:
     if app in _installed_apps(bench_bin, bench_root, site):
         subprocess.run(
-            [bench_bin, "--site", site, "uninstall-app", app, "--yes", "--no-backup"],
+            [bench_bin, "--site", site, "uninstall-app", app, "--yes"],
             cwd=bench_root,
             capture_output=True,
         )
