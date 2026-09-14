@@ -90,6 +90,7 @@ class SiteCommands:
             raise BenchError(f"Failed to clear cache for {self.site.config.name}")
 
     def build_assets(self, app: str | None = None, force: bool = True) -> None:
+        """Rebuild frontend assets for apps installed on this site."""
         try:
             active = self.site.active_apps()
         except Exception as exc:

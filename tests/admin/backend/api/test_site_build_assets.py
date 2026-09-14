@@ -1,5 +1,3 @@
-"""Tests for site asset building: core logic, BuildTask, and /api/v1/sites/<name>/actions/build-assets."""
-
 from __future__ import annotations
 
 import json
@@ -238,7 +236,24 @@ def test_api_build_site_assets_queues_task(tmp_path: Path) -> None:
     body = response.get_json()
     assert body["command"] == "build"
     assert body["args"]["site"] == "site1.localhost"
-    assert body["args"]["force"] is True  # API default
+    assert body["args"]["force"] is True
+
+
+def test_api_build_site_assets_acquires_site_and_bench_locks(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    _make_site(bench_root, "site1.localhost", ["frappe"])
+    client = _client(bench_root)
+
+    from pilot.tasks.build import BuildTask
+
+    with patch.object(BuildTask, "queue", wraps=BuildTask.queue) as mock_queue, patch(
+        "pilot.internal.tasks.runner.task_workers.wake", return_value=False
+    ):
+        response = client.post("/api/v1/sites/site1.localhost/actions/build-assets")
+
+    assert response.status_code == 202
+    mock_queue.assert_called_once()
+    assert mock_queue.call_args.kwargs["resource_key"] == ["site:site1.localhost", "bench:build"]
 
 
 def test_api_build_site_assets_with_app_param(tmp_path: Path) -> None:

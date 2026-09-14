@@ -255,6 +255,7 @@ def clear_cache(name: str):
 @sites_bp.post("/<name>/actions/build-assets")
 @require_scope(site_name)
 def build_site_assets(name: str):
+    """Queue a task to rebuild frontend assets for a site's active apps."""
     bench_root = Path(current_app.config["BENCH_ROOT"])
     if not site_exists(bench_root, name):
         return site_not_found()
@@ -278,7 +279,7 @@ def build_site_assets(name: str):
             app=app.strip() if app else None,
             force=force,
             idempotency_key=request.headers.get("Idempotency-Key"),
-            resource_key=f"site:{name.lower()}",
+            resource_key=[f"site:{name.lower()}", "bench:build"],
         )
     except Exception as error:
         return task_failure(error)
