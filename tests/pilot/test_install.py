@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-
 INSTALLER = Path(__file__).parents[2] / "install.sh"
 INSTALLER_FUNCTIONS = INSTALLER.read_text().split(
     "# ── run ───────────────────────────────────────────────────────────────────────"

@@ -63,6 +63,23 @@ const clearCache = async () => {
   }
 }
 
+const buildingAssets = ref(false)
+const showBuildConfirm = ref(false)
+
+const buildAssets = async () => {
+  error.value = ''
+  buildingAssets.value = true
+  try {
+    const data = await sitesApi.buildAssets(props.siteName)
+    if (data.task_id) openTaskDetailPage(router, data.task_id)
+    else error.value = apiErrorMessage(data, 'Failed to build site assets.')
+  } catch (e) {
+    error.value = e.message || 'Failed to build site assets.'
+  } finally {
+    buildingAssets.value = false
+  }
+}
+
 const refreshingStorage = ref(false)
 
 const refreshStorage = async () => {
@@ -99,6 +116,15 @@ const Actions = [
     onClick: () => clearCache(),
   },
   {
+    key: 'build_assets',
+    label: 'Build assets',
+    buttonLabel: 'Build',
+    description: "Rebuild frontend JS and CSS assets for this site's installed apps.",
+    condition: () => true,
+    loading: () => buildingAssets.value,
+    onClick: () => { showBuildConfirm.value = true },
+  },
+  {
     key: 'refresh_storage',
     label: 'Refresh usage',
     buttonLabel: 'Refresh',
@@ -108,6 +134,7 @@ const Actions = [
     onClick: () => refreshStorage(),
   },
 ]
+
 
 const rows = computed(() => Actions.filter((row) => row.condition()))
 </script>
@@ -166,6 +193,26 @@ const rows = computed(() => Actions.filter((row) => row.condition()))
           @click="enableSsl(sslEmail)"
         >
           Enable SSL
+        </Button>
+      </div>
+    </template>
+  </Dialog>
+
+  <!-- Build assets confirmation dialog -->
+  <Dialog v-model="showBuildConfirm" title="Build assets" size="md">
+    <p class="text-ink-gray-7 text-p-sm">
+      This will rebuild frontend JS and CSS assets for this site's installed apps.
+      The process may take several minutes.
+    </p>
+    <template #actions>
+      <div class="flex justify-end gap-2">
+        <Button variant="outline" @click="showBuildConfirm = false">Cancel</Button>
+        <Button
+          variant="solid"
+          :loading="buildingAssets"
+          @click="showBuildConfirm = false; buildAssets()"
+        >
+          Build
         </Button>
       </div>
     </template>

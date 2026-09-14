@@ -1287,7 +1287,7 @@ def test_revoking_all_clears_active(tmp_path: Path) -> None:
 def test_discarding_an_unknown_jti_does_not_rewrite(tmp_path: Path) -> None:
     from admin.backend.internal.session import ActiveTokens, Session
 
-    client = _client(tmp_path)
+    _client(tmp_path)
     bench = Bench(tmp_path / "benches" / "current")
     Session(bench).issue_session_token()
     path = tmp_path / "benches" / "current" / ActiveTokens.FILENAME

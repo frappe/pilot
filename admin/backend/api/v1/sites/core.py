@@ -33,6 +33,7 @@ from pilot.core.bench import Bench
 from pilot.core.site.login import site_url
 from pilot.internal.site_paths import site_config_path, site_exists
 from pilot.internal.validators import validate_site_name
+from pilot.tasks.build import BuildTask
 from pilot.tasks.clear_cache import ClearCacheTask
 from pilot.tasks.drop_site import DropSiteTask
 from pilot.tasks.new_site import NewSiteTask
@@ -243,6 +244,39 @@ def clear_cache(name: str):
         task_id = ClearCacheTask.queue(
             Bench(bench_root),
             site=name,
+            idempotency_key=request.headers.get("Idempotency-Key"),
+            resource_key=f"site:{name.lower()}",
+        )
+    except Exception as error:
+        return task_failure(error)
+    return accepted_task_response(bench_root, task_id)
+
+
+@sites_bp.post("/<name>/actions/build-assets")
+@require_scope(site_name)
+def build_site_assets(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    if not site_exists(bench_root, name):
+        return site_not_found()
+
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return malformed_body()
+
+    app = data.get("app")
+    if app is not None and (not isinstance(app, str) or not app.strip()):
+        return invalid_fields()
+
+    force = data.get("force", True)
+    if not isinstance(force, bool):
+        return invalid_fields()
+
+    try:
+        task_id = BuildTask.queue(
+            Bench(bench_root),
+            site=name,
+            app=app.strip() if app else None,
+            force=force,
             idempotency_key=request.headers.get("Idempotency-Key"),
             resource_key=f"site:{name.lower()}",
         )
