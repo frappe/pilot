@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Button, Dialog, ErrorMessage, TextInput } from 'frappe-ui'
+import { Button, Dialog, ErrorMessage, TextInput, toast } from 'frappe-ui'
 
 import { useSite } from '@/composables/sites/useSite'
 import { apiErrorMessage } from '@/api/client'
@@ -37,11 +37,15 @@ const enableSsl = async (email) => {
       showSslEmail.value = true
       if (email) sslEmailError.value = apiErrorMessage(data, 'Could not enable SSL.')
     } else {
-      error.value = apiErrorMessage(data, 'Could not enable SSL.')
+      const msg = apiErrorMessage(data, 'Could not enable SSL.')
+      error.value = msg
+      toast.error(msg)
     }
   } catch (e) {
-    if (showSslEmail.value) sslEmailError.value = e.message
-    else error.value = e.message
+    const msg = e.message || 'Could not enable SSL.'
+    if (showSslEmail.value) sslEmailError.value = msg
+    else error.value = msg
+    toast.error(msg)
   } finally {
     sslLoading.value = false
   }
@@ -55,9 +59,15 @@ const clearCache = async () => {
   try {
     const data = await sitesApi.clearCache(props.siteName)
     if (data.task_id) openTaskDetailPage(router, data.task_id)
-    else error.value = apiErrorMessage(data, 'Failed to clear cache.')
+    else {
+      const msg = apiErrorMessage(data, 'Failed to clear cache.')
+      error.value = msg
+      toast.error(msg)
+    }
   } catch (e) {
-    error.value = e.message || 'Failed to clear cache.'
+    const msg = e.message || 'Failed to clear cache.'
+    error.value = msg
+    toast.error(msg)
   } finally {
     clearingCache.value = false
   }
@@ -72,9 +82,15 @@ const buildAssets = async () => {
   try {
     const data = await sitesApi.buildAssets(props.siteName)
     if (data.task_id) openTaskDetailPage(router, data.task_id)
-    else error.value = apiErrorMessage(data, 'Failed to build site assets.')
+    else {
+      const msg = apiErrorMessage(data, 'Failed to build site assets.')
+      error.value = msg
+      toast.error(msg)
+    }
   } catch (e) {
-    error.value = e.message || 'Failed to build site assets.'
+    const msg = e.message || 'Failed to build site assets.'
+    error.value = msg
+    toast.error(msg)
   } finally {
     buildingAssets.value = false
   }
@@ -88,9 +104,15 @@ const refreshStorage = async () => {
   try {
     const data = await sitesApi.refreshStorage(props.siteName)
     if (data.task_id) openTaskDetailPage(router, data.task_id)
-    else error.value = apiErrorMessage(data, 'Failed to refresh storage usage.')
+    else {
+      const msg = apiErrorMessage(data, 'Failed to refresh storage usage.')
+      error.value = msg
+      toast.error(msg)
+    }
   } catch (e) {
-    error.value = e.message || 'Failed to refresh storage usage.'
+    const msg = e.message || 'Failed to refresh storage usage.'
+    error.value = msg
+    toast.error(msg)
   } finally {
     refreshingStorage.value = false
   }
