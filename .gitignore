@@ -89,8 +89,29 @@ registry-cache*
 # Downloaded OWASP CRS ruleset (local data)
 /modsecurity-crs/
 
-# Agent Skills
-.agents
+# Agent Skills & AI Tool Folders
+.agents/
+.aider-desk/
+.augment/
+.autohand/
+.bob/
+.claude/
+.codeartsdoer/
+.codebuddy/
+.codestudio/
+.cortex/
+.crush/
+.grok/
+.hermes/
+.kimchi/
+.kiro/
+.lingma/
+.ona/
+.openhands/
+.pi/
+.qwen/
+.zcode/
+skills/
 skills-lock.json
 
 # Local planning docs, never commit

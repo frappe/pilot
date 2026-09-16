@@ -176,6 +176,12 @@ class Site:
 
         SiteCommands(self).clear_cache()
 
+    def build_assets(self, app: str | None = None, force: bool = True) -> None:
+        """Build frontend assets for active apps on this site."""
+        from pilot.core.site.commands import SiteCommands
+
+        SiteCommands(self).build_assets(app=app, force=force)
+
     def uninstall_apps(
         self,
         app_names: list[str],

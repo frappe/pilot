@@ -63,6 +63,10 @@ Settings screens edit `bench.toml` through the backend. The frontend should not 
 
 Post-save changes such as restarts, firewall sync, WAF sync, or S3 credential sync belong in backend/core code.
 
+## Site Actions
+
+Site Settings -> Actions exposes operational site management actions including **Build assets**, **Clear cache**, and **Refresh storage usage**. Triggering **Build assets** calls the backend endpoint `POST /api/v1/sites/<name>/actions/build-assets` and opens the task progress view to stream asset compilation logs live.
+
 ## UX Expectations
 
 - Show the current bench and site context clearly.

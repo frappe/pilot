@@ -27,6 +27,12 @@ export const sitesApi = {
       .json(),
   clearCache: (name) =>
     request.post(`sites/${encodeURIComponent(name)}/actions/clear-cache`).json(),
+  buildAssets: (name, { app, force } = {}) =>
+    request
+      .post(`sites/${encodeURIComponent(name)}/actions/build-assets`, {
+        ...(app || force !== undefined ? { json: { ...(app ? { app } : {}), ...(force !== undefined ? { force } : {}) } } : {}),
+      })
+      .json(),
   migrate: (name) => request.post(`sites/${encodeURIComponent(name)}/actions/migrate`).json(),
   reinstall: (name) => request.post(`sites/${encodeURIComponent(name)}/actions/reinstall`).json(),
   drop: (name) => request.delete(`sites/${encodeURIComponent(name)}`).json(),

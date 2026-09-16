@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Button, Dialog, ErrorMessage, TextInput } from 'frappe-ui'
+import { Button, Dialog, ErrorMessage, TextInput, toast } from 'frappe-ui'
 
 import { useSite } from '@/composables/sites/useSite'
 import { apiErrorMessage } from '@/api/client'
@@ -37,11 +37,15 @@ const enableSsl = async (email) => {
       showSslEmail.value = true
       if (email) sslEmailError.value = apiErrorMessage(data, 'Could not enable SSL.')
     } else {
-      error.value = apiErrorMessage(data, 'Could not enable SSL.')
+      const msg = apiErrorMessage(data, 'Could not enable SSL.')
+      error.value = msg
+      toast.error(msg)
     }
   } catch (e) {
-    if (showSslEmail.value) sslEmailError.value = e.message
-    else error.value = e.message
+    const msg = e.message || 'Could not enable SSL.'
+    if (showSslEmail.value) sslEmailError.value = msg
+    else error.value = msg
+    toast.error(msg)
   } finally {
     sslLoading.value = false
   }
@@ -55,11 +59,40 @@ const clearCache = async () => {
   try {
     const data = await sitesApi.clearCache(props.siteName)
     if (data.task_id) openTaskDetailPage(router, data.task_id)
-    else error.value = apiErrorMessage(data, 'Failed to clear cache.')
+    else {
+      const msg = apiErrorMessage(data, 'Failed to clear cache.')
+      error.value = msg
+      toast.error(msg)
+    }
   } catch (e) {
-    error.value = e.message || 'Failed to clear cache.'
+    const msg = e.message || 'Failed to clear cache.'
+    error.value = msg
+    toast.error(msg)
   } finally {
     clearingCache.value = false
+  }
+}
+
+const buildingAssets = ref(false)
+const showBuildConfirm = ref(false)
+
+const buildAssets = async () => {
+  error.value = ''
+  buildingAssets.value = true
+  try {
+    const data = await sitesApi.buildAssets(props.siteName)
+    if (data.task_id) openTaskDetailPage(router, data.task_id)
+    else {
+      const msg = apiErrorMessage(data, 'Failed to build site assets.')
+      error.value = msg
+      toast.error(msg)
+    }
+  } catch (e) {
+    const msg = e.message || 'Failed to build site assets.'
+    error.value = msg
+    toast.error(msg)
+  } finally {
+    buildingAssets.value = false
   }
 }
 
@@ -71,9 +104,15 @@ const refreshStorage = async () => {
   try {
     const data = await sitesApi.refreshStorage(props.siteName)
     if (data.task_id) openTaskDetailPage(router, data.task_id)
-    else error.value = apiErrorMessage(data, 'Failed to refresh storage usage.')
+    else {
+      const msg = apiErrorMessage(data, 'Failed to refresh storage usage.')
+      error.value = msg
+      toast.error(msg)
+    }
   } catch (e) {
-    error.value = e.message || 'Failed to refresh storage usage.'
+    const msg = e.message || 'Failed to refresh storage usage.'
+    error.value = msg
+    toast.error(msg)
   } finally {
     refreshingStorage.value = false
   }
@@ -99,6 +138,15 @@ const Actions = [
     onClick: () => clearCache(),
   },
   {
+    key: 'build_assets',
+    label: 'Build assets',
+    buttonLabel: 'Build',
+    description: "Rebuild frontend JS and CSS assets for this site's installed apps.",
+    condition: () => true,
+    loading: () => buildingAssets.value,
+    onClick: () => { showBuildConfirm.value = true },
+  },
+  {
     key: 'refresh_storage',
     label: 'Refresh usage',
     buttonLabel: 'Refresh',
@@ -108,6 +156,7 @@ const Actions = [
     onClick: () => refreshStorage(),
   },
 ]
+
 
 const rows = computed(() => Actions.filter((row) => row.condition()))
 </script>
@@ -166,6 +215,26 @@ const rows = computed(() => Actions.filter((row) => row.condition()))
           @click="enableSsl(sslEmail)"
         >
           Enable SSL
+        </Button>
+      </div>
+    </template>
+  </Dialog>
+
+  <!-- Build assets confirmation dialog -->
+  <Dialog v-model="showBuildConfirm" title="Build assets" size="md">
+    <p class="text-ink-gray-7 text-p-sm">
+      This will rebuild frontend JS and CSS assets for this site's installed apps.
+      The process may take several minutes.
+    </p>
+    <template #actions>
+      <div class="flex justify-end gap-2">
+        <Button variant="outline" @click="showBuildConfirm = false">Cancel</Button>
+        <Button
+          variant="solid"
+          :loading="buildingAssets"
+          @click="showBuildConfirm = false; buildAssets()"
+        >
+          Build
         </Button>
       </div>
     </template>

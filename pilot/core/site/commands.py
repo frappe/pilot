@@ -89,6 +89,30 @@ class SiteCommands:
         if result.returncode != 0:
             raise BenchError(f"Failed to clear cache for {self.site.config.name}")
 
+    def build_assets(self, app: str | None = None, force: bool = True) -> None:
+        """Rebuild frontend assets for apps installed on this site."""
+        try:
+            active = self.site.active_apps()
+        except Exception as exc:
+            raise BenchError(
+                f"Cannot determine installed apps for site '{self.site.config.name}': {exc}"
+            ) from exc
+
+        if app:
+            if app not in active:
+                raise BenchError(
+                    f"App '{app}' is not installed on site '{self.site.config.name}'. "
+                    f"Installed apps: {', '.join(active) or '(none)'}"
+                )
+            apps = [app]
+        else:
+            apps = active
+
+        if not apps:
+            return
+
+        self.site.bench.rebuild_assets(apps=apps, force=force)
+
     @contextmanager
     def setup_credentials(self, db_type: str, database: str = "") -> Iterator[list[str]]:
         """Database credential arguments for one frappe setup command.
