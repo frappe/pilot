@@ -117,10 +117,9 @@ class TaskPayloadBuilder:
         for key in self._required_args[command]:
             if key not in args:
                 raise ValueError(f"Command {command!r} requires arg {key!r}")
-        if "admin_password" in self._required_args[command]:
-            password = args["admin_password"]
-            if not isinstance(password, str) or not password.strip():
-                raise ValueError("admin_password must not be empty")
+            value = args[key]
+            if value is None or (isinstance(value, str) and not value.strip()):
+                raise ValueError(f"{key} must not be empty")
 
     @staticmethod
     def validate_callbacks(callbacks: TaskCallbacks | None) -> dict:

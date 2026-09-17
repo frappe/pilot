@@ -108,6 +108,14 @@ def test_site_tasks_reject_empty_admin_password(tmp_path: Path, password) -> Non
         TaskRunner(tmp_path).run("new-site", {"name": "site.localhost", "admin_password": password})
 
 
+@pytest.mark.parametrize("blank", ["name", "description", "publisher", "email"])
+def test_new_app_rejects_blank_required_args(tmp_path: Path, blank: str) -> None:
+    args = {"name": "people", "description": "Hi", "publisher": "Frappe", "email": "t@f.io"}
+    args[blank] = "  "
+    with pytest.raises(ValueError, match="must not be empty"):
+        TaskRunner(tmp_path).run("new-app", args)
+
+
 def test_command_argv_get_app(tmp_path: Path) -> None:
     argv = task_argv(tmp_path, "get-app", {"name": "erpnext", "repo": "https://github.com/frappe/erpnext"})
     assert argv[0] == sys.executable
