@@ -160,12 +160,12 @@ const submit = async () => {
           <TextInput
             v-model="sitePrefix"
             class="flex-1 min-w-0"
-            :class="hasSingleDomain ? '[&_[data-slot=control]]:pe-28' : ''"
+            :class="hasSingleDomain ? '[&_[data-slot=control]]:pe-60' : ''"
             placeholder="mysite"
             @keyup.enter="submit"
           >
             <template v-if="hasSingleDomain" #suffix>
-              <span class="text-ink-gray-5 text-p-sm truncate max-w-24">
+              <span class="text-ink-gray-5 text-p-sm truncate max-w-56">
                 {{ wildcardDomains[0] }}
               </span>
             </template>

@@ -85,7 +85,7 @@ const confirmAdd = async () => {
 </script>
 
 <template>
-  <Dialog v-model="show" title="Use your own domain">
+  <Dialog v-model="show" title="Use your own domain" size="2xl">
     <template v-if="step === 'input'">
       <p class="text-ink-gray-7 text-p-sm">
         To add a custom domain, you must already own it. If you don't have one, buy it and come
