@@ -153,14 +153,12 @@ class NginxConfigRenderer:
         if not admin.domain or admin.domain != mapping.target:
             return None
 
-        socket_activated = self.bench.config.production.process_manager == "systemd"
-        port = admin.internal_port if socket_activated else admin.port
         # Redirect to the scheme nginx is actually serving.
         scheme = "https" if admin_ssl else "http"
         return SimpleNamespace(
             server_name=vm_hostname_pattern(mapping.pattern),
             redirect=f"{scheme}://{mapping.target}" if mapping.redirect else "",
-            proxy_pass=f"http://127.0.0.1:{port}",
+            proxy_pass=f"http://127.0.0.1:{admin.internal_port}",
             site="",
         )
 
@@ -230,7 +228,6 @@ class NginxConfigRenderer:
 
     def _admin_vhost(self, ssl: bool) -> SimpleNamespace:
         admin = self.bench.config.admin
-        socket_activated = self.bench.config.production.process_manager == "systemd"
         return SimpleNamespace(
             kind="admin",
             server_name=admin.domain,
@@ -238,7 +235,7 @@ class NginxConfigRenderer:
             proxy_protocol=ssl and self.bench.config.proxy.protocol_v2,
             cert=live_cert_path(admin.domain),
             key=live_key_path(admin.domain),
-            port=admin.internal_port if socket_activated else admin.port,
+            port=admin.internal_port,
         )
 
     def _bench_context(
@@ -246,6 +243,11 @@ class NginxConfigRenderer:
     ) -> dict[str, Any]:
         config = self.bench.config
         nginx = config.nginx
+        proxy_servers = self._proxy_servers
+        # Trust a forwarded scheme only when the edge terminates TLS.
+        forwarded_proto = (
+            "$http_x_forwarded_proto" if proxy_servers and not config.proxy.protocol_v2 else "$scheme"
+        )
         return {
             "upstream_name": config.name,
             "upstream_server": GunicornManager(self.bench).upstream_server,
@@ -258,8 +260,10 @@ class NginxConfigRenderer:
             "acme_root": config.letsencrypt.webroot_path,
             "error_dir": self.bench.config_path / "nginx" / "error_pages",
             "error_codes": list(ERROR_PAGES),
-            "proxy_servers": self._proxy_servers,
-            "proxy_peers": "|".join(re.escape(ip) for ip in self._proxy_servers),
+            "proxy_servers": proxy_servers,
+            "proxy_peers": "|".join(re.escape(ip) for ip in proxy_servers),
+            "forwarded_proto": forwarded_proto,
+            "socketio_origin_fallback": f"{forwarded_proto}://$http_host",
             "firewall": config.firewall,
             "waf_active": self._is_waf_active(),
             "waf_rules_file": self.bench.config_path / "modsecurity" / "main.conf",

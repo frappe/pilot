@@ -49,6 +49,27 @@ Runtime commands:
 
 `pilot restart` targets the production workload. Local development start/stop uses bench runtime managers.
 
+### Supervisor Extensions
+
+Supervisor benches may define app-specific processes in
+`config/services/supervisor.d/*.conf`. Pilot includes this directory from its
+generated `config/services/supervisord.conf` and preserves its fragments when
+production configuration is regenerated.
+
+After adding or changing a fragment, load it through the bench-owned
+Supervisor instance:
+
+```bash
+supervisorctl -c config/services/supervisord.conf reread
+supervisorctl -c config/services/supervisord.conf update
+supervisorctl -c config/services/supervisord.conf status
+```
+
+Programs declared only in extension fragments are not members of Pilot's
+generated workload group. Consequently, `pilot restart` does not restart them;
+manage those programs or their explicitly declared Supervisor group with
+`supervisorctl`.
+
 ## Nginx And TLS
 
 Nginx config is rendered from bench and site state. Regenerate it with `pilot setup nginx` or `pilot setup config`.
@@ -66,6 +87,15 @@ pilot setup production --admin-domain admin.example.com --tls --letsencrypt-emai
 
 You can also set `letsencrypt.email` in `common_config.toml` before setup.
 When an upstream proxy terminates HTTPS, set `admin.tls = false` so Pilot does not change site SSL settings or request certificates.
+
+When requests arrive from configured proxy servers, Pilot preserves the
+forwarded scheme supplied by an edge that terminates TLS. Socket.IO also
+preserves an explicit browser `Origin` and reconstructs a same-origin value
+from the forwarded scheme and host only when that header is absent.
+
+With PROXY protocol v2 enabled, the edge passes TLS through to Pilot instead of
+terminating it. In that mode the generated nginx configuration uses its local
+`$scheme`; the PROXY protocol does not carry `X-Forwarded-Proto`.
 
 ## Admin Domain
 

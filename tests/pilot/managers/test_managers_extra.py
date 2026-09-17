@@ -199,6 +199,17 @@ def test_supervisor_conf_program_names_in_group(tmp_path: Path) -> None:
     assert "test-bench-worker-default-1" in conf
 
 
+def test_supervisor_conf_includes_persistent_extension_directory(tmp_path: Path) -> None:
+    from pilot.managers.processes.supervisor import SupervisorRenderer
+
+    conf = SupervisorRenderer("test-bench", tmp_path / "logs").render_supervisord_conf(
+        [], tmp_path / "services" / "s.sock", tmp_path / "services" / "s.pid"
+    )
+
+    assert "[include]" in conf
+    assert f"files={tmp_path}/services/supervisor.d/*.conf" in conf
+
+
 def test_supervisor_conf_redis_gets_stop_timeout(tmp_path: Path) -> None:
     """The redis stop grace must reach the supervisor renderer, not just systemd
     (the consistency fix: stop_timeout lives on the definition now)."""
@@ -237,6 +248,21 @@ def test_supervisor_generate_config_writes_file(tmp_path: Path) -> None:
     ):
         mgr.write_config()
     assert mgr.supervisor_conf_path.exists()
+
+
+def test_supervisor_generate_config_preserves_extension_fragments(tmp_path: Path) -> None:
+    mgr = _make_supervisor_manager(tmp_path)
+    fragment = mgr.supervisor_include_dir / "custom.conf"
+    fragment.parent.mkdir(parents=True)
+    fragment.write_text("[program:custom]\ncommand=/bin/true\n")
+
+    with (
+        patch("pilot.managers.processes.supervisor.AdminEnvManager"),
+        patch.object(mgr, "_prod_process_definitions", return_value=[]),
+    ):
+        mgr.write_config()
+
+    assert fragment.read_text() == "[program:custom]\ncommand=/bin/true\n"
 
 
 def test_supervisor_conf_no_user_directive(tmp_path: Path) -> None:
