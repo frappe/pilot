@@ -53,8 +53,8 @@ def _pids_listening(port: int) -> set[int]:
 
 def _process_has_bench_root(pid: int, bench_root: Path) -> bool | None:
     """True when the process carries this bench's tag, False when it definitely does
-    not - including a pid that is gone or belongs to another user - and None when it
-    could not be inspected at all."""
+    not - including a pid whose /proc entry is gone, or one owned by another user -
+    and None when it could not be inspected."""
     from pilot.managers.platform import is_macos
 
     expected = f"{BENCH_ROOT_ENV}={bench_root}"
@@ -76,7 +76,9 @@ def _process_has_bench_root(pid: int, bench_root: Path) -> bool | None:
     except (FileNotFoundError, subprocess.SubprocessError):
         return None
     if result.returncode != 0:
-        return False
+        # ps cannot say whether the pid is gone or the lookup itself failed; a pid
+        # that is really gone leaves the port listing on its own.
+        return None
     return re.search(rf"(?:^|\s){re.escape(expected)}(?:\s|$)", result.stdout) is not None
 
 
