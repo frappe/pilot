@@ -267,12 +267,23 @@ def test_bench_root_is_unknown_when_inspection_fails(tmp_path: Path, monkeypatch
     assert process_module._process_has_bench_root(123, tmp_path / "bench") is None
 
 
-def test_bench_root_is_foreign_when_the_process_is_gone(tmp_path: Path, monkeypatch) -> None:
+def test_bench_root_is_unknown_when_ps_exits_nonzero(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("pilot.managers.platform.is_macos", lambda: True)
     monkeypatch.setattr(
         process_module.subprocess,
         "run",
         MagicMock(return_value=subprocess.CompletedProcess([], 1, stdout="")),
+    )
+
+    assert process_module._process_has_bench_root(123, tmp_path / "bench") is None
+
+
+def test_bench_root_is_foreign_for_a_missing_proc_entry(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("pilot.managers.platform.is_macos", lambda: False)
+    monkeypatch.setattr(
+        process_module.Path,
+        "read_bytes",
+        MagicMock(side_effect=FileNotFoundError),
     )
 
     assert process_module._process_has_bench_root(123, tmp_path / "bench") is False
