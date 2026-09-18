@@ -184,3 +184,74 @@ def test_main_dispatches_all_benches_without_selecting_one(
     cli.main()
 
     assert dispatched == [("restart", "all")]
+
+
+def test_dispatch_all_runs_stop_on_dev_benches(tmp_path, monkeypatch, capsys):
+    import argparse
+    from types import SimpleNamespace
+
+    from pilot.commands.runtime.start import RunCommand
+    from pilot.commands.runtime.stop import StopCommand
+    from pilot.internal.cli import registry
+    from pilot.internal.cli.dispatch import CliContext
+
+    for name in ("alpha", "beta"):
+        bench_dir = tmp_path / "benches" / name
+        bench_dir.mkdir(parents=True)
+        (bench_dir / "bench.toml").write_text("")
+    dev_bench = SimpleNamespace(config=SimpleNamespace(production=SimpleNamespace(enabled=False)))
+    monkeypatch.setattr(registry, "load_bench", lambda _context: dev_bench)
+    ran = []
+    monkeypatch.setattr(
+        registry,
+        "command_from_args",
+        lambda _cls, _args, bench: SimpleNamespace(run=lambda: ran.append(bench)),
+    )
+    context = CliContext(installation_root=tmp_path, bench_name="all")
+
+    registry.dispatch_all(argparse.Namespace(_command_cls=StopCommand), argparse.ArgumentParser(), context)
+    assert len(ran) == 2
+
+    ran.clear()
+    registry.dispatch_all(argparse.Namespace(_command_cls=RunCommand), argparse.ArgumentParser(), context)
+    assert ran == []
+    assert "skipped: dev mode" in capsys.readouterr().out
+
+
+def test_dispatch_all_stop_tolerates_stopped_benches(tmp_path, monkeypatch):
+    import argparse
+    from types import SimpleNamespace
+
+    from pilot.commands.runtime.stop import StopCommand
+    from pilot.exceptions import BenchError, BenchNotRunningError
+    from pilot.internal.cli import registry
+    from pilot.internal.cli.dispatch import CliContext
+
+    bench_dir = tmp_path / "benches" / "alpha"
+    bench_dir.mkdir(parents=True)
+    (bench_dir / "bench.toml").write_text("")
+    dev_bench = SimpleNamespace(config=SimpleNamespace(production=SimpleNamespace(enabled=False)))
+    monkeypatch.setattr(registry, "load_bench", lambda _context: dev_bench)
+    context = CliContext(installation_root=tmp_path, bench_name="all")
+    args = argparse.Namespace(_command_cls=StopCommand)
+
+    def not_running(*_args):
+        raise BenchNotRunningError("Bench is not running.")
+
+    monkeypatch.setattr(
+        registry,
+        "command_from_args",
+        lambda _cls, _args, _bench: SimpleNamespace(run=not_running),
+    )
+    registry.dispatch_all(args, argparse.ArgumentParser(), context)
+
+    def broken(*_args):
+        raise BenchError("Timed out waiting for bench port(s) to be released: 8000.")
+
+    monkeypatch.setattr(
+        registry,
+        "command_from_args",
+        lambda _cls, _args, _bench: SimpleNamespace(run=broken),
+    )
+    with pytest.raises(BenchError, match="Failed for: alpha"):
+        registry.dispatch_all(args, argparse.ArgumentParser(), context)

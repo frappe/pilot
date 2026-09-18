@@ -40,6 +40,9 @@ class Command:
     group: ClassVar[str | None] = None
     bench_mode: ClassVar[BenchMode] = BenchMode.AUTO
     supports_all_benches: ClassVar[bool] = False
+    # In a `-b all` sweep, also run on development benches. Off by default:
+    # a foreground dev `start` would hang the loop.
+    supports_dev_benches: ClassVar[bool] = False
 
     bench: Bench | None = None
 

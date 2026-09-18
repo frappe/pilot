@@ -7,7 +7,7 @@ import logging
 import pkgutil
 
 from pilot.commands import BenchMode, Command
-from pilot.exceptions import BenchError
+from pilot.exceptions import BenchError, BenchNotRunningError
 from pilot.internal.cli.command import add_command_arguments, command_from_args
 from pilot.internal.cli.dispatch import CliContext, load_bench
 
@@ -103,8 +103,8 @@ def _resolve_bench(cls: type[Command], context: CliContext):
 
 
 def dispatch_all(args: argparse.Namespace, parser: argparse.ArgumentParser, context: CliContext) -> None:
-    """Run the command once per production bench (`-b all`); dev benches are skipped
-    because their foreground `start` would hang the loop."""
+    """Run the command once per bench (`-b all`). Development benches run only
+    commands that declare support, since a foreground dev `start` would hang the loop."""
     cls: type[Command] | None = getattr(args, "_command_cls", None)
     if cls is None:
         printer = getattr(args, "_help_printer", None)
@@ -122,18 +122,25 @@ def dispatch_all(args: argparse.Namespace, parser: argparse.ArgumentParser, cont
     if not names:
         raise BenchError("No benches found.")
 
-    failed = []
-    for name in names:
-        bench = load_bench(context.for_bench(name))
-        if not bench.config.production.enabled:
-            print(f"== {name} == (skipped: dev mode)")
-            continue
-        print(f"== {name} ==")
-        try:
-            command_from_args(cls, args, bench).run()
-        except BenchError as e:
-            failed.append(name)
-            print(str(e))
-
+    failed = [name for name in names if not _run_for_bench(cls, args, context, name)]
     if failed:
         raise BenchError(f"Failed for: {', '.join(failed)}")
+
+
+def _run_for_bench(
+    cls: type[Command], args: argparse.Namespace, context: CliContext, name: str
+) -> bool:
+    """One bench of a `-b all` sweep; False when the command failed."""
+    bench = load_bench(context.for_bench(name))
+    if not bench.config.production.enabled and not cls.supports_dev_benches:
+        print(f"== {name} == (skipped: dev mode)")
+        return True
+    print(f"== {name} ==")
+    try:
+        command_from_args(cls, args, bench).run()
+    except BenchNotRunningError as e:
+        print(str(e))
+    except BenchError as e:
+        print(str(e))
+        return False
+    return True

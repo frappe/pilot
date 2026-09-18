@@ -11,6 +11,7 @@ class StopCommand(Command):
     name: ClassVar[str] = "stop"
     help: ClassVar[str] = "Stop the running bench."
     supports_all_benches: ClassVar[bool] = True
+    supports_dev_benches: ClassVar[bool] = True
 
     def run(self) -> None:
         self.bench.stop(on_progress=self.report)

@@ -6,7 +6,7 @@ import subprocess
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
-from pilot.exceptions import BenchError
+from pilot.exceptions import BenchError, BenchNotRunningError
 
 if TYPE_CHECKING:
     from pilot.core.app import App
@@ -123,7 +123,7 @@ class BenchRuntime:
 
         try:
             ProcessManager(self.bench).stop()
-        except Exception as exc:
+        except BenchNotRunningError as exc:
             logging.debug("Best-effort stop of a stale process manager failed: %s", exc)
         if not initialized:
             self._start_wizard(on_progress)
@@ -183,6 +183,7 @@ class BenchRuntime:
     def _start_wizard(self, on_progress: Callable[[str], None]) -> None:
         from admin.backend.frontend import ensure_admin_frontend
         from pilot.managers.environment import AdminEnvManager
+        from pilot.managers.processes.local import BENCH_ROOT_ENV
         from pilot.utils import cli_root
 
         root = cli_root()
@@ -198,7 +199,11 @@ class BenchRuntime:
         on_progress(f"  Open http://localhost:{port}/?sid={self.bench.issue_setup_link()} in your browser")
         on_progress("  The link signs you in and expires in an hour.\n")
 
-        env = {**os.environ, "PYTHONPATH": str(root)}
+        env = {
+            **os.environ,
+            "PYTHONPATH": str(root),
+            BENCH_ROOT_ENV: str(self.bench.path),
+        }
         subprocess.run(
             [
                 str(admin_mgr.python),
