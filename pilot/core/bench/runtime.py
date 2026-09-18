@@ -3,7 +3,10 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
+import sys
+import time
 from collections.abc import Callable
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from pilot.exceptions import BenchError, BenchNotRunningError
@@ -117,6 +120,43 @@ class BenchRuntime:
     def install_requirements(self, on_progress: Callable[[str], None]) -> None:
         self._install_python_requirements(on_progress)
         self._install_js_requirements(on_progress)
+
+    def start_detached(self, on_progress: Callable[[str], None]) -> None:
+        """Run `pilot start` for this bench as a background session."""
+        from pilot.utils import cli_root
+
+        if self.bench.config.production.enabled:
+            raise BenchError("--detach only applies to development benches.")
+        if not self._is_initialized():
+            raise BenchError("Bench is not initialized. Run 'pilot start' in the foreground to finish setup.")
+        log_path = self.bench.logs_path / "bench.log"
+        self.bench.logs_path.mkdir(parents=True, exist_ok=True)
+        with log_path.open("ab") as log_file:
+            process = subprocess.Popen(
+                [sys.executable, str(cli_root() / "bin" / "pilot"), "-b", self.bench.path.name, "start"],
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        self._wait_for_detached_supervisor(process, log_path)
+        on_progress(f"Started in the background (pid {process.pid}). Logs: {log_path}")
+
+    def _wait_for_detached_supervisor(
+        self, process: subprocess.Popen, log_path: Path, timeout: float = 30.0
+    ) -> None:
+        from pilot.managers.processes.local import ProcessManager
+
+        manager = ProcessManager(self.bench)
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                raise BenchError(f"Background start exited with code {process.returncode}. See {log_path}.")
+            if manager.running_supervisor_pid == process.pid:
+                return
+            time.sleep(0.2)
+        process.terminate()
+        raise BenchError(f"Timed out waiting for the background supervisor. See {log_path}.")
 
     def _start_development(self, initialized: bool, on_progress: Callable[[str], None]) -> None:
         from pilot.managers.processes.local import ProcessManager

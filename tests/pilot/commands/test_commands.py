@@ -1456,3 +1456,112 @@ def test_start_rebuilds_admin_in_a_dev_checkout(tmp_path: Path, monkeypatch: pyt
     BenchRuntime(make_bench(tmp_path))._ensure_admin_dist(lambda _message: None)
 
     build.assert_called_once_with(on_progress=ANY)
+
+
+def test_start_detach_uses_background_start(tmp_path: Path) -> None:
+    from pilot.commands.runtime.start import RunCommand
+
+    bench = make_bench(tmp_path)
+    with patch.object(Bench, "start_detached") as detached:
+        RunCommand(bench=bench, detach=True).run()
+
+    detached.assert_called_once()
+
+
+def test_start_detached_rejects_production_benches(tmp_path: Path) -> None:
+    from pilot.core.bench.runtime import BenchRuntime
+
+    bench = make_bench(tmp_path)
+    bench.config.production.enabled = True
+    bench.config.production.process_manager = "systemd"
+
+    with pytest.raises(BenchError, match="development"):
+        BenchRuntime(bench).start_detached(lambda _message: None)
+
+
+def test_start_detached_allows_a_stale_process_manager_setting(tmp_path: Path) -> None:
+    from pilot.core.bench.runtime import BenchRuntime
+
+    bench = make_bench(tmp_path)
+    bench.config.production.process_manager = "systemd"
+
+    with pytest.raises(BenchError, match="not initialized"):
+        BenchRuntime(bench).start_detached(lambda _message: None)
+
+
+def test_start_detached_spawns_background_supervisor(tmp_path: Path, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from pilot.core.bench.runtime import BenchRuntime
+
+    bench = make_bench(tmp_path)
+    _mark_initialized(bench)
+    runtime = BenchRuntime(bench)
+    captured = {}
+
+    def fake_popen(argv, **kwargs):
+        captured["argv"] = argv
+        captured["kwargs"] = kwargs
+        return SimpleNamespace(poll=lambda: None, pid=4321, returncode=None)
+
+    monkeypatch.setattr("pilot.core.bench.runtime.subprocess.Popen", fake_popen)
+    monkeypatch.setattr(
+        "pilot.managers.processes.local.ProcessManager.running_supervisor_pid",
+        property(lambda _self: 4321),
+    )
+    messages = []
+
+    runtime.start_detached(messages.append)
+
+    assert captured["argv"][-3:] == ["-b", bench.path.name, "start"]
+    assert captured["kwargs"]["start_new_session"] is True
+    assert any("background" in message for message in messages)
+
+
+def test_start_detached_reports_early_exit(tmp_path: Path, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from pilot.core.bench.runtime import BenchRuntime
+
+    bench = make_bench(tmp_path)
+    _mark_initialized(bench)
+    runtime = BenchRuntime(bench)
+    monkeypatch.setattr(
+        "pilot.core.bench.runtime.subprocess.Popen",
+        lambda *_args, **_kwargs: SimpleNamespace(poll=lambda: 1, pid=4321, returncode=1),
+    )
+
+    with pytest.raises(BenchError, match="exited with code 1"):
+        runtime.start_detached(lambda _message: None)
+
+
+def test_detached_start_waits_for_the_new_supervisor(tmp_path: Path, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from pilot.core.bench.runtime import BenchRuntime
+
+    runtime = BenchRuntime(make_bench(tmp_path))
+    supervisor_pids = iter((123, 4321))
+    monkeypatch.setattr(
+        "pilot.managers.processes.local.ProcessManager.running_supervisor_pid",
+        property(lambda _self: next(supervisor_pids)),
+    )
+    monkeypatch.setattr("pilot.core.bench.runtime.time.sleep", lambda _seconds: None)
+    process = SimpleNamespace(poll=lambda: None, pid=4321)
+
+    runtime._wait_for_detached_supervisor(process, tmp_path / "bench.log")
+
+
+def test_detached_start_terminates_the_process_on_timeout(tmp_path: Path) -> None:
+    from pilot.core.bench.runtime import BenchRuntime
+
+    process = MagicMock()
+    process.poll.return_value = None
+    process.pid = 4321
+
+    with pytest.raises(BenchError, match="Timed out"):
+        BenchRuntime(make_bench(tmp_path))._wait_for_detached_supervisor(
+            process, tmp_path / "bench.log", timeout=0
+        )
+
+    process.terminate.assert_called_once_with()
