@@ -256,6 +256,50 @@ def test_macos_bench_root_match_requires_environment_boundary(tmp_path: Path, mo
     assert process_module._process_has_bench_root(123, bench_root) is True
 
 
+def test_bench_root_is_unknown_when_inspection_fails(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("pilot.managers.platform.is_macos", lambda: True)
+    monkeypatch.setattr(
+        process_module.subprocess,
+        "run",
+        MagicMock(side_effect=subprocess.TimeoutExpired(cmd="ps", timeout=5)),
+    )
+
+    assert process_module._process_has_bench_root(123, tmp_path / "bench") is None
+
+
+def test_bench_root_is_foreign_when_the_process_is_gone(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("pilot.managers.platform.is_macos", lambda: True)
+    monkeypatch.setattr(
+        process_module.subprocess,
+        "run",
+        MagicMock(return_value=subprocess.CompletedProcess([], 1, stdout="")),
+    )
+
+    assert process_module._process_has_bench_root(123, tmp_path / "bench") is False
+
+
+def test_wait_for_ports_waits_for_uninspectable_holders(tmp_path: Path, monkeypatch) -> None:
+    manager = _manager(tmp_path)
+    monkeypatch.setattr(manager, "_port_holders", lambda: {11000: {123}})
+    monkeypatch.setattr(process_module, "_process_has_bench_root", lambda _pid, _root: None)
+
+    with pytest.raises(BenchError, match="11000"):
+        manager._wait_for_ports(timeout=0)
+
+
+def test_stop_does_not_signal_uninspectable_port_holder(tmp_path: Path, monkeypatch) -> None:
+    manager = _manager(tmp_path)
+    monkeypatch.setattr(manager, "_port_holders", lambda: {7000: {123}})
+    monkeypatch.setattr(process_module, "_process_has_bench_root", lambda _pid, _root: None)
+    kill = MagicMock()
+    monkeypatch.setattr(process_module.os, "kill", kill)
+
+    with pytest.raises(BenchNotRunningError, match="not running"):
+        manager.stop()
+
+    kill.assert_not_called()
+
+
 def test_stop_raises_when_nothing_is_running(tmp_path: Path, monkeypatch) -> None:
     manager = _manager(tmp_path)
     monkeypatch.setattr("pilot.managers.processes.local._pids_listening", lambda port: set())
