@@ -56,9 +56,27 @@ Exit `0` to proceed. Exit non-zero to abort and show stderr. Prefer fail-open be
 
 Claim and provision the route for `<domain>`. This runs before local site creation, so failure should leave no orphaned local site.
 
-Stdout is ignored. Exit `0` only when the route is live. Exit non-zero to abort and show stderr.
+Exit `0` only when the route is live. Print one JSON route policy to stdout.
 
-`register` must be idempotent. A retry should re-apply the route, not duplicate it or fail because it already exists.
+```json
+{
+  "public_scheme": "https",
+  "origin_scheme": "http",
+  "client_ip_source": "x_forwarded_for"
+}
+```
+
+`public_scheme` tells Pilot which scheme a client uses. `origin_scheme` tells Pilot which scheme the provider uses for nginx.
+
+Both scheme values must be `http` or `https`. `client_ip_source` must be `direct`, `x_forwarded_for`, or `proxy_protocol_v2`.
+
+Use `origin_scheme = "https"` when Pilot must hold the certificate. Pilot gets the certificate and creates a TLS virtual host.
+
+Use `origin_scheme = "http"` when the provider ends TLS. Pilot still shows HTTPS when `public_scheme` is `https`.
+
+Pilot rejects an empty or invalid policy. Pilot then calls `deregister` to remove the route.
+
+`register` must be idempotent. A retry must apply the route again and return the same policy.
 
 Fail closed when the control plane is unreachable.
 
@@ -80,13 +98,15 @@ Return blank for none. Prefer fail-soft behavior: blank stdout with exit `0` on 
 
 ## `proxy-servers`
 
-Print edge proxy or load balancer IPs in front of this bench.
+Print edge proxy or load balancer addresses in front of this bench. An entry can be an IPv4 address, an IPv6 address, or a CIDR network.
 
 ```json
 ["203.0.113.10", "203.0.113.11"]
 ```
 
-When any IPs are returned, generated nginx accepts traffic only from those addresses and trusts their `X-Forwarded-For`. Return blank for direct-client nginx behavior.
+When entries are returned, nginx accepts proxy traffic only from those addresses and networks. It trusts their client IP data.
+
+Return blank for direct client behavior.
 
 Prefer fail-soft behavior here. A non-zero exit breaks nginx setup.
 
@@ -125,6 +145,11 @@ def main(argv):
 
     if verb == "register" and len(argv) == 3:
         domain = argv[2]
+        print(json.dumps({
+            "public_scheme": "https",
+            "origin_scheme": "http",
+            "client_ip_source": "x_forwarded_for",
+        }))
         return 0
 
     if verb == "deregister" and len(argv) == 3:

@@ -80,3 +80,4 @@ These rules are mandatory for agents changing this repo:
 ## Docs
 
 Keep docs concise and current. Human readers should find the workflow quickly. LLMs should find the source of truth, object boundaries, and safe edit locations without scanning long prose.
+Keep Markdown prose on one continuous line; do not hard-wrap paragraphs.

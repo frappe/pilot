@@ -207,41 +207,37 @@ onMounted(() => {
       </template>
     </PageHero>
 
-    <div class="mx-auto w-full max-w-3xl">
+    <div class="px-3 md:px-4 pb-3 md:pb-4 mx-auto w-full max-w-3xl">
       <StickyToolbar>
         <Skeleton class="rounded-4 w-64 h-7 sm:h-8" />
       </StickyToolbar>
     </div>
   </template>
 
-  <div v-else-if="error" class="py-12">
-    <ErrorMessage :message="error" />
-  </div>
+  <ErrorMessage v-else-if="error" class="px-3 md:px-4 py-12" :message="error" />
 
   <template v-else-if="site">
     <PageHero icon="lucide-globe">
       <template #title>
-        <h1 class="font-medium text-ink-gray-9 text-lg truncate">
+        <h1 class="text-lg-medium truncate">
           {{ site.name }}
         </h1>
 
         <Badge
           :label="statusLabel"
           :theme="statusBadgeTheme"
-          variant="subtle"
-          size="md"
           class="shrink-0"
         />
       </template>
 
       <template v-if="storageUsed" #subtitle>{{ storageUsed }} used</template>
       <template #actions>
-        <Button variant="ghost" size="sm" class="hidden sm:flex" @click="goToAnalytics">
+        <Button variant="ghost" class="hidden sm:flex" @click="goToAnalytics">
           <template #prefix><span class="size-4 lucide-chart-line" /></template>
           View analytics
         </Button>
 
-        <Button size="sm" class="hidden sm:flex" @click="goToMarketplace">
+        <Button class="hidden sm:flex" @click="goToMarketplace">
           <template #prefix><span class="size-4 lucide-plus" /></template>
           Install app
         </Button>
@@ -249,8 +245,6 @@ onMounted(() => {
         <Dropdown :options="menuOptions">
           <template #default="{ open }">
             <Button
-              variant="subtle"
-              size="sm"
               :active="open"
               icon="lucide-ellipsis"
               label="Site actions"
@@ -261,13 +255,11 @@ onMounted(() => {
       </template>
     </PageHero>
 
-    <div class="mx-auto w-full max-w-3xl">
-      <!-- Tabs -->
+    <div class="px-4 lg:px-0 pb-3 md:pb-4 mx-auto w-full max-w-3xl">
       <StickyToolbar>
         <TabButtons v-model="activeTab" :options="tabs" :size="isMobile ? 'md' : 'sm'" />
       </StickyToolbar>
 
-      <!-- Sections -->
       <SiteApps v-if="activeTab === 'apps'" :site-name="siteName" />
       <SiteBackups v-else-if="activeTab === 'backups'" :site-name="siteName" />
       <SiteConfig v-else-if="activeTab === 'config'" :site-name="siteName" />
@@ -279,7 +271,6 @@ onMounted(() => {
   <Teleport defer to="#header-actions">
     <Button
       :variant="site?.setup_complete ? 'subtle' : 'solid'"
-      size="sm"
       :loading="settingUpSite"
       @click="site?.setup_complete ? openSite() : setupSite()"
     >

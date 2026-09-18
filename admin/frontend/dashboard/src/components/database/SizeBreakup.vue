@@ -3,11 +3,13 @@ import { computed } from 'vue'
 
 import UsageMeter from '@/components/common/UsageMeter.vue'
 
-const props = defineProps({
-  size: { type: Object, required: true },
-})
+interface Props {
+  size: Record<string, any>
+}
 
-const COLORS = { data: 'red-7', index: 'cyan-7', claimable: 'amber-7', free: 'gray-2' }
+const props = defineProps<Props>()
+
+const COLORS = { data: 'blue-7', index: 'blue-4', claimable: 'amber-5', free: 'gray-2' }
 
 // Server scope reports one combined size, and free space is the whole
 // server's disk, which would dwarf every other segment.
@@ -32,7 +34,7 @@ const parts = computed(() => {
 </script>
 
 <template>
-  <div class="p-4">
-    <UsageMeter :parts="parts" />
+  <div class="px-4 pb-4">
+    <UsageMeter :parts="parts" bar-height="h-5" />
   </div>
 </template>

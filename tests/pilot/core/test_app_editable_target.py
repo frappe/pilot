@@ -74,3 +74,13 @@ def test_malformed_pyproject_installs_plainly(tmp_path: Path) -> None:
     assert not app.has_dev_extra
     assert app.editable_target == str(app.path)
     assert app.module_name == "broken"
+
+
+def test_install_dev_extra_false_skips_the_dev_extra(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.config.production.enabled = False
+    bench.config.install_dev_extra = False
+    app = _make_app(bench, "frappe", _WITH_DEV_EXTRA)
+
+    assert app.has_dev_extra
+    assert app.editable_target == str(app.path)

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from pilot.core.adapters.domain_provider import DomainRouteProvider
 
 if TYPE_CHECKING:
+    from pilot.config import RoutePolicy, SiteConfig
     from pilot.core.site import Site
 
 
@@ -17,8 +18,9 @@ class SiteDomains:
     def generate_dns_records(self, domain: str) -> dict:
         return self._provider.generate_dns_records(self.site.config.name, domain)
 
-    def register(self, domain: str) -> None:
-        self._provider.register(self.site.config.name, domain)
+    def register(self, domain: str) -> "RoutePolicy | None":
+        """Register a domain and return its provider route policy."""
+        return self._provider.register(self.site.config.name, domain)
 
     def deregister(self, domain: str) -> None:
         self._provider.deregister(self.site.config.name, domain)
@@ -42,6 +44,32 @@ class SiteDomains:
         attached = normalized in {normalize_host(name) for name in self.names()}
         return attached, primary is not None and normalize_host(primary) == normalized
 
+    def describe(self) -> tuple[list[dict[str, str | bool]], str]:
+        """Return all domains with their primary and public route state."""
+        config = self._site_config()
+        site_name = config.name
+        primary = self.primary() or site_name
+        rows = [
+            self._description(config, domain, domain == primary)
+            for domain in [site_name, *self.names()]
+        ]
+        return rows, primary
+
+    def describe_domain(self, domain: str) -> dict[str, str | bool] | None:
+        """Return one attached domain with its primary and public route state."""
+        attached, is_primary = self.status(domain)
+        if not attached:
+            return None
+
+        from pilot.utils import normalize_host
+
+        config = self._site_config()
+        normalized = normalize_host(domain)
+        attached_domain = next(
+            candidate for candidate in config.all_domains if normalize_host(candidate) == normalized
+        )
+        return self._description(config, attached_domain, is_primary)
+
     def apply_task(self, idempotency_key: str | None = None) -> str:
         from pilot.tasks.setup_letsencrypt import SetupLetsEncryptTask
         from pilot.tasks.setup_nginx import SetupNginxTask
@@ -55,4 +83,37 @@ class SiteDomains:
             config = json.loads((self.site.path / "site_config.json").read_text())
         except Exception:
             return False
-        return bool(config.get("ssl")) if isinstance(config, dict) else False
+        if not isinstance(config, dict):
+            return False
+        from pilot.config import RoutePolicy, SiteConfig
+
+        site = SiteConfig(
+            name=self.site.config.name,
+            apps=[],
+            ssl=bool(config.get("ssl")),
+            domains=config.get("domains") or [],
+            route=RoutePolicy.from_dict(config["route"]) if config.get("route") else None,
+        )
+        return bool(site.tls_domains)
+
+    def _site_config(self) -> "SiteConfig":
+        return next(
+            site.config
+            for site in self.site.bench.sites()
+            if site.config.name == self.site.config.name
+        )
+
+    def _description(
+        self,
+        config: "SiteConfig",
+        domain: str,
+        is_primary: bool,
+    ) -> dict[str, str | bool]:
+        route = config.route_for(domain)
+        return {
+            "domain": domain,
+            "is_site": domain == config.name,
+            "is_primary": is_primary,
+            "public_scheme": route.public_scheme,
+            "tls": route.public_tls,
+        }

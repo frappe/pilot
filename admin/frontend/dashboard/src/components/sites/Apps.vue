@@ -11,12 +11,16 @@ import { useAppRegistry } from '@/composables/apps/useAppRegistry'
 import { useSession } from '@/composables/auth/useSession'
 import { toSentenceCase } from '@/utils/format'
 
-const props = defineProps({
-  siteName: { type: String, required: true },
-})
+interface Props {
+  siteName: string
+}
+
+const props = defineProps<Props>()
 const { session } = useSession()
 
-const { apps, canDisableApps, installedApps, appsLoading, loadApps, reload } = useSite(props.siteName)
+const { apps, canDisableApps, installedApps, appsLoading, loadApps, reload } = useSite(
+  props.siteName,
+)
 const {
   registry,
   titleMap,
@@ -35,7 +39,9 @@ const refresh = async () => {
 
 // Disabling needs a Frappe that supports it, and an app the catalog can reinstall.
 const canDisable = (app) => {
-  return canDisableApps.value && Boolean(app && registry.value.some((entry) => entry.name === app.name))
+  return (
+    canDisableApps.value && Boolean(app && registry.value.some((entry) => entry.name === app.name))
+  )
 }
 
 const appDetailMap = computed(() => Object.fromEntries(apps.value.map((a) => [a.name, a])))
@@ -62,7 +68,13 @@ const openLink = (url) => {
 const menuOptions = (app) => {
   return [
     ...(session.developerMode
-      ? [{ label: 'Open in editor', icon: 'lucide-code', onClick: () => openLink(`/editor/${encodeURIComponent(app.name)}`) }]
+      ? [
+          {
+            label: 'Open in editor',
+            icon: 'lucide-code',
+            onClick: () => openLink(`/editor/${encodeURIComponent(app.name)}`),
+          },
+        ]
       : []),
     ...(app.website
       ? [{ label: 'Website', icon: 'lucide-globe', onClick: () => openLink(app.website) }]
@@ -99,16 +111,16 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="mt-5">
-    <div v-if="appsLoading" class="gap-x-6 gap-y-4 grid grid-cols-1 md:grid-cols-2">
+  <div class="grid md:grid-cols-2 gap-2 mt-1">
+    <template v-if="appsLoading">
       <MarketplaceAppCardSkeleton v-for="i in 4" :key="i" :index="i - 1" />
-    </div>
+    </template>
 
-    <div v-else-if="!installedApps.length" class="py-12 text-ink-gray-5 text-sm text-center">
+    <p v-else-if="!installedApps.length" class="col-span-full py-12 text-ink-gray-5 text-sm text-center">
       No apps installed on this site.
-    </div>
+    </p>
 
-    <div v-else class="gap-x-6 gap-y-4 grid grid-cols-1 md:grid-cols-2">
+    <template v-else>
       <MarketplaceAppCard v-for="app in appObjects" :key="app.name" :app="app">
         <template #actions>
           <Dropdown
@@ -118,7 +130,6 @@ onMounted(() => {
             <template #default="{ open }">
               <Button
                 variant="ghost"
-                size="sm"
                 :active="open"
                 icon="lucide-ellipsis"
                 label="App actions"
@@ -130,7 +141,7 @@ onMounted(() => {
           <span v-else class="size-7 shrink-0" />
         </template>
       </MarketplaceAppCard>
-    </div>
+    </template>
   </div>
 
   <UninstallAppDialog

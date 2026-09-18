@@ -72,17 +72,35 @@ Two app operations answer inline instead of returning a task id, because both ar
 
 ### Site Detail And Login
 
-`GET /sites/<name>` includes `url`, the origin the site is served on (scheme, primary host, and port derived from the bench config), which the UI uses for "Open site".
+`GET /sites/<name>` includes `url` and `tls`. The route policy supplies the public scheme for both values.
+
+`GET /sites/<name>/domains` returns one row for each hostname. Each row has `domain`, `is_site`, `is_primary`, `public_scheme`, and `tls`.
 
 `POST /sites/<name>/login` returns `{"url": ...}` plus an optional `hint` when the URL's host does not resolve on the server - the UI surfaces it so the user knows to add a hosts entry or use a `*.localhost` name.
+
+### Renaming And Domains
+
+`POST /sites/<name>/actions/rename` takes `{"new_name": "...", "keep_old_hostname": true}` and queues `rename-site`. The new name is validated the same way a new site's is, and both names are claimed as task resources so nothing can create or drop either while the site is moving between them. `keep_old_hostname` defaults to true and keeps the old hostname on the site, so open tabs and existing links keep working; pass false to release a pooled name a fleet reuses. See [Renaming without downtime](commands.md#renaming-without-downtime).
+
+`POST /settings/admin-domain` takes `{"domain": "...", "tls": true|false}` (`tls` optional) and queues `change-admin-domain`, which registers the route with the domain provider, writes `bench.toml`, reissues the certificate when TLS is on, and republishes nginx. The previous hostname is released only once the switch has committed.
+
+Both operations re-point any matching `central.hostname_aliases` entry, so a VM hostname keeps reaching the thing it named. Every route that claims a hostname - creating a site, renaming one, moving the admin - also takes the task resource `host:<hostname>`, so two of them cannot run at once for the same name. That key is host-wide - benches share one nginx and one `/etc/letsencrypt` - so it conflicts with active tasks on every bench of the host, not only its own.
 
 ### Site Storage
 
 `GET /sites/storage` returns every site's `private_bytes`, `public_bytes`, `database_bytes`, and `total_bytes`, plus the `collected_at` of the reading. `database_bytes` is what the schema holds on disk, allocated-but-freed pages included, since nothing else can use that space until the tables are rebuilt.
 
-Measuring means a `du` per site directory and one schema-size query, so the route serves `logs/site-storage.json` instead - written by the `site-storage` systemd timer every six hours (`pilot.core.site.storage`). Reading never measures, however old the report is; the route falls back to measuring only when there is no report at all, which is the first read on a bench whose timer has not run yet.
+Measuring means a `du` per site directory and one schema-size query, so the route serves `logs/site-storage.json` instead - written by the `pilot-storage` systemd timer every six hours (`pilot.core.site.storage`). Reading never measures, however old the report is; the route falls back to measuring only when there is no report at all, which is the first read on a bench whose timer has not run yet.
 
 `POST /sites/<name>/actions/refresh-storage` queues `refresh-storage-usage` to measure again on demand. One report covers every site on the bench, so the task re-measures all of them and concurrent requests fold into one run.
+
+### Database Performance Report
+
+`GET /database/performance-report` returns the read-only findings behind the analyzer's Query Analysis and Index Analysis panels: `time_consuming_queries`, `full_table_scan_queries`, `unused_indexes`, `redundant_indexes`, and the `performance_schema_enabled` flag.
+
+The first three sections come from MariaDB's Performance Schema, so they are empty and the flag is `false` whenever `performance_schema` is off - the instrumentation is a startup setting, and MariaDB collects nothing until the server restarts with it on. `redundant_indexes` reads `information_schema.STATISTICS` instead and stays populated either way. The UI keys off the flag to explain the empty panels rather than reporting them as an error.
+
+`?site=<name>` narrows every section to that site's schema; without it the report covers every user schema on the server, system schemas excluded. Only MariaDB implements it - other engines raise, and the route answers 422.
 
 ### Setup
 

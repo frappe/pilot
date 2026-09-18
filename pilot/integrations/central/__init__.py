@@ -1,20 +1,13 @@
-"""Central HTTP client and enrollment helpers."""
+"""Central HTTP client and cloud-metadata credential pickup."""
 
 from __future__ import annotations
 
-from pilot.integrations.central.bootstrap import (
-    default_seed_path,
-    enroll_if_needed,
-    seed,
-    seed_from_metadata,
-)
 from pilot.integrations.central.client import CentralClient, CentralClientError
+from pilot.integrations.central.metadata import InstanceMetadata, apply_central_config
 
 __all__ = [
     "CentralClient",
     "CentralClientError",
-    "default_seed_path",
-    "enroll_if_needed",
-    "seed",
-    "seed_from_metadata",
+    "InstanceMetadata",
+    "apply_central_config",
 ]

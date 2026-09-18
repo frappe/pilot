@@ -429,3 +429,61 @@ def test_retention_keeps_terminal_task_with_live_process_record(tmp_path: Path) 
 
     assert deleted == [removable]
     assert store.task_dir(protected).exists()
+
+
+# --- hostname claims are host-wide -------------------------------------------
+# Benches on one host share one nginx and one /etc/letsencrypt, so a `host:` key
+# has to conflict across benches; every other key stays bench-local.
+
+OTHER_ID = "20260715-120001-bbccdd"
+
+
+def _benches(tmp_path: Path) -> tuple[TaskStore, TaskStore]:
+    return TaskStore(tmp_path / "b1"), TaskStore(tmp_path / "b2")
+
+
+def test_a_hostname_held_on_one_bench_blocks_another(tmp_path: Path) -> None:
+    first, second = _benches(tmp_path)
+    first.create_queued(metadata(), resource_key="host:shop.example.com")
+
+    with pytest.raises(TaskConflictError, match="Another bench's active task"):
+        second.create_queued({**metadata(), "task_id": OTHER_ID}, resource_key="host:shop.example.com")
+
+
+def test_the_idempotent_path_checks_other_benches_too(tmp_path: Path) -> None:
+    first, second = _benches(tmp_path)
+    first.create_queued(metadata(), resource_key="host:shop.example.com")
+
+    with pytest.raises(TaskConflictError, match="Another bench's active task"):
+        second.create_idempotent_queued(
+            {**metadata(), "task_id": OTHER_ID},
+            {},
+            idempotency_digest="digest",
+            request_fingerprint="fingerprint",
+            resource_key=["site:shop.example.com", "host:shop.example.com"],
+        )
+
+
+def test_other_resources_stay_bench_local(tmp_path: Path) -> None:
+    first, second = _benches(tmp_path)
+    first.create_queued(metadata(), resource_key="site:shop.example.com")
+
+    second.create_queued({**metadata(), "task_id": OTHER_ID}, resource_key="site:shop.example.com")
+
+    assert second.read_metadata(OTHER_ID)["resource_keys"] == ["site:shop.example.com"]
+
+
+def test_different_hostnames_do_not_conflict(tmp_path: Path) -> None:
+    first, second = _benches(tmp_path)
+    first.create_queued(metadata(), resource_key="host:one.example.com")
+
+    second.create_queued({**metadata(), "task_id": OTHER_ID}, resource_key="host:two.example.com")
+
+
+def test_a_finished_task_on_another_bench_releases_the_hostname(tmp_path: Path) -> None:
+    first, second = _benches(tmp_path)
+    first.create_queued(metadata(), resource_key="host:shop.example.com")
+    first.transition(TASK_ID, TaskStatus.QUEUED, TaskStatus.RUNNING)
+    first.transition(TASK_ID, TaskStatus.RUNNING, TaskStatus.SUCCESS)
+
+    second.create_queued({**metadata(), "task_id": OTHER_ID}, resource_key="host:shop.example.com")

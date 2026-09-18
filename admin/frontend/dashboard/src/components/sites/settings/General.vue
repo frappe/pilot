@@ -8,7 +8,11 @@ import { useSite } from '@/composables/sites/useSite'
 import { sitesApi } from '@/api/sites'
 import { settingsApi } from '@/api/settings'
 
-const props = defineProps({ siteName: { type: String, required: true } })
+interface Props {
+  siteName: string
+}
+
+const props = defineProps<Props>()
 
 const { site, reload } = useSite(props.siteName)
 
@@ -70,24 +74,18 @@ const toggle = async (s, value) => {
 </script>
 
 <template>
-  <div>
-    <p class="font-semibold text-ink-gray-8 text-base">General</p>
-    <div class="mt-1">
-      <div
-        v-for="s in visibleSettings"
-        :key="s.key"
-        class="py-4 border-b last:border-b-0 border-outline-alpha-gray-1"
-      >
-        <SettingsSwitch
-          :label="s.label"
-          :description="s.description"
-          :model-value="getValue(s)"
-          :disabled="savingKey === s.key"
-          @update:model-value="(v) => toggle(s, v)"
-        />
-      </div>
-    </div>
+  <h2 class="mb-3 text-base-semibold text-ink-gray-8">General</h2>
 
-    <ErrorMessage v-if="error" :message="error" class="mt-4" />
-  </div>
+  <SettingsSwitch
+    v-for="s in visibleSettings"
+    :key="s.key"
+    class="py-4 border-b last:border-b-0 border-outline-alpha-gray-1"
+    :label="s.label"
+    :description="s.description"
+    :model-value="getValue(s)"
+    :disabled="savingKey === s.key"
+    @update:model-value="(v) => toggle(s, v)"
+  />
+
+  <ErrorMessage v-if="error" :message="error" class="mt-4" />
 </template>

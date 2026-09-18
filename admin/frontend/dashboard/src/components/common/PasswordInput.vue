@@ -1,13 +1,17 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { TextInput } from 'frappe-ui'
-import LucideEye from '~icons/lucide/eye'
-import LucideEyeOff from '~icons/lucide/eye-off'
 
-defineProps({
-  label: { type: String, default: '' },
-  placeholder: { type: String, default: '' },
-  autocomplete: { type: String, default: 'off' },
+interface Props {
+  label?: string
+  placeholder?: string
+  autocomplete?: string
+}
+
+withDefaults(defineProps<Props>(), {
+  label: '',
+  placeholder: '',
+  autocomplete: 'off',
 })
 
 const password = defineModel({ type: String, default: '' })
@@ -30,8 +34,8 @@ const visible = ref(false)
         :aria-label="visible ? 'Hide password' : 'Show password'"
         @click="visible = !visible"
       >
-        <LucideEyeOff v-if="visible" class="size-4" />
-        <LucideEye v-else class="size-4" />
+        <span v-if="visible" class="size-4 lucide-eye-off" />
+        <span v-else class="size-4 lucide-eye" />
       </button>
     </template>
   </TextInput>

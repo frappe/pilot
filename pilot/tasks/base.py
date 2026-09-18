@@ -64,8 +64,18 @@ class Task:
     # Turn off for tasks that leave partial state behind when killed mid-run.
     # Queued tasks can always be cancelled - nothing has run yet.
     is_cancellable_while_running: ClassVar[bool] = True
+    # Turn off to keep a task out of listings; it stays readable by task id.
+    is_listed: ClassVar[bool] = True
     # Non-sensitive queue args safe to record in the audit entry.
-    _AUDIT_ARG_KEYS: ClassVar[tuple[str, ...]] = ("site", "app", "name", "repo", "branch", "marketplace_app")
+    _AUDIT_ARG_KEYS: ClassVar[tuple[str, ...]] = (
+        "site",
+        "app",
+        "name",
+        "new_name",
+        "repo",
+        "branch",
+        "marketplace_app",
+    )
 
     bench: "Bench"
     bench_root: Path
@@ -160,12 +170,7 @@ class Task:
         return _TaskStep(self, key)
 
     def step_failed(self) -> None:
-        """Report the failure being handled, then mark the step failed.
-
-        Reads the exception under handling instead of taking it as an argument,
-        so a caller cannot mark a step failed and drop the reason - which left
-        every migration task logging nothing but STEP-FAILED.
-        """
+        """Report the active exception, then mark the current step failed."""
         error = sys.exc_info()[1]
         if error is not None:
             print(f"Error: {error}", flush=True)

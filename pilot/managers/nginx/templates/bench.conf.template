@@ -3,6 +3,93 @@ upstream bench-{{ upstream_name }} {
     keepalive 32;
 }
 
+{% if proxy_gate_enabled %}
+geo $realip_remote_addr {{ proxy_gate_variable }} {
+    default 0;
+    {% for ip in proxy_servers %}
+    {{ ip }} 1;
+    {% endfor %}
+}
+{% endif %}
+
+{% for alias in aliases %}
+server {
+    listen {{ http_port }};
+    listen [::]:{{ http_port }};
+    server_name {{ alias.server_name }};
+
+    location /.well-known/acme-challenge/ {
+        allow all;
+        root {{ acme_root }};
+        try_files $uri =404;
+    }
+
+    {% if alias.redirect %}
+    location / {
+        return 301 {{ alias.redirect }}$request_uri;
+    }
+    {% else %}
+    {% if alias.site %}
+    root {{ sites_root }};
+    client_max_body_size {{ client_max_body_size }};
+
+    location /assets {
+        try_files $uri =404;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    {# frappe's FORCE_DOWNLOAD_EXTENSIONS; inline markup would be stored XSS #}
+    location ~* ^/files/.*\.(svg|svgz|html|htm|xhtml|xht|shtml|shtm|mhtml|mht|xml|xsl|xslt|swf)$ {
+        root {{ alias.public_root }};
+        add_header Content-Disposition "attachment";
+        try_files $uri @app;
+    }
+
+    location /files/ {
+        root {{ alias.public_root }};
+        try_files $uri @app;
+    }
+
+    location @app {
+        proxy_pass         {{ alias.proxy_pass }};
+        proxy_read_timeout 120;
+        proxy_redirect     off;
+        proxy_set_header   Host               $host;
+        proxy_set_header   X-Real-IP          $remote_addr;
+        proxy_set_header   X-Forwarded-For    $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto  $scheme;
+        proxy_set_header   X-Frappe-Site-Name {{ alias.site }};
+    }
+
+    location /socket.io {
+        proxy_pass         http://127.0.0.1:{{ socketio_port }};
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade $http_upgrade;
+        proxy_set_header   Connection "upgrade";
+        proxy_set_header   X-Frappe-Site-Name {{ alias.site }};
+        proxy_set_header   Origin $scheme://$http_host;
+        proxy_set_header   Host $host;
+    }
+
+    {% endif %}
+    location / {
+        proxy_pass         {{ alias.proxy_pass }};
+        proxy_read_timeout 120;
+        proxy_redirect     off;
+        proxy_set_header   Host               $host;
+        proxy_set_header   X-Real-IP          $remote_addr;
+        proxy_set_header   X-Forwarded-For    $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto  $scheme;
+        {% if alias.site %}
+        proxy_set_header   X-Frappe-Site-Name {{ alias.site }};
+        {% endif %}
+    }
+    {% endif %}
+}
+
+{% endfor %}
+
 {% for vhost in vhosts %}
 {% if vhost.ssl %}
 {# HTTP vhost: redirect everything to HTTPS, minus the ACME challenge path #}
@@ -12,14 +99,13 @@ server {
     server_name {{ vhost.server_name }};
 
     {# trust known reverse proxies: adopt their client IP, reject direct hits #}
-    {% if proxy_servers %}
+    {% if vhost.trusted_proxy %}
     {% for ip in proxy_servers %}
     set_real_ip_from   {{ ip }};
     {% endfor %}
     real_ip_header     X-Forwarded-For;
     real_ip_recursive  on;
-    set $bench_from_proxy 0;
-    if ($realip_remote_addr ~ "^({{ proxy_peers }})$") { set $bench_from_proxy 1; }
+    set $bench_from_proxy {{ proxy_gate_variable }};
     if ($request_uri ~ "^/\.well-known/acme-challenge/") { set $bench_from_proxy 1; }
     if ($bench_from_proxy = 0) { return 403; }
 
@@ -64,8 +150,8 @@ server {
         proxy_redirect     off;
         proxy_set_header   Host               $host;
         proxy_set_header   X-Real-IP          $remote_addr;
-        proxy_set_header   X-Forwarded-For    {% if proxy_servers %}$http_x_forwarded_for{% else %}$proxy_add_x_forwarded_for{% endif %};
-        proxy_set_header   X-Forwarded-Proto  $scheme;
+        proxy_set_header   X-Forwarded-For    {{ vhost.forwarded_for }};
+        proxy_set_header   X-Forwarded-Proto  {{ vhost.public_scheme }};
         proxy_hide_header  Access-Control-Allow-Origin;
         add_header         Access-Control-Allow-Origin * always;
         add_header         Access-Control-Allow-Methods "GET, POST, OPTIONS" always;
@@ -83,8 +169,8 @@ server {
 {# main vhost: HTTPS when a cert is ready, plain HTTP otherwise #}
 server {
     {% if vhost.ssl %}
-    listen {{ https_port }} ssl http2;
-    listen [::]:{{ https_port }} ssl http2;
+    listen {{ https_port }} ssl http2{% if vhost.proxy_protocol %} proxy_protocol{% endif %};
+    listen [::]:{{ https_port }} ssl http2{% if vhost.proxy_protocol %} proxy_protocol{% endif %};
     {% else %}
     listen {{ http_port }};
     listen [::]:{{ http_port }};
@@ -93,14 +179,13 @@ server {
     error_log   {{ logs_path }}/nginx-error.log warn;
 
     {# trust known reverse proxies: adopt their client IP, reject direct hits #}
-    {% if proxy_servers %}
+    {% if vhost.trusted_proxy %}
     {% for ip in proxy_servers %}
     set_real_ip_from   {{ ip }};
     {% endfor %}
-    real_ip_header     X-Forwarded-For;
+    real_ip_header     {% if vhost.proxy_protocol %}proxy_protocol{% else %}X-Forwarded-For{% endif %};
     real_ip_recursive  on;
-    set $bench_from_proxy 0;
-    if ($realip_remote_addr ~ "^({{ proxy_peers }})$") { set $bench_from_proxy 1; }
+    set $bench_from_proxy {{ proxy_gate_variable }};
     if ($request_uri ~ "^/\.well-known/acme-challenge/") { set $bench_from_proxy 1; }
     if ($bench_from_proxy = 0) { return 403; }
 
@@ -168,9 +253,27 @@ server {
         add_header Cache-Control "public, immutable";
     }
 
-    location ~ ^/files/.*\.(jpg|jpeg|png|gif|svg|webp|pdf|docx?|xlsx?)$ {
+    {# frappe's FORCE_DOWNLOAD_EXTENSIONS; inline markup would be stored XSS #}
+    location ~* ^/files/.*\.(svg|svgz|html|htm|xhtml|xht|shtml|shtm|mhtml|mht|xml|xsl|xslt|swf)$ {
         root {{ vhost.public_root }};
-        try_files $uri =404;
+        add_header Content-Disposition "attachment";
+        try_files $uri @app;
+    }
+
+    location /files/ {
+        root {{ vhost.public_root }};
+        try_files $uri @app;
+    }
+
+    location @app {
+        proxy_pass         http://bench-{{ upstream_name }};
+        proxy_read_timeout 120;
+        proxy_redirect     off;
+        proxy_set_header   Host               $host;
+        proxy_set_header   X-Real-IP          $remote_addr;
+        proxy_set_header   X-Forwarded-For    {{ vhost.forwarded_for }};
+        proxy_set_header   X-Forwarded-Proto  {{ vhost.public_scheme }};
+        proxy_set_header   X-Frappe-Site-Name {{ vhost.name }};
     }
 
     {# realtime (socket.io) #}
@@ -180,7 +283,7 @@ server {
         proxy_set_header   Upgrade $http_upgrade;
         proxy_set_header   Connection "upgrade";
         proxy_set_header   X-Frappe-Site-Name {{ vhost.name }};
-        proxy_set_header   Origin $scheme://$http_host;
+        proxy_set_header   Origin {{ vhost.public_scheme }}://$http_host;
         proxy_set_header   Host $host;
     }
 
@@ -189,7 +292,7 @@ server {
         access_log {{ logs_path }}/nginx-access.log pilot_access;
         {% if vhost.canonical %}
         if ($host != "{{ vhost.canonical }}") {
-            return 301 $scheme://{{ vhost.canonical }}$request_uri;
+            return 301 {{ vhost.public_scheme }}://{{ vhost.canonical }}$request_uri;
         }
 
         {% endif %}
@@ -198,8 +301,8 @@ server {
         proxy_redirect     off;
         proxy_set_header   Host               $host;
         proxy_set_header   X-Real-IP          $remote_addr;
-        proxy_set_header   X-Forwarded-For    {% if proxy_servers %}$http_x_forwarded_for{% else %}$proxy_add_x_forwarded_for{% endif %};
-        proxy_set_header   X-Forwarded-Proto  $scheme;
+        proxy_set_header   X-Forwarded-For    {{ vhost.forwarded_for }};
+        proxy_set_header   X-Forwarded-Proto  {{ vhost.public_scheme }};
         proxy_set_header   X-Frappe-Site-Name {{ vhost.name }};
     }
 
@@ -225,8 +328,8 @@ server {
         proxy_redirect     off;
         proxy_set_header   Host               $host;
         proxy_set_header   X-Real-IP          $remote_addr;
-        proxy_set_header   X-Forwarded-For    {% if proxy_servers %}$http_x_forwarded_for{% else %}$proxy_add_x_forwarded_for{% endif %};
-        proxy_set_header   X-Forwarded-Proto  $scheme;
+        proxy_set_header   X-Forwarded-For    {{ vhost.forwarded_for }};
+        proxy_set_header   X-Forwarded-Proto  {{ vhost.public_scheme }};
         proxy_hide_header  Access-Control-Allow-Origin;
         add_header         Access-Control-Allow-Origin * always;
         add_header         Access-Control-Allow-Methods "GET, POST, OPTIONS" always;
@@ -265,8 +368,8 @@ server {
         proxy_redirect     off;
         proxy_set_header   Host               $host;
         proxy_set_header   X-Real-IP          $remote_addr;
-        proxy_set_header   X-Forwarded-For    {% if proxy_servers %}$http_x_forwarded_for{% else %}$proxy_add_x_forwarded_for{% endif %};
-        proxy_set_header   X-Forwarded-Proto  $scheme;
+        proxy_set_header   X-Forwarded-For    {{ vhost.forwarded_for }};
+        proxy_set_header   X-Forwarded-Proto  {{ vhost.public_scheme }};
     }
 
     {% endif %}

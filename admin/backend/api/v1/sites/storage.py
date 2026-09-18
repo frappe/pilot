@@ -21,7 +21,7 @@ from pilot.tasks.refresh_storage_usage import RefreshStorageUsageTask
 
 @sites_bp.get("/storage")
 def get_storage():
-    """Every site's files and database usage, from the report the site-storage
+    """Every site's files and database usage, from the report the pilot-storage
     timer refreshes. Measured here only when there is no report yet."""
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:

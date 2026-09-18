@@ -52,8 +52,19 @@ def list_tasks():
                 f"Unknown task status: {status_filter!r}.",
                 422,
             )
+    limit_arg = request.args.get("limit", "50")
     try:
-        tasks = reader.list_tasks()
+        limit = int(limit_arg)
+    except ValueError:
+        limit = 0
+    if limit < 1:
+        return error_response(
+            "invalid_task_limit",
+            f"The limit parameter must be a positive integer, got {limit_arg!r}.",
+            422,
+        )
+    try:
+        tasks = reader.list_tasks(limit=limit)
     except Exception:
         return error_response("task_list_unavailable", "Could not read tasks.", 500)
     if wanted_status is not None:

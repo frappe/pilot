@@ -1,32 +1,21 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-
-import { ListRowItem, ListView } from 'frappe-ui/experimental'
-
-import {
-  Button,
-  Dialog,
-  ErrorMessage,
-  FormControl,
-  Spinner,
-  toast,
-} from 'frappe-ui'
+import { Button, Dialog, ErrorMessage, Spinner, TextInput, toast } from 'frappe-ui'
 
 import QrcodeVue from 'qrcode.vue'
 
 import EmptyState from '@/components/common/EmptyState.vue'
+import Table from '@/components/common/Table.vue'
 import SettingsRow from '@/components/settings/SettingsRow.vue'
 
 import { twoFactorApi } from '@/api/twoFactor'
 import { fmtDateTime } from '@/utils/taskFormat'
 
 const columns = [
-  // Fixed widths, not fractions: ListView's row wrapper is `w-max`, so a fractional
-  // track sizes to its content and a long device name would stretch the table instead.
-  { label: 'Device', key: 'name', align: 'left', width: '12rem' },
-  { label: 'Added', key: 'confirmed_at', align: 'left', width: '9rem' },
-  { label: 'Last used', key: 'last_used_at', align: 'left', width: '9rem' },
-  { label: '', key: 'actions', align: 'right', width: '3rem' },
+  { label: 'Device', key: 'name', class: 'w-48' },
+  { label: 'Added', key: 'confirmed_at', class: 'w-36' },
+  { label: 'Last used', key: 'last_used_at', class: 'w-36' },
+  { label: '', key: 'actions', class: 'w-12' },
 ]
 
 const loading = ref(true)
@@ -43,9 +32,7 @@ const atDeviceLimit = computed(
   () => status.value.max_devices > 0 && status.value.credentials.length >= status.value.max_devices,
 )
 
-const fmtTimestamp = (seconds) => {
-  return seconds ? fmtDateTime(new Date(seconds * 1000).toISOString()) : 'Never'
-}
+const fmtTimestamp = (seconds) => (seconds ? fmtDateTime(seconds * 1000) : 'Never')
 
 // A device only counts once its code has been verified; half-finished ones are noise.
 const devices = computed(() => status.value.credentials.filter((row) => row.confirmed))
@@ -196,7 +183,7 @@ onMounted(load)
 
   <div v-else class="space-y-5">
     <div class="flex justify-between items-center">
-      <p class="font-medium text-ink-gray-8 text-base">
+      <p class="font-medium text-ink-gray-8">
         Devices
         <span class="font-normal text-ink-gray-5">
           ({{ devices.length }} of {{ status.max_devices }})
@@ -205,7 +192,6 @@ onMounted(load)
 
       <Button
         v-if="!atDeviceLimit"
-        variant="subtle"
         icon-left="lucide-plus"
         @click="openAdd"
         >Add device</Button
@@ -228,55 +214,40 @@ onMounted(load)
       description="Sign-in needs only the admin password. Add a device to require a code from an authenticator app as well."
     />
 
-    <ListView
-      v-else
-      :columns="columns"
-      :rows="devices"
-      row-key="name"
-      :options="{ selectable: false, showTooltip: false }"
-    >
-      <template #cell="{ column, row, item }">
-        <span
-          v-if="column.key === 'name'"
-          class="block min-w-0 max-w-full text-ink-gray-7 text-base truncate"
-          :title="row.name"
-        >
+    <Table v-else :columns="columns" :rows="devices" height="max-h-96">
+      <template #name="{ row }">
+        <span class="block max-w-full text-ink-gray-7 truncate" :title="row.name">
           {{ row.name }}
         </span>
-
-        <span v-else-if="column.key === 'confirmed_at'" class="text-ink-gray-6 text-sm">
-          {{ fmtTimestamp(row.confirmed_at) }}
-        </span>
-
-        <span v-else-if="column.key === 'last_used_at'" class="text-ink-gray-6 text-sm">
-          {{ fmtTimestamp(row.last_used_at) }}
-        </span>
-
-        <div v-else-if="column.key === 'actions'" class="flex justify-end">
-          <Button
-            variant="ghost"
-            size="sm"
-            theme="red"
-            icon="lucide-trash-2"
-            label="Remove device"
-            tooltip="Remove device"
-            @click="promptRemove(row)"
-          />
-        </div>
-
-        <ListRowItem v-else :column="column" :row="row" :item="item" :align="column.align" />
       </template>
-    </ListView>
+
+      <template #confirmed_at="{ row }">
+        <span class="text-ink-gray-6 text-sm">{{ fmtTimestamp(row.confirmed_at) }}</span>
+      </template>
+
+      <template #last_used_at="{ row }">
+        <span class="text-ink-gray-6 text-sm">{{ fmtTimestamp(row.last_used_at) }}</span>
+      </template>
+
+      <template #actions="{ row }">
+        <Button
+          variant="ghost"
+          theme="red"
+          icon="lucide-trash-2"
+          label="Remove device"
+          tooltip="Remove device"
+          @click="promptRemove(row)"
+        />
+      </template>
+    </Table>
 
     <div v-if="status.enabled" class="pt-2 border-t border-outline-gray-1">
-      <!-- -mx on the row alone: on the rule above it the border would overhang
-           the list it divides. -->
       <div class="-mx-2.5">
         <SettingsRow
           label="Recovery codes"
           :description="`${status.recovery_codes_remaining} unused. Use one when no device is available.`"
         >
-          <Button size="sm" variant="subtle" @click="showRegenerate = true">Regenerate</Button>
+          <Button @click="showRegenerate = true">Regenerate</Button>
         </SettingsRow>
       </div>
     </div>
@@ -284,7 +255,7 @@ onMounted(load)
 
   <Dialog v-model="showAdd" title="Add device" size="md">
     <div class="space-y-3">
-      <FormControl
+      <TextInput
         v-if="!enrollment"
         v-model="deviceName"
         label="Device name"
@@ -304,41 +275,42 @@ onMounted(load)
 
         <details class="group">
           <summary
-            class="flex items-center gap-1.5 text-ink-gray-6 text-base cursor-pointer select-none"
+            class="flex items-center gap-1.5 text-ink-gray-6 cursor-pointer select-none"
           >
             <span
-              class="size-4 transition-transform group-open:rotate-90 lucide-chevron-right"
-            ></span>
+              class="size-4 transition-transform group-open:rotate-90 lucide-chevron-right" />
             Can't scan? Enter the key by hand
           </summary>
 
           <div class="bg-surface-gray-2 mt-2 p-3 rounded-6">
-            <p class="font-mono text-ink-gray-8 text-base break-all">{{ enrollment.secret }}</p>
+            <p class="font-mono text-ink-gray-8 break-all">{{ enrollment.secret }}</p>
             <button class="mt-1 text-ink-blue-2 text-sm" @click="copy(enrollment.secret)">
               Copy key
             </button>
           </div>
         </details>
 
-        <FormControl v-model="otp" label="Code from the app" placeholder="123456" autofocus />
+        <TextInput v-model="otp" label="Code from the app" placeholder="123456" autofocus />
       </template>
     </div>
 
     <ErrorMessage v-if="error" :message="error" class="mt-2" />
-    <div class="flex justify-end gap-2 mt-4">
-      <Button variant="ghost" @click="showAdd = false">Cancel</Button>
-      <Button
-        v-if="!enrollment"
-        variant="solid"
-        :loading="busy"
-        :disabled="!deviceName.trim()"
-        @click="startEnrollment"
-        >Get QR code</Button
-      >
-      <Button v-else variant="solid" :loading="busy" :disabled="!otp" @click="confirmEnrollment"
-        >Verify</Button
-      >
-    </div>
+    <template #actions>
+      <div class="flex justify-end gap-2">
+        <Button variant="ghost" @click="showAdd = false">Cancel</Button>
+        <Button
+          v-if="!enrollment"
+          variant="solid"
+          :loading="busy"
+          :disabled="!deviceName.trim()"
+          @click="startEnrollment"
+          >Get QR code</Button
+        >
+        <Button v-else variant="solid" :loading="busy" :disabled="!otp" @click="confirmEnrollment"
+          >Verify</Button
+        >
+      </div>
+    </template>
   </Dialog>
 
   <Dialog v-model="showCodes" title="Save your recovery codes" size="md">
@@ -357,12 +329,14 @@ onMounted(load)
       </span>
     </div>
 
-    <div class="flex justify-end gap-2 mt-4">
-      <Button variant="subtle" @click="copy(codes.join('\n'))">Copy all</Button>
-      <Button variant="solid" icon-left="lucide-download" @click="downloadCodes">
-        Download
-      </Button>
-    </div>
+    <template #actions>
+      <div class="flex justify-end gap-2">
+        <Button @click="copy(codes.join('\n'))">Copy all</Button>
+        <Button variant="solid" icon-left="lucide-download" @click="downloadCodes">
+          Download
+        </Button>
+      </div>
+    </template>
   </Dialog>
 
   <Dialog v-model="showRemove" title="Remove device" size="md">
@@ -372,10 +346,12 @@ onMounted(load)
     </p>
 
     <ErrorMessage v-if="error" :message="error" class="mt-2" />
-    <div class="flex justify-end gap-2 mt-4">
-      <Button variant="ghost" @click="showRemove = false">Cancel</Button>
-      <Button variant="solid" theme="red" :loading="busy" @click="confirmRemove">Remove</Button>
-    </div>
+    <template #actions>
+      <div class="flex justify-end gap-2">
+        <Button variant="ghost" @click="showRemove = false">Cancel</Button>
+        <Button variant="solid" theme="red" :loading="busy" @click="confirmRemove">Remove</Button>
+      </div>
+    </template>
   </Dialog>
 
   <Dialog v-model="showRegenerate" title="Regenerate recovery codes" size="md">
@@ -385,9 +361,11 @@ onMounted(load)
     </p>
 
     <ErrorMessage v-if="error" :message="error" class="mt-2" />
-    <div class="flex justify-end gap-2 mt-4">
-      <Button variant="ghost" @click="showRegenerate = false">Cancel</Button>
-      <Button variant="solid" :loading="busy" @click="regenerate">Regenerate</Button>
-    </div>
+    <template #actions>
+      <div class="flex justify-end gap-2">
+        <Button variant="ghost" @click="showRegenerate = false">Cancel</Button>
+        <Button variant="solid" :loading="busy" @click="regenerate">Regenerate</Button>
+      </div>
+    </template>
   </Dialog>
 </template>

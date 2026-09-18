@@ -1,5 +1,3 @@
-"""Tests for the rename-site command."""
-
 from __future__ import annotations
 
 import json
@@ -82,40 +80,54 @@ def test_rename_moves_dir_and_updates_default_site(tmp_path: Path) -> None:
     assert csc["default_site"] == "new.localhost"
 
 
-def test_rename_followup_runs_setup_production_when_prod(tmp_path: Path, monkeypatch) -> None:
+def test_rename_followup_never_redeploys_production(tmp_path: Path, monkeypatch) -> None:
+    """A rename refreshes certificates without restarting production."""
     bench = _bench(tmp_path, "b1")
     bench.config.production.enabled = True
+    _make_site(bench, "new.localhost", ssl=True)
     calls = []
     monkeypatch.setattr(Bench, "setup_production", lambda self, **kwargs: calls.append("prod"))
-    SiteRename(bench.site("old.localhost"), "new.localhost").run_followups(
-        ssl_enabled=True, on_progress=print
-    )
-    assert calls == ["prod"]  # prod path covers TLS; letsencrypt not run separately
+    monkeypatch.setattr(Bench, "setup_letsencrypt", lambda self: calls.append("le"))
+
+    SiteRename(bench.site("old.localhost"), "new.localhost").run_followups(on_progress=print)
+
+    assert calls == ["le"]
 
 
-def test_rename_followup_runs_letsencrypt_when_ssl_and_not_prod(tmp_path: Path, monkeypatch) -> None:
+def test_rename_followup_runs_letsencrypt_for_a_tls_site(tmp_path: Path, monkeypatch) -> None:
     bench = _bench(tmp_path, "b1")
+    _make_site(bench, "new.localhost", ssl=True)
     calls = []
     monkeypatch.setattr(Bench, "setup_letsencrypt", lambda self: calls.append("le"))
-    SiteRename(bench.site("old.localhost"), "new.localhost").run_followups(
-        ssl_enabled=True, on_progress=print
-    )
+
+    SiteRename(bench.site("old.localhost"), "new.localhost").run_followups(on_progress=print)
+
     assert calls == ["le"]
+
+
+def test_rename_followup_skips_letsencrypt_for_a_plain_site(tmp_path: Path, monkeypatch) -> None:
+    bench = _bench(tmp_path, "b1")
+    _make_site(bench, "new.localhost", ssl=False)
+    calls = []
+    monkeypatch.setattr(Bench, "setup_letsencrypt", lambda self: calls.append("le"))
+
+    SiteRename(bench.site("old.localhost"), "new.localhost").run_followups(on_progress=print)
+
+    assert calls == []
 
 
 def test_rename_followup_advises_on_failure(
     tmp_path: Path, monkeypatch, capsys: pytest.CaptureFixture
 ) -> None:
     bench = _bench(tmp_path, "b1")
-    bench.config.production.enabled = True
+    _make_site(bench, "new.localhost", ssl=True)
 
     def boom(self):
-        raise BenchError("nginx exploded")
+        raise BenchError("certbot exploded")
 
-    monkeypatch.setattr(Bench, "setup_production", boom)
-    SiteRename(bench.site("old.localhost"), "new.localhost").run_followups(
-        ssl_enabled=False, on_progress=print
-    )
+    monkeypatch.setattr(Bench, "setup_letsencrypt", boom)
+    SiteRename(bench.site("old.localhost"), "new.localhost").run_followups(on_progress=print)
+
     out = capsys.readouterr().out
     assert "did not complete" in out
-    assert "pilot setup production -b b1" in out
+    assert "pilot setup letsencrypt -b b1" in out

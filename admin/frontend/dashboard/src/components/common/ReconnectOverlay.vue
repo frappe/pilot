@@ -4,7 +4,13 @@ import { LoadingIndicator } from 'frappe-ui'
 
 import { apiUrl } from '@/api/client'
 
-const props = defineProps({ paused: { type: Boolean, default: false } })
+interface Props {
+  paused?: boolean
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  paused: false,
+})
 
 const down = ref(false)
 let timer = null

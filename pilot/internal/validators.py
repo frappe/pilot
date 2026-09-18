@@ -52,14 +52,25 @@ def validate_branch_name(branch: str) -> str | None:
     return None
 
 
-def validate_site_name(name: str) -> str | None:
+def validate_hostname(name: str, label: str = "Hostname") -> str | None:
     if not name:
-        return "Site name is required."
+        return f"{label} is required."
     if len(name) > 253:
-        return "Site name is too long (max 253 characters)."
+        return f"{label} is too long (max 253 characters)."
     if not _SITE_NAME_RE.match(name):
-        return "Site name must be a valid hostname (letters, numbers, hyphens, and dots only)."
+        return f"{label} must be a valid hostname (letters, numbers, hyphens, and dots only)."
     return None
+
+
+def validate_hostname_pattern(pattern: str, label: str = "Hostname pattern") -> str | None:
+    """A VM hostname glob, where `*` stands for the runtime-assigned VM id."""
+    if pattern.count("*") != 1:
+        return f"{label} must contain exactly one '*' for the VM id, as in 'site-*.example.com'."
+    return validate_hostname(pattern.replace("*", "vm"), label)
+
+
+def validate_site_name(name: str) -> str | None:
+    return validate_hostname(name, "Site name")
 
 
 def validate_cron_expression(expr: str) -> str | None:
@@ -68,6 +79,11 @@ def validate_cron_expression(expr: str) -> str | None:
     if not _CRON_RE.match(expr.strip()):
         return "Invalid cron expression. Expected 5 fields: minute hour day month weekday (e.g. '0 2 * * *')."
     return None
+
+
+ADMIN_PASSWORD_REQUIREMENTS = (
+    "at least 8 characters, with upper and lower case letters, a number, and a symbol"
+)
 
 
 def validate_admin_password(password: str) -> str | None:

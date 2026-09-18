@@ -2,7 +2,13 @@
 import { ref, onBeforeUnmount } from 'vue'
 import { Button } from 'frappe-ui'
 
-const props = defineProps({ options: { type: Array, default: () => [] } })
+interface Props {
+  options?: any[]
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  options: () => [],
+})
 
 const root = ref(null)
 const panel = ref(null)
@@ -46,7 +52,7 @@ onBeforeUnmount(close)
 
 <template>
   <div ref="root" class="inline-flex relative">
-    <Button variant="ghost" size="sm" :active="open" @click="toggle">
+    <Button variant="ghost" :active="open" @click="toggle">
       <template #icon>
         <span class="size-4 lucide-ellipsis-vertical" />
       </template>

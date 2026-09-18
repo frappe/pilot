@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from jwt import PyJWKClient
 from jwt.algorithms import ECAlgorithm, RSAAlgorithm
 
+from admin.backend.internal.jwks_cache import JwksCache
 from admin.backend.internal.session import Session
 from admin.backend.middleware import decode_session_token
 
@@ -47,7 +48,7 @@ def _mint(key=_RSA, alg: str = "RS256", kid: str = "rsa-key", **claims) -> str:
 def _verify(token, jwks_url=JWKS_URL, audience=AUDIENCE):
     """Verify a remotely-issued token via a Session whose bench carries the given JWKS config."""
     admin = SimpleNamespace(jwt_secret="", jwks_url=jwks_url, jwks_audience=audience)
-    return Session(SimpleNamespace(config=SimpleNamespace(admin=admin))).verify_token(token)
+    return Session(SimpleNamespace(path=_Bench.path, config=SimpleNamespace(admin=admin))).verify_token(token)
 
 
 def _local(secret: str, **claims) -> str:
@@ -57,11 +58,12 @@ def _local(secret: str, **claims) -> str:
 
 
 @pytest.fixture(autouse=True)
-def _stub_fetch(monkeypatch):
+def _stub_fetch(monkeypatch, tmp_path):
     monkeypatch.setattr(PyJWKClient, "fetch_data", lambda self: _jwks_document())
-    Session._jwks_clients.clear()
-    yield
-    Session._jwks_clients.clear()
+    (tmp_path / "benches").mkdir()
+    monkeypatch.setattr(_Bench, "path", tmp_path / "benches" / "current", raising=False)
+    JwksCache._refreshing.clear()
+    JwksCache._last_forced_fetch.clear()
 
 
 def test_rsa_token_verifies() -> None:

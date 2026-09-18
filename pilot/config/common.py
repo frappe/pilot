@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field, fields
+import copy
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from pathlib import Path
 
 from pilot.config.alert_limit import ResourceLimitConfig
@@ -10,7 +13,8 @@ from pilot.config.letsencrypt import LetsEncryptConfig
 from pilot.config.logs import LogsConfig
 from pilot.config.mariadb import MariaDBConfig
 from pilot.config.postgres import PostgresConfig
-from pilot.internal.atomic_file import atomic_write_private_text
+from pilot.config.proxy import ProxyConfig
+from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
 from pilot.internal.toml import ConfigDict, Toml
 
 FILENAME = "common_config.toml"
@@ -18,17 +22,13 @@ FILENAME = "common_config.toml"
 
 @dataclass
 class CommonConfig:
-    """Settings shared by every bench under one benches directory: one MariaDB
-    server, one Postgres server, one ACME account, one trusted admin JWKS
-    issuer, one Central enrolment, one metrics destination, one logs
-    destination. Stored once at ``common_config.toml`` next to the bench
-    folders. BenchConfig is the only reader/writer; other code reaches these
-    values through a bench's own config instead."""
+    """Settings shared by every bench in one benches directory."""
 
     mariadb: MariaDBConfig = field(default_factory=MariaDBConfig)
     postgres: PostgresConfig = field(default_factory=PostgresConfig)
     letsencrypt: LetsEncryptConfig = field(default_factory=LetsEncryptConfig)
     central: CentralConfig = field(default_factory=CentralConfig)
+    proxy: ProxyConfig = field(default_factory=ProxyConfig)
     datum: DatumConfig = field(default_factory=DatumConfig)
     logs: LogsConfig = field(default_factory=LogsConfig)
     resource_limits: ResourceLimitConfig = field(default_factory=ResourceLimitConfig)
@@ -56,6 +56,7 @@ class CommonConfig:
             postgres=PostgresConfig(**_known_fields(PostgresConfig, data.get("postgres", {}))),
             letsencrypt=LetsEncryptConfig.from_dict(data.get("letsencrypt", {})),
             central=CentralConfig.from_dict(data.get("central", {})),
+            proxy=ProxyConfig.from_dict(data.get("proxy", {})),
             datum=DatumConfig.from_dict(data.get("datum", {})),
             logs=LogsConfig.from_dict(data.get("logs", {})),
             resource_limits=ResourceLimitConfig(
@@ -66,7 +67,51 @@ class CommonConfig:
         )
 
     def write(self, benches_root: Path) -> None:
-        atomic_write_private_text(self.path(benches_root), Toml.dumps(self._to_toml_dict()))
+        path = self.path(benches_root)
+        with exclusive_file_lock(path):
+            replace_private_text_locked(path, Toml.dumps(self._to_toml_dict()))
+
+    @classmethod
+    @contextmanager
+    def open(cls, benches_root: Path) -> Iterator["CommonConfig"]:
+        """Lock common_config.toml for one read-modify-write transaction."""
+        path = cls.path(benches_root)
+        with exclusive_file_lock(path):
+            config = cls.read(benches_root)
+            original = copy.deepcopy(config)
+            yield config
+            if config != original:
+                replace_private_text_locked(path, Toml.dumps(config._to_toml_dict()))
+
+    @classmethod
+    def apply_changes(
+        cls,
+        benches_root: Path,
+        baseline: "CommonConfig | None",
+        updated: "CommonConfig",
+    ) -> None:
+        """Commit only the settings that differ from `baseline`, under the lock.
+
+        A caller holding a view read earlier must not write the whole file back:
+        anything another bench committed since would be undone. Comparison goes
+        down to individual settings, so changing one value in a table leaves the
+        table's others as whoever committed them. Without a baseline there is
+        nothing to compare, and the view is written as a whole.
+        """
+        if baseline is None:
+            updated.write_if_changed(benches_root)
+            return
+        if baseline == updated:
+            return
+        with cls.open(benches_root) as current:
+            _copy_changed_settings(baseline, updated, current)
+
+    def write_if_changed(self, benches_root: Path) -> None:
+        """Replace the shared file when this view differs from it."""
+        path = self.path(benches_root)
+        with exclusive_file_lock(path):
+            if self != self.read(benches_root):
+                replace_private_text_locked(path, Toml.dumps(self._to_toml_dict()))
 
     def _to_toml_dict(self) -> ConfigDict:
         data: ConfigDict = {
@@ -91,7 +136,21 @@ class CommonConfig:
             },
         }
         if self.central != CentralConfig():
-            data["central"] = self._central_section()
+            data["central"] = {
+                "enabled": self.central.enabled,
+                "bootstrapped": self.central.bootstrapped,
+                "hostname_aliases": [
+                    {
+                        "type": alias.type,
+                        "pattern": alias.pattern,
+                        "target": alias.target,
+                        "redirect": alias.redirect,
+                    }
+                    for alias in self.central.hostname_aliases
+                ],
+            }
+        if self.proxy != ProxyConfig():
+            data["proxy"] = {"protocol_v2": self.proxy.protocol_v2}
         if self.datum != DatumConfig():
             data["datum"] = {"endpoint": self.datum.endpoint, "token": self.datum.token}
         if self.logs != LogsConfig():
@@ -101,27 +160,30 @@ class CommonConfig:
                 "enabled": self.logs.enabled,
             }
         if self.resource_limits != ResourceLimitConfig():
-            data["resource_limits"] = self._resource_limits_section()
+            data["resource_limits"] = asdict(self.resource_limits)
         if self.jwks_url:
             data["admin"] = {"jwks_url": self.jwks_url, "jwks_audience": self.jwks_audience}
-        return data
-
-    def _resource_limits_section(self) -> ConfigDict:
-        return {
-            "cpu_usage_limit": self.resource_limits.cpu_usage_limit,
-            "memory_usage_limit": self.resource_limits.memory_usage_limit,
-            "disk_space_limit": self.resource_limits.disk_space_limit,
-            "site_uptime": self.resource_limits.site_uptime,
-            "webhook_endpoints": self.resource_limits.webhook_endpoints,
-        }
-
-    def _central_section(self) -> ConfigDict:
-        data: ConfigDict = {"endpoint": self.central.endpoint, "auth_token": self.central.auth_token}
-        if self.central.bootstrap_token:
-            data["bootstrap_token"] = self.central.bootstrap_token
         return data
 
 
 def _known_fields(dataclass_type: type, data: dict) -> dict:
     known = {f.name for f in fields(dataclass_type)}
     return {key: value for key, value in data.items() if key in known}
+
+
+def _copy_changed_settings(baseline, updated, current) -> None:
+    """Copy across the individual settings that changed, recursing into tables.
+
+    Comparing whole tables would be enough to spot a change but not to apply
+    one: writing the table back would carry this view's stale copy of every
+    other setting in it with it.
+    """
+    for setting in fields(updated):
+        was = getattr(baseline, setting.name)
+        now = getattr(updated, setting.name)
+        if was == now:
+            continue
+        if is_dataclass(was) and is_dataclass(now):
+            _copy_changed_settings(was, now, getattr(current, setting.name))
+        else:
+            setattr(current, setting.name, now)

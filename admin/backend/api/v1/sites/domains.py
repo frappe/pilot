@@ -114,8 +114,8 @@ def list_domains(name: str):
     if not site_exists(bench_root, name):
         return site_not_found()
     try:
-        domains = _site_domains(bench_root, name)
-        return jsonify({"domains": domains.names(), "primary": domains.primary()})
+        rows, primary = _site_domains(bench_root, name).describe()
+        return jsonify({"domains": rows, "primary": primary})
     except BenchError as error:
         return _domain_failure(error, "Could not read site domains.")
     except Exception:
@@ -174,14 +174,14 @@ def get_domain(name: str, domain: str):
     if err := validate_site_name(domain):
         return error_response("invalid_domain", err, 422)
     try:
-        attached, is_primary = _site_domains(bench_root, name).status(domain)
+        description = _site_domains(bench_root, name).describe_domain(domain)
     except BenchError as error:
         return _domain_failure(error, "Could not read the domain.")
     except Exception:
         return internal_error("Could not read the domain.")
-    if not attached:
+    if description is None:
         return error_response("domain_not_found", "Domain not found.", 404)
-    return jsonify({"domain": domain, "is_primary": is_primary})
+    return jsonify(description)
 
 
 @sites_bp.patch("/<name>/domains/<domain>")

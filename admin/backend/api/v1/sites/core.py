@@ -15,6 +15,7 @@ from admin.backend.api.v1.sites import sites_bp
 from admin.backend.api.v1.sites.login import no_store as _no_store
 from admin.backend.api.v1.sites.login import unreachable_host_hint
 from admin.backend.api.v1.sites.shared import (
+    host_resource_key,
     internal_error,
     invalid_fields,
     malformed_body,
@@ -36,6 +37,7 @@ from pilot.tasks.clear_cache import ClearCacheTask
 from pilot.tasks.drop_site import DropSiteTask
 from pilot.tasks.new_site import NewSiteTask
 from pilot.tasks.reinstall_site import ReinstallSiteTask
+from pilot.tasks.rename_site import RenameSiteTask
 
 
 @sites_bp.get("")
@@ -71,21 +73,26 @@ def detail(name: str):
         installable = []
 
     try:
-        bench_config = Bench(bench_root).config
+        bench = Bench(bench_root)
+        bench_config = bench.config
+        pilot_site = next(item.config for item in bench.sites() if item.config.name == name)
         http_port = bench_config.http_port
         nginx_enabled = bench_config.production.enabled
-        admin_tls = bench_config.admin.tls
+        admin_tls = bench_config.admin.route_policy.public_tls
         url = site_url(name, site.site_config, bench_config)
+        site_tls = pilot_site.uses_tls(pilot_site.primary)
     except Exception:
         http_port = 8000
         nginx_enabled = False
         admin_tls = False
         url = f"http://{name}:8000"
+        site_tls = False
 
     return jsonify(
         {
             **_site_resource(site),
             "ssl": bool(site.site_config.get("ssl")),
+            "tls": site_tls,
             "installable_apps": installable,
             "http_port": http_port,
             "nginx_enabled": nginx_enabled,
@@ -137,7 +144,7 @@ def create_site():
             admin_password=admin_password,
             apps=apps,
             idempotency_key=request.headers.get("Idempotency-Key"),
-            resource_key=f"site:{name.lower()}",
+            resource_key=[f"site:{name.lower()}", host_resource_key(name)],
         )
     except Exception as error:
         return task_failure(error)
@@ -157,6 +164,47 @@ def drop_site(name: str):
             site=name,
             idempotency_key=request.headers.get("Idempotency-Key"),
             resource_key=f"site:{name.lower()}",
+        )
+    except Exception as error:
+        return task_failure(error)
+    return accepted_task_response(bench_root, task_id)
+
+
+@sites_bp.post("/<name>/actions/rename")
+@require_scope(site_name)
+def rename_site(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    if not site_exists(bench_root, name):
+        return site_not_found()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return malformed_body()
+    fields = text_fields(data, "new_name")
+    if fields is None:
+        return invalid_fields()
+
+    new_name = fields["new_name"]
+    keep_old_hostname = data.get("keep_old_hostname", True)
+    if not isinstance(keep_old_hostname, bool):
+        return invalid_fields()
+    err = validate_site_name(new_name) or new_site_name_error(bench_root, new_name)
+    if err:
+        return site_name_failure(err)
+
+    try:
+        task_id = RenameSiteTask.queue(
+            Bench(bench_root),
+            site=name,
+            new_name=new_name,
+            keep_old_hostname=keep_old_hostname,
+            idempotency_key=request.headers.get("Idempotency-Key"),
+            # Hold both hostnames until the old provider route is retained or released.
+            resource_key=[
+                f"site:{name.lower()}",
+                f"site:{new_name.lower()}",
+                host_resource_key(name),
+                host_resource_key(new_name),
+            ],
         )
     except Exception as error:
         return task_failure(error)
@@ -237,8 +285,7 @@ def create_login_link(name: str):
         return site_not_found()
     try:
         bench = Bench(bench_root)
-        proxy_tls = current_app.config["SESSION_COOKIE_SECURE"] and not bench.config.admin.tls
-        url = bench.site(name).admin_login_url(proxy_tls=proxy_tls)
+        url = bench.site(name).admin_login_url()
     except Exception:
         return error_response(
             "configuration_unavailable",

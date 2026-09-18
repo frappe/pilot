@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 from collections.abc import Iterator, Mapping
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -13,6 +13,13 @@ from pilot.internal.tasks.files import TaskFiles
 from pilot.internal.tasks.models import TaskStatus
 from pilot.internal.tasks.state import parse_task_status, validate_task_transition
 from pilot.utils import make_private_directory
+
+HOST_RESOURCE_PREFIX = "host:"
+_HOST_RESOURCE_LOCK = ".host-resources"
+
+
+def _host_keys(keys: list[str]) -> set[str]:
+    return {key for key in keys if key.startswith(HOST_RESOURCE_PREFIX)}
 
 
 @dataclass(frozen=True)
@@ -38,8 +45,9 @@ class TaskStore:
     ) -> Path:
         keys = self._normalize_keys(resource_key)
         make_private_directory(self.tasks_root, parents=True)
-        with exclusive_file_lock(self._lock_target):
+        with self._host_resource_lock(keys), exclusive_file_lock(self._lock_target):
             self._reject_active_resource_locked(keys, resource_handoff_from)
+            self._reject_host_resources_elsewhere(keys)
             return self._create_queued_locked(
                 self._with_resource_keys(metadata, keys),
                 private_files or {},
@@ -55,7 +63,7 @@ class TaskStore:
     ) -> TaskCreation:
         keys = self._normalize_keys(resource_key)
         make_private_directory(self.tasks_root, parents=True)
-        with exclusive_file_lock(self._lock_target):
+        with self._host_resource_lock(keys), exclusive_file_lock(self._lock_target):
             existing = self._active_idempotent_task_locked(idempotency_digest)
             if existing is not None:
                 existing_fingerprint = self.read_metadata(existing).get("request_fingerprint")
@@ -64,6 +72,7 @@ class TaskStore:
                 return TaskCreation(existing, self.task_dir(existing), False)
 
             self._reject_active_resource_locked(keys)
+            self._reject_host_resources_elsewhere(keys)
             stored_metadata = dict(metadata)
             stored_metadata["idempotency_digest"] = idempotency_digest
             stored_metadata["request_fingerprint"] = request_fingerprint
@@ -234,6 +243,33 @@ class TaskStore:
                 )
         if not handoff_found:
             raise TaskConflictError("Resource handoff task is not active")
+
+    def _host_resource_lock(self, keys: list[str]) -> AbstractContextManager:
+        """Serialize hostname claims before taking the bench lock."""
+        if not _host_keys(keys):
+            return nullcontext()
+        return exclusive_file_lock(self.bench_root.parent / _HOST_RESOURCE_LOCK)
+
+    def _reject_host_resources_elsewhere(self, keys: list[str]) -> None:
+        """Reject hostname claims held by an active task on another bench."""
+        wanted = _host_keys(keys)
+        if not wanted:
+            return
+        for store in self._sibling_stores():
+            for _task_id, held in store._active_resources_locked():
+                if conflict := wanted & held:
+                    raise TaskConflictError(
+                        f"Another bench's active task is already using resource {sorted(conflict)[0]!r}"
+                    )
+
+    def _sibling_stores(self) -> Iterator["TaskStore"]:
+        parent = self.bench_root.parent
+        if not parent.is_dir():
+            return
+        me = self.bench_root.resolve()
+        for sibling in parent.iterdir():
+            if sibling.is_dir() and sibling.resolve() != me and (sibling / "tasks").is_dir():
+                yield TaskStore(sibling)
 
     def _active_resources_locked(self) -> Iterator[tuple[str, set[str]]]:
         for task_dir in self._files.task_dirs():

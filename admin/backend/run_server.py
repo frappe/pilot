@@ -34,6 +34,10 @@ def main() -> None:
     app = create_app(bench_root)
     app.config["WIZARD_SERVER"] = args.wizard
 
+    from admin.backend.central_bootstrap import install_central_bootstrap_watcher
+
+    install_central_bootstrap_watcher(app, bench_root)
+
     skip_watchdog = args.no_timeout or args.dev
     if not skip_watchdog:
         try:

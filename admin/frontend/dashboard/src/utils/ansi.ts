@@ -22,7 +22,7 @@ export const escapeHtml = (text) => {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
-export const ansiToHtml = (text) => {
+const ansiToHtml = (text) => {
   let html = ''
   let openSpans = 0
   for (const part of text.split(/(\x1b\[[0-9;]*[A-Za-z])/)) {

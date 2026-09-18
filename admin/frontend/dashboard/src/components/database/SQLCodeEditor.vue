@@ -18,10 +18,16 @@ import { Compartment, Prec } from '@codemirror/state'
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { tags } from '@lezer/highlight'
 
-const props = defineProps({
-  modelValue: { type: String, default: '' },
-  schema: { type: Array, default: () => [] },
-  dbType: { type: String, default: 'mariadb' },
+interface Props {
+  modelValue?: string
+  schema?: any[]
+  dbType?: string
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  modelValue: '',
+  schema: () => [],
+  dbType: 'mariadb',
 })
 
 const emit = defineEmits(['update:modelValue', 'run'])
@@ -78,6 +84,7 @@ const theme = EditorView.theme({
     backgroundColor: 'var(--surface-base, white)',
   },
   '&.cm-focused': { outline: 'none' },
+  '.cm-foldGutter .cm-gutterElement': { padding: '0 4px' },
   '.cm-scroller': {
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
     lineHeight: '22px',

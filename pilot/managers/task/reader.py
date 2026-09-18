@@ -96,15 +96,19 @@ class TaskReader:
         self._files = TaskFiles(self._bench_root / "tasks")
         self._queue = TaskQueue(bench_root)
 
-    def list_tasks(self, limit: int | None = 50) -> list[TaskInfo]:
+    def list_tasks(self, limit: int | None = 50, include_unlisted: bool = False) -> list[TaskInfo]:
+        from pilot.internal.tasks.runner import is_command_listed
+
         tasks: list[TaskInfo] = []
         queue_positions = self._queue.positions()
         for entry in self._files.task_dirs():
             try:
-                tasks.append(_read_task_dir(self, entry, queue_positions))
+                task = _read_task_dir(self, entry, queue_positions)
             except Exception as exc:
                 logging.debug("Skipping unreadable task directory %s: %s", entry, exc)
                 continue
+            if include_unlisted or is_command_listed(task.command):
+                tasks.append(task)
 
         tasks.sort(key=lambda task: task.queued_at, reverse=True)
         return tasks if limit is None else tasks[:limit]

@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import LucideCheck from '~icons/lucide/check'
 
 import { PASSWORD_REQUIREMENTS } from '@/utils/passwordStrength'
 
-const props = defineProps({
-  password: { type: String, default: '' },
+interface Props {
+  password?: string
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  password: '',
 })
 
 const requirements = computed(() =>
@@ -21,7 +24,7 @@ const requirements = computed(() =>
       class="flex items-center gap-1.5 text-xs"
       :class="req.met ? 'text-ink-green-5' : 'text-ink-gray-4'"
     >
-      <LucideCheck class="size-3" />
+      <span class="size-3 lucide-check" />
       {{ req.label }}
     </li>
   </ul>

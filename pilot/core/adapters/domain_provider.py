@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import ipaddress
 import json
 import socket
 import subprocess
@@ -7,6 +9,7 @@ import sys
 import urllib.request
 from typing import TYPE_CHECKING
 
+from pilot.config.route import RoutePolicy
 from pilot.exceptions import BenchError, DomainConflictError, DomainProviderError
 from pilot.managers.platform import which
 from pilot.utils import host_owner, normalize_host, write_private_text
@@ -37,19 +40,30 @@ class DomainRouteProvider:
             records["a"] = [{"type": "A", "host": domain, "value": ip}]
         return records
 
-    def register(self, site_name: str, domain: str) -> None:
+    def register(self, site_name: str, domain: str) -> RoutePolicy | None:
         """Attach a domain locally, delegating DNS/routing checks when available."""
         domain = normalize_host(domain)
         if domain == normalize_host(site_name):
-            self._ask_provider("register", domain)
-            return
+            ran, data = self._register_with_provider(domain)
+            return self._route_policy(domain, ran, data)
         domain = self._validate_new(site_name, domain)
-        ran, _ = self._ask_provider("register", domain)
+        ran, data = self._register_with_provider(domain)
         if not ran:
             self._verify(site_name, domain)
+        policy = self._route_policy(domain, ran, data)
         config = self._read(site_name)
-        config.setdefault("domains", []).append(domain)
+        entry = {"domain": domain, "route": policy.to_dict()} if policy else domain
+        config.setdefault("domains", []).append(entry)
         self._write(site_name, config)
+        return policy
+
+    def _register_with_provider(self, domain: str) -> tuple[bool, object]:
+        try:
+            return self._ask_provider("register", domain)
+        except (ValueError, TypeError) as error:
+            with contextlib.suppress(BenchError):
+                self._ask_provider("deregister", domain)
+            raise DomainProviderError(f"The domain provider returned invalid JSON: {error}") from error
 
     def deregister(self, site_name: str, domain: str) -> None:
         """Detach a non-primary domain and notify the provider first."""
@@ -82,7 +96,15 @@ class DomainRouteProvider:
     @staticmethod
     def proxy_servers() -> list[str]:
         """Edge-proxy IPs reported by the host-level provider, if installed."""
-        return DomainRouteProvider._host_query("proxy-servers")
+        servers = DomainRouteProvider._host_query("proxy-servers")
+        try:
+            for server in servers:
+                ipaddress.ip_network(server, strict=False)
+        except (TypeError, ValueError) as error:
+            raise DomainProviderError(
+                "The domain provider returned an invalid proxy address or network."
+            ) from error
+        return servers
 
     @staticmethod
     def _host_query(verb: str) -> list[str]:
@@ -113,7 +135,16 @@ class DomainRouteProvider:
         candidates = {normalize_host(site_name)} | {normalize_host(d) for d in self._names(config)}
         if domain not in candidates:
             raise DomainConflictError(f"{domain} is not a domain of this site.")
-        scheme = "https" if config.get("ssl") else "http"
+        from pilot.config import RoutePolicy, SiteConfig
+
+        site = SiteConfig(
+            name=site_name,
+            apps=[],
+            ssl=bool(config.get("ssl")),
+            domains=config.get("domains") or [],
+            route=RoutePolicy.from_dict(config["route"]) if config.get("route") else None,
+        )
+        scheme = site.route_for(domain).public_scheme
         config["host_name"] = f"{scheme}://{domain}"
         self._write(site_name, config)
 
@@ -142,11 +173,27 @@ class DomainRouteProvider:
             raise DomainConflictError(result.stderr.strip() or f"{domain or site} was declined.")
         if result.returncode != 0:
             raise DomainProviderError(result.stderr.strip() or f"{_PROVIDER_BIN} {action} failed.")
-        # Do not parse status text from mutating verbs.
-        if action in ("register", "deregister"):
+        if action == "deregister":
             return True, None
         out = result.stdout.strip()
         return True, (json.loads(out) if out else None)
+
+    def _route_policy(self, domain: str, ran: bool, data: object) -> RoutePolicy | None:
+        if not ran:
+            return None
+        try:
+            policy = RoutePolicy.from_dict(data)
+        except (ValueError, TypeError, BenchError) as error:
+            with contextlib.suppress(BenchError):
+                self._ask_provider("deregister", domain)
+            raise DomainProviderError(
+                f"The domain provider returned an invalid route policy: {error}"
+            ) from error
+        if policy.client_ip_source != "direct" and not self.proxy_servers():
+            with contextlib.suppress(BenchError):
+                self._ask_provider("deregister", domain)
+            raise DomainProviderError("The domain provider returned a proxy route without proxy servers.")
+        return policy
 
     def _validate_new(self, site_name: str, domain: str) -> str:
         """Normalize domain and reject duplicates across sibling benches."""

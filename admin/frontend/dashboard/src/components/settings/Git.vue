@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { Alert, Button, ErrorMessage, FormControl, Spinner, toast } from 'frappe-ui'
+import { Alert, Button, ErrorMessage, Spinner, TextInput, toast } from 'frappe-ui'
 
 import { apiErrorMessage } from '@/api/client'
 import { gitApi } from '@/api/git'
@@ -82,7 +82,13 @@ onMounted(load)
   </div>
 
   <div v-else class="space-y-6">
-    <Alert v-if="!connected" theme="blue" title="Connect GitHub" :dismissible="false">
+    <Alert
+      v-if="!connected"
+      theme="blue"
+      title="Connect GitHub"
+      :dismissible="false"
+      class="border-outline-gray-2 border"
+    >
       <template #description>
         <p class="text-ink-gray-6 text-p-sm">
           Install private apps and browse your repos. Paste a
@@ -103,27 +109,21 @@ onMounted(load)
       class="flex sm:flex-row sm:justify-between sm:items-center flex-col gap-3"
     >
       <div>
-        <p class="font-medium text-ink-gray-8 text-base">Connected as {{ username }}</p>
+        <p class="font-medium text-ink-gray-8">Connected as {{ username }}</p>
         <p class="text-ink-gray-5 text-p-sm">GitHub · Personal access token</p>
       </div>
 
       <div class="flex items-center gap-2">
-        <Button
-          class="flex-1 sm:flex-none"
-          variant="subtle"
-          :loading="verifying"
-          @click="verifyConnection"
+        <Button class="flex-1 sm:flex-none" :loading="verifying" @click="verifyConnection"
           >Verify</Button
         >
-        <Button class="flex-1 sm:flex-none" variant="subtle" theme="red" @click="disconnect"
-          >Disconnect</Button
-        >
+        <Button class="flex-1 sm:flex-none" theme="red" @click="disconnect">Disconnect</Button>
       </div>
     </div>
 
     <div class="space-y-4">
-      <FormControl label="GitHub Username" type="text" v-model="username" placeholder="octocat" />
-      <FormControl
+      <TextInput label="GitHub Username" v-model="username" placeholder="octocat" />
+      <TextInput
         label="Personal Access Token"
         type="password"
         v-model="token"
@@ -132,8 +132,12 @@ onMounted(load)
       />
       <ErrorMessage v-if="error" :message="error" />
       <div class="flex justify-end">
-        <!-- The token is the one required field; Enter still hits the guard. -->
-        <Button variant="solid" :loading="connecting" :disabled="!token.trim()" @click="verifyAndConnect">
+        <Button
+          variant="solid"
+          :loading="connecting"
+          :disabled="!token.trim()"
+          @click="verifyAndConnect"
+        >
           {{ connected ? 'Update Token' : 'Verify & Connect' }}
         </Button>
       </div>

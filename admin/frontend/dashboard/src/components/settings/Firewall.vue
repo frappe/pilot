@@ -119,7 +119,13 @@ onMounted(async () => {
   </div>
 
   <div v-else class="space-y-6">
-    <Alert v-if="!production" title="Not enforced yet" theme="amber" :dismissible="false">
+    <Alert
+      v-if="!production"
+      class="border border-outline-gray-2"
+      title="Not enforced yet"
+      theme="amber"
+      :dismissible="false"
+    >
       <template #description>
         <span class="text-ink-gray-6 text-p-sm"
           >These rules take effect only in production (they're applied by nginx). This bench isn't
@@ -143,7 +149,13 @@ onMounted(async () => {
       @update:model-value="(v) => (defaultPolicy = v ? 'deny' : 'allow')"
     />
 
-    <Alert v-if="lockoutRisk" title="Heads up" theme="amber" :dismissible="false">
+    <Alert
+      v-if="lockoutRisk"
+      class="border border-outline-gray-2"
+      title="Heads up"
+      theme="amber"
+      :dismissible="false"
+    >
       <template #description>
         <span class="text-ink-gray-6 text-p-sm"
           >Everyone is blocked by default. Add an <b>Allow</b> rule for your own IP<template
@@ -157,8 +169,8 @@ onMounted(async () => {
 
     <div class="space-y-2">
       <div class="flex justify-between items-center">
-        <p class="font-medium text-ink-gray-8 text-base leading-normal">Rules</p>
-        <Button variant="subtle" icon-left="lucide-plus" @click="addRule">Add rule</Button>
+        <p class="font-medium text-ink-gray-8 leading-normal">Rules</p>
+        <Button icon-left="lucide-plus" @click="addRule">Add rule</Button>
       </div>
 
       <EmptyState
@@ -177,22 +189,21 @@ onMounted(async () => {
         <div v-for="(rule, index) in rules" :key="index">
           <div class="flex items-end gap-2">
             <div class="space-y-1.5 w-28 shrink-0">
-              <p v-if="index === 0" class="font-medium text-ink-gray-7 text-base">Action</p>
+              <p v-if="index === 0" class="font-medium text-ink-gray-7">Action</p>
               <Select v-model="rule.action" :options="ACTION_OPTIONS" class="w-full" />
             </div>
 
             <div class="flex-1 space-y-1.5">
-              <p v-if="index === 0" class="font-medium text-ink-gray-7 text-base">IP / CIDR</p>
+              <p v-if="index === 0" class="font-medium text-ink-gray-7">IP / CIDR</p>
               <TextInput v-model="rule.ip" placeholder="203.0.113.4 or 10.0.0.0/8" class="w-full" />
             </div>
 
             <div class="flex-1 space-y-1.5">
-              <p v-if="index === 0" class="font-medium text-ink-gray-7 text-base">Note</p>
+              <p v-if="index === 0" class="font-medium text-ink-gray-7">Note</p>
               <TextInput v-model="rule.description" placeholder="optional" class="w-full" />
             </div>
 
             <Button
-              variant="subtle"
               icon="lucide-x"
               label="Remove rule"
               tooltip="Remove rule"
@@ -200,7 +211,6 @@ onMounted(async () => {
             />
           </div>
 
-          <!-- Under the row it belongs to, not pooled at the bottom of the page. -->
           <p v-if="ipError(rule)" class="mt-1.5 text-ink-red-5 text-p-sm">{{ ipError(rule) }}</p>
         </div>
       </div>

@@ -215,16 +215,22 @@ def test_command_argv_switch_branch_requires_name_and_branch(tmp_path: Path) -> 
         TaskRunner(tmp_path).run("switch-branch", {"name": "gameplan"})
 
 
-def _make_task_dir(tasks_root: Path, task_id: str, status: str = "success") -> Path:
+def _make_task_dir(
+    tasks_root: Path,
+    task_id: str,
+    status: str = "success",
+    command: str = "build",
+    started_at: str = "2026-05-21T14:30:22+00:00",
+) -> Path:
     """Helper: create a minimal on-disk task directory."""
     task_dir = tasks_root / task_id
     task_dir.mkdir(parents=True)
     meta = {
         "task_id": task_id,
-        "command": "build",
+        "command": command,
         "args": {},
         "command_argv": ["/usr/bin/bench", "frappe", "build"],
-        "started_at": "2026-05-21T14:30:22+00:00",
+        "started_at": started_at,
         "finished_at": "2026-05-21T14:30:35+00:00",
         "exit_code": 0,
     }
@@ -462,6 +468,42 @@ def test_reader_ignores_invalid_task_dirs(tmp_path: Path) -> None:
     tasks = TaskReader(tmp_path).list_tasks()
 
     assert [task.task_id for task in tasks] == [task_id]
+
+
+def test_reader_excludes_unlisted_commands_before_the_limit_cut(tmp_path: Path) -> None:
+    _make_task_dir(
+        tmp_path / "tasks",
+        "20260521-143022-aabbcc",
+        started_at="2026-05-21T14:30:22+00:00",
+    )
+    for suffix, started_at in (
+        ("ddeeff", "2026-05-21T15:00:00+00:00"),
+        ("eeff00", "2026-05-21T15:06:00+00:00"),
+    ):
+        _make_task_dir(
+            tmp_path / "tasks",
+            f"20260521-150000-{suffix}",
+            command="fetch-all-app-updates",
+            started_at=started_at,
+        )
+
+    tasks = TaskReader(tmp_path).list_tasks(limit=1)
+
+    assert [task.command for task in tasks] == ["build"]
+
+
+def test_reader_includes_unlisted_commands_on_request(tmp_path: Path) -> None:
+    _make_task_dir(tmp_path / "tasks", "20260521-143022-aabbcc")
+    _make_task_dir(
+        tmp_path / "tasks",
+        "20260521-150000-ddeeff",
+        command="fetch-all-app-updates",
+        started_at="2026-05-21T15:00:00+00:00",
+    )
+
+    tasks = TaskReader(tmp_path).list_tasks(include_unlisted=True)
+
+    assert sorted(task.command for task in tasks) == ["build", "fetch-all-app-updates"]
 
 
 def test_reader_returns_only_allowlisted_failure_message(tmp_path: Path) -> None:

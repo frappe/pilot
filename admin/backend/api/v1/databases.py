@@ -97,7 +97,13 @@ def list_query_sites() -> ResponseReturnValue:
             config = json.loads((d / "site_config.json").read_text())
         except (OSError, ValueError):
             config = {}
-        sites.append({"name": d.name, "db_type": config.get("db_type", "mariadb")})
+        sites.append(
+            {
+                "name": d.name,
+                "db_type": config.get("db_type", "mariadb"),
+                "db_name": config.get("db_name", ""),
+            }
+        )
     return jsonify(sites)
 
 
@@ -418,6 +424,35 @@ def get_lock_wait_rows():
         return error_response("lockwaits_unavailable", str(exc), 422)
     except Exception:
         return error_response("lockwaits_unavailable", "Could not read database lock waits.", 500)
+
+
+@database_bp.get("/performance-report")
+def get_performance_report() -> ResponseReturnValue:
+    provider = _provider()
+    sections = {
+        "time_consuming_queries": provider.get_time_consuming_queries,
+        "full_table_scan_queries": provider.get_full_table_scan_queries,
+        "unused_indexes": provider.get_unused_indexes,
+        "redundant_indexes": provider.get_redundant_indexes,
+    }
+    section = sections.get(request.args.get("report_type", ""))
+    if section is None:
+        return error_response("invalid_report_type", f"Expected one of {', '.join(sections)}.", 422)
+    try:
+        limit = max(1, min(int(request.args.get("limit", 20)), 200))
+        offset = max(0, int(request.args.get("offset", 0)))
+    except ValueError:
+        return error_response("invalid_page", "limit and offset must be whole numbers.", 422)
+    try:
+        return jsonify(section(request.args.get("site", ""), limit, offset))
+    except DatabaseError as exc:
+        return error_response("performance_report_unavailable", str(exc), 422)
+    except Exception:
+        return error_response(
+            "performance_report_unavailable",
+            "Could not read the database performance report.",
+            500,
+        )
 
 
 @database_bp.get("/size")

@@ -228,6 +228,8 @@ def is_secure_cookie(bench_root: Path) -> bool:
         return False
     if not config.production.enabled:
         return False
+    if route := getattr(config.admin, "route", None):
+        return route.public_tls
     if config.admin.tls:
         return True
 

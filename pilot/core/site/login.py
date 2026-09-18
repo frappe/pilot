@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
+from pilot.config import RoutePolicy, SiteConfig
 from pilot.core.site.config import read_site_config
 from pilot.utils import normalize_host
 
@@ -62,9 +63,19 @@ def site_url(site_name: str, site_config: dict, bench_config, proxy_tls: bool = 
     if not bench_config.production.enabled:
         return origin("http", host, bench_config.http_port)
 
-    secure = proxy_tls or (bench_config.admin.tls and bool(site_config.get("ssl")))
-    scheme = "https" if secure else "http"
-    port = 443 if proxy_tls else (bench_config.nginx.https_port if secure else bench_config.nginx.http_port)
+    config = SiteConfig(
+        name=site_name,
+        apps=[],
+        ssl=bool(site_config.get("ssl")),
+        domains=site_config.get("domains") or [],
+        route=RoutePolicy.from_dict(site_config["route"]) if site_config.get("route") else None,
+    )
+    scheme = config.route_for(host).public_scheme
+    secure = scheme == "https"
+    externally_routed = config.route_for(host).client_ip_source != "direct"
+    port = 443 if externally_routed and secure else (
+        bench_config.nginx.https_port if secure else bench_config.nginx.http_port
+    )
     return origin(scheme, host, port)
 
 

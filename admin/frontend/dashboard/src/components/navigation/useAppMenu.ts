@@ -21,10 +21,7 @@ export const useAppMenu = () => {
   }
 
   const menuItems = computed(() => [
-    {
-      label: 'Central',
-      icon: 'lucide-cloud',
-    },
+    ...(session.centralEnabled ? [{ label: 'Central', icon: 'lucide-cloud' }] : []),
     {
       label: 'Settings',
       icon: 'lucide-settings',

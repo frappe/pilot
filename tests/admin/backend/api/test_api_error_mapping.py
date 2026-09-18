@@ -130,7 +130,7 @@ def test_unrelated_failures_stay_generic(
     site_dir.mkdir(parents=True)
     (site_dir / "site_config.json").write_text("{}")
     site_domains = Mock()
-    site_domains.names.side_effect = error
+    site_domains.describe.side_effect = error
 
     with patch("admin.backend.api.v1.sites.domains._site_domains", return_value=site_domains):
         response = client.get("/api/v1/sites/site.test/domains")
@@ -159,7 +159,7 @@ def test_domain_failures_surface_the_provider_message(
     site_dir.mkdir(parents=True)
     (site_dir / "site_config.json").write_text("{}")
     site_domains = Mock()
-    site_domains.names.side_effect = error
+    site_domains.describe.side_effect = error
 
     with patch("admin.backend.api.v1.sites.domains._site_domains", return_value=site_domains):
         response = client.get("/api/v1/sites/site.test/domains")

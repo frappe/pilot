@@ -5,9 +5,13 @@ import { ErrorMessage, Skeleton } from 'frappe-ui'
 import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
 
-const props = defineProps({
-  siteName: { type: String, required: true },
-  window: { type: String, default: '1h' },
+interface Props {
+  siteName: string
+  window?: string
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  window: '1h',
 })
 
 const loading = ref(true)
@@ -79,9 +83,7 @@ onMounted(load)
 <template>
   <Skeleton v-if="loading" class="rounded-6 h-full min-h-[340px]" />
   <div v-else class="flex flex-col bg-surface-white border rounded-6 border-outline-gray-2 h-full">
-    <div class="flex items-center px-4 py-3 border-b border-outline-gray-2">
-      <h3 class="font-medium text-ink-gray-8 text-base">Uptime</h3>
-    </div>
+    <h3 class="px-4 py-3 border-b border-outline-gray-2 font-medium text-ink-gray-8">Uptime</h3>
 
     <ErrorMessage v-if="error" :message="error" class="m-4" />
     <div
@@ -90,7 +92,7 @@ onMounted(load)
     >
       <span class="size-6 text-ink-gray-3 lucide-server-off" />
       <p class="font-medium text-ink-gray-7 text-sm">Uptime monitoring is production-only</p>
-      <p class="max-w-xs text-ink-gray-5 text-xs">
+      <p class="max-w-xs text-ink-gray-5 text-p-xs">
         This bench isn't in production, so its sites are never pinged. Deploy to production to start
         tracking uptime.
       </p>
@@ -115,8 +117,7 @@ onMounted(load)
           <span>{{ formatFullTime(data.buckets[hovered].time) }}</span>
         </div>
 
-        <div v-else />
-        <div class="flex items-center gap-1 shrink-0">
+        <div class="flex items-center gap-1 ml-auto shrink-0">
           <span>{{ formatPercent(data.overall_percent) }}</span>
           <span class="text-base leading-none">·</span>
           <span>Overall Uptime</span>
@@ -127,8 +128,6 @@ onMounted(load)
         </div>
       </div>
 
-      <!-- mouseleave sits on the strip, not the bars: per-bar leave events fire
-           while crossing the gap between two bars and flicker the readout. -->
       <div class="flex items-end gap-[3px] h-16" @mouseleave="hovered = null">
         <div
           v-for="(bucket, i) in data.buckets"

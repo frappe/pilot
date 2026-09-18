@@ -91,6 +91,7 @@ class BenchProduction:
         nginx_manager.generate_config(ssl_ready=True)
         nginx_manager.install_config()
         nginx_manager.setup_sudoers()
+        nginx_manager.enable_at_boot()
         self._report_site_urls(nginx_manager, on_progress)
 
     def setup_letsencrypt(self) -> None:

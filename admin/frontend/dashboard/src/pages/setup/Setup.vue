@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   Button,
+  Combobox,
   Select,
   TextInput,
   FormLabel,
@@ -36,6 +37,8 @@ const {
   rootUserPlaceholder,
   dbTypeOptions,
   branchOptions,
+  validatingFramework,
+  frameworkIsValid,
   stepSequence,
   stepNumber,
   isConfiguring,
@@ -68,17 +71,13 @@ const {
           Step {{ stepNumber }} of {{ stepSequence.length }}
         </p>
 
-        <h1 class="font-semibold text-ink-gray-9 text-lg">{{ stepTitle }}</h1>
+        <h1 class="text-lg-semibold">{{ stepTitle }}</h1>
         <p v-show="stepSubtitle" class="mt-0.5 text-ink-gray-5 text-p-base">{{ stepSubtitle }}</p>
       </div>
 
       <div class="flex-1 p-5 overflow-y-auto">
-        <!-- Loading -->
-        <div v-show="currentStep === 'loading'" class="flex justify-center items-center py-10">
-          <LoadingText />
-        </div>
+        <LoadingText v-show="currentStep === 'loading'" class="justify-center py-10" />
 
-        <!-- Database -->
         <div v-show="currentStep === 'database'" class="flex flex-col gap-4">
           <Select label="Database engine" v-model="dbType" :options="dbTypeOptions" />
           <Select label="Database setup" v-model="dbMode" :options="dbModeOptions" />
@@ -114,14 +113,32 @@ const {
           <ErrorMessage v-show="errorMessage" :message="errorMessage" />
         </div>
 
-        <!-- Customize -->
         <div v-show="currentStep === 'customize'" class="flex flex-col gap-4">
-          <Select label="Frappe branch" v-model="appBranch" :options="branchOptions" />
+          <Combobox
+            label="Frappe branch"
+            v-model="appBranch"
+            :options="branchOptions"
+            trigger="button"
+            placeholder="Search or type a branch…"
+          >
+            <template #item-typed-branch="{ query }">
+              Use branch “{{ query }}”
+            </template>
+          </Combobox>
           <TextInput label="Frappe repository" v-model="appRepo" />
-          <ErrorMessage v-show="errorMessage" :message="errorMessage" />
+          <ErrorMessage v-if="errorMessage" :message="errorMessage" />
+          <p v-else-if="validatingFramework" class="text-ink-gray-5 text-p-sm">
+            Checking repository…
+          </p>
+          <p
+            v-else-if="frameworkIsValid"
+            class="flex items-center gap-1 text-ink-green-7 text-sm"
+          >
+            <span class="size-3.5 shrink-0 lucide-check" />
+            Found frappe
+          </p>
         </div>
 
-        <!-- Installing -->
         <div v-show="isInstalling" class="flex flex-col gap-4">
           <p class="text-ink-gray-7 text-sm">{{ streamStatus }}</p>
           <button
@@ -136,16 +153,15 @@ const {
             {{ showStreamDetails ? 'Hide details' : 'Show details' }}
           </button>
 
-          <div v-show="showStreamDetails">
-            <TaskStream
-              ref="terminal"
-              :url="streamUrl"
-              :guard-hidden-tab="true"
-              @line="updateStreamStatus"
-              @done="onStreamDone"
-              @error="failInstall('Lost connection to the setup process.')"
-            />
-          </div>
+          <TaskStream
+            v-show="showStreamDetails"
+            ref="terminal"
+            :url="streamUrl"
+            :guard-hidden-tab="true"
+            @line="updateStreamStatus"
+            @done="onStreamDone"
+            @error="failInstall('Lost connection to the setup process.')"
+          />
 
           <ErrorMessage v-show="errorMessage" :message="errorMessage" />
         </div>
@@ -156,14 +172,14 @@ const {
           class="flex flex-col justify-center items-center gap-3 py-10"
         >
           <LoadingText />
-          <p class="text-ink-gray-6 text-sm text-center">
+          <p class="text-ink-gray-6 text-p-sm text-center">
             Finishing production setup. This page will reload automatically once your bench is live.
           </p>
         </div>
 
         <!-- Done: plain dev bench, production is a deliberate step the user runs later -->
         <div v-show="isDone && !isProductionHandoff" class="flex flex-col gap-4 py-2">
-          <p class="text-ink-gray-7 text-sm">
+          <p class="text-ink-gray-7 text-p-sm">
             Your bench is ready. Run one of these in your terminal:
           </p>
 
@@ -197,7 +213,6 @@ const {
       <div v-show="isConfiguring || (isInstalling && errorMessage)" class="flex gap-2 px-5 py-4">
         <Button
           v-show="isInstalling && errorMessage"
-          variant="subtle"
           class="w-full"
           @click="backToConfiguration"
         >
@@ -245,6 +260,7 @@ const {
           v-show="isConfiguring && currentStep !== 'database' && isLastConfigStep"
           variant="solid"
           :loading="isSubmitting"
+          :disabled="!frameworkIsValid"
           class="flex-1"
           @click="startSetup"
         >

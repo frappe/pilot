@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { AxisChart, ErrorMessage, Skeleton } from 'frappe-ui'
+import { ErrorMessage, Skeleton } from 'frappe-ui'
+import { AreaChart } from 'frappe-ui/charts'
 
 import ChartCard from '@/components/common/ChartCard.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -10,7 +11,13 @@ import { apiErrorMessage } from '@/api/client'
 import { monitorApi } from '@/api/monitor'
 import { formatBytes } from '@/utils/format'
 
-const props = defineProps({ window: { type: String, default: '1h' } })
+interface Props {
+  window?: string
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  window: '1h',
+})
 
 const TIME_GRAIN = {
   '30m': 'minute',
@@ -34,7 +41,6 @@ const empty = computed(() => !unsupported.value && points.value.length === 0)
 const GRID = { show: true, lineStyle: { type: 'dashed', color: 'var(--outline-gray-2)' } }
 
 const xAxis = computed(() => ({
-  key: 'time',
   type: 'time',
   timeGrain: TIME_GRAIN[props.window] ?? 'minute',
   echartOptions: {
@@ -44,142 +50,95 @@ const xAxis = computed(() => ({
   },
 }))
 
-const areaSeries = (name, color) => {
-  return {
-    name,
-    type: 'line',
-    color,
-    echartOptions: {
-      smooth: true,
-      symbol: 'circle',
-      symbolSize: 6,
-      showSymbol: false,
-      lineStyle: { width: 1.5 },
-      areaStyle: { color: transparent(color, 0.2) },
-      emphasis: { focus: 'series' },
-    },
-  }
-}
+const areaSeries = (color) => ({
+  color,
+  smooth: true,
+  lineWidth: 1.5,
+  showDataPoints: false,
+  fillOpacity: 0.2,
+})
 
-const transparent = (hex, opacity) => {
-  const v = parseInt(hex.slice(1), 16)
-  return `rgba(${(v >> 16) & 255}, ${(v >> 8) & 255}, ${v & 255}, ${opacity})`
-}
+const bytesAxis = { min: 0, title: 'bytes', format: formatBytes, echartOptions: { splitLine: GRID } }
 
-// Full formatter (frappe-ui overrides valueFormatter) so bytes read as GB/MB.
-const bytesTooltip = (paramsInput) => {
-  const params = (Array.isArray(paramsInput) ? paramsInput : [paramsInput]).filter(
-    (p) => p.value?.[1] != null,
-  )
-  if (!params.length) return ''
-  const date = new Date(params[0].value[0]).toLocaleString()
-  const rows = params
-    .map(
-      (p) =>
-        `<div class="flex items-center gap-2">${p.marker}<span class="flex-1">${p.seriesName}</span><b>${formatBytes(p.value[1])}</b></div>`,
-    )
-    .join('')
-  return `<div>${date}${rows}</div>`
-}
-
-const bytesAxis = {
-  yMin: 0,
-  echartOptions: {
-    name: 'bytes',
-    axisLabel: { formatter: (v) => formatBytes(v) },
-    splitLine: GRID,
-  },
-}
-
-// frappe-ui only auto-shows the legend when a chart has more than one series; force it on for all charts.
-const LEGEND_OPTIONS = { legend: { show: true }, grid: { bottom: 40 } }
+const thresholds = (entries) =>
+  entries.map(([value, label]) => ({ value, label, color: '#ef4444', lineType: 'dashed' }))
 
 const charts = computed(() => [
   {
     title: 'Queries',
     config: {
       data: points.value,
+      x: 'time',
+      y: QUERY_SERIES,
       xAxis: xAxis.value,
-      yAxis: { yMin: 0, echartOptions: { name: 'count', splitLine: GRID } },
-      series: QUERY_SERIES.map((name, i) => areaSeries(name, PALETTE[i])),
-      echartOptions: LEGEND_OPTIONS,
+      yAxis: { min: 0, title: 'count', echartOptions: { splitLine: GRID } },
+      seriesConfig: Object.fromEntries(QUERY_SERIES.map((n, i) => [n, areaSeries(PALETTE[i])])),
     },
   },
   {
     title: 'DB connections',
     config: {
       data: points.value,
+      x: 'time',
+      y: ['Connected', 'Max Connections'],
       xAxis: xAxis.value,
-      yAxis: { yMin: 0, echartOptions: { name: 'connections', splitLine: GRID } },
-      series: [areaSeries('Connected', PALETTE[0]), areaSeries('Max Connections', PALETTE[2])],
-      echartOptions: LEGEND_OPTIONS,
+      yAxis: { min: 0, title: 'connections', echartOptions: { splitLine: GRID } },
+      seriesConfig: {
+        Connected: areaSeries(PALETTE[0]),
+        'Max Connections': areaSeries(PALETTE[2]),
+      },
     },
   },
   {
     title: 'Average row lock time (ms)',
     config: {
       data: points.value,
+      x: 'time',
+      y: 'Avg Row Lock Wait',
       xAxis: xAxis.value,
-      yAxis: { yMin: 0, echartOptions: { name: 'ms', splitLine: GRID } },
-      series: [areaSeries('Avg Row Lock Wait', PALETTE[3])],
+      yAxis: { min: 0, title: 'ms', echartOptions: { splitLine: GRID } },
+      seriesConfig: { 'Avg Row Lock Wait': areaSeries(PALETTE[3]) },
     },
   },
   {
     title: 'Buffer pool size',
     config: {
       data: points.value,
+      x: 'time',
+      y: 'Buffer Pool Size',
       xAxis: xAxis.value,
       yAxis: bytesAxis,
-      series: [areaSeries('Buffer Pool Size', PALETTE[5])],
-      echartOptions: { tooltip: { formatter: bytesTooltip } },
+      seriesConfig: { 'Buffer Pool Size': areaSeries(PALETTE[5]) },
     },
   },
   {
     title: 'Buffer pool size of total RAM',
     config: {
       data: points.value,
+      x: 'time',
+      y: 'Buffer Pool % RAM',
       xAxis: xAxis.value,
-      yAxis: { yMin: 0, yMax: 100, echartOptions: { name: '%', splitLine: GRID } },
-      series: [bufferPoolRamSeries()],
+      yAxis: { min: 0, max: 100, title: '%', echartOptions: { splitLine: GRID } },
+      seriesConfig: { 'Buffer Pool % RAM': areaSeries(PALETTE[0]) },
+      referenceLines: thresholds([
+        [65, 'Too High InnoDB Buffer Pool (65%)'],
+        [15, 'Too Low InnoDB Buffer Pool (15%)'],
+      ]),
     },
   },
   {
     title: 'Buffer pool miss percent',
     config: {
       data: points.value,
+      x: 'time',
+      y: 'Buffer Pool Miss %',
       xAxis: xAxis.value,
-      yAxis: { yMin: 0, echartOptions: { name: '%', splitLine: GRID } },
-      series: [bufferPoolMissSeries()],
+      yAxis: { min: 0, title: '%', echartOptions: { splitLine: GRID } },
+      seriesConfig: { 'Buffer Pool Miss %': areaSeries(PALETTE[1]) },
+      referenceLines: thresholds([[1, 'Too High Buffer Pool Miss (1%)']]),
     },
   },
 ])
-
-const thresholdMarkLine = (entries) => {
-  return {
-    symbol: 'none',
-    silent: true,
-    lineStyle: { color: '#ef4444', type: 'dashed' },
-    label: { formatter: (p) => p.data.name, color: 'var(--ink-gray-6)', position: 'insideEndTop' },
-    data: entries.map(([yAxis, name]) => ({ yAxis, name })),
-  }
-}
-
-// InnoDB buffer pool as a % of RAM, with the standard too-low / too-high guides.
-const bufferPoolRamSeries = () => {
-  const series = areaSeries('Buffer Pool % RAM', PALETTE[0])
-  series.echartOptions.markLine = thresholdMarkLine([
-    [65, 'Too High InnoDB Buffer Pool (65%)'],
-    [15, 'Too Low InnoDB Buffer Pool (15%)'],
-  ])
-  return series
-}
-
-// InnoDB buffer pool miss rate, with the standard too-high guide.
-const bufferPoolMissSeries = () => {
-  const series = areaSeries('Buffer Pool Miss %', PALETTE[1])
-  series.echartOptions.markLine = thresholdMarkLine([[1, 'Too High Buffer Pool Miss (1%)']])
-  return series
-}
 
 // Out-of-order window switches: only the latest load writes state.
 let loadGeneration = 0
@@ -220,33 +179,28 @@ onUnmounted(() => clearInterval(refreshTimer))
 </script>
 
 <template>
-  <div>
-    <div v-if="loading" class="gap-4 grid grid-cols-1 sm:grid-cols-2">
-      <Skeleton v-for="i in 6" :key="i" class="rounded-6 h-[340px]" />
-    </div>
+  <div v-if="loading" class="gap-4 grid md:grid-cols-2">
+    <Skeleton v-for="i in 6" :key="i" class="rounded-6 h-[340px]" />
+  </div>
 
-    <ErrorMessage v-else-if="error" :message="error" />
-    <EmptyState
-      v-else-if="unsupported"
-      icon="lucide-database"
-      title="DB analyzer supports MariaDB only"
-    />
-    <EmptyState
-      v-else-if="empty"
-      icon="lucide-database"
-      title="No data for the selected range"
-      description="The monitor hasn't sampled the database in this range yet."
-    />
+  <ErrorMessage v-else-if="error" :message="error" />
+  <EmptyState
+    v-else-if="unsupported"
+    icon="lucide-database"
+    title="DB analyzer supports MariaDB only"
+  />
+  <EmptyState
+    v-else-if="empty"
+    icon="lucide-database"
+    title="No data for the selected range"
+    description="The monitor hasn't sampled the database in this range yet."
+  />
 
-    <div v-else class="gap-4 grid grid-cols-1 sm:grid-cols-2">
-      <ChartCard v-for="chart in charts" :key="chart.title" :title="chart.title">
-        <AxisChart
-          :config="chart.config"
-          class="w-full min-w-0 h-full min-h-[300px] px-2 sm:px-4 pb-2"
-        />
-      </ChartCard>
+  <div v-else class="gap-4 grid md:grid-cols-2">
+    <ChartCard v-for="chart in charts" :key="chart.title" :title="chart.title">
+      <AreaChart v-bind="chart.config" class="min-h-[300px]" />
+    </ChartCard>
 
-      <SlowQueries v-if="!unsupported" :overview="data?.slow_queries" />
-    </div>
+    <SlowQueries :overview="data?.slow_queries" />
   </div>
 </template>

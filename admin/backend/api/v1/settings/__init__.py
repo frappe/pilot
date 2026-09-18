@@ -15,6 +15,7 @@ from pilot.config import (
     WAF_RULE_OPERATORS,
     BenchConfig,
 )
+from pilot.config.mail import MailConfig, MalformedSiteConfig
 from pilot.config.monitor import bench_log_path, system_log_path
 from pilot.core.bench import Bench
 from pilot.core.bench.settings import (
@@ -22,6 +23,7 @@ from pilot.core.bench.settings import (
     firewall_payload,
     is_restart_needed,
     llm_payload,
+    mail_payload,
     resource_limits_payload,
     restart_trigger_values,
     s3_payload,
@@ -45,6 +47,7 @@ __all__ = [
     "firewall_payload",
     "is_restart_needed",
     "llm_payload",
+    "mail_payload",
     "network_bp",
     "resource_limits_payload",
     "restart_trigger_values",
@@ -116,6 +119,8 @@ def build_settings_response(config: BenchConfig, bench_root: Path | None = None)
         "admin": {
             "domain": config.admin.domain,
             "tls": config.admin.tls,
+            "public_scheme": config.admin.route_policy.public_scheme,
+            "public_tls": config.admin.route_policy.public_tls,
         },
         "letsencrypt": {"email": config.letsencrypt.email},
         "s3": s3_payload(config),
@@ -126,6 +131,7 @@ def build_settings_response(config: BenchConfig, bench_root: Path | None = None)
         },
         "llm_providers": llm_provider_options(),
         "resource_limits": resource_limits_payload(config),
+        "mail": mail_payload(MailConfig.read(bench_root / "sites") if bench_root else MailConfig()),
         "monitor": {
             "system_log_path": str(system_log_path()),
             "log_path": str(bench_log_path(config.name)),
@@ -235,6 +241,49 @@ def my_ip():
     return jsonify({"ip": client_ip(default="")})
 
 
+@settings_bp.post("/admin-domain")
+def change_admin_domain():
+    """Queue an admin hostname change."""
+    from admin.backend.api.responses import accepted_task_response
+    from admin.backend.api.v1.sites.shared import host_resource_key, task_failure
+    from pilot.internal.validators import validate_hostname
+    from pilot.tasks.change_admin_domain import ChangeAdminDomainTask
+
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response("malformed_request", "Expected a JSON object.", 400)
+
+    domain = data.get("domain")
+    if not isinstance(domain, str):
+        return error_response("invalid_settings", "admin domain must be a string.", 422)
+    domain = domain.strip().lower()
+    if error := validate_hostname(domain, "Admin domain"):
+        return error_response("invalid_settings", error, 422)
+
+    tls = data.get("tls")
+    if tls is not None and not isinstance(tls, bool):
+        return error_response("invalid_settings", "tls must be true or false.", 422)
+
+    bench = Bench(bench_root)
+    resources = ["admin-domain", host_resource_key(domain)]
+    if bench.config.admin.domain:
+        resources.append(host_resource_key(bench.config.admin.domain))
+
+    try:
+        task_id = ChangeAdminDomainTask.queue(
+            bench,
+            domain=domain,
+            tls=tls,
+            idempotency_key=request.headers.get("Idempotency-Key"),
+            # Hold both hostnames until the old provider route is released.
+            resource_key=resources,
+        )
+    except Exception as error:
+        return task_failure(error)
+    return accepted_task_response(bench_root, task_id)
+
+
 @settings_bp.patch("")
 def update_settings():
     bench_root = Path(current_app.config["BENCH_ROOT"])
@@ -265,16 +314,22 @@ def update_settings():
 
 
 def _save_settings_update(bench_root: Path, data: dict) -> dict:
+    mail = MailConfig.read(bench_root / "sites")
     with BenchConfig.open(bench_root) as config:
         old_restart = restart_trigger_values(config)
         old_firewall = firewall_payload(config)
         old_waf = waf_payload(config)
         old_s3_config = s3_payload(config)
 
-        if error := ConfigPatcher(config, data).apply():
+        patcher = ConfigPatcher(config, data, mail)
+        if error := patcher.apply():
             raise _SettingsUpdateRejected(error)
         _verify_s3_update(config, old_s3_config)
 
+    try:
+        patcher.mail.write(bench_root / "sites")
+    except MalformedSiteConfig as malformed:
+        raise _SettingsUpdateRejected(str(malformed)) from malformed
     _apply_system_prompt(bench_root, data.get("llm") or {})
 
     return {

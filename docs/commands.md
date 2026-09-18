@@ -8,7 +8,7 @@ Use `pilot --help` and `pilot <command> --help` for exact flags.
 
 - `pilot new NAME`: create a new bench. Sets the Admin password from `--admin-password`, else prompts on a terminal, else generates and prints one.
 - `pilot start` on an uninitialized bench serves the setup wizard and prints a one-hour `?sid=` sign-in link for it.
-- `pilot init`: initialize a bench from `bench.toml`. This is what the setup wizard runs.
+- `pilot init`: initialize a bench from `bench.toml`. This is what the setup wizard runs. `--no-dev` skips apps' `dev` extras.
 - `pilot ls`: list benches in the fixed benches directory.
 - `pilot drop --bench NAME`: remove a bench.
 
@@ -19,7 +19,7 @@ Bench commands with `--bench NAME` can run from outside the bench directory. `Be
 - `pilot start`: start bench processes.
 - `pilot stop`: stop bench processes.
 - `pilot restart`: restart the production workload.
-- `pilot build`: build assets or download prebuilt assets when available.
+- `pilot build`: build assets or download prebuilt assets when available. The queued build task (`pilot.tasks.build.BuildTask`) always forces a full rebuild, since a queued/CLI-triggered build is expected to reflect current source rather than reuse a prebuilt bundle.
 - `pilot frappe -- ...`: pass through to Frappe's bench helper.
 
 In development, `pilot stop` waits until the foreground runner exits and its processes release their configured ports. Unrelated processes on those ports are never signaled or waited for.
@@ -46,9 +46,25 @@ Disabling needs a Frappe that supports it and is exposed through the Admin UI on
 ## Site Commands
 
 - `pilot new-site SITE`: create a site and add it to bench config.
-- `pilot rename-site OLD NEW`: rename a site.
+- `pilot rename-site OLD NEW [--release-old-hostname]`: rename a site, without dropping a request.
 - `pilot list-site-apps SITE`: list the apps in use on a site, disabled ones excluded.
 - `pilot set-admin-password`: set the Admin panel password in `bench.toml`; prompts when `--password` is omitted. The password must meet the same rules the dashboard enforces.
+- `pilot set-admin-domain DOMAIN [--tls]`: move the Admin panel to another hostname, reissuing its certificate and republishing nginx. The old hostname is released once the switch has committed.
+
+### Renaming Without Downtime
+
+A rename never drops traffic already on the site: requests keep arriving on the old hostname and keep being answered throughout. The new hostname follows a moment later - `systemctl reload` returns before nginx has taken the signal, and the workers still running answer until it has - so a caller that redirects straight to the new URL should expect to retry once. Two things would otherwise break in the gap, and both are handled:
+
+- The site directory moves while nginx is still sending the old name in `X-Frappe-Site-Name`. The move leaves the old path behind as a symlink until nginx has reloaded, then removes it, so that header always resolves. Both steps are `rename(2)`, so the old path is absent only between two consecutive syscalls.
+- The old hostname would stop being served. It stays on the site as a domain instead, so anyone already on that URL is served rather than dropped. Pass `--release-old-hostname` to give the name up - a pooled hostname a fleet reuses. The domain provider is asked to route the new hostname before anything moves, and a released one is handed back only once the switch has committed.
+
+The site keeps whatever redirect policy it had: a canonical `host_name` naming the old site moves with it, and one naming another domain is left alone. A rename never makes the renamed site canonical, which would start redirecting the site's other custom domains to it.
+
+HTTPS survives the move as well. A certbot lineage is named after the site it was first issued for and lives in the host-wide `/etc/letsencrypt`, so a rename would otherwise orphan the certificate: nginx would look under the new name, find nothing, and drop every one of the site's TLS domains to HTTP until a fresh one was issued. The rename pins the site's `cert_name` to the existing lineage instead, so the certificate keeps serving the hostnames it already covers, and the reissue expands that same lineage to the new name. A pinned lineage claims its hostname exactly as a domain does - no site on any bench, and not the admin, can take it while the pin stands - so releasing a hostname whose certificate still serves the site's other TLS domains completes in two steps: the rename keeps the pin so those domains stay on HTTPS, and the next `pilot setup letsencrypt` issues under the new name, drops the pin, and frees the old one. `cert_name` is protected from the site configuration API; only a rename writes it.
+
+A rename that fails before nginx has switched is rolled back: the site directory, its config, `common_site_config.json`, `bench.toml` and the hostname aliases are put back under the old name, and the new provider route is released. nginx was still naming the old site throughout, so it keeps serving, and the rename can simply be run again. Each rollback step is reported if it cannot be completed rather than hiding the original failure.
+
+Only the certificate is refreshed afterwards, never the full production deploy - that restarts the workload, which is the downtime this is avoiding. A domain the certificate does not yet name is served over HTTP until it does, rather than taking the rest of the site down with it.
 
 Site behavior belongs on `Site` or a module under `pilot/core/site`.
 
@@ -59,7 +75,10 @@ Site behavior belongs on `Site` or a module under `pilot/core/site`.
 - `pilot setup nginx`: render nginx config.
 - `pilot setup letsencrypt`: issue or refresh TLS certificates.
 - `pilot setup production`: deploy process manager and nginx integration.
+- `pilot setup central`: hand the host to Central and alias the VM hostnames it serves.
 - `pilot remove production`: remove production deployment files and services.
+
+`pilot setup central` writes the shared `[central]` settings: it enables Central management and, given `--admin-pattern` or `--site-pattern`, aliases those VM hostname globs to this bench's admin domain and its site. Central manages a host holding one bench, so the command refuses a second one rather than guess which bench a VM hostname belongs to, and `--site-pattern` needs the bench to have exactly one site. The credential itself is never passed in - it arrives through instance metadata, and `--rebootstrap` asks for it to be applied again. Because the bootstrap unit is written only while Central is enabled, the command rebuilds the process set of a bench already in production, restarting its workload.
 
 Production setup uses the bench config and system managers. The command should not duplicate nginx, process manager, or certificate logic.
 
@@ -75,8 +94,6 @@ These commands control the task worker, not individual Frappe workers.
 
 - `pilot admin build`: rebuild Admin frontend assets from source.
 - `pilot admin upgrade`: update Pilot to the latest version, run pending upgrade patches (pre_update before, post_update after), and restart the admin service.
-- `pilot admin enroll`: exchange the bootstrap token for this bench's Central credential.
-- `pilot admin set-central-config`: store Central endpoint and Pilot auth token.
 - `pilot admin issue-site-token`: issue a scoped site-to-bench API token.
 - `pilot admin run-patches [--phase pre_update|post_update|all]`: run pending Pilot upgrade patches by hand (see [Configuration](configuration.md#common-config)); `pilot admin upgrade` already runs both phases automatically.
 

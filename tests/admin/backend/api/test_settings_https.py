@@ -25,5 +25,7 @@ def test_settings_response_exposes_tls_and_email() -> None:
     payload = build_settings_response(config)
 
     assert payload["admin"]["tls"] is True
+    assert payload["admin"]["public_tls"] is True
+    assert payload["admin"]["public_scheme"] == "https"
     assert payload["admin"]["domain"] == "admin.example.com"
     assert payload["letsencrypt"]["email"] == "ops@example.com"

@@ -6,15 +6,26 @@ import TerminalOutput from '@/components/common/TerminalOutput.vue'
 import { useTaskStream } from '@/composables/tasks/useTaskStream'
 import { processLine } from '@/utils/ansi'
 
-const props = defineProps({
-  url: { type: String, default: '' },
-  autoStart: { type: Boolean, default: true },
-  reset: { type: Boolean, default: true },
-  initialLines: { type: Array, default: () => [] },
-  guardHiddenTab: { type: Boolean, default: false },
-  lineNumbers: { type: Boolean, default: false },
-  emptyText: { type: String, default: 'No output yet…' },
-  maxHeight: { type: String, default: '65vh' },
+interface Props {
+  url?: string
+  autoStart?: boolean
+  reset?: boolean
+  initialLines?: any[]
+  guardHiddenTab?: boolean
+  lineNumbers?: boolean
+  emptyText?: string
+  maxHeight?: string
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  url: '',
+  autoStart: true,
+  reset: true,
+  initialLines: () => [],
+  guardHiddenTab: false,
+  lineNumbers: false,
+  emptyText: 'No output yet…',
+  maxHeight: '65vh',
 })
 const emit = defineEmits(['line', 'status', 'done', 'error'])
 

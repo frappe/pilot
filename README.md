@@ -32,6 +32,7 @@ Pilot makes it simple to run Frappe on your own servers. Use the Admin UI to man
 
 - Debian 12+, Ubuntu 22.04+, Fedora 40+, Arch Linux, or macOS with Homebrew for local development
 - Python 3.11+
+- NodeJs 24
 
 ## Installation
 

@@ -4,12 +4,10 @@ import io
 import json
 import urllib.error
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
-from pilot.commands.admin.set_central_config import SetCentralConfigCommand
 from pilot.config import (
     AppConfig,
     BenchConfig,
@@ -18,10 +16,7 @@ from pilot.config import (
     WorkerConfig,
     WorkerGroup,
 )
-from pilot.config.central import CentralConfig
-from pilot.config.common import CommonConfig
 from pilot.core.bench import Bench
-from pilot.exceptions import BenchError
 from pilot.integrations.central import CentralClient, CentralClientError
 
 
@@ -42,19 +37,27 @@ def _bench(root: Path, name: str = "b1") -> Bench:
     return bench
 
 
-def _write_common(bench: Bench, data: dict) -> Path:
-    path = bench.sites_path / "common_site_config.json"
-    path.write_text(json.dumps(data))
-    return path
+_STAGED: dict[str, str] = {}
 
 
-def _write_central(bench: Bench, endpoint: str, token: str) -> None:
-    """Enrolment is host-shared, so it lives in common_config.toml."""
-    benches_root = bench.path.parent
-    common = CommonConfig.read(benches_root)
-    common.central = CentralConfig(endpoint=endpoint, auth_token=token)
-    common.write(benches_root)
-    bench.config = BenchConfig.read(bench.path)
+@pytest.fixture(autouse=True)
+def staged_metadata():
+    """Metadata owns the endpoint and token, so every test stands one in."""
+    _STAGED.clear()
+    with patch(
+        "pilot.integrations.central.metadata.InstanceMetadata.get_credentials",
+        side_effect=lambda *_, **__: dict(_STAGED) or None,
+    ):
+        yield
+
+
+def _stage_credentials(endpoint: str, token: str) -> None:
+    _STAGED.update(
+        central_endpoint=endpoint,
+        central_auth_token=token,
+        jwks_url="https://central.test/jwks",
+        jwks_audience_id="vm-1",
+    )
 
 
 class _FakeResponse:
@@ -71,64 +74,35 @@ class _FakeResponse:
         return False
 
 
-def test_set_central_config_writes_to_common_config(tmp_path: Path) -> None:
-    bench = _bench(tmp_path)
-    SetCentralConfigCommand(bench, endpoint="https://central.test", token="tok-123").run()
-
-    central = CommonConfig.read(bench.path.parent).central
-    assert central.endpoint == "https://central.test"
-    assert central.auth_token == "tok-123"
-    assert "central" not in BenchConfig.read_raw(bench.path)
-    assert BenchConfig.read_raw(bench.path)["bench"]["name"] == "b1"  # untouched
+def test_client_reads_and_strips_endpoint() -> None:
+    _stage_credentials("https://central.test/", "tok")
+    assert CentralClient()._credentials() == ("https://central.test", "tok")
 
 
-def test_set_central_config_raises_without_bench_toml(tmp_path: Path) -> None:
-    bench = _bench(tmp_path)
-    (bench.path / "bench.toml").unlink()
-    with pytest.raises(BenchError, match="not found"):
-        SetCentralConfigCommand(bench, endpoint="https://central.test", token="tok").run()
+def test_client_raises_when_metadata_has_no_credential() -> None:
+    with pytest.raises(CentralClientError, match="instance metadata"):
+        CentralClient()._credentials()
 
 
-def test_client_reads_and_strips_endpoint(tmp_path: Path) -> None:
-    bench = _bench(tmp_path)
-    _write_central(bench, "https://central.test/", "tok")
-    assert CentralClient(bench)._credentials() == ("https://central.test", "tok")
-
-
-def test_client_raises_when_credentials_absent(tmp_path: Path) -> None:
-    bench = _bench(tmp_path)
-    with pytest.raises(CentralClientError, match="not set"):
-        CentralClient(bench)._credentials()
-
-
-def test_client_falls_back_to_legacy_common_site_config(tmp_path: Path) -> None:
-    bench = _bench(tmp_path)
-    _write_common(bench, {"central_endpoint": "https://central.test/", "central_auth_token": "tok"})
-    assert CentralClient(bench)._credentials() == ("https://central.test", "tok")
-
-
-def test_heartbeat_sends_x_pilot_token_and_returns_echo(tmp_path: Path) -> None:
-    bench = _bench(tmp_path)
-    _write_central(bench, "https://central.test/", "tok-9")
+def test_an_unwrapped_response_comes_back_whole() -> None:
+    _stage_credentials("https://central.test/", "tok-9")
     captured: dict = {}
 
     def fake_urlopen(request, timeout=None):
         captured["url"] = request.full_url
         captured["headers"] = dict(request.headers)
-        return _FakeResponse({"ok": True, "team": "TEAM-1", "pilot_credential_id": "pcred-x"})
+        return _FakeResponse({"ok": True, "team": "TEAM-1"})
 
     with patch("pilot.integrations.central.client.urllib.request.urlopen", side_effect=fake_urlopen):
-        result = CentralClient(bench).heartbeat()
+        result = CentralClient().forward("central.api.pilot.heartbeat", "GET")
 
-    assert result["team"] == "TEAM-1"
-    assert result["pilot_credential_id"] == "pcred-x"
+    assert result == {"ok": True, "team": "TEAM-1"}
     assert captured["url"] == "https://central.test/api/method/central.api.pilot.heartbeat"
     assert "tok-9" in captured["headers"].values()
 
 
-def test_forward_unwraps_message_and_targets_method_path(tmp_path: Path) -> None:
-    bench = _bench(tmp_path)
-    _write_central(bench, "https://central.test", "tok-7")
+def test_forward_unwraps_message_and_targets_method_path() -> None:
+    _stage_credentials("https://central.test", "tok-7")
     captured: dict = {}
 
     def fake_urlopen(request, timeout=None):
@@ -139,7 +113,7 @@ def test_forward_unwraps_message_and_targets_method_path(tmp_path: Path) -> None
         return _FakeResponse({"message": {"currency": "INR"}})
 
     with patch("pilot.integrations.central.client.urllib.request.urlopen", side_effect=fake_urlopen):
-        result = CentralClient(bench).forward(
+        result = CentralClient().forward(
             "central.billing.api.billing_api.change_plan", "POST", {"plan": "biz"}
         )
 
@@ -150,9 +124,8 @@ def test_forward_unwraps_message_and_targets_method_path(tmp_path: Path) -> None
     assert "tok-7" in captured["headers"].values()
 
 
-def test_log_token_unwraps_message_and_targets_method_path(tmp_path: Path) -> None:
-    bench = _bench(tmp_path)
-    _write_central(bench, "https://central.test", "tok-8")
+def test_log_token_unwraps_message_and_targets_method_path() -> None:
+    _stage_credentials("https://central.test", "tok-8")
     captured: dict = {}
 
     def fake_urlopen(request, timeout=None):
@@ -163,7 +136,7 @@ def test_log_token_unwraps_message_and_targets_method_path(tmp_path: Path) -> No
         )
 
     with patch("pilot.integrations.central.client.urllib.request.urlopen", side_effect=fake_urlopen):
-        result = CentralClient(bench).log_token()
+        result = CentralClient().log_token()
 
     assert result["token"] == "jwt-123"
     assert result["resource_id"] == "vm-1"
@@ -171,9 +144,8 @@ def test_log_token_unwraps_message_and_targets_method_path(tmp_path: Path) -> No
     assert captured["method"] == "GET"
 
 
-def test_heartbeat_wraps_non_json_response(tmp_path: Path) -> None:
-    bench = _bench(tmp_path)
-    _write_central(bench, "https://central.test", "tok")
+def test_a_non_json_response_is_wrapped() -> None:
+    _stage_credentials("https://central.test", "tok")
 
     class _HtmlResponse:
         def read(self) -> bytes:
@@ -189,7 +161,7 @@ def test_heartbeat_wraps_non_json_response(tmp_path: Path) -> None:
         patch("pilot.integrations.central.client.urllib.request.urlopen", return_value=_HtmlResponse()),
         pytest.raises(CentralClientError),
     ):
-        CentralClient(bench).heartbeat()
+        CentralClient().forward("central.api.pilot.heartbeat", "GET")
 
 
 def _app_client(bench_root: Path):
@@ -232,27 +204,20 @@ def test_proxy_rejects_non_allowlisted_method(tmp_path: Path) -> None:
     forward.assert_not_called()
 
 
-def test_account_url_returns_the_configured_central_endpoint(tmp_path: Path) -> None:
+def test_account_url_returns_the_endpoint_from_metadata(tmp_path: Path) -> None:
     client = _app_client(tmp_path / "bench")
-    central = SimpleNamespace(
-        bench=SimpleNamespace(config=SimpleNamespace(central=SimpleNamespace(endpoint="https://central.test/")))
-    )
+    _stage_credentials("https://central.test/", "tok")
 
-    with patch("admin.backend.api.v1.sites.central._central", return_value=central):
-        response = client.get("/api/v1/sites/s1.localhost/account-url")
+    response = client.get("/api/v1/sites/s1.localhost/account-url")
 
     assert response.status_code == 200
     assert response.get_json() == {"url": "https://central.test"}
 
 
-def test_account_url_requires_central_configuration(tmp_path: Path) -> None:
+def test_account_url_requires_a_staged_credential(tmp_path: Path) -> None:
     client = _app_client(tmp_path / "bench")
-    central = SimpleNamespace(
-        bench=SimpleNamespace(config=SimpleNamespace(central=SimpleNamespace(endpoint="")))
-    )
 
-    with patch("admin.backend.api.v1.sites.central._central", return_value=central):
-        response = client.get("/api/v1/sites/s1.localhost/account-url")
+    response = client.get("/api/v1/sites/s1.localhost/account-url")
 
     assert response.status_code == 503
     assert response.get_json()["error"]["code"] == "central_not_configured"
@@ -262,11 +227,10 @@ def _http_error(code: int, body: bytes) -> urllib.error.HTTPError:
     return urllib.error.HTTPError("https://central.test/x", code, "err", {}, io.BytesIO(body))
 
 
-def test_rejection_surfaces_centrals_own_message(tmp_path: Path) -> None:
+def test_rejection_surfaces_centrals_own_message() -> None:
     """Central validates billing input; reporting only the status code would strand
     the user with an unactionable "HTTP 417"."""
-    bench = _bench(tmp_path)
-    _write_central(bench, "https://central.test", "tok")
+    _stage_credentials("https://central.test", "tok")
     body = json.dumps(
         {
             "exception": "frappe.exceptions.ValidationError: 'MH' is not a recognised Indian state.",
@@ -283,15 +247,14 @@ def test_rejection_surfaces_centrals_own_message(tmp_path: Path) -> None:
         ),
         pytest.raises(CentralClientError) as excinfo,
     ):
-        CentralClient(bench).forward("central.billing.api.billing_api.save_billing_profile", "POST", {})
+        CentralClient().forward("central.billing.api.billing_api.save_billing_profile", "POST", {})
 
     assert str(excinfo.value) == "'MH' is not a recognised Indian state."
     assert excinfo.value.status_code == 417
 
 
-def test_rejection_without_a_message_falls_back_to_the_status(tmp_path: Path) -> None:
-    bench = _bench(tmp_path)
-    _write_central(bench, "https://central.test", "tok")
+def test_rejection_without_a_message_falls_back_to_the_status() -> None:
+    _stage_credentials("https://central.test", "tok")
 
     with (
         patch(
@@ -300,15 +263,14 @@ def test_rejection_without_a_message_falls_back_to_the_status(tmp_path: Path) ->
         ),
         pytest.raises(CentralClientError) as excinfo,
     ):
-        CentralClient(bench).forward("central.billing.api.billing_api.save_billing_profile", "POST", {})
+        CentralClient().forward("central.billing.api.billing_api.save_billing_profile", "POST", {})
 
     assert "HTTP 403" in str(excinfo.value)
     assert excinfo.value.status_code == 403
 
 
-def test_unreachable_central_has_no_status_code(tmp_path: Path) -> None:
-    bench = _bench(tmp_path)
-    _write_central(bench, "https://central.test", "tok")
+def test_unreachable_central_has_no_status_code() -> None:
+    _stage_credentials("https://central.test", "tok")
 
     with (
         patch(
@@ -317,7 +279,7 @@ def test_unreachable_central_has_no_status_code(tmp_path: Path) -> None:
         ),
         pytest.raises(CentralClientError) as excinfo,
     ):
-        CentralClient(bench).heartbeat()
+        CentralClient().forward("central.api.pilot.heartbeat", "GET")
 
     assert excinfo.value.status_code is None
 

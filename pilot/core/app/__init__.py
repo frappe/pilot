@@ -235,8 +235,10 @@ class App:
     def editable_target(self) -> str:
         """Target for `uv pip install -e`. A dev bench also pulls the app's dev extra,
         which is where frappe keeps watchdog, the reloader `--dev` refuses to start
-        without."""
-        if self.bench.config.production.enabled or not self.has_dev_extra:
+        without. `bench.install_dev_extra = false` opts out on a bench that will never
+        run the reloader."""
+        config = self.bench.config
+        if config.production.enabled or not config.install_dev_extra or not self.has_dev_extra:
             return str(self.path)
         return f"{self.path}[dev]"
 

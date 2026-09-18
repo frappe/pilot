@@ -487,7 +487,6 @@ def test_admin_tls_roundtrip() -> None:
     "section,field,url",
     [
         ("admin", "jwks_url", "http://169.254.169.254/token"),
-        ("central", "endpoint", "http://metadata.google.internal/computeMetadata"),
         ("datum", "endpoint", "file:///etc/shadow"),
         ("llm", "api_base", "http://user:password@llm.example.com/v1"),
     ],
@@ -700,9 +699,7 @@ def test_every_field_survives_a_round_trip(tmp_path: Path) -> None:
     config.admin.tls = True
     config.admin.allow_bench_management = False
 
-    config.central.endpoint = "https://central.example.com"
-    config.central.auth_token = "central-token"
-    config.central.bootstrap_token = "central-bootstrap"
+    config.central.enabled = True
 
     config.firewall.enabled = True
     config.firewall.default = "deny"

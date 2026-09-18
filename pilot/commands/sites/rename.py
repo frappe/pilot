@@ -13,6 +13,14 @@ class RenameSiteCommand(Command):
 
     old_name: Annotated[str, Arg(help="Current site name.")]
     new_name: Annotated[str, Arg(help="New site name (hostname).")]
+    release_old_hostname: Annotated[
+        bool,
+        Arg(help="Stop serving the old hostname instead of redirecting it to the new one."),
+    ] = False
 
     def run(self) -> None:
-        self.bench.site(self.old_name).rename_to(self.new_name, on_progress=self.report)
+        self.bench.site(self.old_name).rename_to(
+            self.new_name,
+            on_progress=self.report,
+            keep_old_hostname=not self.release_old_hostname,
+        )

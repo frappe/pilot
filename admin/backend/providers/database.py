@@ -45,6 +45,10 @@ class DatabaseDiagnosticsProvider:
             "active_connections": self._call(database.get_active_connections),
             "lock_waits": asdict(self._call(database.get_lock_waits)),
             "binlog": asdict(binlog) if binlog is not None else None,
+            "performance_schema_enabled": self._optional(
+                lambda: database.is_performance_schema_enabled
+            )
+            or False,
         }
 
     def get_process_list(self, site: str = "") -> list[dict]:
@@ -57,6 +61,30 @@ class DatabaseDiagnosticsProvider:
     def get_lock_wait_rows(self, site: str = "") -> list[dict]:
         rows = self._call(self._require_server().get_lock_wait_rows, self._database_for(site))
         return [asdict(row) for row in rows]
+
+    def get_time_consuming_queries(self, site: str = "", limit: int = 20, offset: int = 0) -> dict:
+        section = self._call(
+            self._require_server().get_time_consuming_queries, self._database_for(site), limit, offset
+        )
+        return asdict(section)
+
+    def get_full_table_scan_queries(self, site: str = "", limit: int = 20, offset: int = 0) -> dict:
+        section = self._call(
+            self._require_server().get_full_table_scan_queries, self._database_for(site), limit, offset
+        )
+        return asdict(section)
+
+    def get_unused_indexes(self, site: str = "", limit: int = 20, offset: int = 0) -> dict:
+        section = self._call(
+            self._require_server().get_unused_indexes, self._database_for(site), limit, offset
+        )
+        return asdict(section)
+
+    def get_redundant_indexes(self, site: str = "", limit: int = 20, offset: int = 0) -> dict:
+        section = self._call(
+            self._require_server().get_redundant_indexes, self._database_for(site), limit, offset
+        )
+        return asdict(section)
 
     def get_database_size(self, site: str = "") -> dict:
         size = self._call(self._connection_for(site).get_database_size)

@@ -15,17 +15,6 @@ interface NotificationPage {
 
 const pageSize = 20
 
-const notifications = ref<Notification[]>([])
-const unread = ref(0)
-const loading = ref(false)
-const loadingMore = ref(false)
-const error = ref('')
-const cursor = ref<string | null>(null)
-
-let shownFilters: NotificationFilters = {}
-let newestRequest = 0
-let newestLocalChange = 0
-
 const searchParams = (filters: NotificationFilters, forCursor?: string | null) => {
   const params: Record<string, string | number> = { limit: pageSize }
 
@@ -37,6 +26,17 @@ const searchParams = (filters: NotificationFilters, forCursor?: string | null) =
 }
 
 export const useNotifications = () => {
+  const notifications = ref<Notification[]>([])
+  const unread = ref(0)
+  const loading = ref(false)
+  const loadingMore = ref(false)
+  const error = ref('')
+  const cursor = ref<string | null>(null)
+
+  let shownFilters: NotificationFilters = {}
+  let newestRequest = 0
+  let newestLocalChange = 0
+
   const load = async (filters: NotificationFilters = {}) => {
     const request = ++newestRequest
 

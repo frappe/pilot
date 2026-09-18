@@ -8,12 +8,17 @@ import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
 import { openTaskDetailPage } from '@/utils/taskRoute'
 
-const props = defineProps({
-  app: { type: Object, default: null },
-  siteName: { type: String, required: true },
+interface Props {
+  app?: Record<string, any> | null
+  siteName: string
   // Only marketplace apps can be disabled - a disabled app is re-enabled by
   // installing it again, which needs the app to still be in the catalog.
-  canDisable: { type: Boolean, default: false },
+  canDisable?: boolean
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  app: null,
+  canDisable: false,
 })
 const open = defineModel('open')
 const emit = defineEmits(['disabled'])
@@ -103,7 +108,7 @@ const uninstallApp = async () => {
       >
         <span class="mt-0.5 size-4 text-ink-gray-6 shrink-0" :class="option.icon" />
         <span class="min-w-0">
-          <span class="block text-ink-gray-8 text-base">{{ option.label }}</span>
+          <span class="block text-ink-gray-8">{{ option.label }}</span>
           <span class="block mt-0.5 text-ink-gray-5 text-p-sm leading-5">{{ option.description }}</span>
         </span>
       </button>

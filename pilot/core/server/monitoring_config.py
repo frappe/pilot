@@ -55,8 +55,8 @@ class MonitorConfigurator(SystemdUserMixin):
 
     def __init__(self, bench: "Bench | None" = None):
         self.bench = bench
-        self.unit_name = "bench-monitor.service"
-        self.timer_unit_name = "bench-monitor.timer"
+        self.unit_name = "pilot-monitor.service"
+        self.timer_unit_name = "pilot-monitor.timer"
         self.monitor_dir = cli_root() / "system" / "monitor"
 
     def install(self) -> None:

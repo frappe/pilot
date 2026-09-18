@@ -19,8 +19,8 @@ def test_monitor_install_is_idempotent(tmp_path: Path) -> None:
             configurator.install()
         install.assert_not_called()
 
-    assert (unit_dir / "bench-monitor.service").exists()
-    assert (unit_dir / "bench-monitor.timer").exists()
+    assert (unit_dir / "pilot-monitor.service").exists()
+    assert (unit_dir / "pilot-monitor.timer").exists()
 
 
 def test_uptime_install_is_idempotent(tmp_path: Path) -> None:
@@ -37,8 +37,8 @@ def test_uptime_install_is_idempotent(tmp_path: Path) -> None:
             configurator.install()
         install.assert_not_called()
 
-    assert (unit_dir / "site-uptime.service").exists()
-    assert (unit_dir / "site-uptime.timer").exists()
+    assert (unit_dir / "pilot-uptime.service").exists()
+    assert (unit_dir / "pilot-uptime.timer").exists()
 
 
 def test_site_storage_install_is_idempotent(tmp_path: Path) -> None:
@@ -57,7 +57,7 @@ def test_site_storage_install_is_idempotent(tmp_path: Path) -> None:
             configurator.install()
         install.assert_not_called()
 
-    assert (unit_dir / "site-storage.service").exists()
-    timer = (unit_dir / "site-storage.timer").read_text()
+    assert (unit_dir / "pilot-storage.service").exists()
+    timer = (unit_dir / "pilot-storage.timer").read_text()
     assert "OnCalendar=00/6:00:00" in timer
     assert "Persistent=true" in timer

@@ -9,7 +9,11 @@ import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
 import { openTaskDetailPage } from '@/utils/taskRoute'
 
-const props = defineProps({ siteName: { type: String, required: true } })
+interface Props {
+  siteName: string
+}
+
+const props = defineProps<Props>()
 
 const siteSubject = computed(() => ({
   label: props.siteName,
@@ -118,26 +122,23 @@ const confirmDrop = async () => {
 </script>
 
 <template>
-  <div>
-    <p class="font-semibold text-ink-gray-8 text-base">Danger</p>
-    <div class="mt-1">
-      <div
-        v-for="d in DangerActions"
-        :key="d.key"
-        class="flex justify-between items-start gap-x-2.5 py-4 border-b last:border-b-0 border-outline-alpha-gray-1"
-      >
-        <div class="flex flex-col gap-1 min-w-0">
-          <p class="font-medium text-ink-gray-8 text-base">{{ d.label }}</p>
-          <p class="text-ink-gray-6 text-p-sm line-clamp-2 sm:line-clamp-none">
-            {{ d.description }}
-          </p>
-        </div>
+  <h2 class="mb-3 mt-3 text-base-semibold text-ink-gray-8">Danger</h2>
 
-        <Button size="sm" theme="red" class="ml-4 shrink-0" @click="d.action"
-          >{{ d.buttonLabel || d.label }}</Button
-        >
-      </div>
+  <div
+    v-for="d in DangerActions"
+    :key="d.key"
+    class="flex justify-between items-start gap-x-2.5 py-4 border-b last:border-b-0 border-outline-alpha-gray-1"
+  >
+    <div class="flex flex-col gap-1 min-w-0">
+      <p class="font-medium text-ink-gray-8">{{ d.label }}</p>
+      <p class="text-ink-gray-6 text-p-sm line-clamp-2 sm:line-clamp-none">
+        {{ d.description }}
+      </p>
     </div>
+
+    <Button theme="red" class="ml-4 shrink-0" @click="d.action"
+      >{{ d.buttonLabel || d.label }}</Button
+    >
   </div>
 
   <ActionDialog

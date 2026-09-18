@@ -199,7 +199,8 @@ add_distro_repos() {
     case "$DISTRO" in
         debian|ubuntu)
             fetch_and_run_as_root "$MARIADB_REPO_SETUP_URL" \
-                --mariadb-server-version="mariadb-$MARIADB_VERSION" ;;
+                --mariadb-server-version="mariadb-$MARIADB_VERSION" \
+                --skip-maxscale;;
     esac
 }
 
@@ -234,7 +235,16 @@ install_production_packages() {
 
 # NodeSource pins Node 24 on deb/rpm distros; Arch ships a current Node itself.
 install_node() {
-    command -v node >/dev/null 2>&1 && return 0
+    if command -v node >/dev/null 2>&1; then
+        NODE_VERSION=$(node -v | tr -d 'v' | cut -d'.' -f1)
+        if [ "$NODE_VERSION" = "24" ]; then
+            return 0
+        else
+            echo "❌ Error: Found Node.js version $NODE_VERSION, but Pilot strictly requires Node.js 24."
+            echo "Please manually install Node.js 24 and retry."
+            exit 1
+        fi
+    fi
     # An unknown distro only gets Node when apt is there to install it.
     if [ "$DISTRO" = "unknown" ] && ! command -v apt-get >/dev/null 2>&1; then
         return 0
@@ -253,8 +263,8 @@ install_node() {
 }
 
 # The distro packages auto-start services on their default ports. Benches run
-# their own instances, so free the ports and the memory right away. nginx is
-# started by `pilot setup production`, which a sudoers grant already allows.
+# their own instances, so free the ports and the memory right away. `pilot setup
+# production` starts nginx and enables it at boot, which a sudoers grant allows.
 disable_system_services() {
     case "$DISTRO" in
         macos|unknown) return 0 ;;
@@ -455,7 +465,7 @@ install_sudoers_grants() {
 
     echo "Granting '$1' passwordless sudo for nginx and certbot..."
     write_sudoers_file "$1-pilot-nginx" \
-"$1 ALL=(ALL) NOPASSWD: $nginx_bin -t,$nginx_bin -T,$systemctl_bin start nginx,$systemctl_bin stop nginx,$systemctl_bin reload nginx"
+"$1 ALL=(ALL) NOPASSWD: $nginx_bin -t,$nginx_bin -T,$systemctl_bin start nginx,$systemctl_bin stop nginx,$systemctl_bin reload nginx,$systemctl_bin enable nginx"
     # Domain and email tokens stay wildcarded (sites arrive long after this is
     # written), but each wildcard is anchored between fixed literal text, so no
     # extra flag can be smuggled in before or after the match.
@@ -564,9 +574,23 @@ ensure_tzdata() {
         macos) return 0 ;;
         unknown) command -v apt-get >/dev/null 2>&1 || return 0 ;;
     esac
-    pkg_installed tzdata && return 0
-    echo "Installing timezone data..."
-    pkg_install tzdata
+    if ! pkg_installed tzdata; then
+        echo "Installing timezone data..."
+        pkg_install tzdata
+    fi
+    ensure_tzdata_legacy
+}
+
+# Ubuntu 24.04 moved the deprecated zone aliases (Asia/Calcutta, US/Eastern) out
+# of tzdata, and zoneinfo cannot load a name the distro does not ship. Fedora and
+# Arch keep them in tzdata, so test for a missing alias instead of a version.
+ensure_tzdata_legacy() {
+    [ -e "${ZONEINFO_DIR:-/usr/share/zoneinfo}/Asia/Calcutta" ] && return 0
+    case "$DISTRO" in
+        fedora|arch) return 0 ;;
+    esac
+    echo "Installing deprecated timezone names..."
+    pkg_install tzdata-legacy || echo "Warning: tzdata-legacy is unavailable; deprecated timezone names such as Asia/Calcutta will not resolve."
 }
 
 # Appends the given PATH line to a file once, if not already there.

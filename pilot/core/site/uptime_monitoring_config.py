@@ -51,8 +51,8 @@ class UptimeMonitorConfigurator(SystemdUserMixin):
 
     def __init__(self, bench: "Bench | None" = None):
         self.bench = bench
-        self.unit_name = "site-uptime.service"
-        self.timer_unit_name = "site-uptime.timer"
+        self.unit_name = "pilot-uptime.service"
+        self.timer_unit_name = "pilot-uptime.timer"
         self.uptime_dir = cli_root() / "system" / "uptime"
 
     def install(self) -> None:

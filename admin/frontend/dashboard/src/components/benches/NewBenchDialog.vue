@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { Button, Dialog, ErrorMessage, FormControl, LoadingIndicator, Select } from 'frappe-ui'
+import { Button, Dialog, ErrorMessage, LoadingIndicator, Select, TextInput } from 'frappe-ui'
 
 import { apiErrorMessage } from '@/api/client'
 import { authApi } from '@/api/auth'
@@ -8,7 +8,11 @@ import { benchesApi } from '@/api/benches'
 
 const PM_LABELS = { systemd: 'Systemd', supervisor: 'Supervisor' }
 
-const props = defineProps({ modelValue: Boolean })
+interface Props {
+  modelValue?: boolean
+}
+
+const props = defineProps<Props>()
 const emit = defineEmits(['update:modelValue'])
 
 const show = computed({
@@ -236,7 +240,6 @@ const createBench = async () => {
   <Dialog
     v-model="show"
     :title="provisioning ? 'Setting Up Bench' : 'New Bench'"
-    size="lg"
     :showCloseButton="true"
   >
     <div class="flex flex-col gap-5">
@@ -244,7 +247,7 @@ const createBench = async () => {
       <div v-if="provisioning" class="flex flex-col items-center gap-5 py-8 text-center">
         <LoadingIndicator class="w-10 h-10 text-ink-gray-5" />
         <div class="flex flex-col gap-2">
-          <p class="font-semibold text-ink-gray-9 text-lg">This may take a few minutes</p>
+          <p class="text-lg-semibold">This may take a few minutes</p>
           <p class="max-w-xs text-ink-gray-6 text-sm">Opens automatically when ready.</p>
         </div>
 
@@ -254,10 +257,9 @@ const createBench = async () => {
           Elapsed {{ elapsedLabel }}
         </span>
 
-        <Button variant="subtle" @click="openWizardInNewTab">Open setup now</Button>
+        <Button @click="openWizardInNewTab">Open setup now</Button>
       </div>
 
-      <!-- Loading -->
       <div
         v-else-if="isProduction === null"
         class="flex flex-col justify-center items-center gap-3 py-16"
@@ -268,7 +270,7 @@ const createBench = async () => {
       <!-- Dev bench: guide to the CLI rather than auto-provisioning a
            managed bench the host probably can't run. -->
       <div v-else-if="isProduction === false" class="flex flex-col gap-3">
-        <p class="text-ink-gray-7 text-sm">
+        <p class="text-ink-gray-7 text-p-sm">
           This bench is running in development mode, so new benches can be created from the
           command line :
         </p>
@@ -281,9 +283,8 @@ const createBench = async () => {
       <!-- Production bench: a process manager is configured, so we create the
            bench and route its domain to the setup wizard. -->
       <template v-else-if="isProduction === true">
-        <FormControl
+        <TextInput
           label="Bench name"
-          type="text"
           v-model="name"
           placeholder="my-bench"
           @input="error = ''"
@@ -302,7 +303,7 @@ const createBench = async () => {
                 : 'border-outline-gray-2 hover:bg-surface-alpha-gray-1'"
               @click="processManager = opt.value"
             >
-              <span class="block font-medium text-ink-gray-9 text-sm">{{ opt.label }}</span>
+              <span class="block font-medium text-sm">{{ opt.label }}</span>
               <span class="block text-ink-gray-5 text-xs">{{ opt.hint }}</span>
             </button>
           </div>
@@ -310,9 +311,8 @@ const createBench = async () => {
 
         <div>
           <template v-if="wildcardDomains.length === 0">
-            <FormControl
+            <TextInput
               label="Admin domain"
-              type="text"
               v-model="adminDomain"
               placeholder="my-admin.example.com"
               @input="error = ''"
@@ -327,9 +327,8 @@ const createBench = async () => {
           <div v-else>
             <span class="block mb-1.5 text-ink-gray-5 text-xs">Admin domain</span>
             <div class="flex items-stretch gap-2">
-              <FormControl
+              <TextInput
                 class="flex-1 min-w-0"
-                type="text"
                 v-model="adminPrefix"
                 placeholder="my-admin"
                 @input="error = ''"
@@ -349,7 +348,7 @@ const createBench = async () => {
             </div>
           </div>
 
-          <p class="mt-1.5 text-ink-gray-5 text-xs">
+          <p class="mt-1.5 text-ink-gray-5 text-p-xs">
             The web address you'll use to open this bench.
           </p>
         </div>

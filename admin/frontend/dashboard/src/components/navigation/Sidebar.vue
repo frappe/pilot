@@ -10,8 +10,12 @@ import { sidebarSections } from '@/components/navigation/list'
 import { useAppMenu } from '@/components/navigation/useAppMenu'
 import { openSearch } from '@/composables/common/useSearch'
 
-const props = defineProps({
-  isMobile: { type: Boolean, default: false },
+interface Props {
+  isMobile?: boolean
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  isMobile: false,
 })
 
 const route = useRoute()
@@ -71,11 +75,11 @@ const isActive = (to) => route.path === to || route.path.startsWith(`${to}/`)
         >
           {{ item.label }}
 
-          <lucide-chevron-right v-if="isMobile" class="size-4 text-ink-gray-4 ml-auto mr-1" />
+          <span v-if="isMobile" class="size-4 text-ink-gray-4 ml-auto mr-1 lucide-chevron-right" />
         </SidebarItem>
       </template>
     </nav>
 
-    <SidebarCollapseToggle class="mt-auto mx-2 mb-2" />
+    <SidebarCollapseToggle v-if="!isMobile" class="mt-auto mx-2 mb-2" />
   </Sidebar>
 </template>

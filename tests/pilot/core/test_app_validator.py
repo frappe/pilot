@@ -982,3 +982,94 @@ def test_symlink_check_does_not_walk_through_an_allowed_symlinked_dir(tmp_path: 
 
     SymlinkCheck().run(app)  # no raise, and terminates
     assert SymlinkCheck.get_invalid_symlinks(app.path) == []
+
+
+def test_validation_ignore_skips_python_files_from_syntax_check(tmp_path: Path) -> None:
+    app = _make_app(
+        tmp_path,
+        "myapp",
+        '[project]\nname = "myapp"\n\n[tool.bench]\nvalidation-ignore = ["myapp/internal/*"]\n\n'
+        '[tool.bench.frappe-dependencies]\nfrappe = ">=15"\n',
+        {
+            "myapp/hooks.py": "app_name = 'myapp'\n",
+            "myapp/internal/generated.py": "def broken(:\n",
+            "myapp/internal/nested/also_generated.py": "def broken(:\n",
+        },
+    )
+
+    Validator(app, checks=_static_checks()).validate()  # no raise
+
+
+def test_validation_ignore_does_not_skip_unmatched_files(tmp_path: Path) -> None:
+    app = _make_app(
+        tmp_path,
+        "myapp",
+        '[project]\nname = "myapp"\n\n[tool.bench]\nvalidation-ignore = ["myapp/internal/*"]\n\n'
+        '[tool.bench.frappe-dependencies]\nfrappe = ">=15"\n',
+        {"myapp/hooks.py": "app_name = 'myapp'\n", "myapp/utils.py": "def broken(:\n"},
+    )
+
+    with pytest.raises(AppValidationError, match=r"syntax errors"):
+        Validator(app, checks=_static_checks()).validate()
+
+
+def test_validation_ignore_skips_fixtures(tmp_path: Path) -> None:
+    app = _make_app(
+        tmp_path,
+        "myapp",
+        '[project]\nname = "myapp"\n\n[tool.bench]\nvalidation-ignore = ["myapp/fixtures/*"]\n\n'
+        '[tool.bench.frappe-dependencies]\nfrappe = ">=15"\n',
+        {"myapp/hooks.py": "app_name = 'myapp'\n", "myapp/fixtures/custom_field.json": "{not json"},
+    )
+
+    Validator(app, checks=_static_checks()).validate()  # no raise
+
+
+def test_validation_ignore_skips_symlinks(tmp_path: Path) -> None:
+    app = _app_with_symlink(tmp_path, "myapp/vendor/node_modules", "/nowhere/node_modules")
+    (app.path / "pyproject.toml").write_text(
+        f'[project]\nname = "myapp"\nversion = "0.0.1"\n\n'
+        f'[tool.bench]\nvalidation-ignore = ["myapp/vendor/*"]\n\n{_SETUPTOOLS_BUILD}'
+    )
+
+    SymlinkCheck().run(app)  # no raise
+
+
+def test_validation_ignore_rejects_a_non_list_value(tmp_path: Path) -> None:
+    app = _make_app(
+        tmp_path,
+        "myapp",
+        '[project]\nname = "myapp"\n\n[tool.bench]\nvalidation-ignore = "myapp/internal/*"\n\n'
+        '[tool.bench.frappe-dependencies]\nfrappe = ">=15"\n',
+        {"myapp/hooks.py": "app_name = 'myapp'\n"},
+    )
+
+    with pytest.raises(AppValidationError, match=r"invalid \[tool\.bench\] validation-ignore"):
+        Validator(app, checks=_static_checks()).validate()
+
+
+def test_validation_rejects_a_non_table_bench_key(tmp_path: Path) -> None:
+    """A non-table must fail as AppValidationError, not AttributeError: only a
+    BenchError rolls a switched branch back."""
+    app = _make_app(
+        tmp_path,
+        "myapp",
+        '[project]\nname = "myapp"\n\n[tool]\nbench = "nope"\n',
+        {"myapp/hooks.py": "app_name = 'myapp'\n"},
+    )
+
+    with pytest.raises(AppValidationError, match=r"invalid \[tool\.bench\] in pyproject\.toml"):
+        Validator(app, checks=_static_checks()).validate()
+
+
+def test_validation_ignores_unrelated_tool_tables(tmp_path: Path) -> None:
+    """Other tools' keys under [tool] are not pilot's to validate."""
+    app = _make_app(
+        tmp_path,
+        "myapp",
+        '[project]\nname = "myapp"\n\n[tool]\nx = ["sss"]\n\n'
+        '[tool.ruff]\nline-length = 110\n\n[tool.bench.frappe-dependencies]\nfrappe = ">=15"\n',
+        {"myapp/hooks.py": "app_name = 'myapp'\n"},
+    )
+
+    Validator(app, checks=_static_checks()).validate()  # no raise

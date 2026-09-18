@@ -1,13 +1,18 @@
-"""BenchInitializer._provision_or_verify: existing database handling."""
+"""`pilot init`: existing database handling and the --no-dev opt-out."""
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pilot.commands.bench.initialize import InitCommand
+from pilot.config import BenchConfig
+from pilot.core.bench import Bench
 from pilot.core.bench.initializer import BenchInitializer
 from pilot.exceptions import BenchError
+from tests.pilot.commands.test_commands import make_bench
 
 
 def _initializer() -> BenchInitializer:
@@ -92,3 +97,24 @@ def test_ensure_database_credentials_skips_sqlite() -> None:
     BenchInitializer(bench)._ensure_database_credentials()
 
     bench.config.write.assert_not_called()
+
+
+def test_no_dev_persists_the_opt_out_before_initialising(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.config.write(tmp_path)
+
+    with patch.object(Bench, "initialize") as initialize:
+        InitCommand(bench=bench, no_dev=True).run()
+
+    initialize.assert_called_once()
+    assert BenchConfig.read(tmp_path).install_dev_extra is False
+
+
+def test_init_keeps_the_dev_extra_by_default(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.config.write(tmp_path)
+
+    with patch.object(Bench, "initialize"):
+        InitCommand(bench=bench).run()
+
+    assert BenchConfig.read(tmp_path).install_dev_extra is True

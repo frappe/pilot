@@ -40,9 +40,13 @@ def bootstrap():
             503,
         )
 
+    if config.central.is_awaiting_bootstrap:
+        return jsonify({"mode": "pending", "name": config.name, "enabled": True})
+
     initialized = (bench_root / "env" / "bin" / "python").exists()
     if not initialized or not config.admin.password:
         return jsonify(_setup_bootstrap(bench_root))
+
     marker = wizard_marker_path(bench_root)
     if marker.exists():
         with exclusive_file_lock(marker):
@@ -63,6 +67,7 @@ def bootstrap():
                 "production": config.production.enabled,
                 "native_process_manager": native_process_manager(),
                 "allow_bench_management": config.admin.allow_bench_management,
+                "central": config.central.enabled,
                 "developer_mode": config.allow_developer_mode,
                 "task_worker": TaskActivityReader(bench_root).read().public_dict,
             },

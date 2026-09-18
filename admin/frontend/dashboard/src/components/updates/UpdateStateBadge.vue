@@ -3,9 +3,13 @@ import { Badge } from 'frappe-ui'
 
 import { stateLabel, stateTone } from '@/utils/updateFormat'
 
-defineProps({ state: { type: String, required: true } })
+interface Props {
+  state: string
+}
+
+defineProps<Props>()
 </script>
 
 <template>
-  <Badge :theme="stateTone(state)" variant="subtle" size="md" :label="stateLabel(state)" />
+  <Badge :theme="stateTone(state)" :label="stateLabel(state)" />
 </template>

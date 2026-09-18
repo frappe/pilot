@@ -81,6 +81,10 @@ class BenchInventory:
         result = []
         for site_dir in sorted(self.bench.sites_path.iterdir()):
             config_path = site_dir / "site_config.json"
+            # A symlink here is the compatibility path a rename leaves behind while
+            # it swings over; counting it would render the same site twice.
+            if site_dir.is_symlink():
+                continue
             if site_dir.is_dir() and config_path.exists():
                 raw = self._read_site_config(config_path)
                 result.append(Site(self._site_config(site_dir.name, raw), self.bench))
@@ -92,12 +96,10 @@ class BenchInventory:
         apps_txt.write_text("\n".join(names) + "\n" if names else "")
 
     def _site_config(self, name: str, raw: dict):
-        from pilot.config import SiteConfig
+        from pilot.config import RoutePolicy, SiteConfig, SiteDomain
 
-        raw_domains = [
-            entry.get("domain") if isinstance(entry, dict) else entry for entry in (raw.get("domains") or [])
-        ]
-        domains = [domain for domain in raw_domains if isinstance(domain, str) and domain]
+        domains = [SiteDomain.from_entry(entry) for entry in (raw.get("domains") or [])]
+        domains = [domain for domain in domains if domain.name]
         host_name = (raw.get("host_name") or "").strip()
         primary = host_name.split("://", 1)[-1] if host_name else ""
         return SiteConfig(
@@ -106,6 +108,8 @@ class BenchInventory:
             ssl=bool(raw.get("ssl")),
             domains=domains,
             primary_domain=primary,
+            cert_name=str(raw.get("cert_name") or ""),
+            route=RoutePolicy.from_dict(raw["route"]) if raw.get("route") else None,
         )
 
     def _read_site_config(self, path: Path) -> dict:

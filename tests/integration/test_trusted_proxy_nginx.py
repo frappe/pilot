@@ -99,10 +99,8 @@ def test_generated_trusted_proxy_config_passes_nginx_t(tmp_path: Path, monkeypat
         assert f"set_real_ip_from   {ip};" in site_conf
     assert "real_ip_header     X-Forwarded-For;" in site_conf
     # Gate TCP connections to the proxies on the real peer, not the rewritten client.
-    assert (
-        r'if ($realip_remote_addr ~ "^(203\.0\.113\.10|203\.0\.113\.11)$") { set $bench_from_proxy 1; }'
-        in site_conf
-    )
+    assert "203.0.113.10 1;" in site_conf
+    assert "203.0.113.11 1;" in site_conf
     assert "if ($bench_from_proxy = 0) { return 403; }" in site_conf
     # The ACME challenge must stay reachable directly, else cert issuance fails.
     assert r'if ($request_uri ~ "^/\.well-known/acme-challenge/") { set $bench_from_proxy 1; }' in site_conf

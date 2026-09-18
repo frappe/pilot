@@ -23,6 +23,7 @@ class SystemdRenderer(ServiceRenderer):
             f"{working_dir}{env}"
             f"ExecStart={shlex.join(pd.argv)}\n"
             f"Restart=on-failure\n"
+            f"LimitNOFILE=65535\n"
             f"{stop}"
             f"StandardOutput=append:{pd.log_file}\n"
             f"StandardError=append:{pd.log_file}.error.log\n"
@@ -58,6 +59,27 @@ class SystemdRenderer(ServiceRenderer):
             f"KillMode=process\n"
             f"StandardOutput=append:{pd.log_file}\n"
             f"StandardError=append:{pd.log_file}.error.log\n"
+        )
+
+    def render_central_bootstrap(
+        self, python: str, cli_root: str, bench_root: str, log_file: str
+    ) -> str:
+        """Render the boot-time Central credential service."""
+        return (
+            f"[Unit]\n"
+            f"Description={self.bench_name} central bootstrap\n\n"
+            f"[Service]\n"
+            f"Type=simple\n"
+            f"WorkingDirectory={cli_root}\n"
+            f"Environment=PYTHONUNBUFFERED=1\n"
+            f"Environment=PYTHONPATH={cli_root}\n"
+            f"ExecStart={python} -m admin.backend.central_bootstrap --bench-root {bench_root}\n"
+            f"Restart=on-failure\n"
+            f"RestartSec=5s\n"
+            f"StandardOutput=append:{log_file}\n"
+            f"StandardError=append:{log_file}.error.log\n\n"
+            f"[Install]\n"
+            f"WantedBy=default.target\n"
         )
 
     def render_target(self, unit_names: list[str]) -> str:

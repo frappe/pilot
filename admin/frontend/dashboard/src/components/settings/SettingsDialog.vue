@@ -63,7 +63,8 @@ const sections = computed(() => [
 // Section and sub-section are routed, so views are deep-linkable.
 const activeSection = computed({
   get: () => route.params.section || null,
-  set: (id) => router.push(id ? { name: 'Settings', params: { section: id } } : { name: 'Settings' }),
+  set: (id) =>
+    router.push(id ? { name: 'Settings', params: { section: id } } : { name: 'Settings' }),
 })
 const currentSection = computed(() => activeSection.value ?? sections.value[0].id)
 const activeSectionLabel = computed(
@@ -94,7 +95,10 @@ const guardedSubSection = computed({
 const sessionJti = computed({
   get: () => (currentSection.value === 'sessions' ? route.params.subSection || null : null),
   set: (jti) =>
-    router.push({ name: 'Settings', params: { section: 'sessions', subSection: jti || undefined } }),
+    router.push({
+      name: 'Settings',
+      params: { section: 'sessions', subSection: jti || undefined },
+    }),
 })
 
 // Reset on section change so a stale title is never inherited.
@@ -118,21 +122,16 @@ const goBack = () => {
 <template>
   <Dialog v-model="open" bare size="5xl">
     <template #default="{ close }">
-      <!-- 6rem = the Dialog's own chrome (overlay py-4 + content my-8); a
-           literal 100vh overflows and sets the overlay scrolling. -->
       <div class="relative flex sm:h-[calc(100vh-6rem)] max-h-[calc(100vh-6rem)]">
-        <!-- Sizing and tokens from frappe-ui's own SettingsSidebar.
-             surface-sidebar is theme-aware: light gray in light, transparent in dark. -->
-        <div
-          class="flex-col bg-surface-sidebar p-2 sm:border-r border-outline-gray-1 w-full sm:w-[220px] shrink-0"
+        <aside
+          class="flex-col bg-surface-sidebar p-2 sm:border-r dark:border-outline-gray-2 w-full sm:w-[220px] shrink-0"
           :class="activeSection ? 'hidden sm:flex' : 'flex'"
         >
-          <h3
-            class="mb-1 p-2 pb-3 border-b sm:border-b-0 border-outline-gray-1 font-semibold text-ink-gray-9 text-base"
-          >
+          <h3 class="mb-1 p-2 pb-3 border-b sm:border-b-0 border-outline-gray-1 font-semibold">
             Settings
           </h3>
 
+          <!-- close btn only for mobile -->
           <Button
             v-if="!activeSection"
             class="sm:hidden top-3 right-3 absolute"
@@ -142,49 +141,47 @@ const goBack = () => {
             tooltip="Close"
             @click="close"
           />
-          <div class="flex flex-col gap-2 sm:gap-0.5 pt-2 sm:pt-0">
-            <Button
-              v-for="section in sections"
-              :key="section.id"
-              :variant="isMobile ? 'subtle' : 'ghost'"
-              :size="isMobile ? 'md' : 'sm'"
-              class="!justify-start border sm:border-0 w-full"
-              :class="
+
+          <Button
+            v-for="section in sections"
+            :key="section.id"
+            :variant="isMobile ? 'subtle' : 'ghost'"
+            :size="isMobile ? 'md' : 'sm'"
+            class="!justify-start border sm:border-0 w-full mt-0.5"
+            :class="
                 currentSection === section.id
                   ? 'sm:!bg-surface-elevation-3 sm:!shadow-sm sm:!text-ink-gray-9 !text-ink-gray-6'
                   : '!text-ink-gray-6'
               "
-              @click="guarded(() => (activeSection = section.id))"
-            >
-              <template #prefix>
-                <span :class="section.icon" class="size-4"></span>
-              </template>
-              {{ section.label }}
-            </Button>
-          </div>
-        </div>
+            @click="guarded(() => (activeSection = section.id))"
+          >
+            <template #prefix>
+              <span :class="section.icon" class="size-4" />
+            </template>
+            {{ section.label }}
+          </Button>
+        </aside>
 
-        <!-- frappe-ui's SettingsHeader/SettingsBody padding; off below sm. -->
         <div
-          class="flex-col flex-1 px-6 sm:px-[4.4rem] pt-6 sm:pt-10 pb-10 sm:pb-16 overflow-y-auto"
+          class="flex-col flex-1 px-6 sm:px-14 pt-6 sm:pt-10 pb-10 sm:pb-12 overflow-y-auto"
           :class="activeSection ? 'flex' : 'hidden sm:flex'"
         >
-          <div class="flex justify-between items-center pb-4">
-            <div class="flex items-center gap-2">
-              <Button
-                v-if="subSection || sessionJti || activeSection"
-                :class="{ 'sm:hidden': !subSection && !sessionJti }"
-                class="-ml-2"
-                variant="ghost"
-                icon="lucide-arrow-left"
-                label="Back"
-                tooltip="Back"
-                @click="goBack"
-              />
-              <h3 class="font-semibold text-ink-gray-9 text-lg">{{ headerTitle }}</h3>
-            </div>
+          <!-- header -->
+          <div class="flex items-center gap-2 pb-4">
+            <Button
+              v-if="subSection || sessionJti || activeSection"
+              class="-ml-2"
+              :class="{ 'sm:hidden': !subSection && !sessionJti }"
+              variant="ghost"
+              icon="lucide-arrow-left"
+              label="Back"
+              tooltip="Back"
+              @click="goBack"
+            />
 
-            <div id="settings-header-actions" class="contents"></div>
+            <h3 class="text-lg-semibold text-ink-gray-9">{{ headerTitle }}</h3>
+
+            <div id="settings-header-actions" class="flex items-center gap-2 ml-auto" />
           </div>
 
           <General v-if="currentSection === 'general'" v-model:open-section="guardedSubSection" />
@@ -212,9 +209,11 @@ const goBack = () => {
       You have changes here that have not been saved. Leaving loses them.
     </p>
 
-    <div class="flex justify-end gap-2 mt-4">
-      <Button variant="subtle" @click="showDiscard = false">Keep editing</Button>
-      <Button variant="solid" theme="red" @click="discardAndGo">Discard</Button>
-    </div>
+    <template #actions>
+      <div class="flex justify-end gap-2">
+        <Button @click="showDiscard = false">Keep editing</Button>
+        <Button variant="solid" theme="red" @click="discardAndGo">Discard</Button>
+      </div>
+    </template>
   </Dialog>
 </template>

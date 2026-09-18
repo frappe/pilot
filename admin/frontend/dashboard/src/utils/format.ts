@@ -6,6 +6,15 @@ export const formatBytes = (bytes) => {
   return `${(bytes / 1024 ** 3).toFixed(1)} GB`
 }
 
+export const formatMilliseconds = (ms) => {
+  if (!Number.isFinite(ms)) return '—'
+  if (ms < 1) return '<1 ms'
+  if (ms < 1000) return `${Math.round(ms)} ms`
+  return `${(ms / 1000).toFixed(1)} s`
+}
+
+export const formatCount = (value) => (Number.isFinite(value) ? value.toLocaleString() : '—')
+
 export const parseBranchVersion = (branch) => {
   if (!branch) return ''
   if (branch === 'develop') return 'Nightly'

@@ -50,6 +50,25 @@ def _mocked_site_domains(bench_root: Path, site: str, domains=(), primary=None):
         return attached, bool(primary) and normalize_host(primary) == normalized
 
     site_domains.status.side_effect = status
+
+    def description(domain: str):
+        attached, is_primary = status(domain)
+        if not attached:
+            return None
+        return {
+            "domain": domain,
+            "is_site": domain == site,
+            "is_primary": is_primary,
+            "public_scheme": "http",
+            "tls": False,
+        }
+
+    site_domains.describe_domain.side_effect = description
+    effective_primary = primary or site
+    site_domains.describe.return_value = (
+        [description(domain) for domain in [site, *domain_names]],
+        effective_primary,
+    )
     return site_domains
 
 
@@ -73,7 +92,39 @@ def test_get_domain_reports_the_site_itself_as_attached_and_primary(tmp_path: Pa
         response = client.get("/api/v1/sites/site.localhost/domains/site.localhost")
 
     assert response.status_code == 200
-    assert response.get_json() == {"domain": "site.localhost", "is_primary": True}
+    assert response.get_json() == {
+        "domain": "site.localhost",
+        "is_site": True,
+        "is_primary": True,
+        "public_scheme": "http",
+        "tls": False,
+    }
+
+
+def test_list_domains_reports_public_tls_per_hostname(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    route = {
+        "public_scheme": "https",
+        "origin_scheme": "http",
+        "client_ip_source": "x_forwarded_for",
+    }
+    _make_site(
+        bench_root,
+        "site.localhost",
+        route=route,
+        domains=[
+            {
+                "domain": "custom.example.com",
+                "route": {**route, "origin_scheme": "https", "client_ip_source": "proxy_protocol_v2"},
+            }
+        ],
+    )
+    client = _client(bench_root)
+
+    response = client.get("/api/v1/sites/site.localhost/domains")
+
+    assert response.status_code == 200
+    assert [row["tls"] for row in response.get_json()["domains"]] == [True, True]
 
 
 def test_get_domain_reports_a_custom_domain(tmp_path: Path) -> None:
@@ -93,7 +144,13 @@ def test_get_domain_reports_a_custom_domain(tmp_path: Path) -> None:
         response = client.get("/api/v1/sites/site.localhost/domains/custom.example.com")
 
     assert response.status_code == 200
-    assert response.get_json() == {"domain": "custom.example.com", "is_primary": True}
+    assert response.get_json() == {
+        "domain": "custom.example.com",
+        "is_site": False,
+        "is_primary": True,
+        "public_scheme": "http",
+        "tls": False,
+    }
 
 
 def test_get_domain_404s_for_an_unattached_domain(tmp_path: Path) -> None:

@@ -89,14 +89,11 @@ const navigate = (delta: number) => {
             </span>
 
             <div
-              v-for="(item, i) in group.items"
+              v-for="item in group.items"
               :key="`${name}-${item.name}`"
               role="option"
-              class="flex cursor-pointer items-center gap-2 rounded-4 p-2 hover:bg-surface-gray-2"
-              :class="[
-                flatItems.indexOf(item) === activeIndex ? 'bg-surface-gray-2' : '',
-                i === group.items.length - 1 ? 'mb-3' : 'mb-0.5',
-              ]"
+              class="flex cursor-pointer items-center gap-2 mb-0.5 last:mb-3 rounded-4 p-2 hover:bg-surface-gray-2"
+              :class="flatItems.indexOf(item) === activeIndex ? 'bg-surface-gray-2' : ''"
               @click="select(item)"
             >
               <span :class="item.icon" class="size-4 shrink-0 text-ink-gray-6" />

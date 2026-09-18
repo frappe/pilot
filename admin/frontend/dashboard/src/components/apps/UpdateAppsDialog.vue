@@ -26,6 +26,13 @@ const appNames = computed(() => {
 })
 
 const selected = ref(new Set())
+
+const updateLabel = computed(() => {
+  const count = selected.value.size
+  if (!count) return 'Update'
+  if (count === appNames.value.length) return 'Update all'
+  return count === 1 ? 'Update 1 app' : `Update ${count} apps`
+})
 const safeguard = ref(true)
 const updating = ref(false)
 const error = ref('')
@@ -73,9 +80,7 @@ const runUpdate = async () => {
 <template>
   <Dialog v-model="open" title="Updates" size="md">
     <div class="flex flex-col gap-4">
-      <div v-if="checking" class="flex justify-center py-8">
-        <LoadingText />
-      </div>
+      <LoadingText v-if="checking" class="justify-center py-8" />
 
       <p v-else-if="!appNames.length" class="py-6 text-ink-gray-5 text-sm text-center">
         Your bench is up to date.
@@ -88,13 +93,11 @@ const runUpdate = async () => {
               {{ selected.size }} of {{ appNames.length }} selected
             </span>
 
-            <Button variant="ghost" size="sm" @click="toggleAll">
+            <Button variant="ghost" @click="toggleAll">
               {{ selected.size === appNames.length ? 'Unselect all' : 'Select all' }}
             </Button>
           </div>
 
-          <!-- The row is the checkbox; the inner Checkbox is inert decoration
-               (tabindex/aria-hidden reach its <input> via attr passthrough). -->
           <div class="flex flex-col gap-3 max-h-80 overflow-y-auto">
             <button
               v-for="name in appNames"
@@ -107,7 +110,7 @@ const runUpdate = async () => {
             >
               <AppIcon :name="name" size="xl" />
               <span class="flex-1 min-w-0">
-                <p class="font-medium text-ink-gray-8 text-base truncate">
+                <p class="font-medium text-ink-gray-8 truncate">
                   {{ titleMap[name] || name }}
                 </p>
 
@@ -131,17 +134,18 @@ const runUpdate = async () => {
           </div>
         </div>
 
-        <div class="flex flex-col gap-2 pt-2">
-          <label class="flex items-center gap-2 cursor-pointer">
-            <Checkbox v-model="safeguard" />
-            <span class="text-ink-gray-7 text-sm">Take backup of sites</span>
-          </label>
-        </div>
+        <label class="flex items-center gap-2 pt-2 cursor-pointer">
+          <Checkbox v-model="safeguard" />
+          <span class="text-ink-gray-7 text-sm">Take backup of sites</span>
+        </label>
       </template>
 
       <ErrorMessage v-if="error" :message="error" />
 
-      <div class="flex justify-end gap-2 pt-2">
+    </div>
+
+    <template #actions>
+      <div class="flex justify-end gap-2">
         <Button variant="ghost" @click="open = false">Cancel</Button>
         <Button
           v-if="appNames.length"
@@ -150,14 +154,9 @@ const runUpdate = async () => {
           :disabled="!selected.size"
           @click="runUpdate"
         >
-          {{ selected.size == 0 ? 'Update' : (
-              appNames.length == selected.size ? 'Update all' :
-                (
-                  selected.size == 1 ? 'Update 1 app' : `Update ${selected.size} apps`
-                )
-            ) }}
+          {{ updateLabel }}
         </Button>
       </div>
-    </div>
+    </template>
   </Dialog>
 </template>

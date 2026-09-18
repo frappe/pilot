@@ -12,7 +12,6 @@ from pilot.config import (
     WorkerConfig,
     WorkerGroup,
 )
-from pilot.config.central import CentralConfig
 from pilot.config.common import CommonConfig
 from pilot.core.bench import Bench
 
@@ -38,16 +37,16 @@ def _configurator() -> MagicMock:
     return MagicMock()
 
 
-def _write_central(bench: Bench, endpoint: str, token: str) -> None:
+def _enable_cloud_integration(bench: Bench) -> None:
     common = CommonConfig.read(bench.path.parent)
-    common.central = CentralConfig(endpoint=endpoint, auth_token=token)
+    common.central.enabled = True
     common.write(bench.path.parent)
     bench.config = BenchConfig.read(bench.path)
 
 
 def test_setup_logs_fetches_token_from_central_when_not_passed(tmp_path: Path) -> None:
     bench = _bench(tmp_path)
-    _write_central(bench, "https://central.test", "tok-9")
+    _enable_cloud_integration(bench)
     configurator = _configurator()
 
     with (

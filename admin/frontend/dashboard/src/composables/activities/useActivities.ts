@@ -14,12 +14,6 @@ interface AuditPage {
   meta: { limit: number; next_cursor: string | null }
 }
 
-const activities = ref<AuditEntry[]>([])
-const loading = ref(false)
-const loadingMore = ref(false)
-const error = ref('')
-const cursor = ref<string | null>(null)
-
 const auditParams = (filters: ActivityFilters, forCursor?: string | null) => {
   const params: Record<string, string> = {}
   if (filters.type) params.type = filters.type
@@ -30,6 +24,12 @@ const auditParams = (filters: ActivityFilters, forCursor?: string | null) => {
 }
 
 export const useActivities = () => {
+  const activities = ref<AuditEntry[]>([])
+  const loading = ref(false)
+  const loadingMore = ref(false)
+  const error = ref('')
+  const cursor = ref<string | null>(null)
+
   const load = async (filters: ActivityFilters = {}) => {
     loading.value = true
     error.value = ''

@@ -12,6 +12,12 @@ const routes = [
     meta: { title: 'Setup', fullScreen: true },
   },
   {
+    path: '/pending',
+    name: 'Pending',
+    component: () => import('@/pages/pending/Pending.vue'),
+    meta: { title: 'Waiting for configuration', fullScreen: true },
+  },
+  {
     path: '/login',
     name: 'Login',
     component: () => import('@/pages/auth/Login.vue'),
@@ -52,7 +58,7 @@ const routes = [
   {
     path: '/insights/analytics',
     name: 'Analytics',
-    component: () => import('@/pages/dashboard/Analytics.vue'),
+    component: () => import('@/pages/Analytics.vue'),
     meta: { title: 'Analytics', group: 'Insights' },
   },
   {
@@ -148,6 +154,10 @@ router.beforeEach(async (to) => {
 
   const { session, ensureSession } = useSession()
   await ensureSession()
+  // A waiting host has no password yet, so this stop precedes the session checks.
+  if (session.pending) return to.name === 'Pending' ? true : { name: 'Pending' }
+  if (to.name === 'Pending') return { path: '/' }
+
   // Setup authenticates like every other page. Without a session the sign-in page is
   // the only stop; the wizard's own link (printed by `pilot start`) carries a ?sid=.
   if (session.wizard && !session.authenticated)

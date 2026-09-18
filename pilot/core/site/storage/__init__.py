@@ -35,7 +35,7 @@ class SiteStorageReport:
 
 class SiteStorageCollector:
     """Every site's files and database size, kept in one file so the Admin API
-    answers without walking the disk. The site-storage timer refreshes it;
+    answers without walking the disk. The pilot-storage timer refreshes it;
     reach it as `bench.site_storage`."""
 
     def __init__(self, bench: "Bench") -> None:

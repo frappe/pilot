@@ -4,7 +4,7 @@ import ast
 import typing
 
 from pilot._vendor.packaging.specifiers import InvalidSpecifier, SpecifierSet
-from pilot.core.app.validator.base import module_path, read_pyproject
+from pilot.core.app.validator.base import bench_table, module_path, read_pyproject
 from pilot.exceptions import AppValidationError
 
 if typing.TYPE_CHECKING:
@@ -69,7 +69,7 @@ class DependencyDeclarationsCheck:
                 "versions it supports. Scaffold one with 'bench new-app'."
             )
 
-        declared = pyproject_data.get("tool", {}).get("bench", {}).get("frappe-dependencies", {})
+        declared = bench_table(app).get("frappe-dependencies", {})
         if not isinstance(declared, dict):
             raise AppValidationError(
                 f"'{app.config.name}' has an invalid [tool.bench.frappe-dependencies] in "

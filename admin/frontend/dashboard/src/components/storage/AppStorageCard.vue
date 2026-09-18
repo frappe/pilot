@@ -116,8 +116,8 @@ const treeNodes = computed(() => reactive([
 <template>
   <section class="p-5 min-w-0">
     <div class="flex justify-between items-center gap-3 mb-4">
-      <h3 class="flex items-center gap-2 font-medium text-ink-gray-8 text-base">
-        <lucide-box class="size-4" />
+      <h3 class="flex items-center gap-2 font-medium text-ink-gray-8">
+        <span class="size-4 lucide-box" />
         App storage
       </h3>
 
@@ -161,11 +161,9 @@ const treeNodes = computed(() => reactive([
           {{ asStorageNode(rawNode).label }}
         </span>
 
-        <lucide-chevron-up
-          v-if="hasChildren"
-          class="transition-all size-3 text-ink-gray-5 shrink-0"
-          :class="{ 'rotate-180': !expanded }"
-        />
+        <span v-if="hasChildren"
+          class="transition-all size-3 text-ink-gray-5 shrink-0 lucide-chevron-up"
+          :class="{ 'rotate-180': !expanded }" />
 
         <span
           class="ml-auto text-sm tabular-nums shrink-0"

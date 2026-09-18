@@ -15,25 +15,32 @@ from pilot.utils import run_command
 if TYPE_CHECKING:
     from pilot.config import SiteConfig
     from pilot.core.bench import Bench
+    from pilot.core.site import Site
 
 _CERT_EXPIRY_THRESHOLD_DAYS = 30
 
 
 def _nginx_reload_hook() -> str:
-    """Shell command certbot runs after a successful (re)issue to pick up the new cert."""
+    """Return the certbot deploy hook that reloads nginx."""
     return "systemctl reload nginx"
 
 
-def _is_public_domain(domain: str) -> bool:
-    """A domain certbot can actually validate over the public internet.
-    Local dev domains (``*.localhost``) are excluded."""
-    return bool(domain) and not domain.endswith(".localhost")
+def is_public_domain(domain: str) -> bool:
+    """Whether certbot can validate the domain publicly."""
+    domain = domain.strip().lower().rstrip(".")
+    return bool(domain) and domain not in {"local", "localhost"} and not domain.endswith(
+        (".local", ".localhost")
+    )
 
 
 def public_domains(site: "SiteConfig") -> list[str]:
-    """The site's domains certbot can issue for - the only ones a cert covers, so
-    a site with an internal name but a public custom domain still gets TLS."""
-    return [domain for domain in site.all_domains if _is_public_domain(domain)]
+    """Return domains certbot could issue for."""
+    return [domain for domain in site.all_domains if is_public_domain(domain)]
+
+
+def certificate_domains(site: "SiteConfig") -> list[str]:
+    """Return public domains whose TLS terminates on this host."""
+    return [domain for domain in site.tls_domains if is_public_domain(domain)]
 
 
 def has_domain_coverage(cert_file: Path, domains: list[str]) -> bool:
@@ -59,11 +66,15 @@ def letsencrypt_active(bench: "Bench") -> bool:
 
 def letsencrypt_email_required(bench: "Bench") -> bool:
     """True when local TLS would issue a public cert and needs an email."""
+    # Local TLS still needs a certificate regardless of admin TLS.
+    if any(certificate_domains(site.config) for site in bench.sites()):
+        return True
     if not bench.config.admin.tls:
         return False
-    if any(site.config.ssl and _is_public_domain(site.config.name) for site in bench.sites()):
+    # Admin TLS also enables public site TLS in production.
+    if any(public_domains(site.config) for site in bench.sites()):
         return True
-    return _is_public_domain(bench.config.admin.domain)
+    return is_public_domain(bench.config.admin.domain)
 
 
 def is_letsencrypt_required(bench: "Bench") -> bool:
@@ -83,8 +94,7 @@ class LetsEncryptManager:
             get_package_manager().install("certbot")
 
     def setup_sudoers(self) -> None:
-        """Give certbot passwordless sudo for exactly the commands issuing and
-        renewing certs needs. Idempotent: same deterministic content every call."""
+        """Install the passwordless sudo grant needed by certbot."""
         if self.has_passwordless_sudo:
             return
         bench_user = pwd.getpwuid(self.bench.path.stat().st_uid).pw_name
@@ -120,8 +130,7 @@ class LetsEncryptManager:
 
     @property
     def has_passwordless_sudo(self) -> bool:
-        """True when the sudoers grant from `setup_sudoers` lets this user run
-        certbot without a password prompt."""
+        """Whether the certbot sudoers grant is active."""
         certbot = which("certbot") or "/usr/bin/certbot"
         return has_passwordless_sudo_for([certbot, "renew", "--quiet"])
 
@@ -133,9 +142,9 @@ class LetsEncryptManager:
     def obtain(self, site: "SiteConfig") -> None:
         from pilot.managers.nginx import NginxManager
 
-        domains = public_domains(site)
+        domains = certificate_domains(site)
         if not domains:
-            return  # nothing certbot can validate over the public internet
+            return  # nothing certbot can validate that this host terminates
 
         nginx_manager = NginxManager(self.bench)
         if (
@@ -163,7 +172,7 @@ class LetsEncryptManager:
                     webroot_path,
                     *domain_args,
                     "--cert-name",
-                    site.name,
+                    self.bench.certificate_name(site),
                     "--expand",
                     "--email",
                     email,
@@ -176,20 +185,23 @@ class LetsEncryptManager:
         )
 
     def obtain_all(self) -> None:
-        # With TLS disabled a central proxy fronts the bench; obtain nothing.
-        if not self.bench.config.admin.tls:
-            return
+        """Issue certificates for domains whose TLS ends on this host."""
         from pilot.exceptions import CommandError
 
         failed = []
         for site in self.bench.sites():
-            if site.config.ssl and public_domains(site.config):
-                try:
+            if not certificate_domains(site.config):
+                continue
+            try:
+                if site.config.has_released_certificate_pin:
+                    self._retire_released_pin(site)
+                else:
                     self.obtain(site.config)
-                except CommandError as exc:
-                    print(f"Could not obtain a certificate for '{site.config.name}', skipping: {exc}")
-                    failed.append(site.config.name)
-        if _is_public_domain(self.bench.config.admin.domain):
+            except CommandError as exc:
+                domains = ", ".join(f"'{domain}'" for domain in certificate_domains(site.config))
+                print(f"Could not obtain a certificate for {domains} (site '{site.config.name}'), skipping: {exc}")
+                failed.append(site.config.name)
+        if self.bench.config.admin.tls and is_public_domain(self.bench.config.admin.domain):
             try:
                 self.obtain_admin()
             except CommandError as exc:
@@ -201,6 +213,13 @@ class LetsEncryptManager:
         # that failed stay on HTTP and can be retried later.
         if failed:
             print(f"Certificate issuance failed for: {', '.join(failed)}. These stay on HTTP.")
+
+    def _retire_released_pin(self, site: "Site") -> None:
+        """Issue under the site's name, then release its old certificate pin."""
+        from dataclasses import replace
+
+        self.obtain(replace(site.config, cert_name=""))
+        site.clear_certificate_pin()
 
     def obtain_admin(self) -> None:
         from pilot.managers.nginx import NginxManager

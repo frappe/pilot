@@ -17,7 +17,7 @@ import Scrollbar from '@/components/common/Scrollbar.vue'
 
 import { useNotifications } from '@/composables/notifications/useNotifications'
 import type { Notification } from '@/types/notification'
-import { relativeTime } from '@/utils/taskFormat'
+import { relativeTime } from '@/utils/time'
 
 interface SeverityLook {
   icon: string
@@ -25,8 +25,12 @@ interface SeverityLook {
   bg: string
 }
 
-defineProps({
-  mobile: { type: Boolean, default: false },
+interface Props {
+  mobile?: boolean
+}
+
+withDefaults(defineProps<Props>(), {
+  mobile: false,
 })
 
 const badgePollMs = 60000
@@ -105,7 +109,6 @@ onUnmounted(() => clearInterval(badgeTimer))
   <Popover
     v-model:open="isOpen"
     bare
-    align="start"
     :side="mobile ? 'top' : 'right'"
     :offset="mobile ? 0 : 9"
     :collision-padding="0"
@@ -138,7 +141,7 @@ onUnmounted(() => clearInterval(badgeTimer))
       class="flex flex-col bg-surface-base md:border-r border-outline-gray-1 w-screen md:w-[430px] h-[calc(100dvh-3.5rem)] md:h-screen"
     >
       <header class="flex items-center gap-1 py-2 pr-2 pl-4 border-outline-gray-1 border-b">
-        <span class="mr-auto font-medium text-base">Notifications</span>
+        <span class="mr-auto font-medium">Notifications</span>
         <Button
           v-if="unread > 0"
           variant="ghost"
@@ -159,7 +162,7 @@ onUnmounted(() => clearInterval(badgeTimer))
         <Select v-model="category" class="ml-auto" :options="categories" />
       </div>
 
-      <Alert v-if="error" theme="red" title="Couldn't load notifications" :dismissible="false">
+      <Alert v-if="error" class="border border-outline-gray-2" theme="red" title="Couldn't load notifications" :dismissible="false">
         <template #description>{{ error }}</template>
       </Alert>
 
@@ -185,7 +188,7 @@ onUnmounted(() => clearInterval(badgeTimer))
 
           <span class="flex-1 min-w-0">
             <span class="flex items-start gap-2">
-              <span class="flex-1 min-w-0 font-medium text-ink-gray-9 text-base">
+              <span class="flex-1 min-w-0 font-medium">
                 {{ item.title }}
               </span>
 
@@ -207,16 +210,13 @@ onUnmounted(() => clearInterval(badgeTimer))
 
       <div v-else class="flex-1 px-4 pb-3 min-h-0">
         <EmptyState
-          v-if="activeTab === 'unread'"
-          icon="lucide-check-check"
-          title="You're all caught up"
-          description="Every notification on this bench has been read."
-        />
-        <EmptyState
-          v-else
-          icon="lucide-bell-off"
-          title="Nothing here yet"
-          description="Failed tasks and resource alerts for this bench show up here."
+          :icon="activeTab === 'unread' ? 'lucide-check-check' : 'lucide-bell-off'"
+          :title="activeTab === 'unread' ? `You're all caught up` : 'Nothing here yet'"
+          :description="
+            activeTab === 'unread'
+              ? 'Every notification on this bench has been read.'
+              : 'Failed tasks and resource alerts for this bench show up here.'
+          "
         />
       </div>
 

@@ -167,3 +167,72 @@ install_system_packages
     )
     assert provisioned.returncode == 0, provisioned.stderr
     assert "install_database_engines" in provisioned.stdout.splitlines()
+
+
+def zoneinfo_dir(tmp_path: Path, *, with_alias: bool) -> Path:
+    directory = tmp_path / "zoneinfo" / "Asia"
+    directory.mkdir(parents=True, exist_ok=True)
+    if with_alias:
+        (directory / "Calcutta").write_text("")
+    return directory.parent
+
+
+@pytest.mark.parametrize("distro", ["ubuntu", "debian"])
+def test_missing_timezone_aliases_are_installed(distro: str, tmp_path: Path) -> None:
+    result = run_installer_functions(
+        f"""
+DISTRO={distro}
+ZONEINFO_DIR={zoneinfo_dir(tmp_path, with_alias=False)}
+pkg_install() {{ echo "pkg_install $*"; }}
+ensure_tzdata_legacy
+""",
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "pkg_install tzdata-legacy" in result.stdout
+
+
+def test_present_timezone_aliases_install_nothing(tmp_path: Path) -> None:
+    result = run_installer_functions(
+        f"""
+DISTRO=ubuntu
+ZONEINFO_DIR={zoneinfo_dir(tmp_path, with_alias=True)}
+pkg_install() {{ echo "pkg_install $*"; }}
+ensure_tzdata_legacy
+""",
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == ""
+
+
+@pytest.mark.parametrize("distro", ["fedora", "arch"])
+def test_distros_shipping_aliases_in_tzdata_install_nothing(distro: str, tmp_path: Path) -> None:
+    result = run_installer_functions(
+        f"""
+DISTRO={distro}
+ZONEINFO_DIR={zoneinfo_dir(tmp_path, with_alias=False)}
+pkg_install() {{ echo "pkg_install $*"; }}
+ensure_tzdata_legacy
+""",
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == ""
+
+
+def test_unavailable_timezone_alias_package_does_not_abort_the_install(tmp_path: Path) -> None:
+    result = run_installer_functions(
+        f"""
+set -e
+DISTRO=ubuntu
+ZONEINFO_DIR={zoneinfo_dir(tmp_path, with_alias=False)}
+pkg_install() {{ return 1; }}
+ensure_tzdata_legacy
+echo reached_the_end
+""",
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Warning: tzdata-legacy is unavailable" in result.stdout
+    assert "reached_the_end" in result.stdout

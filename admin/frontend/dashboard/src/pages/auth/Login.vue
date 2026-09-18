@@ -2,18 +2,24 @@
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Button, Dialog, TextInput, ErrorMessage } from 'frappe-ui'
-import LucideLock from '~icons/lucide/lock'
-import LucideShield from '~icons/lucide/shield'
-import LucideEye from '~icons/lucide/eye'
-import LucideEyeOff from '~icons/lucide/eye-off'
 
 import PilotLogo from '@/components/icons/Pilot.vue'
 
 import { apiErrorMessage } from '@/api/client'
 import { authApi } from '@/api/auth'
 import { useSession } from '@/composables/auth/useSession'
-import { redirectAfterLogin } from '@/utils/redirect'
+import { safeRedirect } from '@/utils/redirect'
 import { useIsMobile } from '@/composables/common/useIsMobile'
+
+// Off-SPA targets (the code editor) have no route here and need a full load.
+const redirectAfterLogin = (router, value) => {
+  const target = safeRedirect(value)
+  if (router.resolve(target).matched.length) {
+    router.replace(target)
+  } else {
+    window.location.assign(target)
+  }
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -65,7 +71,7 @@ const login = async () => {
       <div class="flex flex-col gap-4">
         <PilotLogo class="size-8" />
         <div class="flex flex-col gap-1">
-          <h1 class="font-semibold text-ink-gray-9 text-lg">Sign In</h1>
+          <h1 class="text-lg-semibold">Sign In</h1>
           <p class="text-ink-gray-5 text-p-base">Welcome! Please sign in to continue.</p>
         </div>
       </div>
@@ -81,7 +87,7 @@ const login = async () => {
           @keydown.enter="login"
         >
           <template #prefix>
-            <LucideLock class="size-4 text-ink-gray-5" />
+            <span class="size-4 text-ink-gray-5 lucide-lock" />
           </template>
 
           <template #suffix>
@@ -91,8 +97,8 @@ const login = async () => {
               class="text-ink-gray-5 hover:text-ink-gray-7"
               @click="showPassword = !showPassword"
             >
-              <LucideEyeOff v-if="showPassword" class="size-4" />
-              <LucideEye v-else class="size-4" />
+              <span v-if="showPassword" class="size-4 lucide-eye-off" />
+              <span v-else class="size-4 lucide-eye" />
             </button>
           </template>
         </TextInput>
@@ -101,13 +107,12 @@ const login = async () => {
           v-else
           v-model="otp"
           label="Authentication code"
-          type="text"
           placeholder="123456"
           autofocus
           @keydown.enter="login"
         >
           <template #prefix>
-            <LucideShield class="size-4 text-ink-gray-5" />
+            <span class="size-4 text-ink-gray-5 lucide-shield" />
           </template>
         </TextInput>
 

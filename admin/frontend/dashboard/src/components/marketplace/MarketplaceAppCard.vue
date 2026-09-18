@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { Badge, Button, Dialog, Tooltip } from 'frappe-ui'
-import LucideDownload from '~icons/lucide/download'
 
 import AppIcon from '@/components/apps/AppIcon.vue'
 
-const props = defineProps({
-  app: { type: Object, required: true },
-})
+interface Props {
+  app: Record<string, any>
+}
+
+const props = defineProps<Props>()
 defineEmits(['install'])
 
 const showIncompatible = ref(false)
@@ -29,9 +30,9 @@ const incompatibleReason = computed(
     <div class="flex flex-1 justify-between items-center gap-2 py-2 min-w-0">
       <div class="min-w-0">
         <div class="flex items-center gap-1.5">
-          <span class="font-medium text-ink-gray-8 text-base truncate">{{ app.title }}</span>
+          <span class="font-medium text-ink-gray-8 truncate">{{ app.title }}</span>
           <span v-if="app.label" class="text-ink-gray-5 text-xs shrink-0">{{ app.label }}</span>
-          <Badge v-if="app.nightly" theme="gray" variant="subtle" label="Nightly" size="sm" />
+          <Badge v-if="app.nightly" label="Nightly" size="sm" />
         </div>
 
         <div class="mt-0.5 text-ink-gray-5 text-p-sm truncate">
@@ -42,7 +43,7 @@ const incompatibleReason = computed(
       <slot name="actions">
         <Tooltip v-if="app.installed" text="Installed">
           <span class="place-items-center grid size-7 shrink-0" role="img" aria-label="Installed">
-            <span class="size-4 text-ink-gray-9 lucide-check"></span>
+            <span class="size-4 lucide-check" />
           </span>
         </Tooltip>
 
@@ -53,16 +54,14 @@ const incompatibleReason = computed(
             class="!text-ink-gray-4"
             @click="showIncompatible = true"
           >
-            <template #icon><LucideDownload class="size-4" /></template>
+            <template #icon><span class="size-4 lucide-download" /></template>
           </Button>
         </Tooltip>
 
         <Tooltip v-else :text="`Install ${app.title}`">
           <Button variant="ghost" label="Install" class="group" @click="$emit('install', app)">
             <template #icon>
-              <LucideDownload
-                class="size-4 transition-transform duration-150 ease-[var(--ease-out)] group-active:scale-95 group-active:duration-100"
-              />
+              <span class="size-4 transition-transform duration-150 ease-[var(--ease-out)] group-active:scale-95 group-active:duration-100 lucide-download" />
             </template>
           </Button>
         </Tooltip>

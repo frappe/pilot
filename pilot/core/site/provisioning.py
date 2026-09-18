@@ -8,6 +8,7 @@ from pilot.config import SiteConfig
 from pilot.exceptions import BenchError
 
 if TYPE_CHECKING:
+    from pilot.config import RoutePolicy
     from pilot.core.bench import Bench
     from pilot.core.site import Site
 
@@ -31,9 +32,11 @@ class SiteProvisioner:
         from pilot.core.site import Site
 
         via_wildcard = validate_new_site(self.bench, self.name, self.apps)
-        ssl = should_enable_ssl(self.bench, self.name)
+        route = None
         if via_wildcard:
-            register_with_provider(self.bench, self.name)
+            route = register_with_provider(self.bench, self.name)
+        ssl = route.public_tls if route else should_enable_ssl(self.bench, self.name)
+        origin_tls = route.origin_tls if route else ssl
 
         site = Site(
             SiteConfig(
@@ -41,11 +44,13 @@ class SiteProvisioner:
                 apps=self.apps,
                 admin_password=self.admin_password,
                 ssl=ssl,
+                route=route,
             ),
             self.bench,
         )
         on_progress(f"Creating site '{self.name}'...")
         site.create(db_type=self.db_type)
+        self.write_route_policy(site)
         self.install_apps(site, on_progress)
         self.write_pilot_communication_config(site)
         self.bench.write_common_site_config()
@@ -53,9 +58,21 @@ class SiteProvisioner:
         self.build_missing_assets()
         self.add_to_hosts(site)
         self.reload_nginx()
-        if ssl:
+        if origin_tls:
             self.obtain_cert(site, on_progress)
         return site
+
+    def write_route_policy(self, site: "Site") -> None:
+        """Persist provider route metadata after site creation."""
+        if not site.config.route:
+            return
+        from pilot.utils import write_private_text
+
+        path = site.path / "site_config.json"
+        config = json.loads(path.read_text())
+        config["ssl"] = site.config.route.public_tls
+        config["route"] = site.config.route.to_dict()
+        write_private_text(path, json.dumps(config, indent=1))
 
     def install_apps(self, site: "Site", on_progress: Callable[[str], None]) -> None:
         framework = self.bench.config.framework_app.name
@@ -67,13 +84,13 @@ class SiteProvisioner:
 
     def write_pilot_communication_config(self, site: "Site") -> None:
         from admin.backend.internal.session import Session
-        from pilot.utils import admin_url, write_private_text
+        from pilot.utils import write_private_text
 
         config_path = site.path / "site_config.json"
         if not config_path.exists():
             return
         config = json.loads(config_path.read_text())
-        config["pilot_endpoint"] = admin_url(self.bench.config)
+        config["pilot_endpoint"] = self.bench.admin_endpoint
         config["pilot_auth_token"] = Session(self.bench).issue_site_token(
             site.config.name,
             ttl=365 * 24 * 3600,
@@ -131,6 +148,13 @@ def validate_new_site(bench: "Bench", name: str, apps: list[str]) -> bool:
             f"'{name}' is already used by bench '{owner}' (as a site or its admin domain). "
             f"All benches share one nginx, so hostnames must be unique."
         )
+    # host_owner skips this bench; another of its sites may already answer to
+    # the name as a custom domain, or hold it as a certificate lineage.
+    if claimed_by := bench.site_claiming(name):
+        raise BenchError(
+            f"'{name}' is already claimed by this bench's site '{claimed_by}'. "
+            f"All benches share one nginx, so hostnames must be unique."
+        )
     if normalize_host(name) == normalize_host(bench.config.admin.domain):
         raise BenchError(
             f"Site '{name}' clashes with this bench's admin domain. "
@@ -167,10 +191,11 @@ def provision_from_backup(
 
 
 def should_enable_ssl(bench: "Bench", name: str) -> bool:
-    from pilot.managers.letsencrypt import _is_public_domain, letsencrypt_active
+    from pilot.managers.letsencrypt import is_public_domain, letsencrypt_active
 
-    return letsencrypt_active(bench) and _is_public_domain(name)
+    return letsencrypt_active(bench) and is_public_domain(name)
 
 
-def register_with_provider(bench: "Bench", name: str) -> None:
-    bench.site(name).domains.register(name)
+def register_with_provider(bench: "Bench", name: str) -> "RoutePolicy | None":
+    """Register a site hostname and return its provider route policy."""
+    return bench.site(name).domains.register(name)

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { Alert, Button, ErrorMessage, FormControl, Select, Spinner, toast } from 'frappe-ui'
+import { Alert, Button, ErrorMessage, Select, Spinner, TextInput, toast } from 'frappe-ui'
 
 import { apiErrorMessage } from '@/api/client'
 import { settingsApi } from '@/api/settings'
@@ -123,7 +123,13 @@ onMounted(load)
   </div>
 
   <div v-else class="space-y-6">
-    <Alert v-if="!connected" theme="blue" title="Why connect object storage?" :dismissible="false">
+    <Alert
+      v-if="!connected"
+      class="border border-outline-gray-2"
+      theme="blue"
+      title="Why connect object storage?"
+      :dismissible="false"
+    >
       <template #description>
         <p class="text-ink-gray-6 text-p-sm">
           Connect S3-compatible object storage to send offsite backups and snapshots.
@@ -136,13 +142,12 @@ onMounted(load)
       class="flex sm:flex-row flex-col sm:justify-between sm:items-center gap-3"
     >
       <div>
-        <p class="font-medium text-ink-gray-8 text-base">Connected to {{ bucket }}</p>
+        <p class="font-medium text-ink-gray-8">Connected to {{ bucket }}</p>
         <p class="text-ink-gray-5 text-p-sm">{{ providerLabel }} · Access key {{ accessKey }}</p>
       </div>
 
       <Button
         class="flex-1 sm:flex-none"
-        variant="subtle"
         theme="red"
         :loading="disconnecting"
         @click="disconnect"
@@ -151,21 +156,20 @@ onMounted(load)
     </div>
 
     <div class="space-y-4">
-      <FormControl label="Bucket" type="text" v-model="bucket" placeholder="storage-bucket" />
+      <TextInput label="Bucket" v-model="bucket" placeholder="storage-bucket" />
       <div class="flex sm:flex-row flex-col gap-4">
         <Select label="Provider" v-model="provider" :options="providerOptions" class="w-full" />
         <Select label="Region" v-model="region" :options="regionOptions" class="w-full" />
       </div>
 
       <div class="flex sm:flex-row flex-col gap-4">
-        <FormControl
+        <TextInput
           label="Access Key"
-          type="text"
           v-model="accessKey"
           placeholder="AKIA…"
           class="w-full"
         />
-        <FormControl
+        <TextInput
           label="Secret Key"
           type="password"
           v-model="secretKey"

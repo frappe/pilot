@@ -1,5 +1,5 @@
 """Pings every production site's /api/method/ping and appends the result to
-that site's bench's uptime log. Invoked by the shared site-uptime systemd
+that site's bench's uptime log. Invoked by the shared pilot-uptime systemd
 timer (pilot.core.site.uptime_monitoring_config); one pass per invocation,
 covering every sibling bench - the timer itself controls the interval."""
 

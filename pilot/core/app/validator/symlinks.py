@@ -4,6 +4,7 @@ import os
 import typing
 from pathlib import Path
 
+from pilot.core.app.validator.base import IgnoredPaths
 from pilot.exceptions import AppValidationError
 
 if typing.TYPE_CHECKING:
@@ -16,7 +17,7 @@ class SymlinkCheck:
     """Rejects symlinks that do not resolve inside the app."""
 
     def run(self, app: "App") -> None:
-        links = self.get_invalid_symlinks(app.path)
+        links = self.get_invalid_symlinks(app.path, IgnoredPaths(app))
         if not links:
             return
         raise AppValidationError(
@@ -35,7 +36,7 @@ class SymlinkCheck:
         return None
 
     @classmethod
-    def get_invalid_symlinks(cls, root: Path) -> list[str]:
+    def get_invalid_symlinks(cls, root: Path, ignored: IgnoredPaths | None = None) -> list[str]:
         """Symlinks under root that cannot survive packaging, described relative
         to it. Symlinks are matched before directories, so a symlinked directory
         is inspected rather than followed."""
@@ -46,9 +47,12 @@ class SymlinkCheck:
             with os.scandir(pending.pop()) as entries:
                 for entry in entries:
                     path = Path(entry.path)
+                    relpath = path.relative_to(root)
+                    if ignored and ignored.matches(relpath.as_posix()):
+                        continue
                     if entry.is_symlink():
                         if reason := cls._rejection_reason(path, root):
-                            found.append(f"  {path.relative_to(root)} -> {os.readlink(path)} ({reason})")
+                            found.append(f"  {relpath} -> {os.readlink(path)} ({reason})")
                     elif entry.is_dir() and entry.name not in SKIPPED_DIRS:
                         pending.append(path)
         return sorted(found)

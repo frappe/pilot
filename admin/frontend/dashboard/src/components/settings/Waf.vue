@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { RouterLink } from 'vue-router'
-import { Button, ErrorMessage, FormControl, Spinner, TabButtons, toast } from 'frappe-ui'
+import { Button, ErrorMessage, Select, Spinner, TabButtons, TextInput, Textarea, toast } from 'frappe-ui'
 
 import SettingsSwitch from '@/components/settings/SettingsSwitch.vue'
 import WafCustomRules from '@/components/settings/WafCustomRules.vue'
@@ -182,9 +182,9 @@ onMounted(async () => {
         <span>{{ setupNote }}</span>
       </p>
 
-      <div class="items-start gap-4 grid grid-cols-1 sm:grid-cols-2">
+      <div class="items-start gap-4 grid md:grid-cols-2">
         <div class="space-y-1.5">
-          <FormControl type="select" label="Action" :options="ACTION_OPTIONS" v-model="mode" />
+          <Select label="Action" :options="ACTION_OPTIONS" v-model="mode" />
           <p v-if="mode === 'DetectionOnly'" class="text-ink-gray-5 text-p-sm">
             Matches are logged, not blocked. Review
             <RouterLink
@@ -198,8 +198,7 @@ onMounted(async () => {
         </div>
 
         <div class="space-y-1.5">
-          <!-- Label markup matches frappe-ui's InputLabel. -->
-          <span class="block text-ink-gray-5 text-base">Sensitivity</span>
+          <span class="block text-ink-gray-5">Sensitivity</span>
           <TabButtons :options="SENSITIVITY_OPTIONS" v-model="paranoia" />
           <p class="text-ink-gray-5 text-p-sm">{{ sensitivityHint }}</p>
         </div>
@@ -216,21 +215,18 @@ onMounted(async () => {
     />
 
     <details class="group">
-      <!-- Chrome marks a clicked summary :focus-visible; blur keeps the focus
-           ring for keyboard only. w-fit so the ring hugs the word. -->
       <summary
-        class="flex items-center gap-1.5 pr-1.5 rounded-1 w-fit text-ink-gray-6 text-base cursor-pointer select-none"
+        class="flex items-center gap-1.5 pr-1.5 rounded-1 w-fit text-ink-gray-6 cursor-pointer select-none"
         @click="(e) => e.currentTarget.blur()"
       >
         <span
-          class="size-4 transition-transform group-open:rotate-90 lucide-chevron-right"
-        ></span>Advanced
+          class="size-4 transition-transform group-open:rotate-90 lucide-chevron-right" />Advanced
       </summary>
 
       <div class="space-y-4 mt-4">
-        <div class="gap-4 grid grid-cols-1 sm:grid-cols-2 items-start">
+        <div class="gap-4 grid md:grid-cols-2 items-start">
           <div class="space-y-1.5">
-            <FormControl
+            <TextInput
               type="number"
               label="Anomaly threshold"
               min="1"
@@ -243,14 +239,13 @@ onMounted(async () => {
           </div>
 
           <div class="space-y-1.5">
-            <FormControl type="text" label="Max inspected body size" v-model="bodyLimit" />
+            <TextInput label="Max inspected body size" v-model="bodyLimit" />
             <p class="text-ink-gray-5 text-p-sm">Number with a k, m or g suffix, e.g. 50m.</p>
           </div>
         </div>
 
         <div class="space-y-1.5">
-          <FormControl
-            type="textarea"
+          <Textarea
             label="Exempt paths"
             :rows="3"
             placeholder="/api/method/frappe.ping"
@@ -262,8 +257,7 @@ onMounted(async () => {
         </div>
 
         <div class="space-y-1.5">
-          <FormControl
-            type="textarea"
+          <Textarea
             label="Rule exclusions (SecLang)"
             :rows="3"
             placeholder="SecRuleRemoveById 942100"

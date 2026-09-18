@@ -241,14 +241,20 @@ class TaskProcess:
         record: TaskProcessRecord,
         timeout_seconds: float,
     ) -> bool:
+        """True once nothing the task launched is left running. A descendant that
+        ignores SIGTERM outlives the leader, and it still has to be killed."""
         deadline = time.monotonic() + max(0, timeout_seconds)
+        cleared = False
         while time.monotonic() < deadline:
             ownership = self._inspector.inspect(record.identity, record.argv)
-            if ownership in {ProcessOwnership.DEAD, ProcessOwnership.STALE}:
-                self._clear_process(record.task_id)
-                return True
             if ownership == ProcessOwnership.UNKNOWN:
                 return True
+            if ownership in {ProcessOwnership.DEAD, ProcessOwnership.STALE}:
+                if not cleared:
+                    self._clear_process(record.task_id)
+                    cleared = True
+                if not self._inspector.owned_pids(record.identity):
+                    return True
             time.sleep(_PROCESS_EXIT_POLL_SECONDS)
         return False
 
@@ -273,9 +279,11 @@ class TaskProcess:
 
     def _signal(self, record: TaskProcessRecord, signum: signal.Signals) -> ProcessOwnership:
         ownership = self._inspector.inspect(record.identity, record.argv)
-        if ownership != ProcessOwnership.OWNED:
+        if ownership == ProcessOwnership.UNKNOWN:
             return ownership
 
+        # The launch id, not the leader pid, is what proves the group is ours, so
+        # survivors are still signalled once the leader itself is gone.
         pids = self._inspector.owned_pids(record.identity)
         if not pids:
             return ProcessOwnership.DEAD

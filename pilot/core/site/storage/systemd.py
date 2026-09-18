@@ -27,8 +27,8 @@ Type=oneshot
 WorkingDirectory={cli_root}
 Environment=PYTHONPATH={cli_root}
 ExecStart={python} -m pilot.core.site.storage
-StandardOutput=append:{cli_root}/system/logs/site-storage.log
-StandardError=append:{cli_root}/system/logs/site-storage.error.log
+StandardOutput=append:{cli_root}/system/logs/pilot-storage.log
+StandardError=append:{cli_root}/system/logs/pilot-storage.error.log
 
 [Install]
 WantedBy=default.target
@@ -41,8 +41,8 @@ class SiteStorageConfigurator(SystemdUserMixin):
     set up. The measuring lives in pilot.core.site.storage."""
 
     def __init__(self) -> None:
-        self.unit_name = "site-storage.service"
-        self.timer_unit_name = "site-storage.timer"
+        self.unit_name = "pilot-storage.service"
+        self.timer_unit_name = "pilot-storage.timer"
         self.storage_dir = cli_root() / "system" / "storage"
 
     def install(self) -> None:

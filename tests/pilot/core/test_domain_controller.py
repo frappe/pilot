@@ -1,5 +1,3 @@
-"""Tests for DomainRouteProvider driving a real (dummy) bench-domain-provider."""
-
 import json
 import os
 from pathlib import Path
@@ -19,8 +17,6 @@ _BENCH_DATA: dict = {
     "redis": {"cache_port": 13000, "queue_port": 11000},
 }
 
-# Dummy bench-domain-provider: logs its argv to $PROVIDER_LOG and answers each
-# verb with canned JSON. $PROVIDER_FAIL=<verb> makes that verb exit non-zero.
 _DUMMY_PROVIDER = """#!/usr/bin/env python3
 import json, os, sys
 argv = sys.argv[1:]
@@ -37,6 +33,8 @@ elif verb == "wildcard-domains":
     print(json.dumps(["*.example.com"]))
 elif verb == "proxy-servers":
     print(json.dumps(["203.0.113.10", "203.0.113.11"]))
+elif verb == "register":
+    print(json.dumps({"public_scheme": "https", "origin_scheme": "https", "client_ip_source": "proxy_protocol_v2"}))
 sys.exit(0)
 """
 
@@ -109,9 +107,31 @@ def test_register_passes_domain_only_and_persists(tmp_path: Path, monkeypatch) -
 
     DomainRouteProvider(bench).register("mysite", "app.example.com")
 
-    assert _calls(log) == ["register app.example.com"]
+    assert _calls(log) == ["register app.example.com", "proxy-servers"]
     saved = json.loads((bench.sites_path / "mysite" / "site_config.json").read_text())
-    assert saved["domains"] == ["app.example.com"]
+    assert saved["domains"] == [{
+        "domain": "app.example.com",
+        "route": {
+            "public_scheme": "https",
+            "origin_scheme": "https",
+            "client_ip_source": "proxy_protocol_v2",
+        },
+    }]
+
+
+def test_register_rejects_missing_policy_and_rolls_back(tmp_path: Path, monkeypatch) -> None:
+    provider = _DUMMY_PROVIDER.replace(
+        'elif verb == "register":\n    print(json.dumps({"public_scheme": "https", "origin_scheme": "https", "client_ip_source": "proxy_protocol_v2"}))',
+        'elif verb == "register":\n    pass',
+    )
+    log = _install_provider(tmp_path, monkeypatch, body=provider)
+    bench = _make_bench(tmp_path)
+    _write_site(bench, "mysite")
+
+    with pytest.raises(DomainProviderError, match="route policy"):
+        DomainRouteProvider(bench).register("mysite", "app.example.com")
+
+    assert _calls(log) == ["register app.example.com", "deregister app.example.com"]
 
 
 def test_deregister_passes_domain_only_and_persists(tmp_path: Path, monkeypatch) -> None:
@@ -193,14 +213,12 @@ def test_builtin_dns_records_without_provider(tmp_path: Path, monkeypatch) -> No
 def test_nginx_gates_tcp_peer_to_provider_proxy_servers(tmp_path: Path, monkeypatch) -> None:
     _install_provider(tmp_path, monkeypatch)
     config = NginxConfigRenderer(_make_bench(tmp_path)).generate_bench_config(
-        [(SiteConfig(name="site1.example.com", apps=["frappe"]), False)], admin_ssl=False
+        [(SiteConfig(name="site1.example.com", apps=["frappe"]), [])], admin_ssl=False
     )
 
     assert "set_real_ip_from   203.0.113.10;" in config
-    assert (
-        r'if ($realip_remote_addr ~ "^(203\.0\.113\.10|203\.0\.113\.11)$") { set $bench_from_proxy 1; }'
-        in config
-    )
+    assert "203.0.113.10 1;" in config
+    assert "203.0.113.11 1;" in config
     assert "if ($bench_from_proxy = 0) { return 403; }" in config
     assert "deny               all;" not in config
     assert "X-Forwarded-For    $http_x_forwarded_for" in config

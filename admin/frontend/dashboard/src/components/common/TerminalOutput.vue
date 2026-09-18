@@ -1,13 +1,22 @@
 <script setup lang="ts">
 import { ref, nextTick } from 'vue'
 
-defineProps({
-  lines: { type: Array, default: () => [] },
-  streaming: { type: Boolean, default: false },
-  lineNumbers: { type: Boolean, default: false },
-  emptyText: { type: String, default: 'No output.' },
-  maxHeight: { type: String, default: '65vh' },
-  fill: { type: Boolean, default: false },
+interface Props {
+  lines?: any[]
+  streaming?: boolean
+  lineNumbers?: boolean
+  emptyText?: string
+  maxHeight?: string
+  fill?: boolean
+}
+
+withDefaults(defineProps<Props>(), {
+  lines: () => [],
+  streaming: false,
+  lineNumbers: false,
+  emptyText: 'No output.',
+  maxHeight: '65vh',
+  fill: false,
 })
 
 const el = ref(null)

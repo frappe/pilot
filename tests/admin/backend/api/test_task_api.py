@@ -28,12 +28,13 @@ def create_task(
     task_id: str = TASK_ID,
     status: TaskStatus = TaskStatus.QUEUED,
     args: dict | None = None,
+    command: str = "build",
 ) -> None:
     store = TaskStore(bench_root)
     store.create_queued(
         {
             "task_id": task_id,
-            "command": "build",
+            "command": command,
             "args": args or {"app": "frappe"},
             "command_argv": ["bench", "build", "--app", "frappe"],
             "queued_at": "2026-07-15T12:00:00+00:00",
@@ -121,6 +122,34 @@ def test_list_rejects_unknown_status_filter(tmp_path: Path) -> None:
 
     assert response.status_code == 422
     assert response.get_json()["error"]["code"] == "invalid_task_status"
+
+
+def test_list_honors_the_limit_parameter(tmp_path: Path) -> None:
+    create_task(tmp_path)
+    create_task(tmp_path, task_id=RETRY_TASK_ID)
+
+    response = client(tmp_path).get("/api/v1/tasks?limit=1")
+
+    assert response.status_code == 200
+    assert len(response.get_json()) == 1
+
+
+def test_list_rejects_an_invalid_limit(tmp_path: Path) -> None:
+    for limit in ("abc", "0", "-5", "²", "9" * 10_000):
+        response = client(tmp_path).get(f"/api/v1/tasks?limit={limit}")
+
+        assert response.status_code == 422
+        assert response.get_json()["error"]["code"] == "invalid_task_limit"
+
+
+def test_list_excludes_polling_tasks(tmp_path: Path) -> None:
+    create_task(tmp_path)
+    create_task(tmp_path, task_id=RETRY_TASK_ID, command="fetch-all-app-updates")
+
+    response = client(tmp_path).get("/api/v1/tasks")
+
+    assert response.status_code == 200
+    assert [task["command"] for task in response.get_json()] == ["build"]
 
 
 def test_task_detail_is_a_resource_without_embedded_output(tmp_path: Path) -> None:

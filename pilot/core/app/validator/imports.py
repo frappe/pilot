@@ -6,7 +6,7 @@ import typing
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 
-from pilot.core.app.validator.base import python_files, read_pyproject
+from pilot.core.app.validator.base import bench_table, python_files
 from pilot.core.app.validator.utils.module_resolver import ModuleResolver
 from pilot.core.app.validator.utils.tmp_env import (
     TmpEnv,
@@ -81,8 +81,7 @@ class ImportCheck:
         # Read the table directly rather than through DependencyDeclarationsCheck,
         # which rejects an app that has no pyproject.toml. This check also runs on
         # update, where an app is allowed to predate that rule.
-        table = (read_pyproject(app) or {}).get("tool", {}).get("bench", {})
-        declared = table.get("frappe-dependencies", {})
+        declared = bench_table(app).get("frappe-dependencies", {})
         paths: list[Path] = []
         if not isinstance(declared, dict):
             return paths  # DependencyDeclarationsCheck reports the bad table on install

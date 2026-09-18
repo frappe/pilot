@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { Badge, Button, ErrorMessage, LoadingText } from 'frappe-ui'
 
 import TaskDebugDialog from '@/components/tasks/TaskDebugDialog.vue'
@@ -11,7 +11,6 @@ import { apiErrorMessage } from '@/api/client'
 import { tasksApi } from '@/api/tasks'
 import { settingsApi } from '@/api/settings'
 import { useBreadcrumbs } from '@/composables/common/useBreadcrumbs'
-import { useIsMobile } from '@/composables/common/useIsMobile'
 import { useTaskDetail } from '@/composables/tasks/useTaskDetail'
 
 import {
@@ -29,7 +28,6 @@ const route = useRoute()
 const router = useRouter()
 const taskId = route.params.taskId
 
-const isMobile = useIsMobile()
 const { setBreadcrumbs } = useBreadcrumbs()
 const { task, rawLines, loading, error, load } = useTaskDetail(taskId)
 
@@ -59,16 +57,21 @@ const loadAiStatus = async () => {
 }
 
 const scope = computed(() => taskScope(task.value))
+const scopeIcon = computed(() =>
+  scope.value.route ? 'lucide-globe' : 'lucide-server',
+)
 
-const metaLine = computed(() => {
-  const parts = []
-  if (task.value.status === 'queued' && task.value.queue_position)
-    parts.push(`#${task.value.queue_position} in queue`)
-  if (task.value.started_at) parts.push(`Started ${fmtDateTime(task.value.started_at)}`)
-  const duration = fmtDuration(task.value.duration_seconds)
-  if (duration) parts.push(`took ${duration}`)
-  return parts.join(' · ')
-})
+const queuePosition = computed(() =>
+  task.value.status === 'queued' && task.value.queue_position
+    ? `#${task.value.queue_position} in queue`
+    : '',
+)
+
+const startedAt = computed(() =>
+  task.value.started_at ? fmtDateTime(task.value.started_at) : '',
+)
+
+const duration = computed(() => fmtDuration(task.value.duration_seconds))
 
 const updateStatus = (event) => {
   if (!['queued', 'running'].includes(event.status)) return
@@ -106,30 +109,21 @@ onMounted(() => {
 </script>
 
 <template>
-  <div v-if="loading" class="flex justify-center py-12">
-    <LoadingText />
-  </div>
+  <LoadingText v-if="loading" class="p-3 md:p-4 justify-center py-12" />
 
-  <div v-else-if="error" class="py-12">
-    <ErrorMessage :message="error" />
-  </div>
+  <ErrorMessage v-else-if="error" class="px-3 md:px-4 py-12" :message="error" />
 
-  <div v-else-if="task" class="mx-auto max-w-3xl">
+  <div v-else-if="task" class="p-3 md:p-4 mx-auto max-w-3xl">
     <Teleport defer to="#header-badge">
       <Badge
         :label="statusConfig(task).label"
         :theme="statusConfig(task).theme"
-        variant="subtle"
-        size="md"
       />
     </Teleport>
 
-    <!-- In place on mobile; the header row has no room for these there. -->
-    <Teleport defer to="#header-actions" :disabled="isMobile">
-      <div class="flex items-center gap-2" :class="isMobile ? 'mb-4' : ''">
+    <Teleport defer to="#header-actions">
+      <div class="flex items-center gap-2">
         <Button
-          variant="subtle"
-          size="sm"
           :loading="loading"
           icon="lucide-refresh-cw"
           label="Refresh"
@@ -138,8 +132,6 @@ onMounted(() => {
         />
         <Button
           v-if="task.status === 'failed' && aiConnected"
-          variant="subtle"
-          size="sm"
           icon-left="lucide-sparkles"
           @click="showDebug = true"
         >
@@ -148,8 +140,6 @@ onMounted(() => {
 
         <Button
           v-if="isTaskCancellable(task)"
-          variant="subtle"
-          size="sm"
           theme="red"
           icon-left="lucide-x"
           @click="cancelTask"
@@ -163,16 +153,33 @@ onMounted(() => {
 
     <div class="flex justify-between items-center gap-4 mt-5 px-2 min-w-0">
       <RouterLink
-        :to="scope.route"
-        class="group flex items-center gap-1 min-w-0 font-medium text-ink-gray-9 text-lg no-underline"
+        :to="scope.route || ''"
+        class="group flex items-center gap-2 min-w-0 text-lg-medium text-ink-gray-9 no-underline"
       >
+        <span class="size-4 text-ink-gray-5 shrink-0" :class="scopeIcon" />
         <span class="truncate">{{ scope.label }}</span>
         <span
+          v-if="scope.route"
           class="opacity-0 group-hover:opacity-100 size-4 text-ink-gray-5 transition-opacity shrink-0 lucide-arrow-up-right"
         />
       </RouterLink>
 
-      <p class="text-ink-gray-8 text-base shrink-0">{{ metaLine }}</p>
+      <div class="flex items-center gap-3 text-sm shrink-0">
+        <span v-if="queuePosition" class="flex items-center gap-1.5 ">
+          <span class="size-3.5 lucide-list-ordered" />
+          {{ queuePosition }}
+        </span>
+
+        <span v-if="startedAt" class="flex items-center gap-1.5 text-ink-gray-7">
+          <span class="size-3.5 lucide-clock" />
+          {{ startedAt }}
+        </span>
+
+        <span v-if="duration" class="flex items-center gap-1.5 text-ink-gray-5">
+          <span class="size-3.5 lucide-timer" />
+          <span class="tabular-nums">{{ duration }}</span>
+        </span>
+      </div>
     </div>
 
     <ErrorMessage v-if="actionError" :message="actionError" class="mt-3" />

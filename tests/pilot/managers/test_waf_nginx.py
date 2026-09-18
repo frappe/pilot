@@ -1,5 +1,3 @@
-"""Tests for ModSecurity (WAF) directive rendering and rule-file generation."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -31,8 +29,7 @@ _SITE = SiteConfig(name="site1.example.com", apps=["frappe"])
 
 @pytest.fixture
 def installed(monkeypatch):
-    """Pretend the ModSecurity module + CRS are installed so the install-gated
-    render emits directives."""
+    """Pretend the ModSecurity module and CRS are installed."""
     monkeypatch.setattr(nginx.WafManager, "is_installed", staticmethod(lambda: True))
 
 
@@ -47,10 +44,10 @@ def _manager(tmp_path: Path, waf: WafConfig) -> NginxManager:
 
 
 def _bench_config(tmp_path: Path, waf: WafConfig) -> str:
-    """Rendered per-bench config for a site + the admin vhost (_DATA has both)."""
+    """Render per-bench config for the site and admin vhosts."""
     renderer = NginxConfigRenderer(_bench(tmp_path, waf))
     renderer._proxy_servers_cache = []
-    return renderer.generate_bench_config([(_SITE, False)], admin_ssl=False)
+    return renderer.generate_bench_config([(_SITE, [])], admin_ssl=False)
 
 
 def test_waf_absent_when_disabled(tmp_path: Path, installed) -> None:

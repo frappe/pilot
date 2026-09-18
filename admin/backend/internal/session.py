@@ -6,14 +6,13 @@ import secrets
 import time
 from typing import TYPE_CHECKING, ClassVar
 
+from admin.backend.internal.jwks_cache import JwksCache
 from pilot.config import BenchConfig
 from pilot.internal import hs256_jwt
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    from jwt import PyJWKClient
 
     from pilot.core.bench import Bench
 
@@ -137,7 +136,7 @@ class Session:
     """Issues and verifies a single bench's session tokens.
 
     Locally issued tokens are HS256, signed with the bench's stored secret. Remotely
-    issued tokens are verified against the bench's configured JWKS endpoint.
+    issued tokens are verified against the issuer's keys in the host's JWKS cache.
     """
 
     DEFAULT_TTL = 24 * 3600
@@ -159,7 +158,6 @@ class Session:
         "PS512",
         "EdDSA",
     ]
-    _jwks_clients: ClassVar[dict[str, PyJWKClient]] = {}
 
     def __init__(self, bench: Bench) -> None:
         self.bench = bench
@@ -286,7 +284,6 @@ class Session:
 
     def _decode_jwks(self, token: str) -> dict | None:
         import jwt
-        from jwt import PyJWKClient
 
         url, audience = self.admin_config.jwks_url, self.admin_config.jwks_audience
         if not token or not url or not audience:
@@ -295,8 +292,7 @@ class Session:
             kid = jwt.get_unverified_header(token).get("kid")
             if not isinstance(kid, str):
                 return None
-            # Unknown kids must not trigger attacker-controlled refetches.
-            signing_key = PyJWKClient.match_kid(self._jwks_client(url).get_signing_keys(), kid)
+            signing_key = JwksCache(self.bench.path.parent, url).signing_key(kid)
             if signing_key is None:
                 return None
             return jwt.decode(
@@ -306,17 +302,5 @@ class Session:
                 audience=audience,
                 options={"require": ["exp", "aud"], "verify_aud": True},
             )
-        except jwt.PyJWTError:  # PyJWKClientError (fetch failures) subclasses this too
+        except jwt.PyJWTError:
             return None
-
-    @classmethod
-    def _jwks_client(cls, url: str) -> "PyJWKClient":
-        from jwt import PyJWKClient
-
-        client = cls._jwks_clients.get(url)
-        if client is None:
-            # A real User-Agent; urllib's default is blocked as a bot by Cloudflare
-            # and similar WAFs fronting an issuer, which would fail every fetch.
-            client = PyJWKClient(url, headers={"User-Agent": "bench-admin"})
-            cls._jwks_clients[url] = client
-        return client

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pilot.config.central import CentralConfig
+from pilot.config.central import CentralConfig, HostnameAlias
 from pilot.config.common import CommonConfig
 from pilot.config.datum import DatumConfig
 from pilot.config.letsencrypt import LetsEncryptConfig
@@ -23,7 +23,16 @@ def test_write_then_read_round_trips(tmp_path: Path) -> None:
         mariadb=MariaDBConfig(host="db.internal", port=3307, root_password="s3cret", admin_user="root"),
         postgres=PostgresConfig(host="pg.internal", port=5433, root_password="pgsecret"),
         letsencrypt=LetsEncryptConfig(email="ops@example.com"),
-        central=CentralConfig(endpoint="https://central.test", auth_token="tok-123"),
+        central=CentralConfig(
+            enabled=True,
+            hostname_aliases=[
+                HostnameAlias(
+                    type="site",
+                    pattern="site-*.par-1.frappe.cloud",
+                    target="site1.local",
+                )
+            ],
+        ),
         datum=DatumConfig(endpoint="https://datum.internal", token="s3cret"),
         jwks_url="https://issuer.example.com/jwks.json",
         jwks_audience="bench-fleet",
