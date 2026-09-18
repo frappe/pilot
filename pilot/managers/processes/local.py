@@ -51,15 +51,20 @@ def _pids_listening(port: int) -> set[int]:
     return {int(m) for m in re.findall(pid_pattern, result.stdout)}
 
 
-def _process_has_bench_root(pid: int, bench_root: Path) -> bool:
+def _process_has_bench_root(pid: int, bench_root: Path) -> bool | None:
+    """True when the process carries this bench's tag, False when it definitely does
+    not - including a pid that is gone or belongs to another user - and None when it
+    could not be inspected at all."""
     from pilot.managers.platform import is_macos
 
     expected = f"{BENCH_ROOT_ENV}={bench_root}"
     if not is_macos():
         try:
             environment = (Path("/proc") / str(pid) / "environ").read_bytes().split(b"\0")
-        except OSError:
+        except (FileNotFoundError, PermissionError):
             return False
+        except OSError:
+            return None
         return expected.encode() in environment
     try:
         result = subprocess.run(
@@ -69,11 +74,10 @@ def _process_has_bench_root(pid: int, bench_root: Path) -> bool:
             timeout=5,
         )
     except (FileNotFoundError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
         return False
-    return (
-        result.returncode == 0
-        and re.search(rf"(?:^|\s){re.escape(expected)}(?:\s|$)", result.stdout) is not None
-    )
+    return re.search(rf"(?:^|\s){re.escape(expected)}(?:\s|$)", result.stdout) is not None
 
 
 _RELOAD_REQUEST_FILE = "reload.request"
@@ -227,7 +231,7 @@ class ProcessManager:
     def _stop_port_holders(self) -> bool:
         pids = {pid for port_pids in self._port_holders().values() for pid in port_pids}
         pids.discard(os.getpid())
-        owned_pids = {pid for pid in pids if self._owns_process(pid)}
+        owned_pids = {pid for pid in pids if self._owns_process(pid) is True}
         for pid in owned_pids:
             try:
                 os.kill(pid, signal.SIGTERM)
@@ -237,7 +241,7 @@ class ProcessManager:
                 raise BenchError(f"Could not stop bench process {pid}: permission denied.") from exc
         return bool(owned_pids)
 
-    def _owns_process(self, pid: int) -> bool:
+    def _owns_process(self, pid: int) -> bool | None:
         return _process_has_bench_root(pid, self.bench.path)
 
     def _port_holders(self) -> dict[int, set[int]]:
@@ -261,12 +265,14 @@ class ProcessManager:
             time.sleep(_STOP_POLL_SECONDS)
 
     def _wait_for_ports(self, timeout: float = _STOP_WAIT_SECONDS) -> None:
-        """Wait until this bench's own processes release its ports; foreign holders are ignored."""
+        """Wait until this bench's own processes release its ports. Signaling a holder
+        needs proof of ownership, waiting for one does not, so a holder that cannot be
+        inspected is waited for rather than assumed foreign."""
         deadline = time.monotonic() + timeout
         while held := {
             port
             for port, pids in self._port_holders().items()
-            if any(self._owns_process(pid) for pid in pids)
+            if any(self._owns_process(pid) is not False for pid in pids)
         }:
             if time.monotonic() >= deadline:
                 rendered = ", ".join(str(port) for port in sorted(held))
