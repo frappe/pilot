@@ -140,6 +140,7 @@ A domain the certificate does not name is served over HTTP rather than off a cer
 These tables are per-bench unless noted otherwise:
 
 - `[gunicorn]`: Gunicorn settings.
+- `[build]`: manual override for the asset build memory cap.
 - `[firewall]`: firewall behavior.
 - `[waf]`: WAF rules and behavior.
 - `[s3]`: backup storage credentials and bucket settings.
