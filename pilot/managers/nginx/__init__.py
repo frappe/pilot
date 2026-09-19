@@ -365,6 +365,7 @@ class NginxManager:
     def generate_config(self, ssl_ready: bool = False) -> None:
         nginx_dir = self.bench.config_path / "nginx"
         nginx_dir.mkdir(parents=True, exist_ok=True)
+        self.bench.logs_path.mkdir(parents=True, exist_ok=True)
         self._write_error_pages(nginx_dir)
         self._write_waf_files()
         # Sites choose TLS per domain; admin.tls only controls the admin vhost.

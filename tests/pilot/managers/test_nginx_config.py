@@ -58,8 +58,9 @@ def test_http_only_site_has_no_tls(tmp_path: Path) -> None:
 def test_ssl_site_redirects_http_and_serves_https(tmp_path: Path) -> None:
     config = _site_config(tmp_path, _BASE_SITE, ssl=True)
 
-    assert "listen 443 ssl http2;" in config
-    assert "listen [::]:443 ssl http2;" in config
+    assert "listen 443 ssl;" in config
+    assert "listen [::]:443 ssl;" in config
+    assert "http2 on;" in config
     assert "ssl_certificate" in config
     assert "ssl_certificate_key" in config
     assert "return 301 https://$host$request_uri" in config
@@ -115,8 +116,9 @@ def test_socketio_proxies_to_socketio_port(tmp_path: Path) -> None:
 def test_dual_stack_listeners(tmp_path: Path) -> None:
     config = _site_config(tmp_path, _BASE_SITE, ssl=True)
 
-    for line in ("listen 80;", "listen [::]:80;", "listen 443 ssl http2;", "listen [::]:443 ssl http2;"):
+    for line in ("listen 80;", "listen [::]:80;", "listen 443 ssl;", "listen [::]:443 ssl;"):
         assert line in config
+    assert "http2 on;" in config
 
 
 # --- public files -----------------------------------------------------------
@@ -310,7 +312,8 @@ def test_admin_proxy_port_under_supervisor(tmp_path: Path) -> None:
 def test_admin_ssl_redirects_http_to_https(tmp_path: Path) -> None:
     config = _renderer(tmp_path, _ADMIN_DATA).generate_bench_config([], admin_ssl=True)
 
-    assert "listen 443 ssl http2" in config
+    assert "listen 443 ssl" in config
+    assert "http2 on;" in config
     assert "ssl_certificate" in config
     assert "return 301 https://$host$request_uri" in config
 
@@ -423,7 +426,8 @@ def test_server_config_is_default_server(tmp_path: Path) -> None:
     assert "alias /usr/share/nginx/bench-error-pages/;" in conf
     # A 443 default_server rejects https for http-only benches instead of
     # serving the first TLS vhost's cert.
-    assert "listen 443 ssl http2 default_server;" in conf
+    assert "listen 443 ssl default_server;" in conf
+    assert "http2 on;" in conf
     assert "ssl_reject_handshake on;" in conf
 
 
@@ -468,6 +472,16 @@ def test_generate_config_writes_error_page_files(tmp_path: Path) -> None:
     assert "404" in (error_dir / "404.html").read_text()
 
 
+def test_generate_config_creates_logs_directory_if_missing(tmp_path: Path) -> None:
+    bench = _bench_with_site(tmp_path, _BASE_DATA)
+    logs_dir = bench.logs_path
+    logs_dir.rmdir()
+
+    NginxManager(bench).generate_config(ssl_ready=False)
+
+    assert logs_dir.is_dir()
+
+
 def test_localhost_ssl_site_gets_https_when_cert_present(tmp_path: Path) -> None:
     # A pure-.localhost SSL site has no public domains to validate a SAN against,
     # so cert existence alone enables HTTPS (the e2e suite runs on site1.localhost).
@@ -484,7 +498,8 @@ def test_localhost_ssl_site_gets_https_when_cert_present(tmp_path: Path) -> None
     manager.generate_config(ssl_ready=True)
 
     content = (tmp_path / "config" / "nginx" / "include.conf").read_text()
-    assert "listen 443 ssl http2" in content
+    assert "listen 443 ssl" in content
+    assert "http2 on;" in content
     assert "return 301 https://$host$request_uri;" in content
 
 
@@ -534,7 +549,8 @@ def test_admin_tls_enabled_redirects_admin_to_https(tmp_path: Path) -> None:
 
     content = (tmp_path / "config" / "nginx" / "include.conf").read_text()
     assert "server_name admin.example.com;" in content
-    assert "listen 443 ssl http2" in content
+    assert "listen 443 ssl" in content
+    assert "http2 on;" in content
     assert "return 301 https://$host$request_uri" in content
 
 
@@ -944,7 +960,8 @@ def test_provider_passthrough_route_enables_proxy_protocol(tmp_path: Path) -> No
         [(site, site.tls_domains)], admin_ssl=False
     )
 
-    assert "listen 443 ssl http2 proxy_protocol;" in config
+    assert "listen 443 ssl proxy_protocol;" in config
+    assert "http2 on;" in config
     assert "real_ip_header     proxy_protocol;" in config
     assert "proxy_set_header   X-Forwarded-Proto  https;" in config
 
@@ -979,7 +996,8 @@ def test_a_custom_domain_gets_its_own_https_vhost(tmp_path: Path) -> None:
     site = _mixed_site()
     config = _renderer(tmp_path).generate_bench_config([(site, site.tls_domains)], admin_ssl=False)
 
-    assert "listen 443 ssl http2;" in config
+    assert "listen 443 ssl;" in config
+    assert "http2 on;" in config
     assert "server_name shop.customer.com;" in config
     # The custom domain still gets the HTTP->HTTPS redirect; the wildcard does not.
     assert "return 301 https://$host$request_uri" in config
@@ -991,8 +1009,9 @@ def test_proxy_protocol_applies_only_to_the_https_listener(tmp_path: Path) -> No
     renderer.bench.config.proxy.protocol_v2 = True  # host-shared, from common_config.toml
     config = renderer.generate_bench_config([(site, site.tls_domains)], admin_ssl=False)
 
-    assert "listen 443 ssl http2 proxy_protocol;" in config
-    assert "listen [::]:443 ssl http2 proxy_protocol;" in config
+    assert "listen 443 ssl proxy_protocol;" in config
+    assert "listen [::]:443 ssl proxy_protocol;" in config
+    assert "http2 on;" in config
     assert "listen 80 proxy_protocol;" not in config
     assert "real_ip_header     proxy_protocol;" in config
     assert "real_ip_header     X-Forwarded-For;" in config
@@ -1005,7 +1024,8 @@ def test_without_proxy_protocol_the_https_listener_is_plain(tmp_path: Path) -> N
     )
 
     listens = [line.strip() for line in config.splitlines() if line.strip().startswith("listen ")]
-    assert "listen 443 ssl http2;" in listens
+    assert "listen 443 ssl;" in listens
+    assert "http2 on;" in config
     assert not any("proxy_protocol" in line for line in listens)
 
 
