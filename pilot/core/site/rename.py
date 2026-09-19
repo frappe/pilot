@@ -24,6 +24,7 @@ class SiteRename:
         self.keep_old_hostname = keep_old_hostname
         self._compatibility_link: Path | None = None
         self._original_site_config: str | None = None
+        self._old_pilot_auth_token = ""
         self._new_route: RoutePolicy | None = None
 
     @property
@@ -44,6 +45,7 @@ class SiteRename:
         try:
             self._pin_certificate_name()
             self._carry_old_hostname()
+            self._refresh_pilot_auth_token()
             self._update_default_site(self.old_name, self.new_name)
             self._rename_in_bench_toml(self.old_name, self.new_name)
             self._retarget_hostname_aliases(self.old_name, self.new_name)
@@ -55,6 +57,9 @@ class SiteRename:
             # nginx still names the old site, so restore that state.
             self._roll_back(on_progress)
             raise
+        # Revocation can commit before its durability sync reports failure. The rename
+        # must stay committed once this starts, or rollback could restore a dead token.
+        self._revoke_old_pilot_auth_token()
         # Release the old route only after nginx has switched.
         if not self.keep_old_hostname:
             self._release_route(self.old_name)
@@ -243,6 +248,24 @@ class SiteRename:
     def _serves_tls(self) -> bool:
         """Whether any site domain terminates TLS on this host."""
         return bool(self._site_config_from(self._read_site_config()).tls_domains)
+
+    def _refresh_pilot_auth_token(self) -> None:
+        config = self._read_site_config()
+        token = config.get("pilot_auth_token")
+        if not isinstance(token, str) or not token:
+            return
+        from admin.backend.internal.session import Session
+
+        self._old_pilot_auth_token = token
+        config["pilot_auth_token"] = Session(self.bench).issue_pilot_token(self.new_name)
+        self._write_site_config(config)
+
+    def _revoke_old_pilot_auth_token(self) -> None:
+        if not self._old_pilot_auth_token:
+            return
+        from admin.backend.internal.session import Session
+
+        Session(self.bench).revoke_token(self._old_pilot_auth_token)
 
     def _read_site_config(self) -> dict:
         return _load_site_config(self.new_path / "site_config.json")

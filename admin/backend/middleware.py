@@ -42,6 +42,7 @@ def is_request_authenticated(bench) -> bool:
     if claims is None:
         return False
     g.jwt_claims = claims
+    g.jwt_token = token
     return True
 
 
@@ -89,12 +90,13 @@ def require_scope(site):
     return decorator
 
 
-def get_authorization_error(claims: dict | None, view, view_args: dict) -> str | None:
+def get_authorization_error(claims: dict | None, view, view_args: dict, bench, token: str = "") -> str | None:
     from admin.backend.internal.session import Session
 
     resolve_site = getattr(view, _SITE_SCOPE_RESOLVER, None)
     if resolve_site is not None:
-        return None if Session.has_scope(claims, resolve_site(view_args)) else "Not authorized for this site"
+        site = resolve_site(view_args)
+        return None if Session(bench).has_scope(claims, site, token) else "Not authorized for this site"
     if claims and claims.get("scope") == "bench":
         return None
     return "Not authorized for this bench"
@@ -104,6 +106,7 @@ def install_auth_guard(app: Flask, bench_root) -> None:
     @app.before_request
     def check_auth():
         g.jwt_claims = None
+        g.jwt_token = None
         return _check_auth_request(app, bench_root)
 
 
@@ -126,8 +129,37 @@ def _check_auth_request(app: Flask, bench_root):
     if response is not None:
         return response
 
-    error = get_authorization_error(g.jwt_claims, view, request.view_args or {})
+    response = _resolve_site_route(bench)
+    if response is not None:
+        return response
+
+    error = get_authorization_error(
+        g.jwt_claims,
+        view,
+        request.view_args or {},
+        bench,
+        g.jwt_token or "",
+    )
     return error_response("forbidden", error, 403) if error else None
+
+
+def _resolve_site_route(bench):
+    if request.blueprint != "sites" or not request.view_args:
+        return None
+    name = request.view_args.get("name")
+    if not name:
+        return None
+    try:
+        resolved = bench.resolve_site_name(name)
+    except Exception:
+        return error_response(
+            "configuration_unavailable",
+            "Site configuration is unavailable.",
+            503,
+        )
+    if resolved:
+        request.view_args["name"] = resolved
+    return None
 
 
 def _auth_config(bench_root):

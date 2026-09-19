@@ -31,7 +31,7 @@ from admin.backend.providers.apps import AppProvider
 from admin.backend.providers.sites import SiteInfo, SiteProvider
 from pilot.core.bench import Bench
 from pilot.core.site.login import site_url
-from pilot.internal.site_paths import site_config_path, site_exists
+from pilot.internal.site_paths import site_exists
 from pilot.internal.validators import validate_site_name
 from pilot.tasks.clear_cache import ClearCacheTask
 from pilot.tasks.drop_site import DropSiteTask
@@ -280,12 +280,10 @@ def migrate_site(name: str):
 @rate_limit(10, 60, user_ip=True)
 def create_login_link(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
+    if not site_exists(bench_root, name):
+        return site_not_found()
     try:
-        bench = Bench(bench_root)
-        resolved_site_name = name if site_config_path(bench_root, name) else bench.site_claiming(name)
-        if resolved_site_name is None:
-            return site_not_found()
-        url = bench.site(resolved_site_name).admin_login_url()
+        url = Bench(bench_root).site(name).admin_login_url()
     except Exception:
         return error_response(
             "configuration_unavailable",

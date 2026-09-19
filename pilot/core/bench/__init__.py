@@ -380,6 +380,14 @@ class Bench:
 
         BenchProduction(self).setup_nginx(on_progress)
 
+    def resolve_site_name(self, host: str) -> str | None:
+        """Return the directory name of the site that answers to this host."""
+        from pilot.internal.site_paths import site_exists
+
+        if site_exists(self.path, host):
+            return host
+        return self.site_claiming(host)
+
     def site_claiming(self, host: str, ignoring: str = "") -> str | None:
         """Return the site claiming host, excluding one optional site."""
         from pilot.utils import normalize_host

@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import logging
 import secrets
+import threading
 import time
+from concurrent.futures import Future
 from typing import TYPE_CHECKING, ClassVar
 
 from admin.backend.internal.jwks_cache import JwksCache
 from pilot.config import BenchConfig
+from pilot.exceptions import ConfigError
 from pilot.internal import hs256_jwt
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
 
@@ -127,7 +132,7 @@ class ActiveTokens(_JtiStore):
 
 
 class RevokedTokens(_JtiStore):
-    """Token jtis revoked before their expiry; checked on every verification."""
+    """Token identifiers revoked before their expiry."""
 
     FILENAME = ".revoked-jtis.json"
 
@@ -141,6 +146,7 @@ class Session:
 
     DEFAULT_TTL = 24 * 3600
     LOGIN_TTL = 5 * 60
+    PILOT_TOKEN_TTL = 365 * 24 * 3600
     # The setup link, and so the session redeeming it, live 3h - shorter than a password
     # login because the link travels in a URL, over plain http.
     SETUP_SESSION_TTL = 3 * 3600
@@ -158,6 +164,8 @@ class Session:
         "PS512",
         "EdDSA",
     ]
+    _staged_jwks_configs: ClassVar[dict[Path, tuple[int | None, Future[tuple[str, str]]]]] = {}
+    _staged_jwks_lock: ClassVar[threading.Lock] = threading.Lock()
 
     def __init__(self, bench: Bench) -> None:
         self.bench = bench
@@ -199,15 +207,28 @@ class Session:
             raise ValueError("Site name is required.")
         return self._encode(ttl=ttl, scope="site", site=site)
 
+    def issue_pilot_token(self, site: str) -> str:
+        """Mint the long-lived site token stored in site_config.json."""
+        return self.issue_site_token(site, ttl=self.PILOT_TOKEN_TTL)
+
     def verify_token(self, token: str, ip: str = "unknown") -> dict | None:
         """Verify a token: local HS256 first, then the bench's JWKS keys if configured.
 
         A token whose jti has been revoked is rejected. Otherwise its entry in the active
         tracker is refreshed with this request's IP and time.
         """
-        claims = self._decode(token)
+        claims = self._decode_local(token)
+        is_local = claims is not None
+        if claims is None:
+            claims = self._decode_jwks(token)
         if claims is None:
             logging.warning("Rejected unknown or invalid session token from %s", ip)
+            return None
+        if (
+            is_local
+            and claims.get("scope") == "site"
+            and self._token_key(token) in RevokedTokens(self.bench)
+        ):
             return None
         jti, exp = claims.get("jti"), claims.get("exp")
         if jti:
@@ -217,14 +238,33 @@ class Session:
                 ActiveTokens(self.bench).add(jti, exp, ip=ip, last_seen=int(time.time()))
         return claims
 
-    @staticmethod
-    def has_scope(claims: dict | None, site: str) -> bool:
+    def revoke_token(self, token: str) -> bool:
+        """Revoke one encoded token until its signed expiry."""
+        claims = self._decode(token)
+        exp = claims.get("exp") if claims else None
+        if not isinstance(exp, int) or exp <= int(time.time()):
+            return False
+        key = self._token_key(token)
+        revoked = RevokedTokens(self.bench)
+        try:
+            revoked.add(key, exp)
+        except OSError:
+            # The replace can commit before its directory durability sync fails.
+            if key not in revoked:
+                raise
+        return True
+
+    def has_scope(self, claims: dict | None, site: str, token: str = "") -> bool:
         if not claims:
             return False
         scope = claims.get("scope")
         if scope == "bench":
             return True
-        return scope == "site" and claims.get("site") == site
+        if scope != "site":
+            return False
+        if claims.get("site") == site:
+            return True
+        return self._is_current_site_token(site, token)
 
     def revoke_jti(self, jti: str) -> bool:
         """Revoke an active session by its jti, using its tracked expiry.
@@ -258,9 +298,28 @@ class Session:
     def _decode(self, token: str) -> dict | None:
         """Signature/expiry-checked claims: local HS256, then JWKS if configured."""
         claims = self._decode_local(token)
-        if claims is None and self.admin_config.jwks_url:
+        if claims is None:
             claims = self._decode_jwks(token)
         return claims
+
+    def _is_current_site_token(self, site: str, token: str) -> bool:
+        if not token:
+            return False
+        from pilot.internal.site_paths import site_config_path
+
+        path = site_config_path(self.bench.path, site)
+        if path is None:
+            return False
+        try:
+            config = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ConfigError("Site configuration is unavailable.") from exc
+        configured = config.get("pilot_auth_token") if isinstance(config, dict) else None
+        return isinstance(configured, str) and hmac.compare_digest(configured, token)
+
+    @staticmethod
+    def _token_key(token: str) -> str:
+        return f"token:{hashlib.sha256(token.encode()).hexdigest()}"
 
     def _encode(self, ttl: int, scope: str, jti: str | None = None, site: str | None = None) -> str:
         now = int(time.time())
@@ -285,7 +344,7 @@ class Session:
     def _decode_jwks(self, token: str) -> dict | None:
         import jwt
 
-        url, audience = self.admin_config.jwks_url, self.admin_config.jwks_audience
+        url, audience = self._jwks_config()
         if not token or not url or not audience:
             return None
         try:
@@ -303,4 +362,79 @@ class Session:
                 options={"require": ["exp", "aud"], "verify_aud": True},
             )
         except jwt.PyJWTError:
+            return None
+
+    def _jwks_config(self) -> tuple[str, str]:
+        """Use the staged issuer only during the Central bootstrap window."""
+        url = getattr(self.admin_config, "jwks_url", "")
+        audience = getattr(self.admin_config, "jwks_audience", "")
+        central = getattr(self.bench.config, "central", None)
+        if not getattr(central, "is_awaiting_bootstrap", False):
+            if path := getattr(self.bench, "path", None):
+                with self._staged_jwks_lock:
+                    self._staged_jwks_configs.pop(path.parent, None)
+            return url, audience
+
+        directory = self.bench.path.parent
+        generation = self._common_config_generation(directory)
+        return self._staged_jwks_config(directory, generation)
+
+    @classmethod
+    def _staged_jwks_config(cls, directory: Path, generation: int | None) -> tuple[str, str]:
+        with cls._staged_jwks_lock:
+            cached = cls._staged_jwks_configs.get(directory)
+            if cached is not None and cached[0] == generation:
+                future = cached[1]
+                loads_metadata = False
+            else:
+                future = Future()
+                cls._staged_jwks_configs[directory] = (generation, future)
+                loads_metadata = True
+
+        if not loads_metadata:
+            return future.result()
+
+        try:
+            config = cls._load_staged_jwks_config(directory)
+        except Exception as error:
+            future.set_exception(error)
+            cls._discard_staged_jwks_config(directory, future)
+            raise
+
+        future.set_result(config)
+        if config == ("", ""):
+            cls._discard_staged_jwks_config(directory, future)
+        return config
+
+    @classmethod
+    def _discard_staged_jwks_config(cls, directory: Path, future: Future[tuple[str, str]]) -> None:
+        with cls._staged_jwks_lock:
+            cached = cls._staged_jwks_configs.get(directory)
+            if cached is not None and cached[1] is future:
+                cls._staged_jwks_configs.pop(directory, None)
+
+    @staticmethod
+    def _load_staged_jwks_config(directory: Path) -> tuple[str, str]:
+        from pilot.integrations.central import CentralClientError, InstanceMetadata
+
+        try:
+            credentials = InstanceMetadata().get_credentials()
+        except CentralClientError as error:
+            logging.warning("Cannot use the staged Central JWKS issuer: %s", error)
+            return "", ""
+        if credentials is None:
+            return "", ""
+
+        url = credentials["jwks_url"]
+        if initial_cache := credentials.get("initial_jwks_cache"):
+            JwksCache(directory, url).seed(initial_cache)
+        return url, credentials["jwks_audience_id"]
+
+    @staticmethod
+    def _common_config_generation(directory: Path) -> int | None:
+        from pilot.config.common import CommonConfig
+
+        try:
+            return CommonConfig.path(directory).stat().st_mtime_ns
+        except FileNotFoundError:
             return None

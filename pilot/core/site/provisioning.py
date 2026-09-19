@@ -91,10 +91,7 @@ class SiteProvisioner:
             return
         config = json.loads(config_path.read_text())
         config["pilot_endpoint"] = self.bench.admin_endpoint
-        config["pilot_auth_token"] = Session(self.bench).issue_site_token(
-            site.config.name,
-            ttl=365 * 24 * 3600,
-        )
+        config["pilot_auth_token"] = Session(self.bench).issue_pilot_token(site.config.name)
         write_private_text(config_path, json.dumps(config, indent=1))
 
     def build_missing_assets(self) -> None:

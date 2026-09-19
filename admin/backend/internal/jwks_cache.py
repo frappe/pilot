@@ -7,7 +7,11 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
-from pilot.internal.atomic_file import atomic_write_private_text
+from pilot.internal.atomic_file import (
+    atomic_write_private_text,
+    exclusive_file_lock,
+    replace_private_text_locked,
+)
 
 if TYPE_CHECKING:
     from jwt import PyJWK, PyJWKSet
@@ -45,11 +49,15 @@ class JwksCache:
         return self._find(self.refresh(), kid)
 
     def seed(self, jwks: dict) -> bool:
-        """Store a key set delivered with the host's credential. False when it holds no usable key."""
+        """Initialize an empty cache from a credential without replacing newer keys."""
         import jwt
 
         try:
-            self._write(jwks)
+            self._key_set(jwks)
+            with exclusive_file_lock(self.path):
+                if self._has_usable_cache():
+                    return True
+                self._write_locked(jwks)
         except (jwt.PyJWTError, OSError) as error:
             logging.warning("Ignoring the initial JWKS cache for %s: %s", self.url, error)
             return False
@@ -100,6 +108,23 @@ class JwksCache:
         self._key_set(jwks)
         record = {"url": self.url, "fetched_at": int(time.time()), "jwks": jwks}
         atomic_write_private_text(self.path, json.dumps(record))
+
+    def _write_locked(self, jwks: dict) -> None:
+        """Store a validated key set while the caller holds the cache lock."""
+        record = {"url": self.url, "fetched_at": int(time.time()), "jwks": jwks}
+        replace_private_text_locked(self.path, json.dumps(record))
+
+    def _has_usable_cache(self) -> bool:
+        import jwt
+
+        record = self._read()
+        if record is None:
+            return False
+        try:
+            self._key_set(record.get("jwks"))
+        except jwt.PyJWTError:
+            return False
+        return True
 
     def _read(self) -> dict | None:
         """The cached record for this issuer, or None."""

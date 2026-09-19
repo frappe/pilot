@@ -164,6 +164,92 @@ def test_the_old_hostname_keeps_being_served(tmp_path: Path) -> None:
     assert _config(bench, NEW)["domains"] == [OLD]
 
 
+def test_the_site_token_is_reissued_for_the_new_name(tmp_path: Path) -> None:
+    bench = _bench(tmp_path)
+    _site(bench, OLD, pilot_auth_token="old-token")
+
+    with (
+        patch(
+            "admin.backend.internal.session.Session.issue_pilot_token",
+            return_value="new-token",
+        ) as issue_token,
+        patch("admin.backend.internal.session.Session.revoke_token", return_value=True) as revoke_token,
+    ):
+        _rename(bench)
+
+    assert _config(bench, NEW)["pilot_auth_token"] == "new-token"
+    issue_token.assert_called_once_with(NEW)
+    revoke_token.assert_called_once_with("old-token")
+
+
+def test_a_failed_rename_restores_and_does_not_revoke_the_old_token(tmp_path: Path) -> None:
+    bench = _bench(tmp_path)
+    _site(bench, OLD, pilot_auth_token="old-token")
+
+    with (
+        patch(
+            "admin.backend.internal.session.Session.issue_pilot_token",
+            return_value="new-token",
+        ),
+        patch("admin.backend.internal.session.Session.revoke_token") as revoke_token,
+        patch.object(SiteRename, "_reload_nginx", side_effect=RuntimeError("reload failed")),
+        pytest.raises(RuntimeError, match="reload failed"),
+    ):
+        SiteRename(bench.site(OLD), NEW).run(lambda message: None)
+
+    assert _config(bench, OLD)["pilot_auth_token"] == "old-token"
+    revoke_token.assert_not_called()
+
+
+def test_a_revocation_sync_failure_does_not_roll_back_the_rename(tmp_path: Path) -> None:
+    bench = _bench(tmp_path)
+    _site(bench, OLD, pilot_auth_token="old-token")
+
+    with (
+        patch(
+            "admin.backend.internal.session.Session.issue_pilot_token",
+            return_value="new-token",
+        ),
+        patch(
+            "admin.backend.internal.session.Session.revoke_token",
+            side_effect=OSError("directory sync failed"),
+        ),
+        patch.object(SiteRename, "_reload_nginx"),
+        pytest.raises(OSError, match="directory sync failed"),
+    ):
+        SiteRename(bench.site(OLD), NEW).run(lambda message: None)
+
+    assert _config(bench, NEW)["pilot_auth_token"] == "new-token"
+    assert not (bench.sites_path / OLD).exists()
+
+
+def test_a_committed_revocation_sync_failure_still_releases_the_old_route(
+    tmp_path: Path,
+) -> None:
+    from admin.backend.internal.session import RevokedTokens, Session
+
+    bench = _bench(tmp_path)
+    token = Session(bench).issue_pilot_token(OLD)
+    _site(bench, OLD, pilot_auth_token=token)
+    released = []
+    add = RevokedTokens.add
+
+    def commit_then_fail(store, key, exp):
+        add(store, key, exp)
+        raise OSError("directory sync failed")
+
+    with (
+        patch.object(RevokedTokens, "add", commit_then_fail),
+        patch(
+            "pilot.core.adapters.domain_provider.DomainRouteProvider.release",
+            lambda self, domain: released.append(domain),
+        ),
+    ):
+        _rename(bench, keep_old_hostname=False)
+
+    assert released == [OLD]
+
+
 def test_the_old_hostname_can_be_released_instead(tmp_path: Path) -> None:
     bench = _bench(tmp_path)
     _site(bench, OLD)
