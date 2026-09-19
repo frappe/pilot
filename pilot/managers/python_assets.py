@@ -31,7 +31,12 @@ class PythonAssetBuilder:
         from pilot.core.build_memory import build_memory_limit_mb
 
         limit_mb = build_memory_limit_mb()
-        kwargs["env"] = {**systemctl_env(), **(kwargs.get("env") or {})}
+        env = {**systemctl_env(), **(kwargs.get("env") or {})}
+        node_options = env.get("NODE_OPTIONS", "")
+        if "max-old-space-size" not in node_options:
+            node_options = f"{node_options} --max-old-space-size={limit_mb}".strip()
+        env["NODE_OPTIONS"] = node_options
+        kwargs["env"] = env
         try:
             run_command(memory_capped(argv, limit_mb), **kwargs)
         except CommandError as error:

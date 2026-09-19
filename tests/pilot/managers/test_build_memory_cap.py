@@ -64,3 +64,22 @@ def test_a_compiler_error_is_left_alone(monkeypatch):
     builder = python_assets.PythonAssetBuilder.__new__(python_assets.PythonAssetBuilder)
     with pytest.raises(CommandError, match="syntax error"):
         builder.run_compiler(["yarn", "build"])
+
+
+def test_compiler_sets_node_heap_to_build_cap(monkeypatch):
+    from pilot.managers import python_assets
+
+    captured: dict = {}
+
+    def ok(argv, **kwargs):
+        captured["argv"] = argv
+        captured["env"] = kwargs.get("env", {})
+
+    monkeypatch.setattr("pilot.core.build_memory.build_memory_limit_mb", lambda: 4096)
+    monkeypatch.setattr(python_assets, "run_command", ok)
+    monkeypatch.setattr(python_assets, "memory_capped", lambda argv, _mb: argv)
+
+    builder = python_assets.PythonAssetBuilder.__new__(python_assets.PythonAssetBuilder)
+    builder.run_compiler(["node", "-e", "console.log(1)"])
+
+    assert "--max-old-space-size=4096" in captured["env"].get("NODE_OPTIONS", "")
