@@ -23,7 +23,6 @@ _NODE_OLD_SPACE_FLOOR_MB = 256
 
 
 def _node_old_space_limit_mb(memory_cap_mb: int) -> int:
-    # Keep room for native allocations and child processes inside the scope cap.
     return max(_NODE_OLD_SPACE_FLOOR_MB, int(memory_cap_mb * _NODE_OLD_SPACE_SHARE))
 
 
