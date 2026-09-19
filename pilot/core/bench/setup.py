@@ -175,8 +175,12 @@ class ProductionSetup:
     def _persist_production_state(self) -> None:
         """Write the production state to bench.toml LAST, so the switcher never
         points users at a half-built deployment."""
+        from pilot.config.common import CommonConfig
+
         prod = self.bench.config.production
         admin = self.bench.config.admin
+        with CommonConfig.open(self.bench.path.parent) as config:
+            config.letsencrypt.email = self.bench.config.letsencrypt.email
         self._persist(
             {
                 "production": {"enabled": True, "process_manager": prod.process_manager},

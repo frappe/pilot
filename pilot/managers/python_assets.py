@@ -18,6 +18,12 @@ if TYPE_CHECKING:
     from pilot.managers.environment import PythonEnvManager
 
 _BUNDLE_RE = re.compile(r"^(.+)\.bundle\.[A-Z0-9]{8}\.(js|css)$")
+_NODE_OLD_SPACE_SHARE = 0.8
+_NODE_OLD_SPACE_FLOOR_MB = 256
+
+
+def _node_old_space_limit_mb(memory_cap_mb: int) -> int:
+    return max(_NODE_OLD_SPACE_FLOOR_MB, int(memory_cap_mb * _NODE_OLD_SPACE_SHARE))
 
 
 class PythonAssetBuilder:
@@ -31,7 +37,13 @@ class PythonAssetBuilder:
         from pilot.core.build_memory import build_memory_limit_mb
 
         limit_mb = build_memory_limit_mb()
-        kwargs["env"] = {**systemctl_env(), **(kwargs.get("env") or {})}
+        env = {**systemctl_env(), **(kwargs.get("env") or {})}
+        node_options = env.get("NODE_OPTIONS", "")
+        if "max-old-space-size" not in node_options:
+            node_heap_mb = _node_old_space_limit_mb(limit_mb)
+            node_options = f"{node_options} --max-old-space-size={node_heap_mb}".strip()
+        env["NODE_OPTIONS"] = node_options
+        kwargs["env"] = env
         try:
             run_command(memory_capped(argv, limit_mb), **kwargs)
         except CommandError as error:

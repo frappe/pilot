@@ -468,6 +468,16 @@ def test_generate_config_writes_error_page_files(tmp_path: Path) -> None:
     assert "404" in (error_dir / "404.html").read_text()
 
 
+def test_generate_config_creates_logs_directory_if_missing(tmp_path: Path) -> None:
+    bench = _bench_with_site(tmp_path, _BASE_DATA)
+    logs_dir = bench.logs_path
+    logs_dir.rmdir()
+
+    NginxManager(bench).generate_config(ssl_ready=False)
+
+    assert logs_dir.is_dir()
+
+
 def test_localhost_ssl_site_gets_https_when_cert_present(tmp_path: Path) -> None:
     # A pure-.localhost SSL site has no public domains to validate a SAN against,
     # so cert existence alone enables HTTPS (the e2e suite runs on site1.localhost).

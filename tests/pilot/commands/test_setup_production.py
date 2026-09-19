@@ -321,6 +321,17 @@ def test_persist_production_state_writes_enabled_and_drops_nginx(tmp_path: Path)
     assert data["admin"]["enabled"] is True
 
 
+def test_persist_production_state_writes_letsencrypt_email_to_common_config(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, email="")
+    cmd = ProductionSetup(bench, process_manager="systemd", letsencrypt_email="ops@example.com")
+
+    cmd._resolve_target()
+    cmd._persist_production_state()
+
+    common = tomllib.loads((bench.path.parent / "common_config.toml").read_text())
+    assert common["letsencrypt"]["email"] == "ops@example.com"
+
+
 
 
 def test_letsencrypt_is_required_for_a_custom_tls_domain_with_admin_tls_off(tmp_path: Path) -> None:
