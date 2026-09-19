@@ -143,3 +143,16 @@ def test_an_unusable_seed_is_not_stored(tmp_path) -> None:
 
     assert cache.seed({"keys": []}) is False
     assert not cache.path.exists()
+
+
+def test_a_seed_does_not_replace_a_fetched_key_set(tmp_path, monkeypatch) -> None:
+    fetched = _jwks_document()
+    staged = {"keys": [fetched["keys"][0]]}
+    monkeypatch.setattr(PyJWKClient, "fetch_data", lambda client: fetched)
+    cache = JwksCache(tmp_path, JWKS_URL)
+    cache.refresh()
+
+    assert cache.seed(staged) is True
+
+    record = json.loads(cache.path.read_text())
+    assert record["jwks"] == fetched

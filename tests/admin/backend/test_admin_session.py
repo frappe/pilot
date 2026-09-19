@@ -435,21 +435,36 @@ def test_setup_endpoint_fails_closed_when_config_is_corrupt(tmp_path: Path) -> N
     assert response.status_code == 503
 
 
-def test_has_scope_bench_token_allows_any_site() -> None:
-    assert Session.has_scope({"scope": "bench"}, "example.com")
-    assert Session.has_scope({"scope": "bench"}, "other.com")
+def test_has_scope_bench_token_allows_any_site(tmp_path: Path) -> None:
+    session = Session(_bench(tmp_path))
+    assert session.has_scope({"scope": "bench"}, "example.com")
+    assert session.has_scope({"scope": "bench"}, "other.com")
 
 
-def test_has_scope_site_token_allows_matching_site() -> None:
-    assert Session.has_scope({"scope": "site", "site": "example.com"}, "example.com")
+def test_has_scope_site_token_allows_matching_site(tmp_path: Path) -> None:
+    assert Session(_bench(tmp_path)).has_scope(
+        {"scope": "site", "site": "example.com"},
+        "example.com",
+    )
 
 
-def test_has_scope_site_token_rejects_different_site() -> None:
-    assert not Session.has_scope({"scope": "site", "site": "example.com"}, "other.com")
+def test_has_scope_site_token_rejects_different_site(tmp_path: Path) -> None:
+    assert not Session(_bench(tmp_path)).has_scope(
+        {"scope": "site", "site": "example.com"},
+        "other.com",
+    )
 
 
-def test_has_scope_none_claims_rejected() -> None:
-    assert not Session.has_scope(None, "example.com")
+@pytest.mark.parametrize("claimed", [1, ["example.com"], {"site": "example.com"}])
+def test_has_scope_rejects_a_non_string_site_claim(tmp_path: Path, claimed) -> None:
+    assert not Session(_bench(tmp_path)).has_scope(
+        {"scope": "site", "site": claimed},
+        "example.com",
+    )
+
+
+def test_has_scope_none_claims_rejected(tmp_path: Path) -> None:
+    assert not Session(_bench(tmp_path)).has_scope(None, "example.com")
 
 
 @pytest.mark.parametrize(

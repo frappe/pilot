@@ -72,6 +72,8 @@ Two app operations answer inline instead of returning a task id, because both ar
 
 ### Site Detail And Login
 
+Every `/sites/<name>/...` route accepts the site's directory name or any hostname the site currently answers to, including custom domains and an old hostname kept through a rename. Pilot resolves the hostname to the directory name after the request is authenticated and before checking its site scope.
+
 `GET /sites/<name>` includes `url` and `tls`. The route policy supplies the public scheme for both values.
 
 `GET /sites/<name>/domains` returns one row for each hostname. Each row has `domain`, `is_site`, `is_primary`, `public_scheme`, and `tls`.
@@ -80,7 +82,7 @@ Two app operations answer inline instead of returning a task id, because both ar
 
 ### Renaming And Domains
 
-`POST /sites/<name>/actions/rename` takes `{"new_name": "...", "keep_old_hostname": true}` and queues `rename-site`. The new name is validated the same way a new site's is, and both names are claimed as task resources so nothing can create or drop either while the site is moving between them. `keep_old_hostname` defaults to true and keeps the old hostname on the site, so open tabs and existing links keep working; pass false to release a pooled name a fleet reuses. See [Renaming without downtime](commands.md#renaming-without-downtime).
+`POST /sites/<name>/actions/rename` takes `{"new_name": "...", "keep_old_hostname": true}` and queues `rename-site`. The new name is validated the same way a new site's is, and both names are claimed as task resources so nothing can create or drop either while the site is moving between them. `keep_old_hostname` defaults to true and keeps the old hostname on the site, so open tabs and existing links keep working; pass false to release a pooled name a fleet reuses. A rename also replaces the site's `pilot_auth_token` with one scoped to the new name. See [Renaming without downtime](commands.md#renaming-without-downtime).
 
 `POST /settings/admin-domain` takes `{"domain": "...", "tls": true|false}` (`tls` optional) and queues `change-admin-domain`, which registers the route with the domain provider, writes `bench.toml`, reissues the certificate when TLS is on, and republishes nginx. The previous hostname is released only once the switch has committed.
 

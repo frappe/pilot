@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -64,6 +66,7 @@ def _stub_fetch(monkeypatch, tmp_path):
     monkeypatch.setattr(_Bench, "path", tmp_path / "benches" / "current", raising=False)
     JwksCache._refreshing.clear()
     JwksCache._last_forced_fetch.clear()
+    Session._staged_jwks_configs.clear()
 
 
 def test_rsa_token_verifies() -> None:
@@ -132,6 +135,175 @@ def test_no_audience_config_rejects_remote_token() -> None:
     # Audience is mandatory for JWKS: with no configured audience a remote token
     # is not bound to this bench, so verification fails closed.
     assert _verify(_mint(aud="anything"), JWKS_URL, "") is None
+
+
+def test_awaiting_central_host_uses_the_staged_imds_issuer(tmp_path: Path, monkeypatch) -> None:
+    bench = SimpleNamespace(
+        path=_Bench.path,
+        config=SimpleNamespace(
+            admin=SimpleNamespace(jwt_secret="", jwks_url="", jwks_audience=""),
+            central=SimpleNamespace(is_awaiting_bootstrap=True),
+        ),
+    )
+    credentials = {
+        "jwks_url": JWKS_URL,
+        "jwks_audience_id": "vm-boot-1",
+        "initial_jwks_cache": _jwks_document(),
+    }
+    calls = []
+
+    def get_credentials(self):
+        calls.append(True)
+        return credentials
+
+    monkeypatch.setattr(
+        "pilot.integrations.central.metadata.InstanceMetadata.get_credentials", get_credentials
+    )
+    monkeypatch.setattr(
+        PyJWKClient,
+        "fetch_data",
+        lambda self: pytest.fail("The staged key set must avoid a JWKS fetch."),
+    )
+
+    claims = Session(bench).verify_token(_mint(aud="vm-boot-1"))
+    repeated = Session(bench).verify_token(_mint(aud="vm-boot-1"))
+
+    assert claims and claims["sub"] == "admin"
+    assert repeated and repeated["sub"] == "admin"
+    assert calls == [True]
+    assert JwksCache(tmp_path / "benches", JWKS_URL).signing_key("rsa-key") is not None
+
+
+def test_pending_issuer_cache_is_invalidated_by_shared_config_change(tmp_path: Path, monkeypatch) -> None:
+    bench = SimpleNamespace(
+        path=_Bench.path,
+        config=SimpleNamespace(
+            admin=SimpleNamespace(jwt_secret="", jwks_url="", jwks_audience=""),
+            central=SimpleNamespace(is_awaiting_bootstrap=True),
+        ),
+    )
+    common_config = tmp_path / "benches" / "common_config.toml"
+    common_config.write_text("generation = 1")
+    audiences = iter(("vm-boot-1", "vm-boot-2"))
+
+    def get_credentials(self):
+        return {
+            "jwks_url": JWKS_URL,
+            "jwks_audience_id": next(audiences),
+            "initial_jwks_cache": _jwks_document(),
+        }
+
+    monkeypatch.setattr(
+        "pilot.integrations.central.metadata.InstanceMetadata.get_credentials", get_credentials
+    )
+
+    assert Session(bench).verify_token(_mint(aud="vm-boot-1"))
+    common_config.write_text("generation = 2")
+    assert Session(bench).verify_token(_mint(aud="vm-boot-2"))
+
+
+def test_concurrent_pending_authentication_shares_one_metadata_lookup(monkeypatch) -> None:
+    bench = SimpleNamespace(
+        path=_Bench.path,
+        config=SimpleNamespace(
+            admin=SimpleNamespace(jwt_secret="", jwks_url="", jwks_audience=""),
+            central=SimpleNamespace(is_awaiting_bootstrap=True),
+        ),
+    )
+    lookup_started = threading.Event()
+    release_lookup = threading.Event()
+    calls = []
+
+    def get_credentials(self):
+        calls.append(True)
+        lookup_started.set()
+        release_lookup.wait(timeout=1)
+        return {
+            "jwks_url": JWKS_URL,
+            "jwks_audience_id": "vm-boot-1",
+            "initial_jwks_cache": _jwks_document(),
+        }
+
+    monkeypatch.setattr(
+        "pilot.integrations.central.metadata.InstanceMetadata.get_credentials", get_credentials
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(Session(bench).verify_token, _mint(aud="vm-boot-1"))
+        assert lookup_started.wait(timeout=1)
+        second = pool.submit(Session(bench).verify_token, _mint(aud="vm-boot-1"))
+        release_lookup.set()
+
+    assert first.result()
+    assert second.result()
+    assert calls == [True]
+
+
+def test_empty_metadata_result_is_retried(monkeypatch) -> None:
+    bench = SimpleNamespace(
+        path=_Bench.path,
+        config=SimpleNamespace(
+            admin=SimpleNamespace(jwt_secret="", jwks_url="", jwks_audience=""),
+            central=SimpleNamespace(is_awaiting_bootstrap=True),
+        ),
+    )
+    results = iter(
+        (
+            None,
+            {
+                "jwks_url": JWKS_URL,
+                "jwks_audience_id": "vm-boot-1",
+                "initial_jwks_cache": _jwks_document(),
+            },
+        )
+    )
+    monkeypatch.setattr(
+        "pilot.integrations.central.metadata.InstanceMetadata.get_credentials",
+        lambda self: next(results),
+    )
+
+    assert Session(bench).verify_token(_mint(aud="vm-boot-1")) is None
+    assert Session(bench).verify_token(_mint(aud="vm-boot-1"))
+
+
+def test_awaiting_central_host_does_not_use_the_saved_issuer(monkeypatch) -> None:
+    bench = SimpleNamespace(
+        path=_Bench.path,
+        config=SimpleNamespace(
+            admin=SimpleNamespace(jwt_secret="", jwks_url=JWKS_URL, jwks_audience=AUDIENCE),
+            central=SimpleNamespace(is_awaiting_bootstrap=True),
+        ),
+    )
+    monkeypatch.setattr(
+        "pilot.integrations.central.metadata.InstanceMetadata.get_credentials",
+        lambda self: None,
+    )
+
+    assert Session(bench).verify_token(_mint()) is None
+
+
+def test_bootstrapped_central_host_uses_the_saved_issuer(monkeypatch) -> None:
+    bench = SimpleNamespace(
+        path=_Bench.path,
+        config=SimpleNamespace(
+            admin=SimpleNamespace(jwt_secret="", jwks_url=JWKS_URL, jwks_audience=AUDIENCE),
+            central=SimpleNamespace(is_awaiting_bootstrap=False),
+        ),
+    )
+
+    def fail_if_called(self):
+        raise AssertionError("IMDS must not be read after bootstrap")
+
+    monkeypatch.setattr(
+        "pilot.integrations.central.metadata.InstanceMetadata.get_credentials",
+        fail_if_called,
+    )
+    staged = Future()
+    staged.set_result(("staged-url", "staged-audience"))
+    Session._staged_jwks_configs[_Bench.path.parent] = (None, staged)
+
+    assert Session(bench).verify_token(_mint())
+    assert _Bench.path.parent not in Session._staged_jwks_configs
 
 
 class _Bench:

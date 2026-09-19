@@ -55,6 +55,7 @@ A rename never drops traffic already on the site: requests keep arriving on the 
 
 - The site directory moves while nginx is still sending the old name in `X-Frappe-Site-Name`. The move leaves the old path behind as a symlink until nginx has reloaded, then removes it, so that header always resolves. Both steps are `rename(2)`, so the old path is absent only between two consecutive syscalls.
 - The old hostname would stop being served. It stays on the site as a domain instead, so anyone already on that URL is served rather than dropped. Pass `--release-old-hostname` to give the name up - a pooled hostname a fleet reuses. The domain provider is asked to route the new hostname before anything moves, and a released one is handed back only once the switch has committed.
+- The site's long-lived Admin API token names the site. The rename replaces it with a token scoped to the new name, so the in-app Cloud Settings embed keeps working without letting the old token follow a hostname that is later assigned to another site.
 
 The site keeps whatever redirect policy it had: a canonical `host_name` naming the old site moves with it, and one naming another domain is left alone. A rename never makes the renamed site canonical, which would start redirecting the site's other custom domains to it.
 
