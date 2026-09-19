@@ -177,6 +177,56 @@ def test_delete_app_404s_when_missing(tmp_path: Path) -> None:
     assert response.status_code == 404
 
 
+def test_switch_branch_queues_the_task(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    _make_cloned_app(bench_root, "suite")
+    client = _client(bench_root)
+
+    with patch(
+        "pilot.internal.tasks.runner.task_workers.wake",
+        return_value=False,
+    ):
+        response = client.post("/api/v1/apps/suite/switch-branch", json={"branch": "version-16-hotfix"})
+
+    body = response.get_json()
+    assert response.status_code == 202
+    assert body["command"] == "switch-branch"
+    assert body["args"] == {"name": "suite", "branch": "version-16-hotfix"}
+
+
+def test_switch_branch_requires_a_branch(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    _make_cloned_app(bench_root, "suite")
+    client = _client(bench_root)
+
+    response = client.post("/api/v1/apps/suite/switch-branch", json={"branch": "   "})
+
+    assert response.status_code == 422
+
+
+def test_switch_branch_rejects_invalid_app_and_branch_names(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    _make_cloned_app(bench_root, "suite")
+    client = _client(bench_root)
+
+    invalid_app = client.post("/api/v1/apps/bad.name/switch-branch", json={"branch": "develop"})
+    invalid_branch = client.post(
+        "/api/v1/apps/suite/switch-branch", json={"branch": "../develop"}
+    )
+
+    assert invalid_app.status_code == 422
+    assert invalid_branch.status_code == 422
+
+
+def test_switch_branch_404s_when_app_missing(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+
+    response = client.post("/api/v1/apps/suite/switch-branch", json={"branch": "develop"})
+
+    assert response.status_code == 404
+
+
 def test_marketplace_returns_catalog_apps(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
     client = _client(bench_root)

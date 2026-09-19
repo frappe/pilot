@@ -13,7 +13,16 @@ class SwitchBranchTask(Task):
     branch: str
 
     def run(self) -> None:
+        from pilot.exceptions import BenchError
+        from pilot.internal.validators import validate_app_name, validate_branch_name
         from pilot.managers.environment import PythonEnvManager
+
+        if error := validate_app_name(self.name):
+            raise BenchError(error)
+        if not self.branch:
+            raise BenchError("Branch is required.")
+        if error := validate_branch_name(self.branch):
+            raise BenchError(error)
 
         app = self.bench.app(self.name)
         previous_branch, previous_sha = app.current_branch, app.head_sha

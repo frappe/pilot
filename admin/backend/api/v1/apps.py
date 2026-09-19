@@ -10,11 +10,12 @@ from admin.backend.providers.apps import AppProvider
 from pilot.core.bench import Bench
 from pilot.exceptions import RegistryUnavailableError
 from pilot.internal.git import GitRepo
-from pilot.internal.validators import validate_app_name, validate_repo_url
+from pilot.internal.validators import validate_app_name, validate_branch_name, validate_repo_url
 from pilot.tasks.fetch_app_updates import FetchAppUpdatesTask
 from pilot.tasks.get_and_install_app import GetAndInstallAppTask
 from pilot.tasks.get_app import GetAppTask
 from pilot.tasks.remove_app import RemoveAppTask
+from pilot.tasks.switch_branch import SwitchBranchTask
 
 apps_bp = Blueprint("apps", __name__)
 marketplace_bp = Blueprint("marketplace", __name__)
@@ -170,6 +171,30 @@ def remove(name: str):
         task_id = RemoveAppTask.queue(Bench(bench_root), name=name)
     except Exception:
         return error_response("app_removal_failed", "Could not start app removal.", 500)
+
+    return accepted_task_response(bench_root, task_id)
+
+
+@apps_bp.post("/<name>/switch-branch")
+def switch_branch(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    if error := validate_app_name(name):
+        return error_response("invalid_app", error, 422)
+    if not (bench_root / "apps" / name / ".git").exists():
+        return error_response("app_not_found", f"App '{name}' not found in bench.", 404)
+
+    data = request.get_json(silent=True)
+    branch = data.get("branch", "") if isinstance(data, dict) else ""
+    if not isinstance(branch, str) or not branch.strip():
+        return error_response("branch_required", "branch is required.", 422)
+    branch = branch.strip()
+    if error := validate_branch_name(branch):
+        return error_response("invalid_branch", error, 422)
+
+    try:
+        task_id = SwitchBranchTask.queue(Bench(bench_root), name=name, branch=branch)
+    except Exception:
+        return error_response("branch_switch_failed", "Could not start the branch switch.", 500)
 
     return accepted_task_response(bench_root, task_id)
 

@@ -8,7 +8,7 @@ from unittest.mock import call, patch
 import pytest
 
 from pilot.core.app import App
-from pilot.exceptions import AppValidationError, CommandError
+from pilot.exceptions import AppValidationError, BenchError, CommandError
 from pilot.managers.environment import PythonEnvManager
 from pilot.tasks.switch_branch import SwitchBranchTask
 from tests.pilot.commands.test_commands import make_bench
@@ -29,6 +29,20 @@ def _write_app(bench, fixture: str) -> None:
 
 def _task(bench) -> SwitchBranchTask:
     return SwitchBranchTask(bench=bench, bench_root=bench.path, name="myapp", branch="develop")
+
+
+@pytest.mark.parametrize(
+    ("name", "branch", "message"),
+    [("../myapp", "develop", "App name"), ("myapp", "../develop", "Branch name")],
+)
+def test_switch_branch_rejects_unsafe_arguments(
+    tmp_path: Path, name: str, branch: str, message: str
+) -> None:
+    bench = make_bench(tmp_path)
+    task = SwitchBranchTask(bench=bench, bench_root=bench.path, name=name, branch=branch)
+
+    with pytest.raises(BenchError, match=message):
+        task.run()
 
 
 def test_switch_branch_installs_a_branch_that_validates(tmp_path: Path) -> None:
