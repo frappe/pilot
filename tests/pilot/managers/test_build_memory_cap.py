@@ -82,4 +82,4 @@ def test_compiler_sets_node_heap_to_build_cap(monkeypatch):
     builder = python_assets.PythonAssetBuilder.__new__(python_assets.PythonAssetBuilder)
     builder.run_compiler(["node", "-e", "console.log(1)"])
 
-    assert "--max-old-space-size=4096" in captured["env"].get("NODE_OPTIONS", "")
+    assert "--max-old-space-size=3276" in captured["env"].get("NODE_OPTIONS", "")
