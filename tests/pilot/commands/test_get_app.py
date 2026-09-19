@@ -2,13 +2,53 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from pilot.commands.apps.download import GetAppCommand
 from pilot.core.app import App
+from pilot.exceptions import BenchError
 from pilot.integrations.marketplace import Marketplace, Resolver
 from tests.pilot.commands.test_commands import make_bench
+
+
+def register_app_on_branch(bench, name: str, branch: str) -> str:
+    app_dir = bench.apps_path / name
+    app_dir.mkdir(parents=True)
+    subprocess.run(["git", "init", "-b", branch, str(app_dir)], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(app_dir), "remote", "add", "origin", f"https://github.com/frappe/{name}"],
+        check=True,
+        capture_output=True,
+    )
+    (app_dir / "hooks.py").write_text("")
+    subprocess.run(["git", "-C", str(app_dir), "add", "hooks.py"], check=True, capture_output=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(app_dir),
+            "-c",
+            "user.name=Pilot Tests",
+            "-c",
+            "user.email=pilot@example.com",
+            "commit",
+            "-m",
+            "Initial commit",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    (bench.sites_path / "apps.txt").write_text(f"frappe\n{name}\n")
+    return subprocess.run(
+        ["git", "-C", str(app_dir), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
 
 
 def make_resolver(name: str, deps: dict[str, str] | None = None) -> Resolver:
@@ -69,6 +109,103 @@ def test_run_short_circuits_when_app_already_registered(tmp_path: Path) -> None:
     mock_validate.assert_not_called()
     mock_install.assert_not_called()
     mock_build.assert_not_called()
+
+
+def test_reinstall_with_a_different_branch_fails_loudly(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    register_app_on_branch(bench, "myapp", "version-16")
+
+    cmd = GetAppCommand(bench, repo="https://github.com/frappe/myapp", branch="version-16-hotfix")
+
+    with pytest.raises(BenchError, match="already installed from branch 'version-16'"):
+        cmd.run()
+
+
+def test_reinstall_from_a_different_repository_fails_loudly(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    register_app_on_branch(bench, "myapp", "version-16")
+
+    cmd = GetAppCommand(bench, repo="https://github.com/acme/myapp", branch="version-16")
+
+    with pytest.raises(BenchError, match="already installed from a different repository"):
+        cmd.run()
+
+
+def test_reinstall_with_the_same_branch_still_short_circuits(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    register_app_on_branch(bench, "myapp", "version-16")
+
+    cmd = GetAppCommand(bench, repo="https://github.com/frappe/myapp", branch="version-16")
+
+    with patch.object(App, "clone") as mock_clone:
+        cmd.run()
+
+    mock_clone.assert_not_called()
+
+
+def test_reinstall_with_a_branch_rejects_a_detached_checkout(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    current = register_app_on_branch(bench, "myapp", "version-16")
+    subprocess.run(
+        ["git", "-C", str(bench.apps_path / "myapp"), "checkout", "--detach", current],
+        check=True,
+        capture_output=True,
+    )
+
+    cmd = GetAppCommand(bench, repo="https://github.com/frappe/myapp", branch="version-16")
+
+    with pytest.raises(BenchError, match="already installed from a detached commit"):
+        cmd.run()
+
+
+def test_reinstall_with_a_different_commit_fails_loudly(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    register_app_on_branch(bench, "myapp", "version-16")
+
+    requested = "0" * 40
+    cmd = GetAppCommand(bench, repo="https://github.com/frappe/myapp", branch=requested)
+
+    with pytest.raises(BenchError, match="already installed at a different commit"):
+        cmd.run()
+
+
+def test_reinstall_with_the_same_commit_still_short_circuits(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    current = register_app_on_branch(bench, "myapp", "version-16")
+
+    cmd = GetAppCommand(bench, repo="https://github.com/frappe/myapp", branch=current[:8])
+
+    with patch.object(App, "clone") as mock_clone:
+        cmd.run()
+
+    mock_clone.assert_not_called()
+
+
+def test_reinstall_with_a_different_marketplace_commit_fails_loudly(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    register_app_on_branch(bench, "myapp", "version-16")
+    app = App.from_repo(bench, "https://github.com/frappe/myapp", branch="version-16")
+
+    with pytest.raises(BenchError, match="already installed at a different commit"):
+        app.install(commit="0" * 40)
+
+
+def test_reinstall_with_the_same_marketplace_commit_still_short_circuits(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    current = register_app_on_branch(bench, "myapp", "version-16")
+    app = App.from_repo(bench, "https://github.com/frappe/myapp", branch="version-16")
+
+    result = app.install(commit=current[:8])
+
+    assert result.already_installed is True
 
 
 def test_short_circuit_adopts_real_on_disk_app_path(tmp_path: Path) -> None:
