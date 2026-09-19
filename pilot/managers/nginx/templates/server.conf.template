@@ -21,9 +21,8 @@ server {
 }
 
 server {
-    listen {{ https_port }} ssl default_server;
-    listen [::]:{{ https_port }} ssl default_server;
-    http2 on;
+    listen {{ https_port }} ssl http2 default_server;
+    listen [::]:{{ https_port }} ssl http2 default_server;
     server_name _;
 
     ssl_reject_handshake on;

@@ -169,9 +169,8 @@ server {
 {# main vhost: HTTPS when a cert is ready, plain HTTP otherwise #}
 server {
     {% if vhost.ssl %}
-    listen {{ https_port }} ssl{% if vhost.proxy_protocol %} proxy_protocol{% endif %};
-    listen [::]:{{ https_port }} ssl{% if vhost.proxy_protocol %} proxy_protocol{% endif %};
-    http2 on;
+    listen {{ https_port }} ssl http2{% if vhost.proxy_protocol %} proxy_protocol{% endif %};
+    listen [::]:{{ https_port }} ssl http2{% if vhost.proxy_protocol %} proxy_protocol{% endif %};
     {% else %}
     listen {{ http_port }};
     listen [::]:{{ http_port }};

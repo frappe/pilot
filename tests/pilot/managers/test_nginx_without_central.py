@@ -33,8 +33,7 @@ def test_proxy_protocol_is_off_by_default(tmp_path: Path) -> None:
     site = SiteConfig(name="site1.example.com", apps=["frappe"], ssl=True)
     config = _render(tmp_path, site, site.all_domains)
 
-    assert "listen 443 ssl;" in config
-    assert "http2 on;" in config
+    assert "listen 443 ssl http2;" in config
     assert "proxy_protocol;" not in config
 
 

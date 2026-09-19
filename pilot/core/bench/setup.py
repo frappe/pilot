@@ -179,14 +179,14 @@ class ProductionSetup:
 
         prod = self.bench.config.production
         admin = self.bench.config.admin
+        with CommonConfig.open(self.bench.path.parent) as config:
+            config.letsencrypt.email = self.bench.config.letsencrypt.email
         self._persist(
             {
                 "production": {"enabled": True, "process_manager": prod.process_manager},
                 "admin": {"domain": admin.domain, "tls": admin.tls, "enabled": True},
             }
         )
-        with CommonConfig.open(self.bench.path.parent) as config:
-            config.letsencrypt.email = self.bench.config.letsencrypt.email
 
     def _require_linux(self) -> None:
         from pilot.managers.platform import is_linux
