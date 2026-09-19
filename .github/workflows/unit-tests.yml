@@ -34,7 +34,7 @@ jobs:
         run: pytest tests/ --ignore=tests/integration --ignore=tests/e2e --cov=pilot --cov-report=term-missing --cov-report=xml:coverage.xml -q
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v7
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: ./coverage.xml
           fail_ci_if_error: true
