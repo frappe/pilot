@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 METADATA_BASE = "http://169.254.169.254/latest"
 TOKEN_TTL_SECONDS = 21600
 REQUIRED_KEYS = ("central_endpoint", "central_auth_token", "jwks_url", "jwks_audience_id")
+S3_KEYS = ("access_key", "secret_key", "bucket", "provider", "region", "endpoint_url")
 
 
 def attribute_name() -> str:
@@ -46,6 +47,17 @@ def _parse_credentials(raw: str, name: str) -> dict[str, Any]:
         if not isinstance(initial_jwks_cache, dict):
             raise CentralClientError(f"{source}: initial_jwks_cache is not a JSON object.")
         credentials["initial_jwks_cache"] = initial_jwks_cache
+
+    s3 = payload.get("s3")
+    if s3 is not None:
+        if not isinstance(s3, dict):
+            raise CentralClientError(f"{source}: s3 is not a JSON object.")
+        if missing := [key for key in S3_KEYS if not s3.get(key)]:
+            raise CentralClientError(f"{source}: s3 is missing: {', '.join(missing)}")
+        storage = {key: str(s3[key]) for key in S3_KEYS}
+        if error := validate_external_url(storage["endpoint_url"], "s3.endpoint_url"):
+            raise CentralClientError(f"{source}: {error}")
+        credentials["s3"] = storage
 
     return credentials
 
@@ -109,6 +121,8 @@ def apply_central_config(
     if on_credentials is not None:
         on_credentials(credentials)
 
+    _apply_default_s3(bench, credentials)
+
     from pilot.config.common import CommonConfig
 
     # Every field written here is host-shared, so the whole write goes through
@@ -123,6 +137,22 @@ def apply_central_config(
 
     _mark_bootstrapped(bench.config, credentials)
     return True
+
+
+def _apply_default_s3(bench: "Bench", credentials: dict[str, Any]) -> None:
+    storage = credentials.get("s3")
+    if not storage:
+        return
+
+    from pilot.config import S3Config
+    from pilot.config.bench import BenchConfig
+
+    with BenchConfig.open(bench.path) as config:
+        if config.s3 != S3Config():
+            return
+        config.s3 = S3Config(**storage)
+
+    bench.config.s3 = S3Config(**storage)
 
 
 def _mark_bootstrapped(config: "BenchConfig", credentials: dict[str, Any]) -> None:

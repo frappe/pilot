@@ -13,6 +13,7 @@ from pilot.config import AppConfig
 from pilot.core.app import repository
 from pilot.core.app.repository import AppRepository
 from pilot.core.app.revisions import RevisionPin
+from pilot.exceptions import CommandError
 from pilot.internal.git import GitRepo
 
 
@@ -147,3 +148,72 @@ def test_update_of_a_full_repo_passes_no_depth(
     _repository(tmp_path / "app").update()
 
     assert "--depth=1" not in git_calls[0]
+
+
+def test_pinned_tag_fetch_passes_git_auth_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[tuple[list[str], dict]] = []
+
+    def record(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+
+    repo = _repository(tmp_path / "app")
+    monkeypatch.setattr(repository, "run_command", record)
+    monkeypatch.setattr(AppRepository, "_sync_remote_url", lambda self: None)
+    monkeypatch.setattr(AppRepository, "git_env", property(lambda self: {"GIT_CONFIG_COUNT": "1"}))
+    monkeypatch.setattr(AppRepository, "_checkout_pinned_ref", lambda self, ref: None)
+    monkeypatch.setattr(AppRepository, "is_shallow", property(lambda self: False))
+
+    repo.checkout_pinned_target(RevisionPin(kind="tag", ref="v1.2.3"))
+
+    assert calls[0][0][-3:] == ["fetch", "origin", "v1.2.3"]
+    assert calls[0][1]["env"] == {"GIT_CONFIG_COUNT": "1"}
+
+
+def test_pinned_commit_fetch_passes_git_auth_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[tuple[list[str], dict]] = []
+
+    def record(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+
+    repo = _repository(tmp_path / "app")
+    monkeypatch.setattr(repository, "run_command", record)
+    monkeypatch.setattr(AppRepository, "_sync_remote_url", lambda self: None)
+    monkeypatch.setattr(AppRepository, "git_env", property(lambda self: {"GIT_CONFIG_COUNT": "1"}))
+    monkeypatch.setattr(AppRepository, "_checkout_pinned_ref", lambda self, ref: None)
+    monkeypatch.setattr(AppRepository, "is_shallow", property(lambda self: False))
+
+    repo.checkout_pinned_commit("abc1234")
+
+    assert calls[0][0][-3:] == ["fetch", "origin", "abc1234"]
+    assert calls[0][1]["env"] == {"GIT_CONFIG_COUNT": "1"}
+
+
+def test_pinned_commit_fallback_fetch_passes_git_auth_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[tuple[list[str], dict]] = []
+    attempt = {"n": 0}
+
+    def record(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        if "fetch" in cmd and attempt["n"] == 0:
+            attempt["n"] += 1
+            raise CommandError("initial fetch failed")
+
+    repo = _repository(tmp_path / "app")
+    monkeypatch.setattr(repository, "run_command", record)
+    monkeypatch.setattr(AppRepository, "_sync_remote_url", lambda self: None)
+    monkeypatch.setattr(AppRepository, "git_env", property(lambda self: {"GIT_CONFIG_COUNT": "1"}))
+    monkeypatch.setattr(AppRepository, "_checkout_pinned_ref", lambda self, ref: None)
+    monkeypatch.setattr(AppRepository, "is_shallow", property(lambda self: False))
+
+    repo.checkout_pinned_commit("abc1234")
+
+    fetch_calls = [(cmd, kwargs) for cmd, kwargs in calls if "fetch" in cmd]
+    assert len(fetch_calls) == 2
+    assert fetch_calls[1][0][-3:] == ["fetch", "origin", "main"]
+    assert fetch_calls[1][1]["env"] == {"GIT_CONFIG_COUNT": "1"}

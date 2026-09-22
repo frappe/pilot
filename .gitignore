@@ -95,3 +95,6 @@ skills-lock.json
 
 # Local planning docs, never commit
 plan_*.md
+
+admin/frontend/dashboard/test-results/
+admin/frontend/dashboard/e2e/.auth/

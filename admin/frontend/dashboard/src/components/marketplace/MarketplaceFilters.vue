@@ -18,7 +18,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   worksWithOptions: () => [],
 })
-defineEmits(['add-from-github'])
+defineEmits(['add-from-github', 'new-app'])
 
 const searchModel = defineModel('search', { type: String })
 const pillModel = defineModel('pill', { type: String })
@@ -83,6 +83,11 @@ const worksWithLabel = computed(() => {
         >
           <template #prefix><GithubMark class="size-4" /></template>
           Import app
+        </Button>
+
+        <Button class="text-base" :size="isMobile ? 'md' : 'sm'" @click="$emit('new-app')">
+          <template #prefix><span class="size-4 text-ink-gray-5 lucide-plus" /></template>
+          New app
         </Button>
       </div>
     </div>

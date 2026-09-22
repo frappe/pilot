@@ -32,6 +32,15 @@ class NewAppOptions:
     branch: str = ""
     github_workflow: bool = False
 
+    def __post_init__(self) -> None:
+        missing = [
+            name
+            for name in ("description", "publisher", "email")
+            if not getattr(self, name).strip()
+        ]
+        if missing:
+            raise BenchError(f"App {', '.join(missing)} cannot be blank.")
+
     def as_answers(self) -> str:
         answers = [
             self.title,

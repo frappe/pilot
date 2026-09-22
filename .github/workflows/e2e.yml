@@ -99,10 +99,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+          key: playwright-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'admin/frontend/dashboard/package-lock.json') }}
 
       - name: Install Playwright browser
         run: playwright install --with-deps chromium
+
+      - name: Install dashboard Playwright browser
+        working-directory: admin/frontend/dashboard
+        run: npx playwright install chromium
 
       - name: Run e2e tests
         working-directory: tests/e2e
@@ -121,5 +125,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: e2e-traces-${{ matrix.variant }}
-          path: tests/e2e/test-results
+          path: |
+            tests/e2e/test-results
+            admin/frontend/dashboard/test-results
           retention-days: 7

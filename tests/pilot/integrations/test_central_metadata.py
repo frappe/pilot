@@ -19,6 +19,14 @@ _ATTRIBUTE = {
 
 # Pilot only checks the shape; the admin validates the keys.
 _KEY_SET = {"keys": [{"kid": "atlas-key"}]}
+_S3 = {
+    "access_key": "garage-access",
+    "secret_key": "garage-secret",
+    "bucket": "team-42-in-mumbai-backups",
+    "provider": "garage",
+    "region": "in-mumbai",
+    "endpoint_url": "https://s3.in-mumbai.example.test",
+}
 
 
 class _FakeMetadata(InstanceMetadata):
@@ -130,6 +138,12 @@ def test_the_initial_jwks_cache_comes_back_with_the_credentials() -> None:
     assert credentials["initial_jwks_cache"] == _KEY_SET
 
 
+def test_storage_configuration_comes_back_with_the_credentials() -> None:
+    credentials = _FakeMetadata(json.dumps({**_ATTRIBUTE, "s3": _S3})).get_credentials()
+
+    assert credentials["s3"] == _S3
+
+
 def test_an_initial_jwks_cache_that_is_not_an_object_raises() -> None:
     malformed = json.dumps({**_ATTRIBUTE, "initial_jwks_cache": "keys"})
 
@@ -150,6 +164,34 @@ def test_apply_hands_over_the_credentials_before_the_host_reads_as_bootstrapped(
     assert apply_central_config(bench, _FakeMetadata(json.dumps(attribute)), on_credentials) is True
 
     assert seen == [(_KEY_SET, False)]
+
+
+def test_apply_saves_central_storage_as_the_default_s3_config(tmp_path: Path) -> None:
+    bench = _awaiting_bench(tmp_path)
+
+    apply_central_config(bench, _FakeMetadata(json.dumps({**_ATTRIBUTE, "s3": _S3})))
+
+    saved = BenchConfig.read(bench.path)
+    assert saved.s3.access_key == "garage-access"
+    assert saved.s3.secret_key == "garage-secret"
+    assert saved.s3.bucket == "team-42-in-mumbai-backups"
+    assert saved.s3.provider == "garage"
+    assert saved.s3.region == "in-mumbai"
+    assert saved.s3.endpoint_url == "https://s3.in-mumbai.example.test"
+
+
+def test_apply_preserves_an_existing_provider_config(tmp_path: Path) -> None:
+    bench = _awaiting_bench(tmp_path)
+    with BenchConfig.open(bench.path) as config:
+        config.s3.access_key = "customer-access"
+        config.s3.secret_key = "customer-secret"
+        config.s3.bucket = "customer-backups"
+        config.s3.provider = "aws"
+        config.s3.region = "us-east-1"
+
+    apply_central_config(bench, _FakeMetadata(json.dumps({**_ATTRIBUTE, "s3": _S3})))
+
+    assert BenchConfig.read(bench.path).s3.provider == "aws"
 
 
 def test_a_metadata_flavoured_endpoint_is_rejected() -> None:

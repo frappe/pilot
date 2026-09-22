@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "test": "node --test src/utils/*.test.ts",
+    "test:e2e": "playwright test",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -23,6 +24,7 @@
     "vue-router": "^4.4.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@vitejs/plugin-vue": "^6.0.8",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",

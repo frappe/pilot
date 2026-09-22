@@ -56,6 +56,7 @@ The stable top-level config groups are:
 - `[lite_mode]`
 - `[monitor]`
 - `[gunicorn]`
+- `[build]`
 - `[admin]`
 - `[firewall]`
 - `[waf]`

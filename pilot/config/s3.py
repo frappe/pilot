@@ -8,6 +8,7 @@ class S3Config:
     bucket: str = ""
     provider: str = ""
     region: str = ""
+    endpoint_url: str = ""
 
     @property
     def is_configured(self) -> bool:
