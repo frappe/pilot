@@ -9,9 +9,6 @@ on:
 jobs:
   unit:
     runs-on: ubuntu-22.04
-    permissions:
-      contents: read
-      pull-requests: write
 
     steps:
       - uses: actions/checkout@v4
@@ -36,12 +33,18 @@ jobs:
         # live bench + browser, so keep it out of the unit run alongside integration.
         run: pytest tests/ --ignore=tests/integration --ignore=tests/e2e --cov=pilot --cov-report=term-missing --cov-report=xml:coverage.xml -q
 
-      - name: Coverage comment
+      - name: Generate coverage comment
         if: github.event_name == 'pull_request'
-        uses: orgoro/coverage@ca0c362dc1a4f100447309405e6dfea47e251495 # v3.3.1
+        run: python .github/scripts/coverage_comment.py --coverage coverage.xml --output coverage-comment.md --run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - name: Upload coverage comment
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
         with:
-          coverageFile: coverage.xml
-          token: ${{ secrets.GITHUB_TOKEN }}
+          name: coverage-comment
+          path: coverage-comment.md
+          retention-days: 7
+          if-no-files-found: error
 
       - name: Type check (dev-only, see [tool.mypy] in pyproject.toml)
         run: mypy pilot admin/backend
