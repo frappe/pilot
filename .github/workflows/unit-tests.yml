@@ -9,6 +9,9 @@ on:
 jobs:
   unit:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      pull-requests: write
 
     steps:
       - uses: actions/checkout@v4
@@ -33,14 +36,12 @@ jobs:
         # live bench + browser, so keep it out of the unit run alongside integration.
         run: pytest tests/ --ignore=tests/integration --ignore=tests/e2e --cov=pilot --cov-report=term-missing --cov-report=xml:coverage.xml -q
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+      - name: Coverage comment
+        if: github.event_name == 'pull_request'
+        uses: orgoro/coverage@ca0c362dc1a4f100447309405e6dfea47e251495 # v3.3.1
         with:
-          files: ./coverage.xml
-          fail_ci_if_error: true
-          verbose: true
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          coverageFile: coverage.xml
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Type check (dev-only, see [tool.mypy] in pyproject.toml)
         run: mypy pilot admin/backend
