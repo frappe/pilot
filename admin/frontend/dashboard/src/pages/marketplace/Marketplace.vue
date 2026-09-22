@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Badge, Button, ErrorMessage, Skeleton } from 'frappe-ui'
 
 import AddAppFromGithubDialog from '@/components/apps/AddAppFromGithubDialog.vue'
+import NewAppDialog from '@/components/apps/NewAppDialog.vue'
 import PageHero from '@/components/common/PageHero.vue'
 import ChooseSiteDialog from '@/components/sites/ChooseSiteDialog.vue'
 import InstallAppDialog from '@/components/apps/InstallAppDialog.vue'
@@ -52,6 +53,7 @@ const filteredHeading = computed(() => {
 const showChooseSite = ref(false)
 const showInstallApp = ref(false)
 const showAddFromGithub = ref(false)
+const showNewApp = ref(false)
 const installTarget = ref(null)
 
 watch(
@@ -116,6 +118,7 @@ onMounted(load)
     v-model:works-with="worksWith"
     :works-with-options="worksWithOptions"
     @add-from-github="showAddFromGithub = true"
+    @new-app="showNewApp = true"
   />
 
   <div class="px-3 sm:px-4 mx-auto box-content max-w-3xl pb-40">
@@ -206,4 +209,6 @@ onMounted(load)
     :site-name="currentSiteName"
   />
   <AddAppFromGithubDialog v-model:open="showAddFromGithub" :site-name="currentSiteName" />
+
+  <NewAppDialog v-model:open="showNewApp" />
 </template>

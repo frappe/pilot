@@ -273,6 +273,24 @@ def test_invalid_redis_version() -> None:
     assert "redis.version" in str(exc_info.value)
 
 
+def test_invalid_build_memory_limit_rejected() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["build"] = {"memory_limit_mb": -1}
+    config = BenchConfig._from_dict(data)
+    with pytest.raises(ConfigError) as exc_info:
+        config.validate()
+    assert "build.memory_limit_mb" in str(exc_info.value)
+
+
+def test_boolean_build_memory_limit_rejected() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["build"] = {"memory_limit_mb": True}
+    config = BenchConfig._from_dict(data)
+    with pytest.raises(ConfigError) as exc_info:
+        config.validate()
+    assert "build.memory_limit_mb" in str(exc_info.value)
+
+
 def test_branches_defaults_to_empty_list() -> None:
     config = BenchConfig.from_file(FIXTURES_DIR / "minimal.toml")
     assert config.apps[0].branches == []
@@ -734,6 +752,8 @@ def test_every_field_survives_a_round_trip(tmp_path: Path) -> None:
     config.llm.model = "my-served-model"
     config.llm.max_tokens = 2048
     config.llm.api_base = "http://vllm:8000/v1"
+
+    config.build.memory_limit_mb = 2048
 
     # mariadb/postgres/letsencrypt/admin.jwks_* are host-shared state in
     # common_config.toml, one level above the bench directory - nest under

@@ -14,6 +14,7 @@ const secretKey = ref('')
 const bucket = ref('')
 const provider = ref('')
 const region = ref('')
+const endpointUrl = ref('')
 const secretKeySet = ref(false)
 const providers = ref([])
 
@@ -31,7 +32,10 @@ const regionOptions = computed(
       ?.regions.map((r) => ({ label: r, value: r })) || [],
 )
 
-watch(provider, () => {
+watch(provider, (_provider, previousProvider) => {
+  if (previousProvider) {
+    endpointUrl.value = ''
+  }
   if (!regionOptions.value.some((o) => o.value === region.value)) {
     region.value = regionOptions.value[0]?.value || ''
   }
@@ -57,6 +61,7 @@ const load = async () => {
     bucket.value = s3.bucket || ''
     provider.value = s3.provider || providers.value[0]?.value || ''
     region.value = s3.region || ''
+    endpointUrl.value = s3.endpoint_url || ''
     secretKeySet.value = !!s3.secret_key_set
   } catch (e) {
     error.value = e.message || 'Could not load settings.'
@@ -76,6 +81,7 @@ const save = async () => {
         bucket: bucket.value.trim(),
         provider: provider.value,
         region: region.value,
+        endpoint_url: endpointUrl.value.trim(),
       },
     })
     if (!result.error) {
@@ -102,6 +108,7 @@ const disconnect = async () => {
       bucket.value = ''
       provider.value = providers.value[0]?.value || ''
       region.value = ''
+      endpointUrl.value = ''
       secretKeySet.value = false
       toast.success('Object storage disconnected')
     } else {
@@ -157,6 +164,11 @@ onMounted(load)
 
     <div class="space-y-4">
       <TextInput label="Bucket" v-model="bucket" placeholder="storage-bucket" />
+      <TextInput
+        label="Endpoint URL"
+        v-model="endpointUrl"
+        placeholder="Optional for AWS, DigitalOcean, and Hetzner"
+      />
       <div class="flex sm:flex-row flex-col gap-4">
         <Select label="Provider" v-model="provider" :options="providerOptions" class="w-full" />
         <Select label="Region" v-model="region" :options="regionOptions" class="w-full" />

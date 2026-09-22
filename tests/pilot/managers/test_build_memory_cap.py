@@ -6,14 +6,28 @@ import os
 
 import psutil
 
+from pilot.config.build import BuildConfig
 from pilot.core.build_memory import BUILD_MEMORY_SHARE, MIN_BUILD_MEMORY_MB, build_memory_limit_mb
 from pilot.exceptions import BenchError
 from pilot.managers.systemd_user import systemctl_env
 
 
+class _FakeBench:
+    class config:
+        build = BuildConfig()
+
+
 def test_the_limit_is_a_share_of_free_memory():
     available_mb = psutil.virtual_memory().available / (1024 * 1024)
     assert build_memory_limit_mb() == int(available_mb * BUILD_MEMORY_SHARE)
+
+
+def test_a_manual_override_is_used_as_is(monkeypatch):
+    class FakeMemory:
+        available = (MIN_BUILD_MEMORY_MB - 1) * 1024 * 1024
+
+    monkeypatch.setattr(psutil, "virtual_memory", lambda: FakeMemory())
+    assert build_memory_limit_mb(2048) == 2048
 
 
 def test_a_starved_host_refuses_up_front(monkeypatch):
@@ -47,6 +61,7 @@ def test_a_killed_build_reports_memory_not_a_signal(monkeypatch):
 
     monkeypatch.setattr(python_assets, "run_command", killed)
     builder = python_assets.PythonAssetBuilder.__new__(python_assets.PythonAssetBuilder)
+    builder.bench = _FakeBench()
     with pytest.raises(BenchError, match="ran out of memory"):
         builder.run_compiler(["yarn", "build"])
 
@@ -62,5 +77,6 @@ def test_a_compiler_error_is_left_alone(monkeypatch):
 
     monkeypatch.setattr(python_assets, "run_command", failed)
     builder = python_assets.PythonAssetBuilder.__new__(python_assets.PythonAssetBuilder)
+    builder.bench = _FakeBench()
     with pytest.raises(CommandError, match="syntax error"):
         builder.run_compiler(["yarn", "build"])

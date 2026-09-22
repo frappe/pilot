@@ -94,6 +94,11 @@ test('site-creating and app tasks redirect to the site page on success', () => {
     redirectRouteOnSuccess({ command: 'get-and-install-app', args: { site: 'a.local', repo: 'x' } }),
     { name: 'SiteDetail', params: { name: 'a.local' } },
   )
+
+  assert.deepEqual(redirectRouteOnSuccess({ command: 'new-app', args: { name: 'people_ops' } }), {
+    name: 'Marketplace',
+  })
+
   // A dropped site has no detail page left to land on.
   assert.deepEqual(redirectRouteOnSuccess({ command: 'drop-site', args: { site: 'a.local' } }), {
     name: 'Sites',

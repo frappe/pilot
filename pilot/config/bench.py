@@ -12,6 +12,7 @@ from typing import Any, ClassVar
 from pilot.config.admin import AdminConfig
 from pilot.config.alert_limit import ResourceLimitConfig
 from pilot.config.app import AppConfig
+from pilot.config.build import BuildConfig
 from pilot.config.central import CentralConfig
 from pilot.config.common import CommonConfig
 from pilot.config.firewall import FirewallConfig, FirewallRule
@@ -129,6 +130,7 @@ class BenchConfig:
     lite_mode: LiteModeConfig = field(default_factory=LiteModeConfig)
     nginx: NginxConfig = field(default_factory=NginxConfig)
     gunicorn: GunicornConfig = field(default_factory=GunicornConfig)
+    build: BuildConfig = field(default_factory=BuildConfig)
     letsencrypt: LetsEncryptConfig = field(default_factory=LetsEncryptConfig)
     admin: AdminConfig = field(default_factory=AdminConfig)
     central: CentralConfig = field(default_factory=CentralConfig)
@@ -262,6 +264,7 @@ class BenchConfig:
         self.workers.validate()
         self.letsencrypt.validate()
         self.gunicorn.validate()
+        self.build.validate()
         self.lite_mode.validate()
         self.production.validate(self.name)
         self.admin.validate(self.production.enabled, self.name)
@@ -330,6 +333,7 @@ class BenchConfig:
             "admin.jwks_url": self.admin.jwks_url,
             "telemetry.endpoint": self.telemetry.endpoint,
             "llm.api_base": self.llm.api_base,
+            "s3.endpoint_url": self.s3.endpoint_url,
         }
         for name, url in endpoints.items():
             if error := validate_external_url(url, name):
@@ -568,6 +572,9 @@ class BenchConfig:
             "max_requests_jitter": self.gunicorn.max_requests_jitter,
         }
 
+    def _build_section(self) -> ConfigDict:
+        return {"memory_limit_mb": self.build.memory_limit_mb}
+
     def _admin_section(self) -> ConfigDict:
         admin: ConfigDict = {
             "port": self.admin.port,
@@ -640,6 +647,7 @@ class BenchConfig:
             "bucket": self.s3.bucket,
             "provider": self.s3.provider,
             "region": self.s3.region,
+            "endpoint_url": self.s3.endpoint_url,
         }
 
     def _llm_section(self) -> ConfigDict:
@@ -756,6 +764,11 @@ _SECTIONS: tuple[_Section, ...] = (
         lambda config: config._gunicorn_section(),
     ),
     _Section(
+        "build",
+        lambda data: BuildConfig.from_dict(data.get("build", {})),
+        lambda config: config._build_section() if config.build.memory_limit_mb else None,
+    ),
+    _Section(
         "admin",
         lambda data: AdminConfig.from_dict(data.get("admin", {})),
         lambda config: config._admin_section(),
@@ -783,6 +796,7 @@ _SECTIONS: tuple[_Section, ...] = (
                 or config.s3.bucket
                 or config.s3.provider
                 or config.s3.region
+                or config.s3.endpoint_url
             )
             else None
         ),
@@ -876,6 +890,7 @@ def _bench_schema() -> _Table:
             "production": _Table(keys=_keys(ProductionConfig) | _PRODUCTION_LEGACY),
             "lite_mode": _Table(keys=_keys(LiteModeConfig)),
             "gunicorn": _Table(keys=_keys(GunicornConfig) | _GUNICORN_LEGACY),
+            "build": _Table(keys=_keys(BuildConfig)),
             "admin": _Table(keys=_keys(AdminConfig)),
             "s3": _Table(keys=_keys(S3Config)),
             "llm": _Table(keys=_keys(LLMConfig)),

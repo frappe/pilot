@@ -22,6 +22,7 @@ completion. Built on **pytest + pytest-playwright** (sync API).
 | `flows/admin.py`    | `login`, `create_site`, `install_custom_app`, `uninstall_app`, `drop_site` + API-based assertions. |
 | `conftest.py`       | `bench` + `page` fixtures (module-scoped) and the serial-skip wiring. |
 | `specs/test_bench_lifecycle.py` | The one serial lifecycle; the engine (`mariadb` / `postgres`) is selected by env. |
+| `admin/frontend/dashboard/e2e/` | Dashboard specs (Playwright TypeScript). `test_dashboard_specs` runs them against the lifecycle bench on MariaDB, after `site1.localhost` exists. Run them alone against any bench with `E2E_ADMIN_PASSWORD=<password> npx playwright test` from `admin/frontend/dashboard` (`E2E_BASE_URL` defaults to `http://localhost:7001`). |
 
 The tests in a module are **serial**: they share one bench and one browser
 context (so the login cookie carries across) and the `incremental` marker skips

@@ -30,7 +30,7 @@ class PythonAssetBuilder:
         fails instead of exhausting the machine."""
         from pilot.core.build_memory import build_memory_limit_mb
 
-        limit_mb = build_memory_limit_mb()
+        limit_mb = build_memory_limit_mb(self.bench.config.build.memory_limit_mb)
         kwargs["env"] = {**systemctl_env(), **(kwargs.get("env") or {})}
         try:
             run_command(memory_capped(argv, limit_mb), **kwargs)
