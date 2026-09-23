@@ -38,8 +38,10 @@ def get_changed_files(base_ref):
         text=True,
         check=True,
     )
+    # Two-dot endpoint diff: three-dot needs a merge base, which a
+    # depth-1 checkout plus a depth-1 fetch does not provide.
     completed = subprocess.run(
-        ["git", "diff", "--name-only", "FETCH_HEAD...HEAD", "--", "*.py"],
+        ["git", "diff", "--name-only", "FETCH_HEAD..HEAD", "--", "*.py"],
         capture_output=True,
         text=True,
         check=True,

@@ -40,9 +40,9 @@ jobs:
               state: 'open',
               head: `${run.head_repository.owner.login}:${run.head_branch}`,
             });
-            const pr = prs.find((p) => p.head.sha === run.head_sha) ?? prs[0];
+            const pr = prs.find((p) => p.head.sha === run.head_sha);
             if (!pr) {
-              core.warning('No open PR found for this run');
+              core.warning('No open PR matches this run head SHA; skipping');
               return;
             }
             const { data: comments } = await github.rest.issues.listComments({
