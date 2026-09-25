@@ -38,6 +38,7 @@ Supported managers are `systemd` and `supervisor`.
 A new bench deploys one bench process plus admin and the two redis servers, because
 `[lite_mode] enabled` is the default. Turn lite mode off and the set becomes web,
 socketio, admin, workers, and redis - see [Lite Mode](configuration.md#lite-mode).
+Supervisor also runs a `schedule` process; systemd's worker pool runs the scheduler itself.
 
 Each workload unit sets `LimitNOFILE=65535`. A systemd user unit gets 1024
 descriptors by default, which is too few for a lite-mode bench process and for
