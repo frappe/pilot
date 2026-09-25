@@ -740,7 +740,7 @@ class MariaDBManager(UserOwnedDBManager):
             "LimitNOFILE=65535\n"
             f"MemoryHigh={sizing.memory_high_mb}M\n"
             f"MemoryMax={sizing.memory_max_mb}M\n"
-            "MemorySwapMax=100M\n"
+            f"MemorySwapMax={sizing.memory_swap_max_mb}M\n"
             "Restart=on-failure\n\n"
             "[Install]\n"
             "WantedBy=default.target\n"

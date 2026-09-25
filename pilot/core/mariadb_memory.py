@@ -9,6 +9,10 @@ _MEMORY_PER_CONNECTION_MB = 35
 _MIN_BUFFER_POOL_MB = 128
 _MIN_MEMORY_MAX_MB = 512
 _MIN_MEMORY_LIMIT_GAP_MB = 128
+_MEMORY_HIGH_SHARE = 0.85
+_MEMORY_SWAP_SHARE = 0.20
+_MIN_MEMORY_SWAP_MB = 100
+_MAX_MEMORY_SWAP_MB = 1024
 _MAX_HOST_MEMORY_SHARE = 0.5
 _MIN_MAX_CONNECTIONS = 10
 _MIN_BUFFER_POOL_SHARE = 0.2
@@ -28,6 +32,7 @@ class MariaDBMemorySizing:
     innodb_log_file_mb: int
     memory_high_mb: int
     memory_max_mb: int
+    memory_swap_max_mb: int
 
 
 @dataclass(frozen=True)
@@ -70,12 +75,20 @@ def calculate_mariadb_memory(total_memory_mb: int) -> MariaDBMemorySizing:
         host_share_cap_mb,
         max(_MIN_MEMORY_MAX_MB, round(mariadb_memory_mb)),
     )
+    # Keep MemoryHigh close enough to MemoryMax that normal MariaDB peaks do
+    # not trigger sustained cgroup throttling while retaining a safety margin.
     memory_high_mb = max(
         1,
         min(
             memory_max_mb - _MIN_MEMORY_LIMIT_GAP_MB,
-            round(max(mariadb_memory_mb - 1024, 1024)),
+            round(memory_max_mb * _MEMORY_HIGH_SHARE),
         ),
+    )
+    # Give MariaDB bounded swap headroom that scales with its service budget.
+    # A fixed 100 MB ceiling can be exhausted during short-lived memory peaks.
+    memory_swap_max_mb = min(
+        _MAX_MEMORY_SWAP_MB,
+        max(_MIN_MEMORY_SWAP_MB, round(memory_max_mb * _MEMORY_SWAP_SHARE)),
     )
 
     return MariaDBMemorySizing(
@@ -87,6 +100,7 @@ def calculate_mariadb_memory(total_memory_mb: int) -> MariaDBMemorySizing:
         innodb_log_file_mb=_innodb_log_file_size(total_memory_mb),
         memory_high_mb=memory_high_mb,
         memory_max_mb=memory_max_mb,
+        memory_swap_max_mb=memory_swap_max_mb,
     )
 
 

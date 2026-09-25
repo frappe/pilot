@@ -54,8 +54,27 @@ def test_press_unified_memory_sizing_is_adapted_for_pilot() -> None:
     assert sizing.max_connections == 50
     assert sizing.key_buffer_mb == 32
     assert sizing.innodb_log_file_mb == 512
-    assert sizing.memory_high_mb == 2148
+    assert sizing.memory_high_mb == 2696
     assert sizing.memory_max_mb == 3172
+    assert sizing.memory_swap_max_mb == 634
+
+
+def test_memory_high_stays_close_to_memory_max_on_8gb_host() -> None:
+    sizing = calculate_mariadb_memory(8192)
+
+    assert sizing.memory_high_mb >= round(sizing.memory_max_mb * 0.84)
+    assert sizing.memory_high_mb <= round(sizing.memory_max_mb * 0.86)
+    assert sizing.memory_max_mb - sizing.memory_high_mb >= 128
+
+
+def test_swap_headroom_scales_with_mariadb_budget() -> None:
+    small = calculate_mariadb_memory(2048)
+    medium = calculate_mariadb_memory(8192)
+    large = calculate_mariadb_memory(32768)
+
+    assert small.memory_swap_max_mb == 102
+    assert medium.memory_swap_max_mb == 634
+    assert large.memory_swap_max_mb == 1024
 
 
 def test_small_vm_limits_leave_memory_for_other_pilot_processes() -> None:
@@ -66,6 +85,7 @@ def test_small_vm_limits_leave_memory_for_other_pilot_processes() -> None:
     assert sizing.innodb_log_file_mb == 48
     assert sizing.memory_high_mb == 384
     assert sizing.memory_max_mb == 512
+    assert sizing.memory_swap_max_mb == 102
     assert sizing.memory_max_mb < sizing.total_memory_mb
 
 
@@ -108,6 +128,7 @@ def test_memory_limits_never_claim_more_than_half_the_host(total_memory_mb: int)
 
     assert 0 < sizing.memory_high_mb <= sizing.memory_max_mb
     assert sizing.memory_max_mb <= total_memory_mb // 2
+    assert 100 <= sizing.memory_swap_max_mb <= 1024
 
 
 @pytest.mark.parametrize(
@@ -772,7 +793,7 @@ def test_linux_unit_starts_with_option_file_and_memory_limits(tmp_path) -> None:
     assert "LimitNOFILE=65535" in content
     assert f"MemoryHigh={sizing.memory_high_mb}M" in content
     assert f"MemoryMax={sizing.memory_max_mb}M" in content
-    assert "MemorySwapMax=100M" in content
+    assert f"MemorySwapMax={sizing.memory_swap_max_mb}M" in content
 
 
 def test_is_provisioned_on_macos_checks_live_server_not_a_marker_file() -> None:
