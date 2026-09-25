@@ -699,12 +699,12 @@ def test_bench_init_apps_comes_from_config(tmp_path: Path) -> None:
 def test_process_definitions_returns_correct_count(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     # workers: default=2, short=1, long=1 => 4 worker processes
-    # plus web, socketio, redis_cache, redis_queue = 4
+    # plus web, socketio, schedule, redis_cache, redis_queue = 5
     # plus admin, watch (on by default in dev) = 2
-    # total = 10
+    # total = 11
     process_manager = ProcessManager(bench)
     definitions = process_manager._process_definitions()
-    assert len(definitions) == 10
+    assert len(definitions) == 11
     assert "watch" in [pd.name for pd in definitions]
     assert "admin-ui" not in [pd.name for pd in definitions]
 
@@ -713,7 +713,7 @@ def test_process_definitions_watch_admin_js_adds_vite_ui(tmp_path: Path) -> None
     bench = make_bench(tmp_path)
     definitions = ProcessManager(bench, watch_admin_js=True)._process_definitions()
     assert "admin-ui" in [pd.name for pd in definitions]
-    assert len(definitions) == 11
+    assert len(definitions) == 12
 
 
 def test_process_definitions_can_disable_app_watch(tmp_path: Path) -> None:
@@ -721,7 +721,7 @@ def test_process_definitions_can_disable_app_watch(tmp_path: Path) -> None:
     bench.config.watch_apps_js = False
     definitions = ProcessManager(bench)._process_definitions()
     assert "watch" not in [pd.name for pd in definitions]
-    assert len(definitions) == 9
+    assert len(definitions) == 10
 
 
 def test_run_processes_survives_noncritical_exit(tmp_path: Path) -> None:
@@ -748,6 +748,22 @@ def test_watch_definition_is_noncritical_frappe_watch(tmp_path: Path) -> None:
     assert watch.working_dir == bench.sites_path
     assert watch.critical is False
     assert all(pd.critical for pd in definitions if pd.name != "watch")
+
+
+def test_process_definitions_run_frappe_scheduler(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    definitions = ProcessManager(bench)._process_definitions()
+    schedule = next(pd for pd in definitions if pd.name == "schedule")
+    assert "frappe schedule" in shlex.join(schedule.argv)
+    assert schedule.working_dir == bench.sites_path
+
+
+def test_systemd_definitions_leave_scheduling_to_worker_pool(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.config.production.process_manager = "systemd"
+    names = [pd.name for pd in ProcessManager(bench)._prod_process_definitions()]
+    assert "worker_pool" in names
+    assert "schedule" not in names
 
 
 def test_process_definitions_worker_names_are_numbered(tmp_path: Path) -> None:

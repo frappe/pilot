@@ -53,6 +53,7 @@ class ProcessDefinitionBuilder:
                 self.socketio_definition(),
                 self.admin_definition(),
                 *worker_defs,
+                self.schedule_definition(),
             ]
         defs.append(self.redis_definition("redis_cache", "redis_cache.conf"))
         defs.append(self.redis_definition("redis_queue", "redis_queue.conf"))
@@ -217,6 +218,16 @@ class ProcessDefinitionBuilder:
             )
             for i in range(1, count + 1)
         ]
+
+    def schedule_definition(self) -> ProcessDefinition:
+        """Plain `frappe worker` has no scheduler; lite and worker-pool run their own."""
+        return ProcessDefinition(
+            name="schedule",
+            argv=[str(self.python), "-m", "frappe.utils.bench_helper", "frappe", "schedule"],
+            log_file=self.bench.logs_path / "schedule.log",
+            env=self.python_env(),
+            working_dir=self.bench.sites_path,
+        )
 
     def redis_definition(self, name: str, config_filename: str) -> ProcessDefinition:
         from pilot.managers.redis import redis_server_binary
