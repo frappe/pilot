@@ -162,6 +162,7 @@ def drop_site(name: str):
         task_id = DropSiteTask.queue(
             Bench(bench_root),
             site=name,
+            no_backup=request.args.get("no_backup") in ("1", "true"),
             idempotency_key=request.headers.get("Idempotency-Key"),
             resource_key=f"site:{name.lower()}",
         )
