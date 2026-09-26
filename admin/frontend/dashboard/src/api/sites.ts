@@ -59,8 +59,12 @@ export const sitesApi = {
   reinstall: (name: string): Promise<TaskPayload> =>
     request.post(`sites/${encodeURIComponent(name)}/actions/reinstall`).json(),
 
-  drop: (name: string): Promise<TaskPayload> =>
-    request.delete(`sites/${encodeURIComponent(name)}`).json(),
+  drop: (name: string, { noBackup = false }: { noBackup?: boolean } = {}): Promise<TaskPayload> =>
+    request
+      .delete(`sites/${encodeURIComponent(name)}`, {
+        searchParams: noBackup ? { no_backup: '1' } : {},
+      })
+      .json(),
 
   apps: {
     list: (name: string): Promise<SiteApps> =>
