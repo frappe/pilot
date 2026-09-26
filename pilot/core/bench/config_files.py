@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+from pilot.exceptions import BenchError
 from pilot.utils import write_private_text
 
 if TYPE_CHECKING:
@@ -66,8 +67,11 @@ class BenchConfigFiles:
         config_path = self.bench.sites_path / "common_site_config.json"
         try:
             config = json.loads(config_path.read_text()) if config_path.exists() else {}
-        except json.JSONDecodeError:
-            config = {}
+        except json.JSONDecodeError as exc:
+            raise BenchError(
+                f"{config_path} contains invalid JSON: {exc}. "
+                "Please fix the syntax error to prevent configuration data loss."
+            ) from exc
         config.update(
             {
                 "redis_cache": redis_cache,
