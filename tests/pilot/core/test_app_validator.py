@@ -178,13 +178,22 @@ def test_dependency_declarations_fails_when_frappe_dependencies_omits_frappe(
 
 
 def test_dependency_declarations_excludes_frappe_from_hooks_comparison(tmp_path: Path) -> None:
-    """pyproject always declares frappe; hooks.py's required_apps never does -
-    frappe being present in pyproject alone must not cause any false failure."""
+    """frappe being present in pyproject alone must not cause any false failure."""
     app = _make_app(
         tmp_path,
         "myapp",
         '[project]\nname = "myapp"\n\n[tool.bench.frappe-dependencies]\nfrappe = ">=15"\n',
         {"myapp/hooks.py": "app_name = 'myapp'\n"},  # no required_apps at all
+    )
+    Validator(app, checks=_static_checks()).validate()
+
+
+def test_dependency_declarations_passes_when_required_apps_lists_frappe(tmp_path: Path) -> None:
+    app = _make_app(
+        tmp_path,
+        "myapp",
+        '[project]\nname = "myapp"\n\n[tool.bench.frappe-dependencies]\nfrappe = ">=15"\nerpnext = ">=15"\n',
+        {"myapp/hooks.py": 'required_apps = ["frappe", "erpnext"]\n'},
     )
     Validator(app, checks=_static_checks()).validate()
 
