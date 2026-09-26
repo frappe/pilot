@@ -87,9 +87,14 @@ The cap applies only to hosts with `systemd-run` and cgroup memory delegation av
 
 To set a fixed cap instead, add `memory_limit_mb` under `[build]` in `bench.toml`. Leave it unset (or 0) to keep the automatic 85% sizing.
 
+## Automated Backups
+
+Automated site backups and backup retention pruning run via the host's cron daemon. A system cron service (`cron` on Debian/Ubuntu, `crond` on Fedora, `cronie` on Arch) must be installed, enabled, and running on the host for backup schedules to execute.
+
 ## Operational Notes
 
 - Production changes may need non-interactive sudo.
+- Automated site backups require an active host cron daemon (such as `cron` or `cronie`); ensure the service is enabled and running.
 - Central-enabled systemd benches retry the metadata credential at boot until it is applied.
 - Generated config belongs under the bench `config/` directory or system config locations managed by the relevant manager.
 - Logs should remain available after production removal.
