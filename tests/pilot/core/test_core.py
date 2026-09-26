@@ -881,12 +881,12 @@ def _capture_admin_sql(monkeypatch) -> list[str]:
     return statements
 
 
-def _write_site_config(bench, site: str, db_name: str) -> None:
+def _write_site_config(bench, site: str, db_name: str, db_type: str = "mariadb") -> None:
     import json
 
     site_dir = bench.sites_path / site
     site_dir.mkdir(parents=True, exist_ok=True)
-    (site_dir / "site_config.json").write_text(json.dumps({"db_name": db_name}))
+    (site_dir / "site_config.json").write_text(json.dumps({"db_name": db_name, "db_type": db_type}))
 
 
 def _capture_site_cmd(monkeypatch) -> dict:
@@ -949,6 +949,7 @@ def test_site_create_mariadb_when_bench_is_mariadb(tmp_path: Path, monkeypatch: 
 
 def test_site_restore_uses_postgres_root_creds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     bench = _postgres_bench(tmp_path, root_password="pgpw")
+    _write_site_config(bench, "pg.localhost", "pgdb", "postgres")
     captured = _capture_site_cmd(monkeypatch)
 
     Site(SiteConfig(name="pg.localhost", apps=[]), bench).restore("/tmp/db.sql.gz")
@@ -982,6 +983,7 @@ def test_site_restore_scopes_its_account_to_the_site_database(
 
 def test_site_reinstall_postgres_root_creds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     bench = _postgres_bench(tmp_path, root_password="pgpw")
+    _write_site_config(bench, "pg.localhost", "pgdb", "postgres")
     captured = _capture_site_cmd(monkeypatch)
 
     Site(SiteConfig(name="pg.localhost", apps=[]), bench).reinstall("secret")
@@ -1001,10 +1003,53 @@ def test_site_reinstall_refuses_root_on_argv_without_a_site_database(
     from pilot.exceptions import BenchError
 
     bench = make_bench(tmp_path)
+    _write_site_config(bench, "m.localhost", "")
     _capture_site_cmd(monkeypatch)
 
     with pytest.raises(BenchError, match="root database password"):
         Site(SiteConfig(name="m.localhost", apps=[]), bench).reinstall("secret")
+
+
+def test_site_reinstall_uses_the_site_engine_not_the_bench_engine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A postgres site on a MariaDB bench gets postgres creds, never the MariaDB root password."""
+    bench = make_bench(tmp_path)  # mariadb bench, root_password="root"
+    bench.config.postgres.root_password = "pgpw"
+    _write_site_config(bench, "pg.localhost", "pgdb", "postgres")
+    captured = _capture_site_cmd(monkeypatch)
+
+    Site(SiteConfig(name="pg.localhost", apps=[]), bench).reinstall("secret")
+
+    cmd = captured["cmd"]
+    assert cmd[cmd.index("--db-root-username") + 1] == "postgres"
+    assert cmd[cmd.index("--db-root-password") + 1] == "pgpw"
+
+
+def test_unknown_site_engine_keeps_the_scoped_mariadb_account(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bench = make_bench(tmp_path)
+    _write_site_config(bench, "m.localhost", "_mdb", "oracle")
+    captured = _capture_site_cmd(monkeypatch)
+    _capture_admin_sql(monkeypatch)
+
+    Site(SiteConfig(name="m.localhost", apps=[]), bench).reinstall("secret")
+
+    cmd = captured["cmd"]
+    assert cmd[cmd.index("--db-root-username") + 1].startswith("pilot_setup_")
+    assert cmd[cmd.index("--db-root-password") + 1] != "root"
+
+
+def test_site_db_type_falls_back_to_frappe_default_not_the_bench(tmp_path: Path) -> None:
+    import json
+
+    bench = _postgres_bench(tmp_path)
+    site_dir = bench.sites_path / "old.localhost"
+    site_dir.mkdir(parents=True)
+    (site_dir / "site_config.json").write_text(json.dumps({"db_name": "_old"}))
+
+    assert Site(SiteConfig(name="old.localhost", apps=[]), bench).db_type == "mariadb"
 
 
 def test_site_create_and_reinstall_reject_empty_admin_password(tmp_path: Path) -> None:
@@ -1050,11 +1095,16 @@ def test_site_create_postgres_empty_password_uses_placeholder(
     assert cmd[cmd.index("--db-root-password") + 1] == "trust_auth"
 
 
-def test_bench_db_root_args_postgres(tmp_path: Path) -> None:
+def test_bench_get_db_root_args_postgres(tmp_path: Path) -> None:
     bench = _postgres_bench(tmp_path, root_password="pgpw")
-    assert bench.db_root_args == ["--db-root-username", "postgres", "--db-root-password", "pgpw"]
+    assert bench.get_db_root_args("postgres") == ["--db-root-username", "postgres", "--db-root-password", "pgpw"]
 
 
-def test_bench_db_root_args_mariadb(tmp_path: Path) -> None:
+def test_bench_get_db_root_args_mariadb(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
-    assert bench.db_root_args == ["--db-root-username", "root", "--db-root-password", "root"]
+    assert bench.get_db_root_args("mariadb") == ["--db-root-username", "root", "--db-root-password", "root"]
+
+
+def test_bench_get_db_root_args_follows_the_engine_asked_for(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)  # mariadb bench
+    assert bench.get_db_root_args("sqlite") == []

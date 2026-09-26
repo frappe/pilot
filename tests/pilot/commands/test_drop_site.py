@@ -4,6 +4,8 @@ import json
 import os
 from pathlib import Path
 
+import pytest
+
 from pilot.config import BenchConfig, SiteConfig
 from pilot.core.bench import Bench
 from pilot.core.site import Site
@@ -108,27 +110,29 @@ def test_no_op_for_missing_site(tmp_path: Path, monkeypatch) -> None:
     assert not log.exists()
 
 
-def _capture_drop_cmd(tmp_path: Path, monkeypatch, bench: Bench) -> dict:
+def _capture_drop_cmd(
+    tmp_path: Path, monkeypatch, bench: Bench, db_type: str = "mariadb", no_backup: bool = False
+) -> dict:
     bench.config.write(bench.path)
-    _write_site(bench, "mysite", {"db_name": "_dropdb"})
+    _write_site(bench, "mysite", {"db_name": "_dropdb", "db_type": db_type})
     monkeypatch.setattr(
         "pilot.managers.database.mariadb.MariaDBManager.run_admin_sql", lambda self, sql: None
     )
     captured: dict = {}
     monkeypatch.setattr("pilot.core.site.run_command", lambda cmd, **kw: captured.setdefault("cmd", cmd))
-    Site(SiteConfig(name="mysite", apps=[]), bench).drop()
+    Site(SiteConfig(name="mysite", apps=[]), bench).drop(no_backup=no_backup)
     return captured
 
 
 def test_drop_uses_postgres_root_creds(tmp_path: Path, monkeypatch) -> None:
     # The drop connects to the server as root to drop the database, so it must pass
-    # the bench engine's credentials - postgres password auth fails without them.
+    # the site engine's credentials - postgres password auth fails without them.
     _install_provider(tmp_path, monkeypatch)
     bench = _make_bench(tmp_path)
     bench.config.db_type = "postgres"
     bench.config.postgres.root_password = "pgpw"
 
-    cmd = _capture_drop_cmd(tmp_path, monkeypatch, bench)["cmd"]
+    cmd = _capture_drop_cmd(tmp_path, monkeypatch, bench, db_type="postgres")["cmd"]
     assert "drop-site" in cmd
     assert cmd[cmd.index("--db-root-username") + 1] == "postgres"
     assert cmd[cmd.index("--db-root-password") + 1] == "pgpw"
@@ -143,3 +147,26 @@ def test_drop_uses_a_scoped_mariadb_account_not_root(tmp_path: Path, monkeypatch
     user = cmd[cmd.index("--db-root-username") + 1]
     assert user.startswith("pilot_setup_")
     assert "root" not in (user, cmd[cmd.index("--db-root-password") + 1])
+
+
+def test_drop_uses_the_site_engine_not_the_bench_engine(tmp_path: Path, monkeypatch) -> None:
+    # A MariaDB site on a postgres bench: postgres root creds would fail the drop.
+    _install_provider(tmp_path, monkeypatch)
+    bench = _make_bench(tmp_path)
+    bench.config.db_type = "postgres"
+    bench.config.postgres.root_password = "pgpw"
+
+    cmd = _capture_drop_cmd(tmp_path, monkeypatch, bench, db_type="mariadb")["cmd"]
+    assert cmd[cmd.index("--db-root-username") + 1].startswith("pilot_setup_")
+    assert "pgpw" not in cmd
+
+
+@pytest.mark.parametrize(("no_backup", "skips_backup"), [(False, False), (True, True)])
+def test_drop_skips_the_backup_only_when_asked(
+    tmp_path: Path, monkeypatch, no_backup: bool, skips_backup: bool
+) -> None:
+    _install_provider(tmp_path, monkeypatch)
+    bench = _make_bench(tmp_path)
+
+    cmd = _capture_drop_cmd(tmp_path, monkeypatch, bench, no_backup=no_backup)["cmd"]
+    assert ("--no-backup" in cmd) is skips_backup

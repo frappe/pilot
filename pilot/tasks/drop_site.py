@@ -9,6 +9,7 @@ class DropSiteTask(Task):
     command: ClassVar[str] = "drop-site"
 
     site: str
+    no_backup: bool = False
 
     def run(self) -> None:
         self.require_production_privileges()
@@ -16,7 +17,7 @@ class DropSiteTask(Task):
 
     @step("drop", lambda self: f"Drop site {self.site}")
     def drop(self) -> None:
-        self.bench.site(self.site).drop(on_progress=self.report)
+        self.bench.site(self.site).drop(on_progress=self.report, no_backup=self.no_backup)
 
 
 if __name__ == "__main__":
