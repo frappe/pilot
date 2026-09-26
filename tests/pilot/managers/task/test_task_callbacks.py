@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -70,6 +71,28 @@ def test_remove_failed_site_preserves_files_when_database_drop_fails(
         )
 
     assert (site_path / "site_config.json").is_file()
+
+
+def test_drop_failed_site_skips_the_backup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    site_path = tmp_path / "sites" / "new.localhost"
+    site_path.mkdir(parents=True)
+    (site_path / "site_config.json").write_text("{}")
+    drops = []
+
+    class FakeBench:
+        def __init__(self, bench_root: Path) -> None:
+            pass
+
+        def site(self, name: str) -> SimpleNamespace:
+            return SimpleNamespace(drop=lambda **kwargs: drops.append((name, kwargs)))
+
+    monkeypatch.setattr("pilot.core.bench.Bench", FakeBench)
+
+    assert callbacks._drop_failed_site(tmp_path, "new.localhost", site_path)
+    assert drops == [("new.localhost", {"no_backup": True})]
 
 
 def test_remove_from_hosts_matches_address_and_hostname_tokens(
