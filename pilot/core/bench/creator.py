@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import socket
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pilot.core.bench.ports import pick_port_offset
 from pilot.exceptions import BenchAlreadyExistsError
-from pilot.utils import iter_sibling_benches
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -51,7 +50,7 @@ class BenchCreator:
         on_progress(f"Creating bench directory: {self.target_directory}")
         self.target_directory.mkdir(parents=True, exist_ok=True)
 
-        offset = self._pick_port_offset(self.target_directory)
+        offset = pick_port_offset(benches_dir)
         on_progress("Writing bench.toml")
         settings = self._initial_settings()
 
@@ -83,36 +82,3 @@ class BenchCreator:
         if self.process_manager:
             settings["production_process_manager"] = self.process_manager
         return settings
-
-    def _pick_port_offset(self, bench_path: Path) -> int:
-        """Pick the first base-port offset unused by configs or live processes."""
-        from pilot.config import BenchConfig
-
-        bases = BenchConfig.default_ports()
-        base_http_port = bases["http_port"]
-        used = set()
-
-        for _, config in iter_sibling_benches(bench_path):
-            try:
-                used.add(config.http_port - base_http_port)
-            except Exception:
-                continue
-
-        admin_internal_port = bases["admin.port"] + 1
-
-        offset = 0
-        while (
-            offset in used
-            or any(self._port_is_live(base + offset) for base in bases.values())
-            or self._port_is_live(admin_internal_port + offset)
-        ):
-            offset += 1
-        return offset
-
-    @staticmethod
-    def _port_is_live(port: int) -> bool:
-        try:
-            with socket.create_connection(("127.0.0.1", port), timeout=0.2):
-                return True
-        except OSError:
-            return False

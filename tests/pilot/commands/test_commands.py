@@ -95,10 +95,9 @@ def test_new_command_creates_benches_dir_if_missing(tmp_path: Path, monkeypatch:
 
 def test_new_command_first_bench_uses_default_ports(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from pilot.commands.bench.create import NewCommand
-    from pilot.core.bench.creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
-    monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
+    monkeypatch.setattr("pilot.core.bench.ports._port_is_live", lambda port: False)
     target = tmp_path / "benches" / "my-bench"
     NewCommand(target_directory=target, bench_name="my-bench").run()
 
@@ -112,10 +111,9 @@ def test_new_command_second_bench_gets_next_offset(tmp_path: Path, monkeypatch: 
     """Every port field must shift by the same offset - a regression guard
     for a bug where admin_port got the offset applied twice."""
     from pilot.commands.bench.create import NewCommand
-    from pilot.core.bench.creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
-    monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
+    monkeypatch.setattr("pilot.core.bench.ports._port_is_live", lambda port: False)
     benches_dir = tmp_path / "benches"
     NewCommand(target_directory=benches_dir / "first", bench_name="first").run()
     NewCommand(target_directory=benches_dir / "second", bench_name="second").run()
@@ -137,10 +135,9 @@ def test_new_command_inherits_sibling_jwks_url_and_audience(
     already trusts one."""
     from pilot.commands.bench.create import NewCommand
     from pilot.config import BenchConfig
-    from pilot.core.bench.creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
-    monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
+    monkeypatch.setattr("pilot.core.bench.ports._port_is_live", lambda port: False)
     benches_dir = tmp_path / "benches"
     NewCommand(target_directory=benches_dir / "first", bench_name="first").run()
     with BenchConfig.open(benches_dir / "first") as config:
@@ -155,10 +152,9 @@ def test_new_command_inherits_sibling_jwks_url_and_audience(
 
 def test_new_command_first_bench_has_no_jwks_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from pilot.commands.bench.create import NewCommand
-    from pilot.core.bench.creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
-    monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
+    monkeypatch.setattr("pilot.core.bench.ports._port_is_live", lambda port: False)
     target = tmp_path / "benches" / "only"
     NewCommand(target_directory=target, bench_name="only").run()
     assert BenchConfig.read(target).admin.jwks_url == ""
@@ -206,10 +202,9 @@ def test_new_command_postgres_port_is_not_offset_between_benches(
 ) -> None:
     """Postgres port stays shared while bench-local ports are offset."""
     from pilot.commands.bench.create import NewCommand
-    from pilot.core.bench.creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
-    monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
+    monkeypatch.setattr("pilot.core.bench.ports._port_is_live", lambda port: False)
     monkeypatch.setattr("pilot.utils._port_is_live", lambda port: False)
     benches_dir = tmp_path / "benches"
     NewCommand(target_directory=benches_dir / "first", bench_name="first", database="postgres").run()
@@ -259,10 +254,9 @@ def test_new_command_mariadb_port_is_not_offset_between_benches(
 ) -> None:
     """MariaDB port stays shared while bench-local ports are offset."""
     from pilot.commands.bench.create import NewCommand
-    from pilot.core.bench.creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
-    monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
+    monkeypatch.setattr("pilot.core.bench.ports._port_is_live", lambda port: False)
     monkeypatch.setattr("pilot.utils._port_is_live", lambda port: False)
     benches_dir = tmp_path / "benches"
     NewCommand(target_directory=benches_dir / "first", bench_name="first").run()
@@ -319,10 +313,9 @@ def test_new_command_skips_offset_with_live_port(tmp_path: Path, monkeypatch: py
     """An orphaned process holding a port with no matching bench.toml must
     also be avoided, not just offsets already on disk."""
     from pilot.commands.bench.create import NewCommand
-    from pilot.core.bench.creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
-    monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: port == 8000))
+    monkeypatch.setattr("pilot.core.bench.ports._port_is_live", lambda port: port == 8000)
 
     target = tmp_path / "benches" / "my-bench"
     NewCommand(target_directory=target, bench_name="my-bench").run()
@@ -337,14 +330,13 @@ def test_new_command_skips_offset_with_live_admin_internal_port(
 ) -> None:
     """Port offset avoids the derived admin internal port too."""
     from pilot.commands.bench.create import NewCommand
-    from pilot.core.bench.creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     # 7001 is admin.port(7000) + 1 at offset 0 - without the internal-port
     # check, offset 0 would be wrongly accepted since nothing else probes it.
     # (It also collides with the plain admin.port base check one offset later,
     # at offset 1, which is why the picker lands on offset 2, not 1.)
-    monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: port == 7001))
+    monkeypatch.setattr("pilot.core.bench.ports._port_is_live", lambda port: port == 7001)
 
     target = tmp_path / "benches" / "my-bench"
     NewCommand(target_directory=target, bench_name="my-bench").run()
