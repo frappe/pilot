@@ -147,7 +147,7 @@ class Worktree:
         builder.run_compiler(
             [get_yarn_bin(), "run", "build", "--apps", self.config.app, "--run-build-command"],
             cwd=self.frappe_source_path,
-            env={**manager._build_env(), **self.env},
+            env={**manager.get_build_env(), **self.env},
             stream_output=True,
         )
 
