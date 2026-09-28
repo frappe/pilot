@@ -261,7 +261,7 @@ def test_remove_and_a_failed_add_drop_exactly_the_recorded_database(
 
 
 @pytest.mark.parametrize("db_type", ["mariadb", "postgres"])
-def test_a_failed_drop_leaves_the_worktree_in_place_and_remove_can_run_again(
+def test_a_failed_drop_keeps_the_record_and_remove_can_run_again(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, server: ServerRecorder, db_type: str
 ) -> None:
     bench = _server_bench(tmp_path, monkeypatch, db_type)
@@ -275,9 +275,9 @@ def test_a_failed_drop_leaves_the_worktree_in_place_and_remove_can_run_again(
 
     monkeypatch.setattr(f"pilot.managers.database.{manager}.run_admin_sql", lose_connection)
     with pytest.raises(BenchError, match="Lost connection to server"):
-        worktree.remove(force=True)
+        worktree.remove()
 
-    assert worktree.app_path.exists()
+    assert not worktree.app_path.exists()
     assert (worktree.runtime_bench.sites_path / worktree.site_name / "site_config.json").exists()
     assert BenchConfig.read(bench.path).worktrees == [worktree.config]
 
@@ -286,12 +286,15 @@ def test_a_failed_drop_leaves_the_worktree_in_place_and_remove_can_run_again(
         lambda self, sql, timeout=5: server.sql.append(sql),
     )
     server.sql.clear()
-    Bench(bench.path).worktree("feature-x").remove(force=True)
+    messages: list[str] = []
+    Bench(bench.path).worktree("feature-x").remove(delete_branch=True, on_progress=messages.append)
 
     [drop] = server.sql
     assert drop.count("IF EXISTS") == 2
     assert not worktree.path.exists()
     assert BenchConfig.read(bench.path).worktrees == []
+    assert str(worktree.app_path) not in _git_worktrees(bench)
+    assert "Kept the branch" in messages[-1]
 
 
 def test_remove_refuses_when_the_site_config_names_another_database(
@@ -312,7 +315,7 @@ def test_remove_refuses_when_the_site_config_names_another_database(
     assert GitRepo(bench.apps_path / "gameplan").has_branch("feature-x")
 
 
-def test_remove_checks_the_checkout_after_stop_and_drops_the_database_before_removing_it(
+def test_git_refuses_a_checkout_dirtied_after_stop_and_a_clean_remove_drops_everything(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, server: ServerRecorder
 ) -> None:
     bench = _server_bench(tmp_path, monkeypatch, "mariadb")
@@ -334,9 +337,10 @@ def test_remove_checks_the_checkout_after_stop_and_drops_the_database_before_rem
 
     assert stopped == ["feature-x"]
     assert server.sql == []
-    assert (worktree.app_path / "doctypes.ts").exists()
+    assert (worktree.app_path / "doctypes.ts").read_text() == "generated"
     assert site_config.exists()
     assert BenchConfig.read(bench.path).worktrees == [worktree.config]
+    assert str(worktree.app_path) in _git_worktrees(bench)
 
     (worktree.app_path / "doctypes.ts").unlink()
     checkout_at_drop: list[bool] = []
@@ -346,7 +350,17 @@ def test_remove_checks_the_checkout_after_stop_and_drops_the_database_before_rem
     )
     Bench(bench.path).worktree("feature-x").remove(delete_branch=True)
 
-    assert checkout_at_drop == [True]
+    assert checkout_at_drop == [False]
     assert not worktree.path.exists()
     assert BenchConfig.read(bench.path).worktrees == []
+    assert str(worktree.app_path) not in _git_worktrees(bench)
     assert not GitRepo(bench.apps_path / "gameplan").has_branch("feature-x")
+
+
+def _git_worktrees(bench: Bench) -> str:
+    return subprocess.run(
+        ["git", "-C", str(bench.apps_path / "gameplan"), "worktree", "list", "--porcelain"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout

@@ -162,37 +162,42 @@ class Worktree:
         force: bool = False,
         on_progress: Callable[[str], None] = lambda message: None,
     ) -> None:
-        """Stop, drop the clone's database, then remove the git worktree, the overlay and the record.
+        """Stop, remove the checkout, drop the clone's database, then the overlay and the record.
         `delete_branch` deletes only a merged branch, after everything else.
 
-        A dirty checkout is refused unless `force` discards the changes. The check runs before
-        anything changes, and again after stop, since the processes can write to the checkout.
-        Only then is the database dropped. If the drop fails, the worktree is intact and remove
-        can run again: the drop is idempotent. After the drop, the checkout is clean or `force` was
-        given, so `git worktree remove --force` cannot fail on uncommitted changes."""
+        A dirty checkout is refused before anything changes, with the changed files listed.
+        Git refuses it again at removal, so no edit is discarded unless `force` is given.
+        Each step skips what is already gone and the record goes last, so a remove that
+        failed part way can run again."""
         has_checkout = self.app_path.exists()
-        check_changes = has_checkout and not force
-        if check_changes:
+        if has_checkout and not force:
             self._refuse_changes()
         db_name = self.get_database_to_drop()
         branch = self.branch if has_checkout else ""
         if self.is_running:
             on_progress(f"Stopping worktree '{self.config.name}'...")
             self.stop()
-        if check_changes:
-            self._refuse_changes()
-        self.drop_database(db_name, on_progress)
         repo = GitRepo(self.main_app_path)
         if has_checkout:
-            repo.remove_worktree(self.app_path, force=True)
+            self.remove_checkout(repo, force)
+        self.drop_database(db_name, on_progress)
         if self.path.exists():
             # rmtree unlinks symlinks without following them, so main's apps and env are safe.
             shutil.rmtree(self.path)
         with BenchConfig.open(self.bench.path) as config:
             config.worktrees = [record for record in config.worktrees if record.name != self.config.name]
         repo.prune_worktrees()
-        if delete_branch and branch:
+        if delete_branch:
             _delete_merged_branch(repo, branch, on_progress)
+
+    def remove_checkout(self, repo: GitRepo, force: bool) -> None:
+        """`git worktree remove`, which refuses a dirty checkout unless `force` is given."""
+        try:
+            repo.remove_worktree(self.app_path, force=force)
+        except BenchError:
+            if not force:
+                self._refuse_changes()
+            raise
 
     def _refuse_changes(self) -> None:
         if changed_files := GitRepo(self.app_path).changed_files:
@@ -239,6 +244,9 @@ class Worktree:
 
 
 def _delete_merged_branch(repo: GitRepo, branch: str, on_progress: Callable[[str], None]) -> None:
+    if not branch:
+        on_progress("Kept the branch: the checkout was already gone, so its name is unknown.")
+        return
     try:
         repo.delete_branch(branch)
     except BenchError as error:
