@@ -197,10 +197,15 @@ def test_remove_refuses_a_dirty_worktree_and_leaves_everything_in_place(tmp_path
 def test_remove_drops_checkout_overlay_record_and_optionally_the_branch(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     worktree = add_checkout(bench)
+    outside = tmp_path / "outside"
+    (outside / "dist").mkdir(parents=True)
+    (outside / "dist" / "bundle.js").write_text("main's bundle")
+    (worktree.path / "sites" / "assets" / "other-app").symlink_to(outside)
 
     worktree.remove(delete_branch=True)
 
     assert not worktree.path.exists()
+    assert (outside / "dist" / "bundle.js").read_text() == "main's bundle"
     assert (bench.apps_path / "frappe" / "frappe").is_dir()
     assert bench.env_path.is_dir()
     assert BenchConfig.read(bench.path).worktrees == []

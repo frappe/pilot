@@ -193,7 +193,9 @@ class Worktree:
         repo = GitRepo(self.main_app_path)
         if has_checkout:
             repo.remove_worktree(self.app_path, force=force)
-        self.remove_overlay()
+        if self.path.exists():
+            # rmtree unlinks symlinks without following them, so main's apps and env are safe.
+            shutil.rmtree(self.path)
         with BenchConfig.open(self.bench.path) as config:
             config.worktrees = [record for record in config.worktrees if record.name != self.config.name]
         repo.prune_worktrees()
@@ -207,13 +209,6 @@ class Worktree:
                 )
             else:
                 on_progress(f"Deleted branch '{branch}'.")
-
-    def remove_overlay(self) -> None:
-        from pilot.core.worktree.layout import WorktreeLayout
-
-        if self.path.exists():
-            WorktreeLayout(self).remove_links()
-            shutil.rmtree(self.path)
 
     def frappe(self, args: Sequence[str]) -> int:
         """Run a Frappe CLI command with the worktree's code and sites. Returns its exit code."""

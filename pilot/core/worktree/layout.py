@@ -78,13 +78,6 @@ class WorktreeLayout:
             if main_entries or own_entries:
                 path.write_text(json.dumps({**main_entries, **own_entries}, indent=4))
 
-    def remove_links(self) -> None:
-        """Unlink everything shared with main, so removing the overlay cannot reach into it."""
-        entries = [*self.overlay.apps_path.glob("*"), *(self.overlay.path / name for name in _SHARED_ENTRIES)]
-        for entry in entries:
-            if entry.is_symlink():
-                entry.unlink()
-
     def _main_text(self, filename: str) -> str:
         path = self.main.sites_path / filename
         return path.read_text() if path.exists() else ""
