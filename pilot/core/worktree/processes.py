@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shlex
+import signal
 import time
 from typing import TYPE_CHECKING
 
@@ -34,11 +35,17 @@ class WorktreeProcessManager(ProcessManager):
         self.procfile_path.write_text("".join(lines))
 
     def stop(self) -> None:
-        """Signal the runner named by the pid file and wait for it. Nothing else is touched."""
-        if not self.pid_file.exists():
-            raise BenchError(f"Worktree '{self.worktree.config.name}' is not running.")
-        pid = int(self.pid_file.read_text().strip())
-        super().stop()
+        """Signal the runner named by the pid file and wait for it. Nothing else is touched:
+        the base class falls back to killing whatever listens on the bench's ports."""
+        try:
+            pid = int(self.pid_file.read_text().strip())
+        except FileNotFoundError:
+            raise BenchError(f"Worktree '{self.worktree.config.name}' is not running.") from None
+        self.pid_file.unlink(missing_ok=True)
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            raise BenchError(f"Worktree '{self.worktree.config.name}' is not running.") from None
         deadline = time.monotonic() + _STOP_WAIT_SECONDS
         while _is_alive(pid) and time.monotonic() < deadline:
             time.sleep(0.2)

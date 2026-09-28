@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -160,12 +161,24 @@ def test_build_runs_esbuild_for_the_app_only_from_the_overlay(
     assert run_compiler.call_args.kwargs["env"]["FRAPPE_BENCH_ROOT"] == str(worktree.path)
 
 
-def test_stop_without_a_pid_file_kills_nothing(tmp_path: Path) -> None:
+def test_stop_signals_only_the_runner_in_the_pid_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     worktree = add_checkout(make_bench(tmp_path))
+    listening = MagicMock(return_value={4242})
+    monkeypatch.setattr("pilot.managers.processes.local._pids_listening", listening)
 
     with patch("os.kill") as kill, pytest.raises(BenchError, match="not running"):
         worktree.stop()
     kill.assert_not_called()
+
+    WorktreeProcessManager(worktree).pid_file.write_text("777")
+    with patch("os.kill", side_effect=[None, ProcessLookupError]) as kill:
+        worktree.stop()
+
+    assert kill.call_args_list == [call(777, signal.SIGTERM), call(777, 0)]
+    listening.assert_not_called()
+    assert worktree.runtime_bench.config.admin.port == 0
 
 
 def test_remove_refuses_a_dirty_worktree_and_leaves_everything_in_place(tmp_path: Path) -> None:

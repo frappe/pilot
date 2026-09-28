@@ -10,7 +10,7 @@ from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pilot.config import BenchConfig, ProductionConfig, WorkerConfig, WorkerGroup, WorktreeConfig
+from pilot.config import AdminConfig, BenchConfig, ProductionConfig, WorkerConfig, WorkerGroup, WorktreeConfig
 from pilot.core.bench.ports import FRONTEND_BASE_PORT
 from pilot.exceptions import BenchError
 from pilot.internal.git import GitRepo
@@ -95,7 +95,8 @@ class Worktree:
 
     @cached_property
     def runtime_bench(self) -> "Bench":
-        """The overlay as a Bench: main's config on this worktree's ports, one worker, no admin."""
+        """The overlay as a Bench: main's config on this worktree's ports, one worker, no admin.
+        Admin port 0, so nothing keyed on the admin port can reach main's admin."""
         from pilot.core.bench import Bench
 
         config = copy.deepcopy(self.bench.config)
@@ -108,6 +109,7 @@ class Worktree:
         config.workers = WorkerConfig(groups=[WorkerGroup(queues=config.workers.queues, count=1)])
         config.watch_admin_js = False
         config.production = ProductionConfig()
+        config.admin = AdminConfig(port=0)
         config.worktrees = []
         return Bench(config, self.path)
 
