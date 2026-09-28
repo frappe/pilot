@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from pilot.config import AdminConfig, BenchConfig, ProductionConfig, WorkerConfig, WorkerGroup, WorktreeConfig
 from pilot.core.bench.ports import FRONTEND_BASE_PORT
+from pilot.core.worktree.site_database import get_site_database
 from pilot.exceptions import BenchError
 from pilot.internal.git import GitRepo
 from pilot.utils import get_yarn_bin
@@ -161,7 +162,7 @@ class Worktree:
         force: bool = False,
         on_progress: Callable[[str], None] = lambda message: None,
     ) -> None:
-        """Stop, remove the git worktree and overlay, and drop the record.
+        """Stop, remove the git worktree, the clone's database, the overlay and the record.
         A dirty worktree is refused before anything is touched, unless `force` discards
         the changes. `delete_branch` deletes only a merged branch."""
         has_checkout = self.app_path.exists()
@@ -172,6 +173,7 @@ class Worktree:
                 + "\n".join(f"  {line}" for line in changed_files)
                 + "\nCommit them, or pass --force to discard them."
             )
+        db_name = self.get_database_to_drop()
         branch = self.branch if has_checkout else ""
         if self.is_running:
             on_progress(f"Stopping worktree '{self.config.name}'...")
@@ -179,6 +181,7 @@ class Worktree:
         repo = GitRepo(self.main_app_path)
         if has_checkout:
             repo.remove_worktree(self.app_path, force=force)
+        self.drop_database(db_name, on_progress)
         if self.path.exists():
             # rmtree unlinks symlinks without following them, so main's apps and env are safe.
             shutil.rmtree(self.path)
@@ -195,6 +198,30 @@ class Worktree:
                 )
             else:
                 on_progress(f"Deleted branch '{branch}'.")
+
+    def get_database_to_drop(self) -> str:
+        """The server database the clone owns, or "" when there is none to drop.
+        Refuses when the clone's site config and the record name different databases."""
+        if self.bench.config.db_type == "sqlite":
+            return ""
+        path = self.runtime_bench.sites_path / self.site_name / "site_config.json"
+        if not path.exists():
+            # An add that failed before the clone wrote its config made no database.
+            return ""
+        site_db_name = json.loads(path.read_text()).get("db_name", "")
+        if site_db_name != self.config.db_name:
+            raise BenchError(
+                f"Worktree '{self.config.name}' records database '{self.config.db_name}', but {path} "
+                f"names '{site_db_name}'. Pilot drops only the database it recorded, so it removed "
+                f"nothing. Set db_name in that file back to '{self.config.db_name}', then remove again."
+            )
+        return site_db_name
+
+    def drop_database(self, db_name: str, on_progress: Callable[[str], None]) -> None:
+        """Drop the database from `get_database_to_drop` and its account. "" drops nothing."""
+        if db_name:
+            on_progress(f"Dropping database '{db_name}' and its account...")
+            get_site_database(self.bench.config).drop(db_name)
 
     def frappe(self, args: Sequence[str]) -> int:
         """Run a Frappe CLI command with the worktree's code and sites. Returns its exit code."""

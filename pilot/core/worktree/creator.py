@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -8,6 +9,7 @@ from pilot.core.bench.ports import pick_port_offset
 from pilot.core.worktree import Worktree
 from pilot.core.worktree.layout import WorktreeLayout
 from pilot.core.worktree.site_clone import SiteClone
+from pilot.core.worktree.site_database import get_site_database
 from pilot.exceptions import BenchError
 from pilot.internal.git import GitRepo
 
@@ -36,7 +38,8 @@ class WorktreeCreator:
         clone = SiteClone(
             self.bench.site(worktree.config.base_site).path,
             worktree.runtime_bench.sites_path / worktree.site_name,
-            self.bench.config.db_type,
+            get_site_database(self.bench.config),
+            worktree.config.db_name,
         )
         creates_branch = not repo.has_branch(self.branch)
         try:
@@ -53,10 +56,10 @@ class WorktreeCreator:
     def rollback(
         self, worktree: Worktree, repo: GitRepo, creates_branch: bool, on_progress: Callable[[str], None]
     ) -> None:
-        """Undo a failed add. A branch that existed before is kept. Errors here are reported,
-        not raised, so they do not hide the error that failed the add."""
+        """Undo a failed add, including the clone's database. A branch that existed before is kept.
+        Errors here are reported, not raised, so they do not hide the error that failed the add."""
         try:
-            worktree.remove(force=True)
+            worktree.remove(force=True, on_progress=on_progress)
             if creates_branch and repo.has_branch(self.branch):
                 repo.delete_branch(self.branch, force=True)
         except Exception as error:
@@ -65,7 +68,11 @@ class WorktreeCreator:
     def get_config(self, repo: GitRepo) -> WorktreeConfig:
         """A validated record, checked against the bench before anything is created."""
         config = WorktreeConfig(
-            self.name, self.app, self.base_site or self.get_only_site_with_app(), port_offset=0
+            self.name,
+            self.app,
+            self.base_site or self.get_only_site_with_app(),
+            port_offset=0,
+            db_name=f"_{secrets.token_hex(8)}",
         )
         config.validate()
         if any(record.name == self.name for record in self.bench.config.worktrees):

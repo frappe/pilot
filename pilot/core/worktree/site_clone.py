@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 import secrets
 import shutil
-import sqlite3
-from contextlib import closing
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pilot.exceptions import BenchError
 from pilot.utils import write_private_text
+
+if TYPE_CHECKING:
+    from pilot.core.worktree.site_database import SiteDatabase
 
 # Settings that tie a site to its public identity or to the Admin plane. The clone
 # answers only on its own name and must not act for the base site.
@@ -17,47 +19,41 @@ _SITE_DIRECTORIES = ("db", "public", "private", "locks", "logs")
 
 
 class SiteClone:
-    """Copy a SQLite site under a new name, with its own database and developer mode on."""
+    """Copy a site under a new name, with its own database `db_name` and developer mode on."""
 
-    def __init__(self, source: Path, target: Path, db_type: str) -> None:
-        if db_type != "sqlite":
-            raise BenchError(f"Worktrees need a SQLite bench; {db_type} is not supported yet.")
+    def __init__(self, source: Path, target: Path, database: "SiteDatabase", db_name: str) -> None:
         self.source = source
         self.target = target
+        self.database = database
+        self.db_name = db_name
 
     def run(self) -> None:
+        """The config is written before the database is made, so undoing a failed add finds it."""
         if self.target.exists():
             raise BenchError(f"Site directory {self.target} already exists.")
         source_config = json.loads((self.source / "site_config.json").read_text())
-        config = self.get_clone_config(source_config)
+        config = self.get_clone_config(source_config, self.db_name)
         for name in _SITE_DIRECTORIES:
             (self.target / name).mkdir(parents=True, exist_ok=True)
         write_private_text(self.target / "site_config.json", json.dumps(config, indent=1))
-        self.copy_database(
-            self.source / "db" / f"{source_config['db_name']}.db",
-            self.target / "db" / f"{config['db_name']}.db",
-        )
+        self.database.copy(self.source, self.target, source_config, config)
         self.copy_files()
 
     @staticmethod
-    def get_clone_config(source_config: dict) -> dict:
-        """Source config with a new database name, developer mode on and public identity dropped.
+    def get_clone_config(source_config: dict, db_name: str) -> dict:
+        """Source config with a new database, developer mode on and public identity dropped.
         encryption_key is kept so encrypted fields still decrypt. Mail and scheduled jobs are
-        off, since the cloned data holds the base site's live credentials."""
+        off, since the cloned data holds the base site's live credentials. A server database
+        gets its own account: named after the database, with a new password."""
         config = {key: value for key, value in source_config.items() if key not in _DROPPED_KEYS}
-        config["db_name"] = f"_{secrets.token_hex(8)}"
+        config.pop("db_user", None)
+        config["db_name"] = db_name
+        if "db_password" in source_config:
+            config["db_password"] = secrets.token_hex(16)
         config["developer_mode"] = 1
         config["mute_emails"] = 1
         config["pause_scheduler"] = 1
         return config
-
-    @staticmethod
-    def copy_database(source: Path, target: Path) -> None:
-        """Copy through SQLite's backup API, which includes writes still in the WAL."""
-        if not source.exists():
-            raise BenchError(f"Database {source} not found.")
-        with closing(sqlite3.connect(source)) as source_db, closing(sqlite3.connect(target)) as target_db:
-            source_db.backup(target_db)
 
     def copy_files(self) -> None:
         """Public and private files, without the base site's backups."""
