@@ -21,12 +21,14 @@ def test_worktrees_round_trip_through_open_and_survive_write_flat(tmp_path: Path
     assert "worktrees" not in (bench_root / "bench.toml").read_text()
 
     with BenchConfig.open(bench_root) as config:
-        config.worktrees.append(WorktreeConfig("feature-x", "gameplan", "gp.localhost", 23))
+        config.worktrees.append(
+            WorktreeConfig("feature-x", "gameplan", "gp.localhost", 23, "_0123456789abcdef")
+        )
     BenchConfig.write_flat(bench_root, "main", {"watch_apps_js": False})
 
     assert "[[worktrees]]" in (bench_root / "bench.toml").read_text()
     assert BenchConfig.read(bench_root).worktrees == [
-        WorktreeConfig(name="feature-x", app="gameplan", base_site="gp.localhost", port_offset=23)
+        WorktreeConfig("feature-x", "gameplan", "gp.localhost", port_offset=23, db_name="_0123456789abcdef")
     ]
     assert BenchConfig.read(bench_root, strict=True).worktrees
 
@@ -39,6 +41,10 @@ def test_worktrees_round_trip_through_open_and_survive_write_flat(tmp_path: Path
         ([WorktreeConfig("x" * 41, "gameplan", "gp.localhost", 1)], "invalid"),
         ([WorktreeConfig("x", "", "gp.localhost", 1)], "app and base_site"),
         ([WorktreeConfig("x", "gameplan", "gp.localhost", 60000)], "out of range"),
+        (
+            [WorktreeConfig("x", "gameplan", "gp.localhost", 1, db_name="production")],
+            "not one Pilot generates",
+        ),
         (
             [
                 WorktreeConfig("x", "gameplan", "gp.localhost", 1),

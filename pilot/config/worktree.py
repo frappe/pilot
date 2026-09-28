@@ -4,17 +4,21 @@ from dataclasses import dataclass
 from pilot.exceptions import ConfigError
 
 _NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
+# The only database names a worktree creates, so the only ones it may drop.
+DB_NAME_PATTERN = re.compile(r"^_[0-9a-f]{16}$")
 _PORT_MAX = 65535
 
 
 @dataclass
 class WorktreeConfig:
-    """One app worktree. Its ports derive from `port_offset`; its branch is read from git."""
+    """One app worktree. Its ports derive from `port_offset`; its branch is read from git.
+    `db_name` is the site clone's database, which removing the worktree drops."""
 
     name: str
     app: str
     base_site: str
     port_offset: int
+    db_name: str = ""
 
     @classmethod
     def from_dict(cls, data: dict) -> "WorktreeConfig":
@@ -23,6 +27,7 @@ class WorktreeConfig:
             app=data.get("app", ""),
             base_site=data.get("base_site", ""),
             port_offset=data.get("port_offset", 0),
+            db_name=data.get("db_name", ""),
         )
 
     def to_dict(self) -> dict:
@@ -31,6 +36,7 @@ class WorktreeConfig:
             "app": self.app,
             "base_site": self.base_site,
             "port_offset": self.port_offset,
+            "db_name": self.db_name,
         }
 
     def validate(self) -> None:
@@ -41,6 +47,8 @@ class WorktreeConfig:
             )
         if not self.app or not self.base_site:
             raise ConfigError(f"Worktree '{self.name}' must have app and base_site.")
+        if self.db_name and not DB_NAME_PATTERN.match(self.db_name):
+            raise ConfigError(f"Worktree '{self.name}': db_name '{self.db_name}' is not one Pilot generates.")
         offset = self.port_offset
         if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
             raise ConfigError(f"Worktree '{self.name}': port_offset must be a non-negative integer.")
