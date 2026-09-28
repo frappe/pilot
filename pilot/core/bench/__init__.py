@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from pilot.core.notification import NotificationStore
     from pilot.core.site import Site
     from pilot.core.site.storage import SiteStorageCollector
+    from pilot.core.worktree import Worktree
     from pilot.tasks import TaskRunner
 
 
@@ -213,6 +214,30 @@ class Bench:
         from pilot.core.site import Site
 
         return Site(SiteConfig(name=name, apps=[]), self)
+
+    def worktrees(self) -> list["Worktree"]:
+        from pilot.core.worktree import Worktree
+
+        return [Worktree(self, config) for config in self.config.worktrees]
+
+    def worktree(self, name: str) -> "Worktree":
+        for worktree in self.worktrees():
+            if worktree.config.name == name:
+                return worktree
+        raise BenchError(f"Worktree '{name}' not found in bench '{self.config.name}'.")
+
+    def add_worktree(
+        self,
+        app: str,
+        name: str,
+        base_site: str = "",
+        branch: str = "",
+        start_point: str = "",
+        on_progress: Callable[[str], None] = lambda message: None,
+    ) -> "Worktree":
+        from pilot.core.worktree import Worktree
+
+        return Worktree.add(self, app, name, base_site, branch, start_point, on_progress)
 
     def create_directories(self) -> None:
         for directory in [

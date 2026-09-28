@@ -1,0 +1,88 @@
+from __future__ import annotations
+
+import os
+import shlex
+import time
+from typing import TYPE_CHECKING
+
+from pilot.exceptions import BenchError
+from pilot.managers.processes.definitions import ProcessDefinition, ProcessDefinitionBuilder
+from pilot.managers.processes.local import ProcessManager
+from pilot.utils import get_yarn_bin
+
+if TYPE_CHECKING:
+    from pilot.core.worktree import Worktree
+
+# The runner drains the workload, then redis, each within its own grace period.
+_STOP_WAIT_SECONDS = 30
+_FRONTEND_HOST = "127.0.0.1"
+
+
+class WorktreeProcessManager(ProcessManager):
+    """Runs a worktree's development processes from its overlay bench.
+
+    No admin plane, its own redis, and a stop that only signals the worktree's own runner."""
+
+    def __init__(self, worktree: "Worktree") -> None:
+        super().__init__(worktree.runtime_bench, watch_admin_js=False)
+        self.worktree = worktree
+
+    def write_config(self) -> None:
+        """Procfile and redis configs only: no admin env and no gunicorn config."""
+        self._ensure_redis_config()
+        lines = [f"{pd.name}: {shlex.join(pd.argv)}\n" for pd in self._process_definitions()]
+        self.procfile_path.write_text("".join(lines))
+
+    def stop(self) -> None:
+        """Signal the runner named by the pid file and wait for it. Nothing else is touched."""
+        if not self.pid_file.exists():
+            raise BenchError(f"Worktree '{self.worktree.config.name}' is not running.")
+        pid = int(self.pid_file.read_text().strip())
+        super().stop()
+        deadline = time.monotonic() + _STOP_WAIT_SECONDS
+        while _is_alive(pid) and time.monotonic() < deadline:
+            time.sleep(0.2)
+
+    def _process_definitions(self) -> list[ProcessDefinition]:
+        builder = self._definitions
+        definitions = [builder.to_dev(pd) for pd in builder.prod_process_definitions() if pd.name != "admin"]
+        if self.bench.config.watch_apps_js and self.worktree.has_asset_bundles:
+            definitions.append(self.watch_definition(builder))
+        if self.worktree.frontend_path is not None:
+            definitions.append(self.frontend_definition())
+        for pd in definitions:
+            if pd.name == "socketio" and pd.argv[0] == "node":
+                pd.argv = self.socketio_argv()
+            pd.env = {**pd.env, **self.worktree.env}
+        return definitions
+
+    def socketio_argv(self) -> list[str]:
+        """Keep node on the overlay's frappe link, so it reads the overlay's config and modules."""
+        socketio = self.bench.apps_path / "frappe" / "socketio.js"
+        return ["node", "--preserve-symlinks", "--preserve-symlinks-main", str(socketio)]
+
+    def watch_definition(self, builder: ProcessDefinitionBuilder) -> ProcessDefinition:
+        """Watch only the worktree app. An unscoped watch would rewrite main's bundles."""
+        definition = builder.watch_definition()
+        definition.argv = [*definition.argv, "--apps", self.worktree.config.app]
+        return definition
+
+    def frontend_definition(self) -> ProcessDefinition:
+        """The app's Vite dev server. frappe-ui picks port 8080 + offset, so a taken port must fail."""
+        return ProcessDefinition(
+            name="frontend",
+            argv=[get_yarn_bin(), "dev", "--strictPort", "--host", _FRONTEND_HOST],
+            log_file=self.bench.logs_path / "frontend.log",
+            working_dir=self.worktree.frontend_path,
+            critical=False,
+        )
+
+
+def _is_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True

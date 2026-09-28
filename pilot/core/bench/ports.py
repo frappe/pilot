@@ -4,7 +4,7 @@ import socket
 from pathlib import Path
 
 # A Vite dev server started by the frappe-ui plugin listens on 8080 + offset.
-_FRONTEND_BASE_PORT = 8080
+FRONTEND_BASE_PORT = 8080
 
 
 def pick_port_offset(benches_root: Path) -> int:
@@ -40,7 +40,7 @@ def _offset_ports(offset: int) -> list[int]:
     return [
         *(base + offset for base in bases.values()),
         admin_internal_port + offset,
-        _FRONTEND_BASE_PORT + offset,
+        FRONTEND_BASE_PORT + offset,
     ]
 
 
