@@ -4,8 +4,6 @@ from dataclasses import dataclass
 from pilot.exceptions import ConfigError
 
 _NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
-# The highest base port a worktree derives from its offset (redis cache).
-_HIGHEST_BASE_PORT = 13000
 _PORT_MAX = 65535
 
 
@@ -46,5 +44,7 @@ class WorktreeConfig:
         offset = self.port_offset
         if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
             raise ConfigError(f"Worktree '{self.name}': port_offset must be a non-negative integer.")
-        if _HIGHEST_BASE_PORT + offset > _PORT_MAX:
+        from pilot.config.bench import BenchConfig
+
+        if max(BenchConfig.default_ports().values()) + offset > _PORT_MAX:
             raise ConfigError(f"Worktree '{self.name}': port_offset {offset} puts its ports out of range.")
