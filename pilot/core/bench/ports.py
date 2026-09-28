@@ -3,7 +3,6 @@ from __future__ import annotations
 import socket
 from pathlib import Path
 
-# A Vite dev server started by the frappe-ui plugin listens on 8080 + offset.
 FRONTEND_BASE_PORT = 8080
 
 

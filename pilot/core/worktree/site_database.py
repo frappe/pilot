@@ -17,7 +17,6 @@ from pilot.managers.platform import which
 if TYPE_CHECKING:
     from pilot.config import BenchConfig, MariaDBConfig, PostgresConfig
 
-# Creating or dropping a database with hundreds of tables can take longer than a query.
 _ADMIN_TIMEOUT_SECONDS = 300
 
 
@@ -149,6 +148,7 @@ def checked_db_name(name: str) -> str:
 
 
 def run_admin_sql(manager: MariaDBManager | PostgresManager, sql: str) -> None:
+    """A long timeout: creating or dropping a database with hundreds of tables outlasts a query."""
     try:
         manager.run_admin_sql(sql, timeout=_ADMIN_TIMEOUT_SECONDS)
     except subprocess.CalledProcessError as error:

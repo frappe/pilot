@@ -21,7 +21,6 @@ if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
 _WORKTREES_DIRECTORY = "worktrees"
-# Frappe CLI commands that reach main's checkouts through sites/assets, even when scoped.
 _ASSET_COMMANDS = frozenset({"build", "watch"})
 
 
@@ -67,6 +66,7 @@ class Worktree:
 
     @property
     def frontend_port(self) -> int:
+        """The port the frappe-ui plugin starts the app's Vite dev server on."""
         return FRONTEND_BASE_PORT + self.config.port_offset
 
     @property
@@ -259,7 +259,8 @@ def _delete_merged_branch(repo: GitRepo, branch: str, on_progress: Callable[[str
 
 def _refuse_asset_command(args: Sequence[str]) -> None:
     """`frappe build` relinks every app's assets and `frappe watch` runs the page-island
-    watcher. Both write into main's checkouts, so Pilot builds and watches instead."""
+    watcher. Both write into main's checkouts through `sites/assets`, even when scoped to
+    one app, so Pilot builds and watches instead."""
     command = _frappe_command_name(args)
     if command in _ASSET_COMMANDS:
         raise BenchError(

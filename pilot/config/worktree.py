@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from pilot.exceptions import ConfigError
 
 _NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
-# The only database names a worktree creates, so the only ones it may drop.
 DB_NAME_PATTERN = re.compile(r"^_[0-9a-f]{16}$")
 _PORT_MAX = 65535
 
@@ -12,7 +11,8 @@ _PORT_MAX = 65535
 @dataclass
 class WorktreeConfig:
     """One app worktree. Its ports derive from `port_offset`; its branch is read from git.
-    `db_name` is the site clone's database, which removing the worktree drops."""
+    `db_name` is the site clone's database, which removing the worktree drops.
+    `DB_NAME_PATTERN` matches the only names a worktree creates, so the only ones it may drop."""
 
     name: str
     app: str

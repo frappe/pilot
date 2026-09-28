@@ -11,7 +11,6 @@ if TYPE_CHECKING:
     from pilot.core.worktree import Worktree
 
 _MANIFESTS = ("assets.json", "assets-rtl.json")
-# Shared with the main bench as links; `chromium` exists only where PDF rendering was set up.
 _SHARED_ENTRIES = ("env", "chromium")
 
 
@@ -45,6 +44,7 @@ class WorktreeLayout:
                 _link(self.overlay.apps_path / app_dir.name, app_dir)
 
     def link_shared_entries(self) -> None:
+        """Link main's `env`, and `chromium` where PDF rendering was set up."""
         for name in _SHARED_ENTRIES:
             if (self.main.path / name).exists():
                 _link(self.overlay.path / name, self.main.path / name)

@@ -12,8 +12,6 @@ from pilot.utils import write_private_text
 if TYPE_CHECKING:
     from pilot.core.worktree.site_database import SiteDatabase
 
-# Settings that tie a site to its public identity or to the Admin plane. The clone
-# answers only on its own name and must not act for the base site.
 _DROPPED_KEYS = ("pilot_auth_token", "pilot_endpoint", "host_name", "domains", "ssl", "route", "cert_name")
 _SITE_DIRECTORIES = ("db", "public", "private", "locks", "logs")
 
@@ -41,7 +39,8 @@ class SiteClone:
 
     @staticmethod
     def get_clone_config(source_config: dict, db_name: str) -> dict:
-        """Source config with a new database, developer mode on and public identity dropped.
+        """Source config with a new database, developer mode on, and public identity and Admin
+        plane settings dropped: the clone answers only on its own name, never for the base site.
         encryption_key is kept so encrypted fields still decrypt. Mail and scheduled jobs are
         off, since the cloned data holds the base site's live credentials. A server database
         gets its own account: named after the database, with a new password."""

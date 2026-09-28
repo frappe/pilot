@@ -15,7 +15,6 @@ from pilot.utils import get_yarn_bin
 if TYPE_CHECKING:
     from pilot.core.worktree import Worktree
 
-# The runner drains the workload, then redis, each within its own grace period.
 _STOP_WAIT_SECONDS = 30
 _FRONTEND_HOST = "127.0.0.1"
 
@@ -51,7 +50,8 @@ class WorktreeProcessManager(ProcessManager):
     def stop(self) -> None:
         """Signal the runner named by the pid file and wait for it. Nothing else is touched:
         the base class falls back to killing whatever listens on the bench's ports.
-        A pid file that names no live runner is removed, and nothing is signalled."""
+        A pid file that names no live runner is removed, and nothing is signalled.
+        The wait covers the runner draining the workload, then redis, each in its own grace period."""
         pid = self._runner_pid()
         self.pid_file.unlink(missing_ok=True)
         if pid is None:
