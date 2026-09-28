@@ -92,6 +92,8 @@ A worktree checks out one app on its own branch and serves it beside the main be
 - `pilot worktree remove NAME [--delete-branch] [--force]`: stop and remove the worktree, overlay and record. A checkout with uncommitted changes is refused, with the changed files listed; `--force` discards the changes. `--delete-branch` deletes the branch with `git branch -d` after everything else. An unmerged branch is kept, and Pilot prints git's reason and the `git branch -D` command. Starting a gameplan worktree regenerates `frontend/src/types/doctypes.ts`, so a started gameplan worktree is usually dirty.
 - `pilot worktree frappe NAME ...`: run a Frappe CLI command with the worktree's code and sites. `build` and `watch` are refused, even with `--app`: they write into main's apps through `sites/assets`. `worktree add` builds the app's assets and `worktree start` runs its watcher and Vite.
 
+The site clone keeps the base site's data and `encryption_key`, so it holds live credentials. Its `site_config.json` sets `mute_emails` and `pause_scheduler`, so it sends no mail, pulls no email accounts and runs no scheduled jobs. To turn them back on, run `pilot worktree frappe NAME --site SITE set-config -p mute_emails 0` and the same for `pause_scheduler`. Keep `-p`: without it the value is the string `"0"`, which Frappe reads as a set `pause_scheduler`.
+
 Only SQLite benches support worktrees for now.
 
 ## Task Worker Commands

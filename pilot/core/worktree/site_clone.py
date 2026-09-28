@@ -46,10 +46,13 @@ class SiteClone:
     @staticmethod
     def get_clone_config(source_config: dict) -> dict:
         """Source config with a new database name, developer mode on and public identity dropped.
-        encryption_key is kept so encrypted fields still decrypt."""
+        encryption_key is kept so encrypted fields still decrypt. Mail and scheduled jobs are
+        off, since the cloned data holds the base site's live credentials."""
         config = {key: value for key, value in source_config.items() if key not in _DROPPED_KEYS}
         config["db_name"] = f"_{secrets.token_hex(8)}"
         config["developer_mode"] = 1
+        config["mute_emails"] = 1
+        config["pause_scheduler"] = 1
         return config
 
     @staticmethod

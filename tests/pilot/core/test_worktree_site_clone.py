@@ -54,6 +54,7 @@ def test_clone_copies_uncheckpointed_writes_and_rewrites_the_config(tmp_path: Pa
     config = json.loads((target / "site_config.json").read_text())
     assert config["db_name"] != "_source"
     assert config["developer_mode"] == 1
+    assert (config["mute_emails"], config["pause_scheduler"]) == (1, 1)
     assert config["encryption_key"] == "key"
     for key in ("pilot_auth_token", "pilot_endpoint", "host_name", "domains", "ssl"):
         assert key not in config
