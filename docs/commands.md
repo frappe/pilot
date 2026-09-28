@@ -89,7 +89,7 @@ A worktree checks out one app on its own branch and serves it beside the main be
 - `pilot worktree list`: list worktrees with their app, branch, site, web URL, Vite URL if the app has a frontend dev server, and state.
 - `pilot worktree start NAME`: run the worktree's processes in the foreground.
 - `pilot worktree stop NAME`: stop the worktree. The main bench keeps running.
-- `pilot worktree remove NAME [--delete-branch] [--force]`: stop and remove the worktree, overlay and record. A checkout with uncommitted changes is refused, with the changed files listed; `--force` discards the changes. `--delete-branch` deletes the branch with `git branch -d` after everything else. An unmerged branch is kept, and Pilot prints git's reason and the `git branch -D` command. Starting a gameplan worktree regenerates `frontend/src/types/doctypes.ts`, so a started gameplan worktree is usually dirty.
+- `pilot worktree remove NAME [--delete-branch] [--force]`: stop and remove the worktree, the site clone's database, the overlay and the record. A checkout with uncommitted changes is refused, with the changed files listed; `--force` discards the changes. `--delete-branch` deletes the branch with `git branch -d` after everything else. An unmerged branch is kept, and Pilot prints git's reason and the `git branch -D` command. Starting a gameplan worktree regenerates `frontend/src/types/doctypes.ts`, so a started gameplan worktree is usually dirty.
 - `pilot worktree frappe NAME ...`: run a Frappe CLI command with the worktree's code and sites. `build` and `watch` are refused, even with `--app`. `worktree add` builds the app's assets, and `worktree start` runs its watcher and Vite.
 
 Build and watch: `worktree add` builds the app with Frappe's esbuild and the app's own `build` script, and `worktree start` watches it with Frappe's esbuild. A frappe worktree is watched with `frappe watch --apps frappe` instead, since there `sites/assets/frappe` is the worktree. `frappe build` never runs in a worktree: it relinks every app's assets through `sites/assets`, which writes into main's apps.
@@ -98,7 +98,11 @@ Python dependencies: the worktree shares main's `env`. A branch that adds one ne
 
 The site clone keeps the base site's data and `encryption_key`, so it holds live credentials. Its `site_config.json` sets `mute_emails` and `pause_scheduler`, so it sends no mail, pulls no email accounts and runs no scheduled jobs. To turn them back on, run `pilot worktree frappe NAME --site SITE set-config -p mute_emails 0` and the same for `pause_scheduler`. Keep `-p`: without it the value is the string `"0"`, which Frappe reads as a set `pause_scheduler`.
 
-Only SQLite benches support worktrees for now.
+Databases: worktrees work on SQLite, MariaDB and PostgreSQL benches. The clone gets a new database named `_` plus 16 hex digits, recorded as `db_name` in the worktree's `[[worktrees]]` record.
+
+- SQLite: the database file is copied with SQLite's backup API, which includes writes still in the WAL. It lives in the overlay and goes with it.
+- MariaDB and PostgreSQL: `worktree add` creates a database and an account, both named `db_name`, with a new password in the clone's `site_config.json`. It streams `mariadb-dump --single-transaction` or `pg_dump` of the base site's database into it, with no file in between. The base site can keep running: `pg_dump` reads one consistent snapshot, and `mariadb-dump` does so for InnoDB tables. Frappe's few MyISAM tables, such as `__global_search` and `tabError Log`, are read without one. The MariaDB account is `'db_name'@'%'`; the PostgreSQL role owns the new database. PostgreSQL extensions are not copied: the clone's role may not create them, and Frappe adds `pg_stat_statements` only as best effort.
+- `worktree remove` and a failed `worktree add` drop that database and account, as the bench's database admin, and nothing else. `remove` first checks that the clone's `site_config.json` names the recorded `db_name`. If it names another database, `remove` stops before it changes anything.
 
 ## Task Worker Commands
 
