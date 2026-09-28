@@ -81,6 +81,19 @@ Site behavior belongs on `Site` or a module under `pilot/core/site`.
 
 Production setup uses the bench config and system managers. The command should not duplicate nginx, process manager, or certificate logic.
 
+## Worktree Commands
+
+A worktree checks out one app on its own branch and serves it beside the main bench. It lives at `worktrees/NAME` as an overlay bench: a git worktree of the app, links to main's other apps and env, and a clone of the base site named `NAME.BASE_SITE`. Its processes run on the bench's ports plus the worktree's own offset, with no admin, and Vite on 8080 plus that offset.
+
+- `pilot worktree add APP NAME [--site SITE] [--branch BRANCH] [--from REF]`: create the worktree, clone the site and build only the app's assets. `--site` is needed only when several sites have the app. The branch defaults to `NAME`, and `--from` sets the start point of a new branch. A failed add is undone.
+- `pilot worktree list`: list worktrees with their app, branch, site, web and Vite URLs, and state.
+- `pilot worktree start NAME`: run the worktree's processes in the foreground.
+- `pilot worktree stop NAME`: stop the worktree. The main bench keeps running.
+- `pilot worktree remove NAME [--delete-branch] [--force]`: stop and remove the worktree, overlay and record. A checkout with uncommitted changes is refused unless `--force`. The branch is deleted last, so a refused `git branch -d` leaves only the branch.
+- `pilot worktree frappe NAME ...`: run a Frappe CLI command with the worktree's code and sites. `build` and `watch` must be scoped with `--app` or `--apps`, since unscoped they rewrite main's assets.
+
+Only SQLite benches support worktrees for now.
+
 ## Task Worker Commands
 
 - `pilot tasks status`: show Admin task worker state.

@@ -105,6 +105,7 @@ env/        Python virtualenv
 logs/       process and task logs
 config/     generated Frappe, Redis, nginx, and process config
 pids/       local process ids
+worktrees/  app worktrees, each an overlay bench with its own sites, config, logs and pids
 bench.toml  declarative bench config
 ```
 

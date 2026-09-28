@@ -146,6 +146,7 @@ These tables are per-bench unless noted otherwise:
 - `[s3]`: backup storage credentials and bucket settings. Set `endpoint_url` for a custom S3-compatible provider.
 - `[llm]`: admin assistant provider settings.
 - `[resource_limits]`: CPU, memory, disk, uptime, and webhook alerts.
+- `[[worktrees]]`: app worktrees, one record each with `name`, `app`, `base_site` and `port_offset`. `pilot worktree add` and `remove` write these records; do not edit them by hand.
 
 `[monitor]` contains this bench's application metric log path. Host-wide system, database, and slow-query logs always use `cli_root()/system/logs/` and cannot be configured.
 
