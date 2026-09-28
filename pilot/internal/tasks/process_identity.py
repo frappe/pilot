@@ -348,6 +348,10 @@ class ProcessInspector:
                 return pid
         return None
 
+    def command_line(self, pid: int) -> str:
+        """The pid's arguments joined by spaces. Raises OSError when the pid cannot be read."""
+        return self._backend.command_line(pid)
+
     def _command_matches(self, pid: int, markers: list[str]) -> bool:
         try:
             command = self._backend.command_line(pid)

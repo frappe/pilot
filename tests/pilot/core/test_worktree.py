@@ -6,8 +6,9 @@ import json
 import os
 import signal
 import subprocess
+import sys
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -184,16 +185,40 @@ def test_stop_signals_only_the_runner_in_the_pid_file(
     worktree = add_checkout(make_bench(tmp_path))
     listening = MagicMock(return_value={4242})
     monkeypatch.setattr("pilot.managers.processes.local._pids_listening", listening)
+    # The stand-in runner is this test's child, so it lingers as a zombie until it is reaped.
+    monkeypatch.setattr("pilot.core.worktree.processes._STOP_WAIT_SECONDS", 0)
+    pid_file = WorktreeProcessManager(worktree).pid_file
 
     with patch("os.kill") as kill, pytest.raises(BenchError, match="not running"):
         worktree.stop()
     kill.assert_not_called()
 
-    WorktreeProcessManager(worktree).pid_file.write_text("777")
-    with patch("os.kill", side_effect=[None, ProcessLookupError]) as kill:
-        worktree.stop()
+    # A runner that died abruptly leaves its pid file, and the pid can go to another process.
+    unrelated = subprocess.Popen(["sleep", "60"])
+    try:
+        pid_file.write_text(str(unrelated.pid))
+        assert not worktree.is_running
+        with pytest.raises(BenchError, match="not running"):
+            worktree.stop()
+        assert unrelated.poll() is None
+        assert not pid_file.exists()
+    finally:
+        unrelated.kill()
+        unrelated.wait()
 
-    assert kill.call_args_list == [call(777, signal.SIGTERM), call(777, 0)]
+    # Stands in for `pilot -b BENCH worktree start feature-x`, which writes the pid file.
+    runner = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(60)", "-b", "main", "worktree", "start", "feature-x"]
+    )
+    try:
+        pid_file.write_text(str(runner.pid))
+        assert worktree.is_running
+        worktree.stop()
+        assert runner.wait(timeout=5) == -signal.SIGTERM
+    finally:
+        runner.kill()
+        runner.wait()
+
     listening.assert_not_called()
     assert worktree.runtime_bench.config.admin.port == 0
 

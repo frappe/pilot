@@ -7,6 +7,7 @@ import time
 from typing import TYPE_CHECKING
 
 from pilot.exceptions import BenchError
+from pilot.internal.tasks.process_identity import ProcessInspector
 from pilot.managers.processes.definitions import ProcessDefinition, ProcessDefinitionBuilder
 from pilot.managers.processes.local import ProcessManager
 from pilot.utils import get_yarn_bin
@@ -34,14 +35,19 @@ class WorktreeProcessManager(ProcessManager):
         lines = [f"{pd.name}: {shlex.join(pd.argv)}\n" for pd in self._process_definitions()]
         self.procfile_path.write_text("".join(lines))
 
+    def is_running(self) -> bool:
+        pid = self._runner_pid()
+        return pid is not None and _is_runner(pid, self.worktree.config.name)
+
     def stop(self) -> None:
         """Signal the runner named by the pid file and wait for it. Nothing else is touched:
-        the base class falls back to killing whatever listens on the bench's ports."""
-        try:
-            pid = int(self.pid_file.read_text().strip())
-        except FileNotFoundError:
-            raise BenchError(f"Worktree '{self.worktree.config.name}' is not running.") from None
+        the base class falls back to killing whatever listens on the bench's ports.
+        A runner that died abruptly leaves its pid file, and the system can reuse that pid,
+        so a pid whose command line is not this worktree's runner is never signalled."""
+        pid = self._runner_pid()
         self.pid_file.unlink(missing_ok=True)
+        if pid is None or not _is_runner(pid, self.worktree.config.name):
+            raise BenchError(f"Worktree '{self.worktree.config.name}' is not running.")
         try:
             os.kill(pid, signal.SIGTERM)
         except ProcessLookupError:
@@ -49,6 +55,12 @@ class WorktreeProcessManager(ProcessManager):
         deadline = time.monotonic() + _STOP_WAIT_SECONDS
         while _is_alive(pid) and time.monotonic() < deadline:
             time.sleep(0.2)
+
+    def _runner_pid(self) -> int | None:
+        try:
+            return int(self.pid_file.read_text().strip())
+        except (FileNotFoundError, ValueError):
+            return None
 
     def _process_definitions(self) -> list[ProcessDefinition]:
         builder = self._definitions
@@ -94,6 +106,15 @@ class WorktreeProcessManager(ProcessManager):
             working_dir=self.worktree.frontend_path,
             critical=False,
         )
+
+
+def _is_runner(pid: int, name: str) -> bool:
+    """Whether pid runs `pilot ... worktree start ... NAME`, the command that writes the pid file."""
+    try:
+        argv = ProcessInspector().command_line(pid).split()
+    except OSError:
+        return False
+    return any(argv[i : i + 2] == ["worktree", "start"] and name in argv[i + 2 :] for i in range(len(argv)))
 
 
 def _is_alive(pid: int) -> bool:
