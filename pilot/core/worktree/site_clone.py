@@ -20,16 +20,12 @@ class SiteClone:
     """Copy a SQLite site under a new name, with its own database and developer mode on."""
 
     def __init__(self, source: Path, target: Path, db_type: str) -> None:
+        if db_type != "sqlite":
+            raise BenchError(f"Worktrees need a SQLite bench; {db_type} is not supported yet.")
         self.source = source
         self.target = target
-        self.db_type = db_type
-
-    def check_supported(self) -> None:
-        if self.db_type != "sqlite":
-            raise BenchError(f"Worktrees need a SQLite bench; {self.db_type} is not supported yet.")
 
     def run(self) -> None:
-        self.check_supported()
         if self.target.exists():
             raise BenchError(f"Site directory {self.target} already exists.")
         source_config = json.loads((self.source / "site_config.json").read_text())

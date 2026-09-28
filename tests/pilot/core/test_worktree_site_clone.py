@@ -69,5 +69,5 @@ def test_clone_copies_uncheckpointed_writes_and_rewrites_the_config(tmp_path: Pa
 @pytest.mark.parametrize("db_type", ["mariadb", "postgres"])
 def test_clone_refuses_server_databases(tmp_path: Path, db_type: str) -> None:
     with pytest.raises(BenchError, match="not supported yet"):
-        SiteClone(tmp_path / "source", tmp_path / "target", db_type).run()
+        SiteClone(tmp_path / "source", tmp_path / "target", db_type)
     assert not (tmp_path / "target").exists()

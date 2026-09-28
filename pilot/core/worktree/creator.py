@@ -38,7 +38,6 @@ class WorktreeCreator:
             worktree.runtime_bench.sites_path / worktree.site_name,
             self.bench.config.db_type,
         )
-        clone.check_supported()
         creates_branch = not repo.has_branch(self.branch)
         try:
             on_progress(f"Checking out '{self.branch}' at {worktree.app_path}")
