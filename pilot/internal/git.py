@@ -134,9 +134,9 @@ class GitRepo:
         return self._run("checkout", "-B", branch, start_point).returncode == 0
 
     @property
-    def is_dirty(self) -> bool:
-        """True if the working tree has uncommitted or untracked files."""
-        return bool(self._checked("status", "--porcelain").strip())
+    def changed_files(self) -> list[str]:
+        """Uncommitted and untracked files, as `git status --short` lines."""
+        return self._checked("status", "--porcelain").splitlines()
 
     def has_branch(self, branch: str) -> bool:
         return self._run("show-ref", "--verify", "--quiet", f"refs/heads/{branch}").returncode == 0
@@ -151,9 +151,9 @@ class GitRepo:
     def remove_worktree(self, path: Path, force: bool = False) -> None:
         self._checked("worktree", "remove", *(["--force"] if force else []), str(path))
 
-    def delete_branch(self, branch: str, force: bool = False) -> None:
-        """Delete a local branch. Without `force`, git refuses one that is not merged."""
-        self._checked("branch", "-D" if force else "-d", branch)
+    def delete_branch(self, branch: str) -> None:
+        """Delete a local branch. git refuses one that is not merged."""
+        self._checked("branch", "-d", branch)
 
     def prune_worktrees(self) -> None:
         self._checked("worktree", "prune")

@@ -176,11 +176,15 @@ class Worktree:
         on_progress: Callable[[str], None] = lambda message: None,
     ) -> None:
         """Stop, remove the git worktree and overlay, and drop the record.
-        A dirty worktree is refused before anything is touched, unless `force`."""
+        A dirty worktree is refused before anything is touched, unless `force` discards
+        the changes. `delete_branch` deletes only a merged branch."""
         has_checkout = self.app_path.exists()
-        if has_checkout and not force and GitRepo(self.app_path).is_dirty:
+        changed_files = GitRepo(self.app_path).changed_files if has_checkout and not force else []
+        if changed_files:
             raise BenchError(
-                f"Worktree '{self.config.name}' has uncommitted changes. Commit them, or pass --force."
+                f"Worktree '{self.config.name}' has uncommitted changes:\n"
+                + "\n".join(f"  {line}" for line in changed_files)
+                + "\nCommit them, or pass --force to discard them."
             )
         branch = self.branch if has_checkout else ""
         if self.is_running:
@@ -194,8 +198,15 @@ class Worktree:
             config.worktrees = [record for record in config.worktrees if record.name != self.config.name]
         repo.prune_worktrees()
         if delete_branch and branch:
-            repo.delete_branch(branch, force=force)
-            on_progress(f"Deleted branch '{branch}'.")
+            try:
+                repo.delete_branch(branch)
+            except BenchError as error:
+                on_progress(
+                    f"Kept branch '{branch}': {error}\n"
+                    f"Delete it anyway with: git -C {repo.path} branch -D {branch}"
+                )
+            else:
+                on_progress(f"Deleted branch '{branch}'.")
 
     def remove_overlay(self) -> None:
         from pilot.core.worktree.layout import WorktreeLayout

@@ -13,10 +13,8 @@ class RemoveWorktreeCommand(Command):
     group: ClassVar[str] = "worktree"
 
     worktree_name: Annotated[str, Arg(help="Worktree name.", metavar="name")]
-    delete_branch: Annotated[
-        bool, Arg(help="Also delete the branch. Refused if unmerged, unless --force.")
-    ] = False
-    force: Annotated[bool, Arg(help="Remove even with uncommitted changes.")] = False
+    delete_branch: Annotated[bool, Arg(help="Also delete the branch, if it is merged.")] = False
+    force: Annotated[bool, Arg(help="Discard uncommitted changes.")] = False
 
     def run(self) -> None:
         self.bench.worktree(self.worktree_name).remove(

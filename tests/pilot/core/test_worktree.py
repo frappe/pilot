@@ -186,7 +186,7 @@ def test_remove_refuses_a_dirty_worktree_and_leaves_everything_in_place(tmp_path
     worktree = add_checkout(bench)
     (worktree.app_path / "notes.txt").write_text("work in progress")
 
-    with pytest.raises(BenchError, match="uncommitted changes"):
+    with pytest.raises(BenchError, match=r"uncommitted changes:\n  \?\? notes.txt"):
         worktree.remove()
 
     assert (worktree.app_path / "notes.txt").exists()
@@ -205,6 +205,22 @@ def test_remove_drops_checkout_overlay_record_and_optionally_the_branch(tmp_path
     assert bench.env_path.is_dir()
     assert BenchConfig.read(bench.path).worktrees == []
     assert not GitRepo(bench.apps_path / "gameplan").has_branch("feature-x")
+
+
+def test_remove_keeps_an_unmerged_branch_and_says_how_to_delete_it(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    worktree = add_checkout(bench)
+    (worktree.app_path / "change.txt").write_text("unmerged")
+    _git(worktree.app_path, "add", ".")
+    _git(worktree.app_path, "commit", "-q", "-m", "unmerged work")
+    messages: list[str] = []
+
+    worktree.remove(delete_branch=True, force=True, on_progress=messages.append)
+
+    assert not worktree.path.exists()
+    assert GitRepo(bench.apps_path / "gameplan").has_branch("feature-x")
+    assert "not fully merged" in messages[-1]
+    assert f"git -C {bench.apps_path / 'gameplan'} branch -D feature-x" in messages[-1]
 
 
 @pytest.mark.parametrize(

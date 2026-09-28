@@ -152,7 +152,7 @@ def test_remove_worktree_refuses_a_dirty_tree_without_force(tmp_path: Path) -> N
     repo.add_worktree(worktree, "feature")
     (worktree / "untracked").write_text("x")
 
-    assert GitRepo(worktree).is_dirty
+    assert GitRepo(worktree).changed_files == ["?? untracked"]
     with pytest.raises(BenchError):
         repo.remove_worktree(worktree)
     assert worktree.exists()
@@ -162,7 +162,7 @@ def test_remove_worktree_refuses_a_dirty_tree_without_force(tmp_path: Path) -> N
     assert not worktree.exists()
 
 
-def test_delete_branch_refuses_an_unmerged_branch_without_force(tmp_path: Path) -> None:
+def test_delete_branch_refuses_an_unmerged_branch(tmp_path: Path) -> None:
     repo_path = _init_repo(tmp_path / "repo")
     _commit(repo_path)
     repo = GitRepo(repo_path)
@@ -173,5 +173,4 @@ def test_delete_branch_refuses_an_unmerged_branch_without_force(tmp_path: Path) 
 
     with pytest.raises(BenchError, match="not fully merged"):
         repo.delete_branch("feature")
-    repo.delete_branch("feature", force=True)
-    assert not repo.has_branch("feature")
+    assert repo.has_branch("feature")
