@@ -20,9 +20,9 @@ class ListWorktreesCommand(Command):
         for worktree in worktrees:
             config = worktree.config
             host = worktree.site_name
+            vite = f"vite=http://{host}:{worktree.frontend_port}  " if worktree.frontend_path else ""
             self.report(
                 f"{config.name}  app={config.app}  branch={worktree.branch or '-'}  site={host}  "
-                f"web=http://{host}:{worktree.runtime_bench.config.http_port}  "
-                f"vite=http://{host}:{worktree.frontend_port}  "
+                f"web=http://{host}:{worktree.runtime_bench.config.http_port}  {vite}"
                 f"{'running' if worktree.is_running else 'stopped'}"
             )

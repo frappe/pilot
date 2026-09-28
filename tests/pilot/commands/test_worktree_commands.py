@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from pilot.commands.worktree.add import AddWorktreeCommand
+from pilot.commands.worktree.list import ListWorktreesCommand
 from pilot.config import BenchConfig
 from pilot.core.bench import Bench
 from pilot.core.worktree import Worktree
@@ -105,3 +106,19 @@ def test_failed_add_keeps_a_branch_that_existed_before(bench: Bench, monkeypatch
 
     assert not (bench.path / "worktrees" / "feature-x").exists()
     assert repo.has_branch("feature-x")
+
+
+def test_list_shows_a_vite_url_only_for_a_worktree_with_a_frontend(
+    bench: Bench, capsys: pytest.CaptureFixture[str]
+) -> None:
+    AddWorktreeCommand(bench=bench, app_name="gameplan", worktree_name="feature-x").run()
+    worktree = Bench(bench.path).worktree("feature-x")
+    capsys.readouterr()
+
+    ListWorktreesCommand(bench=Bench(bench.path)).run()
+    assert "vite=" not in capsys.readouterr().out
+
+    (worktree.app_path / "frontend").mkdir()
+    (worktree.app_path / "frontend" / "package.json").write_text(json.dumps({"scripts": {"dev": "vite"}}))
+    ListWorktreesCommand(bench=Bench(bench.path)).run()
+    assert "vite=http://feature-x.gp.localhost:8080" in capsys.readouterr().out
