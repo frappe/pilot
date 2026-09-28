@@ -27,6 +27,7 @@ def _make_app(apps_path: Path, name: str) -> None:
     path = apps_path / name
     (path / name / "public").mkdir(parents=True)
     (path / name / "__init__.py").write_text("")
+    (path / name / "public" / ".gitkeep").write_text("")
     subprocess.run(["git", "init", "-q", "-b", "develop", str(path)], check=True)
     _git(path, "config", "user.email", "t@t.com")
     _git(path, "config", "user.name", "t")
@@ -79,6 +80,7 @@ def test_layout_links_main_apps_and_keeps_its_own_ports_and_assets(tmp_path: Pat
             }
         )
     )
+    (worktree.app_path / "node_modules").mkdir()
 
     WorktreeLayout(worktree).sync()
 
@@ -86,6 +88,14 @@ def test_layout_links_main_apps_and_keeps_its_own_ports_and_assets(tmp_path: Pat
     assert not (overlay / "apps" / "gameplan").is_symlink()
     assert not (overlay / "apps" / "removed-app").is_symlink()
     assert (overlay / "env").resolve() == bench.env_path
+    assert (
+        overlay / "sites" / "assets" / "frappe"
+    ).resolve() == bench.apps_path / "frappe" / "frappe" / "public"
+    assert (overlay / "sites" / "assets" / "gameplan").resolve() == worktree.app_path / "gameplan" / "public"
+    assert (
+        worktree.app_path / "gameplan" / "public" / "node_modules"
+    ).resolve() == worktree.app_path / "node_modules"
+    assert not (bench.apps_path / "frappe" / "frappe" / "public" / "node_modules").exists()
     assert not (overlay / "bench.toml").exists()
     assert (overlay / "sites" / "apps.txt").read_text() == "frappe\ngameplan\n"
     site_config = json.loads((overlay / "sites" / "common_site_config.json").read_text())
@@ -121,10 +131,33 @@ def test_processes_run_from_the_overlay_without_admin(
         assert pd.env["PYTHONPATH"] == str(worktree.app_path)
         assert pd.env["FRAPPE_BENCH_ROOT"] == str(worktree.path)
     assert definitions["socketio"].argv[:3] == ["node", "--preserve-symlinks", "--preserve-symlinks-main"]
-    assert definitions["watch"].argv[-2:] == ["--apps", "gameplan"]
+    assert definitions["watch"].argv == ["yarn", "run", "watch", "--apps", "gameplan"]
+    assert definitions["watch"].working_dir == worktree.path / "apps" / "frappe"
     assert definitions["frontend"].critical is False
     assert "--strictPort" in definitions["frontend"].argv
     assert definitions["web"].argv[-2:] == ["--port", "8001"]
+
+
+def test_build_runs_esbuild_for_the_app_only_from_the_overlay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("pilot.core.worktree.get_yarn_bin", lambda: "yarn")
+    worktree = add_checkout(make_bench(tmp_path))
+
+    with patch("pilot.managers.python_assets.PythonAssetBuilder.run_compiler") as run_compiler:
+        worktree.build_assets()
+
+    run_compiler.assert_called_once()
+    assert run_compiler.call_args.args[0] == [
+        "yarn",
+        "run",
+        "build",
+        "--apps",
+        "gameplan",
+        "--run-build-command",
+    ]
+    assert run_compiler.call_args.kwargs["cwd"] == worktree.path / "apps" / "frappe"
+    assert run_compiler.call_args.kwargs["env"]["FRAPPE_BENCH_ROOT"] == str(worktree.path)
 
 
 def test_stop_without_a_pid_file_kills_nothing(tmp_path: Path) -> None:

@@ -28,6 +28,7 @@ class WorktreeLayout:
         self.overlay.create_directories()
         self.link_main_apps()
         self.link_shared_entries()
+        self.link_assets()
         (self.overlay.sites_path / "apps.txt").write_text(self._main_text("apps.txt"))
         write_private_text(
             self.overlay.sites_path / "common_site_config.json",
@@ -38,9 +39,7 @@ class WorktreeLayout:
 
     def link_main_apps(self) -> None:
         """Link every main app except the worktree app, and drop links to apps main no longer has."""
-        for entry in self.overlay.apps_path.iterdir():
-            if entry.is_symlink() and not entry.exists():
-                entry.unlink()
+        _drop_dangling_links(self.overlay.apps_path)
         for app_dir in sorted(self.main.apps_path.iterdir()):
             if app_dir.is_dir() and app_dir.name != self.worktree.config.app:
                 _link(self.overlay.apps_path / app_dir.name, app_dir)
@@ -49,6 +48,21 @@ class WorktreeLayout:
         for name in _SHARED_ENTRIES:
             if (self.main.path / name).exists():
                 _link(self.overlay.path / name, self.main.path / name)
+
+    def link_assets(self) -> None:
+        """The `sites/assets` links Frappe's `make_asset_dirs` would make, without its side effect.
+
+        Frappe also relinks `<app>/public/node_modules` through `sites/assets/<app>`, which for a
+        linked app is a write into main's checkout. Only the worktree app gets that link here."""
+        assets = self.overlay.sites_path / "assets"
+        _drop_dangling_links(assets)
+        for app_dir in sorted(self.overlay.apps_path.iterdir()):
+            public = app_dir / app_dir.name / "public"
+            if public.is_dir():
+                _link(assets / app_dir.name, public)
+        node_modules = self.worktree.app_path / "node_modules"
+        if node_modules.is_dir():
+            _link(self.worktree.app_path / self.worktree.config.app / "public" / "node_modules", node_modules)
 
     def merge_asset_manifests(self) -> None:
         """Main's asset entries plus the overlay's own entries for the worktree app."""
@@ -85,6 +99,12 @@ def _link(link: Path, target: Path) -> None:
     elif link.exists():
         return
     link.symlink_to(relative_target)
+
+
+def _drop_dangling_links(directory: Path) -> None:
+    for entry in directory.iterdir():
+        if entry.is_symlink() and not entry.exists():
+            entry.unlink()
 
 
 def _read_json(path: Path) -> dict:

@@ -62,10 +62,21 @@ class WorktreeProcessManager(ProcessManager):
         return ["node", "--preserve-symlinks", "--preserve-symlinks-main", str(socketio)]
 
     def watch_definition(self, builder: ProcessDefinitionBuilder) -> ProcessDefinition:
-        """Watch only the worktree app. An unscoped watch would rewrite main's bundles."""
-        definition = builder.watch_definition()
-        definition.argv = [*definition.argv, "--apps", self.worktree.config.app]
-        return definition
+        """Watch only the worktree app, and never through a path that reaches main's files.
+
+        `frappe watch` also runs the page-island watcher, which writes to `sites/assets/frappe`.
+        That is the worktree only when the worktree is frappe; other apps run esbuild directly."""
+        if self.worktree.config.app == "frappe":
+            definition = builder.watch_definition()
+            definition.argv = [*definition.argv, "--apps", "frappe"]
+            return definition
+        return ProcessDefinition(
+            name="watch",
+            argv=[get_yarn_bin(), "run", "watch", "--apps", self.worktree.config.app],
+            log_file=self.bench.logs_path / "watch.log",
+            working_dir=self.worktree.frappe_source_path,
+            critical=False,
+        )
 
     def frontend_definition(self) -> ProcessDefinition:
         """The app's Vite dev server. frappe-ui picks port 8080 + offset, so a taken port must fail."""

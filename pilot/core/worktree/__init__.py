@@ -14,6 +14,7 @@ from pilot.config import BenchConfig, ProductionConfig, WorkerConfig, WorkerGrou
 from pilot.core.bench.ports import FRONTEND_BASE_PORT
 from pilot.exceptions import BenchError
 from pilot.internal.git import GitRepo
+from pilot.utils import get_yarn_bin
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -58,6 +59,11 @@ class Worktree:
     def env(self) -> dict[str, str]:
         """Put the worktree app ahead of main's copy, and point Frappe at the overlay."""
         return {"PYTHONPATH": str(self.app_path), "FRAPPE_BENCH_ROOT": str(self.path)}
+
+    @property
+    def frappe_source_path(self) -> Path:
+        """Frappe's source as the overlay sees it: the worktree itself, or a link to main's."""
+        return self.path / "apps" / "frappe"
 
     @property
     def frontend_port(self) -> int:
@@ -124,7 +130,10 @@ class Worktree:
         return WorktreeCreator(bench, app, name, base_site, branch, start_point).run(on_progress)
 
     def build_assets(self) -> None:
-        """Install the app's JS dependencies and build only its assets, inside the overlay."""
+        """Install the app's JS dependencies and build only its assets, inside the overlay.
+
+        Runs Frappe's esbuild directly: `frappe build` relinks every app's assets and runs
+        the page-island hook, and both write into main's checkouts through `sites/assets`."""
         from pilot.managers.environment import PythonEnvManager
         from pilot.managers.python_assets import PythonAssetBuilder
 
@@ -135,8 +144,8 @@ class Worktree:
             builder.ensure_yarn_install(self.app_path)
         builder.ensure_frontend_dependencies(runtime.app(self.config.app))
         builder.run_compiler(
-            [*runtime.frappe_call, "frappe", "build", "--force", "--app", self.config.app],
-            cwd=runtime.sites_path,
+            [get_yarn_bin(), "run", "build", "--apps", self.config.app, "--run-build-command"],
+            cwd=self.frappe_source_path,
             env={**manager._build_env(), **self.env},
             stream_output=True,
         )
