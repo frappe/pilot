@@ -40,17 +40,28 @@ class WorktreeCreator:
         )
         clone.check_supported()
         creates_branch = not repo.has_branch(self.branch)
-
-        on_progress(f"Checking out '{self.branch}' at {worktree.app_path}")
-        repo.add_worktree(worktree.app_path, self.branch, self.start_point or "HEAD")
         try:
+            on_progress(f"Checking out '{self.branch}' at {worktree.app_path}")
+            repo.add_worktree(worktree.app_path, self.branch, self.start_point or "HEAD")
             self.populate(worktree, clone, on_progress)
         except BaseException:
             on_progress(f"Adding worktree '{self.name}' failed; removing what it created.")
-            worktree.remove(delete_branch=creates_branch, force=True)
+            self.rollback(worktree, repo, creates_branch, on_progress)
             raise
         on_progress(f"Worktree '{self.name}' is ready. Start it with: pilot worktree start {self.name}")
         return worktree
+
+    def rollback(
+        self, worktree: Worktree, repo: GitRepo, creates_branch: bool, on_progress: Callable[[str], None]
+    ) -> None:
+        """Undo a failed add. A branch that existed before is kept. Errors here are reported,
+        not raised, so they do not hide the error that failed the add."""
+        try:
+            worktree.remove(force=True)
+            if creates_branch and repo.has_branch(self.branch):
+                repo.delete_branch(self.branch, force=True)
+        except Exception as error:
+            on_progress(f"Could not fully undo worktree '{self.name}': {error}")
 
     def get_config(self, repo: GitRepo) -> WorktreeConfig:
         """A validated record, checked against the bench before anything is created."""

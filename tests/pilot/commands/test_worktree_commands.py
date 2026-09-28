@@ -89,3 +89,19 @@ def test_failed_add_is_undone(bench: Bench, monkeypatch: pytest.MonkeyPatch) -> 
     assert not (bench.path / "worktrees" / "feature-x").exists()
     assert BenchConfig.read(bench.path).worktrees == []
     assert not GitRepo(bench.apps_path / "gameplan").has_branch("feature-x")
+
+
+def test_failed_add_keeps_a_branch_that_existed_before(bench: Bench, monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail(self: Worktree) -> None:
+        raise BenchError("build failed")
+
+    monkeypatch.setattr(Worktree, "build_assets", fail)
+    repo = GitRepo(bench.apps_path / "gameplan")
+    repo.checkout_new_branch("feature-x", "HEAD")
+    repo.checkout_new_branch("develop", "HEAD")
+
+    with pytest.raises(BenchError, match="build failed"):
+        AddWorktreeCommand(bench=bench, app_name="gameplan", worktree_name="feature-x").run()
+
+    assert not (bench.path / "worktrees" / "feature-x").exists()
+    assert repo.has_branch("feature-x")

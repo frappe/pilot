@@ -151,9 +151,9 @@ class GitRepo:
     def remove_worktree(self, path: Path, force: bool = False) -> None:
         self._checked("worktree", "remove", *(["--force"] if force else []), str(path))
 
-    def delete_branch(self, branch: str) -> None:
-        """Delete a local branch. git refuses one that is not merged."""
-        self._checked("branch", "-d", branch)
+    def delete_branch(self, branch: str, force: bool = False) -> None:
+        """Delete a local branch. Without `force`, git refuses one that is not merged."""
+        self._checked("branch", "-D" if force else "-d", branch)
 
     def prune_worktrees(self) -> None:
         self._checked("worktree", "prune")
