@@ -235,9 +235,11 @@ class Bench:
         start_point: str = "",
         on_progress: Callable[[str], None] = lambda message: None,
     ) -> "Worktree":
-        from pilot.core.worktree import Worktree
+        """Create the git worktree, overlay and site clone, then build the app's assets.
+        A failed add is undone."""
+        from pilot.core.worktree.creator import WorktreeCreator
 
-        return Worktree.add(self, app, name, base_site, branch, start_point, on_progress)
+        return WorktreeCreator(self, app, name, base_site, branch, start_point).run(on_progress)
 
     def create_directories(self) -> None:
         for directory in [

@@ -113,23 +113,6 @@ class Worktree:
         config.worktrees = []
         return Bench(config, self.path)
 
-    @classmethod
-    def add(
-        cls,
-        bench: "Bench",
-        app: str,
-        name: str,
-        base_site: str = "",
-        branch: str = "",
-        start_point: str = "",
-        on_progress: Callable[[str], None] = lambda message: None,
-    ) -> "Worktree":
-        """Create the git worktree, overlay and site clone, then build the app's assets.
-        A failed add is undone."""
-        from pilot.core.worktree.creator import WorktreeCreator
-
-        return WorktreeCreator(bench, app, name, base_site, branch, start_point).run(on_progress)
-
     def build_assets(self) -> None:
         """Install the app's JS dependencies and build only its assets, inside the overlay.
 
