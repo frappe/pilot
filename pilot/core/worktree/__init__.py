@@ -162,9 +162,12 @@ class Worktree:
         force: bool = False,
         on_progress: Callable[[str], None] = lambda message: None,
     ) -> None:
-        """Stop, remove the git worktree, the clone's database, the overlay and the record.
+        """Stop, drop the clone's database, then remove the git worktree, the overlay and the record.
         A dirty worktree is refused before anything is touched, unless `force` discards
-        the changes. `delete_branch` deletes only a merged branch."""
+        the changes. `delete_branch` deletes only a merged branch.
+
+        The database goes first: if the drop fails, the worktree is intact and remove can run again.
+        The drop is idempotent, so a retry after a partial drop succeeds."""
         has_checkout = self.app_path.exists()
         changed_files = GitRepo(self.app_path).changed_files if has_checkout and not force else []
         if changed_files:
@@ -178,10 +181,10 @@ class Worktree:
         if self.is_running:
             on_progress(f"Stopping worktree '{self.config.name}'...")
             self.stop()
+        self.drop_database(db_name, on_progress)
         repo = GitRepo(self.main_app_path)
         if has_checkout:
             repo.remove_worktree(self.app_path, force=force)
-        self.drop_database(db_name, on_progress)
         if self.path.exists():
             # rmtree unlinks symlinks without following them, so main's apps and env are safe.
             shutil.rmtree(self.path)

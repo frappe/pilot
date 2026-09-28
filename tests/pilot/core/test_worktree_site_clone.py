@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import subprocess
 from contextlib import closing
 from pathlib import Path
 
@@ -257,6 +258,40 @@ def test_remove_and_a_failed_add_drop_exactly_the_recorded_database(
     assert dropped.startswith("DROP DATABASE IF EXISTS") and dropped.count(db_name) == 2
     assert BenchConfig.read(bench.path).worktrees == []
     assert not (bench.path / "worktrees" / "broken").exists()
+
+
+@pytest.mark.parametrize("db_type", ["mariadb", "postgres"])
+def test_a_failed_drop_leaves_the_worktree_in_place_and_remove_can_run_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, server: ServerRecorder, db_type: str
+) -> None:
+    bench = _server_bench(tmp_path, monkeypatch, db_type)
+    worktree = _add(bench, "feature-x")
+    manager = "MariaDBManager" if db_type == "mariadb" else "PostgresManager"
+
+    def lose_connection(self: object, sql: str, timeout: int = 5) -> None:
+        # The database is gone, but the account drop never ran.
+        server.sql.append(sql)
+        raise subprocess.CalledProcessError(1, "sql", stderr="Lost connection to server")
+
+    monkeypatch.setattr(f"pilot.managers.database.{manager}.run_admin_sql", lose_connection)
+    with pytest.raises(BenchError, match="Lost connection to server"):
+        worktree.remove(force=True)
+
+    assert worktree.app_path.exists()
+    assert (worktree.runtime_bench.sites_path / worktree.site_name / "site_config.json").exists()
+    assert BenchConfig.read(bench.path).worktrees == [worktree.config]
+
+    monkeypatch.setattr(
+        f"pilot.managers.database.{manager}.run_admin_sql",
+        lambda self, sql, timeout=5: server.sql.append(sql),
+    )
+    server.sql.clear()
+    Bench(bench.path).worktree("feature-x").remove(force=True)
+
+    [drop] = server.sql
+    assert drop.count("IF EXISTS") == 2
+    assert not worktree.path.exists()
+    assert BenchConfig.read(bench.path).worktrees == []
 
 
 def test_remove_refuses_when_the_site_config_names_another_database(
