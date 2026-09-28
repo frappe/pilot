@@ -117,7 +117,9 @@ class Worktree:
         """Install the app's JS dependencies and build only its assets, inside the overlay.
 
         Runs Frappe's esbuild directly: `frappe build` relinks every app's assets and runs
-        the page-island hook, and both write into main's checkouts through `sites/assets`."""
+        the page-island hook, and both write into main's checkouts through `sites/assets`.
+        `CI` makes esbuild exit non-zero on a failed build; without it, esbuild logs and exits 0."""
+        from pilot.core.worktree.layout import WorktreeLayout
         from pilot.managers.environment import PythonEnvManager
         from pilot.managers.python_assets import PythonAssetBuilder
 
@@ -126,11 +128,12 @@ class Worktree:
         builder = PythonAssetBuilder(manager)
         if (self.app_path / "package.json").exists():
             builder.ensure_yarn_install(self.app_path)
+        WorktreeLayout(self).link_node_modules()
         builder.ensure_frontend_dependencies(runtime.app(self.config.app))
         builder.run_compiler(
             [get_yarn_bin(), "run", "build", "--apps", self.config.app, "--run-build-command"],
             cwd=self.frappe_source_path,
-            env={**manager.get_build_env(), **self.env},
+            env={**manager.get_build_env(), **self.env, "CI": "1"},
             stream_output=True,
         )
 

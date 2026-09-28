@@ -60,6 +60,10 @@ class WorktreeLayout:
             public = app_dir / app_dir.name / "public"
             if public.is_dir():
                 _link(assets / app_dir.name, public)
+        self.link_node_modules()
+
+    def link_node_modules(self) -> None:
+        """`<app>/public/node_modules`, which bundles import from. Needs a yarn install first."""
         node_modules = self.worktree.app_path / "node_modules"
         if node_modules.is_dir():
             _link(self.worktree.app_path / self.worktree.config.app / "public" / "node_modules", node_modules)

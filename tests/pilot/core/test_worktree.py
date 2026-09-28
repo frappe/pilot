@@ -16,7 +16,7 @@ from pilot.core.bench import Bench
 from pilot.core.worktree import Worktree
 from pilot.core.worktree.layout import WorktreeLayout
 from pilot.core.worktree.processes import WorktreeProcessManager
-from pilot.exceptions import BenchError
+from pilot.exceptions import BenchError, CommandError
 from pilot.internal.git import GitRepo
 
 
@@ -139,13 +139,29 @@ def test_processes_run_from_the_overlay_without_admin(
     assert definitions["web"].argv[-2:] == ["--port", "8001"]
 
 
-def test_build_runs_esbuild_for_the_app_only_from_the_overlay(
+def test_build_runs_esbuild_for_the_app_only_from_the_overlay_and_fails_with_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr("pilot.core.worktree.get_yarn_bin", lambda: "yarn")
+    monkeypatch.setattr(
+        "pilot.managers.python_assets.PythonAssetBuilder.ensure_yarn_install",
+        lambda self, path: (path / "node_modules").mkdir(),
+    )
     worktree = add_checkout(make_bench(tmp_path))
+    (worktree.app_path / "package.json").write_text("{}")
+    public_node_modules = worktree.app_path / "gameplan" / "public" / "node_modules"
 
-    with patch("pilot.managers.python_assets.PythonAssetBuilder.run_compiler") as run_compiler:
+    def fail_after_checking_links(*args: object, **kwargs: object) -> None:
+        assert public_node_modules.resolve() == worktree.app_path / "node_modules"
+        raise CommandError("esbuild failed", returncode=1)
+
+    with (
+        patch(
+            "pilot.managers.python_assets.PythonAssetBuilder.run_compiler",
+            side_effect=fail_after_checking_links,
+        ) as run_compiler,
+        pytest.raises(CommandError, match="esbuild failed"),
+    ):
         worktree.build_assets()
 
     run_compiler.assert_called_once()
@@ -159,6 +175,7 @@ def test_build_runs_esbuild_for_the_app_only_from_the_overlay(
     ]
     assert run_compiler.call_args.kwargs["cwd"] == worktree.path / "apps" / "frappe"
     assert run_compiler.call_args.kwargs["env"]["FRAPPE_BENCH_ROOT"] == str(worktree.path)
+    assert run_compiler.call_args.kwargs["env"]["CI"] == "1"
 
 
 def test_stop_signals_only_the_runner_in_the_pid_file(
