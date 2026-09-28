@@ -163,28 +163,28 @@ class Worktree:
         on_progress: Callable[[str], None] = lambda message: None,
     ) -> None:
         """Stop, drop the clone's database, then remove the git worktree, the overlay and the record.
-        A dirty worktree is refused before anything is touched, unless `force` discards
-        the changes. `delete_branch` deletes only a merged branch.
+        `delete_branch` deletes only a merged branch, after everything else.
 
-        The database goes first: if the drop fails, the worktree is intact and remove can run again.
-        The drop is idempotent, so a retry after a partial drop succeeds."""
+        A dirty checkout is refused unless `force` discards the changes. The check runs before
+        anything changes, and again after stop, since the processes can write to the checkout.
+        Only then is the database dropped. If the drop fails, the worktree is intact and remove
+        can run again: the drop is idempotent. After the drop, the checkout is clean or `force` was
+        given, so `git worktree remove --force` cannot fail on uncommitted changes."""
         has_checkout = self.app_path.exists()
-        changed_files = GitRepo(self.app_path).changed_files if has_checkout and not force else []
-        if changed_files:
-            raise BenchError(
-                f"Worktree '{self.config.name}' has uncommitted changes:\n"
-                + "\n".join(f"  {line}" for line in changed_files)
-                + "\nCommit them, or pass --force to discard them."
-            )
+        check_changes = has_checkout and not force
+        if check_changes:
+            self._refuse_changes()
         db_name = self.get_database_to_drop()
         branch = self.branch if has_checkout else ""
         if self.is_running:
             on_progress(f"Stopping worktree '{self.config.name}'...")
             self.stop()
+        if check_changes:
+            self._refuse_changes()
         self.drop_database(db_name, on_progress)
         repo = GitRepo(self.main_app_path)
         if has_checkout:
-            repo.remove_worktree(self.app_path, force=force)
+            repo.remove_worktree(self.app_path, force=True)
         if self.path.exists():
             # rmtree unlinks symlinks without following them, so main's apps and env are safe.
             shutil.rmtree(self.path)
@@ -192,15 +192,15 @@ class Worktree:
             config.worktrees = [record for record in config.worktrees if record.name != self.config.name]
         repo.prune_worktrees()
         if delete_branch and branch:
-            try:
-                repo.delete_branch(branch)
-            except BenchError as error:
-                on_progress(
-                    f"Kept branch '{branch}': {error}\n"
-                    f"Delete it anyway with: git -C {repo.path} branch -D {branch}"
-                )
-            else:
-                on_progress(f"Deleted branch '{branch}'.")
+            _delete_merged_branch(repo, branch, on_progress)
+
+    def _refuse_changes(self) -> None:
+        if changed_files := GitRepo(self.app_path).changed_files:
+            raise BenchError(
+                f"Worktree '{self.config.name}' has uncommitted changes:\n"
+                + "\n".join(f"  {line}" for line in changed_files)
+                + "\nCommit them, or pass --force to discard them."
+            )
 
     def get_database_to_drop(self) -> str:
         """The server database the clone owns, or "" when there is none to drop.
@@ -236,6 +236,17 @@ class Worktree:
             env={**os.environ, **self.env},
         )
         return result.returncode
+
+
+def _delete_merged_branch(repo: GitRepo, branch: str, on_progress: Callable[[str], None]) -> None:
+    try:
+        repo.delete_branch(branch)
+    except BenchError as error:
+        on_progress(
+            f"Kept branch '{branch}': {error}\nDelete it anyway with: git -C {repo.path} branch -D {branch}"
+        )
+    else:
+        on_progress(f"Deleted branch '{branch}'.")
 
 
 def _refuse_asset_command(args: Sequence[str]) -> None:

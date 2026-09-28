@@ -310,3 +310,43 @@ def test_remove_refuses_when_the_site_config_names_another_database(
     assert worktree.app_path.exists()
     assert BenchConfig.read(bench.path).worktrees == [worktree.config]
     assert GitRepo(bench.apps_path / "gameplan").has_branch("feature-x")
+
+
+def test_remove_checks_the_checkout_after_stop_and_drops_the_database_before_removing_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, server: ServerRecorder
+) -> None:
+    bench = _server_bench(tmp_path, monkeypatch, "mariadb")
+    worktree = _add(bench, "feature-x")
+    site_config = worktree.runtime_bench.sites_path / worktree.site_name / "site_config.json"
+    stopped: list[str] = []
+
+    def stop_and_write(self: Worktree) -> None:
+        # A process writes to the checkout before it exits, like gameplan's type generator.
+        (self.app_path / "doctypes.ts").write_text("generated")
+        stopped.append(self.config.name)
+
+    monkeypatch.setattr(Worktree, "is_running", property(lambda self: not stopped))
+    monkeypatch.setattr(Worktree, "stop", stop_and_write)
+    server.sql.clear()
+
+    with pytest.raises(BenchError, match=r"uncommitted changes:\n  \?\? doctypes.ts"):
+        worktree.remove()
+
+    assert stopped == ["feature-x"]
+    assert server.sql == []
+    assert (worktree.app_path / "doctypes.ts").exists()
+    assert site_config.exists()
+    assert BenchConfig.read(bench.path).worktrees == [worktree.config]
+
+    (worktree.app_path / "doctypes.ts").unlink()
+    checkout_at_drop: list[bool] = []
+    monkeypatch.setattr(
+        "pilot.managers.database.MariaDBManager.run_admin_sql",
+        lambda self, sql, timeout=5: checkout_at_drop.append(worktree.app_path.exists()),
+    )
+    Bench(bench.path).worktree("feature-x").remove(delete_branch=True)
+
+    assert checkout_at_drop == [True]
+    assert not worktree.path.exists()
+    assert BenchConfig.read(bench.path).worktrees == []
+    assert not GitRepo(bench.apps_path / "gameplan").has_branch("feature-x")
