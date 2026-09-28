@@ -20,9 +20,8 @@ if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
 _WORKTREES_DIRECTORY = "worktrees"
-# Frappe CLI commands that rebuild assets. Unscoped, they rewrite main's bundles.
+# Frappe CLI commands that reach main's checkouts through sites/assets, even when scoped.
 _ASSET_COMMANDS = frozenset({"build", "watch"})
-_APP_SCOPE_OPTIONS = ("--app", "--apps")
 
 
 class Worktree:
@@ -205,7 +204,7 @@ class Worktree:
 
     def frappe(self, args: Sequence[str]) -> int:
         """Run a Frappe CLI command with the worktree's code and sites. Returns its exit code."""
-        _refuse_unscoped_asset_command(args)
+        _refuse_asset_command(args)
         runtime = self.runtime_bench
         result = subprocess.run(
             [*runtime.frappe_call, "frappe", *args],
@@ -215,10 +214,15 @@ class Worktree:
         return result.returncode
 
 
-def _refuse_unscoped_asset_command(args: Sequence[str]) -> None:
+def _refuse_asset_command(args: Sequence[str]) -> None:
+    """`frappe build` relinks every app's assets and `frappe watch` runs the page-island
+    watcher. Both write into main's checkouts, so Pilot builds and watches instead."""
     command = _frappe_command_name(args)
-    if command in _ASSET_COMMANDS and not any(arg.startswith(_APP_SCOPE_OPTIONS) for arg in args):
-        raise BenchError(f"'{command}' would rebuild the main bench's assets. Scope it with --app or --apps.")
+    if command in _ASSET_COMMANDS:
+        raise BenchError(
+            f"'frappe {command}' can write into the main bench's apps, so worktrees do not run it. "
+            f"'pilot worktree add' builds the app's assets; 'pilot worktree start' runs its watcher and Vite."
+        )
 
 
 def _frappe_command_name(args: Sequence[str]) -> str:

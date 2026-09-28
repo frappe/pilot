@@ -194,11 +194,14 @@ def test_remove_drops_checkout_overlay_record_and_optionally_the_branch(tmp_path
     assert not GitRepo(bench.apps_path / "gameplan").has_branch("feature-x")
 
 
-@pytest.mark.parametrize("args", [["build"], ["--site", "x", "watch"], ["build", "--force"]])
-def test_frappe_passthrough_refuses_unscoped_asset_commands(tmp_path: Path, args: list[str]) -> None:
+@pytest.mark.parametrize(
+    "args",
+    [["build"], ["--site", "x", "watch"], ["build", "--app", "frappe"], ["watch", "--apps", "gameplan"]],
+)
+def test_frappe_passthrough_refuses_asset_commands(tmp_path: Path, args: list[str]) -> None:
     worktree = Worktree(make_bench(tmp_path), WorktreeConfig("feature-x", "gameplan", "gp.localhost", 1))
 
-    with patch("subprocess.run") as run, pytest.raises(BenchError, match="--app"):
+    with patch("subprocess.run") as run, pytest.raises(BenchError, match="worktree start"):
         worktree.frappe(args)
     run.assert_not_called()
 
@@ -208,10 +211,10 @@ def test_frappe_passthrough_runs_in_the_overlay_with_worktree_code(tmp_path: Pat
 
     with patch("subprocess.run") as run:
         run.return_value.returncode = 0
-        assert worktree.frappe(["--site", "x", "build", "--app", "gameplan"]) == 0
+        assert worktree.frappe(["--site", "x", "migrate"]) == 0
 
     argv = run.call_args.args[0]
-    assert argv[-5:] == ["--site", "x", "build", "--app", "gameplan"]
+    assert argv[-3:] == ["--site", "x", "migrate"]
     assert run.call_args.kwargs["cwd"] == worktree.path / "sites"
     assert run.call_args.kwargs["env"]["PYTHONPATH"] == str(worktree.app_path)
     assert run.call_args.kwargs["env"]["PATH"] == os.environ["PATH"]

@@ -90,7 +90,7 @@ A worktree checks out one app on its own branch and serves it beside the main be
 - `pilot worktree start NAME`: run the worktree's processes in the foreground.
 - `pilot worktree stop NAME`: stop the worktree. The main bench keeps running.
 - `pilot worktree remove NAME [--delete-branch] [--force]`: stop and remove the worktree, overlay and record. A checkout with uncommitted changes is refused unless `--force`. The branch is deleted last, so a refused `git branch -d` leaves only the branch.
-- `pilot worktree frappe NAME ...`: run a Frappe CLI command with the worktree's code and sites. `build` and `watch` must be scoped with `--app` or `--apps`, since unscoped they rewrite main's assets.
+- `pilot worktree frappe NAME ...`: run a Frappe CLI command with the worktree's code and sites. `build` and `watch` are refused, even with `--app`: they write into main's apps through `sites/assets`. `worktree add` builds the app's assets and `worktree start` runs its watcher and Vite.
 
 Only SQLite benches support worktrees for now.
 
