@@ -231,3 +231,14 @@ def test_frappe_passthrough_runs_in_the_overlay_with_worktree_code(tmp_path: Pat
     assert run.call_args.kwargs["cwd"] == worktree.path / "sites"
     assert run.call_args.kwargs["env"]["PYTHONPATH"] == str(worktree.app_path)
     assert run.call_args.kwargs["env"]["PATH"] == os.environ["PATH"]
+
+
+def test_app_with_worktrees_cannot_be_removed(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    add_checkout(bench)
+
+    with pytest.raises(BenchError, match="has worktrees: feature-x"):
+        Bench(bench.path).app("gameplan").remove(force=True)
+
+    assert (bench.apps_path / "gameplan" / ".git").is_dir()
+    assert GitRepo(bench.apps_path / "gameplan").has_branch("feature-x")
