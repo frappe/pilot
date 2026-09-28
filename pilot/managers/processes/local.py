@@ -143,12 +143,15 @@ class ProcessManager:
         if not self.is_configured():
             raise BenchError(f"Procfile not found at {self.procfile_path}. Run 'pilot init' first.")
         self.write_config()
-        self.pid_file.write_text(str(os.getpid()))
+        self.write_pid_file()
         try:
             self._run_processes(self._process_definitions())
         finally:
             self.pid_file.unlink(missing_ok=True)
             self._cleanup_proc_pid_files()
+
+    def write_pid_file(self) -> None:
+        self.pid_file.write_text(str(os.getpid()))
 
     def start_workload(self) -> None:
         self.start()

@@ -19,6 +19,7 @@ from pilot.core.worktree.layout import WorktreeLayout
 from pilot.core.worktree.processes import WorktreeProcessManager
 from pilot.exceptions import BenchError, CommandError
 from pilot.internal.git import GitRepo
+from pilot.internal.tasks.process_identity import ProcessInspector
 
 
 def _git(path: Path, *args: str) -> None:
@@ -179,7 +180,7 @@ def test_build_runs_esbuild_for_the_app_only_from_the_overlay_and_fails_with_it(
     assert run_compiler.call_args.kwargs["env"]["CI"] == "1"
 
 
-def test_stop_signals_only_the_runner_in_the_pid_file(
+def test_stop_signals_only_the_runner_that_wrote_the_pid_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     worktree = add_checkout(make_bench(tmp_path))
@@ -187,31 +188,31 @@ def test_stop_signals_only_the_runner_in_the_pid_file(
     monkeypatch.setattr("pilot.managers.processes.local._pids_listening", listening)
     # The stand-in runner is this test's child, so it lingers as a zombie until it is reaped.
     monkeypatch.setattr("pilot.core.worktree.processes._STOP_WAIT_SECONDS", 0)
-    pid_file = WorktreeProcessManager(worktree).pid_file
+    manager = WorktreeProcessManager(worktree)
+    pid_file = manager.pid_file
 
     with patch("os.kill") as kill, pytest.raises(BenchError, match="not running"):
         worktree.stop()
     kill.assert_not_called()
 
-    # A runner that died abruptly leaves its pid file, and the pid can go to another process.
-    unrelated = subprocess.Popen(["sleep", "60"])
-    try:
-        pid_file.write_text(str(unrelated.pid))
-        assert not worktree.is_running
-        with pytest.raises(BenchError, match="not running"):
-            worktree.stop()
-        assert unrelated.poll() is None
-        assert not pid_file.exists()
-    finally:
-        unrelated.kill()
-        unrelated.wait()
-
-    # Stands in for `pilot -b BENCH worktree start feature-x`, which writes the pid file.
+    # Stands in for `pilot -b BENCH worktree start feature-x`, on this bench or on another one.
     runner = subprocess.Popen(
         [sys.executable, "-c", "import time; time.sleep(60)", "-b", "main", "worktree", "start", "feature-x"]
     )
     try:
-        pid_file.write_text(str(runner.pid))
+        start_time = ProcessInspector().start_time(runner.pid)
+        # A pid reused by a later process, and a pid file from before start times: neither is signalled.
+        for stale in (f"{runner.pid} {start_time - 1}", str(runner.pid)):
+            pid_file.write_text(stale)
+            assert not worktree.is_running
+            with pytest.raises(BenchError, match="not running"):
+                worktree.stop()
+            assert runner.poll() is None
+            assert not pid_file.exists()
+
+        with patch("os.getpid", return_value=runner.pid):
+            manager.write_pid_file()
+        assert pid_file.read_text() == f"{runner.pid} {start_time}"
         assert worktree.is_running
         worktree.stop()
         assert runner.wait(timeout=5) == -signal.SIGTERM

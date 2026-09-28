@@ -23,7 +23,12 @@ _FRONTEND_HOST = "127.0.0.1"
 class WorktreeProcessManager(ProcessManager):
     """Runs a worktree's development processes from its overlay bench.
 
-    No admin plane, its own redis, and a stop that only signals the worktree's own runner."""
+    No admin plane, its own redis, and a stop that only signals the worktree's own runner.
+
+    The runner writes `<pid> <start time>` to the pid file. A runner that dies abruptly leaves
+    the file, and the system can reuse the pid, even for another bench's runner of the same name.
+    A reused pid has a later start time, so a pid is accepted only when both values match.
+    A pid file without a start time is never accepted."""
 
     def __init__(self, worktree: "Worktree") -> None:
         super().__init__(worktree.runtime_bench, watch_admin_js=False)
@@ -35,18 +40,21 @@ class WorktreeProcessManager(ProcessManager):
         lines = [f"{pd.name}: {shlex.join(pd.argv)}\n" for pd in self._process_definitions()]
         self.procfile_path.write_text("".join(lines))
 
+    def write_pid_file(self) -> None:
+        pid = os.getpid()
+        self.pid_file.write_text(f"{pid} {ProcessInspector().start_time(pid)}")
+
     def is_running(self) -> bool:
-        pid = self._runner_pid()
-        return pid is not None and _is_runner(pid, self.worktree.config.name)
+        # A query leaves the pid file alone: it may read a file the runner is still writing.
+        return self._runner_pid() is not None
 
     def stop(self) -> None:
         """Signal the runner named by the pid file and wait for it. Nothing else is touched:
         the base class falls back to killing whatever listens on the bench's ports.
-        A runner that died abruptly leaves its pid file, and the system can reuse that pid,
-        so a pid whose command line is not this worktree's runner is never signalled."""
+        A pid file that names no live runner is removed, and nothing is signalled."""
         pid = self._runner_pid()
         self.pid_file.unlink(missing_ok=True)
-        if pid is None or not _is_runner(pid, self.worktree.config.name):
+        if pid is None:
             raise BenchError(f"Worktree '{self.worktree.config.name}' is not running.")
         try:
             os.kill(pid, signal.SIGTERM)
@@ -57,9 +65,11 @@ class WorktreeProcessManager(ProcessManager):
             time.sleep(0.2)
 
     def _runner_pid(self) -> int | None:
+        """The pid in the pid file, when that pid still has the start time the runner recorded."""
         try:
-            return int(self.pid_file.read_text().strip())
-        except (FileNotFoundError, ValueError):
+            pid, start_time = (int(field) for field in self.pid_file.read_text().split())
+            return pid if ProcessInspector().start_time(pid) == start_time else None
+        except (OSError, ValueError):
             return None
 
     def _process_definitions(self) -> list[ProcessDefinition]:
@@ -106,15 +116,6 @@ class WorktreeProcessManager(ProcessManager):
             working_dir=self.worktree.frontend_path,
             critical=False,
         )
-
-
-def _is_runner(pid: int, name: str) -> bool:
-    """Whether pid runs `pilot ... worktree start ... NAME`, the command that writes the pid file."""
-    try:
-        argv = ProcessInspector().command_line(pid).split()
-    except OSError:
-        return False
-    return any(argv[i : i + 2] == ["worktree", "start"] and name in argv[i + 2 :] for i in range(len(argv)))
 
 
 def _is_alive(pid: int) -> bool:
