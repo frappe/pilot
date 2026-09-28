@@ -83,14 +83,18 @@ Production setup uses the bench config and system managers. The command should n
 
 ## Worktree Commands
 
-A worktree checks out one app on its own branch and serves it beside the main bench. It lives at `worktrees/NAME` as an overlay bench: a git worktree of the app, links to main's other apps and env, and a clone of the base site named `NAME.BASE_SITE`. Its processes run on the bench's ports plus the worktree's own offset, with no admin, and Vite on 8080 plus that offset.
+A worktree checks out one app on its own branch and serves it beside the main bench. It lives at `worktrees/NAME` as an overlay bench: a git worktree of the app, links to main's other apps and env, and a clone of the base site named `NAME.BASE_SITE`. Each worktree has its own port offset. Its ports are the default base ports plus that offset, not the bench's ports plus it: web `8000`, socketio `9000`, Redis queue `11000`, Redis cache `13000`, and Vite `8080`. It runs its own Redis and no admin.
 
 - `pilot worktree add APP NAME [--site SITE] [--branch BRANCH] [--from REF]`: create the worktree, clone the site and build only the app's assets. `--site` is needed only when several sites have the app. The branch defaults to `NAME`. A local branch is checked out as it is. A branch that only `origin` has, as of the last fetch, becomes a local branch that tracks it. Otherwise a new branch starts at `--from`, or at the app's `HEAD`. A failed add is undone.
-- `pilot worktree list`: list worktrees with their app, branch, site, web and Vite URLs, and state.
+- `pilot worktree list`: list worktrees with their app, branch, site, web URL, Vite URL if the app has a frontend dev server, and state.
 - `pilot worktree start NAME`: run the worktree's processes in the foreground.
 - `pilot worktree stop NAME`: stop the worktree. The main bench keeps running.
 - `pilot worktree remove NAME [--delete-branch] [--force]`: stop and remove the worktree, overlay and record. A checkout with uncommitted changes is refused, with the changed files listed; `--force` discards the changes. `--delete-branch` deletes the branch with `git branch -d` after everything else. An unmerged branch is kept, and Pilot prints git's reason and the `git branch -D` command. Starting a gameplan worktree regenerates `frontend/src/types/doctypes.ts`, so a started gameplan worktree is usually dirty.
-- `pilot worktree frappe NAME ...`: run a Frappe CLI command with the worktree's code and sites. `build` and `watch` are refused, even with `--app`: they write into main's apps through `sites/assets`. `worktree add` builds the app's assets and `worktree start` runs its watcher and Vite.
+- `pilot worktree frappe NAME ...`: run a Frappe CLI command with the worktree's code and sites. `build` and `watch` are refused, even with `--app`. `worktree add` builds the app's assets, and `worktree start` runs its watcher and Vite.
+
+Build and watch: `worktree add` builds the app with Frappe's esbuild and the app's own `build` script, and `worktree start` watches it with Frappe's esbuild. A frappe worktree is watched with `frappe watch --apps frappe` instead, since there `sites/assets/frappe` is the worktree. `frappe build` never runs in a worktree: it relinks every app's assets through `sites/assets`, which writes into main's apps.
+
+Python dependencies: the worktree shares main's `env`. A branch that adds one needs it installed by hand, for example `uv pip install --python env/bin/python PACKAGE`, which installs it for main too. Never `pip install -e` the worktree: that points main's app at the worktree.
 
 The site clone keeps the base site's data and `encryption_key`, so it holds live credentials. Its `site_config.json` sets `mute_emails` and `pause_scheduler`, so it sends no mail, pulls no email accounts and runs no scheduled jobs. To turn them back on, run `pilot worktree frappe NAME --site SITE set-config -p mute_emails 0` and the same for `pause_scheduler`. Keep `-p`: without it the value is the string `"0"`, which Frappe reads as a set `pause_scheduler`.
 
