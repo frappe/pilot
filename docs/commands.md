@@ -85,7 +85,7 @@ Production setup uses the bench config and system managers. The command should n
 
 A worktree checks out one app on its own branch and serves it beside the main bench. It lives at `worktrees/NAME` as an overlay bench: a git worktree of the app, links to main's other apps and env, and a clone of the base site named `NAME.BASE_SITE`. Its processes run on the bench's ports plus the worktree's own offset, with no admin, and Vite on 8080 plus that offset.
 
-- `pilot worktree add APP NAME [--site SITE] [--branch BRANCH] [--from REF]`: create the worktree, clone the site and build only the app's assets. `--site` is needed only when several sites have the app. The branch defaults to `NAME`, and `--from` sets the start point of a new branch. A failed add is undone.
+- `pilot worktree add APP NAME [--site SITE] [--branch BRANCH] [--from REF]`: create the worktree, clone the site and build only the app's assets. `--site` is needed only when several sites have the app. The branch defaults to `NAME`. A local branch is checked out as it is. A branch that only `origin` has, as of the last fetch, becomes a local branch that tracks it. Otherwise a new branch starts at `--from`, or at the app's `HEAD`. A failed add is undone.
 - `pilot worktree list`: list worktrees with their app, branch, site, web and Vite URLs, and state.
 - `pilot worktree start NAME`: run the worktree's processes in the foreground.
 - `pilot worktree stop NAME`: stop the worktree. The main bench keeps running.

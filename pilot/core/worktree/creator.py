@@ -72,7 +72,7 @@ class WorktreeCreator:
         if any(record.name == self.name for record in self.bench.config.worktrees):
             raise BenchError(f"Worktree '{self.name}' already exists.")
         self.check_base_site(config.base_site)
-        if self.start_point and repo.has_branch(self.branch):
+        if self.start_point and (repo.has_branch(self.branch) or repo.tracking_sha(self.branch)):
             raise BenchError(f"Branch '{self.branch}' exists; --from applies only to a new branch.")
         config.port_offset = pick_port_offset(self.bench.path.parent)
         return config

@@ -142,9 +142,12 @@ class GitRepo:
         return self._run("show-ref", "--verify", "--quiet", f"refs/heads/{branch}").returncode == 0
 
     def add_worktree(self, path: Path, branch: str, start_point: str = "HEAD") -> None:
-        """Check out `branch` at `path`, creating it from `start_point` if it does not exist."""
+        """Check out `branch` at `path`. A missing branch tracks `origin/<branch>` when the
+        last fetch saw one, and otherwise starts at `start_point`."""
         if self.has_branch(branch):
             self._checked("worktree", "add", str(path), branch)
+        elif self.tracking_sha(branch):
+            self._checked("worktree", "add", "--track", "-b", branch, str(path), f"origin/{branch}")
         else:
             self._checked("worktree", "add", "-b", branch, str(path), start_point)
 
