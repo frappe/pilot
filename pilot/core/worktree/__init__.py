@@ -162,13 +162,15 @@ class Worktree:
         force: bool = False,
         on_progress: Callable[[str], None] = lambda message: None,
     ) -> None:
-        """Stop, remove the checkout, drop the clone's database, then the overlay and the record.
-        `delete_branch` deletes only a merged branch, after everything else.
+        """Stop, drop the clone's database, remove the checkout and the branch, then the overlay
+        and the record. `delete_branch` deletes only a merged branch.
 
         A dirty checkout is refused before anything changes, with the changed files listed.
-        Git refuses it again at removal, so no edit is discarded unless `force` is given.
-        Each step skips what is already gone and the record goes last, so a remove that
-        failed part way can run again."""
+        Each step skips what is already gone, so a remove that failed part way can run again:
+        - The drop fails: the checkout, overlay and record stay.
+        - Git refuses a checkout that got dirty after the check: the edits stay, but the
+          database is already dropped. Commit them, or pass `force` to discard them.
+        - A later step fails: the branch is already handled, and a retry finishes the rest."""
         has_checkout = self.app_path.exists()
         if has_checkout and not force:
             self._refuse_changes()
@@ -177,18 +179,18 @@ class Worktree:
         if self.is_running:
             on_progress(f"Stopping worktree '{self.config.name}'...")
             self.stop()
+        self.drop_database(db_name, on_progress)
         repo = GitRepo(self.main_app_path)
         if has_checkout:
             self.remove_checkout(repo, force)
-        self.drop_database(db_name, on_progress)
+        if delete_branch:
+            _delete_merged_branch(repo, branch, on_progress)
         if self.path.exists():
             # rmtree unlinks symlinks without following them, so main's apps and env are safe.
             shutil.rmtree(self.path)
         with BenchConfig.open(self.bench.path) as config:
             config.worktrees = [record for record in config.worktrees if record.name != self.config.name]
         repo.prune_worktrees()
-        if delete_branch:
-            _delete_merged_branch(repo, branch, on_progress)
 
     def remove_checkout(self, repo: GitRepo, force: bool) -> None:
         """`git worktree remove`, which refuses a dirty checkout unless `force` is given."""
@@ -245,7 +247,7 @@ class Worktree:
 
 def _delete_merged_branch(repo: GitRepo, branch: str, on_progress: Callable[[str], None]) -> None:
     if not branch:
-        on_progress("Kept the branch: the checkout was already gone, so its name is unknown.")
+        on_progress("Skipped the branch: the checkout was already gone, so its name is unknown.")
         return
     try:
         repo.delete_branch(branch)

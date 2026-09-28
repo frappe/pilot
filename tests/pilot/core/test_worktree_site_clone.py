@@ -261,7 +261,7 @@ def test_remove_and_a_failed_add_drop_exactly_the_recorded_database(
 
 
 @pytest.mark.parametrize("db_type", ["mariadb", "postgres"])
-def test_a_failed_drop_keeps_the_record_and_remove_can_run_again(
+def test_a_failed_drop_leaves_the_worktree_in_place_and_a_retry_removes_everything(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, server: ServerRecorder, db_type: str
 ) -> None:
     bench = _server_bench(tmp_path, monkeypatch, db_type)
@@ -275,26 +275,33 @@ def test_a_failed_drop_keeps_the_record_and_remove_can_run_again(
 
     monkeypatch.setattr(f"pilot.managers.database.{manager}.run_admin_sql", lose_connection)
     with pytest.raises(BenchError, match="Lost connection to server"):
-        worktree.remove()
+        worktree.remove(delete_branch=True)
 
-    assert not worktree.app_path.exists()
+    assert worktree.app_path.exists()
+    assert str(worktree.app_path) in _git_worktrees(bench)
     assert (worktree.runtime_bench.sites_path / worktree.site_name / "site_config.json").exists()
     assert BenchConfig.read(bench.path).worktrees == [worktree.config]
+    assert GitRepo(bench.apps_path / "gameplan").has_branch("feature-x")
 
-    monkeypatch.setattr(
-        f"pilot.managers.database.{manager}.run_admin_sql",
-        lambda self, sql, timeout=5: server.sql.append(sql),
-    )
+    checkout_at_drop: list[bool] = []
+
+    def drop(self: object, sql: str, timeout: int = 5) -> None:
+        server.sql.append(sql)
+        checkout_at_drop.append(worktree.app_path.exists())
+
+    monkeypatch.setattr(f"pilot.managers.database.{manager}.run_admin_sql", drop)
     server.sql.clear()
     messages: list[str] = []
     Bench(bench.path).worktree("feature-x").remove(delete_branch=True, on_progress=messages.append)
 
-    [drop] = server.sql
-    assert drop.count("IF EXISTS") == 2
+    [statement] = server.sql
+    assert statement.count("IF EXISTS") == 2
+    assert checkout_at_drop == [True]
     assert not worktree.path.exists()
     assert BenchConfig.read(bench.path).worktrees == []
     assert str(worktree.app_path) not in _git_worktrees(bench)
-    assert "Kept the branch" in messages[-1]
+    assert not GitRepo(bench.apps_path / "gameplan").has_branch("feature-x")
+    assert "Deleted branch 'feature-x'." in messages
 
 
 def test_remove_refuses_when_the_site_config_names_another_database(
@@ -315,12 +322,11 @@ def test_remove_refuses_when_the_site_config_names_another_database(
     assert GitRepo(bench.apps_path / "gameplan").has_branch("feature-x")
 
 
-def test_git_refuses_a_checkout_dirtied_after_stop_and_a_clean_remove_drops_everything(
+def test_git_refuses_a_checkout_dirtied_after_stop_and_force_finishes_the_remove(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, server: ServerRecorder
 ) -> None:
     bench = _server_bench(tmp_path, monkeypatch, "mariadb")
     worktree = _add(bench, "feature-x")
-    site_config = worktree.runtime_bench.sites_path / worktree.site_name / "site_config.json"
     stopped: list[str] = []
 
     def stop_and_write(self: Worktree) -> None:
@@ -333,28 +339,22 @@ def test_git_refuses_a_checkout_dirtied_after_stop_and_a_clean_remove_drops_ever
     server.sql.clear()
 
     with pytest.raises(BenchError, match=r"uncommitted changes:\n  \?\? doctypes.ts"):
-        worktree.remove()
+        worktree.remove(delete_branch=True)
 
     assert stopped == ["feature-x"]
-    assert server.sql == []
+    [drop] = server.sql
+    assert drop.startswith("DROP DATABASE IF EXISTS")
     assert (worktree.app_path / "doctypes.ts").read_text() == "generated"
-    assert site_config.exists()
-    assert BenchConfig.read(bench.path).worktrees == [worktree.config]
     assert str(worktree.app_path) in _git_worktrees(bench)
+    assert (worktree.runtime_bench.sites_path / worktree.site_name).is_dir()
+    assert BenchConfig.read(bench.path).worktrees == [worktree.config]
+    assert GitRepo(bench.apps_path / "gameplan").has_branch("feature-x")
 
-    (worktree.app_path / "doctypes.ts").unlink()
-    checkout_at_drop: list[bool] = []
-    monkeypatch.setattr(
-        "pilot.managers.database.MariaDBManager.run_admin_sql",
-        lambda self, sql, timeout=5: checkout_at_drop.append(worktree.app_path.exists()),
-    )
-    Bench(bench.path).worktree("feature-x").remove(delete_branch=True)
+    Bench(bench.path).worktree("feature-x").remove(force=True)
 
-    assert checkout_at_drop == [False]
     assert not worktree.path.exists()
     assert BenchConfig.read(bench.path).worktrees == []
     assert str(worktree.app_path) not in _git_worktrees(bench)
-    assert not GitRepo(bench.apps_path / "gameplan").has_branch("feature-x")
 
 
 def _git_worktrees(bench: Bench) -> str:
