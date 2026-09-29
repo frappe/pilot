@@ -13,6 +13,8 @@ from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text
 _PROBE_CONNECT_TIMEOUT = 5
 _TRUE_SINGLES_VALUES = frozenset({"1", "true"})
 
+# Maintenance settings from before a restore, kept until a restore succeeds.
+MAINTENANCE_BEFORE_RESTORE_KEY = "pilot_maintenance_before_restore"
 PROTECTED_CONFIG_KEYS = frozenset(
     {
         "backup_retention",
@@ -31,6 +33,7 @@ PROTECTED_CONFIG_KEYS = frozenset(
         "installed_apps",
         "pilot_auth_token",
         "pilot_endpoint",
+        MAINTENANCE_BEFORE_RESTORE_KEY,
         "route",
         "ssl",
     }

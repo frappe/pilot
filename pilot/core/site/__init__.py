@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.config import SiteConfig
+from pilot.core.site.config import MAINTENANCE_BEFORE_RESTORE_KEY
 from pilot.utils import run_command
 
 if TYPE_CHECKING:
@@ -15,8 +16,6 @@ if TYPE_CHECKING:
     from pilot.core.site.backups import SiteBackups
     from pilot.core.site.domains import SiteDomains
     from pilot.core.site.migration_backup import SiteMigrationBackup
-
-_MAINTENANCE_BEFORE_RESTORE = "pilot_maintenance_before_restore"
 
 
 class Site:
@@ -77,14 +76,14 @@ class Site:
         attempt, so a retry after a failed restore does not keep the site offline."""
         with self._locked_site_config() as config:
             config.setdefault(
-                _MAINTENANCE_BEFORE_RESTORE,
+                MAINTENANCE_BEFORE_RESTORE_KEY,
                 {key: int(bool(config.get(key))) for key in ("maintenance_mode", "pause_scheduler")},
             )
             config.update({"maintenance_mode": 1, "pause_scheduler": 1})
 
     def leave_restore_maintenance(self) -> None:
         with self._locked_site_config() as config:
-            config.update(config.pop(_MAINTENANCE_BEFORE_RESTORE))
+            config.update(config.pop(MAINTENANCE_BEFORE_RESTORE_KEY))
 
     @contextmanager
     def _locked_site_config(self) -> Iterator[dict]:

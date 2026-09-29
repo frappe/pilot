@@ -4,18 +4,29 @@ test.describe.configure({ timeout: 180_000 })
 
 let site = ''
 let sites: string[] = []
+// The row of the newest backup with a local database file. Only that kind can be restored.
+let row = -1
 
 test.beforeAll(async ({ request }) => {
   sites = (await (await request.get('/api/v1/sites')).json()).map((s) => s.name)
   site = sites.find((name) => !name.startsWith('e2e-')) ?? sites[0]
 
-  // A fresh backup is the newest row and has local files, so the first row can be restored.
+  // With S3 set up, the upload removes the local files, so the fresh backup can be offsite only.
   const { task_id } = await (await request.post(`/api/v1/sites/${site}/backups`)).json()
   await expect
     .poll(async () => (await (await request.get(`/api/v1/tasks/${task_id}`)).json()).status, {
       timeout: 150_000,
     })
     .toBe('success')
+
+  const backups = await (await request.get(`/api/v1/sites/${site}/backups`)).json()
+  row = backups.findIndex((backup) =>
+    backup.files.some((file) => file.kind === 'database' && file.path),
+  )
+})
+
+test.beforeEach(() => {
+  test.skip(row < 0, 'The site has no backup with a local database file.')
 })
 
 // The restore replaces real data, so the tests answer the request with a stub task.
@@ -30,7 +41,7 @@ const stubRestore = async (page) => {
 
 const openRestore = async (page, item: string) => {
   await page.goto(`/sites/${site}/backups`)
-  await page.getByRole('button', { name: 'Backup actions' }).first().click()
+  await page.getByRole('button', { name: 'Backup actions' }).nth(row).click()
   await page.getByRole('menuitem', { name: item, exact: true }).click()
   return page.getByRole('dialog', { name: 'Restore Backup' })
 }
