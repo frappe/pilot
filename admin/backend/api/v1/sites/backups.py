@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flask import current_app, jsonify, request, send_file
+from flask import current_app, g, jsonify, request, send_file
 
 from admin.backend.api.responses import accepted_task_response, error_response, no_content_response
 from admin.backend.api.v1.sites import sites_bp
@@ -22,6 +22,7 @@ from pilot.internal.site_paths import site_exists
 from pilot.internal.validators import validate_cron_expression
 from pilot.tasks.backup_site import BackupSiteTask
 from pilot.tasks.delete_backup import DeleteBackupTask
+from pilot.tasks.restore_site import RestoreSiteTask
 
 _DEFAULT_BACKUPS_PAGE_SIZE = 20
 
@@ -73,6 +74,44 @@ def delete_backup(name: str, timestamp: str):
     try:
         task_id = DeleteBackupTask.queue(
             Bench(bench_root), site=name, filenames=[file.filename for file in match.files]
+        )
+    except Exception as error:
+        return task_failure(error)
+    return accepted_task_response(bench_root, task_id)
+
+
+@sites_bp.post("/<name>/backups/<timestamp>/actions/restore")
+@require_scope(site_name)
+def restore_backup(name: str, timestamp: str):
+    """Restore this site's backup to the site named in the body, which may be another site."""
+    from admin.backend.internal.session import Session
+
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return malformed_body()
+    fields = text_fields(data, "site")
+    if not fields or not fields["site"]:
+        return invalid_fields()
+    target = fields["site"]
+    bench = Bench(bench_root)
+    if not site_exists(bench_root, target):
+        return site_not_found()
+    if not Session(bench).has_scope(g.jwt_claims, target, g.jwt_token or ""):
+        return error_response("forbidden", "Not authorized for this site", 403)
+    match, failure = _find_backup_set(bench_root, name, timestamp)
+    if failure:
+        return failure
+    if not any(file.kind == "database" and file.path for file in match.files):
+        return error_response("backup_not_local", "The backup has no local database file.", 409)
+    try:
+        task_id = RestoreSiteTask.queue(
+            bench,
+            site=target,
+            source_site=name,
+            timestamp=timestamp,
+            idempotency_key=request.headers.get("Idempotency-Key"),
+            resource_key=f"site:{target.lower()}",
         )
     except Exception as error:
         return task_failure(error)

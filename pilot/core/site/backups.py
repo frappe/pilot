@@ -13,6 +13,11 @@ if TYPE_CHECKING:
     from pilot.core.site import Site
 
 _TS_RE = re.compile(r"^(\d{8}_\d{6})")
+_RESTORE_FILE_PATTERNS = {
+    "db_file": re.compile(r"-database\.sql(\.gz)?$"),
+    "public_files": re.compile(r"(?<!-private)-files\.(tar|tgz)$"),
+    "private_files": re.compile(r"-private-files\.(tar|tgz)$"),
+}
 
 
 def parse_backup_timestamp(filename: str) -> str | None:
@@ -79,6 +84,21 @@ class SiteBackups:
         if not target.is_file():
             raise FileNotFoundError(file_id)
         return target
+
+    def get_restore_files(self, timestamp: str) -> dict[str, str]:
+        """Local files of one backup run, keyed as `Site.restore` arguments."""
+        from pilot.exceptions import BenchError
+
+        if not _TS_RE.fullmatch(timestamp) or not self.directory.is_dir():
+            raise BenchError(f"Backup {timestamp} has no local files.")
+        files = {}
+        for path in self.directory.glob(f"{timestamp}-*"):
+            for key, pattern in _RESTORE_FILE_PATTERNS.items():
+                if path.is_file() and pattern.search(path.name):
+                    files[key] = str(path)
+        if "db_file" not in files:
+            raise BenchError(f"Backup {timestamp} has no local database file.")
+        return files
 
     def download_links(self, timestamp: str) -> dict:
         offsite = OffsiteBackup.from_config(self.site.bench.config.s3, self.site.bench.path)

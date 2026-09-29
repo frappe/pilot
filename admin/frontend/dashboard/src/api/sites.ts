@@ -133,6 +133,13 @@ export const sitesApi = {
           `sites/${encodeURIComponent(name)}/backups/${encodeURIComponent(timestamp)}/download-links`,
         )
         .json(),
+    restore: (name: string, timestamp: string, target: string): Promise<TaskPayload> =>
+      request
+        .post(
+          `sites/${encodeURIComponent(name)}/backups/${encodeURIComponent(timestamp)}/actions/restore`,
+          { json: { site: target } },
+        )
+        .json(),
     schedule: {
       get: (name: string): Promise<BackupSchedule> =>
         request.get(`sites/${encodeURIComponent(name)}/backup-schedule`).json(),

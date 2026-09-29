@@ -3,6 +3,7 @@ import { useRouter } from 'vue-router'
 import { computed, onMounted, ref } from 'vue'
 import { Badge, Button, Dialog, Dropdown, type DropdownItem, ErrorMessage, Select } from 'frappe-ui'
 
+import ActionDialog from '@/components/common/ActionDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import ListSkeleton from '@/components/common/ListSkeleton.vue'
 import Table from '@/components/common/Table.vue'
@@ -14,6 +15,7 @@ import { cronToLabel } from '@/utils/backup'
 import { apiErrorMessage } from '@/api/client'
 import { fmtDateTime } from '@/utils/taskFormat'
 import { useSite } from '@/composables/sites/useSite'
+import { useSites } from '@/composables/sites/useSites'
 import { openTaskDetailPage } from '@/utils/taskRoute'
 import type { Backup, BackupFile, BackupSchedule } from '@/types/siteBackups'
 import { errorMessage } from '@/utils/error'
@@ -122,6 +124,20 @@ const menuOptions = (set: Backup): DropdownItem[] => {
         icon: 'lucide-download',
         onClick: () => downloadFile(set, k),
       })),
+    ...(fileOf(set, 'database')?.path
+      ? [
+          {
+            label: 'Restore Backup',
+            icon: 'lucide-archive-restore',
+            onClick: () => openRestore(set, props.siteName),
+          },
+          {
+            label: 'Restore Backup on Another Site',
+            icon: 'lucide-archive-restore',
+            onClick: () => openRestore(set),
+          },
+        ]
+      : []),
     {
       label: 'Delete backup',
       icon: 'lucide-trash-2',
@@ -181,6 +197,51 @@ const confirmDelete = async () => {
     deleteError.value = errorMessage(e, 'Delete failed.')
   } finally {
     deleting.value = false
+  }
+}
+
+const { sites, load: loadSites } = useSites()
+const siteOptions = computed(() =>
+  sites.value
+    .filter((site) => site.name !== props.siteName)
+    .map((site) => ({ label: site.name, value: site.name })),
+)
+
+const showRestore = ref(false)
+const restoreSource = ref<Backup | null>(null)
+const restoreTarget = ref('')
+const isSameSiteRestore = ref(false)
+const restoring = ref(false)
+const restoreError = ref('')
+
+const openRestore = (set: Backup, target = '') => {
+  restoreSource.value = set
+  restoreTarget.value = target
+  isSameSiteRestore.value = target === props.siteName
+  restoreError.value = ''
+  showRestore.value = true
+  loadSites()
+}
+
+const confirmRestore = async () => {
+  if (!restoreSource.value || !restoreTarget.value) return
+
+  restoring.value = true
+  restoreError.value = ''
+  try {
+    const data = await sitesApi.backups.restore(
+      props.siteName,
+      restoreSource.value.timestamp,
+      restoreTarget.value,
+    )
+    if (data.task_id) {
+      showRestore.value = false
+      openTaskDetailPage(router, data.task_id)
+    } else restoreError.value = apiErrorMessage(data, 'Restore failed.')
+  } catch (e) {
+    restoreError.value = errorMessage(e, 'Restore failed.')
+  } finally {
+    restoring.value = false
   }
 }
 
@@ -265,6 +326,40 @@ onMounted(() => {
       <Button v-if="backupsHasMore" class="ml-auto" @click="loadMoreBackups">Load more</Button>
     </div>
   </template>
+
+  <ActionDialog
+    v-model:open="showRestore"
+    title="Restore Backup"
+    :subject="{
+      label: restoreSource ? fmtDateTime(restoreSource.created_at) : '',
+      description: `Backup of ${siteName}`,
+      icon: 'lucide-archive',
+    }"
+    :warning="
+      restoreTarget
+        ? {
+            title: `This can't be undone.`,
+            message: `The database and files of ${restoreTarget} are replaced with this backup, then the site is migrated. The site is in maintenance mode while this runs.`,
+          }
+        : null
+    "
+    :error="restoreError"
+    confirm-label="Restore"
+    confirm-theme="red"
+    :loading="restoring"
+    :disabled="!restoreTarget"
+    @confirm="confirmRestore"
+  >
+    <Select
+      v-if="!isSameSiteRestore"
+      v-model="restoreTarget"
+      :options="siteOptions"
+      label="Restore to"
+      placeholder="Select a site"
+      side="bottom"
+      align="start"
+    />
+  </ActionDialog>
 
   <Dialog v-model="showDelete" title="Delete Backup" size="sm">
     <p class="text-ink-gray-7 text-sm">

@@ -136,6 +136,102 @@ def test_delete_backup_404s_for_an_unknown_timestamp(tmp_path: Path) -> None:
     assert response.status_code == 404
 
 
+def test_restore_backup_queues_task_for_the_target_site(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    _make_site(bench_root, "site.localhost")
+    _make_site(bench_root, "other.localhost")
+    _make_backup_file(bench_root, "site.localhost", "20240101_000000", "database.sql.gz")
+    client = _client(bench_root)
+
+    response = _request(
+        client,
+        "post",
+        "/api/v1/sites/site.localhost/backups/20240101_000000/actions/restore",
+        json={"site": "other.localhost"},
+    )
+
+    body = response.get_json()
+    assert response.status_code == 202
+    assert body["command"] == "restore-site"
+    assert body["args"] == {
+        "site": "other.localhost",
+        "source_site": "site.localhost",
+        "timestamp": "20240101_000000",
+    }
+
+
+def test_restore_backup_can_target_the_same_site(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    _make_site(bench_root, "site.localhost")
+    _make_backup_file(bench_root, "site.localhost", "20240101_000000", "database.sql.gz")
+    client = _client(bench_root)
+
+    response = _request(
+        client,
+        "post",
+        "/api/v1/sites/site.localhost/backups/20240101_000000/actions/restore",
+        json={"site": "site.localhost"},
+    )
+
+    assert response.status_code == 202
+    assert response.get_json()["args"]["site"] == "site.localhost"
+    assert response.get_json()["args"]["source_site"] == "site.localhost"
+
+
+def test_restore_backup_rejects_a_missing_target_site(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    _make_site(bench_root, "site.localhost")
+    _make_backup_file(bench_root, "site.localhost", "20240101_000000", "database.sql.gz")
+    client = _client(bench_root)
+
+    response = _request(
+        client,
+        "post",
+        "/api/v1/sites/site.localhost/backups/20240101_000000/actions/restore",
+        json={"site": "missing.localhost"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_restore_backup_rejects_a_backup_without_a_local_database(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    _make_site(bench_root, "site.localhost")
+    _make_site(bench_root, "other.localhost")
+    _make_backup_file(bench_root, "site.localhost", "20240101_000000", "files.tar")
+    client = _client(bench_root)
+
+    response = _request(
+        client,
+        "post",
+        "/api/v1/sites/site.localhost/backups/20240101_000000/actions/restore",
+        json={"site": "other.localhost"},
+    )
+
+    assert response.status_code == 409
+
+
+def test_restore_backup_needs_access_to_the_target_site(tmp_path: Path) -> None:
+    from admin.backend.internal.session import Session
+    from pilot.core.bench import Bench
+
+    bench_root = tmp_path / "benches" / "current"
+    _make_site(bench_root, "site.localhost")
+    _make_site(bench_root, "other.localhost")
+    _make_backup_file(bench_root, "site.localhost", "20240101_000000", "database.sql.gz")
+    client = _client(bench_root)
+    client.set_cookie("sid", Session(Bench(bench_root)).issue_site_token("site.localhost"))
+
+    response = _request(
+        client,
+        "post",
+        "/api/v1/sites/site.localhost/backups/20240101_000000/actions/restore",
+        json={"site": "other.localhost"},
+    )
+
+    assert response.status_code == 403
+
+
 def test_get_backup_404s_for_an_unknown_timestamp(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
     _make_site(bench_root, "site.localhost")
