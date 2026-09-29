@@ -88,6 +88,12 @@ Every `/sites/<name>/...` route accepts the site's directory name or any hostnam
 
 Both operations re-point any matching `central.hostname_aliases` entry, so a VM hostname keeps reaching the thing it named. Every route that claims a hostname - creating a site, renaming one, moving the admin - also takes the task resource `host:<hostname>`, so two of them cannot run at once for the same name. That key is host-wide - benches share one nginx and one `/etc/letsencrypt` - so it conflicts with active tasks on every bench of the host, not only its own.
 
+### Site Backups
+
+`POST /sites/<name>/backups/<timestamp>/actions/restore` takes `{"site": "<target>"}` and queues `restore-site`. The target can be the same site or another site on this bench. The route needs access to the source site and to the target site. Thus a token for one site cannot replace the data of another site. The backup must have a local database file. The route answers 409 for a backup that is only offsite.
+
+The task sets maintenance mode on the target site. Then it restores the database and the uploaded files, and it migrates the site. It replaces `public/files` and `private/files` and does not merge into them. Thus a file that is not in the backup does not remain. If the restore fails, the task moves the old uploaded files back. If the restore or the migration fails, the site stays in maintenance mode, because its data can be partly restored.
+
 ### Site Storage
 
 `GET /sites/storage` returns every site's `private_bytes`, `public_bytes`, `database_bytes`, and `total_bytes`, plus the `collected_at` of the reading. `database_bytes` is what the schema holds on disk, allocated-but-freed pages included, since nothing else can use that space until the tables are rebuilt.

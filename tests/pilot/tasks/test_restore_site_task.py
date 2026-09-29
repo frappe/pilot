@@ -49,18 +49,22 @@ def test_get_restore_files_rejects_a_glob_timestamp(tmp_path) -> None:
         _bench(tmp_path).site("source.localhost").backups.get_restore_files("*")
 
 
-def test_run_restores_the_source_backup_then_migrates_under_maintenance(tmp_path) -> None:
-    database = _backup_file(tmp_path, "20260101_020000-source_localhost-database.sql.gz")
+def _task(tmp_path) -> RestoreSiteTask:
     target = tmp_path / "sites" / "target.localhost"
     target.mkdir(parents=True)
     (target / "site_config.json").write_text("{}")
-    task = RestoreSiteTask(
+    return RestoreSiteTask(
         bench=_bench(tmp_path),
         bench_root=tmp_path,
         site="target.localhost",
         source_site="source.localhost",
         timestamp="20260101_020000",
     )
+
+
+def test_run_restores_the_source_backup_then_migrates_under_maintenance(tmp_path) -> None:
+    database = _backup_file(tmp_path, "20260101_020000-source_localhost-database.sql.gz")
+    task = _task(tmp_path)
     calls = []
 
     def record(name):
@@ -77,3 +81,20 @@ def test_run_restores_the_source_backup_then_migrates_under_maintenance(tmp_path
         ("migrate", True, (), {}),
     ]
     assert not task.site_record.maintenance_mode
+
+
+def test_a_failed_migration_leaves_the_site_in_maintenance_mode(tmp_path) -> None:
+    _backup_file(tmp_path, "20260101_020000-source_localhost-database.sql.gz")
+    task = _task(tmp_path)
+
+    def fail(site, *args, **kwargs):
+        raise BenchError("migration failed")
+
+    with (
+        patch.object(Site, "restore", lambda site, **files: None),
+        patch.object(Site, "migrate", fail),
+        pytest.raises(BenchError),
+    ):
+        task.run()
+
+    assert task.site_record.maintenance_mode

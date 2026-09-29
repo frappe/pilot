@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import secrets
+import shutil
 from collections.abc import Iterator
 from contextlib import contextmanager
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.exceptions import BenchError, MigrateError
@@ -51,8 +53,42 @@ class SiteCommands:
             cmd += ["--with-public-files", public_files]
         if private_files:
             cmd += ["--with-private-files", private_files]
-        with self.setup_credentials(self.site.bench.config.db_type) as credentials:
+        replaced = [
+            directory
+            for archive, directory in (
+                (public_files, self.site.path / "public" / "files"),
+                (private_files, self.site.path / "private" / "files"),
+            )
+            if archive
+        ]
+        with (
+            self.setup_credentials(self.site.bench.config.db_type) as credentials,
+            self.replaced_directories(replaced),
+        ):
             run_command(cmd + credentials, cwd=self.site.bench.sites_path, stream_output=True)
+
+    @contextmanager
+    def replaced_directories(self, directories: list[Path]) -> Iterator[None]:
+        """Move the directories aside, so frappe extracts the backup into empty ones and
+        files missing from the backup do not remain. Move them back if the restore fails."""
+        moved = {}
+        for directory in directories:
+            if directory.is_dir():
+                moved[directory] = directory.with_name(
+                    f".{directory.name}-before-restore-{secrets.token_hex(4)}"
+                )
+                directory.rename(moved[directory])
+        try:
+            yield
+        except BaseException:
+            for directory, aside in moved.items():
+                shutil.rmtree(directory, ignore_errors=True)
+                aside.rename(directory)
+            raise
+        for directory in directories:
+            directory.mkdir(parents=True, exist_ok=True)
+        for aside in moved.values():
+            shutil.rmtree(aside)
 
     def reinstall(self, admin_password: str) -> None:
         if not isinstance(admin_password, str) or not admin_password.strip():
