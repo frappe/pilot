@@ -157,6 +157,7 @@ ensure_curl() { echo ensure_curl; }
 add_distro_repos() { echo add_distro_repos; }
 pkg_update() { echo pkg_update; }
 bootstrap_packages() { echo bootstrap_packages; }
+ensure_tzdata() { echo ensure_tzdata; }
 install_database_engines() { echo install_database_engines; }
 install_production_packages() { echo install_production_packages; }
 disable_system_services() { echo disable_system_services; }
@@ -167,6 +168,7 @@ install_system_packages
     )
     assert provisioned.returncode == 0, provisioned.stderr
     assert "install_database_engines" in provisioned.stdout.splitlines()
+    assert "ensure_tzdata" in provisioned.stdout.splitlines()
 
 
 def zoneinfo_dir(tmp_path: Path, *, with_alias: bool) -> Path:
@@ -185,6 +187,30 @@ DISTRO={distro}
 ZONEINFO_DIR={zoneinfo_dir(tmp_path, with_alias=False)}
 pkg_install() {{ echo "pkg_install $*"; }}
 ensure_tzdata_legacy
+""",
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "pkg_install tzdata-legacy" in result.stdout
+
+
+def test_root_provisioning_installs_missing_timezone_aliases(tmp_path: Path) -> None:
+    result = run_installer_functions(
+        f"""
+DISTRO=ubuntu
+ZONEINFO_DIR={zoneinfo_dir(tmp_path, with_alias=False)}
+is_root() {{ return 0; }}
+ensure_curl() {{ return 0; }}
+add_distro_repos() {{ return 0; }}
+pkg_update() {{ return 0; }}
+bootstrap_packages() {{ return 0; }}
+install_database_engines() {{ return 0; }}
+install_production_packages() {{ return 0; }}
+disable_system_services() {{ return 0; }}
+install_node() {{ return 0; }}
+pkg_installed() {{ return 0; }}
+pkg_install() {{ echo "pkg_install $*"; }}
+install_system_packages
 """,
         tmp_path,
     )
@@ -236,3 +262,150 @@ echo reached_the_end
     assert result.returncode == 0, result.stderr
     assert "Warning: tzdata-legacy is unavailable" in result.stdout
     assert "reached_the_end" in result.stdout
+
+
+def test_install_for_user_does_not_install_system_packages(tmp_path: Path) -> None:
+    result = run_installer_functions(
+        f"""
+PILOT_DIR="{tmp_path}/pilot"
+mkdir -p "$PILOT_DIR/bin"
+touch "$PILOT_DIR/bin/pilot"
+require_linger() {{ return 0; }}
+fetch_pilot() {{ return 0; }}
+ensure_uv() {{ return 0; }}
+add_pilot_to_path() {{ return 0; }}
+ensure_admin_venv() {{ return 0; }}
+pkg_install() {{ echo "FAIL: pkg_install called"; exit 1; }}
+ensure_tzdata() {{ echo "FAIL: ensure_tzdata called"; exit 1; }}
+install_for_user
+""",
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "FAIL" not in result.stdout
+
+
+# ── timezone_data_present ─────────────────────────────────────────────────────
+
+
+def test_system_packages_present_passes_when_timezone_alias_missing(
+    tmp_path: Path,
+) -> None:
+    """system_packages_present must not gate on timezone data.
+
+    If it did, a bench-user rerun on a host provisioned before tzdata-legacy
+    was added would fail the check, triggering install_system_packages with
+    sudo — reintroducing the privilege-escalation bug.
+    """
+    result = run_installer_functions(
+        f"""
+DISTRO=ubuntu
+ZONEINFO_DIR={zoneinfo_dir(tmp_path, with_alias=False)}
+base_tools_present() {{ return 0; }}
+pkg_installed() {{ return 0; }}
+system_packages_present
+""",
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_install_for_user_warns_when_timezone_alias_missing(tmp_path: Path) -> None:
+    """install_for_user prints an advisory to stderr when deprecated aliases are missing."""
+    result = run_installer_functions(
+        f"""
+DISTRO=ubuntu
+PILOT_DIR="{tmp_path}/pilot"
+INSTALL_URL="https://example.com/install.sh"
+ZONEINFO_DIR={zoneinfo_dir(tmp_path, with_alias=False)}
+mkdir -p "$PILOT_DIR/bin"
+touch "$PILOT_DIR/bin/pilot"
+require_linger() {{ return 0; }}
+fetch_pilot() {{ return 0; }}
+ensure_uv() {{ return 0; }}
+add_pilot_to_path() {{ return 0; }}
+ensure_admin_venv() {{ return 0; }}
+pkg_installed() {{ return 0; }}
+install_for_user
+""",
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Warning" in result.stderr
+    assert "Asia/Calcutta" in result.stderr
+
+
+def test_install_for_user_no_warning_when_timezone_alias_present(tmp_path: Path) -> None:
+    result = run_installer_functions(
+        f"""
+DISTRO=ubuntu
+PILOT_DIR="{tmp_path}/pilot"
+ZONEINFO_DIR={zoneinfo_dir(tmp_path, with_alias=True)}
+mkdir -p "$PILOT_DIR/bin"
+touch "$PILOT_DIR/bin/pilot"
+require_linger() {{ return 0; }}
+fetch_pilot() {{ return 0; }}
+ensure_uv() {{ return 0; }}
+add_pilot_to_path() {{ return 0; }}
+ensure_admin_venv() {{ return 0; }}
+pkg_installed() {{ return 0; }}
+install_for_user
+""",
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Warning" not in result.stderr
+
+
+@pytest.mark.parametrize("distro", ["ubuntu", "debian"])
+def test_timezone_data_present_requires_legacy_alias(distro: str, tmp_path: Path) -> None:
+    without_alias = run_installer_functions(
+        f"""
+DISTRO={distro}
+ZONEINFO_DIR={zoneinfo_dir(tmp_path, with_alias=False)}
+pkg_installed() {{ return 0; }}
+timezone_data_present
+""",
+        tmp_path,
+    )
+    assert without_alias.returncode != 0
+
+    with_alias = run_installer_functions(
+        f"""
+DISTRO={distro}
+ZONEINFO_DIR={zoneinfo_dir(tmp_path, with_alias=True)}
+pkg_installed() {{ return 0; }}
+timezone_data_present
+""",
+        tmp_path,
+    )
+    assert with_alias.returncode == 0, with_alias.stderr
+
+
+@pytest.mark.parametrize("distro", ["fedora", "arch"])
+def test_timezone_data_present_skips_alias_check_on_fedora_and_arch(
+    distro: str, tmp_path: Path
+) -> None:
+    result = run_installer_functions(
+        f"""
+DISTRO={distro}
+ZONEINFO_DIR={zoneinfo_dir(tmp_path, with_alias=False)}
+pkg_installed() {{ return 0; }}
+timezone_data_present
+""",
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_timezone_data_present_fails_when_tzdata_not_installed(tmp_path: Path) -> None:
+    result = run_installer_functions(
+        """
+DISTRO=ubuntu
+ZONEINFO_DIR=/nonexistent
+pkg_installed() { return 1; }
+timezone_data_present
+""",
+        tmp_path,
+    )
+    assert result.returncode != 0
