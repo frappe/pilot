@@ -23,10 +23,12 @@ class RestoreSiteTask(Task):
 
     def run(self) -> None:
         """A failed restore or migration leaves the site in maintenance mode, because
-        its data can be partly restored or partly migrated."""
+        its data can be partly restored or partly migrated. A missing backup fails
+        before the site goes offline."""
+        files = self.bench.site(self.source_site).backups.get_restore_files(self.timestamp)
         self.site_record.enter_restore_maintenance()
         try:
-            self.restore()
+            self.restore(files)
             self.migrate()
         except Exception:
             print(f"{self.site} stays in maintenance mode. Fix the error, then restore again.")
@@ -34,8 +36,7 @@ class RestoreSiteTask(Task):
         self.site_record.leave_restore_maintenance()
 
     @step("restore", lambda self: f"Restore {self.source_site} backup {self.timestamp} to {self.site}")
-    def restore(self) -> None:
-        files = self.bench.site(self.source_site).backups.get_restore_files(self.timestamp)
+    def restore(self, files: dict[str, str]) -> None:
         self.site_record.restore(**files)
 
     @step("migrate", lambda self: f"Migrate site {self.site}")

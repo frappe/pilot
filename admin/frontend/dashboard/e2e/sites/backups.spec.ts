@@ -4,7 +4,6 @@ test.describe.configure({ timeout: 180_000 })
 
 let site = ''
 let sites: string[] = []
-// The row of the newest backup with a local database file. Only that kind can be restored.
 let row = -1
 
 test.beforeAll(async ({ request }) => {

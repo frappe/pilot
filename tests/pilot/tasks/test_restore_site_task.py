@@ -129,3 +129,14 @@ def test_a_site_that_was_in_maintenance_mode_stays_in_it(tmp_path) -> None:
         task.run()
 
     assert task.site_record.maintenance_mode
+
+
+def test_a_missing_backup_fails_before_the_site_goes_offline(tmp_path) -> None:
+    task = _task(tmp_path)
+
+    with patch.object(Site, "restore") as restore, pytest.raises(BenchError, match="no local"):
+        task.run()
+
+    restore.assert_not_called()
+    assert not task.site_record.maintenance_mode
+    assert "pilot_maintenance_before_restore" not in (task.site_record.path / "site_config.json").read_text()
