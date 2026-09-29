@@ -277,6 +277,18 @@ class MariaDBManager(UserOwnedDBManager):
         with self.database_action_lock():
             self._restart_and_wait_healthy()
 
+    def tune_to_host(self) -> MariaDBMemorySizing:
+        """Rewrite my.cnf and the unit memory limits for this host's memory, then restart.
+
+        A server copied from a snapshot or moved to a resized VM keeps the old host's sizing.
+        """
+        self._require_linux_managed_server()
+        with self.database_action_lock():
+            sizing = self._write_config()
+            self._install_unit(sizing)
+            self._restart_and_wait_healthy()
+        return sizing
+
     def performance_schema_enabled(self) -> bool:
         connection = None
         try:

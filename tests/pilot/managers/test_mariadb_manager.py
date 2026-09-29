@@ -775,6 +775,60 @@ def test_linux_unit_starts_with_option_file_and_memory_limits(tmp_path) -> None:
     assert "MemorySwapMax=100M" in content
 
 
+def test_tune_to_host_resizes_for_current_memory_and_restarts(tmp_path) -> None:
+    manager = _manager()
+    with (
+        patch(f"{MODULE}.is_macos", return_value=False),
+        patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
+        patch.object(manager, "is_installed", return_value=True),
+        patch.object(manager, "is_provisioned", return_value=True),
+        patch.object(manager, "_total_memory_mb", return_value=1024),
+        patch.object(manager, "_install_unit") as install_unit,
+        patch.object(manager, "_restart_and_wait_healthy") as restart,
+    ):
+        sizing = manager.tune_to_host()
+        config = manager.my_cnf_path.read_text()
+
+    expected = calculate_mariadb_memory(1024)
+    assert sizing == expected
+    assert f"innodb-buffer-pool-size = {expected.innodb_buffer_pool_mb}M" in config
+    install_unit.assert_called_once_with(expected)
+    restart.assert_called_once()
+
+
+def test_tune_to_host_keeps_manual_options(tmp_path) -> None:
+    manager = _manager()
+    with (
+        patch(f"{MODULE}.is_macos", return_value=False),
+        patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
+        patch.object(manager, "is_installed", return_value=True),
+        patch.object(manager, "is_provisioned", return_value=True),
+        patch.object(manager, "_total_memory_mb", return_value=1024),
+        patch.object(manager, "_install_unit"),
+        patch.object(manager, "_restart_and_wait_healthy"),
+    ):
+        manager.config_dir.mkdir(parents=True)
+        manager.managed_cnf_path.write_text("[mysqld]\nmax-connections = 80\n")
+        manager.tune_to_host()
+        managed = manager.managed_cnf_path.read_text()
+
+    assert managed == "[mysqld]\nmax-connections = 80\n"
+
+
+def test_tune_to_host_refuses_external_server_before_writing(tmp_path) -> None:
+    manager = MariaDBManager(MariaDBConfig(existing=True))
+    with (
+        patch(f"{MODULE}.is_macos", return_value=False),
+        patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
+        patch.object(manager, "_restart_and_wait_healthy") as restart,
+        pytest.raises(DatabaseError, match="external MariaDB"),
+    ):
+        manager.tune_to_host()
+
+    assert not manager.my_cnf_path.exists()
+    restart.assert_not_called()
+
+
 def test_is_provisioned_on_macos_checks_live_server_not_a_marker_file() -> None:
     """macOS provisioning state comes from the live secured server."""
     m = _manager()
