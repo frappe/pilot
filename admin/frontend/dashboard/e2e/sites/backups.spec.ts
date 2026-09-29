@@ -9,10 +9,7 @@ test.beforeAll(async ({ request }) => {
   sites = (await (await request.get('/api/v1/sites')).json()).map((s) => s.name)
   site = sites.find((name) => !name.startsWith('e2e-')) ?? sites[0]
 
-  const backups = await (await request.get(`/api/v1/sites/${site}/backups`)).json()
-  if (backups.some((backup) => backup.files.some((file) => file.kind === 'database' && file.path)))
-    return
-
+  // A fresh backup is the newest row and has local files, so the first row can be restored.
   const { task_id } = await (await request.post(`/api/v1/sites/${site}/backups`)).json()
   await expect
     .poll(async () => (await (await request.get(`/api/v1/tasks/${task_id}`)).json()).status, {

@@ -72,13 +72,12 @@ class SiteCommands:
         """Move the directories aside, so frappe extracts the backup into empty ones and
         files missing from the backup do not remain. Move them back if the restore fails."""
         moved = {}
-        for directory in directories:
-            if directory.is_dir():
-                moved[directory] = directory.with_name(
-                    f".{directory.name}-before-restore-{secrets.token_hex(4)}"
-                )
-                directory.rename(moved[directory])
         try:
+            for directory in directories:
+                if directory.is_dir():
+                    aside = directory.with_name(f".{directory.name}-before-restore-{secrets.token_hex(4)}")
+                    directory.rename(aside)
+                    moved[directory] = aside
             yield
         except BaseException:
             for directory, aside in moved.items():

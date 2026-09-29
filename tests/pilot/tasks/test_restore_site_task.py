@@ -98,3 +98,34 @@ def test_a_failed_migration_leaves_the_site_in_maintenance_mode(tmp_path) -> Non
         task.run()
 
     assert task.site_record.maintenance_mode
+
+
+def test_a_retry_after_a_failure_brings_the_site_back_online(tmp_path) -> None:
+    _backup_file(tmp_path, "20260101_020000-source_localhost-database.sql.gz")
+    task = _task(tmp_path)
+
+    def fail(site, *args, **kwargs):
+        raise BenchError("migration failed")
+
+    with patch.object(Site, "restore", lambda site, **files: None):
+        with patch.object(Site, "migrate", fail), pytest.raises(BenchError):
+            task.run()
+        with patch.object(Site, "migrate", lambda site: None):
+            task.run()
+
+    assert task.site_record.maintenance_settings == {"maintenance_mode": 0, "pause_scheduler": 0}
+    assert "pilot_maintenance_before_restore" not in (task.site_record.path / "site_config.json").read_text()
+
+
+def test_a_site_that_was_in_maintenance_mode_stays_in_it(tmp_path) -> None:
+    _backup_file(tmp_path, "20260101_020000-source_localhost-database.sql.gz")
+    task = _task(tmp_path)
+    task.site_record.set_maintenance_mode(True)
+
+    with (
+        patch.object(Site, "restore", lambda site, **files: None),
+        patch.object(Site, "migrate", lambda site: None),
+    ):
+        task.run()
+
+    assert task.site_record.maintenance_mode

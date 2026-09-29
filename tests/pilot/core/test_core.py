@@ -1029,6 +1029,29 @@ def test_site_restore_keeps_the_uploaded_files_when_it_fails(
         assert [path.name for path in (site.path / kind / "files").iterdir()] == ["old.txt"]
 
 
+def test_site_restore_moves_the_files_back_when_moving_them_aside_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    site = _site_with_files(_postgres_bench(tmp_path), "pg.localhost")
+    captured = _capture_site_cmd(monkeypatch)
+    rename = Path.rename
+
+    def fail_for_private(self, target):
+        if self == site.path / "private" / "files":
+            raise OSError("rename failed")
+        return rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", fail_for_private)
+
+    with pytest.raises(OSError):
+        site.restore("/tmp/db.sql.gz", public_files="/tmp/pub.tar", private_files="/tmp/priv.tar")
+
+    assert "cmd" not in captured
+    for kind in ("public", "private"):
+        assert [path.name for path in (site.path / kind).iterdir()] == ["files"]
+        assert [path.name for path in (site.path / kind / "files").iterdir()] == ["old.txt"]
+
+
 def test_site_restore_without_archives_keeps_the_uploaded_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
