@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
+from pilot.config.build import BuildConfig
 from pilot.managers.python_assets import PythonAssetBuilder
 
 
@@ -18,7 +19,28 @@ def make_app(app_path: Path, name: str = "gameplan") -> MagicMock:
 
 def make_builder() -> PythonAssetBuilder:
     manager = MagicMock()
+    manager.bench.config.build = BuildConfig()
     return PythonAssetBuilder(manager)
+
+
+def test_build_assets_passes_node_heap_env_to_frappe_build(tmp_path: Path) -> None:
+    manager = MagicMock()
+    manager.bench.apps.return_value = []
+    manager.bench.frappe_call = ["python"]
+    manager.bench.sites_path = tmp_path / "sites"
+    manager._build_env.return_value = {"PATH": "/usr/bin"}
+    manager.bench.config.build = BuildConfig()
+    builder = PythonAssetBuilder(manager)
+
+    with (
+        patch.object(type(builder), "auto_node_heap_mb", new_callable=PropertyMock, return_value=4096),
+        patch("pilot.managers.python_assets.run_command") as run_command,
+    ):
+        builder.build_assets()
+
+    run_command.assert_called_once()
+    assert run_command.call_args.kwargs["env"]["NODE_OPTIONS"] == "--max-old-space-size=4096"
+    assert run_command.call_args.kwargs["env"]["PATH"] == "/usr/bin"
 
 
 def test_build_assets_for_app_installs_js_deps_before_frappe_build_runs(tmp_path: Path) -> None:
@@ -32,6 +54,7 @@ def test_build_assets_for_app_installs_js_deps_before_frappe_build_runs(tmp_path
     manager = MagicMock()
     manager.bench.frappe_call = ["python"]
     manager.bench.sites_path = tmp_path / "sites"
+    manager.bench.config.build = BuildConfig()
     builder = PythonAssetBuilder(manager)
 
     events: list[str] = []
@@ -52,6 +75,93 @@ def test_build_assets_for_app_installs_js_deps_before_frappe_build_runs(tmp_path
 
     assert events.index("ensure_yarn_install:frontend") < events.index("run_command")
 
+
+def test_build_assets_for_app_passes_node_heap_env_to_all_node_builds(tmp_path: Path) -> None:
+    app_path = tmp_path / "crm"
+    frontend_dir = app_path / "frontend"
+    frontend_dir.mkdir(parents=True)
+    (frontend_dir / "package.json").write_text("{}")
+
+    manager = MagicMock()
+    manager.bench.frappe_call = ["python"]
+    manager.bench.sites_path = tmp_path / "sites"
+    manager._build_env.return_value = {"PATH": "/usr/bin"}
+    manager.bench.config.build = BuildConfig()
+    builder = PythonAssetBuilder(manager)
+
+    with (
+        patch("pilot.managers.python_assets.git_has_local_changes", return_value=True),
+        patch.object(builder, "ensure_yarn_install"),
+        patch.object(type(builder), "auto_node_heap_mb", new_callable=PropertyMock, return_value=4096),
+        patch("pilot.managers.python_assets.get_yarn_bin", return_value="yarn"),
+        patch("pilot.managers.python_assets.run_command") as run_command,
+    ):
+        builder.build_assets_for_app(make_app(app_path, "crm"))
+
+    frappe_call = next(
+        call for call in run_command.call_args_list if "frappe" in call.args[0]
+    )
+    frontend_call = next(
+        call for call in run_command.call_args_list if call.args[0] == ["yarn", "build"]
+    )
+
+    for build_call in [frappe_call, frontend_call]:
+        assert build_call.kwargs["env"]["NODE_OPTIONS"] == "--max-old-space-size=4096"
+        assert build_call.kwargs["env"]["PATH"] == "/usr/bin"
+
+
+def test_auto_node_heap_uses_sixty_percent_of_available_memory() -> None:
+    builder = make_builder()
+    with patch.object(type(builder), "available_memory_mb", new_callable=PropertyMock, return_value=8192):
+        assert builder.auto_node_heap_mb == 4915
+
+
+def test_auto_node_heap_enforces_minimum() -> None:
+    builder = make_builder()
+    with patch.object(type(builder), "available_memory_mb", new_callable=PropertyMock, return_value=1024):
+        assert builder.auto_node_heap_mb == 2048
+
+
+def test_auto_node_heap_enforces_maximum() -> None:
+    builder = make_builder()
+    with patch.object(type(builder), "available_memory_mb", new_callable=PropertyMock, return_value=32768):
+        assert builder.auto_node_heap_mb == 6144
+
+
+def test_node_build_env_uses_bench_config_override() -> None:
+    manager = MagicMock()
+    manager._build_env.return_value = {"PATH": "/usr/bin"}
+    manager.bench.config.build = BuildConfig(node_heap_limit_mb=4096)
+    builder = PythonAssetBuilder(manager)
+
+    with patch.object(type(builder), "auto_node_heap_mb", new_callable=PropertyMock) as auto_heap:
+        env = builder.node_build_env()
+
+    auto_heap.assert_not_called()
+    assert env["NODE_OPTIONS"] == "--max-old-space-size=4096"
+
+
+def test_node_build_env_preserves_existing_node_options() -> None:
+    manager = MagicMock()
+    manager._build_env.return_value = {"NODE_OPTIONS": "--trace-warnings"}
+    manager.bench.config.build = BuildConfig()
+    builder = PythonAssetBuilder(manager)
+
+    with patch.object(type(builder), "auto_node_heap_mb", new_callable=PropertyMock, return_value=3072):
+        env = builder.node_build_env()
+
+    assert env["NODE_OPTIONS"] == "--trace-warnings --max-old-space-size=3072"
+
+
+def test_auto_node_heap_uses_configured_thresholds() -> None:
+    builder = make_builder()
+    builder.bench.config.build = BuildConfig(
+        node_heap_min_mb=1024,
+        node_heap_max_mb=8192,
+        node_heap_available_percent=50,
+    )
+    with patch.object(type(builder), "available_memory_mb", new_callable=PropertyMock, return_value=10000):
+        assert builder.auto_node_heap_mb == 5000
 
 def test_ensure_yarn_install_uses_frozen_lockfile_first(tmp_path: Path) -> None:
     """A healthy lockfile should keep the reproducible frozen install path."""

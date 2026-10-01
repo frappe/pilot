@@ -573,7 +573,13 @@ class BenchConfig:
         }
 
     def _build_section(self) -> ConfigDict:
-        return {"memory_limit_mb": self.build.memory_limit_mb}
+        return {
+            "memory_limit_mb": self.build.memory_limit_mb,
+            "node_heap_limit_mb": self.build.node_heap_limit_mb,
+            "node_heap_min_mb": self.build.node_heap_min_mb,
+            "node_heap_max_mb": self.build.node_heap_max_mb,
+            "node_heap_available_percent": self.build.node_heap_available_percent,
+        }
 
     def _admin_section(self) -> ConfigDict:
         admin: ConfigDict = {
@@ -766,7 +772,7 @@ _SECTIONS: tuple[_Section, ...] = (
     _Section(
         "build",
         lambda data: BuildConfig.from_dict(data.get("build", {})),
-        lambda config: config._build_section() if config.build.memory_limit_mb else None,
+        lambda config: config._build_section() if config.build != BuildConfig() else None,
     ),
     _Section(
         "admin",

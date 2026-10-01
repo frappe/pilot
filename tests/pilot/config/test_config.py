@@ -291,6 +291,36 @@ def test_boolean_build_memory_limit_rejected() -> None:
     assert "build.memory_limit_mb" in str(exc_info.value)
 
 
+def test_node_heap_build_config_roundtrip() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["build"] = {
+        "node_heap_limit_mb": 4096,
+        "node_heap_min_mb": 1024,
+        "node_heap_max_mb": 8192,
+        "node_heap_available_percent": 50,
+    }
+    config = load_from_dict(data)
+    toml = config.dumps()
+
+    assert "node_heap_limit_mb = 4096" in toml
+    assert "node_heap_min_mb = 1024" in toml
+    assert "node_heap_max_mb = 8192" in toml
+    assert "node_heap_available_percent = 50" in toml
+
+
+def test_node_heap_build_config_rejects_invalid_thresholds() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["build"] = {"node_heap_min_mb": 8192, "node_heap_max_mb": 4096}
+    with pytest.raises(ConfigError) as exc_info:
+        load_from_dict(data)
+    assert "build.node_heap_min_mb" in str(exc_info.value)
+
+    data["build"] = {"node_heap_available_percent": 101}
+    with pytest.raises(ConfigError) as exc_info:
+        load_from_dict(data)
+    assert "build.node_heap_available_percent" in str(exc_info.value)
+
+
 def test_branches_defaults_to_empty_list() -> None:
     config = BenchConfig.from_file(FIXTURES_DIR / "minimal.toml")
     assert config.apps[0].branches == []
@@ -754,6 +784,10 @@ def test_every_field_survives_a_round_trip(tmp_path: Path) -> None:
     config.llm.api_base = "http://vllm:8000/v1"
 
     config.build.memory_limit_mb = 2048
+    config.build.node_heap_limit_mb = 4096
+    config.build.node_heap_min_mb = 1024
+    config.build.node_heap_max_mb = 8192
+    config.build.node_heap_available_percent = 50
 
     # mariadb/postgres/letsencrypt/admin.jwks_* are host-shared state in
     # common_config.toml, one level above the bench directory - nest under

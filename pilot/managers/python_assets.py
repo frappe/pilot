@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import os
 import re
 import shutil
 import sys
@@ -58,7 +59,7 @@ class PythonAssetBuilder:
         self.run_compiler(
             [*self.bench.frappe_call, "frappe", "build", "--force"],
             cwd=self.bench.sites_path,
-            env=self.manager._build_env(),
+            env=self.node_build_env(),
             stream_output=True,
         )
 
@@ -83,7 +84,7 @@ class PythonAssetBuilder:
         self.run_compiler(
             [*self.bench.frappe_call, "frappe", "build", "--force", "--app", app.config.name],
             cwd=self.bench.sites_path,
-            env=self.manager._build_env(),
+            env=self.node_build_env(),
             stream_output=True,
         )
 
@@ -94,8 +95,45 @@ class PythonAssetBuilder:
                 self.run_compiler(
                     [get_yarn_bin(), "build"],
                     cwd=app.path / frontend_dir,
+                    env=self.node_build_env(),
                     stream_output=True,
                 )
+
+    def node_build_env(self) -> dict[str, str]:
+        """Return the normal build environment with a safe Node.js heap limit."""
+        env = self.manager._build_env()
+        heap_mb = self.bench.config.build.node_heap_limit_mb or self.auto_node_heap_mb
+
+        node_options = env.get("NODE_OPTIONS", "").strip()
+        heap_option = f"--max-old-space-size={heap_mb}"
+        env["NODE_OPTIONS"] = f"{node_options} {heap_option}".strip()
+        return env
+
+    @property
+    def auto_node_heap_mb(self) -> int:
+        """Size Node heap from available memory within configured bounds."""
+        build = self.bench.config.build
+        heap_mb = int(self.available_memory_mb * build.node_heap_available_percent / 100)
+        return max(build.node_heap_min_mb, min(heap_mb, build.node_heap_max_mb))
+
+    @property
+    def available_memory_mb(self) -> int:
+        """Return currently available system memory in MiB."""
+        meminfo = Path("/proc/meminfo")
+        if meminfo.exists():
+            for line in meminfo.read_text().splitlines():
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) // 1024
+
+        if hasattr(os, "sysconf"):
+            try:
+                pages = int(os.sysconf("SC_AVPHYS_PAGES"))
+                page_size = int(os.sysconf("SC_PAGE_SIZE"))
+                return pages * page_size // (1024 * 1024)
+            except (ValueError, OSError):
+                pass
+
+        return self.bench.config.build.node_heap_min_mb
 
     def ensure_frontend_dependencies(self, app: "App") -> None:
         """frappe's own `bench build` shells into `frontend`/`roster`, so node_modules must

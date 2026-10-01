@@ -135,12 +135,27 @@ Pilot keeps the site route policy in `site_config.json`. Each attached domain ca
 
 A domain the certificate does not name is served over HTTP rather than off a certificate that would fail to validate, so a half-finished `--expand` costs only that domain. Certificates are held in a certbot lineage named by the site's `cert_name`, defaulting to the site name; [renaming](commands.md#renaming-without-downtime) pins it so the certificate survives the site changing name.
 
+## Build memory settings
+
+Asset build memory controls are bench-scoped:
+
+```toml
+[build]
+memory_limit_mb = 0
+node_heap_limit_mb = 0
+node_heap_min_mb = 2048
+node_heap_max_mb = 6144
+node_heap_available_percent = 60
+```
+
+`memory_limit_mb = 0` keeps the automatic build-memory cap from PR #496. `node_heap_limit_mb = 0` keeps automatic Node.js heap sizing; Pilot takes `node_heap_available_percent` of currently available memory and clamps it between `node_heap_min_mb` and `node_heap_max_mb`. Set `node_heap_limit_mb` to a positive value to use a fixed Node.js heap size for that bench.
+
 ## Other bench tables
 
 These tables are per-bench unless noted otherwise:
 
 - `[gunicorn]`: Gunicorn settings.
-- `[build]`: manual override for the asset build memory cap.
+- `[build]`: asset-build memory controls, including the build cap and Node.js heap sizing.
 - `[firewall]`: firewall behavior.
 - `[waf]`: WAF rules and behavior.
 - `[s3]`: backup storage credentials and bucket settings. Set `endpoint_url` for a custom S3-compatible provider.

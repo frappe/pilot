@@ -154,7 +154,7 @@ class BenchInitializer:
         else:
             self._provision_or_verify(self._mariadb_manager(), "MariaDB")
 
-        RedisManager(self.bench.config.redis, self.bench).install()
+        RedisManager(self.bench.config.redis, self.bench).verify_installed()
         self._install_build_headers(pkg)
         PythonEnvManager(self.bench).ensure_python()
 
