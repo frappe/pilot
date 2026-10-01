@@ -10,11 +10,12 @@ from admin.backend.providers.apps import AppProvider
 from pilot.core.bench import Bench
 from pilot.exceptions import RegistryUnavailableError
 from pilot.internal.git import GitRepo
-from pilot.internal.validators import validate_app_name, validate_repo_url
+from pilot.internal.validators import validate_app_name, validate_branch_name, validate_repo_url
 from pilot.tasks.fetch_app_updates import FetchAppUpdatesTask
 from pilot.tasks.get_and_install_app import GetAndInstallAppTask
 from pilot.tasks.get_app import GetAppTask
 from pilot.tasks.remove_app import RemoveAppTask
+from pilot.tasks.switch_branch import SwitchBranchTask
 
 apps_bp = Blueprint("apps", __name__)
 marketplace_bp = Blueprint("marketplace", __name__)
@@ -157,6 +158,37 @@ def update(name: str):
     except Exception:
         return error_response("apps_unavailable", "Could not read the app.", 500)
     return jsonify(asdict(app))
+
+
+
+@apps_bp.post("/<name>/actions/switch-branch")
+def switch_branch(name: str):
+    err = validate_app_name(name)
+    if err:
+        return error_response("invalid_app", err, 422)
+
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response("malformed_request", "Expected a JSON object.", 400)
+
+    branch = data.get("branch")
+    force = data.get("force", False)
+    if not isinstance(branch, str) or not branch.strip():
+        return error_response("invalid_branch", "Branch is required.", 422)
+    branch = branch.strip()
+    if not isinstance(force, bool):
+        return error_response("invalid_force", "force must be a boolean.", 422)
+
+    err = validate_branch_name(branch)
+    if err:
+        return error_response("invalid_branch", err, 422)
+
+    if not (bench_root / "apps" / name / ".git").exists():
+        return error_response("app_not_found", f"App '{name}' not found.", 404)
+
+    task_id = SwitchBranchTask.queue(Bench(bench_root), name=name, branch=branch, force=force)
+    return accepted_task_response(bench_root, task_id)
 
 
 @apps_bp.delete("/<name>")

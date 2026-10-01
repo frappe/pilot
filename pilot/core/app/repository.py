@@ -268,20 +268,78 @@ class AppRepository:
             ]
         )
 
-    def switch_branch(self, branch: str) -> None:
+    def switch_branch(self, branch: str, *, force: bool = False) -> None:
         if not self.app.is_cloned:
             raise BenchError(f"'{self.app.config.name}' is not cloned at {self.app.path}")
 
         repo = self.repo
+        previous_branch = repo.branch
+        previous_sha = repo.head_sha
+        previous_configured_branch = self.app.config.branch
+
         self._sync_remote_url()
-        repo.fetch("+refs/heads/*:refs/remotes/origin/*")
+        if not repo.fetch(f"+refs/heads/{branch}:refs/remotes/origin/{branch}"):
+            raise BenchError(
+                f"Could not fetch branch '{branch}' for '{self.app.config.name}'. "
+                "Check that the branch exists and the repository credentials are valid."
+            )
         repo.abort_merge_rebase()
-        stashed = repo.stash_all()
+
+        stashed = False
+        if force:
+            if not repo.discard_local_changes():
+                raise BenchError(f"Could not discard local changes for '{self.app.config.name}'.")
+        else:
+            stashed = repo.stash_all()
+
         if not repo.checkout_new_branch(branch, f"origin/{branch}"):
             if stashed:
                 repo.stash_pop()
             raise BenchError(f"Could not switch '{self.app.config.name}' to branch '{branch}'.")
+
+        if not repo.configure_tracking_branch(branch):
+            try:
+                self.restore_revision(
+                    previous_branch,
+                    previous_sha,
+                    previous_configured_branch,
+                )
+                if stashed:
+                    repo.stash_pop()
+            except Exception as rollback_error:
+                raise BenchError(
+                    f"Switched '{self.app.config.name}' to '{branch}', but could not update its Git "
+                    f"tracking configuration or restore the previous revision: {rollback_error}"
+                ) from rollback_error
+            raise BenchError(
+                f"Could not update Git tracking for '{self.app.config.name}' on branch '{branch}'. "
+                "The previous revision was restored."
+            )
+
         self.app.config.branch = branch
+
+    def restore_revision(self, branch: str, sha: str, configured_branch: str) -> None:
+        """Restore the previous checkout and branch tracking."""
+        repo = self.repo
+        repo.abort_merge_rebase()
+        if not repo.discard_local_changes():
+            raise BenchError(
+                f"Could not clean the failed checkout for '{self.app.config.name}' before rollback."
+            )
+
+        restored = repo.checkout_new_branch(branch, sha) if branch else repo.checkout_detached(sha)
+        if not restored:
+            raise BenchError(
+                f"Could not restore '{self.app.config.name}' to its previous revision {sha[:8]}."
+            )
+
+        tracking_branch = branch or configured_branch
+        if tracking_branch and not self.is_commit_hash(tracking_branch):
+            if not repo.configure_tracking_branch(tracking_branch):
+                raise BenchError(
+                    f"Restored '{self.app.config.name}' checkout but could not restore its Git tracking configuration."
+                )
+        self.app.config.branch = configured_branch
 
     def checkout_pinned_target(self, pin: RevisionPin) -> None:
         if pin.kind == "tag":

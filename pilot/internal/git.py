@@ -127,13 +127,50 @@ class GitRepo:
     def stash_pop(self) -> None:
         self._run("stash", "pop")
 
+    def discard_local_changes(self) -> bool:
+        """Discard tracked and untracked working-tree changes."""
+        reset = self._run("reset", "--hard")
+        clean = self._run("clean", "-fd")
+        return reset.returncode == 0 and clean.returncode == 0
+
     def checkout_new_branch(self, branch: str, start_point: str) -> bool:
         """Create (or reset) `branch` to start at `start_point` and check it out."""
         return self._run("checkout", "-B", branch, start_point).returncode == 0
 
+    def checkout_detached(self, ref: str) -> bool:
+        """Check out an exact revision without attaching it to a branch."""
+        return self._run("checkout", "--detach", ref).returncode == 0
+
     def set_remote_url(self, url: str) -> bool:
         """Point origin at *url*; returns False instead of raising on failure."""
         return self._run("remote", "set-url", "origin", url).returncode == 0
+
+    def configure_tracking_branch(self, branch: str) -> bool:
+        """Keep .git/config aligned with a branch switch.
+
+        A clone made with --single-branch stores one narrow remote.origin.fetch
+        refspec. Replace that stale refspec with the selected branch. Full clones
+        already using refs/heads/* keep their broad fetch configuration.
+        """
+        target = f"+refs/heads/{branch}:refs/remotes/origin/{branch}"
+        fetches = self._run("config", "--get-all", "remote.origin.fetch")
+        values = [line.strip() for line in fetches.stdout.splitlines() if line.strip()]
+
+        if not any("refs/heads/*:refs/remotes/origin/*" in value for value in values):
+            if len(values) == 1 and values[0].startswith("+refs/heads/"):
+                result = self._run("config", "--replace-all", "remote.origin.fetch", target)
+            elif target not in values:
+                result = self._run("config", "--add", "remote.origin.fetch", target)
+            else:
+                result = subprocess.CompletedProcess([], returncode=0, stdout="", stderr="")
+            if result.returncode != 0:
+                return False
+
+        if self._run("config", f"branch.{branch}.remote", "origin").returncode != 0:
+            return False
+        return (
+            self._run("config", f"branch.{branch}.merge", f"refs/heads/{branch}").returncode == 0
+        )
 
     @property
     def tag_at_head(self) -> str:

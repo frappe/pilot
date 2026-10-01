@@ -219,12 +219,15 @@ class App:
     def update(self, pin: RevisionPin | None = None) -> None:
         self._repository.update(pin)
 
-    def switch_branch(self, branch: str) -> None:
-        self._repository.switch_branch(branch)
+    def switch_branch(self, branch: str, *, force: bool = False) -> None:
+        self._repository.switch_branch(branch, force=force)
 
     def checkout_commit(self, sha: str) -> None:
         """Check out a specific commit SHA, refetching it from origin if needed."""
         self._repository.checkout_pinned_commit(sha)
+
+    def restore_revision(self, branch: str, sha: str, configured_branch: str) -> None:
+        self._repository.restore_revision(branch, sha, configured_branch)
 
     def _pyproject(self) -> dict:
         """Parsed pyproject.toml, or an empty dict when it is missing or malformed."""

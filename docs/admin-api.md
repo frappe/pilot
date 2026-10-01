@@ -61,6 +61,12 @@ Task-starting endpoints should return:
 
 `GET /git/branches?repo=...` runs local `git ls-remote --heads`, so Git must be available on the Pilot host. It returns all remote branch names and puts the remote default first.
 
+### App Branch Switching
+
+`POST /apps/<name>/actions/switch-branch` takes `{"branch": "...", "force": false}` and queues the existing `switch-branch` task. The task fetches the selected remote branch explicitly, validates the app at the new revision, reinstalls it, rebuilds its assets, records the branch in `bench.toml`, and reloads workers.
+
+Set `force: true` to discard tracked and untracked working-tree changes before switching. The default path preserves local work by stashing it.
+
 ### Site Apps
 
 `GET /sites/<name>/apps` returns the apps in use on the site, disabled ones excluded, plus `can_disable` for whether this bench's Frappe supports disabling at all.

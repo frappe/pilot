@@ -1,4 +1,3 @@
-import sys
 from dataclasses import dataclass
 from typing import ClassVar
 
@@ -11,20 +10,36 @@ class SwitchBranchTask(Task):
 
     name: str
     branch: str
+    force: bool = False
 
     def run(self) -> None:
         from pilot.managers.environment import PythonEnvManager
 
         app = self.bench.app(self.name)
-        previous_branch, previous_sha = app.current_branch, app.head_sha
-        self.checkout(app)
-        self.validate(app, previous_branch, previous_sha)
-
+        previous_branch = app.current_branch
+        previous_sha = app.head_sha
+        previous_configured_branch = app.config.branch
         env = PythonEnvManager(self.bench)
-        self.install(env, app)
-        self.build_assets(env, app)
 
-        app.record_branch()
+        checkout_completed = False
+        try:
+            self.checkout(app)
+            checkout_completed = True
+            self.validate(app)
+            self.install(env, app)
+            self.build_assets(env, app)
+            app.record_branch()
+        except Exception as task_error:
+            if checkout_completed:
+                try:
+                    self.rollback(app, env, previous_branch, previous_sha, previous_configured_branch)
+                except Exception as rollback_error:
+                    raise ExceptionGroup(
+                        "Branch switch failed and rollback did not complete.",
+                        [task_error, rollback_error],
+                    ) from rollback_error
+            raise
+
         print(f"'{self.name}' switched to '{self.branch}' successfully.")
 
     @on_success
@@ -35,33 +50,11 @@ class SwitchBranchTask(Task):
 
     @step("checkout", lambda self: f"Switch to branch '{self.branch}'")
     def checkout(self, app) -> None:
-        from pilot.exceptions import BenchError
-
-        try:
-            app.switch_branch(self.branch)
-        except BenchError as exc:
-            print(str(exc))
-            sys.exit(1)
+        app.switch_branch(self.branch, force=self.force)
 
     @step("validate", lambda self: f"Validate {self.name} on '{self.branch}'")
-    def validate(self, app, previous_branch: str, previous_sha: str) -> None:
-        """The env installs the app editable, so the branch is live the moment it's
-        checked out - a branch that fails the checks has to go back.
-
-        Restore the branch rather than its commit: a detached HEAD would disagree
-        with the branch bench.toml records. Any BenchError rolls back, not just a
-        validation failure - uv falling over leaves the same live bad branch.
-        """
-        from pilot.exceptions import BenchError
-
-        try:
-            app.validate()
-        except BenchError:
-            if previous_branch:
-                app.switch_branch(previous_branch)
-            else:
-                app.checkout_commit(previous_sha)  # it was already detached
-            raise
+    def validate(self, app) -> None:
+        app.validate()
 
     @step("install", lambda self: f"Reinstall {self.name}")
     def install(self, env, app) -> None:
@@ -69,6 +62,20 @@ class SwitchBranchTask(Task):
 
     @step("assets", "Build assets")
     def build_assets(self, env, app) -> None:
+        env.build_assets_for_app(app)
+
+    def rollback(
+        self,
+        app,
+        env,
+        previous_branch: str,
+        previous_sha: str,
+        previous_configured_branch: str,
+    ) -> None:
+        """Restore the previous checkout and environment."""
+        app.restore_revision(previous_branch, previous_sha, previous_configured_branch)
+        app.record_branch()
+        env.install_app(app)
         env.build_assets_for_app(app)
 
 

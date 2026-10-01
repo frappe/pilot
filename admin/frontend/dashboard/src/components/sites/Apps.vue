@@ -5,6 +5,7 @@ import { Button, Dropdown, type DropdownItem } from 'frappe-ui'
 import MarketplaceAppCard from '@/components/marketplace/MarketplaceAppCard.vue'
 import MarketplaceAppCardSkeleton from '@/components/marketplace/MarketplaceAppCardSkeleton.vue'
 import UninstallAppDialog from '@/components/apps/UninstallAppDialog.vue'
+import SwitchBranchDialog from '@/components/apps/SwitchBranchDialog.vue'
 
 import { useSite } from '@/composables/sites/useSite'
 import { useAppRegistry } from '@/composables/apps/useAppRegistry'
@@ -23,6 +24,8 @@ interface AppCardEntry {
   logo_url: string | null
   documentation: string
   website: string
+  repo: string
+  branch: string
 }
 
 const props = defineProps<Props>()
@@ -65,11 +68,15 @@ const appObjects = computed<AppCardEntry[]>(() =>
     logo_url: logoMap.value[name] || null,
     documentation: documentationMap.value[name] || '',
     website: websiteMap.value[name] || '',
+    repo: appDetailMap.value[name]?.repo || '',
+    branch: appDetailMap.value[name]?.branch || '',
   })),
 )
 
 const showUninstall = ref(false)
 const uninstallTarget = ref<AppCardEntry | null>(null)
+const showSwitchBranch = ref(false)
+const switchBranchTarget = ref<AppCardEntry | null>(null)
 
 const openLink = (url: string) => {
   window.open(url, '_blank', 'noopener,noreferrer')
@@ -83,6 +90,16 @@ const menuOptions = (app: AppCardEntry): DropdownItem[] => {
       label: 'Open in editor',
       icon: 'lucide-code',
       onClick: () => openLink(`/editor/${encodeURIComponent(app.name)}`),
+    })
+
+  if (app.repo)
+    options.push({
+      label: 'Change branch',
+      icon: 'lucide-git-branch',
+      onClick: () => {
+        switchBranchTarget.value = app
+        showSwitchBranch.value = true
+      },
     })
 
   if (app.website)
@@ -148,6 +165,8 @@ onMounted(() => {
       </MarketplaceAppCard>
     </template>
   </div>
+
+  <SwitchBranchDialog v-model:open="showSwitchBranch" :app="switchBranchTarget" />
 
   <UninstallAppDialog
     v-model:open="showUninstall"
