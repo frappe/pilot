@@ -980,6 +980,90 @@ def test_site_restore_scopes_its_account_to_the_site_database(
     assert cmd[cmd.index("--with-private-files") + 1] == "/tmp/priv.tar"
 
 
+def _site_with_files(bench, name: str) -> Site:
+    site = Site(SiteConfig(name=name, apps=[]), bench)
+    for kind in ("public", "private"):
+        (site.path / kind / "files").mkdir(parents=True)
+        (site.path / kind / "files" / "old.txt").write_text("old")
+    return site
+
+
+def test_site_restore_replaces_the_uploaded_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """frappe extracts the archives over the existing directories, so a file that is not
+    in the backup must not remain after the restore."""
+    import subprocess
+
+    site = _site_with_files(_postgres_bench(tmp_path), "pg.localhost")
+
+    def extract(cmd, **kw):
+        (site.path / "public" / "files").mkdir(parents=True)
+        (site.path / "public" / "files" / "new.txt").write_text("new")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr("pilot.core.site.commands.run_command", extract)
+
+    site.restore("/tmp/db.sql.gz", public_files="/tmp/pub.tar", private_files="/tmp/priv.tar")
+
+    assert [path.name for path in (site.path / "public" / "files").iterdir()] == ["new.txt"]
+    assert list((site.path / "private" / "files").iterdir()) == []
+    assert sorted(path.name for path in (site.path / "public").iterdir()) == ["files"]
+
+
+def test_site_restore_keeps_the_uploaded_files_when_it_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    site = _site_with_files(_postgres_bench(tmp_path), "pg.localhost")
+
+    def fail(cmd, **kw):
+        (site.path / "public" / "files").mkdir(parents=True)
+        (site.path / "public" / "files" / "partial.txt").write_text("partial")
+        raise BenchError("restore failed")
+
+    monkeypatch.setattr("pilot.core.site.commands.run_command", fail)
+
+    with pytest.raises(BenchError):
+        site.restore("/tmp/db.sql.gz", public_files="/tmp/pub.tar", private_files="/tmp/priv.tar")
+
+    for kind in ("public", "private"):
+        assert [path.name for path in (site.path / kind).iterdir()] == ["files"]
+        assert [path.name for path in (site.path / kind / "files").iterdir()] == ["old.txt"]
+
+
+def test_site_restore_moves_the_files_back_when_moving_them_aside_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    site = _site_with_files(_postgres_bench(tmp_path), "pg.localhost")
+    captured = _capture_site_cmd(monkeypatch)
+    rename = Path.rename
+
+    def fail_for_private(self, target):
+        if self == site.path / "private" / "files":
+            raise OSError("rename failed")
+        return rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", fail_for_private)
+
+    with pytest.raises(OSError):
+        site.restore("/tmp/db.sql.gz", public_files="/tmp/pub.tar", private_files="/tmp/priv.tar")
+
+    assert "cmd" not in captured
+    for kind in ("public", "private"):
+        assert [path.name for path in (site.path / kind).iterdir()] == ["files"]
+        assert [path.name for path in (site.path / kind / "files").iterdir()] == ["old.txt"]
+
+
+def test_site_restore_without_archives_keeps_the_uploaded_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    site = _site_with_files(_postgres_bench(tmp_path), "pg.localhost")
+    _capture_site_cmd(monkeypatch)
+
+    site.restore("/tmp/db.sql.gz")
+
+    assert (site.path / "public" / "files" / "old.txt").exists()
+    assert (site.path / "private" / "files" / "old.txt").exists()
+
+
 def test_site_reinstall_postgres_root_creds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     bench = _postgres_bench(tmp_path, root_password="pgpw")
     captured = _capture_site_cmd(monkeypatch)

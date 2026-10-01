@@ -207,3 +207,24 @@ def test_site_detail_rejects_symlinked_site(tmp_path) -> None:
     response = client.get("/api/v1/sites/linked.localhost")
 
     assert response.status_code == 404
+
+
+def test_site_config_patch_cannot_change_the_restore_maintenance_state(tmp_path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    config_path = bench_root / "sites" / "s.localhost" / "site_config.json"
+    config_path.parent.mkdir(parents=True)
+    original = {"pilot_maintenance_before_restore": {"maintenance_mode": 0, "pause_scheduler": 0}}
+    config_path.write_text(json.dumps(original))
+
+    removed = client.patch(
+        "/api/v1/sites/s.localhost/configuration",
+        json={"pilot_maintenance_before_restore": None},
+    )
+    changed = client.patch(
+        "/api/v1/sites/s.localhost/configuration",
+        json={"pilot_maintenance_before_restore": {"maintenance_mode": 1}},
+    )
+
+    assert [removed.status_code, changed.status_code] == [422, 422]
+    assert json.loads(config_path.read_text()) == original

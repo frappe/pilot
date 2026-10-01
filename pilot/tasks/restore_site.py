@@ -1,0 +1,48 @@
+from dataclasses import dataclass
+from functools import cached_property
+from typing import ClassVar
+
+from pilot.core.site import Site
+from pilot.tasks import Task, step
+
+
+@dataclass(kw_only=True)
+class RestoreSiteTask(Task):
+    """Replace a site's database and files with a backup of any site on this bench."""
+
+    command: ClassVar[str] = "restore-site"
+    is_cancellable_while_running: ClassVar[bool] = False
+
+    site: str
+    source_site: str
+    timestamp: str
+
+    @cached_property
+    def site_record(self) -> Site:
+        return self.bench.site(self.site)
+
+    def run(self) -> None:
+        """A failed restore or migration leaves the site in maintenance mode, because
+        its data can be partly restored or partly migrated. A missing backup fails
+        before the site goes offline."""
+        files = self.bench.site(self.source_site).backups.get_restore_files(self.timestamp)
+        self.site_record.enter_restore_maintenance()
+        try:
+            self.restore(files)
+            self.migrate()
+        except Exception:
+            print(f"{self.site} stays in maintenance mode. Fix the error, then restore again.")
+            raise
+        self.site_record.leave_restore_maintenance()
+
+    @step("restore", lambda self: f"Restore {self.source_site} backup {self.timestamp} to {self.site}")
+    def restore(self, files: dict[str, str]) -> None:
+        self.site_record.restore(**files)
+
+    @step("migrate", lambda self: f"Migrate site {self.site}")
+    def migrate(self) -> None:
+        self.site_record.migrate()
+
+
+if __name__ == "__main__":
+    RestoreSiteTask.main()

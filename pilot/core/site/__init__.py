@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.config import SiteConfig
+from pilot.core.site.config import MAINTENANCE_BEFORE_RESTORE_KEY
 from pilot.utils import run_command
 
 if TYPE_CHECKING:
@@ -67,6 +68,25 @@ class Site:
         self.set_maintenance_settings({"maintenance_mode": value, "pause_scheduler": value})
 
     def set_maintenance_settings(self, settings: dict[str, int]) -> None:
+        with self._locked_site_config() as config:
+            config.update(settings)
+
+    def enter_restore_maintenance(self) -> None:
+        """Turn on maintenance mode. Keep the settings from before the first restore
+        attempt, so a retry after a failed restore does not keep the site offline."""
+        with self._locked_site_config() as config:
+            config.setdefault(
+                MAINTENANCE_BEFORE_RESTORE_KEY,
+                {key: int(bool(config.get(key))) for key in ("maintenance_mode", "pause_scheduler")},
+            )
+            config.update({"maintenance_mode": 1, "pause_scheduler": 1})
+
+    def leave_restore_maintenance(self) -> None:
+        with self._locked_site_config() as config:
+            config.update(config.pop(MAINTENANCE_BEFORE_RESTORE_KEY))
+
+    @contextmanager
+    def _locked_site_config(self) -> Iterator[dict]:
         import json
 
         from pilot.core.site.config import safe_site_config_path
@@ -75,7 +95,7 @@ class Site:
         config_path = safe_site_config_path(self.bench.sites_path, self.config.name)
         with exclusive_file_lock(config_path):
             config = json.loads(config_path.read_text())
-            config.update(settings)
+            yield config
             replace_private_text_locked(config_path, json.dumps(config, indent=1))
 
     @contextmanager
