@@ -59,6 +59,14 @@ def test_press_unified_memory_sizing_is_adapted_for_pilot() -> None:
     assert sizing.memory_max_mb == 3172
 
 
+def test_memory_high_does_not_regress_on_32gb_host() -> None:
+    sizing = calculate_mariadb_memory(32768)
+
+    assert sizing.memory_max_mb == 15116
+    assert sizing.memory_high_mb == 14092
+    assert sizing.memory_high_mb == round(max(sizing.mariadb_memory_mb - 1024, 1024))
+
+
 def test_small_vm_limits_leave_memory_for_other_pilot_processes() -> None:
     sizing = calculate_mariadb_memory(2048)
 
@@ -866,6 +874,17 @@ def test_apply_live_sizing_sets_each_value_and_closes_the_connection(tmp_path) -
     connection.close.assert_called_once_with()
 
 
+def test_runtime_memory_limits_use_configured_memory_high_override() -> None:
+    manager = MariaDBManager(MariaDBConfig(memory_high_mb=2500))
+    sizing = calculate_mariadb_memory(8192)
+    with patch(f"{MODULE}.run_command") as run:
+        manager._set_runtime_memory_limits(sizing)
+
+    command = run.call_args.args[0]
+    assert "MemoryHigh=2500M" in command
+    assert f"MemoryMax={sizing.memory_max_mb}M" in command
+
+
 def test_runtime_memory_limits_wait_until_the_memory_is_released() -> None:
     manager = _manager()
     sizing = calculate_mariadb_memory(2048)
@@ -946,6 +965,35 @@ def test_tune_to_host_refuses_external_server_before_writing(tmp_path) -> None:
     restart.assert_not_called()
 
 
+def test_linux_unit_honors_memory_pressure_overrides(tmp_path) -> None:
+    manager = MariaDBManager(
+        MariaDBConfig(memory_high_mb=2500, memory_swap_max_mb=0)
+    )
+    sizing = calculate_mariadb_memory(8192)
+    unit_dir = tmp_path / "units"
+    with (
+        patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
+        patch.object(type(manager), "user_unit_dir", new_callable=PropertyMock, return_value=unit_dir),
+        patch(f"{MODULE}.which", return_value="/usr/sbin/mariadbd"),
+        patch(f"{MODULE}.run_command"),
+    ):
+        manager._install_unit(sizing)
+
+    content = (unit_dir / "pilot-mariadb.service").read_text()
+    assert "MemoryHigh=2500M" in content
+    assert "MemorySwapMax=0M" in content
+
+
+def test_linux_unit_rejects_memory_high_above_memory_max(tmp_path) -> None:
+    manager = MariaDBManager(MariaDBConfig(memory_high_mb=4000))
+    sizing = calculate_mariadb_memory(8192)
+    with (
+        patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
+        pytest.raises(DatabaseError, match="MemoryHigh must be between"),
+    ):
+        manager._install_unit(sizing)
+
+
 def test_is_provisioned_on_macos_checks_live_server_not_a_marker_file() -> None:
     """macOS provisioning state comes from the live secured server."""
     m = _manager()
@@ -989,40 +1037,75 @@ def test_wait_until_reachable_raises_after_timeout() -> None:
         m._wait_until_reachable(timeout=0.01)
 
 
-def test_provision_resets_failed_state_before_restarting_stopped_unit() -> None:
+def test_provision_resizes_config_and_unit_before_starting_stopped_server() -> None:
     m = _manager()
+    sizing = calculate_mariadb_memory(2048)
     with (
         patch(f"{MODULE}.is_macos", return_value=False),
         patch.object(m, "install"),
         patch.object(m, "is_provisioned", return_value=True),
         patch.object(m, "is_running", return_value=False),
+        patch.object(m, "_write_config", return_value=sizing) as write_config,
+        patch.object(m, "_install_unit") as install_unit,
         patch.object(m, "_wait_until_reachable"),
         patch.object(m, "secure_installation"),
         patch(f"{MODULE}.run_command") as rc,
         patch(f"{BASE_MODULE}.subprocess.run") as reset_run,
     ):
         m.provision()
+
+    write_config.assert_called_once_with()
+    install_unit.assert_called_once_with(sizing)
     reset_run.assert_called_once()
     assert reset_run.call_args.args[0] == ["systemctl", "--user", "reset-failed", "pilot-mariadb.service"]
     assert rc.call_args.args[0] == ["systemctl", "--user", "start", "pilot-mariadb.service"]
 
 
-def test_provision_reuses_already_provisioned_server() -> None:
+def test_provision_defers_running_host_tuning_when_database_action_is_busy() -> None:
     m = _manager()
     with (
         patch(f"{MODULE}.is_macos", return_value=False),
         patch.object(m, "install"),
         patch.object(m, "is_provisioned", return_value=True),
         patch.object(m, "is_running", return_value=True),
-        patch.object(m, "_write_config") as write_config,
-        patch.object(m, "_install_unit") as install_unit,
+        patch.object(m, "tune_to_host", side_effect=DatabaseError("Another database action is already running on this server.")),
+        patch.object(m, "_wait_until_reachable") as wait,
+        patch.object(m, "secure_installation") as secure,
+    ):
+        m.provision()
+
+    wait.assert_called_once_with()
+    secure.assert_called_once_with()
+
+
+def test_provision_does_not_hide_running_host_tuning_failure() -> None:
+    m = _manager()
+    with (
+        patch(f"{MODULE}.is_macos", return_value=False),
+        patch.object(m, "install"),
+        patch.object(m, "is_provisioned", return_value=True),
+        patch.object(m, "is_running", return_value=True),
+        patch.object(m, "tune_to_host", side_effect=DatabaseError("sizing failed")),
+        pytest.raises(DatabaseError, match="sizing failed"),
+    ):
+        m.provision()
+
+
+def test_provision_tunes_running_server_to_host_without_restart() -> None:
+    m = _manager()
+    with (
+        patch(f"{MODULE}.is_macos", return_value=False),
+        patch.object(m, "install"),
+        patch.object(m, "is_provisioned", return_value=True),
+        patch.object(m, "is_running", return_value=True),
+        patch.object(m, "tune_to_host") as tune_to_host,
         patch.object(m, "_wait_until_reachable"),
         patch.object(m, "secure_installation") as secure,
         patch(f"{MODULE}.run_command") as rc,
     ):
         m.provision()
-    install_unit.assert_not_called()
-    write_config.assert_not_called()
+
+    tune_to_host.assert_called_once_with()
     rc.assert_not_called()
     secure.assert_called_once()
 

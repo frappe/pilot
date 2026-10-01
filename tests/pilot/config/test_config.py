@@ -764,3 +764,18 @@ def test_every_field_survives_a_round_trip(tmp_path: Path) -> None:
     reloaded = BenchConfig.read(bench_dir)
 
     assert reloaded == config
+
+
+def test_common_config_round_trips_mariadb_memory_overrides(tmp_path) -> None:
+    config = CommonConfig()
+    config.mariadb.memory_high_mb = 2500
+    config.mariadb.memory_swap_max_mb = 0
+
+    config.write(tmp_path)
+    loaded = CommonConfig.read(tmp_path)
+
+    assert loaded.mariadb.memory_high_mb == 2500
+    assert loaded.mariadb.memory_swap_max_mb == 0
+    content = (tmp_path / "common_config.toml").read_text()
+    assert "memory_high_mb = 2500" in content
+    assert "memory_swap_max_mb = 0" in content

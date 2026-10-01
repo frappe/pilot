@@ -119,6 +119,8 @@ class CommonConfig:
                 "admin_user": self.mariadb.admin_user,
                 "socket_path": self.mariadb.socket_path,
                 "existing": self.mariadb.existing,
+                "memory_high_mb": self.mariadb.memory_high_mb,
+                "memory_swap_max_mb": self.mariadb.memory_swap_max_mb,
             },
             "postgres": {
                 "host": self.postgres.host,

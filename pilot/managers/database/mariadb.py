@@ -33,6 +33,7 @@ from pilot.managers.platform import is_macos, which
 from pilot.utils import cli_root, run_command
 
 _CLIENT_TIMEOUT = 5
+_DATABASE_ACTION_BUSY = "Another database action is already running on this server."
 _MEMORY_RELEASE_TIMEOUT = 60
 _MANAGED_CONFIG_HEADER = "# Managed by Pilot's database variable editor.\n"
 _OPTION_NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
@@ -126,7 +127,16 @@ class MariaDBManager(UserOwnedDBManager):
             self._reset_failed_state()
             run_command(self._systemctl("enable", "--now", self._UNIT_NAME), env=self._systemctl_env())
 
-        elif not self.is_running():
+        elif self.is_running():
+            try:
+                self.tune_to_host()
+            except DatabaseError as exc:
+                if str(exc) != _DATABASE_ACTION_BUSY:
+                    raise
+                logging.getLogger(__name__).info("MariaDB host tuning deferred: %s", exc)
+        else:
+            sizing = self._write_config()
+            self._install_unit(sizing)
             self._reset_failed_state()
             run_command(self._systemctl("start", self._UNIT_NAME), env=self._systemctl_env())
 
@@ -271,7 +281,7 @@ class MariaDBManager(UserOwnedDBManager):
         try:
             stack.enter_context(exclusive_file_lock(self.action_lock_path, blocking=False))
         except BlockingIOError as exc:
-            raise DatabaseError("Another database action is already running on this server.") from exc
+            raise DatabaseError(_DATABASE_ACTION_BUSY) from exc
         with stack:
             yield
 
@@ -325,11 +335,12 @@ class MariaDBManager(UserOwnedDBManager):
         next start.
         """
         deadline = time.monotonic() + _MEMORY_RELEASE_TIMEOUT
-        while (usage := self._unit_memory_mb("MemoryCurrent")) is None or usage >= sizing.memory_high_mb:
+        memory_high_mb = self._memory_high_mb(sizing)
+        while (usage := self._unit_memory_mb("MemoryCurrent")) is None or usage >= memory_high_mb:
             if time.monotonic() >= deadline:
                 logging.getLogger(__name__).warning(
                     "MariaDB memory use is unknown or above %s MiB; its new memory limits apply at the next start.",
-                    sizing.memory_high_mb,
+                    memory_high_mb,
                 )
                 return
             time.sleep(1)
@@ -341,7 +352,7 @@ class MariaDBManager(UserOwnedDBManager):
                 "set-property",
                 "--runtime",
                 self._UNIT_NAME,
-                f"MemoryHigh={sizing.memory_high_mb}M",
+                f"MemoryHigh={self._memory_high_mb(sizing)}M",
                 f"MemoryMax={sizing.memory_max_mb}M",
             ),
             env=self._systemctl_env(),
@@ -817,9 +828,9 @@ class MariaDBManager(UserOwnedDBManager):
             # skip every system default file instead of layering over them.
             f"ExecStart={mariadbd} --defaults-file={self.my_cnf_path}\n"
             "LimitNOFILE=65535\n"
-            f"MemoryHigh={sizing.memory_high_mb}M\n"
+            f"MemoryHigh={self._memory_high_mb(sizing)}M\n"
             f"MemoryMax={sizing.memory_max_mb}M\n"
-            "MemorySwapMax=100M\n"
+            f"MemorySwapMax={self._memory_swap_max_mb()}M\n"
             "Restart=on-failure\n\n"
             "[Install]\n"
             "WantedBy=default.target\n"
@@ -828,6 +839,20 @@ class MariaDBManager(UserOwnedDBManager):
         unit_dir.mkdir(parents=True, exist_ok=True)
         self.unit_path.write_text(content)
         run_command(self._systemctl("daemon-reload"), env=self._systemctl_env())
+
+    def _memory_high_mb(self, sizing: MariaDBMemorySizing) -> int:
+        value = self.config.memory_high_mb or sizing.memory_high_mb
+        if value <= 0 or value > sizing.memory_max_mb:
+            raise DatabaseError(
+                f"MariaDB MemoryHigh must be between 1 and {sizing.memory_max_mb} MB."
+            )
+        return value
+
+    def _memory_swap_max_mb(self) -> int:
+        value = self.config.memory_swap_max_mb
+        if value < 0:
+            raise DatabaseError("MariaDB MemorySwapMax cannot be negative.")
+        return value
 
     def is_reachable(self) -> bool:
         if not self.is_running():
