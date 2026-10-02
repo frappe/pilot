@@ -181,7 +181,9 @@ def test_a_timeout_after_connecting_means_central_is_unreachable() -> None:
     _stage_credentials("https://central.test", "tok")
 
     with (
-        patch("pilot.integrations.central.client.urllib.request.urlopen", side_effect=TimeoutError("timed out")),
+        patch(
+            "pilot.integrations.central.client.urllib.request.urlopen", side_effect=TimeoutError("timed out")
+        ),
         pytest.raises(CentralClientError, match="Cannot reach Central") as caught,
     ):
         CentralClient().get_pilot_release("normal")
