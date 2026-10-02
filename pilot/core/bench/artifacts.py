@@ -69,4 +69,4 @@ class BenchArtifacts:
                             path.unlink()
                             path.symlink_to(destination / target.relative_to(source))
                     elif entry.is_dir(follow_symlinks=False):
-                        directories.append(entry.path)
+                        directories.append(Path(entry.path))

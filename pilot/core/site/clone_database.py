@@ -12,6 +12,7 @@ def stream_database(dump: list[str], restore: list[str], source_env: dict, targe
     try:
         producer = subprocess.Popen(dump, stdout=subprocess.PIPE, env=source_env)
         processes.append(producer)
+        assert producer.stdout is not None
         try:
             consumer = subprocess.Popen(restore, stdin=producer.stdout, env=target_env)
             processes.append(consumer)
