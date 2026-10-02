@@ -13,19 +13,19 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { apiErrorMessage, hasApiError } from '@/api/client'
 import { sitesApi } from '@/api/sites'
+import CloneDialog from '@/components/common/CloneDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import StickyToolbar from '@/components/common/StickyToolbar.vue'
 import Table from '@/components/common/Table.vue'
 import NewSiteDialog from '@/components/sites/NewSiteDialog.vue'
-import CloneDialog from '@/components/common/CloneDialog.vue'
 import SiteSkeleton from '@/components/sites/SiteSkeleton.vue'
 import { useIsMobile } from '@/composables/common/useIsMobile'
 import { useSiteStorage } from '@/composables/sites/useSiteStorage'
 import { useSites } from '@/composables/sites/useSites'
-import { openSiteLogin } from '@/utils/siteLogin'
-import { openTaskDetailPage } from '@/utils/taskRoute'
 import type { SiteResource } from '@/types/sites'
 import { errorMessage } from '@/utils/error'
+import { openSiteLogin } from '@/utils/siteLogin'
+import { openTaskDetailPage } from '@/utils/taskRoute'
 
 const route = useRoute()
 const router = useRouter()
@@ -262,6 +262,7 @@ onMounted(() => {
                 label="Site actions"
                 tooltip="Actions"
                 class="ml-auto"
+                @click.stop
               />
             </Dropdown>
 
