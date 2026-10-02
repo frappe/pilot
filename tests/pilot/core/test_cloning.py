@@ -5,6 +5,8 @@ import os
 import subprocess
 import sys
 from contextlib import nullcontext
+from threading import Barrier
+from types import SimpleNamespace
 
 import pytest
 
@@ -216,6 +218,15 @@ def test_build_cache_rejects_changed_build_mode_environment_and_custom_hooks(sou
     source.write_common_site_config()
     artifacts = BuildArtifacts(source)
     key = artifacts.get_key()
+    generated = source.apps_path / "frappe/frappe/public/dist"
+    generated.mkdir(parents=True)
+    (generated / "bundle.js").write_text("compiled output")
+    assert artifacts.get_key() == key
+    code = source.apps_path / "frappe/frappe/public/distinct"
+    code.mkdir()
+    (code / "input.js").write_text("frontend source")
+    assert artifacts.get_key() != key
+    (code / "input.js").unlink()
     config = source.sites_path / "common_site_config.json"
     original = config.read_text()
     changed = json.loads(original)
@@ -230,20 +241,32 @@ def test_build_cache_rejects_changed_build_mode_environment_and_custom_hooks(sou
     assert artifacts.get_key() is None
 
 
-@pytest.mark.parametrize("failure", [None, "database", "environment"])
+@pytest.mark.parametrize("failure", [None, "database", "environment", "uploads"])
 def test_fork_overlaps_database_and_environment_and_waits_before_cleanup(source, monkeypatch, failure):
     from threading import Event
 
     started, preparing, completed = Event(), Event(), Event()
+    files_completed = Event()
     original = BenchClone.prepare_environment
+    copy_files = SiteClone.copy_files
     cleaned = []
 
     def import_database(self):
         started.set()
         assert preparing.wait(5), "Database import did not overlap environment preparation"
+        assert files_completed.wait(5), "Uploads did not overlap database import"
         completed.set()
         if failure == "database":
             raise RuntimeError("database failed")
+
+    def copy_uploads(self, site):
+        try:
+            assert started.wait(5), "Database import did not overlap upload copying"
+            if failure == "uploads":
+                raise RuntimeError("uploads failed")
+            copy_files(self, site)
+        finally:
+            files_completed.set()
 
     def prepare(self, destination, rebuild, on_progress):
         assert started.wait(5), "Database import was not started before environment preparation"
@@ -254,12 +277,14 @@ def test_fork_overlaps_database_and_environment_and_waits_before_cleanup(source,
 
     def cleanup(self):
         assert completed.is_set(), "Cleanup raced with the database import"
+        assert files_completed.is_set(), "Cleanup raced with upload copying"
         cleaned.append(self.config["db_name"])
 
     monkeypatch.setattr(BenchClone, "prepare_environment", prepare)
     monkeypatch.setattr(SiteDatabaseClone, "run", import_database)
     monkeypatch.setattr(SiteDatabaseClone, "cleanup", cleanup)
     monkeypatch.setattr(SiteClone, "finish", lambda *args: None)
+    monkeypatch.setattr(SiteClone, "copy_files", copy_uploads)
     monkeypatch.setattr("pilot.core.bench.fork_runtime.ForkRuntime", lambda *args, **kwargs: nullcontext())
     if failure:
         with pytest.raises(RuntimeError, match=f"{failure} failed"):
@@ -600,3 +625,59 @@ def test_postgres_clone_uses_resolved_client_binaries(source, monkeypatch):
     assert sql_calls[0][0] == "/brew/bin/psql"
     assert streams[0][0][0] == "/brew/bin/pg_dump"
     assert streams[0][1][0] == "/brew/bin/psql"
+
+
+@pytest.mark.parametrize("unsupported", [None, "relationships", "view", "engine", "small", "escaped"])
+def test_mariadb_clone_parallel_schema_then_single_snapshot_or_full_fallback(
+    source, monkeypatch, unsupported
+):
+    tables = [f"table_{index}" for index in range(16)]
+    rows = [
+        f"{name}\tBASE TABLE\t{'MyISAM' if index == 0 else 'InnoDB'}" for index, name in enumerate(tables)
+    ]
+    rows.append("counter\tSEQUENCE\tInnoDB")
+    if unsupported == "view":
+        rows.append("view\tVIEW\tNULL")
+    elif unsupported == "engine":
+        rows[0] = "table_0\tBASE TABLE\tMEMORY"
+    elif unsupported == "small":
+        rows = rows[:15]
+    elif unsupported == "escaped":
+        rows[0] = "table\\tname\tBASE TABLE\tInnoDB"
+    metadata = "\n".join(["1" if unsupported == "relationships" else "0", *rows]).encode()
+    monkeypatch.setattr(
+        "pilot.core.site.clone_database.run_command", lambda *args, **kwargs: SimpleNamespace(stdout=metadata)
+    )
+    monkeypatch.setattr("pilot.managers.database.MariaDBManager.run_admin_sql", lambda *args: None)
+    streams = []
+    schema_ready = Barrier(4)
+
+    def stream(dump, restore, source_env, target_env):
+        assert "source-secret" not in dump and "target-secret" not in restore
+        assert source_env["MYSQL_PWD"] == "source-secret"
+        assert target_env["MYSQL_PWD"] == "target-secret"
+        assert "--single-transaction" in dump
+        if "--skip-add-drop-table" in dump:
+            schema_ready.wait(timeout=5)
+        elif unsupported is None and "--no-create-info" in dump:
+            assert len(streams) == 4
+        elif unsupported is None:
+            assert len(streams) == 5 and "--no-create-info" in streams[-1]
+        streams.append(dump)
+
+    monkeypatch.setattr("pilot.core.site.clone_database.stream_database", stream)
+    clone = SiteDatabaseClone(
+        source.site("source.localhost"),
+        source.site("copy.localhost"),
+        {"db_name": "_0123456789abcdef", "db_password": "target-secret", "db_type": "mariadb"},
+    )
+    clone.run()
+    if unsupported:
+        assert len(streams) == 1 and "--no-data" not in streams[0]
+        assert streams[0][-1] == "source_db"
+    else:
+        copied = [table for dump in streams[:4] for table in dump[dump.index("--") + 2 :]]
+        assert sorted(copied) == sorted(tables)
+        assert all("--no-data" in dump for dump in streams[:4])
+        assert len(streams) == 6 and streams[4][-1] == "source_db"
+        assert streams[5][-1] == "counter" and "--no-data" in streams[5]

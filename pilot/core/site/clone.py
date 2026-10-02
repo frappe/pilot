@@ -85,15 +85,14 @@ class SiteClone:
         config["host_name"] = site_url(self.name, routing, self.bench.config)
         write_private_text(site.path / "site_config.json", json.dumps(config, indent=2))
         on_progress("Streaming source database into a new database")
-        if prepare_bench is None:
-            database.run()
-        else:
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                imported = executor.submit(database.run)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            imported = executor.submit(database.run)
+            on_progress("Copying public and private uploads")
+            files = executor.submit(self.copy_files, site)
+            if prepare_bench is not None:
                 prepare_bench()
-                imported.result()
-        on_progress("Copying public and private uploads")
-        self.copy_files(site)
+            imported.result()
+            files.result()
         with ForkRuntime(self.bench, allow_existing=True):
             self.finish(site)
         on_progress(f"Site '{self.name}' cloned with scheduler and outgoing mail disabled.")

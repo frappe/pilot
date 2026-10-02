@@ -69,10 +69,11 @@ class BuildArtifacts:
             files.extend(str(path.relative_to(app.path)) for path in (app.path / relative).glob(".env*"))
             digest.update(NodeDependencies.get_resolved_key(app.path / relative).encode())
         outputs = (f"{app.module_name}/public/dist", "frontend/dist", "roster/dist")
+        prefixes = tuple(f"{output}/" for output in outputs)
         for name in sorted(set(files) - {""}):
-            path = app.path / name
-            if "node_modules" in path.parts or any(Path(name).is_relative_to(output) for output in outputs):
+            if "node_modules" in name.split("/") or name in outputs or name.startswith(prefixes):
                 continue
+            path = app.path / name
             if path.is_dir():
                 return None
             digest.update(name.encode() + b"\0")

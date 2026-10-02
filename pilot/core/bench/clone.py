@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import shutil
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from pilot.config import BenchConfig
@@ -89,11 +90,14 @@ class BenchClone:
 
         on_progress("Creating Python environment with destination editable paths")
         environment = PythonEnvManager(destination)
-        environment.create_venv()
-        for app in destination.apps():
-            environment.install_app(app)
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            dependencies = executor.submit(self.copy_dependencies, destination) if rebuild else None
+            environment.create_venv()
+            for app in destination.apps():
+                environment.install_app(app)
+            if dependencies is not None:
+                dependencies.result()
         if rebuild:
-            self.copy_dependencies(destination)
             on_progress("Checking Node dependencies for selected branches")
             environment.install_node_dependencies()
             artifacts = BuildArtifacts(destination)
@@ -108,8 +112,11 @@ class BenchClone:
 
         for app in self.source.apps():
             for relative in (".", "frontend", "roster"):
-                NodeDependencies.copy(app.path / relative, destination.apps_path / app.config.name / relative)
-        BenchArtifacts.relocate_links(self.source.path.resolve(), destination.path.resolve())
+                target = destination.apps_path / app.config.name / relative
+                if NodeDependencies.copy(app.path / relative, target):
+                    BenchArtifacts.relocate_links(
+                        self.source.path.resolve(), destination.path.resolve(), root=target / "node_modules"
+                    )
 
     def copy_apps(self, destination) -> None:
         for app in self.source.apps():

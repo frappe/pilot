@@ -3,8 +3,10 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 
 from pilot.exceptions import BenchError
+from pilot.utils import run_command
 
 
 def stream_database(dump: list[str], restore: list[str], source_env: dict, target_env: dict) -> None:
@@ -76,6 +78,79 @@ class SiteDatabaseClone:
         )
         source = self.mysql_args(original, self.source.bench)
         target = self.mysql_args(self.config, self.destination.bench)
+        schema = self.get_parallel_schema(original, source)
+        if schema:
+            tables, sequences = schema
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                jobs = [
+                    executor.submit(
+                        self.stream_mariadb,
+                        original,
+                        source,
+                        target,
+                        ("--no-data", "--skip-triggers", "--skip-add-drop-table"),
+                        tables[index::4],
+                    )
+                    for index in range(4)
+                ]
+                for imported in jobs:
+                    imported.result()
+            self.stream_mariadb(
+                original,
+                source,
+                target,
+                ("--no-create-info", "--no-autocommit"),
+            )
+            if sequences:
+                self.stream_mariadb(original, source, target, ("--no-data", "--skip-triggers"), sequences)
+        else:
+            self.stream_mariadb(original, source, target)
+
+    @staticmethod
+    def get_parallel_schema(original: dict, source: list[str]) -> tuple[list[str], list[str]] | None:
+        query = (
+            "SELECT (SELECT COUNT(*) FROM information_schema.REFERENTIAL_CONSTRAINTS "
+            "WHERE CONSTRAINT_SCHEMA = DATABASE()) + "
+            "(SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE()) + "
+            "(SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() "
+            "AND LOWER(COLUMN_DEFAULT) LIKE '%nextval%'); "
+            "SELECT TABLE_NAME, TABLE_TYPE, ENGINE FROM information_schema.TABLES "
+            "WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME;"
+        )
+        output = (
+            run_command(
+                [
+                    "mariadb",
+                    *source,
+                    "--batch",
+                    "--skip-column-names",
+                    "--execute",
+                    query,
+                    "--",
+                    original["db_name"],
+                ],
+                env={**os.environ, "MYSQL_PWD": original["db_password"]},
+            )
+            .stdout.decode()
+            .splitlines()
+        )
+        if not output or output[0] != "0" or len(output) < 17:
+            return None
+        tables: list[str] = []
+        sequences: list[str] = []
+        for row in output[1:]:
+            fields = row.split("\t")
+            if (
+                len(fields) != 3
+                or fields[1] not in ("BASE TABLE", "SEQUENCE")
+                or fields[2] not in ("InnoDB", "MyISAM")
+                or "\\" in fields[0]
+            ):
+                return None
+            (sequences if fields[1] == "SEQUENCE" else tables).append(fields[0])
+        return (tables, sequences) if len(tables) >= 16 else None
+
+    def stream_mariadb(self, original, source, target, options=(), tables=()) -> None:
         stream_database(
             [
                 "mariadb-dump",
@@ -83,9 +158,12 @@ class SiteDatabaseClone:
                 "--single-transaction",
                 "--quick",
                 "--skip-lock-tables",
+                *options,
+                "--",
                 original["db_name"],
+                *tables,
             ],
-            ["mariadb", *target, name],
+            ["mariadb", *target, "--", self.config["db_name"]],
             {**os.environ, "MYSQL_PWD": original["db_password"]},
             {**os.environ, "MYSQL_PWD": self.config["db_password"]},
         )

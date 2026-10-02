@@ -40,7 +40,7 @@ class BenchArtifacts:
     def restore(self, bench, paths: list[str]) -> None:
         for path in paths:
             self.copy_directory(self.root / path, bench.path / path)
-        self.relocate_links(self.root, bench.path.resolve())
+            self.relocate_links(self.root, bench.path.resolve(), root=bench.path / path)
 
     @staticmethod
     def copy_directory(source: Path, destination: Path) -> None:
