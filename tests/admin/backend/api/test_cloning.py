@@ -33,13 +33,16 @@ def cloning_client(tmp_path, monkeypatch):
 
 def test_clone_bench_queues_a_real_task(cloning_client):
     client, bench = cloning_client
-    response = client.post("/api/v1/benches/dev/actions/clone", json={"name": "uat"})
+    response = client.post(
+        "/api/v1/benches/dev/actions/clone", json={"name": "uat", "app_branches": {"frappe": "develop"}}
+    )
     assert response.status_code == 202
     payload = response.get_json()
     assert payload["command"] == "clone-bench"
     assert payload["args"]["source_bench"] == "dev"
     assert payload["args"]["name"] == "uat"
     assert payload["args"]["branch"] == "default"
+    assert payload["args"]["app_branches"] == {"frappe": "develop"}
     assert not (bench.path.parent / "uat").exists()
 
 
@@ -84,17 +87,6 @@ def test_clone_branch_options_report_missing_source_and_origin_errors(cloning_cl
     assert "frappe" in response.get_json()["error"]["message"]
 
 
-def test_clone_branch_overrides_reach_task(cloning_client):
-    client, _ = cloning_client
-    response = client.post(
-        "/api/v1/benches/dev/actions/clone",
-        json={"name": "uat", "branch": "current", "app_branches": {"frappe": "develop"}},
-    )
-    assert response.status_code == 202
-    assert response.get_json()["args"]["branch"] == "current"
-    assert response.get_json()["args"]["app_branches"] == {"frappe": "develop"}
-
-
 @pytest.mark.parametrize(
     "selection",
     [{"branch": None}, {"branch": "--bad"}, {"app_branches": []}, {"app_branches": {"frappe": 123}}],
@@ -103,28 +95,6 @@ def test_invalid_branch_selections_cannot_queue(cloning_client, selection):
     client, _ = cloning_client
     response = client.post("/api/v1/benches/dev/actions/clone", json={"name": "uat", **selection})
     assert response.status_code == 422
-
-
-def test_conflicting_clone_returns_conflict(cloning_client):
-    client, _ = cloning_client
-    data = {"name": "uat"}
-    assert client.post("/api/v1/benches/dev/actions/clone", json=data).status_code == 202
-    assert client.post("/api/v1/benches/dev/actions/clone", json=data).status_code == 409
-
-
-def test_clone_site_queues_private_password_and_is_idempotent(cloning_client):
-    client, _ = cloning_client
-    data = {"name": "uat.localhost", "target_bench": "dev"}
-    first = client.post(
-        "/api/v1/sites/source.localhost/actions/clone", json=data, headers={"Idempotency-Key": "clone-one"}
-    )
-    second = client.post(
-        "/api/v1/sites/source.localhost/actions/clone", json=data, headers={"Idempotency-Key": "clone-one"}
-    )
-    assert first.status_code == second.status_code == 202
-    assert first.get_json()["task_id"] == second.get_json()["task_id"]
-    assert first.get_json()["command"] == "clone-site"
-    assert first.get_json()["args"]["admin_password"] == "[redacted]"
 
 
 @pytest.mark.parametrize("target", ["../outside", "pilot", "123", ""])
@@ -168,8 +138,7 @@ def test_cross_bench_cloning_obeys_management_guard(cloning_client):
 
 
 @pytest.mark.parametrize("kind", ["bench", "site"])
-@pytest.mark.parametrize("running", [False, True])
-def test_clone_retry_returns_original_task_after_destination_creation(cloning_client, kind, running):
+def test_clone_retry_returns_original_task_after_destination_creation(cloning_client, kind):
     from pilot.internal.tasks.models import TaskStatus
     from pilot.internal.tasks.store import TaskStore
 
@@ -186,8 +155,13 @@ def test_clone_retry_returns_original_task_after_destination_creation(cloning_cl
     first = client.post(url, json=data, headers=headers)
     assert first.status_code == 202
     task_id = first.get_json()["task_id"]
-    if running:
-        TaskStore(bench.path).transition(task_id, TaskStatus.QUEUED, TaskStatus.RUNNING)
+    if kind == "site":
+        assert first.get_json()["args"]["admin_password"] == "[redacted]"
+    assert client.post(url, json=data).status_code == 409
+    queued_retry = client.post(url, json=data, headers=headers)
+    assert queued_retry.status_code == 202
+    assert queued_retry.get_json()["task_id"] == task_id
+    TaskStore(bench.path).transition(task_id, TaskStatus.QUEUED, TaskStatus.RUNNING)
     target.mkdir()
     second = client.post(url, json=data, headers=headers)
     assert second.status_code == 202

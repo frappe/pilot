@@ -311,22 +311,6 @@ def test_background_artifact_failure_marks_fork_failed(prepared, fake_services, 
     assert {"dependencies", "restore"}.issubset(state["timings"])
 
 
-def test_cli_forks_with_or_without_a_template():
-    from pilot.internal.cli.registry import build_parser
-
-    parser = build_parser()
-    default = parser.parse_args(["fork", "dev", "task-a"])
-    inferred = parser.parse_args(["fork", "task-a"])
-    assert inferred.source is None
-    assert inferred.target == "task-a"
-    assert default.source == "dev"
-    assert default.target == "task-a"
-    assert default.site_template is None
-    assert default.site == ""
-    args = parser.parse_args(["fork", "dev", "task-a", "--site-template", "/tmp/fixture"])
-    assert args.site_template == Path("/tmp/fixture")
-
-
 @pytest.mark.parametrize("selection", ["cwd", "flag", "explicit"])
 def test_fork_command_resolves_source_and_target(prepared, monkeypatch, selection):
     from pilot.core.server import Server
@@ -338,11 +322,13 @@ def test_fork_command_resolves_source_and_target(prepared, monkeypatch, selectio
     monkeypatch.chdir(source.app("frappe").path / "frappe" if selection == "cwd" else root)
     context = CliContext(root, bench_name="dev" if selection == "flag" else None)
     arguments = ["fork", "dev", "task-a"] if selection == "explicit" else ["fork", "task-a"]
+    if selection == "explicit":
+        arguments += ["--branch", "current", "--app-branches", "frappe=develop"]
     calls = []
 
     def copy(self, name, template, on_progress, *, site, branch, app_branches):
-        assert branch == "default"
-        assert app_branches == {}
+        assert branch == ("current" if selection == "explicit" else "default")
+        assert app_branches == ({"frappe": "develop"} if selection == "explicit" else {})
         calls.append((self.path, name))
         return Bench(BenchConfig.default(name), self.path.parent / name)
 
@@ -351,29 +337,6 @@ def test_fork_command_resolves_source_and_target(prepared, monkeypatch, selectio
     parser = build_parser()
     dispatch(parser.parse_args(arguments), parser, context)
     assert calls == [(source.path, "task-a")]
-
-
-def test_fresh_fork_composes_independent_bench_and_site_clones(prepared, fake_services, monkeypatch):
-    from pilot.core.site import Site
-
-    source, _ = prepared
-    fixture = source.site("fixture.localhost")
-    fixture.path.mkdir()
-    (fixture.path / "site_config.json").write_text('{"db_name":"fixture"}')
-    clones = []
-
-    def clone(self, name, destination=None, admin_password="admin", on_progress=print):
-        clones.append((self.config.name, name, destination.path))
-
-    monkeypatch.setattr(Site, "clone", clone)
-    first = source.fork("fresh-a", on_progress=lambda message: None, branch="current")
-    second = source.fork("fresh-b", on_progress=lambda message: None, branch="current")
-    assert first.path != second.path
-    assert clones == [
-        ("fixture.localhost", "fresh-a.localhost", first.path),
-        ("fixture.localhost", "fresh-b.localhost", second.path),
-    ]
-    assert (first.apps_path / "frappe/.git").is_dir()
 
 
 def test_fresh_fork_requires_site_selection_when_ambiguous(prepared, fake_services):

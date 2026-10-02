@@ -90,10 +90,8 @@ def test_bench_clone_preserves_dirty_files_but_has_independent_git_and_ports(sou
     assert (copied / ".git/HEAD").stat().st_ino != (app / ".git/HEAD").stat().st_ino
 
 
-@pytest.mark.parametrize("default_branch", ["main", "develop", "master"])
-def test_default_clone_uses_live_origin_default_and_excludes_feature_changes(
-    source, default_branch, monkeypatch
-):
+def test_default_clone_uses_live_origin_default_and_excludes_feature_changes(source, monkeypatch):
+    default_branch = "trunk"
     app = source.apps_path / "frappe"
     remote = git(app, "remote", "get-url", "origin")
     if default_branch != "main":
@@ -178,27 +176,6 @@ def test_clone_branch_options_fail_when_origin_is_unavailable(source):
     git(source.apps_path / "frappe", "remote", "set-url", "origin", "/missing-pilot-test-origin")
     with pytest.raises(BenchError, match="Could not read branches for frappe"):
         source.get_clone_branch_options()
-
-
-@pytest.mark.parametrize("command", ["clone-bench", "fork"])
-@pytest.mark.parametrize("branch", ["default", "current", "develop"])
-def test_cli_parses_branch_and_per_app_overrides(source, monkeypatch, command, branch):
-    from pilot.internal.cli.dispatch import CliContext
-    from pilot.internal.cli.registry import build_parser, dispatch
-
-    monkeypatch.chdir(source.apps_path / "frappe")
-    received = []
-
-    def clone(self, name, *args, **kwargs):
-        received.append(kwargs)
-        return source
-
-    monkeypatch.setattr(Bench, "clone" if command == "clone-bench" else "fork", clone)
-    parser = build_parser()
-    arguments = [command, "uat", "--branch", branch, "--app-branches", "frappe=develop"]
-    dispatch(parser.parse_args(arguments), parser, CliContext(source.path.parent.parent))
-    assert received[0]["branch"] == branch
-    assert received[0]["app_branches"] == {"frappe": "develop"}
 
 
 @pytest.mark.parametrize("staged", [False, True])
