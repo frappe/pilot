@@ -89,8 +89,9 @@ def test_ensure_yarn_install_falls_back_to_pure_lockfile(tmp_path: Path) -> None
     assert run_command.call_args_list[1].kwargs == {"cwd": tmp_path, "stream_output": True}
 
 
-def test_ensure_yarn_install_skips_when_integrity_is_current(tmp_path: Path) -> None:
-    """Do not reinstall when node_modules integrity is newer than yarn.lock."""
+def test_ensure_yarn_install_checks_contents_even_when_timestamps_match(tmp_path: Path) -> None:
+    from pilot.managers.node_dependencies import NodeDependencies
+
     lock = tmp_path / "yarn.lock"
     integrity = tmp_path / "node_modules" / ".yarn-integrity"
     integrity.parent.mkdir()
@@ -98,11 +99,17 @@ def test_ensure_yarn_install_skips_when_integrity_is_current(tmp_path: Path) -> 
     integrity.write_text("integrity")
     os.utime(lock, (1, 1))
     os.utime(integrity, (2, 2))
+    (integrity.parent / ".pilot-install-key").write_text(NodeDependencies.get_key(tmp_path))
 
     with patch("pilot.managers.python_assets.run_command") as run_command:
         make_builder().ensure_yarn_install(tmp_path)
 
     run_command.assert_not_called()
+    lock.write_text("changed lockfile")
+    os.utime(lock, (1, 1))
+    with patch("pilot.managers.python_assets.run_command") as run_command:
+        make_builder().ensure_yarn_install(tmp_path)
+    run_command.assert_called_once()
 
 
 def test_full_build_installs_nested_dependencies_before_compiling(tmp_path: Path) -> None:
@@ -119,6 +126,8 @@ def test_full_build_installs_nested_dependencies_before_compiling(tmp_path: Path
         assert installed == [app_path, app_path / "frontend", app_path / "roster"]
 
     with (
+        patch("pilot.core.bench.build_artifacts.BuildArtifacts.get_key", return_value="key"),
+        patch("pilot.core.bench.build_artifacts.BuildArtifacts.capture"),
         patch.object(builder, "ensure_yarn_install", side_effect=installed.append),
         patch.object(builder, "run_compiler", side_effect=compile_assets) as compiler,
     ):

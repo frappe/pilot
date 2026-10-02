@@ -29,9 +29,7 @@ def clone_with_site(source, name: str, site: str, on_progress, branch="default",
         raise BenchError(error)
     if not fixture.exists:
         raise BenchError("Source site does not exist.")
-    destination = source.clone(name, on_progress, branch=branch, app_branches=app_branches)
-    fixture.clone(f"{name}.localhost", destination, on_progress=on_progress)
-    return destination
+    return BenchClone(source, name, branch, app_branches).run(on_progress, site_source=fixture)
 
 
 class BenchClone:
@@ -47,9 +45,8 @@ class BenchClone:
         if unknown:
             raise BenchError(f"Unknown app branch overrides: {', '.join(sorted(unknown))}")
 
-    def run(self, on_progress=print):
+    def run(self, on_progress=print, *, site_source=None):
         from pilot.core.bench import Bench
-        from pilot.managers.environment import PythonEnvManager
 
         BenchConfig.default(self.name).validate()
         target = self.source.path.parent / self.name
@@ -73,18 +70,46 @@ class BenchClone:
             BenchArtifacts.copy_directory(assets, destination.sites_path / "assets")
         BenchArtifacts.relocate_links(self.source.path.resolve(), destination.path.resolve())
         destination.write_apps_txt()
+        if site_source is None:
+            self.prepare_environment(destination, rebuild, on_progress)
+        else:
+            from pilot.core.site.clone import SiteClone
+
+            SiteClone(site_source, destination, f"{self.name}.localhost", "admin").run(
+                on_progress,
+                prepare_bench=lambda: self.prepare_environment(destination, rebuild, on_progress),
+            )
+        destination.enforce_lite_mode_rules()
+        on_progress(f"Bench '{self.name}' cloned.")
+        return destination
+
+    def prepare_environment(self, destination, rebuild: bool, on_progress) -> None:
+        from pilot.core.bench.build_artifacts import BuildArtifacts
+        from pilot.managers.environment import PythonEnvManager
+
         on_progress("Creating Python environment with destination editable paths")
         environment = PythonEnvManager(destination)
         environment.create_venv()
         for app in destination.apps():
             environment.install_app(app)
         if rebuild:
-            on_progress("Installing Node dependencies and rebuilding assets for selected branches")
+            self.copy_dependencies(destination)
+            on_progress("Checking Node dependencies for selected branches")
             environment.install_node_dependencies()
-            environment.build_assets()
-        destination.enforce_lite_mode_rules()
-        on_progress(f"Bench '{self.name}' cloned; clone a site or create a new one next.")
-        return destination
+            artifacts = BuildArtifacts(destination)
+            if artifacts.restore(artifacts.get_key()):
+                on_progress("Reusing matching built assets")
+            else:
+                on_progress("Installing Node dependencies and rebuilding assets for selected branches")
+                environment.build_assets()
+
+    def copy_dependencies(self, destination) -> None:
+        from pilot.managers.node_dependencies import NodeDependencies
+
+        for app in self.source.apps():
+            for relative in (".", "frontend", "roster"):
+                NodeDependencies.copy(app.path / relative, destination.apps_path / app.config.name / relative)
+        BenchArtifacts.relocate_links(self.source.path.resolve(), destination.path.resolve())
 
     def copy_apps(self, destination) -> None:
         for app in self.source.apps():

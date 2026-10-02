@@ -203,11 +203,8 @@ class PythonEnvManager:
     def install_node_dependencies(self) -> None:
         for app in self.bench.apps():
             if (app.path / "package.json").exists():
-                run_command(
-                    [get_yarn_bin(), "install", "--frozen-lockfile"],
-                    cwd=app.path,
-                    stream_output=True,
-                )
+                self._assets.ensure_yarn_install(app.path)
+            self._assets.ensure_frontend_dependencies(app)
 
     def build_assets(self) -> None:
         self._assets.build_assets()

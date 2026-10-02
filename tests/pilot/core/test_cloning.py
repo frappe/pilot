@@ -63,7 +63,12 @@ def source(tmp_path, monkeypatch):
         files = site.path / relative
         files.mkdir(parents=True)
         (files / "marker.txt").write_text("source files")
-    monkeypatch.setattr(PythonEnvManager, "create_venv", lambda self: None)
+
+    def create_venv(self):
+        self.bench.python.parent.mkdir(parents=True, exist_ok=True)
+        self.bench.python.symlink_to(sys.executable)
+
+    monkeypatch.setattr(PythonEnvManager, "create_venv", create_venv)
     monkeypatch.setattr(PythonEnvManager, "install_app", lambda self, app: None)
     monkeypatch.setattr(PythonEnvManager, "install_node_dependencies", lambda self: None)
     monkeypatch.setattr(PythonEnvManager, "build_assets", lambda self: None)
@@ -150,6 +155,121 @@ def test_per_app_branch_override_is_fetched_and_checked_out_cleanly(source):
     destination = source.clone("override", lambda message: None, app_branches={"frappe": "feature"})
     assert (destination.apps_path / "frappe/feature.txt").read_text() == "feature"
     assert destination.config.apps[0].branch == "feature"
+
+
+def test_default_clone_reuses_matching_build_without_sharing_writable_artifacts(source, monkeypatch):
+    from pilot.core.bench.build_artifacts import BuildArtifacts
+
+    PythonEnvManager(source).create_venv()
+    app = source.apps_path / "frappe"
+    dist = app / "frappe/public/dist"
+    dist.mkdir(parents=True)
+    (dist / "app.js").write_text("built baseline")
+    (source.sites_path / "assets/frappe").symlink_to(app / "frappe/public")
+    artifacts = BuildArtifacts(source)
+    artifacts.capture(artifacts.get_key())
+    git(app, "checkout", "-b", "feature")
+    (app / "frappe/__init__.py").write_text("feature code")
+    builds = []
+    monkeypatch.setattr(PythonEnvManager, "build_assets", lambda self: builds.append(self.bench.path))
+    destination = source.clone("cached", lambda message: None)
+    copied = destination.sites_path / "assets/frappe/dist/app.js"
+    assert copied.read_text() == "built baseline"
+    assert builds == []
+    copied.write_text("destination change")
+    assert (dist / "app.js").read_text() == "built baseline"
+    assert (app / "frappe/__init__.py").read_text() == "feature code"
+    git(app, "checkout", "--", "frappe/__init__.py")
+    (app / "frappe/__init__.py").write_text("new remote code")
+    git(app, "add", ".")
+    git(app, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "update")
+    git(app, "push", "origin", "HEAD:main")
+    source.clone("changed", lambda message: None)
+    assert len(builds) == 1
+
+
+def test_dependency_copy_requires_matching_install_and_is_independent(tmp_path):
+    from pilot.managers.node_dependencies import NodeDependencies
+
+    original, copied = tmp_path / "source", tmp_path / "target"
+    for directory in (original, copied):
+        directory.mkdir()
+        (directory / "package.json").write_text("{}")
+        (directory / "yarn.lock").write_text("locked dependencies")
+    modules = original / "node_modules"
+    modules.mkdir()
+    (modules / ".yarn-integrity").write_text("installed")
+    (modules / "dependency.js").write_text("original")
+    assert not NodeDependencies.copy(original, copied)
+    (modules / ".pilot-install-key").write_text(NodeDependencies.get_key(original))
+    assert NodeDependencies.copy(original, copied)
+    (copied / "node_modules/dependency.js").write_text("target change")
+    assert (modules / "dependency.js").read_text() == "original"
+    (copied / "yarn.lock").write_text("different dependencies")
+    assert not NodeDependencies.copy(original, copied)
+
+
+def test_build_cache_rejects_changed_build_mode_environment_and_custom_hooks(source, monkeypatch):
+    from pilot.core.bench.build_artifacts import BuildArtifacts
+
+    PythonEnvManager(source).create_venv()
+    source.write_common_site_config()
+    artifacts = BuildArtifacts(source)
+    key = artifacts.get_key()
+    config = source.sites_path / "common_site_config.json"
+    original = config.read_text()
+    changed = json.loads(original)
+    changed["esbuild_target"] = "es2020"
+    config.write_text(json.dumps(changed))
+    assert artifacts.get_key() != key
+    config.write_text(original)
+    monkeypatch.setenv("VITE_API_URL", "https://different.example")
+    assert artifacts.get_key() != key
+    hooks = source.apps_path / "frappe/frappe/hooks.py"
+    hooks.write_text("after_build = 'frappe.custom_build'\n")
+    assert artifacts.get_key() is None
+
+
+@pytest.mark.parametrize("failure", [None, "database", "environment"])
+def test_fork_overlaps_database_and_environment_and_waits_before_cleanup(source, monkeypatch, failure):
+    from threading import Event
+
+    started, preparing, completed = Event(), Event(), Event()
+    original = BenchClone.prepare_environment
+    cleaned = []
+
+    def import_database(self):
+        started.set()
+        assert preparing.wait(5), "Database import did not overlap environment preparation"
+        completed.set()
+        if failure == "database":
+            raise RuntimeError("database failed")
+
+    def prepare(self, destination, rebuild, on_progress):
+        assert started.wait(5), "Database import was not started before environment preparation"
+        preparing.set()
+        if failure == "environment":
+            raise RuntimeError("environment failed")
+        original(self, destination, rebuild, on_progress)
+
+    def cleanup(self):
+        assert completed.is_set(), "Cleanup raced with the database import"
+        cleaned.append(self.config["db_name"])
+
+    monkeypatch.setattr(BenchClone, "prepare_environment", prepare)
+    monkeypatch.setattr(SiteDatabaseClone, "run", import_database)
+    monkeypatch.setattr(SiteDatabaseClone, "cleanup", cleanup)
+    monkeypatch.setattr(SiteClone, "finish", lambda *args: None)
+    monkeypatch.setattr("pilot.core.bench.fork_runtime.ForkRuntime", lambda *args, **kwargs: nullcontext())
+    if failure:
+        with pytest.raises(RuntimeError, match=f"{failure} failed"):
+            source.fork("parallel", on_progress=lambda message: None)
+        assert len(cleaned) == 1
+        assert not (source.path.parent / "parallel/sites/parallel.localhost").exists()
+    else:
+        destination = source.fork("parallel", on_progress=lambda message: None)
+        assert destination.site("parallel.localhost").exists
+        assert cleaned == []
 
 
 def test_default_requires_origin_and_unknown_overrides_fail(source):

@@ -57,8 +57,8 @@ class BenchArtifacts:
         run_command([*argv, str(source) + "/.", str(destination)])
 
     @staticmethod
-    def relocate_links(source: Path, destination: Path) -> None:
-        directories = [destination]
+    def relocate_links(source: Path, destination: Path, *, root: Path | None = None) -> None:
+        directories = [root or destination]
         while directories:
             with os.scandir(directories.pop()) as entries:
                 for entry in entries:

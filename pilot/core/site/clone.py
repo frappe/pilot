@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import secrets
 import shutil
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from pilot.core.bench.artifacts import BenchArtifacts
@@ -50,7 +51,7 @@ class SiteClone:
             raise BenchError("Could not read the source site's installed apps.")
         return validate_new_site(self.bench, self.name, apps)
 
-    def run(self, on_progress=print):
+    def run(self, on_progress=print, *, prepare_bench=None):
         from pilot.core.site.clone_database import SiteDatabaseClone
 
         with exclusive_file_lock(self.bench.path.parent / f"clone-site-{self.name}"):
@@ -63,12 +64,12 @@ class SiteClone:
             database = SiteDatabaseClone(self.source, site, config)
             site.path.mkdir(mode=0o700)
             try:
-                return self.populate(site, database, wildcard, on_progress)
+                return self.populate(site, database, wildcard, on_progress, prepare_bench)
             except BaseException as error:
                 self.rollback(site, database, error, on_progress)
                 raise
 
-    def populate(self, site, database, wildcard: bool, on_progress):
+    def populate(self, site, database, wildcard: bool, on_progress, prepare_bench=None):
         from pilot.core.bench.fork_runtime import ForkRuntime
         from pilot.core.site.login import site_url
 
@@ -84,7 +85,13 @@ class SiteClone:
         config["host_name"] = site_url(self.name, routing, self.bench.config)
         write_private_text(site.path / "site_config.json", json.dumps(config, indent=2))
         on_progress("Streaming source database into a new database")
-        database.run()
+        if prepare_bench is None:
+            database.run()
+        else:
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                imported = executor.submit(database.run)
+                prepare_bench()
+                imported.result()
         on_progress("Copying public and private uploads")
         self.copy_files(site)
         with ForkRuntime(self.bench, allow_existing=True):
