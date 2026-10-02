@@ -96,6 +96,7 @@ def fake_services(monkeypatch):
     calls = []
     monkeypatch.setattr(PythonEnvManager, "create_venv", lambda self: None)
     monkeypatch.setattr(PythonEnvManager, "install_app", lambda self, app: None)
+    monkeypatch.setattr(PythonEnvManager, "install_apps", lambda self, apps: None)
     monkeypatch.setattr(PythonEnvManager, "install_node_dependencies", lambda self: None)
     monkeypatch.setattr(PythonEnvManager, "build_assets", lambda self: None)
     monkeypatch.setattr("pilot.core.bench.fork_runtime.ForkRuntime", lambda bench: nullcontext())

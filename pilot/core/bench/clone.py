@@ -93,8 +93,7 @@ class BenchClone:
         with ThreadPoolExecutor(max_workers=1) as executor:
             dependencies = executor.submit(self.copy_dependencies, destination) if rebuild else None
             environment.create_venv()
-            for app in destination.apps():
-                environment.install_app(app)
+            environment.install_apps(destination.apps())
             if dependencies is not None:
                 dependencies.result()
         if rebuild:

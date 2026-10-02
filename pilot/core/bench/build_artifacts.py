@@ -40,7 +40,8 @@ class BuildArtifacts:
                     str(self.bench.python),
                     "-c",
                     "import importlib.metadata as m; import json; "
-                    "print(json.dumps(sorted((d.metadata['Name'], d.version) for d in m.distributions())))",
+                    "print(json.dumps(sorted((info['Name'], info['Version']) "
+                    "for info in (d.metadata for d in m.distributions()))))",
                 ]
             ).stdout
         )

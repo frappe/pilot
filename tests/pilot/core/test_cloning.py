@@ -72,6 +72,7 @@ def source(tmp_path, monkeypatch):
 
     monkeypatch.setattr(PythonEnvManager, "create_venv", create_venv)
     monkeypatch.setattr(PythonEnvManager, "install_app", lambda self, app: None)
+    monkeypatch.setattr(PythonEnvManager, "install_apps", lambda self, apps: None)
     monkeypatch.setattr(PythonEnvManager, "install_node_dependencies", lambda self: None)
     monkeypatch.setattr(PythonEnvManager, "build_assets", lambda self: None)
     monkeypatch.setattr("pilot.core.site.clone.query_installed_apps_via_db", lambda *args: ["frappe"])
@@ -209,6 +210,40 @@ def test_dependency_copy_requires_matching_install_and_is_independent(tmp_path):
     assert (modules / "dependency.js").read_text() == "original"
     (copied / "yarn.lock").write_text("different dependencies")
     assert not NodeDependencies.copy(original, copied)
+
+
+def test_batch_python_install_keeps_destination_paths_and_per_app_dev_extras(tmp_path, monkeypatch):
+    bench = Bench.create_at(tmp_path / "destination", "destination")
+    bench.config.install_dev_extra = True
+    for name, extras in (("first", '[project.optional-dependencies]\ndev = ["pytest"]\n'), ("second", "")):
+        path = bench.apps_path / name
+        path.mkdir(parents=True)
+        (path / "pyproject.toml").write_text(f'[project]\nname = "{name}"\nversion = "1.0"\n{extras}')
+    installed = []
+    monkeypatch.setattr("pilot.managers.environment.ensure_uv", lambda: "uv")
+    monkeypatch.setattr(PythonEnvManager, "_build_env", lambda self: {"BUILD_FLAG": "preserved"})
+    monkeypatch.setattr(
+        "pilot.managers.environment.run_command", lambda argv, **kwargs: installed.append((argv, kwargs))
+    )
+    environment = PythonEnvManager(bench)
+    apps = [bench.app("first"), bench.app("second")]
+    environment.install_apps(apps)
+    assert len(installed) == 1
+    assert installed[0][0] == [
+        "uv",
+        "pip",
+        "install",
+        "--python",
+        str(bench.python),
+        "-e",
+        f"{apps[0].path}[dev]",
+        "-e",
+        str(apps[1].path),
+    ]
+    assert installed[0][1]["env"] == {"BUILD_FLAG": "preserved"}
+    bench.config.install_dev_extra = False
+    environment.install_apps(apps)
+    assert installed[-1][0][-4:] == ["-e", str(apps[0].path), "-e", str(apps[1].path)]
 
 
 def test_build_cache_rejects_changed_build_mode_environment_and_custom_hooks(source, monkeypatch):

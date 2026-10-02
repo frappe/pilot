@@ -165,10 +165,17 @@ class PythonEnvManager:
         return env
 
     def install_app(self, app: "App") -> None:
+        self.install_apps([app])
+
+    def install_apps(self, apps: list["App"]) -> None:
+        """Resolve editable apps together in the destination environment."""
+        if not apps:
+            return
         uv = ensure_uv()
         python = str(self.bench.env_path / "bin" / "python")
+        targets = [argument for app in apps for argument in ("-e", app.editable_target)]
         run_command(
-            [uv, "pip", "install", "--python", python, "-e", app.editable_target],
+            [uv, "pip", "install", "--python", python, *targets],
             stream_output=True,
             env=self._build_env(),
         )
