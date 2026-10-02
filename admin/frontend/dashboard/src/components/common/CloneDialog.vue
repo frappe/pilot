@@ -192,10 +192,6 @@ const submit = async () => {
             <span class="lucide-git-branch size-4 mt-0.5 shrink-0" />Independent app files and Git
             repositories, using the selected branches.
           </p>
-          <p class="flex items-start gap-2">
-            <span class="lucide-globe size-4 mt-0.5 shrink-0" />No sites are copied. Clone a site
-            into this bench when it’s ready.
-          </p>
         </template>
       </div>
 
