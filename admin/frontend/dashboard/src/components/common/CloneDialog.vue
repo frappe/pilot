@@ -17,6 +17,9 @@ const benches = ref<string[]>([])
 const loading = ref(false)
 const submitting = ref(false)
 const error = ref('')
+const branchMode = ref('default')
+const branchName = ref('')
+const appBranches = ref('')
 const isSite = computed(() => props.kind === 'site')
 const title = computed(() => (isSite.value ? 'Clone Site' : 'Clone Bench'))
 const sameBench = computed(() => targetBench.value === session.benchName)
@@ -24,6 +27,9 @@ const sameBench = computed(() => targetBench.value === session.benchName)
 watch(open, async (value) => {
   if (!value) return
   name.value = ''
+  branchMode.value = 'default'
+  branchName.value = ''
+  appBranches.value = ''
   error.value = ''
   targetBench.value = session.benchName
   benches.value = [session.benchName]
@@ -43,9 +49,27 @@ const submit = async () => {
   error.value = ''
   submitting.value = true
   try {
+    const overrides: Record<string, string> = {}
+    if (!isSite.value) {
+      for (const entry of appBranches.value.split(',').filter((value) => value.trim())) {
+        const separator = entry.indexOf('=')
+        const app = entry.slice(0, separator).trim()
+        const branch = entry.slice(separator + 1).trim()
+        if (separator < 1 || !app || !branch)
+          throw new Error('Use app=branch overrides, such as frappe=develop')
+        overrides[app] = branch
+      }
+      if (branchMode.value === 'named' && !branchName.value.trim())
+        throw new Error('Enter a branch name')
+    }
     const result = isSite.value
       ? await sitesApi.clone(props.source, name.value.trim(), targetBench.value)
-      : await benchesApi.clone(props.source, name.value.trim())
+      : await benchesApi.clone(
+          props.source,
+          name.value.trim(),
+          branchMode.value === 'named' ? branchName.value.trim() : branchMode.value,
+          overrides,
+        )
     if (hasApiError(result)) throw new Error(apiErrorMessage(result, 'Could not start clone'))
     if (!result.task_id) throw new Error('The server did not return a clone task')
     open.value = false
@@ -101,6 +125,37 @@ const submit = async () => {
         :disabled="submitting"
         autofocus
       />
+      <template v-if="!isSite">
+        <FormControl
+          v-model="branchMode"
+          type="select"
+          label="App branches"
+          :disabled="submitting"
+          :options="[
+            { label: 'Default branch (each app’s origin)', value: 'default' },
+            { label: 'Current checkout (including local changes)', value: 'current' },
+            { label: 'Choose a branch', value: 'named' },
+          ]"
+        />
+        <FormControl
+          v-if="branchMode === 'named'"
+          v-model="branchName"
+          label="Branch name"
+          placeholder="develop"
+          :disabled="submitting"
+        />
+        <FormControl
+          v-model="appBranches"
+          label="Per-app overrides (optional)"
+          placeholder="frappe=develop, my_app=feature/example"
+          :disabled="submitting"
+        />
+        <p class="text-p-xs text-ink-gray-5">
+          Default and named branches use clean checkouts from origin. Local changes are included
+          only with Current checkout. Different branches require fresh dependencies and an asset
+          build.
+        </p>
+      </template>
 
       <div class="flex flex-col gap-3 text-p-sm text-ink-gray-6">
         <template v-if="isSite">
@@ -126,7 +181,7 @@ const submit = async () => {
         <template v-else>
           <p class="flex items-start gap-2">
             <span class="lucide-git-branch size-4 mt-0.5 shrink-0" />Independent app files and Git
-            repositories, with their current changes.
+            repositories, using the selected branches.
           </p>
           <p class="flex items-start gap-2">
             <span class="lucide-globe size-4 mt-0.5 shrink-0" />No sites are copied. Clone a site

@@ -6,11 +6,12 @@ from pathlib import Path
 
 from pilot.config import BenchConfig
 from pilot.core.bench.artifacts import BenchArtifacts
+from pilot.core.bench.clone_branches import clone_branch, validate_branches
 from pilot.exceptions import BenchError
 from pilot.utils import run_command
 
 
-def clone_with_site(source, name: str, site: str, on_progress):
+def clone_with_site(source, name: str, site: str, on_progress, branch="default", app_branches=None):
     BenchConfig.default(name).validate()
     if (source.path.parent / name).exists():
         raise BenchError(f"Destination bench '{name}' already exists.")
@@ -27,7 +28,7 @@ def clone_with_site(source, name: str, site: str, on_progress):
         raise BenchError(error)
     if not fixture.exists:
         raise BenchError("Source site does not exist.")
-    destination = source.clone(name, on_progress)
+    destination = source.clone(name, on_progress, branch=branch, app_branches=app_branches)
     fixture.clone(f"{name}.localhost", destination, on_progress=on_progress)
     return destination
 
@@ -35,9 +36,15 @@ def clone_with_site(source, name: str, site: str, on_progress):
 class BenchClone:
     """Copy code and dependencies into an independent, site-free development bench."""
 
-    def __init__(self, source, name: str) -> None:
+    def __init__(self, source, name: str, branch="default", app_branches=None) -> None:
         self.source = source
         self.name = name
+        self.branch = branch
+        self.app_branches = app_branches if app_branches is not None else {}
+        validate_branches(branch, self.app_branches)
+        unknown = set(self.app_branches) - {app.config.name for app in source.apps()}
+        if unknown:
+            raise BenchError(f"Unknown app branch overrides: {', '.join(sorted(unknown))}")
 
     def run(self, on_progress=print):
         from pilot.core.bench import Bench
@@ -55,11 +62,13 @@ class BenchClone:
         destination.create_directories()
         destination.write_common_site_config()
         on_progress("Copying apps and independent Git repositories")
-        for app in self.source.apps():
-            self.copy_app(app.path, destination.apps_path / app.config.name)
-        on_progress("Copying assets")
+        self.copy_apps(destination)
+        rebuild = any(
+            self.app_branches.get(app.config.name, self.branch) != "current" for app in self.source.apps()
+        )
         assets = self.source.sites_path / "assets"
-        if assets.is_dir():
+        if not rebuild and assets.is_dir():
+            on_progress("Copying assets")
             BenchArtifacts.copy_directory(assets, destination.sites_path / "assets")
         BenchArtifacts.relocate_links(self.source.path.resolve(), destination.path.resolve())
         destination.write_apps_txt()
@@ -68,9 +77,26 @@ class BenchClone:
         environment.create_venv()
         for app in destination.apps():
             environment.install_app(app)
+        if rebuild:
+            on_progress("Installing Node dependencies and rebuilding assets for selected branches")
+            environment.install_node_dependencies()
+            environment.build_assets()
         destination.enforce_lite_mode_rules()
         on_progress(f"Bench '{self.name}' cloned; clone a site or create a new one next.")
         return destination
+
+    def copy_apps(self, destination) -> None:
+        for app in self.source.apps():
+            selected = self.app_branches.get(app.config.name, self.branch)
+            target_app = destination.apps_path / app.config.name
+            if selected == "current":
+                self.copy_app(app.path, target_app)
+            else:
+                selected = clone_branch(app.path, target_app, selected)
+                next(
+                    item for item in destination.config.apps if item.name == app.config.name
+                ).branch = selected
+        destination.config.write(destination.path)
 
     def configure(self, destination) -> None:
         for name in (

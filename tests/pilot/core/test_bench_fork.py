@@ -340,7 +340,9 @@ def test_fork_command_resolves_source_and_target(prepared, monkeypatch, selectio
     arguments = ["fork", "dev", "task-a"] if selection == "explicit" else ["fork", "task-a"]
     calls = []
 
-    def copy(self, name, template, on_progress, *, site):
+    def copy(self, name, template, on_progress, *, site, branch, app_branches):
+        assert branch == "default"
+        assert app_branches == {}
         calls.append((self.path, name))
         return Bench(BenchConfig.default(name), self.path.parent / name)
 
@@ -364,8 +366,8 @@ def test_fresh_fork_composes_independent_bench_and_site_clones(prepared, fake_se
         clones.append((self.config.name, name, destination.path))
 
     monkeypatch.setattr(Site, "clone", clone)
-    first = source.fork("fresh-a", on_progress=lambda message: None)
-    second = source.fork("fresh-b", on_progress=lambda message: None)
+    first = source.fork("fresh-a", on_progress=lambda message: None, branch="current")
+    second = source.fork("fresh-b", on_progress=lambda message: None, branch="current")
     assert first.path != second.path
     assert clones == [
         ("fixture.localhost", "fresh-a.localhost", first.path),

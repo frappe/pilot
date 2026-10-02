@@ -23,14 +23,26 @@ class ForkCommand(Command):
         Path | None, Arg(help="Optional prepared snapshot using Git worktrees; defaults to a fresh copy.")
     ] = None
     site: Annotated[str, Arg(help="Source site; required only when the bench has multiple sites.")] = ""
+    branch: Annotated[str, Arg(help="default, current (including local edits), or a branch name.")] = (
+        "default"
+    )
+    app_branches: Annotated[str, Arg(help="Comma-separated app=branch overrides.")] = ""
 
     def run(self) -> None:
+        from pilot.core.bench.clone_branches import parse_app_branches
         from pilot.core.server import Server
 
         source = Server().bench(self.source) if self.source else self.bench
         if source is None:
             raise BenchError("Run pilot fork TARGET inside a bench, or pass a source bench or -b NAME.")
-        destination = source.fork(self.target, self.site_template, self.report, site=self.site)
+        destination = source.fork(
+            self.target,
+            self.site_template,
+            self.report,
+            site=self.site,
+            branch=self.branch,
+            app_branches=parse_app_branches(self.app_branches),
+        )
         print(
             json.dumps(
                 {

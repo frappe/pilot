@@ -84,17 +84,28 @@ class Bench:
             self._db = make_database(self.config)
         return self._db
 
-    def clone(self, name: str, on_progress=print) -> "Bench":
+    def clone(self, name: str, on_progress=print, *, branch="default", app_branches=None) -> "Bench":
         from pilot.core.bench.clone import BenchClone
 
-        return BenchClone(self, name).run(on_progress)
+        return BenchClone(self, name, branch, app_branches).run(on_progress)
 
-    def fork(self, name: str, template: Path | None = None, on_progress=print, *, site: str = "") -> "Bench":
+    def fork(
+        self,
+        name: str,
+        template: Path | None = None,
+        on_progress=print,
+        *,
+        site: str = "",
+        branch="default",
+        app_branches=None,
+    ) -> "Bench":
         from pilot.core.bench.clone import clone_with_site
         from pilot.core.bench.fork import BenchFork
 
         if template is None:
-            return clone_with_site(self, name, site, on_progress)
+            return clone_with_site(self, name, site, on_progress, branch, app_branches)
+        if branch != "default" or app_branches:
+            raise BenchError("Branch overrides are unavailable with --site-template.")
         return BenchFork(self, name, template).run(on_progress)
 
     @cached_property

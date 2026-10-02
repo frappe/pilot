@@ -10,6 +10,7 @@ from admin.backend.api.v1.benches.support import BENCH_NAME_RE, guard_bench_mana
 from admin.backend.api.v1.sites.shared import host_resource_key, task_failure
 from pilot.config import BenchConfig
 from pilot.core.bench import Bench
+from pilot.core.bench.clone_branches import validate_branches
 from pilot.core.site.clone import SiteClone
 from pilot.exceptions import BenchError, TaskConflictError
 from pilot.internal.validators import validate_site_name
@@ -26,6 +27,9 @@ def clone_bench(name: str):
     if not BENCH_NAME_RE.fullmatch(name) or not BENCH_NAME_RE.fullmatch(target):
         return error_response("invalid_clone", "Invalid bench name.", 422)
     try:
+        branch = data.get("branch", "default")
+        app_branches = data.get("app_branches", {})
+        validate_branches(branch, app_branches)
         BenchConfig.default(target).validate()
         source = Bench(target_bench_dir(root, name))
         if target_bench_dir(root, target).exists():
@@ -34,6 +38,8 @@ def clone_bench(name: str):
             Bench(root),
             source_bench=source.path.name,
             name=target,
+            branch=branch,
+            app_branches=app_branches,
             idempotency_key=request.headers.get("Idempotency-Key"),
             resource_key=[f"bench:{name}", f"bench:{target}"],
         )

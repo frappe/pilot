@@ -38,7 +38,29 @@ def test_clone_bench_queues_a_real_task(cloning_client):
     assert payload["command"] == "clone-bench"
     assert payload["args"]["source_bench"] == "dev"
     assert payload["args"]["name"] == "uat"
+    assert payload["args"]["branch"] == "default"
     assert not (bench.path.parent / "uat").exists()
+
+
+def test_clone_branch_overrides_reach_task(cloning_client):
+    client, _ = cloning_client
+    response = client.post(
+        "/api/v1/benches/dev/actions/clone",
+        json={"name": "uat", "branch": "current", "app_branches": {"frappe": "develop"}},
+    )
+    assert response.status_code == 202
+    assert response.get_json()["args"]["branch"] == "current"
+    assert response.get_json()["args"]["app_branches"] == {"frappe": "develop"}
+
+
+@pytest.mark.parametrize(
+    "selection",
+    [{"branch": None}, {"branch": "--bad"}, {"app_branches": []}, {"app_branches": {"frappe": 123}}],
+)
+def test_invalid_branch_selections_cannot_queue(cloning_client, selection):
+    client, _ = cloning_client
+    response = client.post("/api/v1/benches/dev/actions/clone", json={"name": "uat", **selection})
+    assert response.status_code == 422
 
 
 def test_conflicting_clone_returns_conflict(cloning_client):

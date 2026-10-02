@@ -6,10 +6,15 @@ import type { TaskPayload } from '@/types/tasks'
 export const benchesApi = {
   list: (): Promise<BenchResource[]> => request.get('benches').json(),
 
-  clone: (source: string, name: string): Promise<TaskPayload> =>
+  clone: (
+    source: string,
+    name: string,
+    branch = 'default',
+    app_branches: Record<string, string> = {},
+  ): Promise<TaskPayload> =>
     request
       .post(`benches/${encodeURIComponent(source)}/actions/clone`, {
-        json: { name },
+        json: { name, branch, app_branches },
       })
       .json(),
 

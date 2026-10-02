@@ -41,6 +41,9 @@ def source(tmp_path, monkeypatch):
     git(app, "init", "-b", "main")
     git(app, "add", ".")
     git(app, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "baseline")
+    remote = tmp_path / "origin.git"
+    subprocess.run(["git", "clone", "--bare", str(app), str(remote)], check=True, capture_output=True)
+    git(app, "remote", "add", "origin", str(remote))
     bench.write_apps_txt()
     site = bench.site("source.localhost")
     site.path.mkdir()
@@ -62,6 +65,8 @@ def source(tmp_path, monkeypatch):
         (files / "marker.txt").write_text("source files")
     monkeypatch.setattr(PythonEnvManager, "create_venv", lambda self: None)
     monkeypatch.setattr(PythonEnvManager, "install_app", lambda self, app: None)
+    monkeypatch.setattr(PythonEnvManager, "install_node_dependencies", lambda self: None)
+    monkeypatch.setattr(PythonEnvManager, "build_assets", lambda self: None)
     monkeypatch.setattr("pilot.core.site.clone.query_installed_apps_via_db", lambda *args: ["frappe"])
     return bench
 
@@ -71,7 +76,7 @@ def test_bench_clone_preserves_dirty_files_but_has_independent_git_and_ports(sou
     (app / "frappe/__init__.py").write_text("VALUE = 'dirty'\n")
     (app / "untracked.txt").write_text("local change")
     (source.sites_path / "assets/frappe").symlink_to(app / "frappe")
-    destination = source.clone("uat", lambda message: None)
+    destination = source.clone("uat", lambda message: None, branch="current")
     copied = destination.apps_path / "frappe"
     assert destination.sites() == []
     assert destination.config.http_port != source.config.http_port
@@ -83,6 +88,99 @@ def test_bench_clone_preserves_dirty_files_but_has_independent_git_and_ports(sou
     git(copied, "branch", "destination-only")
     assert "destination-only" not in git(app, "branch")
     assert (copied / ".git/HEAD").stat().st_ino != (app / ".git/HEAD").stat().st_ino
+
+
+@pytest.mark.parametrize("default_branch", ["main", "develop", "master"])
+def test_default_clone_uses_live_origin_default_and_excludes_feature_changes(
+    source, default_branch, monkeypatch
+):
+    app = source.apps_path / "frappe"
+    remote = git(app, "remote", "get-url", "origin")
+    if default_branch != "main":
+        git(app, "branch", "-m", default_branch)
+    git(app, "push", "origin", default_branch)
+    subprocess.run(
+        ["git", "--git-dir", remote, "symbolic-ref", "HEAD", f"refs/heads/{default_branch}"], check=True
+    )
+    upstream = source.path.parent / "upstream"
+    subprocess.run(["git", "clone", remote, str(upstream)], check=True, capture_output=True)
+    (upstream / "upstream-only.txt").write_text("latest remote commit")
+    git(upstream, "add", ".")
+    git(
+        upstream,
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        "commit",
+        "-m",
+        "remote advance",
+    )
+    git(upstream, "push", "origin", default_branch)
+    git(app, "checkout", "-b", "feature")
+    (app / "feature.txt").write_text("feature commit")
+    git(app, "add", ".")
+    git(app, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "feature")
+    (app / "frappe/__init__.py").write_text("dirty feature")
+    (app / "untracked.txt").write_text("untracked")
+    before = git(app, "status", "--porcelain")
+    builds = []
+    monkeypatch.setattr(PythonEnvManager, "build_assets", lambda self: builds.append(self.bench.path))
+    destination = source.clone("default-copy", lambda message: None)
+    copied = destination.apps_path / "frappe"
+    assert git(copied, "branch", "--show-current") == default_branch
+    assert git(copied, "status", "--porcelain") == ""
+    assert (copied / "frappe/__init__.py").read_text() == "VALUE = 'baseline'\n"
+    assert not (copied / "feature.txt").exists()
+    assert not (copied / "untracked.txt").exists()
+    assert (copied / "upstream-only.txt").read_text() == "latest remote commit"
+    assert not (app / "upstream-only.txt").exists()
+    assert git(app, "status", "--porcelain") == before
+    assert git(app, "branch", "--show-current") == "feature"
+    assert builds == [destination.path]
+    assert destination.config.apps[0].branch == default_branch
+
+
+def test_per_app_branch_override_is_fetched_and_checked_out_cleanly(source):
+    app = source.apps_path / "frappe"
+    git(app, "checkout", "-b", "feature")
+    (app / "feature.txt").write_text("feature")
+    git(app, "add", ".")
+    git(app, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "feature")
+    git(app, "push", "origin", "feature")
+    (app / "feature.txt").write_text("dirty")
+    destination = source.clone("override", lambda message: None, app_branches={"frappe": "feature"})
+    assert (destination.apps_path / "frappe/feature.txt").read_text() == "feature"
+    assert destination.config.apps[0].branch == "feature"
+
+
+def test_default_requires_origin_and_unknown_overrides_fail(source):
+    git(source.apps_path / "frappe", "remote", "remove", "origin")
+    with pytest.raises(BenchError, match="no origin"):
+        source.clone("no-origin", lambda message: None)
+    with pytest.raises(BenchError, match="Unknown app"):
+        source.clone("unknown", app_branches={"missing": "main"})
+
+
+@pytest.mark.parametrize("command", ["clone-bench", "fork"])
+@pytest.mark.parametrize("branch", ["default", "current", "develop"])
+def test_cli_parses_branch_and_per_app_overrides(source, monkeypatch, command, branch):
+    from pilot.internal.cli.dispatch import CliContext
+    from pilot.internal.cli.registry import build_parser, dispatch
+
+    monkeypatch.chdir(source.apps_path / "frappe")
+    received = []
+
+    def clone(self, name, *args, **kwargs):
+        received.append(kwargs)
+        return source
+
+    monkeypatch.setattr(Bench, "clone" if command == "clone-bench" else "fork", clone)
+    parser = build_parser()
+    arguments = [command, "uat", "--branch", branch, "--app-branches", "frappe=develop"]
+    dispatch(parser.parse_args(arguments), parser, CliContext(source.path.parent.parent))
+    assert received[0]["branch"] == branch
+    assert received[0]["app_branches"] == {"frappe": "develop"}
 
 
 @pytest.mark.parametrize("staged", [False, True])
