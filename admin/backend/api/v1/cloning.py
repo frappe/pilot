@@ -50,6 +50,12 @@ def clone_bench(name: str):
         validate_branches(branch, app_branches)
         BenchConfig.default(target).validate()
         source = Bench(target_bench_dir(root, name))
+        args = dict(source_bench=source.path.name, name=target, branch=branch, app_branches=app_branches)
+        existing = Bench(root).tasks.find_idempotent_task(
+            "clone-bench", args, request.headers.get("Idempotency-Key")
+        )
+        if existing:
+            return accepted_task_response(root, existing)
         if target_bench_dir(root, target).exists():
             return error_response("bench_exists", "Destination bench already exists.", 409)
         task_id = CloneBenchTask.queue(
@@ -87,6 +93,12 @@ def clone_site(name: str):
         bench = Bench(root)
         destination = Bench(target_bench_dir(root, bench_name))
         password = secrets.token_urlsafe(24)
+        args = dict(site=name, name=target, target_bench=bench_name, admin_password=password)
+        existing = bench.tasks.find_idempotent_task(
+            "clone-site", args, request.headers.get("Idempotency-Key")
+        )
+        if existing:
+            return accepted_task_response(root, existing)
         SiteClone(bench.site(name), destination, target, password).validate()
         task_id = CloneSiteTask.queue(
             bench,

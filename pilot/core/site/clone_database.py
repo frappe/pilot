@@ -77,7 +77,9 @@ class SiteDatabaseClone:
     @staticmethod
     def mysql_args(config: dict, bench) -> list[str]:
         args = ["--user", config.get("db_user") or config["db_name"]]
-        socket = config.get("db_socket") or bench.config.mariadb.socket_path
+        socket = config.get("db_socket")
+        if not socket and not (config.get("db_host") or config.get("db_port")):
+            socket = bench.config.mariadb.socket_path
         if socket:
             return [*args, "--socket", socket]
         return [
@@ -89,9 +91,13 @@ class SiteDatabaseClone:
         ]
 
     def postgres(self, original: dict) -> None:
+        from pilot.managers.database import PostgresManager
+
         settings = self.destination.bench.config.postgres
+        psql = PostgresManager(settings).client_binary("psql")
+        pg_dump = PostgresManager(self.source.bench.config.postgres).client_binary("pg_dump")
         admin = [
-            "psql",
+            psql,
             "-h",
             settings.host,
             "-p",
@@ -115,8 +121,8 @@ class SiteDatabaseClone:
         source = self.pg_args(original, self.source.bench)
         target = self.pg_args(self.config, self.destination.bench)
         stream_database(
-            ["pg_dump", *source, "--no-owner", "--no-privileges"],
-            ["psql", *target, "-v", "ON_ERROR_STOP=1"],
+            [pg_dump, *source, "--no-owner", "--no-privileges"],
+            [psql, *target, "-v", "ON_ERROR_STOP=1"],
             {**os.environ, "PGPASSWORD": original["db_password"]},
             {**os.environ, "PGPASSWORD": self.config["db_password"]},
         )

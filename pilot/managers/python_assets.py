@@ -55,6 +55,7 @@ class PythonAssetBuilder:
         for app in self.bench.apps():
             if (app.path / "package.json").exists():
                 self.ensure_yarn_install(app.path)
+            self.ensure_frontend_dependencies(app)
         self.run_compiler(
             [*self.bench.frappe_call, "frappe", "build", "--force"],
             cwd=self.bench.sites_path,

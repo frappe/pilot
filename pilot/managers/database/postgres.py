@@ -262,8 +262,14 @@ class PostgresManager(UserOwnedDBManager):
         version = binary.parent.parent.name
         return tuple(int(part) for part in version.split(".") if part.isdigit())
 
+    def client_binary(self, name: str) -> str:
+        return self._client_binary(name) or name
+
     def _psql(self) -> str | None:
-        found = which("psql")
+        return self._client_binary("psql")
+
+    def _client_binary(self, name: str) -> str | None:
+        found = which(name)
         if found:
             return found
         if is_macos():
@@ -271,7 +277,7 @@ class PostgresManager(UserOwnedDBManager):
                 ["brew", "--prefix", self._brew_package()], capture_output=True, text=True
             )
             if result.returncode == 0:
-                candidate = Path(result.stdout.strip()) / "bin" / "psql"
+                candidate = Path(result.stdout.strip()) / "bin" / name
                 if candidate.exists():
                     return str(candidate)
         return None

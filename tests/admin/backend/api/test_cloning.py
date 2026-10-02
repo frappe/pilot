@@ -165,3 +165,34 @@ def test_cross_bench_cloning_obeys_management_guard(cloning_client):
         ).status_code
         == 202
     )
+
+
+@pytest.mark.parametrize("kind", ["bench", "site"])
+@pytest.mark.parametrize("running", [False, True])
+def test_clone_retry_returns_original_task_after_destination_creation(cloning_client, kind, running):
+    from pilot.internal.tasks.models import TaskStatus
+    from pilot.internal.tasks.store import TaskStore
+
+    client, bench = cloning_client
+    if kind == "bench":
+        url = "/api/v1/benches/dev/actions/clone"
+        data = {"name": "uat"}
+        target = bench.path.parent / "uat"
+    else:
+        url = "/api/v1/sites/source.localhost/actions/clone"
+        data = {"name": "uat.localhost", "target_bench": "dev"}
+        target = bench.sites_path / "uat.localhost"
+    headers = {"Idempotency-Key": "retry-clone"}
+    first = client.post(url, json=data, headers=headers)
+    assert first.status_code == 202
+    task_id = first.get_json()["task_id"]
+    if running:
+        TaskStore(bench.path).transition(task_id, TaskStatus.QUEUED, TaskStatus.RUNNING)
+    target.mkdir()
+    second = client.post(url, json=data, headers=headers)
+    assert second.status_code == 202
+    assert second.get_json()["task_id"] == task_id
+    changed = client.post(
+        url, json={**data, "name": "different.localhost" if kind == "site" else "different"}, headers=headers
+    )
+    assert changed.status_code == 409

@@ -8,6 +8,7 @@ from pilot.config import BenchConfig
 from pilot.core.bench.artifacts import BenchArtifacts
 from pilot.core.bench.clone_branches import clone_branch, validate_branches
 from pilot.exceptions import BenchError
+from pilot.integrations.git import auth_config_for
 from pilot.utils import run_command
 
 
@@ -92,7 +93,9 @@ class BenchClone:
             if selected == "current":
                 self.copy_app(app.path, target_app)
             else:
-                selected = clone_branch(app.path, target_app, selected)
+                selected = clone_branch(
+                    app.path, target_app, selected, auth_config_for(app.bench.path, app.config.repo)
+                )
                 next(
                     item for item in destination.config.apps if item.name == app.config.name
                 ).branch = selected
@@ -123,6 +126,8 @@ class BenchClone:
         # repository, retaining copied dirty/untracked files in the destination.
         git_file = destination / ".git"
         if not git_file.is_file() and not git_file.is_symlink():
+            if (worktrees := git_file / "worktrees").exists():
+                shutil.rmtree(worktrees)
             return
         git_file.unlink()
         staging = destination / ".pilot-clone-git"

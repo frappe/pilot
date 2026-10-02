@@ -103,3 +103,24 @@ def test_ensure_yarn_install_skips_when_integrity_is_current(tmp_path: Path) -> 
         make_builder().ensure_yarn_install(tmp_path)
 
     run_command.assert_not_called()
+
+
+def test_full_build_installs_nested_dependencies_before_compiling(tmp_path: Path) -> None:
+    app_path = tmp_path / "app"
+    for relative in (".", "frontend", "roster"):
+        directory = app_path / relative
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "package.json").write_text("{}")
+    builder = make_builder()
+    builder.bench.apps.return_value = [make_app(app_path)]
+    installed = []
+
+    def compile_assets(*args, **kwargs):
+        assert installed == [app_path, app_path / "frontend", app_path / "roster"]
+
+    with (
+        patch.object(builder, "ensure_yarn_install", side_effect=installed.append),
+        patch.object(builder, "run_compiler", side_effect=compile_assets) as compiler,
+    ):
+        builder.build_assets()
+    compiler.assert_called_once()

@@ -2,6 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from pilot.exceptions import BenchError, CommandError
+from pilot.integrations.git import auth_config_for
 from pilot.internal.git import GitRepo, git_env
 from pilot.utils import run_command
 
@@ -29,13 +30,13 @@ def validate_branches(branch: str, app_branches: dict[str, str]) -> None:
             run_command(["git", "check-ref-format", "--branch", value], env=git_env())
 
 
-def get_remote_branches(source: Path) -> dict:
+def get_remote_branches(source: Path, git_config: dict[str, str] | None = None) -> dict:
     if not GitRepo(source).remote_url:
         raise BenchError(f"{source.name} has no origin remote.")
     try:
         output = run_command(
             ["git", "-C", str(source), "ls-remote", "--symref", "origin", "HEAD", "refs/heads/*"],
-            env=git_env(),
+            env=git_env(git_config),
             timeout=15,
         ).stdout.decode()
     except CommandError as error:
@@ -57,18 +58,26 @@ def get_remote_branches(source: Path) -> dict:
 
 
 def get_app_branch_options(source) -> list[dict]:
-    paths = [app.path for app in source.apps()]
+    apps = source.apps()
     with ThreadPoolExecutor(max_workers=4) as executor:
-        return list(executor.map(get_remote_branches, paths))
+        return list(
+            executor.map(
+                get_remote_branches,
+                [app.path for app in apps],
+                [auth_config_for(app.bench.path, app.config.repo) for app in apps],
+            )
+        )
 
 
-def clone_branch(source: Path, destination: Path, branch: str) -> str:
+def clone_branch(
+    source: Path, destination: Path, branch: str, git_config: dict[str, str] | None = None
+) -> str:
     """Create a clean checkout, fetching the selected branch only in the destination."""
     remote = GitRepo(source).remote_url
     if not remote:
         raise BenchError(f"{source.name} has no origin remote; use --branch current to copy its checkout.")
     if branch == "default":
-        branch = get_remote_branches(source)["default_branch"]
+        branch = get_remote_branches(source, git_config)["default_branch"]
     run_command(
         ["git", "clone", "--no-hardlinks", "--no-checkout", str(source), str(destination)],
         env=git_env(),
@@ -83,7 +92,7 @@ def clone_branch(source: Path, destination: Path, branch: str) -> str:
             "origin",
             f"+refs/heads/{branch}:refs/remotes/origin/{branch}",
         ],
-        env=git_env(),
+        env=git_env(git_config),
     )
     run_command(["git", "-C", str(destination), "checkout", "-B", branch, f"origin/{branch}"], env=git_env())
     return branch

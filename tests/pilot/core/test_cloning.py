@@ -280,3 +280,89 @@ def test_stream_transfers_large_input_without_a_dump_file(tmp_path):
     stream_database(dump, restore, os.environ.copy(), os.environ.copy())
     assert target.stat().st_size == 3_000_000
     assert list(tmp_path.iterdir()) == [target]
+
+
+def test_current_clone_does_not_inherit_source_worktrees(source):
+    from pilot.internal.git import GitRepo
+
+    app = source.apps_path / "frappe"
+    worktree = source.path.parent / "task"
+    git(app, "worktree", "add", "-b", "task", str(worktree))
+    destination = source.clone("independent", lambda message: None, branch="current")
+    copied = destination.apps_path / "frappe"
+    assert str(worktree) not in git(copied, "worktree", "list", "--porcelain")
+    GitRepo(copied).ensure_removable()
+    assert str(worktree) in git(app, "worktree", "list", "--porcelain")
+    assert git(worktree, "rev-parse", "--git-common-dir") == str(app / ".git")
+
+
+def test_branch_discovery_and_fetch_use_source_credentials(source, monkeypatch):
+    from pilot.core.bench import clone_branches
+    from pilot.integrations.git import auth_config_for
+    from pilot.integrations.git.credentials import GitCredentialStore
+    from pilot.internal.git import git_env
+
+    app = source.apps_path / "frappe"
+    local_origin = git(app, "remote", "get-url", "origin")
+    source.config.apps[0].repo = "https://github.com/example/private-app.git"
+    git(app, "remote", "set-url", "origin", source.config.apps[0].repo)
+    source.config.write(source.path)
+    GitCredentialStore(source.path).save("github", "test-private-token")
+    expected = git_env(auth_config_for(source.path, source.config.apps[0].repo))
+    original = clone_branches.run_command
+    authenticated = []
+
+    def run(argv, **kwargs):
+        if "ls-remote" in argv or "fetch" in argv:
+            authenticated.append(argv)
+            for key, value in expected.items():
+                if key.startswith("GIT_CONFIG_"):
+                    assert kwargs["env"][key] == value
+            argv = [local_origin if value == "origin" else value for value in argv]
+        return original(argv, **kwargs)
+
+    monkeypatch.setattr(clone_branches, "run_command", run)
+    assert source.get_clone_branch_options()[0]["default_branch"] == "main"
+    destination = source.clone("authenticated", lambda message: None)
+    assert sum("ls-remote" in argv for argv in authenticated) == 2
+    assert sum("fetch" in argv for argv in authenticated) == 1
+    assert "test-private-token" not in (destination.apps_path / "frappe/.git/config").read_text()
+
+
+@pytest.mark.parametrize(
+    "config, expected",
+    [
+        ({"db_host": "remote.example", "db_port": 3307}, ["--host", "remote.example", "--port", "3307"]),
+        ({"db_socket": "/tmp/site.sock", "db_host": "remote.example"}, ["--socket", "/tmp/site.sock"]),
+        ({}, ["--socket", "/tmp/bench.sock"]),
+    ],
+)
+def test_database_clone_respects_site_connection_settings(source, config, expected):
+    source.config.mariadb.socket_path = "/tmp/bench.sock"
+    assert SiteDatabaseClone.mysql_args({"db_name": "site_db", **config}, source) == [
+        "--user",
+        "site_db",
+        *expected,
+    ]
+
+
+def test_postgres_clone_uses_resolved_client_binaries(source, monkeypatch):
+    source.config.db_type = "postgres"
+    original = source.site("source.localhost")
+    destination = source.site("uat.localhost")
+    config = {"db_name": "_target", "db_password": "target-secret"}
+    sql_calls = []
+    streams = []
+    monkeypatch.setattr(
+        "pilot.managers.database.PostgresManager.client_binary", lambda self, name: f"/brew/bin/{name}"
+    )
+    monkeypatch.setattr(
+        "pilot.core.site.clone_database.subprocess.run", lambda argv, **kwargs: sql_calls.append(argv)
+    )
+    monkeypatch.setattr("pilot.core.site.clone_database.stream_database", lambda *args: streams.append(args))
+    SiteDatabaseClone(original, destination, config).postgres(
+        {"db_name": "source_db", "db_password": "source-secret"}
+    )
+    assert sql_calls[0][0] == "/brew/bin/psql"
+    assert streams[0][0][0] == "/brew/bin/pg_dump"
+    assert streams[0][1][0] == "/brew/bin/psql"
