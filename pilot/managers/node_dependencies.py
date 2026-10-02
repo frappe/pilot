@@ -12,12 +12,17 @@ from pilot.utils import get_yarn_bin
 
 
 class NodeDependencies:
-    """Copy independently writable dependencies only when install inputs match."""
+    """Copy reusable dependencies, reconciling changed inputs with Yarn."""
 
     @staticmethod
-    def get_key(path: Path) -> str:
+    def get_key(path: Path, *, include_dependencies: bool = True) -> str:
         digest = hashlib.sha256(platform.platform().encode())
-        for name in ("package.json", "yarn.lock", ".yarnrc", ".npmrc"):
+        files = (
+            ("package.json", "yarn.lock", ".yarnrc", ".npmrc")
+            if include_dependencies
+            else (".yarnrc", ".npmrc")
+        )
+        for name in files:
             file = path / name
             digest.update(name.encode() + b"\0")
             digest.update(file.read_bytes() if file.is_file() else b"missing")
@@ -55,11 +60,9 @@ class NodeDependencies:
         fields = ("systemParams", "flags", "topLevelPatterns", "lockfileEntries")
         return json.dumps({key: installed.get(key) for key in fields}, sort_keys=True)
 
-    @classmethod
-    def copy(cls, source: Path, destination: Path) -> bool:
-        if not (source / "yarn.lock").is_file() or not (destination / "yarn.lock").is_file():
-            return False
-        package = json.loads((destination / "package.json").read_text())
+    @staticmethod
+    def is_portable(path: Path) -> bool:
+        package = json.loads((path / "package.json").read_text())
         if package.get("workspaces") or set(package.get("scripts", {})) & {
             "preinstall",
             "install",
@@ -67,15 +70,30 @@ class NodeDependencies:
             "prepare",
         }:
             return False
-        dependencies = {
-            **package.get("dependencies", {}),
-            **package.get("devDependencies", {}),
-            **package.get("optionalDependencies", {}),
-        }
-        if any(str(value).startswith(("file:", "link:", "workspace:")) for value in dependencies.values()):
+        return not any(
+            str(value).startswith(("file:", "link:", "workspace:", "./", "../", "/", "~/"))
+            for field in ("dependencies", "devDependencies", "optionalDependencies", "resolutions")
+            for value in package.get(field, {}).values()
+        )
+
+    @classmethod
+    def copy(cls, source: Path, destination: Path) -> bool:
+        if not all(
+            (path / file).is_file()
+            for path in (source, destination)
+            for file in ("package.json", "yarn.lock")
+        ):
             return False
-        key = cls.get_key(destination)
-        if key != cls.get_key(source) or not cls.has_matching_install(source, key):
+        if not all(cls.is_portable(path) for path in (source, destination)):
+            return False
+        source_key, target_key = cls.get_key(source), cls.get_key(destination)
+        if not cls.has_matching_install(source, source_key):
+            return False
+        if cls.get_key(source, include_dependencies=False) != cls.get_key(
+            destination, include_dependencies=False
+        ):
             return False
         BenchArtifacts.copy_directory(source / "node_modules", destination / "node_modules")
+        if source_key != target_key:
+            (destination / "node_modules/.pilot-install-key").unlink(missing_ok=True)
         return True

@@ -191,7 +191,7 @@ def test_default_clone_reuses_matching_build_without_sharing_writable_artifacts(
     assert len(builds) == 1
 
 
-def test_dependency_copy_requires_matching_install_and_is_independent(tmp_path):
+def test_dependency_copy_seeds_changed_lockfile_without_reusing_install_stamp(tmp_path):
     from pilot.managers.node_dependencies import NodeDependencies
 
     original, copied = tmp_path / "source", tmp_path / "target"
@@ -209,7 +209,23 @@ def test_dependency_copy_requires_matching_install_and_is_independent(tmp_path):
     (copied / "node_modules/dependency.js").write_text("target change")
     assert (modules / "dependency.js").read_text() == "original"
     (copied / "yarn.lock").write_text("different dependencies")
+    assert NodeDependencies.copy(original, copied)
+    assert (copied / "node_modules/dependency.js").read_text() == "original"
+    assert not (copied / "node_modules/.pilot-install-key").exists()
+    assert not NodeDependencies.has_matching_install(copied, NodeDependencies.get_key(copied))
+    assert (modules / ".pilot-install-key").exists()
+    (copied / ".yarnrc").write_text("ignore-scripts true\n")
     assert not NodeDependencies.copy(original, copied)
+    (copied / ".yarnrc").unlink()
+    for package in (
+        {"scripts": {"postinstall": "custom-build"}},
+        {"resolutions": {"dependency": "file:../local"}},
+        {"dependencies": {"dependency": "file:../local"}, "resolutions": {"dependency": "1.0"}},
+        {"workspaces": ["packages/*"]},
+    ):
+        (original / "package.json").write_text(json.dumps(package))
+        (modules / ".pilot-install-key").write_text(NodeDependencies.get_key(original))
+        assert not NodeDependencies.copy(original, copied)
 
 
 def test_batch_python_install_keeps_destination_paths_and_per_app_dev_extras(tmp_path, monkeypatch):
