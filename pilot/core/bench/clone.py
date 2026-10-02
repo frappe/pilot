@@ -118,19 +118,23 @@ class BenchClone:
                     )
 
     def copy_apps(self, destination) -> None:
-        for app in self.source.apps():
-            selected = self.app_branches.get(app.config.name, self.branch)
-            target_app = destination.apps_path / app.config.name
-            if selected == "current":
-                self.copy_app(app.path, target_app)
-            else:
-                selected = clone_branch(
-                    app.path, target_app, selected, auth_config_for(app.bench.path, app.config.repo)
-                )
+        apps = self.source.apps()
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            branches = list(executor.map(self.copy_selected_app, apps, [destination] * len(apps)))
+        for app, selected in zip(apps, branches, strict=True):
+            if selected is not None:
                 next(
                     item for item in destination.config.apps if item.name == app.config.name
                 ).branch = selected
         destination.config.write(destination.path)
+
+    def copy_selected_app(self, app, destination) -> str | None:
+        selected = self.app_branches.get(app.config.name, self.branch)
+        target = destination.apps_path / app.config.name
+        if selected == "current":
+            self.copy_app(app.path, target)
+            return None
+        return clone_branch(app.path, target, selected, auth_config_for(app.bench.path, app.config.repo))
 
     def configure(self, destination) -> None:
         for name in (

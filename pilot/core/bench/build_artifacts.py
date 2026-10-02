@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import shutil
+import stat
 import tempfile
 from pathlib import Path
 
@@ -75,17 +76,32 @@ class BuildArtifacts:
             if "node_modules" in name.split("/") or name in outputs or name.startswith(prefixes):
                 continue
             path = app.path / name
-            if path.is_dir():
+            key = BuildArtifacts.get_file_key(path)
+            if key is None:
                 return None
             digest.update(name.encode() + b"\0")
-            if path.is_symlink():
-                digest.update(b"link:" + os.readlink(path).encode())
-            if path.is_file():
-                digest.update(str(path.stat().st_mode).encode())
-                with path.open("rb") as file:
-                    digest.update(hashlib.file_digest(file, "sha256").digest())
-            digest.update(b"\0")
+            digest.update(key + b"\0")
         return digest.hexdigest()
+
+    @staticmethod
+    def get_file_key(path: Path) -> bytes | None:
+        try:
+            metadata = path.lstat()
+        except OSError:
+            return b""
+        prefix = b""
+        if stat.S_ISLNK(metadata.st_mode):
+            prefix = b"link:" + os.readlink(path).encode()
+            try:
+                metadata = path.stat()
+            except OSError:
+                return prefix
+        if stat.S_ISDIR(metadata.st_mode):
+            return None
+        if stat.S_ISREG(metadata.st_mode):
+            with path.open("rb") as file:
+                return prefix + str(metadata.st_mode).encode() + hashlib.file_digest(file, "sha256").digest()
+        return prefix
 
     @staticmethod
     def has_custom_build_hooks(app) -> bool:

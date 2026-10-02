@@ -292,6 +292,29 @@ def test_build_cache_rejects_changed_build_mode_environment_and_custom_hooks(sou
     assert artifacts.get_key() is None
 
 
+def test_build_fingerprint_tracks_link_targets_modes_and_missing_files(source):
+    from pilot.core.bench.build_artifacts import BuildArtifacts
+
+    app = source.app("frappe")
+    file = app.path / "frappe/__init__.py"
+    link = app.path / "linked.py"
+    link.symlink_to("frappe/__init__.py")
+    key = BuildArtifacts.get_app_key(app)
+    file.chmod(file.stat().st_mode | 0o111)
+    assert BuildArtifacts.get_app_key(app) != key
+    key = BuildArtifacts.get_app_key(app)
+    file.write_text("changed content")
+    assert BuildArtifacts.get_app_key(app) != key
+    file.unlink()
+    assert BuildArtifacts.get_app_key(app) is not None
+    link.unlink()
+    link.symlink_to("linked.py")
+    assert BuildArtifacts.get_app_key(app) is not None
+    link.unlink()
+    link.symlink_to("frappe")
+    assert BuildArtifacts.get_app_key(app) is None
+
+
 @pytest.mark.parametrize("failure", [None, "database", "environment", "uploads", "multiple"])
 def test_fork_overlaps_database_and_environment_and_waits_before_cleanup(source, monkeypatch, failure):
     from threading import Event
@@ -612,6 +635,48 @@ def test_current_clone_does_not_inherit_source_worktrees(source):
     GitRepo(copied).ensure_removable()
     assert str(worktree) in git(app, "worktree", "list", "--porcelain")
     assert git(worktree, "rev-parse", "--git-common-dir") == str(app / ".git")
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_repository_copies_overlap_and_finish_before_return(source, monkeypatch, failure):
+    for name in ("addon_a", "addon_b"):
+        path = source.apps_path / name
+        (path / name).mkdir(parents=True)
+        (path / name / "hooks.py").write_text("")
+        git(path, "init", "-b", "develop")
+        git(path, "add", ".")
+        git(path, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "baseline")
+        remote = source.path.parent / f"{name}.git"
+        subprocess.run(["git", "clone", "--bare", str(path), str(remote)], check=True, capture_output=True)
+        git(path, "remote", "add", "origin", str(remote))
+        source.config.apps.append(AppConfig(name=name, repo=str(remote), branch="develop"))
+    source.config.write(source.path)
+    source.write_apps_txt()
+    original = BenchClone.copy_selected_app
+    started = Barrier(3)
+    completed = set()
+
+    def copy(self, app, destination):
+        try:
+            started.wait(timeout=5)
+            if failure and app.config.name == "addon_a":
+                raise RuntimeError("repository failed")
+            return original(self, app, destination)
+        finally:
+            completed.add(app.config.name)
+
+    monkeypatch.setattr(BenchClone, "copy_selected_app", copy)
+    if failure:
+        with pytest.raises(RuntimeError, match="repository failed"):
+            source.clone("parallel-repositories", lambda message: None)
+    else:
+        destination = source.clone("parallel-repositories", lambda message: None)
+        assert {app.name: app.branch for app in destination.config.apps} == {
+            "frappe": "main",
+            "addon_a": "develop",
+            "addon_b": "develop",
+        }
+    assert completed == {"frappe", "addon_a", "addon_b"}
 
 
 def test_branch_discovery_and_fetch_use_source_credentials(source, monkeypatch):
