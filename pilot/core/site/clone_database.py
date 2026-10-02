@@ -5,7 +5,7 @@ import re
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 
-from pilot.exceptions import BenchError
+from pilot.exceptions import BenchError, CommandError
 from pilot.utils import run_command
 
 
@@ -117,8 +117,8 @@ class SiteDatabaseClone:
             "SELECT TABLE_NAME, TABLE_TYPE, ENGINE FROM information_schema.TABLES "
             "WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME;"
         )
-        output = (
-            run_command(
+        try:
+            result = run_command(
                 [
                     "mariadb",
                     *source,
@@ -130,10 +130,11 @@ class SiteDatabaseClone:
                     original["db_name"],
                 ],
                 env={**os.environ, "MYSQL_PWD": original["db_password"]},
+                timeout=5,
             )
-            .stdout.decode()
-            .splitlines()
-        )
+            output = result.stdout.decode().splitlines()
+        except (CommandError, OSError, UnicodeError):
+            return None
         if not output or output[0] != "0" or len(output) < 17:
             return None
         tables: list[str] = []

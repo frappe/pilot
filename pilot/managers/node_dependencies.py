@@ -35,19 +35,23 @@ class NodeDependencies:
         digest.update(json.dumps(environment, sort_keys=True).encode())
         return digest.hexdigest()
 
-    @staticmethod
-    def has_matching_install(path: Path, key: str) -> bool:
+    @classmethod
+    def has_matching_install(cls, path: Path, key: str) -> bool:
         stamp = path / "node_modules" / ".pilot-install-key"
-        return (path / "node_modules" / ".yarn-integrity").is_file() and (
-            stamp.is_file() and stamp.read_text() == key
-        )
+        try:
+            return stamp.read_text() == key and bool(cls.get_resolved_key(path))
+        except (OSError, UnicodeError):
+            return False
 
     @staticmethod
     def get_resolved_key(path: Path) -> str:
         integrity = path / "node_modules/.yarn-integrity"
-        if not integrity.is_file():
+        try:
+            installed = json.loads(integrity.read_text())
+        except (OSError, UnicodeError, json.JSONDecodeError):
             return ""
-        installed = json.loads(integrity.read_text())
+        if not isinstance(installed, dict):
+            return ""
         fields = ("systemParams", "flags", "topLevelPatterns", "lockfileEntries")
         return json.dumps({key: installed.get(key) for key in fields}, sort_keys=True)
 

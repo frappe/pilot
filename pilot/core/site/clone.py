@@ -84,19 +84,36 @@ class SiteClone:
             routing["route"] = site.config.route.to_dict()
         config["host_name"] = site_url(self.name, routing, self.bench.config)
         write_private_text(site.path / "site_config.json", json.dumps(config, indent=2))
+        self.prepare(site, database, on_progress, prepare_bench)
+        with ForkRuntime(self.bench, allow_existing=True):
+            self.finish(site)
+        on_progress(f"Site '{self.name}' cloned with scheduler and outgoing mail disabled.")
+        return site
+
+    def prepare(self, site, database, on_progress, prepare_bench=None) -> None:
         on_progress("Streaming source database into a new database")
         with ThreadPoolExecutor(max_workers=2) as executor:
             imported = executor.submit(database.run)
             on_progress("Copying public and private uploads")
             files = executor.submit(self.copy_files, site)
-            if prepare_bench is not None:
-                prepare_bench()
-            imported.result()
-            files.result()
-        with ForkRuntime(self.bench, allow_existing=True):
-            self.finish(site)
-        on_progress(f"Site '{self.name}' cloned with scheduler and outgoing mail disabled.")
-        return site
+            error: BaseException | None = None
+            try:
+                if prepare_bench is not None:
+                    prepare_bench()
+            except BaseException as failure:
+                error = failure
+            for stage, job in (("Database import", imported), ("Upload copying", files)):
+                try:
+                    job.result()
+                except BaseException as failure:
+                    if error is None:
+                        error = failure
+                    else:
+                        message = f"{stage} failed: {failure}"
+                        error.add_note(message)
+                        on_progress(message)
+            if error is not None:
+                raise error
 
     def rollback(self, site, database, error: BaseException, on_progress) -> None:
         from pilot.core.site.drop import SiteDropper

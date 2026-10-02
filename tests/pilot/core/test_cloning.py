@@ -16,7 +16,7 @@ from pilot.core.bench import Bench
 from pilot.core.bench.clone import BenchClone
 from pilot.core.site.clone import SiteClone
 from pilot.core.site.clone_database import SiteDatabaseClone, stream_database
-from pilot.exceptions import BenchError
+from pilot.exceptions import BenchError, CommandError
 from pilot.managers.environment import PythonEnvManager
 
 
@@ -200,7 +200,7 @@ def test_dependency_copy_requires_matching_install_and_is_independent(tmp_path):
         (directory / "yarn.lock").write_text("locked dependencies")
     modules = original / "node_modules"
     modules.mkdir()
-    (modules / ".yarn-integrity").write_text("installed")
+    (modules / ".yarn-integrity").write_text("{}")
     (modules / "dependency.js").write_text("original")
     assert not NodeDependencies.copy(original, copied)
     (modules / ".pilot-install-key").write_text(NodeDependencies.get_key(original))
@@ -241,7 +241,7 @@ def test_build_cache_rejects_changed_build_mode_environment_and_custom_hooks(sou
     assert artifacts.get_key() is None
 
 
-@pytest.mark.parametrize("failure", [None, "database", "environment", "uploads"])
+@pytest.mark.parametrize("failure", [None, "database", "environment", "uploads", "multiple"])
 def test_fork_overlaps_database_and_environment_and_waits_before_cleanup(source, monkeypatch, failure):
     from threading import Event
 
@@ -250,19 +250,20 @@ def test_fork_overlaps_database_and_environment_and_waits_before_cleanup(source,
     original = BenchClone.prepare_environment
     copy_files = SiteClone.copy_files
     cleaned = []
+    progress = []
 
     def import_database(self):
         started.set()
         assert preparing.wait(5), "Database import did not overlap environment preparation"
         assert files_completed.wait(5), "Uploads did not overlap database import"
         completed.set()
-        if failure == "database":
+        if failure in ("database", "multiple"):
             raise RuntimeError("database failed")
 
     def copy_uploads(self, site):
         try:
             assert started.wait(5), "Database import did not overlap upload copying"
-            if failure == "uploads":
+            if failure in ("uploads", "multiple"):
                 raise RuntimeError("uploads failed")
             copy_files(self, site)
         finally:
@@ -271,7 +272,7 @@ def test_fork_overlaps_database_and_environment_and_waits_before_cleanup(source,
     def prepare(self, destination, rebuild, on_progress):
         assert started.wait(5), "Database import was not started before environment preparation"
         preparing.set()
-        if failure == "environment":
+        if failure in ("environment", "multiple"):
             raise RuntimeError("environment failed")
         original(self, destination, rebuild, on_progress)
 
@@ -287,8 +288,15 @@ def test_fork_overlaps_database_and_environment_and_waits_before_cleanup(source,
     monkeypatch.setattr(SiteClone, "copy_files", copy_uploads)
     monkeypatch.setattr("pilot.core.bench.fork_runtime.ForkRuntime", lambda *args, **kwargs: nullcontext())
     if failure:
-        with pytest.raises(RuntimeError, match=f"{failure} failed"):
-            source.fork("parallel", on_progress=lambda message: None)
+        expected = "environment" if failure == "multiple" else failure
+        with pytest.raises(RuntimeError, match=f"{expected} failed") as raised:
+            source.fork("parallel", on_progress=progress.append)
+        if failure == "multiple":
+            assert raised.value.__notes__ == [
+                "Database import failed: database failed",
+                "Upload copying failed: uploads failed",
+            ]
+            assert all(note in progress for note in raised.value.__notes__)
         assert len(cleaned) == 1
         assert not (source.path.parent / "parallel/sites/parallel.localhost").exists()
     else:
@@ -627,7 +635,9 @@ def test_postgres_clone_uses_resolved_client_binaries(source, monkeypatch):
     assert streams[0][1][0] == "/brew/bin/psql"
 
 
-@pytest.mark.parametrize("unsupported", [None, "relationships", "view", "engine", "small", "escaped"])
+@pytest.mark.parametrize(
+    "unsupported", [None, "relationships", "view", "engine", "small", "escaped", "probe"]
+)
 def test_mariadb_clone_parallel_schema_then_single_snapshot_or_full_fallback(
     source, monkeypatch, unsupported
 ):
@@ -645,9 +655,13 @@ def test_mariadb_clone_parallel_schema_then_single_snapshot_or_full_fallback(
     elif unsupported == "escaped":
         rows[0] = "table\\tname\tBASE TABLE\tInnoDB"
     metadata = "\n".join(["1" if unsupported == "relationships" else "0", *rows]).encode()
-    monkeypatch.setattr(
-        "pilot.core.site.clone_database.run_command", lambda *args, **kwargs: SimpleNamespace(stdout=metadata)
-    )
+
+    def probe(*args, **kwargs):
+        if unsupported == "probe":
+            raise CommandError("Metadata access denied")
+        return SimpleNamespace(stdout=metadata)
+
+    monkeypatch.setattr("pilot.core.site.clone_database.run_command", probe)
     monkeypatch.setattr("pilot.managers.database.MariaDBManager.run_admin_sql", lambda *args: None)
     streams = []
     schema_ready = Barrier(4)

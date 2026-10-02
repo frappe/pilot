@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from pilot.managers.python_assets import PythonAssetBuilder
 
 
@@ -96,7 +98,7 @@ def test_ensure_yarn_install_checks_contents_even_when_timestamps_match(tmp_path
     integrity = tmp_path / "node_modules" / ".yarn-integrity"
     integrity.parent.mkdir()
     lock.write_text("lockfile")
-    integrity.write_text("integrity")
+    integrity.write_text("{}")
     os.utime(lock, (1, 1))
     os.utime(integrity, (2, 2))
     (integrity.parent / ".pilot-install-key").write_text(NodeDependencies.get_key(tmp_path))
@@ -110,6 +112,31 @@ def test_ensure_yarn_install_checks_contents_even_when_timestamps_match(tmp_path
     with patch("pilot.managers.python_assets.run_command") as run_command:
         make_builder().ensure_yarn_install(tmp_path)
     run_command.assert_called_once()
+
+
+@pytest.mark.parametrize("corrupted", [b'{"lockfileEntries":', b"\xff", b"[]"])
+def test_corrupt_integrity_reinstalls_despite_matching_stamp(tmp_path: Path, corrupted: bytes) -> None:
+    from pilot.managers.node_dependencies import NodeDependencies
+
+    (tmp_path / "package.json").write_text("{}")
+    (tmp_path / "yarn.lock").write_text("lockfile")
+    modules = tmp_path / "node_modules"
+    modules.mkdir()
+    integrity = modules / ".yarn-integrity"
+    integrity.write_bytes(corrupted)
+    key = NodeDependencies.get_key(tmp_path)
+    (modules / ".pilot-install-key").write_text(key)
+    assert NodeDependencies.get_resolved_key(tmp_path) == ""
+    assert not NodeDependencies.has_matching_install(tmp_path, key)
+
+    def install(*args, **kwargs):
+        integrity.write_text('{"lockfileEntries": {"dependency": "resolved"}}')
+
+    with patch("pilot.managers.python_assets.run_command", side_effect=install) as installer:
+        make_builder().ensure_yarn_install(tmp_path)
+    installer.assert_called_once()
+    assert NodeDependencies.has_matching_install(tmp_path, key)
+    assert "resolved" in NodeDependencies.get_resolved_key(tmp_path)
 
 
 def test_full_build_installs_nested_dependencies_before_compiling(tmp_path: Path) -> None:
