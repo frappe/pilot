@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 
 from pilot.exceptions import BenchError
@@ -47,6 +48,20 @@ class SiteDatabaseClone:
             self.postgres(original)
         else:
             self.mariadb(original)
+
+    def cleanup(self) -> None:
+        """Drop only the generated destination database and its login."""
+        name = self.config["db_name"]
+        if not re.fullmatch(r"_[0-9a-f]{16}", name):
+            raise BenchError("Refusing to clean up a database not generated for this clone.")
+        if self.config["db_type"] == "postgres":
+            self.postgres_admin_sql(f'DROP DATABASE IF EXISTS "{name}";\nDROP ROLE IF EXISTS "{name}";')
+        else:
+            from pilot.managers.database import MariaDBManager
+
+            MariaDBManager(self.destination.bench.config.mariadb).run_admin_sql(
+                f"DROP DATABASE IF EXISTS `{name}`;\nDROP USER IF EXISTS '{name}'@'%';"
+            )
 
     def mariadb(self, original: dict) -> None:
         from pilot.managers.database import MariaDBManager
@@ -97,8 +112,26 @@ class SiteDatabaseClone:
         settings = self.destination.bench.config.postgres
         psql = PostgresManager(settings).client_binary("psql")
         pg_dump = PostgresManager(self.source.bench.config.postgres).client_binary("pg_dump")
+        name = self.config["db_name"]
+        password = self.config["db_password"].replace("'", "''")
+        self.postgres_admin_sql(
+            f"CREATE ROLE {name} LOGIN PASSWORD '{password}';\nCREATE DATABASE {name} OWNER {name};"
+        )
+        source = self.pg_args(original, self.source.bench)
+        target = self.pg_args(self.config, self.destination.bench)
+        stream_database(
+            [pg_dump, *source, "--no-owner", "--no-privileges"],
+            [psql, *target, "-v", "ON_ERROR_STOP=1"],
+            {**os.environ, "PGPASSWORD": original["db_password"]},
+            {**os.environ, "PGPASSWORD": self.config["db_password"]},
+        )
+
+    def postgres_admin_sql(self, sql: str) -> None:
+        from pilot.managers.database import PostgresManager
+
+        settings = self.destination.bench.config.postgres
         admin = [
-            psql,
+            PostgresManager(settings).client_binary("psql"),
             "-h",
             settings.host,
             "-p",
@@ -110,22 +143,12 @@ class SiteDatabaseClone:
             "-v",
             "ON_ERROR_STOP=1",
         ]
-        name = self.config["db_name"]
-        password = self.config["db_password"].replace("'", "''")
         subprocess.run(
             admin,
-            input=f"CREATE ROLE {name} LOGIN PASSWORD '{password}';\nCREATE DATABASE {name} OWNER {name};",
+            input=sql,
             text=True,
             check=True,
             env={**os.environ, "PGPASSWORD": settings.root_password},
-        )
-        source = self.pg_args(original, self.source.bench)
-        target = self.pg_args(self.config, self.destination.bench)
-        stream_database(
-            [pg_dump, *source, "--no-owner", "--no-privileges"],
-            [psql, *target, "-v", "ON_ERROR_STOP=1"],
-            {**os.environ, "PGPASSWORD": original["db_password"]},
-            {**os.environ, "PGPASSWORD": self.config["db_password"]},
         )
 
     @staticmethod

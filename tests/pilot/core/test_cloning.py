@@ -237,6 +237,75 @@ def test_clone_rejects_existing_destinations_and_missing_apps(source):
         SiteClone(source.site("source.localhost"), destination, "uat.localhost", "admin").validate()
 
 
+@pytest.mark.parametrize("stage", ["database", "finish"])
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+def test_failed_site_clone_releases_route_and_owned_resources(source, monkeypatch, stage, cleanup_fails):
+    from pilot.core.adapters.domain_provider import DomainRouteProvider
+
+    original = source.site("source.localhost")
+    source_config = (original.path / "site_config.json").read_bytes()
+    released, dropped = [], []
+    monkeypatch.setattr(SiteClone, "validate", lambda self: True)
+    monkeypatch.setattr("pilot.core.site.clone.register_with_provider", lambda *args: None)
+    monkeypatch.setattr(DomainRouteProvider, "release", lambda self, name: released.append(name))
+    monkeypatch.setattr("pilot.core.bench.fork_runtime.ForkRuntime", lambda *args, **kwargs: nullcontext())
+
+    def fail(*args):
+        raise RuntimeError("original clone failure")
+
+    def cleanup(self):
+        dropped.append(self.config["db_name"])
+        if cleanup_fails:
+            raise RuntimeError("database cleanup failure")
+
+    monkeypatch.setattr(SiteDatabaseClone, "cleanup", cleanup, raising=False)
+    monkeypatch.setattr(SiteDatabaseClone, "run", fail if stage == "database" else lambda self: None)
+    monkeypatch.setattr(SiteClone, "finish", fail)
+    with pytest.raises(RuntimeError, match="original clone failure"):
+        original.clone("failed.localhost", on_progress=lambda message: None)
+    assert released == ["failed.localhost"]
+    assert len(dropped) == 1 and dropped[0] != "source_db"
+    target = source.sites_path / "failed.localhost"
+    assert target.exists() == cleanup_fails
+    if cleanup_fails:
+        assert json.loads((target / "site_config.json").read_text())["db_name"] == dropped[0]
+    assert (original.path / "site_config.json").read_bytes() == source_config
+    assert (original.path / "public/files/marker.txt").read_text() == "source files"
+
+
+def test_failed_route_registration_does_not_release_an_unowned_route(source, monkeypatch):
+    from pilot.core.adapters.domain_provider import DomainRouteProvider
+
+    released = []
+    monkeypatch.setattr(SiteClone, "validate", lambda self: True)
+    monkeypatch.setattr(DomainRouteProvider, "release", lambda self, name: released.append(name))
+
+    def conflict(*args):
+        raise BenchError("route already owned")
+
+    monkeypatch.setattr("pilot.core.site.clone.register_with_provider", conflict)
+    with pytest.raises(BenchError, match="route already owned"):
+        source.site("source.localhost").clone("conflict.localhost", on_progress=lambda message: None)
+    assert released == []
+    assert not (source.sites_path / "conflict.localhost").exists()
+
+
+def test_clone_file_cleanup_failure_keeps_original_error(source, monkeypatch):
+    def fail(*args):
+        raise RuntimeError("original clone failure")
+
+    def cannot_remove(*args):
+        raise OSError("cannot remove recovery files")
+
+    monkeypatch.setattr(SiteDatabaseClone, "run", fail)
+    monkeypatch.setattr(SiteDatabaseClone, "cleanup", lambda self: None)
+    monkeypatch.setattr("pilot.core.site.clone.shutil.rmtree", cannot_remove)
+    with pytest.raises(RuntimeError, match="original clone failure") as caught:
+        source.site("source.localhost").clone("failed.localhost", on_progress=lambda message: None)
+    assert any("cannot remove recovery files" in note for note in caught.value.__notes__)
+    assert (source.sites_path / "failed.localhost/site_config.json").exists()
+
+
 @pytest.mark.parametrize("dump_exit,import_exit", [(1, 0), (0, 1), (1, 1)])
 def test_stream_reports_failure_of_either_process(dump_exit, import_exit):
     dump = [sys.executable, "-c", f"import sys; print('sql'); sys.exit({dump_exit})"]
@@ -257,6 +326,28 @@ def test_stream_transfers_large_input_without_a_dump_file(tmp_path):
     stream_database(dump, restore, os.environ.copy(), os.environ.copy())
     assert target.stat().st_size == 3_000_000
     assert list(tmp_path.iterdir()) == [target]
+
+
+@pytest.mark.parametrize("engine", ["mariadb", "postgres"])
+def test_clone_database_cleanup_only_drops_generated_destination(source, monkeypatch, engine):
+    from pilot.managers.database import MariaDBManager
+
+    statements = []
+    monkeypatch.setattr(MariaDBManager, "run_admin_sql", lambda self, sql: statements.append(sql))
+    monkeypatch.setattr(SiteDatabaseClone, "postgres_admin_sql", lambda self, sql: statements.append(sql))
+    name = "_0123456789abcdef"
+    clone = SiteDatabaseClone(
+        source.site("source.localhost"), source.site("copy.localhost"), {"db_name": name, "db_type": engine}
+    )
+    clone.cleanup()
+    assert len(statements) == 1
+    assert "DROP DATABASE IF EXISTS" in statements[0]
+    assert ("DROP ROLE IF EXISTS" if engine == "postgres" else "DROP USER IF EXISTS") in statements[0]
+    assert statements[0].count(name) == 2
+    clone.config["db_name"] = "source_db"
+    with pytest.raises(BenchError, match="not generated"):
+        clone.cleanup()
+    assert len(statements) == 1
 
 
 def test_current_clone_does_not_inherit_source_worktrees(source):

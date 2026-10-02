@@ -146,6 +146,8 @@ class SiteTemplate:
             "db_password": secrets.token_urlsafe(24),
             "db_type": data["engine"],
             "developer_mode": 1,
+            "maintenance_mode": 1,
+            "mute_emails": 1,
             "pause_scheduler": 1,
             "host_name": f"http://{name}:{bench.config.http_port}",
         }
@@ -170,8 +172,6 @@ class SiteTemplate:
             name,
             "restore",
             str(self.path / data["files"]["database"]),
-            "--admin-password",
-            "admin",
             "--with-public-files",
             str(self.path / data["files"]["public"]),
             "--with-private-files",
@@ -179,11 +179,7 @@ class SiteTemplate:
         ]
         with commands.setup_credentials(data["engine"], database) as credentials:
             run_command(argv + credentials, cwd=bench.sites_path, stream_output=True)
-        run_command(
-            [*bench.frappe_call, "frappe", "--site", name, "set-admin-password", "admin"],
-            cwd=bench.sites_path,
-            stream_output=True,
-        )
+        commands.set_admin_password(secrets.token_urlsafe(24))
         site.set_maintenance_settings({"maintenance_mode": 0, "pause_scheduler": 1})
-        SiteProvisioner(bench, name, [], "admin").write_pilot_communication_config(site)
+        SiteProvisioner(bench, name, [], None).write_pilot_communication_config(site)
         return site

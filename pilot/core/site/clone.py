@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import secrets
+import shutil
 
 from pilot.core.bench.artifacts import BenchArtifacts
 from pilot.core.site.config import query_installed_apps_via_db
@@ -14,7 +15,7 @@ from pilot.core.site.provisioning import (
 from pilot.exceptions import BenchError
 from pilot.internal.atomic_file import exclusive_file_lock
 from pilot.internal.validators import validate_site_name
-from pilot.utils import run_command, write_private_text
+from pilot.utils import write_private_text
 
 
 class SiteClone:
@@ -25,6 +26,7 @@ class SiteClone:
         self.bench = destination
         self.name = name
         self.password = admin_password
+        self.route_registered = False
 
     def validate(self) -> bool:
         error = validate_site_name(self.name) or validate_site_name(self.source.config.name)
@@ -46,35 +48,57 @@ class SiteClone:
         return validate_new_site(self.bench, self.name, apps)
 
     def run(self, on_progress=print):
-        from pilot.core.bench.fork_runtime import ForkRuntime
         from pilot.core.site.clone_database import SiteDatabaseClone
 
         with exclusive_file_lock(self.bench.path.parent / f"clone-site-{self.name}"):
+            self.route_registered = False
             wildcard = self.validate()
             site = self.bench.site(self.name)
-            site.config.route = register_with_provider(self.bench, self.name) if wildcard else None
-            site.config.ssl = (
-                site.config.route.public_tls
-                if site.config.route
-                else should_enable_ssl(self.bench, self.name)
-            )
-            site.path.mkdir(mode=0o700)
             config = self.site_config()
-            from pilot.core.site.login import site_url
+            database = SiteDatabaseClone(self.source, site, config)
+            site.path.mkdir(mode=0o700)
+            try:
+                return self.populate(site, database, wildcard, on_progress)
+            except BaseException as error:
+                self.rollback(site, database, error, on_progress)
+                raise
 
-            routing = {"ssl": site.config.ssl}
-            if site.config.route:
-                routing["route"] = site.config.route.to_dict()
-            config["host_name"] = site_url(self.name, routing, self.bench.config)
-            write_private_text(site.path / "site_config.json", json.dumps(config, indent=2))
-            on_progress("Streaming source database into a new database")
-            SiteDatabaseClone(self.source, site, config).run()
-            on_progress("Copying public and private uploads")
-            self.copy_files(site)
-            with ForkRuntime(self.bench, allow_existing=True):
-                self.finish(site)
-            on_progress(f"Site '{self.name}' cloned with scheduler and outgoing mail disabled.")
-            return site
+    def populate(self, site, database, wildcard: bool, on_progress):
+        from pilot.core.bench.fork_runtime import ForkRuntime
+        from pilot.core.site.login import site_url
+
+        site.config.route = register_with_provider(self.bench, self.name) if wildcard else None
+        self.route_registered = wildcard
+        site.config.ssl = (
+            site.config.route.public_tls if site.config.route else should_enable_ssl(self.bench, self.name)
+        )
+        config = database.config
+        routing = {"ssl": site.config.ssl}
+        if site.config.route:
+            routing["route"] = site.config.route.to_dict()
+        config["host_name"] = site_url(self.name, routing, self.bench.config)
+        write_private_text(site.path / "site_config.json", json.dumps(config, indent=2))
+        on_progress("Streaming source database into a new database")
+        database.run()
+        on_progress("Copying public and private uploads")
+        self.copy_files(site)
+        with ForkRuntime(self.bench, allow_existing=True):
+            self.finish(site)
+        on_progress(f"Site '{self.name}' cloned with scheduler and outgoing mail disabled.")
+        return site
+
+    def rollback(self, site, database, error: BaseException, on_progress) -> None:
+        from pilot.core.site.drop import SiteDropper
+
+        if self.route_registered:
+            SiteDropper(site).release_domains([self.name])
+        try:
+            if (site.path / "site_config.json").exists():
+                database.cleanup()
+            shutil.rmtree(site.path)
+        except Exception as cleanup_error:
+            error.add_note(f"Clone cleanup failed: {cleanup_error}")
+            on_progress(f"Clone cleanup failed; retained recovery files at {site.path}.")
 
     def site_config(self) -> dict:
         original = json.loads((self.source.path / "site_config.json").read_text())
@@ -109,12 +133,10 @@ class SiteClone:
         BenchArtifacts.relocate_links(self.source.path.resolve(), site.path.resolve())
 
     def finish(self, site) -> None:
+        from pilot.core.site.commands import SiteCommands
+
         provisioner = SiteProvisioner(self.bench, self.name, [], self.password)
-        run_command(
-            [*self.bench.frappe_call, "frappe", "--site", self.name, "set-admin-password", self.password],
-            cwd=self.bench.sites_path,
-            redactions=[self.password],
-        )
+        SiteCommands(site).set_admin_password(self.password)
         provisioner.write_route_policy(site)
         provisioner.write_pilot_communication_config(site)
         self.bench.write_common_site_config()

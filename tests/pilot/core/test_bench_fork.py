@@ -107,6 +107,11 @@ def fake_services(monkeypatch):
         yield ["--db-root-username", "scoped-test-user"]
 
     monkeypatch.setattr(SiteCommands, "setup_credentials", credentials)
+    monkeypatch.setattr(
+        SiteCommands,
+        "set_admin_password",
+        lambda self, password: calls.append(("password", self.site.config.name, password)),
+    )
     monkeypatch.setattr("pilot.core.site.template.run_command", lambda argv, **kwargs: calls.append(argv))
     return calls
 
@@ -160,7 +165,9 @@ def test_parallel_forks_isolate_framework_apps_database_and_ports(prepared, fake
     restores = [call for call in fake_services if isinstance(call, list) and "restore" in call]
     assert len(restores) == 2
     assert all("restore" in call and "new-site" not in call for call in restores)
-    assert len([call for call in fake_services if "set-admin-password" in call]) == 2
+    passwords = [call[2] for call in fake_services if call[0] == "password"]
+    assert len(set(passwords)) == 2 and "admin" not in passwords
+    assert all("--admin-password" not in call for call in restores)
 
 
 def test_failed_fork_keeps_owned_state_without_touching_source(prepared, fake_services, monkeypatch):
