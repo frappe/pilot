@@ -26,6 +26,13 @@ class Site:
     def path(self) -> Path:
         return self.bench.sites_path / self.config.name
 
+    def clone(
+        self, name: str, destination: "Bench | None" = None, admin_password: str = "admin", on_progress=print
+    ) -> "Site":
+        from pilot.core.site.clone import SiteClone
+
+        return SiteClone(self, destination or self.bench, name, admin_password).run(on_progress)
+
     @property
     def exists(self) -> bool:
         return (self.path / "site_config.json").exists()

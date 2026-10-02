@@ -4,6 +4,7 @@ import os
 import sys
 from pathlib import Path
 
+from pilot.exceptions import CommandError
 from pilot.utils import run_command
 
 
@@ -47,6 +48,12 @@ class BenchArtifacts:
         argv = ["cp", "-a"]
         if sys.platform == "linux":
             argv.append("--reflink=auto")
+        elif sys.platform == "darwin":
+            try:
+                run_command([*argv, "-c", str(source) + "/.", str(destination)])
+                return
+            except CommandError:
+                pass  # clonefile is unavailable across volumes or on non-APFS storage.
         run_command([*argv, str(source) + "/.", str(destination)])
 
     @staticmethod

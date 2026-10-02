@@ -1,0 +1,126 @@
+from __future__ import annotations
+
+import json
+import secrets
+
+from pilot.core.bench.artifacts import BenchArtifacts
+from pilot.core.site.config import query_installed_apps_via_db
+from pilot.core.site.provisioning import (
+    SiteProvisioner,
+    register_with_provider,
+    should_enable_ssl,
+    validate_new_site,
+)
+from pilot.exceptions import BenchError
+from pilot.internal.atomic_file import exclusive_file_lock
+from pilot.internal.validators import validate_site_name
+from pilot.utils import run_command, write_private_text
+
+
+class SiteClone:
+    """Fresh independent database, uploads and credentials in a selected bench."""
+
+    def __init__(self, source, destination, name: str, admin_password: str) -> None:
+        self.source = source
+        self.bench = destination
+        self.name = name
+        self.password = admin_password
+
+    def validate(self) -> bool:
+        error = validate_site_name(self.name) or validate_site_name(self.source.config.name)
+        if error:
+            raise BenchError(error)
+        if not self.source.exists:
+            raise BenchError("Source site does not exist.")
+        if self.source.bench.config.db_type != self.bench.config.db_type:
+            raise BenchError("Source and destination must use the same database engine.")
+        if self.bench.config.db_type not in ("mariadb", "postgres"):
+            raise BenchError("Site cloning currently supports MariaDB and PostgreSQL.")
+        if not self.password.strip():
+            raise BenchError("Administrator password must not be empty.")
+        if (self.bench.sites_path / self.name).exists():
+            raise BenchError("Destination site directory already exists.")
+        apps = query_installed_apps_via_db(self.source.bench.path, self.source.config.name)
+        if apps is None:
+            raise BenchError("Could not read the source site's installed apps.")
+        return validate_new_site(self.bench, self.name, apps)
+
+    def run(self, on_progress=print):
+        from pilot.core.bench.fork_runtime import ForkRuntime
+        from pilot.core.site.clone_database import SiteDatabaseClone
+
+        with exclusive_file_lock(self.bench.path.parent / f"clone-site-{self.name}"):
+            wildcard = self.validate()
+            site = self.bench.site(self.name)
+            site.config.route = register_with_provider(self.bench, self.name) if wildcard else None
+            site.config.ssl = (
+                site.config.route.public_tls
+                if site.config.route
+                else should_enable_ssl(self.bench, self.name)
+            )
+            site.path.mkdir(mode=0o700)
+            config = self.site_config()
+            from pilot.core.site.login import site_url
+
+            routing = {"ssl": site.config.ssl}
+            if site.config.route:
+                routing["route"] = site.config.route.to_dict()
+            config["host_name"] = site_url(self.name, routing, self.bench.config)
+            write_private_text(site.path / "site_config.json", json.dumps(config, indent=2))
+            on_progress("Streaming source database into a new database")
+            SiteDatabaseClone(self.source, site, config).run()
+            on_progress("Copying public and private uploads")
+            self.copy_files(site)
+            with ForkRuntime(self.bench, allow_existing=True):
+                self.finish(site)
+            on_progress(f"Site '{self.name}' cloned with scheduler and outgoing mail disabled.")
+            return site
+
+    def site_config(self) -> dict:
+        original = json.loads((self.source.path / "site_config.json").read_text())
+        database = f"_{secrets.token_hex(8)}"
+        engine = self.bench.config.db_type
+        settings = getattr(self.bench.config, engine)
+        config = {
+            "db_type": engine,
+            "db_name": database,
+            "db_user": database,
+            "db_password": secrets.token_urlsafe(24),
+            "db_host": settings.host,
+            "db_port": settings.port,
+            "pause_scheduler": 1,
+            "mute_emails": 1,
+            "maintenance_mode": 1,
+            "host_name": f"http://{self.name}:{self.bench.config.http_port}",
+        }
+        if original.get("encryption_key"):
+            config["encryption_key"] = original["encryption_key"]
+        if engine == "mariadb" and settings.socket_path:
+            config["db_socket"] = settings.socket_path
+        return config
+
+    def copy_files(self, site) -> None:
+        for relative in ("public/files", "private/files", "private/backups", "logs", "locks"):
+            (site.path / relative).mkdir(parents=True, exist_ok=True)
+        for relative in ("public/files", "private/files"):
+            source = self.source.path / relative
+            if source.is_dir():
+                BenchArtifacts.copy_directory(source, site.path / relative)
+        BenchArtifacts.relocate_links(self.source.path.resolve(), site.path.resolve())
+
+    def finish(self, site) -> None:
+        provisioner = SiteProvisioner(self.bench, self.name, [], self.password)
+        run_command(
+            [*self.bench.frappe_call, "frappe", "--site", self.name, "set-admin-password", self.password],
+            cwd=self.bench.sites_path,
+            redactions=[self.password],
+        )
+        provisioner.write_route_policy(site)
+        provisioner.write_pilot_communication_config(site)
+        self.bench.write_common_site_config()
+        provisioner.add_to_hosts(site)
+        provisioner.reload_nginx()
+        origin_tls = site.config.route.origin_tls if site.config.route else site.config.ssl
+        if origin_tls:
+            provisioner.obtain_cert(site, print)
+        site.set_maintenance_settings({"maintenance_mode": 0, "pause_scheduler": 1})

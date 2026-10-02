@@ -1,9 +1,17 @@
 import { request } from '@/api/client'
 import type { BenchReadiness, BenchResource, CreatedBench } from '@/types/benches'
 import type { WildcardDomains } from '@/types/sites'
+import type { TaskPayload } from '@/types/tasks'
 
 export const benchesApi = {
   list: (): Promise<BenchResource[]> => request.get('benches').json(),
+
+  clone: (source: string, name: string): Promise<TaskPayload> =>
+    request
+      .post(`benches/${encodeURIComponent(source)}/actions/clone`, {
+        json: { name },
+      })
+      .json(),
 
   start: (name: string): Promise<BenchResource> =>
     request.post(`benches/${encodeURIComponent(name)}/actions/start`).json(),

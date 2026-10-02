@@ -12,7 +12,7 @@ from pilot.exceptions import BenchError
 @dataclass(kw_only=True)
 class ForkCommand(Command):
     name: ClassVar[str] = "fork"
-    help: ClassVar[str] = "Fork a development bench into independent app worktrees and a fixture site."
+    help: ClassVar[str] = "Clone a bench and its current site in one command."
     bench_mode: ClassVar[BenchMode] = BenchMode.OPTIONAL
 
     source: Annotated[
@@ -20,7 +20,7 @@ class ForkCommand(Command):
     ] = None
     target: Annotated[str, Arg(help="Name for the new bench.")]
     site_template: Annotated[
-        Path | None, Arg(help="Optional prepared snapshot; otherwise copy the source site now.")
+        Path | None, Arg(help="Optional prepared snapshot using Git worktrees; defaults to a fresh copy.")
     ] = None
     site: Annotated[str, Arg(help="Source site; required only when the bench has multiple sites.")] = ""
 

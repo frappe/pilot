@@ -351,29 +351,27 @@ def test_fork_command_resolves_source_and_target(prepared, monkeypatch, selectio
     assert calls == [(source.path, "task-a")]
 
 
-def test_fresh_fork_snapshots_current_site_each_time(prepared, fake_services, monkeypatch):
-    source, existing = prepared
+def test_fresh_fork_composes_independent_bench_and_site_clones(prepared, fake_services, monkeypatch):
+    from pilot.core.site import Site
+
+    source, _ = prepared
     fixture = source.site("fixture.localhost")
     fixture.path.mkdir()
     (fixture.path / "site_config.json").write_text('{"db_name":"fixture"}')
-    snapshots = []
-    original = SiteTemplate.prepare
+    clones = []
 
-    def snapshot(self, site, on_progress, **kwargs):
-        import shutil
+    def clone(self, name, destination=None, admin_password="admin", on_progress=print):
+        clones.append((self.config.name, name, destination.path))
 
-        assert site.config.name == "fixture.localhost"
-        assert kwargs == {"build_assets": False, "reuse_source_artifacts": True}
-        shutil.copytree(existing, self.path)
-        snapshots.append(self.path)
-
-    monkeypatch.setattr(SiteTemplate, "prepare", snapshot)
-    monkeypatch.setattr("pilot.core.bench.fork_template.ForkRuntime", lambda bench, **kwargs: nullcontext())
+    monkeypatch.setattr(Site, "clone", clone)
     first = source.fork("fresh-a", on_progress=lambda message: None)
     second = source.fork("fresh-b", on_progress=lambda message: None)
     assert first.path != second.path
-    assert snapshots[0] != snapshots[1]
-    monkeypatch.setattr(SiteTemplate, "prepare", original)
+    assert clones == [
+        ("fixture.localhost", "fresh-a.localhost", first.path),
+        ("fixture.localhost", "fresh-b.localhost", second.path),
+    ]
+    assert (first.apps_path / "frappe/.git").is_dir()
 
 
 def test_fresh_fork_requires_site_selection_when_ambiguous(prepared, fake_services):
