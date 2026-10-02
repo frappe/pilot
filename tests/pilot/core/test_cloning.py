@@ -306,6 +306,52 @@ def test_clone_file_cleanup_failure_keeps_original_error(source, monkeypatch):
     assert (source.sites_path / "failed.localhost/site_config.json").exists()
 
 
+@pytest.mark.parametrize("existing_hosts_entry", [False, True])
+def test_late_clone_failure_removes_owned_hosts_and_refreshes_nginx(
+    source, monkeypatch, existing_hosts_entry
+):
+    from pathlib import Path
+
+    from pilot.core.site.commands import SiteCommands
+    from pilot.core.site.provisioning import SiteProvisioner
+    from pilot.managers.nginx import NginxManager
+
+    events = []
+    source.config.production.process_manager = "none"
+    read_text = Path.read_text
+
+    def hosts(self, *args, **kwargs):
+        if str(self) == "/etc/hosts":
+            return "127.0.0.1 failed.localhost\n" if existing_hosts_entry else "127.0.0.1 localhost\n"
+        return read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", hosts)
+    monkeypatch.setattr(SiteDatabaseClone, "run", lambda self: None)
+    monkeypatch.setattr(SiteDatabaseClone, "cleanup", lambda self: events.append("database removed"))
+    monkeypatch.setattr(SiteCommands, "set_admin_password", lambda *args: None)
+    monkeypatch.setattr(SiteProvisioner, "write_pilot_communication_config", lambda *args: None)
+    monkeypatch.setattr(SiteProvisioner, "add_to_hosts", lambda *args: events.append("hosts added"))
+    monkeypatch.setattr(
+        "pilot.managers.platform.remove_hosts_entry", lambda name: events.append("hosts removed")
+    )
+    monkeypatch.setattr("pilot.core.bench.fork_runtime.ForkRuntime", lambda *args, **kwargs: nullcontext())
+
+    def reload(self):
+        if (source.sites_path / "failed.localhost").exists():
+            events.append("nginx published")
+            raise RuntimeError("nginx publish failed")
+        events.append("nginx cleared")
+
+    monkeypatch.setattr(NginxManager, "reload_for_site_change", reload)
+    with pytest.raises(RuntimeError, match="nginx publish failed"):
+        source.site("source.localhost").clone("failed.localhost", on_progress=lambda message: None)
+    assert events == (
+        ["hosts added", "nginx published"]
+        + ([] if existing_hosts_entry else ["hosts removed"])
+        + ["database removed", "nginx cleared"]
+    )
+
+
 @pytest.mark.parametrize("dump_exit,import_exit", [(1, 0), (0, 1), (1, 1)])
 def test_stream_reports_failure_of_either_process(dump_exit, import_exit):
     dump = [sys.executable, "-c", f"import sys; print('sql'); sys.exit({dump_exit})"]

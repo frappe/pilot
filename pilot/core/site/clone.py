@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import secrets
 import shutil
+from pathlib import Path
 
 from pilot.core.bench.artifacts import BenchArtifacts
 from pilot.core.site.config import query_installed_apps_via_db
@@ -15,7 +16,7 @@ from pilot.core.site.provisioning import (
 from pilot.exceptions import BenchError
 from pilot.internal.atomic_file import exclusive_file_lock
 from pilot.internal.validators import validate_site_name
-from pilot.utils import write_private_text
+from pilot.utils import hosts_line_contains, write_private_text
 
 
 class SiteClone:
@@ -27,6 +28,8 @@ class SiteClone:
         self.name = name
         self.password = admin_password
         self.route_registered = False
+        self.hosts_added = False
+        self.nginx_changed = False
 
     def validate(self) -> bool:
         error = validate_site_name(self.name) or validate_site_name(self.source.config.name)
@@ -52,6 +55,8 @@ class SiteClone:
 
         with exclusive_file_lock(self.bench.path.parent / f"clone-site-{self.name}"):
             self.route_registered = False
+            self.hosts_added = False
+            self.nginx_changed = False
             wildcard = self.validate()
             site = self.bench.site(self.name)
             config = self.site_config()
@@ -93,9 +98,17 @@ class SiteClone:
         if self.route_registered:
             SiteDropper(site).release_domains([self.name])
         try:
+            if self.hosts_added:
+                from pilot.managers.platform import remove_hosts_entry
+
+                remove_hosts_entry(self.name)
             if (site.path / "site_config.json").exists():
                 database.cleanup()
             shutil.rmtree(site.path)
+            if self.nginx_changed:
+                from pilot.managers.nginx import NginxManager
+
+                NginxManager(self.bench).reload_for_site_change()
         except Exception as cleanup_error:
             error.add_note(f"Clone cleanup failed: {cleanup_error}")
             on_progress(f"Clone cleanup failed; retained recovery files at {site.path}.")
@@ -140,7 +153,12 @@ class SiteClone:
         provisioner.write_route_policy(site)
         provisioner.write_pilot_communication_config(site)
         self.bench.write_common_site_config()
+        if self.bench.config.production.process_manager == "none":
+            self.hosts_added = not any(
+                hosts_line_contains(line, self.name) for line in Path("/etc/hosts").read_text().splitlines()
+            )
         provisioner.add_to_hosts(site)
+        self.nginx_changed = True
         provisioner.reload_nginx()
         origin_tls = site.config.route.origin_tls if site.config.route else site.config.ssl
         if origin_tls:
