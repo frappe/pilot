@@ -3,7 +3,7 @@ from __future__ import annotations
 import secrets
 from pathlib import Path
 
-from flask import current_app, request
+from flask import current_app, jsonify, request
 
 from admin.backend.api.responses import accepted_task_response, error_response
 from admin.backend.api.v1.benches.support import BENCH_NAME_RE, guard_bench_management, target_bench_dir
@@ -16,6 +16,24 @@ from pilot.exceptions import BenchError, TaskConflictError
 from pilot.internal.validators import validate_site_name
 from pilot.tasks.clone_bench import CloneBenchTask
 from pilot.tasks.clone_site import CloneSiteTask
+
+
+def clone_branch_options(name: str):
+    root = Path(current_app.config["BENCH_ROOT"])
+    if not BENCH_NAME_RE.fullmatch(name):
+        return error_response("invalid_bench_name", "Invalid bench name.", 422)
+    try:
+        path = target_bench_dir(root, name)
+        if not (path / "bench.toml").is_file():
+            return error_response("bench_not_found", "Source bench not found.", 404)
+        source = Bench(path)
+        return jsonify({"apps": source.get_clone_branch_options()})
+    except BenchError as error:
+        return error_response("clone_branches_unavailable", str(error), 422)
+    except ValueError:
+        return error_response("bench_not_found", "Source bench not found.", 404)
+    except Exception:
+        return error_response("clone_branches_unavailable", "Could not load app branches.", 503)
 
 
 def clone_bench(name: str):

@@ -162,6 +162,24 @@ def test_default_requires_origin_and_unknown_overrides_fail(source):
         source.clone("unknown", app_branches={"missing": "main"})
 
 
+def test_clone_branch_options_list_origin_branches_with_default_first(source):
+    app = source.apps_path / "frappe"
+    git(app, "branch", "feature/test")
+    git(app, "push", "origin", "feature/test")
+    git(app, "branch", "local-only")
+    before = git(app, "status", "--porcelain")
+    assert source.get_clone_branch_options() == [
+        {"name": "frappe", "default_branch": "main", "branches": ["main", "feature/test"]}
+    ]
+    assert git(app, "status", "--porcelain") == before
+
+
+def test_clone_branch_options_fail_when_origin_is_unavailable(source):
+    git(source.apps_path / "frappe", "remote", "set-url", "origin", "/missing-pilot-test-origin")
+    with pytest.raises(BenchError, match="Could not read branches for frappe"):
+        source.get_clone_branch_options()
+
+
 @pytest.mark.parametrize("command", ["clone-bench", "fork"])
 @pytest.mark.parametrize("branch", ["default", "current", "develop"])
 def test_cli_parses_branch_and_per_app_overrides(source, monkeypatch, command, branch):

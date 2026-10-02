@@ -6,6 +6,7 @@ import { sitesApi } from '@/api/sites'
 import { apiErrorMessage, hasApiError } from '@/api/client'
 import { useSession } from '@/composables/auth/useSession'
 import { errorMessage } from '@/utils/error'
+import type { CloneAppBranches } from '@/types/benches'
 
 const props = defineProps<{ kind: 'bench' | 'site'; source: string }>()
 const open = defineModel<boolean>({ default: false })
@@ -17,59 +18,71 @@ const benches = ref<string[]>([])
 const loading = ref(false)
 const submitting = ref(false)
 const error = ref('')
-const branchMode = ref('default')
-const branchName = ref('')
-const appBranches = ref('')
+const apps = ref<CloneAppBranches[]>([])
+const appBranches = ref<Record<string, string>>({})
+const branchesLoaded = ref(false)
 const isSite = computed(() => props.kind === 'site')
 const title = computed(() => (isSite.value ? 'Clone Site' : 'Clone Bench'))
 const sameBench = computed(() => targetBench.value === session.benchName)
+const canSubmit = computed(
+  () => name.value.trim() && !loading.value && (isSite.value || branchesLoaded.value),
+)
 
-watch(open, async (value) => {
+watch(open, async (value, _previous, onCleanup) => {
+  let stale = false
+  onCleanup(() => {
+    stale = true
+  })
   if (!value) return
   name.value = ''
-  branchMode.value = 'default'
-  branchName.value = ''
-  appBranches.value = ''
+  apps.value = []
+  appBranches.value = {}
+  branchesLoaded.value = false
+  loading.value = false
   error.value = ''
   targetBench.value = session.benchName
   benches.value = [session.benchName]
-  if (!isSite.value || !session.allowBenchManagement) return
+  if (isSite.value && !session.allowBenchManagement) return
   loading.value = true
   try {
-    benches.value = (await benchesApi.list()).map((bench) => bench.name)
+    if (isSite.value) {
+      const result = await benchesApi.list()
+      if (!stale) benches.value = result.map((bench) => bench.name)
+    } else {
+      const result = await benchesApi.cloneBranchOptions(props.source)
+      if (stale) return
+      if (hasApiError(result))
+        throw new Error(apiErrorMessage(result, 'Could not load app branches'))
+      apps.value = result.apps
+      appBranches.value = Object.fromEntries(
+        result.apps.map((app) => [app.name, app.default_branch]),
+      )
+      branchesLoaded.value = true
+    }
   } catch (caught) {
-    error.value = errorMessage(caught, 'Could not load destination benches')
+    if (!stale)
+      error.value = errorMessage(
+        caught,
+        isSite.value ? 'Could not load destination benches' : 'Could not load app branches',
+      )
   } finally {
-    loading.value = false
+    if (!stale) loading.value = false
   }
 })
 
 const submit = async () => {
-  if (!name.value.trim() || submitting.value) return
+  if (!canSubmit.value || submitting.value) return
   error.value = ''
   submitting.value = true
   try {
-    const overrides: Record<string, string> = {}
-    if (!isSite.value) {
-      for (const entry of appBranches.value.split(',').filter((value) => value.trim())) {
-        const separator = entry.indexOf('=')
-        const app = entry.slice(0, separator).trim()
-        const branch = entry.slice(separator + 1).trim()
-        if (separator < 1 || !app || !branch)
-          throw new Error('Use app=branch overrides, such as frappe=develop')
-        overrides[app] = branch
-      }
-      if (branchMode.value === 'named' && !branchName.value.trim())
-        throw new Error('Enter a branch name')
-    }
+    const overrides = Object.fromEntries(
+      apps.value
+        .filter((app) => appBranches.value[app.name] !== app.default_branch)
+        .map((app) => [app.name, appBranches.value[app.name]]),
+    )
     const result = isSite.value
       ? await sitesApi.clone(props.source, name.value.trim(), targetBench.value)
-      : await benchesApi.clone(
-          props.source,
-          name.value.trim(),
-          branchMode.value === 'named' ? branchName.value.trim() : branchMode.value,
-          overrides,
-        )
+      : await benchesApi.clone(props.source, name.value.trim(), 'default', overrides)
     if (hasApiError(result)) throw new Error(apiErrorMessage(result, 'Could not start clone'))
     if (!result.task_id) throw new Error('The server did not return a clone task')
     open.value = false
@@ -125,37 +138,33 @@ const submit = async () => {
         :disabled="submitting"
         autofocus
       />
-      <template v-if="!isSite">
-        <FormControl
-          v-model="branchMode"
-          type="select"
-          label="App branches"
-          :disabled="submitting"
-          :options="[
-            { label: 'Default branch (each app’s origin)', value: 'default' },
-            { label: 'Current checkout (including local changes)', value: 'current' },
-            { label: 'Choose a branch', value: 'named' },
-          ]"
-        />
-        <FormControl
-          v-if="branchMode === 'named'"
-          v-model="branchName"
-          label="Branch name"
-          placeholder="develop"
-          :disabled="submitting"
-        />
-        <FormControl
-          v-model="appBranches"
-          label="Per-app overrides (optional)"
-          placeholder="frappe=develop, my_app=feature/example"
-          :disabled="submitting"
-        />
-        <p class="text-p-xs text-ink-gray-5">
-          Default and named branches use clean checkouts from origin. Local changes are included
-          only with Current checkout. Different branches require fresh dependencies and an asset
-          build.
-        </p>
-      </template>
+      <details v-if="!isSite" class="group/branches rounded-6 border border-outline-gray-2">
+        <summary
+          class="flex cursor-pointer items-center justify-between rounded-6 px-3 py-3 text-p-sm font-medium text-ink-gray-8 hover:bg-surface-gray-1"
+        >
+          <span class="flex items-center gap-2"
+            ><span class="lucide-git-branch size-4 text-ink-gray-5" />App branches</span
+          >
+          <span
+            class="lucide-chevron-down size-4 text-ink-gray-5 transition-transform group-open/branches:rotate-180"
+          />
+        </summary>
+        <div class="flex flex-col gap-4 px-3 pb-3">
+          <p v-if="loading" class="text-p-sm text-ink-gray-5">Loading branches…</p>
+          <FormControl
+            v-for="app in apps"
+            :key="app.name"
+            v-model="appBranches[app.name]"
+            type="select"
+            :label="app.name"
+            :disabled="submitting"
+            :options="app.branches.map((branch) => ({ label: branch, value: branch }))"
+          />
+          <p v-if="branchesLoaded && !apps.length" class="text-p-sm text-ink-gray-5">
+            No apps installed.
+          </p>
+        </div>
+      </details>
 
       <div class="flex flex-col gap-3 text-p-sm text-ink-gray-6">
         <template v-if="isSite">
@@ -193,13 +202,9 @@ const submit = async () => {
       <ErrorMessage v-if="error" :message="error" />
       <div class="flex justify-end gap-2">
         <Button @click="open = false" :disabled="submitting">Cancel</Button>
-        <Button
-          type="submit"
-          variant="solid"
-          :loading="submitting"
-          :disabled="!name.trim() || loading"
-          >{{ title }}</Button
-        >
+        <Button type="submit" variant="solid" :loading="submitting" :disabled="!canSubmit">{{
+          title
+        }}</Button>
       </div>
     </form>
   </Dialog>

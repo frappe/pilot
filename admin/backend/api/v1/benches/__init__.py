@@ -37,6 +37,13 @@ def clone_bench(name: str):
     return submit(name)
 
 
+@benches_bp.get("/<name>/clone-branch-options")
+def clone_branch_options(name: str):
+    from admin.backend.api.v1.cloning import clone_branch_options as read
+
+    return read(name)
+
+
 @benches_bp.get("")
 def list_benches():
     bench_root = Path(current_app.config["BENCH_ROOT"])

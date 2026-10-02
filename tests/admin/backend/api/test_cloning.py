@@ -6,6 +6,7 @@ from admin.backend.app import create_app
 from admin.backend.internal.session import Session
 from pilot.config import BenchConfig
 from pilot.core.bench import Bench
+from pilot.exceptions import BenchError
 
 
 @pytest.fixture
@@ -40,6 +41,47 @@ def test_clone_bench_queues_a_real_task(cloning_client):
     assert payload["args"]["name"] == "uat"
     assert payload["args"]["branch"] == "default"
     assert not (bench.path.parent / "uat").exists()
+
+
+def test_clone_branch_options_read_the_selected_source_bench(cloning_client, monkeypatch):
+    client, bench = cloning_client
+    other = bench.path.parent / "other"
+    other.mkdir()
+    BenchConfig.default("other", benches_root=other.parent).write(other)
+    observed = []
+
+    def options(self):
+        observed.append(self.path)
+        return [{"name": "frappe", "default_branch": "develop", "branches": ["develop", "feature/test"]}]
+
+    monkeypatch.setattr(Bench, "get_clone_branch_options", options)
+    response = client.get("/api/v1/benches/other/clone-branch-options")
+    assert response.status_code == 200
+    assert response.get_json()["apps"][0]["default_branch"] == "develop"
+    assert observed == [other]
+
+
+def test_clone_branch_options_obey_management_guard_and_bench_scope(cloning_client):
+    client, bench = cloning_client
+    client.set_cookie("sid", Session(bench).issue_site_token("source.localhost"))
+    assert client.get("/api/v1/benches/dev/clone-branch-options").status_code == 403
+    client.set_cookie("sid", Session(bench).issue_session_token()[0])
+    bench.config.admin.allow_bench_management = False
+    bench.config.write(bench.path)
+    assert client.get("/api/v1/benches/dev/clone-branch-options").status_code == 403
+
+
+def test_clone_branch_options_report_missing_source_and_origin_errors(cloning_client, monkeypatch):
+    client, _ = cloning_client
+    assert client.get("/api/v1/benches/missing/clone-branch-options").status_code == 404
+
+    def options(self):
+        raise BenchError("Could not read branches for frappe. Check access to origin.")
+
+    monkeypatch.setattr(Bench, "get_clone_branch_options", options)
+    response = client.get("/api/v1/benches/dev/clone-branch-options")
+    assert response.status_code == 422
+    assert "frappe" in response.get_json()["error"]["message"]
 
 
 def test_clone_branch_overrides_reach_task(cloning_client):

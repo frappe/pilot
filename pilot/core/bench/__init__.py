@@ -89,6 +89,11 @@ class Bench:
 
         return BenchClone(self, name, branch, app_branches).run(on_progress)
 
+    def get_clone_branch_options(self) -> list[dict]:
+        from pilot.core.bench.clone_branches import get_app_branch_options
+
+        return get_app_branch_options(self)
+
     def fork(
         self,
         name: str,

@@ -1,6 +1,7 @@
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from pilot.exceptions import BenchError
+from pilot.exceptions import BenchError, CommandError
 from pilot.internal.git import GitRepo, git_env
 from pilot.utils import run_command
 
@@ -28,25 +29,46 @@ def validate_branches(branch: str, app_branches: dict[str, str]) -> None:
             run_command(["git", "check-ref-format", "--branch", value], env=git_env())
 
 
+def get_remote_branches(source: Path) -> dict:
+    if not GitRepo(source).remote_url:
+        raise BenchError(f"{source.name} has no origin remote.")
+    try:
+        output = run_command(
+            ["git", "-C", str(source), "ls-remote", "--symref", "origin", "HEAD", "refs/heads/*"],
+            env=git_env(),
+            timeout=15,
+        ).stdout.decode()
+    except CommandError as error:
+        raise BenchError(f"Could not read branches for {source.name}. Check access to origin.") from error
+    default = ""
+    branches = set()
+    for line in output.splitlines():
+        if line.startswith("ref: refs/heads/"):
+            default = line.split("refs/heads/", 1)[1].split()[0]
+        elif "\trefs/heads/" in line:
+            branches.add(line.split("\trefs/heads/", 1)[1])
+    if not default or default not in branches:
+        raise BenchError(f"Could not determine the default branch of {source.name}'s origin.")
+    return {
+        "name": source.name,
+        "default_branch": default,
+        "branches": [default, *sorted(branches - {default})],
+    }
+
+
+def get_app_branch_options(source) -> list[dict]:
+    paths = [app.path for app in source.apps()]
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        return list(executor.map(get_remote_branches, paths))
+
+
 def clone_branch(source: Path, destination: Path, branch: str) -> str:
     """Create a clean checkout, fetching the selected branch only in the destination."""
     remote = GitRepo(source).remote_url
     if not remote:
         raise BenchError(f"{source.name} has no origin remote; use --branch current to copy its checkout.")
     if branch == "default":
-        output = run_command(
-            ["git", "-C", str(source), "ls-remote", "--symref", "origin", "HEAD"], env=git_env()
-        ).stdout.decode()
-        branch = next(
-            (
-                line.split("refs/heads/", 1)[1].split()[0]
-                for line in output.splitlines()
-                if line.startswith("ref: refs/heads/")
-            ),
-            "",
-        )
-        if not branch:
-            raise BenchError(f"Could not determine the default branch of {source.name}'s origin.")
+        branch = get_remote_branches(source)["default_branch"]
     run_command(
         ["git", "clone", "--no-hardlinks", "--no-checkout", str(source), str(destination)],
         env=git_env(),
