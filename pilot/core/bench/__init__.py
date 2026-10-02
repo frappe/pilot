@@ -84,6 +84,17 @@ class Bench:
             self._db = make_database(self.config)
         return self._db
 
+    def fork(self, name: str, template: Path | None = None, on_progress=print, *, site: str = "") -> "Bench":
+        from pilot.core.bench.fork import BenchFork
+        from pilot.core.bench.fork_template import FreshForkTemplate
+
+        if template is None:
+            BenchConfig.default(name).validate()
+            if (self.path.parent / name).exists():
+                raise BenchError(f"Destination bench '{name}' already exists.")
+            template = FreshForkTemplate(self).prepare(site, on_progress)
+        return BenchFork(self, name, template).run(on_progress)
+
     @cached_property
     def tasks(self) -> "TaskRunner":
         from pilot.tasks import TaskRunner

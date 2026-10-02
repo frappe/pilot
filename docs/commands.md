@@ -6,6 +6,9 @@ Use `pilot --help` and `pilot <command> --help` for exact flags.
 
 ## Bench Commands
 
+- `pilot prepare-template SITE OUTPUT`: save a development fixture's database, files, app commits and prepared JS assets into a new directory. Pass `-b` to select the source bench.
+- `pilot fork TARGET`: infer the source bench from the current directory and create a fresh bench, database and files. Use `pilot fork SOURCE TARGET` or `pilot -b SOURCE fork TARGET` to select it explicitly. Use `--site NAME` for a source with multiple sites, or `--site-template PATH` to select an existing snapshot. See [Development forks](development-forks.md).
+
 - `pilot new NAME`: create a new bench. Sets the Admin password from `--admin-password`, else prompts on a terminal, else generates and prints one.
 - `pilot start` on an uninitialized bench serves the setup wizard and prints a one-hour `?sid=` sign-in link for it.
 - `pilot init`: initialize a bench from `bench.toml`. This is what the setup wizard runs. `--no-dev` skips apps' `dev` extras.

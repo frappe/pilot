@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -34,6 +35,52 @@ class GitRepo:
     @property
     def is_cloned(self) -> bool:
         return (self.path / ".git").exists()
+
+    @property
+    def is_worktree(self) -> bool:
+        return (self.path / ".git").is_file()
+
+    def move(self, target: Path) -> None:
+        from pilot.utils import run_command
+
+        if self.is_worktree:
+            run_command(
+                [
+                    "git",
+                    "-C",
+                    str(self.path),
+                    "worktree",
+                    "move",
+                    str(self.path.resolve()),
+                    str(target.resolve()),
+                ]
+            )
+        else:
+            shutil.move(str(self.path), str(target))
+
+    def ensure_removable(self) -> None:
+        from pilot.exceptions import BenchError
+        from pilot.utils import run_command
+
+        if self.is_worktree:
+            if run_command(["git", "-C", str(self.path), "status", "--porcelain"]).stdout.strip():
+                raise BenchError(f"Worktree {self.path} has uncommitted edits; commit or stash them first.")
+        elif self.is_cloned:
+            trees = self._text("worktree", "list", "--porcelain")
+            if sum(line.startswith("worktree ") for line in trees.splitlines()) > 1:
+                raise BenchError(f"Repository {self.path} owns other worktrees; remove those forks first.")
+
+    def remove(self) -> None:
+        from pilot.utils import run_command
+
+        self.ensure_removable()
+        if self.is_worktree:
+            common = run_command(
+                ["git", "-C", str(self.path), "rev-parse", "--path-format=absolute", "--git-common-dir"]
+            ).stdout.decode().strip()
+            run_command(["git", "--git-dir", common, "worktree", "remove", str(self.path.resolve())])
+        else:
+            shutil.rmtree(self.path, ignore_errors=True)
 
     @property
     def branch(self) -> str:

@@ -104,6 +104,11 @@ class Site:
 
         SiteCommands(self).restore(db_file, public_files, private_files)
 
+    def prepare_template(self, path: Path, on_progress=print) -> None:
+        from pilot.core.site.template import SiteTemplate
+
+        SiteTemplate(path).prepare(self, on_progress)
+
     def reinstall(self, admin_password: str) -> None:
         from pilot.core.site.commands import SiteCommands
 

@@ -122,11 +122,11 @@ def test_new_command_second_bench_gets_next_offset(tmp_path: Path, monkeypatch: 
 
     with open(benches_dir / "second" / "bench.toml", "rb") as f:
         data = tomllib.load(f)
-    assert data["bench"]["http_port"] == 8001
-    assert data["bench"]["socketio_port"] == 9001
-    assert data["redis"]["cache_port"] == 13001
-    assert data["redis"]["queue_port"] == 11001
-    assert data["admin"]["port"] == 7001
+    assert data["bench"]["http_port"] == 8002
+    assert data["bench"]["socketio_port"] == 9002
+    assert data["redis"]["cache_port"] == 13002
+    assert data["redis"]["queue_port"] == 11002
+    assert data["admin"]["port"] == 7002
 
 
 def test_new_command_inherits_sibling_jwks_url_and_audience(
@@ -219,7 +219,7 @@ def test_new_command_postgres_port_is_not_offset_between_benches(
     with open(benches_dir / "second" / "bench.toml", "rb") as f:
         data = tomllib.load(f)
     assert CommonConfig.read(benches_dir).postgres.port == PostgresConfig().port
-    assert data["bench"]["http_port"] == 8001  # other ports still offset
+    assert data["bench"]["http_port"] == 8002  # reserves the sibling's admin internal port
 
 
 def test_new_command_postgres_port_ignores_live_scan_on_macos(
@@ -272,7 +272,7 @@ def test_new_command_mariadb_port_is_not_offset_between_benches(
     with open(benches_dir / "second" / "bench.toml", "rb") as f:
         data = tomllib.load(f)
     assert CommonConfig.read(benches_dir).mariadb.port == MariaDBConfig().port
-    assert data["bench"]["http_port"] == 8001  # other ports still offset
+    assert data["bench"]["http_port"] == 8002  # reserves the sibling's admin internal port
 
 
 def test_new_command_mariadb_port_ignores_live_scan_on_macos(
