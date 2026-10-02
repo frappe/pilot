@@ -100,3 +100,16 @@ def test_cli_update_checks_release_compares_latest(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert body["update_available"] is True
     assert body["latest_version"] == "v0.0.2-pre-alpha"
+
+
+def test_cli_updates_shows_the_update_channel_only_under_central(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+
+    with patch("pilot.is_dev_build", False):
+        assert client.get("/api/v1/cli-updates").get_json()["update_channel"] is None
+
+        with BenchConfig.open(bench_root) as config:
+            config.central.enabled = True
+            config.central.update_channel = "late"
+        assert client.get("/api/v1/cli-updates").get_json()["update_channel"] == "late"

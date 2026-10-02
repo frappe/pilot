@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any
 
@@ -56,6 +57,18 @@ class CentralClient:
         """Each region Frappe object storage serves now, mapped to its S3 endpoint."""
         return self.forward("central.api.pilot.storage_regions", "GET")
 
+    def get_pilot_release(self, channel: str) -> dict[str, Any]:
+        """The Pilot release Central lets this host update to: `{"tag": None}` when no
+        rollout runs, else `{"tag": ..., "allowed": bool}`."""
+        query = urllib.parse.urlencode({"channel": channel})
+        return self.forward(f"central.api.pilot.pilot_release?{query}", "GET")
+
+    def report_pilot_update(self, version: str, error: str | None = None) -> Any:
+        """Tell Central which Pilot version this host now runs, or why its update failed."""
+        return self.forward(
+            "central.api.pilot.report_pilot_update", "POST", {"version": version, "error": error}
+        )
+
     def notify_central(self, event: str, message: str, context: dict | None = None) -> Any:
         """Report a bench event to Central."""
         return self.forward(
@@ -86,8 +99,10 @@ class CentralClient:
             raise CentralClientError(
                 detail or f"Central returned HTTP {exc.code} for {method_path}", status_code=exc.code
             ) from exc
-        except urllib.error.URLError as exc:
-            raise CentralClientError(f"Cannot reach Central at {endpoint}: {exc.reason}") from exc
+        except OSError as exc:
+            # URLError, and also a timeout or reset once connected, which urllib does not wrap.
+            reason = getattr(exc, "reason", exc)
+            raise CentralClientError(f"Cannot reach Central at {endpoint}: {reason}") from exc
         except ValueError as exc:
             raise CentralClientError(f"Central sent a non-JSON response for {method_path}: {exc}") from exc
 

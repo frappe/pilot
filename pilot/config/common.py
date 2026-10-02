@@ -136,6 +136,7 @@ class CommonConfig:
             data["central"] = {
                 "enabled": self.central.enabled,
                 "bootstrapped": self.central.bootstrapped,
+                "update_channel": self.central.update_channel,
                 "hostname_aliases": [
                     {
                         "type": alias.type,

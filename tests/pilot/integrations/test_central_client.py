@@ -144,6 +144,51 @@ def test_datum_token_unwraps_message_and_targets_method_path() -> None:
     assert captured["method"] == "GET"
 
 
+def test_get_pilot_release_sends_the_channel() -> None:
+    _stage_credentials("https://central.test", "tok-9")
+    captured: dict = {}
+
+    def fake_urlopen(request, timeout=None):
+        captured["url"] = request.full_url
+        captured["method"] = request.method
+        return _FakeResponse({"message": {"tag": "v1", "allowed": True}})
+
+    with patch("pilot.integrations.central.client.urllib.request.urlopen", side_effect=fake_urlopen):
+        result = CentralClient().get_pilot_release("early")
+
+    assert result == {"tag": "v1", "allowed": True}
+    assert captured["url"] == "https://central.test/api/method/central.api.pilot.pilot_release?channel=early"
+    assert captured["method"] == "GET"
+
+
+def test_report_pilot_update_posts_version_and_error() -> None:
+    _stage_credentials("https://central.test", "tok-9")
+    captured: dict = {}
+
+    def fake_urlopen(request, timeout=None):
+        captured["url"] = request.full_url
+        captured["body"] = json.loads(request.data)
+        return _FakeResponse({"message": None})
+
+    with patch("pilot.integrations.central.client.urllib.request.urlopen", side_effect=fake_urlopen):
+        CentralClient().report_pilot_update("v1", "boom")
+
+    assert captured["url"] == "https://central.test/api/method/central.api.pilot.report_pilot_update"
+    assert captured["body"] == {"version": "v1", "error": "boom"}
+
+
+def test_a_timeout_after_connecting_means_central_is_unreachable() -> None:
+    _stage_credentials("https://central.test", "tok")
+
+    with (
+        patch("pilot.integrations.central.client.urllib.request.urlopen", side_effect=TimeoutError("timed out")),
+        pytest.raises(CentralClientError, match="Cannot reach Central") as caught,
+    ):
+        CentralClient().get_pilot_release("normal")
+
+    assert caught.value.status_code is None
+
+
 def test_a_non_json_response_is_wrapped() -> None:
     _stage_credentials("https://central.test", "tok")
 
