@@ -1219,6 +1219,21 @@ def test_write_common_site_config_leaves_developer_mode_to_sites(tmp_path: Path)
     assert "developer_mode" not in json.loads(config_path.read_text())
 
 
+def test_write_common_site_config_raises_on_invalid_json(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.sites_path.mkdir(parents=True)
+    config_path = bench.sites_path / "common_site_config.json"
+    malformed_content = '{\n  "mail_server": "smtp.example.com",\n}'
+    config_path.write_text(malformed_content)
+
+    with pytest.raises(BenchError, match="contains invalid JSON"):
+        bench.write_common_site_config()
+
+    # Verify the file was not overwritten
+    assert config_path.read_text() == malformed_content
+
+
+
 def _drop_config(name: str) -> BenchConfig:
     return BenchConfig(
         name=name,
