@@ -75,6 +75,7 @@ class Task:
         "repo",
         "branch",
         "marketplace_app",
+        "no_backup",
     )
 
     bench: "Bench"

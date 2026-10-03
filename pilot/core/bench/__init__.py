@@ -159,11 +159,10 @@ class Bench:
 
         return any(has_app_disabling(self.path, site.config.name) for site in self.sites())
 
-    @property
-    def db_root_args(self) -> list[str]:
+    def get_db_root_args(self, db_type: str) -> list[str]:
         from pilot.core.bench.config_files import BenchConfigFiles
 
-        return BenchConfigFiles(self).db_root_args
+        return BenchConfigFiles(self).get_db_root_args(db_type)
 
     @property
     def postgres_root_password(self) -> str:

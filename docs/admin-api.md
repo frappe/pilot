@@ -76,6 +76,8 @@ Every `/sites/<name>/...` route accepts the site's directory name or any hostnam
 
 `GET /sites/<name>` includes `url` and `tls`. The route policy supplies the public scheme for both values.
 
+`DELETE /sites/<name>` queues `drop-site`. Frappe takes a full backup before the drop; pass `?no_backup=1` to skip it on large sites you do not need to keep.
+
 `GET /sites/<name>/domains` returns one row for each hostname. Each row has `domain`, `is_site`, `is_primary`, `public_scheme`, and `tls`.
 
 `POST /sites/<name>/login` returns `{"url": ...}` plus an optional `hint` when the URL's host does not resolve on the server - the UI surfaces it so the user knows to add a hosts entry or use a `*.localhost` name.

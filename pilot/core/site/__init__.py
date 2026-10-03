@@ -49,6 +49,13 @@ class Site:
         return SiteMigrationBackup(self)
 
     @property
+    def db_type(self) -> str:
+        """The engine frappe connects this site to, with frappe's own fallback."""
+        from pilot.core.site.config import read_site_config
+
+        return read_site_config(self.path).get("db_type") or "mariadb"
+
+    @property
     def maintenance_mode(self) -> bool:
         return bool(self.maintenance_settings["maintenance_mode"])
 
@@ -191,14 +198,20 @@ class Site:
 
         SiteApps(self).remove_app_if_not_on_any_site(app_name, on_progress)
 
-    def drop(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+    def drop(
+        self,
+        on_progress: Callable[[str], None] = lambda message: None,
+        no_backup: bool = False,
+    ) -> None:
         from pilot.core.site.commands import SiteCommands
         from pilot.managers.nginx import NginxManager
 
         provider_domains = self._provider_domains()
         cmd = [*self.bench.frappe_call, "frappe", "drop-site", "--force", self.config.name]
+        if no_backup:
+            cmd.append("--no-backup")
         on_progress(f"Dropping site '{self.config.name}'...")
-        with SiteCommands(self).setup_credentials(self.bench.config.db_type) as credentials:
+        with SiteCommands(self).setup_credentials(self.db_type) as credentials:
             run_command(cmd + credentials, cwd=self.bench.sites_path, stream_output=True)
         self._remove_from_bench_toml()
         self._release_domains(provider_domains)

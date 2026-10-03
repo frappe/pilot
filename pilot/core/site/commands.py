@@ -51,7 +51,7 @@ class SiteCommands:
             cmd += ["--with-public-files", public_files]
         if private_files:
             cmd += ["--with-private-files", private_files]
-        with self.setup_credentials(self.site.bench.config.db_type) as credentials:
+        with self.setup_credentials(self.site.db_type) as credentials:
             run_command(cmd + credentials, cwd=self.site.bench.sites_path, stream_output=True)
 
     def reinstall(self, admin_password: str) -> None:
@@ -66,7 +66,7 @@ class SiteCommands:
             "--admin-password",
             admin_password,
         )
-        with self.setup_credentials(self.site.bench.config.db_type) as credentials:
+        with self.setup_credentials(self.site.db_type) as credentials:
             run_command(cmd + credentials, cwd=self.site.bench.sites_path, stream_output=True)
 
     def migrate(self, skip_failing: bool) -> str:
@@ -97,8 +97,8 @@ class SiteCommands:
         as the command returns: frappe reads the credential from argv, where every local
         process can see it, and the admin password is far too valuable for that.
         """
-        if db_type != "mariadb":
-            yield self.site.bench.db_root_args
+        if db_type in ("postgres", "sqlite"):
+            yield self.site.bench.get_db_root_args(db_type)
             return
         from pilot.core.database import site_database_name
         from pilot.managers.database import MariaDBManager
