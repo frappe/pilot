@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Button, TextInput } from 'frappe-ui'
+import { Button, Checkbox, TextInput } from 'frappe-ui'
 
 import ActionDialog from '@/components/common/ActionDialog.vue'
 
@@ -72,6 +72,7 @@ const DangerActions = [
     action: () => {
       confirmName.value = ''
       dropError.value = ''
+      takeBackup.value = true
       showDrop.value = true
     },
   },
@@ -102,12 +103,13 @@ const confirmReset = async () => {
 const showDrop = ref(false)
 const dropping = ref(false)
 const dropError = ref('')
+const takeBackup = ref(true)
 
 const confirmDrop = async () => {
   dropping.value = true
   dropError.value = ''
   try {
-    const data = await sitesApi.drop(props.siteName)
+    const data = await sitesApi.drop(props.siteName, { noBackup: !takeBackup.value })
     if (data.task_id) {
       showDrop.value = false
       openTaskDetailPage(router, data.task_id)
@@ -202,6 +204,7 @@ const confirmDrop = async () => {
           <span class="text-sm break-all">Type {{ siteName }} to confirm</span>
         </template>
       </TextInput>
+      <Checkbox v-model="takeBackup" label="Take a backup before dropping" />
     </template>
   </ActionDialog>
 </template>
