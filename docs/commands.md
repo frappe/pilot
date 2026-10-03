@@ -21,6 +21,66 @@ Bench commands with `--bench NAME` can run from outside the bench directory. `Be
 - `pilot restart`: restart the production workload.
 - `pilot build`: build assets or download prebuilt assets when available. The queued build task (`pilot.tasks.build.BuildTask`) always forces a full rebuild, since a queued/CLI-triggered build is expected to reflect current source rather than reuse a prebuilt bundle.
 - `pilot frappe -- ...`: pass through to Frappe's bench helper.
+- `pilot recover`: pull the latest offsite S3 backup and restore the site in-place. Designed for the **stop → recover → start** Disaster Recovery workflow.
+
+### pilot recover — Disaster Recovery
+
+**Prerequisites:** S3 offsite backups must be configured in `bench.toml` (`[s3]` section with `bucket`, `endpoint_url`, `access_key`, `secret_key`). Ensure database (MariaDB/PostgreSQL) and Redis are running before recovery begins.
+
+**Flags:**
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--site SITE` | `-s` | Recover a specific site. Defaults to all sites in the bench. |
+| `--timestamp YYYYMMDD_HHMMSS` | `-t` | Restore a specific point-in-time backup. Defaults to the latest available. |
+| `--dry-run` | | List available offsite backups from S3 without restoring anything. |
+| `--leave-maintenance` | | Keep the site in maintenance mode after recovery completes (useful when you want to inspect before resuming traffic). |
+
+**Process & Redis Management during Recovery:**
+
+Post-restore schema migration (`bench migrate`) and cache clearing require the bench Redis instance (`redis_cache`) to be accessible. Because running `pilot stop` shuts down all workload processes including Redis, use one of the following methods to quiesce live traffic and background workers while ensuring Redis is operational:
+
+- **Stop web and workers while leaving Redis active (systemd):**
+  ```bash
+  systemctl --user stop <bench>-web.service <bench>-worker_pool.service <bench>-socketio.service
+  ```
+- **If `pilot stop` was already executed (systemd):** Restart the bench Redis services prior to recovery:
+  ```bash
+  systemctl --user start <bench>-redis_cache.service <bench>-redis_queue.service
+  ```
+- **Supervisor environments (using bench-specific config at `<bench-path>/config/services/supervisord.conf`):**
+  ```bash
+  supervisorctl -c <bench-path>/config/services/supervisord.conf stop <bench>:<bench>-web <bench>:<bench>-socketio <bench>:<bench>-worker*
+  # Or start Redis if pilot stop was used:
+  supervisorctl -c <bench-path>/config/services/supervisord.conf start <bench>:<bench>-redis-cache <bench>:<bench>-redis-queue
+  ```
+
+**Workflow Examples:**
+
+```bash
+# 1. Quiesce web and workers, ensure Redis is up:
+systemctl --user stop <bench>-web.service <bench>-worker_pool.service <bench>-socketio.service
+
+# 2. Recover all sites in the bench to their latest S3 snapshot:
+pilot recover
+
+# 3. Recover a specific site to a point-in-time backup:
+pilot recover --site site1.localhost --timestamp 20260927_140002
+
+# 4. Inspect available offsite backups without restoring (dry run):
+pilot recover --dry-run
+
+# 5. Multi-bench target selection:
+pilot --bench <bench-name> recover
+
+# 6. Resume live production traffic and workers:
+pilot start
+```
+
+**Isolation & Failure Safety:**
+
+Recovery automatically enables maintenance mode and pauses the background scheduler while restoring. If setup or artifact retrieval fails before site data is touched, the prior isolation state is immediately restored so the site is not stranded. If restore or migration fails after site data has been modified, the site is kept strictly isolated in maintenance mode to prevent incoming web traffic and scheduled background jobs from accessing incomplete or unmigrated data.
+
 
 Some runtime commands support all benches when invoked with the CLI option for all-bench execution.
 
