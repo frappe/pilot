@@ -10,6 +10,7 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pilot
 from pilot._vendor.packaging.version import Version
@@ -65,7 +66,7 @@ def get_target_release() -> dict | None:
     return get_release(rollout["tag"]) if rollout.get("allowed") else None
 
 
-def _get_github_json(url: str) -> dict | list:
+def _get_github_json(url: str) -> Any:
     request = urllib.request.Request(
         url,
         headers={"Accept": "application/vnd.github+json", "User-Agent": "pilot"},
