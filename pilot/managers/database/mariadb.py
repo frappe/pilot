@@ -887,7 +887,7 @@ class MariaDBManager(UserOwnedDBManager):
             cmd += ["-h", self.config.host, "-P", str(self.config.port)]
         return cmd
 
-    def run_admin_sql(self, sql: str) -> None:
+    def run_admin_sql(self, sql: str, timeout: float = _CLIENT_TIMEOUT) -> None:
         """Run statements as the admin account, with the password in MYSQL_PWD."""
         subprocess.run(
             self._client_command(),
@@ -895,7 +895,7 @@ class MariaDBManager(UserOwnedDBManager):
             text=True,
             check=True,
             capture_output=True,
-            timeout=_CLIENT_TIMEOUT,
+            timeout=timeout,
             env={**os.environ, "MYSQL_PWD": self.config.root_password},
         )
 

@@ -30,6 +30,7 @@ from pilot.config.s3 import S3Config
 from pilot.config.telemetry import TelemetryConfig
 from pilot.config.waf import WafCondition, WafConfig, WafRule
 from pilot.config.worker import WorkerConfig, WorkerGroup
+from pilot.config.worktree import WorktreeConfig
 from pilot.exceptions import ConfigError
 from pilot.internal.atomic_file import (
     atomic_write_private_text,
@@ -141,6 +142,7 @@ class BenchConfig:
     s3: S3Config = field(default_factory=S3Config)
     llm: LLMConfig = field(default_factory=LLMConfig)
     resource_limits: ResourceLimitConfig = field(default_factory=ResourceLimitConfig)
+    worktrees: list[WorktreeConfig] = field(default_factory=list)
     # What common_config.toml held when this was read, so a write can tell which
     # shared settings this view changed. Not a setting itself: kept out of
     # equality so it never makes a write look necessary, and out of repr.
@@ -272,6 +274,7 @@ class BenchConfig:
         self.waf.validate(self.nginx.client_max_body_size)
         self.llm.validate()
         self.resource_limits.validate()
+        self._validate_worktrees()
 
     def _validate_required_fields(self) -> None:
         if not self.name:
@@ -305,6 +308,16 @@ class BenchConfig:
             if name in seen:
                 raise ConfigError(f"Duplicate app name '{name}'. App names must be unique.")
             seen.add(name)
+
+    def _validate_worktrees(self) -> None:
+        for worktree in self.worktrees:
+            worktree.validate()
+        names = [worktree.name for worktree in self.worktrees]
+        if len(names) != len(set(names)):
+            raise ConfigError("Worktree names must be unique.")
+        offsets = [worktree.port_offset for worktree in self.worktrees]
+        if len(offsets) != len(set(offsets)):
+            raise ConfigError("Worktree port offsets must be unique.")
 
     def _validate_ports(self) -> None:
         ports = {
@@ -802,6 +815,11 @@ _SECTIONS: tuple[_Section, ...] = (
         ),
     ),
     _Section(
+        "worktrees",
+        lambda data: [WorktreeConfig.from_dict(entry) for entry in data.get("worktrees", [])],
+        lambda config: [worktree.to_dict() for worktree in config.worktrees] or None,
+    ),
+    _Section(
         "llm",
         lambda data: LLMConfig(**BenchConfig._known_fields(LLMConfig, data.get("llm", {}))),
         lambda config: config._llm_section() if (config.llm.api_key or config.llm.provider) else None,
@@ -911,6 +929,7 @@ def _bench_schema() -> _Table:
         arrays={
             "apps": _Table(keys=_keys(AppConfig)),
             "workers": _Table(keys=_keys(WorkerGroup) | _WORKER_LEGACY),
+            "worktrees": _Table(keys=_keys(WorktreeConfig)),
         },
     )
 

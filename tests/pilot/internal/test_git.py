@@ -5,6 +5,9 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
+from pilot.exceptions import BenchError
 from pilot.internal.git import GitRepo
 
 
@@ -125,3 +128,73 @@ def test_prune_stale_temp_packs_spares_recent_files_and_real_packs(tmp_path: Pat
 
 def test_prune_stale_temp_packs_is_quiet_on_a_missing_repo(tmp_path: Path) -> None:
     GitRepo(tmp_path / "nope").prune_stale_temp_packs()
+
+
+def test_add_worktree_creates_a_branch_then_reuses_it(tmp_path: Path) -> None:
+    repo_path = _init_repo(tmp_path / "repo")
+    _commit(repo_path)
+    repo = GitRepo(repo_path)
+
+    repo.add_worktree(tmp_path / "one", "feature")
+    assert repo.has_branch("feature")
+    assert GitRepo(tmp_path / "one").branch == "feature"
+
+    repo.remove_worktree(tmp_path / "one")
+    repo.add_worktree(tmp_path / "two", "feature")
+    assert GitRepo(tmp_path / "two").branch == "feature"
+
+
+def test_add_worktree_tracks_a_branch_that_only_origin_has(tmp_path: Path) -> None:
+    remote = _init_repo(tmp_path / "remote")
+    _commit(remote)
+    _git(remote, "checkout", "-q", "-b", "feature")
+    _commit(remote, "feature work")
+    _git(remote, "checkout", "-q", "main")
+    subprocess.run(["git", "clone", "-q", str(remote), str(tmp_path / "clone")], check=True)
+    repo = GitRepo(tmp_path / "clone")
+    assert not repo.has_branch("feature")
+
+    repo.add_worktree(tmp_path / "wt", "feature")
+
+    worktree = GitRepo(tmp_path / "wt")
+    assert worktree.branch == "feature"
+    assert worktree.head_sha == repo.tracking_sha("feature")
+    upstream = subprocess.run(
+        ["git", "-C", str(tmp_path / "wt"), "rev-parse", "--abbrev-ref", "@{upstream}"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert upstream.stdout.strip() == "origin/feature"
+
+
+def test_remove_worktree_refuses_a_dirty_tree_without_force(tmp_path: Path) -> None:
+    repo_path = _init_repo(tmp_path / "repo")
+    _commit(repo_path)
+    repo = GitRepo(repo_path)
+    worktree = tmp_path / "wt"
+    repo.add_worktree(worktree, "feature")
+    (worktree / "untracked").write_text("x")
+
+    assert GitRepo(worktree).changed_files == ["?? untracked"]
+    with pytest.raises(BenchError):
+        repo.remove_worktree(worktree)
+    assert worktree.exists()
+
+    repo.remove_worktree(worktree, force=True)
+    repo.prune_worktrees()
+    assert not worktree.exists()
+
+
+def test_delete_branch_refuses_an_unmerged_branch(tmp_path: Path) -> None:
+    repo_path = _init_repo(tmp_path / "repo")
+    _commit(repo_path)
+    repo = GitRepo(repo_path)
+    worktree = tmp_path / "wt"
+    repo.add_worktree(worktree, "feature")
+    _commit(worktree, "unmerged work")
+    repo.remove_worktree(worktree)
+
+    with pytest.raises(BenchError, match="not fully merged"):
+        repo.delete_branch("feature")
+    assert repo.has_branch("feature")
