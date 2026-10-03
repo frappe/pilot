@@ -13,6 +13,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { apiErrorMessage, hasApiError } from '@/api/client'
 import { sitesApi } from '@/api/sites'
+import CloneDialog from '@/components/common/CloneDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import StickyToolbar from '@/components/common/StickyToolbar.vue'
 import Table from '@/components/common/Table.vue'
@@ -21,10 +22,10 @@ import SiteSkeleton from '@/components/sites/SiteSkeleton.vue'
 import { useIsMobile } from '@/composables/common/useIsMobile'
 import { useSiteStorage } from '@/composables/sites/useSiteStorage'
 import { useSites } from '@/composables/sites/useSites'
-import { openSiteLogin } from '@/utils/siteLogin'
-import { openTaskDetailPage } from '@/utils/taskRoute'
 import type { SiteResource } from '@/types/sites'
 import { errorMessage } from '@/utils/error'
+import { openSiteLogin } from '@/utils/siteLogin'
+import { openTaskDetailPage } from '@/utils/taskRoute'
 
 const route = useRoute()
 const router = useRouter()
@@ -134,12 +135,32 @@ const backupNow = async (site: SiteResource) => {
 
 const siteMenuOptions = (site: SiteResource) => {
   return [
-    { label: 'Open site', icon: 'lucide-external-link', onClick: () => openSite(site) },
-    { label: 'Back up now', icon: 'lucide-archive', onClick: () => backupNow(site) },
+    {
+      label: 'Clone site',
+      icon: 'lucide-copy',
+      onClick: () => {
+        cloneSource.value = site.name
+        showClone.value = true
+      },
+    },
+    {
+      label: 'Open site',
+      icon: 'lucide-external-link',
+      onClick: () => openSite(site),
+    },
+    {
+      label: 'Back up now',
+      icon: 'lucide-archive',
+      onClick: () => backupNow(site),
+    },
     {
       label: 'View analytics',
       icon: 'lucide-chart-line',
-      onClick: () => router.push({ name: 'Analytics', query: { view: 'site', site: site.name } }),
+      onClick: () =>
+        router.push({
+          name: 'Analytics',
+          query: { view: 'site', site: site.name },
+        }),
     },
     {
       label: 'View jobs',
@@ -150,6 +171,8 @@ const siteMenuOptions = (site: SiteResource) => {
 }
 
 const showCreate = ref(false)
+const showClone = ref(false)
+const cloneSource = ref('')
 
 watch(
   () => route.query.new,
@@ -239,6 +262,7 @@ onMounted(() => {
                 label="Site actions"
                 tooltip="Actions"
                 class="ml-auto"
+                @click.stop
               />
             </Dropdown>
 
@@ -314,6 +338,12 @@ onMounted(() => {
   <NewSiteDialog
     v-model="showCreate"
     :sites="sites"
+    @started="(taskId) => openTaskDetailPage(router, taskId)"
+  />
+  <CloneDialog
+    v-model="showClone"
+    kind="site"
+    :source="cloneSource"
     @started="(taskId) => openTaskDetailPage(router, taskId)"
   />
 </template>

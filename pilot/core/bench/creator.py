@@ -36,6 +36,13 @@ class BenchCreator:
         self.admin_password = admin_password
 
     def run(self, on_progress: Callable[[str], None] = lambda message: None) -> "Bench":
+        from pilot.internal.atomic_file import exclusive_file_lock
+
+        self.target_directory.parent.mkdir(parents=True, exist_ok=True)
+        with exclusive_file_lock(self.target_directory.parent / "bench-creation"):
+            return self.create(on_progress)
+
+    def create(self, on_progress: Callable[[str], None]) -> "Bench":
         from pilot.config import BenchConfig
         from pilot.core.bench import Bench
 
@@ -88,26 +95,31 @@ class BenchCreator:
         """Pick the first base-port offset unused by configs or live processes."""
         from pilot.config import BenchConfig
 
-        bases = BenchConfig.default_ports()
-        base_http_port = bases["http_port"]
-        used = set()
-
-        for _, config in iter_sibling_benches(bench_path):
-            try:
-                used.add(config.http_port - base_http_port)
-            except Exception:
-                continue
-
-        admin_internal_port = bases["admin.port"] + 1
+        defaults = BenchConfig.default_ports()
+        bases = [*defaults.values(), defaults["admin.port"] + 1]
+        used = {
+            port for _, config in iter_sibling_benches(bench_path) for port in self.configured_ports(config)
+        }
 
         offset = 0
-        while (
-            offset in used
-            or any(self._port_is_live(base + offset) for base in bases.values())
-            or self._port_is_live(admin_internal_port + offset)
-        ):
+        while self.ports_in_use(bases, used, offset):
             offset += 1
         return offset
+
+    @staticmethod
+    def configured_ports(config) -> set[int]:
+        return {
+            config.http_port,
+            config.socketio_port,
+            config.redis.cache_port,
+            config.redis.queue_port,
+            config.admin.port,
+            config.admin.port + 1,
+        }
+
+    def ports_in_use(self, bases: list[int], used: set[int], offset: int) -> bool:
+        candidates = {base + offset for base in bases}
+        return bool(candidates & used) or any(self._port_is_live(port) for port in candidates)
 
     @staticmethod
     def _port_is_live(port: int) -> bool:

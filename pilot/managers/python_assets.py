@@ -52,15 +52,22 @@ class PythonAssetBuilder:
             ) from error
 
     def build_assets(self) -> None:
+        from pilot.core.bench.build_artifacts import BuildArtifacts
+
+        artifacts = BuildArtifacts(self.bench)
         for app in self.bench.apps():
             if (app.path / "package.json").exists():
                 self.ensure_yarn_install(app.path)
+            self.ensure_frontend_dependencies(app)
+        key = artifacts.get_key()
         self.run_compiler(
             [*self.bench.frappe_call, "frappe", "build", "--force"],
             cwd=self.bench.sites_path,
             env=self.manager._build_env(),
             stream_output=True,
         )
+        if artifacts.get_key() == key:
+            artifacts.capture(key)
 
     def build_assets_for_app(self, app: "App", force: bool = False) -> None:
         app_public_dir = app.path / app.config.name / "public"
@@ -107,10 +114,11 @@ class PythonAssetBuilder:
                 self.ensure_yarn_install(app.path / frontend_dir)
 
     def ensure_yarn_install(self, path: Path) -> None:
-        """Run yarn install when node_modules is missing or yarn.lock changed."""
-        integrity = path / "node_modules" / ".yarn-integrity"
-        lock = path / "yarn.lock"
-        if integrity.exists() and (not lock.exists() or lock.stat().st_mtime <= integrity.stat().st_mtime):
+        """Install when dependency inputs or the local toolchain changed."""
+        from pilot.managers.node_dependencies import NodeDependencies
+
+        key = NodeDependencies.get_key(path)
+        if NodeDependencies.has_matching_install(path, key):
             return
         app_name = path.name
         print(f"  Installing JS dependencies for {app_name}...")
@@ -129,6 +137,9 @@ class PythonAssetBuilder:
                 cwd=path,
                 stream_output=True,
             )
+        integrity = path / "node_modules" / ".yarn-integrity"
+        if integrity.is_file():
+            (integrity.parent / ".pilot-install-key").write_text(key)
 
     def try_download_prebuilt_assets(
         self,

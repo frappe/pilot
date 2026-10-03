@@ -107,6 +107,13 @@ class TaskRunner:
         self._run_post_submission_housekeeping()
         return submission
 
+    def find_idempotent_task(self, command: str, args: dict, key: str | None) -> str | None:
+        if key is None:
+            return None
+        digest = self._idempotency_digest(key)
+        payload = self._payloads.build(command, args, None)
+        return self._store.find_idempotent_task(digest, payload.request_fingerprint)
+
     def _run_post_submission_housekeeping(self) -> None:
         for operation in (
             lambda: task_workers.wake(self._bench_root),

@@ -31,6 +31,13 @@ export const sitesApi = {
   create: (payload: Record<string, unknown>): Promise<TaskPayload> =>
     request.post('sites', { json: payload }).json(),
 
+  clone: (source: string, name: string, targetBench: string): Promise<TaskPayload> =>
+    request
+      .post(`sites/${encodeURIComponent(source)}/actions/clone`, {
+        json: { name, target_bench: targetBench },
+      })
+      .json(),
+
   loginLink: (name: string): Promise<SiteLoginLink> =>
     request.post(`sites/${encodeURIComponent(name)}/login`).json(),
 
@@ -39,7 +46,11 @@ export const sitesApi = {
       unwrap(request.get(`sites/${encodeURIComponent(name)}/configuration`).json()),
     update: (name: string, patch: SiteConfig): Promise<SiteConfig> =>
       unwrap(
-        request.patch(`sites/${encodeURIComponent(name)}/configuration`, { json: patch }).json(),
+        request
+          .patch(`sites/${encodeURIComponent(name)}/configuration`, {
+            json: patch,
+          })
+          .json(),
       ),
   },
 
@@ -67,7 +78,10 @@ export const sitesApi = {
       request.get(`sites/${encodeURIComponent(name)}/apps`).json(),
     install: (name: string, payload: Record<string, unknown>): Promise<EnabledApp | TaskPayload> =>
       request
-        .post(`sites/${encodeURIComponent(name)}/apps`, { json: payload, timeout: inlineTimeout })
+        .post(`sites/${encodeURIComponent(name)}/apps`, {
+          json: payload,
+          timeout: inlineTimeout,
+        })
         .json(),
     remove: (
       name: string,
@@ -76,7 +90,10 @@ export const sitesApi = {
     ): Promise<DisabledApp | TaskPayload> =>
       request
         .delete(`sites/${encodeURIComponent(name)}/apps/${encodeURIComponent(app)}`, {
-          searchParams: { ...(force ? { force: 'true' } : {}), ...(mode ? { mode } : {}) },
+          searchParams: {
+            ...(force ? { force: 'true' } : {}),
+            ...(mode ? { mode } : {}),
+          },
           timeout: inlineTimeout,
         })
         .json(),
@@ -107,19 +124,27 @@ export const sitesApi = {
   monitoring: {
     get: (name: string, window: string): Promise<SiteAnalytics> =>
       request
-        .get(`sites/${encodeURIComponent(name)}/monitoring`, { searchParams: { window } })
+        .get(`sites/${encodeURIComponent(name)}/monitoring`, {
+          searchParams: { window },
+        })
         .json(),
   },
 
   uptime: {
     get: (name: string, window: string): Promise<SiteUptime> =>
-      request.get(`sites/${encodeURIComponent(name)}/uptime`, { searchParams: { window } }).json(),
+      request
+        .get(`sites/${encodeURIComponent(name)}/uptime`, {
+          searchParams: { window },
+        })
+        .json(),
   },
 
   backups: {
     list: (name: string, limit?: number): Promise<Backup[]> =>
       request
-        .get(`sites/${encodeURIComponent(name)}/backups`, { searchParams: limit ? { limit } : {} })
+        .get(`sites/${encodeURIComponent(name)}/backups`, {
+          searchParams: limit ? { limit } : {},
+        })
         .json(),
     create: (name: string): Promise<TaskPayload> =>
       request.post(`sites/${encodeURIComponent(name)}/backups`).json(),
@@ -137,7 +162,11 @@ export const sitesApi = {
       get: (name: string): Promise<BackupSchedule> =>
         request.get(`sites/${encodeURIComponent(name)}/backup-schedule`).json(),
       set: (name: string, payload: Record<string, unknown>): Promise<BackupSchedule> =>
-        request.put(`sites/${encodeURIComponent(name)}/backup-schedule`, { json: payload }).json(),
+        request
+          .put(`sites/${encodeURIComponent(name)}/backup-schedule`, {
+            json: payload,
+          })
+          .json(),
       remove: (name: string) => request.delete(`sites/${encodeURIComponent(name)}/backup-schedule`),
     },
   },

@@ -17,6 +17,8 @@ import UpdateStatusButton from '@/components/common/UpdateStatusButton.vue'
 import SettingsDialog from '@/components/settings/SettingsDialog.vue'
 import BenchSwitcherDialog from '@/components/benches/BenchSwitcherDialog.vue'
 import NewBenchDialog from '@/components/benches/NewBenchDialog.vue'
+import CloneDialog from '@/components/common/CloneDialog.vue'
+import { openTaskDetailPage } from '@/utils/taskRoute'
 import SearchDialog from '@/components/search/SearchDialog.vue'
 import NotificationsPanel from '@/components/notifications/NotificationsPanel.vue'
 
@@ -32,6 +34,12 @@ const isMobile = useIsMobile()
 
 const { session } = useSession()
 const { showBenches, showNewBench } = useAppMenu()
+const cloneBenchSource = ref('')
+const showCloneBench = ref(false)
+const cloneBench = (name: string) => {
+  cloneBenchSource.value = name
+  showCloneBench.value = true
+}
 const { items, resetBreadcrumbs } = useBreadcrumbs()
 
 useSearchShortcut()
@@ -111,7 +119,12 @@ const breadcrumbsFromRouteMeta = ({ title = '' }) => {
 
     <template #nav>
       <MobileNav class="!bg-surface-base">
-        <MobileNavItem label="Home" icon="lucide-house" route="/home" :active="route.name == 'Home'" />
+        <MobileNavItem
+          label="Home"
+          icon="lucide-house"
+          route="/home"
+          :active="route.name == 'Home'"
+        />
         <MobileNavItem label="Search" icon="lucide-search" @click="openSearch" />
         <NotificationsPanel mobile />
         <MobileNavItem
@@ -151,8 +164,18 @@ const breadcrumbsFromRouteMeta = ({ title = '' }) => {
   <SettingsDialog v-model="showSettings" />
 
   <template v-if="session.allowBenchManagement">
-    <BenchSwitcherDialog v-model="showBenches" @new-bench="showNewBench = true" />
+    <BenchSwitcherDialog
+      v-model="showBenches"
+      @new-bench="showNewBench = true"
+      @clone-bench="cloneBench"
+    />
     <NewBenchDialog v-model="showNewBench" />
+    <CloneDialog
+      v-model="showCloneBench"
+      kind="bench"
+      :source="cloneBenchSource"
+      @started="(taskId) => openTaskDetailPage(router, taskId)"
+    />
   </template>
 
   <SearchDialog v-model:open="searchOpen" />

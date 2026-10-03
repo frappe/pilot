@@ -165,10 +165,17 @@ class PythonEnvManager:
         return env
 
     def install_app(self, app: "App") -> None:
+        self.install_apps([app])
+
+    def install_apps(self, apps: list["App"]) -> None:
+        """Resolve editable apps together in the destination environment."""
+        if not apps:
+            return
         uv = ensure_uv()
         python = str(self.bench.env_path / "bin" / "python")
+        targets = [argument for app in apps for argument in ("-e", app.editable_target)]
         run_command(
-            [uv, "pip", "install", "--python", python, "-e", app.editable_target],
+            [uv, "pip", "install", "--python", python, *targets],
             stream_output=True,
             env=self._build_env(),
         )
@@ -203,11 +210,8 @@ class PythonEnvManager:
     def install_node_dependencies(self) -> None:
         for app in self.bench.apps():
             if (app.path / "package.json").exists():
-                run_command(
-                    [get_yarn_bin(), "install", "--frozen-lockfile"],
-                    cwd=app.path,
-                    stream_output=True,
-                )
+                self._assets.ensure_yarn_install(app.path)
+            self._assets.ensure_frontend_dependencies(app)
 
     def build_assets(self) -> None:
         self._assets.build_assets()
