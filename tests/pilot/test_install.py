@@ -34,6 +34,7 @@ EXPECTED_PACKAGES = {
         "certbot",
         "supervisor",
         "libnginx-mod-http-modsecurity",
+        "cron",
     ],
     "ubuntu": [
         "mariadb-server",
@@ -48,6 +49,7 @@ EXPECTED_PACKAGES = {
         "certbot",
         "supervisor",
         "libnginx-mod-http-modsecurity",
+        "cron",
     ],
     "fedora": [
         "mariadb-server",
@@ -61,6 +63,7 @@ EXPECTED_PACKAGES = {
         "nginx",
         "certbot",
         "supervisor",
+        "cronie",
     ],
     "arch": [
         "mariadb",
@@ -73,6 +76,7 @@ EXPECTED_PACKAGES = {
         "nginx",
         "certbot",
         "supervisor",
+        "cronie",
     ],
 }
 
@@ -135,11 +139,14 @@ system_packages_present
 def test_non_root_install_skips_provisioning_only_when_stack_is_present(
     tmp_path: Path,
 ) -> None:
+    # Bench-user second pass: all packages present → return immediately without
+    # touching system services (enable_cron_service requires root).
     skipped = run_installer_functions(
         """
 DISTRO=ubuntu
 is_root() { return 1; }
 system_packages_present() { return 0; }
+enable_cron_service() { echo enable_cron_service; }
 ensure_curl() { echo ensure_curl; }
 install_system_packages
 """,
@@ -160,6 +167,7 @@ bootstrap_packages() { echo bootstrap_packages; }
 install_database_engines() { echo install_database_engines; }
 install_production_packages() { echo install_production_packages; }
 disable_system_services() { echo disable_system_services; }
+enable_cron_service() { echo enable_cron_service; }
 install_node() { echo install_node; }
 install_system_packages
 """,
@@ -167,6 +175,7 @@ install_system_packages
     )
     assert provisioned.returncode == 0, provisioned.stderr
     assert "install_database_engines" in provisioned.stdout.splitlines()
+    assert "enable_cron_service" in provisioned.stdout.splitlines()
 
 
 def zoneinfo_dir(tmp_path: Path, *, with_alias: bool) -> Path:
@@ -236,3 +245,109 @@ echo reached_the_end
     assert result.returncode == 0, result.stderr
     assert "Warning: tzdata-legacy is unavailable" in result.stdout
     assert "reached_the_end" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("distro", "expected_service"),
+    [
+        ("arch", "cronie"),
+        ("fedora", "crond"),
+        ("debian", "cron"),
+        ("ubuntu", "cron"),
+    ],
+)
+def test_enable_cron_service_starts_distro_daemon(
+    distro: str, expected_service: str, tmp_path: Path
+) -> None:
+    # Cron not running at all → must enable it.
+    result = run_installer_functions(
+        f"""
+DISTRO={distro}
+systemd_booted() {{ return 0; }}
+systemctl() {{ return 1; }}
+run_sudo() {{ echo "run_sudo $*"; }}
+enable_cron_service
+""",
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == f"run_sudo systemctl enable --now {expected_service}"
+
+
+def test_enable_cron_service_starts_when_active_but_disabled(tmp_path: Path) -> None:
+    # Running now but not enabled at boot → must still call enable --now so it
+    # survives a reboot.
+    result = run_installer_functions(
+        """
+DISTRO=ubuntu
+systemd_booted() { return 0; }
+systemctl() { [ "$1" = "is-active" ] && return 0; return 1; }
+run_sudo() { echo "run_sudo $*"; }
+enable_cron_service
+""",
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "run_sudo systemctl enable --now cron"
+
+
+def test_enable_cron_service_skips_when_active_and_enabled(tmp_path: Path) -> None:
+    result = run_installer_functions(
+        """
+DISTRO=ubuntu
+systemd_booted() { return 0; }
+systemctl() { return 0; }
+run_sudo() { echo "run_sudo $*"; }
+enable_cron_service
+""",
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == ""
+
+
+def test_enable_cron_service_skips_when_systemd_not_booted(tmp_path: Path) -> None:
+    result = run_installer_functions(
+        """
+DISTRO=ubuntu
+systemd_booted() { return 1; }
+run_sudo() { echo "run_sudo $*"; }
+enable_cron_service
+""",
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == ""
+
+
+@pytest.mark.parametrize("distro", ["macos", "unknown"])
+def test_enable_cron_service_skips_unsupported_distros(
+    distro: str, tmp_path: Path
+) -> None:
+    result = run_installer_functions(
+        f"""
+DISTRO={distro}
+systemd_booted() {{ return 0; }}
+run_sudo() {{ echo "run_sudo $*"; }}
+enable_cron_service
+""",
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == ""
+
+
+def test_enable_cron_service_surfaces_systemctl_failure(tmp_path: Path) -> None:
+    result = run_installer_functions(
+        """
+set -e
+DISTRO=ubuntu
+systemd_booted() { return 0; }
+systemctl() { return 1; }
+run_sudo() { echo "systemctl: unit failed to start" >&2; return 1; }
+enable_cron_service
+""",
+        tmp_path,
+    )
+    assert result.returncode != 0
+    assert "systemctl: unit failed to start" in result.stderr

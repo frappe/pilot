@@ -72,6 +72,10 @@ is_root() {
     [ "$(id -u)" -eq 0 ]
 }
 
+systemd_booted() {
+    [ -d /run/systemd/system ] && command -v loginctl >/dev/null 2>&1
+}
+
 # Piping this script through `curl | sh` leaves stdin occupied, so sudo's own
 # prompt cannot read an answer. Ask via /dev/tty and cache it instead.
 run_sudo() {
@@ -185,11 +189,11 @@ bootstrap_packages() {
         macos)
             pkg_install git python3 ;;
         debian|ubuntu)
-            pkg_install git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata ;;
+            pkg_install git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron ;;
         fedora)
-            pkg_install git curl bash sudo shadow-utils python3 python3-devel gcc gcc-c++ make tzdata ;;
+            pkg_install git curl bash sudo shadow-utils python3 python3-devel gcc gcc-c++ make tzdata cronie ;;
         arch)
-            pkg_install git curl bash sudo python base-devel tzdata ;;
+            pkg_install git curl bash sudo python base-devel tzdata cronie ;;
     esac
 }
 
@@ -274,6 +278,23 @@ disable_system_services() {
     done
 }
 
+
+enable_cron_service() {
+    systemd_booted || return 0
+    case "$DISTRO" in
+        macos|unknown) return 0 ;;
+        debian|ubuntu) service=cron ;;
+        fedora)        service=crond ;;
+        arch)          service=cronie ;;
+        *)             return 0 ;;
+    esac
+    if systemctl is-active --quiet "$service" 2>/dev/null &&
+       systemctl is-enabled --quiet "$service" 2>/dev/null; then
+        return 0
+    fi
+    run_sudo systemctl enable --now "$service"
+}
+
 install_system_packages() {
     [ "$DISTRO" = "unknown" ] && return 0
     # Root always runs this (idempotent, and bare containers need it before
@@ -297,6 +318,7 @@ install_system_packages() {
     install_database_engines
     install_production_packages
     disable_system_services
+    enable_cron_service
     install_node
 }
 
@@ -319,11 +341,11 @@ system_packages_present() {
         macos)
             packages="mariadb@$MARIADB_VERSION postgresql@$POSTGRES_VERSION redis nginx certbot" ;;
         debian|ubuntu)
-            packages="mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config redis-server nginx certbot supervisor libnginx-mod-http-modsecurity" ;;
+            packages="mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config redis-server nginx certbot supervisor libnginx-mod-http-modsecurity cron" ;;
         fedora)
-            packages="mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config valkey nginx certbot supervisor" ;;
+            packages="mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config valkey nginx certbot supervisor cronie" ;;
         arch)
-            packages="mariadb mariadb-clients mariadb-libs postgresql postgresql-libs pkgconf redis nginx certbot supervisor" ;;
+            packages="mariadb mariadb-clients mariadb-libs postgresql postgresql-libs pkgconf redis nginx certbot supervisor cronie" ;;
         *)
             return 1 ;;
     esac
@@ -341,10 +363,6 @@ system_packages_present() {
 
 bench_home() {
     getent passwd "$1" | cut -d: -f6
-}
-
-systemd_booted() {
-    [ -d /run/systemd/system ] && command -v loginctl >/dev/null 2>&1
 }
 
 linger_enabled() {
