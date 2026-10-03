@@ -7,8 +7,8 @@ import SettingsRow from '@/components/settings/SettingsRow.vue'
 
 import { cliUpdatesApi, settingsApi } from '@/api/settings'
 import { tasksApi } from '@/api/tasks'
-import { isTaskActive } from '@/utils/taskFormat'
 import { errorMessage } from '@/utils/error'
+import { isTaskActive } from '@/utils/taskFormat'
 
 const DEV_COMMANDS = 'git pull\npilot admin build\npilot admin upgrade'
 
