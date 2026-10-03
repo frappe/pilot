@@ -27,6 +27,7 @@ class ConfigPatcher:
         self._apply_bench()
         self._apply_lite_mode()
         self._apply_workers()
+        self._apply_central()
         self._apply_firewall()
         self._apply_waf()
         if error := self._apply_llm():
@@ -58,6 +59,11 @@ class ConfigPatcher:
         lite_mode = self.data.get("lite_mode") or {}
         if "enabled" in lite_mode:
             self.config.lite_mode.enabled = bool(lite_mode["enabled"])
+
+    def _apply_central(self) -> None:
+        central = self.data.get("central") or {}
+        if "update_channel" in central:
+            self.config.central.update_channel = str(central["update_channel"])
 
     def _apply_workers(self) -> None:
         workers = self.data.get("workers")

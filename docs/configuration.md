@@ -179,6 +179,7 @@ webroot_path = "/var/www/letsencrypt"
 [central]
 enabled = false
 bootstrapped = false
+update_channel = "normal"
 
 [[central.hostname_aliases]]
 type = "site"
@@ -211,7 +212,7 @@ webhook_endpoints = { "https://alerts.example.com/pilot" = "bearer-token" }
 email_recipients = ["ops@example.com"]
 ```
 
-Shared tables are MariaDB, Postgres, Let's Encrypt, Central, the edge proxy, telemetry, resource limits, and the admin JWKS issuer. A bench exposes these values through its own `BenchConfig`; the model merges shared values on read and writes them back to the common file.
+Shared tables are MariaDB, Postgres, Let's Encrypt, Central, the edge proxy, telemetry, resource limits, and the admin JWKS issuer. `central.update_channel` is `early`, `normal` (the default), or `late`. While Central runs a Pilot rollout, early servers get the new release first and late servers only once it reaches everyone; change the channel in the admin UI next to the Pilot version. A Central-managed server that cannot reach Central does not update. After each update, Pilot reports its version, or why the update failed, to Central. A bench exposes these values through its own `BenchConfig`; the model merges shared values on read and writes them back to the common file.
 
 Central endpoint and authentication data come from instance metadata. While Central is enabled and bootstrap is pending, remote-token verification uses only the current staged JWKS URL, audience, and initial key set from instance metadata. Pilot caches that staged issuer in each Admin process until shared config changes or bootstrap completes. After bootstrap, it clears the staged entry and uses only the issuer saved in shared config. The metadata can include `initial_jwks_cache`, the issuer's JWK set. Pilot uses it to initialize an empty JWKS cache before it marks the host bootstrapped, so the first remote token does not wait for an issuer fetch. It does not replace keys already fetched from the issuer. The Central configuration is in the `pilot-central` attribute. The team's backup bucket is in `pilot-storage`, and the Datum endpoint and token are in `pilot-telemetry`. Both are optional. Each has its own attribute because the cloud caps a metadata value at 1 KiB. `central.hostname_aliases` maps a VM hostname pattern to its current local target. The VM ID is assigned at runtime, so use `*` for that part. Pilot creates redirect rules only for aliases whose targets exist on the bench. Renaming a site or moving the admin domain re-points the matching alias automatically; remove one when the rule is no longer needed. `pilot setup central` writes these settings - see [Setup Commands](commands.md#setup-commands).
 

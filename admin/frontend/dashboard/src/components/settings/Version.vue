@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { Button, Dialog, ErrorMessage, Spinner, toast } from 'frappe-ui'
+import { Button, Dialog, ErrorMessage, Spinner, TabButtons, toast } from 'frappe-ui'
 
 import CopyBtn from '@/components/common/CopyBtn.vue'
 import SettingsRow from '@/components/settings/SettingsRow.vue'
 
-import { cliUpdatesApi } from '@/api/settings'
+import { cliUpdatesApi, settingsApi } from '@/api/settings'
 import { tasksApi } from '@/api/tasks'
+import { errorMessage } from '@/utils/error'
 import { isTaskActive } from '@/utils/taskFormat'
 
 const DEV_COMMANDS = 'git pull\npilot admin build\npilot admin upgrade'
@@ -16,6 +17,7 @@ const POLL_INTERVAL_MS = 1500
 const loading = ref(true)
 const status = ref({ current_version: '', is_dev: true })
 const latestVersion = ref<string | null>(null)
+const updateChannel = ref<string | null>(null)
 const checking = ref(false)
 const updating = ref(false)
 const log = ref('')
@@ -25,13 +27,31 @@ const dialogOpen = ref(false)
 
 const isDev = computed(() => status.value.is_dev || !status.value.current_version)
 const versionLabel = computed(() => (isDev.value ? 'Development' : status.value.current_version))
-const updateAvailable = computed(
-  () => Boolean(latestVersion.value) && latestVersion.value !== status.value.current_version,
-)
+const updateAvailable = computed(() => Boolean(latestVersion.value))
+
+const CHANNEL_OPTIONS = [
+  { value: 'early', label: 'Early' },
+  { value: 'normal', label: 'Normal' },
+  { value: 'late', label: 'Late' },
+]
+
+const changeChannel = async (value: string | number) => {
+  const channel = String(value)
+  versionError.value = null
+  try {
+    await settingsApi.update({ central: { update_channel: channel } })
+    updateChannel.value = channel
+    toast.success(`Update channel set to ${channel}`)
+  } catch (e) {
+    versionError.value = errorMessage(e, 'Could not change the update channel.')
+  }
+}
 
 onMounted(async () => {
   try {
-    status.value = await cliUpdatesApi.status()
+    const result = await cliUpdatesApi.status()
+    status.value = result
+    updateChannel.value = 'update_channel' in result ? result.update_channel : null
   } catch {
     versionError.value = 'Could not load version information.'
   } finally {
@@ -52,11 +72,10 @@ const check = async () => {
   versionError.value = null
   try {
     const result = await cliUpdatesApi.check()
-    const latest = 'latest_version' in result ? result.latest_version : null
-
     status.value = { ...status.value, ...result }
-    latestVersion.value = latest
-    if (latest && latest !== status.value.current_version) {
+    latestVersion.value =
+      result.update_available && 'latest_version' in result ? result.latest_version : null
+    if (latestVersion.value) {
       dialogOpen.value = true
     } else {
       toast.info(`${status.value.current_version} (latest)`, {
@@ -124,6 +143,18 @@ const pollTask = async (taskId: string) => {
 <template>
   <SettingsRow label="Pilot Version" :description="loading ? '' : versionLabel">
     <Button :loading="checking" @click="check">Update</Button>
+  </SettingsRow>
+
+  <SettingsRow
+    v-if="updateChannel"
+    label="Update Channel"
+    description="Early gets new Pilot releases first, late only once everyone has them."
+  >
+    <TabButtons
+      :model-value="updateChannel"
+      :options="CHANNEL_OPTIONS"
+      @update:model-value="changeChannel"
+    />
   </SettingsRow>
 
   <ErrorMessage v-if="versionError" :message="versionError" />

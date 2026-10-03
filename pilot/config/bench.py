@@ -272,6 +272,7 @@ class BenchConfig:
         self.waf.validate(self.nginx.client_max_body_size)
         self.llm.validate()
         self.resource_limits.validate()
+        self.central.validate()
 
     def _validate_required_fields(self) -> None:
         if not self.name:

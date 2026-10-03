@@ -18,6 +18,7 @@ def _populated_common() -> CommonConfig:
     common.resource_limits.cpu_usage_limit = 77
     common.jwks_url = "https://issuer.example.com/jwks.json"
     common.jwks_audience = "bench-fleet"
+    common.central.update_channel = "late"
     return common
 
 

@@ -41,6 +41,7 @@ class CliReleaseUpdate(TypedDict):
     is_dev: Literal[False]
     update_available: bool
     latest_version: str | None
+    update_channel: str | None
 
 
 updates_bp = Blueprint("updates", __name__)
@@ -137,11 +138,13 @@ def _cli_update_dev(*, fetch: bool) -> dict:
 def _cli_update_release(*, fetch: bool) -> dict:
     import pilot
 
+    central = Bench(Path(current_app.config["BENCH_ROOT"])).config.central
     result = {
         "current_version": pilot.__version__,
         "is_dev": False,
         "update_available": False,
         "latest_version": None,
+        "update_channel": central.update_channel if central.enabled else None,
     }
     if fetch:
         from pilot.updater import update_available
