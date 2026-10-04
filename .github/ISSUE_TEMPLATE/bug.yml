@@ -1,0 +1,52 @@
+name: Bug report
+description: Report wrong behavior in Pilot.
+title: "fix(<scope>): <short problem>"
+labels: [bug]
+body:
+  - type: textarea
+    id: issue
+    attributes:
+      label: Issue
+      description: One sentence. What is wrong, and who sees it?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. ...\n2. ..."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Release version, or the full commit hash for a dev install.
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options:
+        - Development
+        - Staging
+        - Production
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Error text, logs, task ID or screenshot. Remove hostnames, IP addresses, tokens and customer data.
+      render: text
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact and workaround

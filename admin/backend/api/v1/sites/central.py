@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import TypedDict
+
 from flask import jsonify, request
 
 from admin.backend.api.responses import error_response
@@ -7,6 +9,11 @@ from admin.backend.api.v1.sites import sites_bp
 from admin.backend.api.v1.sites.shared import site_name
 from admin.backend.middleware import require_scope
 from pilot.integrations.central import CentralClient, CentralClientError
+
+
+class CentralAccountLink(TypedDict):
+    url: str
+
 
 _ALLOWED_PREFIXES = ("central.billing.api.billing_api.",)
 _ALLOWED_EXACT = frozenset({"central.api.pilot.heartbeat"})

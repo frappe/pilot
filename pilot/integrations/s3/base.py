@@ -47,6 +47,7 @@ PROVIDER_LABELS = {
     "aws": "Amazon S3",
     "digitalocean": "DigitalOcean Spaces",
     "hetzner": "Hetzner Object Storage",
+    "frappe": "Frappe Cloud",
 }
 
 SUPPORTED_REGIONS = {

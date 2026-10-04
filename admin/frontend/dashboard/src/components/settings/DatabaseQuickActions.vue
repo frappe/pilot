@@ -7,17 +7,67 @@ import SettingsRow from '@/components/settings/SettingsRow.vue'
 
 import { databaseApi } from '@/api/database'
 import { openTaskDetailPage } from '@/utils/taskRoute'
+import type { DatabaseActionCapabilities, DatabaseCapabilities } from '@/types/database'
+import { errorMessage } from '@/utils/error'
+
+// The five capability payloads share available/reason and differ past that, so one
+// reader type keeps them and the unavailable fallback interchangeable.
+interface ActionCapability {
+  available: boolean
+  reason: string
+  requires_restart?: boolean
+  enabled?: boolean | null
+  current?: number | null
+  min?: number | null
+  max?: number | null
+  recommended?: number | null
+  current_mb?: number | null
+  min_mb?: number | null
+  max_mb?: number | null
+  recommended_mb?: number | null
+  dynamic_max_mb?: number | null
+  unit?: 'MB'
+}
+
+interface ConfirmationBase {
+  title: string
+  buttonLabel: string
+  message: string
+  idempotencyKey: string
+}
+
+interface RestartConfirmation extends ConfirmationBase {
+  action: 'restart'
+}
+
+interface PerformanceSchemaConfirmation extends ConfirmationBase {
+  action: 'performance_schema'
+  enabled: boolean
+}
+
+interface PendingSizing {
+  action: 'innodb_buffer_pool_size' | 'max_connections'
+  title: string
+  inputLabel: string
+  current: number | null
+  recommended: number | null
+  min: number | null
+  max: number | null
+  dynamicMax: number | null
+  unit: string
+  idempotencyKey: string
+}
 
 const router = useRouter()
 
 const loading = ref(false)
-const capabilities = ref(null)
+const capabilities = ref<DatabaseCapabilities | null>(null)
 const error = ref('')
 const actionError = ref('')
 const activeAction = ref('')
-const confirmation = ref(null)
-const sizingAction = ref(null)
-const sizingValue = ref('')
+const confirmation = ref<RestartConfirmation | PerformanceSchemaConfirmation | null>(null)
+const sizingAction = ref<PendingSizing | null>(null)
+const sizingValue = ref<number | string>('')
 
 const confirmationOpen = computed({
   get: () => Boolean(confirmation.value),
@@ -34,19 +84,31 @@ const sizingOpen = computed({
 })
 const sizingTitle = computed(() => sizingAction.value?.title || 'Update database setting')
 const sizingValidationError = computed(() => {
-  if (!sizingAction.value) return ''
-  if (!Number.isInteger(sizingValue.value)) return 'Enter a whole number.'
-  if (sizingValue.value < sizingAction.value.min || sizingValue.value > sizingAction.value.max) {
-    return `Enter a value between ${sizingAction.value.min} and ${sizingAction.value.max}.`
+  const pending = sizingAction.value
+  if (!pending) return ''
+
+  const value = sizingValue.value
+
+  if (typeof value !== 'number' || !Number.isInteger(value)) return 'Enter a whole number.'
+  if (
+    (pending.min !== null && value < pending.min) ||
+    (pending.max !== null && value > pending.max)
+  ) {
+    return `Enter a value between ${pending.min} and ${pending.max}.`
   }
   return ''
 })
-const sizingRequiresRestart = computed(
-  () =>
-    sizingAction.value?.action === 'innodb_buffer_pool_size' &&
-    Number.isFinite(sizingAction.value.dynamicMax) &&
-    sizingValue.value > sizingAction.value.dynamicMax,
-)
+const sizingRequiresRestart = computed(() => {
+  const pending = sizingAction.value
+  if (pending?.action !== 'innodb_buffer_pool_size') return false
+
+  return (
+    pending.dynamicMax !== null &&
+    Number.isFinite(pending.dynamicMax) &&
+    typeof sizingValue.value === 'number' &&
+    sizingValue.value > pending.dynamicMax
+  )
+})
 const sizingUnchanged = computed(
   () => sizingAction.value !== null && sizingValue.value === sizingAction.value.current,
 )
@@ -66,7 +128,7 @@ const maxConnectionsDescription = computed(() => {
   return `Current: ${Number.isInteger(current) ? current : 'unavailable'}`
 })
 
-const action = (name) => {
+const action = (name: keyof DatabaseActionCapabilities): ActionCapability => {
   return (
     capabilities.value?.actions?.[name] || {
       available: false,
@@ -75,11 +137,11 @@ const action = (name) => {
   )
 }
 
-const formatSizingValue = (value, unit = '') => {
+const formatSizingValue = (value: number | null | undefined, unit = '') => {
   return `${value}${unit ? ` ${unit}` : ''}`
 }
 
-const idempotencyKey = (actionName) => {
+const idempotencyKey = (actionName: string) => {
   const random = globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)
   return `database-${actionName}-${Date.now()}-${random}`
 }
@@ -96,7 +158,7 @@ const confirmRestart = () => {
   }
 }
 
-const confirmPerformanceSchema = (enabled) => {
+const confirmPerformanceSchema = (enabled: boolean) => {
   if (action('performance_schema').enabled === enabled) return
   actionError.value = ''
   confirmation.value = {
@@ -109,35 +171,35 @@ const confirmPerformanceSchema = (enabled) => {
   }
 }
 
-const openSizingAction = (actionName) => {
+const openSizingAction = (actionName: 'innodb_buffer_pool_size' | 'max_connections') => {
   actionError.value = ''
   const capability = action(actionName)
   if (!capability.available) return
   if (actionName === 'innodb_buffer_pool_size') {
-    sizingValue.value = capability.current_mb
+    sizingValue.value = capability.current_mb ?? ''
     sizingAction.value = {
       action: actionName,
       title: 'Update InnoDB Buffer Pool Size',
       inputLabel: 'Buffer Pool size (MB)',
-      current: capability.current_mb,
-      recommended: capability.recommended_mb,
-      min: capability.min_mb,
-      max: capability.max_mb,
-      dynamicMax: capability.dynamic_max_mb,
+      current: capability.current_mb ?? null,
+      recommended: capability.recommended_mb ?? null,
+      min: capability.min_mb ?? null,
+      max: capability.max_mb ?? null,
+      dynamicMax: capability.dynamic_max_mb ?? null,
       unit: 'MB',
       idempotencyKey: idempotencyKey('innodb-buffer-pool-size'),
     }
     return
   }
-  sizingValue.value = capability.current
+  sizingValue.value = capability.current ?? ''
   sizingAction.value = {
     action: actionName,
     title: 'Update Max DB Connections',
     inputLabel: 'Maximum connections',
-    current: capability.current,
-    recommended: capability.recommended,
-    min: capability.min,
-    max: capability.max,
+    current: capability.current ?? null,
+    recommended: capability.recommended ?? null,
+    min: capability.min ?? null,
+    max: capability.max ?? null,
     dynamicMax: null,
     unit: '',
     idempotencyKey: idempotencyKey('max-connections'),
@@ -160,7 +222,7 @@ const runConfirmedAction = async () => {
     confirmation.value = null
     openTaskDetailPage(router, task.task_id)
   } catch (e) {
-    actionError.value = e.message || 'Could not start the database action.'
+    actionError.value = errorMessage(e, 'Could not start the database action.')
   } finally {
     activeAction.value = ''
   }
@@ -175,23 +237,20 @@ const runSizingAction = async () => {
   )
     return
   const pending = sizingAction.value
+  const size = sizingValue.value
+  if (typeof size !== 'number') return
+
   activeAction.value = pending.action
   actionError.value = ''
   try {
     const task =
       pending.action === 'innodb_buffer_pool_size'
-        ? await databaseApi.quickActions.setInnoDBBufferPoolSize(
-            sizingValue.value,
-            pending.idempotencyKey,
-          )
-        : await databaseApi.quickActions.setMaxConnections(
-            sizingValue.value,
-            pending.idempotencyKey,
-          )
+        ? await databaseApi.quickActions.setInnoDBBufferPoolSize(size, pending.idempotencyKey)
+        : await databaseApi.quickActions.setMaxConnections(size, pending.idempotencyKey)
     sizingAction.value = null
     openTaskDetailPage(router, task.task_id)
   } catch (e) {
-    actionError.value = e.message || 'Could not start the database action.'
+    actionError.value = errorMessage(e, 'Could not start the database action.')
   } finally {
     activeAction.value = ''
   }
@@ -209,7 +268,7 @@ const load = async () => {
     capabilities.value = await databaseApi.quickActions.capabilities()
   } catch (e) {
     capabilities.value = null
-    error.value = e.message || 'Could not load database capabilities.'
+    error.value = errorMessage(e, 'Could not load database capabilities.')
   } finally {
     loading.value = false
   }

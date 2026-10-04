@@ -2,8 +2,9 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { Alert, Button, ErrorMessage, Select, Spinner, TextInput, toast } from 'frappe-ui'
 
-import { apiErrorMessage } from '@/api/client'
 import { settingsApi } from '@/api/settings'
+import type { S3ProviderOption } from '@/types/settings'
+import { errorMessage } from '@/utils/error'
 
 const loading = ref(true)
 const saving = ref(false)
@@ -16,7 +17,8 @@ const provider = ref('')
 const region = ref('')
 const endpointUrl = ref('')
 const secretKeySet = ref(false)
-const providers = ref([])
+const providers = ref<S3ProviderOption[]>([])
+const loadingRegions = ref(false)
 
 const connected = computed(() => Boolean(accessKey.value && bucket.value && secretKeySet.value))
 const providerLabel = computed(
@@ -32,9 +34,28 @@ const regionOptions = computed(
       ?.regions.map((r) => ({ label: r, value: r })) || [],
 )
 
-watch(provider, (_provider, previousProvider) => {
-  if (previousProvider) {
+// Frappe regions come from Central, so they load only when that provider is picked.
+const loadFrappeRegions = async () => {
+  const frappe = providers.value.find((p) => p.value === 'frappe')
+  if (!frappe) return
+
+  loadingRegions.value = true
+  try {
+    frappe.regions = await settingsApi.frappeStorageRegions()
+  } catch (e) {
+    error.value = errorMessage(e, 'Could not read Frappe storage regions from Central.')
+  } finally {
+    loadingRegions.value = false
+  }
+}
+
+// Also on `providers`: a reload after save replaces the list and empties Frappe's regions.
+watch([provider, providers], async ([current], [previous]) => {
+  if (previous && current !== previous) {
     endpointUrl.value = ''
+  }
+  if (current === 'frappe') {
+    await loadFrappeRegions()
   }
   if (!regionOptions.value.some((o) => o.value === region.value)) {
     region.value = regionOptions.value[0]?.value || ''
@@ -64,7 +85,7 @@ const load = async () => {
     endpointUrl.value = s3.endpoint_url || ''
     secretKeySet.value = !!s3.secret_key_set
   } catch (e) {
-    error.value = e.message || 'Could not load settings.'
+    error.value = errorMessage(e, 'Could not load settings.')
   } finally {
     loading.value = false
   }
@@ -74,7 +95,7 @@ const save = async () => {
   saving.value = true
   error.value = ''
   try {
-    const result = await settingsApi.update({
+    await settingsApi.update({
       s3: {
         access_key: accessKey.value.trim(),
         secret_key: secretKey.value.trim(),
@@ -84,15 +105,11 @@ const save = async () => {
         endpoint_url: endpointUrl.value.trim(),
       },
     })
-    if (!result.error) {
-      secretKey.value = ''
-      toast.success('Object storage settings saved')
-      await load()
-    } else {
-      error.value = apiErrorMessage(result, 'Could not save object storage settings.')
-    }
+    secretKey.value = ''
+    toast.success('Object storage settings saved')
+    await load()
   } catch (e) {
-    error.value = e.message || 'Could not save object storage settings.'
+    error.value = errorMessage(e, 'Could not save object storage settings.')
   } finally {
     saving.value = false
   }
@@ -101,21 +118,17 @@ const save = async () => {
 const disconnect = async () => {
   disconnecting.value = true
   try {
-    const result = await settingsApi.update({ s3: { disconnect: true } })
-    if (!result.error) {
-      accessKey.value = ''
-      secretKey.value = ''
-      bucket.value = ''
-      provider.value = providers.value[0]?.value || ''
-      region.value = ''
-      endpointUrl.value = ''
-      secretKeySet.value = false
-      toast.success('Object storage disconnected')
-    } else {
-      toast.error(apiErrorMessage(result, 'Could not disconnect object storage.'))
-    }
+    await settingsApi.update({ s3: { disconnect: true } })
+    accessKey.value = ''
+    secretKey.value = ''
+    bucket.value = ''
+    provider.value = providers.value[0]?.value || ''
+    region.value = ''
+    endpointUrl.value = ''
+    secretKeySet.value = false
+    toast.success('Object storage disconnected')
   } catch (e) {
-    toast.error(e.message || 'Could not disconnect object storage.')
+    toast.error(errorMessage(e, 'Could not disconnect object storage.'))
   } finally {
     disconnecting.value = false
   }
@@ -171,7 +184,14 @@ onMounted(load)
       />
       <div class="flex sm:flex-row flex-col gap-4">
         <Select label="Provider" v-model="provider" :options="providerOptions" class="w-full" />
-        <Select label="Region" v-model="region" :options="regionOptions" class="w-full" />
+        <Select
+          label="Region"
+          v-model="region"
+          :options="regionOptions"
+          :disabled="loadingRegions"
+          :placeholder="loadingRegions ? 'Loading regions…' : undefined"
+          class="w-full"
+        />
       </div>
 
       <div class="flex sm:flex-row flex-col gap-4">

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { Button, Dialog, Dropdown, Spinner, Tooltip, toast } from 'frappe-ui'
+import { Button, Dialog, Dropdown, type DropdownItem, Spinner, Tooltip, toast } from 'frappe-ui'
 
 import Table from '@/components/common/Table.vue'
 
@@ -10,22 +10,45 @@ import { auditApi } from '@/api/audit'
 import { sessionApi } from '@/api/session'
 import { relativeTime } from '@/utils/time'
 import { commandLabel, fmtDateTime } from '@/utils/taskFormat'
+import type { AuditEntry } from '@/types/audit'
+import type { ActiveSession } from '@/types/auth'
+import { errorMessage } from '@/utils/error'
 
-const nestedView = defineModel('nestedView')
+interface SessionRow {
+  jti: string
+  ip: string
+  isCurrent: boolean
+  lastSeen: number
+  activity: string
+  activityTooltip: string
+  exp: string
+}
+
+interface ActivityRow {
+  key: number
+  event: string
+  eventTooltip: string
+  ip: string
+  time: string
+  timeExact: string
+  raw: AuditEntry
+}
+
+const nestedView = defineModel<{ title: string } | null>('nestedView')
 // The session whose activity is showing - a route param (owned by SettingsDialog),
 // so a specific session's activity view is a real, deep-linkable URL.
-const jti = defineModel('jti')
+const jti = defineModel<string | null>('jti')
 
 const loading = ref(true)
 const loadError = ref('')
-const activeTokens = ref([])
+const activeTokens = ref<ActiveSession[]>([])
 const currentJti = ref('')
 const showRevoke = ref(false)
-const revoking = ref(null)
+const revoking = ref<SessionRow | null>(null)
 const revokeBusy = ref(false)
 
 const activityLoading = ref(false)
-const activity = ref([])
+const activity = ref<AuditEntry[]>([])
 
 // Titled by jti, not IP - the same IP can hold multiple sessions, so IP alone
 // wouldn't identify which one this view is showing.
@@ -49,7 +72,7 @@ watch(
       const result = await auditApi.list({ jti: target, limit: 50 })
       activity.value = result.data || []
     } catch (e) {
-      toast.error(e.message || 'Could not load activity.')
+      toast.error(errorMessage(e, 'Could not load activity.'))
     } finally {
       activityLoading.value = false
     }
@@ -73,7 +96,7 @@ const activityColumns = [
 
 // All display formatting happens here, not in the template - rows already hold the
 // exact strings/tooltips each column renders.
-const rows = computed(() =>
+const rows = computed<SessionRow[]>(() =>
   activeTokens.value
     .map((t) => {
       const isCurrent = t.jti === currentJti.value
@@ -88,10 +111,10 @@ const rows = computed(() =>
         exp: formatDate(t.exp),
       }
     })
-    .sort((a, b) => b.isCurrent - a.isCurrent || b.lastSeen - a.lastSeen),
+    .sort((a, b) => Number(b.isCurrent) - Number(a.isCurrent) || b.lastSeen - a.lastSeen),
 )
 
-const activityRows = computed(() =>
+const activityRows = computed<ActivityRow[]>(() =>
   activity.value.map((entry, i) => ({
     key: i,
     event: auditEntryHead(entry),
@@ -104,9 +127,9 @@ const activityRows = computed(() =>
 )
 
 const showDetail = ref(false)
-const viewingDetail = ref(null)
+const viewingDetail = ref<AuditEntry | null>(null)
 
-const openDetail = (row) => {
+const openDetail = (row: ActivityRow) => {
   viewingDetail.value = row.raw
   showDetail.value = true
 }
@@ -124,9 +147,9 @@ const detailEntries = computed(() => {
     }))
 })
 
-const AUDIT_TYPE_LABELS = { ssh_key: 'SSH Key' }
+const AUDIT_TYPE_LABELS: Record<string, string> = { ssh_key: 'SSH Key' }
 
-const auditTypeLabel = (type) => {
+const auditTypeLabel = (type: string) => {
   if (!type) return ''
   return AUDIT_TYPE_LABELS[type] || type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
@@ -150,36 +173,40 @@ const DETAIL_KEYS = [
 
 // Short enough to fit the column without forcing the row wider than its container -
 // full context (below) only shows up in the hover tooltip.
-const auditEntryHead = (entry) => {
-  const label = entry.type === 'task' ? commandLabel(entry.command) : auditTypeLabel(entry.type)
+const auditEntryHead = (entry: AuditEntry) => {
+  const label =
+    entry.type === 'task' ? commandLabel(entry.command ?? '') : auditTypeLabel(entry.type)
   return entry.event ? `${label} ${entry.event}` : label
 }
 
-const auditEntryDetail = (entry) => {
-  const source = { ...entry, ...entry.args }
+const auditEntryDetail = (entry: AuditEntry) => {
+  const source: Record<string, unknown> = { ...entry, ...entry.args }
   const detail = [...new Set(DETAIL_KEYS.map((key) => source[key]).filter(Boolean))].join(' · ')
   const head = auditEntryHead(entry)
   return detail ? `${head} — ${detail}` : head
 }
 
-const formatDate = (seconds) => (seconds ? fmtDateTime(seconds * 1000) : '-')
+const formatDate = (seconds: number | null) => (seconds ? fmtDateTime(seconds * 1000) : '-')
 
-const menuOptions = (row) => {
+const menuOptions = (row: SessionRow): DropdownItem[] => {
   return [
     { label: 'View activity', icon: 'lucide-history', onClick: () => (jti.value = row.jti) },
     { label: 'Revoke session', icon: 'lucide-log-out', theme: 'red', onClick: () => promptRevoke(row) },
   ]
 }
 
-const promptRevoke = (row) => {
+const promptRevoke = (row: SessionRow) => {
   revoking.value = row
   showRevoke.value = true
 }
 
 const confirmRevoke = async () => {
+  const target = revoking.value
+  if (!target) return
+
   revokeBusy.value = true
   try {
-    const response = await sessionApi.revoke(revoking.value.jti)
+    const response = await sessionApi.revoke(target.jti)
     if (response.ok) {
       toast.success('Session revoked')
       showRevoke.value = false
@@ -188,7 +215,7 @@ const confirmRevoke = async () => {
       toast.error('Could not revoke session')
     }
   } catch (e) {
-    toast.error(e.message || 'Could not revoke session')
+    toast.error(errorMessage(e, 'Could not revoke session'))
   } finally {
     revokeBusy.value = false
   }
@@ -200,7 +227,7 @@ const load = async () => {
     activeTokens.value = data.active_tokens || []
     currentJti.value = data.current_jti || ''
   } catch (e) {
-    loadError.value = e.message || 'Could not load authentication data.'
+    loadError.value = errorMessage(e, 'Could not load authentication data.')
   } finally {
     loading.value = false
   }

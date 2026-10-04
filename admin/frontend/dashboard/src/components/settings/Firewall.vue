@@ -5,8 +5,9 @@ import { Alert, Button, ErrorMessage, Select, Spinner, TextInput, toast } from '
 import EmptyState from '@/components/common/EmptyState.vue'
 import SettingsSwitch from '@/components/settings/SettingsSwitch.vue'
 
-import { apiErrorMessage } from '@/api/client'
 import { settingsApi } from '@/api/settings'
+import type { FirewallRuleSettings } from '@/types/settings'
+import { errorMessage } from '@/utils/error'
 
 const ACTION_OPTIONS = [
   { label: 'Block', value: 'deny' },
@@ -21,7 +22,7 @@ const error = ref('')
 const enabled = ref(false)
 const production = ref(true)
 const defaultPolicy = ref('allow')
-const rules = ref([])
+const rules = ref<FirewallRuleSettings[]>([])
 const myIp = ref('')
 
 const lockoutRisk = computed(() => enabled.value && defaultPolicy.value === 'deny')
@@ -34,12 +35,12 @@ const addRule = () => {
   })
 }
 
-const removeRule = (index) => {
+const removeRule = (index: number) => {
   rules.value.splice(index, 1)
 }
 
 // A wrong fill shows at its own row; empty or invalid IPs just hold the button.
-const ipError = (rule) => {
+const ipError = (rule: FirewallRuleSettings) => {
   const ip = rule.ip.trim()
   if (!ip || IP_PATTERN.test(ip)) return ''
   return `'${rule.ip}' is not a valid IP or CIDR.`
@@ -75,14 +76,10 @@ const save = async () => {
         description: (r.description || '').trim(),
       })),
     }
-    const result = await settingsApi.update({ firewall: payload })
-    if (result.error) {
-      error.value = apiErrorMessage(result, 'Failed to save.')
-      return
-    }
+    await settingsApi.update({ firewall: payload })
     toast.success('Firewall updated')
   } catch (e) {
-    error.value = e.message || 'Failed to save.'
+    error.value = errorMessage(e, 'Failed to save.')
   } finally {
     saving.value = false
   }
@@ -106,7 +103,7 @@ onMounted(async () => {
       myIp.value = ''
     }
   } catch (e) {
-    error.value = e.message || 'Could not load settings.'
+    error.value = errorMessage(e, 'Could not load settings.')
   } finally {
     loading.value = false
   }
@@ -139,14 +136,14 @@ onMounted(async () => {
       label="Enable firewall"
       description="Restrict who can reach Pilot and deployed sites; off means open."
       :model-value="enabled"
-      @update:model-value="(v) => (enabled = v)"
+      @update:model-value="(v: boolean) => (enabled = v)"
     />
 
     <SettingsSwitch
       label="Block by default"
       description="Only allowed IPs below can reach the server; off allows all except blocked ones."
       :model-value="defaultPolicy === 'deny'"
-      @update:model-value="(v) => (defaultPolicy = v ? 'deny' : 'allow')"
+      @update:model-value="(v: boolean) => (defaultPolicy = v ? 'deny' : 'allow')"
     />
 
     <Alert

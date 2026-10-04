@@ -18,7 +18,7 @@ import {
   SECURITY_SECTIONS,
 } from '@/components/settings/sections'
 
-const openModel = defineModel()
+const openModel = defineModel<boolean>()
 
 const isMobile = useIsMobile()
 const route = useRoute()
@@ -27,8 +27,8 @@ const router = useRouter()
 // Every exit funnels through here. Panel switching is a route *param* change
 // on one record, so onBeforeRouteLeave never fires for it.
 const showDiscard = ref(false)
-let pendingNav = null
-const guarded = (action) => {
+let pendingNav: (() => unknown) | null = null
+const guarded = (action: () => unknown) => {
   if (!hasUnsavedChanges()) return action()
   pendingNav = action
   showDiscard.value = true
@@ -93,7 +93,12 @@ const guardedSubSection = computed({
 
 // For Sessions the :subSection route slot carries a jti instead.
 const sessionJti = computed({
-  get: () => (currentSection.value === 'sessions' ? route.params.subSection || null : null),
+  get: () => {
+    if (currentSection.value !== 'sessions') return null
+
+    const target = route.params.subSection
+    return typeof target === 'string' && target ? target : null
+  },
   set: (jti) =>
     router.push({
       name: 'Settings',
@@ -102,7 +107,7 @@ const sessionJti = computed({
 })
 
 // Reset on section change so a stale title is never inherited.
-const nestedView = ref(null)
+const nestedView = ref<{ title: string } | null>(null)
 watch(currentSection, () => (nestedView.value = null))
 
 const headerTitle = computed(() => {

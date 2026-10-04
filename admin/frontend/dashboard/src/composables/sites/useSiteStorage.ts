@@ -1,15 +1,16 @@
 import { ref } from 'vue'
 
 import { sitesApi } from '@/api/sites'
+import type { SiteStorageReport } from '@/types/siteStorage'
 import { formatBytes } from '@/utils/format'
 
 // The report is refreshed by the site-storage timer every six hours, so pages
 // share one fetch rather than each asking for the same unchanged numbers.
 const REFRESH_AFTER_MS = 60_000
 
-const report = ref(null)
+const report = ref<SiteStorageReport | null>(null)
 let fetchedAt = 0
-let pending = null
+let pending: Promise<void> | null = null
 
 export const useSiteStorage = () => {
   // `force` skips the shared client cache, not the server's report - the
@@ -35,7 +36,7 @@ export const useSiteStorage = () => {
     return pending
   }
 
-  const storageLabel = (siteName) => {
+  const storageLabel = (siteName: string) => {
     const usage = (report.value?.sites || []).find((site) => site.name === siteName)
     return usage?.total_bytes ? formatBytes(usage.total_bytes) : ''
   }

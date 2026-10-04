@@ -5,26 +5,37 @@ import { useRouter } from 'vue-router'
 
 import { databaseApi } from '@/api/database'
 import { openTaskDetailPage } from '@/utils/taskRoute'
+import type { DatabaseConfigurationSnapshot, DatabaseVariable } from '@/types/database'
+import { errorMessage } from '@/utils/error'
 
 const router = useRouter()
 
 const loading = ref(false)
-const snapshot = ref(null)
+const snapshot = ref<DatabaseConfigurationSnapshot | null>(null)
 const error = ref('')
 const search = ref('')
-const editing = ref(null)
-const draftValue = ref(null)
+const editing = ref<DatabaseVariable | null>(null)
+const draftValue = ref<DatabaseVariable['value']>(null)
 const saving = ref(false)
 const saveError = ref('')
 
+// TextInput takes strings and numbers only, while the draft also holds booleans.
+const draftNumber = computed<string | number>({
+  get: () =>
+    typeof draftValue.value === 'boolean' || draftValue.value === null ? '' : draftValue.value,
+  set: (value) => (draftValue.value = value),
+})
+
 const groups = computed(() => {
   const query = search.value.trim().toLowerCase()
-  const grouped = new Map()
+  const grouped = new Map<string, DatabaseVariable[]>()
   for (const variable of snapshot.value?.variables || []) {
     const searchable = `${variable.name} ${variable.section}`.toLowerCase()
     if (query && !searchable.includes(query)) continue
-    if (!grouped.has(variable.section)) grouped.set(variable.section, [])
-    grouped.get(variable.section).push(variable)
+
+    const bucket = grouped.get(variable.section)
+    if (bucket) bucket.push(variable)
+    else grouped.set(variable.section, [variable])
   }
   return Array.from(grouped, ([name, variables]) => ({ name, variables }))
 })
@@ -45,12 +56,16 @@ const validationError = computed(() => {
   if (editor.value.value_type === 'boolean') {
     return typeof draftValue.value === 'boolean' ? '' : 'Choose enabled or disabled.'
   }
-  if (!Number.isInteger(draftValue.value)) return 'Enter a whole number.'
-  if (Number.isInteger(editor.value.min) && draftValue.value < editor.value.min) {
-    return `Enter a value between ${editor.value.min} and ${editor.value.max}.`
+
+  const draft = draftValue.value
+  const { min, max } = editor.value
+
+  if (typeof draft !== 'number' || !Number.isInteger(draft)) return 'Enter a whole number.'
+  if (typeof min === 'number' && Number.isInteger(min) && draft < min) {
+    return `Enter a value between ${min} and ${max}.`
   }
-  if (Number.isInteger(editor.value.max) && draftValue.value > editor.value.max) {
-    return `Enter a value between ${editor.value.min} and ${editor.value.max}.`
+  if (typeof max === 'number' && Number.isInteger(max) && draft > max) {
+    return `Enter a value between ${min} and ${max}.`
   }
   return ''
 })
@@ -60,26 +75,30 @@ const restartWarning = computed(() => {
   if (editor.value.action === 'performance_schema') {
     return 'MariaDB will restart to apply this change.'
   }
+  const dynamicMax = editor.value.dynamic_max
+
   if (
     editor.value.action === 'innodb_buffer_pool_size' &&
-    Number.isInteger(editor.value.dynamic_max) &&
-    draftValue.value > editor.value.dynamic_max
+    typeof dynamicMax === 'number' &&
+    Number.isInteger(dynamicMax) &&
+    typeof draftValue.value === 'number' &&
+    draftValue.value > dynamicMax
   ) {
-    return `MariaDB will restart because this value is above its current live Buffer Pool ceiling of ${formatConstraint(editor.value.dynamic_max, editor.value.unit)}.`
+    return `MariaDB will restart because this value is above its current live Buffer Pool ceiling of ${formatConstraint(dynamicMax, editor.value.unit)}.`
   }
   return editor.value.requires_restart ? 'MariaDB will restart to apply this change.' : ''
 })
 
-const formatValue = (variable) => {
+const formatValue = (variable: DatabaseVariable) => {
   if (!variable.supported || variable.value === null) return 'Unavailable'
   if (variable.value_type === 'boolean') return variable.value ? 'Enabled' : 'Disabled'
-  if (variable.unit === 'bytes' && Number.isFinite(variable.value)) {
-    return formatBytes(variable.value)
+  if (variable.unit === 'bytes' && typeof variable.value === 'number') {
+    return Number.isFinite(variable.value) ? formatBytes(variable.value) : 'Unavailable'
   }
   return formatConstraint(variable.value, variable.unit)
 }
 
-const formatBytes = (value) => {
+const formatBytes = (value: number) => {
   const units = ['bytes', 'KB', 'MB', 'GB', 'TB']
   let amount = value
   let index = 0
@@ -91,20 +110,20 @@ const formatBytes = (value) => {
   return `${rounded} ${units[index]}`
 }
 
-const formatConstraint = (value, unit) => {
+const formatConstraint = (value: DatabaseVariable['value'], unit: string) => {
   if (!unit) return String(value)
   if (unit === 'percent') return `${value}%`
   return `${value} ${unit}`
 }
 
-const openEditor = (variable) => {
+const openEditor = (variable: DatabaseVariable) => {
   if (!variable.editable || !variable.edit) return
   saveError.value = ''
   draftValue.value = variable.edit.value
   editing.value = variable
 }
 
-const idempotencyKey = (variable) => {
+const idempotencyKey = (variable: string) => {
   const random = globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)
   return `database-config-${variable}-${Date.now()}-${random}`
 }
@@ -123,7 +142,7 @@ const save = async () => {
     editing.value = null
     openTaskDetailPage(router, task.task_id)
   } catch (e) {
-    saveError.value = e.message || 'Could not update the database configuration.'
+    saveError.value = errorMessage(e, 'Could not update the database configuration.')
   } finally {
     saving.value = false
   }
@@ -137,7 +156,7 @@ const load = async () => {
     snapshot.value = await databaseApi.configurations.list()
   } catch (e) {
     snapshot.value = null
-    error.value = e.message || 'Could not load database configurations.'
+    error.value = errorMessage(e, 'Could not load database configurations.')
   } finally {
     loading.value = false
   }
@@ -257,7 +276,7 @@ onMounted(load)
 
       <TextInput
         v-else
-        v-model.number="draftValue"
+        v-model.number="draftNumber"
         type="number"
         :label="inputLabel"
         :min="editor.min"

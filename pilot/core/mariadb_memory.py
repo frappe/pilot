@@ -14,6 +14,7 @@ _MIN_MAX_CONNECTIONS = 10
 _MIN_BUFFER_POOL_SHARE = 0.2
 _MAX_BUFFER_POOL_SHARE = 0.7
 _BUFFER_POOL_MAX_BLOCK_MB = 8
+_MEBIBYTE = 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -142,3 +143,31 @@ def _round_up(value: int, block: int) -> int:
 
 def _round_down(value: int, block: int) -> int:
     return (value // block) * block
+
+
+def live_sizing_values(
+    sizing: MariaDBMemorySizing, current_pool: int, pool_max: int, overrides: set[str]
+) -> list[tuple[str, int]]:
+    """The SET GLOBAL values for a running server, in a safe order. Pool sizes are in bytes.
+
+    An option in `overrides` (managed.cnf names) keeps its value, as it does at startup.
+    """
+    limits = calculate_mariadb_variable_limits(sizing.total_memory_mb)
+    # innodb_buffer_pool_size_max is read-only, so a larger pool waits for the next start.
+    pool = min(sizing.innodb_buffer_pool_mb * _MEBIBYTE, pool_max)
+    pool_values = [
+        ("innodb_buffer_pool_size_auto_min", min(limits.innodb_buffer_pool_min_mb * _MEBIBYTE, pool)),
+        ("innodb_buffer_pool_size", pool),
+    ]
+    # The automatic minimum stays at or below the pool size during the change.
+    if pool >= current_pool:
+        pool_values.reverse()
+    if "innodb-buffer-pool-size" in overrides:
+        pool_values = []
+    values = [
+        *pool_values,
+        ("innodb_log_file_size", sizing.innodb_log_file_mb * _MEBIBYTE),
+        ("key_buffer_size", sizing.key_buffer_mb * _MEBIBYTE),
+        ("max_connections", sizing.max_connections),
+    ]
+    return [(name, value) for name, value in values if name.replace("_", "-") not in overrides]

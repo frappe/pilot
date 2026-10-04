@@ -2,8 +2,10 @@
 import { onMounted, ref, watch } from 'vue'
 import { ErrorMessage, Skeleton } from 'frappe-ui'
 
-import { apiErrorMessage } from '@/api/client'
+import { apiErrorMessage, hasApiError } from '@/api/client'
 import { sitesApi } from '@/api/sites'
+import type { SiteUptime } from '@/types/siteMonitoring'
+import { errorMessage } from '@/utils/error'
 
 interface Props {
   siteName: string
@@ -16,8 +18,8 @@ const props = withDefaults(defineProps<Props>(), {
 
 const loading = ref(true)
 const error = ref('')
-const data = ref(null)
-const hovered = ref(null)
+const data = ref<SiteUptime | null>(null)
+const hovered = ref<number | null>(null)
 
 const GREEN = '#10b981'
 const AMBER = '#f59e0b'
@@ -25,18 +27,18 @@ const RED = '#ef4444'
 
 // Null percent (no checks in this bucket) is handled by the caller via the
 // bg-surface-gray-3 class instead - this only covers definite percentages.
-const barColor = (percent) => {
+const barColor = (percent: number) => {
   if (percent >= 100) return GREEN
   if (percent > 0) return AMBER
   return RED
 }
 
 // Percentages carry the bar palette; everything around them stays body text.
-const percentTextStyle = (percent) => {
+const percentTextStyle = (percent: number | null) => {
   return percent === null || percent === undefined ? {} : { color: barColor(percent) }
 }
 
-const formatPercent = (percent) => {
+const formatPercent = (percent: number | null) => {
   return percent === null || percent === undefined ? 'No data' : `${percent.toFixed(2)}%`
 }
 
@@ -53,11 +55,11 @@ const TIME_FORMAT = new Intl.DateTimeFormat('en-US', {
   hour12: true,
 })
 
-const formatTimeOnly = (date) => {
+const formatTimeOnly = (date: Date) => {
   return TIME_FORMAT.format(date).toLowerCase()
 }
 
-const formatFullTime = (ms) => {
+const formatFullTime = (ms: number) => {
   const date = new Date(ms)
   return `${DATE_FORMAT.format(date)} ${date.getFullYear()}, ${formatTimeOnly(date)}`
 }
@@ -67,10 +69,10 @@ const load = async () => {
   error.value = ''
   try {
     const result = await sitesApi.uptime.get(props.siteName, props.window)
-    if (result.error) throw new Error(apiErrorMessage(result, 'Could not load uptime data.'))
+    if (hasApiError(result)) throw new Error(apiErrorMessage(result, 'Could not load uptime data.'))
     data.value = result
-  } catch (e) {
-    error.value = e.message || 'Could not load uptime data.'
+  } catch (caught) {
+    error.value = errorMessage(caught, 'Could not load uptime data.')
   } finally {
     loading.value = false
   }

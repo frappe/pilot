@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Button, Dialog, ErrorMessage, LoadingIndicator, Select, TextInput } from 'frappe-ui'
 
-import { apiErrorMessage } from '@/api/client'
+import { apiErrorMessage, hasApiError } from '@/api/client'
 import { authApi } from '@/api/auth'
 import { benchesApi } from '@/api/benches'
 
-const PM_LABELS = { systemd: 'Systemd', supervisor: 'Supervisor' }
+const PM_LABELS: Record<string, string> = { systemd: 'Systemd', supervisor: 'Supervisor' }
 
 interface Props {
   modelValue?: boolean
@@ -26,7 +26,7 @@ const nativeProcessManager = ref('systemd')
 const processManager = ref('systemd')
 const adminDomain = ref('')
 const adminPrefix = ref('')
-const wildcardDomains = ref([])
+const wildcardDomains = ref<string[]>([])
 const selectedSuffix = ref('')
 const error = ref('')
 const creating = ref(false)
@@ -35,7 +35,7 @@ const status = ref('')
 const provisioning = ref(false)
 const wizardUrl = ref('')
 const elapsed = ref(0)
-let elapsedTimer = null
+let elapsedTimer: ReturnType<typeof setInterval> | null = null
 
 const elapsedLabel = computed(() => {
   const m = Math.floor(elapsed.value / 60)
@@ -64,7 +64,7 @@ const stopElapsed = () => {
 // with `pilot start`) most likely has no systemd/supervisor configured, so
 // auto-provisioning a managed bench from the UI would silently fail or confuse.
 // In that case we point the user at the CLI instead.
-const isProduction = ref(null)
+const isProduction = ref<boolean | null>(null)
 
 // Native manager is recommended; supervisor is the cross-platform alternative.
 const processManagerOptions = computed(() => [
@@ -126,7 +126,7 @@ watch(show, (open) => {
   loadWildcardDomains()
 })
 
-const startProvisioning = (url) => {
+const startProvisioning = (url: string) => {
   provisioning.value = true
   wizardUrl.value = url
   elapsed.value = 0
@@ -148,14 +148,15 @@ const MAX_WAIT_SECONDS = 120
 // cache: 'no-store' (plus a nonce) keeps the browser from reusing a stale answer.
 // Returns true if the A record is published (and points here when we know our IP),
 // false if it resolves but not yet, null if the lookup itself couldn't run.
-const dnsResolved = async (domain, expectedIp) => {
+const dnsResolved = async (domain: string, expectedIp: string) => {
   try {
     const url = `https://dns.google/resolve?name=${domain}&type=A&_=${elapsed.value}`
     const response = await fetch(url, {
       headers: { accept: 'application/dns-json' },
       cache: 'no-store',
     })
-    const aRecords = ((await response.json()).Answer || []).filter((a) => a.type === 1)
+    const body: { Answer?: { type: number; data: string }[] } = await response.json()
+    const aRecords = (body.Answer || []).filter((a) => a.type === 1)
     if (!aRecords.length) return false
     return expectedIp ? aRecords.some((a) => a.data === expectedIp) : true
   } catch {
@@ -168,7 +169,7 @@ const dnsResolved = async (domain, expectedIp) => {
 // domain has propagated, and a minimum wait elapses. The dev/port flow has no
 // domain, so it skips DoH and the wait. DoH being unreachable (null) doesn't
 // block, and a cached negative stops blocking after MAX_WAIT_SECONDS.
-const pollReady = async (params, domain = '', serverIp = '') => {
+const pollReady = async (params: Record<string, unknown>, domain = '', serverIp = '') => {
   if (!provisioning.value) return
   let serverReady = false
   try {
@@ -209,7 +210,7 @@ const createBench = async () => {
       process_manager: processManager.value,
       admin_domain: domain,
     })
-    if (data.error) {
+    if (hasApiError(data)) {
       error.value = apiErrorMessage(data, 'Could not create bench.')
       creating.value = false
       return
@@ -271,8 +272,8 @@ const createBench = async () => {
            managed bench the host probably can't run. -->
       <div v-else-if="isProduction === false" class="flex flex-col gap-3">
         <p class="text-ink-gray-7 text-p-sm">
-          This bench is running in development mode, so new benches can be created from the
-          command line :
+          This bench is running in development mode, so new benches can be created from the command
+          line :
         </p>
 
         <pre

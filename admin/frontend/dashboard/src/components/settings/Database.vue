@@ -20,6 +20,7 @@ const configurationSection = DATABASE_SECTIONS.find((section) => section.id === 
     </section>
 
     <SettingsRow
+      v-if="configurationSection"
       class="-mx-2.5 mt-2 border-t rounded border-outline-alpha-gray-1"
       as="button"
       interactive

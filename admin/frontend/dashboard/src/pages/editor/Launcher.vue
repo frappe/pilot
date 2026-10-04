@@ -7,11 +7,12 @@ import MarketplaceAppCard from '@/components/marketplace/MarketplaceAppCard.vue'
 import { appsApi } from '@/api/apps'
 import { useAppRegistry } from '@/composables/apps/useAppRegistry'
 import { useSession } from '@/composables/auth/useSession'
+import type { AppInfo } from '@/types/apps'
 
 const { session } = useSession()
 const { titleMap, descriptionMap, logoMap, load: loadRegistry } = useAppRegistry()
 
-const installed = ref([])
+const installed = ref<AppInfo[]>([])
 const loading = ref(true)
 
 const appObjects = computed(() =>
@@ -49,9 +50,7 @@ onMounted(async () => {
     <LoadingText v-else-if="loading" class="justify-center mt-16" />
 
     <section v-else-if="appObjects.length" class="mt-6">
-      <p class="font-medium">
-        Installed apps · {{ appObjects.length }}
-      </p>
+      <p class="font-medium">Installed apps · {{ appObjects.length }}</p>
 
       <div class="gap-x-6 gap-y-4 grid md:grid-cols-2 mt-3">
         <a

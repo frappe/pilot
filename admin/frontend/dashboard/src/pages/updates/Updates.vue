@@ -5,12 +5,14 @@ import { Badge, Button, ErrorMessage, TabButtons, Tooltip } from 'frappe-ui'
 
 import EmptyState from '@/components/common/EmptyState.vue'
 import ListSkeleton from '@/components/common/ListSkeleton.vue'
-import Table from '@/components/common/Table.vue'
 import StickyToolbar from '@/components/common/StickyToolbar.vue'
+import Table from '@/components/common/Table.vue'
 
-import { useIsMobile } from '@/composables/common/useIsMobile'
 import { updatesApi } from '@/api/updates'
-
+import { useIsMobile } from '@/composables/common/useIsMobile'
+import { errorMessage } from '@/utils/error'
+import { fmtDateTime, fmtDuration } from '@/utils/taskFormat'
+import { relativeTime } from '@/utils/time'
 import {
   matchesUpdateFilter,
   opTitle,
@@ -21,14 +23,14 @@ import {
   stateTone,
   UPDATE_FILTERS,
 } from '@/utils/updateFormat'
-import { relativeTime } from '@/utils/time'
-import { fmtDateTime, fmtDuration } from '@/utils/taskFormat'
+import type { StateTone } from '@/utils/updateFormat'
+import type { MigrationSummary } from '@/types/migrations'
 
 const route = useRoute()
 const router = useRouter()
 const isMobile = useIsMobile()
 
-const operations = ref([])
+const operations = ref<MigrationSummary[]>([])
 const loading = ref(false)
 const error = ref('')
 
@@ -48,17 +50,16 @@ const visibleOperations = computed(() =>
   operations.value.filter((op) => matchesUpdateFilter(op, statusFilter.value)),
 )
 
-const onFilterChange = (value) => {
+const onFilterChange = (value: string | number) => {
   const query = { ...route.query }
   if (value === 'all') delete query.status
-  else query.status = value
+  else query.status = String(value)
   router.replace({ name: 'Updates', query })
 }
 
-const badge = (op) => {
+const badge = (op: MigrationSummary): { label: string; theme: StateTone } => {
   if (op.pending_action) return { label: pendingActionLabel(op.pending_action), theme: 'amber' }
-  const tone = stateTone(op.state)
-  return { label: stateLabel(op.state), theme: tone === 'orange' ? 'amber' : tone }
+  return { label: stateLabel(op.state), theme: stateTone(op.state) }
 }
 
 const columns = [
@@ -82,11 +83,14 @@ const rows = computed(() =>
   })),
 )
 
-const getRowRoute = (row) => ({ name: 'UpdateDetail', params: { operationId: row.id } })
+const getRowRoute = (row: { id: string }) => ({
+  name: 'UpdateDetail',
+  params: { operationId: row.id },
+})
 
-const duration = (op) =>
+const duration = (op: MigrationSummary) =>
   op.finished_at && op.started_at
-    ? fmtDuration((new Date(op.finished_at) - new Date(op.started_at)) / 1000)
+    ? fmtDuration((new Date(op.finished_at).getTime() - new Date(op.started_at).getTime()) / 1000)
     : ''
 
 const load = async () => {
@@ -100,8 +104,8 @@ const load = async () => {
     const past = history.data || []
     // Pin the active/unresolved operation at the top (it is also in history).
     operations.value = current ? [current, ...past.filter((op) => op.id !== current.id)] : past
-  } catch (e) {
-    error.value = e?.message || 'Could not load updates.'
+  } catch (caught) {
+    error.value = errorMessage(caught, 'Could not load updates.')
   } finally {
     loading.value = false
   }

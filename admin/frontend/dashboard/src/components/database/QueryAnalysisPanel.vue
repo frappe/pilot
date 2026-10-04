@@ -6,39 +6,64 @@ import Table from '@/components/common/Table.vue'
 import DatabasePanel from '@/components/database/DatabasePanel.vue'
 import PerformanceSchemaNotice from '@/components/database/PerformanceSchemaNotice.vue'
 
-import { apiErrorMessage } from '@/api/client'
+import { apiErrorMessage, hasApiError } from '@/api/client'
 import { databaseApi } from '@/api/database'
 import { formatCount, formatMilliseconds } from '@/utils/format'
+import type { PerformanceSection } from '@/types/database'
+import { errorMessage } from '@/utils/error'
 
-const props = defineProps({
-  site: { type: String, default: '' },
-  badge: { type: String, default: '' },
-  enabled: { type: Boolean, default: false },
-  showSite: { type: Boolean, default: false },
-  siteByDatabase: { type: Object, default: () => ({}) },
+interface Props {
+  site?: string
+  badge?: string
+  enabled?: boolean
+  showSite?: boolean
+  siteByDatabase?: Record<string, string>
+}
+
+interface Column {
+  key: string
+  label: string
+}
+
+type PerformanceRow = PerformanceSection['data'][number]
+
+const props = withDefaults(defineProps<Props>(), {
+  site: '',
+  badge: '',
+  enabled: false,
+  showSite: false,
+  siteByDatabase: () => ({}),
 })
 
 const pageSize = 20
 
 const tab = ref('time_consuming_queries')
 
-const rows = ref([])
+const rows = ref<PerformanceRow[]>([])
 const hasNextPage = ref(false)
 const loading = ref(false)
 const error = ref('')
 const loaded = ref(false)
 
-const siteLabel = (database) => props.siteByDatabase[database] || database || '—'
+const siteLabel = (database: string | null) =>
+  props.siteByDatabase[database ?? ''] || database || '—'
 
-const withSite = (columns) =>
+const withSite = (columns: Column[]) =>
   props.showSite ? [{ key: 'database', label: 'Site' }, ...columns] : columns
+
+const percentOf = (row: PerformanceRow) => ('percent' in row ? row.percent : 0)
+const callsOf = (row: PerformanceRow) => ('calls' in row ? row.calls : 0)
+const rowsSentOf = (row: PerformanceRow) => ('rows_sent' in row ? row.rows_sent : 0)
+const rowsExaminedOf = (row: PerformanceRow) => ('rows_examined' in row ? row.rows_examined : 0)
+const averageTimeOf = (row: PerformanceRow) => ('average_time_ms' in row ? row.average_time_ms : 0)
+const queryOf = (row: PerformanceRow) => ('query' in row ? (row.query ?? '') : '')
 
 const tabOptions = [
   { label: 'Time consuming', value: 'time_consuming_queries' },
   { label: 'Full table scans', value: 'full_table_scan_queries' },
 ]
 
-const columnsByTab = {
+const columnsByTab: Record<string, Column[]> = {
   time_consuming_queries: [
     { key: 'percent', label: 'Percentage' },
     { key: 'calls', label: 'Calls' },
@@ -60,12 +85,15 @@ const load = async (offset = 0) => {
   error.value = ''
   try {
     const result = await databaseApi.performanceReport(tab.value, props.site, pageSize, offset)
-    if (result?.error) throw new Error(apiErrorMessage(result, 'Could not load the query report.'))
+    if (hasApiError(result)) {
+      throw new Error(apiErrorMessage(result, 'Could not load the query report.'))
+    }
+
     rows.value = offset ? [...rows.value, ...result.data] : result.data
     hasNextPage.value = result.has_next_page
     loaded.value = true
   } catch (caught) {
-    error.value = caught.message || 'Could not load the query report.'
+    error.value = errorMessage(caught, 'Could not load the query report.')
   } finally {
     loading.value = false
   }
@@ -106,20 +134,20 @@ const openQuery = ref('')
       <template v-else>
         <Table class="px-4" height="max-h-96" :columns="columns" :rows="rows">
           <template #database="{ row }">{{ siteLabel(row.database) }}</template>
-          <template #percent="{ row }">{{ Number(row.percent).toFixed(1) }}%</template>
-          <template #calls="{ row }">{{ formatCount(row.calls) }}</template>
-          <template #rows_examined="{ row }">{{ formatCount(row.rows_examined) }}</template>
-          <template #rows_sent="{ row }">{{ formatCount(row.rows_sent) }}</template>
+          <template #percent="{ row }">{{ percentOf(row).toFixed(1) }}%</template>
+          <template #calls="{ row }">{{ formatCount(callsOf(row)) }}</template>
+          <template #rows_examined="{ row }">{{ formatCount(rowsExaminedOf(row)) }}</template>
+          <template #rows_sent="{ row }">{{ formatCount(rowsSentOf(row)) }}</template>
           <template #average_time_ms="{ row }">
-            {{ formatMilliseconds(row.average_time_ms) }}
+            {{ formatMilliseconds(averageTimeOf(row)) }}
           </template>
           <template #query="{ row }">
             <button
               type="button"
               class="max-w-md text-left truncate"
-              @click="openQuery = row.query"
+              @click="openQuery = queryOf(row)"
             >
-              {{ row.query }}
+              {{ queryOf(row) }}
             </button>
           </template>
         </Table>

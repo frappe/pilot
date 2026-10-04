@@ -7,6 +7,7 @@ import PasswordStrengthMeter from '@/components/common/PasswordStrengthMeter.vue
 
 import { settingsApi } from '@/api/settings'
 import { meetsPasswordRequirements } from '@/utils/passwordStrength'
+import { errorMessage } from '@/utils/error'
 
 const emit = defineEmits(['passwordChanged'])
 
@@ -38,7 +39,7 @@ const save = async () => {
     toast.success('Password changed')
     emit('passwordChanged')
   } catch (e) {
-    error.value = e.message || 'Could not change the password.'
+    error.value = errorMessage(e, 'Could not change the password.')
   } finally {
     saving.value = false
   }

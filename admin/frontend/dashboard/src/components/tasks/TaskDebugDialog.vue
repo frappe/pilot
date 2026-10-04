@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { Alert, Button, Dialog, LoadingText } from 'frappe-ui'
 import { markdownToHTML } from 'frappe-ui/markdown'
 import DOMPurify from 'dompurify'
 
 import { tasksApi } from '@/api/tasks'
+import type { DebugDeltaEvent, DebugDoneEvent, DebugErrorEvent } from '@/types/tasks'
 
 interface Props {
   taskId: string
@@ -18,7 +19,7 @@ const text = ref('')
 const html = computed(() => DOMPurify.sanitize(markdownToHTML(text.value || '')))
 const streaming = ref(false)
 const error = ref('')
-let source = null
+let source: EventSource | null = null
 
 const close = () => {
   if (source) {
@@ -37,7 +38,7 @@ const start = ({ refresh = false } = {}) => {
   streaming.value = true
   source = new EventSource(tasksApi.debugUrl(props.taskId, refresh))
   source.onmessage = (message) => {
-    let event
+    let event: DebugDeltaEvent | DebugDoneEvent | DebugErrorEvent
     try {
       event = JSON.parse(message.data)
     } catch {

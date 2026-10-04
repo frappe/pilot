@@ -2,14 +2,23 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ErrorMessage, Skeleton } from 'frappe-ui'
 import { AreaChart } from 'frappe-ui/charts'
+import type {
+  AreaChartProps,
+  ChartXAxisOptions,
+  ReferenceLine,
+  SeriesStyle,
+  TimeGrain,
+} from 'frappe-ui/charts'
 
 import ChartCard from '@/components/common/ChartCard.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import SlowQueries from '@/components/dashboard/SlowQueries.vue'
 
-import { apiErrorMessage } from '@/api/client'
+import { apiErrorMessage, hasApiError } from '@/api/client'
 import { monitorApi } from '@/api/monitor'
 import { formatBytes } from '@/utils/format'
+import { errorMessage } from '@/utils/error'
+import type { DatabaseHistory } from '@/types/stats'
 
 interface Props {
   window?: string
@@ -19,7 +28,7 @@ const props = withDefaults(defineProps<Props>(), {
   window: '1h',
 })
 
-const TIME_GRAIN = {
+const TIME_GRAIN: Record<string, TimeGrain> = {
   '30m': 'minute',
   '1h': 'minute',
   '6h': 'hour',
@@ -32,7 +41,7 @@ const QUERY_SERIES = ['Insert', 'Update', 'Delete', 'Select', 'Other']
 
 const loading = ref(true)
 const error = ref('')
-const data = ref(null)
+const data = ref<DatabaseHistory | null>(null)
 
 const points = computed(() => data.value?.points ?? [])
 const unsupported = computed(() => data.value?.slow_queries?.unsupported === true)
@@ -40,7 +49,7 @@ const empty = computed(() => !unsupported.value && points.value.length === 0)
 
 const GRID = { show: true, lineStyle: { type: 'dashed', color: 'var(--outline-gray-2)' } }
 
-const xAxis = computed(() => ({
+const xAxis = computed<ChartXAxisOptions>(() => ({
   type: 'time',
   timeGrain: TIME_GRAIN[props.window] ?? 'minute',
   echartOptions: {
@@ -50,94 +59,88 @@ const xAxis = computed(() => ({
   },
 }))
 
-const areaSeries = (color) => ({
+const areaSeries = (color: string): SeriesStyle => ({
   color,
   smooth: true,
-  lineWidth: 1.5,
   showDataPoints: false,
-  fillOpacity: 0.2,
+  echartOptions: { lineStyle: { width: 1.5 }, areaStyle: { opacity: 0.2 } },
 })
 
-const bytesAxis = { min: 0, title: 'bytes', format: formatBytes, echartOptions: { splitLine: GRID } }
+const bytesAxis = {
+  min: 0,
+  title: 'bytes',
+  format: formatBytes,
+  echartOptions: { splitLine: GRID },
+}
 
-const thresholds = (entries) =>
-  entries.map(([value, label]) => ({ value, label, color: '#ef4444', lineType: 'dashed' }))
+const thresholds = (entries: [number, string][]): ReferenceLine[] =>
+  entries.map(([value, label]) => ({ value, label, color: '#ef4444', dashed: true }))
+
+const chartCard = (title: string, config: AreaChartProps) => ({ title, config })
 
 const charts = computed(() => [
-  {
-    title: 'Queries',
-    config: {
-      data: points.value,
-      x: 'time',
-      y: QUERY_SERIES,
-      xAxis: xAxis.value,
-      yAxis: { min: 0, title: 'count', echartOptions: { splitLine: GRID } },
-      seriesConfig: Object.fromEntries(QUERY_SERIES.map((n, i) => [n, areaSeries(PALETTE[i])])),
+  chartCard('Queries', {
+    data: points.value,
+    x: 'time',
+    y: QUERY_SERIES,
+    xAxis: xAxis.value,
+    yAxis: { min: 0, title: 'count', echartOptions: { splitLine: GRID } },
+    seriesConfig: Object.fromEntries(QUERY_SERIES.map((n, i) => [n, areaSeries(PALETTE[i])])),
+  }),
+
+  chartCard('DB connections', {
+    data: points.value,
+    x: 'time',
+    y: ['Connected', 'Max Connections'],
+    xAxis: xAxis.value,
+    yAxis: { min: 0, title: 'connections', echartOptions: { splitLine: GRID } },
+    seriesConfig: {
+      Connected: areaSeries(PALETTE[0]),
+      'Max Connections': areaSeries(PALETTE[2]),
     },
-  },
-  {
-    title: 'DB connections',
-    config: {
-      data: points.value,
-      x: 'time',
-      y: ['Connected', 'Max Connections'],
-      xAxis: xAxis.value,
-      yAxis: { min: 0, title: 'connections', echartOptions: { splitLine: GRID } },
-      seriesConfig: {
-        Connected: areaSeries(PALETTE[0]),
-        'Max Connections': areaSeries(PALETTE[2]),
-      },
-    },
-  },
-  {
-    title: 'Average row lock time (ms)',
-    config: {
-      data: points.value,
-      x: 'time',
-      y: 'Avg Row Lock Wait',
-      xAxis: xAxis.value,
-      yAxis: { min: 0, title: 'ms', echartOptions: { splitLine: GRID } },
-      seriesConfig: { 'Avg Row Lock Wait': areaSeries(PALETTE[3]) },
-    },
-  },
-  {
-    title: 'Buffer pool size',
-    config: {
-      data: points.value,
-      x: 'time',
-      y: 'Buffer Pool Size',
-      xAxis: xAxis.value,
-      yAxis: bytesAxis,
-      seriesConfig: { 'Buffer Pool Size': areaSeries(PALETTE[5]) },
-    },
-  },
-  {
-    title: 'Buffer pool size of total RAM',
-    config: {
-      data: points.value,
-      x: 'time',
-      y: 'Buffer Pool % RAM',
-      xAxis: xAxis.value,
-      yAxis: { min: 0, max: 100, title: '%', echartOptions: { splitLine: GRID } },
-      seriesConfig: { 'Buffer Pool % RAM': areaSeries(PALETTE[0]) },
-      referenceLines: thresholds([
-        [65, 'Too High InnoDB Buffer Pool (65%)'],
-        [15, 'Too Low InnoDB Buffer Pool (15%)'],
-      ]),
-    },
-  },
-  {
-    title: 'Buffer pool miss percent',
-    config: {
-      data: points.value,
-      x: 'time',
-      y: 'Buffer Pool Miss %',
-      xAxis: xAxis.value,
-      yAxis: { min: 0, title: '%', echartOptions: { splitLine: GRID } },
-      seriesConfig: { 'Buffer Pool Miss %': areaSeries(PALETTE[1]) },
-      referenceLines: thresholds([[1, 'Too High Buffer Pool Miss (1%)']]),
-    },
-  },
+  }),
+
+  chartCard('Average row lock time (ms)', {
+    data: points.value,
+    x: 'time',
+    y: 'Avg Row Lock Wait',
+    xAxis: xAxis.value,
+    yAxis: { min: 0, title: 'ms', echartOptions: { splitLine: GRID } },
+    seriesConfig: { 'Avg Row Lock Wait': areaSeries(PALETTE[3]) },
+  }),
+
+  chartCard('Buffer pool size', {
+    data: points.value,
+    x: 'time',
+    y: 'Buffer Pool Size',
+    xAxis: xAxis.value,
+    yAxis: bytesAxis,
+    seriesConfig: { 'Buffer Pool Size': areaSeries(PALETTE[5]) },
+  }),
+
+  chartCard('Buffer pool size of total RAM', {
+    data: points.value,
+    x: 'time',
+    y: 'Buffer Pool % RAM',
+    xAxis: xAxis.value,
+    yAxis: { min: 0, max: 100, title: '%', echartOptions: { splitLine: GRID } },
+    seriesConfig: { 'Buffer Pool % RAM': areaSeries(PALETTE[0]) },
+
+    referenceLines: thresholds([
+      [65, 'Too High InnoDB Buffer Pool (65%)'],
+      [15, 'Too Low InnoDB Buffer Pool (15%)'],
+    ]),
+  }),
+
+  chartCard('Buffer pool miss percent', {
+    data: points.value,
+    x: 'time',
+    y: 'Buffer Pool Miss %',
+    xAxis: xAxis.value,
+    yAxis: { min: 0, title: '%', echartOptions: { splitLine: GRID } },
+    seriesConfig: { 'Buffer Pool Miss %': areaSeries(PALETTE[1]) },
+    referenceLines: thresholds([[1, 'Too High Buffer Pool Miss (1%)']]),
+  }),
 ])
 
 // Out-of-order window switches: only the latest load writes state.
@@ -150,11 +153,15 @@ const load = async () => {
   try {
     const result = await monitorApi.dbHistory(props.window)
     if (generation !== loadGeneration) return
-    if (result.error) throw new Error(apiErrorMessage(result, 'Could not load database metrics.'))
+    if (hasApiError(result)) {
+      throw new Error(apiErrorMessage(result, 'Could not load database metrics.'))
+    }
+
     data.value = result
-  } catch (e) {
+  } catch (caught) {
     if (generation !== loadGeneration) return
-    error.value = e.message || 'Could not load database metrics.'
+
+    error.value = errorMessage(caught, 'Could not load database metrics.')
   } finally {
     if (generation === loadGeneration) loading.value = false
   }
@@ -170,7 +177,7 @@ watch(
 )
 
 // Daemon samples every ~10s; a 5-minute refresh keeps charts current.
-let refreshTimer
+let refreshTimer: ReturnType<typeof setInterval> | undefined
 onMounted(() => {
   load()
   refreshTimer = setInterval(load, 300000)

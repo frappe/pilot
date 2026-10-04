@@ -1,10 +1,14 @@
 import { ref } from 'vue'
 
-import { apiErrorMessage } from '@/api/client'
 import { benchesApi } from '@/api/benches'
+import { apiErrorMessage, hasApiError } from '@/api/client'
+import type { BenchResource } from '@/types/benches'
+import { errorMessage } from '@/utils/error'
+
+type BenchControlAction = 'start' | 'stop' | 'restart'
 
 export const useBenches = () => {
-  const benches = ref([])
+  const benches = ref<BenchResource[]>([])
   const loading = ref(false)
   const controlLoading = ref('')
   const error = ref('')
@@ -19,28 +23,28 @@ export const useBenches = () => {
     }
   }
 
-  const run = async (name, action) => {
+  const run = async (action: () => Promise<unknown>) => {
     error.value = ''
     try {
       const result = await action()
-      if (typeof result?.json === 'function') {
+      if (result instanceof Response) {
         if (!result.ok) {
           error.value = apiErrorMessage(await result.json())
           return false
         }
-      } else if (result?.error) {
+      } else if (hasApiError(result)) {
         error.value = apiErrorMessage(result)
         return false
       }
       await load()
       return true
-    } catch (e) {
-      error.value = e.message
+    } catch (caught) {
+      error.value = errorMessage(caught, 'Bench action failed')
       return false
     }
   }
 
-  const control = async (name, action) => {
+  const control = async (name: string, action: BenchControlAction) => {
     const operation = benchesApi[action]
     if (!operation) {
       error.value = 'Unsupported bench action.'
@@ -48,14 +52,14 @@ export const useBenches = () => {
     }
     controlLoading.value = name
     try {
-      return await run(name, () => operation(name))
+      return await run(() => operation(name))
     } finally {
       if (controlLoading.value === name) controlLoading.value = ''
     }
   }
 
-  const drop = (name) => {
-    return run(name, () => benchesApi.drop(name))
+  const drop = (name: string) => {
+    return run(() => benchesApi.drop(name))
   }
 
   return { benches, loading, controlLoading, error, load, control, drop }

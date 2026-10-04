@@ -1,28 +1,38 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Badge, Button, Dropdown, ErrorMessage, Skeleton, TabButtons, toast } from 'frappe-ui'
+import {
+  Badge,
+  type BadgeProps,
+  Button,
+  Dropdown,
+  ErrorMessage,
+  Skeleton,
+  TabButtons,
+  toast,
+} from 'frappe-ui'
 
+import PageHero from '@/components/common/PageHero.vue'
+import StickyToolbar from '@/components/common/StickyToolbar.vue'
 import SiteApps from '@/components/sites/Apps.vue'
 import SiteBackups from '@/components/sites/Backups.vue'
 import SiteConfig from '@/components/sites/Config.vue'
 import SiteSettings from '@/components/sites/Settings.vue'
-import PageHero from '@/components/common/PageHero.vue'
 import Activities from '@/pages/Activities.vue'
-import StickyToolbar from '@/components/common/StickyToolbar.vue'
 
-import { apiErrorMessage } from '@/api/client'
+import { apiErrorMessage, hasApiError } from '@/api/client'
+import { useAppRegistry } from '@/composables/apps/useAppRegistry'
 import { useBreadcrumbs } from '@/composables/common/useBreadcrumbs'
+import { useIsMobile } from '@/composables/common/useIsMobile'
 import { useSite } from '@/composables/sites/useSite'
 import { useSiteStorage } from '@/composables/sites/useSiteStorage'
-import { useAppRegistry } from '@/composables/apps/useAppRegistry'
-import { useIsMobile } from '@/composables/common/useIsMobile'
-import { openTaskDetailPage } from '@/utils/taskRoute'
+import { errorMessage } from '@/utils/error'
 import { toSentenceCase } from '@/utils/format'
+import { openTaskDetailPage } from '@/utils/taskRoute'
 
 const route = useRoute()
 const router = useRouter()
-const siteName = route.params.name
+const siteName = Array.isArray(route.params.name) ? route.params.name[0] : route.params.name
 
 const { setBreadcrumbs } = useBreadcrumbs()
 const { site, loading, error, status, load, reload, login, backup, apps, loadApps } =
@@ -33,8 +43,14 @@ const storageUsed = computed(() => storageLabel(siteName))
 
 setBreadcrumbs([{ label: 'Sites', route: { name: 'Sites' } }, { label: siteName }])
 
-const STATUS_THEMES = { online: 'gray', broken: 'red', offline: 'orange', provisioning: 'blue' }
-const STATUS_LABELS = {
+const STATUS_THEMES: Record<string, BadgeProps['theme']> = {
+  online: 'green',
+  broken: 'red',
+  offline: 'amber',
+  provisioning: 'blue',
+}
+
+const STATUS_LABELS: Record<string, string> = {
   online: 'Active',
   broken: 'Broken',
   offline: 'Paused',
@@ -53,7 +69,8 @@ const tabs = [
 ]
 
 const VALID_TABS = tabs.map((t) => t.value)
-const activeTab = ref(VALID_TABS.includes(route.params.tab) ? route.params.tab : 'apps')
+const tabParam = Array.isArray(route.params.tab) ? route.params.tab[0] : route.params.tab
+const activeTab = ref(VALID_TABS.includes(tabParam) ? tabParam : 'apps')
 
 watch(activeTab, (tab) => {
   router.replace({ name: 'SiteDetail', params: { name: siteName, tab } })
@@ -62,7 +79,8 @@ watch(activeTab, (tab) => {
 watch(
   () => route.params.tab,
   (tab) => {
-    if (tab && VALID_TABS.includes(tab) && tab !== activeTab.value) activeTab.value = tab
+    const value = Array.isArray(tab) ? tab[0] : tab
+    if (value && VALID_TABS.includes(value) && value !== activeTab.value) activeTab.value = value
   },
 )
 
@@ -71,12 +89,15 @@ watchEffect(() => {
   if (site.value) document.title = `${site.value.name} | ${tabLabel.value}`
 })
 
-const APP_ACTIONS = { 'install-app': 'installed', 'uninstall-app': 'uninstalled' }
+const APP_ACTIONS: Record<string, string> = {
+  'install-app': 'installed',
+  'uninstall-app': 'uninstalled',
+}
 const appRegistry = useAppRegistry()
 const appAction = computed(() => {
   const app = route.query.app
   const action = route.query.action
-  if (typeof app !== 'string' || !(action in APP_ACTIONS)) return null
+  if (typeof app !== 'string' || typeof action !== 'string' || !(action in APP_ACTIONS)) return null
   return { app, action }
 })
 watch(
@@ -96,6 +117,7 @@ watch(
 const isMobile = useIsMobile()
 
 const openSite = () => {
+  if (!site.value) return
   window.open(`${site.value.url}/desk`, '_blank')
 }
 
@@ -105,7 +127,7 @@ const setupSite = async () => {
   try {
     await login()
   } catch (caught) {
-    toast.error(caught.message || 'Could not open the setup wizard')
+    toast.error(errorMessage(caught, 'Could not open the setup wizard'))
   } finally {
     settingUpSite.value = false
   }
@@ -123,17 +145,17 @@ const loginAsAdmin = () => {
   toast.promise(login({ onHint: (hint) => toast.info(hint) }), {
     loading: 'Logging in as admin',
     success: 'Logged in as admin',
-    error: (caught) => caught?.message || 'Could not log in as admin',
+    error: (caught: unknown) => errorMessage(caught, 'Could not log in as admin'),
   })
 }
 
 const backupNow = async () => {
   try {
     const result = await backup()
-    if (result.ok) openTaskDetailPage(router, result.task_id)
-    else toast.error(apiErrorMessage(result, 'Could not start backup'))
+    if (hasApiError(result)) toast.error(apiErrorMessage(result, 'Could not start backup'))
+    else openTaskDetailPage(router, result.task_id)
   } catch (caught) {
-    toast.error(caught.message || 'Could not start backup')
+    toast.error(errorMessage(caught, 'Could not start backup'))
   }
 }
 
@@ -149,7 +171,7 @@ const menuOptions = computed(() => [
   {
     label: 'View jobs',
     icon: 'lucide-list-checks',
-    onClick: () => router.push({ name: 'Tasks', query: { site: site.value.name } }),
+    onClick: () => router.push({ name: 'Tasks', query: { site: site.value?.name } }),
   },
 ])
 
@@ -157,10 +179,11 @@ const menuOptions = computed(() => [
 // until they do, so the badge and the header button settle on their own.
 const POLL_INTERVAL_MS = 5000
 const isSettling = computed(
-  () => status.value === 'provisioning' || (status.value === 'online' && !site.value.setup_complete),
+  () =>
+    status.value === 'provisioning' || (status.value === 'online' && !site.value?.setup_complete),
 )
 
-let poll = null
+let poll: ReturnType<typeof setInterval> | null = null
 watch(
   isSettling,
   (settling) => {
@@ -223,11 +246,7 @@ onMounted(() => {
           {{ site.name }}
         </h1>
 
-        <Badge
-          :label="statusLabel"
-          :theme="statusBadgeTheme"
-          class="shrink-0"
-        />
+        <Badge :label="statusLabel" :theme="statusBadgeTheme" class="shrink-0" />
       </template>
 
       <template v-if="storageUsed" #subtitle>{{ storageUsed }} used</template>

@@ -1,4 +1,4 @@
-import { computed } from 'vue'
+import { computed, type Ref } from 'vue'
 
 import { fmtDuration } from '@/utils/taskFormat'
 
@@ -11,20 +11,37 @@ const STEP_FAILED_RE = /^STEP-FAILED\s([\w-]+),([\d.]+)/
 
 export const STEP_MARKER_RE = /^STEP(-FAILED)?\s/
 
+interface StepMarker {
+  key: string
+  ts: number
+  label: string
+  idx: number
+}
+
+export interface StepSection {
+  key: string
+  label: string
+  startedAt: number
+  endedAt: number | null
+  lineStart: number
+  lineEnd: number
+  status: 'done' | 'failed' | 'running'
+}
+
 /**
  * Parses "STEP KEY,TIMESTAMP label" and "STEP-FAILED KEY,TIMESTAMP" markers
  * out of a raw line stream into structured sections with status, timing, and
  * line-range metadata. The backend (TaskReader) already strips the on-disk
  * syslog envelope before these lines reach the UI, so they're plain text here.
- *
- * @param {import('vue').Ref<string[]>} rawLines
- * @param {import('vue').Ref<boolean>}  streaming
- * @param {import('vue').Ref<object|null>} task
  */
-export const useTaskSteps = (rawLines, streaming, task) => {
+export const useTaskSteps = (
+  rawLines: Ref<string[]>,
+  streaming: Ref<boolean>,
+  task: Ref<{ status: string } | null>,
+) => {
   const stepSections = computed(() => {
-    const markers = []
-    const failedKeys = new Set()
+    const markers: StepMarker[] = []
+    const failedKeys = new Set<string>()
     rawLines.value.forEach((line, idx) => {
       const m = line.match(STEP_RE)
       if (m) {
@@ -35,13 +52,13 @@ export const useTaskSteps = (rawLines, streaming, task) => {
       if (f) failedKeys.add(f[1])
     })
 
-    const sections = []
+    const sections: StepSection[] = []
     for (let i = 0; i < markers.length; i++) {
       const m = markers[i]
       if (m.key === 'done') break
 
       const next = markers[i + 1]
-      let status
+      let status: StepSection['status']
       if (failedKeys.has(m.key)) status = 'failed'
       else if (next) status = 'done'
       else if (!streaming.value && task.value?.status === 'failed' && failedKeys.size === 0)
@@ -70,7 +87,7 @@ export const useTaskSteps = (rawLines, streaming, task) => {
     return Math.round((done / stepSections.value.length) * 100)
   })
 
-  const stepDuration = (section) => {
+  const stepDuration = (section: StepSection) => {
     if (!section.startedAt || !section.endedAt) return null
     return fmtDuration((section.endedAt - section.startedAt) / 1000, { precise: true })
   }

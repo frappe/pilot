@@ -1,16 +1,12 @@
 import { ref } from 'vue'
 
 import { notificationsApi } from '@/api/notifications'
-import type { Notification } from '@/types/notification'
+import type { Notification, NotificationPage } from '@/types/notification'
+import { errorMessage } from '@/utils/error'
 
 interface NotificationFilters {
   category?: string
   unreadOnly?: boolean
-}
-
-interface NotificationPage {
-  data: Notification[]
-  meta: { limit: number; next_cursor: string | null; unread: number }
 }
 
 const pageSize = 20
@@ -53,10 +49,10 @@ export const useNotifications = () => {
       notifications.value = page.data
       cursor.value = page.meta.next_cursor
       unread.value = page.meta.unread
-    } catch (caught: any) {
+    } catch (caught) {
       if (request !== newestRequest) return
 
-      error.value = caught.message || 'Failed to load notifications'
+      error.value = errorMessage(caught, 'Failed to load notifications')
       notifications.value = []
     } finally {
       if (request === newestRequest) loading.value = false
@@ -79,10 +75,10 @@ export const useNotifications = () => {
 
       notifications.value = [...notifications.value, ...page.data]
       cursor.value = page.meta.next_cursor
-    } catch (caught: any) {
+    } catch (caught) {
       if (request !== newestRequest) return
 
-      error.value = caught.message || 'Failed to load more notifications'
+      error.value = errorMessage(caught, 'Failed to load more notifications')
     } finally {
       loadingMore.value = false
     }
@@ -91,7 +87,9 @@ export const useNotifications = () => {
   const refreshBadge = async () => {
     const request = newestRequest
     const localChange = newestLocalChange
-    const page: NotificationPage | null = await notificationsApi.list({ limit: 1 }).catch(() => null)
+    const page: NotificationPage | null = await notificationsApi
+      .list({ limit: 1 })
+      .catch(() => null)
 
     if (!page || request !== newestRequest || localChange !== newestLocalChange) return
 

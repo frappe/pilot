@@ -1,24 +1,39 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { Badge, Button, Dropdown, ErrorMessage, LoadingText, Tooltip } from 'frappe-ui'
+import {
+  Badge,
+  Button,
+  Dropdown,
+  type DropdownItem,
+  ErrorMessage,
+  LoadingText,
+  Tooltip,
+} from 'frappe-ui'
 
 import AddDomainDialog from '@/components/sites/settings/domains/AddDomainDialog.vue'
 import RemoveDomainDialog from '@/components/sites/settings/domains/RemoveDomainDialog.vue'
 
-import { useSite } from '@/composables/sites/useSite'
 import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
+import type { SiteDomain } from '@/types/siteDomains'
+import { useSite } from '@/composables/sites/useSite'
+import { errorMessage } from '@/utils/error'
 
 interface Props {
   siteName: string
+}
+
+interface DomainRow extends SiteDomain {
+  isSite: boolean
+  isPrimary: boolean
 }
 
 const props = defineProps<Props>()
 
 const { nginxEnabled } = useSite(props.siteName)
 
-const domains = ref([])
-const primaryDomain = ref(null)
+const domains = ref<SiteDomain[]>([])
+const primaryDomain = ref('')
 const loading = ref(false)
 const error = ref('')
 
@@ -30,8 +45,8 @@ const domainRows = computed(() => {
   }))
 })
 
-const domainMenuOptions = (row) => {
-  const options = []
+const domainMenuOptions = (row: DomainRow): DropdownItem[] => {
+  const options: DropdownItem[] = []
   if (!row.isPrimary) {
     options.push({
       label: 'Make primary',
@@ -56,15 +71,15 @@ const loadDomains = async () => {
   try {
     const data = await sitesApi.domains.list(props.siteName)
     domains.value = data.domains || []
-    primaryDomain.value = data.primary || null
+    primaryDomain.value = data.primary || ''
   } catch (e) {
-    error.value = e.message || 'Failed to load domains.'
+    error.value = errorMessage(e, 'Failed to load domains.')
   } finally {
     loading.value = false
   }
 }
 
-const setPrimary = async (domain) => {
+const setPrimary = async (domain: string) => {
   error.value = ''
   try {
     const data = await sitesApi.domains.setPrimary(props.siteName, domain)
@@ -74,7 +89,7 @@ const setPrimary = async (domain) => {
     }
     await loadDomains()
   } catch (e) {
-    error.value = e.message || 'Failed to set primary domain.'
+    error.value = errorMessage(e, 'Failed to set primary domain.')
   }
 }
 
@@ -82,7 +97,7 @@ const showAdd = ref(false)
 const showRemove = ref(false)
 const removeTarget = ref('')
 
-const openRemove = (domain) => {
+const openRemove = (domain: string) => {
   removeTarget.value = domain
   showRemove.value = true
 }
@@ -117,21 +132,12 @@ watch(nginxEnabled, (enabled) => {
 
           <div class="flex items-center gap-2 min-w-0">
             <p class="font-medium text-ink-gray-8 truncate">{{ row.domain }}</p>
-            <Badge
-              v-if="row.isPrimary"
-              label="Primary"
-              theme="green"
-              size="sm"
-              class="shrink-0"
-            />
+            <Badge v-if="row.isPrimary" label="Primary" theme="green" size="sm" class="shrink-0" />
             <Badge v-else-if="row.isSite" label="Included" size="sm" class="shrink-0" />
           </div>
         </div>
 
-        <Dropdown
-          v-if="domainMenuOptions(row).length"
-          :options="domainMenuOptions(row)"
-        >
+        <Dropdown v-if="domainMenuOptions(row).length" :options="domainMenuOptions(row)">
           <template #default="{ open }">
             <Button
               variant="ghost"

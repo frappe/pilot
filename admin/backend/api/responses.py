@@ -3,10 +3,27 @@ from __future__ import annotations
 import base64
 from collections.abc import Callable
 from pathlib import Path
+from typing import TypedDict
 
 from flask import current_app, jsonify, request, url_for
 
 from pilot.managers.task import TaskReader
+
+
+class ErrorDetail(TypedDict):
+    code: str
+    message: str
+    details: dict
+
+
+class ErrorResponse(TypedDict):
+    error: ErrorDetail
+
+
+class PageMeta(TypedDict):
+    limit: int
+    next_cursor: str | None
+
 
 _MAX_PAGE_OFFSET = 10_000
 
@@ -68,7 +85,9 @@ def parse_pagination(default_limit: int, max_limit: int) -> tuple[int, int]:
     return limit, _decode_cursor(request.args.get("cursor"))
 
 
-def paginated_response(fetch_newest: Callable[[int], list], limit: int, offset: int, meta: dict | None = None):
+def paginated_response(
+    fetch_newest: Callable[[int], list], limit: int, offset: int, meta: dict | None = None
+):
     """Return one cursor page from a newest-first fetcher. `meta` merges extra
     page-level fields (e.g. an unread count) into the envelope."""
     fetched = fetch_newest(min(offset + limit + 1, _MAX_PAGE_OFFSET + limit + 1))

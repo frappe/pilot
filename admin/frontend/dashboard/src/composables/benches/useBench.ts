@@ -1,8 +1,14 @@
 import { ref } from 'vue'
 
 import { settingsApi } from '@/api/settings'
+import type { Settings } from '@/types/settings'
 
-let cached = null
+interface BenchLabels {
+  name: string
+  defaultBranch: string
+}
+
+let cached: BenchLabels | null = null
 
 export const useBench = () => {
   const name = ref(cached?.name ?? '')
@@ -10,7 +16,7 @@ export const useBench = () => {
 
   const load = async () => {
     if (cached) return
-    let settings
+    let settings: Settings
     try {
       settings = await settingsApi.get()
     } catch {

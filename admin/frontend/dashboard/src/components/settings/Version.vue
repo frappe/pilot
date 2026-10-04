@@ -15,12 +15,12 @@ const POLL_INTERVAL_MS = 1500
 
 const loading = ref(true)
 const status = ref({ current_version: '', is_dev: true })
-const latestVersion = ref(null)
+const latestVersion = ref<string | null>(null)
 const checking = ref(false)
 const updating = ref(false)
 const log = ref('')
-const versionError = ref(null)
-const dialogError = ref(null)
+const versionError = ref<string | null>(null)
+const dialogError = ref<string | null>(null)
 const dialogOpen = ref(false)
 
 const isDev = computed(() => status.value.is_dev || !status.value.current_version)
@@ -52,9 +52,11 @@ const check = async () => {
   versionError.value = null
   try {
     const result = await cliUpdatesApi.check()
+    const latest = 'latest_version' in result ? result.latest_version : null
+
     status.value = { ...status.value, ...result }
-    latestVersion.value = result.latest_version
-    if (result.latest_version && result.latest_version !== status.value.current_version) {
+    latestVersion.value = latest
+    if (latest && latest !== status.value.current_version) {
       dialogOpen.value = true
     } else {
       toast.info(`${status.value.current_version} (latest)`, {
@@ -84,7 +86,7 @@ const update = async () => {
   }
 }
 
-const pollTask = async (taskId) => {
+const pollTask = async (taskId: string) => {
   // The admin service restarts mid-update, so detail requests fail transiently.
   // Give it a bounded window to come back before declaring the update lost.
   const MAX_CONSECUTIVE_FAILURES = 40 // ~60s at POLL_INTERVAL_MS

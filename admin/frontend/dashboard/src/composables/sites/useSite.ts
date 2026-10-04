@@ -1,33 +1,61 @@
-import { ref, computed } from 'vue'
+import { computed, type Ref, ref } from 'vue'
 
 import { sitesApi } from '@/api/sites'
+import type { SiteApp } from '@/types/siteApps'
+import type { Backup } from '@/types/siteBackups'
+import type { SiteDetail } from '@/types/sites'
 import { openSiteLogin } from '@/utils/siteLogin'
+import { errorMessage } from '@/utils/error'
 
-const cache = new Map()
-const BACKUPS_PAGE_SIZE = 20
+type SiteWithConfig = SiteDetail & { site_config: Record<string, unknown> }
 
-const getStore = (name) => {
-  if (!cache.has(name)) {
-    cache.set(name, {
-      site: ref(null),
-      apps: ref([]),
-      canDisableApps: ref(false),
-      backups: ref([]),
-      installable: ref([]),
-      nginxEnabled: ref(false),
-      adminTls: ref(false),
-      loading: ref(false),
-      error: ref(''),
-      appsLoading: ref(false),
-      backupsLoading: ref(false),
-      backupsLimit: ref(BACKUPS_PAGE_SIZE),
-      backupsHasMore: ref(false),
-    })
-  }
-  return cache.get(name)
+interface SiteStore {
+  site: Ref<SiteWithConfig | null>
+  apps: Ref<SiteApp[]>
+  canDisableApps: Ref<boolean>
+  backups: Ref<Backup[]>
+  installable: Ref<string[]>
+  nginxEnabled: Ref<boolean>
+  adminTls: Ref<boolean>
+  loading: Ref<boolean>
+  error: Ref<string>
+  appsLoading: Ref<boolean>
+  backupsLoading: Ref<boolean>
+  backupsLimit: Ref<number>
+  backupsHasMore: Ref<boolean>
 }
 
-export const useSite = (name) => {
+interface SiteLoginOptions {
+  onHint?: (hint: string) => void
+}
+
+const cache = new Map<string, SiteStore>()
+const BACKUPS_PAGE_SIZE = 20
+
+const getStore = (name: string): SiteStore => {
+  const existing = cache.get(name)
+  if (existing) return existing
+
+  const store: SiteStore = {
+    site: ref<SiteWithConfig | null>(null),
+    apps: ref<SiteApp[]>([]),
+    canDisableApps: ref(false),
+    backups: ref<Backup[]>([]),
+    installable: ref<string[]>([]),
+    nginxEnabled: ref(false),
+    adminTls: ref(false),
+    loading: ref(false),
+    error: ref(''),
+    appsLoading: ref(false),
+    backupsLoading: ref(false),
+    backupsLimit: ref(BACKUPS_PAGE_SIZE),
+    backupsHasMore: ref(false),
+  }
+  cache.set(name, store)
+  return store
+}
+
+export const useSite = (name: string) => {
   const store = getStore(name)
 
   const load = async () => {
@@ -43,7 +71,7 @@ export const useSite = (name) => {
       store.nginxEnabled.value = data.nginx_enabled ?? false
       store.adminTls.value = data.admin_tls ?? false
     } catch (caught) {
-      store.error.value = caught.message || 'Failed to load site'
+      store.error.value = errorMessage(caught, 'Failed to load site')
       store.site.value = null
     } finally {
       store.loading.value = false
@@ -100,7 +128,7 @@ export const useSite = (name) => {
   }
 
   /** Re-fetches with a larger `limit` - the backups page-length control. */
-  const setBackupsPageLength = async (pageLength) => {
+  const setBackupsPageLength = async (pageLength: number) => {
     store.backupsLimit.value = pageLength
     await _fetchBackups()
   }
@@ -111,7 +139,7 @@ export const useSite = (name) => {
     await _fetchBackups()
   }
 
-  const login = async (options = {}) => {
+  const login = async (options: SiteLoginOptions = {}) => {
     return openSiteLogin(() => sitesApi.loginLink(name), options)
   }
 
@@ -127,7 +155,7 @@ export const useSite = (name) => {
     return sitesApi.reinstall(name)
   }
 
-  const saveConfig = async (config) => {
+  const saveConfig = async (config: Record<string, unknown>) => {
     return sitesApi.configuration.update(name, config)
   }
 
@@ -146,7 +174,7 @@ export const useSite = (name) => {
 
   const version = computed(() => {
     const branch = store.site.value?.site_config?.frappe_branch
-    if (!branch) return ''
+    if (typeof branch !== 'string' || !branch) return ''
     const match = /^version-(\d+)/.exec(branch)
     return match ? `Version ${match[1]}` : branch
   })

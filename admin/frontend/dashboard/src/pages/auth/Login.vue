@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { Button, Dialog, TextInput, ErrorMessage } from 'frappe-ui'
+import { type Router, useRoute, useRouter } from 'vue-router'
+import { Button, Dialog, ErrorMessage, TextInput } from 'frappe-ui'
 
 import PilotLogo from '@/components/icons/Pilot.vue'
 
@@ -12,7 +12,7 @@ import { safeRedirect } from '@/utils/redirect'
 import { useIsMobile } from '@/composables/common/useIsMobile'
 
 // Off-SPA targets (the code editor) have no route here and need a full load.
-const redirectAfterLogin = (router, value) => {
+const redirectAfterLogin = (router: Router, value: unknown) => {
   const target = safeRedirect(value)
   if (router.resolve(target).matched.length) {
     router.replace(target)

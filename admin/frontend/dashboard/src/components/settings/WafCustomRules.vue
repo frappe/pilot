@@ -12,13 +12,15 @@ import {
   ruleProblem,
   ruleSummary,
 } from '@/utils/wafRules'
+import type { WafConditionSettings, WafRuleSettings } from '@/types/settings'
 
 // Two-way bound so the child owns list edits without mutating a prop.
-const rules = defineModel({ type: Array, default: () => [] })
+const rules = defineModel<WafRuleSettings[]>({ default: () => [] })
+
 interface Props {
-  fields?: any[]
-  operators?: any[]
-  actions?: any[]
+  fields?: string[]
+  operators?: string[]
+  actions?: string[]
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -27,7 +29,7 @@ const props = withDefaults(defineProps<Props>(), {
   actions: () => [],
 })
 
-const PLACEHOLDERS = {
+const PLACEHOLDERS: Record<string, string> = {
   source_ip: '10.0.0.0/8, 203.0.113.4',
   method: 'POST',
   uri_path: '/admin',
@@ -48,31 +50,35 @@ const actionOptions = computed(() =>
   props.actions.map((a) => ({ label: ACTION_LABELS[a] || a, value: a })),
 )
 
-const placeholder = (field) => {
+const placeholder = (field: string) => {
   return PLACEHOLDERS[field] || 'value'
 }
 
 // Identity-based :key. Index keys re-key rows on delete and Vue patches the
 // inputs in place, jumping a focused caret to the wrong row.
-const keys = new WeakMap()
+const keys = new WeakMap<object, string>()
 let nextKey = 0
-const keyOf = (object) => {
-  if (!keys.has(object)) keys.set(object, `k${(nextKey += 1)}`)
-  return keys.get(object)
+const keyOf = (object: object) => {
+  const existing = keys.get(object)
+  if (existing) return existing
+
+  const key = `k${(nextKey += 1)}`
+  keys.set(object, key)
+  return key
 }
 
 // One key, not a set: opening a rule closes the one before it.
 const openKey = ref('')
-const isOpen = (rule) => openKey.value === keyOf(rule)
-const toggleOpen = (rule) => {
+const isOpen = (rule: WafRuleSettings) => openKey.value === keyOf(rule)
+const toggleOpen = (rule: WafRuleSettings) => {
   const key = keyOf(rule)
   openKey.value = openKey.value === key ? '' : key
 }
 
 // Same predicate as the save path, so add and save cannot disagree.
 const flaggedKey = ref('')
-const root = ref(null)
-let flagTimer = null
+const root = ref<HTMLElement | null>(null)
+let flagTimer: ReturnType<typeof setTimeout> | undefined
 
 const flagUnfinished = () => {
   const rule = rules.value.find((candidate) => ruleProblem(candidate))
@@ -93,12 +99,12 @@ onUnmounted(() => clearTimeout(flagTimer))
 
 // Live reorder on dragover; identity keys keep row state through the splice.
 const dragKey = ref('')
-const onDragStart = (rule, event) => {
+const onDragStart = (rule: WafRuleSettings, event: DragEvent) => {
   dragKey.value = keyOf(rule)
   openKey.value = ''
-  event.dataTransfer.effectAllowed = 'move'
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
 }
-const onDragOver = (rule) => {
+const onDragOver = (rule: WafRuleSettings) => {
   if (!dragKey.value || dragKey.value === keyOf(rule)) return
   const from = rules.value.findIndex((r) => keyOf(r) === dragKey.value)
   const to = rules.value.findIndex((r) => keyOf(r) === keyOf(rule))
@@ -110,7 +116,7 @@ const onDragEnd = () => {
   dragKey.value = ''
 }
 
-const newCondition = () => {
+const newCondition = (): WafConditionSettings => {
   return { field: 'uri_path', operator: 'contains', value: '', header_name: '' }
 }
 const addRule = () => {
@@ -126,22 +132,24 @@ const addRule = () => {
   // Key the reactive proxy the template iterates, not the raw local object.
   openKey.value = keyOf(rules.value[rules.value.length - 1])
 }
-const addCondition = (rule) => {
+const addCondition = (rule: WafRuleSettings) => {
   rule.conditions.push(newCondition())
 }
-const removeCondition = (rule, index) => {
+const removeCondition = (rule: WafRuleSettings, index: number) => {
   rule.conditions.splice(index, 1)
 }
 
 const showRemove = ref(false)
-const removingRule = ref(null)
+const removingRule = ref<WafRuleSettings | null>(null)
 const removingLabel = computed(() => removingRule.value?.name || 'this rule')
-const promptRemove = (rule) => {
+const promptRemove = (rule: WafRuleSettings) => {
   removingRule.value = rule
   showRemove.value = true
 }
 const confirmRemove = () => {
-  const index = rules.value.indexOf(removingRule.value)
+  const target = removingRule.value
+  const index = target ? rules.value.indexOf(target) : -1
+
   if (index !== -1) rules.value.splice(index, 1)
   showRemove.value = false
   removingRule.value = null
@@ -233,7 +241,7 @@ const confirmRemove = () => {
             label="Rule enabled"
             :model-value="rule.enabled"
             @click.stop
-            @update:model-value="(v) => (rule.enabled = v)"
+            @update:model-value="(v: boolean) => (rule.enabled = v)"
           />
         </div>
 

@@ -9,18 +9,28 @@ interface Props {
   open?: boolean
 }
 
+interface Emits {
+  'update:open': [open: boolean]
+}
+
 withDefaults(defineProps<Props>(), {
   open: true,
 })
 
-defineEmits(['update:open'])
+const emit = defineEmits<Emits>()
+
+const onToggle = (event: Event) => {
+  if (!(event.target instanceof HTMLDetailsElement)) return
+
+  emit('update:open', event.target.open)
+}
 </script>
 
 <template>
   <details
     :open="open"
     class="group/section rounded-6 border border-outline-gray-2 p-1"
-    @toggle="$emit('update:open', $event.target.open)"
+    @toggle="onToggle"
   >
     <summary
       class="flex items-center justify-between px-2.5 py-2 rounded-4 transition-colors cursor-pointer select-none hover:bg-surface-gray-1"

@@ -8,6 +8,7 @@ import ActionDialog from '@/components/common/ActionDialog.vue'
 import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
 import { openTaskDetailPage } from '@/utils/taskRoute'
+import { errorMessage } from '@/utils/error'
 
 interface Props {
   siteName: string
@@ -37,7 +38,7 @@ const confirmMigrate = async () => {
       router.push({ name: 'UpdateDetail', params: { operationId: data.operation_id } })
     } else migrateError.value = apiErrorMessage(data, 'Failed to migrate site.')
   } catch (e) {
-    migrateError.value = e.message || 'Failed to migrate site.'
+    migrateError.value = errorMessage(e, 'Failed to migrate site.')
   } finally {
     migrating.value = false
   }
@@ -92,7 +93,7 @@ const confirmReset = async () => {
       openTaskDetailPage(router, data.task_id)
     } else resetError.value = apiErrorMessage(data, 'Failed to reset site.')
   } catch (e) {
-    resetError.value = e.message || 'Failed to reset site.'
+    resetError.value = errorMessage(e, 'Failed to reset site.')
   } finally {
     resetting.value = false
   }
@@ -115,7 +116,7 @@ const confirmDrop = async () => {
       dropping.value = false
     }
   } catch (e) {
-    dropError.value = e.message || 'Failed to drop site.'
+    dropError.value = errorMessage(e, 'Failed to drop site.')
     dropping.value = false
   }
 }

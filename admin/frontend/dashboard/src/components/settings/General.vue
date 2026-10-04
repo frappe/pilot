@@ -14,6 +14,7 @@ import Workers from '@/components/settings/Workers.vue'
 import { settingsApi } from '@/api/settings'
 import { useSession } from '@/composables/auth/useSession'
 import { GENERAL_SECTIONS as sections } from '@/components/settings/sections'
+import { errorMessage } from '@/utils/error'
 
 const openSection = defineModel<{ id: string } | null>('openSection')
 
@@ -26,7 +27,7 @@ const allowDeveloperMode = ref(false)
 const liteMode = ref(false)
 const liteModeSupported = ref(false)
 
-const toggleAllowDeveloperMode = async (value) => {
+const toggleAllowDeveloperMode = async (value: boolean) => {
   saving.value = true
   error.value = ''
   try {
@@ -35,13 +36,13 @@ const toggleAllowDeveloperMode = async (value) => {
     session.developerMode = value
     toast.success(`Developer mode ${value ? 'allowed' : 'disallowed'}`)
   } catch (e) {
-    error.value = e.message || 'Could not update developer mode setting.'
+    error.value = errorMessage(e, 'Could not update developer mode setting.')
   } finally {
     saving.value = false
   }
 }
 
-const toggleLiteMode = async (value) => {
+const toggleLiteMode = async (value: boolean) => {
   saving.value = true
   error.value = ''
   try {
@@ -49,7 +50,7 @@ const toggleLiteMode = async (value) => {
     liteMode.value = value
     toast.success(`Lite mode ${value ? 'enabled' : 'disabled'}. Rebuilding the process set.`)
   } catch (e) {
-    error.value = e.message || 'Could not update lite mode setting.'
+    error.value = errorMessage(e, 'Could not update lite mode setting.')
   } finally {
     saving.value = false
   }

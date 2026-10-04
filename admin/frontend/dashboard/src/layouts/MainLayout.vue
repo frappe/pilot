@@ -39,7 +39,7 @@ useSearchShortcut()
 // Remembers the last non-Settings route so dismissing the dialog (backdrop
 // click, Escape, close button) exits to it directly instead of stepping back
 // through every section/subsection push made while the dialog was open.
-const lastNonSettingsRoute = ref(null)
+const lastNonSettingsRoute = ref<string | null>(null)
 
 watch(
   () => route.fullPath,
@@ -111,13 +111,13 @@ const breadcrumbsFromRouteMeta = ({ title = '' }) => {
 
     <template #nav>
       <MobileNav class="!bg-surface-base">
-        <MobileNavItem label="Home" icon="lucide-house" to="/home" :active="route.name == 'Home'" />
+        <MobileNavItem label="Home" icon="lucide-house" route="/home" :active="route.name == 'Home'" />
         <MobileNavItem label="Search" icon="lucide-search" @click="openSearch" />
         <NotificationsPanel mobile />
         <MobileNavItem
           label="Settings"
           icon="lucide-settings"
-          to="/mobile/settings"
+          route="/mobile/settings"
           :active="route.name == 'MobileSettings'"
         />
       </MobileNav>

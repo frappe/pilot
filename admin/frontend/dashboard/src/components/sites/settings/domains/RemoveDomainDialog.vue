@@ -4,6 +4,7 @@ import { Button, Dialog, ErrorMessage } from 'frappe-ui'
 
 import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
+import { errorMessage } from '@/utils/error'
 
 interface Props {
   siteName: string
@@ -36,7 +37,7 @@ const confirmRemove = async () => {
     show.value = false
     emit('removed')
   } catch (e) {
-    error.value = e.message || 'Failed to remove domain.'
+    error.value = errorMessage(e, 'Failed to remove domain.')
   } finally {
     removing.value = false
   }

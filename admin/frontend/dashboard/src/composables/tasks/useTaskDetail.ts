@@ -1,11 +1,12 @@
 import { ref } from 'vue'
 
 import { tasksApi } from '@/api/tasks'
+import type { TaskPayload } from '@/types/tasks'
 import { isTaskActive } from '@/utils/taskFormat'
 
-export const useTaskDetail = (taskId) => {
-  const task = ref(null)
-  const rawLines = ref([])
+export const useTaskDetail = (taskId: string) => {
+  const task = ref<TaskPayload | null>(null)
+  const rawLines = ref<string[]>([])
   const loading = ref(false)
   const error = ref('')
 
@@ -20,7 +21,7 @@ export const useTaskDetail = (taskId) => {
         if (output) rawLines.value = output.replace(/\r?\n$/, '').split(/\r?\n/)
       }
     } catch (caught) {
-      error.value = caught.message || 'Failed to load task'
+      error.value = (caught instanceof Error && caught.message) || 'Failed to load task'
     } finally {
       loading.value = false
     }

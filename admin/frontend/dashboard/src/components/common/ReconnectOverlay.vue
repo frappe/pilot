@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { LoadingIndicator } from 'frappe-ui'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { apiUrl } from '@/api/client'
 
@@ -13,10 +13,10 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const down = ref(false)
-let timer = null
+let timer: ReturnType<typeof setTimeout> | undefined
 let stopped = false
 
-const pingOk = async (url) => {
+const pingOk = async (url: string) => {
   try {
     const response = await fetch(url, { cache: 'no-store' })
     return response.status === 200

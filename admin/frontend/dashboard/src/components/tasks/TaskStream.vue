@@ -10,7 +10,7 @@ interface Props {
   url?: string
   autoStart?: boolean
   reset?: boolean
-  initialLines?: any[]
+  initialLines?: string[]
   guardHiddenTab?: boolean
   lineNumbers?: boolean
   emptyText?: string
@@ -32,11 +32,11 @@ const emit = defineEmits(['line', 'status', 'done', 'error'])
 const stream = useTaskStream({ guardHiddenTab: props.guardHiddenTab })
 const { terminal, lines, rawLines, streaming } = stream
 
-const setTerminal = (el) => {
+const setTerminal = (el: { scrollToBottom: () => void } | null) => {
   terminal.value = el
 }
 
-const seed = (initial) => {
+const seed = (initial: string[]) => {
   rawLines.value = [...initial]
   lines.value = initial.map(processLine)
 }

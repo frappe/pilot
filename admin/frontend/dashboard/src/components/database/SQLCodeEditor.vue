@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, shallowRef, watch } from 'vue'
 import { Codemirror } from 'vue-codemirror'
+import type { SQLDialect } from '@codemirror/lang-sql'
 import { MariaSQL, PostgreSQL, SQLite as SQLiteDialect, sql } from '@codemirror/lang-sql'
+import type { Completion } from '@codemirror/autocomplete'
 import { autocompletion } from '@codemirror/autocomplete'
-import { history, historyKeymap, defaultKeymap, indentWithTab } from '@codemirror/commands'
+import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 
 import {
   keymap,
@@ -18,9 +20,11 @@ import { Compartment, Prec } from '@codemirror/state'
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { tags } from '@lezer/highlight'
 
+import type { TableColumn, TableSchema } from '@/types/database'
+
 interface Props {
   modelValue?: string
-  schema?: any[]
+  schema?: TableSchema[]
   dbType?: string
 }
 
@@ -37,21 +41,30 @@ const model = computed({
   set: (v) => emit('update:modelValue', v),
 })
 
-const view = shallowRef(null)
+const view = shallowRef<EditorView | null>(null)
 
-const onReady = ({ view: v }) => {
+const onReady = ({ view: v }: { view: EditorView }) => {
   view.value = v
 }
 
 const cmSchema = computed(() => {
-  const s = {}
+  const s: Record<string, Completion[]> = {}
   for (const table of props.schema) {
-    s[table.name] = table.columns.map((c) => ({ label: c.name, type: 'property', detail: c.type }))
+    s[table.name] = table.columns.map((c: TableColumn) => ({
+      label: c.name,
+      type: 'property',
+      detail: c.type,
+    }))
   }
   return s
 })
 
-const dialects = { mariadb: MariaSQL, postgres: PostgreSQL, sqlite: SQLiteDialect }
+const dialects: Record<string, SQLDialect> = {
+  mariadb: MariaSQL,
+  postgres: PostgreSQL,
+  sqlite: SQLiteDialect,
+}
+
 const cmDialect = computed(() => dialects[props.dbType] || MariaSQL)
 
 const sqlCompartment = new Compartment()
@@ -67,7 +80,7 @@ const reconfigureSql = () => {
 
 watch([cmSchema, cmDialect], reconfigureSql)
 
-const getSelectedOrAll = (v) => {
+const getSelectedOrAll = (v: EditorView) => {
   const { from, to } = v.state.selection.main
   return from !== to ? v.state.sliceDoc(from, to) : v.state.doc.toString()
 }

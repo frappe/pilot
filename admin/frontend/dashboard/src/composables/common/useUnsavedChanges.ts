@@ -1,10 +1,10 @@
-import { getCurrentScope, onScopeDispose } from 'vue'
+import { getCurrentScope, onScopeDispose, type Ref } from 'vue'
 
 // A dirty panel registers a predicate; whoever swaps it out asks first.
 // Module-level: the asking shell is not an ancestor of every panel.
-const guards = new Set()
+const guards = new Set<() => boolean>()
 
-export const useUnsavedChanges = (isDirty) => {
+export const useUnsavedChanges = (isDirty: Ref<unknown>) => {
   // Without an active scope, onScopeDispose no-ops and the guard leaks
   // forever, permanently blocking navigation. Fail loudly instead.
   if (!getCurrentScope()) {

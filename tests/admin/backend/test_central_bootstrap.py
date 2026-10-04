@@ -11,15 +11,23 @@ from admin.backend.central_bootstrap import (
     CentralBootstrapWatcher,
     install_central_bootstrap_watcher,
     main,
+    tune_database,
 )
 from admin.backend.internal.jwks_cache import JwksCache
 from pilot.config import BenchConfig
 from pilot.config.common import CommonConfig
-from pilot.exceptions import ConfigError
+from pilot.exceptions import ConfigError, DatabaseError
 from pilot.integrations.central import CentralClientError
 from tests.admin.backend.test_jwks import _jwks_document
 from tests.pilot.integrations.test_central_client import _bench
 from tests.pilot.integrations.test_central_metadata import _ATTRIBUTE
+
+
+@pytest.fixture(autouse=True)
+def mariadb_manager():
+    """Keep the boot run from restarting a real MariaDB on the machine running the tests."""
+    with patch("pilot.managers.database.mariadb.MariaDBManager") as manager_class:
+        yield manager_class
 
 
 def _awaiting_host(tmp_path: Path) -> Path:
@@ -34,7 +42,7 @@ def _staged(value: str | None):
     """The raw attribute, so the real parsing still runs."""
     return patch(
         "pilot.integrations.central.metadata.InstanceMetadata.get_attribute",
-        return_value=value,
+        side_effect=lambda name: value if name == "pilot-central" else None,
     )
 
 
@@ -261,3 +269,66 @@ def test_boot_run_skips_non_central_hosts(tmp_path: Path) -> None:
         main()
 
     assert BenchConfig.read(bench.path).central.bootstrapped is False
+
+
+def test_boot_run_sizes_mariadb_before_applying_the_credential(tmp_path: Path, mariadb_manager) -> None:
+    bench_root = _awaiting_host(tmp_path)
+
+    with _staged(json.dumps(_ATTRIBUTE)), patch("sys.argv", ["central_bootstrap", "--bench-root", str(bench_root)]):
+        main()
+
+    mariadb_manager.return_value.tune_to_host.assert_called_once()
+    assert BenchConfig.read(bench_root).central.bootstrapped is True
+
+
+def test_boot_run_leaves_mariadb_alone_once_bootstrapped(tmp_path: Path, mariadb_manager) -> None:
+    bench = _bench(tmp_path)
+
+    with _staged(None), patch("sys.argv", ["central_bootstrap", "--bench-root", str(bench.path)]):
+        main()
+
+    mariadb_manager.return_value.tune_to_host.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        DatabaseError("MariaDB did not become healthy within 30s."),
+        RuntimeError("systemctl failed"),
+    ],
+)
+def test_a_failed_sizing_blocks_the_credential(tmp_path: Path, mariadb_manager, error: Exception) -> None:
+    bench_root = _awaiting_host(tmp_path)
+    mariadb_manager.return_value.tune_to_host.side_effect = error
+
+    with (
+        _staged(json.dumps(_ATTRIBUTE)),
+        patch("sys.argv", ["central_bootstrap", "--bench-root", str(bench_root)]),
+        pytest.raises(type(error)),
+    ):
+        main()
+
+    assert BenchConfig.read(bench_root).central.bootstrapped is False
+
+
+def test_a_postgres_bench_needs_no_sizing(tmp_path: Path, mariadb_manager) -> None:
+    bench_root = _awaiting_host(tmp_path)
+    config = BenchConfig.read(bench_root, validate=False)
+    config.db_type = "postgres"
+
+    tune_database(config)
+
+    mariadb_manager.assert_not_called()
+
+
+def test_an_external_mariadb_does_not_block_the_credential(tmp_path: Path, mariadb_manager) -> None:
+    bench_root = _awaiting_host(tmp_path)
+    common = CommonConfig.read(bench_root.parent)
+    common.mariadb.existing = True
+    common.write(bench_root.parent)
+
+    with _staged(json.dumps(_ATTRIBUTE)), patch("sys.argv", ["central_bootstrap", "--bench-root", str(bench_root)]):
+        main()
+
+    mariadb_manager.assert_not_called()
+    assert BenchConfig.read(bench_root).central.bootstrapped is True

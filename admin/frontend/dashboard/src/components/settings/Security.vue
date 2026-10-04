@@ -11,6 +11,7 @@ import SshKeys from '@/components/settings/SshKeys.vue'
 
 import { SECURITY_SECTIONS as sections } from '@/components/settings/sections'
 import { sessionApi } from '@/api/session'
+import { errorMessage } from '@/utils/error'
 
 const openSection = defineModel<{ id: string } | null>('openSection')
 
@@ -25,7 +26,7 @@ const revokeOtherSessions = async () => {
     toast.success(others ? `${others} other session${others === 1 ? '' : 's'} signed out` : 'No other sessions to revoke')
     showRevokePrompt.value = false
   } catch (e) {
-    toast.error(e.message || 'Could not revoke other sessions.')
+    toast.error(errorMessage(e, 'Could not revoke other sessions.'))
   } finally {
     revoking.value = false
   }

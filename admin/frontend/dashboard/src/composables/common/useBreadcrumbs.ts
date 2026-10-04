@@ -1,11 +1,17 @@
 import { ref } from 'vue'
+import type { RouteLocationRaw } from 'vue-router'
 
-const items = ref(null)
+export interface Breadcrumb {
+  label: string
+  route?: RouteLocationRaw
+}
+
+const items = ref<Breadcrumb[] | null>(null)
 
 export const useBreadcrumbs = () => {
   return {
     items,
-    setBreadcrumbs: (value) => (items.value = value),
+    setBreadcrumbs: (value: Breadcrumb[]) => (items.value = value),
     resetBreadcrumbs: () => (items.value = null),
   }
 }

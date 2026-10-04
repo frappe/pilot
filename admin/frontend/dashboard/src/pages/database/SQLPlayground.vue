@@ -8,26 +8,34 @@ import SQLCodeEditor from '@/components/database/SQLCodeEditor.vue'
 import SQLSchemaDialog from '@/components/database/SQLSchemaDialog.vue'
 import Table from '@/components/common/Table.vue'
 
-import { apiErrorMessage } from '@/api/client'
+import { apiErrorMessage, hasApiError } from '@/api/client'
 import { databaseApi } from '@/api/database'
+import type { DatabaseSite, ExecutedQuery, TableSchema } from '@/types/database'
+import { errorMessage } from '@/utils/error'
+
+interface QueryResult extends ExecutedQuery {
+  query: string
+}
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
 const route = useRoute()
 const router = useRouter()
 
-const sites = ref([])
-const selectedSite = ref(route.query.site || '')
+const routeSite = route.query.site
+
+const sites = ref<DatabaseSite[]>([])
+const selectedSite = ref(typeof routeSite === 'string' ? routeSite : '')
 const query = ref('')
 const modeStr = ref('readonly')
 const readOnly = computed(() => modeStr.value === 'readonly')
 const running = ref(false)
-const results = ref([])
+const results = ref<QueryResult[]>([])
 const activeTab = ref(0)
 const error = ref('')
 const showSchema = ref(false)
-const schema = ref([])
-const editorRef = ref(null)
+const schema = ref<TableSchema[]>([])
+const editorRef = ref<InstanceType<typeof SQLCodeEditor> | null>(null)
 
 const siteOptions = computed(() => [
   { label: 'Select site', value: '' },
@@ -46,7 +54,7 @@ const modeOptions = [
 const currentResult = computed(() => results.value[activeTab.value] || null)
 
 const tabOptions = computed(() =>
-  results.value.map((r, i) => ({ label: `Query ${i + 1}`, value: i })),
+  results.value.map((_result, i) => ({ label: `Query ${i + 1}`, value: i })),
 )
 
 // ── Pagination ────────────────────────────────────────────────────────────────
@@ -68,7 +76,7 @@ const resultColumns = computed(() => {
   ]
 })
 
-const paginatedRowObjects = computed(() => {
+const paginatedRowObjects = computed<Record<string, unknown>[]>(() => {
   if (!currentResult.value) return []
   const { columns, rows } = currentResult.value
   const offset = (page.value - 1) * perPage.value
@@ -113,17 +121,17 @@ const confirmRunQuery = () => {
 // MariaDB quotes identifiers with backticks; Postgres and SQLite use the
 // standard double-quote (MariaDB treats double quotes as a string literal
 // unless ANSI_QUOTES is set, so backticks aren't a safe cross-engine default).
-const quoteIdentifier = (name, dbType) => {
+const quoteIdentifier = (name: string, dbType: string) => {
   return dbType === 'mariadb' ? `\`${name}\`` : `"${name}"`
 }
 
-const previewTable = (tableName) => {
+const previewTable = (tableName: string) => {
   modeStr.value = 'readonly'
   query.value = `SELECT * FROM ${quoteIdentifier(tableName, selectedSiteDbType.value)} LIMIT 100;`
   executeQuery(query.value)
 }
 
-const executeQuery = async (raw) => {
+const executeQuery = async (raw: string) => {
   if (!selectedSite.value || !raw?.trim()) return
   const statements = raw
     .split(';')
@@ -138,16 +146,16 @@ const executeQuery = async (raw) => {
   page.value = 1
 
   try {
-    const executed = []
+    const executed: QueryResult[] = []
     for (const stmt of statements) {
       const data = await databaseApi.execute(selectedSite.value, stmt, readOnly.value)
-      if (data.error) throw new Error(apiErrorMessage(data, 'Query failed.'))
+      if (hasApiError(data)) throw new Error(apiErrorMessage(data, 'Query failed.'))
       executed.push({ ...data, query: stmt })
     }
     results.value = executed
     if (!readOnly.value) refreshSchema()
-  } catch (e) {
-    error.value = e.message || 'Query failed'
+  } catch (caught) {
+    error.value = errorMessage(caught, 'Query failed')
   } finally {
     running.value = false
   }
@@ -158,7 +166,7 @@ const executeQuery = async (raw) => {
 const exportCsv = () => {
   if (!currentResult.value) return
   const { columns, rows } = currentResult.value
-  const escape = (v) => {
+  const escape = (v: unknown) => {
     if (v === null) return ''
     const s = String(v)
     return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s
@@ -178,7 +186,7 @@ const refreshSchema = async () => {
   if (!selectedSite.value) return
   try {
     const data = await databaseApi.schema(selectedSite.value)
-    if (!data.error) schema.value = data
+    if (!hasApiError(data)) schema.value = data
   } catch {
     // keep last known schema on failure
   }

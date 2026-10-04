@@ -143,8 +143,9 @@ router.beforeEach(async (to) => {
   // link) are swallowed - the next pass through this guard will see no
   // session cookie and fall through to the normal /login redirect below.
   if (to.query.sid) {
+    const sid = typeof to.query.sid === 'string' ? to.query.sid : ''
     try {
-      await authApi.loginWithSid(to.query.sid)
+      await authApi.loginWithSid(sid)
     } catch {
       /* fall through to the unauthenticated redirect below */
     }

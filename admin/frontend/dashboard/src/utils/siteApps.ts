@@ -1,13 +1,23 @@
 import { toSentenceCase } from './format.ts'
 
-export const isFrappeApp = (app) => {
+export type SiteAppChoice = {
+  name: string
+  title?: string
+  repo?: string
+  stars?: number | null
+}
+
+export const isFrappeApp = (app: { repo?: string }) => {
   return Boolean(app.repo?.includes('github.com/frappe/'))
 }
 
 // The whole catalog is too much to scan while naming a site: Frappe's own apps
 // plus whatever is already cloned onto this bench, marketplace for the rest.
-export const buildSiteAppChoices = (registry = [], benchApps = []) => {
-  const apps = new Map()
+export const buildSiteAppChoices = (
+  registry: SiteAppChoice[] = [],
+  benchApps: SiteAppChoice[] = [],
+) => {
+  const apps = new Map<string, SiteAppChoice>()
   registry
     .filter((app) => app.name !== 'frappe' && isFrappeApp(app))
     .forEach((app) => apps.set(app.name, app))

@@ -1,8 +1,9 @@
 import { ref } from 'vue'
 
 import { tasksApi } from '@/api/tasks'
+import type { TaskPayload } from '@/types/tasks'
 
-const tasks = ref([])
+const tasks = ref<TaskPayload[]>([])
 const loading = ref(false)
 const error = ref('')
 
@@ -13,7 +14,7 @@ export const useTasks = () => {
     try {
       tasks.value = await tasksApi.list(status)
     } catch (caught) {
-      error.value = caught.message || 'Failed to load tasks'
+      error.value = (caught instanceof Error && caught.message) || 'Failed to load tasks'
       tasks.value = []
     } finally {
       loading.value = false

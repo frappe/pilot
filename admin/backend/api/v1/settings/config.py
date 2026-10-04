@@ -304,6 +304,9 @@ class ConfigPatcher:
 
     @staticmethod
     def _validate_s3_region(s3_config: S3Config) -> str | None:
+        if s3_config.provider == "frappe":
+            return ConfigPatcher._set_frappe_endpoint(s3_config)
+
         if s3_config.endpoint_url:
             from pilot.internal.validators import validate_external_url
 
@@ -316,6 +319,22 @@ class ConfigPatcher:
         if s3_config.region not in SUPPORTED_REGIONS[s3_config.provider]:
             return f"s3.region '{s3_config.region}' is not valid for provider '{s3_config.provider}'."
 
+        return None
+
+    @staticmethod
+    def _set_frappe_endpoint(s3_config: S3Config) -> str | None:
+        """Central owns where each region serves storage, so the endpoint is its answer, not the form's."""
+        from pilot.integrations.central import CentralClient, CentralClientError
+
+        try:
+            endpoints = CentralClient().storage_regions()
+        except CentralClientError as error:
+            return f"Could not read Frappe storage regions from Central: {error}"
+
+        if s3_config.region not in endpoints:
+            return f"s3.region '{s3_config.region}' does not serve Frappe object storage."
+
+        s3_config.endpoint_url = endpoints[s3_config.region]
         return None
 
     def _apply_llm(self) -> str | None:

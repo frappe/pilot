@@ -2,7 +2,7 @@ interface SidebarNavItem {
   label: string
   icon: string
   to: string
-  flag?: string
+  flag?: 'allowBenchManagement' | 'centralEnabled' | 'developerMode'
 }
 
 interface SidebarSection {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { Skeleton } from 'frappe-ui'
+import { computed } from 'vue'
 
 interface Props {
   // Index-based width cycle: varied bars, stable across re-renders.

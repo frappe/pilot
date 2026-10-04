@@ -1,7 +1,11 @@
 import { request } from '@/api/client'
+import type { AuthorizedSSHKey, AuthorizedSSHKeys } from '@/types/sshKeys'
 
 export const sshKeysApi = {
-  list: () => request.get('ssh-keys').json(),
-  add: (public_key) => request.post('ssh-keys', { json: { public_key } }).json(),
-  remove: (fingerprint) => request.delete(`ssh-keys/${encodeURIComponent(fingerprint)}`),
+  list: (): Promise<AuthorizedSSHKeys> => request.get('ssh-keys').json(),
+
+  add: (public_key: string): Promise<AuthorizedSSHKey> =>
+    request.post('ssh-keys', { json: { public_key } }).json(),
+
+  remove: (fingerprint: string) => request.delete(`ssh-keys/${encodeURIComponent(fingerprint)}`),
 }

@@ -4,8 +4,10 @@ import { Button, Dialog, ErrorMessage, TextInput } from 'frappe-ui'
 
 import Table from '@/components/common/Table.vue'
 
-import { apiErrorMessage } from '@/api/client'
+import { apiErrorMessage, hasApiError } from '@/api/client'
 import { sitesApi } from '@/api/sites'
+import type { DnsRecord, DnsRecords } from '@/types/siteDomains'
+import { errorMessage } from '@/utils/error'
 
 const DNS_RECORD_COLUMNS = [
   { key: 'type', label: 'Type' },
@@ -15,6 +17,11 @@ const DNS_RECORD_COLUMNS = [
 
 interface Props {
   siteName: string
+}
+
+interface DnsRecordGroup {
+  type: string
+  records: DnsRecord[]
 }
 
 const props = defineProps<Props>()
@@ -27,7 +34,7 @@ const domain = ref('')
 const error = ref('')
 const continuing = ref(false)
 const adding = ref(false)
-const dnsRecordGroups = ref([])
+const dnsRecordGroups = ref<DnsRecordGroup[]>([])
 
 // Reset to a blank first step each time the dialog opens.
 watch(show, (open) => {
@@ -38,8 +45,8 @@ watch(show, (open) => {
   dnsRecordGroups.value = []
 })
 
-const toRecordGroups = (records) => {
-  const groups = []
+const toRecordGroups = (records: DnsRecords): DnsRecordGroup[] => {
+  const groups: DnsRecordGroup[] = []
   if (records?.cname?.length) groups.push({ type: 'CNAME', records: records.cname })
   if (records?.a?.length) groups.push({ type: 'A', records: records.a })
   return groups
@@ -52,14 +59,14 @@ const continueAdd = async () => {
   continuing.value = true
   try {
     const data = await sitesApi.domains.dnsRecords(props.siteName, value)
-    if (data.error) {
+    if (hasApiError(data)) {
       error.value = apiErrorMessage(data, 'Could not generate DNS records.')
       return
     }
     dnsRecordGroups.value = toRecordGroups(data)
     step.value = 'records'
   } catch (e) {
-    error.value = e.message || 'Failed to validate domain.'
+    error.value = errorMessage(e, 'Failed to validate domain.')
   } finally {
     continuing.value = false
   }
@@ -77,7 +84,7 @@ const confirmAdd = async () => {
     show.value = false
     emit('added')
   } catch (e) {
-    error.value = e.message || 'Failed to add domain.'
+    error.value = errorMessage(e, 'Failed to add domain.')
   } finally {
     adding.value = false
   }
@@ -88,8 +95,8 @@ const confirmAdd = async () => {
   <Dialog v-model="show" title="Use your own domain" size="2xl">
     <template v-if="step === 'input'">
       <p class="text-ink-gray-7 text-p-sm">
-        To add a custom domain, you must already own it. If you don't have one, buy it and come
-        back here.
+        To add a custom domain, you must already own it. If you don't have one, buy it and come back
+        here.
       </p>
 
       <TextInput
@@ -121,8 +128,8 @@ const confirmAdd = async () => {
       <template v-if="dnsRecordGroups.length">
         <p class="text-ink-gray-7 text-p-sm">
           <template v-if="dnsRecordGroups.length > 1">
-            Add <span class="font-medium text-ink-gray-8">either one</span> of these records at
-            your domain provider.
+            Add <span class="font-medium text-ink-gray-8">either one</span> of these records at your
+            domain provider.
           </template>
 
           <template v-else>Add this record at your domain provider.</template>

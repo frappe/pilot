@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
 import { computed, onMounted, ref } from 'vue'
-import { Badge, Button, Dialog, Dropdown, ErrorMessage, Select } from 'frappe-ui'
+import { Badge, Button, Dialog, Dropdown, type DropdownItem, ErrorMessage, Select } from 'frappe-ui'
 
 import EmptyState from '@/components/common/EmptyState.vue'
 import ListSkeleton from '@/components/common/ListSkeleton.vue'
@@ -15,6 +15,8 @@ import { apiErrorMessage } from '@/api/client'
 import { fmtDateTime } from '@/utils/taskFormat'
 import { useSite } from '@/composables/sites/useSite'
 import { openTaskDetailPage } from '@/utils/taskRoute'
+import type { Backup, BackupFile, BackupSchedule } from '@/types/siteBackups'
+import { errorMessage } from '@/utils/error'
 
 interface Props {
   siteName: string
@@ -38,13 +40,13 @@ const pageLengths = [20, 50, 100].map((n) => ({ label: `${n} per page`, value: n
 const backingUp = ref(false)
 const error = ref('')
 
-const configRef = ref(null)
-const config = ref(null)
+const configRef = ref<InstanceType<typeof BackupConfigDialog> | null>(null)
+const config = ref<BackupSchedule | null>(null)
 const enabled = computed(() => !!config.value?.schedule)
 
 const scheduleSummary = computed(() =>
   enabled.value
-    ? `${cronToLabel(config.value.schedule)}.`
+    ? `${cronToLabel(config.value?.schedule)}.`
     : 'Manual backups are kept until you delete them.',
 )
 
@@ -64,7 +66,7 @@ const backupNow = async () => {
     if (result.task_id) openTaskDetailPage(router, result.task_id)
     else error.value = apiErrorMessage(result, 'Backup failed.')
   } catch (e) {
-    error.value = e.message || 'Backup failed.'
+    error.value = errorMessage(e, 'Backup failed.')
   } finally {
     backingUp.value = false
   }
@@ -79,8 +81,10 @@ const columns = [
   { label: '', key: 'actions', class: 'w-12' },
 ]
 
-const fileOf = (set, kind) => set.files?.find((f) => f.kind === kind) ?? null
-const fmtSize = (b) =>
+const fileOf = (set: Backup, kind: string): BackupFile | null =>
+  set.files?.find((file) => file.kind === kind) ?? null
+
+const fmtSize = (b: number | undefined) =>
   !b ? '-' : b < 1024 ** 2 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1024 ** 2).toFixed(1)} MB`
 
 const rows = computed(() =>
@@ -96,14 +100,14 @@ const rows = computed(() =>
 
 // The offsite metadata's file_type keys don't match the UI's kind names;
 // this is the same mapping BackupReader uses to merge remote-only files in.
-const OFFSITE_KIND_KEYS = {
+const OFFSITE_KIND_KEYS: Record<string, string> = {
   database: 'database',
   'public-file': 'files',
   'private-file': 'private_files',
   site_config: 'site_config',
 }
 
-const menuOptions = (set) => {
+const menuOptions = (set: Backup): DropdownItem[] => {
   const kinds = [
     ['database', 'Download Database'],
     ['public-file', 'Download Public'],
@@ -130,7 +134,7 @@ const menuOptions = (set) => {
   ]
 }
 
-const downloadFile = async (set, kind) => {
+const downloadFile = async (set: Backup, kind: string) => {
   const file = fileOf(set, kind)
   if (file?.path) {
     window.location.href = sitesApi.backups.download(props.siteName, set.timestamp, file.filename)
@@ -152,27 +156,29 @@ const downloadFile = async (set, kind) => {
     }
     window.open(url, '_blank')
   } catch (e) {
-    error.value = e.message || 'Failed to get offsite download link.'
+    error.value = errorMessage(e, 'Failed to get offsite download link.')
   }
 }
 
 const showDelete = ref(false)
-const deleteTarget = ref(null)
+const deleteTarget = ref<Backup | null>(null)
 const deleting = ref(false)
 const deleteError = ref('')
 
 const confirmDelete = async () => {
+  if (!deleteTarget.value) return
+
   deleting.value = true
   deleteError.value = ''
   try {
-    const filenames = deleteTarget.value.files.map((f) => f.filename)
+    const filenames = deleteTarget.value.files.map((file) => file.filename)
     const data = await tasksApi.run('delete-backup', { site: props.siteName, filenames })
     if (data.task_id) {
       showDelete.value = false
       openTaskDetailPage(router, data.task_id)
     } else deleteError.value = apiErrorMessage(data, 'Delete failed.')
   } catch (e) {
-    deleteError.value = e.message || 'Delete failed.'
+    deleteError.value = errorMessage(e, 'Delete failed.')
   } finally {
     deleting.value = false
   }
@@ -192,7 +198,7 @@ onMounted(() => {
     </div>
 
     <div class="flex items-center gap-2 shrink-0">
-      <Button @click="configRef.open()">
+      <Button @click="configRef?.open()">
         {{ enabled ? 'Configure' : 'Enable' }}
       </Button>
       <Button :loading="backingUp" @click="backupNow">
@@ -227,12 +233,7 @@ onMounted(() => {
   <template v-else>
     <Table :columns="columns" :rows="rows" height="max-h-[32rem]">
       <template #offsite="{ row }">
-        <Badge
-          v-if="row.set.is_offsite"
-          theme="green"
-          size="sm"
-          label="Uploaded"
-        />
+        <Badge v-if="row.set.is_offsite" theme="green" size="sm" label="Uploaded" />
         <Badge v-else theme="gray" size="sm" label="Local only" />
       </template>
 
@@ -256,7 +257,7 @@ onMounted(() => {
         size="sm"
         :model-value="backupsLimit"
         :options="pageLengths"
-        @update:model-value="setBackupsPageLength"
+        @update:model-value="(value) => setBackupsPageLength(Number(value))"
       />
 
       <span class="text-ink-gray-5 text-sm">{{ backups.length }} backups</span>

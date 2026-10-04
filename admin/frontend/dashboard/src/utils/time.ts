@@ -10,9 +10,10 @@ const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
 
 const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
 
-export const relativeTime = (value) => {
+export const relativeTime = (value: string | number | Date) => {
   const seconds = (new Date(value).getTime() - Date.now()) / 1000
-  const [unit, size] = UNITS.find(([, size]) => Math.abs(seconds) >= size) ?? UNITS.at(-1)
+  const [unit, size] =
+    UNITS.find(([, size]) => Math.abs(seconds) >= size) ?? UNITS[UNITS.length - 1]
 
   return formatter.format(Math.round(seconds / size), unit)
 }

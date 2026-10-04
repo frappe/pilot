@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal, TypedDict
 
 from flask import Blueprint, current_app, jsonify
 
@@ -8,6 +9,39 @@ from admin.backend.api.responses import error_response
 from pilot.core.bench import Bench
 from pilot.internal.git import GitRepo
 from pilot.utils import cli_root
+
+
+class AppUpdate(TypedDict):
+    name: str
+    branch: str
+    commits_behind: int
+    commits_ahead: int
+    remote_commit: str
+    local_commit: str
+    last_fetched: float | None
+
+
+class AppUpdates(TypedDict):
+    apps: list[AppUpdate]
+
+
+class CliDevUpdate(TypedDict):
+    current_version: Literal["dev"]
+    is_dev: Literal[True]
+    branch: str
+    commits_behind: int
+    update_available: bool
+    local_commit: str
+    remote_commit: str
+    last_fetched: float | None
+
+
+class CliReleaseUpdate(TypedDict):
+    current_version: str
+    is_dev: Literal[False]
+    update_available: bool
+    latest_version: str | None
+
 
 updates_bp = Blueprint("updates", __name__)
 

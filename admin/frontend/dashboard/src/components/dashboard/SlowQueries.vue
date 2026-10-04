@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import type { BarChartProps } from 'frappe-ui/charts'
 import { BarChart } from 'frappe-ui/charts'
 
 import ChartCard from '@/components/common/ChartCard.vue'
 
+import type { SlowQueryOverview } from '@/types/stats'
+
 interface Props {
-  overview?: Record<string, any> | null
+  overview?: SlowQueryOverview | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -15,8 +18,8 @@ const props = withDefaults(defineProps<Props>(), {
 const GRID = { show: true, lineStyle: { type: 'dashed', color: 'var(--outline-gray-2)' } }
 const PALETTE = ['#10b981', '#ef4444', '#f59e0b', '#2490ef', '#8b5cf6', '#06b6d4', '#ec4899']
 
-const bucketLabel = (ms, bucketMs) => {
-  const date = new Date(ms)
+const bucketLabel = (ms: number | null, bucketMs: number) => {
+  const date = new Date(ms ?? 0)
   return bucketMs >= 24 * 3600_000
     ? date.toLocaleDateString([], { month: 'short', day: 'numeric' })
     : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -24,8 +27,12 @@ const bucketLabel = (ms, bucketMs) => {
 
 // Buckets (and their sizing) come pre-computed from the backend, keyed by
 // whichever dimension the chart stacks by — site or query text.
-const seriesConfig = (rows, keys, yLabel) => {
-  const bucketMs = rows.length > 1 ? rows[1].bucket - rows[0].bucket : 300_000
+const seriesConfig = (
+  rows: Record<string, number | null>[],
+  keys: string[],
+  yLabel: string,
+): BarChartProps => {
+  const bucketMs = rows.length > 1 ? (rows[1].bucket ?? 0) - (rows[0].bucket ?? 0) : 300_000
   return {
     data: rows.map((row) => ({ ...row, bucket: bucketLabel(row.bucket, bucketMs) })),
     x: 'bucket',

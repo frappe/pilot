@@ -4,8 +4,10 @@ import { Button, Dialog, TextInput } from 'frappe-ui'
 
 import Table from '@/components/common/Table.vue'
 
+import type { TableSchema } from '@/types/database'
+
 interface Props {
-  schema?: any[]
+  schema?: TableSchema[]
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -21,7 +23,7 @@ const schemaColumns = [
 ]
 
 const search = ref('')
-const selected = ref(null)
+const selected = ref<TableSchema | null>(null)
 
 const filteredTables = computed(() => {
   const query = search.value.toLowerCase().trim()
@@ -35,7 +37,7 @@ watch(show, (open) => {
   }
 })
 
-const preview = (table) => {
+const preview = (table: TableSchema) => {
   emit('preview', table.name)
   show.value = false
 }

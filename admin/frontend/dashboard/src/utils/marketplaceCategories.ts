@@ -1,3 +1,7 @@
+import type { MarketplaceApp } from '@/types/apps'
+
+export type CategorizedApp = Partial<Pick<MarketplaceApp, 'category' | 'categories'>>
+
 export const PILLS = [
   'All',
   'Integrations',
@@ -8,7 +12,7 @@ export const PILLS = [
   'Dev Tools',
 ]
 
-const PILL_BY_CATEGORY = {
+const PILL_BY_CATEGORY: Record<string, string> = {
   Integrations: 'Integrations',
   'CRM Integration': 'Integrations',
   Communication: 'Integrations',
@@ -43,7 +47,7 @@ const PILL_BY_CATEGORY = {
 }
 
 // 'Featured' is a meta-tag; unknown values default to Utility.
-const pillsFor = (app) => {
+const pillsFor = (app: CategorizedApp) => {
   const categories = app.categories?.length ? app.categories : app.category ? [app.category] : []
   const mapped = categories
     .filter((category) => category !== 'Featured')
@@ -51,6 +55,6 @@ const pillsFor = (app) => {
   return new Set(mapped)
 }
 
-export const matchesPill = (app, pill) => {
+export const matchesPill = (app: CategorizedApp, pill: string) => {
   return pill === 'All' || pillsFor(app).has(pill)
 }

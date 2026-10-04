@@ -4,8 +4,21 @@ import { Badge, Button, Dialog, Tooltip } from 'frappe-ui'
 
 import AppIcon from '@/components/apps/AppIcon.vue'
 
+interface AppCard {
+  name: string
+  title: string
+  description?: string
+  logo_url?: string | null
+  label?: string
+  installed?: boolean
+  compatible?: boolean
+  needs?: string
+  nightly?: boolean
+  frappe_version?: string
+}
+
 interface Props {
-  app: Record<string, any>
+  app: AppCard
 }
 
 const props = defineProps<Props>()

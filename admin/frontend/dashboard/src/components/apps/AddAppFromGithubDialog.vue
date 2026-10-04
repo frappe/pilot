@@ -18,6 +18,8 @@ import { appsApi } from '@/api/apps'
 import { gitApi } from '@/api/git'
 import { branchComboboxOptions } from '@/utils/branchComboboxOptions'
 import { openTaskDetailPage } from '@/utils/taskRoute'
+import type { GitConnection, GitRepository } from '@/types/git'
+import { errorMessage } from '@/utils/error'
 
 interface Props {
   // When set, the fetched app is also installed on this site.
@@ -27,7 +29,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   siteName: '',
 })
-const open = defineModel('open')
+const open = defineModel<boolean>('open')
 const router = useRouter()
 
 const tab = ref('public')
@@ -39,7 +41,7 @@ const repo = ref('')
 const branch = ref('')
 const fetched = ref(false)
 const fetching = ref(false)
-const branches = ref([])
+const branches = ref<string[]>([])
 const branchOptions = computed(() => branches.value.map((b) => ({ label: b, value: b })))
 const manualBranchOptions = computed(() =>
   branchComboboxOptions(branches.value, branch.value, (typed) => {
@@ -47,11 +49,11 @@ const manualBranchOptions = computed(() =>
   }),
 )
 
-const gitStatus = ref(null)
+const gitStatus = ref<GitConnection | null>(null)
 const gitConnected = computed(() =>
   Boolean(gitStatus.value?.connected && gitStatus.value?.is_token_valid),
 )
-const repos = ref([])
+const repos = ref<GitRepository[]>([])
 const reposLoading = ref(false)
 const repoOptions = computed(() =>
   repos.value.map((r) => ({ label: r.full_name, value: r.clone_url })),
@@ -90,7 +92,7 @@ const normalizedRepo = computed(() => {
 const REPO_PATTERN = /^(https?:\/\/)?[^/\s]+\.[^/\s]+\/[^/\s]+\/[^/\s]+$/
 
 // Auto-fetch once the URL looks complete.
-let repoDebounce
+let repoDebounce: ReturnType<typeof setTimeout> | undefined
 watch(repo, (value) => {
   fetched.value = false
   branches.value = []
@@ -113,7 +115,7 @@ const reset = () => {
   if (tab.value === 'private' && !gitStatus.value) loadGitStatus()
 }
 
-const loadBranchesFor = async (url) => {
+const loadBranchesFor = async (url: string) => {
   fetching.value = true
   error.value = ''
   try {
@@ -126,7 +128,7 @@ const loadBranchesFor = async (url) => {
       error.value = apiErrorMessage(d, 'Could not load branches.')
     }
   } catch (e) {
-    error.value = e.message
+    error.value = errorMessage(e, 'Could not load branches.')
   } finally {
     fetching.value = false
   }
@@ -165,7 +167,7 @@ const resolveApp = async () => {
     if (d.name) foundName.value = d.name
     else error.value = apiErrorMessage(d, 'Could not find a Frappe app in this repository.')
   } catch (e) {
-    error.value = e.message
+    error.value = errorMessage(e, 'Could not find a Frappe app in this repository.')
   } finally {
     resolving.value = false
   }
@@ -186,7 +188,7 @@ const submit = async () => {
     open.value = false
     openTaskDetailPage(router, result.task_id)
   } catch (caught) {
-    error.value = caught.message || 'Could not import app.'
+    error.value = errorMessage(caught, 'Could not import app.')
   } finally {
     adding.value = false
   }
@@ -220,9 +222,7 @@ const submit = async () => {
         emptyText="No matching branch. Type one to use it."
         class="w-40 shrink-0"
       >
-        <template #item-typed-branch="{ query }">
-          Use branch “{{ query }}”
-        </template>
+        <template #item-typed-branch="{ query }"> Use branch “{{ query }}” </template>
       </Combobox>
     </div>
 
@@ -282,8 +282,8 @@ const submit = async () => {
       <template v-if="fetching">Loading branches…</template>
       <template v-else-if="resolving">Checking repository…</template>
       <template v-else-if="foundName"
-        >Found {{ foundName
-        }}<template v-if="siteName">, will be installed on {{ siteName }}</template></template
+        >Found {{ foundName }}
+        <template v-if="siteName">, will be installed on {{ siteName }}</template></template
       >
     </p>
 

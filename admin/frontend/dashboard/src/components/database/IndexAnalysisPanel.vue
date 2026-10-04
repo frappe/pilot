@@ -6,30 +6,48 @@ import Table from '@/components/common/Table.vue'
 import DatabasePanel from '@/components/database/DatabasePanel.vue'
 import PerformanceSchemaNotice from '@/components/database/PerformanceSchemaNotice.vue'
 
-import { apiErrorMessage } from '@/api/client'
+import { apiErrorMessage, hasApiError } from '@/api/client'
 import { databaseApi } from '@/api/database'
+import type { PerformanceSection } from '@/types/database'
+import { errorMessage } from '@/utils/error'
 
-const props = defineProps({
-  site: { type: String, default: '' },
-  badge: { type: String, default: '' },
-  enabled: { type: Boolean, default: false },
-  showSite: { type: Boolean, default: false },
-  siteByDatabase: { type: Object, default: () => ({}) },
+interface Props {
+  site?: string
+  badge?: string
+  enabled?: boolean
+  showSite?: boolean
+  siteByDatabase?: Record<string, string>
+}
+
+interface Column {
+  key: string
+  label: string
+}
+
+type PerformanceRow = PerformanceSection['data'][number]
+
+const props = withDefaults(defineProps<Props>(), {
+  site: '',
+  badge: '',
+  enabled: false,
+  showSite: false,
+  siteByDatabase: () => ({}),
 })
 
 const pageSize = 20
 
 const tab = ref('unused_indexes')
 
-const rows = ref([])
+const rows = ref<PerformanceRow[]>([])
 const hasNextPage = ref(false)
 const loading = ref(false)
 const error = ref('')
 const loaded = ref(false)
 
-const siteLabel = (database) => props.siteByDatabase[database] || database || '—'
+const siteLabel = (database: string | null) =>
+  props.siteByDatabase[database ?? ''] || database || '—'
 
-const withSite = (columns) =>
+const withSite = (columns: Column[]) =>
   props.showSite ? [{ key: 'database', label: 'Site' }, ...columns] : columns
 
 const tabOptions = [
@@ -37,7 +55,7 @@ const tabOptions = [
   { label: 'Redundant', value: 'redundant_indexes' },
 ]
 
-const columnsByTab = {
+const columnsByTab: Record<string, Column[]> = {
   unused_indexes: [
     { key: 'table', label: 'Table Name' },
     { key: 'index', label: 'Index Name' },
@@ -62,12 +80,15 @@ const load = async (offset = 0) => {
   error.value = ''
   try {
     const result = await databaseApi.performanceReport(tab.value, props.site, pageSize, offset)
-    if (result?.error) throw new Error(apiErrorMessage(result, 'Could not load the index report.'))
+    if (hasApiError(result)) {
+      throw new Error(apiErrorMessage(result, 'Could not load the index report.'))
+    }
+
     rows.value = offset ? [...rows.value, ...result.data] : result.data
     hasNextPage.value = result.has_next_page
     loaded.value = true
   } catch (caught) {
-    error.value = caught.message || 'Could not load the index report.'
+    error.value = errorMessage(caught, 'Could not load the index report.')
   } finally {
     loading.value = false
   }
@@ -99,7 +120,10 @@ watch(
 
       <PerformanceSchemaNotice v-if="needsPerformanceSchema && !enabled" />
 
-      <p v-else-if="!rows.length" class="py-10 border-t border-outline-gray-2 text-ink-gray-5 text-sm text-center">
+      <p
+        v-else-if="!rows.length"
+        class="py-10 border-t border-outline-gray-2 text-ink-gray-5 text-sm text-center"
+      >
         No results to display
       </p>
 

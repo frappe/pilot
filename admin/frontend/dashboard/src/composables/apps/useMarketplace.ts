@@ -1,25 +1,46 @@
-import { ref, computed } from 'vue'
+import { computed, ref } from 'vue'
 
 import { appsApi } from '@/api/apps'
 import { settingsApi } from '@/api/settings'
 import { sitesApi } from '@/api/sites'
+import type { AppInfo, MarketplaceApp } from '@/types/apps'
+import type { SiteResource } from '@/types/sites'
 import { parseBranchVersion, toSentenceCase } from '@/utils/format'
 import { matchesPill } from '@/utils/marketplaceCategories'
 import { isFrappeApp } from '@/utils/siteApps'
 
-const parseVersion = (branch) => {
+interface BenchBranch {
+  version: number | null
+  label: string | null
+}
+
+export interface WorksWithOption {
+  name: string
+  title: string
+  logo_url: string
+}
+
+export interface MarketplaceListing extends MarketplaceApp {
+  installed: boolean
+  compatible: boolean
+  needs: string
+  label: string
+  nightly: boolean
+}
+
+const parseVersion = (branch: string | undefined) => {
   const match = /^version-(\d+)/.exec(branch || '')
   return match ? Number(match[1]) : null
 }
 
-const parseBenchBranch = (branch) => {
+const parseBenchBranch = (branch: string | undefined): BenchBranch => {
   const version = parseVersion(branch)
   if (version !== null) return { version, label: `v${version}` }
   if (branch === 'develop') return { version: null, label: 'Nightly' }
   return { version: null, label: parseBranchVersion(branch) || null }
 }
 
-const sortApps = (a, b) => {
+const sortApps = (a: MarketplaceListing, b: MarketplaceListing) => {
   if (a.installed !== b.installed) return a.installed ? -1 : 1
   const as = a.stars ?? -1
   const bs = b.stars ?? -1
@@ -28,10 +49,10 @@ const sortApps = (a, b) => {
 }
 
 export const useMarketplace = (initialSiteName = '') => {
-  const registry = ref([])
+  const registry = ref<MarketplaceApp[]>([])
   const benchName = ref('')
-  const benchVersion = ref(null)
-  const benchVersionLabel = ref(null)
+  const benchVersion = ref<number | null>(null)
+  const benchVersionLabel = ref<string | null>(null)
   const loading = ref(true)
   const error = ref('')
 
@@ -39,9 +60,9 @@ export const useMarketplace = (initialSiteName = '') => {
   const selectedPill = ref('All')
   const worksWith = ref('')
 
-  const sites = ref([])
+  const sites = ref<SiteResource[]>([])
   const currentSiteName = ref('')
-  const benchApps = ref([])
+  const benchApps = ref<AppInfo[]>([])
 
   const load = async () => {
     loading.value = true
@@ -71,7 +92,7 @@ export const useMarketplace = (initialSiteName = '') => {
           sites.value.find((site) => site.name === initialSiteName)?.name || ''
       }
     } catch (caught) {
-      error.value = caught.message || 'Failed to load marketplace'
+      error.value = (caught instanceof Error && caught.message) || 'Failed to load marketplace'
     } finally {
       loading.value = false
     }
@@ -82,31 +103,34 @@ export const useMarketplace = (initialSiteName = '') => {
   )
   const installedOnCurrentSite = computed(() => new Set(currentSite.value?.active_apps || []))
 
-  const isInstalledOnAllSites = (appName) => {
-    return Boolean(sites.value.length) && sites.value.every((site) => site.active_apps?.includes(appName))
+  const isInstalledOnAllSites = (appName: string) => {
+    return (
+      Boolean(sites.value.length) &&
+      sites.value.every((site) => site.active_apps?.includes(appName))
+    )
   }
 
-  const isAppInstalled = (appName) => {
+  const isAppInstalled = (appName: string) => {
     return currentSiteName.value
       ? installedOnCurrentSite.value.has(appName)
       : isInstalledOnAllSites(appName)
   }
 
   // Only Frappe-made apps that some marketplace app depends on.
-  const worksWithOptions = computed(() => {
+  const worksWithOptions = computed<WorksWithOption[]>(() => {
     const names = new Set(registry.value.flatMap((app) => Object.keys(app.dependencies || {})))
     return [...names]
       .map((name) => registry.value.find((app) => app.name === name))
-      .filter((entry) => entry && isFrappeApp(entry))
+      .filter((entry): entry is MarketplaceApp => Boolean(entry && isFrappeApp(entry)))
       .map((entry) => ({ name: entry.name, title: entry.title, logo_url: entry.logo_url || '' }))
       .sort((a, b) => a.title.localeCompare(b.title))
   })
 
-  const matchesWorksWith = (app) => {
+  const matchesWorksWith = (app: MarketplaceApp) => {
     return !worksWith.value || Object.hasOwn(app.dependencies || {}, worksWith.value)
   }
 
-  const matchesSearch = (app, query) => {
+  const matchesSearch = (app: MarketplaceApp, query: string) => {
     return (
       !query ||
       app.title?.toLowerCase().includes(query) ||
@@ -114,7 +138,7 @@ export const useMarketplace = (initialSiteName = '') => {
     )
   }
 
-  const matchingApps = computed(() => {
+  const matchingApps = computed<MarketplaceListing[]>(() => {
     const query = search.value.toLowerCase().trim()
     return registry.value
       .filter((app) => matchesPill(app, selectedPill.value))

@@ -23,10 +23,17 @@ export default defineConfig({
           (request, response) => {
             const entry = `http://${request.headers.host}/src/cloud-settings/index.ts`;
 
+            const loader = `
+              frappe.cloudSettings = {
+                show: async (context) => {
+                  await import(${JSON.stringify(entry)});
+                  frappe.cloudSettings.show(context);
+                },
+              };
+            `;
+
             response.setHeader("Content-Type", "text/javascript");
-            response.end(
-              `frappe.cloudSettings = { show: async (context) => { await import(${JSON.stringify(entry)}); frappe.cloudSettings.show(context); } };`,
-            );
+            response.end(loader);
           },
         );
       },

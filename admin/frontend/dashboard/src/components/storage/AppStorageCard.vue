@@ -26,7 +26,12 @@ interface StorageNode {
   expanded?: boolean
 }
 
-const asStorageNode = (node: unknown) => node as StorageNode
+const emptyNode: StorageNode = { key: '', label: '', bytes: 0 }
+
+const isStorageNode = (node: unknown): node is StorageNode =>
+  typeof node === 'object' && node !== null && 'key' in node && 'label' in node && 'bytes' in node
+
+const nodeView = (node: unknown): StorageNode => (isStorageNode(node) ? node : emptyNode)
 
 const props = defineProps<Props>()
 
@@ -138,27 +143,27 @@ const treeNodes = computed(() => reactive([
     >
       <template #item="{ node: rawNode, hasChildren, expanded }">
         <span
-          v-if="asStorageNode(rawNode).dot"
+          v-if="nodeView(rawNode).dot"
           class="rounded-full size-2 shrink-0"
-          :style="{ backgroundColor: asStorageNode(rawNode).dot }"
+          :style="{ backgroundColor: nodeView(rawNode).dot }"
         />
         <AppIcon
           v-else-if="'logo' in rawNode"
-          :name="asStorageNode(rawNode).label"
-          :logo="asStorageNode(rawNode).logo || ''"
+          :name="nodeView(rawNode).label"
+          :logo="nodeView(rawNode).logo || ''"
           size="xs"
         />
         <span
-          v-else-if="asStorageNode(rawNode).icon"
+          v-else-if="nodeView(rawNode).icon"
           class="size-3.5 text-ink-gray-4 shrink-0"
-          :class="asStorageNode(rawNode).icon"
+          :class="nodeView(rawNode).icon"
         />
 
         <span
           class="text-sm truncate"
-          :class="asStorageNode(rawNode).muted ? 'text-ink-gray-5' : 'text-ink-gray-7'"
+          :class="nodeView(rawNode).muted ? 'text-ink-gray-5' : 'text-ink-gray-7'"
         >
-          {{ asStorageNode(rawNode).label }}
+          {{ nodeView(rawNode).label }}
         </span>
 
         <span v-if="hasChildren"
@@ -167,9 +172,9 @@ const treeNodes = computed(() => reactive([
 
         <span
           class="ml-auto text-sm tabular-nums shrink-0"
-          :class="asStorageNode(rawNode).muted ? 'text-ink-gray-6' : 'text-ink-gray-8'"
+          :class="nodeView(rawNode).muted ? 'text-ink-gray-6' : 'text-ink-gray-8'"
         >
-          {{ formatBytes(asStorageNode(rawNode).bytes) }}
+          {{ formatBytes(nodeView(rawNode).bytes) }}
         </span>
       </template>
     </Tree>

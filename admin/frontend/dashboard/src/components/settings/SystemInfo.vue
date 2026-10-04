@@ -4,9 +4,19 @@ import { Spinner } from 'frappe-ui'
 
 import { monitorApi } from '@/api/monitor'
 import { formatBytes } from '@/utils/format'
+import type { SystemInfo } from '@/types/stats'
 
 const loading = ref(true)
-const info = ref({ disk_total: 0, runtime: {} })
+
+const info = ref<SystemInfo>({
+  disk_total: 0,
+  cpu_count: null,
+  memory_total: 0,
+  swap_total: 0,
+  kernel_version: '',
+  os_version: '',
+  runtime: {},
+})
 
 const systemRows = computed(() => {
   const rows = {

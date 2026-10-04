@@ -3,7 +3,8 @@ import { computed, onMounted, ref } from 'vue'
 import { Button, Dialog, Dropdown, ErrorMessage, Select } from 'frappe-ui'
 
 import { formatTime, WEEKDAYS } from '@/utils/backup'
-import { cronToPicks, picksToCron } from '@/utils/cron'
+import { cronToPicks, type Frequency, picksToCron, type SchedulePicks } from '@/utils/cron'
+import { errorMessage } from '@/utils/error'
 
 interface Props {
   title?: string
@@ -41,14 +42,20 @@ const monthDayOptions = Array.from({ length: 31 }, (_, i) => ({ label: `${i + 1}
 const hourOptions = Array.from({ length: 24 }, (_, h) => ({ label: formatTime(h), value: h }))
 
 // Local-time presets; the server stores their UTC equivalents.
-const PRESETS = [
-  { label: 'Daily, 2:00 AM', picks: { frequency: 'daily', weekday: 0, monthDay: 1, hour: 2, minute: 0 } },
-  { label: 'Weekly, Sunday 2:00 AM', picks: { frequency: 'weekly', weekday: 0, monthDay: 1, hour: 2, minute: 0 } },
+const PRESETS: { label: string; picks: SchedulePicks }[] = [
+  {
+    label: 'Daily, 2:00 AM',
+    picks: { frequency: 'daily', weekday: 0, monthDay: 1, hour: 2, minute: 0 },
+  },
+  {
+    label: 'Weekly, Sunday 2:00 AM',
+    picks: { frequency: 'weekly', weekday: 0, monthDay: 1, hour: 2, minute: 0 },
+  },
 ]
 
-const presetCron = (index) => picksToCron(PRESETS[index].picks)
+const presetCron = (index: number) => picksToCron(PRESETS[index].picks)
 
-const matchingPreset = (picks) =>
+const matchingPreset = (picks: SchedulePicks) =>
   PRESETS.findIndex(
     (preset) =>
       preset.picks.frequency === picks.frequency &&
@@ -61,11 +68,14 @@ const disabled = ref(true)
 const loading = ref(false)
 const error = ref('')
 
-const schedulePreset = ref(0)
+const schedulePreset = ref<number | 'custom'>(0)
 const showCustomDialog = ref(false)
 const showDisableConfirm = ref(false)
 const scheduleSaving = ref(false)
 const schedFrequency = ref('daily')
+
+const toFrequency = (value: string): Frequency =>
+  value === 'weekly' || value === 'monthly' ? value : 'daily'
 const schedWeekday = ref(0)
 const schedMonthDay = ref(1)
 const schedHour = ref(2)
@@ -81,8 +91,7 @@ const schedHourPick = computed({
 
 const customScheduleLabel = computed(() => {
   const time = formatTime(schedHour.value, schedMinute.value)
-  if (schedFrequency.value === 'weekly')
-    return `Weekly, ${WEEKDAYS[schedWeekday.value]} ${time}`
+  if (schedFrequency.value === 'weekly') return `Weekly, ${WEEKDAYS[schedWeekday.value]} ${time}`
   if (schedFrequency.value === 'monthly') return `Monthly, ${schedMonthDay.value} ${time}`
   return `Daily, ${time}`
 })
@@ -119,7 +128,7 @@ const scheduleOptions = computed(() => {
 // The pickers hold local time; the server stores the schedule in UTC.
 const schedCron = computed(() =>
   picksToCron({
-    frequency: schedFrequency.value,
+    frequency: toFrequency(schedFrequency.value),
     weekday: schedWeekday.value,
     monthDay: schedMonthDay.value,
     hour: schedHour.value,
@@ -127,7 +136,7 @@ const schedCron = computed(() =>
   }),
 )
 
-const parseCronToState = (cron) => {
+const parseCronToState = (cron: string) => {
   const picks = cronToPicks(cron)
   schedFrequency.value = picks.frequency
   schedWeekday.value = picks.weekday
@@ -147,19 +156,19 @@ const load = async () => {
     disabled.value = false
     const matched = matchingPreset(parseCronToState(data.schedule))
     schedulePreset.value = matched === -1 ? 'custom' : matched
-  } catch (e) {
-    error.value = e.message || 'Failed to load schedule.'
+  } catch (caught) {
+    error.value = errorMessage(caught, 'Failed to load schedule.')
   }
 }
 
-const setPreset = async (index) => {
+const setPreset = async (index: number) => {
   error.value = ''
   try {
     await props.setSchedule(presetCron(index))
     schedulePreset.value = index
     disabled.value = false
-  } catch (e) {
-    error.value = e.message || 'Failed to save schedule.'
+  } catch (caught) {
+    error.value = errorMessage(caught, 'Failed to save schedule.')
   }
 }
 
@@ -171,8 +180,8 @@ const saveCustomSchedule = async () => {
     schedulePreset.value = 'custom'
     disabled.value = false
     showCustomDialog.value = false
-  } catch (e) {
-    error.value = e.message || 'Failed to save schedule.'
+  } catch (caught) {
+    error.value = errorMessage(caught, 'Failed to save schedule.')
   } finally {
     scheduleSaving.value = false
   }
@@ -185,8 +194,8 @@ const disable = async () => {
     await props.removeSchedule()
     disabled.value = true
     showDisableConfirm.value = false
-  } catch (e) {
-    error.value = e.message || `Failed to disable ${props.noun}.`
+  } catch (caught) {
+    error.value = errorMessage(caught, `Failed to disable ${props.noun}.`)
   } finally {
     loading.value = false
   }
@@ -199,8 +208,8 @@ const enable = async () => {
     await props.setSchedule(presetCron(0))
     disabled.value = false
     schedulePreset.value = 0
-  } catch (e) {
-    error.value = e.message || `Failed to enable ${props.noun}.`
+  } catch (caught) {
+    error.value = errorMessage(caught, `Failed to enable ${props.noun}.`)
   } finally {
     loading.value = false
   }
@@ -223,9 +232,7 @@ defineExpose({ disabled, currentScheduleLabel, loading, enable })
       </div>
 
       <div class="flex items-center gap-2 shrink-0">
-        <Button v-if="disabled" :loading="loading" @click="enable"
-          >Enable {{ noun }}</Button
-        >
+        <Button v-if="disabled" :loading="loading" @click="enable">Enable {{ noun }}</Button>
         <Dropdown v-else :options="scheduleOptions">
           <template #default="{ open }">
             <Button variant="subtle" size="sm" :loading="loading" :active="open">
