@@ -1,4 +1,5 @@
 import configparser
+import logging
 import os
 import re
 import subprocess
@@ -20,6 +21,7 @@ from pilot.core.mariadb_memory import (
     MariaDBVariableLimits,
     calculate_mariadb_memory,
     calculate_mariadb_variable_limits,
+    live_sizing_values,
 )
 from pilot.exceptions import DatabaseError
 from pilot.internal.atomic_file import (
@@ -31,6 +33,7 @@ from pilot.managers.platform import is_macos, which
 from pilot.utils import cli_root, run_command
 
 _CLIENT_TIMEOUT = 5
+_MEMORY_RELEASE_TIMEOUT = 60
 _MANAGED_CONFIG_HEADER = "# Managed by Pilot's database variable editor.\n"
 _OPTION_NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _MEBIBYTE = 1024 * 1024
@@ -276,6 +279,82 @@ class MariaDBManager(UserOwnedDBManager):
         self._require_managed_server()
         with self.database_action_lock():
             self._restart_and_wait_healthy()
+
+    def tune_to_host(self) -> MariaDBMemorySizing:
+        """Rewrite my.cnf and the unit memory limits for this host's memory, and apply them live.
+
+        A server copied from a snapshot or moved to a resized VM keeps the old host's sizing.
+        Every sized variable is dynamic, so the running server needs no restart.
+        """
+        self._require_linux_managed_server()
+        with self.database_action_lock():
+            sizing = self._write_config()
+            self._install_unit(sizing)
+            self._wait_until_healthy()
+            current_max = self._unit_memory_mb("MemoryMax")
+            # Raise the limits before MariaDB grows, and lower them only after it shrinks.
+            if current_max is not None and sizing.memory_max_mb >= current_max:
+                self._set_runtime_memory_limits(sizing)
+                self._apply_live_sizing(sizing)
+            else:
+                self._apply_live_sizing(sizing)
+                self._lower_runtime_memory_limits(sizing)
+        return sizing
+
+    def _apply_live_sizing(self, sizing: MariaDBMemorySizing) -> None:
+        overrides = set(self._read_managed_options())
+        connection = self.connect()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT @@GLOBAL.innodb_buffer_pool_size, @@GLOBAL.innodb_buffer_pool_size_max"
+                )
+                current_pool, pool_max = cursor.fetchone()
+                for name, value in live_sizing_values(sizing, current_pool, pool_max, overrides):
+                    cursor.execute(f"SET GLOBAL {name} = %s", (value,))
+        except Exception as exc:
+            raise DatabaseError("Could not apply the MariaDB sizing to the running server.") from exc
+        finally:
+            connection.close()
+
+    def _lower_runtime_memory_limits(self, sizing: MariaDBMemorySizing) -> None:
+        """Lower the unit memory limits once MariaDB uses less than the new soft limit.
+
+        A smaller buffer pool releases its memory gradually, and the hard limit must not kill
+        the server first. If the memory stays high or cannot be read, the limits apply at the
+        next start.
+        """
+        deadline = time.monotonic() + _MEMORY_RELEASE_TIMEOUT
+        while (usage := self._unit_memory_mb("MemoryCurrent")) is None or usage >= sizing.memory_high_mb:
+            if time.monotonic() >= deadline:
+                logging.getLogger(__name__).warning(
+                    "MariaDB memory use is unknown or above %s MiB; its new memory limits apply at the next start.",
+                    sizing.memory_high_mb,
+                )
+                return
+            time.sleep(1)
+        self._set_runtime_memory_limits(sizing)
+
+    def _set_runtime_memory_limits(self, sizing: MariaDBMemorySizing) -> None:
+        run_command(
+            self._systemctl(
+                "set-property",
+                "--runtime",
+                self._UNIT_NAME,
+                f"MemoryHigh={sizing.memory_high_mb}M",
+                f"MemoryMax={sizing.memory_max_mb}M",
+            ),
+            env=self._systemctl_env(),
+        )
+
+    def _unit_memory_mb(self, name: str) -> int | None:
+        result = run_command(
+            self._systemctl("show", self._UNIT_NAME, f"--property={name}", "--value"),
+            env=self._systemctl_env(),
+        )
+        value = result.stdout.strip()
+        # systemd prints "[not set]" for an unknown value and "infinity" for no limit.
+        return int(value) // _MEBIBYTE if value.isdigit() else None
 
     def performance_schema_enabled(self) -> bool:
         connection = None

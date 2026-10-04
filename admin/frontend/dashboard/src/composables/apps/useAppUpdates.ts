@@ -4,7 +4,12 @@ import { appsApi } from '@/api/apps'
 import { tasksApi } from '@/api/tasks'
 import { isTaskActive } from '@/utils/taskFormat'
 
-const updates = ref({})
+interface AppVersionUpdate {
+  current: string
+  target: string
+}
+
+const updates = ref<Record<string, AppVersionUpdate>>({})
 const checking = ref(false)
 const checked = ref(false)
 

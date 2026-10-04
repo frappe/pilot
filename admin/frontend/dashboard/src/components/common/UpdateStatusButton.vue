@@ -1,7 +1,7 @@
 <script setup lang="ts">
+import { Button, Spinner } from 'frappe-ui'
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Button, Spinner } from 'frappe-ui'
 
 import UpdateAppsDialog from '@/components/apps/UpdateAppsDialog.vue'
 
@@ -12,11 +12,13 @@ const { status, start } = useUpdate()
 const showDialog = ref(false)
 
 const onClick = () => {
-  if (status.value.operationId) {
-    router.push({ name: 'UpdateDetail', params: { operationId: status.value.operationId } })
-  } else {
-    showDialog.value = true
+  const current = status.value
+  if (current && 'operationId' in current) {
+    router.push({ name: 'UpdateDetail', params: { operationId: current.operationId } })
+    return
   }
+
+  showDialog.value = true
 }
 
 onMounted(start)

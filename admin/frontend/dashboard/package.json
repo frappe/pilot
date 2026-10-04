@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "preinstall": "cd \"$(git rev-parse --show-toplevel)\" && uv run python scripts/generate_ts_types.py",
+    "preinstall": "cd \"$(git rev-parse --show-toplevel)\" && uv run --extra admin python scripts/generate_ts_types.py",
     "dev": "vite",
-    "build": "vite build",
+    "build": "vue-tsc --noEmit && vite build",
     "test": "node --test src/utils/*.test.ts",
+    "typecheck": "vue-tsc --noEmit",
     "test:e2e": "playwright test",
     "preview": "vite preview"
   },
@@ -16,7 +17,7 @@
     "@codemirror/lang-sql": "^6.10.0",
     "@codemirror/state": "^6.7.0",
     "@codemirror/view": "^6.43.4",
-    "frappe-ui": "1.0.0-beta.55",
+    "frappe-ui": "^1.0.0-rc.1",
     "ky": "^2.0.2",
     "qrcode.vue": "^3.10.0",
     "vue": "^3.5.0",

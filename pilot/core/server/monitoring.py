@@ -144,7 +144,7 @@ class Monitor:
         return self.system_log_path.with_suffix(".alerts")
 
     def _alert_payload(self, breached: list[str], system_record: dict) -> dict[str, typing.Any]:
-        """Central's report_pilot_event schema: event, message, context."""
+        """Alert body for the webhook, mail, and Central sinks: event, message, context."""
         limits = self.bench.config.resource_limits
         readings = self._readings(system_record)
         crossed = [

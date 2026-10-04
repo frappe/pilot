@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import urllib.request
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from pilot.integrations.central.client import CentralClientError
 
@@ -17,10 +17,34 @@ METADATA_BASE = "http://169.254.169.254/latest"
 TOKEN_TTL_SECONDS = 21600
 REQUIRED_KEYS = ("central_endpoint", "central_auth_token", "jwks_url", "jwks_audience_id")
 S3_KEYS = ("access_key", "secret_key", "bucket", "provider", "region", "endpoint_url")
+TELEMETRY_KEYS = ("endpoint", "token")
+
+
+class MetadataBlock(TypedDict):
+    attribute: str
+    keys: tuple[str, ...]
+    url_key: str
+
+
+# The cloud caps each metadata value at 1 KiB, so each optional block has its own attribute.
+BLOCKS: dict[str, MetadataBlock] = {
+    "s3": {"attribute": "pilot-storage", "keys": S3_KEYS, "url_key": "endpoint_url"},
+    "telemetry": {"attribute": "pilot-telemetry", "keys": TELEMETRY_KEYS, "url_key": "endpoint"},
+}
 
 
 def attribute_name() -> str:
     return os.environ.get("PILOT_METADATA_KEY", "pilot-central")
+
+
+def _parse_object(raw: str, source: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(raw)
+    except ValueError as exc:
+        raise CentralClientError(f"{source} is not JSON: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise CentralClientError(f"{source} is not a JSON object.")
+    return payload
 
 
 def _parse_credentials(raw: str, name: str) -> dict[str, Any]:
@@ -28,12 +52,7 @@ def _parse_credentials(raw: str, name: str) -> dict[str, Any]:
     from pilot.internal.validators import validate_external_url
 
     source = f"Instance metadata '{name}'"
-    try:
-        payload = json.loads(raw)
-    except ValueError as exc:
-        raise CentralClientError(f"{source} is not JSON: {exc}") from exc
-    if not isinstance(payload, dict):
-        raise CentralClientError(f"{source} is not a JSON object.")
+    payload = _parse_object(raw, source)
 
     if missing := [key for key in REQUIRED_KEYS if not payload.get(key)]:
         raise CentralClientError(f"{source} is missing: {', '.join(missing)}")
@@ -48,18 +67,21 @@ def _parse_credentials(raw: str, name: str) -> dict[str, Any]:
             raise CentralClientError(f"{source}: initial_jwks_cache is not a JSON object.")
         credentials["initial_jwks_cache"] = initial_jwks_cache
 
-    s3 = payload.get("s3")
-    if s3 is not None:
-        if not isinstance(s3, dict):
-            raise CentralClientError(f"{source}: s3 is not a JSON object.")
-        if missing := [key for key in S3_KEYS if not s3.get(key)]:
-            raise CentralClientError(f"{source}: s3 is missing: {', '.join(missing)}")
-        storage = {key: str(s3[key]) for key in S3_KEYS}
-        if error := validate_external_url(storage["endpoint_url"], "s3.endpoint_url"):
-            raise CentralClientError(f"{source}: {error}")
-        credentials["s3"] = storage
-
     return credentials
+
+
+def _parse_block(raw: str, attribute: str, keys: tuple[str, ...], url_key: str) -> dict[str, str]:
+    from pilot.internal.validators import validate_external_url
+
+    source = f"Instance metadata '{attribute}'"
+    block = _parse_object(raw, source)
+    if missing := [key for key in keys if not block.get(key)]:
+        raise CentralClientError(f"{source} is missing: {', '.join(missing)}")
+
+    values = {key: str(block[key]) for key in keys}
+    if error := validate_external_url(values[url_key], url_key):
+        raise CentralClientError(f"{source}: {error}")
+    return values
 
 
 class InstanceMetadata:
@@ -73,7 +95,14 @@ class InstanceMetadata:
         """The staged credential, or None until the cloud writes it. Malformed raises."""
         name = attribute_name()
         raw = self.get_attribute(name)
-        return _parse_credentials(raw, name) if raw else None
+        if not raw:
+            return None
+
+        credentials = _parse_credentials(raw, name)
+        for block, spec in BLOCKS.items():
+            if value := self.get_attribute(spec["attribute"]):
+                credentials[block] = _parse_block(value, spec["attribute"], spec["keys"], spec["url_key"])
+        return credentials
 
     def get_attribute(self, name: str) -> str | None:
         token = self._token()
@@ -122,6 +151,7 @@ def apply_central_config(
         on_credentials(credentials)
 
     _apply_default_s3(bench, credentials)
+    _apply_telemetry(bench, credentials)
 
     from pilot.config.common import CommonConfig
 
@@ -153,6 +183,16 @@ def _apply_default_s3(bench: "Bench", credentials: dict[str, Any]) -> None:
         config.s3 = S3Config(**storage)
 
     bench.config.s3 = S3Config(**storage)
+
+
+def _apply_telemetry(bench: "Bench", credentials: dict[str, Any]) -> None:
+    datum = credentials.get("telemetry")
+    if not datum:
+        return
+
+    from pilot.core.bench.telemetry import apply_credential
+
+    apply_credential(bench, endpoint=datum["endpoint"], token=datum["token"])
 
 
 def _mark_bootstrapped(config: "BenchConfig", credentials: dict[str, Any]) -> None:

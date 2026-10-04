@@ -13,18 +13,20 @@ import { formatBytes } from '@/utils/format'
 import { relativeTime } from '@/utils/time'
 import { useBench } from '@/composables/benches/useBench'
 import { useIsMobile } from '@/composables/common/useIsMobile'
+import type { LogErrorEvent, LogFile, LogLineEvent } from '@/types/logs'
+import { errorMessage } from '@/utils/error'
 
 const route = useRoute()
 const router = useRouter()
 
 const { name: benchName, load: loadBench } = useBench()
 
-const hasErrors = (log) => {
+const hasErrors = (log: LogFile) => {
   return log.filename.endsWith('.error.log') && log.size_bytes > 0
 }
 
 // ── Log list ─────────────────────────────────────────────────────────────
-const logs = ref([])
+const logs = ref<LogFile[]>([])
 const logsLoading = ref(true)
 const logsError = ref('')
 const fileSearch = ref('')
@@ -57,32 +59,36 @@ const loadLogs = async () => {
   try {
     // Sort once here (most recently active first) - filteredLogs only needs to filter.
     logs.value = (await logsApi.list()).sort(
-      (a, b) => new Date(b.last_modified) - new Date(a.last_modified),
+      (a, b) => new Date(b.last_modified).getTime() - new Date(a.last_modified).getTime(),
     )
   } catch (caught) {
-    logsError.value = caught.message || 'Failed to load logs'
+    logsError.value = errorMessage(caught, 'Failed to load logs')
   } finally {
     logsLoading.value = false
   }
 }
 
 // ── Viewer ───────────────────────────────────────────────────────────────
-const selectedFile = ref(route.query.file || '')
-const rawLines = ref([])
+const selectedFile = ref(typeof route.query.file === 'string' ? route.query.file : '')
+const rawLines = ref<string[]>([])
 const contentLoading = ref(false)
 const contentError = ref('')
 const search = ref('')
 const linesCount = ref(200)
 const liveMode = ref(false)
-const terminal = ref(null)
+const terminal = ref<InstanceType<typeof LogView> | null>(null)
 const activeMatch = ref(0)
 const matchTotal = ref(0)
-let eventSource = null
+let eventSource: EventSource | null = null
 let lastTerm = ''
 
 const isMobile = useIsMobile(768)
 
 const isSearching = computed(() => search.value.trim().length > 0)
+
+const onFileSelect = (value: unknown) => {
+  selectedFile.value = typeof value === 'string' ? value : ''
+}
 
 // Re-run ANSI processing per fetch, not per search keystroke.
 const processedLines = computed(() => rawLines.value.map(processLine))
@@ -124,7 +130,7 @@ const syncMatches = () => {
   }
 }
 
-const gotoMatch = (delta) => {
+const gotoMatch = (delta: number) => {
   const marks = matchEls()
   if (!marks.length) return
   activeMatch.value = (activeMatch.value + delta + marks.length) % marks.length
@@ -136,7 +142,7 @@ const matchEls = () => {
   return root ? [...root.querySelectorAll('mark[data-mi]')] : []
 }
 
-const paintMatches = (scroll) => {
+const paintMatches = (scroll: boolean) => {
   matchEls().forEach((el, index) => {
     const active = index === activeMatch.value
     el.classList.toggle('log-match--active', active)
@@ -164,7 +170,7 @@ const loadContent = async () => {
       terminal.value?.scrollToBottom()
     }
   } catch (caught) {
-    contentError.value = caught.message || 'Failed to load log'
+    contentError.value = errorMessage(caught, 'Failed to load log')
   } finally {
     contentLoading.value = false
   }
@@ -175,8 +181,8 @@ const startLive = () => {
   rawLines.value = []
   eventSource = new EventSource(logsApi.streamUrl(selectedFile.value))
   eventSource.onmessage = (event) => {
-    const data = JSON.parse(event.data)
-    rawLines.value.push(data.error ? `ERROR: ${data.error}` : data.line)
+    const data: Partial<LogLineEvent & LogErrorEvent> = JSON.parse(event.data)
+    rawLines.value.push(data.error ? `ERROR: ${data.error}` : (data.line ?? ''))
     if (rawLines.value.length > 2000) rawLines.value.shift()
   }
   eventSource.onerror = () => stopLive()
@@ -198,15 +204,16 @@ const toggleLive = () => {
 
 // Wrap matches in rendered HTML, touching only text between tags so ANSI
 // <span>s stay intact; the pattern is built from an HTML-escaped term.
-const highlight = (html, pattern) => {
+const highlight = (html: string, pattern: RegExp) => {
   return html.replace(
     /(<[^>]+>)|([^<]+)/g,
-    (_, tag, text) =>
-      tag || text.replace(pattern, (match) => `<mark data-mi class="log-match">${match}</mark>`),
+    (_: string, tag: string, text: string) =>
+      tag ||
+      text.replace(pattern, (match: string) => `<mark data-mi class="log-match">${match}</mark>`),
   )
 }
 
-const escapeRegExp = (text) => {
+const escapeRegExp = (text: string) => {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
@@ -278,7 +285,7 @@ onUnmounted(() => stopLive())
         placeholder="Select a log file"
         :model-value="selectedFile"
         :options="fileOptions"
-        @update:model-value="selectedFile = $event"
+        @update:model-value="onFileSelect"
       >
         <template #prefix><span class="size-4 text-ink-gray-5 lucide-search" /></template>
 

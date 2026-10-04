@@ -103,8 +103,8 @@ class BackupProvider:
         stat = path.stat()
         name = path.name
         timestamp = parse_backup_timestamp(name) or "unknown"
-        default_created_at = datetime.fromtimestamp(stat.st_mtime, tz=UTC)
-        created_at = self.get_timestamp(timestamp) or default_created_at
+        # The filename carries the site's local time with no zone, so trust the file's mtime.
+        created_at = datetime.fromtimestamp(stat.st_mtime, tz=UTC)
 
         return BackupFile(
             filename=name,

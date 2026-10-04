@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { type Router, useRouter } from 'vue-router'
 
 import ActionDialog from '@/components/common/ActionDialog.vue'
 import SiteRow from '@/components/sites/SiteRow.vue'
@@ -8,15 +8,22 @@ import SiteRow from '@/components/sites/SiteRow.vue'
 import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
 import { openTaskDetailPage } from '@/utils/taskRoute'
+import type { SiteResource } from '@/types/sites'
+import { errorMessage } from '@/utils/error'
 
-const openSitePage = (router, siteName, app = '') => {
+const openSitePage = (router: Router, siteName: string, app = '') => {
   const route = { name: 'SiteDetail', params: { name: siteName, tab: 'apps' } }
   router.push(app ? { ...route, query: { app, action: 'install-app' } } : route)
 }
 
+interface AppRef {
+  name: string
+  title?: string
+}
+
 interface Props {
-  app?: Record<string, any> | null
-  sites?: any[]
+  app?: AppRef | null
+  sites?: SiteResource[]
   siteName?: string
 }
 
@@ -25,14 +32,15 @@ const props = withDefaults(defineProps<Props>(), {
   sites: () => [],
   siteName: '',
 })
-const open = defineModel('open')
+const open = defineModel<boolean>('open')
 const router = useRouter()
 
-const selection = ref(null)
+const selection = ref<string | null>(null)
 const installing = ref(false)
 const error = ref('')
 
 const appLabel = computed(() => props.app?.title || props.app?.name || '')
+const appName = computed(() => props.app?.name ?? '')
 
 const presetSite = computed(() => props.sites.find((s) => s.name === props.siteName) || null)
 // A single-site bench behaves like a preset: shown for confirmation, never asked.
@@ -48,35 +56,38 @@ watch(open, (isOpen) => {
 
 const installableSites = computed(() => props.sites.filter((s) => !isInstalled(s)))
 // Hide "All sites" when there's only one site on the bench, or only one site left to install on.
-const showAllSitesOption = computed(() => props.sites.length > 1 && installableSites.value.length > 1)
+const showAllSitesOption = computed(
+  () => props.sites.length > 1 && installableSites.value.length > 1,
+)
 
-const isInstalled = (site) => {
+const isInstalled = (site: SiteResource) => {
   return Boolean(props.app && site.active_apps?.includes(props.app.name))
 }
 
-const siteMeta = (site) => {
+const siteMeta = (site: SiteResource) => {
   const n = site.active_apps?.length || 0
   return `${n} app${n === 1 ? '' : 's'}`
 }
 
 // An app the site only has disabled comes back enabled inline, with no task to follow.
-const startInstall = async (site) => {
+const startInstall = async (site: SiteResource) => {
   const result = await sitesApi.apps.install(site.name, {
-    app: props.app.name,
+    app: appName.value,
   })
-  if (!result.task_id && !result.enabled)
+  if ('enabled' in result) return ''
+  if (!result.task_id)
     throw new Error(apiErrorMessage(result, `Could not install on ${site.name}.`))
-  return result.task_id || ''
+  return result.task_id
 }
 
 // An install follows its task; an enable has no task, so it lands on the site itself.
-const installOnSite = async (name) => {
+const installOnSite = async (name: string) => {
   const site = props.sites.find((s) => s.name === name)
   if (!site) return
   const taskId = await startInstall(site)
   open.value = false
   if (taskId) openTaskDetailPage(router, taskId)
-  else openSitePage(router, site.name, props.app.name)
+  else openSitePage(router, site.name, appName.value)
 }
 
 const installOnAllSites = async () => {
@@ -85,7 +96,7 @@ const installOnAllSites = async () => {
   const taskIds = await Promise.all(targets.map((site) => startInstall(site)))
   open.value = false
   if (taskIds.some(Boolean)) router.push({ name: 'Tasks' })
-  else if (targets.length === 1) openSitePage(router, targets[0].name, props.app.name)
+  else if (targets.length === 1) openSitePage(router, targets[0].name, appName.value)
   else router.push({ name: 'Sites' })
 }
 
@@ -97,7 +108,7 @@ const confirmInstall = async () => {
     if (selection.value === 'all') await installOnAllSites()
     else await installOnSite(selection.value)
   } catch (caught) {
-    error.value = caught.message || 'Could not start install.'
+    error.value = errorMessage(caught, 'Could not start install.')
   } finally {
     installing.value = false
   }
@@ -139,7 +150,8 @@ const confirmInstall = async () => {
       >
         <template #suffix>
           <span class="w-20 text-ink-gray-5 text-sm text-right shrink-0">
-            {{ installableSites.length }} sites
+            {{ installableSites.length }}
+            sites
           </span>
         </template>
       </SiteRow>

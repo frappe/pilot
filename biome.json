@@ -1,7 +1,7 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.4/schema.json",
   "files": {
-    "includes": ["admin/frontend/dashboard/src/**"]
+    "includes": ["admin/frontend/dashboard/src/**", "admin/frontend/in-app-embed/src/**"]
   },
   "formatter": {
     "enabled": true,

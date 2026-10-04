@@ -387,4 +387,6 @@ def test_alerts_reach_central_when_it_is_managed(tmp_path: Path) -> None:
     with patch.object(alerts, "CentralClient") as client:
         assert alerts.notify(bench, {"event": "cpu", "message": "high", "context": {}}) is True
 
-    client.return_value.notify_central.assert_called_once()
+    client.return_value.notify_central.assert_called_once_with(
+        event="cpu", message="high", context={}, reference_name=bench.config.name
+    )

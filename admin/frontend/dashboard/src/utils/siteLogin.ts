@@ -1,4 +1,12 @@
-export const openSiteLogin = async (createLink, { onHint } = {}) => {
+export type SiteLoginLink = {
+  url?: string
+  hint?: string
+}
+
+export const openSiteLogin = async (
+  createLink: () => Promise<SiteLoginLink>,
+  { onHint }: { onHint?: (hint: string) => void } = {},
+) => {
   const link = await createLink()
   if (typeof link?.url !== 'string') {
     throw new Error('The site login link is invalid.')

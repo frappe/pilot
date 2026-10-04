@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.exceptions import BenchError, CommandError
-from pilot.managers.systemd_user import memory_capped, systemctl_env
+from pilot.managers.systemd_user import can_cap_memory, memory_capped, systemctl_env
 from pilot.utils import extract_tar_archive, get_yarn_bin, git_has_local_changes, run_command
 
 if TYPE_CHECKING:
@@ -27,16 +27,22 @@ class PythonAssetBuilder:
 
     def run_compiler(self, argv: list[str], **kwargs) -> None:
         """Run a compiler capped at a share of host memory, so a runaway build
-        fails instead of exhausting the machine."""
-        from pilot.core.build_memory import build_memory_limit_mb
+        fails instead of exhausting the machine. Uncapped where the host cannot cap."""
+        from pilot.core.build_memory import build_memory_limit_mb, can_read_memory
 
-        limit_mb = build_memory_limit_mb(self.bench.config.build.memory_limit_mb)
+        limit_mb = build_memory_limit_mb(self.bench.config.build.memory_limit_mb) if can_read_memory() else 0
+        capped = bool(limit_mb) and can_cap_memory()
+        if capped:
+            argv = memory_capped(argv, limit_mb)
+        else:
+            logging.warning("Memory control unavailable here, so this build runs uncapped.")
+
         kwargs["env"] = {**systemctl_env(), **(kwargs.get("env") or {})}
         try:
-            run_command(memory_capped(argv, limit_mb), **kwargs)
+            run_command(argv, **kwargs)
         except CommandError as error:
             # The kernel kills the scope, so the runner only sees a signal.
-            if error.returncode < 0:
+            if capped and error.returncode < 0:
                 raise BenchError(
                     f"Build ran out of memory: it may use {limit_mb}MB on this machine."
                 ) from error
@@ -116,10 +122,7 @@ class PythonAssetBuilder:
                 stream_output=True,
             )
         except Exception:
-            print(
-                f"  Frozen lockfile install failed for {app_name}; "
-                "retrying without modifying yarn.lock..."
-            )
+            print(f"  Frozen lockfile install failed for {app_name}; retrying without modifying yarn.lock...")
             sys.stdout.flush()
             run_command(
                 [get_yarn_bin(), "install", "--pure-lockfile"],

@@ -1,103 +1,87 @@
-<script setup>
-import { computed, ref } from "vue";
-import SettingsHeader from "frappe-ui/src/components/SettingsDialog/SettingsHeader.vue";
-import SettingsBody from "frappe-ui/src/components/SettingsDialog/SettingsBody.vue";
-import Button from "frappe-ui/src/components/Button/Button.vue";
-import ErrorMessage from "frappe-ui/src/components/ErrorMessage/ErrorMessage.vue";
-import { openExternal } from "../external";
+<script setup lang="ts">
+import { Button, ErrorMessage, SettingsRow } from 'frappe-ui'
+import { computed, ref } from 'vue'
+import Panel from '../components/Panel.vue'
+import { openExternal } from '../external'
+import type { Store } from '../store'
 
-const props = defineProps({ store: { type: Object, required: true } });
+interface Props {
+  store: Store
+}
 
-const context = computed(() => props.store.state.context || {});
-const openingBilling = ref(false);
-const billingError = ref("");
+const props = defineProps<Props>()
 
-// Server controls leave the site. Billing stays in this dialog, so local and dev
-// sites never depend on a configured Central account URL.
+const context = computed(() => props.store.state.context || {})
+const openingBilling = ref(false)
+const billingError = ref('')
+
 const links = computed(() => [
   {
-    title: __("Open your server"),
-    description: __(
-      "Deploys, scaling, SSH, backups, sites — the full server controls.",
-    ),
-    label: __("Open server"),
+    title: __('Open your server'),
+    description: __('Deploys, scaling, SSH, backups, sites — the full server controls.'),
+    label: __('Open server'),
     url: context.value.server_url,
   },
-]);
+])
 
-async function openBilling() {
-  if (openingBilling.value) return;
-  openingBilling.value = true;
-  billingError.value = "";
+const openBilling = async () => {
+  if (openingBilling.value) return
+
+  openingBilling.value = true
+  billingError.value = ''
+
   try {
     const response = context.value.account_url
       ? { url: context.value.account_url }
-      : await props.store.api.getAccountUrl();
-    if (!response?.url) throw new Error(__("Central is not configured."));
-    openExternal(response.url);
+      : await props.store.api.getAccountUrl()
+
+    if (!response?.url) throw new Error(__('Central is not configured.'))
+
+    openExternal(response.url)
   } catch (exception) {
-    billingError.value = props.store.api.getErrorMessage(exception);
+    billingError.value = props.store.api.getErrorMessage(exception)
   } finally {
-    openingBilling.value = false;
+    openingBilling.value = false
   }
 }
 </script>
 
 <template>
-  <SettingsHeader
-    :title="__('Advanced')"
-    :description="__('Deeper controls for your server.')"
-  />
-  <SettingsBody>
-    <div class="divide-y divide-outline-gray-1 pt-4">
-      <div
+  <Panel :title="__('Advanced')" :description="__('Deeper controls for your server.')">
+    <div class="divide-y divide-outline-gray-1 border-t border-outline-gray-1">
+      <SettingsRow
         v-for="link in links"
         :key="link.title"
-        class="flex items-center justify-between gap-4 py-5"
+        label-for=""
+        :title="link.title"
+        :description="link.description"
       >
-        <div>
-          <p class="text-base font-semibold text-ink-gray-9">
-            {{ link.title }}
-          </p>
-          <p class="mt-1 text-p-sm text-ink-gray-5">{{ link.description }}</p>
-        </div>
         <Button
           v-if="link.url"
-          class="shrink-0"
-          icon-right="arrow-up-right"
+          icon-right="lucide-arrow-up-right"
+          :label="link.label"
           @click="openExternal(link.url)"
-        >
-          {{ link.label }}
-        </Button>
-        <p v-else class="shrink-0 text-p-sm text-ink-gray-4">
-          {{ __("Not configured") }}
-        </p>
-      </div>
-      <div class="py-5">
-        <div class="flex items-center justify-between gap-4">
-          <div>
-            <p class="text-base font-semibold text-ink-gray-9">
-              {{ __("Account & billing") }}
-            </p>
-            <p class="mt-1 text-p-sm text-ink-gray-5">
-              {{
-                __(
-                  "Payment methods, invoices, billing email and account settings.",
-                )
-              }}
-            </p>
-          </div>
-          <Button
-            class="shrink-0"
-            icon-right="arrow-up-right"
-            :disabled="openingBilling"
-            @click="openBilling"
-          >
-            {{ openingBilling ? __("Opening billing") : __("Manage billing") }}
-          </Button>
-        </div>
-        <ErrorMessage :message="billingError" class="mt-2" />
-      </div>
+        />
+
+        <span v-else class="text-p-sm text-ink-gray-5">{{ __("Not configured") }}</span>
+      </SettingsRow>
+
+      <SettingsRow
+        label-for=""
+        :title="__('Account & billing')"
+        :description="
+          __('Payment methods, invoices, billing email and account settings.')
+        "
+      >
+        <Button
+          icon-right="lucide-arrow-up-right"
+          :disabled="openingBilling"
+          :label="openingBilling ? __('Opening billing') : __('Manage billing')"
+          @click="openBilling"
+        />
+      </SettingsRow>
     </div>
-  </SettingsBody>
+
+    <ErrorMessage :message="billingError" class="mt-2" />
+  </Panel>
 </template>

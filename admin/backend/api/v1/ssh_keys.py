@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TypedDict
 
 from flask import Blueprint, current_app, jsonify, request
 
@@ -14,6 +15,17 @@ from pilot.core.server import (
     SSHKeyAlreadyExistsError,
     SSHKeyNotFoundError,
 )
+
+
+class AuthorizedSSHKey(TypedDict):
+    fingerprint: str
+    type: str
+    comment: str
+
+
+class AuthorizedSSHKeys(TypedDict):
+    keys: list[AuthorizedSSHKey]
+
 
 ssh_keys_bp = Blueprint("ssh_keys", __name__)
 

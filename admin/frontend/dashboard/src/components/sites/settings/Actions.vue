@@ -7,6 +7,7 @@ import { useSite } from '@/composables/sites/useSite'
 import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
 import { openTaskDetailPage } from '@/utils/taskRoute'
+import { errorMessage } from '@/utils/error'
 
 interface Props {
   siteName: string
@@ -24,7 +25,17 @@ const showSslEmail = ref(false)
 const sslEmail = ref('')
 const sslEmailError = ref('')
 
-const enableSsl = async (email) => {
+// The backend asks for a contact address by answering with `needs_email` in the error detail.
+const needsEmail = (payload: unknown): boolean => {
+  if (typeof payload !== 'object' || payload === null || !('error' in payload)) return false
+  const detail = payload.error
+  if (typeof detail !== 'object' || detail === null || !('details' in detail)) return false
+  const details = detail.details
+  if (typeof details !== 'object' || details === null || !('needs_email' in details)) return false
+  return Boolean(details.needs_email)
+}
+
+const enableSsl = async (email = '') => {
   error.value = ''
   sslEmailError.value = ''
   sslLoading.value = true
@@ -33,15 +44,15 @@ const enableSsl = async (email) => {
     if (data.task_id) {
       showSslEmail.value = false
       openTaskDetailPage(router, data.task_id)
-    } else if (data.error?.details?.needs_email) {
+    } else if (needsEmail(data)) {
       showSslEmail.value = true
       if (email) sslEmailError.value = apiErrorMessage(data, 'Could not enable SSL.')
     } else {
       error.value = apiErrorMessage(data, 'Could not enable SSL.')
     }
   } catch (e) {
-    if (showSslEmail.value) sslEmailError.value = e.message
-    else error.value = e.message
+    if (showSslEmail.value) sslEmailError.value = errorMessage(e, 'Could not enable SSL.')
+    else error.value = errorMessage(e, 'Could not enable SSL.')
   } finally {
     sslLoading.value = false
   }
@@ -57,7 +68,7 @@ const clearCache = async () => {
     if (data.task_id) openTaskDetailPage(router, data.task_id)
     else error.value = apiErrorMessage(data, 'Failed to clear cache.')
   } catch (e) {
-    error.value = e.message || 'Failed to clear cache.'
+    error.value = errorMessage(e, 'Failed to clear cache.')
   } finally {
     clearingCache.value = false
   }
@@ -73,7 +84,7 @@ const refreshStorage = async () => {
     if (data.task_id) openTaskDetailPage(router, data.task_id)
     else error.value = apiErrorMessage(data, 'Failed to refresh storage usage.')
   } catch (e) {
-    error.value = e.message || 'Failed to refresh storage usage.'
+    error.value = errorMessage(e, 'Failed to refresh storage usage.')
   } finally {
     refreshingStorage.value = false
   }
@@ -125,11 +136,7 @@ const rows = computed(() => Actions.filter((row) => row.condition()))
         <p class="text-ink-gray-6 text-p-sm">{{ row.description }}</p>
       </div>
 
-      <Button
-        class="ml-4 shrink-0"
-        :loading="row.loading()"
-        @click="row.onClick"
-      >
+      <Button class="ml-4 shrink-0" :loading="row.loading()" @click="row.onClick">
         {{ row.buttonLabel || row.label }}
       </Button>
     </div>

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Literal, NotRequired, TypedDict
 
 from flask import Blueprint, current_app, jsonify
 
@@ -13,6 +14,33 @@ from pilot.core.bench import Bench
 from pilot.internal.atomic_file import exclusive_file_lock
 from pilot.managers.platform import native_process_manager
 from pilot.managers.task import TaskActivityReader
+
+
+class HealthStatus(TypedDict):
+    status: Literal["ok"]
+
+
+class TaskWorkerActivity(TypedDict):
+    active: bool
+    uncertain: bool
+    status: str
+    desired: str
+
+
+class Bootstrap(TypedDict):
+    """Unauthenticated callers get only `mode`, `enabled` and `name`."""
+
+    mode: Literal["setup", "pending", "admin"]
+    enabled: bool
+    name: str
+    db_type: NotRequired[str]
+    production: NotRequired[bool]
+    native_process_manager: NotRequired[str]
+    allow_bench_management: NotRequired[bool]
+    central: NotRequired[bool]
+    developer_mode: NotRequired[bool]
+    task_worker: NotRequired[TaskWorkerActivity]
+
 
 core_bp = Blueprint("core", __name__)
 

@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Button, Dialog, Dropdown, ErrorMessage, TextInput } from 'frappe-ui'
+import { Button, Dialog, Dropdown, type DropdownItem, ErrorMessage, TextInput } from 'frappe-ui'
 
 import Table from '@/components/common/Table.vue'
 
 import { sitesApi } from '@/api/sites'
 import { useSite } from '@/composables/sites/useSite'
+import { errorMessage } from '@/utils/error'
 
 interface Props {
   siteName: string
@@ -21,7 +22,7 @@ const columns = [
   { label: '', key: 'actions', class: 'w-12' },
 ]
 
-const isPassword = (key) => /password|secret|token|key/i.test(key)
+const isPassword = (key: string) => /password|secret|token|key/i.test(key)
 
 const rows = computed(() => {
   const config = site.value?.site_config || {}
@@ -34,7 +35,7 @@ const rows = computed(() => {
   return entries
 })
 
-const menuOptions = (row) => {
+const menuOptions = (row: { key: string }): DropdownItem[] => {
   return [
     { label: 'Edit', icon: 'lucide-pencil', onClick: () => openDialog(row.key) },
     {
@@ -59,11 +60,11 @@ const dialogError = ref('')
 const refreshing = ref(false)
 const isNew = computed(() => showAddDialog.value)
 
-const openDialog = (key = null) => {
+const openDialog = (key: string | null = null) => {
   dialogError.value = ''
   entryKey.value = key || ''
   if (key !== null) {
-    const val = site.value.site_config[key]
+    const val = site.value?.site_config[key]
     entryValue.value = typeof val === 'string' ? val : JSON.stringify(val)
     showEditDialog.value = true
   } else {
@@ -72,7 +73,7 @@ const openDialog = (key = null) => {
   }
 }
 
-const parseValue = (raw) => {
+const parseValue = (raw: string) => {
   try {
     return JSON.parse(raw)
   } catch {
@@ -86,7 +87,7 @@ const save = async () => {
     dialogError.value = 'Key is required.'
     return
   }
-  if (isNew.value && key in (site.value.site_config || {})) {
+  if (isNew.value && key in (site.value?.site_config || {})) {
     dialogError.value = 'Key already exists.'
     return
   }
@@ -98,7 +99,7 @@ const save = async () => {
     showAddDialog.value = false
     showEditDialog.value = false
   } catch (e) {
-    dialogError.value = e.message || 'Failed to save.'
+    dialogError.value = errorMessage(e, 'Failed to save.')
   } finally {
     saving.value = false
   }
@@ -117,7 +118,7 @@ const confirmDelete = async () => {
     await reload()
     showDelete.value = false
   } catch (e) {
-    deleteError.value = e.message || 'Failed to remove.'
+    deleteError.value = errorMessage(e, 'Failed to remove.')
   } finally {
     deleting.value = false
   }

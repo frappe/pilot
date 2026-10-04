@@ -31,6 +31,30 @@ def get_storage():
     return jsonify(asdict(report))
 
 
+@sites_bp.get("/<name>/storage")
+@require_scope(site_name)
+def get_site_storage(name: str):
+    """One site's folder breakdown plus its database size, for callers holding only its token."""
+    from admin.backend.providers.storage import StorageProvider
+
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    if not site_exists(bench_root, name):
+        return site_not_found()
+    try:
+        report = Bench(bench_root).site_storage.get_report()
+        files = StorageProvider(bench_root).get_site(name)
+    except Exception:
+        return internal_error("Could not read site storage usage.")
+    usage = next((site for site in report.sites if site.name == name), None)
+    return jsonify(
+        {
+            "collected_at": report.collected_at,
+            "database_bytes": usage.database_bytes if usage else 0,
+            **asdict(files),
+        }
+    )
+
+
 @sites_bp.post("/<name>/actions/refresh-storage")
 @require_scope(site_name)
 def refresh_storage(name: str):

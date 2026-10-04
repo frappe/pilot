@@ -1,19 +1,28 @@
 import { apiUrl, request } from '@/api/client'
+import type { Bootstrap } from '@/types/core'
+import type { DatabaseValidation, FrameworkBranches, SetupConfiguration } from '@/types/setup'
+import type { TaskPayload } from '@/types/tasks'
 
-const SETUP_IDEMPOTENCY_KEY = 'wizard-setup'
+const setupIdempotencyKey = 'wizard-setup'
 
 export const setupApi = {
-  bootstrap: () => request.get('bootstrap').json(),
-  config: () => request.get('setup/configuration').json(),
-  branches: () => request.get('setup/framework-branches').json(),
-  validateDatabase: (json) => request.post('setup/database-validations', { json }).json(),
-  save: (json) => request.put('setup/configuration', { json }).json(),
-  start: () =>
+  bootstrap: (): Promise<Bootstrap> => request.get('bootstrap').json(),
+  config: (): Promise<SetupConfiguration> => request.get('setup/configuration').json(),
+  branches: (): Promise<FrameworkBranches> => request.get('setup/framework-branches').json(),
+
+  validateDatabase: (json: Record<string, unknown>): Promise<DatabaseValidation> =>
+    request.post('setup/database-validations', { json }).json(),
+
+  save: (json: Record<string, unknown>): Promise<SetupConfiguration> =>
+    request.put('setup/configuration', { json }).json(),
+
+  start: (): Promise<TaskPayload> =>
     request
       .post('setup/actions/start', {
-        headers: { 'Idempotency-Key': SETUP_IDEMPOTENCY_KEY },
+        headers: { 'Idempotency-Key': setupIdempotencyKey },
       })
       .json(),
-  finish: (taskId) => request.post('setup/actions/finish', { json: { task_id: taskId } }),
-  streamUrl: (taskId) => apiUrl(`tasks/${taskId}/events`),
+
+  finish: (taskId: string) => request.post('setup/actions/finish', { json: { task_id: taskId } }),
+  streamUrl: (taskId: string) => apiUrl(`tasks/${taskId}/events`),
 }

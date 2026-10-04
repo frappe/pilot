@@ -144,6 +144,11 @@ class StorageProvider:
             bench=self._bench_breakdown(),
         )
 
+    def get_site(self, name: str) -> SiteStorage:
+        """One site's folder breakdown, measured fresh."""
+        directory_size_bytes.cache_clear()
+        return self._site_storage(self._bench.site(name))
+
     def _database_breakdown(self) -> DatabaseBreakdown:
         engine = self._config.db_type
         if engine not in _ENGINES_WITH_SCHEMA_SIZES:
@@ -213,9 +218,7 @@ class StorageProvider:
         private_files_bytes = directory_size_bytes(str(site.path / "private" / "files"))
         public_files_bytes = directory_size_bytes(str(site.path / "public"))
         backups_bytes = directory_size_bytes(str(site.path / "private" / "backups"))
-        other_bytes = max(
-            total_bytes - private_files_bytes - public_files_bytes - backups_bytes, 0
-        )
+        other_bytes = max(total_bytes - private_files_bytes - public_files_bytes - backups_bytes, 0)
         return SiteStorage(
             name=site.config.name,
             bytes=total_bytes,

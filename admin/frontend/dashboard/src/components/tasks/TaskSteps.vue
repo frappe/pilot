@@ -4,11 +4,11 @@ import { computed, toRef } from 'vue'
 import LogView from '@/components/logs/LogView.vue'
 import TaskStep from '@/components/tasks/TaskStep.vue'
 
-import { STEP_MARKER_RE, useTaskSteps } from '@/composables/tasks/useTaskSteps'
+import { STEP_MARKER_RE, type StepSection, useTaskSteps } from '@/composables/tasks/useTaskSteps'
 import { processLine } from '@/utils/ansi'
 
 interface Props {
-  rawLines?: any[]
+  rawLines?: string[]
   streaming?: boolean
   taskStatus?: string
   emptyText?: string
@@ -28,14 +28,14 @@ const taskRef = computed(() => ({ status: props.taskStatus }))
 const { stepSections, hasSteps, stepDuration } = useTaskSteps(rawLinesRef, streamingRef, taskRef)
 const processedLines = computed(() => props.rawLines.map(processLine))
 
-const sectionLines = (section) => {
+const sectionLines = (section: StepSection) => {
   return props.rawLines
     .slice(section.lineStart, section.lineEnd)
     .filter((line) => !STEP_MARKER_RE.test(line))
     .map(processLine)
 }
 
-const sectionHasOutput = (section) => {
+const sectionHasOutput = (section: StepSection) => {
   return props.rawLines
     .slice(section.lineStart, section.lineEnd)
     .some((line) => line.trim() && !STEP_MARKER_RE.test(line))

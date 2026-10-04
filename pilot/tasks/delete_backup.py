@@ -33,6 +33,8 @@ class DeleteBackupTask(Task):
 
         try:
             offsite_backup = OffsiteBackup.from_config(self.bench.config.s3, self.bench_root)
+            if filename not in (offsite_backup.get_backup(self.site, timestamp) or {}).values():
+                return False
             offsite_backup.delete(self.site, timestamp, filename)
             print(f"Deleted from S3: {filename}")
             return True
@@ -46,13 +48,14 @@ class DeleteBackupTask(Task):
         deleted, offsite = [], False
         for filename in self.filenames:
             path = backups.resolve_file(filename)
-            if path.is_file():
+            removed = path.is_file()
+            if removed:
                 path.unlink()
-                deleted.append(filename)
                 print(f"Deleted: {filename}")
-            elif self.bench.config.s3.is_configured and self.delete_from_remote(filename):
+            if self.bench.config.s3.is_configured and self.delete_from_remote(filename):
+                removed = offsite = True
+            if removed:
                 deleted.append(filename)
-                offsite = True
 
         self.record(deleted, offsite)
 

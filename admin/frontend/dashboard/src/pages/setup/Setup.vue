@@ -1,14 +1,5 @@
 <script setup lang="ts">
-import {
-  Button,
-  Combobox,
-  Select,
-  TextInput,
-  FormLabel,
-  Password,
-  ErrorMessage,
-  LoadingText,
-} from 'frappe-ui'
+import { Button, Combobox, ErrorMessage, LoadingText, Password, Select, TextInput } from 'frappe-ui'
 import TaskStream from '@/components/tasks/TaskStream.vue'
 import { useSetup } from '@/composables/setup/useSetup'
 
@@ -16,11 +7,9 @@ const {
   currentStep,
   errorMessage,
   isSubmitting,
-  isLinux,
   isProductionHandoff,
   isDone,
   pilotCommand,
-  terminal,
   streamUrl,
   streamStatus,
   showStreamDetails,
@@ -121,19 +110,14 @@ const {
             trigger="button"
             placeholder="Search or type a branch…"
           >
-            <template #item-typed-branch="{ query }">
-              Use branch “{{ query }}”
-            </template>
+            <template #item-typed-branch="{ query }"> Use branch “{{ query }}” </template>
           </Combobox>
           <TextInput label="Frappe repository" v-model="appRepo" />
           <ErrorMessage v-if="errorMessage" :message="errorMessage" />
           <p v-else-if="validatingFramework" class="text-ink-gray-5 text-p-sm">
             Checking repository…
           </p>
-          <p
-            v-else-if="frameworkIsValid"
-            class="flex items-center gap-1 text-ink-green-7 text-sm"
-          >
+          <p v-else-if="frameworkIsValid" class="flex items-center gap-1 text-ink-green-7 text-sm">
             <span class="size-3.5 shrink-0 lucide-check" />
             Found frappe
           </p>
@@ -211,11 +195,7 @@ const {
 
       <!-- Footer -->
       <div v-show="isConfiguring || (isInstalling && errorMessage)" class="flex gap-2 px-5 py-4">
-        <Button
-          v-show="isInstalling && errorMessage"
-          class="w-full"
-          @click="backToConfiguration"
-        >
+        <Button v-show="isInstalling && errorMessage" class="w-full" @click="backToConfiguration">
           Back to configuration
         </Button>
 

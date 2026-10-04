@@ -7,16 +7,25 @@ import SettingsSwitch from '@/components/settings/SettingsSwitch.vue'
 import { useSite } from '@/composables/sites/useSite'
 import { sitesApi } from '@/api/sites'
 import { settingsApi } from '@/api/settings'
+import { errorMessage } from '@/utils/error'
 
 interface Props {
   siteName: string
+}
+
+interface GeneralSetting {
+  key: string
+  label: string
+  description: string
+  get: (config: Record<string, unknown> | undefined) => boolean
+  toValue: (value: boolean) => number
 }
 
 const props = defineProps<Props>()
 
 const { site, reload } = useSite(props.siteName)
 
-const GeneralSettings = [
+const GeneralSettings: GeneralSetting[] = [
   {
     key: 'maintenance_mode',
     label: 'Maintenance mode',
@@ -40,7 +49,7 @@ const GeneralSettings = [
   },
 ]
 
-const savingKey = ref(null)
+const savingKey = ref<string | null>(null)
 const error = ref('')
 const allowDeveloperMode = ref(false)
 
@@ -57,16 +66,16 @@ onMounted(async () => {
   }
 })
 
-const getValue = (s) => s.get(site.value?.site_config)
+const getValue = (s: GeneralSetting) => s.get(site.value?.site_config)
 
-const toggle = async (s, value) => {
+const toggle = async (s: GeneralSetting, value: boolean) => {
   savingKey.value = s.key
   error.value = ''
   try {
     await sitesApi.configuration.update(props.siteName, { [s.key]: s.toValue(value) })
     await reload()
   } catch (e) {
-    error.value = e.message || 'Failed to update.'
+    error.value = errorMessage(e, 'Failed to update.')
   } finally {
     savingKey.value = null
   }
@@ -84,7 +93,7 @@ const toggle = async (s, value) => {
     :description="s.description"
     :model-value="getValue(s)"
     :disabled="savingKey === s.key"
-    @update:model-value="(v) => toggle(s, v)"
+    @update:model-value="(v: boolean) => toggle(s, v)"
   />
 
   <ErrorMessage v-if="error" :message="error" class="mt-4" />

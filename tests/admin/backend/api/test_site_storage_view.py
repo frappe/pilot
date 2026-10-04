@@ -139,3 +139,36 @@ def test_storage_reports_an_error_when_it_cannot_be_measured(tmp_path: Path) -> 
 
     assert response.status_code == 500
     assert response.get_json()["error"]["message"] == "Could not read site storage usage."
+
+
+def test_site_storage_returns_folder_breakdown_and_database_size(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    _write_site(bench_root, "s.localhost")
+    backups = bench_root / "sites" / "s.localhost" / "private" / "backups"
+    backups.mkdir(parents=True)
+    (backups / "20240101_000000-s_localhost-database.sql.gz").write_bytes(b"x" * 300)
+    client = _client(bench_root)
+    report = _report()
+    _write_report(bench_root, report)
+
+    response = client.get("/api/v1/sites/s.localhost/storage")
+
+    body = response.get_json()
+    assert response.status_code == 200
+    assert body["collected_at"] == report.collected_at
+    assert body["database_bytes"] == 500
+    assert body["name"] == "s.localhost"
+    assert body["backups_bytes"] > 0
+    assert body["backup_files"] == [{"name": "20240101_000000-s_localhost-database.sql.gz", "bytes": 300}]
+
+
+def test_site_storage_reports_zero_database_when_not_measured(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    _write_site(bench_root, "other.localhost")
+    client = _client(bench_root)
+    _write_report(bench_root, _report())
+
+    response = client.get("/api/v1/sites/other.localhost/storage")
+
+    assert response.status_code == 200
+    assert response.get_json()["database_bytes"] == 0

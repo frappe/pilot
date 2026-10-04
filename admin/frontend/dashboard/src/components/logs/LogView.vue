@@ -2,7 +2,7 @@
 import { nextTick, ref, watch } from 'vue'
 
 interface Props {
-  lines?: any[]
+  lines?: string[]
   streaming?: boolean
   lineNumbers?: boolean
   wrap?: boolean
@@ -21,7 +21,7 @@ const props = withDefaults(defineProps<Props>(), {
   emptyText: 'No output.',
 })
 
-const el = ref(null)
+const el = ref<HTMLElement | null>(null)
 
 const scrollToBottom = () => {
   nextTick(() => {
@@ -33,8 +33,11 @@ const scrollToBottom = () => {
 // bottom resumes it.
 const follow = ref(true)
 
-const onScroll = ({ target }) => {
-  follow.value = target.scrollHeight - target.scrollTop - target.clientHeight < 8
+const onScroll = (event: Event) => {
+  if (!(event.target instanceof HTMLElement)) return
+
+  const { scrollHeight, scrollTop, clientHeight } = event.target
+  follow.value = scrollHeight - scrollTop - clientHeight < 8
 }
 
 watch(

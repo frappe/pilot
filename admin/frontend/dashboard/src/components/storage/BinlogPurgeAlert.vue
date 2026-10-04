@@ -2,7 +2,7 @@
 import { Alert, Button, Dialog, ErrorMessage, toast } from 'frappe-ui'
 import { computed, onMounted, ref } from 'vue'
 
-import { apiErrorMessage } from '@/api/client'
+import { apiErrorMessage, hasApiError } from '@/api/client'
 import { databaseApi } from '@/api/database'
 import { formatBytes } from '@/utils/format'
 
@@ -49,7 +49,7 @@ const loadBinlogs = async () => {
 
   try {
     const result = await databaseApi.binlogs.list()
-    if (result?.error) throw new Error(apiErrorMessage(result, 'Could not load binary logs.'))
+    if (hasApiError(result)) throw new Error(apiErrorMessage(result, 'Could not load binary logs.'))
 
     binlogs.value = Array.isArray(result) ? result : []
     binlogsLoaded.value = true
@@ -76,7 +76,8 @@ const purge = async () => {
 
   try {
     const result = await databaseApi.binlogs.purge(keepFile.value.name)
-    if (result?.error) throw new Error(apiErrorMessage(result, 'Could not purge binary logs.'))
+    if (hasApiError(result))
+      throw new Error(apiErrorMessage(result, 'Could not purge binary logs.'))
 
     dialogOpen.value = false
     toast.success('Binary logs purged')
@@ -103,9 +104,7 @@ const purge = async () => {
     </template>
 
     <template #footer>
-      <Button theme="blue" class="col-span-2 ml-auto" @click="openDialog"
-        >Purge binary logs</Button
-      >
+      <Button theme="blue" class="col-span-2 ml-auto" @click="openDialog">Purge binary logs</Button>
     </template>
   </Alert>
 
@@ -119,8 +118,8 @@ const purge = async () => {
 
       <p v-else class="text-ink-gray-7 text-p-sm">
         All binary logs except the most recent are deleted, freeing about
-        {{ formatBytes(freedBytes) }}. The most recent log is kept so replication and
-        point-in-time recovery keep working.
+        {{ formatBytes(freedBytes) }}. The most recent log is kept so replication and point-in-time
+        recovery keep working.
       </p>
     </template>
 

@@ -7,6 +7,13 @@ import Table from '@/components/common/Table.vue'
 
 import { sshKeysApi } from '@/api/sshKeys'
 import { apiErrorMessage } from '@/api/client'
+import type { AuthorizedSSHKey } from '@/types/sshKeys'
+import { errorMessage } from '@/utils/error'
+
+interface KeyRow {
+  fingerprint: string
+  label: string
+}
 
 const columns = [
   { label: 'Name', key: 'label', class: 'w-1/3' },
@@ -18,11 +25,11 @@ const loading = ref(true)
 const adding = ref(false)
 const error = ref('')
 const loadError = ref('')
-const keys = ref([])
+const keys = ref<AuthorizedSSHKey[]>([])
 const newKey = ref('')
 const showAdd = ref(false)
 const showRemove = ref(false)
-const removing = ref(null)
+const removing = ref<KeyRow | null>(null)
 const removingBusy = ref(false)
 
 const rows = computed(() =>
@@ -36,7 +43,7 @@ const load = async () => {
   try {
     keys.value = (await sshKeysApi.list()).keys || []
   } catch (e) {
-    loadError.value = e.message || 'Could not load SSH keys.'
+    loadError.value = errorMessage(e, 'Could not load SSH keys.')
   } finally {
     loading.value = false
   }
@@ -61,21 +68,24 @@ const add = async () => {
       error.value = apiErrorMessage(result, 'Could not add key.')
     }
   } catch (e) {
-    error.value = e.message || 'Could not add key.'
+    error.value = errorMessage(e, 'Could not add key.')
   } finally {
     adding.value = false
   }
 }
 
-const promptRemove = (row) => {
+const promptRemove = (row: KeyRow) => {
   removing.value = row
   showRemove.value = true
 }
 
 const confirmRemove = async () => {
+  const target = removing.value
+  if (!target) return
+
   removingBusy.value = true
   try {
-    const response = await sshKeysApi.remove(removing.value.fingerprint)
+    const response = await sshKeysApi.remove(target.fingerprint)
     if (response.ok) {
       toast.success('Key removed')
       showRemove.value = false
@@ -84,7 +94,7 @@ const confirmRemove = async () => {
       toast.error(apiErrorMessage(await response.json(), 'Could not remove key.'))
     }
   } catch (e) {
-    toast.error(e.message || 'Could not remove key.')
+    toast.error(errorMessage(e, 'Could not remove key.'))
   } finally {
     removingBusy.value = false
   }

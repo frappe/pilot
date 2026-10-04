@@ -8,11 +8,12 @@ import GithubMark from '@/components/icons/GithubMark.vue'
 
 import { useIsMobile } from '@/composables/common/useIsMobile'
 import { PILLS } from '@/utils/marketplaceCategories'
+import type { WorksWithOption } from '@/composables/apps/useMarketplace'
 
 const isMobile = useIsMobile()
 
 interface Props {
-  worksWithOptions?: any[]
+  worksWithOptions?: WorksWithOption[]
 }
 
 const props = withDefaults(defineProps<Props>(), {

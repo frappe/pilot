@@ -1,28 +1,33 @@
 <script setup lang="ts">
-import { ref, onBeforeUnmount } from 'vue'
 import { Button } from 'frappe-ui'
+import { onBeforeUnmount, ref } from 'vue'
+
+import type { ActionMenuOption } from '@/components/common/actionMenu'
 
 interface Props {
-  options?: any[]
+  options?: ActionMenuOption[]
 }
 
 const props = withDefaults(defineProps<Props>(), {
   options: () => [],
 })
 
-const root = ref(null)
-const panel = ref(null)
+const root = ref<HTMLElement | null>(null)
+const panel = ref<HTMLElement | null>(null)
 const open = ref(false)
-const panelStyle = ref({})
+const panelStyle = ref<Record<string, string>>({})
 
-const onOutside = (event) => {
-  if (root.value?.contains(event.target)) return
-  if (panel.value?.contains(event.target)) return
+const onOutside = (event: Event) => {
+  const target = event.target instanceof Node ? event.target : null
+  if (root.value?.contains(target)) return
+  if (panel.value?.contains(target)) return
   close()
 }
 
 const toggle = () => {
   if (open.value) return close()
+  if (!root.value) return
+
   const rect = root.value.getBoundingClientRect()
   const opensUp = rect.bottom + props.options.length * 36 + 12 > window.innerHeight
   panelStyle.value = opensUp
@@ -42,7 +47,7 @@ const close = () => {
   document.removeEventListener('scroll', close, true)
 }
 
-const select = (option) => {
+const select = (option: { onClick?: () => void }) => {
   close()
   option.onClick?.()
 }

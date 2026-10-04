@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, nextTick } from 'vue'
+import { nextTick, ref } from 'vue'
 
 interface Props {
-  lines?: any[]
+  lines?: string[]
   streaming?: boolean
   lineNumbers?: boolean
   emptyText?: string
@@ -19,7 +19,7 @@ withDefaults(defineProps<Props>(), {
   fill: false,
 })
 
-const el = ref(null)
+const el = ref<HTMLElement | null>(null)
 
 const scrollToBottom = () => {
   nextTick(() => {

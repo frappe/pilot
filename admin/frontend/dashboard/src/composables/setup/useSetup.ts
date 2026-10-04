@@ -1,10 +1,14 @@
-import { ref, computed, watch, onMounted } from 'vue'
+import { computed, onMounted, ref, useTemplateRef, watch } from 'vue'
 
-import { useSetupHandoff } from '@/composables/setup/useSetupHandoff'
-import { apiErrorMessage } from '@/api/client'
+import { apiErrorMessage, hasApiError } from '@/api/client'
 import { gitApi } from '@/api/git'
 import { setupApi } from '@/api/setup'
+import { useSetupHandoff } from '@/composables/setup/useSetupHandoff'
 import { branchComboboxOptions } from '@/utils/branchComboboxOptions'
+
+interface TerminalHandle {
+  scrollToBottom: () => void
+}
 
 // Excludes quote/shell-special characters and visually ambiguous ones (0/O, 1/l/I)
 // since this ends up in bench.toml, SQL statements, and shell commands.
@@ -20,13 +24,13 @@ const DB_TYPE_OPTIONS = [
   { label: 'MariaDB', value: 'mariadb' },
   { label: 'PostgreSQL', value: 'postgres' },
 ]
-const STEP_TITLES = {
+const STEP_TITLES: Record<string, string> = {
   database: 'Database',
   customize: 'Customize your bench',
   running: 'Setting up your bench',
   done: 'Setup complete',
 }
-const STEP_SUBTITLES = {
+const STEP_SUBTITLES: Record<string, string> = {
   database: 'Choose and configure your database',
 }
 
@@ -40,13 +44,13 @@ export const useSetup = () => {
   const benchName = ref('')
   const isLinux = ref(true)
   const isProductionHandoff = ref(false)
-  const availableBranches = ref([])
+  const availableBranches = ref<string[]>([])
   const mariadbPasswordConfigured = ref(false)
   const postgresPasswordConfigured = ref(false)
   const mariadbLocalAvailable = ref(false)
   const postgresLocalAvailable = ref(false)
 
-  const terminal = ref(null)
+  const terminal = useTemplateRef<TerminalHandle>('terminal')
   const setupTaskId = ref('')
   const streamUrl = ref('')
   const streamStatus = ref('Starting…')
@@ -92,7 +96,7 @@ export const useSetup = () => {
   const resolvedDbUser = computed(() => dbUser.value || rootUserPlaceholder.value)
 
   const branchOptions = computed(() =>
-    branchComboboxOptions(availableBranches.value, appBranch.value, (typed) => {
+    branchComboboxOptions(availableBranches.value, appBranch.value, (typed: string) => {
       appBranch.value = typed
     }),
   )
@@ -175,19 +179,19 @@ export const useSetup = () => {
   }
 
   // Stream
-  const startStream = (taskId) => {
+  const startStream = (taskId: string) => {
     setupTaskId.value = taskId
     streamStatus.value = 'Starting…'
     streamUrl.value = setupApi.streamUrl(taskId)
     currentStep.value = 'running'
   }
 
-  const updateStreamStatus = (line) => {
+  const updateStreamStatus = (line: string) => {
     const match = line.match(/^\[\d+\/\d+\]\s*(.+?)\.*\s*$/)
     if (match) streamStatus.value = match[1]
   }
 
-  const onStreamDone = (success) => {
+  const onStreamDone = (success: boolean) => {
     if (!success) {
       failInstall('Setup failed. Open the details to see what went wrong, then try again.')
       return
@@ -197,7 +201,7 @@ export const useSetup = () => {
     shutdownWizardAndReload()
   }
 
-  const failInstall = (message) => {
+  const failInstall = (message: string) => {
     errorMessage.value = message
     showStreamDetails.value = true
   }
@@ -235,7 +239,8 @@ export const useSetup = () => {
       return true
     } catch (error) {
       if (request === frameworkRequest) {
-        errorMessage.value = error.message || 'Could not validate the Frappe branch.'
+        errorMessage.value =
+          (error instanceof Error && error.message) || 'Could not validate the Frappe branch.'
       }
       return false
     } finally {
@@ -271,7 +276,7 @@ export const useSetup = () => {
         host: dbHost.value,
         port: Number(dbPort.value) || Number(dbPortPlaceholder.value),
       })
-      if (result.error) {
+      if (hasApiError(result)) {
         return apiErrorMessage(result, `Could not validate the ${databaseName} configuration.`)
       }
       if (result.state === 'invalid') return `Incorrect ${databaseName} credentials.`
@@ -279,7 +284,10 @@ export const useSetup = () => {
         return `Could not validate the ${databaseName} configuration.`
       }
     } catch (error) {
-      return error.message || `Could not validate the ${databaseName} configuration.`
+      return (
+        (error instanceof Error && error.message) ||
+        `Could not validate the ${databaseName} configuration.`
+      )
     } finally {
       isSubmitting.value = false
     }
@@ -288,7 +296,9 @@ export const useSetup = () => {
 
   // Navigation
   const goToNextStep = async () => {
-    const validators = { database: validateDatabaseStep }
+    const validators: Record<string, () => Promise<string | null>> = {
+      database: validateDatabaseStep,
+    }
     const message = await validators[currentStep.value]?.()
     if (message) {
       errorMessage.value = message
@@ -306,7 +316,7 @@ export const useSetup = () => {
   const backToConfiguration = () => {
     errorMessage.value = ''
     showStreamDetails.value = false
-    currentStep.value = stepSequence.value.at(-1)
+    currentStep.value = stepSequence.value[stepSequence.value.length - 1]
   }
 
   const buildPayload = () => {
@@ -348,7 +358,8 @@ export const useSetup = () => {
 
   const saveConfig = async () => {
     const result = await setupApi.save(buildPayload())
-    if (result.error) throw new Error(apiErrorMessage(result, 'Failed to save configuration.'))
+    if (hasApiError(result))
+      throw new Error(apiErrorMessage(result, 'Failed to save configuration.'))
   }
 
   const startSetup = async () => {
@@ -362,11 +373,11 @@ export const useSetup = () => {
       if (!(await validateFramework(repo, branch))) return
       await saveConfig()
       const result = await setupApi.start()
-      if (result.error) throw new Error(apiErrorMessage(result, 'Failed to start setup.'))
+      if (hasApiError(result)) throw new Error(apiErrorMessage(result, 'Failed to start setup.'))
       if (!result.task_id) throw new Error('Setup did not return a task to follow.')
       startStream(result.task_id)
     } catch (error) {
-      errorMessage.value = error.message
+      errorMessage.value = error instanceof Error ? error.message : String(error)
     } finally {
       isSubmitting.value = false
     }

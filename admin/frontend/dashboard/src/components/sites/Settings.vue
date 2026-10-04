@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import SettingsGeneral from '@/components/sites/settings/General.vue'
-import SettingsDomains from '@/components/sites/settings/Domains.vue'
 import SettingsActions from '@/components/sites/settings/Actions.vue'
 import SettingsDanger from '@/components/sites/settings/Danger.vue'
+import SettingsDomains from '@/components/sites/settings/Domains.vue'
+import SettingsGeneral from '@/components/sites/settings/General.vue'
 
 interface Props {
   siteName: string

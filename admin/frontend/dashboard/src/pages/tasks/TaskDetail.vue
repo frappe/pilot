@@ -12,6 +12,8 @@ import { tasksApi } from '@/api/tasks'
 import { settingsApi } from '@/api/settings'
 import { useBreadcrumbs } from '@/composables/common/useBreadcrumbs'
 import { useTaskDetail } from '@/composables/tasks/useTaskDetail'
+import type { StatusEvent } from '@/types/tasks'
+import { errorMessage } from '@/utils/error'
 
 import {
   commandLabel,
@@ -26,7 +28,7 @@ import {
 
 const route = useRoute()
 const router = useRouter()
-const taskId = route.params.taskId
+const taskId = typeof route.params.taskId === 'string' ? route.params.taskId : ''
 
 const { setBreadcrumbs } = useBreadcrumbs()
 const { task, rawLines, loading, error, load } = useTaskDetail(taskId)
@@ -36,10 +38,7 @@ watch(
   () => task.value?.command,
   (command) => {
     if (!command) return
-    setBreadcrumbs([
-      { label: 'Tasks', route: { name: 'Tasks' } },
-      { label: commandLabel(command) },
-    ])
+    setBreadcrumbs([{ label: 'Tasks', route: { name: 'Tasks' } }, { label: commandLabel(command) }])
   },
 )
 
@@ -56,33 +55,32 @@ const loadAiStatus = async () => {
   }
 }
 
-const scope = computed(() => taskScope(task.value))
-const scopeIcon = computed(() =>
-  scope.value.route ? 'lucide-globe' : 'lucide-server',
-)
+const scope = computed(() => (task.value ? taskScope(task.value) : null))
+const scopeIcon = computed(() => (scope.value?.route ? 'lucide-globe' : 'lucide-server'))
 
 const queuePosition = computed(() =>
-  task.value.status === 'queued' && task.value.queue_position
+  task.value?.status === 'queued' && task.value.queue_position
     ? `#${task.value.queue_position} in queue`
     : '',
 )
 
-const startedAt = computed(() =>
-  task.value.started_at ? fmtDateTime(task.value.started_at) : '',
-)
+const startedAt = computed(() => (task.value?.started_at ? fmtDateTime(task.value.started_at) : ''))
 
-const duration = computed(() => fmtDuration(task.value.duration_seconds))
+const duration = computed(() => fmtDuration(task.value?.duration_seconds))
 
-const updateStatus = (event) => {
-  if (!['queued', 'running'].includes(event.status)) return
+const updateStatus = (event: StatusEvent) => {
+  if (!task.value) return
+  if (event.status !== 'queued' && event.status !== 'running') return
+
   task.value.status = event.status
   task.value.queue_position = event.queue_position
   task.value.is_cancellable = event.is_cancellable
 }
 
-const handleDone = (success) => {
+const handleDone = (success: boolean) => {
   load()
-  if (!success) return
+  if (!success || !task.value) return
+
   const redirect = redirectRouteOnSuccess(task.value)
   if (redirect) router.push(redirect)
 }
@@ -98,7 +96,7 @@ const cancelTask = async () => {
     }
     load()
   } catch (caught) {
-    actionError.value = caught.message || 'Failed to cancel task'
+    actionError.value = errorMessage(caught, 'Failed to cancel task')
   }
 }
 
@@ -115,10 +113,7 @@ onMounted(() => {
 
   <div v-else-if="task" class="p-3 md:p-4 mx-auto max-w-3xl">
     <Teleport defer to="#header-badge">
-      <Badge
-        :label="statusConfig(task).label"
-        :theme="statusConfig(task).theme"
-      />
+      <Badge :label="statusConfig(task).label" :theme="statusConfig(task).theme" />
     </Teleport>
 
     <Teleport defer to="#header-actions">
@@ -138,12 +133,7 @@ onMounted(() => {
           Debug with AI
         </Button>
 
-        <Button
-          v-if="isTaskCancellable(task)"
-          theme="red"
-          icon-left="lucide-x"
-          @click="cancelTask"
-        >
+        <Button v-if="isTaskCancellable(task)" theme="red" icon-left="lucide-x" @click="cancelTask">
           Cancel
         </Button>
       </div>
@@ -153,13 +143,13 @@ onMounted(() => {
 
     <div class="flex justify-between items-center gap-4 lg:mt-5 px-2 min-w-0">
       <RouterLink
-        :to="scope.route || ''"
+        :to="scope?.route || ''"
         class="group flex items-center gap-2 min-w-0 text-lg-medium text-ink-gray-9 no-underline"
       >
         <span class="size-4 text-ink-gray-5 shrink-0" :class="scopeIcon" />
-        <span class="truncate">{{ scope.label }}</span>
+        <span class="truncate">{{ scope?.label }}</span>
         <span
-          v-if="scope.route"
+          v-if="scope?.route"
           class="opacity-0 group-hover:opacity-100 size-4 text-ink-gray-5 transition-opacity shrink-0 lucide-arrow-up-right"
         />
       </RouterLink>

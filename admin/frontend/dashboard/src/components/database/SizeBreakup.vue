@@ -2,9 +2,10 @@
 import { computed } from 'vue'
 
 import UsageMeter from '@/components/common/UsageMeter.vue'
+import type { DatabaseSize } from '@/types/database'
 
 interface Props {
-  size: Record<string, any>
+  size: DatabaseSize
 }
 
 const props = defineProps<Props>()

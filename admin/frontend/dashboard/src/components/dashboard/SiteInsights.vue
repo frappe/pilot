@@ -1,24 +1,41 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { ErrorMessage, Skeleton } from 'frappe-ui'
+import type { BarChartProps, TimeGrain } from 'frappe-ui/charts'
 import { AreaChart, BarChart } from 'frappe-ui/charts'
 
 import ChartCard from '@/components/common/ChartCard.vue'
 import SiteUptime from '@/components/dashboard/SiteUptime.vue'
 
-import { apiErrorMessage } from '@/api/client'
+import { apiErrorMessage, hasApiError } from '@/api/client'
 import { sitesApi } from '@/api/sites'
+import type { SiteAnalytics, Timeline } from '@/types/siteMonitoring'
+import { errorMessage } from '@/utils/error'
 
 interface Props {
   siteName: string
   window?: string
 }
 
+type TimelineKey =
+  | 'requests_over_time'
+  | 'top_ips'
+  | 'background_jobs_over_time'
+  | 'top_paths'
+  | 'slowest_requests'
+  | 'avg_request_duration'
+  | 'top_jobs'
+  | 'avg_job_duration'
+  | 'frequent_slow_queries'
+  | 'slowest_queries'
+  | 'slowest_jobs'
+  | 'slowest_reports'
+
 const props = withDefaults(defineProps<Props>(), {
   window: '24h',
 })
 
-const TIME_GRAIN = {
+const TIME_GRAIN: Record<string, TimeGrain> = {
   '30m': 'minute',
   '1h': 'minute',
   '6h': 'hour',
@@ -29,7 +46,7 @@ const TIME_GRAIN = {
 
 const loading = ref(true)
 const error = ref('')
-const data = ref(null)
+const data = ref<SiteAnalytics | null>(null)
 
 const GRID = { show: true, lineStyle: { type: 'dashed', color: 'var(--outline-gray-2)' } }
 const PALETTE = ['#10b981', '#ef4444', '#2490ef', '#f59e0b', '#8b5cf6']
@@ -37,7 +54,7 @@ const PALETTE = ['#10b981', '#ef4444', '#2490ef', '#f59e0b', '#8b5cf6']
 const axisMax = computed(() => data.value?.now ?? Date.now())
 const axisMin = computed(() => axisMax.value - (data.value?.window_seconds ?? 0) * 1000)
 
-const timelineConfig = (timeline, valueLabel) => {
+const timelineConfig = (timeline: Timeline | undefined, valueLabel: string): BarChartProps => {
   const categories = timeline?.categories ?? []
   return {
     data: timeline?.points ?? [],
@@ -56,7 +73,7 @@ const timelineConfig = (timeline, valueLabel) => {
   }
 }
 
-const CHARTS = [
+const CHARTS: [TimelineKey, string, string, string?][] = [
   ['requests_over_time', 'Requests', 'Requests', 'line'],
   ['top_ips', 'Requests by IP', 'Requests'],
   ['background_jobs_over_time', 'Background jobs', 'Runs', 'line'],
@@ -91,11 +108,15 @@ const load = async () => {
   try {
     const result = await sitesApi.monitoring.get(props.siteName, props.window)
     if (generation !== loadGeneration) return
-    if (result.error) throw new Error(apiErrorMessage(result, 'Could not load monitoring data.'))
+    if (hasApiError(result)) {
+      throw new Error(apiErrorMessage(result, 'Could not load monitoring data.'))
+    }
+
     data.value = result
-  } catch (e) {
+  } catch (caught) {
     if (generation !== loadGeneration) return
-    error.value = e.message || 'Could not load monitoring data.'
+
+    error.value = errorMessage(caught, 'Could not load monitoring data.')
   } finally {
     if (generation === loadGeneration) loading.value = false
   }
@@ -135,11 +156,7 @@ onMounted(load)
           <template #tooltip="{ label, items }">
             <p class="mb-2 text-ink-gray-5 text-p-sm">{{ label }}</p>
 
-            <div
-              v-for="item in items"
-              :key="item.name"
-              class="flex items-start gap-2 text-p-sm"
-            >
+            <div v-for="item in items" :key="item.name" class="flex items-start gap-2 text-p-sm">
               <span class="mt-1.5 rounded-1 size-2 shrink-0" :style="{ background: item.color }" />
               <span class="flex-1 min-w-0 text-ink-gray-6 break-words">{{ item.label }}</span>
               <span class="font-semibold text-ink-gray-8 tabular-nums shrink-0">

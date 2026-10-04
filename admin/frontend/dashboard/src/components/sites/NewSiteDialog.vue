@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { Button, Checkbox, Dialog, ErrorMessage, Select, Spinner, TextInput } from 'frappe-ui'
 
 import AppIcon from '@/components/apps/AppIcon.vue'
@@ -9,36 +9,43 @@ import { appsApi } from '@/api/apps'
 import { sitesApi } from '@/api/sites'
 import { useAppRegistry } from '@/composables/apps/useAppRegistry'
 import { buildSiteAppChoices } from '@/utils/siteApps'
+import type { AppInfo } from '@/types/apps'
+import { errorMessage } from '@/utils/error'
+import type { SiteResource } from '@/types/sites'
 
 interface Props {
-  sites?: any[]
+  sites?: SiteResource[]
 }
 
 withDefaults(defineProps<Props>(), {
   sites: () => [],
 })
 
-const emit = defineEmits(['started'])
-const open = defineModel()
+interface Emits {
+  started: [taskId: string]
+}
+
+const emit = defineEmits<Emits>()
+const open = defineModel<boolean>()
 
 const { registry, load: loadRegistry } = useAppRegistry()
-const benchApps = ref([])
+const benchApps = ref<AppInfo[]>([])
 
 const newSiteName = ref('')
 const sitePrefix = ref('')
-const wildcardDomains = ref([])
+const wildcardDomains = ref<string[]>([])
 const selectedSuffix = ref('')
 const loading = ref(false)
 const creating = ref(false)
 const error = ref('')
 
-const selectedApps = ref([])
+const selectedApps = ref<string[]>([])
 
 const hasSingleDomain = computed(() => wildcardDomains.value.length === 1)
 
 // Fade only the edges that can still scroll, so a clipped row reads as "more
 // below" and the last app is never dimmed at rest.
-const appList = ref(null)
+const appList = ref<HTMLElement | null>(null)
 const fadeEdges = ref('')
 
 const updateFadeEdges = () => {
@@ -86,7 +93,7 @@ const loadBenchApps = async () => {
   }
 }
 
-const toggleApp = (name) => {
+const toggleApp = (name: string) => {
   const index = selectedApps.value.indexOf(name)
   if (index === -1) selectedApps.value.push(name)
   else selectedApps.value.splice(index, 1)
@@ -102,7 +109,7 @@ const loadWildcardDomains = async () => {
   }
 }
 
-const validate = (name) => {
+const validate = (name: string) => {
   if (!name) return 'Site name is required.'
   if (!/^[a-zA-Z0-9][a-zA-Z0-9\-.]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$/.test(name))
     return 'Site name must be a valid hostname.'
@@ -131,7 +138,7 @@ const submit = async () => {
       error.value = apiErrorMessage(result, 'Could not create site.')
     }
   } catch (caught) {
-    error.value = caught.message || 'Could not create site.'
+    error.value = errorMessage(caught, 'Could not create site.')
   } finally {
     creating.value = false
   }

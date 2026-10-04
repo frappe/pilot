@@ -124,7 +124,7 @@ def build_settings_response(config: BenchConfig, bench_root: Path | None = None)
         },
         "letsencrypt": {"email": config.letsencrypt.email},
         "s3": s3_payload(config),
-        "s3_providers": s3_provider_options(),
+        "s3_providers": s3_provider_options(config),
         "llm": {
             **llm_payload(config),
             "system_prompt": read_system_prompt(bench_root) if bench_root else "",
@@ -139,13 +139,19 @@ def build_settings_response(config: BenchConfig, bench_root: Path | None = None)
     }
 
 
-def s3_provider_options() -> list[dict]:
+def s3_provider_options(config: BenchConfig) -> list[dict]:
     from pilot.integrations.s3.base import PROVIDER_LABELS, SUPPORTED_REGIONS
 
-    return [
+    options = [
         {"value": provider, "label": PROVIDER_LABELS[provider], "regions": regions}
         for provider, regions in SUPPORTED_REGIONS.items()
     ]
+    if not config.central.enabled:
+        return options
+
+    # First, so a new form on a Central bench defaults to Frappe storage. Its regions
+    # come from /s3/frappe-regions, so a slow Central never holds up the settings load.
+    return [{"value": "frappe", "label": PROVIDER_LABELS["frappe"], "regions": []}, *options]
 
 
 def llm_provider_options() -> list[dict]:
@@ -169,6 +175,19 @@ def _saved_llm_api_base() -> str:
         return BenchConfig.read(Path(current_app.config["BENCH_ROOT"])).llm.api_base
     except Exception:
         return ""
+
+
+@settings_bp.get("/s3/frappe-regions")
+def frappe_storage_regions():
+    """Regions Frappe object storage serves now, read from Central on each call."""
+    from pilot.integrations.central import CentralClient, CentralClientError
+
+    try:
+        return jsonify(list(CentralClient().storage_regions()))
+    except CentralClientError as exc:
+        return error_response(
+            "frappe_storage_unavailable", f"Could not read Frappe storage regions from Central: {exc}", 502
+        )
 
 
 @settings_bp.post("/llm/models")

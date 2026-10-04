@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ErrorMessage, Select, Skeleton } from 'frappe-ui'
 import { AreaChart, useChartTokens } from 'frappe-ui/charts'
+import type { AreaChartProps, ChartXAxisOptions, SeriesStyle, TimeGrain } from 'frappe-ui/charts'
 
 import ChartCard from '@/components/common/ChartCard.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -11,11 +12,28 @@ import WafAnalytics from '@/components/common/WafAnalytics.vue'
 import DatabaseInsights from '@/components/dashboard/DatabaseInsights.vue'
 import SiteInsights from '@/components/dashboard/SiteInsights.vue'
 
-import { apiErrorMessage } from '@/api/client'
+import { apiErrorMessage, hasApiError } from '@/api/client'
 import { monitorApi } from '@/api/monitor'
-import { livePollDelayMs } from '@/utils/livePolling'
-import { useSites } from '@/composables/sites/useSites'
 import { useIsMobile } from '@/composables/common/useIsMobile'
+import { useSites } from '@/composables/sites/useSites'
+import { errorMessage } from '@/utils/error'
+import { livePollDelayMs } from '@/utils/livePolling'
+import type {
+  ApplicationMetricsHistory,
+  CpuBreakdown,
+  DiskIoRates,
+  MemoryBreakdown,
+  NetworkRates,
+  SystemMetrics,
+  SystemMetricsHistory,
+} from '@/types/stats'
+
+type MetricPoint = Record<string, number | null | undefined>
+
+interface AnalyticsChart {
+  title: string
+  config: AreaChartProps
+}
 
 const WINDOWS = [
   { key: 'live', label: 'Live' },
@@ -26,7 +44,7 @@ const WINDOWS = [
   { key: '24h', label: '24 hours' },
   { key: '1w', label: '1 week' },
 ]
-const WINDOW_SECONDS = {
+const WINDOW_SECONDS: Record<string, number> = {
   '30m': 1800,
   '1h': 3600,
   '6h': 21600,
@@ -34,7 +52,7 @@ const WINDOW_SECONDS = {
   '24h': 86400,
   '1w': 604800,
 }
-const TIME_GRAIN = {
+const TIME_GRAIN: Record<string, TimeGrain> = {
   live: 'second',
   '30m': 'minute',
   '1h': 'minute',
@@ -54,14 +72,14 @@ const NETWORK_SERIES = ['Received', 'Sent']
 const DISK_IO_SERIES = ['Read', 'Write']
 const DISK_SERIES = 'Root Disk'
 
-const CPU_COLORS = {
+const CPU_COLORS: Record<string, number> = {
   'Busy User': 1,
   'Busy System': 7,
   'Busy IOWait': 9,
   'Busy IRQ': 5,
   'Busy Other': 10,
 }
-const MEMORY_COLORS = {
+const MEMORY_COLORS: Record<string, number> = {
   Used: 7,
   'Cached + Buffers': 1,
   Free: 3,
@@ -81,8 +99,15 @@ const VIEWS = [
 const VIEW_KEYS = VIEWS.map((v) => v.key)
 const WINDOW_KEYS = WINDOWS.map((w) => w.key)
 
-const view = ref(VIEW_KEYS.includes(route.query.view) ? route.query.view : 'system')
-const initialWindow = WINDOW_KEYS.includes(route.query.window) ? route.query.window : 'live'
+const routeView = route.query.view
+const routeWindow = route.query.window
+
+const view = ref(
+  typeof routeView === 'string' && VIEW_KEYS.includes(routeView) ? routeView : 'system',
+)
+
+const initialWindow =
+  typeof routeWindow === 'string' && WINDOW_KEYS.includes(routeWindow) ? routeWindow : 'live'
 const activeWindow = ref(view.value !== 'system' && initialWindow === 'live' ? '1h' : initialWindow)
 const isHistorical = computed(() => activeWindow.value !== 'live')
 
@@ -123,12 +148,12 @@ const historyWindow = computed(() => (activeWindow.value === 'live' ? '1h' : act
 // restores what the viewer actually picked.
 let preferredWindow = activeWindow.value
 
-const chooseWindow = (key) => {
+const chooseWindow = (key: string) => {
   preferredWindow = key
   selectWindow(key)
 }
 
-const setView = (key) => {
+const setView = (key: string) => {
   // Re-picking would refetch and, in live mode, discard collected history.
   if (view.value === key) return
   view.value = key
@@ -136,12 +161,12 @@ const setView = (key) => {
   else if (activeWindow.value === 'live') selectWindow('1h')
 }
 
-const selectSite = (name) => {
+const selectSite = (name: string) => {
   setView('site')
   activeSite.value = name
 }
 
-const selectWindow = (key) => {
+const selectWindow = (key: string) => {
   if (view.value === 'system') setWindow(key)
   else activeWindow.value = key
 }
@@ -174,14 +199,25 @@ watch(
 )
 
 // Live mode state
-const stats = ref(null)
-const liveHistory = ref([])
+const stats = ref<SystemMetrics | null>(null)
+const liveHistory = ref<MetricPoint[]>([])
 const liveNow = ref(Date.now())
 const timeOffset = ref(0)
 
 // Historical mode state
-const system = ref({ earliest: null, points: [], memory_total_bytes: null, storage: null })
-const application = ref({ earliest: null, services: [], cpu: [], memory: [] })
+const system = ref<SystemMetricsHistory>({
+  earliest: null,
+  points: [],
+  memory_total_bytes: null,
+  storage: null,
+})
+
+const application = ref<ApplicationMetricsHistory>({
+  earliest: null,
+  services: [],
+  cpu: [],
+  memory: [],
+})
 const historyLoading = ref(false)
 const historyError = ref('')
 const historyNow = ref(Date.now())
@@ -197,21 +233,9 @@ const axisMin = computed(
 )
 const axisMax = computed(() => historyNow.value)
 
-const isPartial = (earliest) => {
-  return earliest != null && earliest > axisMin.value + 1000
-}
-
-const humanizeSince = (earliest) => {
-  if (earliest == null) return ''
-  const seconds = Math.floor((historyNow.value - earliest) / 1000)
-  if (seconds < 3600) return `${Math.max(1, Math.floor(seconds / 60))}m`
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`
-  return `${Math.floor(seconds / 86400)}d`
-}
-
 // Data loading
 
-const setWindow = async (key) => {
+const setWindow = async (key: string) => {
   activeWindow.value = key
   if (key === 'live') {
     liveHistory.value = []
@@ -236,12 +260,12 @@ const loadStats = async () => {
   } catch {}
 }
 
-const appendLivePoint = (s) => {
-  const cpu = s.cpu_breakdown || {}
-  const mem = s.memory_breakdown || {}
+const appendLivePoint = (s: SystemMetrics) => {
+  const cpu: Partial<CpuBreakdown> = s.cpu_breakdown || {}
+  const mem: Partial<MemoryBreakdown> = s.memory_breakdown || {}
   const [load1, load5, load15] = s.load_avg || []
-  const network = s.network || {}
-  const diskIo = s.disk_io || {}
+  const network: Partial<NetworkRates> = s.network || {}
+  const diskIo: Partial<DiskIoRates> = s.disk_io || {}
   liveHistory.value.push({
     time: serverTime(),
     'Busy User': cpu.user,
@@ -266,13 +290,13 @@ const appendLivePoint = (s) => {
 
 const trimLiveHistory = () => {
   const cutoff = liveNow.value - LIVE_WINDOW_MS - 60000
-  liveHistory.value = liveHistory.value.filter((p) => p.time >= cutoff)
+  liveHistory.value = liveHistory.value.filter((p) => (p.time ?? 0) >= cutoff)
 }
 
 const refreshAppData = async () => {
   try {
     const d = await monitorApi.history('30m')
-    if (!d.error && d.application) {
+    if (!hasApiError(d) && d.application) {
       application.value = d.application
     }
   } catch {}
@@ -282,7 +306,8 @@ const seedLiveHistory = async () => {
   if (isHistorical.value || liveHistory.value.length) return
   try {
     const d = await monitorApi.history('1h')
-    if (d.error) throw new Error(apiErrorMessage(d, 'Failed to load analytics.'))
+    if (hasApiError(d)) throw new Error(apiErrorMessage(d, 'Failed to load analytics.'))
+
     const serverNow = d.now ?? Date.now()
     timeOffset.value = serverNow - Date.now()
     if (d.system?.points?.length) {
@@ -295,17 +320,18 @@ const seedLiveHistory = async () => {
   } catch {}
 }
 
-const loadHistory = async (window) => {
+const loadHistory = async (window: string) => {
   historyLoading.value = true
   historyError.value = ''
   try {
     const d = await monitorApi.history(window)
-    if (d.error) throw new Error(apiErrorMessage(d, 'Failed to load analytics.'))
+    if (hasApiError(d)) throw new Error(apiErrorMessage(d, 'Failed to load analytics.'))
+
     historyNow.value = d.now ?? Date.now()
     system.value = d.system
     application.value = d.application
-  } catch (e) {
-    historyError.value = e.message
+  } catch (caught) {
+    historyError.value = errorMessage(caught, 'Failed to load analytics.')
   } finally {
     historyLoading.value = false
   }
@@ -359,42 +385,54 @@ const showCharts = computed(() =>
 // Chart helpers
 
 const GRID = { show: true, lineStyle: { type: 'dashed', color: 'var(--outline-gray-2)' } }
-const fixedXAxis = computed(() => ({
+const fixedXAxis = computed<ChartXAxisOptions>(() => ({
   type: 'time',
   timeGrain: TIME_GRAIN[activeWindow.value],
   echartOptions: { min: axisMin.value, max: axisMax.value, splitLine: GRID },
 }))
 
-const liveXAxis = computed(() => ({
+const liveXAxis = computed<ChartXAxisOptions>(() => ({
   type: 'time',
   timeGrain: 'second',
   echartOptions: { min: liveNow.value - LIVE_WINDOW_MS, max: liveNow.value, splitLine: GRID },
 }))
 
-const currentPoints = computed(() => (isHistorical.value ? system.value.points : liveHistory.value))
+const currentPoints = computed<MetricPoint[]>(() =>
+  isHistorical.value ? system.value.points : liveHistory.value,
+)
 const currentXAxis = computed(() => (isHistorical.value ? fixedXAxis.value : liveXAxis.value))
 
 const { tokens } = useChartTokens(ref())
 
-const lineSeries = (slot) => ({
+const lineSeries = (slot: number): SeriesStyle => ({
   color: tokens.value.categorical[slot - 1],
   smooth: true,
-  lineWidth: 1.5,
   showDataPoints: false,
-  fillOpacity: 0.25,
+  echartOptions: { lineStyle: { width: 1.5 }, areaStyle: { opacity: 0.25 } },
 })
 
-const styleFor = (names, colorAt) =>
-  Object.fromEntries(names.map((name, i) => [name, lineSeries(colorAt(name, i))]))
+const styleFor = (names: string[], colorAt: (name: string, index: number) => number) =>
+  Object.fromEntries(
+    names.map((name, i): [string, SeriesStyle] => [name, lineSeries(colorAt(name, i))]),
+  )
 
-const scaleFields = (points, keys, divisor) => {
+const scaleFields = (points: MetricPoint[], keys: string[], divisor: number): MetricPoint[] => {
   return points.map((p) => ({
     ...p,
-    ...Object.fromEntries(keys.map((k) => [k, p[k] != null ? p[k] / divisor : p[k]])),
+
+    ...Object.fromEntries(
+      keys.map((k) => {
+        const value = p[k]
+        return [k, value != null ? value / divisor : value]
+      }),
+    ),
   }))
 }
 
-const normalizeAppData = (points, services) => {
+const normalizeAppData = (
+  points: Record<string, number | null>[],
+  services: string[],
+): MetricPoint[] => {
   return points.map((p) => ({
     time: p.time,
     ...Object.fromEntries(services.map((s) => [s, p[s] ?? 0])),
@@ -403,7 +441,7 @@ const normalizeAppData = (points, services) => {
 
 // Chart configs
 
-const cpuChartConfig = computed(() => ({
+const cpuChartConfig = computed<AnalyticsChart>(() => ({
   title: 'CPU',
   config: {
     data: currentPoints.value.map((p) => ({
@@ -423,7 +461,7 @@ const cpuChartConfig = computed(() => ({
   },
 }))
 
-const loadChartConfig = computed(() => ({
+const loadChartConfig = computed<AnalyticsChart>(() => ({
   title: 'Load Average',
   config: {
     data: currentPoints.value.map((p) => ({
@@ -444,7 +482,7 @@ const loadChartConfig = computed(() => ({
   },
 }))
 
-const memChartConfig = computed(() => {
+const memChartConfig = computed<AnalyticsChart>(() => {
   const data = scaleFields(currentPoints.value, MEMORY_SERIES, 1024 ** 3)
   const peak = data.reduce(
     (max, p) =>
@@ -460,8 +498,8 @@ const memChartConfig = computed(() => {
       data,
       xAxis: currentXAxis.value,
       yAxis: {
-        yMin: 0,
-        yMax: peak > 0 ? peak * 1.1 : undefined,
+        min: 0,
+        max: peak > 0 ? peak * 1.1 : undefined,
         echartOptions: { name: 'GB', splitLine: GRID },
       },
       x: 'time',
@@ -480,7 +518,7 @@ const diskInfo = computed(() =>
       : null,
 )
 
-const diskChartConfig = computed(() => ({
+const diskChartConfig = computed<AnalyticsChart>(() => ({
   title: 'Disk',
   config: {
     data: currentPoints.value,
@@ -492,7 +530,7 @@ const diskChartConfig = computed(() => ({
   },
 }))
 
-const networkChartConfig = computed(() => ({
+const networkChartConfig = computed<AnalyticsChart>(() => ({
   title: 'Network',
   config: {
     data: scaleFields(currentPoints.value, NETWORK_SERIES, 1024 ** 2),
@@ -504,7 +542,7 @@ const networkChartConfig = computed(() => ({
   },
 }))
 
-const diskIoChartConfig = computed(() => ({
+const diskIoChartConfig = computed<AnalyticsChart>(() => ({
   title: 'Disk I/O',
   config: {
     data: scaleFields(currentPoints.value, DISK_IO_SERIES, 1024 ** 2),
@@ -520,16 +558,16 @@ const appWindowData = computed(() => {
   const data = application.value
   if (!data.services.length) return { services: [], cpu: [], memory: [] }
   if (isHistorical.value) return data
-  const latest = data.cpu.length ? Math.max(...data.cpu.map((p) => p.time)) : 0
+  const latest = data.cpu.length ? Math.max(...data.cpu.map((p) => p.time ?? 0)) : 0
   const cutoff = latest ? latest - LIVE_WINDOW_MS : 0
   return {
     services: data.services,
-    cpu: cutoff ? data.cpu.filter((p) => p.time >= cutoff) : data.cpu,
-    memory: cutoff ? data.memory.filter((p) => p.time >= cutoff) : data.memory,
+    cpu: cutoff ? data.cpu.filter((p) => (p.time ?? 0) >= cutoff) : data.cpu,
+    memory: cutoff ? data.memory.filter((p) => (p.time ?? 0) >= cutoff) : data.memory,
   }
 })
 
-const appCpuConfig = computed(() => ({
+const appCpuConfig = computed<AnalyticsChart>(() => ({
   title: 'Process CPU',
   config: {
     data: normalizeAppData(appWindowData.value.cpu, appWindowData.value.services),
@@ -541,7 +579,7 @@ const appCpuConfig = computed(() => ({
   },
 }))
 
-const appMemConfig = computed(() => ({
+const appMemConfig = computed<AnalyticsChart>(() => ({
   title: 'Process Memory',
   config: {
     data: scaleFields(
@@ -570,7 +608,7 @@ const charts = computed(() => [
 
 // Formatting
 
-const formatBytes = (bytes) => {
+const formatBytes = (bytes: number) => {
   if (bytes < 1024 ** 2) return (bytes / 1024).toFixed(0) + ' KB'
   if (bytes < 1024 ** 3) return (bytes / 1024 ** 2).toFixed(1) + ' MB'
   return (bytes / 1024 ** 3).toFixed(1) + ' GB'
@@ -578,7 +616,7 @@ const formatBytes = (bytes) => {
 
 // Lifecycle
 
-let statsTimer
+let statsTimer: ReturnType<typeof setTimeout> | undefined
 const scheduleStats = () => {
   clearTimeout(statsTimer)
   const delay = livePollDelayMs({

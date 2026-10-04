@@ -10,6 +10,8 @@ import SettingsRow from '@/components/settings/SettingsRow.vue'
 
 import { twoFactorApi } from '@/api/twoFactor'
 import { fmtDateTime } from '@/utils/taskFormat'
+import type { TwoFactorCredential, TwoFactorEnrollment, TwoFactorStatus } from '@/types/auth'
+import { errorMessage } from '@/utils/error'
 
 const columns = [
   { label: 'Device', key: 'name', class: 'w-48' },
@@ -21,7 +23,7 @@ const columns = [
 const loading = ref(true)
 const busy = ref(false)
 const error = ref('')
-const status = ref({
+const status = ref<TwoFactorStatus>({
   enabled: false,
   credentials: [],
   recovery_codes_remaining: 0,
@@ -32,7 +34,7 @@ const atDeviceLimit = computed(
   () => status.value.max_devices > 0 && status.value.credentials.length >= status.value.max_devices,
 )
 
-const fmtTimestamp = (seconds) => (seconds ? fmtDateTime(seconds * 1000) : 'Never')
+const fmtTimestamp = (seconds: number | null) => (seconds ? fmtDateTime(seconds * 1000) : 'Never')
 
 // A device only counts once its code has been verified; half-finished ones are noise.
 const devices = computed(() => status.value.credentials.filter((row) => row.confirmed))
@@ -44,9 +46,9 @@ const showRegenerate = ref(false)
 
 const deviceName = ref('')
 const otp = ref('')
-const enrollment = ref(null)
-const codes = ref([])
-const removing = ref(null)
+const enrollment = ref<TwoFactorEnrollment | null>(null)
+const codes = ref<string[]>([])
+const removing = ref<TwoFactorCredential | null>(null)
 
 // Dismissing the dialog abandons the pending credential, which would otherwise sit in
 // the store consuming one of the device slots until it expires.
@@ -78,17 +80,20 @@ const startEnrollment = async () => {
   try {
     enrollment.value = await twoFactorApi.startEnrollment(deviceName.value)
   } catch (e) {
-    error.value = e.message || 'Could not start enrollment.'
+    error.value = errorMessage(e, 'Could not start enrollment.')
   } finally {
     busy.value = false
   }
 }
 
 const confirmEnrollment = async () => {
+  const pending = enrollment.value
+  if (!pending) return
+
   error.value = ''
   busy.value = true
   try {
-    const result = await twoFactorApi.confirm(enrollment.value.name, otp.value)
+    const result = await twoFactorApi.confirm(pending.name, otp.value)
     status.value = result
     // Cleared before closing: the close handler deletes whatever enrollment is still
     // pending, and this one is now confirmed.
@@ -100,27 +105,30 @@ const confirmEnrollment = async () => {
     }
     toast.success('Device added')
   } catch (e) {
-    error.value = e.message || 'Could not verify that code.'
+    error.value = errorMessage(e, 'Could not verify that code.')
   } finally {
     busy.value = false
   }
 }
 
-const promptRemove = (row) => {
+const promptRemove = (row: TwoFactorCredential) => {
   removing.value = row
   error.value = ''
   showRemove.value = true
 }
 
 const confirmRemove = async () => {
+  const target = removing.value
+  if (!target) return
+
   error.value = ''
   busy.value = true
   try {
-    status.value = await twoFactorApi.removeDevice(removing.value.name)
+    status.value = await twoFactorApi.removeDevice(target.name)
     showRemove.value = false
     toast.success('Device removed')
   } catch (e) {
-    error.value = e.message || 'Could not remove that device.'
+    error.value = errorMessage(e, 'Could not remove that device.')
   } finally {
     busy.value = false
   }
@@ -136,7 +144,7 @@ const regenerate = async () => {
     showCodes.value = true
     await load()
   } catch (e) {
-    error.value = e.message || 'Could not regenerate recovery codes.'
+    error.value = errorMessage(e, 'Could not regenerate recovery codes.')
   } finally {
     busy.value = false
   }
@@ -154,7 +162,7 @@ const downloadCodes = () => {
   showCodes.value = false
 }
 
-const copy = async (text) => {
+const copy = async (text: string) => {
   try {
     await navigator.clipboard.writeText(text)
     toast.success('Copied')
@@ -167,7 +175,7 @@ const load = async () => {
   try {
     status.value = await twoFactorApi.status()
   } catch (e) {
-    toast.error(e.message || 'Could not load two-factor settings.')
+    toast.error(errorMessage(e, 'Could not load two-factor settings.'))
   } finally {
     loading.value = false
   }

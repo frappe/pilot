@@ -1,6 +1,6 @@
 <script setup lang="ts">
+import { Avatar, type AvatarProps } from 'frappe-ui'
 import { computed } from 'vue'
-import { Avatar } from 'frappe-ui'
 
 import {
   FRAPPE_LOGO_URL,
@@ -13,7 +13,7 @@ interface Props {
   name: string
   label?: string
   logo?: string
-  size?: string
+  size?: AvatarProps['size']
 }
 
 const props = withDefaults(defineProps<Props>(), {

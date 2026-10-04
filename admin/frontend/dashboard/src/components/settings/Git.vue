@@ -2,14 +2,16 @@
 import { computed, onMounted, ref } from 'vue'
 import { Alert, Button, ErrorMessage, Spinner, TextInput, toast } from 'frappe-ui'
 
-import { apiErrorMessage } from '@/api/client'
+import { apiErrorMessage, hasApiError } from '@/api/client'
 import { gitApi } from '@/api/git'
+import type { GitConnection } from '@/types/git'
+import { errorMessage } from '@/utils/error'
 
 const loading = ref(true)
 const connecting = ref(false)
 const verifying = ref(false)
 const error = ref('')
-const status = ref(null)
+const status = ref<GitConnection | null>(null)
 const username = ref('')
 const token = ref('')
 
@@ -39,7 +41,7 @@ const verifyAndConnect = async () => {
   error.value = ''
   try {
     const result = await gitApi.connect('github', token.value.trim(), username.value.trim())
-    if (result.error) {
+    if (hasApiError(result)) {
       error.value = apiErrorMessage(result, 'Could not verify token.')
     } else {
       token.value = ''
@@ -47,7 +49,7 @@ const verifyAndConnect = async () => {
       toast.success(`Connected as ${result.username}`)
     }
   } catch (e) {
-    error.value = e.message || 'Could not verify token.'
+    error.value = errorMessage(e, 'Could not verify token.')
   } finally {
     connecting.value = false
   }
@@ -60,7 +62,7 @@ const verifyConnection = async () => {
     if (Array.isArray(result)) toast.success('GitHub connection is working')
     else toast.error(apiErrorMessage(result, 'GitHub connection failed'))
   } catch (e) {
-    toast.error(e.message || 'GitHub connection failed')
+    toast.error(errorMessage(e, 'GitHub connection failed'))
   } finally {
     await load()
     verifying.value = false
@@ -127,7 +129,7 @@ onMounted(load)
         label="Personal Access Token"
         type="password"
         v-model="token"
-        :placeholder="connected ? status.token_preview : 'ghp_…'"
+        :placeholder="connected ? status?.token_preview : 'ghp_…'"
         @keydown.enter="verifyAndConnect"
       />
       <ErrorMessage v-if="error" :message="error" />

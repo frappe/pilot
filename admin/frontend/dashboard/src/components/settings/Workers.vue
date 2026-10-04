@@ -2,20 +2,26 @@
 import { ref, onMounted } from 'vue'
 import { Button, ErrorMessage, Spinner, TextInput, toast } from 'frappe-ui'
 
-import { apiErrorMessage } from '@/api/client'
 import { settingsApi } from '@/api/settings'
+import type { WorkerGroupSettings } from '@/types/settings'
+import { errorMessage } from '@/utils/error'
+
+interface WorkerGroupForm {
+  queues: string
+  count: number | string
+}
 
 const loading = ref(true)
 const saving = ref(false)
 const error = ref('')
-const groups = ref([])
+const groups = ref<WorkerGroupForm[]>([])
 const liteMode = ref(false)
 
-const toGroupForm = (group) => {
+const toGroupForm = (group: WorkerGroupSettings): WorkerGroupForm => {
   return { queues: (group.queues || []).join(', '), count: group.count }
 }
 
-const collapse = (groups) => {
+const collapse = (groups: WorkerGroupSettings[]): WorkerGroupSettings[] => {
   return [
     {
       queues: [...new Set(groups.flatMap((group) => group.queues || []))],
@@ -28,11 +34,11 @@ const addGroup = () => {
   groups.value.push({ queues: '', count: 1 })
 }
 
-const removeGroup = (index) => {
+const removeGroup = (index: number) => {
   groups.value.splice(index, 1)
 }
 
-const queueList = (value) => {
+const queueList = (value: string | number) => {
   return String(value || '')
     .split(',')
     .map((queue) => queue.trim())
@@ -61,13 +67,9 @@ const save = async () => {
       count: Number(group.count),
     }))
     const result = await settingsApi.update({ workers: payload })
-    if (result.error) {
-      error.value = apiErrorMessage(result, 'Failed to save.')
-      return
-    }
     toast.success(result.restarted ? 'Saved & restarted' : 'Saved')
   } catch (e) {
-    error.value = e.message || 'Failed to save.'
+    error.value = errorMessage(e, 'Failed to save.')
   } finally {
     saving.value = false
   }
@@ -80,7 +82,7 @@ onMounted(async () => {
     const loaded = data.workers || []
     groups.value = (liteMode.value && loaded.length ? collapse(loaded) : loaded).map(toGroupForm)
   } catch (e) {
-    error.value = e.message || 'Could not load settings.'
+    error.value = errorMessage(e, 'Could not load settings.')
   } finally {
     loading.value = false
   }

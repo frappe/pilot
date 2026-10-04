@@ -1,11 +1,18 @@
 <script setup lang="ts">
 import { Button, ErrorMessage, Spinner, TextInput, toast } from 'frappe-ui'
 import { computed, onMounted, ref } from 'vue'
-import { apiErrorMessage } from '@/api/client'
 import { settingsApi } from '@/api/settings'
 import EmptyState from '@/components/common/EmptyState.vue'
 import SettingsSwitch from '@/components/settings/SettingsSwitch.vue'
 import { useSession } from '@/composables/auth/useSession'
+import { errorMessage } from '@/utils/error'
+
+interface WebhookForm {
+  url: string
+  token: string
+  token_set: boolean
+  original_url: string
+}
 
 const { session } = useSession()
 
@@ -38,8 +45,8 @@ const error = ref('')
 const enabled = ref(Object.fromEntries(RESOURCE_ALERTS.map((alert) => [alert.key, false])))
 const limits = ref(Object.fromEntries(RESOURCE_ALERTS.map((alert) => [alert.key, ''])))
 const siteUptime = ref(true)
-const webhooks = ref([])
-const recipients = ref([])
+const webhooks = ref<WebhookForm[]>([])
+const recipients = ref<string[]>([])
 // Recipients are useless without a mailbox to send from, and that lives in Mail settings.
 const mailConfigured = ref(false)
 
@@ -69,20 +76,21 @@ const addRecipient = () => {
   recipients.value.push('')
 }
 
-const removeRecipient = (index) => {
+const removeRecipient = (index: number) => {
   recipients.value.splice(index, 1)
 }
 
-const recipientError = (address) => {
+const recipientError = (address: string) => {
   const trimmed = address.trim()
   if (trimmed && !/^[^@\s]+@[^@\s]+$/.test(trimmed)) return 'Must be an email address.'
   return ''
 }
 
-const setEnabled = (key, on) => {
+const setEnabled = (key: string, on: boolean) => {
   enabled.value[key] = on
   if (on && !Number(limits.value[key])) {
-    limits.value[key] = String(RESOURCE_ALERTS.find((alert) => alert.key === key).initial)
+    const alert = RESOURCE_ALERTS.find((candidate) => candidate.key === key)
+    if (alert) limits.value[key] = String(alert.initial)
   }
 }
 
@@ -90,23 +98,23 @@ const addWebhook = () => {
   webhooks.value.push({ url: '', token: '', token_set: false, original_url: '' })
 }
 
-const removeWebhook = (index) => {
+const removeWebhook = (index: number) => {
   webhooks.value.splice(index, 1)
 }
 
 // A row still being filled in says nothing and just holds the Save button.
-const webhookError = (webhook) => {
+const webhookError = (webhook: WebhookForm) => {
   const url = webhook.url.trim()
   if (url && (!URL.canParse(url) || !/^https?:\/\//.test(url)))
     return 'Endpoint must be an http:// or https:// URL.'
   return ''
 }
 
-const webhookIsComplete = (webhook) => {
+const webhookIsComplete = (webhook: WebhookForm) => {
   return Boolean(webhook.url.trim()) && Boolean(webhook.token || webhook.token_set)
 }
 
-const limitError = (key) => {
+const limitError = (key: string) => {
   if (!enabled.value[key]) return ''
   const limit = Number(limits.value[key])
   if (!Number.isInteger(limit) || limit < 1 || limit > 100)
@@ -128,11 +136,7 @@ const save = async () => {
   saving.value = true
   try {
     const payload = buildPayload()
-    const result = await settingsApi.update({ resource_limits: payload })
-    if (result.error) {
-      error.value = apiErrorMessage(result, 'Failed to save.')
-      return
-    }
+    await settingsApi.update({ resource_limits: payload })
     // Drop the typed secrets once stored, so the form reads back like a reload.
     for (const webhook of webhooks.value) {
       webhook.token_set = webhook.token_set || Boolean(webhook.token)
@@ -142,7 +146,7 @@ const save = async () => {
     savedPayload.value = JSON.stringify(buildPayload())
     toast.success('Notification settings saved')
   } catch (e) {
-    error.value = e.message || 'Failed to save.'
+    error.value = errorMessage(e, 'Failed to save.')
   } finally {
     saving.value = false
   }
@@ -152,8 +156,10 @@ onMounted(async () => {
   try {
     const data = await settingsApi.get()
     const saved = data.resource_limits || {}
+    const savedLimits: Record<string, unknown> = { ...saved }
+
     for (const alert of RESOURCE_ALERTS) {
-      const limit = Number(saved[alert.key]) || 0
+      const limit = Number(savedLimits[alert.key]) || 0
       enabled.value[alert.key] = limit > 0
       limits.value[alert.key] = limit ? String(limit) : ''
     }
@@ -168,7 +174,7 @@ onMounted(async () => {
     mailConfigured.value = Boolean((data.mail || {}).server)
     savedPayload.value = JSON.stringify(buildPayload())
   } catch (e) {
-    error.value = e.message || 'Could not load settings.'
+    error.value = errorMessage(e, 'Could not load settings.')
   } finally {
     loading.value = false
   }
@@ -185,7 +191,7 @@ onMounted(async () => {
       label="Site uptime"
       description="Alert when a site stops responding to its uptime check."
       :model-value="siteUptime"
-      @update:model-value="(on) => (siteUptime = on)"
+      @update:model-value="(on: boolean) => (siteUptime = on)"
     />
 
     <div v-for="alert in RESOURCE_ALERTS" :key="alert.key" class="space-y-3">
@@ -193,7 +199,7 @@ onMounted(async () => {
         :label="alert.label"
         :description="alert.description"
         :model-value="enabled[alert.key]"
-        @update:model-value="(on) => setEnabled(alert.key, on)"
+        @update:model-value="(on: boolean) => setEnabled(alert.key, on)"
       />
       <div v-if="enabled[alert.key]" class="flex items-center gap-2 pl-0.5">
         <TextInput

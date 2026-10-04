@@ -2,8 +2,8 @@
 import { Button, Checkbox, ErrorMessage, FormControl, Spinner, toast } from 'frappe-ui'
 import { computed, onMounted, ref } from 'vue'
 
-import { apiErrorMessage } from '@/api/client'
 import { settingsApi } from '@/api/settings'
+import { errorMessage } from '@/utils/error'
 
 const ADDRESS_RE = /^[^@\s]+@[^@\s]+$/
 
@@ -64,17 +64,13 @@ const save = async () => {
   error.value = ''
   saving.value = true
   try {
-    const result = await settingsApi.update({ mail: buildPayload() })
-    if (result.error) {
-      error.value = apiErrorMessage(result, 'Failed to save.')
-      return
-    }
+    await settingsApi.update({ mail: buildPayload() })
     passwordSet.value = passwordSet.value || Boolean(password.value)
     password.value = ''
     savedPayload.value = JSON.stringify(buildPayload())
     toast.success('Mail settings saved')
   } catch (e) {
-    error.value = e.message || 'Failed to save.'
+    error.value = errorMessage(e, 'Failed to save.')
   } finally {
     saving.value = false
   }
@@ -93,7 +89,7 @@ onMounted(async () => {
     passwordSet.value = Boolean(saved.password_set)
     savedPayload.value = JSON.stringify(buildPayload())
   } catch (e) {
-    error.value = e.message || 'Could not load settings.'
+    error.value = errorMessage(e, 'Could not load settings.')
   } finally {
     loading.value = false
   }

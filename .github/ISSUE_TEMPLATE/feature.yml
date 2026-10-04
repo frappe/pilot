@@ -1,0 +1,33 @@
+name: Feature request
+description: Propose a new capability for Pilot.
+title: "feat(<scope>): <short capability>"
+labels: [feature]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: The capability and why it matters, in 1 or 2 sentences.
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What users or operators cannot do today.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Proposed behavior
+      description: What the user or operator sees in the CLI, Admin API or Admin UI.
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility
+      description: Which CLI commands, config keys, Admin API clients, tasks or existing benches it affects.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

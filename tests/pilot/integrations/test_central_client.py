@@ -144,6 +144,32 @@ def test_datum_token_unwraps_message_and_targets_method_path() -> None:
     assert captured["method"] == "GET"
 
 
+def test_notify_central_sends_the_event_as_centrals_event_type() -> None:
+    """Central's report_pilot_event requires ``event_type``; an ``event`` key fails the call."""
+    _stage_credentials("https://central.test", "tok-9")
+    captured: dict = {}
+
+    def fake_urlopen(request, timeout=None):
+        captured["url"] = request.full_url
+        captured["method"] = request.method
+        captured["body"] = json.loads(request.data.decode())
+        return _FakeResponse({"message": {"created": True}})
+
+    with patch("pilot.integrations.central.client.urllib.request.urlopen", side_effect=fake_urlopen):
+        CentralClient().notify_central(
+            "backup_failure", "b1: disk full", {"bench": "b1"}, reference_name="b1"
+        )
+
+    assert captured["url"] == "https://central.test/api/method/central.notification.api.report_pilot_event"
+    assert captured["method"] == "POST"
+    assert captured["body"] == {
+        "event_type": "backup_failure",
+        "message": "b1: disk full",
+        "context": {"bench": "b1"},
+        "reference_name": "b1",
+    }
+
+
 def test_a_non_json_response_is_wrapped() -> None:
     _stage_credentials("https://central.test", "tok")
 

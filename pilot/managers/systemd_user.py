@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import os
 import shutil
 from pathlib import Path
@@ -20,17 +19,18 @@ def systemctl_env() -> dict:
     return env
 
 
-def memory_capped(argv: list[str], memory_max_mb: int) -> list[str]:
-    """Run argv in a transient scope the kernel kills past memory_max_mb. Returns
-    argv unchanged where scopes cannot cap, so callers stay one code path."""
+def can_cap_memory() -> bool:
+    """Can we cap memory usage."""
     controllers = Path(f"/sys/fs/cgroup/user.slice/user-{os.getuid()}.slice/cgroup.controllers")
     try:
-        can_cap = bool(shutil.which("systemd-run")) and "memory" in controllers.read_text().split()
+        return bool(shutil.which("systemd-run")) and "memory" in controllers.read_text().split()
     except OSError:
-        can_cap = False
-    if not can_cap:
-        logging.warning("Memory control unavailable here, so this build runs uncapped.")
-        return argv
+        return False
+
+
+def memory_capped(argv: list[str], memory_max_mb: int) -> list[str]:
+    """Run argv in a transient scope the kernel kills past memory_max_mb. Only where
+    `can_cap_memory` holds."""
     return [
         "systemd-run",
         "--user",

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
 import { Spinner } from 'frappe-ui'
+import { ref, watch } from 'vue'
 
 import LogView from '@/components/logs/LogView.vue'
 
@@ -8,7 +8,7 @@ interface Props {
   label: string
   status?: string
   duration?: string | null
-  lines?: any[]
+  lines?: string[]
   hasOutput?: boolean
   streaming?: boolean
 }
@@ -22,7 +22,7 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 // Open while running or failed; anything else settles closed unless toggled.
-const shouldExpand = (status) => {
+const shouldExpand = (status: string) => {
   return status === 'running' || status === 'failed'
 }
 
@@ -52,7 +52,10 @@ const toggle = () => {
     >
       <span v-if="status === 'done'" class="size-5 text-ink-gray-5 shrink-0 lucide-circle-check" />
       <Spinner v-else-if="status === 'running'" size="md" class="text-ink-amber-6 shrink-0" />
-      <span v-else-if="status === 'failed'" class="size-5 text-ink-red-6 shrink-0 lucide-circle-x" />
+      <span
+        v-else-if="status === 'failed'"
+        class="size-5 text-ink-red-6 shrink-0 lucide-circle-x"
+      />
       <span v-else class="size-5 text-ink-gray-3 shrink-0 lucide-circle-dashed" />
 
       <span

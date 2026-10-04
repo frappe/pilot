@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from typing import TYPE_CHECKING
 
 from pilot.core.app.revisions import RevisionPin
@@ -152,6 +153,14 @@ class AppRepository:
         return bool(re.fullmatch(r"[0-9a-f]{7,40}", ref))
 
     def clone_rev(self, commit: str) -> None:
+        # Git fetches a commit on its own only by its full SHA; a short one is found in the full history.
+        if len(commit) == 40 and self.depth_flags and not self.app.path.exists():
+            try:
+                self.fetch_commit(commit)
+                return
+            except CommandError:
+                shutil.rmtree(self.app.path, ignore_errors=True)
+
         run_command(
             ["git", "clone", self.remote_url, str(self.app.path)],
             env=self.git_env,
@@ -160,7 +169,20 @@ class AppRepository:
         try:
             run_command(["git", "-C", str(self.app.path), "checkout", commit])
         except CommandError as exc:
+            shutil.rmtree(self.app.path, ignore_errors=True)
             raise BenchError(f"Commit '{commit}' not found in {self.app.config.repo}.") from exc
+
+    def fetch_commit(self, commit: str) -> None:
+        """Clone only `commit`, without its history, which a large app like erpnext cannot afford."""
+        path = str(self.app.path)
+        run_command(["git", "init", "--quiet", path])
+        run_command(["git", "-C", path, "remote", "add", "origin", self.remote_url])
+        run_command(
+            ["git", "-C", path, "fetch", *self.depth_flags, "origin", commit],
+            env=self.git_env,
+            stream_output=True,
+        )
+        run_command(["git", "-C", path, "checkout", "--quiet", "FETCH_HEAD"])
 
     def clone(self) -> None:
         target = self.app.config.branch or self.get_default_branch()

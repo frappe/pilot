@@ -2,16 +2,28 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from pathlib import Path
+from typing import TypedDict
 
 from flask import Blueprint, current_app, request
 
 from admin.backend.api.responses import (
+    PageMeta,
     error_response,
     no_content_response,
     paginated_response,
     parse_pagination,
 )
-from pilot.core.notification import CATEGORIES, NotificationStore
+from pilot.core.notification import CATEGORIES, Notification, NotificationStore
+
+
+class NotificationPageMeta(PageMeta):
+    unread: int
+
+
+class NotificationPage(TypedDict):
+    data: list[Notification]
+    meta: NotificationPageMeta
+
 
 notifications_bp = Blueprint("notifications", __name__)
 

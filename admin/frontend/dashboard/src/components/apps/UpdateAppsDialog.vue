@@ -8,8 +8,9 @@ import AppIcon from '@/components/apps/AppIcon.vue'
 import { updatesApi } from '@/api/updates'
 import { useAppRegistry } from '@/composables/apps/useAppRegistry'
 import { useAppUpdates } from '@/composables/apps/useAppUpdates'
+import { errorMessage } from '@/utils/error'
 
-const open = defineModel()
+const open = defineModel<boolean>()
 const router = useRouter()
 
 const { updates, appsWithUpdates, checking } = useAppUpdates()
@@ -25,7 +26,7 @@ const appNames = computed(() => {
   return names
 })
 
-const selected = ref(new Set())
+const selected = ref(new Set<string>())
 
 const updateLabel = computed(() => {
   const count = selected.value.size
@@ -48,14 +49,15 @@ watch(
   { immediate: true },
 )
 
-const toggle = (name) => {
+const toggle = (name: string) => {
   const next = new Set(selected.value)
   next.has(name) ? next.delete(name) : next.add(name)
   selected.value = next
 }
 
 const toggleAll = () => {
-  selected.value = selected.value.size === appNames.value.length ? new Set() : new Set(appNames.value)
+  selected.value =
+    selected.value.size === appNames.value.length ? new Set() : new Set(appNames.value)
 }
 
 const runUpdate = async () => {
@@ -70,7 +72,7 @@ const runUpdate = async () => {
     open.value = false
     router.push({ name: 'UpdateDetail', params: { operationId: res.operation.id } })
   } catch (e) {
-    error.value = e.message || 'Failed to start update.'
+    error.value = errorMessage(e, 'Failed to start update.')
   } finally {
     updating.value = false
   }
@@ -90,7 +92,8 @@ const runUpdate = async () => {
         <div class="flex flex-col gap-2">
           <div class="flex items-center justify-between">
             <span class="text-ink-gray-5 text-sm">
-              {{ selected.size }} of {{ appNames.length }} selected
+              {{ selected.size }}
+              of {{ appNames.length }} selected
             </span>
 
             <Button variant="ghost" @click="toggleAll">
@@ -141,7 +144,6 @@ const runUpdate = async () => {
       </template>
 
       <ErrorMessage v-if="error" :message="error" />
-
     </div>
 
     <template #actions>

@@ -1,22 +1,23 @@
 <script setup lang="ts">
+import { Badge, Button, ErrorMessage, Select, TabButtons, Tooltip } from 'frappe-ui'
+import type { SelectOptionValue } from 'frappe-ui'
 import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Badge, Button, ErrorMessage, Select, TabButtons, Tooltip } from 'frappe-ui'
 
 import EmptyState from '@/components/common/EmptyState.vue'
 import ListSkeleton from '@/components/common/ListSkeleton.vue'
-import Table from '@/components/common/Table.vue'
 import StickyToolbar from '@/components/common/StickyToolbar.vue'
+import Table from '@/components/common/Table.vue'
 
 import { useIsMobile } from '@/composables/common/useIsMobile'
 import { useTasks } from '@/composables/tasks/useTasks'
 
 import {
   commandLabel,
+  fmtDateTime,
   siteLabel,
   statusConfig,
   TASK_TYPES,
-  fmtDateTime,
   taskDuration,
   taskLastRun,
   taskType,
@@ -73,7 +74,7 @@ const rows = computed(() =>
   })),
 )
 
-const getRowRoute = (row) => taskDetailRoute(row.id)
+const getRowRoute = (row: { id: string }) => taskDetailRoute(row.id)
 
 // "Other" is a fallback for unknown commands; listed only once one exists.
 const typeOptions = computed(() => {
@@ -98,14 +99,16 @@ const siteOptions = computed(() => {
 })
 
 // Patch, not replace: changing one filter must not clear the other.
-const setFilterQuery = (patch) => {
+const setFilterQuery = (patch: Record<string, string>) => {
   const query = { ...route.query, ...patch }
   for (const key of Object.keys(query)) if (!query[key]) delete query[key]
   router.replace({ name: 'Tasks', query })
 }
 
-const onSiteChange = (site) => setFilterQuery({ site })
-const onTypeChange = (type) => setFilterQuery({ type })
+const onSiteChange = (site: SelectOptionValue | null | undefined) =>
+  setFilterQuery({ site: String(site ?? '') })
+const onTypeChange = (type: SelectOptionValue | null | undefined) =>
+  setFilterQuery({ type: String(type ?? '') })
 
 // An empty list means something different when a filter is on - saying "no tasks
 // yet" there would be a lie.
@@ -113,9 +116,9 @@ const isFiltered = computed(
   () => statusFilter.value !== 'all' || Boolean(siteFilter.value) || Boolean(typeFilter.value),
 )
 
-const onFilterChange = (value) => {
-  setFilterQuery({ status: value === 'all' ? '' : value })
-  load(value)
+const onFilterChange = (value: string | number) => {
+  setFilterQuery({ status: value === 'all' ? '' : String(value) })
+  load(String(value))
 }
 
 onMounted(() => load(statusFilter.value))

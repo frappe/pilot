@@ -1,0 +1,26 @@
+{
+  "autoMode": {
+    "environment": [
+      "$defaults",
+      "This repository is Pilot, a CLI and Admin backend that manages Frappe benches. Agents run commands against local benches, development hosts, staging and production. The access policy is in llm/engineering-playbook/references/environments.md.",
+      "Each developer declares their own development, staging and production hosts, sites and cloud accounts in additional environment entries in their personal settings. Those entries decide the tier of a target.",
+      "Development tier: local bench sites ending in .localhost, the test.local site, localhost services, local containers, and any host, VM or cloud resource declared as development. Agents may act freely there."
+    ],
+    "allow": [
+      "$defaults",
+      "Commands against the development tier: local bench sites (*.localhost, test.local), localhost services, local containers, and hosts or VMs declared as development. This includes pilot, bench, ssh, systemctl, nginx, database and deploy commands on those targets."
+    ],
+    "soft_deny": [
+      "$defaults",
+      "Any write, restart, deploy, migrate, update, data patch or bench, site or host change on a target declared as staging, or on a host reached through one. Read-only inspection is fine. Block unless the developer approved this exact action in the conversation.",
+      "Provider API calls that create, delete, resize or attach paid cloud resources, even in development, unless the developer approved this exact action.",
+      "Running the test suite against any site other than test.local, or dropping and reinstalling a site that is not test.local."
+    ],
+    "hard_deny": [
+      "$defaults",
+      "Any command, SSH session, API call, script or file copy that reaches a target declared as production, including through jump hosts, ProxyCommand chains or scripts.",
+      "Any command against a host, IP address, domain, site, bucket or cloud account that is not declared as development or staging. Treat undeclared targets as production.",
+      "Printing, copying or committing secrets, private keys, tokens or .env content from any environment."
+    ]
+  }
+}

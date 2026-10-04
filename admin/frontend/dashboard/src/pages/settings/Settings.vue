@@ -30,7 +30,7 @@ const menuRows = computed(() => [
     label: 'Activity',
     onClick: () => router.push({ name: 'Activity' }),
   },
-].filter(Boolean))
+].filter((row) => row !== false))
 
 const themeOptions = [
   { value: 'system', label: 'System', icon: 'lucide-monitor' },

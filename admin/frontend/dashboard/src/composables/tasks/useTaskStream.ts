@@ -1,20 +1,32 @@
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 
+import type { DoneEvent, OutputEvent, StatusEvent } from '@/types/tasks'
 import { processLine } from '@/utils/ansi.ts'
 
+interface TerminalHandle {
+  scrollToBottom: () => void
+}
+
+interface StreamHandlers {
+  onDone?: (success: boolean) => void
+  onLine?: (line: string) => void
+  onStatus?: (event: StatusEvent) => void
+  onError?: () => void
+}
+
 export const useTaskStream = ({ guardHiddenTab = false } = {}) => {
-  const terminal = ref(null)
-  const lines = ref([])
-  const rawLines = ref([])
+  const terminal = ref<TerminalHandle | null>(null)
+  const lines = ref<string[]>([])
+  const rawLines = ref<string[]>([])
   const streaming = ref(false)
-  let source = null
+  let source: EventSource | null = null
 
   const scrollToBottom = () => {
     if (guardHiddenTab && document.hidden) return
     terminal.value?.scrollToBottom()
   }
 
-  const push = (raw, { overwrite } = {}) => {
+  const push = (raw: string, { overwrite }: { overwrite?: boolean } = {}) => {
     if (overwrite) {
       rawLines.value[rawLines.value.length - 1] = raw
       lines.value[lines.value.length - 1] = processLine(raw)
@@ -32,7 +44,7 @@ export const useTaskStream = ({ guardHiddenTab = false } = {}) => {
     }
   }
 
-  const start = (url, { onDone, onLine, onStatus, onError } = {}) => {
+  const start = (url: string, { onDone, onLine, onStatus, onError }: StreamHandlers = {}) => {
     close()
     streaming.value = true
     let volatile = false
@@ -40,7 +52,7 @@ export const useTaskStream = ({ guardHiddenTab = false } = {}) => {
     source = new EventSource(url)
 
     source.onmessage = (message) => {
-      let event
+      let event: OutputEvent | StatusEvent | DoneEvent
       try {
         event = JSON.parse(message.data)
       } catch {

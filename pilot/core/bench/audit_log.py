@@ -26,6 +26,7 @@ class AuditEntry:
     jti: str | None = None
     command: str | None = None
     task_id: str | None = None
+    args: dict | None = None
     provider: str | None = None
     username: str | None = None
     fingerprint: str | None = None

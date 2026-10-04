@@ -1,178 +1,289 @@
-<script setup>
-import { computed, ref, watch } from "vue";
-import SettingsHeader from "frappe-ui/src/components/SettingsDialog/SettingsHeader.vue";
-import SettingsBody from "frappe-ui/src/components/SettingsDialog/SettingsBody.vue";
-import Button from "frappe-ui/src/components/Button/Button.vue";
-import Badge from "frappe-ui/src/components/Badge/Badge.vue";
-import FormControl from "frappe-ui/src/components/FormControl/FormControl.vue";
-import ErrorMessage from "frappe-ui/src/components/ErrorMessage/ErrorMessage.vue";
-import Tooltip from "frappe-ui/src/components/Tooltip/Tooltip.vue";
-import PanelState from "../components/PanelState.vue";
+<script setup lang="ts">
+import { Badge, Button, Dialog, Dropdown, ErrorMessage, TextInput } from 'frappe-ui'
+import { computed, inject, ref, watch } from 'vue'
+import Panel from '../components/Panel.vue'
+import Table from '../components/Table.vue'
+import { openExternal } from '../external'
+import type { Store } from '../store'
 
-const props = defineProps({
-  store: { type: Object, required: true },
-  active: { type: Boolean, default: false },
-});
-const store = props.store;
+interface Props {
+  store: Store
+  active?: boolean
+}
 
-const input = ref("");
-const pendingDomain = ref("");
-const dnsRecords = ref([]);
-const working = ref(false);
+const props = defineProps<Props>()
+const store = props.store
+
+const input = ref('')
+const dnsRecords = ref([])
+const working = ref(false)
+const removeTarget = ref('')
+const showRemove = ref(false)
+const busyDomain = ref('')
+const overlayTarget = inject('overlayTarget', 'body')
 
 watch(
   () => props.active,
   (active) => {
-    if (active) store.loadDomains();
+    if (active) store.loadDomains()
   },
   { immediate: true },
-);
+)
 
-const domains = computed(() => store.state.domains?.domains);
-const error = computed(() => store.state.domainsError);
-// A load failure blanks the panel and needs a retry; an action failure is inline.
-const loadFailed = computed(() => Boolean(error.value) && !domains.value);
-const canAdd = computed(() => Boolean(input.value.trim()) && !working.value);
+const domains = computed(() => {
+  const rows = store.state.domains?.domains
+  const routes = rows
+    ?.filter((row) => typeof row.domain === 'object')
+    .map(({ domain }) => ({ ...domain, is_default: domain.is_site }))
 
-// Show the DNS records the customer must add before we attach the domain. Some
-// domains need none, in which case attach immediately.
-async function previewDomain() {
-  const domain = input.value.trim();
-  if (!domain) return;
-  await run(async () => {
-    const response = await store.api.getDomainDnsRecords(domain);
-    dnsRecords.value = response.records || [];
-    pendingDomain.value = domain;
-    if (!dnsRecords.value.length) await confirmAdd();
-  });
-}
+  return routes?.length ? routes : rows
+})
 
-async function confirmAdd() {
-  const domain = pendingDomain.value || input.value.trim();
-  if (!domain) return;
-  await run(async () => {
-    await store.api.addDomain(domain);
-    clearPreview();
-    await store.loadDomains(true);
-  });
-}
+const columns = [
+  { label: __('Domain'), key: 'domain', class: 'w-1/2' },
+  { label: __('Type'), key: 'type' },
+  { label: __('SSL'), key: 'ssl' },
+  { label: '', key: 'actions', class: 'w-12' },
+]
 
-const makePrimary = (domain) =>
-  run(async () => {
-    await store.api.setPrimaryDomain(domain);
-    await store.loadDomains(true);
-  });
+const rows = computed(() =>
+  (domains.value || []).map((domain) => ({ id: domain.domain, ...domain })),
+)
 
-const remove = (domain) =>
-  run(async () => {
-    await store.api.removeDomain(domain);
-    await store.loadDomains(true);
-  });
+const hasCustomDomains = computed(() => rows.value.some((row) => !row.is_default))
 
-async function run(action) {
-  working.value = true;
-  store.state.domainsError = "";
-  try {
-    await action();
-  } catch (exception) {
-    store.state.domainsError = store.api.getErrorMessage(exception);
-  } finally {
-    working.value = false;
+const error = computed(() => store.state.domainsError)
+const loadFailed = computed(() => Boolean(error.value) && !domains.value)
+const domainPattern = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/
+
+const normalizedDomain = computed(() =>
+  input.value
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/[/?#].*$/, '')
+    .replace(/\.$/, ''),
+)
+
+const domainError = computed(() => {
+  const domain = normalizedDomain.value
+
+  if (!domain) return ''
+  if (!domainPattern.test(domain)) return __('Enter a valid domain, like shop.example.com.')
+  if ((domains.value || []).some((row) => row.domain === domain)) {
+    return __('{0} is already added.', [domain])
   }
+
+  return ''
+})
+
+const canAdd = computed(
+  () => Boolean(normalizedDomain.value) && !domainError.value && !working.value,
+)
+
+let dnsTimer
+
+watch(normalizedDomain, (domain) => {
+  clearTimeout(dnsTimer)
+  dnsRecords.value = []
+
+  if (!domain || domainError.value) return
+
+  dnsTimer = setTimeout(() => loadDnsRecords(domain), 400)
+})
+
+const loadDnsRecords = async (domain) => {
+  try {
+    const response = await store.api.getDomainDnsRecords(domain)
+
+    if (domain === normalizedDomain.value) dnsRecords.value = response.records || []
+  } catch {}
 }
 
-function clearPreview() {
-  dnsRecords.value = [];
-  pendingDomain.value = "";
-  input.value = "";
+const confirmAdd = async () => {
+  const domain = normalizedDomain.value
+
+  if (!canAdd.value) return
+
+  await run(async () => {
+    await store.api.addDomain(domain)
+
+    input.value = ''
+
+    await store.loadDomains(true)
+  })
+}
+
+const urlFor = (row) => `${row.public_scheme || (row.tls ? 'https' : 'http')}://${row.domain}`
+
+const menuOptions = (row) =>
+  [
+    !row.is_primary && {
+      label: __('Make primary'),
+      icon: 'lucide-star',
+      onClick: () => makePrimary(row.domain),
+    },
+    !row.is_default && {
+      label: __('Remove'),
+      icon: 'lucide-trash-2',
+      theme: 'red',
+      onClick: () => askRemove(row.domain),
+    },
+  ].filter(Boolean)
+
+const makePrimary = (domain) => {
+  busyDomain.value = domain
+
+  run(async () => {
+    await store.api.setPrimaryDomain(domain)
+    await store.loadDomains(true)
+  })
+}
+
+const askRemove = (domain) => {
+  removeTarget.value = domain
+  showRemove.value = true
+}
+
+const confirmRemove = () => {
+  showRemove.value = false
+  busyDomain.value = removeTarget.value
+
+  run(async () => {
+    await store.api.removeDomain(removeTarget.value)
+    await store.loadDomains(true)
+  })
+}
+
+const run = async (action) => {
+  working.value = true
+  store.state.domainsError = ''
+
+  try {
+    await action()
+  } catch (exception) {
+    store.state.domainsError = store.api.getErrorMessage(exception)
+  } finally {
+    working.value = false
+    busyDomain.value = ''
+  }
 }
 </script>
 
 <template>
-  <SettingsHeader
+  <Panel
     :title="__('Domains')"
     :description="__('The addresses this site answers on.')"
-  />
-  <SettingsBody>
-    <PanelState
-      class="pt-8"
-      :loading="!domains && !error"
-      :error="loadFailed ? error : ''"
-      :title="__(`Couldn't load domains`)"
-      @retry="store.loadDomains(true)"
-    >
-      <div class="space-y-4">
-        <div class="flex items-center gap-2">
-          <FormControl
-            v-model="input"
-            type="text"
-            class="flex-1"
-            :placeholder="__('shop.mycompany.in')"
-            :disabled="working"
-            @keyup.enter="previewDomain"
-          />
-          <Button :disabled="!canAdd" :loading="working && !pendingDomain" @click="previewDomain">
-            {{ __("Add") }}
-          </Button>
-        </div>
+    :loading="!domains && !error"
+    :error="loadFailed ? error : ''"
+    :error-title="__(`Couldn't load domains`)"
+    @retry="store.loadDomains(true)"
+  >
+    <div class="rounded-6 border border-outline-gray-2">
+      <div class="grid items-end gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <TextInput
+          v-model="input"
+          :label="__('Domain')"
+          :placeholder="__('shop.example.com')"
+          :disabled="working"
+          @keydown.enter="confirmAdd"
+        />
 
-        <ErrorMessage :message="error" />
-
-        <section v-if="dnsRecords.length" class="rounded-xl border border-outline-gray-2 p-4">
-          <p class="text-base font-medium text-ink-gray-9">{{ pendingDomain }}</p>
-          <p class="mt-1 text-p-sm text-ink-gray-6">
-            {{ __("Add these DNS records at your provider, then continue.") }}
-          </p>
-          <div class="my-3 space-y-2">
-            <div
-              v-for="(record, index) in dnsRecords"
-              :key="index"
-              class="grid grid-cols-[70px_minmax(0,1fr)_minmax(0,1.4fr)] items-center gap-3 rounded-lg bg-surface-gray-1 px-3 py-2.5 text-p-sm text-ink-gray-7"
-            >
-              <span>{{ record.type }}</span>
-              <code class="truncate text-ink-gray-9">{{ record.host }}</code>
-              <code class="truncate text-ink-gray-9">{{ record.value }}</code>
-            </div>
-          </div>
-          <div class="flex justify-end gap-2">
-            <Button :disabled="working" @click="clearPreview">{{ __("Cancel") }}</Button>
-            <Button variant="solid" :loading="working" @click="confirmAdd">
-              {{ __("Add domain") }}
-            </Button>
-          </div>
-        </section>
-
-        <div
-          v-for="domain in domains"
-          :key="domain.domain"
-          class="flex items-center justify-between gap-2 rounded-lg border border-outline-gray-2 p-3"
-        >
-          <div>
-            <p class="flex items-center gap-1.5 text-base font-semibold text-ink-gray-9">
-              {{ domain.domain }}
-              <Tooltip :text="__('Managed SSL certificate')">
-                <span class="lucide-lock size-3.5 text-ink-green-7" aria-hidden="true" />
-              </Tooltip>
-            </p>
-            <p class="mt-1 text-p-sm text-ink-gray-6">
-              {{ domain.is_default ? __("Default address · managed SSL") : __("Managed SSL") }}
-            </p>
-          </div>
-          <div class="flex shrink-0 items-center gap-2">
-            <Badge v-if="domain.is_primary" theme="green" :label="__('Primary')" />
-            <Button v-else :disabled="working" @click="makePrimary(domain.domain)">
-              {{ __("Make primary") }}
-            </Button>
-            <Button v-if="!domain.is_default" :disabled="working" @click="remove(domain.domain)">
-              {{ __("Remove") }}
-            </Button>
-          </div>
-        </div>
-
-        <p v-if="(domains || []).length <= 1" class="text-p-sm text-ink-gray-5">
-          {{ __("No custom domains yet. Add one above and we'll handle SSL once DNS checks out.") }}
-        </p>
+        <Button
+          variant="solid"
+          :disabled="!canAdd"
+          :loading="working && !busyDomain"
+          :label="__('Add')"
+          @click="confirmAdd"
+        />
       </div>
-    </PanelState>
-  </SettingsBody>
+
+      <div
+        v-if="domainError || error || dnsRecords.length"
+        class="border-t border-outline-gray-2 px-4 py-3 text-p-sm text-ink-gray-5"
+      >
+        <ErrorMessage v-if="domainError || error" :message="domainError || error" />
+
+        <template v-else-if="dnsRecords.length">
+          <p>{{ __("Add these records at your DNS provider, then add the domain.") }}</p>
+
+          <dl class="mt-2 grid grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)] gap-x-6 gap-y-1">
+            <template v-for="(record, index) in dnsRecords" :key="index">
+              <dt class="text-ink-gray-8">{{ record.type }}</dt>
+              <dd class="truncate text-ink-gray-7">{{ record.host }}</dd>
+              <dd class="truncate font-mono text-ink-gray-7">{{ record.value }}</dd>
+            </template>
+          </dl>
+        </template>
+      </div>
+    </div>
+
+    <Table class="mt-6" :columns="columns" :rows="rows">
+      <template #domain="{ row }">
+        <a
+          class="text-ink-gray-8 hover:underline"
+          :href="urlFor(row)"
+          target="_blank"
+          rel="noopener"
+          @click.prevent="openExternal(urlFor(row))"
+        >
+          {{ row.domain }}
+        </a>
+
+        <Badge v-if="row.is_primary" class="ml-2" theme="green" size="sm" :label="__('Primary')" />
+      </template>
+
+      <template #type="{ row }">
+        <span class="text-ink-gray-6">
+          {{ row.is_default ? __('Site address') : __('Custom domain') }}
+        </span>
+      </template>
+
+      <template #ssl="{ row }">
+        <span
+          class="flex items-center gap-1.5"
+          :class="row.tls ? 'text-ink-green-7' : 'text-ink-gray-5'"
+        >
+          <span
+            :class="[row.tls ? 'lucide-lock' : 'lucide-lock-open', 'size-3.5']"
+            aria-hidden="true"
+          />
+          {{ row.tls ? __('HTTPS') : __('HTTP only') }}
+        </span>
+      </template>
+
+      <template #actions="{ row }">
+        <Dropdown
+          v-if="menuOptions(row).length"
+          align="end"
+          :portal-to="overlayTarget"
+          :options="menuOptions(row)"
+        >
+          <Button
+            variant="ghost"
+            icon="lucide-ellipsis"
+            :loading="busyDomain === row.domain"
+            :disabled="working && busyDomain !== row.domain"
+            :label="__('Actions for {0}', [row.domain])"
+          />
+        </Dropdown>
+      </template>
+    </Table>
+  </Panel>
+
+  <Dialog v-model="showRemove" :title="__('Remove domain')" size="md">
+    <template #default>
+      <p class="text-p-base text-ink-gray-7">
+        {{ __("{0} will stop pointing to this site. You can add it again later.", [removeTarget]) }}
+      </p>
+    </template>
+
+    <template #actions>
+      <div class="flex justify-end gap-2">
+        <Button :label="__('Cancel')" @click="showRemove = false" />
+
+        <Button variant="solid" theme="red" :label="__('Remove')" @click="confirmRemove" />
+      </div>
+    </template>
+  </Dialog>
 </template>

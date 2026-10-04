@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -83,6 +84,18 @@ def test_list_backups_includes_local_files(tmp_path: Path) -> None:
     assert body[0]["files"][0]["kind"] == "database"
 
 
+def test_list_backups_dates_local_files_by_mtime_not_filename(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    _make_site(bench_root, "site.localhost")
+    path = _make_backup_file(bench_root, "site.localhost", "20240101_000000", "database.sql.gz")
+    os.utime(path, (1704048000, 1704048000))
+    client = _client(bench_root)
+
+    response = client.get("/api/v1/sites/site.localhost/backups")
+
+    assert response.get_json()[0]["created_at"] == "2023-12-31T18:40:00+00:00"
+
+
 def test_get_backup_returns_the_matching_set(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
     _make_site(bench_root, "site.localhost")
@@ -93,6 +106,34 @@ def test_get_backup_returns_the_matching_set(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert response.get_json()["timestamp"] == "20240101_000000"
+
+
+def test_delete_backup_queues_task_with_the_set_files(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    _make_site(bench_root, "site.localhost")
+    _make_backup_file(bench_root, "site.localhost", "20240101_000000", "database.sql.gz")
+    _make_backup_file(bench_root, "site.localhost", "20240101_000000", "site_config_backup.json")
+    client = _client(bench_root)
+
+    response = _request(client, "delete", "/api/v1/sites/site.localhost/backups/20240101_000000")
+
+    body = response.get_json()
+    assert response.status_code == 202
+    assert body["command"] == "delete-backup"
+    assert sorted(body["args"]["filenames"]) == [
+        "20240101_000000-site.localhost-database.sql.gz",
+        "20240101_000000-site.localhost-site_config_backup.json",
+    ]
+
+
+def test_delete_backup_404s_for_an_unknown_timestamp(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    _make_site(bench_root, "site.localhost")
+    client = _client(bench_root)
+
+    response = _request(client, "delete", "/api/v1/sites/site.localhost/backups/20240101_000000")
+
+    assert response.status_code == 404
 
 
 def test_get_backup_404s_for_an_unknown_timestamp(tmp_path: Path) -> None:

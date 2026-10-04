@@ -1,14 +1,14 @@
 <script setup lang="ts">
+import { Button, Checkbox, Dialog, ErrorMessage, Select, TextInput } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
-import { Button, Checkbox, Dialog, ErrorMessage, Select, TextInput } from 'frappe-ui'
-
 import { apiErrorMessage } from '@/api/client'
 import { tasksApi } from '@/api/tasks'
+import { errorMessage } from '@/utils/error'
 import { openTaskDetailPage } from '@/utils/taskRoute'
 
-const open = defineModel('open')
+const open = defineModel<boolean>('open')
 const router = useRouter()
 
 const licenseOptions = [
@@ -84,7 +84,7 @@ const submit = async () => {
     open.value = false
     openTaskDetailPage(router, result.task_id)
   } catch (caught) {
-    error.value = caught.message || 'Could not create the app.'
+    error.value = errorMessage(caught, 'Could not create the app.')
   } finally {
     loading.value = false
   }
@@ -137,7 +137,7 @@ const submit = async () => {
 </template>
 
 <style scoped>
-form:invalid button[type='submit'] {
+form:invalid button[type="submit"] {
   @apply opacity-50 pointer-events-none;
 }
 </style>

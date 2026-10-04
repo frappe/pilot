@@ -2,10 +2,12 @@
 import { computed, ref } from 'vue'
 import { Button, Checkbox, Dialog, ErrorMessage, Select, TextInput } from 'frappe-ui'
 
-import { apiErrorMessage } from '@/api/client'
+import { apiErrorMessage, hasApiError } from '@/api/client'
 import { sitesApi } from '@/api/sites'
 import { formatTime } from '@/utils/backup'
-import { cronToPicks, picksToCron } from '@/utils/cron'
+import { cronToPicks, type Frequency, picksToCron } from '@/utils/cron'
+import type { BackupConfig } from '@/types/siteBackups'
+import { errorMessage } from '@/utils/error'
 
 interface Props {
   siteName: string
@@ -41,7 +43,7 @@ const isEnabled = ref(false)
 const saving = ref(false)
 const error = ref('')
 
-const frequency = ref('daily')
+const frequency = ref<Frequency>('daily')
 const weekday = ref(0)
 const monthDay = ref(1)
 const hour = ref(2)
@@ -78,7 +80,7 @@ const hourPick = computed({
   },
 })
 
-const applySchedule = (schedule) => {
+const applySchedule = (schedule: string | null) => {
   if (!schedule) return
   const picks = cronToPicks(schedule)
   frequency.value = picks.frequency
@@ -88,7 +90,7 @@ const applySchedule = (schedule) => {
   minute.value = picks.minute
 }
 
-const applyRetention = (retention) => {
+const applyRetention = (retention: BackupConfig | null) => {
   if (!retention) return
   scheme.value = retention.scheme || 'gfs'
   keepLast.value = retention.keep_last ?? 7
@@ -107,7 +109,7 @@ const open = async () => {
     applySchedule(data.schedule)
     applyRetention(data.retention)
   } catch (e) {
-    error.value = e.message || 'Could not load backup settings.'
+    error.value = errorMessage(e, 'Could not load backup settings.')
   }
 }
 
@@ -121,7 +123,7 @@ const save = async () => {
         schedule: cron.value,
         retention: retentionPayload(),
       })
-      if (result.error) {
+      if (hasApiError(result)) {
         error.value = apiErrorMessage(result, 'Could not save.')
         return
       }
@@ -135,7 +137,7 @@ const save = async () => {
     show.value = false
     emit('saved')
   } catch (e) {
-    error.value = e.message || 'Could not save.'
+    error.value = errorMessage(e, 'Could not save.')
   } finally {
     saving.value = false
   }

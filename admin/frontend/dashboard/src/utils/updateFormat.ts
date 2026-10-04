@@ -1,4 +1,37 @@
+import type {
+  MigrationDecision,
+  MigrationDiagnosis,
+  MigrationPendingAction,
+  MigrationSite,
+  MigrationSummary,
+} from '@/types/migrations'
+
 import { fmtDateTime, SERVER_SCOPE } from './taskFormat.ts'
+
+/** Loosened from `MigrationSummary`: list rows render operations the API has only partly filled in. */
+export type UpdateOperation = Omit<
+  Partial<MigrationSummary>,
+  'apps' | 'decisions' | 'diagnosis' | 'sites'
+> & {
+  apps?: { name: string }[]
+  decisions?: Partial<MigrationDecision>[]
+  diagnosis?: Partial<MigrationDiagnosis> | null
+  sites?: Pick<MigrationSite, 'name'>[]
+}
+
+/** `unsupported` is a backup outcome the UI renders but the generated `MigrationSite` does not list. */
+export type OperationSite = Partial<Omit<MigrationSite, 'backup_status'>> & {
+  backup_status?: MigrationSite['backup_status'] | 'unsupported'
+}
+
+export type StateTone = 'green' | 'blue' | 'red' | 'amber' | 'gray'
+
+export type SiteStatus = {
+  label: string
+  tone: StateTone
+  busy?: boolean
+  value: string
+}
 
 export const ACTIVE_STATES = [
   'preparing',
@@ -14,7 +47,7 @@ export const ATTENTION_STATES = ['needs_attention', 'revert_failed']
 
 // The API's status filter matches one state exactly, so these groups can only
 // be applied client-side.
-const FILTER_STATES = {
+const FILTER_STATES: Record<string, (string | undefined)[]> = {
   active: ACTIVE_STATES,
   attention: ATTENTION_STATES,
   completed: ['completed'],
@@ -31,12 +64,12 @@ export const UPDATE_FILTERS = [
 ]
 
 // Every state belongs to exactly one group, so no update is unreachable.
-export const matchesUpdateFilter = (operation, filter) => {
+export const matchesUpdateFilter = (operation: UpdateOperation | null, filter: string) => {
   if (filter === 'all') return true
   return (FILTER_STATES[filter] || []).includes(operation?.state)
 }
 
-export const opTitle = (op) => {
+export const opTitle = (op: UpdateOperation | null) => {
   if (op?.kind === 'site_migrate') return `Migrate ${op.sites?.[0]?.name || 'site'}`
   // Operations store no name; two picked apps read fine by name, more become a count.
   const picked = op?.apps_filter || []
@@ -51,20 +84,20 @@ export const opTitle = (op) => {
  * they collapse to a count and `siteNames` carries the full list into the cell's
  * tooltip. An operation touching no site is bench-level work.
  */
-export const sitesLabel = (op) => {
+export const sitesLabel = (op: UpdateOperation | null) => {
   const sites = op?.sites || []
   if (!sites.length) return SERVER_SCOPE
   if (sites.length === 1) return sites[0].name
   return `${sites.length} sites`
 }
 
-export const siteNames = (op) => {
+export const siteNames = (op: UpdateOperation | null) => {
   return (op?.sites || []).map((site) => site.name).join(', ')
 }
 
-export const patchSkipped = (op) => {
+export const patchSkipped = (op: UpdateOperation | null) => {
   const patch = op?.diagnosis?.patch
-  if (!patch) return false
+  if (!op || !patch) return false
   return (op.decisions || []).some(
     (decision) =>
       decision.action === 'bypass_patch' &&
@@ -73,34 +106,36 @@ export const patchSkipped = (op) => {
   )
 }
 
-const ACTION_LABEL = {
+const ACTION_LABEL: Record<string, string> = {
   retry: 'Retry',
   restore: 'Restore',
   bypass_patch: 'Skip patch',
 }
 
-export const pendingActionLabel = (pending) => {
+export const pendingActionLabel = (
+  pending: Pick<MigrationPendingAction, 'role' | 'status'> | null | undefined,
+) => {
   if (!pending) return ''
   const action = ACTION_LABEL[pending.role] || 'Action'
   return pending.status === 'running' ? `${action} in progress` : `${action} queued`
 }
 
-const STATE_TONE = {
+const STATE_TONE: Record<string, StateTone> = {
   completed: 'green',
   reverted: 'blue',
   needs_attention: 'red',
   revert_failed: 'red',
-  preparing: 'orange',
-  backing_up: 'orange',
-  updating: 'orange',
-  migrating: 'orange',
-  retrying: 'orange',
-  reverting_apps: 'orange',
-  reverting_sites: 'orange',
-  restarting: 'orange',
+  preparing: 'amber',
+  backing_up: 'amber',
+  updating: 'amber',
+  migrating: 'amber',
+  retrying: 'amber',
+  reverting_apps: 'amber',
+  reverting_sites: 'amber',
+  restarting: 'amber',
 }
 
-const STATE_LABEL = {
+const STATE_LABEL: Record<string, string> = {
   completed: 'Completed',
   reverted: 'Reverted',
   needs_attention: 'Needs attention',
@@ -115,27 +150,27 @@ const STATE_LABEL = {
   restarting: 'Restarting services',
 }
 
-export const stateTone = (state) => {
+export const stateTone = (state: string): StateTone => {
   return STATE_TONE[state] || 'gray'
 }
 
-export const stateLabel = (state) => {
+export const stateLabel = (state: string) => {
   return STATE_LABEL[state] || state
 }
 
 // Per-site lifecycle: pending -> backing up -> running -> success / failed / recovered
-export const siteStatus = (site) => {
+export const siteStatus = (site: OperationSite): SiteStatus => {
   if (site.migration_status === 'recovering')
-    return { label: 'Recovering', tone: 'orange', busy: true, value: 'recovering' }
+    return { label: 'Recovering', tone: 'amber', busy: true, value: 'recovering' }
   if (site.migration_status === 'recovered')
     return { label: 'Recovered', tone: 'green', value: 'recovered' }
   if (site.migration_status === 'success')
     return { label: 'Success', tone: 'green', value: 'success' }
   if (site.migration_status === 'running')
-    return { label: 'Migrating', tone: 'orange', busy: true, value: 'running' }
+    return { label: 'Migrating', tone: 'amber', busy: true, value: 'running' }
   if (site.migration_status === 'failed') return { label: 'Failed', tone: 'red', value: 'failed' }
   if (site.backup_status === 'backing_up')
-    return { label: 'Backing up', tone: 'orange', busy: true, value: 'backing_up' }
+    return { label: 'Backing up', tone: 'amber', busy: true, value: 'backing_up' }
   if (site.backup_status === 'failed') return { label: 'Failed', tone: 'red', value: 'failed' }
   if (site.backup_status === 'backed_up')
     return { label: 'Backed up', tone: 'blue', value: 'backed_up' }
