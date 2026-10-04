@@ -176,6 +176,21 @@ class Site:
 
         SiteCommands(self).clear_cache()
 
+    def recover(
+        self,
+        timestamp: str | None = None,
+        leave_maintenance: bool = False,
+        on_progress: Callable[[str], None] = lambda message: None,
+    ) -> str:
+        """Restore this site in-place from the latest (or named) offsite S3 backup."""
+        from pilot.core.site.recovery import SiteRecovery
+
+        return SiteRecovery(self).recover(
+            timestamp=timestamp,
+            leave_maintenance=leave_maintenance,
+            on_progress=on_progress,
+        )
+
     def uninstall_apps(
         self,
         app_names: list[str],
