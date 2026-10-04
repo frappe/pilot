@@ -13,7 +13,7 @@ const showNewBench = ref(false)
 export const useAppMenu = () => {
   const router = useRouter()
   const { setColorScheme } = useColorScheme()
-  const { session } = useSession()
+  const { session, centralServerUrl } = useSession()
 
   const logout = async () => {
     await authApi.logout()
@@ -21,7 +21,15 @@ export const useAppMenu = () => {
   }
 
   const menuItems = computed(() => [
-    ...(session.centralEnabled ? [{ label: 'Central', icon: 'lucide-cloud' }] : []),
+    ...(session.centralUrl
+      ? [
+          {
+            label: 'Central',
+            icon: 'lucide-cloud',
+            onClick: () => window.open(centralServerUrl(), '_blank', 'noopener'),
+          },
+        ]
+      : []),
     {
       label: 'Settings',
       icon: 'lucide-settings',

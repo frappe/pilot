@@ -189,3 +189,20 @@ def test_install_node_raises_on_other_linux(monkeypatch) -> None:
     monkeypatch.setattr(module, "is_macos", lambda: False)
     with pytest.raises(BenchError, match=r"install\.sh"):
         manager._install_node()
+
+
+@pytest.mark.parametrize(("version", "is_accepted"), [("v18.20.3", False), ("v24.1.0", True), ("v26.0.0", True)])
+def test_node_version_is_checked_before_yarn_runs(monkeypatch, version: str, is_accepted: bool) -> None:
+    from types import SimpleNamespace
+
+    from pilot.exceptions import BenchError
+    from pilot.managers import environment as module
+
+    monkeypatch.setattr(module, "run_command", lambda argv, **kwargs: SimpleNamespace(stdout=version.encode()))
+    monkeypatch.setattr(module, "which", lambda name: f"/usr/bin/{name}")
+
+    if is_accepted:
+        module.PythonEnvManager.require_node_version()
+    else:
+        with pytest.raises(BenchError, match=r"Node\.js 24 or later is required"):
+            module.PythonEnvManager.require_node_version()

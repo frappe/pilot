@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-
 INSTALLER = Path(__file__).parents[2] / "install.sh"
 INSTALLER_FUNCTIONS = INSTALLER.read_text().split(
     "# ── run ───────────────────────────────────────────────────────────────────────"
@@ -104,6 +103,7 @@ def test_system_packages_present_checks_distro_packages(
         f"""
 DISTRO={distro}
 base_tools_present() {{ return 0; }}
+pkg_available() {{ return 0; }}
 pkg_installed() {{ printf '%s\\n' "$1"; return 0; }}
 system_packages_present
 """,
@@ -157,10 +157,12 @@ ensure_curl() { echo ensure_curl; }
 add_distro_repos() { echo add_distro_repos; }
 pkg_update() { echo pkg_update; }
 bootstrap_packages() { echo bootstrap_packages; }
+enable_cron() { echo enable_cron; }
 install_database_engines() { echo install_database_engines; }
 install_production_packages() { echo install_production_packages; }
 disable_system_services() { echo disable_system_services; }
 install_node() { echo install_node; }
+ensure_tzdata() { echo ensure_tzdata; }
 install_system_packages
 """,
         tmp_path,
@@ -236,3 +238,103 @@ echo reached_the_end
     assert result.returncode == 0, result.stderr
     assert "Warning: tzdata-legacy is unavailable" in result.stdout
     assert "reached_the_end" in result.stdout
+
+
+def test_user_pass_never_installs_timezone_data(tmp_path: Path) -> None:
+    """The bench user may have no sudo; the root pass installs tzdata."""
+    result = run_installer_functions(
+        """
+require_linger() { :; }
+fetch_pilot() { :; }
+ensure_uv() { :; }
+add_pilot_to_path() { :; }
+ensure_admin_venv() { :; }
+chmod() { :; }
+PILOT_DIR=/nonexistent
+pkg_install() { echo "pkg_install $*"; }
+install_for_user
+""",
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "pkg_install" not in result.stdout
+
+
+def test_missing_waf_module_is_skipped_with_a_warning(tmp_path: Path) -> None:
+    """Ubuntu 22.04 does not package the ModSecurity module."""
+    result = run_installer_functions(
+        """
+DISTRO=ubuntu
+pkg_available() { return 1; }
+pkg_install() { echo "pkg_install $*"; }
+install_production_packages
+""",
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "WAF is unavailable" in result.stdout
+    assert "pkg_install nginx certbot supervisor" in result.stdout
+    assert "modsecurity" not in result.stdout.split("pkg_install", 1)[1]
+
+
+def test_arch_keeps_an_installed_mariadb_provider(tmp_path: Path) -> None:
+    """mariadb-lts provides mariadb; installing mariadb would conflict."""
+    result = run_installer_functions(
+        """
+DISTRO=arch
+pkg_installed() { case "$1" in mariadb*) return 0 ;; *) return 1 ;; esac; }
+pkg_install() { echo "pkg_install $*"; }
+install_database_engines
+""",
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "pkg_install postgresql postgresql-libs pkgconf redis"
+
+
+def test_sudoers_grant_falls_back_when_wildcards_are_rejected(tmp_path: Path) -> None:
+    """sudo-rs on Ubuntu 26.04 rejects wildcards in arguments."""
+    result = run_installer_functions(
+        """
+visudo() { ! grep -q '\\*' "$2"; }
+sudo() { echo "sudo-rs 0.2.13"; }
+install() { cp "$3" "$TARGET"; }
+TARGET=$(mktemp)
+write_sudoers_file frappe-pilot-certbot "frappe ALL=(ALL) NOPASSWD: /usr/bin/test -f /a/*/b" "frappe ALL=(ALL) NOPASSWD: /usr/bin/test"
+cat "$TARGET"
+""",
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "frappe ALL=(ALL) NOPASSWD: /usr/bin/test"
+    assert "without argument limits" in result.stderr
+
+
+def test_a_rerun_leaves_enabled_services_running(tmp_path: Path) -> None:
+    """Production setup enables nginx; a root rerun must not take every bench down."""
+    result = run_installer_functions(
+        """
+systemctl() { [ "$1" = "is-enabled" ] && [ "$2" = "nginx" ]; }
+services_to_disable
+""",
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "nginx" not in result.stdout.split()
+    assert "mariadb" in result.stdout.split()
+
+
+@pytest.mark.parametrize(("version", "is_accepted"), [("v18.20.3", False), ("v24.1.0", True), ("v26.0.0", True)])
+def test_node_24_or_later_is_accepted(version: str, is_accepted: bool, tmp_path: Path) -> None:
+    """Frappe needs Node 24 or later, and Arch and Homebrew install the current release."""
+    result = run_installer_functions(
+        f"""
+DISTRO=ubuntu
+node() {{ echo "{version}"; }}
+install_node
+echo reached_the_end
+""",
+        tmp_path,
+    )
+    assert ("reached_the_end" in result.stdout) is is_accepted
+    assert ("Node.js 24 or later" in result.stdout) is not is_accepted

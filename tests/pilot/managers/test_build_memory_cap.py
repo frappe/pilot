@@ -157,3 +157,27 @@ def test_a_compiler_error_is_left_alone(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(python_assets, "run_command", failed)
     with pytest.raises(CommandError, match="syntax error"):
         _builder().run_compiler(["yarn", "build"])
+
+
+def _build_env(monkeypatch: pytest.MonkeyPatch, **env: str) -> dict:
+    environments: list[dict] = []
+    monkeypatch.setattr(build_memory, "can_read_memory", lambda: True)
+    monkeypatch.setattr(python_assets, "can_cap_memory", lambda: True)
+    _free_memory(monkeypatch, 8192)
+    monkeypatch.setattr(python_assets, "run_command", lambda argv, **kwargs: environments.append(kwargs["env"]))
+    _builder().run_compiler(["yarn", "build"], env=env)
+    return environments[0]
+
+
+def test_node_heap_follows_the_build_memory_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Node's default heap fails large frontends long before the cap."""
+    env = _build_env(monkeypatch, NODE_OPTIONS="--enable-source-maps")
+
+    heap_mb = int(8192 * BUILD_MEMORY_SHARE) * 3 // 4
+    assert env["NODE_OPTIONS"] == f"--enable-source-maps --max-old-space-size={heap_mb}"
+
+
+def test_an_operator_node_heap_is_kept(monkeypatch: pytest.MonkeyPatch) -> None:
+    env = _build_env(monkeypatch, NODE_OPTIONS="--max-old-space-size=3000")
+
+    assert env["NODE_OPTIONS"] == "--max-old-space-size=3000"

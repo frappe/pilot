@@ -1,22 +1,21 @@
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
-import { computed, onMounted, ref } from 'vue'
 import { Badge, Button, Dialog, Dropdown, type DropdownItem, ErrorMessage, Select } from 'frappe-ui'
-
+import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { apiErrorMessage } from '@/api/client'
+import { sitesApi } from '@/api/sites'
+import { tasksApi } from '@/api/tasks'
 import EmptyState from '@/components/common/EmptyState.vue'
 import ListSkeleton from '@/components/common/ListSkeleton.vue'
 import Table from '@/components/common/Table.vue'
 import BackupConfigDialog from '@/components/sites/BackupConfigDialog.vue'
-
-import { sitesApi } from '@/api/sites'
-import { tasksApi } from '@/api/tasks'
-import { cronToLabel } from '@/utils/backup'
-import { apiErrorMessage } from '@/api/client'
-import { fmtDateTime } from '@/utils/taskFormat'
+import RestoreBackupDialog from '@/components/sites/RestoreBackupDialog.vue'
 import { useSite } from '@/composables/sites/useSite'
-import { openTaskDetailPage } from '@/utils/taskRoute'
 import type { Backup, BackupFile, BackupSchedule } from '@/types/siteBackups'
+import { cronToLabel } from '@/utils/backup'
 import { errorMessage } from '@/utils/error'
+import { fmtDateTime } from '@/utils/taskFormat'
+import { openTaskDetailPage } from '@/utils/taskRoute'
 
 interface Props {
   siteName: string
@@ -123,6 +122,14 @@ const menuOptions = (set: Backup): DropdownItem[] => {
         onClick: () => downloadFile(set, k),
       })),
     {
+      label: 'Restore…',
+      icon: 'lucide-archive-restore',
+      onClick: () => {
+        restoreTarget.value = set
+        showRestore.value = true
+      },
+    },
+    {
       label: 'Delete backup',
       icon: 'lucide-trash-2',
       theme: 'red',
@@ -162,6 +169,9 @@ const downloadFile = async (set: Backup, kind: string) => {
 
 const showDelete = ref(false)
 const deleteTarget = ref<Backup | null>(null)
+
+const showRestore = ref(false)
+const restoreTarget = ref<Backup | null>(null)
 const deleting = ref(false)
 const deleteError = ref('')
 
@@ -283,4 +293,6 @@ onMounted(() => {
       </div>
     </template>
   </Dialog>
+
+  <RestoreBackupDialog v-model:open="showRestore" :site-name="siteName" :backup="restoreTarget" />
 </template>

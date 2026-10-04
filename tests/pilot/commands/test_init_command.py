@@ -118,3 +118,18 @@ def test_init_keeps_the_dev_extra_by_default(tmp_path: Path) -> None:
         InitCommand(bench=bench).run()
 
     assert BenchConfig.read(tmp_path).install_dev_extra is True
+
+
+def test_new_bench_enables_server_scripts_unless_set_by_hand(tmp_path) -> None:
+    import json
+
+    bench = make_bench(tmp_path)
+    bench.sites_path.mkdir(parents=True)
+    config_path = bench.sites_path / "common_site_config.json"
+
+    BenchInitializer(bench)._create_bench_structure()
+    assert json.loads(config_path.read_text())["server_script_enabled"] is True
+
+    config_path.write_text(json.dumps({"server_script_enabled": False}))
+    BenchInitializer(bench)._create_bench_structure()
+    assert json.loads(config_path.read_text())["server_script_enabled"] is False

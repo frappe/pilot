@@ -27,7 +27,7 @@ class BenchRuntime:
         self.bench = bench
 
     def start(self, on_progress: Callable[[str], None]) -> None:
-        initialized = self._is_initialized()
+        initialized = self.bench.is_initialized
         process_manager = self.bench.config.production.process_manager
 
         if not process_manager:
@@ -215,7 +215,7 @@ class BenchRuntime:
             env=env,
         )
 
-        if self._is_initialized():
+        if self.bench.is_initialized:
             on_progress("\nSetup complete. Run 'pilot start' to start your bench.\n")
 
     def _admin_port(self) -> int:
@@ -227,9 +227,6 @@ class BenchRuntime:
             return BenchConfig.read(self.bench.path, validate=False).admin.port
         except (OSError, tomllib.TOMLDecodeError):
             return 7000
-
-    def _is_initialized(self) -> bool:
-        return self.bench.python.exists()
 
     def _install_python_requirements(self, on_progress: Callable[[str], None]) -> None:
         from pilot.managers.environment import ensure_uv

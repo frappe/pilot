@@ -1,0 +1,120 @@
+from __future__ import annotations
+
+import gzip
+import io
+import json
+import subprocess
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from pilot.core.site.restore import BackupRun, SiteRestore, backup_part
+from pilot.exceptions import BenchError
+
+
+def _frappe_archive(tmp_path: Path, site: str, part: str) -> Path:
+    """Built the way Frappe's backup builds it: `tar cf` of ./<site>/<part>/files from sites/."""
+    sites = tmp_path / "source-sites"
+    (sites / site / part / "files").mkdir(parents=True)
+    (sites / site / part / "files" / "logo.png").write_text("image")
+    archive = tmp_path / f"20261004_010000-{site}-{'private-' if part == 'private' else ''}files.tar"
+    subprocess.run(["tar", "-cf", str(archive), f"./{site}/{part}/files"], cwd=sites, check=True)
+    return archive
+
+
+def _site(tmp_path: Path) -> MagicMock:
+    site = MagicMock()
+    site.path = tmp_path / "target"
+    site.path.mkdir()
+    site.config.name = "target.localhost"
+    return site
+
+
+def test_backup_parts_are_told_apart_by_name() -> None:
+    names = {
+        "x-database.sql.gz": "database",
+        "x-files.tar": "public",
+        "x-private-files.tgz": "private",
+        "x-site_config_backup.json": "config",
+        "notes.txt": None,
+    }
+    assert {name: backup_part(name) for name in names} == names
+
+
+def test_files_from_another_site_land_in_this_site(tmp_path: Path) -> None:
+    site = _site(tmp_path)
+    run = BackupRun.from_paths([_frappe_archive(tmp_path, "source.localhost", "public")])
+
+    SiteRestore(site).restore(run, ["public"], on_progress=lambda message: None)
+
+    assert (site.path / "public" / "files" / "logo.png").read_text() == "image"
+    site.restore.assert_not_called()  # files only: the database is left alone
+    site.migrate.assert_called_once()
+    assert site.set_maintenance_mode.call_args_list[-1].args == (False,)
+
+
+def test_a_restored_database_brings_its_apps_and_encryption_key(tmp_path: Path) -> None:
+    site = _site(tmp_path)
+    config = tmp_path / "20261004_010000-source-site_config_backup.json"
+    config.write_text(json.dumps({"encryption_key": "source-key"}))
+    database = tmp_path / "20261004_010000-source-database.sql.gz"
+    database.write_bytes(b"")
+
+    with patch("pilot.core.site.config.query_installed_apps_via_db", return_value=["frappe", "payments"]):
+        SiteRestore(site).restore(BackupRun.from_paths([database, config]), ["database"], lambda message: None)
+
+    site.restore.assert_called_once_with(str(database))
+    site.set_config_values.assert_called_once_with(
+        {"installed_apps": ["frappe", "payments"], "encryption_key": "source-key"}
+    )
+
+
+def test_a_failed_restore_keeps_the_site_in_maintenance(tmp_path: Path) -> None:
+    site = _site(tmp_path)
+    site.migrate.side_effect = BenchError("patch failed")
+    messages: list[str] = []
+    run = BackupRun.from_paths([_frappe_archive(tmp_path, "source.localhost", "public")])
+
+    with pytest.raises(BenchError, match="patch failed"):
+        SiteRestore(site).restore(run, ["public"], messages.append)
+
+    assert site.set_maintenance_mode.call_args_list[-1].args == (True,)
+    assert "maintenance mode" in messages[-1]
+
+
+def test_a_missing_part_is_refused_before_anything_changes(tmp_path: Path) -> None:
+    site = _site(tmp_path)
+
+    with pytest.raises(BenchError, match="no private file"):
+        SiteRestore(site).restore(BackupRun(), ["private"], lambda message: None)
+
+    site.set_maintenance_mode.assert_not_called()
+
+
+def test_a_dump_streams_into_the_client(tmp_path: Path, monkeypatch) -> None:
+    from pilot.managers.database import mariadb as module
+
+    output = tmp_path / "imported.sql"
+    manager = module.MariaDBManager.__new__(module.MariaDBManager)
+    manager.config = SimpleNamespace(root_password="secret")
+    monkeypatch.setattr(module.MariaDBManager, "_client_command", lambda self: ["sh", "-c", f"cat > {output}", "x"])
+
+    manager.import_sql("site_db", gzip.GzipFile(fileobj=io.BytesIO(gzip.compress(b"INSERT 1;\n" * 1000))))
+
+    assert output.read_bytes() == b"INSERT 1;\n" * 1000
+
+
+def test_an_archive_cannot_write_outside_the_files_directory(tmp_path: Path) -> None:
+    site = _site(tmp_path)
+    (site.path / "site_config.json").write_text('{"db_name": "real"}')
+    sites = tmp_path / "evil-sites"
+    (sites / "x" / "public" / "files").mkdir(parents=True)
+    (sites / "x" / "site_config.json").write_text('{"db_name": "attacker"}')
+    archive = tmp_path / "20261004_010000-x-files.tar"
+    subprocess.run(["tar", "-cf", str(archive), "./x/public/files", "./x/site_config.json"], cwd=sites, check=True)
+
+    SiteRestore(site).extract_files(archive, "public")
+
+    assert json.loads((site.path / "site_config.json").read_text()) == {"db_name": "real"}

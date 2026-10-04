@@ -33,6 +33,7 @@ from pilot.core.bench import Bench
 from pilot.core.site.login import site_url
 from pilot.internal.site_paths import site_exists
 from pilot.internal.validators import validate_site_name
+from pilot.tasks.build import BuildTask
 from pilot.tasks.clear_cache import ClearCacheTask
 from pilot.tasks.drop_site import DropSiteTask
 from pilot.tasks.new_site import NewSiteTask
@@ -162,6 +163,7 @@ def drop_site(name: str):
         task_id = DropSiteTask.queue(
             Bench(bench_root),
             site=name,
+            no_backup=request.args.get("no_backup") in ("1", "true"),
             idempotency_key=request.headers.get("Idempotency-Key"),
             resource_key=f"site:{name.lower()}",
         )
@@ -256,6 +258,25 @@ def clear_cache(name: str):
     return accepted_task_response(bench_root, task_id)
 
 
+@sites_bp.post("/<name>/actions/build-assets")
+@require_scope(site_name)
+def build_assets(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    if not site_exists(bench_root, name):
+        return site_not_found()
+    try:
+        task_id = BuildTask.queue(
+            Bench(bench_root),
+            site=name,
+            idempotency_key=request.headers.get("Idempotency-Key"),
+            # The built assets are shared by every site, as an update's are.
+            resource_key=[f"site:{name.lower()}", "bench:update"],
+        )
+    except Exception as error:
+        return task_failure(error)
+    return accepted_task_response(bench_root, task_id)
+
+
 @sites_bp.post("/<name>/actions/migrate")
 @require_scope(site_name)
 def migrate_site(name: str):
@@ -263,7 +284,7 @@ def migrate_site(name: str):
     if not site_exists(bench_root, name):
         return site_not_found()
     bench = Bench(bench_root)
-    operation = bench.migrations.create_site_migrate(name)
+    operation = bench.migrations.create_site_migrate(name, with_safeguards=False)
     try:
         task_id = operation.begin()
     except Exception as error:

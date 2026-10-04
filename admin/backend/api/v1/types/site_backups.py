@@ -19,6 +19,16 @@ class Backup(TypedDict):
     files: list[BackupFile]
 
 
+class RemoteBackup(TypedDict):
+    timestamp: str
+    created_at: str
+    parts: list[str]
+
+
+class RemoteBackupList(TypedDict):
+    backups: list[RemoteBackup]
+
+
 class BackupSchedule(TypedDict):
     schedule: str | None
     retention: BackupConfig | None

@@ -38,6 +38,7 @@ Supported managers are `systemd` and `supervisor`.
 A new bench deploys one bench process plus admin and the two redis servers, because
 `[lite_mode] enabled` is the default. Turn lite mode off and the set becomes web,
 socketio, admin, workers, and redis - see [Lite Mode](configuration.md#lite-mode).
+Supervisor also runs a `schedule` process; systemd's worker pool runs the scheduler itself.
 
 Each workload unit sets `LimitNOFILE=65535`. A systemd user unit gets 1024
 descriptors by default, which is too few for a lite-mode bench process and for
@@ -50,6 +51,20 @@ Runtime commands:
 - `pilot restart`
 
 `pilot restart` targets the production workload. Local development start/stop uses bench runtime managers.
+
+### Supervisor Extensions
+
+Supervisor benches may define app-specific processes in `config/services/supervisor.d/*.conf`. Pilot includes this directory from its generated `config/services/supervisord.conf` and preserves its fragments when production configuration is regenerated.
+
+After adding or changing a fragment, load it through the bench-owned Supervisor instance:
+
+```bash
+supervisorctl -c config/services/supervisord.conf reread
+supervisorctl -c config/services/supervisord.conf update
+supervisorctl -c config/services/supervisord.conf status
+```
+
+Programs declared only in extension fragments are not members of Pilot's generated workload group. Consequently, `pilot restart` does not restart them; manage those programs or their explicitly declared Supervisor group with `supervisorctl`.
 
 ## Nginx And TLS
 
@@ -69,6 +84,10 @@ pilot setup production --admin-domain admin.example.com --tls --letsencrypt-emai
 You can also set `letsencrypt.email` in `common_config.toml` before setup.
 When an upstream proxy terminates HTTPS, set `admin.tls = false` so Pilot does not change site SSL settings or request certificates.
 
+When requests arrive from configured proxy servers, Pilot preserves the forwarded scheme supplied by an edge that terminates TLS. Socket.IO also preserves an explicit browser `Origin` and reconstructs a same-origin value from the forwarded scheme and host only when that header is absent.
+
+A vhost that receives TLS through PROXY protocol v2 uses its local `$scheme` instead, because the PROXY protocol does not carry `X-Forwarded-Proto`. The scheme is chosen per vhost, so edge-terminated and passthrough vhosts can share one bench.
+
 ## Admin Domain
 
 The Admin backend runs behind nginx in production. The public Admin port and the internal Gunicorn port come from `[admin]`.
@@ -86,6 +105,8 @@ Asset builds (`pilot build`, and rebuilds triggered from app updates) run capped
 The cap applies only to hosts with `systemd-run` and cgroup memory delegation available; where neither is available the build runs uncapped with a warning. Concurrent builds are not coordinated - each sizes its cap independently from memory free at the time it starts.
 
 To set a fixed cap instead, add `memory_limit_mb` under `[build]` in `bench.toml`. Leave it unset (or 0) to keep the automatic 85% sizing.
+
+Node.js builds get a heap of 75% of the cap through `NODE_OPTIONS=--max-old-space-size`. A `--max-old-space-size` that you set in `NODE_OPTIONS` takes priority.
 
 ## Operational Notes
 

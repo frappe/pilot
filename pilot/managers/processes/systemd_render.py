@@ -46,7 +46,10 @@ class SystemdRenderer(ServiceRenderer):
             f"[Unit]\n"
             f"Description={self.bench_name} admin\n"
             f"Requires={socket_name}\n"
-            f"After={socket_name}\n\n"
+            f"After={socket_name}\n"
+            # A crash loop must not trip the start limit: that fails the socket and
+            # nginx answers 502 until someone resets it.
+            f"StartLimitIntervalSec=0\n\n"
             f"[Service]\n"
             f"Type=simple\n"
             f"WorkingDirectory={pd.working_dir}\n"

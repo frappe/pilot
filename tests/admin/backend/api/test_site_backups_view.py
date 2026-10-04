@@ -33,7 +33,7 @@ def _make_site(bench_root: Path, name: str, **config) -> None:
 
 
 def _make_backup_file(bench_root: Path, site: str, timestamp: str, suffix: str) -> Path:
-    backups_dir = bench_root / "sites" / site / "private" / "backups"
+    backups_dir = bench_root / "sites" / site / "backups"
     backups_dir.mkdir(parents=True, exist_ok=True)
     path = backups_dir / f"{timestamp}-{site}-{suffix}"
     path.write_text("data")
@@ -292,3 +292,17 @@ def test_backup_schedule_delete_returns_no_content(tmp_path: Path) -> None:
     assert response.status_code == 204
     assert response.data == b""
     remove_schedule.assert_called_once_with("site.localhost")
+
+
+def test_backup_schedule_reports_missing_cron(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    _make_site(bench_root, "site.localhost")
+    client = _client(bench_root)
+
+    with patch("shutil.which", return_value=None):
+        response = client.put("/api/v1/sites/site.localhost/backup-schedule", json={"schedule": "0 2 * * *"})
+
+    assert response.status_code == 503
+    error = response.get_json()["error"]
+    assert error["code"] == "cron_unavailable"
+    assert "Install cron" in error["message"]

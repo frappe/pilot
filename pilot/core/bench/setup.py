@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import sys
 from collections.abc import Callable
 from typing import TYPE_CHECKING
@@ -8,7 +7,6 @@ from typing import TYPE_CHECKING
 from pilot.core.bench.admin_domain import ProductionAdminDomain
 from pilot.core.bench.telemetry import apply_credential as apply_telemetry_credential
 from pilot.exceptions import BenchError
-from pilot.utils import write_private_text
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -237,13 +235,11 @@ class ProductionSetup:
             data.get("production", {}).pop("nginx", None)
 
     def _write_dns_multitenancy(self) -> None:
+        from pilot.config.common_site_config import update_common_site_config
+
         self.bench.sites_path.mkdir(parents=True, exist_ok=True)
-        common_config_path = self.bench.sites_path / "common_site_config.json"
-        existing_data: dict = {}
-        if common_config_path.exists():
-            existing_data = json.loads(common_config_path.read_text())
-        existing_data["dns_multitenant"] = 1
-        write_private_text(common_config_path, json.dumps(existing_data, indent=2))
+        with update_common_site_config(self.bench.sites_path) as config:
+            config["dns_multitenant"] = 1
 
     def _setup_supervisor(self) -> None:
         import subprocess

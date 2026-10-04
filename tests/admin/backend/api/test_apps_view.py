@@ -268,3 +268,35 @@ def test_app_update_checks_fetches_each_cloned_app(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert response.get_json() == {"apps": [{"name": "suite"}]}
     repo.fetch.assert_called_once_with("develop", timeout=60)
+
+
+def test_switch_branch_locks_every_site_with_the_app(tmp_path: Path) -> None:
+    import json
+
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    _make_cloned_app(bench_root, "erpnext")
+
+    with (
+        patch("pilot.internal.tasks.runner.task_workers.wake", return_value=False),
+        patch("pilot.core.bench.migration.store.MigrationStore.sites_for_apps", return_value=["a.localhost"]),
+    ):
+        response = client.post("/api/v1/apps/erpnext/actions/switch-branch", json={"branch": "version-16"})
+
+    assert response.status_code == 202
+    task_dir = bench_root / "tasks" / response.get_json()["task_id"]
+    metadata = json.loads((task_dir / "meta.json").read_text())
+    assert metadata["args"]["sites"] == ["a.localhost"]
+    assert set(metadata["resource_keys"]) == {"bench:update", "site:a.localhost"}
+
+
+def test_switch_branch_rejects_a_bad_branch_and_an_unknown_app(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    _make_cloned_app(bench_root, "erpnext")
+
+    bad_branch = client.post("/api/v1/apps/erpnext/actions/switch-branch", json={"branch": "--upload-pack=x"})
+    unknown_app = client.post("/api/v1/apps/nope/actions/switch-branch", json={"branch": "develop"})
+
+    assert bad_branch.status_code == 422
+    assert unknown_app.status_code == 404

@@ -1,14 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
 import { Button, Dropdown, type DropdownItem } from 'frappe-ui'
-
+import { computed, onMounted, ref } from 'vue'
+import SwitchBranchDialog from '@/components/apps/SwitchBranchDialog.vue'
+import UninstallAppDialog from '@/components/apps/UninstallAppDialog.vue'
 import MarketplaceAppCard from '@/components/marketplace/MarketplaceAppCard.vue'
 import MarketplaceAppCardSkeleton from '@/components/marketplace/MarketplaceAppCardSkeleton.vue'
-import UninstallAppDialog from '@/components/apps/UninstallAppDialog.vue'
-
-import { useSite } from '@/composables/sites/useSite'
 import { useAppRegistry } from '@/composables/apps/useAppRegistry'
 import { useSession } from '@/composables/auth/useSession'
+import { useSite } from '@/composables/sites/useSite'
 import { toSentenceCase } from '@/utils/format'
 
 interface Props {
@@ -71,6 +70,14 @@ const appObjects = computed<AppCardEntry[]>(() =>
 const showUninstall = ref(false)
 const uninstallTarget = ref<AppCardEntry | null>(null)
 
+const showSwitchBranch = ref(false)
+const switchBranchApp = ref<AppCardEntry | null>(null)
+const switchBranchTarget = computed(() => {
+  const app = switchBranchApp.value
+  const detail = app && appDetailMap.value[app.name]
+  return app && detail ? { ...app, branch: detail.branch, repo: detail.repo } : null
+})
+
 const openLink = (url: string) => {
   window.open(url, '_blank', 'noopener,noreferrer')
 }
@@ -93,6 +100,17 @@ const menuOptions = (app: AppCardEntry): DropdownItem[] => {
       label: 'Documentation',
       icon: 'lucide-book-open',
       onClick: () => openLink(app.documentation),
+    })
+
+  // Branches are listed through the GitHub provider.
+  if (appDetailMap.value[app.name]?.repo?.includes('github.com'))
+    options.push({
+      label: 'Switch branch',
+      icon: 'lucide-git-branch',
+      onClick: () => {
+        switchBranchApp.value = app
+        showSwitchBranch.value = true
+      },
     })
 
   if (app.name !== 'frappe')
@@ -148,6 +166,8 @@ onMounted(() => {
       </MarketplaceAppCard>
     </template>
   </div>
+
+  <SwitchBranchDialog v-model:open="showSwitchBranch" :app="switchBranchTarget" />
 
   <UninstallAppDialog
     v-model:open="showUninstall"

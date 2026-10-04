@@ -100,16 +100,16 @@ class Parser:
         nodes: list[Node] = []
 
         while (token := self.current()) is not None:
+            if not TOKEN_RE.fullmatch(token):
+                nodes.append(self.parse_text())
+                continue
+
             if token.startswith("{{"):
                 nodes.append(self.parse_expr())
                 continue
 
             if token.startswith("{#"):
                 self.consume()
-                continue
-
-            if not token.startswith("{%"):
-                nodes.append(Text(self.consume()))
                 continue
 
             statement = self.statement(token)
@@ -121,6 +121,13 @@ class Parser:
             nodes.append(self.parse_statement(keyword, statement))
 
         return nodes
+
+    def parse_text(self) -> Text:
+        token = self.consume()
+        if any(opener in token for opener in ("{{", "{%", "{#")):
+            raise ValueError(f"Unterminated tag: {token[:40]!r}")
+
+        return Text(token)
 
     def parse_expr(self) -> Expr:
         token = self.consume()

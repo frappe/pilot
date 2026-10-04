@@ -54,7 +54,9 @@ const COMMAND_LABELS: Record<string, string> = {
   'drop-site': 'Drop Site',
   'backup-site': 'Backup Site',
   'delete-backup': 'Delete Backup',
-  build: 'Build Bench',
+  build: 'Build Assets',
+  'rename-site': 'Rename Site',
+  'restore-site': 'Restore Site',
   update: 'Update Bench',
   'get-and-install-app': 'Fetch & Install App',
   'add-and-install-app': 'Fetch & Install App on All Sites',
@@ -78,6 +80,8 @@ export const TASK_TYPES = [
       'new-site',
       'new-site-from-backup',
       'drop-site',
+      'rename-site',
+      'restore-site',
       'reinstall-site',
       'revert-site',
       'clear-cache',
@@ -156,6 +160,9 @@ const SITE_ARG_KEY: Record<string, string> = {
   'delete-backup': 'site',
   'get-and-install-app': 'site',
   'reinstall-site': 'site',
+  'rename-site': 'site',
+  'restore-site': 'site',
+  build: 'site',
   'new-site': 'name',
   'new-site-from-backup': 'name',
 }
@@ -191,6 +198,7 @@ const REDIRECT_ON_SUCCESS_COMMANDS = [
   'uninstall-app',
   'get-and-install-app',
   'drop-site',
+  'rename-site',
 ]
 
 const APP_ARG_KEY: Record<string, string> = {
@@ -209,6 +217,8 @@ export const redirectRouteOnSuccess = (task: ScopedTask) => {
   if (!REDIRECT_ON_SUCCESS_COMMANDS.includes(task.command)) return null
   if (task.command === 'drop-site') return { name: 'Sites' }
   if (task.command === 'new-app') return { name: 'Marketplace' }
+  if (task.command === 'rename-site' && typeof task.args?.new_name === 'string')
+    return { name: 'SiteDetail', params: { name: task.args.new_name } }
   const route = siteRoute(task)
   if (!route) return null
   const appKey = APP_ARG_KEY[task.command]

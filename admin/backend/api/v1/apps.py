@@ -8,13 +8,14 @@ from flask import Blueprint, current_app, jsonify, request
 from admin.backend.api.responses import accepted_task_response, error_response
 from admin.backend.providers.apps import AppProvider
 from pilot.core.bench import Bench
-from pilot.exceptions import RegistryUnavailableError
+from pilot.exceptions import RegistryUnavailableError, TaskConflictError
 from pilot.internal.git import GitRepo
-from pilot.internal.validators import validate_app_name, validate_repo_url
+from pilot.internal.validators import validate_app_name, validate_branch_name, validate_repo_url
 from pilot.tasks.fetch_app_updates import FetchAppUpdatesTask
 from pilot.tasks.get_and_install_app import GetAndInstallAppTask
 from pilot.tasks.get_app import GetAppTask
 from pilot.tasks.remove_app import RemoveAppTask
+from pilot.tasks.switch_branch import SwitchBranchTask
 
 apps_bp = Blueprint("apps", __name__)
 marketplace_bp = Blueprint("marketplace", __name__)
@@ -171,6 +172,29 @@ def remove(name: str):
     except Exception:
         return error_response("app_removal_failed", "Could not start app removal.", 500)
 
+    return accepted_task_response(bench_root, task_id)
+
+
+@apps_bp.post("/<name>/actions/switch-branch")
+def switch_branch(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    if validate_app_name(name) or not (bench_root / "apps" / name).is_dir():
+        return error_response("app_not_found", f"App '{name}' not found in bench.", 404)
+    data = request.get_json(silent=True)
+    branch = data.get("branch") if isinstance(data, dict) else None
+    if not isinstance(branch, str) or not branch.strip():
+        return error_response("invalid_branch", "Choose a branch.", 422)
+    if error := validate_branch_name(branch.strip()):
+        return error_response("invalid_branch", error, 422)
+
+    try:
+        task_id = SwitchBranchTask.queue_switch(
+            Bench(bench_root), name, branch.strip(), idempotency_key=request.headers.get("Idempotency-Key")
+        )
+    except TaskConflictError as error:
+        return error_response("task_conflict", str(error), 409)
+    except Exception:
+        return error_response("branch_switch_failed", "Could not start the branch switch.", 500)
     return accepted_task_response(bench_root, task_id)
 
 

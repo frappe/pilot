@@ -6,6 +6,7 @@ import subprocess
 import time
 from collections.abc import Callable, Iterable
 from contextlib import ExitStack, contextmanager
+from io import BufferedIOBase
 from pathlib import Path
 from typing import NoReturn
 
@@ -22,6 +23,7 @@ from pilot.core.mariadb_memory import (
     calculate_mariadb_memory,
     calculate_mariadb_variable_limits,
     live_sizing_values,
+    memory_high_for,
 )
 from pilot.exceptions import DatabaseError
 from pilot.internal.atomic_file import (
@@ -33,6 +35,7 @@ from pilot.managers.platform import is_macos, which
 from pilot.utils import cli_root, run_command
 
 _CLIENT_TIMEOUT = 5
+_IMPORT_CHUNK_BYTES = 1024 * 1024
 _MEMORY_RELEASE_TIMEOUT = 60
 _MANAGED_CONFIG_HEADER = "# Managed by Pilot's database variable editor.\n"
 _OPTION_NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
@@ -334,6 +337,28 @@ class MariaDBManager(UserOwnedDBManager):
                 return
             time.sleep(1)
         self._set_runtime_memory_limits(sizing)
+
+    def raise_memory_high(self) -> bool:
+        """Raise the unit's MemoryHigh to `memory_high_for` its MemoryMax, on disk and live.
+        Never lowers a limit or restarts the server. Returns whether anything changed."""
+        if is_macos() or self.config.existing or not self.unit_path.exists():
+            return False
+        current_high = self._unit_memory_mb("MemoryHigh")
+        current_max = self._unit_memory_mb("MemoryMax")
+        if current_high is None or current_max is None:
+            return False
+        memory_high_mb = memory_high_for(current_max)
+        if memory_high_mb <= current_high:
+            return False
+        unit = re.sub(r"^MemoryHigh=.*$", f"MemoryHigh={memory_high_mb}M", self.unit_path.read_text(), flags=re.M)
+        self.unit_path.write_text(unit)
+        env = self._systemctl_env()
+        run_command(self._systemctl("daemon-reload"), env=env)
+        run_command(
+            self._systemctl("set-property", "--runtime", self._UNIT_NAME, f"MemoryHigh={memory_high_mb}M"),
+            env=env,
+        )
+        return True
 
     def _set_runtime_memory_limits(self, sizing: MariaDBMemorySizing) -> None:
         run_command(
@@ -784,6 +809,8 @@ class MariaDBManager(UserOwnedDBManager):
         raise DatabaseError(f"MariaDB did not become healthy within {timeout:.0f}s.")
 
     def is_healthy(self) -> bool:
+        import pymysql
+
         try:
             connection = self.connect()
             try:
@@ -792,7 +819,7 @@ class MariaDBManager(UserOwnedDBManager):
                     return cursor.fetchone() is not None
             finally:
                 connection.close()
-        except Exception:
+        except (pymysql.Error, OSError):
             return False
 
     def _total_memory_mb(self) -> int:
@@ -898,6 +925,34 @@ class MariaDBManager(UserOwnedDBManager):
             timeout=_CLIENT_TIMEOUT,
             env={**os.environ, "MYSQL_PWD": self.config.root_password},
         )
+
+    def recreate_database(self, db_name: str) -> None:
+        """Drop and create an empty database. Grants name the database, so they survive."""
+        database = db_name.replace("`", "")
+        self.run_admin_sql(
+            f"DROP DATABASE IF EXISTS `{database}`;\n"
+            f"CREATE DATABASE `{database}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+        )
+
+    def import_sql(self, db_name: str, dump: BufferedIOBase) -> None:
+        """Pipe an SQL dump into `db_name` as it is read."""
+        process = subprocess.Popen(
+            [*self._client_command(), db_name.replace("`", "")],
+            stdin=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env={**os.environ, "MYSQL_PWD": self.config.root_password},
+        )
+        assert process.stdin is not None and process.stderr is not None
+        try:
+            while chunk := dump.read(_IMPORT_CHUNK_BYTES):
+                process.stdin.write(chunk)
+        except BrokenPipeError:
+            pass  # the client exited; its stderr says why
+        finally:
+            process.stdin.close()
+        error = process.stderr.read().decode(errors="replace").strip()
+        if process.wait() != 0:
+            raise DatabaseError(f"The database import failed: {error}")
 
     @contextmanager
     def temporary_setup_user(self, db_name: str):

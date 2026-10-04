@@ -140,12 +140,21 @@ class Bench:
         return self.path / "config"
 
     @property
+    def uploads_path(self) -> Path:
+        """Where uploaded backups wait for the restore that removes them."""
+        return self.path / "tmp" / "uploads"
+
+    @property
     def pids_path(self) -> Path:
         return self.path / "pids"
 
     @property
     def python(self) -> Path:
         return self.env_path / "bin" / "python"
+
+    @property
+    def is_initialized(self) -> bool:
+        return self.python.exists()
 
     @property
     def frappe_call(self) -> list[str]:
@@ -159,11 +168,10 @@ class Bench:
 
         return any(has_app_disabling(self.path, site.config.name) for site in self.sites())
 
-    @property
-    def db_root_args(self) -> list[str]:
+    def get_db_root_args(self, db_type: str) -> list[str]:
         from pilot.core.bench.config_files import BenchConfigFiles
 
-        return BenchConfigFiles(self).db_root_args
+        return BenchConfigFiles(self).get_db_root_args(db_type)
 
     @property
     def postgres_root_password(self) -> str:

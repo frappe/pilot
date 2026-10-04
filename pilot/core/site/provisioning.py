@@ -54,6 +54,7 @@ class SiteProvisioner:
         self.install_apps(site, on_progress)
         self.write_pilot_communication_config(site)
         self.bench.write_common_site_config()
+        site.enable_scheduler()
         on_progress(f"\nSite '{self.name}' created successfully.")
         self.build_missing_assets()
         self.add_to_hosts(site)

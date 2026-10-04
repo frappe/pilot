@@ -638,3 +638,16 @@ def test_task_retention_limit(tmp_path: Path) -> None:
         and (entry / "status").read_text().strip() in {"success", "failed", "killed"}
     ]
     assert len(remaining_completed) == TASK_RETENTION_LIMIT
+
+
+def test_a_running_task_stream_ends_when_the_worker_drains(tmp_path: Path) -> None:
+    """Otherwise an open dashboard holds every Admin restart for the full graceful timeout."""
+    task_id = "20260521-143022-aabbcc"
+    task_dir = _make_task_dir(tmp_path / "tasks", task_id, status="running")
+    (task_dir / "output.log").write_text("alpha\n")
+
+    with patch("os.kill", return_value=None):
+        events = list(TaskReader(tmp_path).stream_output(task_id, should_stop=lambda: True))
+
+    assert {"type": "line", "line": "alpha"} in events
+    assert all(event["type"] != "done" for event in events)

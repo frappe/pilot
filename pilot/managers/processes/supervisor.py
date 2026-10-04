@@ -51,6 +51,7 @@ class SupervisorRenderer(ServiceRenderer):
         admin = [pd for pd in defs if pd.name == "admin"]
         admin_group = f"[group:{self.bench_name}-admin]\nprograms={self._csv(admin)}\n\n" if admin else ""
         programs = "\n".join(self.render(pd) for pd in defs)
+        include_glob = Path(sock).parent / "supervisor.d" / "*.conf"
         return (
             f"[unix_http_server]\n"
             f"file={sock}\n"
@@ -66,6 +67,8 @@ class SupervisorRenderer(ServiceRenderer):
             f"supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface\n\n"
             f"[supervisorctl]\n"
             f"serverurl=unix://{sock}\n\n"
+            f"[include]\n"
+            f"files={include_glob}\n\n"
             f"[group:{self.bench_name}]\n"
             f"programs={self._csv(workload)}\n\n"
             f"{admin_group}"
@@ -91,6 +94,11 @@ class SupervisorProcessManager(ManagedProcessManager):
         return self.supervisor_dir / "supervisord.conf"
 
     @property
+    def supervisor_include_dir(self) -> Path:
+        """Stable extension directory preserved across Pilot regeneration."""
+        return self.supervisor_dir / "supervisor.d"
+
+    @property
     def supervisor_sock(self) -> Path:
         return self.supervisor_dir / "supervisord.sock"
 
@@ -113,6 +121,7 @@ class SupervisorProcessManager(ManagedProcessManager):
         self._ensure_gunicorn_config()
         GunicornManager(self.bench).generate_admin_config()
         self.supervisor_dir.mkdir(parents=True, exist_ok=True)
+        self.supervisor_include_dir.mkdir(parents=True, exist_ok=True)
         renderer = SupervisorRenderer(self.bench.config.name, self.bench.logs_path)
         self.supervisor_conf_path.write_text(
             renderer.render_supervisord_conf(self._prod_process_definitions(), self.supervisor_sock, self.supervisor_pid)

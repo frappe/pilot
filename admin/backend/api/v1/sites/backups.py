@@ -17,7 +17,7 @@ from admin.backend.api.v1.sites.shared import (
 )
 from admin.backend.middleware import require_scope
 from pilot.core.bench import Bench
-from pilot.exceptions import BenchError
+from pilot.exceptions import BenchError, CronError
 from pilot.internal.site_paths import site_exists
 from pilot.internal.validators import validate_cron_expression
 from pilot.tasks.backup_site import BackupSiteTask
@@ -163,6 +163,8 @@ def get_backup_schedule(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
         schedule = Bench(bench_root).site(name).backups.schedule()
+    except CronError as error:
+        return error_response("cron_unavailable", str(error), 503)
     except Exception:
         return internal_error("Could not read the backup schedule.")
     return jsonify(schedule)
@@ -188,6 +190,8 @@ def set_backup_schedule(name: str):
         return error_response("invalid_retention", retention, 422)
     try:
         saved = backups.set_schedule(schedule, retention)
+    except CronError as error:
+        return error_response("cron_unavailable", str(error), 503)
     except Exception:
         return internal_error("Could not update the backup schedule.")
     return jsonify(saved)
@@ -199,6 +203,8 @@ def delete_backup_schedule(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
         Bench(bench_root).site(name).backups.clear_schedule()
+    except CronError as error:
+        return error_response("cron_unavailable", str(error), 503)
     except Exception:
         return internal_error("Could not remove the backup schedule.")
     return no_content_response()

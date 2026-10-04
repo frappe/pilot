@@ -1,6 +1,6 @@
 import { apiUrl, request, unwrap } from '@/api/client'
 import type { DisabledApp, EnabledApp, SiteApps } from '@/types/siteApps'
-import type { Backup, BackupSchedule } from '@/types/siteBackups'
+import type { Backup, BackupSchedule, RemoteBackupList } from '@/types/siteBackups'
 import type { DnsRecords, SiteDomains } from '@/types/siteDomains'
 import type { SiteAnalytics, SiteUptime } from '@/types/siteMonitoring'
 import type { SiteStorageReport } from '@/types/siteStorage'
@@ -53,14 +53,47 @@ export const sitesApi = {
   clearCache: (name: string): Promise<TaskPayload> =>
     request.post(`sites/${encodeURIComponent(name)}/actions/clear-cache`).json(),
 
+  restore: (name: string, payload: Record<string, unknown>): Promise<TaskPayload> =>
+    request.post(`sites/${encodeURIComponent(name)}/actions/restore`, { json: payload }).json(),
+
+  remoteBackups: (name: string, remoteSite: string, password: string): Promise<RemoteBackupList> =>
+    request
+      .post(`sites/${encodeURIComponent(name)}/actions/remote-backups`, {
+        json: { remote_site: remoteSite, password },
+      })
+      .json(),
+
+  // Large archives take as long as the upload does.
+  restoreUpload: (name: string, form: FormData): Promise<TaskPayload> =>
+    request
+      .post(`sites/${encodeURIComponent(name)}/actions/restore-upload`, {
+        body: form,
+        timeout: false,
+      })
+      .json(),
+
+  buildAssets: (name: string): Promise<TaskPayload> =>
+    request.post(`sites/${encodeURIComponent(name)}/actions/build-assets`).json(),
+
+  rename: (name: string, newName: string, keepOldHostname: boolean): Promise<TaskPayload> =>
+    request
+      .post(`sites/${encodeURIComponent(name)}/actions/rename`, {
+        json: { new_name: newName, keep_old_hostname: keepOldHostname },
+      })
+      .json(),
+
   migrate: (name: string): Promise<MigrationStarted> =>
     request.post(`sites/${encodeURIComponent(name)}/actions/migrate`).json(),
 
   reinstall: (name: string): Promise<TaskPayload> =>
     request.post(`sites/${encodeURIComponent(name)}/actions/reinstall`).json(),
 
-  drop: (name: string): Promise<TaskPayload> =>
-    request.delete(`sites/${encodeURIComponent(name)}`).json(),
+  drop: (name: string, { noBackup = false }: { noBackup?: boolean } = {}): Promise<TaskPayload> =>
+    request
+      .delete(`sites/${encodeURIComponent(name)}`, {
+        searchParams: noBackup ? { no_backup: '1' } : {},
+      })
+      .json(),
 
   apps: {
     list: (name: string): Promise<SiteApps> =>

@@ -199,6 +199,17 @@ def test_supervisor_conf_program_names_in_group(tmp_path: Path) -> None:
     assert "test-bench-worker-default-1" in conf
 
 
+def test_supervisor_conf_includes_persistent_extension_directory(tmp_path: Path) -> None:
+    from pilot.managers.processes.supervisor import SupervisorRenderer
+
+    conf = SupervisorRenderer("test-bench", tmp_path / "logs").render_supervisord_conf(
+        [], tmp_path / "services" / "s.sock", tmp_path / "services" / "s.pid"
+    )
+
+    assert "[include]" in conf
+    assert f"files={tmp_path}/services/supervisor.d/*.conf" in conf
+
+
 def test_supervisor_conf_redis_gets_stop_timeout(tmp_path: Path) -> None:
     """The redis stop grace must reach the supervisor renderer, not just systemd
     (the consistency fix: stop_timeout lives on the definition now)."""
@@ -237,6 +248,21 @@ def test_supervisor_generate_config_writes_file(tmp_path: Path) -> None:
     ):
         mgr.write_config()
     assert mgr.supervisor_conf_path.exists()
+
+
+def test_supervisor_generate_config_preserves_extension_fragments(tmp_path: Path) -> None:
+    mgr = _make_supervisor_manager(tmp_path)
+    fragment = mgr.supervisor_include_dir / "custom.conf"
+    fragment.parent.mkdir(parents=True)
+    fragment.write_text("[program:custom]\ncommand=/bin/true\n")
+
+    with (
+        patch("pilot.managers.processes.supervisor.AdminEnvManager"),
+        patch.object(mgr, "_prod_process_definitions", return_value=[]),
+    ):
+        mgr.write_config()
+
+    assert fragment.read_text() == "[program:custom]\ncommand=/bin/true\n"
 
 
 def test_supervisor_conf_no_user_directive(tmp_path: Path) -> None:
@@ -688,3 +714,46 @@ def test_supervised_reload_workers_noop_when_not_running() -> None:
     fake._is_running = False
     fake.manager.reload_workers()
     assert fake.calls == []
+
+
+def _admin_activation(tmp_path: Path, monkeypatch, socket_active: bool, service_changed: bool, socket_changed: bool):
+    """The systemctl calls `pilot start` makes for the admin."""
+    import subprocess
+    from types import SimpleNamespace
+
+    mgr = _make_systemd_manager(tmp_path)
+    mgr.admin_service_changed = service_changed
+    mgr.admin_socket_changed = socket_changed
+    calls: list[list[str]] = []
+
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        return SimpleNamespace(returncode=0 if socket_active else 3)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr("pilot.managers.processes.systemd.run_command", lambda argv, **kwargs: calls.append(argv))
+    monkeypatch.setattr(type(mgr), "user_unit_dir", tmp_path)
+    (tmp_path / mgr._unit_name("admin")).touch()
+
+    mgr._control_admin("start", {})
+    return [call[2:] for call in calls if call[2] != "is-active"]
+
+
+def test_start_leaves_a_listening_unchanged_admin_alone(tmp_path: Path, monkeypatch) -> None:
+    """Restarting the socket drops queued requests, which nginx turns into 502s."""
+    calls = _admin_activation(tmp_path, monkeypatch, socket_active=True, service_changed=False, socket_changed=False)
+
+    assert calls == []
+
+
+def test_a_changed_admin_service_restarts_behind_its_socket(tmp_path: Path, monkeypatch) -> None:
+    calls = _admin_activation(tmp_path, monkeypatch, socket_active=True, service_changed=True, socket_changed=False)
+
+    assert ["restart", "test-bench-admin.service"] in calls
+    assert not any("test-bench-admin.socket" in call for call in calls)
+
+
+def test_an_idle_admin_socket_is_activated(tmp_path: Path, monkeypatch) -> None:
+    calls = _admin_activation(tmp_path, monkeypatch, socket_active=False, service_changed=False, socket_changed=False)
+
+    assert ["restart", "test-bench-admin.socket"] in calls

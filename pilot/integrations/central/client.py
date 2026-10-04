@@ -69,12 +69,19 @@ class CentralClient:
             "central.api.pilot.report_pilot_update", "POST", {"version": version, "error": error}
         )
 
-    def notify_central(self, event: str, message: str, context: dict | None = None) -> Any:
-        """Report a bench event to Central."""
+    def notify_central(
+        self, event: str, message: str, context: dict | None = None, reference_name: str | None = None
+    ) -> Any:
+        """Report a bench event to Central. Central deduplicates repeats per ``reference_name``."""
         return self.forward(
             "central.notification.api.report_pilot_event",
             "POST",
-            {"event": event, "message": message, "context": context or {}},
+            {
+                "event_type": event,
+                "message": message,
+                "context": context or {},
+                "reference_name": reference_name,
+            },
         )
 
     def forward(self, method_path: str, http_method: str, data: dict[str, Any] | None = None) -> Any:

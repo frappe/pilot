@@ -9,4 +9,9 @@ export const appsApi = {
 
   add: (payload: Record<string, unknown>): Promise<TaskPayload> =>
     request.post('apps', { json: payload }).json(),
+
+  switchBranch: (name: string, branch: string): Promise<TaskPayload> =>
+    request
+      .post(`apps/${encodeURIComponent(name)}/actions/switch-branch`, { json: { branch } })
+      .json(),
 }

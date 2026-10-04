@@ -310,10 +310,11 @@ class TestProductionSSL:
         assert f"ssl_certificate_key /etc/letsencrypt/live/{ADMIN_DOMAIN}/privkey.pem;" in conf
 
     def test_socketio_proxy_configured(self, production: Path) -> None:
-        # Realtime auth fails over HTTPS unless nginx rewrites Origin to $scheme://$http_host.
+        # Realtime auth fails over HTTPS unless a missing Origin falls back to $scheme://$http_host.
         conf = _vhost_blocks(production, SITE)
         assert "location /socket.io {" in conf, conf
-        assert "proxy_set_header   Origin $scheme://$http_host;" in conf
+        assert "set $pilot_socketio_origin $scheme://$http_host;" in conf
+        assert "proxy_set_header   Origin $pilot_socketio_origin;" in conf
 
     def test_nginx_config_is_valid(self, production: Path) -> None:
         r = _run("sudo", "nginx", "-t")

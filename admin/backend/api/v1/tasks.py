@@ -18,6 +18,7 @@ from admin.backend.api.responses import (
     error_response,
     no_content_response,
 )
+from admin.backend.draining import is_draining
 from pilot.exceptions import (
     TaskConflictError,
     TaskNotCancellableError,
@@ -174,7 +175,7 @@ def task_events(task_id: str):
 
     def generate():
         event_id = 0
-        for event in reader.stream_output(task_id):
+        for event in reader.stream_output(task_id, should_stop=is_draining):
             if event["type"] == "status":
                 yield sse_message(event)
                 continue

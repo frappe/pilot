@@ -39,7 +39,7 @@ Assume from this:
 
 - Admin access to one bench is equivalent to shell access as the host user, and to the same access over every other bench in that directory.
 - Two workloads that must not reach each other belong on separate hosts, or under separate host users with their own benches directory.
-- The host user holds passwordless sudo for a fixed set of nginx and certbot commands (installed by `install.sh`) so production deploys and cert renewals need no prompt. These grants, and the bench-writable nginx config that root parses, mean the host user is effectively root-equivalent on the box; treat one bench's compromise as reaching the whole host, not just its own benches.
+- The host user holds passwordless sudo for a fixed set of nginx and certbot commands (installed by `install.sh`) so production deploys and cert renewals need no prompt. sudo-rs (Ubuntu 26.04) rejects wildcards in arguments, so there the certbot, openssl, test and mkdir grants have no argument limits. These grants, and the bench-writable nginx config that root parses, mean the host user is effectively root-equivalent on the box; treat one bench's compromise as reaching the whole host, not just its own benches.
 - Whoever reaches the Admin port before setup finishes owns the bench, so serve the setup wizard only where you accept that.
 
 ## Configuration
@@ -83,4 +83,5 @@ Use `@step` for visible progress and `@on_success`, `@on_failure`, or `@on_cance
 - [Admin API](docs/admin-api.md)
 - [Admin UI](docs/admin-ui.md)
 - [Production](docs/production.md)
+- [Prebuilt Assets](docs/prebuilt-assets.md)
 - [Domain Provider](docs/domain-provider.md)

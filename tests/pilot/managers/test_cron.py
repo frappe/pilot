@@ -109,3 +109,37 @@ def test_get_schedule_reads_the_expression_ahead_of_the_environment_prefix() -> 
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = _crontab_result(f"{marker}\n{entry}\n")
         assert manager.get_schedule("job1") == "30 14 * * *"
+
+
+def test_missing_crontab_binary_names_the_package_to_install() -> None:
+    import pytest
+
+    from pilot.exceptions import CronError
+
+    with patch("shutil.which", return_value=None), pytest.raises(CronError, match="Install cron"):
+        make_manager().get_schedule("job1")
+
+
+def test_unreadable_crontab_is_not_treated_as_empty() -> None:
+    """Writing after a failed read would wipe the user's other cron entries."""
+    import pytest
+
+    from pilot.exceptions import CronError
+
+    failed = _crontab_result("", returncode=1)
+    failed.stderr = "crontab: cannot connect to the cron daemon"
+    with (
+        patch("shutil.which", return_value="/usr/bin/crontab"),
+        patch("subprocess.run", return_value=failed) as run,
+        pytest.raises(CronError, match="Could not read the crontab"),
+    ):
+        make_manager().set_schedule("job1", "0 3 * * *", "run-it")
+
+    assert run.call_count == 1
+
+
+def test_no_crontab_yet_reads_as_empty() -> None:
+    empty = _crontab_result("", returncode=1)
+    empty.stderr = "no crontab for frappe"
+    with patch("shutil.which", return_value="/usr/bin/crontab"), patch("subprocess.run", return_value=empty):
+        assert make_manager().get_schedule("job1") is None

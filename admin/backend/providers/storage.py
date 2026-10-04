@@ -96,22 +96,29 @@ def _data_directory_bytes(path: str | None) -> int | None:
 _PRIVATE_SUBDIRS_EXCLUDED_FROM_OTHER = {"files", "backups"}
 
 
+def _site_backup_dirs(site_path: Path) -> tuple[Path, Path]:
+    """Pilot's backups, and Frappe's own under private/."""
+    return site_path / "backups", site_path / "private" / "backups"
+
+
 def _storage_entry(path: Path) -> StorageItem:
     size = path.stat().st_size if path.is_file() else directory_size_bytes(str(path))
     return StorageItem(name=path.name, bytes=size)
 
 
 def _site_backup_files(site_path: Path) -> list[StorageItem]:
-    backups_dir = site_path / "private" / "backups"
-    if not backups_dir.is_dir():
-        return []
-    return [_storage_entry(child) for child in backups_dir.iterdir()]
+    return [
+        _storage_entry(child)
+        for backups_dir in _site_backup_dirs(site_path)
+        if backups_dir.is_dir()
+        for child in backups_dir.iterdir()
+    ]
 
 
 def _site_other_entries(site_path: Path) -> list[StorageItem]:
     entries: list[StorageItem] = []
     for child in site_path.iterdir():
-        if child.name == "public":
+        if child.name in {"public", "backups"}:
             continue
         if child.name == "private":
             entries.extend(
@@ -217,7 +224,9 @@ class StorageProvider:
         total_bytes = directory_size_bytes(str(site.path))
         private_files_bytes = directory_size_bytes(str(site.path / "private" / "files"))
         public_files_bytes = directory_size_bytes(str(site.path / "public"))
-        backups_bytes = directory_size_bytes(str(site.path / "private" / "backups"))
+        backups_bytes = sum(
+            directory_size_bytes(str(path)) for path in _site_backup_dirs(site.path) if path.is_dir()
+        )
         other_bytes = max(total_bytes - private_files_bytes - public_files_bytes - backups_bytes, 0)
         return SiteStorage(
             name=site.config.name,

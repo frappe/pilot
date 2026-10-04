@@ -62,8 +62,11 @@ def test_edge_tls_site_sets_ssl_without_obtaining_a_certificate(tmp_path: Path) 
         patch.object(provisioner, "reload_nginx"),
         patch.object(provisioner, "obtain_cert") as obtain_cert,
         patch.object(provisioner.bench, "write_common_site_config"),
+        patch.object(Site, "enable_scheduler") as enable_scheduler,
     ):
         site = provisioner.provision(lambda _: None)
+
+    enable_scheduler.assert_called_once_with()
 
     assert site.config.ssl is True
     assert site.config.route == route
@@ -71,3 +74,30 @@ def test_edge_tls_site_sets_ssl_without_obtaining_a_certificate(tmp_path: Path) 
     assert persisted["ssl"] is True
     assert persisted["route"]["origin_scheme"] == "http"
     obtain_cert.assert_not_called()
+
+
+def test_enable_scheduler_runs_frappe_for_the_site(tmp_path: Path) -> None:
+    bench = Bench(BenchConfig._from_dict(_BASE_DATA), tmp_path)
+    site = Site(SiteConfig(name="site1.example.com", apps=["frappe"]), bench)
+
+    with patch("pilot.core.site.commands.run_command", return_value=MagicMock(returncode=0)) as run:
+        site.enable_scheduler()
+
+    command = run.call_args.args[0]
+    assert command[-3:] == ["--site", "site1.example.com", "enable-scheduler"]
+    assert run.call_args.kwargs["cwd"] == bench.sites_path
+
+
+def test_enable_scheduler_fails_loudly(tmp_path: Path) -> None:
+    from pilot.exceptions import BenchError
+
+    bench = Bench(BenchConfig._from_dict(_BASE_DATA), tmp_path)
+    site = Site(SiteConfig(name="site1.example.com", apps=["frappe"]), bench)
+
+    with patch("pilot.core.site.commands.run_command", return_value=MagicMock(returncode=1)):
+        try:
+            site.enable_scheduler()
+        except BenchError as error:
+            assert "site1.example.com" in str(error)
+        else:
+            raise AssertionError("expected BenchError")

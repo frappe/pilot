@@ -119,6 +119,7 @@ jobs:
           # CI validates this branch's frontend, so build the admin UI from source.
           E2E_BUILD_ADMIN: "1"
           E2E_DB_TYPE: ${{ matrix.db_type }}
+          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Upload Playwright traces
         if: ${{ !cancelled() }}

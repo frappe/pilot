@@ -4,10 +4,12 @@ import { useRouter } from 'vue-router'
 import { Button, TabButtons, useColorScheme } from 'frappe-ui'
 
 import { useAppMenu } from '@/components/navigation/useAppMenu'
+import { useSession } from '@/composables/auth/useSession'
 
 const router = useRouter()
 const { showBenches, logout, session } = useAppMenu()
 const { colorScheme, setColorScheme } = useColorScheme()
+const { centralServerUrl } = useSession()
 
 const themeModel = computed({
   get: () => colorScheme.value,
@@ -44,13 +46,17 @@ const themeOptions = [
     <div
       class="flex flex-col divide-y divide-outline-gray-1 rounded-6 border border-outline-gray-1"
     >
-      <div
-        v-if="session.centralEnabled"
-        class="flex items-center gap-3 px-3 py-2.5  text-ink-gray-8"
+      <a
+        v-if="session.centralUrl"
+        :href="centralServerUrl()"
+        target="_blank"
+        rel="noopener"
+        class="flex items-center gap-3 px-3 py-2.5 text-ink-gray-8 hover:bg-surface-gray-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
       >
-        <span class="size-4 text-ink-gray-6 lucide-cloud" />
+        <span class="size-4 text-ink-gray-6 lucide-cloud" aria-hidden="true" />
         Central
-      </div>
+        <span class="ml-auto size-4 text-ink-gray-5 lucide-external-link" aria-hidden="true" />
+      </a>
 
       <Button
         v-for="row in menuRows"

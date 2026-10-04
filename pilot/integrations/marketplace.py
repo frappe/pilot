@@ -3,6 +3,7 @@
 import typing
 from dataclasses import dataclass, field
 from functools import cache, lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pilot._vendor.packaging.specifiers import InvalidSpecifier, SpecifierSet
@@ -139,9 +140,17 @@ class Marketplace:
         return result.stdout.strip().decode()
 
     @staticmethod
-    @lru_cache(maxsize=1)
     def registry() -> list[dict]:
-        """The app index for callers that don't have a Marketplace/bench (e.g. tasks). Cached once."""
+        """The app index for callers without a Marketplace/bench (e.g. tasks), reread when
+        the registry clone changes."""
+        from pilot.core.registry_cache import RegistryCache
+        from pilot.utils import cli_root
+
+        return Marketplace._registry_at(_modified_ns(RegistryCache(cli_root()).index_path))
+
+    @staticmethod
+    @lru_cache(maxsize=1)
+    def _registry_at(modified_ns: int) -> list[dict]:
         return Marketplace._load_registry()
 
     @staticmethod
@@ -150,10 +159,17 @@ class Marketplace:
         return {entry["name"]: entry for entry in Marketplace.registry()}
 
     @staticmethod
-    @cache
     def releases(app_name: str) -> tuple[dict, ...]:
-        """One app's releases, read from the registry cache on first ask and kept
-        for the life of the process. Apps nobody asks about are never read."""
+        """One app's releases, reread when its registry file changes."""
+        from pilot.core.registry_cache import RegistryCache
+        from pilot.utils import cli_root
+
+        registry = RegistryCache(cli_root())
+        return Marketplace._releases_at(app_name, _modified_ns(registry.path / "apps" / f"{app_name}.json"))
+
+    @staticmethod
+    @lru_cache(maxsize=512)
+    def _releases_at(app_name: str, modified_ns: int) -> tuple[dict, ...]:
         from pilot.core.registry_cache import RegistryCache
         from pilot.utils import cli_root
 
@@ -247,3 +263,11 @@ class Marketplace:
         if resolver is None:
             raise AppNotFoundError(f"'{name}' not found in marketplace.")
         return resolver
+
+
+def _modified_ns(path: Path) -> int:
+    """Cache key that changes when a registry refresh rewrites the file."""
+    try:
+        return path.stat().st_mtime_ns
+    except FileNotFoundError:
+        return 0

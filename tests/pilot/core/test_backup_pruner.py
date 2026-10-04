@@ -14,7 +14,7 @@ def _bench(tmp_path):
 
 def _setup_site(bench, site, retention=_FIFO_RETENTION):
     site_dir = bench.sites_path / site
-    backups = site_dir / "private" / "backups"
+    backups = site_dir / "backups"
     backups.mkdir(parents=True)
     for ts in _RUNS:
         (backups / f"{ts}-{site}-database.sql.gz").write_text("x")
@@ -75,7 +75,7 @@ def test_prunes_with_gfs_scheme(tmp_path) -> None:
     """The pruner honours a GFS policy read from site_config, not just FIFO."""
     bench = _bench(tmp_path)
     runs = [f"202601{day:02d}_020000" for day in range(1, 11)]  # 10 daily runs, Jan 1-10
-    backups = bench.sites_path / "site1" / "private" / "backups"
+    backups = bench.sites_path / "site1" / "backups"
     backups.mkdir(parents=True)
     for ts in runs:
         (backups / f"{ts}-site1-database.sql.gz").write_text("x")

@@ -269,7 +269,17 @@ onMounted(async () => {
         </div>
 
         <p class="text-ink-gray-5 text-p-sm">
-          <template v-if="session.centralEnabled">Alerts go to Central. Endpoints listed here receive them too, as a POST carrying an</template>
+          <template v-if="session.centralEnabled"
+            >Alerts go to
+            <a
+              v-if="session.centralUrl"
+              :href="`${session.centralUrl}/dashboard`"
+              target="_blank"
+              rel="noopener"
+              class="text-ink-gray-8 underline underline-offset-2 hover:text-ink-gray-9"
+              >Central</a
+            ><template v-else>Central</template>. Endpoints listed here receive them too, as a POST carrying an</template
+          >
           <template v-else>Endpoints listed here receive alerts as a POST carrying an</template>
           <code>Authorization: Bearer</code>
           header, so the token stays out of the URL.

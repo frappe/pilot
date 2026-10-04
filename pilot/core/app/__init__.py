@@ -226,6 +226,15 @@ class App:
         """Check out a specific commit SHA, refetching it from origin if needed."""
         self._repository.checkout_pinned_commit(sha)
 
+    def return_to(self, branch: str, sha: str) -> None:
+        """Go back to `sha` with `branch` tracked again, as before a branch switch. A commit
+        hash or empty `branch` leaves the checkout detached, as it was."""
+        if branch and not self.is_commit_hash(branch):
+            self.switch_branch(branch)
+        else:
+            self.config.branch = branch
+        self.checkout_commit(sha)
+
     def _pyproject(self) -> dict:
         """Parsed pyproject.toml, or an empty dict when it is missing or malformed."""
         import tomllib

@@ -171,7 +171,9 @@ def register_frontend(app: Flask) -> None:
                 # path inside the build instead of reaching bench.toml.
                 response = send_from_directory(dashboard_dir, path)
             except NotFound:
-                pass  # unknown route: the SPA router owns it
+                # A rebuild deletes old hashed chunks; index.html in their place fails as a script.
+                if path.startswith("assets/"):
+                    return "Asset not found.", 404
             else:
                 return _immutable(response) if path.startswith("assets/") else response
         return send_file(str(dashboard_dir / "index.html"))

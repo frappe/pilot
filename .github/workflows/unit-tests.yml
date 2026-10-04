@@ -25,6 +25,10 @@ jobs:
       - name: Install system dependencies
         run: sudo apt-get install -y redis-tools
 
+      - name: Lint
+        # Same ruff version as .pre-commit-config.yaml.
+        run: uvx ruff@0.15.22 check admin pilot tests
+
       - name: Install dependencies
         run: pip install -e ".[test,admin,type-check]"
 

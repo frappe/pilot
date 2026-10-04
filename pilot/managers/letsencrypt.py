@@ -126,6 +126,7 @@ class LetsEncryptManager:
                 f"{openssl} x509 -noout -ext subjectAltName -in {LETSENCRYPT_LIVE}/*/fullchain.pem",
                 f"{openssl} x509 -enddate -noout -in {LETSENCRYPT_LIVE}/*/fullchain.pem",
             ],
+            bare_commands=[certbot, mkdir, test, openssl],
         )
 
     @property

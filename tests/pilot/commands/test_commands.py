@@ -1206,6 +1206,18 @@ def test_write_common_site_config_preserves_custom_keys(tmp_path: Path) -> None:
     assert config["redis_cache"] == "redis://localhost:13000"
 
 
+def test_write_common_site_config_does_not_enable_server_scripts(tmp_path: Path) -> None:
+    import json
+
+    bench = make_bench(tmp_path)
+    bench.sites_path.mkdir(parents=True)
+
+    bench.write_common_site_config()
+
+    config = json.loads((bench.sites_path / "common_site_config.json").read_text())
+    assert "server_script_enabled" not in config
+
+
 def test_write_common_site_config_leaves_developer_mode_to_sites(tmp_path: Path) -> None:
     import json
 
@@ -1418,3 +1430,17 @@ def test_start_rebuilds_admin_in_a_dev_checkout(tmp_path: Path, monkeypatch: pyt
     BenchRuntime(make_bench(tmp_path))._ensure_admin_dist(lambda _message: None)
 
     build.assert_called_once_with(on_progress=ANY)
+
+
+def test_set_admin_password_generates_one_when_left_blank(tmp_path: Path, monkeypatch, capsys) -> None:
+    """The prompt says blank generates a password."""
+    from pilot.commands.sites.set_admin_password import SetAdminPasswordCommand
+
+    bench = make_bench(tmp_path)
+    bench.config.write(tmp_path)
+    monkeypatch.setattr(SetAdminPasswordCommand, "ask_password", lambda self, label="admin password": "")
+
+    SetAdminPasswordCommand(bench=bench).run()
+
+    generated = capsys.readouterr().out.split("Generated password (shown once): ", 1)[1].strip()
+    assert BenchConfig.read(tmp_path).admin.verify_password(generated)

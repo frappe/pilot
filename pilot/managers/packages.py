@@ -31,8 +31,9 @@ class SystemPackageManager(ABC):
         if self.requires_privilege and not is_root() and not has_passwordless_sudo():
             names = ", ".join(self._resolve(*packages))
             raise BenchError(
-                f"Required: {names}. No passwordless sudo available; install "
-                "manually with your system package manager, then re-run this command."
+                f"Required: {names}. No passwordless sudo available. Re-run install.sh as root, "
+                "which installs every system package Pilot needs, or install them with your "
+                "system package manager. Then re-run this command."
             )
         self._install(*packages)
 
