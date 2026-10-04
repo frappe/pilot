@@ -198,7 +198,7 @@ def test_lite_off_keeps_the_ordinary_process_set(tmp_path: Path) -> None:
 def test_a_new_bench_is_created_in_lite_mode(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from pilot.core.bench.creator import BenchCreator
 
-    monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
+    monkeypatch.setattr("pilot.core.bench.ports._port_is_live", lambda port: False)
     target = tmp_path / "benches" / "fresh"
     BenchCreator(target, "fresh").run()
 

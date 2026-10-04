@@ -113,6 +113,9 @@ class _ProcessBackend(Protocol):
     def command_line(self, pid: int) -> str:
         pass
 
+    def start_time(self, pid: int) -> int:
+        pass
+
 
 class _ProcSysBackend:
     """Reads process identity from /proc, as found on Linux."""
@@ -154,6 +157,10 @@ class _ProcSysBackend:
     def command_line(self, pid: int) -> str:
         raw = (_PROC_ROOT / str(pid) / "cmdline").read_bytes()
         return os.fsdecode(raw.replace(b"\0", b" "))
+
+    def start_time(self, pid: int) -> int:
+        """Clock ticks from boot to the pid's start: field 22 of /proc/<pid>/stat."""
+        return self.read_process(pid).start_ticks
 
 
 class _DarwinPsBackend:
@@ -204,6 +211,11 @@ class _DarwinPsBackend:
 
     def command_line(self, pid: int) -> str:
         return self._run(["ps", "-ww", "-p", str(pid), "-o", "command="])
+
+    def start_time(self, pid: int) -> int:
+        """Epoch seconds of the pid's start. `lstart` has seconds; `start` in read_process has minutes."""
+        started = self._run(["ps", "-p", str(pid), "-o", "lstart="])
+        return int(time.mktime(time.strptime(started, "%a %b %d %H:%M:%S %Y")))
 
     @staticmethod
     def _drop_executable(command: str) -> str:
@@ -347,6 +359,13 @@ class ProcessInspector:
             if pid != hint_pid and self._command_matches(pid, markers):
                 return pid
         return None
+
+    def start_time(self, pid: int) -> int:
+        """When the pid started. A later process that reuses the pid has a later start time.
+        Raises OSError when the pid is gone or a zombie, and ValueError when it cannot be parsed."""
+        if self._read_process(pid).state == "Z":
+            raise ProcessLookupError(pid)
+        return self._backend.start_time(pid)
 
     def _command_matches(self, pid: int, markers: list[str]) -> bool:
         try:

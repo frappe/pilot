@@ -62,6 +62,7 @@ The stable top-level config groups are:
 - `[waf]`
 - `[s3]`
 - `[llm]`
+- `[[worktrees]]`
 
 Settings shared by every bench under one benches directory - `[mariadb]`, `[postgres]`, `[letsencrypt]`, `[central]`, `[telemetry]`, and `admin.jwks_url`/`jwks_audience` - live in `common_config.toml` instead, merged in by `BenchConfig` alone. See [Configuration](docs/configuration.md#common-config).
 

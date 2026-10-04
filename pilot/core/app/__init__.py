@@ -417,6 +417,13 @@ class App:
         framework = self.bench.config.framework_app.name
         if self.config.name == framework:
             raise BenchError(f"Cannot remove the framework app '{framework}'.")
+        # Worktree branches live in this checkout's .git, which removal deletes.
+        worktrees = [record.name for record in self.bench.config.worktrees if record.app == self.config.name]
+        if worktrees:
+            raise BenchError(
+                f"App '{self.config.name}' has worktrees: {', '.join(worktrees)}. "
+                f"Remove them first with 'pilot worktree remove NAME'."
+            )
 
     def remove(self, force: bool = False, on_progress: Callable[[str], None] = lambda message: None) -> None:
         """Uninstall from sites, deregister, pip-uninstall, and delete the clone."""

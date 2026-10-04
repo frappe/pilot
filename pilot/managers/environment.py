@@ -152,7 +152,7 @@ class PythonEnvManager:
         version = self.bench.config.python_version
         run_command([uv, "venv", "--python", version, str(self.bench.env_path)], stream_output=True)
 
-    def _build_env(self) -> dict:
+    def get_build_env(self) -> dict:
         """Build subprocess env with yarn on PATH and macOS mysqlclient flags."""
         env = os.environ.copy()
 
@@ -172,7 +172,7 @@ class PythonEnvManager:
         run_command(
             [uv, "pip", "install", "--python", python, "-e", app.editable_target],
             stream_output=True,
-            env=self._build_env(),
+            env=self.get_build_env(),
         )
 
     def uninstall_app(self, app_name: str) -> None:

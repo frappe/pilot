@@ -63,7 +63,7 @@ class PythonAssetBuilder:
         self.run_compiler(
             [*self.bench.frappe_call, "frappe", "build", "--force"],
             cwd=self.bench.sites_path,
-            env=self.manager._build_env(),
+            env=self.manager.get_build_env(),
             stream_output=True,
         )
 
@@ -88,7 +88,7 @@ class PythonAssetBuilder:
         self.run_compiler(
             [*self.bench.frappe_call, "frappe", "build", "--force", "--app", app.config.name],
             cwd=self.bench.sites_path,
-            env=self.manager._build_env(),
+            env=self.manager.get_build_env(),
             stream_output=True,
         )
 

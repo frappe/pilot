@@ -223,6 +223,30 @@ class PostgresManager(UserOwnedDBManager):
             "END IF; END $$;"
         )
 
+    def run_admin_sql(self, sql: str, timeout: float = _CLIENT_TIMEOUT) -> None:
+        """Run statements as the admin role over TCP, with the password in PGPASSWORD."""
+        subprocess.run(
+            [
+                self._psql() or "psql",
+                f"--host={self.config.host}",
+                f"--port={self.config.port}",
+                f"--username={self.config.admin_user}",
+                "--dbname=postgres",
+                "--no-psqlrc",
+                "--set=ON_ERROR_STOP=1",
+            ],
+            input=sql,
+            text=True,
+            check=True,
+            capture_output=True,
+            timeout=timeout,
+            env={
+                **os.environ,
+                "PGPASSWORD": self.config.root_password,
+                "PGCONNECT_TIMEOUT": str(_CLIENT_TIMEOUT),
+            },
+        )
+
     def _run_sql_as_superuser(self, sql: str) -> None:
         # Peer/trust auth lets the bench OS user bootstrap without sudo.
         # Linux needs our socket_dir; Homebrew already uses a user-owned socket.

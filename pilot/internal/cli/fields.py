@@ -69,6 +69,8 @@ def argument_kwargs(arg_field: ArgField, base_hint: Any) -> dict[str, Any]:
     kwargs: dict[str, Any] = {"help": arg_field.metadata.help} if arg_field.metadata.help else {}
     if arg_field.metadata.metavar:
         kwargs["metavar"] = arg_field.metadata.metavar
+    if arg_field.metadata.flag:
+        kwargs["dest"] = arg_field.name
     if base_hint in (bool, tuple[str, ...]):
         return kwargs
     if get_origin(base_hint) is Literal:
@@ -88,7 +90,7 @@ def update_list_kwargs(kwargs: dict[str, Any], arg_field: ArgField, base_hint: A
 
 
 def option_flags(arg_field: ArgField) -> list[str]:
-    flags = [f"--{to_kebab_case(arg_field.name)}"]
+    flags = [arg_field.metadata.flag or f"--{to_kebab_case(arg_field.name)}"]
     if arg_field.metadata.short:
         flags.append(f"-{arg_field.metadata.short}")
     return flags

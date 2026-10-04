@@ -29,6 +29,8 @@ class Arg:
     cli: bool = True
     metavar: str | None = None
     required: bool = False
+    # Option flag when it cannot be the field name, such as `--from` (a Python keyword).
+    flag: str | None = None
 
 
 @dataclass

@@ -13,6 +13,7 @@ import pytest
 from pilot.internal.tasks.process_identity import (
     ProcessInspector,
     ProcessOwnership,
+    _DarwinPsBackend,
 )
 
 
@@ -158,3 +159,14 @@ def test_different_expected_arguments_are_stale(owned_process) -> None:
     identity = inspector.capture(process.pid, argv, launch_id)
 
     assert inspector.inspect(identity, [*argv, "other"]) == ProcessOwnership.STALE
+
+
+def test_macos_start_time_tells_apart_processes_started_a_second_apart(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backend = _DarwinPsBackend()
+    # `ps -o lstart=` pads a one-digit day with a space.
+    started = {1: "Tue Sep  1 03:42:13 2026", 2: "Tue Sep  1 03:42:14 2026"}
+    monkeypatch.setattr(backend, "_run", lambda argv: started[int(argv[2])])
+
+    assert backend.start_time(2) - backend.start_time(1) == 1

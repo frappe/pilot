@@ -27,6 +27,7 @@ from pilot.config.waf import (
     parse_nginx_size,
 )
 from pilot.config.worker import WorkerConfig, WorkerGroup
+from pilot.config.worktree import WorktreeConfig
 
 __all__ = [
     "SCHEME_FIFO",
@@ -63,5 +64,6 @@ __all__ = [
     "WafRule",
     "WorkerConfig",
     "WorkerGroup",
+    "WorktreeConfig",
     "parse_nginx_size",
 ]

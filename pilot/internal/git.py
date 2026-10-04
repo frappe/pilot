@@ -6,6 +6,8 @@ import subprocess
 import time
 from pathlib import Path
 
+from pilot.exceptions import BenchError
+
 _STALE_TEMP_FILE_SECONDS = 24 * 60 * 60
 # ext:: hands git an arbitrary command to run as the transport, so no bench input can
 # ever be allowed to reach it. See gitprotocol-ext(5).
@@ -131,6 +133,34 @@ class GitRepo:
         """Create (or reset) `branch` to start at `start_point` and check it out."""
         return self._run("checkout", "-B", branch, start_point).returncode == 0
 
+    @property
+    def changed_files(self) -> list[str]:
+        """Uncommitted and untracked files, as `git status --short` lines."""
+        return self._checked("status", "--porcelain").splitlines()
+
+    def has_branch(self, branch: str) -> bool:
+        return self._run("show-ref", "--verify", "--quiet", f"refs/heads/{branch}").returncode == 0
+
+    def add_worktree(self, path: Path, branch: str, start_point: str = "HEAD") -> None:
+        """Check out `branch` at `path`. A missing branch tracks `origin/<branch>` when the
+        last fetch saw one, and otherwise starts at `start_point`."""
+        if self.has_branch(branch):
+            self._checked("worktree", "add", str(path), branch)
+        elif self.tracking_sha(branch):
+            self._checked("worktree", "add", "--track", "-b", branch, str(path), f"origin/{branch}")
+        else:
+            self._checked("worktree", "add", "-b", branch, str(path), start_point)
+
+    def remove_worktree(self, path: Path, force: bool = False) -> None:
+        self._checked("worktree", "remove", *(["--force"] if force else []), str(path))
+
+    def delete_branch(self, branch: str, force: bool = False) -> None:
+        """Delete a local branch. Without `force`, git refuses one that is not merged."""
+        self._checked("branch", "-D" if force else "-d", branch)
+
+    def prune_worktrees(self) -> None:
+        self._checked("worktree", "prune")
+
     def set_remote_url(self, url: str) -> bool:
         """Point origin at *url*; returns False instead of raising on failure."""
         return self._run("remote", "set-url", "origin", url).returncode == 0
@@ -149,6 +179,14 @@ class GitRepo:
         """mtime of the last fetch, or None if the repo was never fetched."""
         fetch_head = self.path / ".git" / "FETCH_HEAD"
         return fetch_head.stat().st_mtime if fetch_head.exists() else None
+
+    def _checked(self, *args: str) -> str:
+        """Stdout of a git command that must succeed."""
+        result = self._run(*args)
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout).strip()
+            raise BenchError(f"git {' '.join(args)} failed in {self.path}: {detail}")
+        return result.stdout
 
     def _text(self, *args: str, timeout: float | None = None) -> str:
         result = self._run(*args, timeout=timeout)
