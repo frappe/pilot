@@ -25,7 +25,7 @@ Do these steps in the app repository.
 Add `.github/workflows/assets.yml`:
 
 ```yaml
-name: Assets
+name: Pre-build assets
 
 on:
   push:
@@ -33,6 +33,7 @@ on:
 
 jobs:
   assets:
+    name: Pre-build assets
     uses: frappe/pilot/.github/workflows/app-assets.yml@develop
     permissions:
       contents: write
@@ -96,6 +97,7 @@ Set inputs under `with:` in the job.
 ```yaml
 jobs:
   assets:
+    name: Pre-build assets
     uses: frappe/pilot/.github/workflows/app-assets.yml@develop
     with:
       keep-untagged: 10
