@@ -210,6 +210,11 @@ class Site:
 
         SiteCommands(self).clear_cache()
 
+    def complete_setup(self, answers: dict[str, str]) -> None:
+        from pilot.core.site.commands import SiteCommands
+
+        SiteCommands(self).complete_setup(answers)
+
     def enable_scheduler(self) -> None:
         from pilot.core.site.commands import SiteCommands
 

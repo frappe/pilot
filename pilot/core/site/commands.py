@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import secrets
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -88,6 +89,22 @@ class SiteCommands:
         result = run_command(cmd, cwd=self.site.bench.sites_path, stream_output=True)
         if result.returncode != 0:
             raise BenchError(f"Failed to clear cache for {self.site.config.name}")
+
+    def complete_setup(self, answers: dict[str, str]) -> None:
+        """Run Frappe's setup wizard with `answers` instead of its screens. Frappe skips a
+        site whose setup is already complete, so a repeat is safe."""
+        cmd = self.site._frappe_call(
+            "frappe",
+            "--site",
+            self.site.config.name,
+            "execute",
+            "frappe.desk.page.setup_wizard.setup_wizard.setup_complete",
+            "--kwargs",
+            json.dumps({"args": answers}),
+        )
+        result = run_command(cmd, cwd=self.site.bench.sites_path, stream_output=True)
+        if result.returncode != 0:
+            raise BenchError(f"Failed to complete setup for {self.site.config.name}")
 
     def enable_scheduler(self) -> None:
         cmd = self.site._frappe_call("frappe", "--site", self.site.config.name, "enable-scheduler")

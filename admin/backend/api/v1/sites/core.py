@@ -35,6 +35,7 @@ from pilot.internal.site_paths import site_exists
 from pilot.internal.validators import validate_site_name
 from pilot.tasks.build import BuildTask
 from pilot.tasks.clear_cache import ClearCacheTask
+from pilot.tasks.complete_setup import CompleteSetupTask
 from pilot.tasks.drop_site import DropSiteTask
 from pilot.tasks.new_site import NewSiteTask
 from pilot.tasks.reinstall_site import ReinstallSiteTask
@@ -250,6 +251,32 @@ def clear_cache(name: str):
         task_id = ClearCacheTask.queue(
             Bench(bench_root),
             site=name,
+            idempotency_key=request.headers.get("Idempotency-Key"),
+            resource_key=f"site:{name.lower()}",
+        )
+    except Exception as error:
+        return task_failure(error)
+    return accepted_task_response(bench_root, task_id)
+
+
+@sites_bp.post("/<name>/actions/complete-setup")
+@require_scope(site_name)
+def complete_setup(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    if not site_exists(bench_root, name):
+        return site_not_found()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return malformed_body()
+    fields = text_fields(data, "full_name", "email", "language", "country", "time_zone", "currency")
+    if fields is None or not fields["full_name"] or "@" not in fields["email"]:
+        return invalid_fields()
+
+    try:
+        task_id = CompleteSetupTask.queue(
+            Bench(bench_root),
+            site=name,
+            **{field: value for field, value in fields.items() if value},
             idempotency_key=request.headers.get("Idempotency-Key"),
             resource_key=f"site:{name.lower()}",
         )
