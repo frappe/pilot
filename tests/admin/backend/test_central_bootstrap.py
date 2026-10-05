@@ -332,3 +332,14 @@ def test_an_external_mariadb_does_not_block_the_credential(tmp_path: Path, maria
 
     mariadb_manager.assert_not_called()
     assert BenchConfig.read(bench_root).central.bootstrapped is True
+
+
+def test_the_watcher_stops_when_another_process_bootstrapped_the_host(tmp_path: Path) -> None:
+    """The admin's watcher and the boot unit race; the loser must stop, not poll forever."""
+    from pilot.core.bench import Bench
+    from pilot.integrations.central import apply_central_config
+
+    bench_root = _awaiting_host(tmp_path)
+    with _staged(json.dumps(_ATTRIBUTE)):
+        assert apply_central_config(Bench(bench_root)) is True
+        assert CentralBootstrapWatcher(bench_root).check_once() is True

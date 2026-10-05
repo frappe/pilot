@@ -21,7 +21,7 @@ def _task(tmp_path, filenames, s3_configured=False):
 
 
 def test_delete_removes_local_files_and_logs(tmp_path) -> None:
-    backups = tmp_path / "sites" / "site1" / "private" / "backups"
+    backups = tmp_path / "sites" / "site1" / "backups"
     backups.mkdir(parents=True)
     name = "20260101_020000-site1-database.sql.gz"
     (backups / name).write_text("x")
@@ -40,7 +40,7 @@ def test_delete_removes_local_files_and_logs(tmp_path) -> None:
 
 
 def test_delete_logs_even_when_nothing_matched(tmp_path) -> None:
-    (tmp_path / "sites" / "site1" / "private" / "backups").mkdir(parents=True)
+    (tmp_path / "sites" / "site1" / "backups").mkdir(parents=True)
     task, bench = _task(tmp_path, ["missing-file.sql.gz"])
     task.run()
 
@@ -70,7 +70,7 @@ def offsite(monkeypatch):
 
 
 def test_delete_removes_offsite_copy_of_a_local_backup(tmp_path, offsite) -> None:
-    backups = tmp_path / "sites" / "site1" / "private" / "backups"
+    backups = tmp_path / "sites" / "site1" / "backups"
     backups.mkdir(parents=True)
     name = "20260101_020000-site1-database.sql.gz"
     (backups / name).write_text("x")
@@ -87,7 +87,7 @@ def test_delete_removes_offsite_copy_of_a_local_backup(tmp_path, offsite) -> Non
 
 
 def test_delete_skips_s3_for_a_local_only_backup(tmp_path, offsite) -> None:
-    backups = tmp_path / "sites" / "site1" / "private" / "backups"
+    backups = tmp_path / "sites" / "site1" / "backups"
     backups.mkdir(parents=True)
     name = "20260101_020000-site1-database.sql.gz"
     (backups / name).write_text("x")

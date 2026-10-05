@@ -23,10 +23,12 @@ class UpdateCliTask(Task):
 
     @step("restart-admin", lambda self: "Restart admin service")
     def restart_admin(self) -> None:
+        from pilot.managers.processes.base import ManagedProcessManager
         from pilot.managers.processes.local import ProcessManager
 
         manager = ProcessManager.detect_running(self.bench)
-        if type(manager) is ProcessManager:
+        if not isinstance(manager, ManagedProcessManager):
+            print("`pilot start` runs the admin here. Restart it to run the new version.")
             return
         manager.restart_admin()
 

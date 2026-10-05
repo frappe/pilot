@@ -1,8 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
-
+import { authApi } from '@/api/auth'
 import { useSession } from '@/composables/auth/useSession'
 import { safeRedirect } from '@/utils/redirect'
-import { authApi } from '@/api/auth'
 
 const routes = [
   {
@@ -178,7 +177,21 @@ router.beforeEach(async (to) => {
   return true
 })
 
+// A rebuild replaces the hashed route chunks, so an open tab cannot load the pages it
+// has not visited yet. One full load fetches the new build; the marker stops a loop.
+const RELOAD_MARKER = 'pilot:chunk-reload'
+
+router.onError((error, to) => {
+  const isChunkError = /dynamically imported module|Importing a module script failed/.test(
+    String(error?.message),
+  )
+  if (!isChunkError || sessionStorage.getItem(RELOAD_MARKER) === to.fullPath) return
+  sessionStorage.setItem(RELOAD_MARKER, to.fullPath)
+  window.location.assign(to.fullPath)
+})
+
 router.afterEach((to) => {
+  sessionStorage.removeItem(RELOAD_MARKER)
   if (to.name !== 'SiteDetail') {
     document.title = to.meta?.title ? `${to.meta.title} - Pilot` : 'Pilot'
   }

@@ -28,8 +28,9 @@ _SYSTEMCTL_TIMEOUT = 90
 class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
     """Manages bench processes via systemd --user (no sudo required)."""
 
-    # Until write_config compares them, assume admin needs re-activation.
-    admin_units_changed = True
+    # Until write_config compares them, assume both admin units changed.
+    admin_service_changed = True
+    admin_socket_changed = True
 
     @property
     def systemd_conf_dir(self) -> Path:
@@ -37,7 +38,7 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
 
     @override
     def write_config(self) -> None:
-        admin_units_before = self._admin_unit_text()
+        service_before, socket_before = self._admin_unit_text()
         AdminEnvManager(cli_root()).ensure()
         self._ensure_redis_config()
         self._ensure_gunicorn_config()
@@ -70,7 +71,9 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
                     str(self.bench.logs_path / "central-bootstrap.log"),
                 )
             )
-        self.admin_units_changed = self._admin_unit_text() != admin_units_before
+        service_after, socket_after = self._admin_unit_text()
+        self.admin_service_changed = service_after != service_before
+        self.admin_socket_changed = socket_after != socket_before
 
     def _admin_unit_text(self) -> list[str]:
         """The admin unit files as they stand on disk."""
@@ -118,10 +121,7 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         subprocess.run(self._systemctl("reset-failed", *units), capture_output=True, env=env)
         run_command(self._systemctl("enable", self._target_name()), env=env)
         self._enable_central_bootstrap(env)
-        # Re-activating admin costs a graceful gunicorn stop; a workload-only change
-        # must not pay for it.
-        if self.admin_units_changed or not self.are_units_running(UnitGroup.ADMIN):
-            self._activate_admin_socket(env)
+        self._activate_admin(env)
 
     @staticmethod
     def _ensure_linger() -> None:
@@ -255,7 +255,7 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
 
     def _control_admin(self, action: str, env: dict) -> None:
         if action == "start":
-            self._activate_admin_socket(env)
+            self._activate_admin(env)
         elif action == "stop":
             for unit in (self._admin_socket_name(), self._unit_name("admin")):
                 subprocess.run(self._systemctl("stop", unit), capture_output=True, env=env)
@@ -264,6 +264,18 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
             if (self.user_unit_dir / service).exists():
                 subprocess.run(self._systemctl("reset-failed", service), capture_output=True, env=env)
                 run_command(self._systemctl("restart", service), env=env, timeout=_SYSTEMCTL_TIMEOUT)
+
+    def _activate_admin(self, env: dict) -> None:
+        """The kernel queues requests on a listening socket while the service restarts.
+        Restarting the socket drops them, so only a changed or idle socket restarts."""
+        socket_state = subprocess.run(
+            self._systemctl("is-active", self._admin_socket_name()), capture_output=True, env=env
+        )
+        if self.admin_socket_changed or socket_state.returncode != 0:
+            self._activate_admin_socket(env)
+        elif self.admin_service_changed:
+            self._control_admin("restart", env)
+        self.admin_service_changed = self.admin_socket_changed = False
 
     def _activate_admin_socket(self, env: dict) -> None:
         # Stop the service first: a stale port hold would make the new socket 502.

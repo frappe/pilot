@@ -49,16 +49,15 @@ def _ensure_database_credentials(bench_dir: Path) -> None:
     BenchInitializer(Bench(bench_dir))._ensure_database_credentials()
 
 
-
 def _write_installable_app(app_dir: Path, name: str) -> None:
     """The minimum an app needs to pass validation, which every update runs."""
     (app_dir / "pyproject.toml").write_text(
-        f'[project]\nname = "{name}"\n\n'
-        '[tool.bench.frappe-dependencies]\nfrappe = ">=16.0.0,<17.0.0"\n'
+        f'[project]\nname = "{name}"\n\n[tool.bench.frappe-dependencies]\nfrappe = ">=16.0.0,<17.0.0"\n'
     )
     (app_dir / name).mkdir(exist_ok=True)
     (app_dir / name / "__init__.py").write_text("")
     (app_dir / name / "hooks.py").write_text(f"app_name = '{name}'\n")
+
 
 def test_new_command_creates_directory_and_toml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from pilot.commands.bench.create import NewCommand
@@ -500,9 +499,13 @@ def test_remove_app_full_flow_no_sites(tmp_path: Path) -> None:
     (bench.sites_path / "apps.txt").write_text("frappe\nerpnext\n")
 
     cmd = RemoveAppCommand(bench, app_name="erpnext", skip_confirm=True)
-    with patch("pilot.managers.environment.PythonEnvManager.uninstall_app"):
+    with (
+        patch("pilot.managers.environment.PythonEnvManager.uninstall_app"),
+        patch.object(type(bench), "reload_workers") as mock_reload,
+    ):
         cmd.run()
 
+    mock_reload.assert_called_once()
     assert not app_dir.exists()
     remaining = [line for line in (bench.sites_path / "apps.txt").read_text().splitlines() if line.strip()]
     assert "erpnext" not in remaining
@@ -919,7 +922,9 @@ def test_bench_update_apps_uses_captured_target_for_unpinned_app(tmp_path: Path)
     publish([])
     with patch("pilot.core.app.App.update") as mock_update:
         # A captured pin is used exactly as given - never re-resolved live.
-        bench._update_apps(None, lambda message: None, {"helpdesk": RevisionPin(kind="commit", ref="deadbeef")})
+        bench._update_apps(
+            None, lambda message: None, {"helpdesk": RevisionPin(kind="commit", ref="deadbeef")}
+        )
 
     mock_update.assert_called_once_with(pin=RevisionPin(kind="commit", ref="deadbeef"))
 
@@ -1206,6 +1211,18 @@ def test_write_common_site_config_preserves_custom_keys(tmp_path: Path) -> None:
     assert config["redis_cache"] == "redis://localhost:13000"
 
 
+def test_write_common_site_config_does_not_enable_server_scripts(tmp_path: Path) -> None:
+    import json
+
+    bench = make_bench(tmp_path)
+    bench.sites_path.mkdir(parents=True)
+
+    bench.write_common_site_config()
+
+    config = json.loads((bench.sites_path / "common_site_config.json").read_text())
+    assert "server_script_enabled" not in config
+
+
 def test_write_common_site_config_leaves_developer_mode_to_sites(tmp_path: Path) -> None:
     import json
 
@@ -1418,3 +1435,35 @@ def test_start_rebuilds_admin_in_a_dev_checkout(tmp_path: Path, monkeypatch: pyt
     BenchRuntime(make_bench(tmp_path))._ensure_admin_dist(lambda _message: None)
 
     build.assert_called_once_with(on_progress=ANY)
+
+
+def test_set_admin_password_generates_one_when_left_blank(tmp_path: Path, monkeypatch, capsys) -> None:
+    """The prompt says blank generates a password."""
+    from pilot.commands.sites.set_admin_password import SetAdminPasswordCommand
+
+    bench = make_bench(tmp_path)
+    bench.config.write(tmp_path)
+    monkeypatch.setattr(SetAdminPasswordCommand, "ask_password", lambda self, label="admin password": "")
+
+    SetAdminPasswordCommand(bench=bench).run()
+
+    generated = capsys.readouterr().out.split("Generated password (shown once): ", 1)[1].strip()
+    assert BenchConfig.read(tmp_path).admin.verify_password(generated)
+
+
+def test_new_app_reloads_workers_so_sites_can_import_it(tmp_path: Path) -> None:
+    from pilot.commands.apps.new import NewAppCommand
+
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    cmd = NewAppCommand(bench, app_name="demo_app", description="Demo", email="dev@example.com")
+
+    with (
+        patch.object(type(bench), "new_app") as mock_new_app,
+        patch.object(type(bench), "reload_workers") as mock_reload,
+        patch("sys.stdin.isatty", return_value=False),
+    ):
+        cmd.run()
+
+    mock_new_app.assert_called_once()
+    mock_reload.assert_called_once()

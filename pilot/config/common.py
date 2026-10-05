@@ -8,6 +8,7 @@ from pathlib import Path
 
 from pilot.config.alert_limit import ResourceLimitConfig
 from pilot.config.central import CentralConfig
+from pilot.config.frappe_cloud import FrappeCloudConfig
 from pilot.config.letsencrypt import LetsEncryptConfig
 from pilot.config.mariadb import MariaDBConfig
 from pilot.config.postgres import PostgresConfig
@@ -30,6 +31,7 @@ class CommonConfig:
     proxy: ProxyConfig = field(default_factory=ProxyConfig)
     telemetry: TelemetryConfig = field(default_factory=TelemetryConfig)
     resource_limits: ResourceLimitConfig = field(default_factory=ResourceLimitConfig)
+    frappe_cloud: FrappeCloudConfig = field(default_factory=FrappeCloudConfig)
     jwks_url: str = ""
     jwks_audience: str = ""
 
@@ -59,6 +61,7 @@ class CommonConfig:
             resource_limits=ResourceLimitConfig(
                 **_known_fields(ResourceLimitConfig, data.get("resource_limits", {}))
             ),
+            frappe_cloud=FrappeCloudConfig.from_dict(data.get("frappe_cloud", {})),
             jwks_url=admin.get("jwks_url", ""),
             jwks_audience=admin.get("jwks_audience", ""),
         )
@@ -157,6 +160,8 @@ class CommonConfig:
             }
         if self.resource_limits != ResourceLimitConfig():
             data["resource_limits"] = asdict(self.resource_limits)
+        if self.frappe_cloud != FrappeCloudConfig():
+            data["frappe_cloud"] = {"url": self.frappe_cloud.url}
         if self.jwks_url:
             data["admin"] = {"jwks_url": self.jwks_url, "jwks_audience": self.jwks_audience}
         return data

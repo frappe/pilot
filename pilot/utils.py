@@ -371,13 +371,6 @@ def installed_app_version(env_path: Path, name: str) -> str:
     return ""
 
 
-def git_has_local_changes(path: Path) -> bool:
-    """True if the repo at *path* has uncommitted edits or commits not yet on upstream."""
-    from pilot.internal.git import GitRepo
-
-    return GitRepo(path).has_local_changes
-
-
 def get_yarn_bin() -> str:
     if yarn := shutil.which("yarn"):
         return yarn

@@ -142,3 +142,18 @@ def test_run_reloads_workers_even_when_no_app_was_fetched(tmp_path: Path) -> Non
         task.run()
 
     task.bench.reload_workers.assert_called_once()
+
+
+def test_failure_cleanup_targets_a_site_this_task_would_create(tmp_path: Path) -> None:
+    task = make_task(tmp_path, ["frappe"])
+
+    assert task.remove_failed_site() == {"site": "site1.localhost"}
+
+
+def test_failure_cleanup_never_targets_a_site_that_already_exists(tmp_path: Path) -> None:
+    task = make_task(tmp_path, ["frappe"])
+    site_path = task.bench.sites_path / "site1.localhost"
+    site_path.mkdir(parents=True)
+    (site_path / "site_config.json").write_text("{}")
+
+    assert task.remove_failed_site() is None

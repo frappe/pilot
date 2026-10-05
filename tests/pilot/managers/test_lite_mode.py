@@ -222,3 +222,17 @@ def test_an_existing_bench_without_the_section_stays_off(tmp_path: Path) -> None
     BenchConfig.write_flat(tmp_path, "old", {"admin_domain": "old.example.com"})
 
     assert "lite_mode" not in tomllib.loads(bench_toml.read_text(encoding="utf-8"))
+
+
+def test_start_refuses_to_overwrite_a_damaged_common_site_config(tmp_path: Path) -> None:
+    from pilot.exceptions import MalformedSiteConfig
+
+    bench = make_bench(tmp_path)
+    bench.sites_path.mkdir(parents=True, exist_ok=True)
+    path = bench.sites_path / "common_site_config.json"
+    path.write_text('{"mail_server": "smtp.example.com",}')
+
+    with pytest.raises(MalformedSiteConfig):
+        bench.write_common_site_config()
+
+    assert "mail_server" in path.read_text()

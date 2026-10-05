@@ -9,6 +9,7 @@ _MEMORY_PER_CONNECTION_MB = 35
 _MIN_BUFFER_POOL_MB = 128
 _MIN_MEMORY_MAX_MB = 512
 _MIN_MEMORY_LIMIT_GAP_MB = 128
+_MEMORY_HIGH_HEADROOM_SHARE = 0.1
 _MAX_HOST_MEMORY_SHARE = 0.5
 _MIN_MAX_CONNECTIONS = 10
 _MIN_BUFFER_POOL_SHARE = 0.2
@@ -71,13 +72,7 @@ def calculate_mariadb_memory(total_memory_mb: int) -> MariaDBMemorySizing:
         host_share_cap_mb,
         max(_MIN_MEMORY_MAX_MB, round(mariadb_memory_mb)),
     )
-    memory_high_mb = max(
-        1,
-        min(
-            memory_max_mb - _MIN_MEMORY_LIMIT_GAP_MB,
-            round(max(mariadb_memory_mb - 1024, 1024)),
-        ),
-    )
+    memory_high_mb = memory_high_for(memory_max_mb)
 
     return MariaDBMemorySizing(
         total_memory_mb=total_memory_mb,
@@ -89,6 +84,13 @@ def calculate_mariadb_memory(total_memory_mb: int) -> MariaDBMemorySizing:
         memory_high_mb=memory_high_mb,
         memory_max_mb=memory_max_mb,
     )
+
+
+def memory_high_for(memory_max_mb: int) -> int:
+    """Just under MemoryMax. The buffer pool and connections fill MemoryMax, and a
+    MemoryHigh below that working set throttles MariaDB until it stalls."""
+    headroom_mb = max(_MIN_MEMORY_LIMIT_GAP_MB, int(memory_max_mb * _MEMORY_HIGH_HEADROOM_SHARE))
+    return max(1, memory_max_mb - headroom_mb)
 
 
 def calculate_mariadb_variable_limits(total_memory_mb: int) -> MariaDBVariableLimits:

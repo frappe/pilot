@@ -68,6 +68,28 @@ detect_distro() {
 
 DISTRO="$(detect_distro)"
 
+# The last two releases of each distro. Derivatives number releases differently
+# (Mint 22 is Ubuntu 24.04), so only the parents are checked.
+require_supported_release() {
+    os_release="${1:-/etc/os-release}"
+    [ -r "$os_release" ] || return 0
+    # shellcheck disable=SC1090
+    distro_id=$(. "$os_release"; echo "$ID")
+    # shellcheck disable=SC1090
+    major=$(. "$os_release"; echo "${VERSION_ID%%.*}")
+    case "$distro_id" in
+        ubuntu) minimum=24; label="Ubuntu 24.04" ;;
+        debian) minimum=12; label="Debian 12" ;;
+        fedora) minimum=43; label="Fedora 43" ;;
+        *) return 0 ;;
+    esac
+    # Debian testing and sid have no VERSION_ID; they are newer than any release.
+    [ -z "$major" ] && return 0
+    [ "$major" -ge "$minimum" ] && return 0
+    echo "Pilot does not support $distro_id $major. Use $label or newer." >&2
+    exit 1
+}
+
 is_root() {
     [ "$(id -u)" -eq 0 ]
 }
@@ -121,9 +143,29 @@ pkg_installed() {
     case "$DISTRO" in
         macos)  brew list --versions "$1" >/dev/null 2>&1 ;;
         fedora) rpm -q "$1" >/dev/null 2>&1 ;;
-        arch)   pacman -Qi "$1" >/dev/null 2>&1 ;;
+        # -T accepts a provider, such as mariadb-lts for mariadb.
+        arch)   pacman -T "$1" >/dev/null 2>&1 ;;
         *)      dpkg -l "$1" 2>/dev/null | grep -q '^ii' ;;
     esac
+}
+
+pkg_available() {
+    case "$DISTRO" in
+        debian|ubuntu) apt-cache show "$1" >/dev/null 2>&1 ;;
+        fedora) dnf -q info "$1" >/dev/null 2>&1 ;;
+        *) return 1 ;;
+    esac
+}
+
+# Naming an installed provider's package again makes pacman remove the provider.
+pkg_install_missing() {
+    missing=""
+    for package in "$@"; do
+        pkg_installed "$package" || missing="$missing $package"
+    done
+    [ -z "$missing" ] && return 0
+    # shellcheck disable=SC2086
+    pkg_install $missing
 }
 
 # Vendors (MariaDB, NodeSource, Homebrew) only publish `curl | bash` installers
@@ -180,16 +222,25 @@ ensure_homebrew() {
 
 # Bare images ship almost nothing: the tools this script and Pilot both need
 # before first use, plus the build deps for the admin venv and frappe wheels.
+# cron runs scheduled backups; Frappe's restore runs `file` to tell a gzipped dump apart.
 bootstrap_packages() {
     case "$DISTRO" in
         macos)
             pkg_install git python3 ;;
         debian|ubuntu)
-            pkg_install git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata ;;
+            pkg_install git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file ;;
         fedora)
-            pkg_install git curl bash sudo shadow-utils python3 python3-devel gcc gcc-c++ make tzdata ;;
+            pkg_install git curl bash sudo shadow-utils python3 python3-devel gcc gcc-c++ make tzdata cronie file ;;
         arch)
-            pkg_install git curl bash sudo python base-devel tzdata ;;
+            pkg_install git curl bash sudo python base-devel tzdata cronie file ;;
+    esac
+}
+
+# Debian's cron starts itself.
+enable_cron() {
+    case "$DISTRO" in
+        fedora) run_sudo systemctl enable --now crond 2>/dev/null || true ;;
+        arch)   run_sudo systemctl enable --now cronie 2>/dev/null || true ;;
     esac
 }
 
@@ -217,7 +268,7 @@ install_database_engines() {
             # Fedora 41+ ships valkey in place of redis (the alias the runtime resolves).
             pkg_install mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config valkey ;;
         arch)
-            pkg_install mariadb mariadb-clients mariadb-libs postgresql postgresql-libs pkgconf redis ;;
+            pkg_install_missing mariadb mariadb-clients mariadb-libs postgresql postgresql-libs pkgconf redis ;;
     esac
 }
 
@@ -226,24 +277,34 @@ install_database_engines() {
 install_production_packages() {
     case "$DISTRO" in
         macos)  pkg_install nginx certbot ;;
-        debian|ubuntu)
-            pkg_install nginx certbot supervisor libnginx-mod-http-modsecurity ;;
-        fedora) pkg_install nginx certbot supervisor ;;
+        debian|ubuntu|fedora)
+            waf=$(waf_packages)
+            [ -n "$waf" ] || echo "Warning: the nginx ModSecurity module is not packaged for this release, so the WAF is unavailable."
+            # shellcheck disable=SC2086
+            pkg_install nginx certbot supervisor $waf ;;
         arch)   pkg_install nginx certbot supervisor ;;
     esac
+}
+
+# Some releases do not package the ModSecurity module.
+waf_packages() {
+    case "$DISTRO" in
+        debian|ubuntu) pkg_available libnginx-mod-http-modsecurity && echo libnginx-mod-http-modsecurity ;;
+        fedora) pkg_available nginx-mod-modsecurity && echo nginx-mod-modsecurity ;;
+    esac
+    return 0
 }
 
 # NodeSource pins Node 24 on deb/rpm distros; Arch ships a current Node itself.
 install_node() {
     if command -v node >/dev/null 2>&1; then
         NODE_VERSION=$(node -v | tr -d 'v' | cut -d'.' -f1)
-        if [ "$NODE_VERSION" = "24" ]; then
+        if [ "$NODE_VERSION" -ge 24 ] 2>/dev/null; then
             return 0
-        else
-            echo "❌ Error: Found Node.js version $NODE_VERSION, but Pilot strictly requires Node.js 24."
-            echo "Please manually install Node.js 24 and retry."
-            exit 1
         fi
+        echo "❌ Error: Pilot needs Node.js 24 or later, but found $(node -v)."
+        echo "Please install Node.js 24 or later and retry."
+        exit 1
     fi
     # An unknown distro only gets Node when apt is there to install it.
     if [ "$DISTRO" = "unknown" ] && ! command -v apt-get >/dev/null 2>&1; then
@@ -262,6 +323,14 @@ install_node() {
     esac
 }
 
+# Services not enabled before this run. A rerun must leave alone the nginx that
+# `pilot setup production` enabled, or every production bench goes down.
+services_to_disable() {
+    for service in mariadb postgresql redis-server redis valkey nginx supervisor; do
+        systemctl is-enabled "$service" >/dev/null 2>&1 || echo "$service"
+    done
+}
+
 # The distro packages auto-start services on their default ports. Benches run
 # their own instances, so free the ports and the memory right away. `pilot setup
 # production` starts nginx and enables it at boot, which a sudoers grant allows.
@@ -269,13 +338,17 @@ disable_system_services() {
     case "$DISTRO" in
         macos|unknown) return 0 ;;
     esac
-    for service in mariadb postgresql redis-server redis valkey nginx supervisor; do
+    for service in "$@"; do
         run_sudo systemctl disable --now "$service" 2>/dev/null || true
     done
 }
 
 install_system_packages() {
-    [ "$DISTRO" = "unknown" ] && return 0
+    if [ "$DISTRO" = "unknown" ]; then
+        # Timezone data still applies where apt exists; only root may install it.
+        if is_root; then ensure_tzdata; fi
+        return 0
+    fi
     # Root always runs this (idempotent, and bare containers need it before
     # useradd). A non-root install may skip it only when the complete host stack
     # is already present, such as the second pass after root provisioning.
@@ -290,21 +363,25 @@ install_system_packages() {
         fi
     fi
     echo "$DISTRO detected — installing base dependencies..."
+    new_services=$(services_to_disable)
     ensure_curl
     add_distro_repos
     pkg_update
     bootstrap_packages
+    enable_cron
     install_database_engines
     install_production_packages
-    disable_system_services
+    # shellcheck disable=SC2086
+    disable_system_services $new_services
     install_node
+    ensure_tzdata
 }
 
 base_tools_present() {
     if [ "$DISTRO" = "macos" ]; then
         tools="git brew python3"
     else
-        tools="git curl bash sudo python3"
+        tools="git curl bash sudo python3 crontab file"
     fi
     for tool in $tools; do
         command -v "$tool" >/dev/null 2>&1 || return 1
@@ -319,9 +396,9 @@ system_packages_present() {
         macos)
             packages="mariadb@$MARIADB_VERSION postgresql@$POSTGRES_VERSION redis nginx certbot" ;;
         debian|ubuntu)
-            packages="mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config redis-server nginx certbot supervisor libnginx-mod-http-modsecurity" ;;
+            packages="mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config redis-server nginx certbot supervisor $(waf_packages)" ;;
         fedora)
-            packages="mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config valkey nginx certbot supervisor" ;;
+            packages="mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config valkey nginx certbot supervisor $(waf_packages)" ;;
         arch)
             packages="mariadb mariadb-clients mariadb-libs postgresql postgresql-libs pkgconf redis nginx certbot supervisor" ;;
         *)
@@ -470,14 +547,20 @@ install_sudoers_grants() {
     # written), but each wildcard is anchored between fixed literal text, so no
     # extra flag can be smuggled in before or after the match.
     write_sudoers_file "$1-pilot-certbot" \
-"$1 ALL=(ALL) NOPASSWD: $certbot_bin certonly --webroot -w $webroot * --cert-name * --expand --email * --agree-tos --non-interactive --deploy-hook $hook,$certbot_bin certonly --webroot -w $webroot -d * --email * --agree-tos --non-interactive --deploy-hook $hook,$certbot_bin renew --quiet,$mkdir_bin -p $webroot,$test_bin -f $live/*/fullchain.pem -a -f $live/*/privkey.pem,$openssl_bin x509 -noout -ext subjectAltName -in $live/*/fullchain.pem,$openssl_bin x509 -enddate -noout -in $live/*/fullchain.pem"
+"$1 ALL=(ALL) NOPASSWD: $certbot_bin certonly --webroot -w $webroot * --cert-name * --expand --email * --agree-tos --non-interactive --deploy-hook $hook,$certbot_bin certonly --webroot -w $webroot -d * --email * --agree-tos --non-interactive --deploy-hook $hook,$certbot_bin renew --quiet,$mkdir_bin -p $webroot,$test_bin -f $live/*/fullchain.pem -a -f $live/*/privkey.pem,$openssl_bin x509 -noout -ext subjectAltName -in $live/*/fullchain.pem,$openssl_bin x509 -enddate -noout -in $live/*/fullchain.pem" \
+"$1 ALL=(ALL) NOPASSWD: $certbot_bin,$mkdir_bin,$test_bin,$openssl_bin"
 }
 
 # A malformed file in /etc/sudoers.d breaks sudo for every user, including the
-# recovery path, so validate before installing.
+# recovery path, so validate before installing. sudo-rs (Ubuntu 26.04) rejects
+# wildcards in arguments; the optional third grant names the same commands bare.
 write_sudoers_file() {
     staged="$(mktemp)"
     echo "$2" > "$staged"
+    if [ -n "${3:-}" ] && sudo --version 2>/dev/null | grep -q '^sudo-rs' && ! visudo -cf "$staged" >/dev/null 2>&1; then
+        echo "Warning: this sudo rejects argument wildcards, so $1 grants its commands without argument limits." >&2
+        echo "$3" > "$staged"
+    fi
     if visudo -cf "$staged" >/dev/null 2>&1; then
         install -m 440 "$staged" "/etc/sudoers.d/$1"
     else
@@ -676,7 +759,6 @@ install_for_user() {
     rm -f "$PILOT_DIR/bench"
     chmod +x "$PILOT_DIR/bin/pilot"
     ensure_uv
-    ensure_tzdata
     add_pilot_to_path
     ensure_admin_venv
 
@@ -691,6 +773,7 @@ install_for_user() {
 }
 
 # ── run ───────────────────────────────────────────────────────────────────────
+require_supported_release
 install_system_packages
 
 if is_root; then

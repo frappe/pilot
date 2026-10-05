@@ -83,6 +83,7 @@ def test_cli_updates_release_reports_version_without_network(tmp_path: Path) -> 
     assert body["is_dev"] is False
     assert body["current_version"] == "v0.0.1-pre-alpha"
     assert body["update_available"] is False
+    assert body["restarts_admin"] is False  # no systemd or supervisor runs this bench
 
 
 def test_cli_update_checks_release_compares_latest(tmp_path: Path) -> None:

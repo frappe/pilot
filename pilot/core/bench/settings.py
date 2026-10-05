@@ -54,6 +54,9 @@ class BenchSettings:
 
     def _regenerate_and_restart_if_needed(self, old_restart: dict) -> bool:
         new_restart = restart_trigger_values(self.bench.config)
+        if not self.bench.supports_lite_mode:
+            # Without Frappe's runner the bench runs the classic process set either way.
+            old_restart = {**old_restart, "lite_mode": new_restart["lite_mode"]}
         if not is_restart_needed(old_restart, new_restart):
             return False
         if old_restart.get("lite_mode") != new_restart.get("lite_mode"):

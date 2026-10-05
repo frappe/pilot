@@ -53,10 +53,10 @@ def drop_site(page: Page, base_url: str, site_name: str) -> None:
     # Drop lives in the site's Danger section, part of the "settings" tab (there
     # is no standalone "actions" tab anymore).
     _open_site_tab(page, base_url, site_name, "settings")
-    page.get_by_role("button", name="Drop site").click()
+    page.get_by_role("button", name="Drop", exact=True).click()
 
     dialog = page.get_by_role("dialog")
-    dialog.get_by_label(f"Type {site_name} to confirm").fill(site_name)
+    dialog.get_by_label("Type the site name to confirm").fill(site_name)
     task_id = run_task_action(
         page,
         f"/api/v1/sites/{site_name}",

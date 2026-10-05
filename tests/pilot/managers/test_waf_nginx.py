@@ -203,3 +203,28 @@ def test_custom_rules_file_written_and_included_before_crs(tmp_path: Path, insta
     assert (modsec / "custom_rules.conf").read_text().startswith("SecRule REQUEST_FILENAME")
     main = (modsec / "main.conf").read_text()
     assert main.index("overrides.conf") < main.index("custom_rules.conf") < main.index("rules/*.conf")
+
+
+def test_engine_config_leaves_default_actions_to_crs_setup(tmp_path: Path) -> None:
+    # crs-setup.conf sets SecDefaultAction per phase; libmodsecurity 3.0.16 rejects a second one.
+    engine = ModSecurityRenderer(_bench(tmp_path, WafConfig(enabled=True))).render_engine(WafConfig(enabled=True))
+
+    assert "SecDefaultAction" not in engine
+
+
+def test_a_module_loaded_from_fedora_module_dir_is_not_loaded_again(tmp_path: Path, monkeypatch) -> None:
+    nginx_conf = tmp_path / "nginx.conf"
+    nginx_conf.write_text("include /usr/share/nginx/modules/*.conf;\n")
+    fedora_modules = tmp_path / "modules"
+    fedora_modules.mkdir()
+    (fedora_modules / "mod-modsecurity.conf").write_text("load_module ngx_http_modsecurity_module.so;\n")
+    monkeypatch.setattr(nginx, "_NGINX_CONF", nginx_conf)
+    monkeypatch.setattr(nginx, "_MODULE_DIRS", (tmp_path / "missing", fedora_modules))
+
+    assert NginxManager._module_already_loaded() is True
+
+
+def test_frappe_rest_methods_pass_the_crs_method_policy() -> None:
+    overrides = ModSecurityRenderer.render_overrides(WafConfig(enabled=True))
+
+    assert "tx.allowed_methods=GET HEAD POST OPTIONS PUT PATCH DELETE" in overrides

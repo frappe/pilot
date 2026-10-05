@@ -4,13 +4,13 @@ import importlib.util
 import logging
 import pwd
 import re
-import shutil
 import sys
 from fnmatch import fnmatch
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
+from pilot.config.waf import parse_nginx_size
 from pilot.exceptions import CommandError
 from pilot.internal.template import Template
 from pilot.managers.gunicorn import GunicornManager
@@ -40,6 +40,7 @@ _USER_DIRECTIVE = re.compile(r"^[ \t]*user[ \t]+[^;\n]+;", re.MULTILINE)
 _SHARED_ERROR_DIR = Path("/usr/share/nginx/bench-error-pages")
 
 _TEMPLATES = Path(__file__).parent / "templates"
+ADMIN_CLIENT_MAX_BODY_SIZE = "1024m"
 _BENCH_TEMPLATE = Template.from_path(_TEMPLATES / "bench.conf.template")
 _SERVER_TEMPLATE = Template.from_path(_TEMPLATES / "server.conf.template")
 _ERROR_PAGE_TEMPLATE = Template.from_path(_TEMPLATES / "error_page.html.template")
@@ -65,7 +66,7 @@ ERROR_PAGES = {
     404: ("Page not found", "The page you're looking for doesn't exist."),
     502: (
         "Temporarily unavailable",
-        "The server isn't responding right now. Please try again in a moment.",
+        "The server is starting or not responding. This page retries every few seconds.",
     ),
     503: (
         "Service unavailable",
@@ -74,6 +75,8 @@ ERROR_PAGES = {
 }
 
 LETSENCRYPT_LIVE = Path("/etc/letsencrypt/live")
+# Debian loads dynamic modules from modules-enabled, Fedora from /usr/share/nginx/modules.
+_MODULE_DIRS = (Path("/etc/nginx/modules-enabled"), Path("/usr/share/nginx/modules"))
 
 
 def _shared_nginx_dir() -> Path:
@@ -153,14 +156,12 @@ class NginxConfigRenderer:
         if not admin.domain or admin.domain != mapping.target:
             return None
 
-        socket_activated = self.bench.config.production.process_manager == "systemd"
-        port = admin.internal_port if socket_activated else admin.port
         # Redirect to the scheme nginx is actually serving.
         scheme = "https" if admin_ssl else "http"
         return SimpleNamespace(
             server_name=vm_hostname_pattern(mapping.pattern),
             redirect=f"{scheme}://{mapping.target}" if mapping.redirect else "",
-            proxy_pass=f"http://127.0.0.1:{port}",
+            proxy_pass=f"http://127.0.0.1:{admin.internal_port}",
             site="",
         )
 
@@ -211,7 +212,6 @@ class NginxConfigRenderer:
         for domain in site.all_domains:
             route = site.configured_route_for(domain)
             ssl = domain in tls_domains
-            public_scheme = route.public_scheme if route else "$scheme"
             client_ip_source = route.client_ip_source if route else (
                 "proxy_protocol_v2"
                 if ssl and self.bench.config.proxy.protocol_v2
@@ -219,6 +219,7 @@ class NginxConfigRenderer:
                 if self._proxy_servers
                 else "direct"
             )
+            public_scheme = route.public_scheme if route else self._unrouted_scheme(client_ip_source)
             key = (ssl, public_scheme, client_ip_source)
             groups.setdefault(key, []).append(domain)
         for (ssl, public_scheme, client_ip_source), domains in groups.items():
@@ -226,6 +227,12 @@ class NginxConfigRenderer:
                 self._site_vhost(site, domains, ssl, public_scheme, client_ip_source)
             )
         return vhosts
+
+    @staticmethod
+    def _unrouted_scheme(client_ip_source: str) -> str:
+        """Trust the edge's scheme only where it terminates TLS, never on PROXY-protocol passthrough.
+        $pilot_scheme falls back to $scheme when the edge sends no X-Forwarded-Proto."""
+        return "$pilot_scheme" if client_ip_source == "x_forwarded_for" else "$scheme"
 
     def _site_vhost(
         self,
@@ -268,7 +275,6 @@ class NginxConfigRenderer:
             else "direct"
         )
         client_ip_source = route.client_ip_source if admin.route else legacy_source
-        socket_activated = self.bench.config.production.process_manager == "systemd"
         return SimpleNamespace(
             kind="admin",
             server_name=admin.domain,
@@ -282,10 +288,10 @@ class NginxConfigRenderer:
                 if client_ip_source == "x_forwarded_for"
                 else "$proxy_add_x_forwarded_for"
             ),
-            public_scheme=route.public_scheme if admin.route else "$scheme",
+            public_scheme=route.public_scheme if admin.route else self._unrouted_scheme(client_ip_source),
             cert=live_cert_path(admin.domain),
             key=live_key_path(admin.domain),
-            port=admin.internal_port if socket_activated else admin.port,
+            port=admin.internal_port,
         )
 
     def _bench_context(
@@ -299,6 +305,10 @@ class NginxConfigRenderer:
             "http_port": nginx.http_port,
             "https_port": nginx.https_port,
             "client_max_body_size": nginx.client_max_body_size,
+            # Backup uploads come in chunks of up to 256 MB, so the admin takes at least 1 GB.
+            "admin_client_max_body_size": max(
+                nginx.client_max_body_size, ADMIN_CLIENT_MAX_BODY_SIZE, key=parse_nginx_size
+            ),
             "socketio_port": self.bench.realtime_port,
             "sites_root": f"{self.bench.path}/sites",
             "logs_path": str(self.bench.logs_path),
@@ -329,7 +339,7 @@ class NginxManager:
         self._modsec = ModSecurityRenderer(bench)
 
     def is_installed(self) -> bool:
-        return shutil.which("nginx") is not None
+        return which("nginx") is not None
 
     def install(self) -> None:
         if not self.is_installed():
@@ -515,8 +525,10 @@ class NginxManager:
                 return True
         except OSError:
             return True
-        modules_dir = Path("/etc/nginx/modules-enabled")
-        return modules_dir.is_dir() and any("modsecurity" in entry.name for entry in modules_dir.iterdir())
+        for modules_dir in _MODULE_DIRS:
+            if modules_dir.is_dir() and any("modsecurity" in entry.name for entry in modules_dir.iterdir()):
+                return True
+        return False
 
     @staticmethod
     def _prune_dangling_symlinks(nginx_dir: Path) -> None:

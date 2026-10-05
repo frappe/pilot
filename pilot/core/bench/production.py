@@ -39,15 +39,18 @@ class BenchProduction:
         manager = cast("ManagedProcessManager", ProcessManager.for_bench(self.bench))
         on_progress("Stopping the running processes")
         manager.stop()
-        on_progress("Rewriting the bench configuration")
-        self.bench.write_common_site_config()
-        regenerate_nginx(self.bench)
-        on_progress("Installing the new process set")
-        manager.write_config()
-        manager.install_config()
-        manager.reload_manager_config()
-        on_progress("Starting the new process set")
-        manager.start_workload()
+        # A failed step must not leave the sites down.
+        try:
+            on_progress("Rewriting the bench configuration")
+            self.bench.write_common_site_config()
+            regenerate_nginx(self.bench)
+            on_progress("Installing the new process set")
+            manager.write_config()
+            manager.install_config()
+            manager.reload_manager_config()
+        finally:
+            on_progress("Starting the new process set")
+            manager.start_workload()
 
     def remove_production(self, on_progress: Callable[[str], None]) -> None:
         production = self.bench.config.production
@@ -108,7 +111,9 @@ class BenchProduction:
         from pilot.managers.nginx import NginxManager
 
         if not self.bench.config.letsencrypt.email:
-            raise ConfigError("letsencrypt.email must be set in bench.toml to run setup letsencrypt.")
+            raise ConfigError(
+                "letsencrypt.email is not set. Run 'pilot setup production --letsencrypt-email <email>', or set letsencrypt.email in common_config.toml."
+            )
         letsencrypt_manager = LetsEncryptManager(self.bench)
         nginx_manager = NginxManager(self.bench)
         letsencrypt_manager.install()
@@ -199,7 +204,7 @@ class BenchProduction:
             WafManager(self.bench).install()
         except Exception as exc:
             print(
-                f"Warning: could not install the WAF (ModSecurity/CRS): {exc}. "
+                f"Warning: could not install the WAF (ModSecurity/CRS): {str(exc).rstrip('.')}. "
                 f"Sites are unaffected; re-run setup to retry.",
                 file=sys.stderr,
             )

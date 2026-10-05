@@ -6,6 +6,7 @@ from typing import TypedDict
 from flask import Blueprint, Response, current_app, jsonify, request, stream_with_context
 
 from admin.backend.api.responses import error_response
+from admin.backend.draining import is_draining
 from admin.backend.providers.logs import LogProvider
 
 
@@ -117,7 +118,7 @@ def stream_log(filename: str):
 
     def generate():
         try:
-            for line in provider.follow_file(filename):
+            for line in provider.follow_file(filename, should_stop=is_draining):
                 yield f"data: {json.dumps({'line': line})}\n\n"
         except ValueError as error:
             yield f"data: {json.dumps({'error': str(error)})}\n\n"

@@ -36,7 +36,7 @@ class ProcessResolver:
         from pilot.managers.processes.systemd import SystemdProcessManager
 
         bench_process_manager = SystemdProcessManager(self.bench)
-        systemd_dir = self.bench.config_path / "systemd"
+        systemd_dir = bench_process_manager.systemd_conf_dir
 
         if not systemd_dir.exists():
             return {}
@@ -58,6 +58,8 @@ class ProcessResolver:
         from pilot.managers.processes.supervisor import SupervisorProcessManager
 
         bench_process_manager = SupervisorProcessManager(self.bench)
+        if not bench_process_manager.is_alive():
+            return {}
         result = run_command(
             ["supervisorctl", "-c", str(bench_process_manager.supervisor_conf_path), "status"]
         )

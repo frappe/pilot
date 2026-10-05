@@ -97,7 +97,7 @@ def test_post_updates_rejects_when_one_is_already_unresolved(tmp_path: Path) -> 
     assert second.get_json()["error"]["code"] == "migration_conflict"
 
 
-def test_standalone_migrate_returns_operation_and_task_ids(tmp_path: Path) -> None:
+def test_standalone_migrate_runs_in_place_without_a_backup(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
     site_dir = bench_root / "sites" / "site1.localhost"
     site_dir.mkdir(parents=True)
@@ -106,7 +106,8 @@ def test_standalone_migrate_returns_operation_and_task_ids(tmp_path: Path) -> No
 
     with (
         patch("pilot.integrations.marketplace.Marketplace.registry", return_value=[]),
-        patch("pilot.tasks.migration_backup.MigrationBackupTask.queue", return_value="task-99"),
+        patch("pilot.tasks.migration_backup.MigrationBackupTask.queue") as backup,
+        patch("pilot.tasks.migrate.MigrateTask.queue", return_value="task-99"),
     ):
         response = client.post("/api/v1/sites/site1.localhost/actions/migrate", json={})
 
@@ -115,6 +116,8 @@ def test_standalone_migrate_returns_operation_and_task_ids(tmp_path: Path) -> No
     assert data["operation_id"]
     assert data["task_id"] == "task-99"
     assert response.headers["Location"].endswith(f"/migrations/{data['operation_id']}")
+    backup.assert_not_called()
+    assert Bench(bench_root).migrations.get(data["operation_id"]).can_revert is False
 
 
 def test_restore_action_uses_documented_endpoint(tmp_path: Path) -> None:

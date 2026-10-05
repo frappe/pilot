@@ -24,7 +24,7 @@ Bench commands with `--bench NAME` can run from outside the bench directory. `Be
 - `pilot start`: start bench processes.
 - `pilot stop`: stop bench processes.
 - `pilot restart`: restart the production workload.
-- `pilot build`: build assets or download prebuilt assets when available. The queued build task (`pilot.tasks.build.BuildTask`) always forces a full rebuild, since a queued/CLI-triggered build is expected to reflect current source rather than reuse a prebuilt bundle.
+- `pilot build`: build assets, or download [prebuilt assets](prebuilt-assets.md) for the checked-out commit when the app publishes them. The queued build task (`pilot.tasks.build.BuildTask`) always forces a full rebuild, since a queued/CLI-triggered build is expected to reflect current source rather than reuse a prebuilt bundle.
 - `pilot frappe -- ...`: pass through to Frappe's bench helper.
 
 Some runtime commands support all benches when invoked with the CLI option for all-bench execution.
@@ -34,8 +34,8 @@ Some runtime commands support all benches when invoked with the CLI option for a
 - `pilot new-app APP`: scaffold a new Frappe app under `apps/` and install it. Prompts for title, description, publisher, email, license, GitHub workflow, and branch; pass any of `--title/--description/--publisher/--email/--license/--branch/--github-workflow` to skip prompts (branch defaults to `develop`).
 - `pilot get-app REPO_OR_NAME`: clone and install an app into the bench.
 - `pilot list-apps`: list apps present in the bench.
-- `pilot install-app APP --site SITE`: install apps on a site. An app the site only has disabled is enabled instead, bringing back anything it requires first.
-- `pilot uninstall-app APP --site SITE`: uninstall apps from a site, dropping their data.
+- `pilot install-app SITE APP [APP ...]`: install apps on a site. An app the site only has disabled is enabled instead, bringing back anything it requires first.
+- `pilot uninstall-app SITE APP [APP ...]`: uninstall apps from a site, dropping their data. An app that no site uses afterwards is also removed from the bench.
 - `pilot remove-app APP`: remove an app from the bench when no site needs it.
 
 Long app operations should use task classes from `pilot.tasks`.

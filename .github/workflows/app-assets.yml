@@ -1,0 +1,99 @@
+name: App assets
+
+on:
+  workflow_call:
+    inputs:
+      frappe-branch:
+        description: Frappe branch to build against. Defaults to the pushed branch for version-* branches, else develop.
+        type: string
+        required: false
+        default: ""
+      keep-untagged:
+        description: How many of the newest untagged commits keep their assets. At least 1.
+        type: number
+        required: false
+        default: 30
+      keep-tagged:
+        description: How many of the newest tagged commits keep their assets. 0 keeps all of them.
+        type: number
+        required: false
+        default: 0
+
+permissions:
+  contents: write
+
+# Pushes in quick succession would race on creating the release.
+concurrency:
+  group: app-assets-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  assets:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: app
+
+      - uses: actions/checkout@v4
+        with:
+          repository: frappe/pilot
+          path: pilot
+          sparse-checkout: scripts
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Build
+        env:
+          FRAPPE_BRANCH: ${{ inputs.frappe-branch }}
+        run: |
+          if [ -z "$FRAPPE_BRANCH" ]; then
+            case "$GITHUB_REF_NAME" in
+              version-*) FRAPPE_BRANCH="${GITHUB_REF_NAME%-hotfix}" ;;
+              *) FRAPPE_BRANCH=develop ;;
+            esac
+          fi
+          pilot/scripts/build-app-assets.sh app "$FRAPPE_BRANCH" dist
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # The checkouts live in app/ and pilot/, so gh cannot read the repository from git here.
+          GH_REPO: ${{ github.repository }}
+          KEEP_UNTAGGED: ${{ inputs.keep-untagged }}
+          KEEP_TAGGED: ${{ inputs.keep-tagged }}
+        run: |
+          if [ "$KEEP_UNTAGGED" -lt 1 ] || [ "$KEEP_TAGGED" -lt 0 ]; then
+            echo "keep-untagged must be at least 1 and keep-tagged at least 0." >&2
+            exit 1
+          fi
+          tag="assets-${GITHUB_REF_NAME//\//-}"
+          # Another workflow on the same branch can create the release first.
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --prerelease --target "$GITHUB_SHA" \
+              --title "Assets for $GITHUB_REF_NAME" --notes "Prebuilt assets that Pilot downloads. Do not edit." \
+              || gh release view "$tag" >/dev/null
+          fi
+          gh release upload "$tag" dist/* --clobber
+
+          # Keep the newest commits of each kind: two files (archive and checksum) per commit.
+          # The release's own assets-<branch> tag does not make its commit a release.
+          tagged=$(gh api --paginate "repos/$GITHUB_REPOSITORY/tags?per_page=100" \
+            --jq '.[] | select(.name | startswith("assets-") | not) | .commit.sha' | tr '\n' ' ')
+          release_id=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --jq .id)
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases/$release_id/assets?per_page=100" \
+            --jq '.[] | "\(.created_at) \(.id) \(.name)"' \
+            | sort -r \
+            | awk -v keep_untagged="$KEEP_UNTAGGED" -v keep_tagged="$KEEP_TAGGED" -v tagged="$tagged" '
+                BEGIN { split(tagged, shas, " "); for (i in shas) is_tagged[shas[i]] = 1 }
+                match($3, /-[0-9a-f]{40}\.tar\.gz(\.sha256)?$/) {
+                  sha = substr($3, RSTART + 1, 40)
+                  kind = (sha in is_tagged) ? "tagged" : "untagged"
+                  if (!(sha in seen)) { seen[sha] = 1; count[kind]++ }
+                  if (kind == "untagged" && count[kind] > keep_untagged) print $2
+                  if (kind == "tagged" && keep_tagged > 0 && count[kind] > keep_tagged) print $2
+                }' \
+            | xargs -r -I{} gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/{}"

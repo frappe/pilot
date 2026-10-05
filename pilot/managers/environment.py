@@ -12,6 +12,8 @@ from pilot.managers.platform import add_mysqlclient_flags, is_macos, which
 from pilot.managers.python_assets import PythonAssetBuilder
 from pilot.utils import get_yarn_bin, run_command
 
+MINIMUM_NODE_MAJOR = 24
+
 if TYPE_CHECKING:
     from pilot.core.app import App
     from pilot.core.bench import Bench
@@ -188,8 +190,20 @@ class PythonEnvManager:
     def install_node(self) -> None:
         if not which("node"):
             self._install_node()
+        self.require_node_version()
         if not which("yarn"):
             self._install_yarn()
+
+    @staticmethod
+    def require_node_version() -> None:
+        """Frappe v16 needs Node 24. Fail here rather than later inside `yarn install`."""
+        version = run_command(["node", "--version"]).stdout.decode().strip()
+        major = int(version.lstrip("v").split(".", 1)[0])
+        if major < MINIMUM_NODE_MAJOR:
+            raise BenchError(
+                f"Node.js {MINIMUM_NODE_MAJOR} or later is required, but `node` on PATH is {version} "
+                f"({which('node')}). Install Node.js {MINIMUM_NODE_MAJOR} or put it first on PATH."
+            )
 
     def _install_node(self) -> None:
         if is_macos():

@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
 
 from pilot.config.route import RoutePolicy
 from pilot.exceptions import ConfigError
@@ -37,6 +38,12 @@ class AdminConfig:
     # an operator with server access can still read them; the API returns them only when
     # they are issued, never on demand.
     recovery_codes: list[str] = field(default_factory=list)
+
+    @property
+    def central_url(self) -> str:
+        """Central's origin. Central serves its JWKS from its own host."""
+        url = urlsplit(self.jwks_url)
+        return f"{url.scheme}://{url.netloc}" if url.scheme and url.netloc else ""
 
     @classmethod
     def from_dict(cls, data: dict) -> "AdminConfig":

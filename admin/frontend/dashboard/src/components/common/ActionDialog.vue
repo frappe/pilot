@@ -29,6 +29,7 @@ interface Props {
   cancelLabel?: string
   loading?: boolean
   disabled?: boolean
+  hideActions?: boolean
 }
 
 withDefaults(defineProps<Props>(), {
@@ -40,6 +41,7 @@ withDefaults(defineProps<Props>(), {
   cancelLabel: 'Cancel',
   loading: false,
   disabled: false,
+  hideActions: false,
 })
 
 const open = defineModel<boolean>('open')
@@ -95,7 +97,7 @@ const emit = defineEmits(['confirm'])
       <ErrorMessage v-if="error" :message="error" />
     </div>
 
-    <template #actions>
+    <template v-if="!hideActions" #actions>
       <div class="flex justify-end gap-2">
         <Button variant="subtle" @click="open = false">{{ cancelLabel }}</Button>
         <Button

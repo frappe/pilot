@@ -57,3 +57,10 @@ def test_dashboard_route_serves_the_build_and_falls_back_to_the_spa(
     assert "immutable" in asset.headers.get("Cache-Control", "")
     assert unknown_route.status_code == 200
     assert b"dashboard" in unknown_route.data
+
+
+def test_a_chunk_removed_by_a_rebuild_is_a_404_not_the_spa(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """index.html served as a module script hides the real failure."""
+    response = _client(tmp_path, monkeypatch).get("/assets/TaskDetail-old.js")
+
+    assert response.status_code == 404

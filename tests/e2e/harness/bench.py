@@ -10,6 +10,7 @@ import signal
 import subprocess
 import time
 import tomllib
+from collections.abc import Iterator
 from pathlib import Path
 from shutil import rmtree
 from urllib.request import urlopen
@@ -88,6 +89,21 @@ class Bench:
                 f"`pilot` from a non-editable pip install writes next to its site-packages."
             )
         self._info = self._read_config()
+
+    @contextlib.contextmanager
+    def github_connected(self) -> Iterator[None]:
+        """Use the CI token as the bench's GitHub connection for the duration: anonymous
+        GitHub API calls from shared runners hit the rate limit. Later specs need the
+        bench without a connection, so it is removed again."""
+        from pilot.integrations.git.credentials import GitCredentialStore
+
+        store = GitCredentialStore(self.dir)
+        if token := os.environ.get("GITHUB_TOKEN"):
+            store.save("github", token)
+        try:
+            yield
+        finally:
+            store.clear()
 
     def start_wizard(self) -> None:
         """Start the standalone setup-wizard server."""

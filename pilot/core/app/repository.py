@@ -92,11 +92,12 @@ class AppRepository:
         )
         if newest is None or not newest.get("commit"):
             return None
-        return newest if self._is_ahead_of_installed(newest["commit"]) else None
+        return newest if self._is_ahead_of_installed(newest["commit"], newest.get("version", "")) else None
 
-    def _is_ahead_of_installed(self, commit: str) -> bool:
-        """Whether `commit` is a step forward from HEAD, asking git rather than
-        comparing version labels."""
+    def _is_ahead_of_installed(self, commit: str, version: str) -> bool:
+        """Whether `commit` descends from HEAD. A stale registry can advertise an older
+        release, so only proven descent counts. When a shallow clone holds both commits
+        without the history between them, a strictly newer version decides."""
         installed = self.installed_hash
         if installed == commit:
             return False
@@ -105,8 +106,21 @@ class AppRepository:
         repo = self.repo
         if not repo.has_commit(commit):
             self._sync_remote_url()
+            # Fetching a descendant also brings the history that links it to HEAD.
             repo.fetch(commit, timeout=_FETCH_TIMEOUT_SECONDS)
-        return not repo.is_ancestor(commit, installed)
+        if repo.is_ancestor(installed, commit):
+            return True
+        if not repo.has_commit(commit) or repo.is_ancestor(commit, installed):
+            return False
+        return self._is_newer_than_installed(version)
+
+    def _is_newer_than_installed(self, version: str) -> bool:
+        from pilot._vendor.packaging.version import InvalidVersion, Version
+
+        try:
+            return Version(version) > Version(self.app.installed_version)
+        except InvalidVersion:
+            return False
 
     @property
     def remote_url(self) -> str:
@@ -281,7 +295,10 @@ class AppRepository:
 
         repo = self.repo
         self._sync_remote_url()
-        repo.fetch("+refs/heads/*:refs/remotes/origin/*")
+        # A named refspec creates origin/<branch> even in a single-branch clone.
+        refspec = f"+refs/heads/{branch}:refs/remotes/origin/{branch}"
+        if not repo.fetch(*self.depth_flags, refspec, timeout=_FETCH_TIMEOUT_SECONDS * 10):
+            raise BenchError(f"Could not fetch branch '{branch}' of '{self.app.config.name}'.")
         repo.abort_merge_rebase()
         stashed = repo.stash_all()
         if not repo.checkout_new_branch(branch, f"origin/{branch}"):

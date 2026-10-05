@@ -71,7 +71,7 @@ migrating   -- one task per site, in order
 completed
 ```
 
-A standalone site migration uses the same workflow but skips the app-update step.
+A standalone site migration uses the same workflow but skips the app-update step. It runs in place: it takes no safeguard backup, so it cannot be reverted. A branch switch also uses this workflow, and it does take the safeguard backups.
 
 
 Before the first task is queued, Pilot:

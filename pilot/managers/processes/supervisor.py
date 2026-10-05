@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import os
 import shlex
+import shutil
 import subprocess
 from pathlib import Path
 
+from pilot.managers.cron import CronManager
 from pilot.managers.environment import AdminEnvManager
 from pilot.managers.gunicorn import GunicornManager
 from pilot.managers.processes.base import (
@@ -15,6 +17,8 @@ from pilot.managers.processes.base import (
 )
 from pilot.managers.processes.local import ProcessDefinition
 from pilot.utils import cli_root, run_command
+
+_BOOT_JOB = "supervisord-boot"
 
 
 class SupervisorRenderer(ServiceRenderer):
@@ -32,8 +36,11 @@ class SupervisorRenderer(ServiceRenderer):
             pairs = ",".join(f'{k}="{v}"' for k, v in pd.env.items())
             env = f"environment={pairs}\n"
         stop = f"stopwaitsecs={pd.stop_timeout}\n" if pd.stop_timeout is not None else ""
+        # Lower priority starts first and stops last, so redis outlives what drains into it.
+        priority = "priority=100\n" if pd.name.startswith("redis") else ""
         return (
             f"[program:{self.get_program_name(pd)}]\n"
+            f"{priority}"
             f"command={shlex.join(pd.argv)}\n"
             f"{env}{directory}"
             f"autostart=true\n"
@@ -51,6 +58,7 @@ class SupervisorRenderer(ServiceRenderer):
         admin = [pd for pd in defs if pd.name == "admin"]
         admin_group = f"[group:{self.bench_name}-admin]\nprograms={self._csv(admin)}\n\n" if admin else ""
         programs = "\n".join(self.render(pd) for pd in defs)
+        include_glob = Path(sock).parent / "supervisor.d" / "*.conf"
         return (
             f"[unix_http_server]\n"
             f"file={sock}\n"
@@ -66,6 +74,8 @@ class SupervisorRenderer(ServiceRenderer):
             f"supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface\n\n"
             f"[supervisorctl]\n"
             f"serverurl=unix://{sock}\n\n"
+            f"[include]\n"
+            f"files={include_glob}\n\n"
             f"[group:{self.bench_name}]\n"
             f"programs={self._csv(workload)}\n\n"
             f"{admin_group}"
@@ -91,6 +101,11 @@ class SupervisorProcessManager(ManagedProcessManager):
         return self.supervisor_dir / "supervisord.conf"
 
     @property
+    def supervisor_include_dir(self) -> Path:
+        """Stable extension directory preserved across Pilot regeneration."""
+        return self.supervisor_dir / "supervisor.d"
+
+    @property
     def supervisor_sock(self) -> Path:
         return self.supervisor_dir / "supervisord.sock"
 
@@ -113,6 +128,7 @@ class SupervisorProcessManager(ManagedProcessManager):
         self._ensure_gunicorn_config()
         GunicornManager(self.bench).generate_admin_config()
         self.supervisor_dir.mkdir(parents=True, exist_ok=True)
+        self.supervisor_include_dir.mkdir(parents=True, exist_ok=True)
         renderer = SupervisorRenderer(self.bench.config.name, self.bench.logs_path)
         self.supervisor_conf_path.write_text(
             renderer.render_supervisord_conf(self._prod_process_definitions(), self.supervisor_sock, self.supervisor_pid)
@@ -121,6 +137,13 @@ class SupervisorProcessManager(ManagedProcessManager):
     @override
     def install_config(self) -> None:
         self.supervisor_dir.mkdir(parents=True, exist_ok=True)
+        # The bench owns its supervisord, so nothing else starts it after a reboot.
+        CronManager(self.bench.path).set_schedule(_BOOT_JOB, "@reboot", self._boot_command())
+
+    def _boot_command(self) -> str:
+        supervisord = shutil.which("supervisord") or "supervisord"
+        log_file = self.bench.logs_path / "supervisord-boot.log"
+        return f"{shlex.quote(supervisord)} -c {shlex.quote(str(self.supervisor_conf_path))} >> {shlex.quote(str(log_file))} 2>&1"
 
     @override
     def reload_manager_config(self) -> None:
@@ -170,6 +193,7 @@ class SupervisorProcessManager(ManagedProcessManager):
 
     def shutdown(self) -> None:
         """Tear down everything, including the admin group and the daemon."""
+        CronManager(self.bench.path).remove_schedule(_BOOT_JOB)
         if self.is_alive():
             run_command([*self._supervisorctl(), "shutdown"])
 

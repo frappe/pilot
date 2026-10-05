@@ -55,7 +55,7 @@ def test_press_unified_memory_sizing_is_adapted_for_pilot() -> None:
     assert sizing.max_connections == 50
     assert sizing.key_buffer_mb == 32
     assert sizing.innodb_log_file_mb == 512
-    assert sizing.memory_high_mb == 2148
+    assert sizing.memory_high_mb == 2855
     assert sizing.memory_max_mb == 3172
 
 
@@ -101,6 +101,14 @@ def test_startup_values_are_inside_configurable_ranges(total_memory_mb: int) -> 
         limits.innodb_buffer_pool_min_mb <= sizing.innodb_buffer_pool_mb <= limits.innodb_buffer_pool_max_mb
     )
     assert limits.max_connections_min <= sizing.max_connections <= limits.max_connections_max
+
+
+def test_memory_high_does_not_throttle_the_sized_working_set() -> None:
+    """An 8 GB host stalls with 2.1 GB RSS under MemoryHigh=1929M, far below MemoryMax."""
+    sizing = calculate_mariadb_memory(7740)
+
+    assert sizing.memory_high_mb > 2100
+    assert sizing.memory_high_mb >= sizing.memory_max_mb * 0.9
 
 
 @pytest.mark.parametrize("total_memory_mb", [256, 512, 1024, 2048, 8192])
@@ -1206,3 +1214,26 @@ def test_validate_endpoint_on_macos_checks_password_for_already_secured_server(t
     ):
         resp = _post_validate(_client(tmp_path), "wrong")
     assert resp.get_json() == {"engine": "mariadb", "state": "invalid"}
+
+
+def test_an_existing_unit_gets_its_memory_high_raised_live(tmp_path: Path, monkeypatch) -> None:
+    """MemoryHigh 1 GB under MemoryMax throttles MariaDB below its working set."""
+    from pilot.managers.database import mariadb as module
+
+    manager = _manager()
+    unit = tmp_path / "pilot-mariadb.service"
+    unit.write_text("[Service]\nMemoryHigh=1929M\nMemoryMax=2953M\nMemorySwapMax=100M\n")
+    limits = {"MemoryHigh": 1929, "MemoryMax": 2953}
+    commands: list[list[str]] = []
+    monkeypatch.setattr(module, "is_macos", lambda: False)
+    monkeypatch.setattr(type(manager), "unit_path", property(lambda self: unit))
+    monkeypatch.setattr(manager, "_unit_memory_mb", lambda name: limits[name])
+    monkeypatch.setattr(module, "run_command", lambda argv, **kwargs: commands.append(argv))
+
+    assert manager.raise_memory_high() is True
+    assert "MemoryHigh=2658M" in unit.read_text()
+    assert "MemoryMax=2953M" in unit.read_text()
+    assert commands[-1][-1] == "MemoryHigh=2658M"
+
+    limits["MemoryHigh"] = 2658
+    assert manager.raise_memory_high() is False

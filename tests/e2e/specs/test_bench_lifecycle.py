@@ -32,11 +32,12 @@ DASHBOARD_DIR = Path(__file__).resolve().parents[3] / "admin" / "frontend" / "da
 def test_completes_setup_wizard(bench, page):
     open_root(page, bench.admin_url)
     try:
-        complete_dev_wizard(
-            page,
-            admin_password=bench.admin_password,
-            db_type=DB_TYPE,
-        )
+        with bench.github_connected():
+            complete_dev_wizard(
+                page,
+                admin_password=bench.admin_password,
+                db_type=DB_TYPE,
+            )
     except Exception as err:
         # Attach the failed setup task's output so the failure is diagnosable
         # straight from the report, not just a "text never appeared" timeout.

@@ -32,9 +32,12 @@ const tick = async () => {
     timer = setTimeout(tick, 3000)
     return
   }
-  if (!down.value) {
-    down.value = !(await pingOk(apiUrl('health', window.location.origin)))
+  const reachable = await pingOk(apiUrl('health', window.location.origin))
+  if (!down.value || reachable) {
+    // Same address back: keep the page and any upload in progress.
+    down.value = !reachable
   } else {
+    // Reload only when the other scheme answers (TLS turned on or off).
     const port = window.location.port ? `:${window.location.port}` : ''
     const authority = `${window.location.hostname}${port}`
     const [httpsOk, httpOk] = await Promise.all([

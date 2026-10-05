@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
 
-from pilot.utils import write_private_text
+from pilot.config.common_site_config import read_common_site_config, update_common_site_config
+from pilot.exceptions import MalformedSiteConfig
 
 ADDRESS_RE = re.compile(r"^[^@\s]+@[^@\s]+$")
 
@@ -22,10 +22,6 @@ CONFIG_KEYS = (
     "use_tls",
     "disable_mail_smtp_authentication",
 )
-
-
-class MalformedSiteConfig(Exception):
-    """common_site_config.json cannot be parsed, so it must not be rewritten."""
 
 
 class MailEndpoint(NamedTuple):
@@ -85,7 +81,7 @@ class MailConfig:
         """A damaged file reads as no mailbox rather than raising: the monitor
         tick calls this, and an unparsable file is not a reason to kill it."""
         try:
-            config = _load(sites_path)
+            config = read_common_site_config(sites_path)
         except MalformedSiteConfig:
             return cls()
         return cls(
@@ -102,16 +98,17 @@ class MailConfig:
         """Clearing the server is the only way to drop a stored mailbox. Settings
         that merely fail to validate are left on disk rather than deleted, so a
         hand-edited file is never destroyed by an unrelated save."""
-        path = sites_path / "common_site_config.json"
-        if not path.exists():
+        if not (sites_path / "common_site_config.json").exists():
             return
-        config = _load(sites_path)
         if self.server and not self.is_configured:
+            read_common_site_config(sites_path)  # a damaged file still fails the save
             return
-        for key in CONFIG_KEYS:
-            config.pop(key, None)
-        if self.is_configured:
-            endpoint = self.get_endpoint()
+        endpoint = self.get_endpoint() if self.is_configured else None
+        with update_common_site_config(sites_path) as config:
+            for key in CONFIG_KEYS:
+                config.pop(key, None)
+            if endpoint is None:
+                return
             config["mail_server"] = endpoint.host
             config["mail_port"] = endpoint.port
             config["auto_email_id"] = endpoint.sender
@@ -121,17 +118,3 @@ class MailConfig:
                 config["mail_password"] = self.password
             else:
                 config["disable_mail_smtp_authentication"] = 1
-        write_private_text(path, json.dumps(config, indent=2) + "\n")
-
-
-def _load(sites_path: Path) -> dict:
-    """A missing file reads as empty, but an unparsable one raises: callers merge
-    into what comes back and write the result, so treating damaged JSON as empty
-    would drop every unrelated setting the file still holds."""
-    path = sites_path / "common_site_config.json"
-    try:
-        return json.loads(path.read_text())
-    except FileNotFoundError:
-        return {}
-    except ValueError as error:
-        raise MalformedSiteConfig(f"{path} is not valid JSON: {error}") from error

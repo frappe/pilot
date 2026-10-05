@@ -41,6 +41,7 @@ class CliReleaseUpdate(TypedDict):
     is_dev: Literal[False]
     update_available: bool
     latest_version: str | None
+    restarts_admin: bool
 
 
 updates_bp = Blueprint("updates", __name__)
@@ -136,12 +137,17 @@ def _cli_update_dev(*, fetch: bool) -> dict:
 
 def _cli_update_release(*, fetch: bool) -> dict:
     import pilot
+    from pilot.managers.processes.base import ManagedProcessManager
+    from pilot.managers.processes.local import ProcessManager
 
+    bench = Bench(Path(current_app.config["BENCH_ROOT"]))
     result = {
         "current_version": pilot.__version__,
         "is_dev": False,
         "update_available": False,
         "latest_version": None,
+        # Under `pilot start` nothing can restart the admin, so the operator must.
+        "restarts_admin": isinstance(ProcessManager.detect_running(bench), ManagedProcessManager),
     }
     if fetch:
         from pilot.updater import update_available

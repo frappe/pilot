@@ -769,3 +769,41 @@ def test_bypass_patch_auto_resumes_migration(tmp_path: Path) -> None:
     assert operation.state == "migrating"
     assert operation.failed_site is None
     assert operation.sites[0].migration_status == "pending"
+
+
+def _branch_switch_migration(tmp_path: Path):
+    mock_bench = MagicMock()
+    mock_bench.path = tmp_path
+
+    from pilot.core.bench.migration.store import MigrationStore
+
+    switched = AppRevision("myapp", "1111111", updated_sha="2222222", branch="main")
+    return mock_bench, MigrationStore(mock_bench).create_site_migrate("site1.localhost", switched_app=switched)
+
+
+def test_a_branch_switch_migration_does_not_update_the_app_again(tmp_path: Path) -> None:
+    mock_bench, operation = _branch_switch_migration(tmp_path)
+    operation.state = get_state("backing_up")
+    mock_bench.site.return_value.migration_backup.create.return_value = None
+
+    operation.back_up_site("site1.localhost")
+
+    assert operation.state == "migrating"
+
+
+def test_reverting_a_branch_switch_migration_returns_the_app_to_its_branch(tmp_path: Path) -> None:
+    """Restoring only the databases would leave the sites on the new branch's code."""
+    mock_bench, operation = _branch_switch_migration(tmp_path)
+    operation.state = get_state("needs_attention")
+    operation.sites[0].backup_status = "backed_up"
+    operation.sites[0].migration_status = "failed"
+    app = mock_bench.app.return_value
+
+    operation.revert()
+    assert operation.state == "reverting_apps"
+    operation.revert_apps()
+
+    app.return_to.assert_called_once_with("main", "1111111")
+    app.record_branch.assert_called_once_with()
+    mock_bench._reinstall_apps.assert_called_once()
+    assert mock_bench._reinstall_apps.call_args.args[0] == {"myapp"}

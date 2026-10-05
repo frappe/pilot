@@ -923,7 +923,7 @@ def test_site_actions_return_canonical_task_resources(tmp_path: Path) -> None:
     cases = [
         ("reinstall", "reinstall-site", {}),
         ("clear-cache", "clear-cache", {}),
-        ("migrate", "migration-backup", {}),
+        ("migrate", "migrate", {}),
         ("enable-tls", "setup-letsencrypt", {"email": "ops@example.com"}),
     ]
 
@@ -980,6 +980,22 @@ def test_site_action_idempotency_replays_same_task(tmp_path: Path) -> None:
 
     assert first.status_code == replay.status_code == 202
     assert first.get_json()["task_id"] == replay.get_json()["task_id"]
+
+
+def test_site_build_waits_for_an_update_since_assets_are_shared(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    for site in ("a.localhost", "b.localhost"):
+        (bench_root / "sites" / site).mkdir(parents=True)
+        (bench_root / "sites" / site / "site_config.json").write_text("{}")
+
+    with patch("pilot.internal.tasks.runner.task_workers.wake", return_value=False):
+        first = client.post("/api/v1/sites/a.localhost/actions/build-assets")
+        second = client.post("/api/v1/sites/b.localhost/actions/build-assets")
+
+    assert first.status_code == 202
+    assert first.get_json()["command"] == "build"
+    assert second.status_code == 409
 
 
 def test_site_actions_reject_missing_and_symlinked_sites(tmp_path: Path) -> None:

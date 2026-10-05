@@ -98,3 +98,19 @@ def test_setup_telemetry_reports_unconfigured_without_an_endpoint(tmp_path: Path
     client_cls.assert_not_called()
     configurator.setup.assert_not_called()
     assert "not configured" in "".join(str(call) for call in stdout.write.call_args_list)
+
+
+def test_metrics_are_not_promised_without_the_datum_client(tmp_path: Path) -> None:
+    bench = _bench(tmp_path)
+    reports: list[str] = []
+    cmd = SetupTelemetryCommand(bench, endpoint="https://datum.example.com", token="jwt")
+    cmd.report = reports.append
+
+    with (
+        patch("pilot.core.server.monitoring_datum.HAS_DATUM_CLIENT", False),
+        patch("pilot.managers.fluentbit.LogsConfigurator", return_value=_configurator()),
+    ):
+        cmd.run()
+
+    assert any("Metrics stay in local logs" in line for line in reports)
+    assert not any("Metrics will ship" in line for line in reports)

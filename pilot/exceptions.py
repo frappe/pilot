@@ -76,6 +76,30 @@ class DependencyResolutionError(RegistryError):
     """A dependency chain couldn't be resolved (cycle, version conflict, etc)."""
 
 
+class CronError(BenchError):
+    pass
+
+
+class MalformedSiteConfig(ConfigError):
+    """common_site_config.json cannot be parsed, so it must not be rewritten."""
+
+
+class RemoteSiteError(BenchError):
+    pass
+
+
+class UploadOffsetError(BenchError):
+    """A chunk starts past the bytes received, so the client must resume from `received`."""
+
+    def __init__(self, received: int) -> None:
+        super().__init__(f"Send the file from byte {received}.")
+        self.received = received
+
+
+class FrappeCloudError(BenchError):
+    """Frappe Cloud refused a v1 migration call or could not be reached."""
+
+
 class DatabaseError(BenchError):
     """A database server operation failed (connection, provisioning, credentials)."""
 

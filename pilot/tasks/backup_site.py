@@ -1,4 +1,3 @@
-import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -7,6 +6,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from pilot.core.site import Site
+from pilot.exceptions import BenchError
 from pilot.integrations.s3.backups import OffsiteBackup
 from pilot.integrations.s3.base import S3IntegrationError
 from pilot.tasks import Task, step
@@ -28,21 +28,12 @@ class BackupSiteTask(Task):
 
     @step("backup", lambda self: f"Backup site {self.site}")
     def backup(self) -> None:
-        # cwd matters: frappe's bench helper reads apps.txt from the current dir.
-        # The task wrapper sets this, but cron invokes us directly, so set it here.
-        argv = [*self.bench.frappe_call, "frappe", "--site", self.site, "backup"]
-        if self.with_files:
-            argv.append("--with-files")
-        result = subprocess.run(argv, cwd=str(self.bench.sites_path))
-        if result.returncode != 0:
+        try:
+            timestamp, backup_files = self.site_record.backups.take(with_files=self.with_files)
+        except BenchError as error:
+            print(error)
             self.record(status="failed", timestamp="", files={}, offsite=False, pruned=[])
-            sys.exit(result.returncode)
-
-        timestamp, backup_files = self.site_record.backups.latest_run()
-        if not backup_files:
-            print("Backup command exited 0 but produced no files.")
-            self.record(status="failed", timestamp="", files={}, offsite=False, pruned=[])
-            sys.exit(1)
+            sys.exit(getattr(error, "returncode", None) or 1)
         files = {path.name: path.stat().st_size for path in backup_files}
         offsite = self.upload(timestamp, backup_files)
         pruned = self.prune()

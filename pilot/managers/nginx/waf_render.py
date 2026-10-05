@@ -75,8 +75,8 @@ class ModSecurityRenderer:
             "SecAuditLogParts ABIJDEFHZ\n"
             "SecTmpDir /tmp\n"
             "SecDataDir /tmp\n"
-            'SecDefaultAction "phase:1,pass,log"\n'
-            'SecDefaultAction "phase:2,pass,log"\n'
+            # No SecDefaultAction: crs-setup.conf sets one per phase, and
+            # libmodsecurity 3.0.16+ rejects a second one.
         )
 
     @staticmethod
@@ -88,6 +88,10 @@ class ModSecurityRenderer:
             f'setvar:tx.paranoia_level={waf.paranoia}"',
             f'SecAction "id:1001,phase:1,pass,nolog,'
             f'setvar:tx.inbound_anomaly_score_threshold={waf.inbound_threshold}"',
+            # CRS allows GET HEAD POST OPTIONS by default; Frappe's REST API and the
+            # admin also use PUT, PATCH and DELETE.
+            "SecAction \"id:1002,phase:1,pass,nolog,"
+            "setvar:'tx.allowed_methods=GET HEAD POST OPTIONS PUT PATCH DELETE'\"",
         ]
         for index, path in enumerate(waf.exempt_paths):
             lines.append(

@@ -93,6 +93,18 @@ def test_canonical_redirect_with_explicit_primary(tmp_path: Path) -> None:
     assert "return 301 $scheme://www.example.com$request_uri;" in config
 
 
+def test_canonical_redirect_preserves_edge_proxy_scheme(tmp_path: Path) -> None:
+    site = SiteConfig(
+        name="site.localhost",
+        apps=["frappe"],
+        domains=["www.example.com"],
+        primary_domain="www.example.com",
+    )
+    config = _site_config(tmp_path, site, proxy_servers=["203.0.113.5"])
+
+    assert "return 301 $pilot_scheme://www.example.com$request_uri;" in config
+
+
 def test_proxy_headers_and_error_pages_present(tmp_path: Path) -> None:
     config = _site_config(tmp_path, _BASE_SITE)
 
@@ -217,6 +229,27 @@ def test_trusted_proxy_accepts_ipv4_and_ipv6_networks(tmp_path: Path) -> None:
     assert "set_real_ip_from   2001:db8::/48;" in config
     assert "X-Forwarded-For    $http_x_forwarded_for" in config
     assert "$proxy_add_x_forwarded_for" not in config
+    assert "X-Forwarded-Proto  $pilot_scheme" in config
+    assert "set $pilot_socketio_origin $http_origin;" in config
+    assert 'if ($pilot_socketio_origin = "") {' in config
+    assert "set $pilot_socketio_origin $pilot_scheme://$http_host;" in config
+    assert "proxy_set_header   Origin $pilot_socketio_origin;" in config
+
+
+def test_trusted_proxy_scheme_falls_back_to_the_local_scheme(tmp_path: Path) -> None:
+    config = _site_config(tmp_path, _BASE_SITE, proxy_servers=["203.0.113.5"])
+
+    assert "set $pilot_scheme $http_x_forwarded_proto;" in config
+    assert 'if ($pilot_scheme = "") { set $pilot_scheme $scheme; }' in config
+
+
+def test_direct_site_builds_socketio_origin_from_local_scheme(tmp_path: Path) -> None:
+    config = _site_config(tmp_path, _BASE_SITE, proxy_servers=[])
+
+    assert "X-Forwarded-Proto  $scheme" in config
+    assert "set $pilot_socketio_origin $http_origin;" in config
+    assert "set $pilot_socketio_origin $scheme://$http_host;" in config
+    assert "proxy_set_header   Origin $pilot_socketio_origin;" in config
 
 
 # --- firewall ---------------------------------------------------------------
@@ -300,11 +333,12 @@ def test_admin_proxy_port_under_systemd(tmp_path: Path) -> None:
 
 
 def test_admin_proxy_port_under_supervisor(tmp_path: Path) -> None:
+    """Supervisor runs the same admin gunicorn config, bound to the internal port."""
     data = copy.deepcopy(_ADMIN_DATA)
     data["production"]["process_manager"] = "supervisor"
     config = _renderer(tmp_path, data).generate_bench_config([], admin_ssl=False)
 
-    assert "proxy_pass         http://127.0.0.1:7000;" in config
+    assert "proxy_pass         http://127.0.0.1:7001;" in config
 
 
 def test_admin_ssl_redirects_http_to_https(tmp_path: Path) -> None:
@@ -998,6 +1032,22 @@ def test_proxy_protocol_applies_only_to_the_https_listener(tmp_path: Path) -> No
     assert "real_ip_header     X-Forwarded-For;" in config
 
 
+def test_proxy_protocol_vhost_uses_local_scheme_while_edge_terminated_vhost_forwards_it(
+    tmp_path: Path,
+) -> None:
+    site = _mixed_site()
+    renderer = _renderer(tmp_path, proxy_servers=["203.0.113.10"])
+    renderer.bench.config.proxy.protocol_v2 = True
+    config = renderer.generate_bench_config([(site, site.tls_domains)], admin_ssl=False)
+
+    passthrough = config.split("server_name shop.customer.com;")[-1]
+    edge_terminated = config.split("server_name site-a1b2c3.zone.example;")[1].split("server {")[0]
+    assert "X-Forwarded-Proto  $scheme" in passthrough
+    assert "set $pilot_socketio_origin $scheme://$http_host;" in passthrough
+    assert "X-Forwarded-Proto  $pilot_scheme" in edge_terminated
+    assert "set $pilot_socketio_origin $pilot_scheme://$http_host;" in edge_terminated
+
+
 def test_without_proxy_protocol_the_https_listener_is_plain(tmp_path: Path) -> None:
     site = _mixed_site()
     config = _renderer(tmp_path, proxy_servers=["203.0.113.10"]).generate_bench_config(
@@ -1080,3 +1130,51 @@ def test_a_pinned_lineage_is_what_the_vhost_references(tmp_path: Path) -> None:
 
     assert "/etc/letsencrypt/live/old.example.com/fullchain.pem" in config
     assert "/etc/letsencrypt/live/new.example.com/" not in config
+
+
+def test_admin_takes_backup_uploads_of_at_least_one_gigabyte_while_sites_keep_their_limit(tmp_path: Path) -> None:
+    config = _renderer(tmp_path, _ADMIN_DATA).generate_bench_config([], admin_ssl=False)
+    admin = config[config.index("server_name admin.example.com;") :]
+
+    assert "client_max_body_size 1024m;" in admin
+    assert "client_max_body_size 1024m;" not in config[: config.index("server_name admin.example.com;")]
+
+
+def test_a_larger_site_limit_also_applies_to_the_admin(tmp_path: Path) -> None:
+    renderer = _renderer(tmp_path, _ADMIN_DATA)
+    renderer.bench.config.nginx.client_max_body_size = "2g"
+    config = renderer.generate_bench_config([], admin_ssl=False)
+
+    assert "client_max_body_size 2g;" in config[config.index("server_name admin.example.com;") :]
+
+
+def test_backup_upload_chunks_stream_to_the_admin_without_the_waf(tmp_path: Path) -> None:
+    data = {**copy.deepcopy(_ADMIN_DATA), "waf": {"enabled": True, "mode": "On"}}
+    with patch("pilot.managers.nginx.NginxConfigRenderer._is_waf_active", return_value=True):
+        config = _renderer(tmp_path, data).generate_bench_config([], admin_ssl=False)
+    location = config[config.index("location ~ ^/api/v1/sites/[^/]+/uploads/[^/]+/files/") :]
+    location = location[: location.index("}")]
+
+    assert "modsecurity off;" in location
+    assert "proxy_request_buffering off;" in location
+
+
+def test_nginx_in_sbin_is_found_without_sbin_on_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Debian leaves /usr/sbin off a normal user's PATH.
+    sbin = tmp_path / "sbin"
+    sbin.mkdir()
+    (sbin / "nginx").write_text("#!/bin/sh\n")
+    (sbin / "nginx").chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path / "bin"))
+    monkeypatch.setattr("pilot.managers.platform._EXTRA_BIN_DIRS", (str(sbin),))
+
+    assert NginxManager(_make_bench(tmp_path, _BASE_DATA)).is_installed()
+
+
+def test_only_the_bad_gateway_page_retries_on_its_own() -> None:
+    from pilot.managers.nginx import ERROR_PAGES, render_error_html
+
+    # 502 is what nginx shows while the bench boots or restarts.
+    pages = {code: render_error_html(code, *text) for code, text in ERROR_PAGES.items()}
+    assert '<meta http-equiv="refresh" content="5">' in pages[502]
+    assert all("http-equiv" not in page for code, page in pages.items() if code != 502)

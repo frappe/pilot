@@ -5,8 +5,6 @@ import json
 import secrets
 import time
 
-import pyotp
-
 from pilot.config import BenchConfig
 from pilot.core.bench import Bench
 from pilot.exceptions import TwoFactorError
@@ -189,6 +187,8 @@ class TwoFactorAuthentication:
         The secret is returned exactly here. Once confirmed it is never handed back, so a
         stolen session cannot clone an existing device's factor.
         """
+        import pyotp
+
         name = validate_device_name(name)
         secret = pyotp.random_base32()
         self.store.add(name, secret)
@@ -276,11 +276,15 @@ class TwoFactorAuthentication:
         return False
 
     def _provisioning_url(self, name: str, secret: str) -> str:
+        import pyotp
+
         return pyotp.TOTP(secret).provisioning_uri(name=name, issuer_name=f"Pilot - {self.bench.config.name}")
 
     @staticmethod
     def _matching_timestep(secret: str, otp: str) -> int | None:
         """The time step whose code equals ``otp``, or None. Compared in constant time."""
+        import pyotp
+
         totp = pyotp.TOTP(secret)
         now = int(time.time())
         for offset in range(-DRIFT_STEPS, DRIFT_STEPS + 1):

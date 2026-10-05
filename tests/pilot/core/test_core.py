@@ -348,11 +348,10 @@ def test_app_has_marketplace_update_false_when_advertised_commit_is_checked_out(
     assert app.has_marketplace_update() is False
 
 
-def test_app_has_marketplace_update_true_when_advertised_commit_is_unrelated(
+def test_app_has_marketplace_update_false_when_advertised_commit_is_unrelated(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """git can't relate a commit this clone has never seen and can't fetch, so the
-    advertised release wins - the registry only ever advertises newer code."""
+    """A commit git cannot fetch or relate to HEAD is not proof of an update."""
     app = _app_on_branch(tmp_path, "https://github.com/frappe/myapp")
     monkeypatch.setattr("pilot.core.app.installed_app_version", lambda *_: "1.0.0")
     entry = {
@@ -363,7 +362,55 @@ def test_app_has_marketplace_update_true_when_advertised_commit_is_unrelated(
 
     _publish(entry)
 
-    assert app.has_marketplace_update() is True
+    assert app.has_marketplace_update() is False
+
+
+def _shallow_app(tmp_path: Path) -> tuple[App, Path, list[str]]:
+    """A depth-1 clone of the third of four upstream commits, as Pilot clones releases."""
+    import subprocess
+
+    remote = tmp_path / "remote"
+    remote.mkdir()
+    _init_git_repo(remote)
+    shas = []
+    for message in ("c1", "c2", "c3"):
+        _commit(remote, message)
+        shas.append(GitRepo(remote).head_sha)
+
+    app = App(AppConfig(name="myapp", repo="https://github.com/frappe/myapp", branch="main"), make_bench(tmp_path))
+    subprocess.run(["git", "clone", "-q", "--depth", "1", f"file://{remote}", str(app.path)], check=True)
+    subprocess.run(["git", "-C", str(app.path), "checkout", "-q", "-B", "main"], check=True)
+    _commit(remote, "c4")
+    shas.append(GitRepo(remote).head_sha)
+    return app, remote, shas
+
+
+def test_shallow_clone_does_not_offer_an_older_release(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    app, _, shas = _shallow_app(tmp_path)
+    monkeypatch.setattr("pilot.core.app.installed_app_version", lambda *_: "1.0.0")
+    _publish(
+        {
+            "name": "myapp",
+            "repo": "https://github.com/frappe/myapp",
+            "releases": [{"version": "0.9.0", "branch": "main", "commit": shas[0]}],
+        }
+    )
+
+    assert app.update_target() is None
+
+
+def test_shallow_clone_offers_a_newer_release(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    app, _, shas = _shallow_app(tmp_path)
+    monkeypatch.setattr("pilot.core.app.installed_app_version", lambda *_: "1.0.0")
+    _publish(
+        {
+            "name": "myapp",
+            "repo": "https://github.com/frappe/myapp",
+            "releases": [{"version": "1.1.0", "branch": "main", "commit": shas[3]}],
+        }
+    )
+
+    assert app.update_target() == RevisionPin(kind="commit", ref=shas[3])
 
 
 def test_app_is_marketplace_matches_the_registry_entry_for_its_repository(tmp_path: Path) -> None:
@@ -397,18 +444,19 @@ def test_app_update_target_prefers_the_release_on_the_apps_branch(
 ) -> None:
     app = _app_on_branch(tmp_path, "https://github.com/frappe/myapp", branch="version-15")
     monkeypatch.setattr("pilot.core.app.installed_app_version", lambda *_: "1.0.0")
+    ahead = _commit_ahead_of_head(app)
     entry = {
         "name": "myapp",
         "repo": "https://github.com/frappe/myapp",
         "releases": [
             {"version": "1.0.0", "branch": "main", "commit": "a" * 40},
-            {"version": "1.0.0", "branch": "version-15", "commit": "b" * 40},
+            {"version": "1.0.0", "branch": "version-15", "commit": ahead},
         ],
     }
 
     _publish(entry)
 
-    assert app.update_target() == RevisionPin(kind="commit", ref="b" * 40)
+    assert app.update_target() == RevisionPin(kind="commit", ref=ahead)
 
 
 def test_app_install_checks_out_the_pinned_commit_before_validating(tmp_path: Path) -> None:
@@ -699,12 +747,12 @@ def test_bench_init_apps_comes_from_config(tmp_path: Path) -> None:
 def test_process_definitions_returns_correct_count(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     # workers: default=2, short=1, long=1 => 4 worker processes
-    # plus web, socketio, redis_cache, redis_queue = 4
+    # plus web, socketio, schedule, redis_cache, redis_queue = 5
     # plus admin, watch (on by default in dev) = 2
-    # total = 10
+    # total = 11
     process_manager = ProcessManager(bench)
     definitions = process_manager._process_definitions()
-    assert len(definitions) == 10
+    assert len(definitions) == 11
     assert "watch" in [pd.name for pd in definitions]
     assert "admin-ui" not in [pd.name for pd in definitions]
 
@@ -713,7 +761,7 @@ def test_process_definitions_watch_admin_js_adds_vite_ui(tmp_path: Path) -> None
     bench = make_bench(tmp_path)
     definitions = ProcessManager(bench, watch_admin_js=True)._process_definitions()
     assert "admin-ui" in [pd.name for pd in definitions]
-    assert len(definitions) == 11
+    assert len(definitions) == 12
 
 
 def test_process_definitions_can_disable_app_watch(tmp_path: Path) -> None:
@@ -721,7 +769,7 @@ def test_process_definitions_can_disable_app_watch(tmp_path: Path) -> None:
     bench.config.watch_apps_js = False
     definitions = ProcessManager(bench)._process_definitions()
     assert "watch" not in [pd.name for pd in definitions]
-    assert len(definitions) == 9
+    assert len(definitions) == 10
 
 
 def test_run_processes_survives_noncritical_exit(tmp_path: Path) -> None:
@@ -748,6 +796,22 @@ def test_watch_definition_is_noncritical_frappe_watch(tmp_path: Path) -> None:
     assert watch.working_dir == bench.sites_path
     assert watch.critical is False
     assert all(pd.critical for pd in definitions if pd.name != "watch")
+
+
+def test_process_definitions_run_frappe_scheduler(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    definitions = ProcessManager(bench)._process_definitions()
+    schedule = next(pd for pd in definitions if pd.name == "schedule")
+    assert "frappe schedule" in shlex.join(schedule.argv)
+    assert schedule.working_dir == bench.sites_path
+
+
+def test_systemd_definitions_leave_scheduling_to_worker_pool(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.config.production.process_manager = "systemd"
+    names = [pd.name for pd in ProcessManager(bench)._prod_process_definitions()]
+    assert "worker_pool" in names
+    assert "schedule" not in names
 
 
 def test_process_definitions_worker_names_are_numbered(tmp_path: Path) -> None:
@@ -881,12 +945,12 @@ def _capture_admin_sql(monkeypatch) -> list[str]:
     return statements
 
 
-def _write_site_config(bench, site: str, db_name: str) -> None:
+def _write_site_config(bench, site: str, db_name: str, db_type: str = "mariadb") -> None:
     import json
 
     site_dir = bench.sites_path / site
     site_dir.mkdir(parents=True, exist_ok=True)
-    (site_dir / "site_config.json").write_text(json.dumps({"db_name": db_name}))
+    (site_dir / "site_config.json").write_text(json.dumps({"db_name": db_name, "db_type": db_type}))
 
 
 def _capture_site_cmd(monkeypatch) -> dict:
@@ -949,6 +1013,7 @@ def test_site_create_mariadb_when_bench_is_mariadb(tmp_path: Path, monkeypatch: 
 
 def test_site_restore_uses_postgres_root_creds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     bench = _postgres_bench(tmp_path, root_password="pgpw")
+    _write_site_config(bench, "pg.localhost", "pgdb", "postgres")
     captured = _capture_site_cmd(monkeypatch)
 
     Site(SiteConfig(name="pg.localhost", apps=[]), bench).restore("/tmp/db.sql.gz")
@@ -982,6 +1047,7 @@ def test_site_restore_scopes_its_account_to_the_site_database(
 
 def test_site_reinstall_postgres_root_creds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     bench = _postgres_bench(tmp_path, root_password="pgpw")
+    _write_site_config(bench, "pg.localhost", "pgdb", "postgres")
     captured = _capture_site_cmd(monkeypatch)
 
     Site(SiteConfig(name="pg.localhost", apps=[]), bench).reinstall("secret")
@@ -1001,10 +1067,53 @@ def test_site_reinstall_refuses_root_on_argv_without_a_site_database(
     from pilot.exceptions import BenchError
 
     bench = make_bench(tmp_path)
+    _write_site_config(bench, "m.localhost", "")
     _capture_site_cmd(monkeypatch)
 
     with pytest.raises(BenchError, match="root database password"):
         Site(SiteConfig(name="m.localhost", apps=[]), bench).reinstall("secret")
+
+
+def test_site_reinstall_uses_the_site_engine_not_the_bench_engine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A postgres site on a MariaDB bench gets postgres creds, never the MariaDB root password."""
+    bench = make_bench(tmp_path)  # mariadb bench, root_password="root"
+    bench.config.postgres.root_password = "pgpw"
+    _write_site_config(bench, "pg.localhost", "pgdb", "postgres")
+    captured = _capture_site_cmd(monkeypatch)
+
+    Site(SiteConfig(name="pg.localhost", apps=[]), bench).reinstall("secret")
+
+    cmd = captured["cmd"]
+    assert cmd[cmd.index("--db-root-username") + 1] == "postgres"
+    assert cmd[cmd.index("--db-root-password") + 1] == "pgpw"
+
+
+def test_unknown_site_engine_keeps_the_scoped_mariadb_account(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bench = make_bench(tmp_path)
+    _write_site_config(bench, "m.localhost", "_mdb", "oracle")
+    captured = _capture_site_cmd(monkeypatch)
+    _capture_admin_sql(monkeypatch)
+
+    Site(SiteConfig(name="m.localhost", apps=[]), bench).reinstall("secret")
+
+    cmd = captured["cmd"]
+    assert cmd[cmd.index("--db-root-username") + 1].startswith("pilot_setup_")
+    assert cmd[cmd.index("--db-root-password") + 1] != "root"
+
+
+def test_site_db_type_falls_back_to_frappe_default_not_the_bench(tmp_path: Path) -> None:
+    import json
+
+    bench = _postgres_bench(tmp_path)
+    site_dir = bench.sites_path / "old.localhost"
+    site_dir.mkdir(parents=True)
+    (site_dir / "site_config.json").write_text(json.dumps({"db_name": "_old"}))
+
+    assert Site(SiteConfig(name="old.localhost", apps=[]), bench).db_type == "mariadb"
 
 
 def test_site_create_and_reinstall_reject_empty_admin_password(tmp_path: Path) -> None:
@@ -1050,11 +1159,38 @@ def test_site_create_postgres_empty_password_uses_placeholder(
     assert cmd[cmd.index("--db-root-password") + 1] == "trust_auth"
 
 
-def test_bench_db_root_args_postgres(tmp_path: Path) -> None:
+def test_bench_get_db_root_args_postgres(tmp_path: Path) -> None:
     bench = _postgres_bench(tmp_path, root_password="pgpw")
-    assert bench.db_root_args == ["--db-root-username", "postgres", "--db-root-password", "pgpw"]
+    assert bench.get_db_root_args("postgres") == ["--db-root-username", "postgres", "--db-root-password", "pgpw"]
 
 
-def test_bench_db_root_args_mariadb(tmp_path: Path) -> None:
+def test_bench_get_db_root_args_mariadb(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
-    assert bench.db_root_args == ["--db-root-username", "root", "--db-root-password", "root"]
+    assert bench.get_db_root_args("mariadb") == ["--db-root-username", "root", "--db-root-password", "root"]
+
+
+def test_bench_get_db_root_args_follows_the_engine_asked_for(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)  # mariadb bench
+    assert bench.get_db_root_args("sqlite") == []
+
+
+def test_after_a_revert_a_disconnected_newer_release_is_still_offered(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A depth-1 revert leaves the newer release in the clone with no history between them."""
+    import subprocess
+
+    app, _, shas = _shallow_app(tmp_path)
+    subprocess.run(["git", "-C", str(app.path), "fetch", "-q", "--depth", "1", "origin", shas[3]], check=True)
+    subprocess.run(["git", "-C", str(app.path), "fetch", "-q", "--depth", "1", "origin", shas[1]], check=True)
+    subprocess.run(["git", "-C", str(app.path), "checkout", "-q", "-B", "main", shas[1]], check=True)
+    monkeypatch.setattr("pilot.core.app.installed_app_version", lambda *_: "1.0.0")
+    _publish(
+        {
+            "name": "myapp",
+            "repo": "https://github.com/frappe/myapp",
+            "releases": [{"version": "1.1.0", "branch": "main", "commit": shas[3]}],
+        }
+    )
+
+    assert app.update_target() == RevisionPin(kind="commit", ref=shas[3])

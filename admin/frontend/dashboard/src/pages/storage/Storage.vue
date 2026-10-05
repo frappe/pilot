@@ -13,7 +13,7 @@ import { monitorApi } from '@/api/monitor'
 import type { StorageBreakdown } from '@/types/storage'
 import { formatBytes } from '@/utils/format'
 
-const { session } = useSession()
+const { session, centralServerUrl } = useSession()
 const storageData = ref<StorageBreakdown | null>(null)
 const loading = ref(false)
 const error = ref('')
@@ -58,7 +58,11 @@ onMounted(load)
         @click="load"
       />
 
-      <Button v-if="session.centralEnabled" :iconLeft="h(FCLogo, { class: 'size-4' })">
+      <Button
+        v-if="session.centralUrl"
+        :iconLeft="h(FCLogo, { class: 'size-4' })"
+        :link="centralServerUrl('resize')"
+      >
         Manage Storage
       </Button>
     </div>

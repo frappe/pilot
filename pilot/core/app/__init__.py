@@ -34,11 +34,7 @@ class NewAppOptions:
     github_workflow: bool = False
 
     def __post_init__(self) -> None:
-        missing = [
-            name
-            for name in ("description", "publisher", "email")
-            if not getattr(self, name).strip()
-        ]
+        missing = [name for name in ("description", "publisher", "email") if not getattr(self, name).strip()]
         if missing:
             raise BenchError(f"App {', '.join(missing)} cannot be blank.")
 
@@ -157,6 +153,27 @@ class App:
         return self._repository.repo.head_sha
 
     @property
+    def has_source_changes(self) -> bool:
+        """Local edits that published assets lack. Files the asset build rewrites do not count,
+        or one server build would rule out prebuilt assets for good."""
+        from pilot.core.app.prebuilt_assets import build_output_paths
+
+        repo = self._repository.repo
+        if repo.has_unpushed_commits:
+            return True
+        outputs = build_output_paths(self)
+        return any(
+            Path(path).name != "components.d.ts"
+            and not any(path == output or path.startswith(f"{output}/") for output in outputs)
+            for path in repo.changed_paths
+        )
+
+    @property
+    def has_page_islands(self) -> bool:
+        """Whether the app has Frappe UI pages, whose islands Frappe builds."""
+        return any((self.path / self.config.name).glob("*/page/*/*.island.js"))
+
+    @property
     def current_branch(self) -> str:
         """The branch checked out on disk, empty when HEAD is detached."""
         return self._repository.repo.branch
@@ -229,6 +246,15 @@ class App:
     def checkout_commit(self, sha: str) -> None:
         """Check out a specific commit SHA, refetching it from origin if needed."""
         self._repository.checkout_pinned_commit(sha)
+
+    def return_to(self, branch: str, sha: str) -> None:
+        """Go back to `sha` with `branch` tracked again, as before a branch switch. A commit
+        hash or empty `branch` leaves the checkout detached, as it was."""
+        if branch and not self.is_commit_hash(branch):
+            self.switch_branch(branch)
+        else:
+            self.config.branch = branch
+        self.checkout_commit(sha)
 
     def _pyproject(self) -> dict:
         """Parsed pyproject.toml, or an empty dict when it is missing or malformed."""

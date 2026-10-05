@@ -22,6 +22,13 @@ class SiteApps:
         if app.config.name in self.disabled_apps():
             self.enable_app(app)
             return
+        # Frappe fails deep in a traceback when a required app is not on the bench.
+        missing = [name for name in self.get_required_apps(app) if not self.site.bench.is_app_installed(name)]
+        if missing:
+            raise BenchError(
+                f"'{app.config.name}' requires {', '.join(missing)}, which this bench does not have. "
+                "Add it with 'pilot get-app <repo>' first, then retry."
+            )
         self._clear_cache()
         try:
             run_command(

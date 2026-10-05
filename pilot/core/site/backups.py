@@ -27,7 +27,49 @@ class SiteBackups:
 
     @property
     def directory(self) -> Path:
-        return self.site.path / "private" / "backups"
+        """Outside private/backups, which Frappe prunes by age and by its backup limit."""
+        return self.site.path / "backups"
+
+    def take(self, with_files: bool = True) -> tuple[str, list[Path]]:
+        """Run `frappe backup` into this directory and return the run it made."""
+        from pilot.exceptions import BenchError
+        from pilot.utils import run_command
+
+        argv = [
+            *self.site.bench.frappe_call,
+            "frappe",
+            "--site",
+            self.site.config.name,
+            "backup",
+            "--backup-path",
+            str(self.directory),
+        ]
+        if with_files:
+            argv.append("--with-files")
+        # cwd matters: frappe's bench helper reads apps.txt from the current dir.
+        run_command(argv, cwd=self.site.bench.sites_path, stream_output=True)
+        timestamp, files = self.latest_run()
+        if not files:
+            raise BenchError(f"The backup of {self.site.config.name} produced no files.")
+        return timestamp, files
+
+    def fetch_run(self, timestamp: str, destination: Path) -> list[Path]:
+        """One run's files on local disk, downloaded into `destination` when only the
+        offsite copy is left."""
+        from pilot.exceptions import BenchError
+
+        local = sorted(path for path in self.directory.glob(f"{timestamp}-*") if path.is_file())
+        if local:
+            return local
+        offsite = self._offsite()
+        files = offsite.get_backup(self.site.config.name, timestamp) if offsite else None
+        if offsite is None or not files:
+            raise BenchError(f"Backup {timestamp} of {self.site.config.name} was not found.")
+        paths = []
+        for filename in files.values():
+            offsite.download(self.site.config.name, timestamp, filename, destination / filename)
+            paths.append(destination / filename)
+        return paths
 
     def latest_run(self) -> tuple[str, list[Path]]:
         """Timestamp and files of the most recently created backup run for this site."""

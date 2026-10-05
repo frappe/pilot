@@ -30,9 +30,10 @@ Pilot makes it simple to run Frappe on your own servers. Use the Admin UI to man
 
 ## Requirements
 
-- Debian 12+, Ubuntu 22.04+, Fedora 40+, Arch Linux, or macOS with Homebrew for local development
-- Python 3.11+
-- NodeJs 24
+- Debian 12+, Ubuntu 24.04+, Fedora 43+, Arch Linux, or macOS with Homebrew for local development. The installer refuses older releases.
+- Python 3.11+ on the host to run the `pilot` CLI. Benches get their own Python 3.14 through `uv`.
+- Node.js 24
+- Frappe v16 or later
 
 ## Installation
 
@@ -73,7 +74,6 @@ Common commands:
 | `pilot -b <name> stop` | Stop development processes |
 | `pilot -b <name> get-app <repo>` | Clone and install an app |
 | `pilot -b <name> new-site <site>` | Create a site |
-| `pilot -b <name> update` | Pull apps, install deps, build assets, and migrate sites |
 | `pilot -b <name> setup production` | Configure process manager, nginx, Admin domain, and optional TLS |
 | `pilot -b <name> restart` | Restart production processes |
 | `pilot -b <name> remove production` | Remove production deployment files and services |

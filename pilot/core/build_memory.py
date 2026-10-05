@@ -21,6 +21,20 @@ def available_memory_mb(meminfo: Path = Path("/proc/meminfo")) -> int:
     raise BenchError(f"{meminfo} has no MemAvailable line.")
 
 
+def free_swap_mb(meminfo: Path = Path("/proc/meminfo")) -> int:
+    """Unused swap in MB; 0 on a host without swap."""
+    for line in meminfo.read_text().splitlines():
+        if line.startswith("SwapFree:"):
+            return int(line.split()[1]) // 1024
+    return 0
+
+
+def build_swap_limit_mb() -> int:
+    """Max swap in MB one asset build may use past its RAM cap: the same share of
+    free swap, so other services keep the rest."""
+    return int(free_swap_mb() * BUILD_MEMORY_SHARE)
+
+
 def build_memory_limit_mb(override_mb: int = 0) -> int:
     """Max memory in MB one asset build may use, so a runaway build
     is killed before it eats all free memory and crashes the host.

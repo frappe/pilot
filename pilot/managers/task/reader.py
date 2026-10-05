@@ -4,7 +4,7 @@ import json
 import logging
 import re
 import time
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from datetime import datetime
 from pathlib import Path
 from typing import Literal, TypedDict
@@ -145,7 +145,10 @@ class TaskReader:
             if pending:
                 yield display_line(pending)
 
-    def stream_output(self, task_id: str) -> Generator[TaskStreamEvent, None, None]:
+    def stream_output(
+        self, task_id: str, should_stop: Callable[[], bool] = lambda: False
+    ) -> Generator[TaskStreamEvent, None, None]:
+        """Events until the task ends or `should_stop`; the client resumes by Last-Event-ID."""
         task = self.read_task(task_id)
         output_path = task.output_path
         last_state = (task.status, task.queue_position)
@@ -168,6 +171,8 @@ class TaskReader:
 
                 if not task.status.is_active:
                     yield from self._stream_done(task, cur)
+                    return
+                if should_stop():
                     return
 
                 time.sleep(_TASK_POLL_SECONDS)

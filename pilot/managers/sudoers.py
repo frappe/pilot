@@ -19,13 +19,37 @@ def stage_and_copy(stage_dir: Path, content: str, target: Path, validate: list[s
     staged.unlink()
 
 
-def install_sudoers_grant(stage_dir: Path, bench_user: str, name: str, commands: list[str]) -> None:
-    """Give bench_user passwordless sudo for exactly `commands`, no more.
-    Idempotent: same deterministic content every call."""
+def install_sudoers_grant(
+    stage_dir: Path,
+    bench_user: str,
+    name: str,
+    commands: list[str],
+    bare_commands: list[str] | None = None,
+) -> None:
+    """Give bench_user passwordless sudo for exactly `commands`. sudo-rs rejects wildcards
+    in arguments, so there `bare_commands` grants the same binaries without limits."""
+    from pilot.exceptions import CommandError
+
     sudoers_file = Path(f"/etc/sudoers.d/{bench_user}-pilot-{name}")
-    content = f"{bench_user} ALL=(ALL) NOPASSWD: " + ",".join(commands) + "\n"
-    stage_and_copy(stage_dir, content, sudoers_file, validate=["visudo", "-cf"])
+    try:
+        stage_and_copy(stage_dir, _grant(bench_user, commands), sudoers_file, validate=["visudo", "-cf"])
+    except CommandError:
+        if not bare_commands or not is_sudo_rs():
+            raise
+        print(f"Warning: this sudo rejects argument wildcards, so {sudoers_file.name} grants its commands without argument limits.")
+        stage_and_copy(stage_dir, _grant(bench_user, bare_commands), sudoers_file, validate=["visudo", "-cf"])
     run_command(_privileged(["chmod", "440", str(sudoers_file)]))
+
+
+def is_sudo_rs() -> bool:
+    import subprocess
+
+    result = subprocess.run(["sudo", "--version"], capture_output=True, text=True, timeout=5)
+    return result.stdout.startswith("sudo-rs")
+
+
+def _grant(bench_user: str, commands: list[str]) -> str:
+    return f"{bench_user} ALL=(ALL) NOPASSWD: " + ",".join(commands) + "\n"
 
 
 def has_passwordless_sudo_for(command: list[str]) -> bool:

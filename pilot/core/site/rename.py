@@ -296,16 +296,13 @@ class SiteRename:
         )
 
     def _update_default_site(self, current: str, target: str) -> None:
-        path = self.bench.sites_path / "common_site_config.json"
-        if not path.exists():
+        from pilot.config.common_site_config import update_common_site_config
+
+        if not (self.bench.sites_path / "common_site_config.json").exists():
             return
-        try:
-            data = json.loads(path.read_text())
-        except (OSError, json.JSONDecodeError):
-            return
-        if data.get("default_site") == current:
-            data["default_site"] = target
-            write_private_text(path, json.dumps(data, indent=2) + "\n")
+        with update_common_site_config(self.bench.sites_path) as config:
+            if config.get("default_site") == current:
+                config["default_site"] = target
 
     def _rename_in_bench_toml(self, current: str, target: str) -> None:
         from pilot.config import BenchConfig

@@ -417,8 +417,8 @@ def _age_alerts(monitor: Monitor) -> None:
 
 
 def test_alert_body_matches_centrals_event_schema(tmp_path: Path) -> None:
-    """Central's report_pilot_event takes event/message/context, and the webhook
-    sinks get the identical body."""
+    """Every sink gets the same event/message/context body. CentralClient maps
+    ``event`` to Central's ``event_type`` on the wire."""
     bench = _make_bench(tmp_path / "my-bench")
     bench.config.resource_limits.cpu_usage_limit = 80
     monitor = _make_monitor(bench)

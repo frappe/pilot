@@ -53,7 +53,7 @@ def _drop_failed_site(bench_root: Path, site_name: str, site_path: Path) -> bool
 
         bench = Bench(bench_root)
         with noninteractive_privileges():
-            bench.site(site_name).drop()
+            bench.site(site_name).drop(no_backup=True)
         return True
     except Exception as exc:
         logging.debug("Site drop callback failed for %s: %s", site_name, exc)

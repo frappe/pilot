@@ -30,7 +30,8 @@ class CentralBootstrapWatcher:
         ).start()
 
     def check_once(self) -> bool:
-        """True once the credential has been written to this host's config.
+        """True once the credential has been written to this host's config, here or by
+        the other watcher (the admin process and the boot unit both run one).
 
         Nothing here is fatal: the credential, and any config it trips over, can
         still be fixed in place, so a failure is reported and retried rather than
@@ -42,6 +43,8 @@ class CentralBootstrapWatcher:
 
         try:
             config = BenchConfig.read(self.bench_root, validate=False)
+            if not config.central.is_awaiting_bootstrap:
+                return True
             return apply_central_config(Bench(config, self.bench_root), on_credentials=self.seed_jwks_cache)
         except Exception:
             logging.exception("Central bootstrap attempt failed")

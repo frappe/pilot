@@ -75,9 +75,13 @@ class GitRepo:
 
         self.ensure_removable()
         if self.is_worktree:
-            common = run_command(
-                ["git", "-C", str(self.path), "rev-parse", "--path-format=absolute", "--git-common-dir"]
-            ).stdout.decode().strip()
+            common = (
+                run_command(
+                    ["git", "-C", str(self.path), "rev-parse", "--path-format=absolute", "--git-common-dir"]
+                )
+                .stdout.decode()
+                .strip()
+            )
             run_command(["git", "--git-dir", common, "worktree", "remove", str(self.path.resolve())])
         else:
             shutil.rmtree(self.path, ignore_errors=True)
@@ -105,8 +109,30 @@ class GitRepo:
     @property
     def has_local_changes(self) -> bool:
         """True if the tree has uncommitted edits or commits not yet on upstream."""
-        if self._text("status", "--porcelain"):
-            return True
+        return bool(self.changed_paths) or self.has_unpushed_commits
+
+    @property
+    def changed_paths(self) -> list[str]:
+        """Modified, staged and untracked paths, relative to the repository root."""
+        result = self._run("status", "--porcelain", "-z")
+        if result.returncode != 0:
+            return []
+        entries = result.stdout.split("\0")
+        paths = []
+        index = 0
+        while index < len(entries):
+            entry = entries[index]
+            index += 1
+            if not entry:
+                continue
+            paths.append(entry[3:])
+            # A rename or copy names its source in the next field.
+            if entry[0] in "RC":
+                index += 1
+        return paths
+
+    @property
+    def has_unpushed_commits(self) -> bool:
         return self._text("rev-list", "--count", "@{u}..HEAD") not in ("", "0")
 
     def count(self, range_: str) -> int:

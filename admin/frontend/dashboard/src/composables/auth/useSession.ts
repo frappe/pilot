@@ -12,6 +12,8 @@ const session = reactive({
   allowBenchManagement: false,
   developerMode: false,
   centralEnabled: false,
+  centralUrl: '',
+  centralAudience: '',
 })
 
 const loadSession = async () => {
@@ -25,6 +27,8 @@ const loadSession = async () => {
     session.allowBenchManagement = bootstrap.allow_bench_management === true
     session.developerMode = bootstrap.developer_mode === true
     session.centralEnabled = bootstrap.central === true
+    session.centralUrl = bootstrap.central_url || ''
+    session.centralAudience = bootstrap.central_audience || ''
   } catch {
     session.authenticated = false
     session.wizard = false
@@ -34,6 +38,8 @@ const loadSession = async () => {
     session.allowBenchManagement = false
     session.developerMode = false
     session.centralEnabled = false
+    session.centralUrl = ''
+    session.centralAudience = ''
   }
   session.loaded = true
 }
@@ -42,6 +48,16 @@ const ensureSession = async () => {
   if (!session.loaded) await loadSession()
 }
 
+export type CentralServerAction = 'overview' | 'resize'
+
+/** This server's page in Central, opened on `action`. Empty when Central is not set up. */
+const centralServerUrl = (action: CentralServerAction = 'overview'): string => {
+  if (!session.centralUrl) return ''
+  if (!session.centralAudience) return `${session.centralUrl}/dashboard/servers`
+  const query = new URLSearchParams({ pilot: session.centralAudience, action })
+  return `${session.centralUrl}/dashboard/servers?${query}`
+}
+
 export const useSession = () => {
-  return { session, loadSession, ensureSession }
+  return { session, loadSession, ensureSession, centralServerUrl }
 }

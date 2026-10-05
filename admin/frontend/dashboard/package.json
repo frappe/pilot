@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "preinstall": "cd \"$(git rev-parse --show-toplevel)\" && uv run --extra admin python scripts/generate_ts_types.py",
+    "prebuild": "cd \"$(git rev-parse --show-toplevel)\" && uv run --extra admin python scripts/generate_ts_types.py",
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "test": "node --test src/utils/*.test.ts",

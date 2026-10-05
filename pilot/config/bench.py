@@ -16,6 +16,7 @@ from pilot.config.build import BuildConfig
 from pilot.config.central import CentralConfig
 from pilot.config.common import CommonConfig
 from pilot.config.firewall import FirewallConfig, FirewallRule
+from pilot.config.frappe_cloud import FrappeCloudConfig
 from pilot.config.gunicorn import GunicornConfig
 from pilot.config.letsencrypt import LetsEncryptConfig
 from pilot.config.lite_mode import LiteModeConfig
@@ -141,6 +142,7 @@ class BenchConfig:
     s3: S3Config = field(default_factory=S3Config)
     llm: LLMConfig = field(default_factory=LLMConfig)
     resource_limits: ResourceLimitConfig = field(default_factory=ResourceLimitConfig)
+    frappe_cloud: FrappeCloudConfig = field(default_factory=FrappeCloudConfig)
     # What common_config.toml held when this was read, so a write can tell which
     # shared settings this view changed. Not a setting itself: kept out of
     # equality so it never makes a write look necessary, and out of repr.
@@ -226,6 +228,7 @@ class BenchConfig:
             proxy=common.proxy,
             telemetry=common.telemetry,
             resource_limits=common.resource_limits,
+            frappe_cloud=common.frappe_cloud,
             **sections,
         )
         config.admin.jwks_url = common.jwks_url
@@ -332,6 +335,7 @@ class BenchConfig:
         endpoints = {
             "admin.jwks_url": self.admin.jwks_url,
             "telemetry.endpoint": self.telemetry.endpoint,
+            "frappe_cloud.url": self.frappe_cloud.url,
             "llm.api_base": self.llm.api_base,
             "s3.endpoint_url": self.s3.endpoint_url,
         }
@@ -475,6 +479,7 @@ class BenchConfig:
             proxy=self.proxy,
             telemetry=self.telemetry,
             resource_limits=self.resource_limits,
+            frappe_cloud=self.frappe_cloud,
             jwks_url=self.admin.jwks_url,
             jwks_audience=self.admin.jwks_audience,
         )

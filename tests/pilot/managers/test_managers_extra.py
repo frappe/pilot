@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -199,6 +200,17 @@ def test_supervisor_conf_program_names_in_group(tmp_path: Path) -> None:
     assert "test-bench-worker-default-1" in conf
 
 
+def test_supervisor_conf_includes_persistent_extension_directory(tmp_path: Path) -> None:
+    from pilot.managers.processes.supervisor import SupervisorRenderer
+
+    conf = SupervisorRenderer("test-bench", tmp_path / "logs").render_supervisord_conf(
+        [], tmp_path / "services" / "s.sock", tmp_path / "services" / "s.pid"
+    )
+
+    assert "[include]" in conf
+    assert f"files={tmp_path}/services/supervisor.d/*.conf" in conf
+
+
 def test_supervisor_conf_redis_gets_stop_timeout(tmp_path: Path) -> None:
     """The redis stop grace must reach the supervisor renderer, not just systemd
     (the consistency fix: stop_timeout lives on the definition now)."""
@@ -237,6 +249,21 @@ def test_supervisor_generate_config_writes_file(tmp_path: Path) -> None:
     ):
         mgr.write_config()
     assert mgr.supervisor_conf_path.exists()
+
+
+def test_supervisor_generate_config_preserves_extension_fragments(tmp_path: Path) -> None:
+    mgr = _make_supervisor_manager(tmp_path)
+    fragment = mgr.supervisor_include_dir / "custom.conf"
+    fragment.parent.mkdir(parents=True)
+    fragment.write_text("[program:custom]\ncommand=/bin/true\n")
+
+    with (
+        patch("pilot.managers.processes.supervisor.AdminEnvManager"),
+        patch.object(mgr, "_prod_process_definitions", return_value=[]),
+    ):
+        mgr.write_config()
+
+    assert fragment.read_text() == "[program:custom]\ncommand=/bin/true\n"
 
 
 def test_supervisor_conf_no_user_directive(tmp_path: Path) -> None:
@@ -374,6 +401,31 @@ def test_systemd_unit_part_of_target(tmp_path: Path) -> None:
     )
     unit = SystemdRenderer("test-bench").render(pd)
     assert "PartOf=test-bench.target" in unit
+
+
+def test_systemd_workload_stops_before_redis(tmp_path: Path) -> None:
+    """Stopped together, a lite runner's job worker retries redis until its drain timeout."""
+    from pilot.managers.processes.local import ProcessDefinition
+    from pilot.managers.processes.systemd import SystemdRenderer
+
+    renderer = SystemdRenderer("test-bench")
+    web = renderer.render(ProcessDefinition(name="web", argv=["web"], log_file=tmp_path / "web.log"))
+    redis = renderer.render(ProcessDefinition(name="redis_queue", argv=["redis"], log_file=tmp_path / "r.log"))
+
+    assert "After=test-bench-redis_cache.service test-bench-redis_queue.service" in web
+    assert "After=" not in redis
+
+
+def test_supervisor_redis_starts_first_and_stops_last(tmp_path: Path) -> None:
+    from pilot.managers.processes.local import ProcessDefinition
+    from pilot.managers.processes.supervisor import SupervisorRenderer
+
+    renderer = SupervisorRenderer("test-bench", tmp_path)
+    redis = renderer.render(ProcessDefinition(name="redis_queue", argv=["redis"], log_file=tmp_path / "r.log"))
+    web = renderer.render(ProcessDefinition(name="web", argv=["web"], log_file=tmp_path / "web.log"))
+
+    assert "priority=100" in redis
+    assert "priority" not in web
 
 
 def test_systemd_unit_redis_gets_stop_timeout(tmp_path: Path) -> None:
@@ -688,3 +740,66 @@ def test_supervised_reload_workers_noop_when_not_running() -> None:
     fake._is_running = False
     fake.manager.reload_workers()
     assert fake.calls == []
+
+
+def _admin_activation(tmp_path: Path, monkeypatch, socket_active: bool, service_changed: bool, socket_changed: bool):
+    """The systemctl calls `pilot start` makes for the admin."""
+    import subprocess
+    from types import SimpleNamespace
+
+    mgr = _make_systemd_manager(tmp_path)
+    mgr.admin_service_changed = service_changed
+    mgr.admin_socket_changed = socket_changed
+    calls: list[list[str]] = []
+
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        return SimpleNamespace(returncode=0 if socket_active else 3)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr("pilot.managers.processes.systemd.run_command", lambda argv, **kwargs: calls.append(argv))
+    monkeypatch.setattr(type(mgr), "user_unit_dir", tmp_path)
+    (tmp_path / mgr._unit_name("admin")).touch()
+
+    mgr._control_admin("start", {})
+    return [call[2:] for call in calls if call[2] != "is-active"]
+
+
+def test_start_leaves_a_listening_unchanged_admin_alone(tmp_path: Path, monkeypatch) -> None:
+    """Restarting the socket drops queued requests, which nginx turns into 502s."""
+    calls = _admin_activation(tmp_path, monkeypatch, socket_active=True, service_changed=False, socket_changed=False)
+
+    assert calls == []
+
+
+def test_a_changed_admin_service_restarts_behind_its_socket(tmp_path: Path, monkeypatch) -> None:
+    calls = _admin_activation(tmp_path, monkeypatch, socket_active=True, service_changed=True, socket_changed=False)
+
+    assert ["restart", "test-bench-admin.service"] in calls
+    assert not any("test-bench-admin.socket" in call for call in calls)
+
+
+def test_an_idle_admin_socket_is_activated(tmp_path: Path, monkeypatch) -> None:
+    calls = _admin_activation(tmp_path, monkeypatch, socket_active=False, service_changed=False, socket_changed=False)
+
+    assert ["restart", "test-bench-admin.socket"] in calls
+
+
+def test_supervisor_starts_again_after_a_reboot(tmp_path: Path, monkeypatch) -> None:
+    """The bench owns its supervisord, so an @reboot entry brings the bench back."""
+    from pilot.managers.cron import CronManager
+    from pilot.managers.processes.supervisor import SupervisorProcessManager
+
+    crontab: list[str] = []
+    monkeypatch.setattr(CronManager, "_read_crontab", lambda self: list(crontab))
+    monkeypatch.setattr(CronManager, "_write_crontab", lambda self, lines: crontab.__setitem__(slice(None), lines))
+    monkeypatch.setattr(CronManager, "_lock", lambda self: contextlib.nullcontext())
+    manager = SupervisorProcessManager(make_bench(tmp_path))
+    monkeypatch.setattr(manager, "is_alive", lambda: False)
+
+    manager.install_config()
+    entry = next(line for line in crontab if line.startswith("@reboot"))
+    assert f"-c {manager.supervisor_conf_path}" in entry
+
+    manager.shutdown()
+    assert not any(line.startswith("@reboot") for line in crontab)

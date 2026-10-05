@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from pilot.exceptions import BenchError, CommandError
 from pilot.managers.systemd_user import can_cap_memory, memory_capped, systemctl_env
-from pilot.utils import extract_tar_archive, get_yarn_bin, git_has_local_changes, run_command
+from pilot.utils import get_yarn_bin, run_command
 
 if TYPE_CHECKING:
     from pilot.core.app import App
@@ -28,23 +28,31 @@ class PythonAssetBuilder:
     def run_compiler(self, argv: list[str], **kwargs) -> None:
         """Run a compiler capped at a share of host memory, so a runaway build
         fails instead of exhausting the machine. Uncapped where the host cannot cap."""
-        from pilot.core.build_memory import build_memory_limit_mb, can_read_memory
+        from pilot.core.build_memory import build_memory_limit_mb, build_swap_limit_mb, can_read_memory
 
         limit_mb = build_memory_limit_mb(self.bench.config.build.memory_limit_mb) if can_read_memory() else 0
         capped = bool(limit_mb) and can_cap_memory()
         if capped:
-            argv = memory_capped(argv, limit_mb)
+            swap_mb = build_swap_limit_mb()
+            argv = memory_capped(argv, limit_mb, swap_mb)
         else:
             logging.warning("Memory control unavailable here, so this build runs uncapped.")
 
-        kwargs["env"] = {**systemctl_env(), **(kwargs.get("env") or {})}
+        env = {**systemctl_env(), **(kwargs.get("env") or {})}
+        node_options = env.get("NODE_OPTIONS", "")
+        # V8 stops near 2GB whatever the cap; leave a quarter of the cap for native memory.
+        if limit_mb and "--max-old-space-size" not in node_options:
+            env["NODE_OPTIONS"] = f"{node_options} --max-old-space-size={limit_mb * 3 // 4}".strip()
+        kwargs["env"] = env
         try:
             run_command(argv, **kwargs)
         except CommandError as error:
             # The kernel kills the scope, so the runner only sees a signal.
             if capped and error.returncode < 0:
                 raise BenchError(
-                    f"Build ran out of memory: it may use {limit_mb}MB on this machine."
+                    f"Build ran out of memory: it may use {limit_mb}MB of RAM and {swap_mb}MB of swap "
+                    "on this machine. Add swap, free memory, or set memory_limit_mb under [build] "
+                    "in bench.toml, then retry."
                 ) from error
             raise CommandError(
                 error.message.replace(repr("systemd-run"), repr(argv[0]), 1),
@@ -73,11 +81,18 @@ class PythonAssetBuilder:
         app_public_dir = app.path / app.config.name / "public"
         dist_dir = app_public_dir / "dist"
 
-        if not force and not git_has_local_changes(app.path):
-            if self.try_download_prebuilt_assets(app, app_public_dir, dist_dir):
-                return
-            if self.has_prebuilt_assets(dist_dir):
-                self.setup_prebuilt_assets(app.config.name, app_public_dir, dist_dir)
+        # Desk serves /assets/frappe/node_modules, and every server build runs Frappe's esbuild.
+        if app.config.name == "frappe" and (app.path / "package.json").exists():
+            self.ensure_yarn_install(app.path)
+
+        if not force and not app.has_source_changes:
+            from pilot.core.app.prebuilt_assets import PrebuiltAssets
+
+            prebuilt = PrebuiltAssets(app)
+            if prebuilt.install():
+                self.setup_prebuilt_assets(app.config.name, app_public_dir, dist_dir, prebuilt.asset_maps)
+                if app.has_page_islands:
+                    self.build_page_islands()
                 return
 
         if (app.path / "package.json").exists():
@@ -141,76 +156,13 @@ class PythonAssetBuilder:
         if integrity.is_file():
             (integrity.parent / ".pilot-install-key").write_text(key)
 
-    def try_download_prebuilt_assets(
+    def setup_prebuilt_assets(
         self,
-        app: "App",
+        app_name: str,
         app_public_dir: Path,
         dist_dir: Path,
-    ) -> bool:
-        from pilot.internal.git import GitRepo
-
-        branch = GitRepo(app.path).branch
-        if not branch:
-            return False
-        url = self.release_asset_url(app, branch)
-        if not url:
-            return False
-        print(f"  Downloading pre-built assets for {app.config.name}...")
-        sys.stdout.flush()
-        if not self.download_and_extract(url, app_public_dir):
-            return False
-        self.setup_prebuilt_assets(app.config.name, app_public_dir, dist_dir)
-        return True
-
-    @staticmethod
-    def release_asset_url(app: "App", branch: str) -> str | None:
-        import subprocess
-
-        r = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
-            capture_output=True,
-            text=True,
-            cwd=app.path,
-        )
-        if r.returncode != 0:
-            return None
-        m = re.search(r"github\.com[:/](.+?)(?:\.git)?$", r.stdout.strip())
-        if not m:
-            return None
-        owner_repo = m.group(1)
-        tag = f"assets-{branch.replace('/', '-')}"
-        return f"https://github.com/{owner_repo}/releases/download/{tag}/{app.config.name}-assets.tar.gz"
-
-    @staticmethod
-    def download_and_extract(url: str, dest_dir: Path) -> bool:
-        import tempfile
-        import urllib.error
-        import urllib.request
-
-        with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp_file:
-            tmp_path = Path(tmp_file.name)
-        try:
-            urllib.request.urlretrieve(url, tmp_path)
-        except urllib.error.URLError:
-            tmp_path.unlink(missing_ok=True)
-            return False
-
-        try:
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            extract_tar_archive(tmp_path, dest_dir)
-            return True
-        except Exception as exc:
-            logging.debug("Failed to extract downloaded archive to %s: %s", dest_dir, exc)
-            return False
-        finally:
-            tmp_path.unlink(missing_ok=True)
-
-    @staticmethod
-    def has_prebuilt_assets(dist_dir: Path) -> bool:
-        js_dir = dist_dir / "js"
-        return js_dir.is_dir() and any(_BUNDLE_RE.match(f.name) for f in js_dir.iterdir())
-
-    def setup_prebuilt_assets(self, app_name: str, app_public_dir: Path, dist_dir: Path) -> None:
+        asset_maps: dict[str, dict[str, str]] | None = None,
+    ) -> None:
         assets_dir = self.bench.sites_path / "assets"
         assets_dir.mkdir(exist_ok=True)
 
@@ -221,8 +173,34 @@ class PythonAssetBuilder:
             shutil.rmtree(str(app_link))
         app_link.symlink_to(app_public_dir.resolve())
 
-        self.write_assets_json(app_name, dist_dir, assets_dir)
+        # As `bench build` links it: <app>/node_modules is served at /assets/<app>/node_modules.
+        node_modules = app_public_dir.parent.parent / "node_modules"
+        node_modules_link = app_public_dir / "node_modules"
+        if node_modules.is_dir() and not node_modules_link.exists() and not node_modules_link.is_symlink():
+            node_modules_link.symlink_to(node_modules.resolve())
+
+        if asset_maps is None:
+            self.write_assets_json(app_name, dist_dir, assets_dir)
+        else:
+            from pilot.core.app.prebuilt_assets import PAGE_ISLAND_URL
+
+            for name, entries in asset_maps.items():
+                self.merge_json(
+                    assets_dir / name, entries, replacing=f"/assets/{app_name}/", keeping=PAGE_ISLAND_URL
+                )
         print(f"  Linked {app_link} -> {app_public_dir.resolve()}")
+
+    def build_page_islands(self) -> None:
+        """Build every app's page islands, as Frappe's `after_app_build` hook does. Frappe
+        without them (version-16) has no script."""
+        frappe_path = self.bench.apps_path / "frappe"
+        script = frappe_path / "ui" / "vite" / "island" / "build-pages.js"
+        if not script.exists():
+            return
+        self.ensure_yarn_install(script.parent / "toolchain")
+        print("  Building Frappe UI page islands...")
+        sys.stdout.flush()
+        self.run_compiler(["node", str(script), "--production"], cwd=frappe_path, stream_output=True)
 
     def write_assets_json(self, app_name: str, dist_dir: Path, assets_dir: Path) -> None:
         assets = {
@@ -263,10 +241,21 @@ class PythonAssetBuilder:
         return entries
 
     @staticmethod
-    def merge_json(path: Path, new_entries: dict) -> None:
-        existing: dict = {}
-        if path.exists():
-            with contextlib.suppress(json.JSONDecodeError):
-                existing = json.loads(path.read_text())
-        existing.update(new_entries)
-        path.write_text(json.dumps(existing, indent="\t", sort_keys=True) + "\n")
+    def merge_json(path: Path, new_entries: dict, replacing: str = "", keeping: str = "") -> None:
+        """Merge under the lock: several apps' builds write this file at once. Entries under
+        `replacing` are dropped first, except those under `keeping`."""
+        from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
+
+        with exclusive_file_lock(path):
+            existing: dict = {}
+            if path.exists():
+                with contextlib.suppress(json.JSONDecodeError):
+                    existing = json.loads(path.read_text())
+            if replacing:
+                existing = {
+                    key: url
+                    for key, url in existing.items()
+                    if not str(url).startswith(replacing) or (keeping and str(url).startswith(keeping))
+                }
+            existing.update(new_entries)
+            replace_private_text_locked(path, json.dumps(existing, indent="\t", sort_keys=True) + "\n")

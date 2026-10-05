@@ -1,19 +1,17 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
 import { ErrorMessage, Spinner, Switch, toast } from 'frappe-ui'
-
-import SettingsRow from '@/components/settings/SettingsRow.vue'
-import Version from '@/components/settings/Version.vue'
-import Git from '@/components/settings/Git.vue'
-import S3Bucket from '@/components/settings/S3Bucket.vue'
-import LLM from '@/components/settings/LLM.vue'
-import Notifications from '@/components/settings/Notifications.vue'
-import Mail from '@/components/settings/Mail.vue'
-import Workers from '@/components/settings/Workers.vue'
-
+import { onMounted, ref } from 'vue'
 import { settingsApi } from '@/api/settings'
-import { useSession } from '@/composables/auth/useSession'
+import Git from '@/components/settings/Git.vue'
+import LLM from '@/components/settings/LLM.vue'
+import Mail from '@/components/settings/Mail.vue'
+import Notifications from '@/components/settings/Notifications.vue'
+import S3Bucket from '@/components/settings/S3Bucket.vue'
+import SettingsRow from '@/components/settings/SettingsRow.vue'
 import { GENERAL_SECTIONS as sections } from '@/components/settings/sections'
+import Version from '@/components/settings/Version.vue'
+import Workers from '@/components/settings/Workers.vue'
+import { useSession } from '@/composables/auth/useSession'
 import { errorMessage } from '@/utils/error'
 
 const openSection = defineModel<{ id: string } | null>('openSection')

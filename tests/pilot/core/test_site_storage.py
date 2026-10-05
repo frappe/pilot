@@ -164,3 +164,28 @@ def test_a_bench_that_cannot_be_measured_does_not_stop_the_others(tmp_path: Path
 
     assert "could not collect site storage: database is down" in capsys.readouterr().err
     assert healthy.site_storage.path.exists()
+
+
+def test_a_timer_pass_removes_abandoned_backup_uploads(tmp_path: Path) -> None:
+    """Without it they hold disk until someone starts another upload."""
+    import os
+    import time
+
+    from pilot.core.bench.uploads import MANIFEST_NAME, STALE_SECONDS
+    from pilot.core.site import storage
+
+    bench = _bench(tmp_path, db_type="sqlite")
+    abandoned, recent = bench.uploads_path / "a", bench.uploads_path / "b"
+    for upload in (abandoned, recent):
+        upload.mkdir(parents=True)
+        (upload / MANIFEST_NAME).write_text("{}")
+        (upload / "upload-database.sql.gz").write_bytes(b"x" * 10)
+    old = time.time() - STALE_SECONDS - 60
+    for path in abandoned.iterdir():
+        os.utime(path, (old, old))
+
+    with patch.object(storage, "iter_sibling_benches", return_value=[(bench.path, bench.config)]):
+        collect_all_benches()
+
+    assert not abandoned.exists()
+    assert recent.exists()

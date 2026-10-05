@@ -384,9 +384,6 @@ def test_finish_clears_the_marker_without_signalling_managed_web_process(
     assert save_configuration(client).status_code == 200
     task_id = start_setup(client).get_json()["task_id"]
     complete_task(tmp_path, task_id)
-    procfile = tmp_path / "config" / "Procfile"
-    procfile.parent.mkdir()
-    procfile.touch()
     python = tmp_path / "env" / "bin" / "python"
     python.parent.mkdir(parents=True)
     python.touch()
@@ -429,9 +426,9 @@ def test_finish_requires_the_marker_bound_task(tmp_path: Path) -> None:
     assert save_configuration(client).status_code == 200
     task_id = start_setup(client).get_json()["task_id"]
     complete_task(tmp_path, task_id)
-    procfile = tmp_path / "config" / "Procfile"
-    procfile.parent.mkdir()
-    procfile.touch()
+    python = tmp_path / "env" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.touch()
     (tmp_path / ".wizard-active").write_text("20260715-120000-ffffff")
 
     response = client.post(
@@ -452,9 +449,9 @@ def test_finish_is_retryable_after_the_marker_was_already_cleared(tmp_path: Path
     assert save_configuration(client).status_code == 200
     task_id = start_setup(client).get_json()["task_id"]
     complete_task(tmp_path, task_id)
-    procfile = tmp_path / "config" / "Procfile"
-    procfile.parent.mkdir()
-    procfile.touch()
+    python = tmp_path / "env" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.touch()
     first = client.post("/api/v1/setup/actions/finish", json={"task_id": task_id})
     assert first.status_code == 204
     assert not (tmp_path / ".wizard-active").exists()

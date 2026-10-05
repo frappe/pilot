@@ -57,7 +57,7 @@ test('Migrate the site', async ({ page }) => {
 
 test('Reset the site', async ({ page }) => {
   await page.goto(`/sites/${site}/settings`)
-  await page.getByRole('button', { name: 'Reset site' }).click()
+  await page.getByRole('button', { name: 'Reset', exact: true }).click()
 
   const dialog = page.getByRole('dialog', { name: 'Reset Site' })
   await dialog.getByRole('textbox').fill(site)
@@ -69,11 +69,17 @@ test('Reset the site', async ({ page }) => {
 
 test('Drop the site', async ({ page }) => {
   await page.goto(`/sites/${site}/settings`)
-  await page.getByRole('button', { name: 'Drop site' }).click()
+  await page.getByRole('button', { name: 'Drop', exact: true }).click()
 
   const dialog = page.getByRole('dialog', { name: 'Drop Site' })
   await dialog.getByRole('textbox').fill(site)
+  await dialog.getByRole('checkbox', { name: 'Take a backup before dropping' }).uncheck()
+
+  const dropRequest = page.waitForRequest(
+    (request) => request.method() === 'DELETE' && request.url().includes(`/api/v1/sites/${site}`),
+  )
   await dialog.getByRole('button', { name: 'Drop site' }).click()
+  expect(new URL((await dropRequest).url()).searchParams.get('no_backup')).toBe('1')
 
   await waitForTask(page, /\/sites$/)
   await expect(page.getByRole('link', { name: new RegExp(site) })).toBeHidden()

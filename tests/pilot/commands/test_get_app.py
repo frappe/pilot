@@ -41,9 +41,12 @@ def test_full_flow_runs_when_app_not_registered(tmp_path: Path) -> None:
         patch.object(App, "validate") as mock_validate,
         patch.object(App, "_install_into_environment") as mock_install,
         patch.object(App, "_build_assets_via_env_manager") as mock_build,
+        patch.object(type(bench), "reload_workers") as mock_reload,
     ):
         cmd.run()
 
+    # Production workers must restart to import the new app.
+    mock_reload.assert_called_once()
     mock_clone.assert_called_once()
     mock_validate.assert_called_once()
     mock_install.assert_called_once()
@@ -62,9 +65,11 @@ def test_run_short_circuits_when_app_already_registered(tmp_path: Path) -> None:
         patch.object(App, "validate") as mock_validate,
         patch.object(App, "_install_into_environment") as mock_install,
         patch.object(App, "_build_assets_via_env_manager") as mock_build,
+        patch.object(type(bench), "reload_workers") as mock_reload,
     ):
         cmd.run()
 
+    mock_reload.assert_not_called()
     mock_clone.assert_not_called()
     mock_validate.assert_not_called()
     mock_install.assert_not_called()
@@ -175,3 +180,12 @@ def test_bench_is_app_installed_reflects_apps_txt_contents(tmp_path: Path) -> No
 
     (bench.sites_path / "apps.txt").write_text("frappe\nerpnext\n")
     assert bench.is_app_installed("erpnext") is True
+
+
+def test_without_a_branch_the_repository_default_is_used(tmp_path: Path) -> None:
+    # Many Frappe apps default to develop and have no main branch.
+    bench = make_bench(tmp_path)
+
+    cmd = GetAppCommand(bench, repo="https://github.com/frappe/telephony")
+
+    assert cmd.app.config.branch == ""

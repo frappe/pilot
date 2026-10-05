@@ -75,10 +75,20 @@ class Task:
         "repo",
         "branch",
         "marketplace_app",
+        "no_backup",
     )
 
     bench: "Bench"
     bench_root: Path
+
+    @property
+    def running_task_id(self) -> str:
+        """This task's id while a task worker runs it; empty when run directly."""
+        import os
+
+        from pilot.internal.tasks.process import TASK_ID_ENV
+
+        return os.environ.get(TASK_ID_ENV, "")
 
     @classmethod
     def queue(

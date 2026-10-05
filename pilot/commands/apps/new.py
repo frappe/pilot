@@ -37,6 +37,7 @@ class NewAppCommand(Command):
         if not App.is_available_on_bench(self.bench, self.app_name):
             raise BenchError(f"App '{self.app_name}' already exists in this bench.")
         self.app: "App" = self.bench.new_app(self.app_name, self._collect_options(), on_progress=self.report)
+        self.bench.reload_workers()
 
     def _collect_options(self) -> "NewAppOptions":
         from pilot.core.app import NewAppOptions

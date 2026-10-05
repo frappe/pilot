@@ -108,6 +108,8 @@ server {
     set $bench_from_proxy {{ proxy_gate_variable }};
     if ($request_uri ~ "^/\.well-known/acme-challenge/") { set $bench_from_proxy 1; }
     if ($bench_from_proxy = 0) { return 403; }
+    set $pilot_scheme $http_x_forwarded_proto;
+    if ($pilot_scheme = "") { set $pilot_scheme $scheme; }
 
     {% endif %}
     {# firewall: first-match allow / deny #}
@@ -188,6 +190,8 @@ server {
     set $bench_from_proxy {{ proxy_gate_variable }};
     if ($request_uri ~ "^/\.well-known/acme-challenge/") { set $bench_from_proxy 1; }
     if ($bench_from_proxy = 0) { return 403; }
+    set $pilot_scheme $http_x_forwarded_proto;
+    if ($pilot_scheme = "") { set $pilot_scheme $scheme; }
 
     {% endif %}
     {# firewall: first-match allow / deny #}
@@ -223,9 +227,11 @@ server {
     {# document root #}
     {% if vhost.kind == "site" %}
     root {{ sites_root }};
-    client_max_body_size {{ client_max_body_size }};
 
     {% endif %}
+    {# the admin takes backup uploads, so it gets at least the site limit #}
+    client_max_body_size {{ client_max_body_size if vhost.kind == "site" else admin_client_max_body_size }};
+
     {# ACME http-01 challenge, kept reachable so cert issuance never 403s #}
     {% if not vhost.ssl %}
     location /.well-known/acme-challenge/ {
@@ -278,12 +284,17 @@ server {
 
     {# realtime (socket.io) #}
     location /socket.io {
+        set $pilot_socketio_origin $http_origin;
+        if ($pilot_socketio_origin = "") {
+            set $pilot_socketio_origin {{ vhost.public_scheme }}://$http_host;
+        }
+
         proxy_pass         http://127.0.0.1:{{ socketio_port }};
         proxy_http_version 1.1;
         proxy_set_header   Upgrade $http_upgrade;
         proxy_set_header   Connection "upgrade";
         proxy_set_header   X-Frappe-Site-Name {{ vhost.name }};
-        proxy_set_header   Origin {{ vhost.public_scheme }}://$http_host;
+        proxy_set_header   Origin $pilot_socketio_origin;
         proxy_set_header   Host $host;
     }
 
@@ -359,6 +370,22 @@ server {
         try_files $uri =404;
         expires 1y;
         add_header Cache-Control "public, immutable";
+    }
+
+    {# backup upload chunks: raw bytes the WAF cannot inspect, streamed to the admin #}
+    location ~ ^/api/v1/sites/[^/]+/uploads/[^/]+/files/ {
+        {% if waf_active %}
+        modsecurity off;
+        {% endif %}
+        proxy_request_buffering off;
+        proxy_pass         http://127.0.0.1:{{ vhost.port }};
+        proxy_read_timeout 600;
+        proxy_send_timeout 600;
+        proxy_redirect     off;
+        proxy_set_header   Host               $host;
+        proxy_set_header   X-Real-IP          $remote_addr;
+        proxy_set_header   X-Forwarded-For    {{ vhost.forwarded_for }};
+        proxy_set_header   X-Forwarded-Proto  {{ vhost.public_scheme }};
     }
 
     {# everything else to the local admin process #}

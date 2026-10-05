@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+{% if code == 502 %}
+<meta http-equiv="refresh" content="5">
+{% endif %}
 <title>{{ code }} - {{ title }}</title>
 <style>
 :root{--bg:#fbfbfc;--fg:#1c2024;--muted:#6b7280;--accent:#d1d5db;--font:system-ui,-apple-system,sans-serif}

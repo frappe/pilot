@@ -11,9 +11,10 @@ import pytest
 
 from pilot.config import BenchConfig, MariaDBConfig, RedisConfig, WorkerConfig
 from pilot.config.alert_limit import ResourceLimitConfig
-from pilot.config.mail import MailConfig, MalformedSiteConfig
+from pilot.config.mail import MailConfig
 from pilot.core.alerts import check_mail_credentials, notify, send_mail
 from pilot.core.bench import Bench
+from pilot.exceptions import MalformedSiteConfig
 
 PAYLOAD = {
     "event": "site_down",
@@ -387,4 +388,6 @@ def test_alerts_reach_central_when_it_is_managed(tmp_path: Path) -> None:
     with patch.object(alerts, "CentralClient") as client:
         assert alerts.notify(bench, {"event": "cpu", "message": "high", "context": {}}) is True
 
-    client.return_value.notify_central.assert_called_once()
+    client.return_value.notify_central.assert_called_once_with(
+        event="cpu", message="high", context={}, reference_name=bench.config.name
+    )

@@ -166,7 +166,8 @@ FUZZ_ALPHABET = [
 
 # Malformed templates and expressions are expected to fail loudly with one of
 # these, never with an unhandled crash (IndexError, RecursionError, ...).
-FUZZ_EXPECTED_ERRORS = (ValueError, TypeError, NameError, SyntaxError)
+# AttributeError comes from a well-formed expression such as `range(3).x`.
+FUZZ_EXPECTED_ERRORS = (ValueError, TypeError, NameError, SyntaxError, AttributeError)
 
 token_soup = st.lists(st.sampled_from(FUZZ_ALPHABET), max_size=20).map("".join)
 
@@ -183,3 +184,9 @@ def test_fuzz_random_token_soup_never_crashes_unexpectedly(source: str) -> None:
 def test_fuzz_random_text_never_crashes_unexpectedly(source: str) -> None:
     with contextlib.suppress(*FUZZ_EXPECTED_ERRORS):
         Template(source).render()
+
+
+@pytest.mark.parametrize("source", ["{{range(3). if ", "text {{ x", "{% if x", "{# note"])
+def test_unterminated_tag_is_rejected_not_evaluated(source: str) -> None:
+    with pytest.raises(ValueError, match="Unterminated tag"):
+        Template(source).render(x=1, items=[1, 2, 3])

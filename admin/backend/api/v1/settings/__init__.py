@@ -15,7 +15,7 @@ from pilot.config import (
     WAF_RULE_OPERATORS,
     BenchConfig,
 )
-from pilot.config.mail import MailConfig, MalformedSiteConfig
+from pilot.config.mail import MailConfig
 from pilot.config.monitor import bench_log_path, system_log_path
 from pilot.core.bench import Bench
 from pilot.core.bench.settings import (
@@ -30,6 +30,7 @@ from pilot.core.bench.settings import (
     waf_payload,
     worker_groups_payload,
 )
+from pilot.exceptions import MalformedSiteConfig
 from pilot.integrations.llm import clear_system_prompt, read_system_prompt, write_system_prompt
 from pilot.internal.validators import validate_external_url
 from pilot.managers.platform import is_linux, native_process_manager

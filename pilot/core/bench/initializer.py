@@ -4,6 +4,8 @@ import shutil
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from pilot.config.common_site_config import update_common_site_config
+
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
@@ -83,6 +85,8 @@ class BenchInitializer:
     def _create_bench_structure(self) -> None:
         self.bench.create_directories()
         self.bench.write_common_site_config()
+        with update_common_site_config(self.bench.sites_path) as config:
+            config.setdefault("server_script_enabled", True)
         self._rollback_actions.append(("bench directories", self._remove_bench_dirs))
 
     def _create_virtualenv(self, python_env_manager) -> None:

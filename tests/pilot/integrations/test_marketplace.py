@@ -603,3 +603,21 @@ def test_find_app_raises_for_unknown_app():
     mp = make_marketplace("15.0.0")
     with pytest.raises(BenchError, match="'unknown_app' not found in marketplace"):
         mp.find_app("unknown_app")
+
+
+def test_releases_are_reread_after_a_registry_refresh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The Admin process outlives many registry refreshes."""
+    import json
+    import os
+
+    monkeypatch.setattr("pilot.utils.cli_root", lambda: tmp_path)
+    release_file = tmp_path / "system" / "registry-cache" / "apps" / "crm.json"
+    release_file.parent.mkdir(parents=True)
+    release_file.write_text(json.dumps({"releases": [{"version": "1.0.0", "frappe_core": ">=16"}]}))
+    assert Marketplace.releases("crm")[0]["frappe_core"] == ">=16"
+
+    release_file.write_text(json.dumps({"releases": [{"version": "1.0.0", "frappe_core": ">=18"}]}))
+    modified = release_file.stat().st_mtime_ns + 1_000_000_000
+    os.utime(release_file, ns=(modified, modified))
+
+    assert Marketplace.releases("crm")[0]["frappe_core"] == ">=18"

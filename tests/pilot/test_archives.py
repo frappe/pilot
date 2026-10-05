@@ -3,7 +3,6 @@ from __future__ import annotations
 import io
 import stat
 import tarfile
-import urllib.request
 from pathlib import Path
 
 import pytest
@@ -114,23 +113,3 @@ def test_extract_rejects_existing_symlink_parent(tmp_path: Path) -> None:
         extract_tar_archive(path, destination)
 
     assert not (outside / "escape.txt").exists()
-
-
-def test_prebuilt_asset_download_rejects_unsafe_archive(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from pilot.managers.python_assets import PythonAssetBuilder
-
-    archive = _archive(tmp_path / "assets.tar", [_file("../escape.txt")])
-
-    def retrieve(_url: str, destination: str | Path):
-        Path(destination).write_bytes(archive.read_bytes())
-        return str(destination), None
-
-    monkeypatch.setattr(urllib.request, "urlretrieve", retrieve)
-
-    assert (
-        PythonAssetBuilder.download_and_extract("https://example.test/assets.tar", tmp_path / "public")
-        is False
-    )
-    assert not (tmp_path / "escape.txt").exists()

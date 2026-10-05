@@ -1,13 +1,12 @@
 <script setup lang="ts">
+import { Button, Dialog, ErrorMessage, TextInput } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Button, Dialog, ErrorMessage, TextInput } from 'frappe-ui'
-
-import { useSite } from '@/composables/sites/useSite'
 import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
-import { openTaskDetailPage } from '@/utils/taskRoute'
+import { useSite } from '@/composables/sites/useSite'
 import { errorMessage } from '@/utils/error'
+import { openTaskDetailPage } from '@/utils/taskRoute'
 
 interface Props {
   siteName: string
@@ -74,6 +73,22 @@ const clearCache = async () => {
   }
 }
 
+const buildingAssets = ref(false)
+
+const buildAssets = async () => {
+  error.value = ''
+  buildingAssets.value = true
+  try {
+    const data = await sitesApi.buildAssets(props.siteName)
+    if (data.task_id) openTaskDetailPage(router, data.task_id)
+    else error.value = apiErrorMessage(data, 'Failed to build assets.')
+  } catch (e) {
+    error.value = errorMessage(e, 'Failed to build assets.')
+  } finally {
+    buildingAssets.value = false
+  }
+}
+
 const refreshingStorage = ref(false)
 
 const refreshStorage = async () => {
@@ -108,6 +123,15 @@ const Actions = [
     condition: () => true,
     loading: () => clearingCache.value,
     onClick: () => clearCache(),
+  },
+  {
+    key: 'build_assets',
+    label: 'Build assets',
+    buttonLabel: 'Build',
+    description: "Rebuild JS and CSS for this site's apps.",
+    condition: () => true,
+    loading: () => buildingAssets.value,
+    onClick: () => buildAssets(),
   },
   {
     key: 'refresh_storage',

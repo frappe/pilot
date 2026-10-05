@@ -225,3 +225,17 @@ def test_missing_dependencies_lists_what_the_site_does_not_have(tmp_path: Path) 
         patch.object(SiteApps, "installed_apps", return_value=["frappe", "erpnext"]),
     ):
         assert site.get_missing_dependencies(app) == ["telephony"]
+
+
+def test_install_app_refuses_when_a_required_app_is_not_on_the_bench(tmp_path: Path) -> None:
+    site, app = make_site_and_app(tmp_path)
+
+    with (
+        patch("pilot.core.site.apps.run_command") as mock_rc,
+        patch.object(SiteApps, "disabled_apps", return_value=[]),
+        patch.object(SiteApps, "get_required_apps", return_value=["telephony"]),
+        pytest.raises(BenchError, match="requires telephony"),
+    ):
+        site.install_app(app)
+
+    assert not any("install-app" in call.args[0] for call in mock_rc.call_args_list)

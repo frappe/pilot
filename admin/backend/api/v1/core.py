@@ -38,6 +38,8 @@ class Bootstrap(TypedDict):
     native_process_manager: NotRequired[str]
     allow_bench_management: NotRequired[bool]
     central: NotRequired[bool]
+    central_url: NotRequired[str]
+    central_audience: NotRequired[str]
     developer_mode: NotRequired[bool]
     task_worker: NotRequired[TaskWorkerActivity]
 
@@ -96,6 +98,8 @@ def bootstrap():
                 "native_process_manager": native_process_manager(),
                 "allow_bench_management": config.admin.allow_bench_management,
                 "central": config.central.enabled,
+                "central_url": config.admin.central_url if config.central.enabled else "",
+                "central_audience": config.admin.jwks_audience if config.central.enabled else "",
                 "developer_mode": config.allow_developer_mode,
                 "task_worker": TaskActivityReader(bench_root).read().public_dict,
             },

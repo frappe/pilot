@@ -28,9 +28,9 @@ def can_cap_memory() -> bool:
         return False
 
 
-def memory_capped(argv: list[str], memory_max_mb: int) -> list[str]:
-    """Run argv in a transient scope the kernel kills past memory_max_mb. Only where
-    `can_cap_memory` holds."""
+def memory_capped(argv: list[str], memory_max_mb: int, swap_max_mb: int) -> list[str]:
+    """Run argv in a transient scope capped at memory_max_mb of RAM and swap_max_mb of
+    swap. Only where `can_cap_memory` holds. Swap lets small hosts finish large builds."""
     return [
         "systemd-run",
         "--user",
@@ -40,7 +40,7 @@ def memory_capped(argv: list[str], memory_max_mb: int) -> list[str]:
         "-p",
         f"MemoryMax={memory_max_mb}M",
         "-p",
-        "MemorySwapMax=0",
+        f"MemorySwapMax={swap_max_mb}M",
         *argv,
     ]
 

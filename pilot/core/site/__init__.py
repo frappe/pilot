@@ -4,7 +4,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from functools import cached_property
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import IO, TYPE_CHECKING
 
 from pilot.config import SiteConfig
 from pilot.utils import run_command
@@ -14,7 +14,9 @@ if TYPE_CHECKING:
     from pilot.core.bench import Bench
     from pilot.core.site.backups import SiteBackups
     from pilot.core.site.domains import SiteDomains
+    from pilot.core.site.frappe_cloud import SiteFrappeCloud
     from pilot.core.site.migration_backup import SiteMigrationBackup
+    from pilot.core.site.restore import BackupRun
 
 
 class Site:
@@ -50,10 +52,23 @@ class Site:
         return SiteDomains(self)
 
     @cached_property
+    def frappe_cloud(self) -> "SiteFrappeCloud":
+        from pilot.core.site.frappe_cloud import SiteFrappeCloud
+
+        return SiteFrappeCloud(self)
+
+    @cached_property
     def migration_backup(self) -> "SiteMigrationBackup":
         from pilot.core.site.migration_backup import SiteMigrationBackup
 
         return SiteMigrationBackup(self)
+
+    @property
+    def db_type(self) -> str:
+        """The engine frappe connects this site to, with frappe's own fallback."""
+        from pilot.core.site.config import read_site_config
+
+        return read_site_config(self.path).get("db_type") or "mariadb"
 
     @property
     def maintenance_mode(self) -> bool:
@@ -115,6 +130,25 @@ class Site:
         from pilot.core.site.template import SiteTemplate
 
         SiteTemplate(path).prepare(self, on_progress)
+
+    def restore_backup(
+        self,
+        run: BackupRun,
+        parts: list[str],
+        on_progress: Callable[[str], None] = print,
+        open_dump: Callable[[], IO[bytes]] | None = None,
+        skip_failing_patches: bool = False,
+    ) -> None:
+        """Restore `parts` of a backup run in maintenance mode, then migrate."""
+        from pilot.core.site.restore import SiteRestore
+
+        SiteRestore(self).restore(run, parts, on_progress, open_dump, skip_failing_patches)
+
+    def set_config_values(self, values: dict) -> None:
+        """Write keys into site_config.json under its lock."""
+        from pilot.core.site.config import set_site_config_values
+
+        set_site_config_values(self.bench.sites_path, self.config.name, values)
 
     def reinstall(self, admin_password: str) -> None:
         from pilot.core.site.commands import SiteCommands
@@ -188,6 +222,16 @@ class Site:
 
         SiteCommands(self).clear_cache()
 
+    def enable_scheduler(self) -> None:
+        from pilot.core.site.commands import SiteCommands
+
+        SiteCommands(self).enable_scheduler()
+
+    def build_assets(self) -> None:
+        """Rebuild the assets of the apps this site runs. Assets are shared by every
+        site on the bench that has those apps."""
+        self.bench.rebuild_assets(apps=self.active_apps(), force=True)
+
     def uninstall_apps(
         self,
         app_names: list[str],
@@ -203,14 +247,20 @@ class Site:
 
         SiteApps(self).remove_app_if_not_on_any_site(app_name, on_progress)
 
-    def drop(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+    def drop(
+        self,
+        on_progress: Callable[[str], None] = lambda message: None,
+        no_backup: bool = False,
+    ) -> None:
         from pilot.core.site.commands import SiteCommands
         from pilot.managers.nginx import NginxManager
 
         provider_domains = self._provider_domains()
         cmd = [*self.bench.frappe_call, "frappe", "drop-site", "--force", self.config.name]
+        if no_backup:
+            cmd.append("--no-backup")
         on_progress(f"Dropping site '{self.config.name}'...")
-        with SiteCommands(self).setup_credentials(self.bench.config.db_type) as credentials:
+        with SiteCommands(self).setup_credentials(self.db_type) as credentials:
             run_command(cmd + credentials, cwd=self.bench.sites_path, stream_output=True)
         self._remove_from_bench_toml()
         self._release_domains(provider_domains)
