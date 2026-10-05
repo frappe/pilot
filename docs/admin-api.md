@@ -82,6 +82,8 @@ Every `/sites/<name>/...` route accepts the site's directory name or any hostnam
 
 `POST /sites/<name>/login` returns `{"url": ...}` plus an optional `hint` when the URL's host does not resolve on the server - the UI surfaces it so the user knows to add a hosts entry or use a `*.localhost` name.
 
+The login signs in the user the token names. A token whose `sub` is an email signs that user in, and its optional `name` claim is the user's full name. A user the site does not have yet is created as a System Manager, the way Frappe's setup wizard creates the first user. Any other `sub`, such as `admin`, signs in as Administrator.
+
 ### Renaming And Domains
 
 `POST /sites/<name>/actions/rename` takes `{"new_name": "...", "keep_old_hostname": true}` and queues `rename-site`. The new name is validated the same way a new site's is, and both names are claimed as task resources so nothing can create or drop either while the site is moving between them. `keep_old_hostname` defaults to true and keeps the old hostname on the site, so open tabs and existing links keep working; pass false to release a pooled name a fleet reuses. A rename also replaces the site's `pilot_auth_token` with one scoped to the new name. See [Renaming without downtime](commands.md#renaming-without-downtime).

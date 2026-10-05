@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import re
 import secrets
 from pathlib import Path
 
-from flask import current_app, jsonify, request, url_for
+from flask import current_app, g, jsonify, request, url_for
 
 from admin.backend.api.responses import (
     accepted_response,
@@ -330,8 +331,9 @@ def create_login_link(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     if not site_exists(bench_root, name):
         return site_not_found()
+    user, full_name = login_user(g.jwt_claims)
     try:
-        url = Bench(bench_root).site(name).admin_login_url()
+        url = Bench(bench_root).site(name).admin_login_url(user=user, full_name=full_name)
     except Exception:
         return error_response(
             "configuration_unavailable",
@@ -349,6 +351,17 @@ def create_login_link(name: str):
     if hint := unreachable_host_hint(url):
         payload["hint"] = hint
     return _no_store(created_response(payload, url))
+
+
+def login_user(claims: dict | None) -> tuple[str, str]:
+    """The site user a login token names, with their full name. A token whose subject is
+    not an email, such as a bench admin's, signs in as Administrator."""
+    claims = claims or {}
+    subject = claims.get("sub")
+    full_name = claims.get("name")
+    if not isinstance(subject, str) or not re.fullmatch(r"[^@\s]{1,64}@[^@\s]{1,189}", subject):
+        return "Administrator", ""
+    return subject, full_name[:140] if isinstance(full_name, str) else ""
 
 
 def _site_resource(site: SiteInfo) -> dict:
