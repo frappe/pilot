@@ -166,7 +166,9 @@ class BenchClone:
             return
         git_file.unlink()
         staging = destination / ".pilot-clone-git"
-        run_command(["git", "clone", "--no-hardlinks", "--no-checkout", str(source), str(staging)])
+        from pilot.core.bench.clone_repository import clone_repository
+
+        clone_repository(source, staging)
         (staging / ".git").rename(git_file)
         staging.rmdir()
         index = (

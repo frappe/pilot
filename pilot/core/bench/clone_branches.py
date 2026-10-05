@@ -1,6 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from pilot.core.bench.clone_repository import clone_repository
 from pilot.exceptions import BenchError, CommandError
 from pilot.integrations.git import auth_config_for
 from pilot.internal.git import GitRepo, git_env
@@ -78,10 +79,7 @@ def clone_branch(
         raise BenchError(f"{source.name} has no origin remote; use --branch current to copy its checkout.")
     if branch == "default":
         branch = get_remote_branches(source, git_config)["default_branch"]
-    run_command(
-        ["git", "clone", "--no-hardlinks", "--no-checkout", str(source), str(destination)],
-        env=git_env(),
-    )
+    clone_repository(source, destination)
     run_command(["git", "-C", str(destination), "remote", "set-url", "origin", remote], env=git_env())
     run_command(
         [

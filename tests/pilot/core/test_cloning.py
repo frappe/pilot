@@ -26,6 +26,98 @@ def git(path, *args):
     ).stdout.strip()
 
 
+@pytest.mark.parametrize("checkout", ["branch", "detached", "worktree"])
+def test_reflink_repository_is_independent_with_fresh_metadata(source, monkeypatch, checkout):
+    import shutil
+
+    from pilot.core.bench import clone_repository
+
+    app = source.apps_path / "frappe"
+    git(app, "tag", "baseline")
+    git(app, "gc")
+    (app / ".git/hooks/post-checkout").write_text("source hook")
+    original = app
+    if checkout == "detached":
+        git(app, "checkout", "--detach")
+    elif checkout == "worktree":
+        app = source.path.parent / "linked"
+        git(original, "worktree", "add", "-b", "task", str(app))
+    revision = git(app, "rev-parse", "HEAD")
+    run = clone_repository.run_command
+    copies = []
+    commands = []
+
+    def copy(argv, **kwargs):
+        commands.append(argv)
+        if argv[0] == "cp":
+            copies.append(argv)
+            argv = ["--reflink=auto" if part == "--reflink=always" else part for part in argv]
+        return run(argv, **kwargs)
+
+    monkeypatch.setattr(clone_repository, "run_command", copy)
+    destination = source.path.parent / "independent"
+    clone_repository.clone_repository(app, destination)
+    assert copies
+    assert not any(argv[:2] == ["git", "clone"] for argv in commands)
+    assert git(destination, "rev-parse", "HEAD") == revision
+    assert git(destination, "rev-parse", "baseline") == revision
+    if checkout != "detached":
+        assert git(destination, "rev-parse", "--abbrev-ref", "@{upstream}") == (
+            "origin/task" if checkout == "worktree" else "origin/main"
+        )
+    assert not (destination / ".git/hooks/post-checkout").exists()
+    assert not (destination / ".git/objects/info/alternates").exists()
+    pack = next((original / ".git/objects/pack").glob("*.pack"))
+    copied = destination / ".git/objects/pack" / pack.name
+    assert (pack.stat().st_dev, pack.stat().st_ino) != (copied.stat().st_dev, copied.stat().st_ino)
+    shutil.rmtree(original)
+    git(destination, "fsck", "--full")
+    git(destination, "checkout", "--force", "HEAD")
+    assert (destination / "frappe/__init__.py").read_text() == "VALUE = 'baseline'\n"
+
+
+def test_alternate_backed_repository_clone_dissociates(source):
+    import shutil
+
+    from pilot.core.bench.clone_repository import clone_repository
+
+    app = source.apps_path / "frappe"
+    alternate = source.path.parent / "alternate"
+    subprocess.run(["git", "clone", "--shared", str(app), str(alternate)], check=True, capture_output=True)
+    assert [
+        path.relative_to(alternate / ".git/objects").as_posix()
+        for path in (alternate / ".git/objects").rglob("*")
+        if path.is_file()
+    ] == ["info/alternates"]
+    destination = source.path.parent / "independent"
+    clone_repository(alternate, destination)
+    assert not (destination / ".git/objects/info/alternates").exists()
+    shutil.rmtree(app)
+    shutil.rmtree(alternate)
+    git(destination, "fsck", "--full")
+
+
+def test_failed_reflink_copy_discards_partial_objects_before_clone(source, monkeypatch):
+    from pathlib import Path
+
+    from pilot.core.bench import clone_repository
+
+    run = clone_repository.run_command
+
+    def copy(argv, **kwargs):
+        if argv[0] == "cp":
+            (Path(argv[-1]) / "partial").write_text("incomplete object")
+            raise CommandError("Reflink unavailable")
+        return run(argv, **kwargs)
+
+    monkeypatch.setattr(clone_repository, "run_command", copy)
+    destination = source.path.parent / "fallback"
+    clone_repository.clone_repository(source.apps_path / "frappe", destination)
+    git(destination, "fsck", "--full")
+    assert not (destination / ".git/objects/partial").exists()
+    assert not list(destination.parent.glob(".pilot-git-*"))
+
+
 @pytest.fixture
 def source(tmp_path, monkeypatch):
     root = tmp_path / "benches" / "dev"
