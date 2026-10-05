@@ -1,5 +1,5 @@
 {
-  "name": "@frappe/cloud-sdk",
+  "name": "@frappe-dev/cloud-sdk",
   "version": "0.1.0",
   "description": "API client for Frappe Cloud site settings",
   "type": "module",
