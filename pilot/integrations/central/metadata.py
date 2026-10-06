@@ -26,7 +26,6 @@ class MetadataBlock(TypedDict):
     url_key: str
 
 
-# The cloud caps each metadata value at 1 KiB, so each optional block has its own attribute.
 BLOCKS: dict[str, MetadataBlock] = {
     "s3": {"attribute": "pilot-storage", "keys": S3_KEYS, "url_key": "endpoint_url"},
     "telemetry": {"attribute": "pilot-telemetry", "keys": TELEMETRY_KEYS, "url_key": "endpoint"},
