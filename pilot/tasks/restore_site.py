@@ -121,8 +121,11 @@ class RestoreSiteTask(Task):
 
     @property
     def fetch_label(self) -> str:
+        """Streamed sources download in the restore step, so this step only prepares them."""
         if self.frappe_cloud_backup:
-            return f"Download backup from Frappe Cloud ({self.frappe_cloud_backup})"
+            return f"Prepare the Frappe Cloud backup ({self.frappe_cloud_backup})"
+        if self.remote_site:
+            return f"Prepare the backup from {self.remote_site}"
         return f"Get the backup from {self.source_label}"
 
     @property

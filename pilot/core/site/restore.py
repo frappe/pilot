@@ -109,16 +109,18 @@ class SiteRestore:
         """Files go first: a stream that fails then stops the restore before the database is dropped."""
         for part in ("public", "private"):
             if part in parts:
-                on_progress(f"Restoring {part} files...")
                 if stream := run.streams.get(part):
+                    on_progress(f"Downloading and restoring {part} files...")
                     self.extract_files_stream(stream, part)
                 else:
+                    on_progress(f"Restoring {part} files...")
                     self.extract_files(run.files[part], part)
         if "database" in parts:
-            on_progress("Restoring the database...")
             if stream := run.streams.get("database"):
+                on_progress("Downloading and restoring the database...")
                 self.import_database_stream(stream.open)
             else:
+                on_progress("Restoring the database...")
                 self.site.restore(str(run.files["database"]))
             self.site.set_config_values(self.get_restored_database_config(run))
         if "config" in parts:
