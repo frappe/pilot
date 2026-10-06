@@ -151,10 +151,10 @@ A user of the team opens `approval_url` and enters the code within 10 minutes. F
 
 ### Site Actions
 
-`POST /sites/<name>/actions/complete-setup` queues `complete-setup`, which runs Frappe's setup wizard without its screens. It takes `full_name` and `email`, and optionally `language` (a Frappe language name, such as English), `country`, `time_zone` and `currency`. Frappe creates the user as a System Manager, sets the site's region settings, runs each app's setup step, and skips a site whose setup is already complete. Example:
+`POST /sites/<name>/actions/complete-setup` queues `complete-setup`, which runs Frappe's setup wizard without its screens. It takes `full_name` and `email`, and optionally `language` (a Frappe language name, such as English), `country`, `time_zone`, `currency` and `host_name`. Frappe creates the user as a System Manager, sets the site's region settings, runs each app's setup step, and skips a site whose setup is already complete. `host_name` is the site's public address as an `http` or `https` origin. Pilot writes it to the site config before setup, so links that the site builds and the app setup steps use that address, also before a rename. A rename leaves a `host_name` that does not name the old site. Example:
 
 ```json
-{"full_name": "Asha Rao", "email": "asha@example.com", "language": "English", "country": "India", "time_zone": "Asia/Kolkata", "currency": "INR"}
+{"full_name": "Prathamesh Kurunkar", "email": "prathamesh@example.com", "language": "English", "country": "India", "time_zone": "Asia/Kolkata", "currency": "INR", "host_name": "https://prathamesh.example.com"}
 ```
 
 `POST /sites/<name>/actions/build-assets` queues `build` for the apps the site runs. Assets are shared by every site on the bench that has those apps, so the task also takes the `bench:update` lock and waits for an update or another build.

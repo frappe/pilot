@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import secrets
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from flask import current_app, g, jsonify, request, url_for
 
@@ -33,7 +34,7 @@ from admin.backend.providers.sites import SiteInfo, SiteProvider
 from pilot.core.bench import Bench
 from pilot.core.site.login import site_url
 from pilot.internal.site_paths import site_exists
-from pilot.internal.validators import validate_site_name
+from pilot.internal.validators import validate_hostname, validate_site_name
 from pilot.tasks.build import BuildTask
 from pilot.tasks.clear_cache import ClearCacheTask
 from pilot.tasks.complete_setup import CompleteSetupTask
@@ -269,9 +270,14 @@ def complete_setup(name: str):
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return malformed_body()
-    fields = text_fields(data, "full_name", "email", "language", "country", "time_zone", "currency")
+    fields = text_fields(
+        data, "full_name", "email", "language", "country", "time_zone", "currency", "host_name"
+    )
     if fields is None or not fields["full_name"] or "@" not in fields["email"]:
         return invalid_fields()
+    if fields["host_name"] and not _is_site_address(fields["host_name"]):
+        return invalid_fields()
+    fields["host_name"] = fields["host_name"].rstrip("/")
 
     try:
         task_id = CompleteSetupTask.queue(
@@ -284,6 +290,17 @@ def complete_setup(name: str):
     except Exception as error:
         return task_failure(error)
     return accepted_task_response(bench_root, task_id)
+
+
+def _is_site_address(value: str) -> bool:
+    """An http or https origin, such as `https://acme.example.com`, with no path."""
+    parts = urlsplit(value)
+    return (
+        parts.scheme in ("http", "https")
+        and validate_hostname(parts.hostname or "") is None
+        and parts.path in ("", "/")
+        and not (parts.query or parts.fragment or parts.username)
+    )
 
 
 @sites_bp.post("/<name>/actions/build-assets")
