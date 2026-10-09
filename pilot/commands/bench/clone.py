@@ -16,7 +16,7 @@ class CloneBenchCommand(Command):
     app_branches: Annotated[str, Arg(help="Comma-separated app=branch overrides.")] = ""
 
     def run(self) -> None:
-        from pilot.core.bench.clone_branches import parse_app_branches
+        from pilot.core.bench.cloning.branches import parse_app_branches
 
         destination = self.bench.clone(
             self.target, self.report, branch=self.branch, app_branches=parse_app_branches(self.app_branches)

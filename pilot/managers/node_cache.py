@@ -1,9 +1,11 @@
+import logging
 import os
 import shutil
 import tempfile
 from pathlib import Path
 
 from pilot.core.bench.artifacts import BenchArtifacts
+from pilot.exceptions import CommandError
 from pilot.internal.atomic_file import exclusive_file_lock
 from pilot.managers.node_dependencies import NodeDependencies
 
@@ -28,6 +30,12 @@ class NodeDependencyCache:
             return
         if not NodeDependencies.has_matching_install(path, key):
             return
+        try:
+            self.publish(path, key)
+        except (OSError, CommandError) as error:
+            logging.warning("Skipping Node dependency cache publication: %s", error)
+
+    def publish(self, path: Path, key: str) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
         with exclusive_file_lock(self.root / f"{key}.guard"):
             target = self.root / key

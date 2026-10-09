@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
+from pilot.exceptions import CommandError
 from pilot.managers.node_cache import NodeDependencyCache
 from pilot.managers.node_dependencies import NodeDependencies
 from pilot.managers.python_assets import PythonAssetBuilder
@@ -32,6 +33,37 @@ def install(tmp_path):
 def capture_install(source, cache):
     (source / "node_modules/.pilot-install-key").write_text(NodeDependencies.get_key(source))
     cache.capture(source)
+
+
+@pytest.mark.parametrize("failure", ["directory", "copy", "rename"])
+def test_cache_storage_failure_preserves_completed_install(install, monkeypatch, caplog, failure):
+    from pathlib import Path
+
+    from pilot.core.bench.artifacts import BenchArtifacts
+
+    source, target, cache = install
+    key = NodeDependencies.get_key(source)
+    (source / "node_modules/.pilot-install-key").write_text(key)
+
+    def fail(*args, **kwargs):
+        if failure == "copy":
+            raise CommandError("No space left on device")
+        raise PermissionError("Cache is read-only")
+
+    with monkeypatch.context() as patcher:
+        if failure == "directory":
+            patcher.setattr(Path, "mkdir", fail)
+        elif failure == "copy":
+            patcher.setattr(BenchArtifacts, "copy_directory", fail)
+        else:
+            patcher.setattr(Path, "rename", fail)
+        cache.capture(source)
+    assert "Skipping Node dependency cache publication" in caplog.text
+    assert NodeDependencies.has_matching_install(source, key)
+    assert not (cache.root / key).exists()
+    assert not list(cache.root.glob("install-*"))
+    cache.capture(source)
+    assert cache.restore(target)
 
 
 def test_cached_install_survives_source_removal_and_skips_yarn(install):
@@ -86,7 +118,7 @@ def test_unsafe_or_corrupt_installs_are_not_reused(install, unsafe):
 
 @pytest.mark.parametrize("branch", ["default", "current"])
 def test_cache_hit_precedes_seeding_except_for_current_checkout(install, branch):
-    from pilot.core.bench.clone import BenchClone
+    from pilot.core.bench.cloning.bench import BenchClone
 
     source, target, cache = install
     capture_install(source, cache)

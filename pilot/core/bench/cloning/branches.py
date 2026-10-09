@@ -1,7 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from pilot.core.bench.clone_repository import clone_repository
+from pilot.core.bench.cloning.repository import clone_repository
 from pilot.exceptions import BenchError, CommandError
 from pilot.integrations.git import auth_config_for
 from pilot.internal.git import GitRepo, git_env

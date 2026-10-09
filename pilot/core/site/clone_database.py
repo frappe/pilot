@@ -135,21 +135,29 @@ class SiteDatabaseClone:
             output = result.stdout.decode().splitlines()
         except (CommandError, OSError, UnicodeError):
             return None
+        return SiteDatabaseClone.parse_parallel_schema(output)
+
+    @staticmethod
+    def parse_parallel_schema(output: list[str]) -> tuple[list[str], list[str]] | None:
         if not output or output[0] != "0" or len(output) < 17:
             return None
         tables: list[str] = []
         sequences: list[str] = []
         for row in output[1:]:
             fields = row.split("\t")
-            if (
-                len(fields) != 3
-                or fields[1] not in ("BASE TABLE", "SEQUENCE")
-                or fields[2] not in ("InnoDB", "MyISAM")
-                or "\\" in fields[0]
-            ):
+            if not SiteDatabaseClone.is_parallel_table(fields):
                 return None
             (sequences if fields[1] == "SEQUENCE" else tables).append(fields[0])
         return (tables, sequences) if len(tables) >= 16 else None
+
+    @staticmethod
+    def is_parallel_table(fields: list[str]) -> bool:
+        return (
+            len(fields) == 3
+            and fields[1] in ("BASE TABLE", "SEQUENCE")
+            and fields[2] in ("InnoDB", "MyISAM")
+            and "\\" not in fields[0]
+        )
 
     def stream_mariadb(self, original, source, target, options=(), tables=()) -> None:
         stream_database(

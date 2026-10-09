@@ -99,7 +99,7 @@ def fake_services(monkeypatch):
     monkeypatch.setattr(PythonEnvManager, "install_apps", lambda self, apps: None)
     monkeypatch.setattr(PythonEnvManager, "install_node_dependencies", lambda self: None)
     monkeypatch.setattr(PythonEnvManager, "build_assets", lambda self: None)
-    monkeypatch.setattr("pilot.core.bench.fork_runtime.ForkRuntime", lambda bench: nullcontext())
+    monkeypatch.setattr("pilot.core.bench.cloning.runtime.ForkRuntime", lambda bench: nullcontext())
     monkeypatch.setattr("pilot.managers.database.mariadb.MariaDBManager._detect_socket", lambda self: "")
 
     @contextmanager
@@ -413,16 +413,16 @@ def test_live_artifacts_must_belong_to_source(prepared, tmp_path):
 
 
 def test_source_snapshot_reuses_running_redis_without_stopping_it(prepared, monkeypatch):
-    from pilot.core.bench.fork_runtime import ForkRuntime
+    from pilot.core.bench.cloning.runtime import ForkRuntime
 
     source, _ = prepared
-    monkeypatch.setattr("pilot.core.bench.fork_runtime.redis_server_binary", lambda: "/redis")
+    monkeypatch.setattr("pilot.core.bench.cloning.runtime.redis_server_binary", lambda: "/redis")
     monkeypatch.setattr(ForkRuntime, "has_existing_redis", staticmethod(lambda port: True))
 
     def unexpected(*args, **kwargs):
         raise AssertionError("Running source Redis must not be replaced")
 
-    monkeypatch.setattr("pilot.core.bench.fork_runtime.RedisManager.generate_configs", unexpected)
-    monkeypatch.setattr("pilot.core.bench.fork_runtime.subprocess.Popen", unexpected)
+    monkeypatch.setattr("pilot.core.bench.cloning.runtime.RedisManager.generate_configs", unexpected)
+    monkeypatch.setattr("pilot.core.bench.cloning.runtime.subprocess.Popen", unexpected)
     with ForkRuntime(source, allow_existing=True):
         pass

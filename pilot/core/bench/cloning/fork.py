@@ -135,7 +135,7 @@ class BenchFork:
             environment.install_node_dependencies()
 
     def provision(self, destination: Bench, environment, on_progress) -> None:
-        from pilot.core.bench.fork_runtime import ForkRuntime
+        from pilot.core.bench.cloning.runtime import ForkRuntime
 
         with ThreadPoolExecutor(max_workers=1) as executor:
             dependencies = executor.submit(

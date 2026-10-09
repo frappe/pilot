@@ -70,7 +70,7 @@ class SiteClone:
                 raise
 
     def populate(self, site, database, wildcard: bool, on_progress, prepare_bench=None):
-        from pilot.core.bench.fork_runtime import ForkRuntime
+        from pilot.core.bench.cloning.runtime import ForkRuntime
         from pilot.core.site.login import site_url
 
         site.config.route = register_with_provider(self.bench, self.name) if wildcard else None

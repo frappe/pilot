@@ -29,7 +29,7 @@ class ForkCommand(Command):
     app_branches: Annotated[str, Arg(help="Comma-separated app=branch overrides.")] = ""
 
     def run(self) -> None:
-        from pilot.core.bench.clone_branches import parse_app_branches
+        from pilot.core.bench.cloning.branches import parse_app_branches
         from pilot.core.server import Server
 
         source = Server().bench(self.source) if self.source else self.bench

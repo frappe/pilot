@@ -10,7 +10,7 @@ from admin.backend.api.v1.benches.support import BENCH_NAME_RE, guard_bench_mana
 from admin.backend.api.v1.sites.shared import host_resource_key, task_failure
 from pilot.config import BenchConfig
 from pilot.core.bench import Bench
-from pilot.core.bench.clone_branches import validate_branches
+from pilot.core.bench.cloning.branches import validate_branches
 from pilot.core.site.clone import SiteClone
 from pilot.exceptions import BenchError, TaskConflictError
 from pilot.internal.validators import validate_site_name

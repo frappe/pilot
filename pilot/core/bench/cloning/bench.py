@@ -7,7 +7,7 @@ from pathlib import Path
 
 from pilot.config import BenchConfig
 from pilot.core.bench.artifacts import BenchArtifacts
-from pilot.core.bench.clone_branches import clone_branch, validate_branches
+from pilot.core.bench.cloning.branches import clone_branch, validate_branches
 from pilot.exceptions import BenchError
 from pilot.integrations.git import auth_config_for
 from pilot.utils import run_command
@@ -173,12 +173,15 @@ class BenchClone:
         # repository, retaining copied dirty/untracked files in the destination.
         git_file = destination / ".git"
         if not git_file.is_file() and not git_file.is_symlink():
+            if (alternates := git_file / "objects/info/alternates").exists():
+                run_command(["git", "-C", str(destination), "repack", "-a", "-d"])
+                alternates.unlink()
             if (worktrees := git_file / "worktrees").exists():
                 shutil.rmtree(worktrees)
             return
         git_file.unlink()
         staging = destination / ".pilot-clone-git"
-        from pilot.core.bench.clone_repository import clone_repository
+        from pilot.core.bench.cloning.repository import clone_repository
 
         clone_repository(source, staging)
         (staging / ".git").rename(git_file)

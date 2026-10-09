@@ -70,11 +70,7 @@ class BuildArtifacts:
         for relative in (".", "frontend", "roster", "ui"):
             files.extend(str(path.relative_to(app.path)) for path in (app.path / relative).glob(".env*"))
             digest.update(NodeDependencies.get_resolved_key(app.path / relative).encode())
-        outputs = (f"{app.module_name}/public/dist", "frontend/dist", "roster/dist")
-        prefixes = tuple(f"{output}/" for output in outputs)
-        for name in sorted(set(files) - {""}):
-            if "node_modules" in name.split("/") or name in outputs or name.startswith(prefixes):
-                continue
+        for name in BuildArtifacts.get_source_files(app, files):
             path = app.path / name
             key = BuildArtifacts.get_file_key(path)
             if key is None:
@@ -82,6 +78,16 @@ class BuildArtifacts:
             digest.update(name.encode() + b"\0")
             digest.update(key + b"\0")
         return digest.hexdigest()
+
+    @staticmethod
+    def get_source_files(app, files: list[str]) -> list[str]:
+        outputs = (f"{app.module_name}/public/dist", "frontend/dist", "roster/dist")
+        prefixes = tuple(f"{output}/" for output in outputs)
+        return [
+            name
+            for name in sorted(set(files) - {""})
+            if not ("node_modules" in name.split("/") or name in outputs or name.startswith(prefixes))
+        ]
 
     @staticmethod
     def get_file_key(path: Path) -> bytes | None:

@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from pilot.core.bench import Bench
-from pilot.core.bench.fork_runtime import ForkRuntime
+from pilot.core.bench.cloning.runtime import ForkRuntime
 
 pytestmark = pytest.mark.integration
 
