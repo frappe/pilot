@@ -154,6 +154,13 @@ def create_site():
     return accepted_task_response(bench_root, task_id)
 
 
+@sites_bp.post("/<name>/actions/clone")
+def clone_site(name: str):
+    from admin.backend.api.v1.cloning import clone_site as submit
+
+    return submit(name)
+
+
 @sites_bp.delete("/<name>")
 @require_scope(site_name)
 def drop_site(name: str):

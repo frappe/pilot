@@ -51,6 +51,8 @@ const COMMAND_LABELS: Record<string, string> = {
   'new-app': 'New App',
   'remove-app': 'Remove App',
   'new-site': 'New Site',
+  'clone-site': 'Clone Site',
+  'clone-bench': 'Clone Bench',
   'drop-site': 'Drop Site',
   'backup-site': 'Backup Site',
   'delete-backup': 'Delete Backup',
@@ -78,6 +80,7 @@ export const TASK_TYPES = [
     label: 'Sites',
     commands: [
       'new-site',
+      'clone-site',
       'new-site-from-backup',
       'drop-site',
       'rename-site',
@@ -127,7 +130,7 @@ export const TASK_TYPES = [
     value: 'server',
     icon: 'lucide-server',
     label: 'Server',
-    commands: ['setup-nginx', 'setup-letsencrypt', 'restart-services'],
+    commands: ['setup-nginx', 'setup-letsencrypt', 'restart-services', 'clone-bench'],
   },
   // Catch-all for commands this table has not learned.
   { value: 'other', icon: 'lucide-ellipsis', label: 'Other', commands: [] },
@@ -150,6 +153,7 @@ export const commandLabel = (command: string) => {
 }
 
 const SITE_ARG_KEY: Record<string, string> = {
+  'clone-site': 'site',
   migrate: 'site',
   'migration-backup': 'site',
   'clear-cache': 'site',
@@ -224,7 +228,10 @@ export const redirectRouteOnSuccess = (task: ScopedTask) => {
   const appKey = APP_ARG_KEY[task.command]
   const app = appKey && task.args?.[appKey]
   if (typeof app !== 'string' || !app) return route
-  return { ...route, query: { app, action: APP_ACTION_FOR_COMMAND[task.command] } }
+  return {
+    ...route,
+    query: { app, action: APP_ACTION_FOR_COMMAND[task.command] },
+  }
 }
 
 /**
@@ -246,7 +253,10 @@ export const fmtDuration = (
 
 export const fmtDateTime = (value: string | number | Date | null | undefined) => {
   if (!value) return '-'
-  return new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+  return new Date(value).toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  })
 }
 
 /** A queued task has no duration, so its place in the queue takes that slot. */

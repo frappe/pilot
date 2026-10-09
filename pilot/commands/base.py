@@ -29,6 +29,7 @@ class Arg:
     cli: bool = True
     metavar: str | None = None
     required: bool = False
+    positional: bool = False
 
 
 @dataclass

@@ -13,6 +13,7 @@ from pilot.core.app.install_result import AppInstallResult
 from pilot.core.app.repository import AppRepository
 from pilot.core.app.revisions import RevisionPin
 from pilot.exceptions import BenchError
+from pilot.internal.git import GitRepo
 from pilot.utils import installed_app_version, run_command
 
 if TYPE_CHECKING:
@@ -33,11 +34,7 @@ class NewAppOptions:
     github_workflow: bool = False
 
     def __post_init__(self) -> None:
-        missing = [
-            name
-            for name in ("description", "publisher", "email")
-            if not getattr(self, name).strip()
-        ]
+        missing = [name for name in ("description", "publisher", "email") if not getattr(self, name).strip()]
         if missing:
             raise BenchError(f"App {', '.join(missing)} cannot be blank.")
 
@@ -226,12 +223,12 @@ class App:
             self._repository.clone()
             return
 
-        shutil.rmtree(self.path, ignore_errors=True)  # leftovers from an interrupted run
+        GitRepo(self.path).remove()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         apps_clone = self.existing_clone_path
         if apps_clone is not None:
             on_progress(f"'{self.config.name}' already cloned, moving it out of apps/ to validate.")
-            shutil.move(str(apps_clone), str(self.path))
+            GitRepo(apps_clone).move(self.path)
             return
 
         on_progress(f"Cloning {self.config.name}...")
@@ -239,6 +236,9 @@ class App:
 
     def update(self, pin: RevisionPin | None = None) -> None:
         self._repository.update(pin)
+
+    def create_worktree(self, path: Path, commit: str, branch: str) -> None:
+        self._repository.create_worktree(path, commit, branch)
 
     def switch_branch(self, branch: str) -> None:
         self._repository.switch_branch(branch)
@@ -358,9 +358,9 @@ class App:
         one that was already in apps/ back where it was. A working tree we did not
         create is not ours to remove."""
         if existing_clone is None:
-            shutil.rmtree(self.path, ignore_errors=True)
+            GitRepo(self.path).remove()
         elif self.is_staged:
-            shutil.move(str(self.path), str(existing_clone))
+            GitRepo(self.path).move(existing_clone)
 
     def promote(self) -> "App":
         if not self.path.is_dir():
@@ -372,7 +372,7 @@ class App:
         if target.exists():
             raise BenchError(f"'{target}' already exists - remove it before installing this app.")
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(self.path), str(target))  # a rename, unless apps/ is another filesystem
+        GitRepo(self.path).move(target)
         self.config.name = module
         self.is_staged = False
         return self
@@ -386,7 +386,7 @@ class App:
         with contextlib.suppress(Exception):
             self._pip_uninstall()
         if delete_clone:
-            shutil.rmtree(self.path, ignore_errors=True)
+            GitRepo(self.path).remove()
 
     def _install_dependencies(self, on_progress: Callable[[str], None]) -> list["App"]:
         from pilot.core.app.dependency_installer import AppDependencyInstaller
@@ -442,12 +442,13 @@ class App:
     def remove(self, force: bool = False, on_progress: Callable[[str], None] = lambda message: None) -> None:
         """Uninstall from sites, deregister, pip-uninstall, and delete the clone."""
         self.ensure_removable()
+        GitRepo(self.path).ensure_removable()
         self._uninstall_from_all_sites(force, on_progress)
         self._deregister()
         on_progress(f"Removing '{self.config.name}' from Python environment...")
         self._pip_uninstall()
         on_progress(f"Deleting {self.path}...")
-        shutil.rmtree(self.path)
+        GitRepo(self.path).remove()
         on_progress(f"\n'{self.config.name}' removed from bench.")
 
     def _uninstall_from_all_sites(self, force: bool, on_progress: Callable[[str], None]) -> None:

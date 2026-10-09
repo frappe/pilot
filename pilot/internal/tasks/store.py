@@ -80,6 +80,16 @@ class TaskStore:
             task_dir = self._create_queued_locked(stored_metadata, private_files)
             return TaskCreation(str(metadata["task_id"]), task_dir, True)
 
+    def find_idempotent_task(self, digest: str, fingerprint: str) -> str | None:
+        with self.locked():
+            existing = self._active_idempotent_task_locked(digest)
+            if (
+                existing is not None
+                and self.read_metadata(existing).get("request_fingerprint") != fingerprint
+            ):
+                raise TaskConflictError("Idempotency key is already in use for another active task")
+            return existing
+
     def read_metadata(self, task_id: str) -> dict:
         task_dir = self._files.existing_task_dir(task_id)
         return json.loads((task_dir / "meta.json").read_text(encoding="utf-8"))

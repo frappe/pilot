@@ -6,6 +6,11 @@ Use `pilot --help` and `pilot <command> --help` for exact flags.
 
 ## Bench Commands
 
+- `pilot clone-bench TARGET`: infer the source bench and create an independent development bench without sites, using each app's origin default branch. Override with `--branch current` to include local changes, `--branch NAME` for a clean named branch, or `--app-branches frappe=develop,my_app=feature/example` per app. Use `-b SOURCE` from elsewhere. The same branch options apply to fresh `pilot fork`.
+- `pilot clone-site SOURCE_SITE TARGET_SITE [--target-bench NAME]`: stream a fresh database copy and copy uploads into a new site in the current or selected bench. Scheduler and outgoing mail start disabled.
+- `pilot prepare-template SITE OUTPUT`: save a development fixture's database, files, app commits and prepared JS assets into a new directory. Pass `-b` to select the source bench.
+- `pilot fork TARGET`: run bench cloning and fresh site cloning together. Use `pilot fork SOURCE TARGET` or `pilot -b SOURCE fork TARGET` to select the source explicitly, `--site NAME` for multiple sites, or `--site-template PATH` to explicitly use a prepared snapshot and Git worktrees. See [Development forks](development-forks.md).
+
 - `pilot new NAME`: create a new bench. Sets the Admin password from `--admin-password`, else prompts on a terminal, else generates and prints one.
 - `pilot start` on an uninitialized bench serves the setup wizard and prints a one-hour `?sid=` sign-in link for it.
 - `pilot init`: initialize a bench from `bench.toml`. This is what the setup wizard runs. `--no-dev` skips apps' `dev` extras.

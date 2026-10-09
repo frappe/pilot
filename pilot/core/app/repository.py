@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.core.app.revisions import RevisionPin
@@ -17,6 +18,12 @@ _FETCH_TIMEOUT_SECONDS = 30
 class AppRepository:
     def __init__(self, app: "App") -> None:
         self.app = app
+
+    def create_worktree(self, path: Path, commit: str, branch: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        run_command(
+            ["git", "-C", str(self.app.path), "worktree", "add", "-b", branch, str(path.resolve()), commit]
+        )
 
     @property
     def repo(self) -> "GitRepo":
