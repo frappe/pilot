@@ -174,6 +174,11 @@ class Bench:
         return self.path / "tmp" / "uploads"
 
     @property
+    def restores_path(self) -> Path:
+        """Where a restore keeps the backup files it downloads, in a directory named after its task."""
+        return self.path / "tmp" / "restores"
+
+    @property
     def pids_path(self) -> Path:
         return self.path / "pids"
 

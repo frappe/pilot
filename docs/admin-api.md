@@ -82,9 +82,21 @@ Every `/sites/<name>/...` route accepts the site's directory name or any hostnam
 
 `POST /sites/<name>/login` returns `{"url": ...}` plus an optional `hint` when the URL's host does not resolve on the server - the UI surfaces it so the user knows to add a hosts entry or use a `*.localhost` name.
 
+The login signs in the user the token names. A token whose `sub` is an email signs that user in, and its optional `name` claim is the user's full name. A user the site does not have yet is created as a System Manager, the way Frappe's setup wizard creates the first user. Any other `sub`, such as `admin`, signs in as Administrator.
+
+### Site To Central
+
+A site calls Central through `GET` or `POST /sites/<name>/central/<method>`. Pilot forwards the call with this host's Pilot credential, so Central knows the server and its team. Pilot forwards only these methods and refuses others with `403`:
+
+| Method | Use |
+|---|---|
+| `central.api.pilot.heartbeat` | Check that the site reaches Central |
+| `central.api.pilot.get_team_identity_token` | Get a 5-minute token that proves the team to an outside service. Send `{"audience": "<service URL>"}`; the answer is `{"token": "..."}`. |
+| `central.billing.api.billing_api.*` | Billing calls from the site's Cloud Settings |
+
 ### Renaming And Domains
 
-`POST /sites/<name>/actions/rename` takes `{"new_name": "...", "keep_old_hostname": true}` and queues `rename-site`. The new name is validated the same way a new site's is, and both names are claimed as task resources so nothing can create or drop either while the site is moving between them. `keep_old_hostname` defaults to true and keeps the old hostname on the site, so open tabs and existing links keep working; pass false to release a pooled name a fleet reuses. A rename also replaces the site's `pilot_auth_token` with one scoped to the new name. See [Renaming without downtime](commands.md#renaming-without-downtime).
+`POST /sites/<name>/actions/rename` takes `{"new_name": "...", "keep_old_hostname": true}` and queues `rename-site`. The new name is validated the same way a new site's is, and both names are claimed as task resources so nothing can create or drop either while the site is moving between them. `keep_old_hostname` defaults to true and keeps the old hostname on the site, so open tabs and existing links keep working; pass false to release a pooled name a fleet reuses. `make_primary` defaults to false. Pass true to make the new name the site's `host_name`, so the links the site builds use it and its other domains redirect to it. A rename also replaces the site's `pilot_auth_token` with one scoped to the new name. See [Renaming without downtime](commands.md#renaming-without-downtime).
 
 `POST /settings/admin-domain` takes `{"domain": "...", "tls": true|false}` (`tls` optional) and queues `change-admin-domain`, which registers the route with the domain provider, writes `bench.toml`, reissues the certificate when TLS is on, and republishes nginx. The previous hostname is released only once the switch has committed.
 
@@ -117,7 +129,7 @@ A remote source needs a bench session and an `https://` site. The Administrator 
 
 `POST /sites/<name>/actions/restore-upload` takes the same `parts` and `skip_failing_patches` (`"true"`) as multipart form fields, plus the files `database`, `public`, `private`, and `config` (the site config backup). nginx `client_max_body_size` limits the upload size.
 
-A restore puts the site in maintenance mode, restores only the chosen parts, and migrates it. `skip_failing_patches` passes `--skip-failing` to the migration. It takes no backup of the site first. A database from another site brings that site's encryption key. The `config` part merges the source site config into this site, except the keys that belong to this site: `db_*`, `redis_*`, `pilot_*`, `atlas_*`, `rds_db`, `host_name`, `installed_apps`, `maintenance_mode`, and `pause_scheduler`. A config restored without its database keeps this site's `encryption_key`, so the passwords in this site's database stay readable. If a step fails, the site stays in maintenance mode. Restoring from another site needs a bench session; a site token can only restore its own backups.
+A restore puts the site in maintenance mode, restores only the chosen parts, and migrates it. It restores the files before the database. From a remote site or Frappe Cloud, the file archives and a MariaDB database stream into the site as they download, so they need no copy on disk. The site stays in maintenance mode for the download time. `skip_failing_patches` passes `--skip-failing` to the migration. It takes no backup of the site first. A database from another site brings that site's encryption key. The `config` part merges the source site config into this site, except the keys that belong to this site: `db_*`, `redis_*`, `pilot_*`, `atlas_*`, `rds_db`, `host_name`, `installed_apps`, `maintenance_mode`, and `pause_scheduler`. A config restored without its database keeps this site's `encryption_key`, so the passwords in this site's database stay readable. If a step fails, the site stays in maintenance mode. Restoring from another site needs a bench session; a site token can only restore its own backups.
 
 #### Chunked uploads
 

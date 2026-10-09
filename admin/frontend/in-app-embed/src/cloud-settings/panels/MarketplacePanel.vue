@@ -1,12 +1,24 @@
 <script setup lang="ts">
-import { Button, ErrorMessage, Select, TextInput } from 'frappe-ui'
+import { useTranslation } from '../translation'
+import { installApp, isMigrationConflict, uninstallApp, updateApps } from '@frappe/cloud-sdk/api'
+import type { MarketplaceApp, TaskSubmission } from '@frappe/cloud-sdk'
+import { Button, ErrorMessage, Select, TextInput, toast } from 'frappe-ui'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import ActionableError from '../components/ActionableError.vue'
 import AppRow from '../components/AppRow.vue'
 import Panel from '../components/Panel.vue'
 import UninstallAppDialog from '../components/UninstallAppDialog.vue'
 import UpdateAppsDialog from '../components/UpdateAppsDialog.vue'
-import { type Store, getRememberedTasks, rememberTask, waitForTask } from '../store'
+import {
+  useErrorMessage,
+  getRememberedTasks,
+  rememberTask,
+  type Store,
+  waitForTask,
+} from '../store'
+
+const __ = useTranslation()
+const getErrorMessage = useErrorMessage()
 
 interface Props {
   store: Store
@@ -38,13 +50,13 @@ const ACTION = {
 
 const query = ref('')
 const category = ref('')
-const pending = reactive({})
-const errors = reactive({})
+const pending = reactive<Record<string, string>>({})
+const errors = reactive<Record<string, string>>({})
 const showUpdates = ref(false)
 const updatingAll = ref(false)
 const updateAllError = ref('')
-const blocker = ref(null)
-const uninstallTarget = ref(null)
+const blocker = ref<{ message: string; actionLabel: string; actionUrl: string } | null>(null)
+const uninstallTarget = ref<MarketplaceApp | null>(null)
 const showUninstall = ref(false)
 
 let gone = false
@@ -102,62 +114,66 @@ const clearFilters = () => {
   category.value = ''
 }
 
-const install = (app) => runAction(app, 'install', () => store.api.installApp(app.name))
+const install = (app: MarketplaceApp) => runAction(app, 'install', () => installApp(app.name))
 
-const askUninstall = (app) => {
+const askUninstall = (app: MarketplaceApp) => {
   uninstallTarget.value = app
   showUninstall.value = true
 }
 
-const uninstall = (app, mode) => runAction(app, mode, () => store.api.uninstallApp(app.name, mode))
-const updateOne = (app) => runAction(app, 'update', () => store.api.updateApps([app.name]))
+const uninstall = (app: MarketplaceApp, mode: 'uninstall' | 'disable') => runAction(app, mode, () => uninstallApp(app.name, mode))
+const updateOne = (app: MarketplaceApp) => runAction(app, 'update', () => updateApps([app.name]))
 
-const asBlocker = (exception) => {
-  if (!store.api.isMigrationConflict(exception)) return null
+const asBlocker = (exception: unknown) => {
+  if (!isMigrationConflict(exception)) return null
 
   const server = store.state.context.server_url
 
   return {
-    message: store.api.getErrorMessage(exception),
+    message: getErrorMessage(exception),
     actionLabel: server ? __('Open updates') : '',
     actionUrl: server ? `${server.replace(/\/$/, '')}/updates` : '',
   }
 }
 
-const updateAll = async ({ apps, taskId }) => {
+const updateAll = async ({ apps, taskId }: { apps?: string[]; taskId?: string }) => {
+  let finished = false
   updatingAll.value = true
   updateAllError.value = ''
   blocker.value = null
 
   try {
-    const { task_id } = taskId ? { task_id: taskId } : await store.api.updateApps(apps)
+    const { task_id } = taskId ? { task_id: taskId } : await updateApps(apps)
 
     rememberTask(site, '*', { taskId: task_id, verb: 'update' })
 
     const done = await settle(task_id, ACTION.update, __('all apps'))
+    finished = done === true
 
     await store.loadMarketplace(true)
 
-    if (done) notify(__('{0} {1}.', [__('All apps'), ACTION.update.done]), 'green')
+    if (done) toast.success(__('{0} {1}.', [__('All apps'), ACTION.update.done]))
 
     showUpdates.value = false
   } catch (exception) {
+    finished = true
     blocker.value = asBlocker(exception)
 
     if (blocker.value) {
       showUpdates.value = false
     } else {
-      updateAllError.value = store.api.getErrorMessage(exception)
+      updateAllError.value = getErrorMessage(exception)
 
-      if (!showUpdates.value) notify(updateAllError.value, 'red')
+      if (!showUpdates.value) toast.error(updateAllError.value)
     }
   } finally {
-    rememberTask(site, '*')
+    if (finished) rememberTask(site, '*')
     updatingAll.value = false
   }
 }
 
-const runAction = async (app, verb, action) => {
+const runAction = async (app: Pick<MarketplaceApp, 'name' | 'title'>, verb: keyof typeof ACTION, action: () => TaskSubmission | Promise<TaskSubmission>) => {
+  let finished = false
   errors[app.name] = ''
   blocker.value = null
   pending[app.name] = verb
@@ -168,6 +184,7 @@ const runAction = async (app, verb, action) => {
     rememberTask(site, app.name, { taskId: task_id, verb })
 
     const done = await settle(task_id, ACTION[verb], app.title)
+    finished = done === true
 
     delete errors[app.name]
     await store.loadMarketplace(true)
@@ -182,17 +199,18 @@ const runAction = async (app, verb, action) => {
       )
     }
 
-    notify(__('{0} {1}.', [app.title, ACTION[verb].done]), 'green')
+    toast.success(__('{0} {1}.', [app.title, ACTION[verb].done]))
   } catch (exception) {
+    finished = true
     blocker.value = asBlocker(exception)
 
     if (!blocker.value) {
-      errors[app.name] = store.api.getErrorMessage(exception)
+      errors[app.name] = getErrorMessage(exception)
 
-      notify(errors[app.name], 'red')
+      toast.error(errors[app.name])
     }
   } finally {
-    rememberTask(site, app.name)
+    if (finished) rememberTask(site, app.name)
     delete pending[app.name]
   }
 }
@@ -207,11 +225,13 @@ const resumeTasks = () => {
 
     const app = marketplace.value?.apps?.find((row) => row.name === name) || { name, title: name }
 
-    runAction(app, task.verb, () => ({ task_id: task.taskId }))
+    if (task.verb === 'install' || task.verb === 'uninstall' || task.verb === 'disable' || task.verb === 'update') {
+      runAction(app, task.verb, () => ({ task_id: task.taskId }))
+    }
   }
 }
 
-const settle = async (taskId, action, label) => {
+const settle = async (taskId: string, action: { verb: string; progress: string }, label: string) => {
   if (!taskId) return true
 
   const outcome = await waitForTask(taskId, () => gone)
@@ -222,19 +242,15 @@ const settle = async (taskId, action, label) => {
   }
 
   if (outcome !== 'cancelled') {
-    notify(
+    toast.warning(
       __(
         '{0} {1} is taking longer than expected. It will keep running in the background — reopen to check.',
         [action.progress, label],
       ),
-      'orange',
     )
   }
 }
 
-const notify = (message, indicator = 'green') => {
-  frappe.show_alert({ message, indicator })
-}
 </script>
 
 <template>
@@ -258,9 +274,9 @@ const notify = (message, indicator = 'green') => {
     </template>
 
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-      <TextInput v-model="query" class="flex-1" :placeholder="__('Search apps')" />
+      <TextInput v-model="query" class="flex-1" :aria-label="__('Search apps')" :placeholder="__('Search apps')" />
 
-      <Select v-model="category" class="sm:w-44" :options="categoryOptions" />
+      <Select v-model="category" :aria-label="__('Category')" class="sm:w-44" :options="categoryOptions" />
     </div>
 
     <ErrorMessage :message="loadFailed ? '' : error" class="mt-2" />

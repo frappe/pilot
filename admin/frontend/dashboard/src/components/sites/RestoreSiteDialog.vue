@@ -112,7 +112,7 @@ const sourceInUrl = (): Source => {
 
 const setRestoreQuery = (value?: Source) => {
   const { restore: _, ...query } = route.query
-  router.replace({ query: value ? { ...query, restore: value } : query })
+  return router.replace({ query: value ? { ...query, restore: value } : query })
 }
 
 watch(source, (value) => open.value && setRestoreQuery(value))
@@ -221,6 +221,7 @@ const restore = async () => {
   try {
     const data = await submit()
     if (data.task_id) {
+      await setRestoreQuery()
       open.value = false
       openTaskDetailPage(router, data.task_id)
     } else error.value = apiErrorMessage(data, 'Could not start the restore.')

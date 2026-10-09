@@ -86,3 +86,37 @@ def read_pyproject(app: "App") -> dict | None:
         raise AppValidationError(
             f"'{app.config.name}' has an invalid pyproject.toml: {exc}\nFix the TOML syntax."
         ) from exc
+
+
+def _find_env_python(env_path: Path | str | None) -> str | None:
+    if not env_path:
+        return None
+    env_dir = Path(env_path)
+    if not env_dir.is_absolute():
+        env_dir = env_dir.absolute()
+    for rel_path in ("bin/python", "bin/python3", "Scripts/python.exe"):
+        p = env_dir / rel_path
+        if p.is_file():
+            return str(p)
+    return None
+
+
+def get_bench_python(app: "App | None" = None) -> str:
+    """Returns the path to the bench's Python binary, falling back to sys.executable."""
+    import sys
+
+    bench = getattr(app, "bench", None) if app is not None else None
+    if bench is not None:
+        env_bin = _find_env_python(getattr(bench, "env_path", None))
+        if env_bin:
+            return env_bin
+
+        candidate = getattr(bench, "python", None)
+        if candidate and not callable(candidate):
+            candidate_path = Path(candidate)
+            if not candidate_path.is_absolute():
+                candidate_path = candidate_path.absolute()
+            if candidate_path.is_file():
+                return str(candidate_path)
+
+    return sys.executable

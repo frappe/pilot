@@ -1,14 +1,15 @@
 import functools
 import shutil
 import tempfile
-from collections.abc import Callable
+import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO, Annotated, ClassVar
+from typing import Annotated, ClassVar
 
-from pilot.core.site.restore import BackupRun
+from pilot.core.site.restore import BackupRun, BackupStream
 from pilot.exceptions import BenchError, RemoteSiteError
 from pilot.tasks import Arg, Task, on_cancel, on_failure, step
+from pilot.utils import make_private_directory
 
 
 @dataclass(kw_only=True)
@@ -36,34 +37,36 @@ class RestoreSiteTask(Task):
     def run(self) -> None:
         if self.upload_dir and Path(self.upload_dir).resolve().parent != self.bench.uploads_path.resolve():
             raise BenchError(f"Uploaded backups must be in {self.bench.uploads_path}.")
-        with tempfile.TemporaryDirectory(dir=self.bench.path, prefix=".restore-") as workdir:
-            run, open_dump = self.fetch(Path(workdir))
-            self.restore(run, open_dump)
+        make_private_directory(self.bench.restores_path, parents=True)
+        prefix = f"{self.running_task_id}-"
+        with tempfile.TemporaryDirectory(dir=self.bench.restores_path, prefix=prefix) as workdir:
+            self.restore(self.fetch(Path(workdir)))
         if self.upload_dir:
             shutil.rmtree(self.upload_dir, ignore_errors=True)
 
     @on_failure
     @on_cancel
-    def cleanup_site_restore(self) -> dict | None:
-        """Uploaded archives can hold a whole database, so a failed run must not leave them."""
-        return {"site": self.site, "upload_dir": self.upload_dir} if self.upload_dir else None
+    def cleanup_site_restore(self) -> dict:
+        """Backup files can hold a whole database, so a failed run must not leave them, even
+        when the task process dies before it can remove them."""
+        return {"site": self.site, "upload_dir": self.upload_dir}
 
     @step("fetch", lambda self: self.fetch_label)
-    def fetch(self, workdir: Path) -> tuple[BackupRun, Callable[[], IO[bytes]] | None]:
+    def fetch(self, workdir: Path) -> BackupRun:
         if self.remote_site:
             return self.fetch_remote(workdir)
         if self.frappe_cloud_secret_urls:
             return self.fetch_frappe_cloud(workdir)
         if self.upload_dir:
-            return BackupRun.from_paths(sorted(Path(self.upload_dir).iterdir())), None
+            return BackupRun.from_paths(sorted(Path(self.upload_dir).iterdir()))
         backups = self.bench.site(self.source_site).backups
         if self.backup_timestamp:
-            return BackupRun.from_paths(backups.fetch_run(self.backup_timestamp, workdir)), None
+            return BackupRun.from_paths(backups.fetch_run(self.backup_timestamp, workdir))
         _, paths = backups.take(with_files=self.needs_files)
-        return BackupRun.from_paths(paths), None
+        return BackupRun.from_paths(paths)
 
-    def fetch_remote(self, workdir: Path) -> tuple[BackupRun, Callable[[], IO[bytes]] | None]:
-        """The database streams straight into MariaDB; the file archives are downloaded."""
+    def fetch_remote(self, workdir: Path) -> BackupRun:
+        """Only the config is downloaded here. The other parts stream in during the restore."""
         from pilot.integrations.frappe_site import RemoteFrappeSite
 
         remote = RemoteFrappeSite(self.remote_site, self.remote_password)
@@ -71,40 +74,64 @@ class RestoreSiteTask(Task):
         timestamp, latest = remote.get_latest_run()
         if timestamp != self.backup_timestamp:
             raise RemoteSiteError("The remote site has a newer backup now. Get its backups again.")
-        is_streamed = "database" in self.parts and self.bench.config.db_type == "mariadb" and "database" in latest
-        wanted: list[str] = [part for part in ("public", "private") if part in self.parts]
-        wanted += ["config"] if {"database", "config"} & set(self.parts) else []
-        wanted += ["database"] if "database" in self.parts and not is_streamed else []
+        streamed = self.get_streamed_parts(latest)
+        wanted = ["config"] if {"database", "config"} & set(self.parts) else []
+        wanted += ["database"] if "database" in self.parts and "database" not in streamed else []
         run = BackupRun.from_paths([remote.download_backup(latest[part], workdir) for part in wanted if latest.get(part)])
-        # Opened by the restore once the local database is ready, so the stream never idles.
-        open_dump = functools.partial(remote.open_backup, latest["database"]) if is_streamed else None
-        return run, open_dump
+        run.streams = {
+            part: BackupStream(Path(latest[part]).name, functools.partial(remote.open_backup, latest[part]))
+            for part in streamed
+        }
+        return run
 
-    def fetch_frappe_cloud(self, workdir: Path) -> tuple[BackupRun, Callable[[], IO[bytes]] | None]:
+    def fetch_frappe_cloud(self, workdir: Path) -> BackupRun:
         """The links work without the token, so the access ends before the download starts."""
         from pilot.integrations.frappe_cloud import download_backup, open_download_link
 
         self.bench.site(self.site).frappe_cloud.disconnect(self.frappe_cloud_token)
         links = self.frappe_cloud_secret_urls or {}
-        is_streamed = "database" in self.parts and self.bench.config.db_type == "mariadb" and "database" in links
-        wanted = [*[part for part in ("public", "private") if part in self.parts], "config"]
-        wanted += ["database"] if "database" in self.parts and not is_streamed else []
+        streamed = self.get_streamed_parts(links)
+        wanted = ["config"]
+        wanted += ["database"] if "database" in self.parts and "database" not in streamed else []
         run = BackupRun.from_paths([download_backup(links[part], workdir) for part in wanted if links.get(part)])
-        open_dump = functools.partial(open_download_link, links["database"]) if is_streamed else None
-        return run, open_dump
+        run.streams = {
+            part: BackupStream(
+                Path(urllib.parse.urlsplit(links[part]).path).name,
+                functools.partial(open_download_link, links[part]),
+            )
+            for part in streamed
+        }
+        return run
+
+    def get_streamed_parts(self, available: dict[str, str]) -> list[str]:
+        """The parts the restore reads as they download, so they need no copy on disk."""
+        streamable = ["public", "private", *(["database"] if self.is_database_streamable else [])]
+        return [part for part in streamable if part in self.parts and available.get(part)]
 
     @step("restore", lambda self: f"Restore {', '.join(self.parts)} into {self.site}")
-    def restore(self, run: BackupRun, open_dump: Callable[[], IO[bytes]] | None) -> None:
-        self.bench.site(self.site).restore_backup(run, self.parts, self.report, open_dump, self.skip_failing_patches)
+    def restore(self, run: BackupRun) -> None:
+        self.bench.site(self.site).restore_backup(
+            run, self.parts, self.report, skip_failing_patches=self.skip_failing_patches
+        )
 
     @property
     def needs_files(self) -> bool:
         return bool({"public", "private"} & set(self.parts))
 
     @property
+    def is_database_streamable(self) -> bool:
+        """Only MariaDB imports a database as it downloads."""
+        return self.bench.config.db_type == "mariadb"
+
+    @property
     def fetch_label(self) -> str:
+        """Streamed parts download in the restore step, so this step only prepares them."""
+        is_database_downloaded = "database" in self.parts and not self.is_database_streamable
+        verb = "Download" if is_database_downloaded else "Prepare"
         if self.frappe_cloud_backup:
-            return f"Download backup from Frappe Cloud ({self.frappe_cloud_backup})"
+            return f"{verb} the Frappe Cloud backup ({self.frappe_cloud_backup})"
+        if self.remote_site:
+            return f"{verb} the backup from {self.remote_site}"
         return f"Get the backup from {self.source_label}"
 
     @property

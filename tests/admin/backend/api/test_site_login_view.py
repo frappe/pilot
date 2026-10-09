@@ -29,7 +29,7 @@ def test_create_login_link_returns_url_with_sid(tmp_path: Path) -> None:
     assert response.headers["Location"] == body["url"]
     assert response.headers["Cache-Control"] == "no-store"
     assert body["url"] == "http://s.localhost:8000/desk?sid=frappe-session-id"
-    create_session.assert_called_once_with()
+    create_session.assert_called_once_with("Administrator", "")
 
 
 def test_create_login_link_resolves_a_renamed_sites_old_hostname(tmp_path: Path) -> None:
@@ -122,3 +122,18 @@ def test_login_link_rejects_missing_and_symlinked_sites(tmp_path: Path) -> None:
     linked = client.post("/api/v1/sites/linked.localhost/login")
 
     assert missing.status_code == linked.status_code == 404
+
+
+def test_a_login_token_naming_an_email_signs_that_user_in() -> None:
+    from admin.backend.internal.session import Session
+
+    claims = {"scope": "site", "sub": "asha@example.com", "name": "Asha Rao"}
+
+    assert Session.get_login_user(claims) == ("asha@example.com", "Asha Rao")
+
+
+def test_a_login_token_without_an_email_signs_administrator_in() -> None:
+    from admin.backend.internal.session import Session
+
+    for claims in ({"sub": "admin"}, {"sub": "not an email"}, {}, None):
+        assert Session.get_login_user(claims) == ("Administrator", "")

@@ -12,7 +12,11 @@
     "esModuleInterop": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "skipLibCheck": true,
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    "paths": {
+      "@frappe/cloud-sdk": ["../cloud-sdk/src/index.ts"],
+      "@frappe/cloud-sdk/api": ["../cloud-sdk/src/api.ts"]
+    }
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue"]
 }

@@ -1,16 +1,49 @@
 from __future__ import annotations
 
-import ast
 import typing
 
 from pilot._vendor.packaging.specifiers import InvalidSpecifier, SpecifierSet
-from pilot.core.app.validator.base import bench_table, module_path, read_pyproject
+from pilot.core.app.validator.base import bench_table, get_bench_python, module_path, read_pyproject
+from pilot.core.app.validator.utils.bench_runner import run_in_bench
 from pilot.exceptions import AppValidationError
 
 if typing.TYPE_CHECKING:
     from pilot.core.app import App
 
 _EXAMPLE_SPECIFIER = ">=16.0.0,<17.0.0"
+
+_REQUIRED_APPS_AST_SCRIPT = """
+import ast, json, sys
+
+req = json.load(sys.stdin)
+path = req["path"]
+try:
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        tree = ast.parse(f.read(), filename=path)
+except Exception:
+    print(json.dumps({"required_apps": []}))
+    sys.exit(0)
+
+required_apps = []
+for node in ast.walk(tree):
+    if isinstance(node, ast.Assign):
+        for target in node.targets:
+            if (
+                isinstance(target, ast.Name)
+                and target.id == "required_apps"
+                and isinstance(node.value, (ast.List, ast.Tuple))
+            ):
+                required_apps = [
+                    elt.value.rsplit("/", 1)[-1]
+                    for elt in node.value.elts
+                    if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
+                ]
+                break
+        if required_apps:
+            break
+
+print(json.dumps({"required_apps": required_apps}))
+"""
 
 
 class DependencyDeclarationsCheck:
@@ -43,22 +76,12 @@ class DependencyDeclarationsCheck:
     def get_hooks_required_apps(self, app: "App") -> list[str]:
         """Parse hooks.py (guaranteed present by RepoStructureCheck) for required_apps."""
         hooks_path = module_path(app) / "hooks.py"
-        tree = ast.parse(hooks_path.read_text(), filename=str(hooks_path))
+        if not hooks_path.is_file():
+            return []
 
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if (
-                        isinstance(target, ast.Name)
-                        and target.id == "required_apps"
-                        and isinstance(node.value, (ast.List, ast.Tuple))
-                    ):
-                        return [
-                            elt.value.rsplit("/", 1)[-1]
-                            for elt in node.value.elts
-                            if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
-                        ]
-        return []
+        bench_python = get_bench_python(app)
+        data = run_in_bench(bench_python, _REQUIRED_APPS_AST_SCRIPT, {"path": str(hooks_path)})
+        return data.get("required_apps", [])
 
     def get_frappe_dependencies(self, app: "App") -> dict[str, str]:
         """The `[tool.bench.frappe-dependencies]` table as {app: version specifier}."""

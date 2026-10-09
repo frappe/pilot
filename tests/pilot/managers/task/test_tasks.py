@@ -307,6 +307,20 @@ def test_stream_output_yields_structured_events(tmp_path: Path) -> None:
     ]
 
 
+def test_a_quiet_stream_sends_a_heartbeat(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A heartbeat write is how a stream finds out its client went away."""
+    task_id = "20260521-143022-aabbcc"
+    _make_task_dir(tmp_path / "tasks", task_id, status="running")
+    clock = iter(range(0, 1000, 10))
+    monkeypatch.setattr(task_reader_module.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(task_reader_module.time, "sleep", lambda seconds: None)
+
+    stream = TaskReader(tmp_path).stream_output(task_id)
+
+    assert next(stream)["type"] == "status"
+    assert next(stream) is None
+
+
 def test_stream_waits_across_queued_running_and_success(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

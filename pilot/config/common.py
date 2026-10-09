@@ -7,13 +7,15 @@ from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from pathlib import Path
 
 from pilot.config.alert_limit import ResourceLimitConfig
-from pilot.config.central import CentralConfig
+from pilot.config.central import CentralConfig, HostnameAlias
 from pilot.config.frappe_cloud import FrappeCloudConfig
 from pilot.config.letsencrypt import LetsEncryptConfig
 from pilot.config.mariadb import MariaDBConfig
 from pilot.config.postgres import PostgresConfig
 from pilot.config.proxy import ProxyConfig
+from pilot.config.schema import TomlSchema, field_names
 from pilot.config.telemetry import TelemetryConfig
+from pilot.exceptions import ConfigError
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
 from pilot.internal.toml import ConfigDict, Toml
 
@@ -47,9 +49,12 @@ class CommonConfig:
         return cls.from_raw_dict(Toml.loads(path.read_text(encoding="utf-8")))
 
     @classmethod
-    def from_raw_dict(cls, data: dict) -> "CommonConfig":
+    def from_raw_dict(cls, data: dict, *, strict: bool = False) -> "CommonConfig":
         """Build from a parsed TOML dict shaped like common_config.toml (or a
         bench.toml that still carries these tables pre-migration)."""
+        if strict and (unknown := _SCHEMA.get_unknown_paths(data)):
+            raise ConfigError(f"common_config.toml has unrecognized fields: {', '.join(unknown)}")
+
         admin = data.get("admin", {})
         return cls(
             mariadb=MariaDBConfig(**_known_fields(MariaDBConfig, data.get("mariadb", {}))),
@@ -73,15 +78,25 @@ class CommonConfig:
 
     @classmethod
     @contextmanager
-    def open(cls, benches_root: Path) -> Iterator["CommonConfig"]:
+    def open(cls, benches_root: Path, mode: str = "rw") -> Iterator:
         """Lock common_config.toml for one read-modify-write transaction."""
+        if mode not in ("rw", "raw"):
+            raise ValueError(f"Unsupported mode: {mode!r}. Use 'rw' or 'raw'.")
+
         path = cls.path(benches_root)
         with exclusive_file_lock(path):
-            config = cls.read(benches_root)
-            original = copy.deepcopy(config)
-            yield config
-            if config != original:
-                replace_private_text_locked(path, Toml.dumps(config._to_toml_dict()))
+            if mode == "raw":
+                data = Toml.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+                original_data = copy.deepcopy(data)
+                yield data
+                if data != original_data:
+                    replace_private_text_locked(path, Toml.dumps(cls.from_raw_dict(data)._to_toml_dict()))
+            else:
+                config = cls.read(benches_root)
+                original = copy.deepcopy(config)
+                yield config
+                if config != original:
+                    replace_private_text_locked(path, Toml.dumps(config._to_toml_dict()))
 
     @classmethod
     def apply_changes(
@@ -165,6 +180,24 @@ class CommonConfig:
         if self.jwks_url:
             data["admin"] = {"jwks_url": self.jwks_url, "jwks_audience": self.jwks_audience}
         return data
+
+
+_SCHEMA = TomlSchema(
+    tables={
+        "mariadb": TomlSchema(keys=field_names(MariaDBConfig)),
+        "postgres": TomlSchema(keys=field_names(PostgresConfig)),
+        "letsencrypt": TomlSchema(keys=field_names(LetsEncryptConfig)),
+        "central": TomlSchema(
+            keys=field_names(CentralConfig) - {"hostname_aliases"},
+            arrays={"hostname_aliases": TomlSchema(keys=field_names(HostnameAlias))},
+        ),
+        "proxy": TomlSchema(keys=field_names(ProxyConfig)),
+        "telemetry": TomlSchema(keys=field_names(TelemetryConfig)),
+        "resource_limits": TomlSchema(keys=field_names(ResourceLimitConfig)),
+        "frappe_cloud": TomlSchema(keys=field_names(FrappeCloudConfig)),
+        "admin": TomlSchema(keys={"jwks_url", "jwks_audience"}),
+    }
+)
 
 
 def _known_fields(dataclass_type: type, data: dict) -> dict:

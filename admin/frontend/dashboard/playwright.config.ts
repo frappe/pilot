@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: 'cloud-settings.spec.ts',
   globalSetup: './e2e/global-setup.ts',
   expect: { timeout: 15_000 },
   workers: process.env.CI ? 2 : 4,

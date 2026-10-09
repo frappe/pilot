@@ -4,7 +4,7 @@ The Admin UI is the browser surface for benches, sites, apps, tasks, logs, and s
 
 ## Layout
 
-The Vue app lives under `admin/frontend/dashboard`. The Desk Cloud Settings in-app embed lives under `admin/frontend/in-app-embed`. Backend API routes live under `admin/backend/api/v1`.
+The Vue app lives under `admin/frontend/dashboard`. The shared Cloud Settings dialog lives under `admin/frontend/in-app-embed`. The [Cloud SDK](../admin/frontend/cloud-sdk/README.md) packages its APIs and lazy UI runtime for Desk, Vue, React, and plain browser pages. Backend API routes live under `admin/backend/api/v1`.
 
 Keep UI code organized by feature area: benches, sites, apps, tasks, logs, settings, setup, and shared utilities.
 

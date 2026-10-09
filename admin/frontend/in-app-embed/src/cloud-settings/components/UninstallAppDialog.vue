@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import { useTranslation } from '../translation'
 import { Button, Dialog } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
+
+const __ = useTranslation()
 
 interface Props {
   app?: Record<string, any> | null

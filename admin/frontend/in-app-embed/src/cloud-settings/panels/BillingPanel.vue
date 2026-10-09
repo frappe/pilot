@@ -1,11 +1,16 @@
 <script setup lang="ts">
+import { useTranslation } from '../translation'
+import { getAccountUrl, reconcilePaymentSetup, removePaymentMethod } from '@frappe/cloud-sdk/api'
 import { Button, ErrorMessage } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import AddPaymentCard from '../components/AddPaymentCard.vue'
 import BillingProfileCard from '../components/BillingProfileCard.vue'
 import Panel from '../components/Panel.vue'
 import { openExternal } from '../external'
-import type { Store } from '../store'
+import { useErrorMessage, type Store } from '../store'
+
+const __ = useTranslation()
+const getErrorMessage = useErrorMessage()
 
 interface Props {
   store: Store
@@ -20,14 +25,18 @@ const removing = ref(false)
 const removeError = ref('')
 const openingChangePlan = ref(false)
 const changePlanError = ref('')
+const paymentSetupError = ref('')
 
 const load = async () => {
+  paymentSetupError.value = ''
   await store.loadBilling(true)
 
   try {
-    await store.api.reconcilePaymentSetup()
-    await store.loadBilling(true)
-  } catch {}
+    const result = await reconcilePaymentSetup()
+    if (result.activated.length) await store.loadBilling(true)
+  } catch (exception) {
+    paymentSetupError.value = getErrorMessage(exception)
+  }
 }
 
 watch(
@@ -57,16 +66,16 @@ const startPayment = () => {
 }
 
 const removeCard = async () => {
-  if (removing.value) return
+  if (removing.value || !billing.value?.payment_method) return
 
   removing.value = true
   removeError.value = ''
 
   try {
-    await store.api.removePaymentMethod(billing.value.payment_method.name)
+    await removePaymentMethod(billing.value.payment_method.name)
     await store.loadBilling(true)
   } catch (exception) {
-    removeError.value = store.api.getErrorMessage(exception)
+    removeError.value = getErrorMessage(exception)
   } finally {
     removing.value = false
   }
@@ -81,13 +90,13 @@ const openChangePlan = async () => {
   try {
     const response = store.state.context?.account_url
       ? { url: store.state.context.account_url }
-      : await store.api.getAccountUrl()
+      : await getAccountUrl()
 
     if (!response?.url) throw new Error(__('Central is not configured.'))
 
     openExternal(response.url)
   } catch (exception) {
-    changePlanError.value = store.api.getErrorMessage(exception)
+    changePlanError.value = getErrorMessage(exception)
   } finally {
     openingChangePlan.value = false
   }
@@ -134,11 +143,12 @@ const openChangePlan = async () => {
       <ErrorMessage :message="changePlanError" class="mt-2" />
     </div>
 
-    <div v-else class="space-y-4">
+    <div v-else-if="billing" class="space-y-4">
       <ErrorMessage :message="loadFailed ? '' : error" />
+      <ErrorMessage :message="paymentSetupError" />
 
       <section
-        class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 rounded-6 border border-outline-gray-2 p-5"
+        class="grid grid-cols-1 items-center gap-x-4 rounded-6 border border-outline-gray-2 p-5 sm:grid-cols-[minmax(0,1fr)_auto]"
       >
         <p class="text-base-semibold text-ink-gray-8">
           {{ plan.name ? __("{0} plan", [plan.name]) : __("Current plan") }}
@@ -147,14 +157,14 @@ const openChangePlan = async () => {
         <p class="col-start-1 mt-1 text-sm text-ink-gray-5">{{ planSubtitle }}</p>
 
         <Button
-          class="col-start-2 row-span-2 row-start-1"
+          class="mt-3 justify-self-start sm:col-start-2 sm:row-span-2 sm:row-start-1 sm:mt-0"
           icon-right="lucide-arrow-up-right"
           :disabled="openingChangePlan"
           :label="openingChangePlan ? __('Opening…') : __('Change plan')"
           @click="openChangePlan"
         />
 
-        <ErrorMessage :message="changePlanError" class="col-span-2 mt-2" />
+        <ErrorMessage :message="changePlanError" class="mt-2 sm:col-span-2" />
       </section>
 
       <div class="grid grid-cols-[repeat(auto-fit,minmax(14rem,1fr))] gap-3">
@@ -200,7 +210,7 @@ const openChangePlan = async () => {
 
       <section
         v-else
-        class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 rounded-6 border border-outline-gray-2 p-5"
+        class="grid grid-cols-1 items-center gap-x-4 rounded-6 border border-outline-gray-2 p-5 sm:grid-cols-[minmax(0,1fr)_auto]"
       >
         <p class="flex items-center gap-2 text-base-medium text-ink-gray-8">
           <span
@@ -223,7 +233,7 @@ const openChangePlan = async () => {
 
         <Button
           v-if="billing.payment_method"
-          class="col-start-2 row-span-2 row-start-1"
+          class="mt-3 justify-self-start sm:col-start-2 sm:row-span-2 sm:row-start-1 sm:mt-0"
           :loading="removing"
           :label="__('Remove')"
           @click="removeCard"
@@ -231,14 +241,14 @@ const openChangePlan = async () => {
 
         <Button
           v-else
-          class="col-start-2 row-span-2 row-start-1"
+          class="mt-3 justify-self-start sm:col-start-2 sm:row-span-2 sm:row-start-1 sm:mt-0"
           variant="solid"
           icon-left="lucide-plus"
           :label="__('Add payment method')"
           @click="startPayment"
         />
 
-        <ErrorMessage :message="removeError" class="col-span-2 mt-2" />
+        <ErrorMessage :message="removeError" class="mt-2 sm:col-span-2" />
       </section>
     </div>
   </Panel>

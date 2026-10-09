@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import urllib.request
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, Any
 
 from pilot.integrations.central.client import CentralClientError
 
@@ -12,24 +12,16 @@ if TYPE_CHECKING:
 
     from pilot.config.bench import BenchConfig
     from pilot.core.bench import Bench
+    from pilot.core.bench.config_patch import ConfigPatch
 
 METADATA_BASE = "http://169.254.169.254/latest"
 TOKEN_TTL_SECONDS = 21600
 REQUIRED_KEYS = ("central_endpoint", "central_auth_token", "jwks_url", "jwks_audience_id")
-S3_KEYS = ("access_key", "secret_key", "bucket", "provider", "region", "endpoint_url")
-TELEMETRY_KEYS = ("endpoint", "token")
-
-
-class MetadataBlock(TypedDict):
-    attribute: str
-    keys: tuple[str, ...]
-    url_key: str
-
-
-# The cloud caps each metadata value at 1 KiB, so each optional block has its own attribute.
-BLOCKS: dict[str, MetadataBlock] = {
-    "s3": {"attribute": "pilot-storage", "keys": S3_KEYS, "url_key": "endpoint_url"},
-    "telemetry": {"attribute": "pilot-telemetry", "keys": TELEMETRY_KEYS, "url_key": "endpoint"},
+# The cloud caps each metadata value at 1 KiB, so each config file has its own attribute.
+CONFIG_ATTRIBUTES = {
+    "common_config": "pilot-common-config",
+    "bench_config": "pilot-config",
+    "common_site_config": "pilot-common-site-config",
 }
 
 
@@ -70,20 +62,6 @@ def _parse_credentials(raw: str, name: str) -> dict[str, Any]:
     return credentials
 
 
-def _parse_block(raw: str, attribute: str, keys: tuple[str, ...], url_key: str) -> dict[str, str]:
-    from pilot.internal.validators import validate_external_url
-
-    source = f"Instance metadata '{attribute}'"
-    block = _parse_object(raw, source)
-    if missing := [key for key in keys if not block.get(key)]:
-        raise CentralClientError(f"{source} is missing: {', '.join(missing)}")
-
-    values = {key: str(block[key]) for key in keys}
-    if error := validate_external_url(values[url_key], url_key):
-        raise CentralClientError(f"{source}: {error}")
-    return values
-
-
 class InstanceMetadata:
     """The cloud metadata service, which owns this host's Central credential."""
 
@@ -98,11 +76,17 @@ class InstanceMetadata:
         if not raw:
             return None
 
-        credentials = _parse_credentials(raw, name)
-        for block, spec in BLOCKS.items():
-            if value := self.get_attribute(spec["attribute"]):
-                credentials[block] = _parse_block(value, spec["attribute"], spec["keys"], spec["url_key"])
-        return credentials
+        return _parse_credentials(raw, name)
+
+    def get_config_patch(self) -> ConfigPatch:
+        """The config patches staged for bootstrap. A malformed attribute raises."""
+        from pilot.core.bench.config_patch import ConfigPatch
+
+        patches = {}
+        for target, name in CONFIG_ATTRIBUTES.items():
+            if raw := self.get_attribute(name):
+                patches[target] = _parse_object(raw, f"Instance metadata '{name}'")
+        return ConfigPatch(**patches)
 
     def get_attribute(self, name: str) -> str | None:
         token = self._token()
@@ -143,15 +127,19 @@ def apply_central_config(
     if not bench.config.central.is_awaiting_bootstrap:
         return False
 
-    credentials = (metadata or InstanceMetadata()).get_credentials()
+    metadata = metadata or InstanceMetadata()
+    credentials = metadata.get_credentials()
     if credentials is None:
         return False
+
+    config_patch = metadata.get_config_patch()
+    if "central" in config_patch.common_config:
+        raise CentralClientError("Instance metadata 'pilot-common-config' must not change central settings.")
 
     if on_credentials is not None:
         on_credentials(credentials)
 
-    _apply_default_s3(bench, credentials)
-    _apply_telemetry(bench, credentials)
+    config_patch.apply(bench)
 
     from pilot.config.common import CommonConfig
 
@@ -167,32 +155,6 @@ def apply_central_config(
 
     _mark_bootstrapped(bench.config, credentials)
     return True
-
-
-def _apply_default_s3(bench: "Bench", credentials: dict[str, Any]) -> None:
-    storage = credentials.get("s3")
-    if not storage:
-        return
-
-    from pilot.config import S3Config
-    from pilot.config.bench import BenchConfig
-
-    with BenchConfig.open(bench.path) as config:
-        if config.s3 != S3Config():
-            return
-        config.s3 = S3Config(**storage)
-
-    bench.config.s3 = S3Config(**storage)
-
-
-def _apply_telemetry(bench: "Bench", credentials: dict[str, Any]) -> None:
-    datum = credentials.get("telemetry")
-    if not datum:
-        return
-
-    from pilot.core.bench.telemetry import apply_credential
-
-    apply_credential(bench, endpoint=datum["endpoint"], token=datum["token"])
 
 
 def _mark_bootstrapped(config: "BenchConfig", credentials: dict[str, Any]) -> None:

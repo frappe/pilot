@@ -17,3 +17,7 @@ export const relativeTime = (value: string | number | Date) => {
 
   return formatter.format(Math.round(seconds / size), unit)
 }
+
+/** frappe-ui time axes read a Date or an ISO string, so epoch milliseconds are dropped as rows with no date. */
+export const withDateTime = <T extends { time?: number | null }>(rows: T[]) =>
+  rows.map((row) => ({ ...row, time: row.time == null ? row.time : new Date(row.time) }))

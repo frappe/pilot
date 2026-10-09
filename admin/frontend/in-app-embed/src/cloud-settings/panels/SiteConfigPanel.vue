@@ -1,9 +1,15 @@
 <script setup lang="ts">
+import { useTranslation } from '../translation'
+import { getSiteConfig, updateSiteConfig } from '@frappe/cloud-sdk/api'
+import type { SiteConfiguration } from '@frappe/cloud-sdk'
 import { Button, Dialog, Dropdown, ErrorMessage, TextInput } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import Panel from '../components/Panel.vue'
 import Table from '../components/Table.vue'
-import type { Store } from '../store'
+import { useErrorMessage, type Store } from '../store'
+
+const __ = useTranslation()
+const getErrorMessage = useErrorMessage()
 
 interface Props {
   store: Store
@@ -11,7 +17,6 @@ interface Props {
 }
 
 const props = defineProps<Props>()
-const store = props.store
 
 const columns = [
   { label: __('Key'), key: 'key', class: 'w-1/3' },
@@ -19,7 +24,7 @@ const columns = [
   { label: '', key: 'actions', class: 'w-12' },
 ]
 
-const config = ref(null)
+const config = ref<SiteConfiguration | null>(null)
 const error = ref('')
 const saving = ref(false)
 const showEdit = ref(false)
@@ -32,9 +37,9 @@ const load = async () => {
   error.value = ''
 
   try {
-    config.value = await store.api.getSiteConfig()
+    config.value = await getSiteConfig()
   } catch (exception) {
-    error.value = store.api.getErrorMessage(exception)
+    error.value = getErrorMessage(exception)
   }
 }
 
@@ -46,7 +51,7 @@ watch(
   { immediate: true },
 )
 
-const formatValue = (value) => (typeof value === 'string' ? value : JSON.stringify(value))
+const formatValue = (value: unknown) => (typeof value === 'string' ? value : JSON.stringify(value))
 
 const rows = computed(() =>
   Object.entries(config.value || {})
@@ -54,7 +59,7 @@ const rows = computed(() =>
     .sort((a, b) => a.key.localeCompare(b.key)),
 )
 
-const parseValue = (text) => {
+const parseValue = (text: string) => {
   try {
     return JSON.parse(text)
   } catch {
@@ -62,7 +67,7 @@ const parseValue = (text) => {
   }
 }
 
-const openEdit = (row) => {
+const openEdit = (row?: { key: string; value: string } | null) => {
   editing.value = Boolean(row)
   draftKey.value = row?.key || ''
   draftValue.value = row?.value || ''
@@ -70,16 +75,16 @@ const openEdit = (row) => {
   showEdit.value = true
 }
 
-const save = async (patch) => {
+const save = async (patch: SiteConfiguration) => {
   saving.value = true
   error.value = ''
 
   try {
-    config.value = await store.api.updateSiteConfig(patch)
+    config.value = await updateSiteConfig(patch)
 
     return true
   } catch (exception) {
-    error.value = store.api.getErrorMessage(exception)
+    error.value = getErrorMessage(exception)
 
     return false
   } finally {
@@ -103,12 +108,12 @@ const confirmRemove = async () => {
   await save({ [key]: null })
 }
 
-const menuOptions = (row) => [
+const menuOptions = (row: { key: string; value: string }) => [
   { label: __('Edit'), icon: 'lucide-pencil', onClick: () => openEdit(row) },
   {
     label: __('Remove'),
     icon: 'lucide-trash-2',
-    theme: 'red',
+    theme: 'red' as const,
     onClick: () => (removeTarget.value = row.key),
   },
 ]

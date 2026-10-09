@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cloud SDK smoke fixture</title>
+  <style>
+    html { font-size: 24px; }
+    body { margin: 32px; font-family: Georgia, serif; background: #fafafa; }
+    button { padding: 12px; margin: 4px; }
+    html[data-theme="dark"] body { background: #171717; color: white; }
+  </style>
+  <h1>Cloud SDK smoke fixture</h1>
+  <p>Sample data only. No real site, billing, payment, or domain action runs here.</p>
+  <button id="open">Open all panels</button>
+  <button id="billing">Open Billing only</button>
+  <button id="theme">Toggle theme</button>
+  <button id="failure">Toggle API failure</button>
+  <p id="status" role="status"></p>
+  <script type="module">
+    import { openCloudSettings } from '../dist/index.js'
+
+    let failure = false
+    let profileComplete = false
+    let siteConfig = { maintenance_mode: 0, time_zone: 'Asia/Kolkata' }
+    let appInstalled = false
+    const now = Date.now()
+    const timeline = (category, values) => ({ categories: [category], points: values.map((value, index) => ({ time: now - (values.length - 1 - index) * 3600000, [category]: value })) })
+    const billing = () => ({
+      currency: 'USD', plan: { name: 'Starter', subtitle: 'For small teams', specs: { storage: '5 GB' } },
+      estimate: { amount: '$10.00', note: 'This cycle' },
+      credit: { amount: '$25.00', note: 'Trial credit', warning: false },
+      usage: [{ name: 'CPU', percent: 24, detail: 'Sample CPU usage' }, { name: 'Memory', percent: 42, detail: 'Sample memory usage' }],
+      payment_method: null, profile_complete: profileComplete,
+    })
+    const profile = { currency: 'USD', legal_name: 'Example Company', email: 'billing@example.test', address_line1: '1 Example Street', city: 'Example City', state: 'Example State', country: 'US', pincode: '12345', gstin: '', supported_currencies: ['USD'] }
+
+    window.fetch = async (url, options) => {
+      const method = String(url).split('.').pop().split('?')[0]
+      if (failure && method !== 'get_context') return new Response(JSON.stringify({ _server_messages: JSON.stringify([JSON.stringify({ message: 'Fixture API failure. Toggle it off and retry.' })]) }), { status: 503 })
+      if (method === 'save_billing_profile') profileComplete = true
+      if (method === 'install_app') appInstalled = true
+      if (method === 'uninstall_app') appInstalled = false
+      const values = {
+        get_context: { enabled: true, site_name: 'example.test', server_url: location.href, account_url: location.href },
+        get_billing: billing(), get_billing_profile: profile,
+        reconcile_payment_setup: { activated: [] }, save_billing_profile: {},
+        get_payment_gateways: [{ name: 'stripe', label: 'Stripe', adapter_key: 'Stripe', method_types: ['Card'], subtitle: 'Example gateway' }],
+        get_domains: { primary: 'example.test', domains: [{ domain: 'example.test', is_default: true, is_primary: true, tls: true }] },
+        get_marketplace_apps: { apps: [{ name: 'raven', title: 'Raven', description: 'Sample team chat app.', logo_url: '', category: 'Communication', stars: 250, installable: true, installed: appInstalled, required_version: '', installed_version: appInstalled ? '2.0' : '', latest_version: '2.0', has_update: false }], categories: ['Communication'], update_count: 0 },
+        install_app: { task_id: 'fixture-task' }, uninstall_app: { task_id: 'fixture-task' }, update_apps: { task_id: 'fixture-task' },
+      }
+      if (method === 'pilot_request') {
+        const path = options.body?.get('path') ?? new URL(String(url), location.href).searchParams.get('path')
+        if (path.startsWith('monitoring')) values.pilot_request = { now, window_seconds: 86400, requests_over_time: timeline('Requests', [12, 24, 18, 40]), background_jobs_over_time: timeline('Jobs', [2, 4, 3, 6]), top_paths: timeline('/raven', [5, 8, 6, 10]) }
+        if (path.startsWith('uptime')) values.pilot_request = { overall_percent: 99.98, buckets: [0, 1, 2, 3].map((index) => ({ time: now - index * 3600000, checks: 60, percent: 100 })) }
+        if (path === 'backups') values.pilot_request = options.body?.get('method') === 'POST' ? { task_id: 'fixture-task' } : [{ timestamp: '20261007_120000', created_at: '2026-10-07T12:00:00Z', is_offsite: true, files: [{ filename: 'example-database.sql.gz', path: '', size_bytes: 2300000, kind: 'database' }, { filename: 'example-files.tar', path: '', size_bytes: 4200000, kind: 'public-file' }] }]
+        if (path === 'storage') values.pilot_request = { database_bytes: 2300000, bytes: 9000000, public_files_bytes: 4200000, private_files_bytes: 1000000, backups_bytes: 3000000, other_bytes: 800000, collected_at: new Date(now).toISOString(), backup_files: [{ name: 'example-database.sql.gz', bytes: 3000000 }], other_entries: [{ name: 'site_config.json', bytes: 800000 }] }
+        if (path === 'configuration') {
+          if (options.body?.get('method') === 'PATCH') siteConfig = { ...siteConfig, ...JSON.parse(options.body.get('data')) }
+          values.pilot_request = siteConfig
+        }
+        if (path.startsWith('actions/')) values.pilot_request = { task_id: 'fixture-task' }
+      }
+      if (method === 'get_task') values.get_task = { status: 'success', exit_code: 0 }
+      return new Response(JSON.stringify({ message: values[method] ?? {} }), { headers: { 'Content-Type': 'application/json' } })
+    }
+
+    const open = (options = {}) => openCloudSettings({ ...options, onClose: () => { document.querySelector('#status').textContent = 'Dialog closed' } }).catch((error) => { document.querySelector('#status').textContent = error.message })
+    document.querySelector('#open').onclick = () => open()
+    document.querySelector('#billing').onclick = () => open({ panels: ['billing'] })
+    document.querySelector('#theme').onclick = () => { document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark' }
+    document.querySelector('#failure').onclick = () => { failure = !failure; document.querySelector('#status').textContent = `API failure: ${failure}` }
+  </script>
+</html>

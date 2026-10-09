@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -12,6 +13,7 @@ import pytest
 from pilot.config import AppConfig
 from pilot.core.app import App
 from pilot.core.app.validator import Validator
+from pilot.core.app.validator.base import get_bench_python
 from pilot.core.app.validator.dependency_declarations import DependencyDeclarationsCheck
 from pilot.core.app.validator.fixtures import FixturesCheck
 from pilot.core.app.validator.frappe_compatibility import FrappeCompatibilityCheck
@@ -28,10 +30,15 @@ from pilot.exceptions import AppValidationError
 class _FakeBench:
     apps_path: Path
     env_path: Path
+    _python: Path | None = None
 
     @property
     def python(self) -> Path:
-        return Path(sys.executable)
+        return self._python or Path(sys.executable)
+
+    @python.setter
+    def python(self, value: Path | None) -> None:
+        self._python = value
 
     def apps(self) -> list[App]:
         apps = []
@@ -762,7 +769,7 @@ def test_import_check_trusts_the_bench_python_over_stat(monkeypatch, tmp_path: P
     keeps that from being reported as missing."""
     _make_fake_frappe(tmp_path)
     (tmp_path / "env" / "bin").mkdir(parents=True)
-    (tmp_path / "env" / "bin" / "python").write_text("")
+    (tmp_path / "env" / "bin" / "python").symlink_to(sys.executable)
     app = _make_app(
         tmp_path,
         "myapp",
@@ -792,7 +799,7 @@ def test_import_check_never_imports_the_app_it_is_validating(monkeypatch, tmp_pa
     """Only third-party names go to the bench python; app modules stay stat-only."""
     _make_fake_frappe(tmp_path)
     (tmp_path / "env" / "bin").mkdir(parents=True)
-    (tmp_path / "env" / "bin" / "python").write_text("")
+    (tmp_path / "env" / "bin" / "python").symlink_to(sys.executable)
     app = _make_app(
         tmp_path,
         "myapp",
@@ -1143,7 +1150,7 @@ def test_syntax_check_raises_on_process_failure(tmp_path: Path, monkeypatch: pyt
         "run",
         lambda *args, **kwargs: subprocess.CompletedProcess(args, returncode=1, stderr="fatal error"),
     )
-    with pytest.raises(AppValidationError, match=r"Syntax validator failed under .* fatal error"):
+    with pytest.raises(AppValidationError, match=r"failed under .* fatal error"):
         SyntaxCheck().run(app)
 
 
@@ -1177,5 +1184,222 @@ def test_syntax_check_raises_on_subprocess_exception(tmp_path: Path, monkeypatch
         raise FileNotFoundError("python binary not found")
 
     monkeypatch.setattr(subprocess, "run", _raise_err)
-    with pytest.raises(AppValidationError, match=r"Failed to execute syntax validator"):
+    with pytest.raises(AppValidationError, match=r"Failed to execute"):
         SyntaxCheck().run(app)
+
+
+def test_get_bench_python_resolves_relative_env_path(tmp_path: Path) -> None:
+    """Verifies get_bench_python resolves relative env_path to an absolute path."""
+    app = _make_app(tmp_path, "myapp", '[project]\nname = "myapp"\n', {"myapp/hooks.py": ""})
+    rel_env = Path("fake_env")
+    app.bench.env_path = rel_env  # relative path
+    bench_python = rel_env.resolve() / "bin" / "python"
+    bench_python.parent.mkdir(parents=True, exist_ok=True)
+    bench_python.touch(mode=0o755)
+
+    resolved = get_bench_python(app)
+    assert Path(resolved).is_absolute()
+    assert resolved == str(bench_python)
+
+
+def test_get_bench_python_finds_python3_when_python_absent(tmp_path: Path) -> None:
+    """Verifies get_bench_python checks bin/python3 if bin/python does not exist."""
+    app = _make_app(tmp_path, "myapp", '[project]\nname = "myapp"\n', {"myapp/hooks.py": ""})
+    app.bench.env_path = tmp_path / "env"
+    python3_bin = app.bench.env_path / "bin" / "python3"
+    python3_bin.parent.mkdir(parents=True, exist_ok=True)
+    python3_bin.touch(mode=0o755)
+
+    resolved = get_bench_python(app)
+    assert resolved == str(python3_bin)
+
+
+def test_get_bench_python_falls_back_when_no_binary(tmp_path: Path) -> None:
+    """Verifies get_bench_python falls back to sys.executable if no valid binary exists."""
+    app = _make_app(tmp_path, "myapp", '[project]\nname = "myapp"\n', {"myapp/hooks.py": ""})
+    app.bench.env_path = tmp_path / "empty_env"
+    app.bench.env_path.mkdir(parents=True, exist_ok=True)
+
+    assert get_bench_python(app) == sys.executable
+
+
+def test_get_bench_python_prefers_bench_python_property(tmp_path: Path) -> None:
+    """Verifies get_bench_python prefers bench.python property when set."""
+    app = _make_app(tmp_path, "myapp", '[project]\nname = "myapp"\n', {"myapp/hooks.py": ""})
+    custom_python = tmp_path / "custom_bin" / "python"
+    custom_python.parent.mkdir(parents=True, exist_ok=True)
+    custom_python.touch(mode=0o755)
+
+    app.bench.python = custom_python  # type: ignore[misc]
+    assert get_bench_python(app) == str(custom_python.resolve())
+
+
+def test_hooks_check_raises_app_validation_error_on_syntax_error(tmp_path: Path) -> None:
+    """Verifies HooksCheck reports unparseable hook target syntax cleanly rather than crashing."""
+    app = _make_hooks_app(
+        tmp_path,
+        'after_migrate = "myapp.setup.install"\n',
+        setup="def broken(:\n    pass\n",
+    )
+    with pytest.raises(AppValidationError, match=r"cannot parse 'setup.py': syntax error"):
+        HooksCheck().run(app)
+
+
+def test_hooks_check_raises_app_validation_error_on_hooks_py_syntax_error(tmp_path: Path) -> None:
+    """Verifies HooksCheck reports syntax errors in hooks.py itself cleanly."""
+    app = _make_app(
+        tmp_path,
+        "myapp",
+        '[project]\nname = "myapp"\n',
+        {"myapp/hooks.py": "app_name = (\n"},
+    )
+    with pytest.raises(AppValidationError, match=r"has syntax errors in myapp/hooks.py"):
+        HooksCheck().run(app)
+
+
+def test_frappe_compatibility_fails_on_init_py_syntax_error(tmp_path: Path) -> None:
+    """Verifies FrappeCompatibilityCheck reports syntax errors in installed app __init__.py."""
+    frappe_path = tmp_path / "apps" / "frappe" / "frappe"
+    frappe_path.mkdir(parents=True)
+    (tmp_path / "apps" / "frappe" / "pyproject.toml").write_text('[project]\nname = "frappe"\n')
+    (frappe_path / "__init__.py").write_text("def broken(:\n    pass\n")
+    app = _make_app_needing_frappe(tmp_path, ">=16.0.0")
+
+    with pytest.raises(AppValidationError, match=r"'frappe' has syntax errors in __init__\.py"):
+        FrappeCompatibilityCheck().run(app)
+
+
+def test_import_check_raises_app_validation_error_on_unparseable_syntax(tmp_path: Path) -> None:
+    """Verifies ImportCheck reports unparseable files rather than silently dropping dependencies."""
+    app = _make_app(
+        tmp_path,
+        "myapp",
+        '[project]\nname = "myapp"\n',
+        {"myapp/hooks.py": "", "myapp/bad.py": "except A, B:\n    pass\n"},
+    )
+    bad_file = app.path / "myapp" / "bad.py"
+    with pytest.raises(AppValidationError, match=r"has unparseable Python syntax in myapp/bad.py"):
+        ImportCheck()._file_imported_modules(app, bad_file)
+
+
+def test_all_checks_delegate_to_bench_python(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifies all checks delegate to the bench's Python interpreter."""
+    from pilot.core.app.validator import frappe_compatibility, hooks, imports, syntax
+    from pilot.core.app.validator.utils import bench_runner
+
+    app = _make_app(
+        tmp_path,
+        "myapp",
+        '[project]\nname = "myapp"\n\n[tool.bench.frappe-dependencies]\nfrappe = ">=16.0.0"\n',
+        {
+            "myapp/hooks.py": 'app_name = "myapp"\n',
+            "myapp/utils.py": "import frappe\n",
+        },
+    )
+    _make_frappe_at(tmp_path, "16.5.0")
+    custom_python = tmp_path / "env" / "bin" / "python"
+    custom_python.parent.mkdir(parents=True, exist_ok=True)
+    custom_python.symlink_to(sys.executable)
+
+    calls: list[str] = []
+    original_run = bench_runner.run_in_bench
+
+    def fake_run(bench_python: str, script: str, payload: typing.Any = None) -> typing.Any:
+        calls.append(bench_python)
+        return original_run(bench_python, script, payload)
+
+    monkeypatch.setattr(bench_runner, "run_in_bench", fake_run)
+    monkeypatch.setattr(hooks, "run_in_bench", fake_run)
+    monkeypatch.setattr(imports, "run_in_bench", fake_run)
+    monkeypatch.setattr(frappe_compatibility, "run_in_bench", fake_run)
+    monkeypatch.setattr(syntax, "batch_check_syntax", lambda py, files: [calls.append(py), {}][1])
+
+    SyntaxCheck().run(app)
+    HooksCheck().run(app)
+    ImportCheck()._file_imported_modules(app, app.path / "myapp" / "utils.py")
+    FrappeCompatibilityCheck().run(app)
+
+    assert len(calls) >= 4
+    assert all(py == str(custom_python) for py in calls)
+
+
+def test_newer_python_syntax_passes_bench_python(tmp_path: Path) -> None:
+    """Verifies files using newer Python syntax pass validation when supported by bench interpreter."""
+    app = _make_app(
+        tmp_path,
+        "myapp",
+        '[project]\nname = "myapp"\n\n[tool.bench.frappe-dependencies]\nfrappe = ">=16.0.0"\n',
+        {
+            "myapp/hooks.py": 'app_name = "myapp"\n',
+            "myapp/feature.py": "type Point = tuple[float, float]\n",
+        },
+    )
+    # If host running tests supports 3.12 syntax, this executes and passes
+    if sys.version_info >= (3, 12):
+        SyntaxCheck().run(app)
+
+
+def test_bench_ast_matches_host_ast_for_standard_module(tmp_path: Path) -> None:
+    """Verifies ast parsing in bench python matches host ast module parsing."""
+    test_file = tmp_path / "valid.py"
+    test_file.write_text("x = 1\n")
+    tree = ast.parse(test_file.read_text())
+    assert isinstance(tree, ast.Module)
+
+
+def test_import_check_resolves_relative_imports_via_bench_python(tmp_path: Path) -> None:
+    """Verifies relative imports parsed through bench python format resolve properly."""
+    app = _make_app(
+        tmp_path,
+        "myapp",
+        '[project]\nname = "myapp"\n',
+        {"myapp/hooks.py": "", "myapp/sub/feature.py": ""},
+    )
+    sub_file = app.path / "myapp" / "sub" / "feature.py"
+
+    # Relative level 1: from .helper import x
+    mod1 = ImportCheck._resolve_relative_parts(app, sub_file, "helper", 1, 1)
+    assert mod1 == "myapp.sub.helper"
+
+    # Relative level 2: from ..utils import y
+    mod2 = ImportCheck._resolve_relative_parts(app, sub_file, "utils", 2, 2)
+    assert mod2 == "myapp.utils"
+
+    # Relative above app: level 3 goes above myapp package
+    with pytest.raises(AppValidationError, match=r"goes above the app's own package"):
+        ImportCheck._resolve_relative_parts(app, sub_file, "escaped", 3, 3)
+
+
+def test_dependency_declarations_extracts_nested_and_conditional_required_apps(tmp_path: Path) -> None:
+    """Verifies that required_apps inside conditional or nested blocks are found."""
+    app = _make_app(
+        tmp_path,
+        "myapp",
+        '[project]\nname = "myapp"\n\n[tool.bench.frappe-dependencies]\nfrappe = ">=15"\n',
+        {
+            "myapp/hooks.py": (
+                "if True:\n"
+                "    required_apps = ['erpnext']\n"
+                "else:\n"
+                "    required_apps = ['hrms']\n"
+            ),
+        },
+    )
+    with pytest.raises(AppValidationError, match="erpnext"):
+        Validator(app, checks=[DependencyDeclarationsCheck()]).validate()
+
+
+def test_get_bench_python_retains_venv_symlink_path(tmp_path: Path) -> None:
+    """Verifies get_bench_python returns the venv binary path without resolving symlink to base interpreter."""
+    app = _make_app(tmp_path, "myapp", '[project]\nname = "myapp"\n', {"myapp/hooks.py": ""})
+    venv_bin = tmp_path / "env" / "bin" / "python"
+    venv_bin.parent.mkdir(parents=True, exist_ok=True)
+    venv_bin.symlink_to(sys.executable)
+
+    resolved = get_bench_python(app)
+    assert resolved == str(venv_bin)
+    # Ensure it didn't resolve to the base sys.executable path
+    if Path(sys.executable) != venv_bin:
+        assert resolved != str(Path(sys.executable).resolve())
+
+

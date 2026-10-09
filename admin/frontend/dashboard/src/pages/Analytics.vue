@@ -18,6 +18,7 @@ import { useIsMobile } from '@/composables/common/useIsMobile'
 import { useSites } from '@/composables/sites/useSites'
 import { errorMessage } from '@/utils/error'
 import { livePollDelayMs } from '@/utils/livePolling'
+import { withDateTime } from '@/utils/time'
 import type {
   ApplicationMetricsHistory,
   CpuBreakdown,
@@ -596,15 +597,20 @@ const appMemConfig = computed<AnalyticsChart>(() => ({
 }))
 
 // Combine all charts for template rendering
-const charts = computed(() => [
-  cpuChartConfig.value,
-  loadChartConfig.value,
-  memChartConfig.value,
-  ...(diskInfo.value ? [diskChartConfig.value] : []),
-  networkChartConfig.value,
-  diskIoChartConfig.value,
-  ...(appWindowData.value.cpu.length ? [appCpuConfig.value, appMemConfig.value] : []),
-])
+const charts = computed(() =>
+  [
+    cpuChartConfig.value,
+    loadChartConfig.value,
+    memChartConfig.value,
+    ...(diskInfo.value ? [diskChartConfig.value] : []),
+    networkChartConfig.value,
+    diskIoChartConfig.value,
+    ...(appWindowData.value.cpu.length ? [appCpuConfig.value, appMemConfig.value] : []),
+  ].map((chart) => ({
+    ...chart,
+    config: { ...chart.config, data: withDateTime(chart.config.data ?? []) },
+  })),
+)
 
 // Formatting
 

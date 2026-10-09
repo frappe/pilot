@@ -65,6 +65,7 @@ htmlcov/
 admin/frontend/dashboard/node_modules/
 admin/frontend/editor/node_modules/
 admin/frontend/in-app-embed/node_modules/
+admin/frontend/cloud-sdk/node_modules/
 admin/backend/static/dashboard/
 admin/backend/static/editor/
 admin/backend/static/in-app-embed/

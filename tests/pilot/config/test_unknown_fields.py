@@ -21,7 +21,7 @@ MINIMAL: dict = {
 def test_unknown_nested_key_reported_with_full_path() -> None:
     data = copy.deepcopy(MINIMAL)
     data["admin"]["unknown_key"] = "x"
-    assert "admin.unknown_key" in BenchConfig._unknown_config_paths(data)
+    assert "admin.unknown_key" in BenchConfig.unknown_config_paths(data)
 
 
 def test_mariadb_postgres_letsencrypt_are_now_unknown_tables() -> None:
@@ -32,7 +32,7 @@ def test_mariadb_postgres_letsencrypt_are_now_unknown_tables() -> None:
     data["mariadb"] = {"root_password": "root"}
     data["postgres"] = {"root_password": "secret"}
     data["letsencrypt"] = {"email": "ops@example.com"}
-    paths = BenchConfig._unknown_config_paths(data)
+    paths = BenchConfig.unknown_config_paths(data)
     assert set(paths) == {"mariadb", "postgres", "letsencrypt"}
 
 
@@ -41,7 +41,7 @@ def test_nginx_is_now_an_unknown_table() -> None:
     a [nginx] table reports it as unrecognized rather than parsing it."""
     data = copy.deepcopy(MINIMAL)
     data["nginx"] = {"http_port": 8080}
-    assert BenchConfig._unknown_config_paths(data) == ["nginx"]
+    assert BenchConfig.unknown_config_paths(data) == ["nginx"]
 
 
 def test_monitor_is_now_an_unknown_table() -> None:
@@ -49,26 +49,26 @@ def test_monitor_is_now_an_unknown_table() -> None:
     a [monitor] table reports it as unrecognized rather than parsing it."""
     data = copy.deepcopy(MINIMAL)
     data["monitor"] = {"log_path": "/var/log/custom.log"}
-    assert BenchConfig._unknown_config_paths(data) == ["monitor"]
+    assert BenchConfig.unknown_config_paths(data) == ["monitor"]
 
 
 def test_unknown_bench_key_reported() -> None:
     data = copy.deepcopy(MINIMAL)
     data["bench"]["typo"] = 1
-    assert "bench.typo" in BenchConfig._unknown_config_paths(data)
+    assert "bench.typo" in BenchConfig.unknown_config_paths(data)
 
 
 def test_unknown_top_level_table_reported() -> None:
     data = copy.deepcopy(MINIMAL)
     data["whatever"] = {"key": 1}
-    assert "whatever" in BenchConfig._unknown_config_paths(data)
+    assert "whatever" in BenchConfig.unknown_config_paths(data)
 
 
 def test_unknown_array_entry_keys_reported_with_index() -> None:
     data = copy.deepcopy(MINIMAL)
     data["apps"][0]["typo"] = "x"
     data["firewall"] = {"rules": [{"ip": "203.0.113.4", "bogus": 1}]}
-    paths = BenchConfig._unknown_config_paths(data)
+    paths = BenchConfig.unknown_config_paths(data)
     assert "apps[0].typo" in paths
     assert "firewall.rules[0].bogus" in paths
 
@@ -83,7 +83,7 @@ def test_known_and_legacy_keys_not_flagged() -> None:
         "use_companion_manager": False,
     }
     data["workers"] = [{"queue": "default", "count": 1}]
-    assert BenchConfig._unknown_config_paths(data) == []
+    assert BenchConfig.unknown_config_paths(data) == []
 
 
 def test_default_decode_silently_ignores_unknown_and_still_loads(

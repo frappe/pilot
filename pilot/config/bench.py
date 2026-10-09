@@ -28,6 +28,7 @@ from pilot.config.production import ProductionConfig
 from pilot.config.proxy import ProxyConfig
 from pilot.config.redis import RedisConfig
 from pilot.config.s3 import S3Config
+from pilot.config.schema import TomlSchema, field_names
 from pilot.config.telemetry import TelemetryConfig
 from pilot.config.waf import WafCondition, WafConfig, WafRule
 from pilot.config.worker import WorkerConfig, WorkerGroup
@@ -249,7 +250,7 @@ class BenchConfig:
         """Optionally reject keys outside the known config schema."""
         if not strict:
             return
-        paths = cls._unknown_config_paths(data)
+        paths = cls.unknown_config_paths(data)
         if paths:
             raise ConfigError(f"bench.toml has unrecognized fields: {', '.join(paths)}")
 
@@ -388,11 +389,20 @@ class BenchConfig:
         return cls.toml_path(bench_root).exists()
 
     @classmethod
-    def read(cls, bench_root: Path, *, validate: bool = True, strict: bool = False) -> "BenchConfig":
-        """Typed config. ``validate=False`` parses a half-configured file."""
+    def read(
+        cls,
+        bench_root: Path,
+        *,
+        validate: bool = True,
+        strict: bool = False,
+        common: CommonConfig | None = None,
+    ) -> "BenchConfig":
+        """Typed config. ``validate=False`` parses a half-configured file; ``common`` overrides the shared file."""
         path = cls.toml_path(bench_root)
         data = Toml.loads(path.read_text(encoding="utf-8"))
-        config = cls._from_dict(data, common=cls._read_common(bench_root), strict=strict)
+        if common is None:
+            common = cls._read_common(bench_root)
+        config = cls._from_dict(data, common=common, strict=strict)
         if validate:
             config.validate()
         return config
@@ -723,9 +733,9 @@ class BenchConfig:
     # -- unknown-field schema (older/foreign bench.toml compatibility) --
 
     @staticmethod
-    def _unknown_config_paths(data: Mapping) -> list[str]:
+    def unknown_config_paths(data: Mapping) -> list[str]:
         """Return dotted paths for keys outside the declared schema."""
-        return _scan(data, _SCHEMA_ROOT, "")
+        return _SCHEMA_ROOT.get_unknown_paths(data)
 
     @staticmethod
     def _preserve_unknown_config(original: Mapping, replacement: Mapping) -> dict:
@@ -852,19 +862,6 @@ def _workers_to_groups(value) -> list[WorkerGroup]:
     return groups or WorkerConfig().groups
 
 
-@dataclass
-class _Table:
-    """Describe a table's keys and nested tables for schema validation."""
-
-    keys: set[str] = field(default_factory=set)
-    tables: dict[str, "_Table"] = field(default_factory=dict)
-    arrays: dict[str, "_Table"] = field(default_factory=dict)
-
-
-def _keys(dataclass_type: type) -> set[str]:
-    return {f.name for f in fields(dataclass_type)}
-
-
 # The [bench] table flattens top-level fields whose keys differ from the
 # BenchConfig attribute names (python vs python_version), so it is listed here.
 _BENCH_KEYS = {
@@ -887,35 +884,35 @@ _GUNICORN_LEGACY = {"malloc_arena_max"}
 _WORKER_LEGACY = {"queue"}
 
 
-def _bench_schema() -> _Table:
-    return _Table(
+def _bench_schema() -> TomlSchema:
+    return TomlSchema(
         tables={
-            "bench": _Table(keys=set(_BENCH_KEYS)),
-            "redis": _Table(keys=_keys(RedisConfig)),
-            "production": _Table(keys=_keys(ProductionConfig) | _PRODUCTION_LEGACY),
-            "lite_mode": _Table(keys=_keys(LiteModeConfig)),
-            "gunicorn": _Table(keys=_keys(GunicornConfig) | _GUNICORN_LEGACY),
-            "build": _Table(keys=_keys(BuildConfig)),
-            "admin": _Table(keys=_keys(AdminConfig)),
-            "s3": _Table(keys=_keys(S3Config)),
-            "llm": _Table(keys=_keys(LLMConfig)),
-            "firewall": _Table(
-                keys=_keys(FirewallConfig) - {"rules"},
-                arrays={"rules": _Table(keys=_keys(FirewallRule))},
+            "bench": TomlSchema(keys=set(_BENCH_KEYS)),
+            "redis": TomlSchema(keys=field_names(RedisConfig)),
+            "production": TomlSchema(keys=field_names(ProductionConfig) | _PRODUCTION_LEGACY),
+            "lite_mode": TomlSchema(keys=field_names(LiteModeConfig)),
+            "gunicorn": TomlSchema(keys=field_names(GunicornConfig) | _GUNICORN_LEGACY),
+            "build": TomlSchema(keys=field_names(BuildConfig)),
+            "admin": TomlSchema(keys=field_names(AdminConfig)),
+            "s3": TomlSchema(keys=field_names(S3Config)),
+            "llm": TomlSchema(keys=field_names(LLMConfig)),
+            "firewall": TomlSchema(
+                keys=field_names(FirewallConfig) - {"rules"},
+                arrays={"rules": TomlSchema(keys=field_names(FirewallRule))},
             ),
-            "waf": _Table(
-                keys=_keys(WafConfig) - {"custom_rules"},
+            "waf": TomlSchema(
+                keys=field_names(WafConfig) - {"custom_rules"},
                 arrays={
-                    "custom_rules": _Table(
-                        keys=_keys(WafRule) - {"conditions"},
-                        arrays={"conditions": _Table(keys=_keys(WafCondition))},
+                    "custom_rules": TomlSchema(
+                        keys=field_names(WafRule) - {"conditions"},
+                        arrays={"conditions": TomlSchema(keys=field_names(WafCondition))},
                     )
                 },
             ),
         },
         arrays={
-            "apps": _Table(keys=_keys(AppConfig)),
-            "workers": _Table(keys=_keys(WorkerGroup) | _WORKER_LEGACY),
+            "apps": TomlSchema(keys=field_names(AppConfig)),
+            "workers": TomlSchema(keys=field_names(WorkerGroup) | _WORKER_LEGACY),
         },
     )
 
@@ -923,7 +920,7 @@ def _bench_schema() -> _Table:
 _SCHEMA_ROOT = _bench_schema()
 
 
-def _preserve_unknown(original: Mapping, replacement: Mapping, table: _Table) -> dict:
+def _preserve_unknown(original: Mapping, replacement: Mapping, table: TomlSchema) -> dict:
     result = copy.deepcopy(dict(replacement))
     for key, value in original.items():
         if key in table.tables and isinstance(value, Mapping):
@@ -934,35 +931,15 @@ def _preserve_unknown(original: Mapping, replacement: Mapping, table: _Table) ->
             current = result.get(key, [])
             if isinstance(current, list):
                 result[key] = _preserve_unknown_array(value, current, table.arrays[key])
-        elif key not in table.keys and key not in table.tables and key not in table.arrays:
+        elif not table.is_known(key):
             result[key] = copy.deepcopy(value)
     return result
 
 
-def _preserve_unknown_array(original: list, replacement: list, table: _Table) -> list:
+def _preserve_unknown_array(original: list, replacement: list, table: TomlSchema) -> list:
     result = copy.deepcopy(replacement)
     for index, (old_entry, new_entry) in enumerate(zip(original, result, strict=False)):
         if isinstance(old_entry, Mapping) and isinstance(new_entry, Mapping):
             result[index] = _preserve_unknown(old_entry, new_entry, table)
     return result
 
-
-def _scan(data: Mapping, table: _Table, prefix: str) -> list[str]:
-    unknown: list[str] = []
-    for key, value in data.items():
-        path = f"{prefix}{key}"
-        if key in table.tables and isinstance(value, Mapping):
-            unknown += _scan(value, table.tables[key], f"{path}.")
-        elif key in table.arrays and isinstance(value, list):
-            unknown += _scan_array(value, table.arrays[key], path)
-        elif key not in table.keys and key not in table.tables and key not in table.arrays:
-            unknown.append(path)
-    return unknown
-
-
-def _scan_array(entries: list, table: _Table, path: str) -> list[str]:
-    unknown: list[str] = []
-    for index, entry in enumerate(entries):
-        if isinstance(entry, Mapping):
-            unknown += _scan(entry, table, f"{path}[{index}].")
-    return unknown

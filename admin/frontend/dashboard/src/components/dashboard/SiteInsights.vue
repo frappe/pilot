@@ -11,6 +11,7 @@ import { apiErrorMessage, hasApiError } from '@/api/client'
 import { sitesApi } from '@/api/sites'
 import type { SiteAnalytics, Timeline } from '@/types/siteMonitoring'
 import { errorMessage } from '@/utils/error'
+import { withDateTime } from '@/utils/time'
 
 interface Props {
   siteName: string
@@ -57,7 +58,7 @@ const axisMin = computed(() => axisMax.value - (data.value?.window_seconds ?? 0)
 const timelineConfig = (timeline: Timeline | undefined, valueLabel: string): BarChartProps => {
   const categories = timeline?.categories ?? []
   return {
-    data: timeline?.points ?? [],
+    data: withDateTime(timeline?.points ?? []),
     x: 'time',
     y: categories,
     stacked: true,
@@ -68,7 +69,7 @@ const timelineConfig = (timeline: Timeline | undefined, valueLabel: string): Bar
     },
     yAxis: { min: 0, title: valueLabel, echartOptions: { splitLine: GRID } },
     seriesConfig: Object.fromEntries(
-      categories.map((name, i) => [name, { color: PALETTE[i % PALETTE.length] }]),
+      categories.map((name, i) => [name, { label: name, color: PALETTE[i % PALETTE.length] }]),
     ),
   }
 }
@@ -93,6 +94,7 @@ const charts = computed(() =>
     key,
     title,
     line: chartType === 'line',
+    empty: !data.value?.[key]?.categories.length || !data.value?.[key]?.points.length,
     config: timelineConfig(data.value?.[key], valueLabel),
   })).filter((chart) => chart.key !== 'slowest_reports' || chart.config.y.length),
 )
@@ -131,7 +133,7 @@ onMounted(load)
     <SiteUptime :site-name="siteName" :window="window" />
 
     <template v-if="loading">
-      <Skeleton v-for="i in 12" :key="i" class="rounded-6 h-[340px]" />
+      <Skeleton v-for="i in 12" :key="i" class="rounded-4 h-[340px]" />
     </template>
 
     <ErrorMessage v-else-if="error" :message="error" class="sm:col-span-2" />
@@ -139,12 +141,12 @@ onMounted(load)
     <template v-else>
       <ChartCard v-for="chart in charts" :key="chart.key" :title="chart.title">
         <div
-          v-if="!chart.config.y.length"
+          v-if="chart.empty"
           class="flex flex-col flex-1 justify-center items-center gap-1 min-h-[300px] text-center"
         >
           <span class="size-6 text-ink-gray-3 lucide-chart-bar" />
-          <p class="font-medium text-ink-gray-7 text-xs">No usage yet</p>
-          <p class="text-ink-gray-5 text-xs">Data will appear here once activity is tracked</p>
+          <p class="text-sm-medium text-ink-gray-7">No usage yet</p>
+          <p class="text-p-xs text-ink-gray-5">Data will appear here once activity is tracked</p>
         </div>
 
         <component

@@ -1,16 +1,21 @@
 <script setup lang="ts">
+import { translate } from './translation'
 import {
   Badge,
+  Button,
+  Select,
   SettingsContent,
   SettingsDialog,
   SettingsNavGroup,
   SettingsNavItem,
   SettingsPanel,
   SettingsSidebar,
+  ToastProvider,
   providePortalTarget,
 } from 'frappe-ui'
 import { ConfigProvider } from 'reka-ui'
 import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
+import type { CloudContext, CloudSettingsOptions } from '@frappe/cloud-sdk'
 
 import FrappeCloudLogo from './components/FrappeCloudLogo.vue'
 import AdvancedPanel from './panels/AdvancedPanel.vue'
@@ -26,14 +31,18 @@ import { createStore } from './store'
 import TailwindStyles from './TailwindStyles.vue'
 
 interface Props {
-  context?: Record<string, any>
+  context?: CloudContext
   open?: boolean
+  options?: CloudSettingsOptions
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  context: () => ({}),
+  context: () => ({ enabled: false }),
+  options: () => ({}),
 })
 const emit = defineEmits(['close'])
+const __ = props.options.translate ?? translate
+provide('cloudSettingsTranslate', __)
 
 const GROUPS = [
   {
@@ -91,23 +100,36 @@ const GROUPS = [
   },
 ]
 
-const TABS = GROUPS.flatMap((group) => group.tabs)
+// An omitted or empty selection shows every panel. Unknown names are ignored.
+const visibleGroups = computed(() => {
+  const allowed = new Set<string>(props.options.panels || [])
+  if (!allowed.size) return GROUPS
+  const groups = GROUPS.map((group) => ({
+    ...group,
+    tabs: group.tabs.filter((item) => allowed.has(item.value)),
+  })).filter((group) => group.tabs.length)
 
-const overlays = ref(null)
+  return groups
+})
+const visibleTabs = computed(() => visibleGroups.value.flatMap((group) => group.tabs))
+const getFirstTab = () =>
+  visibleTabs.value.find((item) => item.value === props.options.tab)?.value || visibleTabs.value[0]?.value
+
+const overlays = ref<HTMLElement>()
 
 provide('overlayTarget', overlays)
 providePortalTarget(overlays)
 
 const isOpen = ref(props.open)
-const tab = ref(TABS[0].value)
-const store = ref(createStore(props.context))
+const tab = ref(getFirstTab())
+const store = ref(createStore(props.context, __))
 
 watch(
   () => props.open,
   (open) => {
     if (open) {
-      store.value = createStore(props.context)
-      tab.value = TABS[0].value
+      store.value = createStore(props.context, __)
+      tab.value = getFirstTab()
     }
 
     isOpen.value = open
@@ -116,16 +138,22 @@ watch(
 
 watch(isOpen, (open) => !open && emit('close'))
 
-const isDark = ref(document.documentElement.dataset.theme === 'dark')
-let themeWatcher
+// Desk sets `data-theme="dark"`. Tailwind apps, such as Raven, set the `dark` class.
+const isPageDark = () =>
+  document.documentElement.dataset.theme === 'dark' ||
+  document.documentElement.classList.contains('dark')
+
+const pageDark = ref(isPageDark())
+const isDark = computed(() => props.options.theme === 'dark' || (props.options.theme !== 'light' && pageDark.value))
+let themeWatcher: MutationObserver | undefined
 
 onMounted(() => {
   themeWatcher = new MutationObserver(() => {
-    isDark.value = document.documentElement.dataset.theme === 'dark'
+    pageDark.value = isPageDark()
   })
 
   themeWatcher.observe(document.documentElement, {
-    attributeFilter: ['data-theme'],
+    attributeFilter: ['data-theme', 'class'],
   })
 })
 
@@ -135,63 +163,84 @@ const updateCount = computed(() => store.value.state.marketplace?.update_count |
 </script>
 
 <template>
-  <ConfigProvider :teleport-to="overlays">
-    <SettingsDialog
-      v-model:open="isOpen"
-      v-model:tab="tab"
-      size="5xl"
-      :keyboard-shortcut="false"
-      :unmount-on-hide="false"
-    >
-      <template #title>{{ __("Cloud Settings") }}</template>
+  <div class="cloud-settings-root" :data-theme="isDark ? 'dark' : 'light'">
+    <ConfigProvider :teleport-to="overlays">
+      <div ref="overlays">
+        <ToastProvider />
+      </div>
+      <SettingsDialog
+        v-if="overlays"
+        v-model:open="isOpen"
+        v-model:tab="tab"
+        size="5xl"
+        :keyboard-shortcut="false"
+        :unmount-on-hide="true"
+      >
+        <template #title>{{ __("Cloud Settings") }}</template>
 
-      <SettingsSidebar class="!border-0">
-        <SettingsNavGroup>
-          <span class="mb-1 flex h-7 items-center px-2 text-base text-ink-gray-7">
-            <FrappeCloudLogo class="mr-2 size-4 rounded-2" />
-            {{ __("Cloud Settings") }}
-          </span>
+        <Button
+          class="absolute right-3 top-3 z-20"
+          variant="ghost"
+          icon="lucide-x"
+          :aria-label="__('Close Cloud Settings')"
+          @click="emit('close')"
+        />
 
-          <template v-for="(group, index) in GROUPS" :key="index">
-            <span
-              v-if="group.label"
-              class="mt-1.5 flex h-7 items-center px-2 text-sm-medium text-ink-gray-5"
-            >
-              {{ group.label }}
+        <div class="shrink-0 border-b border-outline-gray-1 bg-surface-sidebar px-4 pb-4 pt-3 sm:hidden">
+          <p class="mb-3 pr-8 text-base-semibold text-ink-gray-8">{{ __('Cloud Settings') }}</p>
+          <Select
+            v-model="tab"
+            :label="__('Panel')"
+            :options="visibleTabs.map((item) => ({ label: item.label, value: item.value }))"
+          />
+        </div>
+
+        <SettingsSidebar class="cloud-settings-sidebar hidden !border-0 sm:flex">
+          <SettingsNavGroup>
+            <span class="mb-1 flex h-7 items-center px-2 text-base text-ink-gray-7">
+              <FrappeCloudLogo class="mr-2 size-4 rounded-2" />
+              {{ __("Cloud Settings") }}
             </span>
 
-            <SettingsNavItem
-              v-for="(item, position) in group.tabs"
-              :key="item.value"
-              :class="index && !group.label && !position && 'mt-1.5'"
-              :value="item.value"
-            >
-              <template #prefix>
-                <span :class="[item.icon, 'size-4 shrink-0 text-ink-gray-6']" />
-              </template>
-              {{ item.label }}
+            <template v-for="(group, index) in visibleGroups" :key="index">
+              <span
+                v-if="group.label"
+                class="mt-1.5 flex h-7 items-center px-2 text-sm-medium text-ink-gray-5"
+              >
+                {{ group.label }}
+              </span>
 
-              <template #suffix>
-                <Badge
-                  v-if="item.value === 'marketplace' && updateCount"
-                  theme="gray"
-                  :label="String(updateCount)"
-                />
-              </template>
-            </SettingsNavItem>
-          </template>
-        </SettingsNavGroup>
-      </SettingsSidebar>
+              <SettingsNavItem
+                v-for="(item, position) in group.tabs"
+                :key="item.value"
+                :class="index && !group.label && !position && 'mt-1.5'"
+                :value="item.value"
+              >
+                <template #prefix>
+                  <span :class="[item.icon, 'size-4 shrink-0 text-ink-gray-6']" />
+                </template>
+                {{ item.label }}
 
-      <SettingsContent class="bg-surface-base">
-        <SettingsPanel v-for="item in TABS" :key="item.value" :value="item.value">
-          <component :is="item.component" :store="store" :active="tab === item.value" />
-        </SettingsPanel>
-      </SettingsContent>
-    </SettingsDialog>
+                <template #suffix>
+                  <Badge
+                    v-if="item.value === 'marketplace' && updateCount"
+                    theme="gray"
+                    :label="String(updateCount)"
+                  />
+                </template>
+              </SettingsNavItem>
+            </template>
+          </SettingsNavGroup>
+        </SettingsSidebar>
 
-    <div ref="overlays" :data-theme="isDark ? 'dark' : 'light'" />
+        <SettingsContent class="min-w-0 bg-surface-base">
+          <SettingsPanel v-for="item in visibleTabs" :key="item.value" :value="item.value" class="min-w-0">
+            <component :is="item.component" :store="store" :active="tab === item.value" />
+          </SettingsPanel>
+        </SettingsContent>
+      </SettingsDialog>
 
-    <TailwindStyles />
-  </ConfigProvider>
+      <TailwindStyles />
+    </ConfigProvider>
+  </div>
 </template>

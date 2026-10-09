@@ -16,6 +16,7 @@ class RenameSiteTask(Task):
     new_name: str
     # Keep the old hostname by default so existing links continue to work.
     keep_old_hostname: bool = True
+    make_primary: bool = False
 
     def run(self) -> None:
         self.require_production_privileges()
@@ -27,6 +28,7 @@ class RenameSiteTask(Task):
             self.new_name,
             on_progress=self.report,
             keep_old_hostname=self.keep_old_hostname,
+            make_primary=self.make_primary,
         )
 
 

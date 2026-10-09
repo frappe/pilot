@@ -1,17 +1,15 @@
 from __future__ import annotations
 
-import ast
 import typing
 from pathlib import Path
 
-from pilot.core.app.validator.base import module_path
+from pilot.core.app.validator.base import get_bench_python, module_path
+from pilot.core.app.validator.utils.bench_runner import run_in_bench
 from pilot.exceptions import AppValidationError
 
 if typing.TYPE_CHECKING:
     from pilot.core.app import App
 
-# frappe's append_hook branches on dict, so a non-dict here reaches consumers
-# that call .items() and breaks install or migrate.
 _DICT_HOOKS = frozenset(
     [
         "additional_timeline_content",
@@ -35,8 +33,6 @@ _DICT_HOOKS = frozenset(
     ]
 )
 
-# Hooks whose leaf strings are dotted paths frappe resolves with get_attr(). A
-# stale path fails when the hook fires - often mid-migrate.
 _PATH_HOOKS = frozenset(
     [
         "additional_timeline_content",
@@ -82,10 +78,106 @@ _PATH_HOOKS = frozenset(
     ]
 )
 
+_HOOKS_AST_SCRIPT = """
+import ast, json, sys
 
-# Shapes a dict hook definitely isn't. A name or a call may still evaluate to a
-# dict at import time, so those are left alone rather than guessed at.
-_NOT_A_DICT = (ast.List, ast.Tuple, ast.Set, ast.Constant)
+req = json.load(sys.stdin)
+path = req["path"]
+try:
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        tree = ast.parse(f.read(), filename=path)
+except SyntaxError as exc:
+    print(json.dumps({"syntax_error": f"line {exc.lineno}: {exc.msg}"}))
+    sys.exit(0)
+except (OSError, UnicodeDecodeError):
+    print(json.dumps({"dict_errors": [], "path_hooks": []}))
+    sys.exit(0)
+
+dict_hooks = set(req.get("dict_hooks", []))
+path_hooks = set(req.get("path_hooks", []))
+
+def string_values(node):
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return [(node.value, node.lineno)]
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        return [found for el in node.elts for found in string_values(el)]
+    if isinstance(node, ast.Dict):
+        return [found for val in node.values if val for found in string_values(val)]
+    return []
+
+not_a_dict = (ast.List, ast.Tuple, ast.Set, ast.Constant)
+dict_errors = []
+found_paths = []
+
+for node in tree.body:
+    if isinstance(node, ast.Assign):
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                name = target.id
+                val = node.value
+                if name in dict_hooks and isinstance(val, not_a_dict):
+                    dict_errors.append(f"line {val.lineno}: {name} must be a dict")
+                elif name in path_hooks:
+                    for p, lineno in string_values(val):
+                        found_paths.append([name, p, lineno])
+
+print(json.dumps({"dict_errors": dict_errors, "path_hooks": found_paths}))
+"""
+
+_SYMBOLS_AST_SCRIPT = """
+import ast, json, sys
+
+req = json.load(sys.stdin)
+path = req["path"]
+try:
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        tree = ast.parse(f.read(), filename=path)
+except SyntaxError as exc:
+    print(json.dumps({"syntax_error": f"line {exc.lineno}: {exc.msg}"}))
+    sys.exit(0)
+except (OSError, UnicodeDecodeError):
+    print(json.dumps({"symbols": [], "wildcard": False}))
+    sys.exit(0)
+
+def reachable_statements(body):
+    stmts = []
+    for node in body:
+        stmts.append(node)
+        if isinstance(node, ast.If):
+            stmts += reachable_statements(node.body + node.orelse)
+        elif isinstance(node, ast.Try):
+            handled = [s for h in node.handlers for s in h.body]
+            stmts += reachable_statements(node.body + node.orelse + node.finalbody + handled)
+    return stmts
+
+symbols = set()
+wildcard = False
+for node in reachable_statements(tree.body):
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        symbols.add(node.name)
+    elif isinstance(node, (ast.Import, ast.ImportFrom)):
+        for alias in node.names:
+            if alias.name == "*":
+                wildcard = True
+                break
+            symbols.add(alias.asname or alias.name.split(".", 1)[0])
+        if wildcard:
+            break
+    elif isinstance(node, ast.Assign):
+        for t in node.targets:
+            if isinstance(t, ast.Name):
+                symbols.add(t.id)
+    elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+        symbols.add(node.target.id)
+
+print(json.dumps({"wildcard": wildcard, "symbols": list(symbols)}))
+"""
+
+
+@typing.final
+class _HooksData(typing.NamedTuple):
+    dict_errors: list[str]
+    path_hooks: list[tuple[str, str, int]]
 
 
 class HooksCheck:
@@ -99,20 +191,8 @@ class HooksCheck:
         hooks_path = module_path(app) / "hooks.py"
         if not hooks_path.is_file():
             return  # RepoStructureCheck owns this when it runs; updates skip it
-        tree = ast.parse(hooks_path.read_text())
 
-        problems = []
-        for name, value in _hook_assignments(tree):
-            if name in _DICT_HOOKS and isinstance(value, _NOT_A_DICT):
-                problems.append(f"line {value.lineno}: {name} must be a dict")
-                continue
-            if name not in _PATH_HOOKS:
-                continue
-            for path, lineno in _string_values(value):
-                error = _path_error(app, path)
-                if error:
-                    problems.append(f"line {lineno}: {name} -> {path}: {error}")
-
+        problems = self._validate_hooks(app, hooks_path)
         if problems:
             raise AppValidationError(
                 f"'{app.config.name}' has invalid hooks in {app.module_name}/hooks.py:\n"
@@ -121,29 +201,39 @@ class HooksCheck:
                 "https://docs.frappe.io/framework/user/en/python-api/hooks"
             )
 
+    @classmethod
+    def _validate_hooks(cls, app: "App", hooks_path: Path) -> list[str]:
+        data = cls._extract_hooks_data(app, hooks_path)
+        problems = list(data.dict_errors)
+        for name, path, lineno in data.path_hooks:
+            error = _path_error(app, path)
+            if error:
+                problems.append(f"line {lineno}: {name} -> {path}: {error}")
+        return problems
 
-def _hook_assignments(tree: ast.Module) -> list[tuple[str, ast.expr]]:
-    """Every module-level `hook_name = value` in hooks.py, as (name, value) pairs."""
-    hooks = []
-    for node in tree.body:
-        if isinstance(node, ast.Assign):
-            hooks += [(target.id, node.value) for target in node.targets if isinstance(target, ast.Name)]
-    return hooks
+    @classmethod
+    def _extract_hooks_data(cls, app: "App", hooks_path: Path) -> _HooksData:
+        bench_python = get_bench_python(app)
+        payload = {
+            "path": str(hooks_path),
+            "dict_hooks": list(_DICT_HOOKS),
+            "path_hooks": list(_PATH_HOOKS),
+        }
+        data = run_in_bench(bench_python, _HOOKS_AST_SCRIPT, payload)
+        if "syntax_error" in data:
+            raise AppValidationError(
+                f"'{app.config.name}' has syntax errors in {app.module_name}/hooks.py: {data['syntax_error']}"
+            )
+        return _HooksData(
+            dict_errors=data.get("dict_errors", []),
+            path_hooks=[(item[0], item[1], item[2]) for item in data.get("path_hooks", [])],
+        )
 
 
-def _string_values(node: ast.expr) -> list[tuple[str, int]]:
-    """Every string inside a hook's value, with its line number, however deeply nested.
-
-    `{"ToDo": {"on_update": ["myapp.overrides.on_update"]}}` yields that one path.
-    Dict keys are skipped - those are doctype names and cron expressions, not paths.
-    """
-    if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        return [(node.value, node.lineno)]
-    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
-        return [found for element in node.elts for found in _string_values(element)]
-    if isinstance(node, ast.Dict):
-        return [found for value in node.values if value for found in _string_values(value)]
-    return []
+def _resolve_package(app: "App", app_module: str) -> Path:
+    if app_module == app.module_name:
+        return module_path(app)
+    return app.bench.apps_path / app_module / app_module
 
 
 def _path_error(app: "App", dotted: str) -> str | None:
@@ -152,11 +242,7 @@ def _path_error(app: "App", dotted: str) -> str | None:
     `"myapp.setup.after_migrate"` looks for `after_migrate` in `myapp/setup.py`.
     """
     app_module, *rest = dotted.rsplit(":", 1)[-1].split(".")  # jenv-style "alias:path"
-    # The app under validation may be staged outside apps/; anything else is a
-    # pip package, which ImportCheck already covers.
-    package = (
-        module_path(app) if app_module == app.module_name else app.bench.apps_path / app_module / app_module
-    )
+    package = _resolve_package(app, app_module)
     if not package.is_dir():
         return None
 
@@ -166,12 +252,18 @@ def _path_error(app: "App", dotted: str) -> str | None:
     if not attributes:
         return None  # the path names a module, not something inside one
 
-    symbols = _top_level_symbols(module_file)
-    if symbols is None or attributes[0] in symbols:
+    return _check_module_attribute(module_file, attributes[0], app)
+
+
+def _check_module_attribute(module_file: Path, attribute: str, app: "App") -> str | None:
+    result = _top_level_symbols(module_file, app)
+    if isinstance(result, str):
+        return f"cannot parse '{module_file.name}': {result}"
+    if result is None or attribute in result:
         return None
     # Only the first attribute is checked, so `some.module.Class.method` stops at `Class`.
     module_name = module_file.parent.name if module_file.stem == "__init__" else module_file.stem
-    return f"'{module_name}' has no '{attributes[0]}'"
+    return f"'{module_name}' has no '{attribute}'"
 
 
 def _find_module(package: Path, parts: list[str]) -> tuple[Path | None, list[str]]:
@@ -186,8 +278,6 @@ def _find_module(package: Path, parts: list[str]) -> tuple[Path | None, list[str
         elif (current / f"{part}.py").is_file():
             return current / f"{part}.py", parts[index + 1 :]
         else:
-            # Neither: `part` and everything after it must be attributes of the
-            # package we're standing in, defined in its __init__.py.
             return _package_init(current), parts[index:]
     return _package_init(current), []
 
@@ -197,39 +287,16 @@ def _package_init(package: Path) -> Path | None:
     return init if init.is_file() else None
 
 
-def _reachable_statements(body: list[ast.stmt]) -> list[ast.stmt]:
-    """Module-level statements, plus those inside any if/try guarding them.
-
-    A name defined in an `except ImportError:` fallback or behind a version
-    check is as importable as one defined at the top level.
-    """
-    statements = []
-    for node in body:
-        statements.append(node)
-        if isinstance(node, ast.If):
-            statements += _reachable_statements(node.body + node.orelse)
-        elif isinstance(node, ast.Try):
-            handled = [statement for handler in node.handlers for statement in handler.body]
-            statements += _reachable_statements(node.body + node.orelse + node.finalbody + handled)
-    return statements
-
-
-def _top_level_symbols(module_file: Path) -> set[str] | None:
+def _top_level_symbols(module_file: Path, app: "App" | None = None) -> set[str] | str | None:
     """Names a module defines or imports - everything frappe's get_attr() could find.
 
     None means a `from x import *` hides them, so nothing can be concluded.
+    Returns error string if syntax is unparseable.
     """
-    symbols = set()
-    for node in _reachable_statements(ast.parse(module_file.read_text()).body):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            symbols.add(node.name)
-        elif isinstance(node, (ast.Import, ast.ImportFrom)):
-            for alias in node.names:
-                if alias.name == "*":
-                    return None
-                symbols.add(alias.asname or alias.name.split(".", 1)[0])
-        elif isinstance(node, ast.Assign):
-            symbols.update(target.id for target in node.targets if isinstance(target, ast.Name))
-        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-            symbols.add(node.target.id)
-    return symbols
+    bench_python = get_bench_python(app)
+    data = run_in_bench(bench_python, _SYMBOLS_AST_SCRIPT, {"path": str(module_file)})
+    if "syntax_error" in data:
+        return f"syntax error: {data['syntax_error']}"
+    if data.get("wildcard"):
+        return None
+    return set(data.get("symbols", []))

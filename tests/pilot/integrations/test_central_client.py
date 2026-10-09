@@ -131,9 +131,7 @@ def test_datum_token_unwraps_message_and_targets_method_path() -> None:
     def fake_urlopen(request, timeout=None):
         captured["url"] = request.full_url
         captured["method"] = request.method
-        return _FakeResponse(
-            {"message": {"token": "jwt-123", "expires_in": 604800, "resource_id": "vm-1"}}
-        )
+        return _FakeResponse({"message": {"token": "jwt-123", "expires_in": 604800, "resource_id": "vm-1"}})
 
     with patch("pilot.integrations.central.client.urllib.request.urlopen", side_effect=fake_urlopen):
         result = CentralClient().datum_token()
@@ -219,6 +217,19 @@ def test_proxy_forwards_allowlisted_billing_method(tmp_path: Path) -> None:
     assert response.get_json() == {"currency": "INR"}
     assert forward.call_args.args[0] == "central.billing.api.billing_api.get_billing_summary"
     assert forward.call_args.args[1] == "GET"
+
+
+def test_proxy_forwards_a_team_identity_token_request(tmp_path: Path) -> None:
+    client = _app_client(tmp_path / "bench")
+    method = "central.api.pilot.get_team_identity_token"
+    body = {"audience": "https://relay.example.test"}
+    with patch(
+        "admin.backend.api.v1.sites.central.CentralClient.forward", return_value={"token": "t"}
+    ) as forward:
+        response = client.post(f"/api/v1/sites/s1.localhost/central/{method}", json=body)
+
+    assert response.status_code == 200
+    forward.assert_called_once_with(method, "POST", body)
 
 
 def test_proxy_rejects_non_allowlisted_method(tmp_path: Path) -> None:

@@ -119,6 +119,9 @@ def stream_log(filename: str):
     def generate():
         try:
             for line in provider.follow_file(filename, should_stop=is_draining):
+                if line is None:
+                    yield ": heartbeat\n\n"
+                    continue
                 yield f"data: {json.dumps({'line': line})}\n\n"
         except ValueError as error:
             yield f"data: {json.dumps({'error': str(error)})}\n\n"

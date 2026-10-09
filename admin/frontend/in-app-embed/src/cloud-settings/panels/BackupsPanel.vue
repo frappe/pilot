@@ -1,10 +1,16 @@
 <script setup lang="ts">
-import { Badge, Button, Dialog, Dropdown, ErrorMessage } from 'frappe-ui'
+import { useTranslation } from '../translation'
+import { createBackup, deleteBackup, getBackupDownloadLinks, getBackups } from '@frappe/cloud-sdk/api'
+import type { Backup, BackupFile, Backups } from '@frappe/cloud-sdk'
+import { Badge, Button, Dialog, Dropdown, ErrorMessage, toast } from 'frappe-ui'
 import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
 import Panel from '../components/Panel.vue'
 import Table from '../components/Table.vue'
 import { openExternal } from '../external'
-import { settleTask, type Store } from '../store'
+import { useErrorMessage, type Store, settleTask } from '../store'
+
+const __ = useTranslation()
+const getErrorMessage = useErrorMessage()
 
 interface Props {
   store: Store
@@ -12,26 +18,25 @@ interface Props {
 }
 
 const props = defineProps<Props>()
-const store = props.store
 
-const FILE_LABELS = {
+const FILE_LABELS: Record<string, string> = {
   database: __('Download Database'),
   'public-file': __('Download Public'),
   'private-file': __('Download Private'),
   site_config: __('Download Config'),
 }
 
-const LINK_KEYS = {
+const LINK_KEYS: Record<string, string> = {
   database: 'database',
   'public-file': 'files',
   'private-file': 'private_files',
   site_config: 'site_config',
 }
 
-const backups = ref(null)
+const backups = ref<Backups | null>(null)
 const error = ref('')
 const creating = ref(false)
-const deleteTarget = ref(null)
+const deleteTarget = ref<Backup | null>(null)
 const showDelete = ref(false)
 const deleting = ref(false)
 const overlayTarget = inject('overlayTarget', 'body')
@@ -44,9 +49,9 @@ const load = async () => {
   error.value = ''
 
   try {
-    backups.value = await store.api.getBackups()
+    backups.value = await getBackups()
   } catch (exception) {
-    error.value = store.api.getErrorMessage(exception)
+    error.value = getErrorMessage(exception)
   }
 }
 
@@ -60,7 +65,7 @@ watch(
 
 const loadFailed = computed(() => Boolean(error.value) && !backups.value)
 
-const formatDate = (value) =>
+const formatDate = (value: string) =>
   new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 
 const columns = [
@@ -72,7 +77,7 @@ const columns = [
   { label: '', key: 'actions', class: 'w-12' },
 ]
 
-const formatSize = (bytes) => {
+const formatSize = (bytes?: number) => {
   if (!bytes) return '-'
 
   return bytes < 1024 ** 2
@@ -80,7 +85,7 @@ const formatSize = (bytes) => {
     : `${(bytes / 1024 ** 2).toFixed(1)} MB`
 }
 
-const fileSize = (backup, kind) =>
+const fileSize = (backup: Backup, kind: string) =>
   formatSize(backup.files.find((file) => file.kind === kind)?.size_bytes)
 
 const rows = computed(() =>
@@ -99,63 +104,64 @@ const backUp = async () => {
   error.value = ''
 
   try {
-    const { task_id } = await store.api.createBackup()
+    const { task_id } = await createBackup()
 
-    if (!(await settleTask(task_id, () => gone, __("Couldn't back up the site.")))) return
+    if (!(await settleTask(task_id, () => gone, __("Couldn't back up the site."), __))) return
 
     await load()
 
-    frappe.show_alert({ message: __('Backup done.'), indicator: 'green' })
+    toast.success(__('Backup done.'))
   } catch (exception) {
-    error.value = store.api.getErrorMessage(exception)
+    error.value = getErrorMessage(exception)
   } finally {
     creating.value = false
   }
 }
 
-const download = async (backup, file) => {
+const download = async (backup: Backup, file: BackupFile) => {
   error.value = ''
 
   if (!backup.is_offsite) return openExternal(`/backups/${encodeURIComponent(file.filename)}`)
 
   try {
-    const links = await store.api.getBackupDownloadLinks(backup.timestamp)
+    const links = await getBackupDownloadLinks(backup.timestamp)
     const url = links[LINK_KEYS[file.kind]]
 
     if (!url) throw new Error(__('This file is not in the offsite backup.'))
 
     openExternal(url)
   } catch (exception) {
-    error.value = store.api.getErrorMessage(exception)
+    error.value = getErrorMessage(exception)
   }
 }
 
-const askDelete = (backup) => {
+const askDelete = (backup: Backup) => {
   deleteTarget.value = backup
   showDelete.value = true
 }
 
 const confirmDelete = async () => {
+  if (!deleteTarget.value) return
   showDelete.value = false
   deleting.value = true
   error.value = ''
 
   try {
-    const { task_id } = await store.api.deleteBackup(deleteTarget.value.timestamp)
+    const { task_id } = await deleteBackup(deleteTarget.value.timestamp)
 
-    if (!(await settleTask(task_id, () => gone, __("Couldn't delete the backup.")))) return
+    if (!(await settleTask(task_id, () => gone, __("Couldn't delete the backup."), __))) return
 
     await load()
 
-    frappe.show_alert({ message: __('Backup deleted.'), indicator: 'green' })
+    toast.success(__('Backup deleted.'))
   } catch (exception) {
-    error.value = store.api.getErrorMessage(exception)
+    error.value = getErrorMessage(exception)
   } finally {
     deleting.value = false
   }
 }
 
-const menuOptions = (backup) => [
+const menuOptions = (backup: Backup) => [
   ...backup.files.map((file) => ({
     label: FILE_LABELS[file.kind] || file.kind,
     icon: 'lucide-download',
@@ -164,7 +170,7 @@ const menuOptions = (backup) => [
   {
     label: __('Delete backup'),
     icon: 'lucide-trash-2',
-    theme: 'red',
+    theme: 'red' as const,
     onClick: () => askDelete(backup),
   },
 ]
@@ -191,7 +197,7 @@ const menuOptions = (backup) => [
 
     <ErrorMessage :message="loadFailed ? '' : error" class="mb-4" />
 
-    <p v-if="!backups.length" class="py-12 text-center text-p-sm text-ink-gray-5">
+    <p v-if="!backups?.length" class="py-12 text-center text-p-sm text-ink-gray-5">
       {{ __("No backups yet.") }}
     </p>
 

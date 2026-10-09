@@ -85,3 +85,23 @@ def test_log_events_emits_a_structured_error_for_an_invalid_filename(tmp_path: P
         assert "error" in event
     else:
         assert response.status_code == 404
+
+
+def test_a_quiet_log_stream_sends_a_heartbeat_comment(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+
+    with patch("admin.backend.providers.logs.LogProvider.follow_file", return_value=iter(["first line", None])):
+        body = client.get("/api/v1/logs/web.log/events").get_data(as_text=True)
+
+    assert body == 'data: {"line": "first line"}\n\n: heartbeat\n\n'
+
+
+def test_follow_file_sends_a_heartbeat_when_the_file_stays_quiet(tmp_path: Path, monkeypatch) -> None:
+    import admin.backend.providers.logs as logs_module
+    from admin.backend.providers.logs import LogProvider
+
+    _make_log(tmp_path, "web.log", "")
+    clock = iter(range(0, 1000, 10))
+    monkeypatch.setattr(logs_module.time, "monotonic", lambda: next(clock))
+
+    assert next(LogProvider(tmp_path).follow_file("web.log")) is None

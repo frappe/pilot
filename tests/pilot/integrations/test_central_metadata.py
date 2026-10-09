@@ -7,7 +7,9 @@ from unittest.mock import patch
 import pytest
 
 from pilot.config.bench import BenchConfig
+from pilot.exceptions import ConfigError
 from pilot.integrations.central import CentralClientError, InstanceMetadata, apply_central_config
+from pilot.integrations.central.metadata import CONFIG_ATTRIBUTES
 from tests.pilot.integrations.test_central_client import _bench
 
 _ATTRIBUTE = {
@@ -19,29 +21,24 @@ _ATTRIBUTE = {
 
 # Pilot only checks the shape; the admin validates the keys.
 _KEY_SET = {"keys": [{"kid": "atlas-key"}]}
-_S3 = {
-    "access_key": "garage-access",
-    "secret_key": "garage-secret",
-    "bucket": "team-42-in-mumbai-backups",
-    "provider": "garage",
-    "region": "in-mumbai",
-    "endpoint_url": "https://s3.in-mumbai.example.test",
-}
-_TELEMETRY = {"endpoint": "https://datum.in-mumbai.example.test", "token": "datum-token"}
+_S3 = {"bucket": "team-42-backups", "endpoint_url": "https://s3.example.test"}
+_TELEMETRY = {"endpoint": "https://datum.example.test", "token": "datum-token"}
 
 
 class _FakeMetadata(InstanceMetadata):
     """The metadata service. A None value means the attribute is unset."""
 
-    def __init__(self, value: str | None, storage: str | None = None, telemetry: str | None = None) -> None:
+    def __init__(self, value: str | None, **config: dict) -> None:
         super().__init__()
         self.value = value
-        self.blocks = {"pilot-storage": storage, "pilot-telemetry": telemetry}
+        self.config = {CONFIG_ATTRIBUTES[target]: json.dumps(patch) for target, patch in config.items()}
         self.requested: list[str] = []
 
     def get_attribute(self, name: str) -> str | None:
         self.requested.append(name)
-        return self.blocks.get(name, self.value)
+        if name in CONFIG_ATTRIBUTES.values():
+            return self.config.get(name)
+        return self.value
 
 
 def test_credentials_come_back_from_the_configured_attribute(monkeypatch) -> None:
@@ -49,7 +46,7 @@ def test_credentials_come_back_from_the_configured_attribute(monkeypatch) -> Non
     metadata = _FakeMetadata(json.dumps(_ATTRIBUTE))
 
     assert metadata.get_credentials() == _ATTRIBUTE
-    assert metadata.requested == ["my-key", "pilot-storage", "pilot-telemetry"]
+    assert metadata.requested == ["my-key"]
 
 
 def test_an_unset_attribute_is_not_an_error() -> None:
@@ -140,12 +137,6 @@ def test_the_initial_jwks_cache_comes_back_with_the_credentials() -> None:
     assert credentials["initial_jwks_cache"] == _KEY_SET
 
 
-def test_storage_configuration_comes_back_with_the_credentials() -> None:
-    credentials = _FakeMetadata(json.dumps(_ATTRIBUTE), storage=json.dumps(_S3)).get_credentials()
-
-    assert credentials["s3"] == _S3
-
-
 def test_an_initial_jwks_cache_that_is_not_an_object_raises() -> None:
     malformed = json.dumps({**_ATTRIBUTE, "initial_jwks_cache": "keys"})
 
@@ -170,71 +161,48 @@ def test_apply_hands_over_the_credentials_before_the_host_reads_as_bootstrapped(
     assert seen == [(_KEY_SET, False)]
 
 
-def test_apply_saves_central_storage_as_the_default_s3_config(tmp_path: Path) -> None:
+def test_apply_merges_the_config_patches(tmp_path: Path) -> None:
     bench = _awaiting_bench(tmp_path)
+    metadata = _FakeMetadata(
+        json.dumps(_ATTRIBUTE),
+        common_config={"telemetry": _TELEMETRY},
+        bench_config={"s3": _S3},
+        common_site_config={"max_file_size": 1024},
+    )
 
-    apply_central_config(bench, _FakeMetadata(json.dumps(_ATTRIBUTE), storage=json.dumps(_S3)))
+    assert apply_central_config(bench, metadata) is True
 
     saved = BenchConfig.read(bench.path)
-    assert saved.s3.access_key == "garage-access"
-    assert saved.s3.secret_key == "garage-secret"
-    assert saved.s3.bucket == "team-42-in-mumbai-backups"
-    assert saved.s3.provider == "garage"
-    assert saved.s3.region == "in-mumbai"
-    assert saved.s3.endpoint_url == "https://s3.in-mumbai.example.test"
+    assert saved.telemetry.token == "datum-token"
+    assert saved.s3.bucket == "team-42-backups"
+    assert json.loads((bench.sites_path / "common_site_config.json").read_text())["max_file_size"] == 1024
 
 
-def test_apply_preserves_an_existing_provider_config(tmp_path: Path) -> None:
+def test_a_bad_config_patch_leaves_the_host_awaiting(tmp_path: Path) -> None:
     bench = _awaiting_bench(tmp_path)
-    with BenchConfig.open(bench.path) as config:
-        config.s3.access_key = "customer-access"
-        config.s3.secret_key = "customer-secret"
-        config.s3.bucket = "customer-backups"
-        config.s3.provider = "aws"
-        config.s3.region = "us-east-1"
+    hostile = {"telemetry": {**_TELEMETRY, "endpoint": "http://169.254.169.254/"}}
 
-    apply_central_config(bench, _FakeMetadata(json.dumps(_ATTRIBUTE), storage=json.dumps(_S3)))
+    with pytest.raises(ConfigError):
+        apply_central_config(bench, _FakeMetadata(json.dumps(_ATTRIBUTE), common_config=hostile))
 
-    assert BenchConfig.read(bench.path).s3.provider == "aws"
+    assert BenchConfig.read(bench.path).central.bootstrapped is False
 
 
-def test_telemetry_comes_back_with_the_credentials() -> None:
-    credentials = _FakeMetadata(json.dumps(_ATTRIBUTE), telemetry=json.dumps(_TELEMETRY)).get_credentials()
-
-    assert credentials["telemetry"] == _TELEMETRY
-
-
-def test_apply_saves_the_datum_credential(tmp_path: Path) -> None:
+@pytest.mark.parametrize("central", [{"bootstrapped": True}, {"enabled": False}, None])
+def test_a_patch_cannot_change_the_bootstrap_state(tmp_path: Path, central) -> None:
     bench = _awaiting_bench(tmp_path)
 
-    apply_central_config(bench, _FakeMetadata(json.dumps(_ATTRIBUTE), telemetry=json.dumps(_TELEMETRY)))
+    with pytest.raises(CentralClientError, match="central settings"):
+        apply_central_config(bench, _FakeMetadata(json.dumps(_ATTRIBUTE), common_config={"central": central}))
 
-    saved = BenchConfig.read(bench.path).telemetry
-    assert saved.endpoint == "https://datum.in-mumbai.example.test"
-    assert saved.token == "datum-token"
-
-
-def test_an_incomplete_telemetry_block_raises() -> None:
-    incomplete = json.dumps({"endpoint": _TELEMETRY["endpoint"]})
-
-    with pytest.raises(CentralClientError, match="pilot-telemetry' is missing: token"):
-        _FakeMetadata(json.dumps(_ATTRIBUTE), telemetry=incomplete).get_credentials()
+    assert BenchConfig.read(bench.path).central.is_awaiting_bootstrap is True
 
 
-def test_a_metadata_flavoured_telemetry_endpoint_is_rejected() -> None:
-    hostile = json.dumps({**_TELEMETRY, "endpoint": "http://169.254.169.254/"})
+def test_a_config_attribute_that_is_not_an_object_raises() -> None:
+    metadata = _FakeMetadata(json.dumps(_ATTRIBUTE), bench_config=["s3"])
 
-    with pytest.raises(CentralClientError, match="pilot-telemetry"):
-        _FakeMetadata(json.dumps(_ATTRIBUTE), telemetry=hostile).get_credentials()
-
-
-def test_blocks_inside_the_central_attribute_are_ignored() -> None:
-    attribute = json.dumps({**_ATTRIBUTE, "s3": _S3, "telemetry": _TELEMETRY})
-
-    credentials = _FakeMetadata(attribute).get_credentials()
-
-    assert "s3" not in credentials
-    assert "telemetry" not in credentials
+    with pytest.raises(CentralClientError, match="pilot-config"):
+        metadata.get_config_patch()
 
 
 def test_a_metadata_flavoured_endpoint_is_rejected() -> None:

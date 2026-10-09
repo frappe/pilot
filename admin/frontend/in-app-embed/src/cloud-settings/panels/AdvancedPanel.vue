@@ -1,9 +1,14 @@
 <script setup lang="ts">
+import { useTranslation } from '../translation'
+import { getAccountUrl } from '@frappe/cloud-sdk/api'
 import { Button, ErrorMessage, SettingsRow } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import Panel from '../components/Panel.vue'
 import { openExternal } from '../external'
-import type { Store } from '../store'
+import { useErrorMessage, type Store } from '../store'
+
+const __ = useTranslation()
+const getErrorMessage = useErrorMessage()
 
 interface Props {
   store: Store
@@ -33,13 +38,13 @@ const openBilling = async () => {
   try {
     const response = context.value.account_url
       ? { url: context.value.account_url }
-      : await props.store.api.getAccountUrl()
+      : await getAccountUrl()
 
     if (!response?.url) throw new Error(__('Central is not configured.'))
 
     openExternal(response.url)
   } catch (exception) {
-    billingError.value = props.store.api.getErrorMessage(exception)
+    billingError.value = getErrorMessage(exception)
   } finally {
     openingBilling.value = false
   }
@@ -50,6 +55,7 @@ const openBilling = async () => {
   <Panel :title="__('Advanced')" :description="__('Deeper controls for your server.')">
     <div class="divide-y divide-outline-gray-1 border-t border-outline-gray-1">
       <SettingsRow
+        class="flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-8"
         v-for="link in links"
         :key="link.title"
         label-for=""
@@ -69,6 +75,7 @@ const openBilling = async () => {
       <SettingsRow
         label-for=""
         :title="__('Account & billing')"
+        class="flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-8"
         :description="
           __('Payment methods, invoices, billing email and account settings.')
         "

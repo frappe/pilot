@@ -108,6 +108,16 @@ jobs:
         working-directory: admin/frontend/dashboard
         run: npx playwright install chromium
 
+      - name: Test Cloud Settings embed
+        if: matrix.db_type == 'mariadb'
+        run: |
+          npm ci --prefix admin/frontend/cloud-sdk
+          npm ci --prefix admin/frontend/in-app-embed
+          npm --prefix admin/frontend/cloud-sdk test
+          npm --prefix admin/frontend/cloud-sdk run build
+          cd admin/frontend/dashboard
+          npx playwright test --config cloud-settings.config.ts
+
       - name: Run e2e tests
         working-directory: tests/e2e
         # PILOT_BIN is intentionally unset so the harness uses the repo launcher

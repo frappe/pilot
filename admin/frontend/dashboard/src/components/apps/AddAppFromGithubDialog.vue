@@ -201,7 +201,7 @@ const submit = async () => {
       v-model="tab"
       :options="tabOptions"
       size="md"
-      class="mb-4 w-full [&>div]:w-full [&_[data-slot=tab-button]>span]:w-full"
+      class="mb-4"
     />
 
     <div v-if="tab === 'public'" class="flex items-end gap-2">

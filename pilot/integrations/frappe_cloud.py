@@ -15,6 +15,8 @@ _REQUEST_TIMEOUT_SECONDS = 30
 _DOWNLOAD_READ_TIMEOUT_SECONDS = 300
 _API = "/api/method/press.api.v1_migration"
 _TOKEN_HEADER = "X-Press-Migration-Token"
+# Cloudflare's Browser Integrity Check blocks urllib's default User-Agent with HTTP 403.
+_HEADERS = {"User-Agent": "pilot"}
 
 
 class FrappeCloud:
@@ -52,7 +54,7 @@ class FrappeCloud:
         """GET without `data`, POST with it. Frappe's error message is raised as is."""
         query = f"?{urllib.parse.urlencode(params)}" if params else ""
         body = urllib.parse.urlencode(data).encode() if data is not None else None
-        request = urllib.request.Request(f"{self.url}{_API}.{method}{query}", data=body)
+        request = urllib.request.Request(f"{self.url}{_API}.{method}{query}", data=body, headers=_HEADERS)
         if self.token:
             request.add_header(_TOKEN_HEADER, self.token)
         try:
@@ -70,7 +72,8 @@ def open_download_link(url: str) -> IO[bytes]:
     if urllib.parse.urlsplit(url).scheme not in ("http", "https"):
         raise FrappeCloudError("Frappe Cloud sent a download link that is not HTTP.")
     try:
-        return urllib.request.urlopen(url, timeout=_DOWNLOAD_READ_TIMEOUT_SECONDS)
+        request = urllib.request.Request(url, headers=_HEADERS)
+        return urllib.request.urlopen(request, timeout=_DOWNLOAD_READ_TIMEOUT_SECONDS)
     except (urllib.error.URLError, OSError, http.client.HTTPException) as error:
         raise FrappeCloudError(f"Could not download the backup: {error}") from error
 

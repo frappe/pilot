@@ -1,14 +1,25 @@
-<script setup lang="ts">
+<script setup lang="ts" generic="Row extends Record<string, unknown> & { id: string }">
+import { useTranslation } from '../translation'
+
+const __ = useTranslation()
+interface Column {
+  key: string
+  label: string
+  class?: string
+  cellClass?: string
+}
+
 interface Props {
-  columns: Record<string, any>[]
-  rows: Record<string, any>[]
+  columns: Column[]
+  rows: Row[]
 }
 
 defineProps<Props>()
+defineSlots<{ [name: string]: (props: { row: Row; column: Column; index: number }) => unknown }>()
 </script>
 
 <template>
-  <div class="min-h-0 overflow-auto">
+  <div class="min-h-0 overflow-auto" tabindex="0" role="region" :aria-label="__('Settings table')">
     <table class="border-separate border-spacing-0 min-w-full text-left">
       <thead>
         <tr>
@@ -24,7 +35,7 @@ defineProps<Props>()
       </thead>
 
       <tbody>
-        <tr v-for="(row, index) in rows" :key="row.id ?? index">
+        <tr v-for="(row, index) in rows" :key="row.id">
           <td
             v-for="column in columns"
             :key="column.key"

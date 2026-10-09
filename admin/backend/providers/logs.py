@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from pilot.managers.task.reader import HEARTBEAT_SECONDS
+
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mKJHfABCDGsu]")
 
 _MAX_STREAM_LINES = 5000  # cap on lines a single log tail-stream connection emits
@@ -68,11 +70,15 @@ class LogProvider:
     def get_file_path(self, filename: str) -> Path:
         return self._validated_path(filename)
 
-    def follow_file(self, filename: str, should_stop: Callable[[], bool] = lambda: False) -> Generator[str, None, None]:
-        """Yield new lines as they're written, like `tail -f`, until `should_stop`."""
+    def follow_file(
+        self, filename: str, should_stop: Callable[[], bool] = lambda: False
+    ) -> Generator[str | None, None, None]:
+        """Yield new lines as they're written, like `tail -f`, until `should_stop`. None is a
+        heartbeat, sent when the file stays quiet for HEARTBEAT_SECONDS."""
         log_path = self._validated_path(filename)
         log_path.touch()
         yielded = 0
+        last_write = time.monotonic()
 
         with open(log_path, "r", errors="replace") as file_handle:
             file_handle.seek(0, 2)  # seek to end
@@ -81,6 +87,10 @@ class LogProvider:
                 if line:
                     yield _ANSI_RE.sub("", line.rstrip("\n"))
                     yielded += 1
+                    last_write = time.monotonic()
+                elif time.monotonic() - last_write >= HEARTBEAT_SECONDS:
+                    yield None
+                    last_write = time.monotonic()
                 else:
                     time.sleep(0.2)
 

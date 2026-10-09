@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import gzip
 import json
+import shutil
+import subprocess
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -14,6 +17,8 @@ if TYPE_CHECKING:
     from pilot.core.site import Site
 
 RESTORE_PARTS = ("database", "public", "private", "config")
+# The end of tar's error output says why it failed.
+_STDERR_TAIL_BYTES = 4096
 # Keys that tie a config to its own database, cache, host or Pilot, so they stay as this site has them.
 LOCAL_CONFIG_PREFIXES = ("db_", "redis_", "pilot_", "atlas_")
 LOCAL_CONFIG_KEYS = frozenset({"rds_db", "host_name", "installed_apps", "maintenance_mode", "pause_scheduler"})
@@ -33,10 +38,20 @@ def backup_part(filename: str) -> str | None:
 
 
 @dataclass
+class BackupStream:
+    """A backup file read as it downloads. Its name tells the part and the compression."""
+
+    name: str
+    open: Callable[[], IO[bytes]]
+
+
+@dataclass
 class BackupRun:
-    """The files of one backup run on local disk, keyed by part."""
+    """The files of one backup run, keyed by part: on local disk, or streamed so a large
+    file needs no copy on disk."""
 
     files: dict[str, Path] = field(default_factory=dict)
+    streams: dict[str, BackupStream] = field(default_factory=dict)
 
     @classmethod
     def from_paths(cls, paths: list[Path]) -> BackupRun:
@@ -71,14 +86,12 @@ class SiteRestore:
         run: BackupRun,
         parts: list[str],
         on_progress: Callable[[str], None] = print,
-        open_dump: Callable[[], IO[bytes]] | None = None,
         skip_failing_patches: bool = False,
     ) -> None:
-        """`open_dump` opens a gzipped SQL dump that streams in, in place of a database file."""
-        self.require_parts(run, parts, has_database_stream=open_dump is not None)
+        self.require_parts(run, parts)
         self.site.set_maintenance_mode(True)
         try:
-            self.restore_parts(run, parts, on_progress, open_dump)
+            self.restore_parts(run, parts, on_progress)
             on_progress("Migrating the site...")
             self.site.migrate(skip_failing=skip_failing_patches)
         except Exception:
@@ -88,31 +101,31 @@ class SiteRestore:
         self.site.set_maintenance_mode(False)
 
     @staticmethod
-    def require_parts(run: BackupRun, parts: list[str], has_database_stream: bool = False) -> None:
+    def require_parts(run: BackupRun, parts: list[str]) -> None:
         if not parts or any(part not in RESTORE_PARTS for part in parts):
             raise BenchError(f"Choose what to restore: {', '.join(RESTORE_PARTS)}.")
-        available = set(run.files) | ({"database"} if has_database_stream else set())
+        available = set(run.files) | set(run.streams)
         if missing := [part for part in parts if part not in available]:
             raise BenchError(f"The backup has no {' or '.join(missing)} file.")
 
-    def restore_parts(
-        self,
-        run: BackupRun,
-        parts: list[str],
-        on_progress: Callable[[str], None],
-        open_dump: Callable[[], IO[bytes]] | None,
-    ) -> None:
-        if "database" in parts:
-            on_progress("Restoring the database...")
-            if open_dump is not None:
-                self.import_database_stream(open_dump)
-            else:
-                self.site.restore(str(run.files["database"]))
-            self.site.set_config_values(self.get_restored_database_config(run))
+    def restore_parts(self, run: BackupRun, parts: list[str], on_progress: Callable[[str], None]) -> None:
+        """Files go first: a stream that fails then stops the restore before the database is dropped."""
         for part in ("public", "private"):
             if part in parts:
-                on_progress(f"Restoring {part} files...")
-                self.extract_files(run.files[part], part)
+                if stream := run.streams.get(part):
+                    on_progress(f"Downloading and restoring {part} files...")
+                    self.extract_files_stream(stream, part)
+                else:
+                    on_progress(f"Restoring {part} files...")
+                    self.extract_files(run.files[part], part)
+        if "database" in parts:
+            if stream := run.streams.get("database"):
+                on_progress("Downloading and restoring the database...")
+                self.import_database_stream(stream.open)
+            else:
+                on_progress("Restoring the database...")
+                self.site.restore(str(run.files["database"]))
+            self.site.set_config_values(self.get_restored_database_config(run))
         if "config" in parts:
             on_progress("Restoring the site config...")
             values = run.site_config
@@ -139,6 +152,31 @@ class SiteRestore:
             ["tar", "xf", str(archive.resolve()), "--strip", "2", "--wildcards", f"*/{part}/files"],
             cwd=self.site.path,
         )
+
+    def extract_files_stream(self, stream: BackupStream, part: str) -> None:
+        """`extract_files` for an archive as it downloads. tar cannot detect compression
+        on a pipe, so a .tgz needs -z."""
+        compression = ["-z"] if stream.name.endswith(".tgz") else []
+        with tempfile.TemporaryFile() as stderr:
+            process = subprocess.Popen(
+                ["tar", "xf", "-", *compression, "--strip", "2", "--wildcards", f"*/{part}/files"],
+                cwd=self.site.path,
+                stdin=subprocess.PIPE,
+                stderr=stderr,
+            )
+            assert process.stdin is not None
+            try:
+                with stream.open() as source:
+                    shutil.copyfileobj(source, process.stdin)
+            except BrokenPipeError:
+                pass  # tar exited; its stderr says why
+            finally:
+                process.stdin.close()
+                return_code = process.wait()
+            if return_code != 0:
+                stderr.seek(max(0, stderr.seek(0, 2) - _STDERR_TAIL_BYTES))
+                error = stderr.read().decode(errors="replace").strip()
+                raise BenchError(f"Extracting the {part} files failed: {error}")
 
     def import_database_stream(self, open_dump: Callable[[], IO[bytes]]) -> None:
         """Replace the site's MariaDB database with the dump as it streams in, so a large

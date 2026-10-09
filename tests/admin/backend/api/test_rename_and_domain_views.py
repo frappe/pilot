@@ -47,12 +47,32 @@ def test_rename_queues_the_task_with_both_names(tmp_path: Path) -> None:
     kwargs = queue.call_args.kwargs
     assert kwargs["site"] == "old.localhost"
     assert kwargs["new_name"] == "new.localhost"
+    assert kwargs["make_primary"] is False
     assert set(kwargs["resource_key"]) == {
         "site:old.localhost",
         "site:new.localhost",
         "host:old.localhost",
         "host:new.localhost",
     }
+
+
+def test_rename_can_make_the_new_name_primary(tmp_path: Path) -> None:
+    bench_root = tmp_path / "bench"
+    client = _client(bench_root)
+    _make_site(bench_root, "old.localhost")
+
+    with patch("pilot.tasks.rename_site.RenameSiteTask.queue", return_value="task-1") as queue:
+        client.post(
+            "/api/v1/sites/old.localhost/actions/rename",
+            json={"new_name": "new.localhost", "make_primary": True},
+        )
+        refused = client.post(
+            "/api/v1/sites/old.localhost/actions/rename",
+            json={"new_name": "new.localhost", "make_primary": "yes"},
+        )
+
+    assert queue.call_args.kwargs["make_primary"] is True
+    assert refused.status_code == 422
 
 
 def test_rename_of_an_unknown_site_is_a_404(tmp_path: Path) -> None:
@@ -204,10 +224,13 @@ def test_an_unexpected_queue_failure_is_logged(tmp_path: Path, caplog) -> None:
     """A generic 500 is all the caller sees, so the cause has to reach the log."""
     client = _client(tmp_path / "bench")
 
-    with patch(
-        "pilot.tasks.change_admin_domain.ChangeAdminDomainTask.queue",
-        side_effect=RuntimeError("disk exploded"),
-    ), caplog.at_level("ERROR"):
+    with (
+        patch(
+            "pilot.tasks.change_admin_domain.ChangeAdminDomainTask.queue",
+            side_effect=RuntimeError("disk exploded"),
+        ),
+        caplog.at_level("ERROR"),
+    ):
         response = client.post("/api/v1/settings/admin-domain", json={"domain": "admin.example.com"})
 
     assert response.status_code == 500
@@ -225,7 +248,8 @@ def test_a_claim_that_cannot_be_read_is_not_treated_as_a_free_name(tmp_path: Pat
     bench_root = tmp_path / "bench"
     _client(bench_root)
 
-    with patch.object(Bench, "site_claiming", side_effect=OSError("bench.toml is unreadable")), pytest.raises(
-        OSError
+    with (
+        patch.object(Bench, "site_claiming", side_effect=OSError("bench.toml is unreadable")),
+        pytest.raises(OSError),
     ):
         new_site_name_error(bench_root, "wanted.localhost")

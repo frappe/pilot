@@ -303,6 +303,15 @@ def test_a_canonical_host_naming_another_domain_is_left_alone(tmp_path: Path) ->
     assert _config(bench, NEW)["host_name"] == "http://shop.customer.com"
 
 
+def test_make_primary_makes_the_new_name_the_canonical_host(tmp_path: Path) -> None:
+    bench = _bench(tmp_path)
+    _site(bench, OLD, ssl=True)
+
+    _rename(bench, make_primary=True)
+
+    assert _config(bench, NEW)["host_name"] == f"https://{NEW}"
+
+
 def test_a_rename_introduces_no_redirect_for_other_domains(tmp_path: Path) -> None:
     """A rename does not make the new name canonical."""
     bench = _bench(tmp_path)

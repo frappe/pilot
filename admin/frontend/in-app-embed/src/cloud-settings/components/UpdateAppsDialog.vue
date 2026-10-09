@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import { useTranslation } from '../translation'
 import { Button, Checkbox, Dialog, ErrorMessage } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
+
+const __ = useTranslation()
 
 interface Props {
   apps?: Record<string, any>[]
@@ -36,7 +39,7 @@ const submitLabel = computed(() => {
   return __('Update {0} apps', [selected.value.size])
 })
 
-const toggle = (name) => {
+const toggle = (name: string) => {
   const next = new Set(selected.value)
 
   next.has(name) ? next.delete(name) : next.add(name)

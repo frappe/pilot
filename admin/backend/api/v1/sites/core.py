@@ -3,7 +3,7 @@ from __future__ import annotations
 import secrets
 from pathlib import Path
 
-from flask import current_app, jsonify, request, url_for
+from flask import current_app, g, jsonify, request, url_for
 
 from admin.backend.api.responses import (
     accepted_response,
@@ -26,6 +26,7 @@ from admin.backend.api.v1.sites.shared import (
     task_failure,
     text_fields,
 )
+from admin.backend.internal.session import Session
 from admin.backend.middleware import rate_limit, require_scope
 from admin.backend.providers.apps import AppProvider
 from admin.backend.providers.sites import SiteInfo, SiteProvider
@@ -194,7 +195,8 @@ def rename_site(name: str):
 
     new_name = fields["new_name"]
     keep_old_hostname = data.get("keep_old_hostname", True)
-    if not isinstance(keep_old_hostname, bool):
+    make_primary = data.get("make_primary", False)
+    if not isinstance(keep_old_hostname, bool) or not isinstance(make_primary, bool):
         return invalid_fields()
     err = validate_site_name(new_name) or new_site_name_error(bench_root, new_name)
     if err:
@@ -206,6 +208,7 @@ def rename_site(name: str):
             site=name,
             new_name=new_name,
             keep_old_hostname=keep_old_hostname,
+            make_primary=make_primary,
             idempotency_key=request.headers.get("Idempotency-Key"),
             # Hold both hostnames until the old provider route is retained or released.
             resource_key=[
@@ -310,8 +313,9 @@ def create_login_link(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     if not site_exists(bench_root, name):
         return site_not_found()
+    user, full_name = Session.get_login_user(g.jwt_claims)
     try:
-        url = Bench(bench_root).site(name).admin_login_url()
+        url = Bench(bench_root).site(name).admin_login_url(user=user, full_name=full_name)
     except Exception:
         return error_response(
             "configuration_unavailable",

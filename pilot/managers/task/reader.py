@@ -20,6 +20,8 @@ from pilot.managers.task.models import (
 from pilot.utils import open_private
 
 _TASK_POLL_SECONDS = 0.5
+# A write is the only way to see that a client went away, so a quiet stream still writes.
+HEARTBEAT_SECONDS = 15
 _SYSLOG_RE = re.compile(r"^<\d+>\d+ \S+ \S+ \S+ \S+ \S+ \S+ (.*)$")
 
 
@@ -147,8 +149,9 @@ class TaskReader:
 
     def stream_output(
         self, task_id: str, should_stop: Callable[[], bool] = lambda: False
-    ) -> Generator[TaskStreamEvent, None, None]:
-        """Events until the task ends or `should_stop`; the client resumes by Last-Event-ID."""
+    ) -> Generator[TaskStreamEvent | None, None, None]:
+        """Events until the task ends or `should_stop`; the client resumes by Last-Event-ID.
+        None is a heartbeat, sent when the task writes nothing for HEARTBEAT_SECONDS."""
         task = self.read_task(task_id)
         output_path = task.output_path
         last_state = (task.status, task.queue_position)
@@ -157,10 +160,12 @@ class TaskReader:
         open_private(output_path, "a").close()
         with open(output_path, "r", errors="replace", newline="") as log_file:
             cur = ""
+            last_write = time.monotonic()
             while True:
                 chunk = log_file.read(8192)
                 if chunk:
                     cur = yield from self._stream_chunk(chunk, cur)
+                    last_write = time.monotonic()
                     continue
 
                 task = self.read_task(task_id)
@@ -174,6 +179,9 @@ class TaskReader:
                     return
                 if should_stop():
                     return
+                if time.monotonic() - last_write >= HEARTBEAT_SECONDS:
+                    yield None
+                    last_write = time.monotonic()
 
                 time.sleep(_TASK_POLL_SECONDS)
 

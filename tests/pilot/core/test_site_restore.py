@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pilot.core.site.restore import BackupRun, SiteRestore, backup_part
+from pilot.core.site.restore import BackupRun, BackupStream, SiteRestore, backup_part
 from pilot.exceptions import BenchError
 
 
@@ -53,6 +53,59 @@ def test_files_from_another_site_land_in_this_site(tmp_path: Path) -> None:
     site.restore.assert_not_called()  # files only: the database is left alone
     site.migrate.assert_called_once()
     assert site.set_maintenance_mode.call_args_list[-1].args == (False,)
+
+
+@pytest.mark.parametrize("is_compressed", [False, True])
+def test_a_streamed_archive_lands_in_this_site_without_a_copy_on_disk(tmp_path: Path, is_compressed: bool) -> None:
+    site = _site(tmp_path)
+    archive = _frappe_archive(tmp_path, "source.localhost", "public")
+    data = gzip.compress(archive.read_bytes()) if is_compressed else archive.read_bytes()
+    name = archive.name.replace(".tar", ".tgz") if is_compressed else archive.name
+    run = BackupRun(streams={"public": BackupStream(name, lambda: io.BytesIO(data))})
+
+    SiteRestore(site).restore(run, ["public"], on_progress=lambda message: None)
+
+    assert (site.path / "public" / "files" / "logo.png").read_text() == "image"
+
+
+def test_a_streamed_extraction_with_much_error_output_does_not_hang(tmp_path: Path, monkeypatch) -> None:
+    """tar that writes more to stderr than a pipe holds must still read the whole archive."""
+    import threading
+
+    real_popen = subprocess.Popen
+    noisy_tar = ["sh", "-c", "head -c 300000 /dev/zero | tr '\\0' e >&2; cat > /dev/null; exit 2"]
+    monkeypatch.setattr(subprocess, "Popen", lambda argv, **options: real_popen(noisy_tar, **options))
+    stream = BackupStream("x-files.tar", lambda: io.BytesIO(b"x" * 1_000_000))
+    errors: list[BaseException] = []
+
+    def extract() -> None:
+        try:
+            SiteRestore(_site(tmp_path)).extract_files_stream(stream, "public")
+        except BenchError as error:
+            errors.append(error)
+
+    worker = threading.Thread(target=extract, daemon=True)
+    worker.start()
+    worker.join(timeout=20)
+
+    assert not worker.is_alive()
+    assert len(errors) == 1 and "eee" in str(errors[0])
+    assert len(str(errors[0])) < 5000  # only the end of the error output
+
+
+def test_a_failed_file_stream_stops_the_restore_before_the_database(tmp_path: Path) -> None:
+    site = _site(tmp_path)
+    archive = _frappe_archive(tmp_path, "source.localhost", "public")
+
+    def broken_download() -> io.BytesIO:
+        raise OSError("connection reset")
+
+    run = BackupRun(files={"database": archive}, streams={"public": BackupStream(archive.name, broken_download)})
+
+    with pytest.raises(OSError, match="connection reset"):
+        SiteRestore(site).restore(run, ["public", "database"], lambda message: None)
+
+    site.restore.assert_not_called()
 
 
 def _source_config(tmp_path: Path) -> Path:

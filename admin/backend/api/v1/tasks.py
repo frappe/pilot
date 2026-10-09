@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 from flask import (
@@ -173,21 +174,26 @@ def task_events(task_id: str):
     except ValueError:
         skip = 0
 
-    def generate():
-        event_id = 0
-        for event in reader.stream_output(task_id, should_stop=is_draining):
-            if event["type"] == "status":
-                yield sse_message(event)
-                continue
-            event_id += 1
-            if event_id > skip:
-                yield sse_message(event, event_id)
-
     return Response(
-        stream_with_context(generate()),
+        stream_with_context(_task_event_messages(reader, task_id, skip)),
         mimetype="text/event-stream",
         headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
     )
+
+
+def _task_event_messages(reader: TaskReader, task_id: str, skip: int) -> Iterator[str]:
+    """SSE messages, without the output events the client already has."""
+    event_id = 0
+    for event in reader.stream_output(task_id, should_stop=is_draining):
+        if event is None:
+            yield ": heartbeat\n\n"
+            continue
+        if event["type"] == "status":
+            yield sse_message(event)
+            continue
+        event_id += 1
+        if event_id > skip:
+            yield sse_message(event, event_id)
 
 
 @tasks_bp.get("/<task_id>/output/content")

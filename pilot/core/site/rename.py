@@ -16,12 +16,15 @@ if TYPE_CHECKING:
 class SiteRename:
     """Rename a site without dropping requests."""
 
-    def __init__(self, site: "Site", new_name: str, keep_old_hostname: bool = True) -> None:
+    def __init__(
+        self, site: "Site", new_name: str, keep_old_hostname: bool = True, make_primary: bool = False
+    ) -> None:
         self.site = site
         self.bench = site.bench
         self.old_name = site.config.name
         self.new_name = new_name
         self.keep_old_hostname = keep_old_hostname
+        self.make_primary = make_primary
         self._compatibility_link: Path | None = None
         self._original_site_config: str | None = None
         self._old_pilot_auth_token = ""
@@ -226,9 +229,7 @@ class SiteRename:
         if self.keep_old_hostname and normalize_host(self.old_name) not in known:
             old_route = self.site.config.route
             domains.append(
-                {"domain": self.old_name, "route": old_route.to_dict()}
-                if old_route
-                else self.old_name
+                {"domain": self.old_name, "route": old_route.to_dict()} if old_route else self.old_name
             )
         config["domains"] = domains
         if self._new_route:
@@ -238,9 +239,11 @@ class SiteRename:
         # A canonical host naming the old site has to move with it, or nginx
         # redirects every request to a hostname this site no longer answers to.
         primary = (config.get("host_name") or "").split("://", 1)[-1]
-        if primary and normalize_host(primary) == normalize_host(self.old_name):
-            scheme = self._new_route.public_scheme if self._new_route else (
-                "https" if config.get("ssl") else "http"
+        if self.make_primary or (primary and normalize_host(primary) == normalize_host(self.old_name)):
+            scheme = (
+                self._new_route.public_scheme
+                if self._new_route
+                else ("https" if config.get("ssl") else "http")
             )
             config["host_name"] = f"{scheme}://{self.new_name}"
         self._write_site_config(config)

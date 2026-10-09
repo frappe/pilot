@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import { useTranslation } from '../translation'
 import { Button, SettingsBody, SettingsHeader, Skeleton } from 'frappe-ui'
+
+const __ = useTranslation()
 
 interface Props {
   title: string

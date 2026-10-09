@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import ast
 import sys
 import typing
-from collections.abc import Iterable, Iterator
 from pathlib import Path
 
-from pilot.core.app.validator.base import bench_table, python_files
+from pilot.core.app.validator.base import bench_table, get_bench_python, python_files
+from pilot.core.app.validator.utils.bench_runner import run_in_bench
 from pilot.core.app.validator.utils.module_resolver import ModuleResolver
 from pilot.core.app.validator.utils.tmp_env import (
     TmpEnv,
@@ -17,6 +16,53 @@ from pilot.exceptions import AppValidationError, BenchError
 
 if typing.TYPE_CHECKING:
     from pilot.core.app import App
+
+_IMPORTS_AST_SCRIPT = """
+import ast, json, sys
+
+req = json.load(sys.stdin)
+path = req["path"]
+try:
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        tree = ast.parse(f.read(), filename=path)
+except SyntaxError as exc:
+    print(json.dumps({"syntax_error": f"line {exc.lineno}: {exc.msg}"}))
+    sys.exit(0)
+except (OSError, UnicodeDecodeError):
+    print(json.dumps({"imports": []}))
+    sys.exit(0)
+
+def is_type_checking(test):
+    return (isinstance(test, ast.Name) and test.id == "TYPE_CHECKING") or (
+        isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING"
+    )
+
+def runtime_imports(nodes):
+    for node in nodes:
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            yield node
+        elif isinstance(node, (ast.Try, ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        elif isinstance(node, ast.If) and is_type_checking(node.test):
+            yield from runtime_imports(node.orelse)
+        else:
+            yield from runtime_imports(ast.iter_child_nodes(node))
+
+results = []
+for node in runtime_imports(tree.body):
+    if isinstance(node, ast.Import):
+        for alias in node.names:
+            results.append({"type": "import", "name": alias.name, "lineno": node.lineno})
+    elif isinstance(node, ast.ImportFrom):
+        results.append({
+            "type": "import_from",
+            "module": node.module,
+            "level": node.level,
+            "lineno": node.lineno,
+        })
+
+print(json.dumps({"imports": results}))
+"""
 
 
 class ImportCheck:
@@ -62,11 +108,11 @@ class ImportCheck:
         """
         app_modules = {app.module_name, *(installed.config.name for installed in app.bench.apps())}
         candidates = [name for name in unresolved if name.split(".", 1)[0] not in app_modules]
-        python = app.bench.env_path / "bin" / "python"
-        if not candidates or not python.exists():
+        python_bin = get_bench_python(app)
+        if not candidates or not Path(python_bin).is_file():
             return unresolved
 
-        missing = unimportable_modules(python, candidates)
+        missing = unimportable_modules(Path(python_bin), candidates)
         return [name for name in unresolved if name not in candidates or name in missing]
 
     @staticmethod
@@ -109,15 +155,15 @@ class ImportCheck:
             + "\nAdd the missing packages to pyproject.toml's dependencies, or fix the import path."
         )
 
-    def _imported_module_locations(self, app: "App") -> dict[str, list[str]]:
-        stdlib = sys.stdlib_module_names
+    def _imported_module_locations(self, app: "App", stdlib: set[str] | None = None) -> dict[str, list[str]]:
+        stdlib_names = sys.stdlib_module_names if stdlib is None else stdlib
         locations: dict[str, list[str]] = {}
         for path in python_files(app):
             relpath = path.relative_to(app.path)
             if self._is_test_file(relpath):
                 continue
             for module, lineno in self._file_imported_modules(app, path):
-                if module.split(".", 1)[0] in stdlib:
+                if module.split(".", 1)[0] in stdlib_names:
                     continue
                 where = f"{relpath}:{lineno}"
                 locations.setdefault(module, [])
@@ -134,51 +180,36 @@ class ImportCheck:
         return relpath.name.startswith("test_") or relpath.name == "conftest.py"
 
     def _file_imported_modules(self, app: "App", path: Path) -> list[tuple[str, int]]:
-        try:
-            tree = ast.parse(path.read_text(), filename=str(path))
-        except OSError:
-            return []
-
+        bench_python = get_bench_python(app)
+        data = run_in_bench(bench_python, _IMPORTS_AST_SCRIPT, {"path": str(path)})
+        if "syntax_error" in data:
+            relpath = path.relative_to(app.path)
+            raise AppValidationError(
+                f"'{app.config.name}' has unparseable Python syntax in {relpath}: {data['syntax_error']}"
+            )
         modules: list[tuple[str, int]] = []
-        for node in self._runtime_imports(tree.body):
-            if isinstance(node, ast.Import):
-                modules.extend((alias.name, node.lineno) for alias in node.names)
-            else:
-                modules.append((self._resolve_module(app, path, node), node.lineno))
+        for item in data.get("imports", []):
+            if item.get("type") == "import" and item.get("name"):
+                modules.append((item["name"], item["lineno"]))
+            elif item.get("type") == "import_from":
+                mod = self._resolve_relative_parts(
+                    app, path, item.get("module"), item.get("level", 0), item["lineno"]
+                )
+                modules.append((mod, item["lineno"]))
         return modules
 
-    def _runtime_imports(self, nodes: Iterable[ast.AST]) -> Iterator[ast.Import | ast.ImportFrom]:
-        """Yield imports that must resolve at module import time. Imports inside
-        functions are lazy and often intentionally dynamic, so they're skipped."""
-        for node in nodes:
-            if isinstance(node, (ast.Import, ast.ImportFrom)):
-                yield node
-            elif isinstance(node, (ast.Try, ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
-            elif isinstance(node, ast.If) and self._is_type_checking(node.test):
-                yield from self._runtime_imports(node.orelse)
-            else:
-                yield from self._runtime_imports(ast.iter_child_nodes(node))
-
     @staticmethod
-    def _is_type_checking(test: ast.expr) -> bool:
-        return (isinstance(test, ast.Name) and test.id == "TYPE_CHECKING") or (
-            isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING"
-        )
-
-    @staticmethod
-    def _resolve_module(app: "App", path: Path, node: ast.ImportFrom) -> str:
-        if node.level == 0:
-            # `from module import ...` - always has a module name (never bare).
-            return typing.cast("str", node.module)
+    def _resolve_relative_parts(app: "App", path: Path, module: str | None, level: int, lineno: int) -> str:
+        if level == 0:
+            return module or ""
 
         parts = path.relative_to(app.path).with_suffix("").parts[:-1]
-        cut = node.level - 1
+        cut = level - 1
         if cut >= len(parts):
             raise AppValidationError(
                 f"'{app.config.name}' has an invalid relative import in "
-                f"{path.relative_to(app.path)} (line {node.lineno}): "
+                f"{path.relative_to(app.path)} (line {lineno}): "
                 "goes above the app's own package."
             )
         base = ".".join(parts[: len(parts) - cut])
-        return f"{base}.{node.module}" if node.module else base
+        return f"{base}.{module}" if module else base

@@ -35,7 +35,7 @@ const isActive = (to: string) => route.path === to || route.path.startsWith(`${t
 
 <template>
   <Sidebar
-    :disable-collapse="isMobile"
+    :collapsible="!isMobile"
     class="border-r dark:border-outline-gray-2"
     :class="isMobile ? '!w-full !border-r-0 mobile-sidebar bg-transparent' : ''"
   >

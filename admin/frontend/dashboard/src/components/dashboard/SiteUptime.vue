@@ -2,6 +2,8 @@
 import { onMounted, ref, watch } from 'vue'
 import { ErrorMessage, Skeleton } from 'frappe-ui'
 
+import ChartCard from '@/components/common/ChartCard.vue'
+
 import { apiErrorMessage, hasApiError } from '@/api/client'
 import { sitesApi } from '@/api/sites'
 import type { SiteUptime } from '@/types/siteMonitoring'
@@ -83,17 +85,15 @@ onMounted(load)
 </script>
 
 <template>
-  <Skeleton v-if="loading" class="rounded-6 h-full min-h-[340px]" />
-  <div v-else class="flex flex-col bg-surface-white border rounded-6 border-outline-gray-2 h-full">
-    <h3 class="px-4 py-3 border-b border-outline-gray-2 font-medium text-ink-gray-8">Uptime</h3>
-
-    <ErrorMessage v-if="error" :message="error" class="m-4" />
+  <Skeleton v-if="loading" class="rounded-4 h-full min-h-[340px]" />
+  <ChartCard v-else title="Uptime">
+    <ErrorMessage v-if="error" :message="error" class="my-4" />
     <div
       v-else-if="data && !data.production_enabled"
       class="flex flex-col flex-1 justify-center items-center gap-1 py-10 text-center"
     >
       <span class="size-6 text-ink-gray-3 lucide-server-off" />
-      <p class="font-medium text-ink-gray-7 text-sm">Uptime monitoring is production-only</p>
+      <p class="text-sm-medium text-ink-gray-7">Uptime monitoring is production-only</p>
       <p class="max-w-xs text-ink-gray-5 text-p-xs">
         This bench isn't in production, so its sites are never pinged. Deploy to production to start
         tracking uptime.
@@ -105,10 +105,10 @@ onMounted(load)
       class="flex flex-col flex-1 justify-center items-center gap-1 py-10 text-center"
     >
       <span class="size-6 text-ink-gray-3 lucide-activity" />
-      <p class="text-ink-gray-5 text-xs">No uptime data yet</p>
+      <p class="text-sm-medium text-ink-gray-7">No uptime data yet</p>
     </div>
 
-    <div v-else class="flex flex-col flex-1 justify-center gap-2 px-4 py-6">
+    <div v-else class="flex flex-col flex-1 justify-center gap-2 py-6">
       <div class="flex justify-between items-center gap-2 text-ink-gray-5 text-sm">
         <div v-if="hovered !== null" class="min-w-0 truncate">
           <span class="font-bold" :style="percentTextStyle(data.buckets[hovered].percent)">
@@ -146,5 +146,5 @@ onMounted(load)
         <span>{{ formatFullTime(data.buckets[data.buckets.length - 1].time) }}</span>
       </div>
     </div>
-  </div>
+  </ChartCard>
 </template>

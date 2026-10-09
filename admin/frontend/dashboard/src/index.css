@@ -22,6 +22,10 @@ body {
   @apply !h-auto !py-2.5;
 }
 
+[data-slot="chart-legend"] {
+  @apply flex-nowrap justify-start overflow-x-auto;
+}
+
 /* A hovered row reads as one block, so the rules touching it fade. Goes on the
    rows' parent; rows qualify by carrying a hover background, not by tag. First
    pair covers `divide-y`, second covers rows wrapping a bordered body.

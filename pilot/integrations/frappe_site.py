@@ -26,6 +26,8 @@ class RemoteFrappeSite:
         self.url = site if site.startswith(("https://", "http://")) else f"https://{site}"
         self.password = password
         self._opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
+        # Cloudflare in front of Frappe Cloud sites blocks urllib's default User-Agent with HTTP 403.
+        self._opener.addheaders = [("User-Agent", "pilot")]
 
     def login(self) -> None:
         """Fail with a clear message for a wrong password, 2FA, or an unreachable site."""

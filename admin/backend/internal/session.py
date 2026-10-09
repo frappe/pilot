@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 import secrets
 import threading
 import time
@@ -265,6 +266,17 @@ class Session:
         if claims.get("site") == site:
             return True
         return self._is_current_site_token(site, token)
+
+    @staticmethod
+    def get_login_user(claims: dict | None) -> tuple[str, str]:
+        """The site user a login token names, with their full name. A token whose subject is
+        not an email, such as a bench admin's, signs in as Administrator."""
+        claims = claims or {}
+        subject = claims.get("sub")
+        full_name = claims.get("name")
+        if not isinstance(subject, str) or not re.fullmatch(r"[^@\s]{1,64}@[^@\s]{1,189}", subject):
+            return "Administrator", ""
+        return subject, full_name[:140] if isinstance(full_name, str) else ""
 
     def revoke_jti(self, jti: str) -> bool:
         """Revoke an active session by its jti, using its tracked expiry.
