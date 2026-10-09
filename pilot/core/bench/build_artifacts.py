@@ -117,19 +117,23 @@ class BuildArtifacts:
         for node in ast.walk(ast.parse(hooks.read_text())):
             if not isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
                 continue
-            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            names = {target.id for target in targets if isinstance(target, ast.Name)}
-            if not names & {"after_build", "after_app_build"}:
-                continue
-            if (
-                app.module_name != "frappe"
-                or not isinstance(node.value, ast.Constant)
-                or not isinstance(node, ast.Assign)
-            ):
-                return True
-            if node.value.value != "frappe.bundler.build_page_islands":
+            if BuildArtifacts.is_custom_build_hook(node, app.module_name):
                 return True
         return False
+
+    @staticmethod
+    def is_custom_build_hook(node, module_name: str) -> bool:
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        names = {target.id for target in targets if isinstance(target, ast.Name)}
+        if not names & {"after_build", "after_app_build"}:
+            return False
+        if (
+            module_name != "frappe"
+            or not isinstance(node.value, ast.Constant)
+            or not isinstance(node, ast.Assign)
+        ):
+            return True
+        return node.value.value != "frappe.bundler.build_page_islands"
 
     @property
     def paths(self) -> list[str]:

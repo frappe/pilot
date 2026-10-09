@@ -21,14 +21,18 @@ def parse_app_branches(value: str) -> dict[str, str]:
 def validate_branches(branch: str, app_branches: dict[str, str]) -> None:
     if not isinstance(branch, str) or not branch.strip():
         raise BenchError("Select default, current, or a branch name.")
+    validate_app_branches(app_branches)
+    for value in [branch, *app_branches.values()]:
+        if value not in ("default", "current"):
+            run_command(["git", "check-ref-format", "--branch", value], env=git_env())
+
+
+def validate_app_branches(app_branches: dict[str, str]) -> None:
     if not isinstance(app_branches, dict) or not all(
         isinstance(app, str) and app and isinstance(value, str) and value
         for app, value in app_branches.items()
     ):
         raise BenchError("App branch overrides must map app names to branch names.")
-    for value in [branch, *app_branches.values()]:
-        if value not in ("default", "current"):
-            run_command(["git", "check-ref-format", "--branch", value], env=git_env())
 
 
 def get_remote_branches(source: Path, git_config: dict[str, str] | None = None) -> dict:

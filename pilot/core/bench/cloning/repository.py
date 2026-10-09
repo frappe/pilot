@@ -59,6 +59,10 @@ def has_portable_objects(source: Path, objects: Path) -> bool:
     ).stdout.strip()
     if shallow != b"false":
         return False
+    return has_independent_object_files(objects)
+
+
+def has_independent_object_files(objects: Path) -> bool:
     for directory, directories, files in os.walk(objects):
         if any(Path(directory, name).is_symlink() for name in [*directories, *files]):
             return False

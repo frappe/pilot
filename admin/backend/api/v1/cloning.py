@@ -36,15 +36,22 @@ def clone_branch_options(name: str):
         return error_response("clone_branches_unavailable", "Could not load app branches.", 503)
 
 
+def get_clone_bench_name(name: str, data: dict) -> str:
+    if not isinstance(data.get("name"), str):
+        raise BenchError("Enter a destination bench name.")
+    target = data["name"].strip()
+    if not BENCH_NAME_RE.fullmatch(name) or not BENCH_NAME_RE.fullmatch(target):
+        raise BenchError("Invalid bench name.")
+    return target
+
+
 def clone_bench(name: str):
     root = Path(current_app.config["BENCH_ROOT"])
     data = request.get_json(silent=True)
-    if not isinstance(data, dict) or not isinstance(data.get("name"), str):
+    if not isinstance(data, dict):
         return error_response("invalid_clone", "Enter a destination bench name.", 422)
-    target = data["name"].strip()
-    if not BENCH_NAME_RE.fullmatch(name) or not BENCH_NAME_RE.fullmatch(target):
-        return error_response("invalid_clone", "Invalid bench name.", 422)
     try:
+        target = get_clone_bench_name(name, data)
         branch = data.get("branch", "default")
         app_branches = data.get("app_branches", {})
         validate_branches(branch, app_branches)
@@ -76,17 +83,25 @@ def clone_bench(name: str):
     return accepted_task_response(root, task_id)
 
 
-def clone_site(name: str):
-    root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True)
+def get_clone_site_names(name: str, data) -> tuple[str, str]:
     if not isinstance(data, dict) or not all(
         isinstance(data.get(key), str) for key in ("name", "target_bench")
     ):
-        return error_response("invalid_clone", "Enter a site name and destination bench.", 422)
+        raise BenchError("Enter a site name and destination bench.")
     target = data["name"].strip()
     bench_name = data["target_bench"].strip()
     if validate_site_name(name) or validate_site_name(target) or not BENCH_NAME_RE.fullmatch(bench_name):
-        return error_response("invalid_clone", "Invalid site or bench name.", 422)
+        raise BenchError("Invalid site or bench name.")
+    return target, bench_name
+
+
+def clone_site(name: str):
+    root = Path(current_app.config["BENCH_ROOT"])
+    data = request.get_json(silent=True)
+    try:
+        target, bench_name = get_clone_site_names(name, data)
+    except BenchError as error:
+        return error_response("invalid_clone", str(error), 422)
     if bench_name != root.name and (response := guard_bench_management()):
         return response
     try:

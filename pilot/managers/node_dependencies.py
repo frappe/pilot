@@ -17,6 +17,19 @@ class NodeDependencies:
     @staticmethod
     def get_key(path: Path, *, include_dependencies: bool = True) -> str:
         digest = hashlib.sha256(platform.platform().encode())
+        NodeDependencies.update_file_key(digest, path, include_dependencies=include_dependencies)
+        for binary in (shutil.which("node"), shutil.which(get_yarn_bin())):
+            if binary:
+                file = Path(binary).resolve()
+                digest.update(f"{file}:{file.stat().st_mtime_ns}:{file.stat().st_size}".encode())
+        environment = {
+            key: value for key, value in os.environ.items() if key not in {"PWD", "OLDPWD", "SHLVL", "_"}
+        }
+        digest.update(json.dumps(environment, sort_keys=True).encode())
+        return digest.hexdigest()
+
+    @staticmethod
+    def update_file_key(digest, path: Path, *, include_dependencies: bool) -> None:
         files = (
             ("package.json", "yarn.lock", ".yarnrc", ".npmrc")
             if include_dependencies
@@ -30,15 +43,6 @@ class NodeDependencies:
             for name in (".yarnrc", ".npmrc"):
                 file = directory / name
                 digest.update(file.read_bytes() if file.is_file() else b"missing")
-        for binary in (shutil.which("node"), shutil.which(get_yarn_bin())):
-            if binary:
-                file = Path(binary).resolve()
-                digest.update(f"{file}:{file.stat().st_mtime_ns}:{file.stat().st_size}".encode())
-        environment = {
-            key: value for key, value in os.environ.items() if key not in {"PWD", "OLDPWD", "SHLVL", "_"}
-        }
-        digest.update(json.dumps(environment, sort_keys=True).encode())
-        return digest.hexdigest()
 
     @classmethod
     def has_matching_install(cls, path: Path, key: str) -> bool:
@@ -77,7 +81,7 @@ class NodeDependencies:
         )
 
     @classmethod
-    def copy(cls, source: Path, destination: Path) -> bool:
+    def has_portable_inputs(cls, source: Path, destination: Path) -> bool:
         if not all(
             (path / file).is_file()
             for path in (source, destination)
@@ -85,6 +89,12 @@ class NodeDependencies:
         ):
             return False
         if not all(cls.is_portable(path) for path in (source, destination)):
+            return False
+        return True
+
+    @classmethod
+    def copy(cls, source: Path, destination: Path) -> bool:
+        if not cls.has_portable_inputs(source, destination):
             return False
         source_key, target_key = cls.get_key(source), cls.get_key(destination)
         if not cls.has_matching_install(source, source_key):

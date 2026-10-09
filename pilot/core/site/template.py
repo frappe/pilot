@@ -22,7 +22,6 @@ class SiteTemplate:
         self, site: Site, on_progress=print, *, build_assets=True, reuse_source_artifacts=False
     ) -> None:
         from pilot.core.bench.artifacts import BenchArtifacts
-        from pilot.internal.git import GitRepo
         from pilot.managers.environment import PythonEnvManager
 
         if site.bench.config.production.enabled:
@@ -32,17 +31,7 @@ class SiteTemplate:
         config = json.loads((site.path / "site_config.json").read_text())
         if config.get("encrypt_backup"):
             raise BenchError("Development templates require unencrypted backups.")
-        apps = []
-        configured = {app.name: app for app in site.bench.config.apps}
-        for app in site.bench.apps():
-            repo = GitRepo(app.path)
-            if run_command(["git", "-C", str(app.path), "status", "--porcelain"]).stdout.strip():
-                raise BenchError(f"Commit or stash changes in {app.config.name} before preparing a template.")
-            repository = app.config.repo or configured[app.config.name].repo
-            apps.append({"name": app.config.name, "repo": repository, "commit": repo.head_sha})
-        missing = set(site.bench.registered_apps()) - {app["name"] for app in apps}
-        if missing:
-            raise BenchError(f"Template apps must be Git repositories: {', '.join(sorted(missing))}")
+        apps = self.get_apps(site.bench)
         self.path.mkdir(mode=0o700, parents=True, exist_ok=False)
         if build_assets:
             on_progress("Building template assets once")
@@ -86,6 +75,23 @@ class SiteTemplate:
         )
 
     @staticmethod
+    def get_apps(bench: Bench) -> list[dict]:
+        from pilot.internal.git import GitRepo
+
+        apps = []
+        configured = {app.name: app for app in bench.config.apps}
+        for app in bench.apps():
+            repo = GitRepo(app.path)
+            if run_command(["git", "-C", str(app.path), "status", "--porcelain"]).stdout.strip():
+                raise BenchError(f"Commit or stash changes in {app.config.name} before preparing a template.")
+            repository = app.config.repo or configured[app.config.name].repo
+            apps.append({"name": app.config.name, "repo": repository, "commit": repo.head_sha})
+        missing = set(bench.registered_apps()) - {app["name"] for app in apps}
+        if missing:
+            raise BenchError(f"Template apps must be Git repositories: {', '.join(sorted(missing))}")
+        return apps
+
+    @staticmethod
     def ensure_revisions_unchanged(bench: Bench, apps: list[dict]) -> None:
         from pilot.internal.git import GitRepo
 
@@ -121,11 +127,15 @@ class SiteTemplate:
             if path.parent != self.path or not path.is_file():
                 raise BenchError(f"Missing or invalid template file: {filename}")
         root = Path(data.get("artifact_source") or self.path / "artifacts").resolve()
-        for relative in data.get("artifacts", []):
+        self.validate_artifacts(root, data.get("artifacts", []))
+        return data
+
+    @staticmethod
+    def validate_artifacts(root: Path, artifacts: list[str]) -> None:
+        for relative in artifacts:
             path = root / relative
             if not path.resolve().is_relative_to(root) or not path.is_dir():
                 raise BenchError(f"Missing or invalid template artifact: {relative}")
-        return data
 
     def restore_into(self, bench: Bench, name: str) -> Site:
         import secrets

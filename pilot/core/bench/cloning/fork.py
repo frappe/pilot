@@ -70,7 +70,6 @@ class BenchFork:
 
     def validate(self) -> None:
         from pilot.config import BenchConfig
-        from pilot.internal.git import GitRepo
 
         BenchConfig.default(self.name).validate()
         if self.source.config.production.enabled:
@@ -81,12 +80,17 @@ class BenchFork:
             raise BenchError("Live template artifacts must belong to the source bench.")
         if data["engine"] not in ("mariadb", "postgres") or data["engine"] != self.source.config.db_type:
             raise BenchError("Forks require a matching MariaDB or PostgreSQL development template.")
-        for entry in data["apps"]:
+        self.validate_commits(data["apps"])
+        if (self.source.path.parent / self.name).exists():
+            raise BenchError(f"Destination bench '{self.name}' already exists.")
+
+    def validate_commits(self, apps: list[dict]) -> None:
+        from pilot.internal.git import GitRepo
+
+        for entry in apps:
             app = self.source.app(entry["name"])
             if not GitRepo(app.path).has_commit(entry["commit"]):
                 raise BenchError(f"Template commit is unavailable for {entry['name']}.")
-        if (self.source.path.parent / self.name).exists():
-            raise BenchError(f"Destination bench '{self.name}' already exists.")
 
     def configure(self, destination: Bench) -> None:
         config = destination.config
