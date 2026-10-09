@@ -99,6 +99,14 @@ class BenchClone:
         if rebuild:
             on_progress("Checking Node dependencies for selected branches")
             environment.install_node_dependencies()
+            from pilot.managers.node_cache import NodeDependencyCache
+
+            cache = NodeDependencyCache(destination)
+            for app in destination.apps():
+                if self.app_branches.get(app.config.name, self.branch) == "current":
+                    continue
+                for relative in (".", "frontend", "roster"):
+                    cache.capture(app.path / relative)
             artifacts = BuildArtifacts(destination)
             if artifacts.restore(artifacts.get_key()):
                 on_progress("Reusing matching built assets")
@@ -107,11 +115,15 @@ class BenchClone:
                 environment.build_assets()
 
     def copy_dependencies(self, destination) -> None:
+        from pilot.managers.node_cache import NodeDependencyCache
         from pilot.managers.node_dependencies import NodeDependencies
 
+        cache = NodeDependencyCache(destination)
         for app in self.source.apps():
             for relative in (".", "frontend", "roster"):
                 target = destination.apps_path / app.config.name / relative
+                if self.app_branches.get(app.config.name, self.branch) != "current" and cache.restore(target):
+                    continue
                 if NodeDependencies.copy(app.path / relative, target):
                     BenchArtifacts.relocate_links(
                         self.source.path.resolve(), destination.path.resolve(), root=target / "node_modules"

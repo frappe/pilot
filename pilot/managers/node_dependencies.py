@@ -26,7 +26,7 @@ class NodeDependencies:
             file = path / name
             digest.update(name.encode() + b"\0")
             digest.update(file.read_bytes() if file.is_file() else b"missing")
-        for directory in (path.parent, Path.home()):
+        for directory in (*path.resolve().parents, Path.home()):
             for name in (".yarnrc", ".npmrc"):
                 file = directory / name
                 digest.update(file.read_bytes() if file.is_file() else b"missing")
