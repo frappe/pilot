@@ -49,7 +49,7 @@ class SiteTemplate:
             PythonEnvManager(site.bench).build_assets()
         artifact_source = str(site.bench.path.resolve()) if reuse_source_artifacts else ""
         artifacts = (
-            BenchArtifacts.paths(site.bench)
+            BenchArtifacts.get_paths(site.bench)
             if reuse_source_artifacts
             else BenchArtifacts(self.path / "artifacts").capture(site.bench)
         )

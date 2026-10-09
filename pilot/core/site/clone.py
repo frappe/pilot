@@ -33,9 +33,7 @@ class SiteClone:
         self.nginx_changed = False
 
     def validate(self) -> bool:
-        error = validate_site_name(self.name) or validate_site_name(self.source.config.name)
-        if error:
-            raise BenchError(error)
+        self.validate_names()
         if not self.source.exists:
             raise BenchError("Source site does not exist.")
         if self.source.bench.config.db_type != self.bench.config.db_type:
@@ -50,6 +48,11 @@ class SiteClone:
         if apps is None:
             raise BenchError("Could not read the source site's installed apps.")
         return validate_new_site(self.bench, self.name, apps)
+
+    def validate_names(self) -> None:
+        for name in (self.name, self.source.config.name):
+            if error := validate_site_name(name):
+                raise BenchError(error)
 
     def run(self, on_progress=print, *, prepare_bench=None):
         from pilot.core.site.clone_database import SiteDatabaseClone

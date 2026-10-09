@@ -15,7 +15,7 @@ class BenchArtifacts:
         self.root = root.resolve()
 
     @staticmethod
-    def paths(bench) -> list[str]:
+    def get_paths(bench) -> list[str]:
         paths = ["sites/assets"]
         for app in bench.apps():
             prefix = f"apps/{app.config.name}"
@@ -31,7 +31,7 @@ class BenchArtifacts:
         return [path for path in paths if (bench.path / path).is_dir()]
 
     def capture(self, bench) -> list[str]:
-        existing = self.paths(bench)
+        existing = self.get_paths(bench)
         for path in existing:
             self.copy_directory(bench.path / path, self.root / path)
         self.relocate_links(bench.path.resolve(), self.root)

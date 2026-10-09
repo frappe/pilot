@@ -131,6 +131,7 @@ class BuildArtifacts:
                 return True
         return False
 
+    @property
     def paths(self) -> list[str]:
         paths = ["sites/assets"]
         for app in self.bench.apps():
@@ -144,7 +145,7 @@ class BuildArtifacts:
     def capture(self, key: str | None) -> None:
         if key is None:
             return
-        paths = self.paths()
+        paths = self.paths
         if "sites/assets" not in paths:
             return
         self.root.mkdir(parents=True, exist_ok=True)
