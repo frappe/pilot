@@ -23,7 +23,9 @@ jobs:
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Install system dependencies
-        run: sudo apt-get install -y redis-tools
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y redis-tools
 
       - name: Lint
         # Same ruff version as .pre-commit-config.yaml.
