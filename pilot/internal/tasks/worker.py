@@ -5,6 +5,7 @@ import os
 import signal
 import subprocess
 import threading
+import time
 from pathlib import Path
 
 from pilot.internal.tasks.process import TaskProcess, TaskProcessStartError
@@ -27,6 +28,7 @@ class TaskWorker:
         self._drain = threading.Event()
         self._claim_lock = threading.Lock()
         self._last_state: tuple[WorkerStatus, int | None, str | None] | None = None
+        self._next_migration_reconcile_at = 0.0
         self._thread = threading.Thread(
             target=self._run,
             name="bench-task-worker",
@@ -76,6 +78,12 @@ class TaskWorker:
     def _work_once(self, pid: int) -> None:
         self._wake.clear()
         blocking_task = self._processes.reconcile()
+        if blocking_task is None and time.monotonic() >= self._next_migration_reconcile_at:
+            self._next_migration_reconcile_at = time.monotonic() + 30
+            from pilot.core.bench import Bench
+            from pilot.core.bench.migration.recovery import reconcile_orphaned_migrations
+
+            reconcile_orphaned_migrations(Bench(self._bench_root))
         if blocking_task is not None:
             status = WorkerStatus.DRAINING if self._intent_stopped() else WorkerStatus.RUNNING
             self._write_state(status, pid, blocking_task)

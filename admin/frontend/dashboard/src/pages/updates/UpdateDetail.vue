@@ -36,6 +36,8 @@ const acting = ref(false)
 const error = ref('')
 const confirmSkip = ref(false)
 const confirmRestore = ref(false)
+const confirmForceRecovery = ref(false)
+const recovering = ref(false)
 let timer: ReturnType<typeof setTimeout> | undefined
 
 const title = computed(() => opTitle(op.value))
@@ -133,6 +135,21 @@ const runAction = async (action: () => Promise<MigrationAccepted>) => {
     error.value = errorMessage(caught, 'Action failed.')
   } finally {
     acting.value = false
+  }
+}
+
+const doRecover = async (force = false) => {
+  recovering.value = true
+  try {
+    op.value = force
+      ? await updatesApi.forceNeedsAttention(props.operationId)
+      : await updatesApi.recover(props.operationId)
+    await load()
+  } catch (caught) {
+    error.value = errorMessage(caught, 'Migration recovery failed.')
+  } finally {
+    recovering.value = false
+    confirmForceRecovery.value = false
   }
 }
 
@@ -254,6 +271,36 @@ onUnmounted(() => clearTimeout(timer))
 
       <ErrorMessage v-if="error" class="mt-4" :message="error" />
 
+      <section
+        v-if="isActive(op)"
+        class="mt-4 rounded-6 border border-outline-gray-2 p-4"
+      >
+        <h2 class="text-sm font-medium">Migration recovery</h2>
+        <p class="mt-2 text-p-sm text-ink-gray-6">
+          If the task has stopped unexpectedly, recover its state without retrying the database migration.
+          Recovery refuses tasks that are still executing or cannot be verified.
+        </p>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <Button :loading="recovering" @click="doRecover(false)">Recover interrupted migration</Button>
+          <Button variant="subtle" :disabled="recovering" @click="confirmForceRecovery = true">
+            Force set to Needs Attention
+          </Button>
+        </div>
+      </section>
+      <Dialog v-model="confirmForceRecovery" title="Force migration into Needs Attention?">
+        <div class="space-y-3 p-4">
+          <p class="text-p-sm text-ink-gray-7">
+            Only proceed if the migration worker is no longer active. This does not roll back
+            schema changes or provide a database backup.
+          </p>
+          <div class="flex justify-end gap-2">
+            <Button variant="subtle" @click="confirmForceRecovery = false">Cancel</Button>
+            <Button theme="red" :loading="recovering" @click="doRecover(true)">
+              Confirm force recovery
+            </Button>
+          </div>
+        </div>
+      </Dialog>
       <!-- Unresolved failure -->
       <section
         v-if="isAttention"
