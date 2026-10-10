@@ -1,0 +1,18 @@
+[bench]
+name = "ci-v15-bench"
+python = "3.14"
+http_port = 8001
+socketio_port = 9001
+
+[[apps]]
+name = "frappe"
+repo = "https://github.com/frappe/frappe"
+branch = "version-15"
+
+[redis]
+cache_port = 14000
+queue_port = 12000
+
+[[workers]]
+queues = ["default", "short", "long"]
+count = 1

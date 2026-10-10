@@ -28,6 +28,28 @@ def setup_client(bench_root: Path, *, authenticated: bool = True):
     return client
 
 
+def test_framework_branches_offer_v15_and_preserve_v16_default(tmp_path: Path) -> None:
+    client = setup_client(tmp_path)
+
+    branches = client.get("/api/v1/setup/framework-branches").get_json()["branches"]
+
+    assert branches[0] == "version-16"
+    assert "version-15" in branches
+    response = client.put(
+        "/api/v1/setup/configuration",
+        json={"app_branch": "version-15", "mariadb_password": "database-secret"},
+    )
+    assert response.status_code == 200
+    assert BenchConfig.read(tmp_path).apps[0].branch == "version-15"
+
+    started = start_setup(client)
+
+    assert started.status_code == 202
+    assert started.get_json()["command"] == "wizard-setup"
+    assert started.get_json()["status"] == "queued"
+    assert BenchConfig.read(tmp_path).apps[0].branch == "version-15"
+
+
 def save_configuration(client):
     return client.put(
         "/api/v1/setup/configuration",

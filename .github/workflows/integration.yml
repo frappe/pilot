@@ -117,6 +117,21 @@ jobs:
           # (installs services, rewrites the machine's nginx config).
           BENCH_E2E_PRODUCTION: "1"
 
+      - name: Pilot init (Frappe v15)
+        run: |
+          mkdir -p benches/ci-v15-bench
+          cp tests/fixtures/ci_v15_bench.toml benches/ci-v15-bench/bench.toml
+          pilot init -b ci-v15-bench
+        timeout-minutes: 45
+
+      - name: Verify Frappe v15 initialization
+        run: |
+          benches/ci-v15-bench/env/bin/python -c 'import sys, frappe; assert sys.version_info[:2] == (3, 14); assert frappe.__version__.startswith("15.")'
+          test -d benches/ci-v15-bench/apps/frappe/node_modules
+          test -f benches/ci-v15-bench/config/redis_cache.conf
+          test -f benches/ci-v15-bench/config/Procfile
+          test "$(cat benches/ci-v15-bench/sites/apps.txt)" = "frappe"
+
       - name: Diagnostics on failure
         if: failure()
         run: |

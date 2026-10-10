@@ -221,6 +221,7 @@ class PythonEnvManager:
                     [get_yarn_bin(), "install", "--frozen-lockfile"],
                     cwd=app.path,
                     stream_output=True,
+                    env={**os.environ, "UV_USE_IO_URING": "0"},
                 )
 
     def build_assets(self) -> None:

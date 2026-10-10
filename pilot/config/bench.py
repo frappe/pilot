@@ -82,7 +82,7 @@ FLAT_KEYS = {
 }
 
 # Framework branches the setup wizard offers, newest/recommended first.
-FRAMEWORK_BRANCHES = ["version-16", "develop"]
+FRAMEWORK_BRANCHES = ["version-16", "version-15", "develop"]
 
 _DEFAULT_DATA: dict = {
     "bench": {"name": "", "python": "3.14"},

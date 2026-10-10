@@ -191,6 +191,28 @@ def test_install_node_raises_on_other_linux(monkeypatch) -> None:
         manager._install_node()
 
 
+def test_node_dependencies_disable_io_uring_without_losing_environment(tmp_path: Path, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from pilot.managers import environment as module
+
+    (tmp_path / "package.json").write_text("{}")
+    app = SimpleNamespace(path=tmp_path)
+    bench = SimpleNamespace(apps=lambda: [app])
+    monkeypatch.setenv("PILOT_INSTALL_TEST", "preserved")
+    monkeypatch.setenv("UV_USE_IO_URING", "1")
+    monkeypatch.setattr(module, "get_yarn_bin", lambda: "/usr/bin/yarn")
+
+    with patch.object(module, "run_command") as run:
+        module.PythonEnvManager(bench).install_node_dependencies()
+
+    assert run.call_args.args == (["/usr/bin/yarn", "install", "--frozen-lockfile"],)
+    assert run.call_args.kwargs["cwd"] == tmp_path
+    assert run.call_args.kwargs["env"]["UV_USE_IO_URING"] == "0"
+    assert run.call_args.kwargs["env"]["PILOT_INSTALL_TEST"] == "preserved"
+    assert module.os.environ["UV_USE_IO_URING"] == "1"
+
+
 @pytest.mark.parametrize(("version", "is_accepted"), [("v18.20.3", False), ("v24.1.0", True), ("v26.0.0", True)])
 def test_node_version_is_checked_before_yarn_runs(monkeypatch, version: str, is_accepted: bool) -> None:
     from types import SimpleNamespace
