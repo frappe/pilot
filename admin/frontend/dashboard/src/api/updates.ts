@@ -14,6 +14,15 @@ export const updatesApi = {
   createUpdate: (json: Record<string, unknown> = {}): Promise<MigrationAccepted> =>
     request.post('updates', { json }).json(),
 
+  stop: (id: string): Promise<MigrationSummary> =>
+    request.post(`migrations/${id}/actions/stop`, { json: { confirm: true } }).json(),
+
+  recover: (id: string): Promise<MigrationSummary> =>
+    request.post(`migrations/${id}/actions/recover`).json(),
+
+  forceNeedsAttention: (id: string): Promise<MigrationSummary> =>
+    request.post(`migrations/${id}/actions/force-needs-attention`, { json: { confirm: true } }).json(),
+
   retry: (id: string): Promise<MigrationAccepted> =>
     request.post(`migrations/${id}/actions/retry`).json(),
 
