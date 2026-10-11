@@ -128,11 +128,26 @@ class BenchRuntime:
         if not initialized:
             self._start_wizard(on_progress)
             return
+        self._warn_fixed_dev_site(on_progress)
         manager = ProcessManager(self.bench)
         self._rebuild_manager_config(manager)
         if not manager.watch_admin_js:
             self._ensure_admin_dist(on_progress)
         manager.start()
+
+    def _warn_fixed_dev_site(self, on_progress: Callable[[str], None]) -> None:
+        from pilot.config.common_site_config import read_common_site_config
+
+        if self.bench.is_lite_mode:
+            return
+        config = read_common_site_config(self.bench.sites_path)
+        fixed_site = os.environ.get("FRAPPE_SITE") or config.get("default_site")
+        if fixed_site and len(self.bench.sites()) > 1:
+            on_progress(
+                f"Warning: the development web server is pinned to '{fixed_site}'. "
+                "Unset FRAPPE_SITE and remove default_site from common_site_config.json "
+                "for Host-based routing across sites."
+            )
 
     def _production_manager(self, process_manager: str) -> "ManagedProcessManager":
         if process_manager == "systemd":
