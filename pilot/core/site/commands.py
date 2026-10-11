@@ -46,6 +46,8 @@ class SiteCommands:
         public_files: str | None = None,
         private_files: str | None = None,
     ) -> None:
+        for directory in ("logs", "locks"):
+            (self.site.path / directory).mkdir(exist_ok=True)
         cmd = self.site._frappe_call("frappe", "--site", self.site.config.name, "restore", db_file)
         if public_files:
             cmd += ["--with-public-files", public_files]
