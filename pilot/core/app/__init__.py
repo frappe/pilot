@@ -105,6 +105,9 @@ class App:
         except Exception:
             shutil.rmtree(app.path, ignore_errors=True)
             raise
+        app.config.repo = str(app.path)
+        app.config.branch = app.current_branch
+        app.record_branch()
         on_progress(f"\n'{name}' created and installed successfully.")
         return app
 
