@@ -170,6 +170,28 @@ def test_main_forwards_explicit_frappe_command(monkeypatch: pytest.MonkeyPatch) 
     assert calls == [("demo", ["--site", "site.localhost", "migrate", "--verbose"], True)]
 
 
+@pytest.mark.parametrize("flag", ["--help", "-h"])
+def test_frappe_help_explains_passthrough_without_a_bench(monkeypatch, capsys, flag):
+    monkeypatch.setattr(sys, "argv", ["pilot", "frappe", flag])
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main()
+
+    assert exit_info.value.code == 0
+    help_text = " ".join(capsys.readouterr().out.split())
+    assert "pilot -b NAME frappe --site SITE migrate" in help_text
+    assert "without a '--' separator" in help_text
+
+
+def test_frappe_subcommand_help_is_forwarded(monkeypatch):
+    calls = []
+    monkeypatch.setattr(dispatch, "run_frappe", lambda context, args: calls.append(args))
+    monkeypatch.setattr(sys, "argv", ["pilot", "frappe", "--site", "test.local", "migrate", "--help"])
+
+    cli.main()
+
+    assert calls == [["--site", "test.local", "migrate", "--help"]]
+
+
 def test_main_dispatches_all_benches_without_selecting_one(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

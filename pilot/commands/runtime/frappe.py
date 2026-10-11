@@ -12,7 +12,11 @@ from pilot.exceptions import BenchError
 @dataclass(kw_only=True)
 class FrappeCommand(Command):
     name: ClassVar[str] = "frappe"
-    help: ClassVar[str] = "Run a frappe CLI command."
+    help: ClassVar[str] = (
+        "Run a Frappe CLI command, without a '--' separator. "
+        "Example: pilot -b NAME frappe --site SITE migrate. "
+        "Add --help after a Frappe command to see its options."
+    )
 
     args: tuple[str, ...] = ()
 

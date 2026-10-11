@@ -175,6 +175,8 @@ def build_context(bench_name: str | None, verbose: bool, assume_yes: bool) -> Cl
 
 
 def forwarded_frappe_args(remaining: list[str]) -> list[str] | None:
+    if remaining in (["frappe", "--help"], ["frappe", "-h"]):
+        return None
     if remaining and remaining[0] == "frappe":
         return remaining[1:]
     if is_frappe_passthrough(remaining):
