@@ -133,3 +133,43 @@ def test_new_bench_enables_server_scripts_unless_set_by_hand(tmp_path) -> None:
     config_path.write_text(json.dumps({"server_script_enabled": False}))
     BenchInitializer(bench)._create_bench_structure()
     assert json.loads(config_path.read_text())["server_script_enabled"] is False
+
+
+def test_init_links_prebuilt_assets_after_node_dependencies(tmp_path: Path) -> None:
+    from pilot.managers.environment import PythonEnvManager
+
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    public = bench.apps_path / "frappe" / "frappe" / "public"
+    public.mkdir(parents=True)
+    (public / "desk.js").write_text("desk")
+    app = MagicMock()
+    app.path = public.parent.parent
+    app.config.name = "frappe"
+    app.has_source_changes = False
+    app.has_page_islands = False
+    initializer = BenchInitializer(bench)
+
+    def install_node_dependencies(self: PythonEnvManager) -> None:
+        (app.path / "node_modules").mkdir()
+        (app.path / "node_modules" / "style.css").write_text("style")
+
+    with (
+        patch.object(Bench, "apps", return_value=[app]),
+        patch.object(BenchInitializer, "_ensure_admin_password"),
+        patch.object(BenchInitializer, "_ensure_database_credentials"),
+        patch.object(BenchInitializer, "_install_system_packages"),
+        patch.object(BenchInitializer, "_create_virtualenv"),
+        patch.object(BenchInitializer, "_install_framework_apps"),
+        patch.object(BenchInitializer, "_configure_redis"),
+        patch.object(BenchInitializer, "_ensure_admin_frontend"),
+        patch.object(BenchInitializer, "_generate_process_config"),
+        patch.object(PythonEnvManager, "install_node"),
+        patch.object(PythonEnvManager, "install_node_dependencies", install_node_dependencies),
+        patch("pilot.core.app.prebuilt_assets.PrebuiltAssets.install", return_value=True),
+    ):
+        initializer.run(lambda message: None)
+
+    assets = bench.sites_path / "assets" / "frappe"
+    assert (assets / "desk.js").read_text() == "desk"
+    assert (assets / "node_modules" / "style.css").read_text() == "style"

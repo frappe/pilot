@@ -51,6 +51,7 @@ class BenchInitializer:
             ("Install Node.js", python_env_manager.install_node),
             ("Install Node.js dependencies", python_env_manager.install_node_dependencies),
             ("Configure Redis", self._configure_redis),
+            ("Build app assets", lambda: self._build_assets(python_env_manager)),
             ("Prepare admin frontend", lambda: self._ensure_admin_frontend(on_progress)),
             ("Generate process config", self._generate_process_config),
         ]
@@ -101,6 +102,10 @@ class BenchInitializer:
             on_progress(f"  Installing {app.config.name}...")
             python_env_manager.install_app(app)
         self.bench.write_apps_txt()
+
+    def _build_assets(self, python_env_manager) -> None:
+        for app in self.bench.apps():
+            python_env_manager.build_assets_for_app(app)
 
     def _ensure_admin_password(self) -> None:
         import secrets
