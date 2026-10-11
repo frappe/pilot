@@ -24,6 +24,27 @@ Bench commands with `--bench NAME` can run from outside the bench directory. `Be
 
 Some runtime commands support all benches when invoked with the CLI option for all-bench execution.
 
+### Development Tunnels
+
+A tunnel to the development web port bypasses Pilot's production nginx. Rewriting `Host` to the local site name is not sufficient for clients that send `X-Frappe-Site-Name` with the browser's hostname. Frappe selects that header before `Host`, so API requests can report that the public hostname does not exist.
+
+For a site named `dev.localhost` exposed as `dev.example.com`, run this from the bench directory:
+
+```bash
+test ! -e sites/dev.example.com && test ! -L sites/dev.example.com &&
+  ln -s dev.localhost sites/dev.example.com
+```
+
+The alias lets Frappe load the same site configuration for either hostname. Keep the tunnel's Host rewrite, such as Cloudflare Tunnel's `httpHostHeader: dev.localhost`. The checks prevent creating a link when that path already exists. Pilot does not list the alias as a separate site.
+
+Check an API request with `X-Frappe-Site-Name: dev.example.com`, as well as a page load. Remove the alias before dropping or renaming the site:
+
+```bash
+unlink sites/dev.example.com
+```
+
+Recreate the alias with the new site name after a rename. Production nginx sets `X-Frappe-Site-Name` itself, so its configured domains do not need this development alias.
+
 ## App Commands
 
 - `pilot new-app APP`: scaffold a new Frappe app under `apps/` and install it. Prompts for title, description, publisher, email, license, GitHub workflow, and branch; pass any of `--title/--description/--publisher/--email/--license/--branch/--github-workflow` to skip prompts (branch defaults to `develop`).
