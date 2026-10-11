@@ -9,6 +9,7 @@ import pytest
 from pilot.config import BenchConfig, SiteConfig
 from pilot.core.bench import Bench
 from pilot.core.site import Site
+from pilot.exceptions import BenchError
 
 _BENCH_DATA: dict = {
     "bench": {"name": "test-bench", "python": "3.14"},
@@ -170,3 +171,43 @@ def test_drop_skips_the_backup_only_when_asked(
 
     cmd = _capture_drop_cmd(tmp_path, monkeypatch, bench, no_backup=no_backup)["cmd"]
     assert ("--no-backup" in cmd) is skips_backup
+
+
+@pytest.mark.parametrize("no_backup", [False, True])
+def test_drop_site_cli_uses_confirmation_and_backup_flags(tmp_path: Path, monkeypatch, no_backup) -> None:
+    from pilot.internal.cli.command import command_from_args
+    from pilot.internal.cli.registry import build_parser
+
+    parser = build_parser()
+    args = parser.parse_args(["--yes", "drop-site", "mysite", *(["--no-backup"] if no_backup else [])])
+    bench = _make_bench(tmp_path)
+    _write_site(bench, "mysite", {"db_name": "_dropdb"})
+    calls = []
+    monkeypatch.setattr(Site, "drop", lambda self, **kwargs: calls.append((self.config.name, kwargs)))
+    monkeypatch.setattr("builtins.input", lambda prompt: pytest.fail("must not prompt with --yes"))
+
+    command_from_args(args._command_cls, args, bench).run()
+
+    assert len(calls) == 1
+    assert calls[0][0] == "mysite"
+    assert calls[0][1]["no_backup"] is no_backup
+
+
+def test_drop_site_cli_aborts_on_eof(tmp_path: Path, monkeypatch) -> None:
+    from pilot.internal.cli.command import command_from_args
+    from pilot.internal.cli.registry import build_parser
+
+    args = build_parser().parse_args(["drop-site", "mysite"])
+    bench = _make_bench(tmp_path)
+    _write_site(bench, "mysite", {"db_name": "_dropdb"})
+    calls = []
+    monkeypatch.setattr(Site, "drop", lambda self, **kwargs: calls.append(self.config.name))
+
+    def eof(prompt):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", eof)
+    with pytest.raises(BenchError, match="Aborted"):
+        command_from_args(args._command_cls, args, bench).run()
+
+    assert calls == []
