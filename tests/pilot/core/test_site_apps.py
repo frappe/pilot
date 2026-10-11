@@ -50,6 +50,26 @@ def test_install_app_clears_cache_before_and_after_success(tmp_path: Path) -> No
     assert commands[2][-1] == "clear-cache"
 
 
+def test_install_app_links_static_assets_without_building(tmp_path: Path) -> None:
+    site, app = make_site_and_app(tmp_path)
+    public = app.path / app.config.name / "public"
+    public.mkdir(parents=True)
+    (public / "index.html").write_text("app page")
+    (app.path / "node_modules").mkdir()
+    link = site.bench.sites_path / "assets" / app.config.name
+
+    with patch("pilot.core.site.apps.run_command"), patch.object(Bench, "reload_workers"):
+        site.install_app(app)
+        link.unlink()
+        link.symlink_to(tmp_path / "missing")
+        site.install_app(app)
+        site.install_app(app)
+
+    assert link.is_symlink()
+    assert (link / "index.html").read_text() == "app page"
+    assert (link / "node_modules").resolve() == app.path / "node_modules"
+
+
 def test_install_app_clears_cache_after_failure(tmp_path: Path) -> None:
     site, app = make_site_and_app(tmp_path)
 
