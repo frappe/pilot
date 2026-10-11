@@ -19,6 +19,12 @@ class SiteApps:
         self.site = site
 
     def install_app(self, app: "App") -> None:
+        from pilot.managers.environment import PythonEnvManager
+        from pilot.managers.python_assets import PythonAssetBuilder
+
+        public = app.path / app.module_name / "public"
+        if public.is_dir():
+            PythonAssetBuilder(PythonEnvManager(self.site.bench)).link_app_assets(app.module_name, public)
         if app.config.name in self.disabled_apps():
             self.enable_app(app)
             return

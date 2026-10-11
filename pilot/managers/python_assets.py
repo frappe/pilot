@@ -152,21 +152,8 @@ class PythonAssetBuilder:
         dist_dir: Path,
         asset_maps: dict[str, dict[str, str]] | None = None,
     ) -> None:
+        self.link_app_assets(app_name, app_public_dir)
         assets_dir = self.bench.sites_path / "assets"
-        assets_dir.mkdir(exist_ok=True)
-
-        app_link = assets_dir / app_name
-        if app_link.is_symlink():
-            app_link.unlink()
-        elif app_link.is_dir():
-            shutil.rmtree(str(app_link))
-        app_link.symlink_to(app_public_dir.resolve())
-
-        # As `bench build` links it: <app>/node_modules is served at /assets/<app>/node_modules.
-        node_modules = app_public_dir.parent.parent / "node_modules"
-        node_modules_link = app_public_dir / "node_modules"
-        if node_modules.is_dir() and not node_modules_link.exists() and not node_modules_link.is_symlink():
-            node_modules_link.symlink_to(node_modules.resolve())
 
         if asset_maps is None:
             self.write_assets_json(app_name, dist_dir, assets_dir)
@@ -175,6 +162,27 @@ class PythonAssetBuilder:
 
             for name, entries in asset_maps.items():
                 self.merge_json(assets_dir / name, entries, replacing=f"/assets/{app_name}/", keeping=PAGE_ISLAND_URL)
+
+    def link_app_assets(self, app_name: str, app_public_dir: Path) -> None:
+        from pilot.internal.atomic_file import exclusive_file_lock
+
+        assets_dir = self.bench.sites_path / "assets"
+        assets_dir.mkdir(parents=True, exist_ok=True)
+
+        app_link = assets_dir / app_name
+        with exclusive_file_lock(assets_dir / "asset-links"):
+            if app_link.is_symlink():
+                app_link.unlink()
+            elif app_link.is_dir():
+                shutil.rmtree(str(app_link))
+            app_link.symlink_to(app_public_dir.resolve())
+
+            # As `bench build` links it: <app>/node_modules is served at /assets/<app>/node_modules.
+            node_modules = app_public_dir.parent.parent / "node_modules"
+            node_modules_link = app_public_dir / "node_modules"
+            if node_modules.is_dir() and not node_modules_link.exists() and not node_modules_link.is_symlink():
+                node_modules_link.symlink_to(node_modules.resolve())
+
         print(f"  Linked {app_link} -> {app_public_dir.resolve()}")
 
     def build_page_islands(self) -> None:
