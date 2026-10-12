@@ -107,7 +107,16 @@ class App:
             raise
         app.config.repo = str(app.path)
         app.config.branch = app.current_branch
-        app.record_branch()
+        from pilot.config import BenchConfig
+
+        with BenchConfig.open(bench.path, mode="raw") as raw:
+            apps = raw.setdefault("apps", [])
+            entry = next((item for item in apps if item.get("name") == name), None)
+            if entry is None:
+                apps.append({"name": name, "repo": app.config.repo, "branch": app.config.branch})
+            else:
+                entry["repo"] = app.config.repo
+                entry["branch"] = app.config.branch
         on_progress(f"\n'{name}' created and installed successfully.")
         return app
 
