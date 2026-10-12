@@ -61,7 +61,11 @@ def test_new_app_records_the_scaffold_branch_in_bench_config(tmp_path, branch):
 def test_new_app_replaces_stale_config_entry(tmp_path):
     bench = make_bench(tmp_path)
     bench.create_directories()
-    bench.config.apps.append(AppConfig(name="my_app", repo="https://example.com/old", branch="old"))
+    bench.config.apps.append(
+        AppConfig(
+            name="my_app", repo="https://example.com/old", branch="old", branches=["old"]
+        )
+    )
     bench.config.write(bench.path)
     options = NewAppOptions(description="Hi", publisher="Frappe", email="dev@example.com")
 
@@ -79,4 +83,5 @@ def test_new_app_replaces_stale_config_entry(tmp_path):
     assert len(entries) == 1
     assert entries[0].repo == str(app.path)
     assert entries[0].branch == "develop"
+    assert entries[0].branches == []
     assert bench.registered_apps() == ["my_app"]

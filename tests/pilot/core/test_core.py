@@ -637,6 +637,22 @@ def test_record_branch_updates_existing_app_entry(tmp_path: Path) -> None:
     assert apps[0].branch == "develop"
 
 
+def test_record_branch_preserves_existing_repository_and_branches(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.config.apps[0].branches = ["version-16", "develop"]
+    bench.config.write(bench.path)
+    app = App(
+        AppConfig(name="frappe", repo="https://example.com/another", branch="develop"), bench
+    )
+
+    app.record_branch()
+
+    entry = BenchConfig.read(bench.path).apps[0]
+    assert entry.repo == "https://github.com/frappe/frappe"
+    assert entry.branch == "develop"
+    assert entry.branches == ["version-16", "develop"]
+
+
 def test_record_branch_skips_when_branch_is_commit_hash(tmp_path: Path) -> None:
     bench_dir = tmp_path / "bench1"
     _write_bench_toml(bench_dir, "test-bench")
