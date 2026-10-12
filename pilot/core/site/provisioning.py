@@ -107,8 +107,7 @@ class SiteProvisioner:
         return [
             app
             for app in self.bench.apps()
-            if self.bench.is_app_installed(app.config.name)
-            and not (assets_dir / app.config.name).exists()
+            if self.bench.is_app_installed(app.config.name) and not (assets_dir / app.config.name).exists()
         ]
 
     def build_missing_assets(self, apps: list["App"] | None = None) -> None:

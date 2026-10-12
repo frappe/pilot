@@ -62,9 +62,7 @@ def test_new_app_replaces_stale_config_entry(tmp_path):
     bench = make_bench(tmp_path)
     bench.create_directories()
     bench.config.apps.append(
-        AppConfig(
-            name="my_app", repo="https://example.com/old", branch="old", branches=["old"]
-        )
+        AppConfig(name="my_app", repo="https://example.com/old", branch="old", branches=["old"])
     )
     bench.config.write(bench.path)
     options = NewAppOptions(description="Hi", publisher="Frappe", email="dev@example.com")

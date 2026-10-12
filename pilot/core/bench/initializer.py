@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -102,7 +103,7 @@ class BenchInitializer:
             if not app.is_cloned:
                 if not app.path.exists() and not app.path.is_symlink():
                     self._rollback_actions.append(
-                        (f"app {app.config.name}", lambda path=app.path: shutil.rmtree(path, ignore_errors=True))
+                        (f"app {app.config.name}", partial(shutil.rmtree, app.path, ignore_errors=True))
                     )
                 on_progress(f"  Cloning {app.config.name}...")
                 app.clone()

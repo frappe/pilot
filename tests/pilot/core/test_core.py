@@ -641,9 +641,7 @@ def test_record_branch_preserves_existing_repository_and_branches(tmp_path: Path
     bench = make_bench(tmp_path)
     bench.config.apps[0].branches = ["version-16", "develop"]
     bench.config.write(bench.path)
-    app = App(
-        AppConfig(name="frappe", repo="https://example.com/another", branch="develop"), bench
-    )
+    app = App(AppConfig(name="frappe", repo="https://example.com/another", branch="develop"), bench)
 
     app.record_branch()
 

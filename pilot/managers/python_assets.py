@@ -157,7 +157,11 @@ class PythonAssetBuilder:
             # As `bench build` links it: <app>/node_modules is served at /assets/<app>/node_modules.
             node_modules = app_public_dir.parent.parent / "node_modules"
             node_modules_link = app_public_dir / "node_modules"
-            if node_modules.is_dir() and not node_modules_link.exists() and not node_modules_link.is_symlink():
+            if (
+                node_modules.is_dir()
+                and not node_modules_link.exists()
+                and not node_modules_link.is_symlink()
+            ):
                 node_modules_link.symlink_to(node_modules.resolve())
 
         print(f"  Linked {app_link} -> {app_public_dir.resolve()}")
