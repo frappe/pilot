@@ -26,9 +26,11 @@ from pilot.exceptions import (
     MigrationConflictError,
     MigrationNotFoundError,
     RegistryUnavailableError,
+    TaskConflictError,
     TaskNotFoundError,
 )
 from pilot.internal.site_paths import site_exists
+from pilot.internal.tasks.store import TaskStore
 from pilot.internal.validators import validate_app_name, validate_repo_url
 from pilot.managers.task import TaskReader
 from pilot.tasks.get_and_install_app import GetAndInstallAppTask
@@ -131,9 +133,7 @@ def install_site_app(name: str):
         if enabled := _enable_disabled_app(bench, name, cloned):
             return jsonify({"app": enabled, "enabled": True})
     except BenchError as error:
-        # Frappe refuses to enable an app whose dependency is still disabled - that is
-        # the user's problem to fix, not a failure to start work.
-        return error_response("cannot_enable", _frappe_reason(error, "Could not enable the app."), 422)
+        return _enable_bench_error(error)
     except Exception as error:
         return task_failure(error)
 
@@ -168,20 +168,28 @@ def _frappe_reason(error: Exception, fallback: str) -> str:
     return fallback if not reason or _COMMAND_FAILURE.match(reason) else reason
 
 
+def _enable_bench_error(error: BenchError):
+    if isinstance(error, TaskConflictError):
+        return task_failure(error)
+    # Frappe refuses to enable an app whose dependency is still disabled.
+    return error_response("cannot_enable", _frappe_reason(error, "Could not enable the app."), 422)
+
+
 def _enable_disabled_app(bench: Bench, site: str, cloned: "App | None") -> str | None:
     """A disabled app still has its schema and data on the site, so installing it again
     is a flag flip - done inline, no task. An app it requires but no longer has must be
     installed first, which is task work, so that falls through to the queue instead."""
     if cloned is None:
         return None
-    site_object = bench.site(site)
-    if cloned.module_name not in site_object.disabled_apps():
-        return None
-    app = bench.app(cloned.module_name)
-    if site_object.get_missing_dependencies(app):
-        return None
-    site_object.enable_app(app)
-    return cloned.module_name
+    with TaskStore(bench.path).reserve_inline_site_write(site):
+        site_object = bench.site(site)
+        if cloned.module_name not in site_object.disabled_apps():
+            return None
+        app = bench.app(cloned.module_name)
+        if site_object.get_missing_dependencies(app):
+            return None
+        site_object.enable_app(app)
+        return cloned.module_name
 
 
 def _submit_install_task(
@@ -326,7 +334,10 @@ def delete_site_app(name: str, app: str):
     bench = Bench(bench_root)
     if request.args.get("mode") == "disable":
         try:
-            bench.site(name).disable_app(bench.app(app))
+            with TaskStore(bench_root).reserve_inline_site_write(name):
+                bench.site(name).disable_app(bench.app(app))
+        except TaskConflictError as error:
+            return task_failure(error)
         except BenchError as error:
             return error_response("cannot_disable", _frappe_reason(error, "Could not disable the app."), 422)
         except Exception as error:

@@ -205,11 +205,17 @@ def test_active_idempotent_submission_returns_existing_task(tmp_path: Path) -> N
     assert not store.task_dir(duplicate_metadata["task_id"]).exists()
 
 
+@pytest.mark.parametrize("unkeyed", [False, True])
 def test_concurrent_idempotent_site_submissions_return_same_task(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    unkeyed: bool,
 ) -> None:
     store = TaskStore(tmp_path)
+    first_metadata = (
+        {**metadata(), "command": "backup-site", "args": {"site": "example.test"}} if unkeyed else metadata()
+    )
+    resource_key = None if unkeyed else "site:example.test"
     publishing = Event()
     release = Event()
     second_started = Event()
@@ -224,11 +230,11 @@ def test_concurrent_idempotent_site_submissions_return_same_task(
     def submit_second():
         second_started.set()
         return store.create_idempotent_queued(
-            {**metadata(), "task_id": "20260715-120001-bbccdd"},
+            {**first_metadata, "task_id": "20260715-120001-bbccdd"},
             {},
             idempotency_digest="key-digest",
             request_fingerprint="request-digest",
-            resource_key="site:example.test",
+            resource_key=resource_key,
         )
 
     monkeypatch.setattr(store, "_create_queued_locked", pause_first_publish)
@@ -236,11 +242,11 @@ def test_concurrent_idempotent_site_submissions_return_same_task(
     with ThreadPoolExecutor(max_workers=2) as executor:
         first = executor.submit(
             store.create_idempotent_queued,
-            metadata(),
+            first_metadata,
             {},
             "key-digest",
             "request-digest",
-            resource_key="site:example.test",
+            resource_key=resource_key,
         )
         try:
             assert publishing.wait(10)
@@ -324,6 +330,130 @@ def test_direct_site_reservation_uses_lowercase_and_releases_on_error(tmp_path: 
         store.reserve_direct_site("Example.Test"),
     ):
         pytest.fail("reservation must reject the active task")
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["backup-site", "delete-backup", "install-app", "get-and-install-app", "uninstall-app"],
+)
+@pytest.mark.parametrize("status", [TaskStatus.QUEUED, TaskStatus.RUNNING])
+def test_direct_site_reservation_rejects_unkeyed_site_work(
+    tmp_path: Path, command: str, status: TaskStatus
+) -> None:
+    store = TaskStore(tmp_path)
+    store.create_queued({**metadata(), "command": command, "args": {"site": "Example.Test"}})
+    if status == TaskStatus.RUNNING:
+        store.transition(TASK_ID, TaskStatus.QUEUED, status)
+
+    with (
+        pytest.raises(TaskConflictError, match=r"site:example\.test"),
+        store.reserve_direct_site("example.test"),
+    ):
+        pytest.fail("drop must reject active site work")
+
+
+def test_direct_site_reservation_rejects_multi_site_app_work(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    store.create_queued(
+        {
+            **metadata(),
+            "command": "get-and-install-app",
+            "args": {"site": "", "sites": ["Other.Test", "Example.Test"]},
+        }
+    )
+
+    with (
+        pytest.raises(TaskConflictError, match=r"site:example\.test"),
+        store.reserve_direct_site("example.test"),
+    ):
+        pytest.fail("drop must reject a task that includes the site")
+
+
+def test_direct_site_reservation_rejects_new_unkeyed_work_and_inline_write(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    backup = {**metadata(), "command": "backup-site", "args": {"site": "example.test"}}
+    install = {**metadata(), "command": "install-app", "args": {"site": "Example.Test"}}
+
+    with store.reserve_direct_site("Example.Test"):
+        with pytest.raises(TaskConflictError, match=r"site:example\.test"):
+            store.create_queued(backup)
+        with pytest.raises(TaskConflictError, match=r"site:example\.test"):
+            store.create_idempotent_queued(
+                install, {}, idempotency_digest="key-digest", request_fingerprint="request-digest"
+            )
+        with (
+            pytest.raises(TaskConflictError, match=r"site:example\.test"),
+            store.reserve_inline_site_write("example.test"),
+        ):
+            pytest.fail("inline write must not start during drop")
+
+    assert not store.task_dir(TASK_ID).exists()
+    store.create_queued(backup)
+
+
+def test_inline_site_writes_and_unkeyed_tasks_remain_concurrent(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    entered = Event()
+    release = Event()
+    backup = {**metadata(), "command": "backup-site", "args": {"site": "example.test"}}
+    install = {
+        **metadata(),
+        "task_id": "20260715-120001-bbccdd",
+        "command": "install-app",
+        "args": {"site": "example.test"},
+    }
+
+    def hold_second_inline_write() -> None:
+        with TaskStore(tmp_path).reserve_inline_site_write("example.test"):
+            entered.set()
+            assert release.wait(10)
+
+    with store.reserve_inline_site_write("Example.Test"), ThreadPoolExecutor(max_workers=1) as executor:
+        second = executor.submit(hold_second_inline_write)
+        try:
+            assert entered.wait(10)
+            store.create_queued(backup)
+            store.create_queued(install)
+            with (
+                pytest.raises(TaskConflictError, match=r"site:example\.test"),
+                store.reserve_direct_site("example.test"),
+            ):
+                pytest.fail("drop must not start during an inline write")
+        finally:
+            release.set()
+        second.result(timeout=10)
+
+    assert store.read_status(TASK_ID) == TaskStatus.QUEUED
+    assert store.read_status(install["task_id"]) == TaskStatus.QUEUED
+
+
+def test_unkeyed_site_idempotent_replay_remains_available(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    backup = {**metadata(), "command": "backup-site", "args": {"site": "example.test"}}
+
+    with store.reserve_inline_site_write("example.test"):
+        first = store.create_idempotent_queued(
+            backup, {}, idempotency_digest="key-digest", request_fingerprint="request-digest"
+        )
+        replay = store.create_idempotent_queued(
+            {**backup, "task_id": "20260715-120001-bbccdd"},
+            {},
+            idempotency_digest="key-digest",
+            request_fingerprint="request-digest",
+        )
+
+    assert first.created is True
+    assert replay.created is False
+    assert replay.task_id == first.task_id
+
+
+def test_inline_site_write_releases_lock_on_error(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    with pytest.raises(RuntimeError, match="enable failed"), store.reserve_inline_site_write("example.test"):
+        raise RuntimeError("enable failed")
+
+    with store.reserve_direct_site("example.test"):
+        pass
 
 
 def test_active_resource_can_be_handed_to_successor(tmp_path: Path) -> None:

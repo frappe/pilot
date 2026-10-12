@@ -9,7 +9,7 @@ from hashlib import sha256
 from pathlib import Path
 
 from pilot.exceptions import TaskConflictError, TaskNotFoundError
-from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
+from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked, shared_file_lock
 from pilot.internal.tasks.files import TaskFiles
 from pilot.internal.tasks.models import TaskStatus
 from pilot.internal.tasks.state import parse_task_status, validate_task_transition
@@ -17,6 +17,9 @@ from pilot.utils import make_private_directory
 
 HOST_RESOURCE_PREFIX = "host:"
 _HOST_RESOURCE_LOCK = ".host-resources"
+_DROP_COORDINATED_COMMANDS = frozenset(
+    {"backup-site", "delete-backup", "install-app", "get-and-install-app", "uninstall-app"}
+)
 
 
 def _host_keys(keys: list[str]) -> set[str]:
@@ -49,6 +52,7 @@ class TaskStore:
         with (
             self._host_resource_lock(keys),
             exclusive_file_lock(self._lock_target),
+            self._drop_exclusion_locks(self._drop_site_names(metadata), shared=True),
             self._site_resource_locks(keys),
         ):
             self._reject_active_resource_locked(keys, resource_handoff_from)
@@ -71,6 +75,7 @@ class TaskStore:
         with (
             self._host_resource_lock(keys),
             exclusive_file_lock(self._lock_target),
+            self._drop_exclusion_locks(self._drop_site_names(metadata), shared=True),
             self._site_resource_locks(keys),
         ):
             existing = self._active_idempotent_task_locked(idempotency_digest)
@@ -214,9 +219,16 @@ class TaskStore:
     def reserve_direct_site(self, site_name: str) -> Iterator[None]:
         key = f"site:{site_name.lower()}"
         make_private_directory(self.tasks_root, parents=True)
-        with self._site_resource_locks([key]):
+        with self._drop_exclusion_locks([site_name], shared=False), self._site_resource_locks([key]):
             with exclusive_file_lock(self._lock_target):
                 self._reject_active_resource_locked([key])
+                self._reject_active_drop_work_locked(site_name)
+            yield
+
+    @contextmanager
+    def reserve_inline_site_write(self, site_name: str) -> Iterator[None]:
+        make_private_directory(self.tasks_root, parents=True)
+        with self._drop_exclusion_locks([site_name], shared=True):
             yield
 
     def _create_queued_locked(
@@ -262,6 +274,19 @@ class TaskStore:
         if not handoff_found:
             raise TaskConflictError("Resource handoff task is not active")
 
+    def _reject_active_drop_work_locked(self, site_name: str) -> None:
+        wanted = site_name.lower()
+        for task_dir in self._files.task_dirs():
+            try:
+                status = self.read_status(task_dir.name)
+                if not status.is_active and not self._files.has_cleanup_pending(task_dir):
+                    continue
+                metadata = self.read_metadata(task_dir.name)
+            except (OSError, ValueError, TaskNotFoundError):
+                continue
+            if wanted in self._drop_site_names(metadata):
+                raise TaskConflictError(f"Another active task is already using resource 'site:{wanted}'")
+
     def _host_resource_lock(self, keys: list[str]) -> AbstractContextManager:
         """Serialize hostname claims before taking the bench lock."""
         if not _host_keys(keys):
@@ -279,6 +304,24 @@ class TaskStore:
                     locks.enter_context(
                         exclusive_file_lock(self.tasks_root / f"site-resource-{digest}", blocking=False)
                     )
+                except BlockingIOError as error:
+                    raise TaskConflictError(f"Another operation is already using resource {key!r}") from error
+            yield
+
+    @contextmanager
+    def _drop_exclusion_locks(self, site_names: list[str], *, shared: bool) -> Iterator[None]:
+        with ExitStack() as locks:
+            for site_name in sorted({name.lower() for name in site_names}):
+                key = f"site:{site_name}"
+                digest = sha256(key.encode()).hexdigest()
+                path = self.tasks_root / f"drop-exclusion-{digest}"
+                try:
+                    lock = (
+                        shared_file_lock(path, blocking=False)
+                        if shared
+                        else exclusive_file_lock(path, blocking=False)
+                    )
+                    locks.enter_context(lock)
                 except BlockingIOError as error:
                     raise TaskConflictError(f"Another operation is already using resource {key!r}") from error
             yield
@@ -344,6 +387,20 @@ class TaskStore:
         if isinstance(resource_key, str):
             return [resource_key]
         return list(resource_key)
+
+    @staticmethod
+    def _drop_site_names(metadata: Mapping[str, object]) -> list[str]:
+        if metadata.get("command") not in _DROP_COORDINATED_COMMANDS:
+            return []
+        args = metadata.get("args")
+        if not isinstance(args, dict):
+            return []
+        names: list[str] = []
+        if isinstance(site := args.get("site"), str) and site:
+            names.append(site.lower())
+        if isinstance(sites := args.get("sites"), list):
+            names.extend(name.lower() for name in sites if isinstance(name, str) and name)
+        return sorted(set(names))
 
     @staticmethod
     def _task_resource_keys(metadata: Mapping[str, object]) -> list[str]:
