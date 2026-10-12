@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 import shutil
 from collections.abc import Iterator, Mapping
-from contextlib import AbstractContextManager, contextmanager, nullcontext
+from contextlib import AbstractContextManager, ExitStack, contextmanager, nullcontext
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 
 from pilot.exceptions import TaskConflictError, TaskNotFoundError
@@ -45,7 +46,9 @@ class TaskStore:
     ) -> Path:
         keys = self._normalize_keys(resource_key)
         make_private_directory(self.tasks_root, parents=True)
-        with self._host_resource_lock(keys), exclusive_file_lock(self._lock_target):
+        with self._host_resource_lock(keys), self._site_resource_locks(keys), exclusive_file_lock(
+            self._lock_target
+        ):
             self._reject_active_resource_locked(keys, resource_handoff_from)
             self._reject_host_resources_elsewhere(keys)
             return self._create_queued_locked(
@@ -63,7 +66,9 @@ class TaskStore:
     ) -> TaskCreation:
         keys = self._normalize_keys(resource_key)
         make_private_directory(self.tasks_root, parents=True)
-        with self._host_resource_lock(keys), exclusive_file_lock(self._lock_target):
+        with self._host_resource_lock(keys), self._site_resource_locks(keys), exclusive_file_lock(
+            self._lock_target
+        ):
             existing = self._active_idempotent_task_locked(idempotency_digest)
             if existing is not None:
                 existing_fingerprint = self.read_metadata(existing).get("request_fingerprint")
@@ -201,6 +206,15 @@ class TaskStore:
         with exclusive_file_lock(self._lock_target):
             yield
 
+    @contextmanager
+    def reserve_direct_site(self, site_name: str) -> Iterator[None]:
+        key = f"site:{site_name.lower()}"
+        make_private_directory(self.tasks_root, parents=True)
+        with self._site_resource_locks([key]):
+            with exclusive_file_lock(self._lock_target):
+                self._reject_active_resource_locked([key])
+            yield
+
     def _create_queued_locked(
         self,
         metadata: Mapping[str, object],
@@ -249,6 +263,21 @@ class TaskStore:
         if not _host_keys(keys):
             return nullcontext()
         return exclusive_file_lock(self.bench_root.parent / _HOST_RESOURCE_LOCK)
+
+    @contextmanager
+    def _site_resource_locks(self, keys: list[str]) -> Iterator[None]:
+        with ExitStack() as locks:
+            for key in sorted(set(keys)):
+                if not key.startswith("site:"):
+                    continue
+                digest = sha256(key.encode()).hexdigest()
+                try:
+                    locks.enter_context(
+                        exclusive_file_lock(self.tasks_root / f"site-resource-{digest}", blocking=False)
+                    )
+                except BlockingIOError as error:
+                    raise TaskConflictError(f"Another operation is already using resource {key!r}") from error
+            yield
 
     def _reject_host_resources_elsewhere(self, keys: list[str]) -> None:
         """Reject hostname claims held by an active task on another bench."""

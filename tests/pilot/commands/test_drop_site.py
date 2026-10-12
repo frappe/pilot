@@ -9,7 +9,8 @@ import pytest
 from pilot.config import BenchConfig, SiteConfig
 from pilot.core.bench import Bench
 from pilot.core.site import Site
-from pilot.exceptions import BenchError
+from pilot.exceptions import BenchError, TaskConflictError
+from pilot.internal.tasks.store import TaskStore
 
 _BENCH_DATA: dict = {
     "bench": {"name": "test-bench", "python": "3.14"},
@@ -235,3 +236,52 @@ def test_drop_site_dispatch_requires_an_explicit_bench(tmp_path: Path, monkeypat
     args = parser.parse_args(["--yes", "-b", "test-bench", "drop-site", "mysite"])
     dispatch(args, parser, CliContext(installation_root=tmp_path, bench_name=args.bench))
     assert calls == ["mysite"]
+
+
+def test_drop_site_cli_rejects_queued_restore(tmp_path: Path, monkeypatch) -> None:
+    from pilot.internal.cli.command import command_from_args
+    from pilot.internal.cli.registry import build_parser
+
+    bench = _make_bench(tmp_path)
+    _write_site(bench, "mysite", {"db_name": "_dropdb"})
+    store = TaskStore(bench.path)
+    store.create_queued(
+        {"task_id": "20260715-120000-aabbcc", "command": "restore-site", "args": {}},
+        resource_key="site:mysite",
+    )
+    monkeypatch.setattr(Site, "drop", lambda self, **kwargs: pytest.fail("drop must not start"))
+    args = build_parser().parse_args(["--yes", "drop-site", "mysite"])
+
+    with pytest.raises(TaskConflictError, match="site:mysite"):
+        command_from_args(args._command_cls, args, bench).run()
+
+
+def test_admin_queue_rejects_in_progress_cli_drop(tmp_path: Path, monkeypatch) -> None:
+    from pilot.internal.cli.command import command_from_args
+    from pilot.internal.cli.registry import build_parser
+
+    bench = _make_bench(tmp_path)
+    _write_site(bench, "mysite", {"db_name": "_dropdb"})
+    store = TaskStore(bench.path)
+
+    def drop(self, **kwargs):
+        with pytest.raises(TaskConflictError, match="site:mysite"):
+            store.create_queued(
+                {"task_id": "20260715-120000-aabbcc", "command": "restore-site", "args": {}},
+                resource_key="site:mysite",
+            )
+        with pytest.raises(TaskConflictError, match="site:mysite"):
+            store.create_idempotent_queued(
+                {"task_id": "20260715-120001-bbccdd", "command": "restore-site", "args": {}},
+                {},
+                idempotency_digest="request-key",
+                request_fingerprint="restore-site",
+                resource_key="site:mysite",
+            )
+
+    monkeypatch.setattr(Site, "drop", drop)
+    args = build_parser().parse_args(["--yes", "drop-site", "mysite"])
+    command_from_args(args._command_cls, args, bench).run()
+
+    assert not store.task_dir("20260715-120000-aabbcc").exists()
+    assert not store.task_dir("20260715-120001-bbccdd").exists()

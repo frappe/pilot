@@ -256,6 +256,19 @@ def test_active_resource_rejects_another_task(tmp_path: Path) -> None:
     assert store.read_metadata(TASK_ID)["resource_keys"] == ["site:example.test"]
 
 
+def test_direct_site_reservation_uses_lowercase_and_releases_on_error(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+
+    with pytest.raises(RuntimeError, match="drop failed"), store.reserve_direct_site("Example.Test"):
+        raise RuntimeError("drop failed")
+
+    store.create_queued(metadata(), resource_key="site:example.test")
+    with pytest.raises(TaskConflictError, match=r"site:example\.test"), store.reserve_direct_site(
+        "Example.Test"
+    ):
+        pytest.fail("reservation must reject the active task")
+
+
 def test_active_resource_can_be_handed_to_successor(tmp_path: Path) -> None:
     store = TaskStore(tmp_path)
     store.create_queued(metadata(), resource_key=["bench:update", "site:example.test"])
