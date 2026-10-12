@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import stat
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
+from threading import Event
 
 import pytest
 
@@ -201,6 +203,60 @@ def test_active_idempotent_submission_returns_existing_task(tmp_path: Path) -> N
     assert duplicate.created is False
     assert duplicate.task_id == TASK_ID
     assert not store.task_dir(duplicate_metadata["task_id"]).exists()
+
+
+def test_concurrent_idempotent_site_submissions_return_same_task(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = TaskStore(tmp_path)
+    publishing = Event()
+    release = Event()
+    second_started = Event()
+    publish_task = store._create_queued_locked
+
+    def pause_first_publish(task_metadata: dict, private_files: dict) -> Path:
+        if task_metadata["task_id"] == TASK_ID:
+            publishing.set()
+            assert release.wait(10)
+        return publish_task(task_metadata, private_files)
+
+    def submit_second():
+        second_started.set()
+        return store.create_idempotent_queued(
+            {**metadata(), "task_id": "20260715-120001-bbccdd"},
+            {},
+            idempotency_digest="key-digest",
+            request_fingerprint="request-digest",
+            resource_key="site:example.test",
+        )
+
+    monkeypatch.setattr(store, "_create_queued_locked", pause_first_publish)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(
+            store.create_idempotent_queued,
+            metadata(),
+            {},
+            "key-digest",
+            "request-digest",
+            resource_key="site:example.test",
+        )
+        try:
+            assert publishing.wait(10)
+            second = executor.submit(submit_second)
+            assert second_started.wait(10)
+            with pytest.raises(TimeoutError):
+                second.result(timeout=0.2)
+        finally:
+            release.set()
+
+        assert first.result(timeout=10).created is True
+        replay = second.result(timeout=10)
+
+    assert replay.created is False
+    assert replay.task_id == TASK_ID
+    assert not store.task_dir("20260715-120001-bbccdd").exists()
 
 
 def test_active_idempotency_key_rejects_another_request(tmp_path: Path) -> None:
