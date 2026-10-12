@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import stat
+import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
 from threading import Event
@@ -453,6 +455,20 @@ def test_inline_site_write_releases_lock_on_error(tmp_path: Path) -> None:
         raise RuntimeError("enable failed")
 
     with store.reserve_direct_site("example.test"):
+        pass
+
+
+def test_direct_site_lock_releases_after_process_exit(tmp_path: Path) -> None:
+    code = (
+        "import os, sys\n"
+        "from pathlib import Path\n"
+        "from pilot.internal.tasks.store import TaskStore\n"
+        "with TaskStore(Path(sys.argv[1])).reserve_direct_site('example.test'):\n"
+        "    os._exit(0)\n"
+    )
+    subprocess.run([sys.executable, "-c", code, str(tmp_path)], check=True)
+
+    with TaskStore(tmp_path).reserve_inline_site_write("example.test"):
         pass
 
 
