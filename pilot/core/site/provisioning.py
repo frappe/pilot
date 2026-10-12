@@ -103,11 +103,14 @@ class SiteProvisioner:
         write_private_text(config_path, json.dumps(config, indent=1))
 
     def get_apps_missing_assets(self) -> list["App"]:
-        assets_dir = self.bench.sites_path / "assets"
+        from pilot.managers.environment import PythonEnvManager
+        from pilot.managers.python_assets import PythonAssetBuilder
+
+        builder = PythonAssetBuilder(PythonEnvManager(self.bench))
         return [
             app
             for app in self.bench.apps()
-            if self.bench.is_app_installed(app.config.name) and not (assets_dir / app.config.name).exists()
+            if self.bench.is_app_installed(app.config.name) and not builder.has_app_assets(app)
         ]
 
     def build_missing_assets(self, apps: list["App"] | None = None) -> None:

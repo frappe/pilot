@@ -141,6 +141,147 @@ def test_asset_links_are_updated_under_one_lock(tmp_path: Path, monkeypatch: pyt
     assert (public_dir / "node_modules").resolve() == node_modules
 
 
+@pytest.mark.parametrize(
+    ("source_extension", "output_dir", "output_extension"),
+    [("ts", "js", "js"), ("scss", "css", "css"), ("jsx", "", "js")],
+)
+def test_linked_bundle_requires_its_manifest_and_output(
+    tmp_path: Path, source_extension: str, output_dir: str, output_extension: str
+) -> None:
+    manager = MagicMock()
+    manager.bench.sites_path = tmp_path / "sites"
+    builder = PythonAssetBuilder(manager)
+    app = make_app(tmp_path / "gameplan")
+    public = app.path / "gameplan" / "public"
+    source_dir = public / "js" / "nested"
+    source_dir.mkdir(parents=True)
+    (source_dir / f"desk.bundle.{source_extension}").write_text("source")
+    assets = manager.bench.sites_path / "assets"
+    assets.mkdir(parents=True)
+    (assets / "gameplan").symlink_to(public)
+
+    assert not builder.has_app_assets(app)
+
+    dist = public / "dist" / output_dir
+    dist.mkdir(parents=True)
+    output = dist / f"desk.bundle.AAAAAAAA.{output_extension}"
+    output.write_text("built")
+    manifest = assets / "assets.json"
+    url = f"/assets/gameplan/dist/{output_dir}/desk.bundle.AAAAAAAA.{output_extension}"
+    if not output_dir:
+        url = f"/assets/gameplan/dist/desk.bundle.AAAAAAAA.{output_extension}"
+    key = (
+        f"desk.bundle.{output_extension}" if output_extension == "css" else f"desk.bundle.{source_extension}"
+    )
+    manifest.write_text(json.dumps({key: url}))
+    assert builder.has_app_assets(app)
+
+    manifest.write_text("[]")
+    assert not builder.has_app_assets(app)
+    manifest.write_text(json.dumps({key: url}))
+
+    output.unlink()
+    assert not builder.has_app_assets(app)
+
+
+def test_linked_app_requires_declared_frontend_outputs(tmp_path: Path) -> None:
+    manager = MagicMock()
+    manager.bench.sites_path = tmp_path / "sites"
+    builder = PythonAssetBuilder(manager)
+    app = make_app(tmp_path / "gameplan")
+    write_package(app.path / "frontend", scripts={"build": "vite build"})
+    public = app.path / "gameplan" / "public"
+    public.mkdir(parents=True)
+    assets = manager.bench.sites_path / "assets"
+    assets.mkdir(parents=True)
+    (assets / "gameplan").symlink_to(public)
+
+    assert not builder.has_app_assets(app)
+
+    (app.path / "pyproject.toml").write_text(
+        '[tool.bench.assets]\nbuild_dir = "frontend"\nout_dir = "gameplan/public/frontend"\n'
+        'index_html_path = "gameplan/www/g.html"\n'
+    )
+    assert not builder.has_app_assets(app)
+    output = public / "frontend"
+    output.mkdir()
+    (output / "app.js").write_text("built")
+    assert not builder.has_app_assets(app)
+    html = app.path / "gameplan" / "www" / "g.html"
+    html.parent.mkdir(parents=True)
+    html.write_text("<html></html>")
+    assert builder.has_app_assets(app)
+
+
+def test_linked_static_app_needs_no_generated_outputs(tmp_path: Path) -> None:
+    manager = MagicMock()
+    manager.bench.sites_path = tmp_path / "sites"
+    builder = PythonAssetBuilder(manager)
+    app = make_app(tmp_path / "static_app", "static_app")
+    public = app.path / "static_app" / "public"
+    public.mkdir(parents=True)
+    (public / "logo.svg").write_text("<svg />")
+    assets = manager.bench.sites_path / "assets"
+    assets.mkdir(parents=True)
+    (assets / "static_app").symlink_to(public)
+
+    assert builder.has_app_assets(app)
+
+
+def test_empty_prebuilt_archive_keeps_its_link_after_broken_link_cleanup(tmp_path: Path) -> None:
+    manager = MagicMock()
+    manager.bench.sites_path = tmp_path / "sites"
+    builder = PythonAssetBuilder(manager)
+    app = make_app(tmp_path / "empty_app", "empty_app")
+    app.path.mkdir()
+    public = app.path / "empty_app" / "public"
+    assets = manager.bench.sites_path / "assets"
+    assert not public.exists()
+    assets.mkdir(parents=True)
+    (assets / "empty_app").symlink_to(public)
+    assert not builder.has_app_assets(app)
+
+    builder.setup_prebuilt_assets("empty_app", public, public / "dist")
+
+    for link in assets.iterdir():
+        if link.is_symlink() and not link.exists():
+            link.unlink()
+
+    assert public.is_dir()
+    assert (assets / "empty_app").is_symlink()
+    assert builder.has_app_assets(app)
+
+
+def test_legacy_prebuilt_jsx_archive_builds_to_write_its_manifest(tmp_path: Path) -> None:
+    manager = MagicMock()
+    manager.bench.sites_path = tmp_path / "sites"
+    manager.bench.frappe_call = ["python"]
+    builder = PythonAssetBuilder(manager)
+    app = make_app(tmp_path / "raven", "raven")
+    app.has_source_changes = False
+    public = app.path / "raven" / "public"
+    public.mkdir(parents=True)
+    (public / "raven_chat.bundle.jsx").write_text("source")
+    output = public / "dist" / "raven_chat.bundle.AAAAAAAA.js"
+    output.parent.mkdir()
+    output.write_text("prebuilt")
+
+    def compile_assets(argv: list[str], **kwargs: object) -> None:
+        manifest = manager.bench.sites_path / "assets" / "assets.json"
+        manifest.write_text(
+            json.dumps({"raven_chat.bundle.jsx": "/assets/raven/dist/raven_chat.bundle.AAAAAAAA.js"})
+        )
+
+    with (
+        patch("pilot.core.app.prebuilt_assets.PrebuiltAssets.install", return_value=True),
+        patch.object(builder, "run_compiler", side_effect=compile_assets) as compiler,
+    ):
+        builder.build_assets_for_app(app)
+
+    compiler.assert_called_once()
+    assert builder.has_app_assets(app)
+
+
 def test_page_islands_are_built_with_frappe_s_own_script(tmp_path: Path) -> None:
     manager = MagicMock()
     manager.bench.apps_path = tmp_path / "apps"

@@ -71,6 +71,66 @@ class PythonAssetBuilder:
             stream_output=True,
         )
 
+    def has_app_assets(self, app: "App") -> bool:
+        from pilot.core.app.prebuilt_assets import build_output_paths
+
+        name = app.config.name
+        public_dir = app.path / name / "public"
+        link = self.bench.sites_path / "assets" / name
+        if not link.is_symlink() or not link.exists() or link.resolve() != public_dir.resolve():
+            return False
+
+        outputs = build_output_paths(app)
+        if self.frontend_dirs(app) and not outputs:
+            return False
+
+        for output in outputs:
+            path = app.path / output
+            if not path.is_file() and not (path.is_dir() and any(path.iterdir())):
+                return False
+            if path.is_file() and not path.stat().st_size:
+                return False
+
+        return self._has_bundle_assets(name, public_dir)
+
+    def _has_bundle_assets(self, name: str, public_dir: Path) -> bool:
+        sources = [
+            path
+            for path in public_dir.rglob("*.bundle.*")
+            if path.suffix in {".js", ".ts", ".jsx", ".css", ".sass", ".scss", ".less", ".styl"}
+            and not set(path.relative_to(public_dir).parts) & {"dist", "node_modules"}
+        ]
+        if not sources:
+            return True
+
+        assets_json = self.bench.sites_path / "assets" / "assets.json"
+        if not assets_json.is_file():
+            return False
+        try:
+            assets = json.loads(assets_json.read_text())
+        except json.JSONDecodeError:
+            return False
+        if not isinstance(assets, dict):
+            return False
+
+        for source in sources:
+            extension = "css" if source.suffix in {".css", ".sass", ".scss", ".less", ".styl"} else "js"
+            key = f"{source.stem}.css" if extension == "css" else source.name
+            directory = "css" if extension == "css" else "js" if source.suffix != ".jsx" else ""
+            prefix = f"/assets/{name}/dist/{directory}/" if directory else f"/assets/{name}/dist/"
+            url = assets.get(key)
+            if not isinstance(url, str) or not url.startswith(prefix):
+                return False
+            built = public_dir / "dist" / url.removeprefix(f"/assets/{name}/dist/")
+            if (
+                not built.name.startswith(f"{source.stem}.")
+                or built.suffix != f".{extension}"
+                or not built.is_file()
+                or not built.stat().st_size
+            ):
+                return False
+        return True
+
     def build_assets_for_app(self, app: "App", force: bool = False) -> None:
         app_public_dir = app.path / app.config.name / "public"
         dist_dir = app_public_dir / "dist"
@@ -85,9 +145,10 @@ class PythonAssetBuilder:
             prebuilt = PrebuiltAssets(app)
             if prebuilt.install():
                 self.setup_prebuilt_assets(app.config.name, app_public_dir, dist_dir, prebuilt.asset_maps)
-                if app.has_page_islands:
-                    self.build_page_islands()
-                return
+                if self.has_app_assets(app):
+                    if app.has_page_islands:
+                        self.build_page_islands()
+                    return
 
         # Frappe's build runs the app's build script, which can build `frontend`/`roster`, so
         # their node_modules must be installed before it.
@@ -103,6 +164,9 @@ class PythonAssetBuilder:
             stream_output=True,
         )
 
+        self.build_frontends(app)
+
+    def build_frontends(self, app: "App") -> None:
         # Frappe's build already ran the app's own build script, which builds its frontends.
         if NodePackages(app.path).has_build_script:
             return
@@ -131,6 +195,7 @@ class PythonAssetBuilder:
         dist_dir: Path,
         asset_maps: dict[str, dict[str, str]] | None = None,
     ) -> None:
+        app_public_dir.mkdir(parents=True, exist_ok=True)
         self.link_app_assets(app_name, app_public_dir)
         assets_dir = self.bench.sites_path / "assets"
 
