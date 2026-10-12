@@ -6,7 +6,6 @@ import logging
 import re
 import shutil
 import sys
-from contextlib import ExitStack
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -63,14 +62,12 @@ class PythonAssetBuilder:
             ) from error
 
     def build_assets(self) -> None:
-        apps = self.bench.apps()
         assets_dir = self.bench.sites_path / "assets"
         assets_dir.mkdir(parents=True, exist_ok=True)
-        with ExitStack() as locks:
-            for name in sorted({app.config.name for app in apps}):
-                locks.enter_context(exclusive_file_lock(assets_dir / f"{name}.asset-build"))
-            for app in apps:
-                (assets_dir / f".{app.config.name}.built").unlink(missing_ok=True)
+        with exclusive_file_lock(assets_dir / "asset-build"):
+            apps = self.bench.apps()
+            for marker in assets_dir.glob(".*.built"):
+                marker.unlink()
             for app in apps:
                 NodePackages(app.path).ensure_installed()
             self.run_compiler(
@@ -85,7 +82,7 @@ class PythonAssetBuilder:
     def build_assets_for_app(self, app: "App", force: bool = False, if_missing: bool = False) -> None:
         assets_dir = self.bench.sites_path / "assets"
         assets_dir.mkdir(parents=True, exist_ok=True)
-        with exclusive_file_lock(assets_dir / f"{app.config.name}.asset-build"):
+        with exclusive_file_lock(assets_dir / "asset-build"):
             if (
                 if_missing
                 and (assets_dir / f".{app.config.name}.built").exists()
