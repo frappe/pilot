@@ -6,11 +6,13 @@ import logging
 import re
 import shutil
 import sys
+from contextlib import ExitStack
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.core.app.node_packages import NodePackages, get_app_packages
 from pilot.exceptions import BenchError, CommandError
+from pilot.internal.atomic_file import exclusive_file_lock
 from pilot.managers.systemd_user import can_cap_memory, memory_capped, systemctl_env
 from pilot.utils import run_command
 
@@ -61,20 +63,38 @@ class PythonAssetBuilder:
             ) from error
 
     def build_assets(self) -> None:
-        for app in self.bench.apps():
-            (self.bench.sites_path / "assets" / f".{app.config.name}.built").unlink(missing_ok=True)
-        for app in self.bench.apps():
-            NodePackages(app.path).ensure_installed()
-        self.run_compiler(
-            [*self.bench.frappe_call, "frappe", "build", "--force"],
-            cwd=self.bench.sites_path,
-            env=self.manager._build_env(),
-            stream_output=True,
-        )
-        for app in self.bench.apps():
-            self.mark_assets_built(app.config.name)
+        apps = self.bench.apps()
+        assets_dir = self.bench.sites_path / "assets"
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        with ExitStack() as locks:
+            for name in sorted({app.config.name for app in apps}):
+                locks.enter_context(exclusive_file_lock(assets_dir / f"{name}.asset-build"))
+            for app in apps:
+                (assets_dir / f".{app.config.name}.built").unlink(missing_ok=True)
+            for app in apps:
+                NodePackages(app.path).ensure_installed()
+            self.run_compiler(
+                [*self.bench.frappe_call, "frappe", "build", "--force"],
+                cwd=self.bench.sites_path,
+                env=self.manager._build_env(),
+                stream_output=True,
+            )
+            for app in apps:
+                self.mark_assets_built(app.config.name)
 
-    def build_assets_for_app(self, app: "App", force: bool = False) -> None:
+    def build_assets_for_app(self, app: "App", force: bool = False, if_missing: bool = False) -> None:
+        assets_dir = self.bench.sites_path / "assets"
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        with exclusive_file_lock(assets_dir / f"{app.config.name}.asset-build"):
+            if (
+                if_missing
+                and (assets_dir / f".{app.config.name}.built").exists()
+                and (assets_dir / app.config.name).exists()
+            ):
+                return
+            self._build_assets_for_app(app, force)
+
+    def _build_assets_for_app(self, app: "App", force: bool) -> None:
         (self.bench.sites_path / "assets" / f".{app.config.name}.built").unlink(missing_ok=True)
         app_public_dir = app.path / app.config.name / "public"
         dist_dir = app_public_dir / "dist"

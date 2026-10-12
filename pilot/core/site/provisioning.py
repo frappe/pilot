@@ -111,7 +111,7 @@ class SiteProvisioner:
             if not (assets_dir / app.config.name).exists() or not (
                 assets_dir / f".{app.config.name}.built"
             ).exists():
-                manager.build_assets_for_app(app)
+                manager.build_assets_for_app(app, if_missing=True)
 
     def add_to_hosts(self, site: "Site") -> None:
         if self.bench.config.production.process_manager != "none":
