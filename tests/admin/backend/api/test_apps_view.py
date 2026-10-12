@@ -31,6 +31,12 @@ def _make_cloned_app(bench_root: Path, name: str) -> None:
     (app_dir / ".git").mkdir()
 
 
+def _make_site(bench_root: Path, name: str) -> None:
+    site_dir = bench_root / "sites" / name
+    site_dir.mkdir(parents=True)
+    (site_dir / "site_config.json").write_text("{}")
+
+
 def _post_install(client, **payload):
     with patch(
         "pilot.internal.tasks.runner.task_workers.wake",
@@ -65,6 +71,7 @@ def test_install_fetches_by_repo_without_sites(tmp_path: Path) -> None:
 
 def test_install_fetches_and_installs_by_repo_onto_sites(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
+    _make_site(bench_root, "s1.localhost")
     client = _client(bench_root)
 
     response = _post_install(
@@ -89,8 +96,21 @@ def test_install_onto_site_conflicts_with_cli_site_drop(tmp_path: Path) -> None:
     assert response.get_json()["error"]["code"] == "task_conflict"
 
 
+def test_install_onto_missing_site_does_not_queue_app_fetch(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+
+    with patch("admin.backend.api.v1.apps.GetAndInstallAppTask.queue") as queue:
+        response = _post_install(client, repo="https://github.com/frappe/suite", sites=["s1.localhost"])
+
+    assert response.status_code == 404
+    assert response.get_json()["error"]["code"] == "site_not_found"
+    queue.assert_not_called()
+
+
 def test_install_fetches_and_installs_a_marketplace_app_onto_sites(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
+    _make_site(bench_root, "s1.localhost")
     client = _client(bench_root)
 
     response = _post_install(client, name="suite", sites=["s1.localhost"])

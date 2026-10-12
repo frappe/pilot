@@ -10,6 +10,8 @@ from admin.backend.providers.apps import AppProvider
 from pilot.core.bench import Bench
 from pilot.exceptions import RegistryUnavailableError, TaskConflictError
 from pilot.internal.git import GitRepo
+from pilot.internal.site_paths import site_exists
+from pilot.internal.tasks.store import TaskStore
 from pilot.internal.validators import validate_app_name, validate_branch_name, validate_repo_url
 from pilot.tasks.fetch_app_updates import FetchAppUpdatesTask
 from pilot.tasks.get_and_install_app import GetAndInstallAppTask
@@ -55,7 +57,10 @@ def install():
         return response
 
     try:
-        task_id = _queue_install_task(bench_root, task_args, sites)
+        with TaskStore(bench_root).reserve_site_writes(sites):
+            if any(not site_exists(bench_root, site) for site in sites):
+                return error_response("site_not_found", "Site not found.", 404)
+            task_id = _queue_install_task(bench_root, task_args, sites)
     except TaskConflictError as error:
         return error_response("task_conflict", str(error), 409)
     except Exception:

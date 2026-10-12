@@ -112,6 +112,14 @@ def site_marketplace(name: str):
 @require_scope(site_name)
 def install_site_app(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
+    try:
+        with TaskStore(bench_root).reserve_inline_site_write(name):
+            return _install_site_app(name, bench_root)
+    except TaskConflictError as error:
+        return task_failure(error)
+
+
+def _install_site_app(name: str, bench_root: Path):
     if not site_exists(bench_root, name):
         return site_not_found()
     requested, request_error = _requested_install()
@@ -181,15 +189,14 @@ def _enable_disabled_app(bench: Bench, site: str, cloned: "App | None") -> str |
     installed first, which is task work, so that falls through to the queue instead."""
     if cloned is None:
         return None
-    with TaskStore(bench.path).reserve_inline_site_write(site):
-        site_object = bench.site(site)
-        if cloned.module_name not in site_object.disabled_apps():
-            return None
-        app = bench.app(cloned.module_name)
-        if site_object.get_missing_dependencies(app):
-            return None
-        site_object.enable_app(app)
-        return cloned.module_name
+    site_object = bench.site(site)
+    if cloned.module_name not in site_object.disabled_apps():
+        return None
+    app = bench.app(cloned.module_name)
+    if site_object.get_missing_dependencies(app):
+        return None
+    site_object.enable_app(app)
+    return cloned.module_name
 
 
 def _submit_install_task(
@@ -325,6 +332,14 @@ def _operation_task_data(data: dict, state: str) -> dict:
 @require_scope(site_name)
 def delete_site_app(name: str, app: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
+    try:
+        with TaskStore(bench_root).reserve_inline_site_write(name):
+            return _delete_site_app(name, app, bench_root)
+    except TaskConflictError as error:
+        return task_failure(error)
+
+
+def _delete_site_app(name: str, app: str, bench_root: Path):
     if not site_exists(bench_root, name):
         return site_not_found()
     err = validate_app_name(app)
@@ -334,8 +349,7 @@ def delete_site_app(name: str, app: str):
     bench = Bench(bench_root)
     if request.args.get("mode") == "disable":
         try:
-            with TaskStore(bench_root).reserve_inline_site_write(name):
-                bench.site(name).disable_app(bench.app(app))
+            bench.site(name).disable_app(bench.app(app))
         except TaskConflictError as error:
             return task_failure(error)
         except BenchError as error:

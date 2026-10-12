@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -518,3 +519,29 @@ def test_delete_site_app_cannot_disable_inline_during_cli_site_drop(tmp_path: Pa
     assert response.status_code == 409
     assert response.get_json()["error"]["code"] == "task_conflict"
     disable.assert_not_called()
+
+
+def test_site_app_writes_do_not_start_after_completed_cli_drop(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    name = "site1.localhost"
+    _make_site(bench_root, name, ["suite"])
+    _make_cloned_app(bench_root, "suite")
+    client = _client(bench_root)
+    with TaskStore(bench_root).reserve_direct_site(name):
+        shutil.rmtree(bench_root / "sites" / name)
+
+    with (
+        patch("admin.backend.api.v1.sites.apps._cloned_app") as cloned,
+        patch("pilot.core.site.Site.disable_app") as disable,
+        patch("admin.backend.api.v1.sites.apps.UninstallAppTask.queue") as uninstall,
+    ):
+        enable_response = _post_install(client, name, app="suite")
+        disable_response = _delete_app(client, name, "suite", mode="disable")
+        uninstall_response = _delete_app(client, name, "suite")
+
+    for response in (enable_response, disable_response, uninstall_response):
+        assert response.status_code == 404
+        assert response.get_json()["error"]["code"] == "site_not_found"
+    cloned.assert_not_called()
+    disable.assert_not_called()
+    uninstall.assert_not_called()

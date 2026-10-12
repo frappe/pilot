@@ -227,8 +227,13 @@ class TaskStore:
 
     @contextmanager
     def reserve_inline_site_write(self, site_name: str) -> Iterator[None]:
+        with self.reserve_site_writes([site_name]):
+            yield
+
+    @contextmanager
+    def reserve_site_writes(self, site_names: list[str]) -> Iterator[None]:
         make_private_directory(self.tasks_root, parents=True)
-        with self._drop_exclusion_locks([site_name], shared=True):
+        with self._drop_exclusion_locks(site_names, shared=True):
             yield
 
     def _create_queued_locked(
