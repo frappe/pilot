@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from threading import Event
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -58,179 +56,6 @@ def write_package(path: Path, **package: object) -> None:
     (path / "package.json").write_text(json.dumps(package))
 
 
-def test_prebuilt_assets_mark_a_completed_build(tmp_path: Path) -> None:
-    manager = MagicMock()
-    manager.bench.sites_path = tmp_path / "sites"
-    builder = PythonAssetBuilder(manager)
-    app = make_app(tmp_path / "gameplan")
-    app.has_source_changes = False
-    app.has_page_islands = False
-
-    with (
-        patch("pilot.core.app.prebuilt_assets.PrebuiltAssets.install", return_value=True),
-        patch.object(builder, "setup_prebuilt_assets"),
-    ):
-        builder.build_assets_for_app(app)
-
-    assert (manager.bench.sites_path / "assets" / ".gameplan.built").exists()
-
-
-def test_failed_asset_build_does_not_mark_completion(tmp_path: Path) -> None:
-    manager = MagicMock()
-    manager.bench.sites_path = tmp_path / "sites"
-    manager.bench.frappe_call = ["python"]
-    builder = PythonAssetBuilder(manager)
-    app = make_app(tmp_path / "gameplan")
-    app.has_source_changes = True
-    marker = manager.bench.sites_path / "assets" / ".gameplan.built"
-    marker.parent.mkdir(parents=True)
-    marker.touch()
-
-    with (
-        patch.object(builder, "run_compiler", side_effect=RuntimeError("build failed")),
-        pytest.raises(RuntimeError, match="build failed"),
-    ):
-        builder.build_assets_for_app(app)
-
-    assert not marker.exists()
-
-
-def test_waiting_site_build_rechecks_completion(tmp_path: Path) -> None:
-    manager = MagicMock()
-    manager.bench.sites_path = tmp_path / "sites"
-    manager.bench.frappe_call = ["python"]
-    builder = PythonAssetBuilder(manager)
-    app = make_app(tmp_path / "gameplan")
-    app.has_source_changes = True
-    assets_dir = manager.bench.sites_path / "assets"
-    (assets_dir / "gameplan").mkdir(parents=True)
-    compiling = Event()
-    finish = Event()
-    commands = []
-
-    def compile_assets(argv: list[str], **kwargs: object) -> None:
-        commands.append(argv)
-        compiling.set()
-        assert finish.wait(5)
-
-    with patch.object(builder, "run_compiler", side_effect=compile_assets), ThreadPoolExecutor(2) as pool:
-        first = pool.submit(builder.build_assets_for_app, app, True)
-        assert compiling.wait(5)
-        second = pool.submit(builder.build_assets_for_app, app, if_missing=True)
-        finish.set()
-        first.result(timeout=5)
-        second.result(timeout=5)
-
-    assert len(commands) == 1
-    assert (assets_dir / ".gameplan.built").exists()
-
-
-def test_missing_asset_link_still_builds_with_completion_marker(tmp_path: Path) -> None:
-    manager = MagicMock()
-    manager.bench.sites_path = tmp_path / "sites"
-    manager.bench.frappe_call = ["python"]
-    builder = PythonAssetBuilder(manager)
-    app = make_app(tmp_path / "gameplan")
-    app.has_source_changes = True
-    assets_dir = manager.bench.sites_path / "assets"
-    assets_dir.mkdir(parents=True)
-    (assets_dir / ".gameplan.built").touch()
-
-    with patch.object(builder, "run_compiler") as compile_assets:
-        builder.build_assets_for_app(app, if_missing=True)
-
-    compile_assets.assert_called_once()
-
-
-def test_full_bench_build_serializes_with_app_build(tmp_path: Path) -> None:
-    manager = MagicMock()
-    manager.bench.sites_path = tmp_path / "sites"
-    manager.bench.frappe_call = ["python"]
-    app = make_app(tmp_path / "gameplan")
-    app.has_source_changes = True
-    manager.bench.apps.return_value = [app]
-    builder = PythonAssetBuilder(manager)
-    full_compiling = Event()
-    finish_full = Event()
-    app_compiling = Event()
-
-    def compile_assets(argv: list[str], **kwargs: object) -> None:
-        if "--app" in argv:
-            app_compiling.set()
-            raise RuntimeError("app build failed")
-        full_compiling.set()
-        assert finish_full.wait(5)
-
-    with (
-        patch.object(builder, "run_compiler", side_effect=compile_assets),
-        patch("pilot.managers.python_assets.NodePackages") as packages,
-        ThreadPoolExecutor(2) as pool,
-    ):
-        packages.return_value.has_build_script = True
-        full = pool.submit(builder.build_assets)
-        assert full_compiling.wait(5)
-        per_app = pool.submit(builder.build_assets_for_app, app, True)
-        assert not app_compiling.wait(0.1)
-        finish_full.set()
-        full.result(timeout=5)
-        with pytest.raises(RuntimeError, match="app build failed"):
-            per_app.result(timeout=5)
-
-    assert app_compiling.is_set()
-    assert not (manager.bench.sites_path / "assets" / ".gameplan.built").exists()
-
-
-def test_full_build_failure_clears_new_app_marker_before_waiting_build(tmp_path: Path) -> None:
-    manager = MagicMock()
-    manager.bench.sites_path = tmp_path / "sites"
-    manager.bench.frappe_call = ["python"]
-    registered_apps = [make_app(tmp_path / "frappe", "frappe")]
-    manager.bench.apps.side_effect = lambda: list(registered_apps)
-    builder = PythonAssetBuilder(manager)
-    new_app = make_app(tmp_path / "gameplan")
-    new_app.has_source_changes = True
-    assets_dir = manager.bench.sites_path / "assets"
-    (assets_dir / "gameplan").mkdir(parents=True)
-    marker = assets_dir / ".gameplan.built"
-    marker.touch()
-    full_compiling = Event()
-    finish_full = Event()
-    app_compiling = Event()
-    finish_app = Event()
-
-    def compile_assets(argv: list[str], **kwargs: object) -> None:
-        if "--app" in argv:
-            app_compiling.set()
-            assert finish_app.wait(5)
-            return
-        full_compiling.set()
-        assert finish_full.wait(5)
-        assert new_app in registered_apps
-        (assets_dir / "gameplan" / "bundle.js").write_text("partial build")
-        raise RuntimeError("full build failed")
-
-    with (
-        patch.object(builder, "run_compiler", side_effect=compile_assets),
-        patch("pilot.managers.python_assets.NodePackages") as packages,
-        ThreadPoolExecutor(2) as pool,
-    ):
-        packages.return_value.has_build_script = True
-        full = pool.submit(builder.build_assets)
-        assert full_compiling.wait(5)
-        registered_apps.append(new_app)
-        per_app = pool.submit(builder.build_assets_for_app, new_app, if_missing=True)
-        assert not app_compiling.wait(0.1)
-        finish_full.set()
-        with pytest.raises(RuntimeError, match="full build failed"):
-            full.result(timeout=5)
-        assert app_compiling.wait(5)
-        assert not marker.exists()
-        finish_app.set()
-        per_app.result(timeout=5)
-
-    assert marker.exists()
-
-
 def test_frontend_dependencies_install_before_frappe_build_runs(tmp_path: Path) -> None:
     """frappe's own `bench build` step runs the app's build script, which builds `frontend`,
     so node_modules there must be synced before that step."""
@@ -243,7 +68,6 @@ def test_frontend_dependencies_install_before_frappe_build_runs(tmp_path: Path) 
     assert commands.index(["yarn", "install", "--frozen-lockfile"]) < commands.index(
         ["python", "frappe", "build", "--force", "--app", "gameplan"]
     )
-    assert (tmp_path / "sites" / "assets" / ".gameplan.built").exists()
 
 
 def test_pnpm_workspace_installs_once_and_builds_once(tmp_path: Path) -> None:

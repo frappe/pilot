@@ -77,6 +77,44 @@ def test_edge_tls_site_sets_ssl_without_obtaining_a_certificate(tmp_path: Path) 
     obtain_cert.assert_not_called()
 
 
+def test_provision_builds_app_captured_before_install_creates_asset_link(tmp_path: Path) -> None:
+    provisioner = _provisioner(tmp_path)
+    provisioner.apps.append("gameplan")
+    provisioner.bench.create_directories()
+    app = MagicMock()
+    app.config.name = "gameplan"
+    public = tmp_path / "apps" / "gameplan" / "gameplan" / "public"
+    public.mkdir(parents=True)
+    app.path = public.parent.parent
+    link = provisioner.bench.sites_path / "assets" / "gameplan"
+
+    def install_app(site: Site, installed_app: MagicMock) -> None:
+        assert installed_app is app
+        link.symlink_to(public)
+
+    with (
+        patch("pilot.core.site.provisioning.validate_new_site", return_value=False),
+        patch("pilot.core.site.provisioning.should_enable_ssl", return_value=False),
+        patch.object(provisioner.bench, "apps", return_value=[app]),
+        patch.object(provisioner.bench, "is_app_installed", return_value=True),
+        patch.object(provisioner.bench, "app", return_value=app),
+        patch.object(Site, "create"),
+        patch.object(Site, "install_app", install_app),
+        patch.object(provisioner, "write_email_sender_name"),
+        patch.object(provisioner, "write_route_policy"),
+        patch.object(provisioner, "write_pilot_communication_config"),
+        patch.object(provisioner.bench, "write_common_site_config"),
+        patch.object(Site, "enable_scheduler"),
+        patch.object(provisioner, "add_to_hosts"),
+        patch.object(provisioner, "reload_nginx"),
+        patch("pilot.managers.environment.PythonEnvManager.build_assets_for_app") as build,
+    ):
+        provisioner.provision(lambda _: None)
+
+    assert link.is_symlink()
+    build.assert_called_once_with(app)
+
+
 def test_enable_scheduler_runs_frappe_for_the_site(tmp_path: Path) -> None:
     bench = Bench(BenchConfig._from_dict(_BASE_DATA), tmp_path)
     site = Site(SiteConfig(name="site1.example.com", apps=["frappe"]), bench)

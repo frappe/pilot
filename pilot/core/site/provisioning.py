@@ -10,6 +10,7 @@ from pilot.exceptions import BenchError
 
 if TYPE_CHECKING:
     from pilot.config import RoutePolicy
+    from pilot.core.app import App
     from pilot.core.bench import Bench
     from pilot.core.site import Site
 
@@ -53,12 +54,13 @@ class SiteProvisioner:
         site.create(db_type=self.db_type)
         self.write_email_sender_name(site)
         self.write_route_policy(site)
+        apps_missing_assets = self.get_apps_missing_assets()
         self.install_apps(site, on_progress)
         self.write_pilot_communication_config(site)
         self.bench.write_common_site_config()
         site.enable_scheduler()
         on_progress(f"\nSite '{self.name}' created successfully.")
-        self.build_missing_assets()
+        self.build_missing_assets(apps_missing_assets)
         self.add_to_hosts(site)
         self.reload_nginx()
         if origin_tls:
@@ -100,18 +102,21 @@ class SiteProvisioner:
         config["pilot_auth_token"] = Session(self.bench).issue_pilot_token(site.config.name)
         write_private_text(config_path, json.dumps(config, indent=1))
 
-    def build_missing_assets(self) -> None:
+    def get_apps_missing_assets(self) -> list["App"]:
+        assets_dir = self.bench.sites_path / "assets"
+        return [
+            app
+            for app in self.bench.apps()
+            if self.bench.is_app_installed(app.config.name)
+            and not (assets_dir / app.config.name).exists()
+        ]
+
+    def build_missing_assets(self, apps: list["App"] | None = None) -> None:
         from pilot.managers.environment import PythonEnvManager
 
         manager = PythonEnvManager(self.bench)
-        assets_dir = self.bench.sites_path / "assets"
-        for app in self.bench.apps():
-            if not self.bench.is_app_installed(app.config.name):
-                continue
-            if not (assets_dir / app.config.name).exists() or not (
-                assets_dir / f".{app.config.name}.built"
-            ).exists():
-                manager.build_assets_for_app(app, if_missing=True)
+        for app in self.get_apps_missing_assets() if apps is None else apps:
+            manager.build_assets_for_app(app)
 
     def add_to_hosts(self, site: "Site") -> None:
         if self.bench.config.production.process_manager != "none":

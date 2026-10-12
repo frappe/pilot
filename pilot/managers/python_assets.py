@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 
 from pilot.core.app.node_packages import NodePackages, get_app_packages
 from pilot.exceptions import BenchError, CommandError
-from pilot.internal.atomic_file import exclusive_file_lock
 from pilot.managers.systemd_user import can_cap_memory, memory_capped, systemctl_env
 from pilot.utils import run_command
 
@@ -62,37 +61,16 @@ class PythonAssetBuilder:
             ) from error
 
     def build_assets(self) -> None:
-        assets_dir = self.bench.sites_path / "assets"
-        assets_dir.mkdir(parents=True, exist_ok=True)
-        with exclusive_file_lock(assets_dir / "asset-build"):
-            apps = self.bench.apps()
-            for marker in assets_dir.glob(".*.built"):
-                marker.unlink()
-            for app in apps:
-                NodePackages(app.path).ensure_installed()
-            self.run_compiler(
-                [*self.bench.frappe_call, "frappe", "build", "--force"],
-                cwd=self.bench.sites_path,
-                env=self.manager._build_env(),
-                stream_output=True,
-            )
-            for app in apps:
-                self.mark_assets_built(app.config.name)
+        for app in self.bench.apps():
+            NodePackages(app.path).ensure_installed()
+        self.run_compiler(
+            [*self.bench.frappe_call, "frappe", "build", "--force"],
+            cwd=self.bench.sites_path,
+            env=self.manager._build_env(),
+            stream_output=True,
+        )
 
-    def build_assets_for_app(self, app: "App", force: bool = False, if_missing: bool = False) -> None:
-        assets_dir = self.bench.sites_path / "assets"
-        assets_dir.mkdir(parents=True, exist_ok=True)
-        with exclusive_file_lock(assets_dir / "asset-build"):
-            if (
-                if_missing
-                and (assets_dir / f".{app.config.name}.built").exists()
-                and (assets_dir / app.config.name).exists()
-            ):
-                return
-            self._build_assets_for_app(app, force)
-
-    def _build_assets_for_app(self, app: "App", force: bool) -> None:
-        (self.bench.sites_path / "assets" / f".{app.config.name}.built").unlink(missing_ok=True)
+    def build_assets_for_app(self, app: "App", force: bool = False) -> None:
         app_public_dir = app.path / app.config.name / "public"
         dist_dir = app_public_dir / "dist"
 
@@ -108,7 +86,6 @@ class PythonAssetBuilder:
                 self.setup_prebuilt_assets(app.config.name, app_public_dir, dist_dir, prebuilt.asset_maps)
                 if app.has_page_islands:
                     self.build_page_islands()
-                self.mark_assets_built(app.config.name)
                 return
 
         # Frappe's build runs the app's build script, which can build `frontend`/`roster`, so
@@ -127,7 +104,6 @@ class PythonAssetBuilder:
 
         # Frappe's build already ran the app's own build script, which builds its frontends.
         if NodePackages(app.path).has_build_script:
-            self.mark_assets_built(app.config.name)
             return
         for frontend_dir in self.frontend_dirs(app):
             print(f"  Building {frontend_dir.name} for {app.config.name}...")
@@ -138,12 +114,6 @@ class PythonAssetBuilder:
                 env=self.manager._build_env(),
                 stream_output=True,
             )
-        self.mark_assets_built(app.config.name)
-
-    def mark_assets_built(self, app_name: str) -> None:
-        assets_dir = self.bench.sites_path / "assets"
-        assets_dir.mkdir(parents=True, exist_ok=True)
-        (assets_dir / f".{app_name}.built").touch()
 
     @staticmethod
     def frontend_dirs(app: "App") -> list[Path]:
@@ -172,24 +142,21 @@ class PythonAssetBuilder:
                 self.merge_json(assets_dir / name, entries, replacing=f"/assets/{app_name}/", keeping=PAGE_ISLAND_URL)
 
     def link_app_assets(self, app_name: str, app_public_dir: Path) -> None:
-        from pilot.internal.atomic_file import exclusive_file_lock
-
         assets_dir = self.bench.sites_path / "assets"
         assets_dir.mkdir(parents=True, exist_ok=True)
 
         app_link = assets_dir / app_name
-        with exclusive_file_lock(assets_dir / "asset-links"):
-            if app_link.is_symlink():
-                app_link.unlink()
-            elif app_link.is_dir():
-                shutil.rmtree(str(app_link))
-            app_link.symlink_to(app_public_dir.resolve())
+        if app_link.is_symlink():
+            app_link.unlink()
+        elif app_link.is_dir():
+            shutil.rmtree(str(app_link))
+        app_link.symlink_to(app_public_dir.resolve())
 
-            # As `bench build` links it: <app>/node_modules is served at /assets/<app>/node_modules.
-            node_modules = app_public_dir.parent.parent / "node_modules"
-            node_modules_link = app_public_dir / "node_modules"
-            if node_modules.is_dir() and not node_modules_link.exists() and not node_modules_link.is_symlink():
-                node_modules_link.symlink_to(node_modules.resolve())
+        # As `bench build` links it: <app>/node_modules is served at /assets/<app>/node_modules.
+        node_modules = app_public_dir.parent.parent / "node_modules"
+        node_modules_link = app_public_dir / "node_modules"
+        if node_modules.is_dir() and not node_modules_link.exists() and not node_modules_link.is_symlink():
+            node_modules_link.symlink_to(node_modules.resolve())
 
         print(f"  Linked {app_link} -> {app_public_dir.resolve()}")
 
