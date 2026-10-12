@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pilot.exceptions import BenchError
+from pilot.internal.atomic_file import exclusive_file_lock
 from pilot.managers.python_assets import PythonAssetBuilder
 
 
@@ -109,6 +110,35 @@ def test_frontend_with_two_lockfiles_fails_before_any_install(tmp_path: Path) ->
 
     with pytest.raises(BenchError, match=r"yarn\.lock and pnpm-lock\.yaml"):
         build_app(app_path, on_install=lambda: pytest.fail("installed before the lockfile check"))
+
+
+def test_asset_links_are_updated_under_one_lock(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = MagicMock()
+    manager.bench.sites_path = tmp_path / "sites"
+    builder = PythonAssetBuilder(manager)
+    public_dir = tmp_path / "apps" / "gameplan" / "gameplan" / "public"
+    public_dir.mkdir(parents=True)
+    node_modules = tmp_path / "apps" / "gameplan" / "node_modules"
+    node_modules.mkdir()
+    assets_dir = manager.bench.sites_path / "assets"
+    old_link = assets_dir / "gameplan"
+    old_link.mkdir(parents=True)
+    lock_path = assets_dir / "asset-links"
+    original_symlink_to = Path.symlink_to
+    linked_paths = []
+
+    def symlink_under_lock(path: Path, target: Path, target_is_directory: bool = False) -> None:
+        with pytest.raises(BlockingIOError), exclusive_file_lock(lock_path, blocking=False):
+            pass
+        linked_paths.append(path)
+        original_symlink_to(path, target, target_is_directory=target_is_directory)
+
+    monkeypatch.setattr(Path, "symlink_to", symlink_under_lock)
+    builder.link_app_assets("gameplan", public_dir)
+
+    assert linked_paths == [old_link, public_dir / "node_modules"]
+    assert old_link.resolve() == public_dir
+    assert (public_dir / "node_modules").resolve() == node_modules
 
 
 def test_page_islands_are_built_with_frappe_s_own_script(tmp_path: Path) -> None:

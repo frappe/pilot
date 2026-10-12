@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 from pilot.core.app.node_packages import NodePackages, get_app_packages
 from pilot.exceptions import BenchError, CommandError
+from pilot.internal.atomic_file import exclusive_file_lock
 from pilot.managers.systemd_user import can_cap_memory, memory_capped, systemctl_env
 from pilot.utils import run_command
 
@@ -145,18 +146,19 @@ class PythonAssetBuilder:
         assets_dir = self.bench.sites_path / "assets"
         assets_dir.mkdir(parents=True, exist_ok=True)
 
-        app_link = assets_dir / app_name
-        if app_link.is_symlink():
-            app_link.unlink()
-        elif app_link.is_dir():
-            shutil.rmtree(str(app_link))
-        app_link.symlink_to(app_public_dir.resolve())
+        with exclusive_file_lock(assets_dir / "asset-links"):
+            app_link = assets_dir / app_name
+            if app_link.is_symlink():
+                app_link.unlink()
+            elif app_link.is_dir():
+                shutil.rmtree(str(app_link))
+            app_link.symlink_to(app_public_dir.resolve())
 
-        # As `bench build` links it: <app>/node_modules is served at /assets/<app>/node_modules.
-        node_modules = app_public_dir.parent.parent / "node_modules"
-        node_modules_link = app_public_dir / "node_modules"
-        if node_modules.is_dir() and not node_modules_link.exists() and not node_modules_link.is_symlink():
-            node_modules_link.symlink_to(node_modules.resolve())
+            # As `bench build` links it: <app>/node_modules is served at /assets/<app>/node_modules.
+            node_modules = app_public_dir.parent.parent / "node_modules"
+            node_modules_link = app_public_dir / "node_modules"
+            if node_modules.is_dir() and not node_modules_link.exists() and not node_modules_link.is_symlink():
+                node_modules_link.symlink_to(node_modules.resolve())
 
         print(f"  Linked {app_link} -> {app_public_dir.resolve()}")
 
