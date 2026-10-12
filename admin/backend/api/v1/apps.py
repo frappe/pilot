@@ -56,6 +56,8 @@ def install():
 
     try:
         task_id = _queue_install_task(bench_root, task_args, sites)
+    except TaskConflictError as error:
+        return error_response("task_conflict", str(error), 409)
     except Exception:
         return error_response("app_install_failed", "Could not start app installation.", 500)
 

@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from pilot.config import BenchConfig
+from pilot.internal.tasks.store import TaskStore
 
 
 def _client(bench_root: Path, password: str = "secret"):
@@ -75,6 +76,17 @@ def test_install_fetches_and_installs_by_repo_onto_sites(tmp_path: Path) -> None
     assert body["command"] == "get-and-install-app"
     assert body["args"]["repo"] == "https://github.com/frappe/suite"
     assert body["args"]["sites"] == ["s1.localhost"]
+
+
+def test_install_onto_site_conflicts_with_cli_site_drop(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+
+    with TaskStore(bench_root).reserve_direct_site("s1.localhost"):
+        response = _post_install(client, repo="https://github.com/frappe/suite", sites=["s1.localhost"])
+
+    assert response.status_code == 409
+    assert response.get_json()["error"]["code"] == "task_conflict"
 
 
 def test_install_fetches_and_installs_a_marketplace_app_onto_sites(tmp_path: Path) -> None:
