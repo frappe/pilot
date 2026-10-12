@@ -258,6 +258,8 @@ def test_enable_app_brings_a_disabled_dependency_back_first(tmp_path: Path) -> N
     dependency is flipped before the app that needs it."""
     site, app = make_site_and_app(tmp_path)
     (tmp_path / "apps" / "telephony").mkdir(parents=True)
+    (tmp_path / "apps" / "telephony" / "telephony" / "public").mkdir(parents=True)
+    (app.path / app.config.name / "public").mkdir(parents=True)
 
     with (
         patch("pilot.core.site.apps.run_command") as mock_rc,
@@ -269,6 +271,9 @@ def test_enable_app_brings_a_disabled_dependency_back_first(tmp_path: Path) -> N
 
     commands = [call.args[0][-2:] for call in mock_rc.call_args_list]
     assert commands == [["enable-app", "telephony"], ["enable-app", "erpnext"]]
+    assets = site.bench.sites_path / "assets"
+    assert (assets / "telephony").resolve() == tmp_path / "apps" / "telephony" / "telephony" / "public"
+    assert (assets / "erpnext").resolve() == app.path / app.config.name / "public"
 
 
 def test_missing_dependencies_lists_what_the_site_does_not_have(tmp_path: Path) -> None:

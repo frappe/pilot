@@ -94,6 +94,7 @@ class SiteApps:
                 elif name not in installed:
                     self.install_app(dependency)
         self._toggle_app("enable-app", app)
+        self._link_app_assets(app)
 
     def get_required_apps(self, app: "App") -> list[str]:
         """Frappe validates these itself and names what is missing, so an unreadable
@@ -127,8 +128,6 @@ class SiteApps:
             cwd=self.site.bench.sites_path,
             timeout=110,
         )
-        if command == "enable-app":
-            self._link_app_assets(app)
 
     def _link_app_assets(self, app: "App") -> None:
         from pilot.managers.environment import PythonEnvManager
