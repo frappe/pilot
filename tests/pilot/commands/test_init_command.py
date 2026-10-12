@@ -173,3 +173,34 @@ def test_init_links_prebuilt_assets_after_node_dependencies(tmp_path: Path) -> N
     assets = bench.sites_path / "assets" / "frappe"
     assert (assets / "desk.js").read_text() == "desk"
     assert (assets / "node_modules" / "style.css").read_text() == "style"
+
+
+def test_init_rolls_back_when_an_app_asset_build_fails(tmp_path: Path) -> None:
+    from pilot.managers.environment import PythonEnvManager
+
+    bench = make_bench(tmp_path)
+    bench.config.write(tmp_path)
+    app = MagicMock()
+    messages: list[str] = []
+
+    with (
+        patch.object(Bench, "apps", return_value=[app]),
+        patch.object(BenchInitializer, "_ensure_admin_password"),
+        patch.object(BenchInitializer, "_ensure_database_credentials"),
+        patch.object(BenchInitializer, "_install_system_packages"),
+        patch.object(BenchInitializer, "_create_virtualenv"),
+        patch.object(BenchInitializer, "_install_framework_apps"),
+        patch.object(BenchInitializer, "_configure_redis"),
+        patch.object(BenchInitializer, "_ensure_admin_frontend") as admin_frontend,
+        patch.object(PythonEnvManager, "install_node"),
+        patch.object(PythonEnvManager, "install_node_dependencies"),
+        patch.object(PythonEnvManager, "build_assets_for_app", side_effect=RuntimeError("build failed")),
+        pytest.raises(RuntimeError, match="build failed"),
+    ):
+        BenchInitializer(bench).run(messages.append)
+
+    assert any("Build app assets" in message for message in messages)
+    assert any("Rolling back changes" in message for message in messages)
+    assert not bench.apps_path.exists()
+    assert BenchConfig.toml_path(tmp_path).exists()
+    admin_frontend.assert_not_called()
