@@ -417,6 +417,29 @@ def test_build_missing_assets_skips_cloned_but_unregistered_apps(tmp_path: Path)
     assert built == {"frappe"}
 
 
+def test_new_site_builds_assets_after_static_link(tmp_path: Path) -> None:
+    from pilot.config import SiteConfig
+    from pilot.core.site import Site
+
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    public = bench.apps_path / "frappe" / "frappe" / "public"
+    public.mkdir(parents=True)
+    (bench.apps_path / "frappe" / ".git").mkdir()
+    (bench.sites_path / "apps.txt").write_text("frappe\n")
+    link = bench.sites_path / "assets" / "frappe"
+    link.symlink_to(public)
+    site = Site(SiteConfig(name="site1.localhost", apps=["frappe"]), bench)
+
+    with patch("pilot.managers.environment.PythonEnvManager.build_assets_for_app") as build:
+        site._build_missing_assets()
+        build.assert_called_once()
+        (bench.sites_path / "assets" / ".frappe.built").touch()
+        site._build_missing_assets()
+
+    build.assert_called_once()
+
+
 def test_remove_app_raises_when_app_directory_missing(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     bench.create_directories()

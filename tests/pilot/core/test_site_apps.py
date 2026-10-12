@@ -70,6 +70,25 @@ def test_install_app_links_static_assets_without_building(tmp_path: Path) -> Non
     assert (link / "node_modules").resolve() == app.path / "node_modules"
 
 
+def test_install_app_does_not_link_assets_when_install_fails(tmp_path: Path) -> None:
+    site, app = make_site_and_app(tmp_path)
+    public = app.path / app.config.name / "public"
+    public.mkdir(parents=True)
+
+    def fail_on_install(argv, **kwargs):
+        if "install-app" in argv:
+            raise CommandError("install failed")
+
+    with (
+        patch("pilot.core.site.apps.run_command", side_effect=fail_on_install),
+        patch.object(Bench, "reload_workers"),
+        pytest.raises(CommandError, match="install failed"),
+    ):
+        site.install_app(app)
+
+    assert not (site.bench.sites_path / "assets" / app.config.name).exists()
+
+
 def test_install_app_clears_cache_after_failure(tmp_path: Path) -> None:
     site, app = make_site_and_app(tmp_path)
 
@@ -178,6 +197,21 @@ def test_install_app_enables_it_when_the_site_has_it_disabled(tmp_path: Path) ->
     assert commands[0][-2:] == ["enable-app", "erpnext"]
 
 
+def test_enabling_app_links_assets_after_success(tmp_path: Path) -> None:
+    site, app = make_site_and_app(tmp_path)
+    public = app.path / app.config.name / "public"
+    public.mkdir(parents=True)
+
+    with (
+        patch("pilot.core.site.apps.run_command"),
+        patch.object(SiteApps, "disabled_apps", return_value=["erpnext"]),
+        patch.object(Bench, "reload_workers"),
+    ):
+        site.install_app(app)
+
+    assert (site.bench.sites_path / "assets" / app.config.name).resolve() == public
+
+
 def test_disable_app_calls_frappe_for_a_marketplace_app(tmp_path: Path) -> None:
     site, app = make_site_and_app(tmp_path)
     publish([{"name": "erpnext", "repo": "https://github.com/frappe/erpnext"}])
@@ -249,6 +283,7 @@ def test_missing_dependencies_lists_what_the_site_does_not_have(tmp_path: Path) 
 
 def test_install_app_refuses_when_a_required_app_is_not_on_the_bench(tmp_path: Path) -> None:
     site, app = make_site_and_app(tmp_path)
+    (app.path / app.config.name / "public").mkdir(parents=True)
 
     with (
         patch("pilot.core.site.apps.run_command") as mock_rc,
@@ -259,3 +294,4 @@ def test_install_app_refuses_when_a_required_app_is_not_on_the_bench(tmp_path: P
         site.install_app(app)
 
     assert not any("install-app" in call.args[0] for call in mock_rc.call_args_list)
+    assert not (site.bench.sites_path / "assets" / app.config.name).exists()

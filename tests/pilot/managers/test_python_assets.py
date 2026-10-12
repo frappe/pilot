@@ -56,6 +56,43 @@ def write_package(path: Path, **package: object) -> None:
     (path / "package.json").write_text(json.dumps(package))
 
 
+def test_prebuilt_assets_mark_a_completed_build(tmp_path: Path) -> None:
+    manager = MagicMock()
+    manager.bench.sites_path = tmp_path / "sites"
+    builder = PythonAssetBuilder(manager)
+    app = make_app(tmp_path / "gameplan")
+    app.has_source_changes = False
+    app.has_page_islands = False
+
+    with (
+        patch("pilot.core.app.prebuilt_assets.PrebuiltAssets.install", return_value=True),
+        patch.object(builder, "setup_prebuilt_assets"),
+    ):
+        builder.build_assets_for_app(app)
+
+    assert (manager.bench.sites_path / "assets" / ".gameplan.built").exists()
+
+
+def test_failed_asset_build_does_not_mark_completion(tmp_path: Path) -> None:
+    manager = MagicMock()
+    manager.bench.sites_path = tmp_path / "sites"
+    manager.bench.frappe_call = ["python"]
+    builder = PythonAssetBuilder(manager)
+    app = make_app(tmp_path / "gameplan")
+    app.has_source_changes = True
+    marker = manager.bench.sites_path / "assets" / ".gameplan.built"
+    marker.parent.mkdir(parents=True)
+    marker.touch()
+
+    with (
+        patch.object(builder, "run_compiler", side_effect=RuntimeError("build failed")),
+        pytest.raises(RuntimeError, match="build failed"),
+    ):
+        builder.build_assets_for_app(app)
+
+    assert not marker.exists()
+
+
 def test_frontend_dependencies_install_before_frappe_build_runs(tmp_path: Path) -> None:
     """frappe's own `bench build` step runs the app's build script, which builds `frontend`,
     so node_modules there must be synced before that step."""
@@ -68,6 +105,7 @@ def test_frontend_dependencies_install_before_frappe_build_runs(tmp_path: Path) 
     assert commands.index(["yarn", "install", "--frozen-lockfile"]) < commands.index(
         ["python", "frappe", "build", "--force", "--app", "gameplan"]
     )
+    assert (tmp_path / "sites" / "assets" / ".gameplan.built").exists()
 
 
 def test_pnpm_workspace_installs_once_and_builds_once(tmp_path: Path) -> None:

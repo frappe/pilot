@@ -62,6 +62,8 @@ class PythonAssetBuilder:
 
     def build_assets(self) -> None:
         for app in self.bench.apps():
+            (self.bench.sites_path / "assets" / f".{app.config.name}.built").unlink(missing_ok=True)
+        for app in self.bench.apps():
             NodePackages(app.path).ensure_installed()
         self.run_compiler(
             [*self.bench.frappe_call, "frappe", "build", "--force"],
@@ -69,8 +71,11 @@ class PythonAssetBuilder:
             env=self.manager._build_env(),
             stream_output=True,
         )
+        for app in self.bench.apps():
+            self.mark_assets_built(app.config.name)
 
     def build_assets_for_app(self, app: "App", force: bool = False) -> None:
+        (self.bench.sites_path / "assets" / f".{app.config.name}.built").unlink(missing_ok=True)
         app_public_dir = app.path / app.config.name / "public"
         dist_dir = app_public_dir / "dist"
 
@@ -86,6 +91,7 @@ class PythonAssetBuilder:
                 self.setup_prebuilt_assets(app.config.name, app_public_dir, dist_dir, prebuilt.asset_maps)
                 if app.has_page_islands:
                     self.build_page_islands()
+                self.mark_assets_built(app.config.name)
                 return
 
         # Frappe's build runs the app's build script, which can build `frontend`/`roster`, so
@@ -104,6 +110,7 @@ class PythonAssetBuilder:
 
         # Frappe's build already ran the app's own build script, which builds its frontends.
         if NodePackages(app.path).has_build_script:
+            self.mark_assets_built(app.config.name)
             return
         for frontend_dir in self.frontend_dirs(app):
             print(f"  Building {frontend_dir.name} for {app.config.name}...")
@@ -114,6 +121,12 @@ class PythonAssetBuilder:
                 env=self.manager._build_env(),
                 stream_output=True,
             )
+        self.mark_assets_built(app.config.name)
+
+    def mark_assets_built(self, app_name: str) -> None:
+        assets_dir = self.bench.sites_path / "assets"
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        (assets_dir / f".{app_name}.built").touch()
 
     @staticmethod
     def frontend_dirs(app: "App") -> list[Path]:

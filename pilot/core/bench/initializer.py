@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 from collections.abc import Callable
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.config.common_site_config import update_common_site_config
@@ -77,18 +78,20 @@ class BenchInitializer:
                 on_progress(f"    Warning: rollback step failed - {e}")
         on_progress("\nRollback complete. bench.toml is preserved - fix the issue and run init again.")
 
-    def _remove_bench_dirs(self) -> None:
-        for name in _BENCH_DIRS:
-            p = self.bench.path / name
-            if p.exists() or p.is_symlink():
-                shutil.rmtree(p, ignore_errors=True)
+    def _remove_bench_dirs(self, paths: list[Path]) -> None:
+        for path in reversed(paths):
+            if path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path, ignore_errors=True)
 
     def _create_bench_structure(self) -> None:
+        paths = [self.bench.path / name for name in _BENCH_DIRS]
+        paths.append(self.bench.sites_path / "assets")
+        created = [path for path in paths if not path.exists() and not path.is_symlink()]
+        self._rollback_actions.append(("bench directories", lambda: self._remove_bench_dirs(created)))
         self.bench.create_directories()
         self.bench.write_common_site_config()
         with update_common_site_config(self.bench.sites_path) as config:
             config.setdefault("server_script_enabled", True)
-        self._rollback_actions.append(("bench directories", self._remove_bench_dirs))
 
     def _create_virtualenv(self, python_env_manager) -> None:
         python_env_manager.ensure_python()
@@ -97,6 +100,10 @@ class BenchInitializer:
     def _install_framework_apps(self, python_env_manager, on_progress: Callable[[str], None]) -> None:
         for app in self.bench.init_apps():
             if not app.is_cloned:
+                if not app.path.exists() and not app.path.is_symlink():
+                    self._rollback_actions.append(
+                        (f"app {app.config.name}", lambda path=app.path: shutil.rmtree(path, ignore_errors=True))
+                    )
                 on_progress(f"  Cloning {app.config.name}...")
                 app.clone()
             on_progress(f"  Installing {app.config.name}...")

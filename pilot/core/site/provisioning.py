@@ -108,7 +108,9 @@ class SiteProvisioner:
         for app in self.bench.apps():
             if not self.bench.is_app_installed(app.config.name):
                 continue
-            if not (assets_dir / app.config.name).exists():
+            if not (assets_dir / app.config.name).exists() or not (
+                assets_dir / f".{app.config.name}.built"
+            ).exists():
                 manager.build_assets_for_app(app)
 
     def add_to_hosts(self, site: "Site") -> None:

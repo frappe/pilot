@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pilot.commands.bench.initialize import InitCommand
-from pilot.config import BenchConfig
+from pilot.config import AppConfig, BenchConfig
 from pilot.core.bench import Bench
 from pilot.core.bench.initializer import BenchInitializer
 from pilot.exceptions import BenchError
@@ -180,6 +180,10 @@ def test_init_rolls_back_when_an_app_asset_build_fails(tmp_path: Path) -> None:
 
     bench = make_bench(tmp_path)
     bench.config.write(tmp_path)
+    bench.apps_path.mkdir()
+    (bench.apps_path / "local-work.txt").write_text("keep me")
+    bench.sites_path.mkdir()
+    (bench.sites_path / "existing.txt").write_text("keep me too")
     app = MagicMock()
     messages: list[str] = []
 
@@ -201,6 +205,39 @@ def test_init_rolls_back_when_an_app_asset_build_fails(tmp_path: Path) -> None:
 
     assert any("Build app assets" in message for message in messages)
     assert any("Rolling back changes" in message for message in messages)
-    assert not bench.apps_path.exists()
+    assert (bench.apps_path / "local-work.txt").read_text() == "keep me"
+    assert (bench.sites_path / "existing.txt").read_text() == "keep me too"
+    assert not (bench.sites_path / "assets").exists()
+    assert not bench.logs_path.exists()
     assert BenchConfig.toml_path(tmp_path).exists()
     admin_frontend.assert_not_called()
+
+
+def test_init_rollback_removes_only_newly_cloned_apps(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.config.apps.append(AppConfig(name="local", repo="https://example.com/local", branch="main"))
+    bench.apps_path.mkdir()
+    framework = bench.apps_path / "frappe"
+    (framework / ".git").mkdir(parents=True)
+    (framework / "local-work.txt").write_text("keep me")
+    initializer = BenchInitializer(bench)
+
+    def clone(app):
+        app.path.mkdir()
+        (app.path / "partial.txt").write_text("partial")
+        raise RuntimeError("clone failed")
+
+    with (
+        patch("pilot.core.app.App.clone", autospec=True, side_effect=clone),
+        patch("pilot.managers.environment.PythonEnvManager.install_app"),
+        patch.object(BenchInitializer, "_ensure_admin_password"),
+        patch.object(BenchInitializer, "_ensure_database_credentials"),
+        patch.object(BenchInitializer, "_install_system_packages"),
+        patch.object(BenchInitializer, "_create_virtualenv"),
+        pytest.raises(RuntimeError, match="clone failed"),
+    ):
+        initializer.run(lambda message: None)
+
+    assert (framework / "local-work.txt").read_text() == "keep me"
+    assert not (bench.apps_path / "local").exists()
+    assert bench.apps_path.exists()
