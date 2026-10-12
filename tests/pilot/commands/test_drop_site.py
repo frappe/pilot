@@ -211,3 +211,27 @@ def test_drop_site_cli_aborts_on_eof(tmp_path: Path, monkeypatch) -> None:
         command_from_args(args._command_cls, args, bench).run()
 
     assert calls == []
+
+
+def test_drop_site_dispatch_requires_an_explicit_bench(tmp_path: Path, monkeypatch) -> None:
+    from pilot.internal.cli import CliContext
+    from pilot.internal.cli.registry import build_parser, dispatch
+
+    bench_dir = tmp_path / "benches" / "test-bench"
+    bench_dir.mkdir(parents=True)
+    bench = Bench(BenchConfig._from_dict(_BENCH_DATA), bench_dir)
+    bench.config.write(bench.path)
+    _write_site(bench, "mysite", {"db_name": "_dropdb"})
+    monkeypatch.chdir(tmp_path)
+    calls = []
+    monkeypatch.setattr(Site, "drop", lambda self, **kwargs: calls.append(self.config.name))
+    parser = build_parser()
+
+    args = parser.parse_args(["--yes", "drop-site", "mysite"])
+    with pytest.raises(BenchError, match="explicit bench"):
+        dispatch(args, parser, CliContext(installation_root=tmp_path))
+    assert calls == []
+
+    args = parser.parse_args(["--yes", "-b", "test-bench", "drop-site", "mysite"])
+    dispatch(args, parser, CliContext(installation_root=tmp_path, bench_name=args.bench))
+    assert calls == ["mysite"]
