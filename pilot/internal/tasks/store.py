@@ -46,8 +46,10 @@ class TaskStore:
     ) -> Path:
         keys = self._normalize_keys(resource_key)
         make_private_directory(self.tasks_root, parents=True)
-        with self._host_resource_lock(keys), exclusive_file_lock(self._lock_target), self._site_resource_locks(
-            keys
+        with (
+            self._host_resource_lock(keys),
+            exclusive_file_lock(self._lock_target),
+            self._site_resource_locks(keys),
         ):
             self._reject_active_resource_locked(keys, resource_handoff_from)
             self._reject_host_resources_elsewhere(keys)
@@ -66,8 +68,10 @@ class TaskStore:
     ) -> TaskCreation:
         keys = self._normalize_keys(resource_key)
         make_private_directory(self.tasks_root, parents=True)
-        with self._host_resource_lock(keys), exclusive_file_lock(self._lock_target), self._site_resource_locks(
-            keys
+        with (
+            self._host_resource_lock(keys),
+            exclusive_file_lock(self._lock_target),
+            self._site_resource_locks(keys),
         ):
             existing = self._active_idempotent_task_locked(idempotency_digest)
             if existing is not None:

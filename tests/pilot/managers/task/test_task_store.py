@@ -319,8 +319,9 @@ def test_direct_site_reservation_uses_lowercase_and_releases_on_error(tmp_path: 
         raise RuntimeError("drop failed")
 
     store.create_queued(metadata(), resource_key="site:example.test")
-    with pytest.raises(TaskConflictError, match=r"site:example\.test"), store.reserve_direct_site(
-        "Example.Test"
+    with (
+        pytest.raises(TaskConflictError, match=r"site:example\.test"),
+        store.reserve_direct_site("Example.Test"),
     ):
         pytest.fail("reservation must reject the active task")
 
