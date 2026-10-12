@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -55,9 +56,15 @@ def test_restore_missing_directories_then_drop_site(bench_root: Path, bench_bin:
         assert not site_path.exists()
     finally:
         if site_path.exists():
-            subprocess.run(
+            cleanup = subprocess.run(
                 [bench_bin, "--yes", "-b", bench_root.name, "drop-site", name, "--no-backup"],
                 cwd=bench_root,
                 capture_output=True,
                 text=True,
             )
+            if cleanup.returncode != 0 or site_path.exists():
+                message = f"Could not clean up {name}: {cleanup.stderr}"
+                if error := sys.exception():
+                    error.add_note(message)
+                else:
+                    pytest.fail(message)
