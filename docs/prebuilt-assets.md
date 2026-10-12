@@ -127,6 +127,7 @@ When you tag a commit after its push, its files stay from then on, if the workfl
 
 | Operation | Prebuilt assets |
 |---|---|
+| Initialize a bench from `bench.toml` | Yes |
 | Install an app (`pilot get-app`, Admin) | Yes. `pilot get-app --skip-assets` skips all asset setup. |
 | Update the bench or an app | Yes |
 | Switch an app's branch | Yes |
