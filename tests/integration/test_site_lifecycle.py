@@ -19,7 +19,7 @@ def test_restore_missing_directories_then_drop_site(bench_root: Path, bench_bin:
 
     try:
         created = subprocess.run(
-            [bench_bin, "-b", bench_root.name, "new-site", name, "--admin-password", "admin"],
+            [bench_bin, "new-site", name, "--admin-password", "admin"],
             cwd=bench_root,
             capture_output=True,
             text=True,
@@ -47,7 +47,7 @@ def test_restore_missing_directories_then_drop_site(bench_root: Path, bench_bin:
         assert json.loads((site_path / "site_config.json").read_text()) == config
 
         dropped = subprocess.run(
-            [bench_bin, "--yes", "-b", bench_root.name, "drop-site", name],
+            [bench_bin, "--yes", "drop-site", name],
             cwd=bench_root,
             capture_output=True,
             text=True,
@@ -57,7 +57,7 @@ def test_restore_missing_directories_then_drop_site(bench_root: Path, bench_bin:
     finally:
         if site_path.exists():
             cleanup = subprocess.run(
-                [bench_bin, "--yes", "-b", bench_root.name, "drop-site", name, "--no-backup"],
+                [bench_bin, "--yes", "drop-site", name, "--no-backup"],
                 cwd=bench_root,
                 capture_output=True,
                 text=True,

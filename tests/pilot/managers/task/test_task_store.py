@@ -336,7 +336,23 @@ def test_direct_site_reservation_uses_lowercase_and_releases_on_error(tmp_path: 
 
 @pytest.mark.parametrize(
     "command",
-    ["backup-site", "delete-backup", "install-app", "get-and-install-app", "uninstall-app"],
+    [
+        "backup-site",
+        "build",
+        "clear-cache",
+        "delete-backup",
+        "drop-site",
+        "get-and-install-app",
+        "install-app",
+        "migrate",
+        "migration-backup",
+        "reinstall-site",
+        "rename-site",
+        "restore-site",
+        "revert-site",
+        "setup-letsencrypt",
+        "uninstall-app",
+    ],
 )
 @pytest.mark.parametrize("status", [TaskStatus.QUEUED, TaskStatus.RUNNING])
 def test_direct_site_reservation_rejects_unkeyed_site_work(
@@ -352,6 +368,63 @@ def test_direct_site_reservation_rejects_unkeyed_site_work(
         store.reserve_direct_site("example.test"),
     ):
         pytest.fail("drop must reject active site work")
+
+
+@pytest.mark.parametrize("command", ["new-site", "new-site-from-backup"])
+@pytest.mark.parametrize("status", [TaskStatus.QUEUED, TaskStatus.RUNNING])
+def test_direct_site_reservation_rejects_unkeyed_site_creation(
+    tmp_path: Path, command: str, status: TaskStatus
+) -> None:
+    store = TaskStore(tmp_path)
+    store.create_queued({**metadata(), "command": command, "args": {"name": "Example.Test"}})
+    if status == TaskStatus.RUNNING:
+        store.transition(TASK_ID, TaskStatus.QUEUED, status)
+
+    with (
+        pytest.raises(TaskConflictError, match=r"site:example\.test"),
+        store.reserve_direct_site("example.test"),
+    ):
+        pytest.fail("drop must reject active site creation")
+
+
+@pytest.mark.parametrize(("command", "field"), [("restore-site", "source_site"), ("rename-site", "new_name")])
+@pytest.mark.parametrize("status", [TaskStatus.QUEUED, TaskStatus.RUNNING])
+def test_direct_site_reservation_rejects_secondary_site_work(
+    tmp_path: Path, command: str, field: str, status: TaskStatus
+) -> None:
+    store = TaskStore(tmp_path)
+    store.create_queued(
+        {**metadata(), "command": command, "args": {"site": "other.test", field: "Example.Test"}}
+    )
+    if status == TaskStatus.RUNNING:
+        store.transition(TASK_ID, TaskStatus.QUEUED, status)
+
+    with (
+        pytest.raises(TaskConflictError, match=r"site:example\.test"),
+        store.reserve_direct_site("example.test"),
+    ):
+        pytest.fail("drop must reject work using the site as a source or new name")
+
+
+@pytest.mark.parametrize("command", ["restore-site", "reinstall-site", "drop-site"])
+def test_direct_site_reservation_rejects_new_site_task(tmp_path: Path, command: str) -> None:
+    store = TaskStore(tmp_path)
+
+    with (
+        store.reserve_direct_site("example.test"),
+        pytest.raises(TaskConflictError, match=r"site:example\.test"),
+    ):
+        store.create_queued({**metadata(), "command": command, "args": {"site": "Example.Test"}})
+
+    assert not store.task_dir(TASK_ID).exists()
+
+
+def test_direct_site_reservation_allows_other_site_task(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    store.create_queued({**metadata(), "command": "restore-site", "args": {"site": "other.test"}})
+
+    with store.reserve_direct_site("example.test"):
+        pass
 
 
 def test_direct_site_reservation_rejects_multi_site_app_work(tmp_path: Path) -> None:

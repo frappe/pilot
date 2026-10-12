@@ -18,8 +18,32 @@ from pilot.utils import make_private_directory
 HOST_RESOURCE_PREFIX = "host:"
 _HOST_RESOURCE_LOCK = ".host-resources"
 _DROP_COORDINATED_COMMANDS = frozenset(
-    {"backup-site", "delete-backup", "install-app", "get-and-install-app", "uninstall-app"}
+    {
+        "backup-site",
+        "build",
+        "clear-cache",
+        "delete-backup",
+        "drop-site",
+        "get-and-install-app",
+        "install-app",
+        "migrate",
+        "migration-backup",
+        "new-site",
+        "new-site-from-backup",
+        "reinstall-site",
+        "rename-site",
+        "restore-site",
+        "revert-site",
+        "setup-letsencrypt",
+        "uninstall-app",
+    }
 )
+_ADDITIONAL_SITE_ARG = {
+    "new-site": "name",
+    "new-site-from-backup": "name",
+    "restore-site": "source_site",
+    "rename-site": "new_name",
+}
 
 
 def _host_keys(keys: list[str]) -> set[str]:
@@ -395,14 +419,16 @@ class TaskStore:
 
     @staticmethod
     def _drop_site_names(metadata: Mapping[str, object]) -> list[str]:
-        if metadata.get("command") not in _DROP_COORDINATED_COMMANDS:
+        command = metadata.get("command")
+        if command not in _DROP_COORDINATED_COMMANDS:
             return []
         args = metadata.get("args")
         if not isinstance(args, dict):
             return []
         names: list[str] = []
-        if isinstance(site := args.get("site"), str) and site:
-            names.append(site.lower())
+        for field in ("site", _ADDITIONAL_SITE_ARG.get(command)):
+            if isinstance(name := args.get(field), str) and name:
+                names.append(name.lower())
         if isinstance(sites := args.get("sites"), list):
             names.extend(name.lower() for name in sites if isinstance(name, str) and name)
         return sorted(set(names))
