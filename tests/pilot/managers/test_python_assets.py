@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -125,6 +126,7 @@ def test_asset_links_are_updated_under_one_lock(tmp_path: Path, monkeypatch: pyt
     old_link.mkdir(parents=True)
     lock_path = assets_dir / "asset-links"
     original_symlink_to = Path.symlink_to
+    original_replace = os.replace
     linked_paths = []
 
     def symlink_under_lock(path: Path, target: Path, target_is_directory: bool = False) -> None:
@@ -133,12 +135,51 @@ def test_asset_links_are_updated_under_one_lock(tmp_path: Path, monkeypatch: pyt
         linked_paths.append(path)
         original_symlink_to(path, target, target_is_directory=target_is_directory)
 
+    def replace_under_lock(source: Path, target: Path) -> None:
+        with pytest.raises(BlockingIOError), exclusive_file_lock(lock_path, blocking=False):
+            pass
+        assert target == old_link
+        original_replace(source, target)
+
     monkeypatch.setattr(Path, "symlink_to", symlink_under_lock)
+    monkeypatch.setattr(os, "replace", replace_under_lock)
     builder.link_app_assets("gameplan", public_dir)
 
-    assert linked_paths == [old_link, public_dir / "node_modules"]
+    assert len(linked_paths) == 2
+    assert linked_paths[0].parent.parent == assets_dir
+    assert linked_paths[1] == public_dir / "node_modules"
     assert old_link.resolve() == public_dir
     assert (public_dir / "node_modules").resolve() == node_modules
+
+
+def test_link_survives_frappe_removing_it_during_install(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = MagicMock()
+    manager.bench.sites_path = tmp_path / "sites"
+    builder = PythonAssetBuilder(manager)
+    public_dir = tmp_path / "apps" / "gameplan" / "gameplan" / "public"
+    public_dir.mkdir(parents=True)
+    app_link = manager.bench.sites_path / "assets" / "gameplan"
+    app_link.parent.mkdir(parents=True)
+    app_link.symlink_to(public_dir)
+    original_is_symlink = Path.is_symlink
+    removed_by_frappe = False
+
+    def remove_link_during_check(path: Path) -> bool:
+        nonlocal removed_by_frappe
+        is_symlink = original_is_symlink(path)
+        if path == app_link and is_symlink and not removed_by_frappe:
+            path.unlink()
+            removed_by_frappe = True
+        return is_symlink
+
+    monkeypatch.setattr(Path, "is_symlink", remove_link_during_check)
+    builder.link_app_assets("gameplan", public_dir)
+
+    assert removed_by_frappe
+    assert app_link.is_symlink()
+    assert app_link.resolve() == public_dir
 
 
 @pytest.mark.parametrize(

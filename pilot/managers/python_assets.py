@@ -3,9 +3,11 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import os
 import re
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -213,11 +215,12 @@ class PythonAssetBuilder:
 
         with exclusive_file_lock(assets_dir / "asset-links"):
             app_link = assets_dir / app_name
-            if app_link.is_symlink():
-                app_link.unlink()
-            elif app_link.is_dir():
-                shutil.rmtree(str(app_link))
-            app_link.symlink_to(app_public_dir.resolve())
+            with tempfile.TemporaryDirectory(dir=assets_dir, prefix=f".{app_name}.") as directory:
+                temporary_link = Path(directory) / app_name
+                temporary_link.symlink_to(app_public_dir.resolve())
+                if app_link.is_dir() and not app_link.is_symlink():
+                    shutil.rmtree(str(app_link))
+                os.replace(temporary_link, app_link)
 
             # As `bench build` links it: <app>/node_modules is served at /assets/<app>/node_modules.
             node_modules = app_public_dir.parent.parent / "node_modules"
