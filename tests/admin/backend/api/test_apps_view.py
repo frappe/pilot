@@ -209,6 +209,18 @@ def test_delete_app_404s_when_missing(tmp_path: Path) -> None:
     assert response.status_code == 404
 
 
+def test_delete_app_conflicts_with_cli_site_drop(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    _make_cloned_app(bench_root, "suite")
+    client = _client(bench_root)
+
+    with TaskStore(bench_root).reserve_direct_site("example.test"):
+        response = client.delete("/api/v1/apps/suite")
+
+    assert response.status_code == 409
+    assert response.get_json()["error"]["code"] == "task_conflict"
+
+
 def test_marketplace_returns_catalog_apps(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
     client = _client(bench_root)

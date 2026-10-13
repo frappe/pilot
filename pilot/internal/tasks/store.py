@@ -17,6 +17,7 @@ from pilot.utils import make_private_directory
 
 HOST_RESOURCE_PREFIX = "host:"
 _HOST_RESOURCE_LOCK = ".host-resources"
+_BENCH_DROP_EXCLUSION_LOCK = "drop-bench-exclusion"
 _DROP_COORDINATED_COMMANDS = frozenset(
     {
         "backup-site",
@@ -76,6 +77,7 @@ class TaskStore:
         with (
             self._host_resource_lock(keys),
             exclusive_file_lock(self._lock_target),
+            self._bench_drop_exclusion_lock(metadata, shared=False),
             self._drop_exclusion_locks(self._drop_site_names(metadata), shared=True),
             self._site_resource_locks(keys),
         ):
@@ -99,6 +101,7 @@ class TaskStore:
         with (
             self._host_resource_lock(keys),
             exclusive_file_lock(self._lock_target),
+            self._bench_drop_exclusion_lock(metadata, shared=False),
             self._drop_exclusion_locks(self._drop_site_names(metadata), shared=True),
             self._site_resource_locks(keys),
         ):
@@ -243,7 +246,11 @@ class TaskStore:
     def reserve_direct_site(self, site_name: str) -> Iterator[None]:
         key = f"site:{site_name.lower()}"
         make_private_directory(self.tasks_root, parents=True)
-        with self._drop_exclusion_locks([site_name], shared=False), self._site_resource_locks([key]):
+        with (
+            self._bench_drop_exclusion_lock(None, shared=True),
+            self._drop_exclusion_locks([site_name], shared=False),
+            self._site_resource_locks([key]),
+        ):
             with exclusive_file_lock(self._lock_target):
                 self._reject_active_resource_locked([key])
                 self._reject_active_drop_work_locked(site_name)
@@ -313,6 +320,8 @@ class TaskStore:
                 metadata = self.read_metadata(task_dir.name)
             except (OSError, ValueError, TaskNotFoundError):
                 continue
+            if metadata.get("command") == "remove-app":
+                raise TaskConflictError("An app removal task is active across this bench")
             if wanted in self._drop_site_names(metadata):
                 raise TaskConflictError(f"Another active task is already using resource 'site:{wanted}'")
 
@@ -321,6 +330,21 @@ class TaskStore:
         if not _host_keys(keys):
             return nullcontext()
         return exclusive_file_lock(self.bench_root.parent / _HOST_RESOURCE_LOCK)
+
+    @contextmanager
+    def _bench_drop_exclusion_lock(
+        self, metadata: Mapping[str, object] | None, *, shared: bool
+    ) -> Iterator[None]:
+        if not shared and (metadata is None or metadata.get("command") != "remove-app"):
+            yield
+            return
+        path = self.tasks_root / _BENCH_DROP_EXCLUSION_LOCK
+        lock = shared_file_lock if shared else exclusive_file_lock
+        try:
+            with lock(path, blocking=False):
+                yield
+        except BlockingIOError as error:
+            raise TaskConflictError("An app removal conflicts with site deletion in this bench") from error
 
     @contextmanager
     def _site_resource_locks(self, keys: list[str]) -> Iterator[None]:

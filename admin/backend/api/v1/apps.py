@@ -176,6 +176,8 @@ def remove(name: str):
 
     try:
         task_id = RemoveAppTask.queue(Bench(bench_root), name=name)
+    except TaskConflictError as error:
+        return error_response("task_conflict", str(error), 409)
     except Exception:
         return error_response("app_removal_failed", "Could not start app removal.", 500)
 

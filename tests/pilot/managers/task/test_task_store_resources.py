@@ -164,6 +164,29 @@ def test_direct_site_reservation_rejects_multi_site_app_work(tmp_path: Path) -> 
         pytest.fail("drop must reject a task that includes the site")
 
 
+@pytest.mark.parametrize("status", [TaskStatus.QUEUED, TaskStatus.RUNNING])
+def test_direct_site_reservation_rejects_bench_wide_app_removal(tmp_path: Path, status: TaskStatus) -> None:
+    store = TaskStore(tmp_path)
+    store.create_queued({**metadata(), "command": "remove-app", "args": {"name": "suite"}})
+    if status == TaskStatus.RUNNING:
+        store.transition(TASK_ID, TaskStatus.QUEUED, status)
+
+    with pytest.raises(TaskConflictError, match="app removal"), store.reserve_direct_site("example.test"):
+        pytest.fail("drop must reject app removal across the bench")
+
+
+def test_app_removal_cannot_queue_during_direct_site_reservation(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    removal = {**metadata(), "command": "remove-app", "args": {"name": "suite"}}
+
+    with store.reserve_direct_site("example.test"):
+        with pytest.raises(TaskConflictError, match="app removal"):
+            store.create_queued(removal)
+        assert not store.task_dir(TASK_ID).exists()
+
+    store.create_queued(removal)
+
+
 def test_direct_site_reservation_rejects_new_unkeyed_work_and_inline_write(tmp_path: Path) -> None:
     store = TaskStore(tmp_path)
     backup = {**metadata(), "command": "backup-site", "args": {"site": "example.test"}}
