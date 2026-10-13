@@ -63,12 +63,16 @@ server {
     }
 
     location /socket.io {
+        set $pilot_socketio_origin $http_origin;
+        if ($pilot_socketio_origin = "") {
+            set $pilot_socketio_origin $scheme://$http_host;
+        }
         proxy_pass         http://127.0.0.1:{{ socketio_port }};
         proxy_http_version 1.1;
         proxy_set_header   Upgrade $http_upgrade;
         proxy_set_header   Connection "upgrade";
         proxy_set_header   X-Frappe-Site-Name {{ alias.site }};
-        proxy_set_header   Origin $scheme://$http_host;
+        proxy_set_header   Origin $pilot_socketio_origin;
         proxy_set_header   Host $host;
     }
 

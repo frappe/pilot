@@ -84,7 +84,9 @@ pilot setup production --admin-domain admin.example.com --tls --letsencrypt-emai
 You can also set `letsencrypt.email` in `common_config.toml` before setup.
 When an upstream proxy terminates HTTPS, set `admin.tls = false` so Pilot does not change site SSL settings or request certificates.
 
-When requests arrive from configured proxy servers, Pilot preserves the forwarded scheme supplied by an edge that terminates TLS. Socket.IO also preserves an explicit browser `Origin` and reconstructs a same-origin value from the forwarded scheme and host only when that header is absent.
+When requests arrive from configured proxy servers, Pilot preserves the forwarded scheme supplied by an edge that terminates TLS.
+
+Site routes and non-redirecting site aliases preserve explicit Socket.IO `Origin` headers. For an absent or empty header, site routes use the configured public scheme and aliases use the local request scheme with the request host.
 
 A vhost that receives TLS through PROXY protocol v2 uses its local `$scheme` instead, because the PROXY protocol does not carry `X-Forwarded-Proto`. The scheme is chosen per vhost, so edge-terminated and passthrough vhosts can share one bench.
 
