@@ -79,7 +79,10 @@ def test_edge_tls_site_sets_ssl_without_obtaining_a_certificate(tmp_path: Path) 
     obtain_cert.assert_not_called()
 
 
-def test_provision_builds_app_captured_before_install_creates_asset_link(tmp_path: Path) -> None:
+@pytest.mark.parametrize("has_bundle", [False, True])
+def test_provision_builds_only_apps_missing_assets_after_install(
+    tmp_path: Path, has_bundle: bool
+) -> None:
     provisioner = _provisioner(tmp_path)
     provisioner.apps.append("gameplan")
     provisioner.bench.create_directories()
@@ -87,6 +90,11 @@ def test_provision_builds_app_captured_before_install_creates_asset_link(tmp_pat
     app.config.name = "gameplan"
     public = tmp_path / "apps" / "gameplan" / "gameplan" / "public"
     public.mkdir(parents=True)
+    if has_bundle:
+        (public / "js").mkdir()
+        (public / "js" / "desk.bundle.js").write_text("source")
+    else:
+        (public / "logo.svg").write_text("<svg />")
     app.path = public.parent.parent
     link = provisioner.bench.sites_path / "assets" / "gameplan"
 
@@ -114,7 +122,10 @@ def test_provision_builds_app_captured_before_install_creates_asset_link(tmp_pat
         provisioner.provision(lambda _: None)
 
     assert link.is_symlink()
-    build.assert_called_once_with(app)
+    if has_bundle:
+        build.assert_called_once_with(app)
+    else:
+        build.assert_not_called()
 
 
 def test_failed_build_is_retried_with_existing_asset_link(tmp_path: Path) -> None:

@@ -54,13 +54,12 @@ class SiteProvisioner:
         site.create(db_type=self.db_type)
         self.write_email_sender_name(site)
         self.write_route_policy(site)
-        apps_missing_assets = self.get_apps_missing_assets()
         self.install_apps(site, on_progress)
         self.write_pilot_communication_config(site)
         self.bench.write_common_site_config()
         site.enable_scheduler()
         on_progress(f"\nSite '{self.name}' created successfully.")
-        self.build_missing_assets(apps_missing_assets)
+        self.build_missing_assets()
         self.add_to_hosts(site)
         self.reload_nginx()
         if origin_tls:
@@ -113,11 +112,11 @@ class SiteProvisioner:
             if self.bench.is_app_installed(app.config.name) and not builder.has_app_assets(app)
         ]
 
-    def build_missing_assets(self, apps: list["App"] | None = None) -> None:
+    def build_missing_assets(self) -> None:
         from pilot.managers.environment import PythonEnvManager
 
         manager = PythonEnvManager(self.bench)
-        for app in self.get_apps_missing_assets() if apps is None else apps:
+        for app in self.get_apps_missing_assets():
             manager.build_assets_for_app(app)
 
     def add_to_hosts(self, site: "Site") -> None:
