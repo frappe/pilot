@@ -359,14 +359,15 @@ MARIADB_VARIABLE_SPECS = (
         _RECOVERY_SENSITIVE,
         value_type="integer",
     ),
-    _read_only(
-        "innodb_snapshot_isolation",
-        "InnoDB snapshot isolation",
-        "InnoDB",
-        "Controls write conflict detection for repeatable-read transactions.",
-        _WORKLOAD_SENSITIVE,
+    MariaDBVariableSpec(
+        name="innodb_snapshot_isolation",
+        label="InnoDB snapshot isolation",
+        section="InnoDB",
+        description="Controls write conflict detection for repeatable-read transactions.",
         value_type="boolean",
         dynamic=True,
+        edit_action="configuration",
+        read_only_reason="",
     ),
     _read_only(
         "innodb_flush_log_at_trx_commit",

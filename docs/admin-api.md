@@ -155,6 +155,10 @@ A user of the team opens `approval_url` and enters the code within 10 minutes. F
 
 `POST /apps/<name>/actions/switch-branch` takes `{"branch": "..."}` and queues `switch-branch`. The task validates, reinstalls, and builds the app on the new branch, and returns to the old branch if a step fails. It then backs up and migrates every site that has the app, through one migration operation that takes over the task's locks. If a migration fails, restoring that operation returns the app to its previous branch and restores the site databases.
 
+### Database Memory Settings
+
+`GET /database/configurations` includes host-wide `MemoryHigh` and `MemoryMax` rows for Pilot-managed MariaDB on Linux. `POST /database/configurations/<variable>` accepts `{"value": <whole MiB>}` and queues the existing configuration task. The task checks current host memory before applying the limit. Swap is not editable. The same endpoint accepts a boolean for `innodb_snapshot_isolation`. See [MariaDB Memory Settings](admin-ui.md#mariadb-memory-settings) for validation and startup behavior.
+
 ### Database Performance Report
 
 `GET /database/performance-report` returns the read-only findings behind the analyzer's Query Analysis and Index Analysis panels: `time_consuming_queries`, `full_table_scan_queries`, `unused_indexes`, `redundant_indexes`, and the `performance_schema_enabled` flag.

@@ -31,6 +31,7 @@ from pilot.internal.atomic_file import (
     exclusive_file_lock,
 )
 from pilot.managers.database.base import UserOwnedDBManager
+from pilot.managers.database.memory import MariaDBMemory
 from pilot.managers.platform import is_macos, which
 from pilot.utils import cli_root, run_command
 
@@ -61,6 +62,10 @@ class MariaDBManager(UserOwnedDBManager):
 
     def __init__(self, config: MariaDBConfig) -> None:
         self.config = config
+
+    @property
+    def memory(self) -> MariaDBMemory:
+        return MariaDBMemory(self)
 
     @property
     def state_dir(self) -> Path:
@@ -292,7 +297,7 @@ class MariaDBManager(UserOwnedDBManager):
         self._require_linux_managed_server()
         with self.database_action_lock():
             sizing = self._write_config()
-            self._install_unit(sizing)
+            self._install_unit(sizing, preserve_swap_limit=True)
             self._wait_until_healthy()
             current_max = self._unit_memory_mb("MemoryMax")
             # Raise the limits before MariaDB grows, and lower them only after it shrinks.
@@ -302,6 +307,7 @@ class MariaDBManager(UserOwnedDBManager):
             else:
                 self._apply_live_sizing(sizing)
                 self._lower_runtime_memory_limits(sizing)
+            self._wait_until_healthy()
         return sizing
 
     def _apply_live_sizing(self, sizing: MariaDBMemorySizing) -> None:
@@ -324,14 +330,14 @@ class MariaDBManager(UserOwnedDBManager):
         """Lower the unit memory limits once MariaDB uses less than the new soft limit.
 
         A smaller buffer pool releases its memory gradually, and the hard limit must not kill
-        the server first. If the memory stays high or cannot be read, the limits apply at the
-        next start.
+        the server first. If memory stays high or cannot be read, the active limits stay unchanged.
         """
         deadline = time.monotonic() + _MEMORY_RELEASE_TIMEOUT
         while (usage := self._unit_memory_mb("MemoryCurrent")) is None or usage >= sizing.memory_high_mb:
             if time.monotonic() >= deadline:
                 logging.getLogger(__name__).warning(
-                    "MariaDB memory use is unknown or above %s MiB; its new memory limits apply at the next start.",
+                    "MariaDB memory use is unknown or above %s MiB; memory limits remain pending. "
+                    "Review active limits and recalculate after memory use decreases.",
                     sizing.memory_high_mb,
                 )
                 return
@@ -833,10 +839,18 @@ class MariaDBManager(UserOwnedDBManager):
             raise DatabaseError("Could not detect total system memory for MariaDB sizing.")
         return total_memory_mb
 
-    def _install_unit(self, sizing: MariaDBMemorySizing) -> None:
+    def _install_unit(self, sizing: MariaDBMemorySizing, *, preserve_swap_limit: bool = False) -> None:
         mariadbd = which("mariadbd") or which("mysqld") or "/usr/sbin/mariadbd"
+        swap_limits = "MemorySwapMax=100M\n"
+        if preserve_swap_limit:
+            swap_limits = "".join(
+                f"{line}\n" for line in self.unit_path.read_text().splitlines()
+                if line.strip().startswith("MemorySwapMax=")
+            )
         content = (
             "[Unit]\n"
+            "Requires=pilot-mariadb-sizing.service\n"
+            "After=pilot-mariadb-sizing.service\n"
             "Description=MariaDB (pilot, user-owned)\n\n"
             "[Service]\n"
             "Type=simple\n"
@@ -846,14 +860,15 @@ class MariaDBManager(UserOwnedDBManager):
             "LimitNOFILE=65535\n"
             f"MemoryHigh={sizing.memory_high_mb}M\n"
             f"MemoryMax={sizing.memory_max_mb}M\n"
-            "MemorySwapMax=100M\n"
+            f"{swap_limits}"
             "Restart=on-failure\n\n"
             "[Install]\n"
             "WantedBy=default.target\n"
         )
         unit_dir = self.user_unit_dir
         unit_dir.mkdir(parents=True, exist_ok=True)
-        self.unit_path.write_text(content)
+        atomic_write_private_text(self.unit_path, content)
+        self.memory.install_startup_hook()
         run_command(self._systemctl("daemon-reload"), env=self._systemctl_env())
 
     def is_reachable(self) -> bool:
