@@ -1,4 +1,4 @@
-import { request } from '@/api/client'
+import { request, unwrap } from '@/api/client'
 import type {
   ActionStatus,
   BinlogFile,
@@ -64,14 +64,16 @@ export const databaseApi = {
 
   configurations: {
     list: (): Promise<DatabaseConfigurationSnapshot> =>
-      request.get('database/configurations').json(),
+      unwrap(request.get('database/configurations').json()),
     set: (variable: string, value: unknown, idempotencyKey: string): Promise<TaskPayload> =>
-      request
-        .post(`database/configurations/${encodeURIComponent(variable)}`, {
-          json: { value },
-          headers: { 'Idempotency-Key': idempotencyKey },
-        })
-        .json(),
+      unwrap(
+        request
+          .post(`database/configurations/${encodeURIComponent(variable)}`, {
+            json: { value },
+            headers: { 'Idempotency-Key': idempotencyKey },
+          })
+          .json<TaskPayload>(),
+      ),
   },
 
   quickActions: {

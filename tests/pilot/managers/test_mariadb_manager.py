@@ -803,7 +803,7 @@ def _tune(manager, tmp_path, current_max_mb):
         sizing = manager.tune_to_host()
         config = manager.my_cnf_path.read_text()
     restart.assert_not_called()
-    install_unit.assert_called_once_with(sizing)
+    install_unit.assert_called_once_with(sizing, preserve_swap_limit=True)
     return sizing, config, [name for name, _args, _kwargs in order.mock_calls]
 
 
@@ -1237,3 +1237,12 @@ def test_an_existing_unit_gets_its_memory_high_raised_live(tmp_path: Path, monke
 
     limits["MemoryHigh"] = 2658
     assert manager.raise_memory_high() is False
+
+
+def test_client_command_uses_homebrew_default_socket_on_macos() -> None:
+    manager = _manager()
+
+    with patch(f"{MODULE}.is_macos", return_value=True):
+        command = manager._client_command()
+
+    assert command == ["mariadb", "--connect-timeout=5", "-u", "root", "--batch"]

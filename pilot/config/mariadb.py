@@ -11,3 +11,5 @@ class MariaDBConfig:
     admin_user: str = "root"
     socket_path: str = ""
     existing: bool = False
+    memory_high_mb: int | None = None
+    memory_max_mb: int | None = None
