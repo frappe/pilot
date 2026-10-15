@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 from pilot.config import BenchConfig
+from pilot.internal.site_paths import site_exists
+from pilot.internal.tasks.store import TaskStore
 
 
 def _client(bench_root: Path, password: str = "secret"):
@@ -59,6 +62,65 @@ def test_backup_site_queues_task(tmp_path: Path) -> None:
     assert response.status_code == 202
     assert body["command"] == "backup-site"
     assert body["args"] == {"site": "site.localhost", "with_files": True}
+
+
+def test_backup_site_cannot_queue_during_cli_site_drop(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    _make_site(bench_root, "site.localhost")
+    client = _client(bench_root)
+
+    with TaskStore(bench_root).reserve_direct_site("site.localhost"):
+        response = _request(client, "post", "/api/v1/sites/site.localhost/backups")
+
+    assert response.status_code == 409
+    assert response.get_json()["error"]["code"] == "task_conflict"
+
+
+def test_backup_site_rechecks_site_after_completed_cli_drop(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    name = "site.localhost"
+    _make_site(bench_root, name)
+    client = _client(bench_root)
+    checked = False
+
+    def drop_after_first_check(root: Path, site: str) -> bool:
+        nonlocal checked
+        exists = site_exists(root, site)
+        if not checked:
+            checked = True
+            with TaskStore(root).reserve_direct_site(site):
+                shutil.rmtree(root / "sites" / site)
+        return exists
+
+    with (
+        patch("admin.backend.api.v1.sites.backups.site_exists", side_effect=drop_after_first_check),
+        patch("admin.backend.api.v1.sites.backups.BackupSiteTask.queue") as queue,
+    ):
+        response = _request(client, "post", f"/api/v1/sites/{name}/backups")
+
+    assert response.status_code == 404
+    assert response.get_json()["error"]["code"] == "site_not_found"
+    queue.assert_not_called()
+
+
+def test_delete_backup_does_not_touch_backup_state_after_cli_drop(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    name = "site.localhost"
+    _make_site(bench_root, name)
+    client = _client(bench_root)
+    with TaskStore(bench_root).reserve_direct_site(name):
+        shutil.rmtree(bench_root / "sites" / name)
+
+    with (
+        patch("admin.backend.api.v1.sites.backups._find_backup_set") as find_backup,
+        patch("admin.backend.api.v1.sites.backups.DeleteBackupTask.queue") as queue,
+    ):
+        response = _request(client, "delete", f"/api/v1/sites/{name}/backups/20260101_020000")
+
+    assert response.status_code == 404
+    assert response.get_json()["error"]["code"] == "site_not_found"
+    find_backup.assert_not_called()
+    queue.assert_not_called()
 
 
 def test_backup_site_rejects_missing_site(tmp_path: Path) -> None:

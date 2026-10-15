@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import stat
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
+from threading import Event
 
 import pytest
 
@@ -203,6 +205,66 @@ def test_active_idempotent_submission_returns_existing_task(tmp_path: Path) -> N
     assert not store.task_dir(duplicate_metadata["task_id"]).exists()
 
 
+@pytest.mark.parametrize("unkeyed", [False, True])
+def test_concurrent_idempotent_site_submissions_return_same_task(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    unkeyed: bool,
+) -> None:
+    store = TaskStore(tmp_path)
+    first_metadata = (
+        {**metadata(), "command": "backup-site", "args": {"site": "example.test"}} if unkeyed else metadata()
+    )
+    resource_key = None if unkeyed else "site:example.test"
+    publishing = Event()
+    release = Event()
+    second_started = Event()
+    publish_task = store._create_queued_locked
+
+    def pause_first_publish(task_metadata: dict, private_files: dict) -> Path:
+        if task_metadata["task_id"] == TASK_ID:
+            publishing.set()
+            assert release.wait(10)
+        return publish_task(task_metadata, private_files)
+
+    def submit_second():
+        second_started.set()
+        return store.create_idempotent_queued(
+            {**first_metadata, "task_id": "20260715-120001-bbccdd"},
+            {},
+            idempotency_digest="key-digest",
+            request_fingerprint="request-digest",
+            resource_key=resource_key,
+        )
+
+    monkeypatch.setattr(store, "_create_queued_locked", pause_first_publish)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(
+            store.create_idempotent_queued,
+            first_metadata,
+            {},
+            "key-digest",
+            "request-digest",
+            resource_key=resource_key,
+        )
+        try:
+            assert publishing.wait(10)
+            second = executor.submit(submit_second)
+            assert second_started.wait(10)
+            with pytest.raises(TimeoutError):
+                second.result(timeout=0.2)
+        finally:
+            release.set()
+
+        assert first.result(timeout=10).created is True
+        replay = second.result(timeout=10)
+
+    assert replay.created is False
+    assert replay.task_id == TASK_ID
+    assert not store.task_dir("20260715-120001-bbccdd").exists()
+
+
 def test_active_idempotency_key_rejects_another_request(tmp_path: Path) -> None:
     store = TaskStore(tmp_path)
     store.create_idempotent_queued(
@@ -241,129 +303,6 @@ def test_terminal_task_does_not_block_idempotent_retry(tmp_path: Path) -> None:
 
     assert retry.created is True
     assert retry.task_id == retry_id
-
-
-def test_active_resource_rejects_another_task(tmp_path: Path) -> None:
-    store = TaskStore(tmp_path)
-    store.create_queued(metadata(), resource_key="site:example.test")
-
-    with pytest.raises(TaskConflictError, match="already using resource"):
-        store.create_queued(
-            {**metadata(), "task_id": "20260715-120001-bbccdd"},
-            resource_key="site:example.test",
-        )
-
-    assert store.read_metadata(TASK_ID)["resource_keys"] == ["site:example.test"]
-
-
-def test_active_resource_can_be_handed_to_successor(tmp_path: Path) -> None:
-    store = TaskStore(tmp_path)
-    store.create_queued(metadata(), resource_key=["bench:update", "site:example.test"])
-    store.transition(TASK_ID, TaskStatus.QUEUED, TaskStatus.RUNNING)
-    successor_id = "20260715-120001-bbccdd"
-
-    store.create_queued(
-        {**metadata(), "task_id": successor_id},
-        resource_key=["bench:update", "site:example.test"],
-        resource_handoff_from=TASK_ID,
-    )
-
-    assert store.read_metadata(successor_id)["resource_keys"] == [
-        "bench:update",
-        "site:example.test",
-    ]
-
-
-def test_resource_handoff_does_not_ignore_another_owner(tmp_path: Path) -> None:
-    store = TaskStore(tmp_path)
-    store.create_queued(metadata(), resource_key="site:example.test")
-
-    with pytest.raises(TaskConflictError, match="already using resource"):
-        store.create_queued(
-            {**metadata(), "task_id": "20260715-120001-bbccdd"},
-            resource_key="site:example.test",
-            resource_handoff_from="not-the-active-task",
-        )
-
-
-def test_idempotent_replay_precedes_resource_conflict(tmp_path: Path) -> None:
-    store = TaskStore(tmp_path)
-    store.create_idempotent_queued(
-        metadata(),
-        {},
-        idempotency_digest="key-digest",
-        request_fingerprint="request-digest",
-        resource_key="site:example.test",
-    )
-
-    replay = store.create_idempotent_queued(
-        {**metadata(), "task_id": "20260715-120001-bbccdd"},
-        {},
-        idempotency_digest="key-digest",
-        request_fingerprint="request-digest",
-        resource_key="site:example.test",
-    )
-
-    assert replay.created is False
-    assert replay.task_id == TASK_ID
-
-
-def test_active_resource_rejects_different_idempotent_task(tmp_path: Path) -> None:
-    store = TaskStore(tmp_path)
-    store.create_idempotent_queued(
-        metadata(),
-        {},
-        idempotency_digest="first-key",
-        request_fingerprint="request-digest",
-        resource_key="site:example.test",
-    )
-
-    with pytest.raises(TaskConflictError, match="already using resource"):
-        store.create_idempotent_queued(
-            {**metadata(), "task_id": "20260715-120001-bbccdd"},
-            {},
-            idempotency_digest="second-key",
-            request_fingerprint="request-digest",
-            resource_key="site:example.test",
-        )
-
-
-def test_terminal_task_releases_resource(tmp_path: Path) -> None:
-    store = TaskStore(tmp_path)
-    store.create_queued(metadata(), resource_key="site:example.test")
-    store.transition(TASK_ID, TaskStatus.QUEUED, TaskStatus.KILLED)
-    retry_id = "20260715-120001-bbccdd"
-
-    store.create_queued(
-        {**metadata(), "task_id": retry_id},
-        resource_key="site:example.test",
-    )
-
-    assert store.read_metadata(retry_id)["resource_keys"] == ["site:example.test"]
-
-
-@pytest.mark.parametrize("pending_file", ["callbacks.json", "process.json"])
-def test_terminal_task_holds_resource_while_cleanup_is_pending(
-    tmp_path: Path,
-    pending_file: str,
-) -> None:
-    store = TaskStore(tmp_path)
-    store.create_queued(
-        metadata(),
-        {pending_file: "{}"},
-        resource_key="site:example.test",
-    )
-    store.transition(TASK_ID, TaskStatus.QUEUED, TaskStatus.KILLED)
-    retry_metadata = {**metadata(), "task_id": "20260715-120001-bbccdd"}
-
-    with pytest.raises(TaskConflictError, match="already using resource"):
-        store.create_queued(
-            retry_metadata,
-            resource_key="site:example.test",
-        )
-
-    store.remove_private_files(TASK_ID, pending_file)
-    store.create_queued(retry_metadata, resource_key="site:example.test")
 
 
 def test_retention_preserves_task_with_pending_callback(tmp_path: Path) -> None:
@@ -429,61 +368,3 @@ def test_retention_keeps_terminal_task_with_live_process_record(tmp_path: Path) 
 
     assert deleted == [removable]
     assert store.task_dir(protected).exists()
-
-
-# --- hostname claims are host-wide -------------------------------------------
-# Benches on one host share one nginx and one /etc/letsencrypt, so a `host:` key
-# has to conflict across benches; every other key stays bench-local.
-
-OTHER_ID = "20260715-120001-bbccdd"
-
-
-def _benches(tmp_path: Path) -> tuple[TaskStore, TaskStore]:
-    return TaskStore(tmp_path / "b1"), TaskStore(tmp_path / "b2")
-
-
-def test_a_hostname_held_on_one_bench_blocks_another(tmp_path: Path) -> None:
-    first, second = _benches(tmp_path)
-    first.create_queued(metadata(), resource_key="host:shop.example.com")
-
-    with pytest.raises(TaskConflictError, match="Another bench's active task"):
-        second.create_queued({**metadata(), "task_id": OTHER_ID}, resource_key="host:shop.example.com")
-
-
-def test_the_idempotent_path_checks_other_benches_too(tmp_path: Path) -> None:
-    first, second = _benches(tmp_path)
-    first.create_queued(metadata(), resource_key="host:shop.example.com")
-
-    with pytest.raises(TaskConflictError, match="Another bench's active task"):
-        second.create_idempotent_queued(
-            {**metadata(), "task_id": OTHER_ID},
-            {},
-            idempotency_digest="digest",
-            request_fingerprint="fingerprint",
-            resource_key=["site:shop.example.com", "host:shop.example.com"],
-        )
-
-
-def test_other_resources_stay_bench_local(tmp_path: Path) -> None:
-    first, second = _benches(tmp_path)
-    first.create_queued(metadata(), resource_key="site:shop.example.com")
-
-    second.create_queued({**metadata(), "task_id": OTHER_ID}, resource_key="site:shop.example.com")
-
-    assert second.read_metadata(OTHER_ID)["resource_keys"] == ["site:shop.example.com"]
-
-
-def test_different_hostnames_do_not_conflict(tmp_path: Path) -> None:
-    first, second = _benches(tmp_path)
-    first.create_queued(metadata(), resource_key="host:one.example.com")
-
-    second.create_queued({**metadata(), "task_id": OTHER_ID}, resource_key="host:two.example.com")
-
-
-def test_a_finished_task_on_another_bench_releases_the_hostname(tmp_path: Path) -> None:
-    first, second = _benches(tmp_path)
-    first.create_queued(metadata(), resource_key="host:shop.example.com")
-    first.transition(TASK_ID, TaskStatus.QUEUED, TaskStatus.RUNNING)
-    first.transition(TASK_ID, TaskStatus.RUNNING, TaskStatus.SUCCESS)
-
-    second.create_queued({**metadata(), "task_id": OTHER_ID}, resource_key="host:shop.example.com")

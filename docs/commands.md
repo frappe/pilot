@@ -47,6 +47,7 @@ Disabling needs a Frappe that supports it and is exposed through the Admin UI on
 ## Site Commands
 
 - `pilot new-site SITE`: create a site and add it to bench config.
+- `pilot -b NAME drop-site SITE`: confirm, back up, and remove a site with the database credentials from shared config. Use `pilot --yes -b NAME drop-site SITE` for unattended removal. `--no-backup` skips the backup. Run from inside the bench or select it with `-b`. Removal conflicts with Admin tasks that reserve the site, backup and app tasks for the site, bench-wide app removal, and inline app enable/disable.
 - `pilot rename-site OLD NEW [--release-old-hostname]`: rename a site, without dropping a request.
 - `pilot list-site-apps SITE`: list the apps in use on a site, disabled ones excluded.
 - `pilot set-admin-password`: set the Admin panel password in `bench.toml`; prompts when `--password` is omitted. The password must meet the same rules the dashboard enforces.

@@ -9,6 +9,8 @@ import pytest
 from pilot.config import BenchConfig, SiteConfig
 from pilot.core.bench import Bench
 from pilot.core.site import Site
+from pilot.exceptions import BenchError, TaskConflictError
+from pilot.internal.tasks.store import TaskStore
 
 _BENCH_DATA: dict = {
     "bench": {"name": "test-bench", "python": "3.14"},
@@ -170,3 +172,116 @@ def test_drop_skips_the_backup_only_when_asked(
 
     cmd = _capture_drop_cmd(tmp_path, monkeypatch, bench, no_backup=no_backup)["cmd"]
     assert ("--no-backup" in cmd) is skips_backup
+
+
+@pytest.mark.parametrize("no_backup", [False, True])
+def test_drop_site_cli_uses_confirmation_and_backup_flags(tmp_path: Path, monkeypatch, no_backup) -> None:
+    from pilot.internal.cli.command import command_from_args
+    from pilot.internal.cli.registry import build_parser
+
+    parser = build_parser()
+    args = parser.parse_args(["--yes", "drop-site", "mysite", *(["--no-backup"] if no_backup else [])])
+    bench = _make_bench(tmp_path)
+    _write_site(bench, "mysite", {"db_name": "_dropdb"})
+    calls = []
+    monkeypatch.setattr(Site, "drop", lambda self, **kwargs: calls.append((self.config.name, kwargs)))
+    monkeypatch.setattr("builtins.input", lambda prompt: pytest.fail("must not prompt with --yes"))
+
+    command_from_args(args._command_cls, args, bench).run()
+
+    assert len(calls) == 1
+    assert calls[0][0] == "mysite"
+    assert calls[0][1]["no_backup"] is no_backup
+
+
+def test_drop_site_cli_aborts_on_eof(tmp_path: Path, monkeypatch) -> None:
+    from pilot.internal.cli.command import command_from_args
+    from pilot.internal.cli.registry import build_parser
+
+    args = build_parser().parse_args(["drop-site", "mysite"])
+    bench = _make_bench(tmp_path)
+    _write_site(bench, "mysite", {"db_name": "_dropdb"})
+    calls = []
+    monkeypatch.setattr(Site, "drop", lambda self, **kwargs: calls.append(self.config.name))
+
+    def eof(prompt):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", eof)
+    with pytest.raises(BenchError, match="Aborted"):
+        command_from_args(args._command_cls, args, bench).run()
+
+    assert calls == []
+
+
+def test_drop_site_dispatch_requires_an_explicit_bench(tmp_path: Path, monkeypatch) -> None:
+    from pilot.internal.cli import CliContext
+    from pilot.internal.cli.registry import build_parser, dispatch
+
+    bench_dir = tmp_path / "benches" / "test-bench"
+    bench_dir.mkdir(parents=True)
+    bench = Bench(BenchConfig._from_dict(_BENCH_DATA), bench_dir)
+    bench.config.write(bench.path)
+    _write_site(bench, "mysite", {"db_name": "_dropdb"})
+    monkeypatch.chdir(tmp_path)
+    calls = []
+    monkeypatch.setattr(Site, "drop", lambda self, **kwargs: calls.append(self.config.name))
+    parser = build_parser()
+
+    args = parser.parse_args(["--yes", "drop-site", "mysite"])
+    with pytest.raises(BenchError, match="explicit bench"):
+        dispatch(args, parser, CliContext(installation_root=tmp_path))
+    assert calls == []
+
+    args = parser.parse_args(["--yes", "-b", "test-bench", "drop-site", "mysite"])
+    dispatch(args, parser, CliContext(installation_root=tmp_path, bench_name=args.bench))
+    assert calls == ["mysite"]
+
+
+def test_drop_site_cli_rejects_queued_restore(tmp_path: Path, monkeypatch) -> None:
+    from pilot.internal.cli.command import command_from_args
+    from pilot.internal.cli.registry import build_parser
+
+    bench = _make_bench(tmp_path)
+    _write_site(bench, "mysite", {"db_name": "_dropdb"})
+    store = TaskStore(bench.path)
+    store.create_queued(
+        {"task_id": "20260715-120000-aabbcc", "command": "restore-site", "args": {}},
+        resource_key="site:mysite",
+    )
+    monkeypatch.setattr(Site, "drop", lambda self, **kwargs: pytest.fail("drop must not start"))
+    args = build_parser().parse_args(["--yes", "drop-site", "mysite"])
+
+    with pytest.raises(TaskConflictError, match="site:mysite"):
+        command_from_args(args._command_cls, args, bench).run()
+
+
+def test_admin_queue_rejects_in_progress_cli_drop(tmp_path: Path, monkeypatch) -> None:
+    from pilot.internal.cli.command import command_from_args
+    from pilot.internal.cli.registry import build_parser
+
+    bench = _make_bench(tmp_path)
+    _write_site(bench, "mysite", {"db_name": "_dropdb"})
+    store = TaskStore(bench.path)
+
+    def drop(self, **kwargs):
+        with pytest.raises(TaskConflictError, match="site:mysite"):
+            store.create_queued(
+                {"task_id": "20260715-120000-aabbcc", "command": "restore-site", "args": {}},
+                resource_key="site:mysite",
+            )
+        with pytest.raises(TaskConflictError, match="site:mysite"):
+            store.create_idempotent_queued(
+                {"task_id": "20260715-120001-bbccdd", "command": "restore-site", "args": {}},
+                {},
+                idempotency_digest="request-key",
+                request_fingerprint="restore-site",
+                resource_key="site:mysite",
+            )
+
+    monkeypatch.setattr(Site, "drop", drop)
+    args = build_parser().parse_args(["--yes", "drop-site", "mysite"])
+    command_from_args(args._command_cls, args, bench).run()
+
+    assert not store.task_dir("20260715-120000-aabbcc").exists()
+    assert not store.task_dir("20260715-120001-bbccdd").exists()

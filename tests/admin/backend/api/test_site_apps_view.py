@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from pilot.config import BenchConfig
+from pilot.internal.tasks.store import TaskStore
 
 
 def _write_bench_toml(bench_dir: Path, name: str, **settings) -> None:
@@ -355,9 +357,7 @@ def test_install_app_from_a_repo_needs_a_bench_session(tmp_path: Path) -> None:
     _make_site(bench_root, "site1.localhost", [])
     client = _site_client(bench_root, "site1.localhost")
 
-    response = _post_install(
-        client, "site1.localhost", app="suite", repo="https://github.com/attacker/suite"
-    )
+    response = _post_install(client, "site1.localhost", app="suite", repo="https://github.com/attacker/suite")
 
     assert response.status_code == 403
     assert response.get_json()["error"]["code"] == "bench_scope_required"
@@ -472,6 +472,24 @@ def test_install_app_enables_it_inline_when_the_site_has_it_disabled(tmp_path: P
     assert enable.call_args.args[0].config.name == "suite"
 
 
+def test_install_app_cannot_enable_inline_during_cli_site_drop(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    _make_site(bench_root, "site1.localhost", [])
+    _make_cloned_app(bench_root, "suite")
+    client = _client(bench_root)
+
+    with (
+        patch("pilot.core.site.Site.disabled_apps", return_value=["suite"]),
+        patch("pilot.core.site.Site.enable_app") as enable,
+        TaskStore(bench_root).reserve_direct_site("site1.localhost"),
+    ):
+        response = _post_install(client, "site1.localhost", app="suite")
+
+    assert response.status_code == 409
+    assert response.get_json()["error"]["code"] == "task_conflict"
+    enable.assert_not_called()
+
+
 def test_delete_site_app_disables_inline_when_asked(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
     _make_site(bench_root, "site1.localhost", ["suite"])
@@ -484,3 +502,46 @@ def test_delete_site_app_disables_inline_when_asked(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert response.get_json() == {"app": "suite", "disabled": True}
     assert disable.call_args.args[0].config.name == "suite"
+
+
+def test_delete_site_app_cannot_disable_inline_during_cli_site_drop(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    _make_site(bench_root, "site1.localhost", ["suite"])
+    _make_cloned_app(bench_root, "suite")
+    client = _client(bench_root)
+
+    with (
+        patch("pilot.core.site.Site.disable_app") as disable,
+        TaskStore(bench_root).reserve_direct_site("site1.localhost"),
+    ):
+        response = _delete_app(client, "site1.localhost", "suite", mode="disable")
+
+    assert response.status_code == 409
+    assert response.get_json()["error"]["code"] == "task_conflict"
+    disable.assert_not_called()
+
+
+def test_site_app_writes_do_not_start_after_completed_cli_drop(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    name = "site1.localhost"
+    _make_site(bench_root, name, ["suite"])
+    _make_cloned_app(bench_root, "suite")
+    client = _client(bench_root)
+    with TaskStore(bench_root).reserve_direct_site(name):
+        shutil.rmtree(bench_root / "sites" / name)
+
+    with (
+        patch("admin.backend.api.v1.sites.apps._cloned_app") as cloned,
+        patch("pilot.core.site.Site.disable_app") as disable,
+        patch("admin.backend.api.v1.sites.apps.UninstallAppTask.queue") as uninstall,
+    ):
+        enable_response = _post_install(client, name, app="suite")
+        disable_response = _delete_app(client, name, "suite", mode="disable")
+        uninstall_response = _delete_app(client, name, "suite")
+
+    for response in (enable_response, disable_response, uninstall_response):
+        assert response.status_code == 404
+        assert response.get_json()["error"]["code"] == "site_not_found"
+    cloned.assert_not_called()
+    disable.assert_not_called()
+    uninstall.assert_not_called()

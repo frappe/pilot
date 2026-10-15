@@ -19,6 +19,7 @@ from admin.backend.middleware import require_scope
 from pilot.core.bench import Bench
 from pilot.exceptions import BenchError, CronError
 from pilot.internal.site_paths import site_exists
+from pilot.internal.tasks.store import TaskStore
 from pilot.internal.validators import validate_cron_expression
 from pilot.tasks.backup_site import BackupSiteTask
 from pilot.tasks.delete_backup import DeleteBackupTask
@@ -33,7 +34,10 @@ def backup_site(name: str):
     if not site_exists(bench_root, name):
         return site_not_found()
     try:
-        task_id = BackupSiteTask.queue(Bench(bench_root), site=name, with_files=True)
+        with TaskStore(bench_root).reserve_inline_site_write(name):
+            if not site_exists(bench_root, name):
+                return site_not_found()
+            task_id = BackupSiteTask.queue(Bench(bench_root), site=name, with_files=True)
     except Exception as error:
         return task_failure(error)
     return accepted_task_response(bench_root, task_id)
@@ -67,13 +71,16 @@ def get_backup(name: str, timestamp: str):
 @require_scope(site_name)
 def delete_backup(name: str, timestamp: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    match, failure = _find_backup_set(bench_root, name, timestamp)
-    if failure:
-        return failure
     try:
-        task_id = DeleteBackupTask.queue(
-            Bench(bench_root), site=name, filenames=[file.filename for file in match.files]
-        )
+        with TaskStore(bench_root).reserve_inline_site_write(name):
+            if not site_exists(bench_root, name):
+                return site_not_found()
+            match, failure = _find_backup_set(bench_root, name, timestamp)
+            if failure:
+                return failure
+            task_id = DeleteBackupTask.queue(
+                Bench(bench_root), site=name, filenames=[file.filename for file in match.files]
+            )
     except Exception as error:
         return task_failure(error)
     return accepted_task_response(bench_root, task_id)

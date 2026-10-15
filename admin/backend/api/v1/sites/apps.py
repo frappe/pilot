@@ -26,9 +26,11 @@ from pilot.exceptions import (
     MigrationConflictError,
     MigrationNotFoundError,
     RegistryUnavailableError,
+    TaskConflictError,
     TaskNotFoundError,
 )
 from pilot.internal.site_paths import site_exists
+from pilot.internal.tasks.store import TaskStore
 from pilot.internal.validators import validate_app_name, validate_repo_url
 from pilot.managers.task import TaskReader
 from pilot.tasks.get_and_install_app import GetAndInstallAppTask
@@ -110,6 +112,14 @@ def site_marketplace(name: str):
 @require_scope(site_name)
 def install_site_app(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
+    try:
+        with TaskStore(bench_root).reserve_inline_site_write(name):
+            return _install_site_app(name, bench_root)
+    except TaskConflictError as error:
+        return task_failure(error)
+
+
+def _install_site_app(name: str, bench_root: Path):
     if not site_exists(bench_root, name):
         return site_not_found()
     requested, request_error = _requested_install()
@@ -131,9 +141,7 @@ def install_site_app(name: str):
         if enabled := _enable_disabled_app(bench, name, cloned):
             return jsonify({"app": enabled, "enabled": True})
     except BenchError as error:
-        # Frappe refuses to enable an app whose dependency is still disabled - that is
-        # the user's problem to fix, not a failure to start work.
-        return error_response("cannot_enable", _frappe_reason(error, "Could not enable the app."), 422)
+        return _enable_bench_error(error)
     except Exception as error:
         return task_failure(error)
 
@@ -166,6 +174,13 @@ def _frappe_reason(error: Exception, fallback: str) -> str:
     Python - the fallback says the same thing without the path."""
     reason = _EXCEPTION_PREFIX.sub("", str(error).strip().rsplit("\n", 1)[-1].strip())
     return fallback if not reason or _COMMAND_FAILURE.match(reason) else reason
+
+
+def _enable_bench_error(error: BenchError):
+    if isinstance(error, TaskConflictError):
+        return task_failure(error)
+    # Frappe refuses to enable an app whose dependency is still disabled.
+    return error_response("cannot_enable", _frappe_reason(error, "Could not enable the app."), 422)
 
 
 def _enable_disabled_app(bench: Bench, site: str, cloned: "App | None") -> str | None:
@@ -317,6 +332,14 @@ def _operation_task_data(data: dict, state: str) -> dict:
 @require_scope(site_name)
 def delete_site_app(name: str, app: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
+    try:
+        with TaskStore(bench_root).reserve_inline_site_write(name):
+            return _delete_site_app(name, app, bench_root)
+    except TaskConflictError as error:
+        return task_failure(error)
+
+
+def _delete_site_app(name: str, app: str, bench_root: Path):
     if not site_exists(bench_root, name):
         return site_not_found()
     err = validate_app_name(app)
@@ -327,6 +350,8 @@ def delete_site_app(name: str, app: str):
     if request.args.get("mode") == "disable":
         try:
             bench.site(name).disable_app(bench.app(app))
+        except TaskConflictError as error:
+            return task_failure(error)
         except BenchError as error:
             return error_response("cannot_disable", _frappe_reason(error, "Could not disable the app."), 422)
         except Exception as error:

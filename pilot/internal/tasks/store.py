@@ -3,12 +3,13 @@ from __future__ import annotations
 import json
 import shutil
 from collections.abc import Iterator, Mapping
-from contextlib import AbstractContextManager, contextmanager, nullcontext
+from contextlib import AbstractContextManager, ExitStack, contextmanager, nullcontext
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 
 from pilot.exceptions import TaskConflictError, TaskNotFoundError
-from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
+from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked, shared_file_lock
 from pilot.internal.tasks.files import TaskFiles
 from pilot.internal.tasks.models import TaskStatus
 from pilot.internal.tasks.state import parse_task_status, validate_task_transition
@@ -16,6 +17,34 @@ from pilot.utils import make_private_directory
 
 HOST_RESOURCE_PREFIX = "host:"
 _HOST_RESOURCE_LOCK = ".host-resources"
+_BENCH_DROP_EXCLUSION_LOCK = "drop-bench-exclusion"
+_DROP_COORDINATED_COMMANDS = frozenset(
+    {
+        "backup-site",
+        "build",
+        "clear-cache",
+        "delete-backup",
+        "drop-site",
+        "get-and-install-app",
+        "install-app",
+        "migrate",
+        "migration-backup",
+        "new-site",
+        "new-site-from-backup",
+        "reinstall-site",
+        "rename-site",
+        "restore-site",
+        "revert-site",
+        "setup-letsencrypt",
+        "uninstall-app",
+    }
+)
+_ADDITIONAL_SITE_ARG = {
+    "new-site": "name",
+    "new-site-from-backup": "name",
+    "restore-site": "source_site",
+    "rename-site": "new_name",
+}
 
 
 def _host_keys(keys: list[str]) -> set[str]:
@@ -45,7 +74,13 @@ class TaskStore:
     ) -> Path:
         keys = self._normalize_keys(resource_key)
         make_private_directory(self.tasks_root, parents=True)
-        with self._host_resource_lock(keys), exclusive_file_lock(self._lock_target):
+        with (
+            self._host_resource_lock(keys),
+            exclusive_file_lock(self._lock_target),
+            self._bench_drop_exclusion_lock(metadata, shared=False),
+            self._drop_exclusion_locks(self._drop_site_names(metadata), shared=True),
+            self._site_resource_locks(keys),
+        ):
             self._reject_active_resource_locked(keys, resource_handoff_from)
             self._reject_host_resources_elsewhere(keys)
             return self._create_queued_locked(
@@ -63,7 +98,13 @@ class TaskStore:
     ) -> TaskCreation:
         keys = self._normalize_keys(resource_key)
         make_private_directory(self.tasks_root, parents=True)
-        with self._host_resource_lock(keys), exclusive_file_lock(self._lock_target):
+        with (
+            self._host_resource_lock(keys),
+            exclusive_file_lock(self._lock_target),
+            self._bench_drop_exclusion_lock(metadata, shared=False),
+            self._drop_exclusion_locks(self._drop_site_names(metadata), shared=True),
+            self._site_resource_locks(keys),
+        ):
             existing = self._active_idempotent_task_locked(idempotency_digest)
             if existing is not None:
                 existing_fingerprint = self.read_metadata(existing).get("request_fingerprint")
@@ -201,6 +242,31 @@ class TaskStore:
         with exclusive_file_lock(self._lock_target):
             yield
 
+    @contextmanager
+    def reserve_direct_site(self, site_name: str) -> Iterator[None]:
+        key = f"site:{site_name.lower()}"
+        make_private_directory(self.tasks_root, parents=True)
+        with (
+            self._bench_drop_exclusion_lock(None, shared=True),
+            self._drop_exclusion_locks([site_name], shared=False),
+            self._site_resource_locks([key]),
+        ):
+            with exclusive_file_lock(self._lock_target):
+                self._reject_active_resource_locked([key])
+                self._reject_active_drop_work_locked(site_name)
+            yield
+
+    @contextmanager
+    def reserve_inline_site_write(self, site_name: str) -> Iterator[None]:
+        with self.reserve_site_writes([site_name]):
+            yield
+
+    @contextmanager
+    def reserve_site_writes(self, site_names: list[str]) -> Iterator[None]:
+        make_private_directory(self.tasks_root, parents=True)
+        with self._drop_exclusion_locks(site_names, shared=True):
+            yield
+
     def _create_queued_locked(
         self,
         metadata: Mapping[str, object],
@@ -244,11 +310,74 @@ class TaskStore:
         if not handoff_found:
             raise TaskConflictError("Resource handoff task is not active")
 
+    def _reject_active_drop_work_locked(self, site_name: str) -> None:
+        wanted = site_name.lower()
+        for task_dir in self._files.task_dirs():
+            try:
+                status = self.read_status(task_dir.name)
+                if not status.is_active and not self._files.has_cleanup_pending(task_dir):
+                    continue
+                metadata = self.read_metadata(task_dir.name)
+            except (OSError, ValueError, TaskNotFoundError):
+                continue
+            if metadata.get("command") == "remove-app":
+                raise TaskConflictError("An app removal task is active across this bench")
+            if wanted in self._drop_site_names(metadata):
+                raise TaskConflictError(f"Another active task is already using resource 'site:{wanted}'")
+
     def _host_resource_lock(self, keys: list[str]) -> AbstractContextManager:
         """Serialize hostname claims before taking the bench lock."""
         if not _host_keys(keys):
             return nullcontext()
         return exclusive_file_lock(self.bench_root.parent / _HOST_RESOURCE_LOCK)
+
+    @contextmanager
+    def _bench_drop_exclusion_lock(
+        self, metadata: Mapping[str, object] | None, *, shared: bool
+    ) -> Iterator[None]:
+        if not shared and (metadata is None or metadata.get("command") != "remove-app"):
+            yield
+            return
+        path = self.tasks_root / _BENCH_DROP_EXCLUSION_LOCK
+        lock = shared_file_lock if shared else exclusive_file_lock
+        try:
+            with lock(path, blocking=False):
+                yield
+        except BlockingIOError as error:
+            raise TaskConflictError("An app removal conflicts with site deletion in this bench") from error
+
+    @contextmanager
+    def _site_resource_locks(self, keys: list[str]) -> Iterator[None]:
+        with ExitStack() as locks:
+            for key in sorted(set(keys)):
+                if not key.startswith("site:"):
+                    continue
+                digest = sha256(key.encode()).hexdigest()
+                try:
+                    locks.enter_context(
+                        exclusive_file_lock(self.tasks_root / f"site-resource-{digest}", blocking=False)
+                    )
+                except BlockingIOError as error:
+                    raise TaskConflictError(f"Another operation is already using resource {key!r}") from error
+            yield
+
+    @contextmanager
+    def _drop_exclusion_locks(self, site_names: list[str], *, shared: bool) -> Iterator[None]:
+        with ExitStack() as locks:
+            for site_name in sorted({name.lower() for name in site_names}):
+                key = f"site:{site_name}"
+                digest = sha256(key.encode()).hexdigest()
+                path = self.tasks_root / f"drop-exclusion-{digest}"
+                try:
+                    lock = (
+                        shared_file_lock(path, blocking=False)
+                        if shared
+                        else exclusive_file_lock(path, blocking=False)
+                    )
+                    locks.enter_context(lock)
+                except BlockingIOError as error:
+                    raise TaskConflictError(f"Another operation is already using resource {key!r}") from error
+            yield
 
     def _reject_host_resources_elsewhere(self, keys: list[str]) -> None:
         """Reject hostname claims held by an active task on another bench."""
@@ -311,6 +440,22 @@ class TaskStore:
         if isinstance(resource_key, str):
             return [resource_key]
         return list(resource_key)
+
+    @staticmethod
+    def _drop_site_names(metadata: Mapping[str, object]) -> list[str]:
+        command = metadata.get("command")
+        if command not in _DROP_COORDINATED_COMMANDS:
+            return []
+        args = metadata.get("args")
+        if not isinstance(args, dict):
+            return []
+        names: list[str] = []
+        for field in ("site", _ADDITIONAL_SITE_ARG.get(command)):
+            if isinstance(name := args.get(field), str) and name:
+                names.append(name.lower())
+        if isinstance(sites := args.get("sites"), list):
+            names.extend(name.lower() for name in sites if isinstance(name, str) and name)
+        return sorted(set(names))
 
     @staticmethod
     def _task_resource_keys(metadata: Mapping[str, object]) -> list[str]:
