@@ -172,11 +172,10 @@ class NodePackages:
         manager.ensure_installed()
         return [manager.bin, "run", script]
 
-    @property
-    def has_build_script(self) -> bool:
+    def has_script(self, script: str) -> bool:
         if not self.has_package_json:
             return False
-        return "build" in json.loads((self.path / "package.json").read_text()).get("scripts", {})
+        return script in json.loads((self.path / "package.json").read_text()).get("scripts", {})
 
     @staticmethod
     def lockfiles_in(path: Path) -> list[Path]:

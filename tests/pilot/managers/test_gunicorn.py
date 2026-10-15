@@ -342,6 +342,7 @@ def test_only_lite_and_admin_cap_glibc_arenas(tmp_path: Path) -> None:
     assert admin.env["MALLOC_ARENA_MAX"] == "2"
 def test_python_processes_run_unbuffered(tmp_path: Path) -> None:
     bench = make_bench(tmp_path, GunicornConfig())
+    bench.config.admin.enabled = True
     definitions = _definitions(bench)
 
     dev = {pd.name: pd for pd in definitions.process_definitions()}

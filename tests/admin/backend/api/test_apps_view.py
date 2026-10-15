@@ -229,7 +229,7 @@ def test_fetch_updates_reports_an_unreadable_registry_as_unavailable(tmp_path: P
 def test_app_updates_reads_without_fetching(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
     client = _client(bench_root)
-    app = Mock(is_cloned=True)
+    app = Mock(is_cloned=True, is_linked=False)
     app.config.name = "suite"
     app.config.branch = "develop"
     bench = Mock()
@@ -248,14 +248,15 @@ def test_app_updates_reads_without_fetching(tmp_path: Path) -> None:
     repo.fetch.assert_not_called()
 
 
-def test_app_update_checks_fetches_each_cloned_app(tmp_path: Path) -> None:
+def test_app_update_checks_fetches_each_cloned_app_except_linked_ones(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
     client = _client(bench_root)
-    app = Mock(is_cloned=True)
+    app = Mock(is_cloned=True, is_linked=False)
     app.config.name = "suite"
     app.config.branch = "develop"
+    linked = Mock(is_cloned=True, is_linked=True)
     bench = Mock()
-    bench.apps.return_value = [app]
+    bench.apps.return_value = [app, linked]
     repo = Mock()
 
     with (

@@ -204,6 +204,7 @@ class BenchConfig:
                 repo=a.get("repo", ""),
                 branch=a.get("branch", ""),
                 branches=a.get("branches", []),
+                path=a.get("path", ""),
                 follow_branch=bool(a.get("follow_branch", False)),
             )
             for a in data.get("apps", [])
@@ -285,6 +286,10 @@ class BenchConfig:
         if not self.python_version:
             raise ConfigError("bench.python is required and must not be empty.")
         for app in self.apps:
+            if app.is_linked:
+                if not app.name:
+                    raise ConfigError(f"Linked app at '{app.path}' must have a name.")
+                continue
             if not app.name or not app.repo or not app.branch:
                 raise ConfigError(f"App '{app.name or '(unnamed)'}' must have name, repo, and branch.")
             if app.branches and app.branch not in app.branches:
@@ -413,6 +418,15 @@ class BenchConfig:
     def read_raw(cls, bench_root: Path) -> dict:
         """Parsed TOML as a plain dict, preserving every section as written."""
         return Toml.loads(cls.toml_path(bench_root).read_text(encoding="utf-8"))
+
+    @classmethod
+    def get_linked_app_paths(cls, bench_root: Path) -> list[Path]:
+        """Resolved checkouts linked into apps/, parsed without validation."""
+        try:
+            apps = cls.read_raw(bench_root).get("apps", [])
+            return [Path(app["path"]).resolve() for app in apps if app.get("path")]
+        except (OSError, RuntimeError, AttributeError, TypeError, tomllib.TOMLDecodeError) as error:
+            raise ConfigError(f"Cannot read {cls.toml_path(bench_root)}: {error}") from error
 
     @classmethod
     def read_flat(cls, bench_root: Path) -> dict:
@@ -545,6 +559,9 @@ class BenchConfig:
     def _apps_section(self) -> list[ConfigDict]:
         apps: list[ConfigDict] = []
         for app in self.apps:
+            if app.is_linked:
+                apps.append({"name": app.name, "path": app.path})
+                continue
             app_data: ConfigDict = {"name": app.name, "repo": app.repo, "branch": app.branch}
             if app.branches:
                 app_data["branches"] = app.branches

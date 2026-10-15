@@ -746,6 +746,7 @@ def test_bench_init_apps_comes_from_config(tmp_path: Path) -> None:
 
 def test_process_definitions_returns_correct_count(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
+    bench.config.admin.enabled = True
     # workers: default=2, short=1, long=1 => 4 worker processes
     # plus web, socketio, schedule, redis_cache, redis_queue = 5
     # plus admin, watch (on by default in dev) = 2
@@ -759,6 +760,7 @@ def test_process_definitions_returns_correct_count(tmp_path: Path) -> None:
 
 def test_process_definitions_watch_admin_js_adds_vite_ui(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
+    bench.config.admin.enabled = True
     definitions = ProcessManager(bench, watch_admin_js=True)._process_definitions()
     assert "admin-ui" in [pd.name for pd in definitions]
     assert len(definitions) == 12
@@ -766,6 +768,7 @@ def test_process_definitions_watch_admin_js_adds_vite_ui(tmp_path: Path) -> None
 
 def test_process_definitions_can_disable_app_watch(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
+    bench.config.admin.enabled = True
     bench.config.watch_apps_js = False
     definitions = ProcessManager(bench)._process_definitions()
     assert "watch" not in [pd.name for pd in definitions]

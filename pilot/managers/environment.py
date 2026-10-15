@@ -163,6 +163,9 @@ class PythonEnvManager:
                 env["PATH"] = os.pathsep.join([str(Path(manager.bin).parent), env.get("PATH", "")])
 
         add_mysqlclient_flags(env)
+        # frappe-ui's Vite plugins look for the bench here before walking up from the
+        # app, whose real path is outside the bench when the app is linked.
+        env["FRAPPE_BENCH_PATH"] = str(self.bench.path)
 
         return env
 

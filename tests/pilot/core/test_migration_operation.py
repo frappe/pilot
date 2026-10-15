@@ -207,6 +207,7 @@ def test_update_operation_records_app_repository(tmp_path: Path) -> None:
     app = MagicMock()
     app.config.name = "frappe"
     app.config.repo = "https://github.com/frappe/frappe.git"
+    app.is_linked = False
     app.installed_hash = "1111111"
     app.update_target.return_value = RevisionPin(kind="commit", ref="2222222")
     app.has_migrate_changes.return_value = True
@@ -235,6 +236,7 @@ def test_update_operation_captures_tag_pinned_target(tmp_path: Path) -> None:
     app = MagicMock()
     app.config.name = "helpdesk"
     app.config.repo = "https://github.com/frappe/helpdesk.git"
+    app.is_linked = False
     app.installed_hash = "aaaaaaa"
     app.update_target.return_value = RevisionPin(kind="tag", ref="v2.0.0")
     app.has_migrate_changes.return_value = True
@@ -271,6 +273,7 @@ def test_create_update_only_includes_sites_with_a_selected_app(tmp_path: Path) -
     hrms = MagicMock()
     hrms.config.name = "hrms"
     hrms.config.repo = ""
+    hrms.is_linked = False
     hrms.installed_hash = "1111111"
     hrms.update_target.return_value = RevisionPin(kind="commit", ref="2222222")
     hrms.has_migrate_changes.return_value = True
@@ -295,6 +298,7 @@ def test_create_update_includes_a_site_when_its_apps_cannot_be_determined(tmp_pa
     hrms = MagicMock()
     hrms.config.name = "hrms"
     hrms.config.repo = ""
+    hrms.is_linked = False
     hrms.installed_hash = "1111111"
     hrms.update_target.return_value = RevisionPin(kind="commit", ref="2222222")
     hrms.has_migrate_changes.return_value = True
@@ -314,6 +318,7 @@ def test_create_update_skips_backup_and_migrate_when_no_app_needs_a_migrate(tmp_
     mock_bench.path = tmp_path
     hrms = MagicMock()
     hrms.config.name = "hrms"
+    hrms.is_linked = False
     hrms.config.repo = ""
     hrms.installed_hash = "1111111"
     hrms.update_target.return_value = RevisionPin(kind="commit", ref="2222222")
@@ -341,6 +346,7 @@ def test_create_update_migrates_every_site_when_one_app_needs_it(tmp_path: Path)
     for name, has_migrate_changes in (("hrms", True), ("crm", False)):
         app = MagicMock()
         app.config.name = name
+        app.is_linked = False
         app.config.repo = ""
         app.installed_hash = "1111111"
         app.update_target.return_value = RevisionPin(kind="commit", ref="2222222")

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -213,7 +213,7 @@ def test_build_env_finds_pnpm_installed_into_local_after_startup(tmp_path: Path,
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("PATH", "/usr/bin")
-    manager = module.PythonEnvManager(bench=None)
+    manager = module.PythonEnvManager(bench=MagicMock(path=tmp_path))
     with patch("pilot.core.app.node_packages.shutil.which", return_value=None):
         assert manager._build_env()["PATH"] == "/usr/bin"
 

@@ -315,6 +315,15 @@ class Site:
 
         return SiteProvisioner(bench, name, apps, admin_password, db_type).provision(on_progress)
 
+    def finish_provisioning(
+        self, apps: list[str], on_progress: Callable[[str], None] = lambda message: None
+    ) -> None:
+        """Install `apps` and run the provisioning steps after them, for a site whose
+        provisioning stopped before its apps were installed."""
+        from pilot.core.site.provisioning import SiteProvisioner
+
+        SiteProvisioner(self.bench, self.config.name, apps, None).finish(self, on_progress)
+
     def set_ssl(self, enabled: bool) -> None:
         set_site_ssl_flag(self.bench.sites_path, self.config.name, enabled)
 

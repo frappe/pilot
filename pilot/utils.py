@@ -84,12 +84,12 @@ def pick_free_port(port: int) -> int:
 
     if is_macos():
         return port
-    while _port_is_live(port):
+    while is_port_listening(port):
         port += 1
     return port
 
 
-def _port_is_live(port: int) -> bool:
+def is_port_listening(port: int) -> bool:
     import socket
 
     try:

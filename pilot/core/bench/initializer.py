@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 from collections.abc import Callable
 from typing import TYPE_CHECKING
@@ -61,10 +62,6 @@ class BenchInitializer:
             on_progress(f"[{i}/{total}] {description}...")
             action()
 
-        on_progress("\nBench initialised. Next steps:")
-        on_progress("  pilot new-site site1.example.com   # create your first site")
-        on_progress("  pilot start                        # start all processes")
-
     def _rollback(self, on_progress: Callable[[str], None]) -> None:
         if not self._rollback_actions:
             return
@@ -77,18 +74,18 @@ class BenchInitializer:
                 on_progress(f"    Warning: rollback step failed - {e}")
         on_progress("\nRollback complete. bench.toml is preserved - fix the issue and run init again.")
 
-    def _remove_bench_dirs(self) -> None:
-        for name in _BENCH_DIRS:
-            p = self.bench.path / name
-            if p.exists() or p.is_symlink():
-                shutil.rmtree(p, ignore_errors=True)
+    def _remove_bench_dirs(self, names: list[str]) -> None:
+        for name in names:
+            shutil.rmtree(self.bench.path / name, ignore_errors=True)
 
     def _create_bench_structure(self) -> None:
+        new_dirs = [name for name in _BENCH_DIRS if not os.path.lexists(self.bench.path / name)]
         self.bench.create_directories()
         self.bench.write_common_site_config()
         with update_common_site_config(self.bench.sites_path) as config:
             config.setdefault("server_script_enabled", True)
-        self._rollback_actions.append(("bench directories", self._remove_bench_dirs))
+        if new_dirs:
+            self._rollback_actions.append(("bench directories", lambda: self._remove_bench_dirs(new_dirs)))
 
     def _create_virtualenv(self, python_env_manager) -> None:
         python_env_manager.ensure_python()
@@ -96,7 +93,10 @@ class BenchInitializer:
 
     def _install_framework_apps(self, python_env_manager, on_progress: Callable[[str], None]) -> None:
         for app in self.bench.init_apps():
-            if not app.is_cloned:
+            if app.config.is_linked:
+                on_progress(f"  Linking {app.config.name} from {app.config.path}...")
+                app.link()
+            elif not app.is_cloned:
                 on_progress(f"  Cloning {app.config.name}...")
                 app.clone()
             on_progress(f"  Installing {app.config.name}...")

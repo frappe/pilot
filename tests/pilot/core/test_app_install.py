@@ -218,3 +218,25 @@ def test_promote_refuses_to_overwrite_an_existing_app(tmp_path: Path) -> None:
 
     with pytest.raises(BenchError, match="already exists"):
         staged.promote()
+
+
+def test_install_refuses_a_symlinked_checkout_and_leaves_it_alone(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path / "bench")
+    bench.create_directories()
+    checkout = tmp_path / "src" / "myapp"
+    _write_app_tree(checkout, "myapp")
+    (bench.apps_path / "myapp").symlink_to(checkout)
+
+    with (
+        patch("subprocess.run") as run,
+        patch("subprocess.Popen") as popen,
+        pytest.raises(BenchError, match="is linked to"),
+    ):
+        _make_app(bench, "myapp").install(commit="a" * 40)
+    with pytest.raises(BenchError, match="is linked to"):
+        _make_app(bench, "myapp").checkout_commit("a" * 40)
+
+    run.assert_not_called()
+    popen.assert_not_called()
+    assert (bench.apps_path / "myapp").resolve() == checkout
+    assert not (bench.staging_path / "myapp").exists()

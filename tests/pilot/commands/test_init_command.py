@@ -1,5 +1,3 @@
-"""`pilot init`: existing database handling and the --no-dev opt-out."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -133,6 +131,46 @@ def test_new_bench_enables_server_scripts_unless_set_by_hand(tmp_path) -> None:
     config_path.write_text(json.dumps({"server_script_enabled": False}))
     BenchInitializer(bench)._create_bench_structure()
     assert json.loads(config_path.read_text())["server_script_enabled"] is False
+
+
+def _initialize_until_the_virtualenv_fails(bench: Bench) -> None:
+    def create_env_then_fail(initializer: BenchInitializer, python_env_manager: object) -> None:
+        (bench.path / "env" / "bin").mkdir(parents=True, exist_ok=True)
+        raise BenchError("could not install dependencies")
+
+    with (
+        patch.object(BenchInitializer, "_ensure_admin_password"),
+        patch.object(BenchInitializer, "_ensure_database_credentials"),
+        patch.object(BenchInitializer, "_install_system_packages"),
+        patch.object(BenchInitializer, "_create_virtualenv", create_env_then_fail),
+        pytest.raises(BenchError, match="could not install dependencies"),
+    ):
+        bench.initialize()
+
+
+def test_failed_first_initialization_removes_the_folders_it_created(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.config.write(tmp_path)
+
+    _initialize_until_the_virtualenv_fails(bench)
+
+    assert [path.name for path in tmp_path.iterdir() if path.is_dir()] == []
+    assert (tmp_path / "bench.toml").is_file()
+
+
+def test_failed_initialization_keeps_folders_from_an_earlier_run(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.config.write(tmp_path)
+    (tmp_path / "apps" / "frappe").mkdir(parents=True)
+    (tmp_path / "sites" / "other.localhost").mkdir(parents=True)
+    (tmp_path / "env" / "bin").mkdir(parents=True)
+
+    _initialize_until_the_virtualenv_fails(bench)
+
+    assert (tmp_path / "apps" / "frappe").is_dir()
+    assert (tmp_path / "sites" / "other.localhost").is_dir()
+    assert (tmp_path / "env" / "bin").is_dir()
+    assert not (tmp_path / "logs").exists()
 
 
 def test_a_failed_init_keeps_the_task_records(tmp_path: Path) -> None:

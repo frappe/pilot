@@ -69,7 +69,7 @@ def _app_updates(*, fetch: bool) -> list[dict]:
 
     apps_info = []
     for app in bench.apps():
-        if not app.is_cloned:
+        if not app.is_cloned or app.is_linked:
             continue
         repo = GitRepo(app.path)
         branch = app.config.branch or repo.branch

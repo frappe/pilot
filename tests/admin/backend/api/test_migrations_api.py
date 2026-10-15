@@ -54,6 +54,7 @@ def test_migrations_list_and_current(tmp_path: Path) -> None:
 
 def _app_needing_migrate() -> MagicMock:
     app = MagicMock()
+    app.is_linked = False
     app.config.name = "frappe"
     app.config.repo = "https://github.com/frappe/frappe.git"
     app.installed_hash = "1111111"

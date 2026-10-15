@@ -5,10 +5,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pilot.core.app.node_packages import NodePackages
 from pilot.managers.environment import AdminEnvManager
 from pilot.utils import cli_root
 
 if TYPE_CHECKING:
+    from pilot.core.app import App
     from pilot.core.bench import Bench
 
 
@@ -61,12 +63,38 @@ class ProcessDefinitionBuilder:
         return defs
 
     def process_definitions(self) -> list[ProcessDefinition]:
-        defs = [self.to_dev(pd) for pd in self.prod_process_definitions()]
+        """The dev runner's processes. With the Admin disabled, neither the Admin nor its
+        UI dev server runs. Each linked app with a `dev` script runs that script."""
+        has_admin = self.bench.config.admin.enabled
+        defs = [self.to_dev(pd) for pd in self.prod_process_definitions() if has_admin or pd.name != "admin"]
         if self.bench.config.watch_apps_js:
             defs.append(self.watch_definition())
-        if self.watch_admin_js:
+        if has_admin and self.watch_admin_js:
             defs.append(self.admin_frontend_dev_definition())
+        defs.extend(self.linked_app_dev_definitions())
         return defs
+
+    def linked_app_dev_definitions(self) -> list[ProcessDefinition]:
+        return [
+            self.app_dev_definition(app)
+            for app in self.bench.apps()
+            if app.is_linked and NodePackages(app.path).has_script("dev")
+        ]
+
+    def app_dev_definition(self, app: "App") -> ProcessDefinition:
+        # frappe-ui's Vite plugins read these, since a linked app has no bench folder above it.
+        name = f"{app.config.name}-dev"
+        return ProcessDefinition(
+            name=name,
+            argv=NodePackages(app.path).get_script_command("dev"),
+            log_file=self.bench.logs_path / f"{name}.log",
+            env={
+                "FRAPPE_BENCH_PATH": str(self.bench.path),
+                "FRAPPE_WEB_SERVER_PORT": str(self.bench.config.http_port),
+            },
+            working_dir=app.path,
+            critical=False,
+        )
 
     def to_dev(self, pd: ProcessDefinition) -> ProcessDefinition:
         if pd.name == "admin":

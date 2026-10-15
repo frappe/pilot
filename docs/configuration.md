@@ -71,6 +71,14 @@ branch = "develop"
 follow_branch = true
 ```
 
+A linked app uses `path` instead of `repo` and `branch`. Pilot symlinks that checkout into `apps/` and never pulls, switches, or checks out commits in it. `pilot dev setup` writes this entry:
+
+```toml
+[[apps]]
+name = "gameplan"
+path = "/home/me/Projects/gameplan"
+```
+
 `[redis]` defines separate cache and queue ports. `[[workers]]` defines queue groups and their process counts.
 
 ## Runtime modes
@@ -107,6 +115,8 @@ domain = "admin.example.com"
 tls = true
 allow_bench_management = true
 ```
+
+With `enabled = false`, `pilot start` does not run the Admin. `pilot dev setup` creates benches this way.
 
 Nginx proxies admin traffic to `port + 1` on localhost. In production, `admin.domain` is required. `allow_bench_management` permits this admin to manage sibling benches and defaults to enabled only for development installs.
 

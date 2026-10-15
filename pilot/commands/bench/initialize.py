@@ -23,3 +23,6 @@ class InitCommand(Command):
             self.bench.config.install_dev_extra = False
             self.bench.config.write(self.bench.path)
         self.bench.initialize(on_progress=self.report)
+        self.report("\nBench initialised. Next steps:")
+        self.report("  pilot new-site site1.example.com   # create your first site")
+        self.report("  pilot start                        # start all processes")

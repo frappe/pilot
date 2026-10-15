@@ -53,6 +53,13 @@ class SiteProvisioner:
         site.create(db_type=self.db_type)
         self.write_email_sender_name(site)
         self.write_route_policy(site)
+        self.finish(site, on_progress)
+        if origin_tls:
+            self.obtain_cert(site, on_progress)
+        return site
+
+    def finish(self, site: "Site", on_progress: Callable[[str], None]) -> None:
+        """The steps after the site is created, from installing its apps on."""
         self.install_apps(site, on_progress)
         self.write_pilot_communication_config(site)
         self.bench.write_common_site_config()
@@ -61,9 +68,6 @@ class SiteProvisioner:
         self.build_missing_assets()
         self.add_to_hosts(site)
         self.reload_nginx()
-        if origin_tls:
-            self.obtain_cert(site, on_progress)
-        return site
 
     def write_email_sender_name(self, site: "Site") -> None:
         site.set_config_values({"email_sender_name": email_sender_name(site.config.name)})
