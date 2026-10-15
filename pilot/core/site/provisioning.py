@@ -10,6 +10,7 @@ from pilot.exceptions import BenchError
 
 if TYPE_CHECKING:
     from pilot.config import RoutePolicy
+    from pilot.core.app import App
     from pilot.core.bench import Bench
     from pilot.core.site import Site
 
@@ -100,16 +101,23 @@ class SiteProvisioner:
         config["pilot_auth_token"] = Session(self.bench).issue_pilot_token(site.config.name)
         write_private_text(config_path, json.dumps(config, indent=1))
 
+    def get_apps_missing_assets(self) -> list["App"]:
+        from pilot.managers.environment import PythonEnvManager
+        from pilot.managers.python_assets import PythonAssetBuilder
+
+        builder = PythonAssetBuilder(PythonEnvManager(self.bench))
+        return [
+            app
+            for app in self.bench.apps()
+            if self.bench.is_app_installed(app.config.name) and not builder.has_app_assets(app)
+        ]
+
     def build_missing_assets(self) -> None:
         from pilot.managers.environment import PythonEnvManager
 
         manager = PythonEnvManager(self.bench)
-        assets_dir = self.bench.sites_path / "assets"
-        for app in self.bench.apps():
-            if not self.bench.is_app_installed(app.config.name):
-                continue
-            if not (assets_dir / app.config.name).exists():
-                manager.build_assets_for_app(app)
+        for app in self.get_apps_missing_assets():
+            manager.build_assets_for_app(app)
 
     def add_to_hosts(self, site: "Site") -> None:
         if self.bench.config.production.process_manager != "none":

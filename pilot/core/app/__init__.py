@@ -105,6 +105,9 @@ class App:
         except Exception:
             shutil.rmtree(app.path, ignore_errors=True)
             raise
+        app.config.repo = str(app.path)
+        app.config.branch = app.current_branch
+        app.record_branch(replace_repository=True)
         on_progress(f"\n'{name}' created and installed successfully.")
         return app
 
@@ -410,7 +413,7 @@ class App:
         if self.config.name not in existing:
             (self.bench.sites_path / "apps.txt").write_text("\n".join([*existing, self.config.name]) + "\n")
 
-    def record_branch(self) -> None:
+    def record_branch(self, *, replace_repository: bool = False) -> None:
         """Persist this app's tracked branch to bench.toml so it survives a
         detached HEAD after a later commit pin (see BenchInventory._configured_branch)."""
         if not self.config.branch or self.is_commit_hash(self.config.branch):
@@ -428,6 +431,9 @@ class App:
                 )
             else:
                 entry["branch"] = self.config.branch
+                if replace_repository:
+                    entry["repo"] = self.config.repo
+                    entry.pop("branches", None)
 
     def _build_assets_via_env_manager(self) -> None:
         from pilot.managers.environment import PythonEnvManager

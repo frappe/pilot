@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from pilot.config import BenchConfig, RoutePolicy, SiteConfig
 from pilot.config.site import email_sender_name
 from pilot.core.bench import Bench
@@ -75,6 +77,127 @@ def test_edge_tls_site_sets_ssl_without_obtaining_a_certificate(tmp_path: Path) 
     assert persisted["ssl"] is True
     assert persisted["route"]["origin_scheme"] == "http"
     obtain_cert.assert_not_called()
+
+
+@pytest.mark.parametrize("has_bundle", [False, True])
+def test_provision_builds_only_apps_missing_assets_after_install(
+    tmp_path: Path, has_bundle: bool
+) -> None:
+    provisioner = _provisioner(tmp_path)
+    provisioner.apps.append("gameplan")
+    provisioner.bench.create_directories()
+    app = MagicMock()
+    app.config.name = "gameplan"
+    public = tmp_path / "apps" / "gameplan" / "gameplan" / "public"
+    public.mkdir(parents=True)
+    if has_bundle:
+        (public / "js").mkdir()
+        (public / "js" / "desk.bundle.js").write_text("source")
+    else:
+        (public / "logo.svg").write_text("<svg />")
+    app.path = public.parent.parent
+    link = provisioner.bench.sites_path / "assets" / "gameplan"
+
+    def install_app(site: Site, installed_app: MagicMock) -> None:
+        assert installed_app is app
+        link.symlink_to(public)
+
+    with (
+        patch("pilot.core.site.provisioning.validate_new_site", return_value=False),
+        patch("pilot.core.site.provisioning.should_enable_ssl", return_value=False),
+        patch.object(provisioner.bench, "apps", return_value=[app]),
+        patch.object(provisioner.bench, "is_app_installed", return_value=True),
+        patch.object(provisioner.bench, "app", return_value=app),
+        patch.object(Site, "create"),
+        patch.object(Site, "install_app", install_app),
+        patch.object(provisioner, "write_email_sender_name"),
+        patch.object(provisioner, "write_route_policy"),
+        patch.object(provisioner, "write_pilot_communication_config"),
+        patch.object(provisioner.bench, "write_common_site_config"),
+        patch.object(Site, "enable_scheduler"),
+        patch.object(provisioner, "add_to_hosts"),
+        patch.object(provisioner, "reload_nginx"),
+        patch("pilot.managers.environment.PythonEnvManager.build_assets_for_app") as build,
+    ):
+        provisioner.provision(lambda _: None)
+
+    assert link.is_symlink()
+    if has_bundle:
+        build.assert_called_once_with(app)
+    else:
+        build.assert_not_called()
+
+
+def test_failed_build_is_retried_with_existing_asset_link(tmp_path: Path) -> None:
+    provisioner = _provisioner(tmp_path)
+    provisioner.bench.create_directories()
+    app = MagicMock()
+    app.config.name = "gameplan"
+    app.path = tmp_path / "apps" / "gameplan"
+    public = app.path / "gameplan" / "public"
+    (public / "js").mkdir(parents=True)
+    (public / "js" / "desk.bundle.js").write_text("source")
+    (provisioner.bench.sites_path / "assets" / "gameplan").symlink_to(public)
+
+    def build_assets(installed_app: MagicMock) -> None:
+        if build.call_count == 1:
+            raise RuntimeError("build failed")
+        output = public / "dist" / "js" / "desk.bundle.AAAAAAAA.js"
+        output.parent.mkdir(parents=True)
+        output.write_text("built")
+        (provisioner.bench.sites_path / "assets" / "assets.json").write_text(
+            json.dumps({"desk.bundle.js": "/assets/gameplan/dist/js/desk.bundle.AAAAAAAA.js"})
+        )
+
+    with (
+        patch.object(provisioner.bench, "apps", return_value=[app]),
+        patch.object(provisioner.bench, "is_app_installed", return_value=True),
+        patch(
+            "pilot.managers.environment.PythonEnvManager.build_assets_for_app", side_effect=build_assets
+        ) as build,
+    ):
+        with pytest.raises(RuntimeError, match="build failed"):
+            provisioner.build_missing_assets()
+        provisioner.build_missing_assets()
+        provisioner.build_missing_assets()
+
+    assert build.call_count == 2
+
+
+def test_undeclared_frontend_build_is_retried(tmp_path: Path) -> None:
+    provisioner = _provisioner(tmp_path)
+    provisioner.bench.create_directories()
+    app = MagicMock()
+    app.config.name = "gameplan"
+    app.path = tmp_path / "apps" / "gameplan"
+    public = app.path / "gameplan" / "public"
+    public.mkdir(parents=True)
+    frontend = app.path / "frontend"
+    frontend.mkdir()
+    (frontend / "package.json").write_text('{"scripts":{"build":"vite build"}}')
+    (provisioner.bench.sites_path / "assets" / "gameplan").symlink_to(public)
+
+    def build_assets(installed_app: MagicMock) -> None:
+        if build.call_count == 1:
+            raise RuntimeError("build failed")
+        output = public / "frontend" / "app.js"
+        output.parent.mkdir(exist_ok=True)
+        output.write_text("built")
+
+    with (
+        patch.object(provisioner.bench, "apps", return_value=[app]),
+        patch.object(provisioner.bench, "is_app_installed", return_value=True),
+        patch(
+            "pilot.managers.environment.PythonEnvManager.build_assets_for_app", side_effect=build_assets
+        ) as build,
+    ):
+        with pytest.raises(RuntimeError, match="build failed"):
+            provisioner.build_missing_assets()
+        provisioner.build_missing_assets()
+        assert provisioner.get_apps_missing_assets() == [app]
+        provisioner.build_missing_assets()
+
+    assert build.call_count == 3
 
 
 def test_enable_scheduler_runs_frappe_for_the_site(tmp_path: Path) -> None:

@@ -3,14 +3,17 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import os
 import re
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.core.app.node_packages import NodePackages, get_app_packages
 from pilot.exceptions import BenchError, CommandError
+from pilot.internal.atomic_file import exclusive_file_lock
 from pilot.managers.systemd_user import can_cap_memory, memory_capped, systemctl_env
 from pilot.utils import run_command
 
@@ -70,6 +73,66 @@ class PythonAssetBuilder:
             stream_output=True,
         )
 
+    def has_app_assets(self, app: "App") -> bool:
+        from pilot.core.app.prebuilt_assets import build_output_paths
+
+        name = app.config.name
+        public_dir = app.path / name / "public"
+        link = self.bench.sites_path / "assets" / name
+        if not link.is_symlink() or not link.exists() or link.resolve() != public_dir.resolve():
+            return False
+
+        outputs = build_output_paths(app)
+        if self.frontend_dirs(app) and not outputs:
+            return False
+
+        for output in outputs:
+            path = app.path / output
+            if not path.is_file() and not (path.is_dir() and any(path.iterdir())):
+                return False
+            if path.is_file() and not path.stat().st_size:
+                return False
+
+        return self._has_bundle_assets(name, public_dir)
+
+    def _has_bundle_assets(self, name: str, public_dir: Path) -> bool:
+        sources = [
+            path
+            for path in public_dir.rglob("*.bundle.*")
+            if path.suffix in {".js", ".ts", ".jsx", ".css", ".sass", ".scss", ".less", ".styl"}
+            and not set(path.relative_to(public_dir).parts) & {"dist", "node_modules"}
+        ]
+        if not sources:
+            return True
+
+        assets_json = self.bench.sites_path / "assets" / "assets.json"
+        if not assets_json.is_file():
+            return False
+        try:
+            assets = json.loads(assets_json.read_text())
+        except json.JSONDecodeError:
+            return False
+        if not isinstance(assets, dict):
+            return False
+
+        for source in sources:
+            extension = "css" if source.suffix in {".css", ".sass", ".scss", ".less", ".styl"} else "js"
+            key = f"{source.stem}.css" if extension == "css" else source.name
+            directory = "css" if extension == "css" else "js" if source.suffix != ".jsx" else ""
+            prefix = f"/assets/{name}/dist/{directory}/" if directory else f"/assets/{name}/dist/"
+            url = assets.get(key)
+            if not isinstance(url, str) or not url.startswith(prefix):
+                return False
+            built = public_dir / "dist" / url.removeprefix(f"/assets/{name}/dist/")
+            if (
+                not built.name.startswith(f"{source.stem}.")
+                or built.suffix != f".{extension}"
+                or not built.is_file()
+                or not built.stat().st_size
+            ):
+                return False
+        return True
+
     def build_assets_for_app(self, app: "App", force: bool = False) -> None:
         app_public_dir = app.path / app.config.name / "public"
         dist_dir = app_public_dir / "dist"
@@ -84,9 +147,10 @@ class PythonAssetBuilder:
             prebuilt = PrebuiltAssets(app)
             if prebuilt.install():
                 self.setup_prebuilt_assets(app.config.name, app_public_dir, dist_dir, prebuilt.asset_maps)
-                if app.has_page_islands:
-                    self.build_page_islands()
-                return
+                if self.has_app_assets(app):
+                    if app.has_page_islands:
+                        self.build_page_islands()
+                    return
 
         # Frappe's build runs the app's build script, which can build `frontend`/`roster`, so
         # their node_modules must be installed before it.
@@ -102,6 +166,9 @@ class PythonAssetBuilder:
             stream_output=True,
         )
 
+        self.build_frontends(app)
+
+    def build_frontends(self, app: "App") -> None:
         # Frappe's build already ran the app's own build script, which builds its frontends.
         if NodePackages(app.path).has_build_script:
             return
@@ -130,21 +197,9 @@ class PythonAssetBuilder:
         dist_dir: Path,
         asset_maps: dict[str, dict[str, str]] | None = None,
     ) -> None:
+        app_public_dir.mkdir(parents=True, exist_ok=True)
+        self.link_app_assets(app_name, app_public_dir)
         assets_dir = self.bench.sites_path / "assets"
-        assets_dir.mkdir(exist_ok=True)
-
-        app_link = assets_dir / app_name
-        if app_link.is_symlink():
-            app_link.unlink()
-        elif app_link.is_dir():
-            shutil.rmtree(str(app_link))
-        app_link.symlink_to(app_public_dir.resolve())
-
-        # As `bench build` links it: <app>/node_modules is served at /assets/<app>/node_modules.
-        node_modules = app_public_dir.parent.parent / "node_modules"
-        node_modules_link = app_public_dir / "node_modules"
-        if node_modules.is_dir() and not node_modules_link.exists() and not node_modules_link.is_symlink():
-            node_modules_link.symlink_to(node_modules.resolve())
 
         if asset_maps is None:
             self.write_assets_json(app_name, dist_dir, assets_dir)
@@ -153,6 +208,30 @@ class PythonAssetBuilder:
 
             for name, entries in asset_maps.items():
                 self.merge_json(assets_dir / name, entries, replacing=f"/assets/{app_name}/", keeping=PAGE_ISLAND_URL)
+
+    def link_app_assets(self, app_name: str, app_public_dir: Path) -> None:
+        assets_dir = self.bench.sites_path / "assets"
+        assets_dir.mkdir(parents=True, exist_ok=True)
+
+        with exclusive_file_lock(assets_dir / "asset-links"):
+            app_link = assets_dir / app_name
+            with tempfile.TemporaryDirectory(dir=assets_dir, prefix=f".{app_name}.") as directory:
+                temporary_link = Path(directory) / app_name
+                temporary_link.symlink_to(app_public_dir.resolve())
+                if app_link.is_dir() and not app_link.is_symlink():
+                    shutil.rmtree(str(app_link))
+                os.replace(temporary_link, app_link)
+
+            # As `bench build` links it: <app>/node_modules is served at /assets/<app>/node_modules.
+            node_modules = app_public_dir.parent.parent / "node_modules"
+            node_modules_link = app_public_dir / "node_modules"
+            if (
+                node_modules.is_dir()
+                and not node_modules_link.exists()
+                and not node_modules_link.is_symlink()
+            ):
+                node_modules_link.symlink_to(node_modules.resolve())
+
         print(f"  Linked {app_link} -> {app_public_dir.resolve()}")
 
     def build_page_islands(self) -> None:

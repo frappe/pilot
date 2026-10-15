@@ -45,6 +45,8 @@ List in `branches` each branch that benches install. The workflow needs `content
 
 Do this step only when the app builds a SPA, such as a Vue frontend. Apps that have only the esbuild bundles in `<app>/public/dist` need no setting.
 
+If an app has a `frontend` or `roster` package but declares no output paths, Pilot builds its assets each time it creates a site because it cannot confirm that the frontend build finished.
+
 Declare where each SPA is built, in `pyproject.toml`. These are the keys that Frappe Cloud also reads, so an app that runs on Frappe Cloud can have them already. Paths are relative to the repository root. A path that starts with `../` is relative to `build_dir`, as in a Vite config, and must stay inside the repository.
 
 | Key | Value |
@@ -127,6 +129,7 @@ When you tag a commit after its push, its files stay from then on, if the workfl
 
 | Operation | Prebuilt assets |
 |---|---|
+| Initialize a bench from `bench.toml` | Yes |
 | Install an app (`pilot get-app`, Admin) | Yes. `pilot get-app --skip-assets` skips all asset setup. |
 | Update the bench or an app | Yes |
 | Switch an app's branch | Yes |
