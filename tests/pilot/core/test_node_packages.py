@@ -10,14 +10,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pilot.core.app.node_packages import NodePackages
+from pilot.core.app.node_packages import NodePackageManager, NodePackages
 from pilot.exceptions import BenchError, CommandError
 
 
 @pytest.fixture
 def run_command() -> Iterator[MagicMock]:
     with (
-        patch("pilot.core.app.node_packages.shutil.which", side_effect=lambda name: name),
+        patch.object(NodePackageManager, "bin", new=property(lambda manager: manager.name)),
+        patch.object(NodePackageManager, "ensure_installed"),
         patch("pilot.core.app.node_packages.run_command") as run_command,
     ):
         yield run_command
@@ -138,13 +139,11 @@ def test_failed_frozen_install_is_not_retried(tmp_path: Path, run_command: Magic
     run_command.assert_called_once()
 
 
-@pytest.mark.parametrize(
-    ("lockfile", "marker"), [("yarn.lock", ".yarn-integrity"), ("pnpm-lock.yaml", ".modules.yaml")]
-)
-def test_install_runs_again_only_after_the_lockfile_changes(
-    tmp_path: Path, run_command: MagicMock, lockfile: str, marker: str
+def test_pnpm_install_runs_again_only_after_the_lockfile_changes(
+    tmp_path: Path, run_command: MagicMock
 ) -> None:
     app = write_package(tmp_path / "app")
+    lockfile, marker = "pnpm-lock.yaml", ".modules.yaml"
     (app / lockfile).write_text("")
     (app / "node_modules").mkdir()
     (app / "node_modules" / marker).write_text("")
@@ -157,6 +156,67 @@ def test_install_runs_again_only_after_the_lockfile_changes(
     os.utime(app / lockfile, (3, 3))
     NodePackages(app).ensure_installed()
     run_command.assert_called_once()
+
+
+def test_yarn_without_a_lockfile_preserves_existing_install(tmp_path: Path, run_command: MagicMock) -> None:
+    app = write_package(tmp_path / "app")
+    (app / "node_modules").mkdir()
+    (app / "node_modules/.yarn-integrity").write_text("")
+
+    NodePackages(app).ensure_installed()
+
+    run_command.assert_not_called()
+
+
+def test_yarn_install_checks_contents_even_when_timestamps_match(
+    tmp_path: Path, run_command: MagicMock
+) -> None:
+    from pilot.managers.node_dependencies import NodeDependencies
+
+    app = write_package(tmp_path / "app")
+    lock = app / "yarn.lock"
+    integrity = app / "node_modules/.yarn-integrity"
+    integrity.parent.mkdir()
+    lock.write_text("lockfile")
+    integrity.write_text("{}")
+    os.utime(lock, (1, 1))
+    os.utime(integrity, (2, 2))
+    (integrity.parent / ".pilot-install-key").write_text(NodeDependencies.get_key(app))
+
+    NodePackages(app).ensure_installed()
+    run_command.assert_not_called()
+
+    lock.write_text("changed lockfile")
+    os.utime(lock, (1, 1))
+    NodePackages(app).ensure_installed()
+    run_command.assert_called_once()
+
+
+@pytest.mark.parametrize("corrupted", [b'{"lockfileEntries":', b"\xff", b"[]"])
+def test_corrupt_yarn_integrity_reinstalls_despite_matching_stamp(
+    tmp_path: Path, run_command: MagicMock, corrupted: bytes
+) -> None:
+    from pilot.managers.node_dependencies import NodeDependencies
+
+    app = write_package(tmp_path / "app")
+    (app / "yarn.lock").write_text("lockfile")
+    modules = app / "node_modules"
+    modules.mkdir()
+    integrity = modules / ".yarn-integrity"
+    integrity.write_bytes(corrupted)
+    key = NodeDependencies.get_key(app)
+    (modules / ".pilot-install-key").write_text(key)
+    assert not NodeDependencies.has_matching_install(app, key)
+
+    def install(*args, **kwargs):
+        integrity.write_text('{"lockfileEntries": {"dependency": "resolved"}}')
+
+    run_command.side_effect = install
+    NodePackages(app).ensure_installed()
+
+    run_command.assert_called_once()
+    assert NodeDependencies.has_matching_install(app, key)
+    assert "resolved" in NodeDependencies.get_resolved_key(app)
 
 
 def test_missing_pnpm_is_installed_into_local_before_it_runs(

@@ -300,6 +300,9 @@ class TaskRunner:
         )
         return TaskSubmission(result.task_id, result.created)
 
+    def find_idempotent_task(self, command: str, args: dict, key: str | None) -> str | None:
+        return self.__engine.find_idempotent_task(command, args, key)
+
     def kill(self, task_id: str) -> None:
         self.__engine.kill(task_id)
 

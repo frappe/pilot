@@ -72,14 +72,21 @@ class PythonAssetBuilder:
         return env
 
     def build_assets(self) -> None:
+        from pilot.core.bench.build_artifacts import BuildArtifacts
+
+        artifacts = BuildArtifacts(self.bench)
         for app in self.bench.apps():
-            NodePackages(app.path).ensure_installed()
+            for packages in get_app_packages(app.path, self.frontend_dirs(app)):
+                packages.ensure_installed()
+        key = artifacts.get_key()
         self.run_compiler(
             [*self.bench.frappe_call, "frappe", "build", "--force"],
             cwd=self.bench.sites_path,
             env=self.manager._build_env(),
             stream_output=True,
         )
+        if artifacts.get_key() == key:
+            artifacts.capture(key)
 
     def build_assets_for_app(self, app: "App", force: bool = False) -> None:
         app_public_dir = app.path / app.config.name / "public"
@@ -168,7 +175,9 @@ class PythonAssetBuilder:
             from pilot.core.app.prebuilt_assets import PAGE_ISLAND_URL
 
             for name, entries in asset_maps.items():
-                self.merge_json(assets_dir / name, entries, replacing=f"/assets/{app_name}/", keeping=PAGE_ISLAND_URL)
+                self.merge_json(
+                    assets_dir / name, entries, replacing=f"/assets/{app_name}/", keeping=PAGE_ISLAND_URL
+                )
         print(f"  Linked {app_link} -> {app_public_dir.resolve()}")
 
     def build_page_islands(self) -> None:

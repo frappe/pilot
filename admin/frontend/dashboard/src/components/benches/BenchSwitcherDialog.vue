@@ -15,6 +15,7 @@ import LucidePlay from '~icons/lucide/play'
 import LucideRotateCw from '~icons/lucide/rotate-cw'
 import LucideSquare from '~icons/lucide/square'
 import LucideTrash2 from '~icons/lucide/trash-2'
+import LucideCopy from '~icons/lucide/copy'
 
 import ActionMenu from '@/components/common/ActionMenu.vue'
 import type { ActionMenuOption } from '@/components/common/actionMenu'
@@ -28,7 +29,7 @@ interface Props {
 }
 
 const props = defineProps<Props>()
-const emit = defineEmits(['update:modelValue', 'new-bench'])
+const emit = defineEmits(['update:modelValue', 'new-bench', 'clone-bench'])
 
 const show = computed({
   get: () => props.modelValue,
@@ -138,8 +139,20 @@ const openBench = (bench: BenchResource) => {
 
 const menuOptions = (bench: BenchResource) => {
   const opts: ActionMenuOption[] = []
+  opts.push({
+    label: 'Clone bench',
+    icon: LucideCopy,
+    onClick: () => {
+      show.value = false
+      emit('clone-bench', bench.name)
+    },
+  })
   if (canOpen(bench))
-    opts.push({ label: 'Open', icon: LucideExternalLink, onClick: () => openBench(bench) })
+    opts.push({
+      label: 'Open',
+      icon: LucideExternalLink,
+      onClick: () => openBench(bench),
+    })
   if (bench.production) {
     const running = bench.workload_running
     const current = isCurrentBench(bench)
@@ -251,7 +264,11 @@ watch(show, (open) => {
   <Dialog v-model="showDropConfirm" title="Drop Bench" size="sm">
     <div class="flex flex-col gap-4" @pointerdown.stop>
       <div class="flex flex-col gap-2 text-ink-gray-7 text-sm leading-relaxed">
-        <p>Permanently delete <strong class="text-ink-gray-9">{{ benchToDrop?.name }}</strong>?</p>
+        <p>
+          Permanently delete
+          <strong class="text-ink-gray-9">{{ benchToDrop?.name }}</strong
+          >?
+        </p>
 
         <p>
           This tears down its production services, nginx config and MariaDB instance, then removes

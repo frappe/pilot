@@ -476,3 +476,16 @@ def test_provision_user_owned_creates_socket_dir(tmp_path) -> None:
     ):
         m._provision_user_owned()
     assert (tmp_path / "run").is_dir()
+
+
+@pytest.mark.parametrize("name", ["psql", "pg_dump"])
+def test_client_binary_resolves_versioned_homebrew_install(tmp_path, name) -> None:
+    binary = tmp_path / "bin" / name
+    binary.parent.mkdir()
+    binary.touch()
+    with (
+        patch(f"{MODULE}.which", return_value=None),
+        patch(f"{MODULE}.is_macos", return_value=True),
+        patch(f"{MODULE}.subprocess.run", return_value=MagicMock(returncode=0, stdout=str(tmp_path))),
+    ):
+        assert _mgr().client_binary(name) == str(binary)

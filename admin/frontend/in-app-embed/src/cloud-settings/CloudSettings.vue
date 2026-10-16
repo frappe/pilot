@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { translate } from './translation'
+import type { CloudContext, CloudSettingsOptions } from '@frappe/cloud-sdk'
 import {
   Badge,
   Button,
+  providePortalTarget,
   Select,
   SettingsContent,
   SettingsDialog,
@@ -11,16 +12,22 @@ import {
   SettingsPanel,
   SettingsSidebar,
   ToastProvider,
-  providePortalTarget,
 } from 'frappe-ui'
 import { ConfigProvider } from 'reka-ui'
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
-import type { CloudContext, CloudSettingsOptions } from '@frappe/cloud-sdk'
-
+import {
+  computed,
+  defineAsyncComponent,
+  onBeforeUnmount,
+  onMounted,
+  provide,
+  ref,
+  watch,
+} from 'vue'
 import FrappeCloudLogo from './components/FrappeCloudLogo.vue'
 import PanelFallback from './components/PanelFallback.vue'
 import { createStore } from './store'
 import TailwindStyles from './TailwindStyles.vue'
+import { translate } from './translation'
 
 interface Props {
   context?: CloudContext
@@ -125,7 +132,8 @@ const visibleGroups = computed(() => {
 })
 const visibleTabs = computed(() => visibleGroups.value.flatMap((group) => group.tabs))
 const getFirstTab = () =>
-  visibleTabs.value.find((item) => item.value === props.options.tab)?.value || visibleTabs.value[0]?.value
+  visibleTabs.value.find((item) => item.value === props.options.tab)?.value ||
+  visibleTabs.value[0]?.value
 
 const overlays = ref<HTMLElement>()
 
@@ -156,7 +164,9 @@ const isPageDark = () =>
   document.documentElement.classList.contains('dark')
 
 const pageDark = ref(isPageDark())
-const isDark = computed(() => props.options.theme === 'dark' || (props.options.theme !== 'light' && pageDark.value))
+const isDark = computed(
+  () => props.options.theme === 'dark' || (props.options.theme !== 'light' && pageDark.value),
+)
 let themeWatcher: MutationObserver | undefined
 
 onMounted(() => {
@@ -198,7 +208,9 @@ const updateCount = computed(() => store.value.state.marketplace?.update_count |
           @click="emit('close')"
         />
 
-        <div class="shrink-0 border-b border-outline-gray-1 bg-surface-sidebar px-4 pb-4 pt-3 sm:hidden">
+        <div
+          class="shrink-0 border-b border-outline-gray-1 bg-surface-sidebar px-4 pb-4 pt-3 sm:hidden"
+        >
           <p class="mb-3 pr-12 text-base-semibold text-ink-gray-8">{{ __('Cloud Settings') }}</p>
           <Select
             v-model="tab"
@@ -246,7 +258,12 @@ const updateCount = computed(() => store.value.state.marketplace?.update_count |
         </SettingsSidebar>
 
         <SettingsContent class="min-w-0 bg-surface-base">
-          <SettingsPanel v-for="item in visibleTabs" :key="item.value" :value="item.value" class="min-w-0">
+          <SettingsPanel
+            v-for="item in visibleTabs"
+            :key="item.value"
+            :value="item.value"
+            class="min-w-0"
+          >
             <component :is="item.component" :store="store" :active="tab === item.value" />
           </SettingsPanel>
         </SettingsContent>
