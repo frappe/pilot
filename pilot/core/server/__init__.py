@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -34,6 +35,32 @@ class Server:
     @property
     def ssh_keys(self) -> AuthorizedKeysStore:
         return AuthorizedKeysStore()
+
+    def get_rollout_number(self) -> int:
+        """This host's place, from 1 to 100, in every app update rollout. Chosen on first use."""
+        from pilot.exceptions import BenchError
+        from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
+        from pilot.utils import cli_root
+
+        path = cli_root() / "system" / "rollout-number"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with exclusive_file_lock(path):
+            try:
+                number = int(path.read_text())
+            except FileNotFoundError:
+                number = random.randint(1, 100)
+                replace_private_text_locked(path, str(number))
+                return number
+            except ValueError:
+                number = 0
+
+            if not 1 <= number <= 100:
+                raise BenchError(
+                    f"The rollout number in {path} is damaged. Set it to a number from 1 to 100, "
+                    "or delete the file so Pilot picks a new one."
+                )
+
+            return number
 
 
 __all__ = [

@@ -64,12 +64,18 @@ class AppRepository:
 
     def update_target(self) -> RevisionPin | None:
         """The fixed revision this app would update to, or None (forward only). A marketplace
-        app follows the registry's releases, or its branch tip with `follow_branch` or no release."""
+        app follows the registry's releases, or its branch tip with `follow_branch` or no release.
+        A release waits until the app update rollout reaches this server."""
         entry = None if self.app.config.follow_branch else self.marketplace_entry
         release = self.newest_release(entry) if entry else None
         if release is not None:
-            is_newer = self._is_ahead_of_installed(release["commit"], release.get("version", ""))
-            return RevisionPin.from_marketplace_release(release) if is_newer else None
+            if not self._is_ahead_of_installed(release["commit"], release.get("version", "")):
+                return None
+
+            if not self.app.bench.app_rollout.is_offered(self.app.config.name, release["commit"]):
+                return None
+
+            return RevisionPin.from_marketplace_release(release)
         if not self.app.config.branch:
             return None
         tip = self.repo.remote_branch_sha(self.app.config.branch)

@@ -55,6 +55,11 @@ class GitRepo:
     def commit_subject(self, ref: str = "HEAD") -> str:
         return self._text("log", "-1", "--format=%s", ref)
 
+    def get_last_change_time(self, text: str, path: str) -> str:
+        """Time of the newest commit on the first-parent line that added or removed `text`
+        in `path`, or '' when there is none. On a merged branch, that commit is the merge."""
+        return self._text("log", "--first-parent", "-1", "--format=%cI", "-S", text, "--", path)
+
     @property
     def has_local_changes(self) -> bool:
         """True if the tree has uncommitted edits or commits not yet on upstream."""

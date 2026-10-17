@@ -8,6 +8,7 @@ from typing import Any
 from pilot.exceptions import BenchError
 
 _TIMEOUT_SECONDS = 10
+_CONFIG_TIMEOUT_SECONDS = 3
 
 
 class CentralClientError(BenchError):
@@ -52,6 +53,10 @@ class CentralClient:
         id and this region's endpoint. Datum tells the two apart by route, not by token."""
         return self.forward("central.api.pilot.datum_token", "GET")
 
+    def config(self) -> dict[str, Any]:
+        """This host's settings from Central, such as the app update rollout steps."""
+        return self.forward("central.api.pilot.config", "GET", timeout=_CONFIG_TIMEOUT_SECONDS)
+
     def storage_regions(self) -> dict[str, str]:
         """Each region Frappe object storage serves now, mapped to its S3 endpoint."""
         return self.forward("central.api.pilot.storage_regions", "GET")
@@ -90,7 +95,13 @@ class CentralClient:
     def disconnect_github(self) -> None:
         self.forward("central.api.integrations.github.disconnect", "POST", {})
 
-    def forward(self, method_path: str, http_method: str, data: dict[str, Any] | None = None) -> Any:
+    def forward(
+        self,
+        method_path: str,
+        http_method: str,
+        data: dict[str, Any] | None = None,
+        timeout: float = _TIMEOUT_SECONDS,
+    ) -> Any:
         """Call a Central pilot-API method, returning its result with the
         ``{"message": ...}`` envelope unwrapped. The caller decides what's reachable."""
         endpoint, token = self._credentials()
@@ -108,7 +119,7 @@ class CentralClient:
         request = urllib.request.Request(url, data=body, method=http_method, headers=headers)
 
         try:
-            with urllib.request.urlopen(request, timeout=_TIMEOUT_SECONDS) as response:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
                 payload = json.loads(response.read().decode())
         except urllib.error.HTTPError as exc:
             detail = _error_detail(exc.read())
@@ -117,6 +128,8 @@ class CentralClient:
             ) from exc
         except urllib.error.URLError as exc:
             raise CentralClientError(f"Cannot reach Central at {endpoint}: {exc.reason}") from exc
+        except OSError as exc:
+            raise CentralClientError(f"Cannot reach Central at {endpoint}: {exc}") from exc
         except ValueError as exc:
             raise CentralClientError(f"Central sent a non-JSON response for {method_path}: {exc}") from exc
 

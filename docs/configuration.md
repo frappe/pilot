@@ -253,6 +253,12 @@ Set `proxy.cloudflare = true` when site domains use Cloudflare's proxy. nginx th
 
 `[frappe_cloud] url` is the Frappe Cloud that a site restore copies backups from. The default is `https://cloud.frappe.io`. Set it to use another Frappe Cloud, for example a local Press during development.
 
+### App update rollout
+
+When `[central] enabled` is set, Pilot offers each marketplace release to a share of servers that grows over time. Central Settings holds the steps: a start percent, a step percent, an interval in hours and a max percent. The rollout does not go above the max percent, and a max percent of 0 stops it. Each host picks a fixed number from 1 to 100 one time and keeps it in `system/rollout-number`. When that file is damaged, the update check stops with an error until you correct the number or delete the file. The Apps page shows a release when this number is at or below the start percent plus one step for each full interval since the release was added to the marketplace registry. Pilot reads that time from the git history of its registry clone, so every server uses the same time. An app that follows a branch is not in the registry, so its new commits show at once. Without Central, or when Central sends no rollout steps, every update shows at once. When Central does not answer, sends bad steps, or the registry does not give the time of a release, that release waits. Central can hold a release that fails on too many servers, and a held release does not show until a person releases it in Central. The rollout only controls when an update shows. A person still starts each update.
+
+After each app update, Pilot writes one line for each updated app to `<bench>/logs/app_updates.json.log`, with `status` set to `success` or `failed`. The line also has the app, the old and new commits, the host's rollout number and, on failure, the error. The log shipper sends these lines to Datum with the other logs.
+
 ### Telemetry
 
 `[telemetry]` is one credential for both shippers. `endpoint` is the base URL of the region's Datum, with no path: metrics append `/v1/ingest` and logs append `/v1/logs/ingest`. `token` is the JWT Central mints for the region, which Datum tells apart by route rather than by token, so one serves both. `logs_enabled` and `metrics_enabled` switch each shipper independently.

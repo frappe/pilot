@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from pilot.core.app import App, NewAppOptions, RevisionPin
     from pilot.core.bench.hostname_aliases import HostnameAliases
     from pilot.core.bench.migration.store import MigrationStore
+    from pilot.core.bench.rollout import AppRollout
     from pilot.core.database import Database
     from pilot.core.notification import NotificationStore
     from pilot.core.site import Site
@@ -101,6 +102,12 @@ class Bench:
         from pilot.core.notification import NotificationStore
 
         return NotificationStore(self.logs_path)
+
+    @cached_property
+    def app_rollout(self) -> "AppRollout":
+        from pilot.core.bench.rollout import AppRollout
+
+        return AppRollout(self)
 
     @cached_property
     def hostname_aliases(self) -> "HostnameAliases":
