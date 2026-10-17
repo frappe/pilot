@@ -1,16 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 import { Button, Checkbox, Dialog, ErrorMessage, Select, Spinner, TextInput } from 'frappe-ui'
 
 import AppIcon from '@/components/apps/AppIcon.vue'
 
-import { apiErrorMessage } from '@/api/client'
-import { appsApi } from '@/api/apps'
-import { sitesApi } from '@/api/sites'
-import { useAppRegistry } from '@/composables/apps/useAppRegistry'
-import { buildSiteAppChoices } from '@/utils/siteApps'
-import type { AppInfo } from '@/types/apps'
-import { errorMessage } from '@/utils/error'
+import { useNewSite } from '@/composables/sites/useNewSite'
 import type { SiteResource } from '@/types/sites'
 
 interface Props {
@@ -28,20 +22,23 @@ interface Emits {
 const emit = defineEmits<Emits>()
 const open = defineModel<boolean>()
 
-const { registry, load: loadRegistry } = useAppRegistry()
-const benchApps = ref<AppInfo[]>([])
-
-const newSiteName = ref('')
-const sitePrefix = ref('')
-const wildcardDomains = ref<string[]>([])
-const selectedSuffix = ref('')
-const loading = ref(false)
-const creating = ref(false)
-const error = ref('')
-
-const selectedApps = ref<string[]>([])
-
-const hasSingleDomain = computed(() => wildcardDomains.value.length === 1)
+const {
+  name: newSiteName,
+  prefix: sitePrefix,
+  wildcardDomains,
+  suffix: selectedSuffix,
+  selectedApps,
+  appSearch,
+  loading,
+  creating,
+  error,
+  hasSingleDomain,
+  availableApps,
+  filteredApps,
+  reset,
+  toggleApp,
+  create,
+} = useNewSite()
 
 // Fade only the edges that can still scroll, so a clipped row reads as "more
 // below" and the last app is never dimmed at rest.
@@ -56,92 +53,20 @@ const updateFadeEdges = () => {
   fadeEdges.value = top && bottom ? 'both' : top ? 'top' : bottom ? 'bottom' : ''
 }
 
-const availableApps = computed(() => buildSiteAppChoices(registry.value, benchApps.value))
-
 // Also `loading`: apps resolve while the spinner is still up, so the rows only
 // exist once it flips.
-watch([availableApps, loading], () => nextTick(updateFadeEdges))
-
-watch([sitePrefix, selectedSuffix], () => {
-  if (wildcardDomains.value.length && sitePrefix.value) {
-    newSiteName.value = `${sitePrefix.value.trim()}${selectedSuffix.value}`
-  } else {
-    newSiteName.value = ''
-  }
-})
+watch([filteredApps, loading], () => nextTick(updateFadeEdges))
 
 watch(open, (visible) => {
-  if (!visible) return
-  reset()
+  if (visible) reset()
 })
 
-const reset = async () => {
-  newSiteName.value = ''
-  sitePrefix.value = ''
-  error.value = ''
-  selectedApps.value = []
-  loading.value = true
-  await Promise.all([loadWildcardDomains(), loadRegistry(), loadBenchApps()])
-  loading.value = false
-}
-
-const loadBenchApps = async () => {
-  try {
-    benchApps.value = await appsApi.installed()
-  } catch {
-    benchApps.value = []
-  }
-}
-
-const toggleApp = (name: string) => {
-  const index = selectedApps.value.indexOf(name)
-  if (index === -1) selectedApps.value.push(name)
-  else selectedApps.value.splice(index, 1)
-}
-
-const loadWildcardDomains = async () => {
-  try {
-    const { domains } = await sitesApi.domains.wildcardList()
-    wildcardDomains.value = domains || []
-    selectedSuffix.value = wildcardDomains.value[0] || ''
-  } catch {
-    wildcardDomains.value = []
-  }
-}
-
-const validate = (name: string) => {
-  if (!name) return 'Site name is required.'
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9\-.]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$/.test(name))
-    return 'Site name must be a valid hostname.'
-  return null
-}
-
 const submit = async () => {
-  const name = newSiteName.value.trim()
-  const validationError = validate(name)
-  if (validationError) {
-    error.value = validationError
-    return
-  }
+  const taskId = await create()
+  if (!taskId) return
 
-  creating.value = true
-  error.value = ''
-  try {
-    const result = await sitesApi.create({
-      name,
-      apps: selectedApps.value,
-    })
-    if (result.task_id) {
-      open.value = false
-      emit('started', result.task_id)
-    } else {
-      error.value = apiErrorMessage(result, 'Could not create site.')
-    }
-  } catch (caught) {
-    error.value = errorMessage(caught, 'Could not create site.')
-  } finally {
-    creating.value = false
-  }
+  open.value = false
+  emit('started', taskId)
 }
 </script>
 
@@ -189,9 +114,9 @@ const submit = async () => {
 
         <p class="mt-1.5 text-ink-gray-5 text-p-sm">
           Web address:
-          <span class="font-medium text-ink-gray-7"
-            >{{ newSiteName || `mysite${selectedSuffix}` }}</span
-          >
+          <span class="font-medium text-ink-gray-7">
+            {{ newSiteName || `mysite${selectedSuffix}` }}
+          </span>
         </p>
       </div>
 
@@ -202,6 +127,16 @@ const submit = async () => {
           <span class="text-ink-gray-5 text-xs"> {{ selectedApps.length }} selected </span>
         </div>
 
+        <TextInput v-model="appSearch" class="mb-2" placeholder="Search apps" autocomplete="off">
+          <template #prefix>
+            <span class="size-4 text-ink-gray-5 lucide-search" />
+          </template>
+        </TextInput>
+
+        <p v-if="!filteredApps.length" class="py-6 text-ink-gray-5 text-p-sm text-center">
+          No apps match "{{ appSearch }}"
+        </p>
+
         <div
           ref="appList"
           :data-fade="fadeEdges"
@@ -209,7 +144,7 @@ const submit = async () => {
           @scroll.passive="updateFadeEdges"
         >
           <button
-            v-for="app in availableApps"
+            v-for="app in filteredApps"
             :key="app.name"
             type="button"
             class="flex items-center gap-3 px-2 py-2 border rounded-4 min-w-0 text-left transition-colors hover:bg-surface-alpha-gray-1"

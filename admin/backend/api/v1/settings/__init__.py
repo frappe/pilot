@@ -83,6 +83,7 @@ def build_settings_response(config: BenchConfig, bench_root: Path | None = None)
             "default_branch": config.default_branch,
             "db_type": config.db_type,
             "allow_developer_mode": config.allow_developer_mode,
+            "onboarding": config.onboarding,
         },
         "mariadb": {
             "host": config.mariadb.host,

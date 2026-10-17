@@ -16,15 +16,12 @@ test('isFrappeApp only matches repos under the frappe org', () => {
   assert.equal(isFrappeApp({}), false)
 })
 
-test('keeps Frappe registry apps and drops third-party ones', () => {
+test('offers every registry app, third-party ones included', () => {
   const choices = buildSiteAppChoices(
     [frappe('erpnext'), { name: 'acme', title: 'Acme', repo: 'https://github.com/acme/acme' }],
     [],
   )
-  assert.deepEqual(
-    choices.map((a) => a.name),
-    ['erpnext'],
-  )
+  assert.deepEqual(choices.map((a) => a.name).sort(), ['acme', 'erpnext'])
 })
 
 test('never offers frappe itself, from either source', () => {

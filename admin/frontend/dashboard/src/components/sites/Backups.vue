@@ -1,5 +1,14 @@
 <script setup lang="ts">
-import { Badge, Button, Dialog, Dropdown, type DropdownItem, ErrorMessage, Select } from 'frappe-ui'
+import {
+  Alert,
+  Badge,
+  Button,
+  Dialog,
+  Dropdown,
+  type DropdownItem,
+  ErrorMessage,
+  Select,
+} from 'frappe-ui'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { apiErrorMessage } from '@/api/client'
@@ -10,6 +19,7 @@ import ListSkeleton from '@/components/common/ListSkeleton.vue'
 import Table from '@/components/common/Table.vue'
 import BackupConfigDialog from '@/components/sites/BackupConfigDialog.vue'
 import RestoreBackupDialog from '@/components/sites/RestoreBackupDialog.vue'
+import { useObjectStorage } from '@/composables/settings/useObjectStorage'
 import { useSite } from '@/composables/sites/useSite'
 import type { Backup, BackupFile, BackupSchedule } from '@/types/siteBackups'
 import { cronToLabel } from '@/utils/backup'
@@ -33,6 +43,19 @@ const {
   loadMoreBackups,
   setBackupsPageLength,
 } = useSite(props.siteName)
+
+const {
+  loading: storageLoading,
+  connected: storageConnected,
+  load: loadStorage,
+} = useObjectStorage()
+
+const storageAction = {
+  label: 'Connect storage',
+  onClick: () => {
+    router.push({ name: 'Settings', params: { section: 'general', subSection: 's3-bucket' } })
+  },
+}
 
 const pageLengths = [20, 50, 100].map((n) => ({ label: `${n} per page`, value: n }))
 
@@ -197,10 +220,21 @@ const confirmDelete = async () => {
 onMounted(() => {
   loadBackups()
   loadConfig()
+  loadStorage()
 })
 </script>
 
 <template>
+  <Alert
+    v-if="!storageLoading && !storageConnected"
+    class="mb-4 border border-outline-gray-2"
+    theme="blue"
+    title="Backups stay on this server"
+    description="Connect object storage to keep a copy offsite."
+    :dismissible="false"
+    :primary-action="storageAction"
+  />
+
   <div class="flex sm:flex-row flex-col sm:justify-between sm:items-center gap-3 mb-4">
     <div>
       <p class="font-medium text-ink-gray-8">Automated backups</p>

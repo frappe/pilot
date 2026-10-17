@@ -50,6 +50,7 @@ The `[bench]` table supports:
 | `allow_developer_mode` | Allows per-site developer mode changes. |
 | `watch_apps_js`, `watch_admin_js`, `reload_python` | Development reload settings. |
 | `install_dev_extra` | Install apps' `dev` extras on a non-production bench. Defaults to true; `pilot init --no-dev` sets it to false. |
+| `onboarding` | State of the onboarding dialog: empty shows it, `minimized` shows in sidebar card only, `dismissed` hides both |
 
 Applications use `[[apps]]` entries. `branches` can list branches available to the app:
 

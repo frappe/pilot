@@ -36,13 +36,13 @@ defineExpose({ scrollToBottom })
 <template>
   <div
     ref="el"
-    class="terminal select-text font-mono text-sm leading-[1.6]"
+    class="terminal select-text bg-surface-gray-1 text-ink-gray-8 font-mono text-sm leading-[1.6]"
     :class="{ 'terminal--fill': fill }"
     :style="fill ? '' : `max-height:${maxHeight}`"
   >
-    <div v-if="!lines.length" class="terminal__empty">{{ emptyText }}</div>
-    <div v-for="(line, index) in lines" :key="index" class="terminal__row">
-      <span v-if="lineNumbers" class="terminal__lineno">{{ index + 1 }}</span>
+    <div v-if="!lines.length" class="terminal__empty text-ink-gray-5">{{ emptyText }}</div>
+    <div v-for="(line, index) in lines" :key="index" class="terminal__row hover:bg-surface-gray-2">
+      <span v-if="lineNumbers" class="terminal__lineno text-ink-gray-4">{{ index + 1 }}</span>
       <span
         class="terminal__text"
         :class="{ 'terminal__text--pad': !lineNumbers }"
@@ -50,26 +50,16 @@ defineExpose({ scrollToBottom })
       />
     </div>
 
-    <div v-if="streaming" class="terminal__cursor">█</div>
+    <div v-if="streaming" class="terminal__cursor text-ink-green-6">█</div>
   </div>
 </template>
 
 <style scoped>
 .terminal {
-  --terminal-bg: #1e1e2e;
-  --terminal-fg: #cdd6f4;
-  --terminal-muted: #585b70;
-  --terminal-lineno: #45475a;
-  --terminal-cursor: #a6e3a1;
   overflow: auto;
   border-radius: 0.5rem;
   min-height: 120px;
   padding: 0.75rem 0;
-  background: var(--terminal-bg);
-  color: var(--terminal-fg);
-}
-.terminal ::selection {
-  background: rgb(255 255 255 / 0.25);
 }
 .terminal--fill {
   flex: 1;
@@ -77,13 +67,9 @@ defineExpose({ scrollToBottom })
 }
 .terminal__empty {
   padding: 0.25rem 1rem;
-  color: var(--terminal-muted);
 }
 .terminal__row {
   display: flex;
-}
-.terminal__row:hover {
-  background: rgb(255 255 255 / 0.04);
 }
 .terminal__lineno {
   flex-shrink: 0;
@@ -92,7 +78,6 @@ defineExpose({ scrollToBottom })
   padding-right: 1rem;
   text-align: right;
   user-select: none;
-  color: var(--terminal-lineno);
 }
 .terminal__text {
   flex: 1;
@@ -105,7 +90,6 @@ defineExpose({ scrollToBottom })
 }
 .terminal__cursor {
   padding: 0.25rem 1rem;
-  color: var(--terminal-cursor);
   animation: terminal-blink 1s step-start infinite;
 }
 @keyframes terminal-blink {

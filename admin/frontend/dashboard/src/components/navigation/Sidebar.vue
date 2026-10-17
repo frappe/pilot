@@ -5,6 +5,7 @@ import { Sidebar, SidebarCollapseToggle, SidebarHeader, SidebarItem, SidebarLabe
 
 import PilotLogo from '@/components/icons/Pilot.vue'
 import NotificationsPanel from '@/components/notifications/NotificationsPanel.vue'
+import SetupChecklist from '@/components/navigation/SetupChecklist.vue'
 
 import { sidebarSections } from '@/components/navigation/list'
 import { useAppMenu } from '@/components/navigation/useAppMenu'
@@ -36,7 +37,7 @@ const isActive = (to: string) => route.path === to || route.path.startsWith(`${t
 <template>
   <Sidebar
     :collapsible="!isMobile"
-    class="border-r dark:border-outline-gray-2"
+    class="group border-r"
     :class="isMobile ? '!w-full !border-r-0 mobile-sidebar bg-transparent' : ''"
   >
     <SidebarHeader
@@ -79,6 +80,8 @@ const isActive = (to: string) => route.path === to || route.path.startsWith(`${t
         </SidebarItem>
       </template>
     </nav>
+
+    <SetupChecklist />
 
     <SidebarCollapseToggle v-if="!isMobile" class="mt-auto mx-2 mb-2" />
   </Sidebar>

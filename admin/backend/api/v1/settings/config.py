@@ -4,6 +4,7 @@ import smtplib
 
 from pilot.config import BenchConfig, FirewallRule, S3Config, WafCondition, WafRule, WorkerGroup
 from pilot.config.alert_limit import RESOURCE_LIMIT_FIELDS
+from pilot.config.bench import ONBOARDING_STATES
 from pilot.config.llm import LLMConfig
 from pilot.config.mail import MailConfig
 from pilot.core.alerts import check_mail_credentials
@@ -39,7 +40,8 @@ class ConfigPatcher:
     def apply(self) -> str | None:
         if error := self.get_group_type_error():
             return error
-        self._apply_bench()
+        if error := self._apply_bench():
+            return error
         self._apply_lite_mode()
         self._apply_letsencrypt()
         self._apply_workers()
@@ -66,7 +68,7 @@ class ConfigPatcher:
                 return f"{name} must be {'a list' if expected is list else 'an object'}."
         return None
 
-    def _apply_bench(self) -> None:
+    def _apply_bench(self) -> str | None:
         bench = self.data.get("bench") or {}
         if "http_port" in bench:
             self.config.http_port = int(bench["http_port"])
@@ -76,6 +78,11 @@ class ConfigPatcher:
             self.config.default_branch = str(bench["default_branch"]).strip()
         if "allow_developer_mode" in bench:
             self.config.allow_developer_mode = bool(bench["allow_developer_mode"])
+        if "onboarding" in bench:
+            if bench["onboarding"] not in ONBOARDING_STATES:
+                return f"bench.onboarding must be one of: {', '.join(repr(state) for state in ONBOARDING_STATES)}"
+            self.config.onboarding = bench["onboarding"]
+        return None
 
     def _apply_lite_mode(self) -> None:
         lite_mode = self.data.get("lite_mode") or {}

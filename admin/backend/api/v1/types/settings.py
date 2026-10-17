@@ -111,6 +111,7 @@ class GeneralSettings(TypedDict):
     default_branch: str
     db_type: str
     allow_developer_mode: bool
+    onboarding: str
 
 
 class MariaDBSettings(TypedDict):
