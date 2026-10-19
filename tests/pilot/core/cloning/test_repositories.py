@@ -384,6 +384,25 @@ def test_current_copy_does_not_inherit_local_hooks_or_configuration(source):
     assert git(destination, "rev-parse", "HEAD") == git(app, "rev-parse", "HEAD")
 
 
+def test_github_ssh_remote_is_read_over_https_first(monkeypatch, tmp_path):
+    from pilot.core.bench.cloning import branches
+
+    calls = []
+
+    def ls_remote(source, remote, git_config):
+        calls.append(remote)
+        if remote.startswith("https://"):
+            raise CommandError("private repository")
+        return "ok"
+
+    monkeypatch.setattr(branches, "ls_remote", ls_remote)
+    assert branches.read_remote_refs(tmp_path, "git@github.com:frappe/frappe.git", None) == "ok"
+    assert calls == ["https://github.com/frappe/frappe.git", "origin"]
+    calls.clear()
+    assert branches.read_remote_refs(tmp_path, "https://gitlab.com/acme/app", None) == "ok"
+    assert calls == ["origin"]
+
+
 @pytest.mark.parametrize("staged", [False, True])
 def test_copying_linked_worktree_materializes_repository(tmp_path, staged):
     repo = tmp_path / "repo"
