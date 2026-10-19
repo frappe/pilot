@@ -347,6 +347,25 @@ def test_clone_branch_options_list_origin_branches_with_default_first(source):
     assert git(app, "status", "--porcelain") == before
 
 
+def test_github_ssh_remote_is_read_over_https_first(monkeypatch, tmp_path):
+    from pilot.core.bench.cloning import branches
+
+    calls = []
+
+    def ls_remote(source, remote, git_config):
+        calls.append(remote)
+        if remote.startswith("https://"):
+            raise CommandError("private repository")
+        return "ok"
+
+    monkeypatch.setattr(branches, "ls_remote", ls_remote)
+    assert branches.read_remote_refs(tmp_path, "git@github.com:frappe/frappe.git", None) == "ok"
+    assert calls == ["https://github.com/frappe/frappe.git", "origin"]
+    calls.clear()
+    assert branches.read_remote_refs(tmp_path, "https://gitlab.com/acme/app", None) == "ok"
+    assert calls == ["origin"]
+
+
 def test_clone_branch_options_fail_when_origin_is_unavailable(source):
     git(source.apps_path / "frappe", "remote", "set-url", "origin", "/missing-pilot-test-origin")
     with pytest.raises(BenchError, match="Could not read branches for frappe"):
