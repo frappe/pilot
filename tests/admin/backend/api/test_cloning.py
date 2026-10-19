@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -46,8 +47,15 @@ def test_clone_bench_queues_a_real_task(cloning_client):
     assert not (bench.path.parent / "uat").exists()
 
 
+def fake_apps(path, *names):
+    return [
+        SimpleNamespace(config=SimpleNamespace(name=name, repo=""), path=path / "apps" / name)
+        for name in names
+    ]
+
+
 @pytest.mark.parametrize("title", ["Frappe Framework", ""])
-def test_clone_branch_options_read_the_selected_source_bench(cloning_client, monkeypatch, title):
+def test_clone_apps_list_the_selected_source_bench_without_branches(cloning_client, monkeypatch, title):
     client, bench = cloning_client
     other = bench.path.parent / "other"
     other.mkdir()
@@ -57,37 +65,60 @@ def test_clone_branch_options_read_the_selected_source_bench(cloning_client, mon
     (app_path / "pyproject.toml").write_text(f'[project]\nname = "{title}"\n')
     observed = []
 
-    def options(self):
+    def apps(self):
         observed.append(self.path)
-        return [{"name": "frappe", "default_branch": "develop", "branches": ["develop", "feature/test"]}]
+        return fake_apps(self.path, "frappe")
 
+    def options(self, app):
+        raise AssertionError("listing apps must not read remote branches")
+
+    monkeypatch.setattr(Bench, "apps", apps)
     monkeypatch.setattr(Bench, "get_clone_branch_options", options)
-    response = client.get("/api/v1/benches/other/clone-branch-options")
+    response = client.get("/api/v1/benches/other/clone-apps")
     assert response.status_code == 200
-    assert response.get_json()["apps"][0]["default_branch"] == "develop"
-    assert response.get_json()["apps"][0]["title"] == (title or "frappe")
+    assert response.get_json() == {"apps": [{"name": "frappe", "title": title or "frappe"}]}
     assert observed == [other]
 
 
-def test_clone_branch_options_obey_management_guard_and_bench_scope(cloning_client):
+def test_clone_app_branches_read_one_app(cloning_client, monkeypatch):
+    client, _ = cloning_client
+    requested = []
+
+    def options(self, app):
+        requested.append(app)
+        return {"name": app, "default_branch": "develop", "branches": ["develop", "feature/test"]}
+
+    monkeypatch.setattr(Bench, "apps", lambda self: fake_apps(self.path, "frappe", "erpnext"))
+    monkeypatch.setattr(Bench, "get_clone_branch_options", options)
+    response = client.get("/api/v1/benches/dev/clone-apps/erpnext/branches")
+    assert response.status_code == 200
+    assert response.get_json()["default_branch"] == "develop"
+    assert requested == ["erpnext"]
+    assert client.get("/api/v1/benches/dev/clone-apps/missing/branches").status_code == 404
+
+
+@pytest.mark.parametrize("path", ["clone-apps", "clone-apps/frappe/branches"])
+def test_clone_options_obey_management_guard_and_bench_scope(cloning_client, path):
     client, bench = cloning_client
     client.set_cookie("sid", Session(bench).issue_site_token("source.localhost"))
-    assert client.get("/api/v1/benches/dev/clone-branch-options").status_code == 403
+    assert client.get(f"/api/v1/benches/dev/{path}").status_code == 403
     client.set_cookie("sid", Session(bench).issue_session_token()[0])
     bench.config.admin.allow_bench_management = False
     bench.config.write(bench.path)
-    assert client.get("/api/v1/benches/dev/clone-branch-options").status_code == 403
+    assert client.get(f"/api/v1/benches/dev/{path}").status_code == 403
 
 
-def test_clone_branch_options_report_missing_source_and_origin_errors(cloning_client, monkeypatch):
+def test_clone_options_report_missing_source_and_origin_errors(cloning_client, monkeypatch):
     client, _ = cloning_client
-    assert client.get("/api/v1/benches/missing/clone-branch-options").status_code == 404
+    assert client.get("/api/v1/benches/missing/clone-apps").status_code == 404
+    assert client.get("/api/v1/benches/missing/clone-apps/frappe/branches").status_code == 404
 
-    def options(self):
+    def options(self, app):
         raise BenchError("Could not read branches for frappe. Check access to origin.")
 
+    monkeypatch.setattr(Bench, "apps", lambda self: fake_apps(self.path, "frappe"))
     monkeypatch.setattr(Bench, "get_clone_branch_options", options)
-    response = client.get("/api/v1/benches/dev/clone-branch-options")
+    response = client.get("/api/v1/benches/dev/clone-apps/frappe/branches")
     assert response.status_code == 422
     assert "frappe" in response.get_json()["error"]["message"]
 
