@@ -1,11 +1,9 @@
 import contextlib
 import re
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from pilot.core.bench.cloning.repository import clone_repository
 from pilot.exceptions import BenchError, CommandError
-from pilot.integrations.git import auth_config_for
 from pilot.internal.git import GitRepo, git_env
 from pilot.utils import run_command
 
@@ -78,16 +76,10 @@ def get_remote_branches(source: Path, git_config: dict[str, str] | None = None) 
     }
 
 
-def get_app_branch_options(source) -> list[dict]:
-    apps = source.apps()
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        return list(
-            executor.map(
-                get_remote_branches,
-                [app.path for app in apps],
-                [auth_config_for(app.bench.path, app.config.repo) for app in apps],
-            )
-        )
+def get_branch_options(source: Path, git_config: dict[str, str] | None = None) -> dict:
+    if not GitRepo(source).remote_url:
+        return {"name": source.name, "default_branch": "current", "branches": ["current"]}
+    return get_remote_branches(source, git_config)
 
 
 def clone_branch(
