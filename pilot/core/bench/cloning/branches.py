@@ -1,3 +1,5 @@
+import contextlib
+import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -35,15 +37,29 @@ def validate_app_branches(app_branches: dict[str, str]) -> None:
         raise BenchError("App branch overrides must map app names to branch names.")
 
 
+GITHUB_SSH_RE = re.compile(r"^(?:git@github\.com:|ssh://git@github\.com/)(?P<path>.+)$")
+
+
+def ls_remote(source: Path, remote: str, git_config: dict[str, str] | None) -> str:
+    env = {**git_env(git_config), "GIT_TERMINAL_PROMPT": "0"}
+    command = ["git", "-C", str(source), "ls-remote", "--symref", remote, "HEAD", "refs/heads/*"]
+    return run_command(command, env=env, timeout=15).stdout.decode()
+
+
+def read_remote_refs(source: Path, remote: str, git_config: dict[str, str] | None) -> str:
+    github = GITHUB_SSH_RE.match(remote)
+    if github:
+        with contextlib.suppress(CommandError):
+            return ls_remote(source, f"https://github.com/{github['path']}", git_config)
+    return ls_remote(source, "origin", git_config)
+
+
 def get_remote_branches(source: Path, git_config: dict[str, str] | None = None) -> dict:
-    if not GitRepo(source).remote_url:
+    remote = GitRepo(source).remote_url
+    if not remote:
         raise BenchError(f"{source.name} has no origin remote.")
     try:
-        output = run_command(
-            ["git", "-C", str(source), "ls-remote", "--symref", "origin", "HEAD", "refs/heads/*"],
-            env=git_env(git_config),
-            timeout=15,
-        ).stdout.decode()
+        output = read_remote_refs(source, remote, git_config)
     except CommandError as error:
         raise BenchError(f"Could not read branches for {source.name}. Check access to origin.") from error
     default = ""
