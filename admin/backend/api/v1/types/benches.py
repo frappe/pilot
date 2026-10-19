@@ -27,15 +27,16 @@ class BenchReadiness(TypedDict):
     ready: bool
 
 
-class CloneAppBranches(TypedDict):
+class CloneApp(TypedDict):
     name: str
     title: str
+
+
+class CloneApps(TypedDict):
+    apps: list[CloneApp]
+
+
+class CloneAppBranches(TypedDict):
+    name: str
     default_branch: str
     branches: list[str]
-    current_branch: str
-    changed_files: int
-    error: str
-
-
-class CloneBranchOptions(TypedDict):
-    apps: list[CloneAppBranches]
