@@ -281,6 +281,28 @@ def test_backup_schedule_put_rejects_invalid_cron(tmp_path: Path) -> None:
     assert response.status_code == 422
 
 
+def test_a_custom_schedule_replaces_the_default_policy(tmp_path: Path) -> None:
+    from pilot.config import BackupConfig
+    from pilot.config.site_backup import read_retention, write_retention
+
+    bench_root = tmp_path / "benches" / "current"
+    _make_site(bench_root, "site.localhost")
+    site_config = bench_root / "sites" / "site.localhost" / "site_config.json"
+    write_retention(site_config, BackupConfig(keep_weekly=4, keep_yearly=10, calendar_rotation=True))
+    client = _client(bench_root)
+    with (
+        patch("pilot.managers.cron.CronManager.get_schedule", return_value="0 2 * * *"),
+        patch("pilot.managers.cron.CronManager.set_schedule"),
+    ):
+        response = client.put(
+            "/api/v1/sites/site.localhost/backup-schedule",
+            json={"schedule": "0 2 * * *", "retention": {"scheme": "fifo", "keep_last": 3}},
+        )
+
+    assert response.status_code == 200
+    assert read_retention(site_config) == BackupConfig(scheme="fifo", keep_last=3)
+
+
 def test_backup_schedule_delete_returns_no_content(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
     _make_site(bench_root, "site.localhost")

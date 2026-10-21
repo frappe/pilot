@@ -74,6 +74,12 @@ class UserOwnedDBManager(SystemdUserMixin):
     def stop(self) -> None:
         self._control("stop")
 
+    def enable_and_start(self) -> None:
+        """Start the user unit and enable it at boot. Safe to repeat."""
+        if not self.is_running():
+            self._reset_failed_state()
+        run_command(self._systemctl("enable", "--now", self._UNIT_NAME), env=self._systemctl_env())
+
     def _control(self, action: str) -> None:
         if is_macos():
             run_command(["brew", "services", action, self._brew_package()])

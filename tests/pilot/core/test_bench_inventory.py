@@ -52,3 +52,19 @@ def test_app_prefers_live_branch_over_configured_branch(tmp_path: Path) -> None:
     app = BenchInventory(mock_bench).app("frappe")
 
     assert app.config.branch == "develop"
+
+
+def test_apps_carry_follow_branch_from_bench_toml(tmp_path: Path) -> None:
+    apps_path = tmp_path / "apps"
+    _init_repo(apps_path / "myapp")
+    _init_repo(apps_path / "frappe")
+
+    mock_bench = MagicMock()
+    mock_bench.apps_path = apps_path
+    mock_bench.config.apps = [AppConfig(name="myapp", repo="", branch="develop", follow_branch=True)]
+
+    inventory = BenchInventory(mock_bench)
+    follow_branch_by_name = {app.config.name: app.config.follow_branch for app in inventory.apps()}
+
+    assert inventory.app("myapp").config.follow_branch is True
+    assert follow_branch_by_name == {"frappe": False, "myapp": True}

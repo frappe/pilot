@@ -5,6 +5,7 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlsplit
 
 from pilot.exceptions import BenchError
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
@@ -115,7 +116,7 @@ class AdminDomainChange:
         on_progress(f"\nAdmin is now at {self._served_scheme()}://{self.domain}")
 
     def _clear_site_cache(self, on_progress: Callable[[str], None]) -> None:
-        """Drop cached site configs so sites read the new pilot_endpoint."""
+        """Drop cached site configs so sites read the new admin URL."""
         try:
             self.bench.clear_cache()
         except (BenchError, OSError) as exc:
@@ -160,7 +161,7 @@ class AdminDomainChange:
             data.setdefault("admin", {}).update(values)
 
     def repoint_pilot_endpoints(self) -> None:
-        """Point every existing `pilot_endpoint` in the bench's site configs at the admin URL."""
+        """Point every existing public admin URL in the bench's site configs at the admin domain."""
         endpoint = self.bench.admin_endpoint
         common_config_path = self.bench.sites_path / "common_site_config.json"
         self._repoint_pilot_endpoint(common_config_path, endpoint, indent=2)
@@ -173,9 +174,16 @@ class AdminDomainChange:
             return
         with exclusive_file_lock(config_path):
             config = json.loads(config_path.read_text())
-            if "pilot_endpoint" not in config or config["pilot_endpoint"] == endpoint:
+            is_loopback = urlsplit(str(config.get("pilot_endpoint", ""))).hostname == "127.0.0.1"
+            urls = {
+                "pilot_endpoint": self.bench.admin_internal_endpoint if is_loopback else endpoint,
+                "cloud_server_url": endpoint,
+                "cloud_settings_embed_url": endpoint,
+            }
+            changes = {key: url for key, url in urls.items() if key in config and config[key] != url}
+            if not changes:
                 return
-            config["pilot_endpoint"] = endpoint
+            config.update(changes)
             replace_private_text_locked(config_path, json.dumps(config, indent=indent))
 
     def _retarget_hostname_aliases(self) -> None:

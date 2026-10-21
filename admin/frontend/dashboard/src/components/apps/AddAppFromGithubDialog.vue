@@ -238,12 +238,15 @@ const submit = async () => {
       />
 
       <template v-else>
-        <p
-          class="bg-surface-gray-1 px-3 py-2 border rounded-6 border-outline-gray-2 text-ink-gray-7 text-sm"
+        <div
+          class="flex items-center justify-between gap-2 bg-surface-gray-1 py-1.5 pr-1.5 pl-3 border rounded-6 border-outline-gray-2 text-ink-gray-7 text-sm"
         >
-          Connected as
-          <span class="font-medium text-ink-gray-9">{{ gitStatus.username }}</span>
-        </p>
+          <p class="min-w-0 truncate">
+            Connected as
+            <span class="font-medium text-ink-gray-9">{{ gitStatus.username }}</span>
+          </p>
+          <Button size="sm" variant="ghost" label="Manage" @click="goToGithubSettings" />
+        </div>
 
         <LoadingText v-if="reposLoading" class="justify-center h-32" />
 

@@ -257,6 +257,45 @@ def test_a_successful_change_repoints_existing_pilot_endpoints(tmp_path: Path) -
     assert "pilot_endpoint" not in json.loads(bare_site.read_text())
 
 
+def test_a_change_moves_the_browser_urls_and_keeps_a_loopback_pilot_endpoint(tmp_path: Path) -> None:
+    bench = _admin_bench(tmp_path)
+    loopback = f"http://127.0.0.1:{bench.config.admin.internal_port}"
+    site = _write_site_config(
+        bench,
+        "site1.local",
+        {
+            "pilot_endpoint": loopback,
+            "cloud_server_url": f"http://{OLD}",
+            "cloud_settings_embed_url": f"http://{OLD}",
+        },
+    )
+
+    with (
+        patch.object(AdminDomainChange, "_republish_nginx"),
+        patch.object(AdminDomainChange, "_reissue_certificate", lambda self, on_progress: False),
+    ):
+        AdminDomainChange(bench, NEW).run()
+
+    assert json.loads(site.read_text()) == {
+        "pilot_endpoint": loopback,
+        "cloud_server_url": f"http://{NEW}",
+        "cloud_settings_embed_url": f"http://{NEW}",
+    }
+
+
+def test_a_change_keeps_a_stale_loopback_pilot_endpoint_on_loopback(tmp_path: Path) -> None:
+    bench = _admin_bench(tmp_path)
+    site = _write_site_config(bench, "site1.local", {"pilot_endpoint": "http://127.0.0.1:1"})
+
+    with (
+        patch.object(AdminDomainChange, "_republish_nginx"),
+        patch.object(AdminDomainChange, "_reissue_certificate", lambda self, on_progress: False),
+    ):
+        AdminDomainChange(bench, NEW).run()
+
+    assert json.loads(site.read_text()) == {"pilot_endpoint": f"http://127.0.0.1:{bench.config.admin.internal_port}"}
+
+
 def test_a_common_site_config_without_pilot_endpoint_is_left_alone(tmp_path: Path) -> None:
     bench = _admin_bench(tmp_path)
     common = bench.sites_path / "common_site_config.json"

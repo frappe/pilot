@@ -313,7 +313,7 @@ onMounted(() => {
       @click="site?.setup_complete ? openSite() : setupSite()"
     >
       <template #prefix><span class="size-4 lucide-external-link" /></template>
-      <span class="hidden sm:inline">{{ site?.setup_complete ? 'Open site' : 'Setup site' }}</span>
+      <span class="hidden sm:inline">{{ site?.setup_complete ? 'Visit site' : 'Setup site' }}</span>
       <span class="sm:hidden">{{ site?.setup_complete ? 'Open' : 'Setup' }}</span>
     </Button>
   </Teleport>

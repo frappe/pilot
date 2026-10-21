@@ -100,6 +100,8 @@ Build your own UI on the read calls, for example a plan badge or a banner. For c
 
 Requests use the current origin and session. They time out after 30 seconds. The SDK does not retry write calls.
 
+`changePlan(plan)` returns `{ queued, resized, progress_url }`. A new size stops the site for a few minutes. When `progress_url` is set, open it: the page lives on Central and brings the user back when the site is ready. During a free trial, Central refuses the call until the team adds a payment method.
+
 ## Handle feedback and errors
 
 | State | Dialog behavior |
@@ -122,7 +124,7 @@ Desk loads `/embed/cloud-settings/cloud-settings.js` from Pilot. It exposes `win
 
 Run `npm test` and `npm run build` in this package. Run `npm run build` in `admin/frontend/in-app-embed` to build the Pilot browser bundle. Build both outputs after a UI change. Refresh local file dependencies before you rebuild a consumer such as Raven.
 
-To run browser regression tests, install the dependencies in `admin/frontend/dashboard` and `admin/frontend/in-app-embed`, then build this package. Run `npx playwright install chromium` and `npx playwright test --config cloud-settings.config.ts` from `admin/frontend/dashboard`. The tests check dialog cleanup, custom feedback translations, task cancellation and resume, and the phone layout. CI runs these tests in the MariaDB browser job.
+To run browser regression tests, install the dependencies in `admin/frontend/dashboard` and `admin/frontend/in-app-embed`, then build this package. Run `npx playwright install chromium` and `npx playwright test --config cloud-settings.config.ts` from `admin/frontend/dashboard`. The tests check dialog cleanup, custom feedback translations, task cancellation and resume, and the phone layout. `cloud-settings-billing.spec.ts` checks the billing tab: the trial credit and sleep notes, the payment step during a trial, the plan list, the move to the progress page, and the refusal, spending limit and retry states. CI runs these tests in the MariaDB browser job.
 
 To test all panels with sample data, run `python3 -m http.server 8123` in this package. Open `http://localhost:8123/tests/embed.html`. No real payment or site action runs in this fixture.
 

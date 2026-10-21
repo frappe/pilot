@@ -1,15 +1,23 @@
 from __future__ import annotations
 
 import re
+import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pilot.exceptions import BenchError
 from pilot.managers.environment import AdminEnvManager
 from pilot.utils import cli_root
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
+
+
+@dataclass(frozen=True)
+class ProcessState:
+    state: str  # the manager's own word, such as RUNNING or active (running)
+    pid: int | None = None
 
 
 @dataclass
@@ -21,7 +29,48 @@ class ProcessDefinition:
     working_dir: Path | None = None  # was `cd {dir} &&`
     stop_timeout: int | None = None  # graceful-stop seconds (redis=300)
     critical: bool = True  # dev runner stops the whole bench when this process exits
+    app: str | None = None  # the app that declares it; None for the bench's own processes
     socket_file: Path | None = None  # removed before each start; a stale one blocks listen()
+    listen_address: str | None = None  # systemd holds it, so a restart queues requests instead of refusing them
+    restart_on_failure: bool = True
+    pre_run: list[str] = field(default_factory=list)
+    post_run: list[str] = field(default_factory=list)
+
+    @property
+    def argv_with_hooks(self) -> list[str]:
+        """argv that runs pre_run and post_run around the process, for managers without native hooks."""
+        if not self.pre_run and not self.post_run:
+            return self.argv
+
+        if not self.post_run:
+            return ["sh", "-c", f"{shlex.join(self.pre_run)} || exit; exec {shlex.join(self.argv)}"]
+
+        # One line: supervisord's command= cannot hold a newline.
+        # A TERM during pre_run skips the process; one during it ends the first wait early,
+        # so wait again before post_run.
+        pre_run = f"{shlex.join(self.pre_run)} || status=$?; " if self.pre_run else ""
+        run = (
+            f"{shlex.join(self.argv)} & child=$!; "
+            'wait "$child"; status=$?; '
+            'kill -0 "$child" 2>/dev/null && { wait "$child"; status=$?; }'
+        )
+        script = (
+            "status=0; stopped=0; child=; "
+            "trap 'stopped=1; [ -n \"$child\" ] && kill -TERM \"$child\" 2>/dev/null' TERM; "
+            f'{pre_run}if [ "$status" -eq 0 ] && [ "$stopped" -eq 0 ]; then {run}; fi; '
+            f'{shlex.join(self.post_run)}; exit "$status"'
+        )
+        return ["sh", "-c", script]
+
+
+def check_unique_names(definitions: list[ProcessDefinition]) -> None:
+    """Supervisor writes `_` as `-`, so two names that differ only there would share a program."""
+    seen: dict[str, ProcessDefinition] = {}
+    for definition in definitions:
+        other = seen.setdefault(definition.name.replace("_", "-"), definition)
+        if other is not definition:
+            owner = f"app '{definition.app}'" if definition.app else "the bench"
+            raise BenchError(f"Process '{definition.name}' of {owner} has the same name as '{other.name}'.")
 
 
 class ProcessDefinitionBuilder:
@@ -58,6 +107,8 @@ class ProcessDefinitionBuilder:
             ]
         defs.append(self.redis_definition("redis_cache", "redis_cache.conf"))
         defs.append(self.redis_definition("redis_queue", "redis_queue.conf"))
+        defs.extend(self.bench.processes.get_app_definitions())
+        check_unique_names(defs)
         return defs
 
     def process_definitions(self) -> list[ProcessDefinition]:
@@ -81,7 +132,8 @@ class ProcessDefinitionBuilder:
             return self.socketio_definition(dev=True)
         return pd
 
-    def python_env(self) -> dict:
+    @staticmethod
+    def python_env() -> dict:
         """Shared env for Python processes. PYTHONUNBUFFERED keeps stdout unbuffered:
         every runner captures it into a pipe or log file, where Python would otherwise
         block-buffer app-code print() until ~8KB accumulates."""
@@ -118,6 +170,8 @@ class ProcessDefinitionBuilder:
             log_file=self.bench.logs_path / "web.log",
             env=self.python_env(),
             working_dir=sites,
+            # gunicorn takes systemd's socket when given one, and binds this address itself otherwise.
+            listen_address=f"127.0.0.1:{self.bench.config.http_port}",
         )
 
     def lite_definition(self, dev: bool = False) -> ProcessDefinition:
@@ -149,6 +203,11 @@ class ProcessDefinitionBuilder:
             env={**self.python_env(), "MALLOC_ARENA_MAX": "2", "FRAPPE_PRELOAD_MODULES": "0"},
             working_dir=self.bench.sites_path,
             stop_timeout=lite_mode.stop_timeout,
+            listen_address=(
+                f"127.0.0.1:{self.bench.config.http_port}"
+                if not dev and self.bench.has_runner_socket_support
+                else None
+            ),
         )
 
     def socketio_definition(self, dev: bool = False) -> ProcessDefinition:

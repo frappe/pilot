@@ -416,6 +416,8 @@ class MigrationOperation:
     def restart(self, on_step: OnStep = _NO_STEP) -> None:
         on_step("restart", "Restarting services")
         try:
+            # The reverted apps may declare different processes; the restart then restarts them.
+            self.bench.processes.apply()
             self.bench.reload_workers()
             self._restore_maintenance()
             for site in self.sites:
@@ -476,6 +478,8 @@ class MigrationOperation:
 
     def _complete(self, on_step: OnStep) -> None:
         on_step("restart", "Restarting services")
+        # An updated app may declare different processes; the restart then restarts them.
+        self.bench.processes.apply()
         self.bench.reload_workers()
         self._restore_maintenance()
         for site in self.sites:

@@ -61,6 +61,14 @@ Task-starting endpoints should return:
 
 `GET /git/branches?repo=...` runs local `git ls-remote --heads`, so Git must be available on the Pilot host. It returns all remote branch names and puts the remote default first.
 
+### Git Connection Through Central
+
+On a Central-managed host, `GET /git/connection` also returns `central`: whether Central offers its GitHub App, and the granted repositories of each account. The host stores no GitHub token. It asks Central for a read-only token per repository and caches it in memory until about 10 minutes before expiry.
+
+- `POST /git/connection-attempts` with `{"return_url": ...}` returns the Central `url` where a user picks repositories. Central then sends the browser back to `return_url`.
+- A Central grant replaces a stored personal access token. `PUT /git/connection` answers 409 `github_app_connected` while the grant is active.
+- `DELETE /git/connection` removes the grant on Central, then the local record.
+
 ### Site Apps
 
 `GET /sites/<name>/apps` returns the apps in use on the site, disabled ones excluded, plus `can_disable` for whether this bench's Frappe supports disabling at all. Each app has `is_marketplace` when its repository is the one the registry lists; the registry's links and metadata apply only then, so a fork keeps its own. An app the site lists but the bench does not have, for example after a restore from another bench, has `missing: true`. Uninstalling such an app removes it from the site's installed apps only.
@@ -102,6 +110,8 @@ A site calls Central through `GET` or `POST /sites/<name>/central/<method>`. Pil
 
 `POST /sites/<name>/actions/rename` takes `{"new_name": "...", "keep_old_hostname": true}` and queues `rename-site`. The new name is validated the same way a new site's is, and both names are claimed as task resources so nothing can create or drop either while the site is moving between them. `keep_old_hostname` defaults to true and keeps the old hostname on the site, so open tabs and existing links keep working; pass false to release a pooled name a fleet reuses. `make_primary` defaults to false. Pass true to make the new name the site's `host_name`, so the links the site builds use it and its other domains redirect to it. A rename also replaces the site's `pilot_auth_token` with one scoped to the new name. See [Renaming without downtime](commands.md#renaming-without-downtime).
 
+`PATCH /settings` takes `{"letsencrypt": {"email": "ops@example.com"}}` to set the Let's Encrypt account email in `bench.toml`. An invalid address gets a 422 `invalid_settings`. It does not issue certificates.
+
 `POST /settings/admin-domain` takes `{"domain": "...", "tls": true|false}` (`tls` optional) and queues `change-admin-domain`, which registers the route with the domain provider, writes `bench.toml`, reissues the certificate when TLS is on, and republishes nginx. The previous hostname is released only once the switch has committed.
 
 Both operations re-point any matching `central.hostname_aliases` entry, so a VM hostname keeps reaching the thing it named. Every route that claims a hostname - creating a site, renaming one, moving the admin - also takes the task resource `host:<hostname>`, so two of them cannot run at once for the same name. That key is host-wide - benches share one nginx and one `/etc/letsencrypt` - so it conflicts with active tasks on every bench of the host, not only its own.
@@ -133,7 +143,7 @@ A remote source needs a bench session and an `https://` site. The Administrator 
 
 `POST /sites/<name>/actions/restore-upload` takes the same `parts` and `skip_failing_patches` (`"true"`) as multipart form fields, plus the files `database`, `public`, `private`, and `config` (the site config backup). nginx `client_max_body_size` limits the upload size.
 
-A restore puts the site in maintenance mode, restores only the chosen parts, and migrates it. It restores the files before the database. From a remote site or Frappe Cloud, the file archives and a MariaDB database stream into the site as they download, so they need no copy on disk. The site stays in maintenance mode for the download time. `skip_failing_patches` passes `--skip-failing` to the migration. It takes no backup of the site first. A database from another site brings that site's encryption key. The `config` part merges the source site config into this site, except the keys that belong to this site: `db_*`, `redis_*`, `pilot_*`, `atlas_*`, `rds_db`, `maintenance_mode`, `pause_scheduler`, `email_sender_name`, and the keys a site-scoped config change cannot set either, such as `host_name`, `domains`, `route`, `ssl`, `cert_name`, `backup_retention`, and `installed_apps`. A config restored without its database keeps this site's `encryption_key`, so the passwords in this site's database stay readable. If a step fails, the site stays in maintenance mode. Restoring from another site needs a bench session; a site token can only restore its own backups.
+A restore puts the site in maintenance mode, restores only the chosen parts, and migrates it. It restores the files before the database. From a remote site or Frappe Cloud, the file archives and a MariaDB database stream into the site as they download, so they need no copy on disk. The site stays in maintenance mode for the download time. `skip_failing_patches` passes `--skip-failing` to the migration. It takes no backup of the site first. A database from another site brings that site's encryption key. The `config` part merges the source site config into this site, except the keys that belong to this site: `db_*`, `redis_*`, `pilot_*`, `atlas_*`, `rds_db`, `maintenance_mode`, `pause_scheduler`, `email_sender_name`, and the keys a site-scoped config change cannot set either, such as `host_name`, `domains`, `route`, `ssl`, `cert_name`, `backup_retention`, `installed_apps`, `cloud_server_url`, and `cloud_settings_embed_url`. A config restored without its database keeps this site's `encryption_key`, so the passwords in this site's database stay readable. If a step fails, the site stays in maintenance mode. Restoring from another site needs a bench session; a site token can only restore its own backups.
 
 #### Chunked uploads
 

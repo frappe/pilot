@@ -118,7 +118,9 @@ const headerTitle = computed(() => {
 const goBack = () => {
   guarded(() => {
     if (sessionJti.value) sessionJti.value = null
-    else if (subSection.value) subSection.value = null
+    else if (subSection.value)
+      subSection.value =
+        subSectionOptions.value.find((s) => s.id === subSection.value?.parent) ?? null
     else activeSection.value = null
   })
 }

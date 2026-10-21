@@ -65,6 +65,8 @@ class BenchConfigFiles:
                     "redis_socketio": redis_cache,
                     "socketio_port": self.bench.realtime_port,
                     "webserver_port": self.bench.config.http_port,
+                    # Realtime checks sessions against web here, not through nginx and the site's TLS.
+                    "webserver_host": "127.0.0.1",
                     "socketio_backend": self.bench.config.socketio_backend,
                     "monitor": True,
                 }

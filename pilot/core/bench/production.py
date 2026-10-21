@@ -37,6 +37,8 @@ class BenchProduction:
         from pilot.managers.processes.local import ProcessManager
 
         manager = cast("ManagedProcessManager", ProcessManager.for_bench(self.bench))
+        # The configuration must build before the bench stops.
+        manager.check_config()
         on_progress("Stopping the running processes")
         manager.stop()
         # A failed step must not leave the sites down.

@@ -24,6 +24,7 @@ from pilot.config.llm import LLMConfig
 from pilot.config.mariadb import MariaDBConfig
 from pilot.config.nginx import NginxConfig
 from pilot.config.postgres import PostgresConfig
+from pilot.config.processes import ProcessesConfig
 from pilot.config.production import ProductionConfig
 from pilot.config.proxy import ProxyConfig
 from pilot.config.redis import RedisConfig
@@ -133,6 +134,7 @@ class BenchConfig:
     nginx: NginxConfig = field(default_factory=NginxConfig)
     gunicorn: GunicornConfig = field(default_factory=GunicornConfig)
     build: BuildConfig = field(default_factory=BuildConfig)
+    processes: ProcessesConfig = field(default_factory=ProcessesConfig)
     letsencrypt: LetsEncryptConfig = field(default_factory=LetsEncryptConfig)
     admin: AdminConfig = field(default_factory=AdminConfig)
     central: CentralConfig = field(default_factory=CentralConfig)
@@ -271,6 +273,7 @@ class BenchConfig:
         self.mariadb.validate()
         self.gunicorn.validate()
         self.build.validate()
+        self.processes.validate()
         self.lite_mode.validate()
         self.production.validate(self.name)
         self.admin.validate(self.production.enabled, self.name)
@@ -788,6 +791,11 @@ _SECTIONS: tuple[_Section, ...] = (
         lambda config: config._build_section() if config.build.memory_limit_mb else None,
     ),
     _Section(
+        "processes",
+        lambda data: ProcessesConfig.from_dict(data.get("processes", {})),
+        lambda config: {"disabled": config.processes.disabled} if config.processes.disabled else None,
+    ),
+    _Section(
         "admin",
         lambda data: AdminConfig.from_dict(data.get("admin", {})),
         lambda config: config._admin_section(),
@@ -897,6 +905,7 @@ def _bench_schema() -> TomlSchema:
             "lite_mode": TomlSchema(keys=field_names(LiteModeConfig)),
             "gunicorn": TomlSchema(keys=field_names(GunicornConfig) | _GUNICORN_LEGACY),
             "build": TomlSchema(keys=field_names(BuildConfig)),
+            "processes": TomlSchema(keys=field_names(ProcessesConfig)),
             "admin": TomlSchema(keys=field_names(AdminConfig)),
             "s3": TomlSchema(keys=field_names(S3Config)),
             "llm": TomlSchema(keys=field_names(LLMConfig)),

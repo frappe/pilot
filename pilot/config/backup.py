@@ -14,6 +14,7 @@ class BackupConfig:
     keep_weekly: int = 5  # one per week across the current month
     keep_monthly: int = 12  # one per month, past year
     keep_yearly: int = 5  # one per year, kept a few years
+    calendar_rotation: bool = False
 
     @property
     def counts(self) -> dict[str, int]:

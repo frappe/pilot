@@ -48,7 +48,7 @@ def test_logs_install_writes_config_parsers_lua_and_unit(tmp_path: Path) -> None
 
     lua = (tmp_path / "system" / "fluent-bit" / "pilot.lua").read_text()
     assert "function normalize" in lua
-    assert "\\\"product\\\":\\\"pilot\\\"" in lua
+    assert 'product = "pilot"' in lua
 
     token_file = tmp_path / "system" / "fluent-bit" / "token.env"
     assert "DATUM_LOG_TOKEN=secret" in token_file.read_text()
@@ -57,6 +57,44 @@ def test_logs_install_writes_config_parsers_lua_and_unit(tmp_path: Path) -> None
     unit_text = install.call_args.kwargs["unit_text"]
     assert "fluent-bit" in unit_text
     assert str(tmp_path / "system" / "fluent-bit" / "fluent-bit.conf") in unit_text
+    assert "LogRateLimitIntervalSec=30s" in unit_text
+
+
+def test_logs_output_batches_within_datum_limits(tmp_path: Path) -> None:
+    """One JSON array per chunk, flushed rarely enough for Datum's 12 requests a minute."""
+    configurator = _configurator(tmp_path)
+    config = TelemetryConfig(endpoint="https://datum.internal", token="secret")
+
+    with (
+        patch("pilot.managers.fluentbit.cli_root", return_value=tmp_path),
+        patch("pilot.managers.fluentbit.shutil.which", return_value="/usr/bin/fluent-bit"),
+    ):
+        conf = configurator._render_files(config)["fluent-bit.conf"]
+
+    assert "Flush                     30" in conf
+    assert "Format        json" in conf
+    assert "json_date_key false" in conf
+    assert "Retry_Limit   3" in conf
+    assert "storage.total_limit_size 100M" in conf
+    assert "Body_Key" not in conf
+    assert "Retry_Limit   False" not in conf
+
+
+def test_logs_output_reads_one_stream(tmp_path: Path) -> None:
+    """Each input chunks on its own, so every line is funneled through one emitter the output reads."""
+    configurator = _configurator(tmp_path)
+    config = TelemetryConfig(endpoint="https://datum.internal", token="secret")
+
+    with (
+        patch("pilot.managers.fluentbit.cli_root", return_value=tmp_path),
+        patch("pilot.managers.fluentbit.shutil.which", return_value="/usr/bin/fluent-bit"),
+    ):
+        conf = configurator._render_files(config)["fluent-bit.conf"]
+
+    output = conf[conf.index("[OUTPUT]") :]
+    assert "Match         datum.logs" in output
+    assert "Rule                  $product ^pilot$ datum.logs false" in conf
+    assert conf.index("Name            lua") < conf.index("Name                  rewrite_tag")
 
 
 def test_python_input_tails_bench_dir_only(tmp_path: Path) -> None:
@@ -97,6 +135,7 @@ def test_logs_install_disables_tls_for_http_endpoint(tmp_path: Path) -> None:
 
 
 def test_logs_install_restarts_when_already_installed(tmp_path: Path) -> None:
+    """The unit is rewritten too, so a changed unit reaches hosts that already run the shipper."""
     configurator = _configurator(tmp_path)
     config = TelemetryConfig(endpoint="https://datum.internal", token="test-token")
 
@@ -109,7 +148,7 @@ def test_logs_install_restarts_when_already_installed(tmp_path: Path) -> None:
     ):
         configurator.install(config)
 
-    install.assert_not_called()
+    install.assert_called_once()
     restart_calls = [call for call in run.call_args_list if "restart" in call.args[0]]
     assert len(restart_calls) == 1
 
@@ -294,6 +333,17 @@ def test_logs_sync_restarts_the_shipper_for_a_new_token(tmp_path: Path) -> None:
     )
 
     config = TelemetryConfig(endpoint="https://datum.internal", token="new")
+    install = _sync(tmp_path, config, binary="/usr/bin/fluent-bit", active=True)
+
+    install.assert_called_once()
+
+
+def test_logs_sync_reinstalls_the_shipper_for_a_changed_unit(tmp_path: Path) -> None:
+    config = TelemetryConfig(endpoint="https://datum.internal", token="jwt")
+    _sync(tmp_path, config, binary="/usr/bin/fluent-bit", active=False)
+    unit = tmp_path / "system" / "fluent-bit" / LogsConfigurator.unit_name
+    unit.write_text(unit.read_text().replace("LogRateLimitBurst=200\n", ""))
+
     install = _sync(tmp_path, config, binary="/usr/bin/fluent-bit", active=True)
 
     install.assert_called_once()

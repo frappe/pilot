@@ -36,6 +36,10 @@ export interface BillingTrial {
   days_left: number
   /** When an ended trial's server is deleted. */
   deletes_on: string | null
+  /** The credit a card adds before the trial ends, or null when there is none to earn. */
+  credit?: { amount: number; currency: string; ends_on?: string | null } | null
+  /** Idle minutes before the trial server sleeps. */
+  sleeps_after_minutes?: number
 }
 
 export interface PlanOption {
@@ -53,6 +57,13 @@ export interface PlanOptions {
   current: string | null
   plans: PlanOption[]
   sufficient: boolean
+}
+
+/** A queued plan change. `progress_url` is the page that follows it while the site restarts. */
+export interface PlanChange {
+  queued: boolean
+  resized: boolean
+  progress_url: string | null
 }
 
 export interface BillingProfile {

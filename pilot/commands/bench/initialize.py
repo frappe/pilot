@@ -17,9 +17,12 @@ class InitCommand(Command):
         bool,
         Arg(help="Skip apps' dev extras. Stored as bench.install_dev_extra for later installs."),
     ] = False
+    commit: Annotated[
+        str, Arg(help="Git commit hash to checkout for the framework app, on its bench.toml branch.")
+    ] = ""
 
     def run(self) -> None:
         if self.no_dev:
             self.bench.config.install_dev_extra = False
             self.bench.config.write(self.bench.path)
-        self.bench.initialize(on_progress=self.report)
+        self.bench.initialize(commit=self.commit, on_progress=self.report)

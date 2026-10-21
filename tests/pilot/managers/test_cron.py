@@ -169,3 +169,14 @@ def test_move_schedule_rekeys_the_entry_and_keeps_its_schedule() -> None:
 
     written = mock_run.call_args_list[-1].kwargs["input"].splitlines()
     assert written == ["0 */6 * * * someone-elses-job", manager._marker("new"), "0 3 * * * run-new"]
+
+
+def test_set_schedule_does_not_rewrite_an_unchanged_entry() -> None:
+    manager = make_manager()
+    existing = f"{manager._marker('job1')}\n0 3 * * * run-it\n"
+
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = _crontab_result(existing)
+        manager.set_schedule("job1", "0 3 * * *", "run-it")
+
+    assert all(call.kwargs.get("input") is None for call in mock_run.call_args_list)

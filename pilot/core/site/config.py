@@ -19,6 +19,8 @@ PROTECTED_CONFIG_KEYS = frozenset(
         # Pilot pins it on a rename; a site-scoped caller setting it could squat a
         # certificate lineage another site or a future one would need.
         "cert_name",
+        "cloud_server_url",
+        "cloud_settings_embed_url",
         "db_host",
         "db_name",
         "db_password",

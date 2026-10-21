@@ -47,6 +47,22 @@ def test_a_clean_checkout_has_no_source_changes(app: App) -> None:
     assert app.has_source_changes is False
 
 
+def test_a_commit_pinned_behind_a_shallow_clone_s_tip_has_no_source_changes(app: App, tmp_path: Path) -> None:
+    """Pilot clones the branch tip with depth 1, then fetches the pinned commit with depth 1;
+    the two share no history, so the pinned commit reads as ahead of its upstream."""
+    origin = tmp_path / "origin"
+    app.path.rename(origin)
+    pinned = GitRepo(origin).head_sha
+    branch = GitRepo(origin).branch
+    _git(origin, "commit", "-q", "--allow-empty", "-m", "tip")
+    _git(tmp_path, "clone", "-q", "--depth", "1", "--branch", branch, f"file://{origin}", str(app.path))
+    _git(app.path, "fetch", "-q", "--depth", "1", "origin", pinned)
+    _git(app.path, "checkout", "-q", "-B", branch, "FETCH_HEAD")
+
+    assert GitRepo(app.path).has_unpushed_commits is True
+    assert app.has_source_changes is False
+
+
 def test_files_the_asset_build_rewrites_do_not_count(app: App) -> None:
     for name in ("crm/www/crm.html", "crm/public/frontend/index.js", "frontend/components.d.ts"):
         (app.path / name).write_text("rebuilt")

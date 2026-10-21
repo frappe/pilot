@@ -15,9 +15,8 @@ from pilot.managers.processes.local import ProcessDefinition, ProcessManager
 
 
 class UnitGroup(Enum):
-    WORKLOAD = auto()  # web, socketio, workers, redis - what `pilot stop` stops
+    WORKLOAD = auto()  # web, socketio, workers, redis and app processes - what `pilot stop` stops
     ADMIN = auto()  # the control plane - survives `pilot stop`
-    WEB = auto()  # just web, for reload_workers(web_only=True)
 
 
 class ServiceRenderer(ABC):
@@ -33,6 +32,15 @@ class ServiceRenderer(ABC):
 
 class ManagedProcessManager(ProcessManager, ABC):
     """Base lifecycle for production process managers."""
+
+    @property
+    @override
+    def process_definitions(self) -> list[ProcessDefinition]:
+        return self._prod_process_definitions()
+
+    def check_config(self) -> None:
+        """Build the configuration without writing it, so what would fail to write fails before a stop."""
+        self._prod_process_definitions()
 
     @abstractmethod
     def write_config(self) -> None: ...
@@ -91,9 +99,36 @@ class ManagedProcessManager(ProcessManager, ABC):
 
     @override
     def reload_workers(self, web_only: bool = False) -> None:
+        """Restart what runs app code. Socketio restarts only when realtime code changed, so its
+        connections stay open; redis keeps its cache and admin keeps running."""
         self._clear_frappe_cache()
-        if self.is_running():
-            self.apply_unit_action("restart", UnitGroup.WEB if web_only else UnitGroup.WORKLOAD)
+        if not self.is_running():
+            return
+
+        definitions = self.process_definitions
+        realtime = not web_only and self._is_realtime_stale(definitions)
+        self.restart_processes([pd for pd in definitions if self._is_reloaded(pd, web_only, realtime)])
+        if not web_only:
+            self.bench.processes.save_realtime_folders()
+
+    def _is_realtime_stale(self, definitions: list[ProcessDefinition]) -> bool:
+        """Whether realtime code changed after the running socketio started. Lite runs realtime in web."""
+        from pilot.managers.platform import get_process_start_time
+
+        socketio = [pd for pd in definitions if pd.name == "socketio"]
+        if not socketio:
+            return False
+        state = self.get_process_states(socketio).get("socketio")
+        started = get_process_start_time(state.pid) if state and state.pid else None
+        return started is None or self.bench.processes.is_realtime_changed_since(started)
+
+    @staticmethod
+    def _is_reloaded(pd: ProcessDefinition, web_only: bool, realtime: bool) -> bool:
+        if pd.name == "web":
+            return True
+        if web_only or pd.name == "admin" or (pd.app is None and pd.name.startswith("redis")):
+            return False
+        return realtime or pd.name != "socketio"
 
     def start_admin(self) -> None:
         self.bench.logs_path.mkdir(parents=True, exist_ok=True)

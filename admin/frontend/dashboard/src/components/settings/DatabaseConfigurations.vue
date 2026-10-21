@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { Button, Dialog, ErrorMessage, Spinner, Switch, TextInput, Tooltip } from 'frappe-ui'
+import { Alert, Button, Dialog, ErrorMessage, Spinner, Switch, TextInput, Tooltip } from 'frappe-ui'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { databaseApi } from '@/api/database'
-import { openTaskDetailPage } from '@/utils/taskRoute'
 import type { DatabaseConfigurationSnapshot, DatabaseVariable } from '@/types/database'
 import { errorMessage } from '@/utils/error'
+import { openTaskDetailPage } from '@/utils/taskRoute'
 
 const router = useRouter()
 
@@ -18,6 +18,7 @@ const editing = ref<DatabaseVariable | null>(null)
 const draftValue = ref<DatabaseVariable['value']>(null)
 const saving = ref(false)
 const saveError = ref('')
+const isSnapshotIsolation = computed(() => editing.value?.name === 'innodb_snapshot_isolation')
 
 // TextInput takes strings and numbers only, while the draft also holds booleans.
 const draftNumber = computed<string | number>({
@@ -183,79 +184,74 @@ onMounted(load)
   </div>
 
   <template v-else>
-  <ErrorMessage v-if="error" :message="error" class="mb-4" />
+    <ErrorMessage v-if="error" :message="error" class="mb-4" />
 
-  <div
-    v-if="snapshot && !snapshot.readable"
-    class="border border-outline-gray-2 bg-surface-gray-1 px-3 py-2 text-ink-gray-7 text-sm"
-  >
-    {{ snapshot.reason }}
-  </div>
-
-  <template v-else-if="snapshot">
     <div
-      v-if="snapshot.edit_reason"
-      class="mb-4 border border-outline-gray-2 bg-surface-gray-1 px-3 py-2 text-ink-gray-7 text-sm"
+      v-if="snapshot && !snapshot.readable"
+      class="border border-outline-gray-2 bg-surface-gray-1 px-3 py-2 text-ink-gray-7 text-sm"
     >
-      {{ snapshot.edit_reason }}
+      {{ snapshot.reason }}
     </div>
 
-    <TextInput
-      v-model="search"
-      placeholder="Search variables"
-      autocomplete="off"
-      class="mb-5"
-    />
+    <template v-else-if="snapshot">
+      <div
+        v-if="snapshot.edit_reason"
+        class="mb-4 border border-outline-gray-2 bg-surface-gray-1 px-3 py-2 text-ink-gray-7 text-sm"
+      >
+        {{ snapshot.edit_reason }}
+      </div>
 
-    <div v-if="groups.length" class="space-y-7">
-      <section v-for="group in groups" :key="group.name">
-        <h4 class="mb-1 font-medium text-ink-gray-6 text-sm">
-          {{ group.name }}
-        </h4>
+      <TextInput v-model="search" placeholder="Search variables" autocomplete="off" class="mb-5" />
 
-        <div class="divide-y divide-outline-alpha-gray-1">
-          <div
-            v-for="variable in group.variables"
-            :key="variable.name"
-            class="flex sm:flex-row sm:items-center sm:justify-between flex-col gap-3 py-3"
-          >
-            <code class="min-w-0 font-medium text-ink-gray-8 break-all">
-              {{ variable.name }}
-            </code>
+      <div v-if="groups.length" class="space-y-7">
+        <section v-for="group in groups" :key="group.name">
+          <h4 class="mb-1 font-medium text-ink-gray-6 text-sm">
+            {{ group.name }}
+          </h4>
 
-            <div class="flex items-center justify-between sm:justify-end gap-3 sm:ml-6 shrink-0">
-              <span
-                class="max-w-48 text-right text-ink-gray-8 text-sm font-mono break-all"
-                :class="{ 'text-ink-gray-5': !variable.supported }"
-              >
-                {{ formatValue(variable) }}
-              </span>
+          <div class="divide-y divide-outline-alpha-gray-1">
+            <div
+              v-for="variable in group.variables"
+              :key="variable.name"
+              class="flex sm:flex-row sm:items-center sm:justify-between flex-col gap-3 py-3"
+            >
+              <code class="min-w-0 font-medium text-ink-gray-8 break-all">
+                {{ variable.name }}
+              </code>
 
-              <Button
-                v-if="variable.editable"
-                variant="ghost"
-                icon="lucide-pencil"
-                :disabled="saving"
-                aria-label="Edit"
-                @click="openEditor(variable)"
-              />
-              <Tooltip v-else :text="variable.reason || 'Read-only in Pilot'">
+              <div class="flex items-center justify-between sm:justify-end gap-3 sm:ml-6 shrink-0">
                 <span
-                  class="block size-4 text-ink-gray-4 lucide-lock"
-                  role="img"
-                  :aria-label="variable.reason || 'Read-only in Pilot'"
+                  class="max-w-48 text-right text-ink-gray-8 text-sm font-mono break-all"
+                  :class="{ 'text-ink-gray-5': !variable.supported }"
+                >
+                  {{ formatValue(variable) }}
+                </span>
+
+                <Button
+                  v-if="variable.editable"
+                  variant="ghost"
+                  icon="lucide-pencil"
+                  :disabled="saving"
+                  aria-label="Edit"
+                  @click="openEditor(variable)"
                 />
-              </Tooltip>
+                <Tooltip v-else :text="variable.reason || 'Read-only in Pilot'">
+                  <span
+                    class="block size-4 text-ink-gray-4 lucide-lock"
+                    role="img"
+                    :aria-label="variable.reason || 'Read-only in Pilot'"
+                  />
+                </Tooltip>
+              </div>
             </div>
           </div>
-        </div>
-      </section>
-    </div>
+        </section>
+      </div>
 
-    <p v-else class="py-10 text-center text-ink-gray-5 text-sm">
-      No database variables match this search.
-    </p>
-  </template>
+      <p v-else class="py-10 text-center text-ink-gray-5 text-sm">
+        No database variables match this search.
+      </p>
+    </template>
   </template>
 
   <Dialog
@@ -264,6 +260,19 @@ onMounted(load)
     size="sm"
   >
     <div v-if="editing && editor" class="space-y-4">
+      <Alert
+        v-if="isSnapshotIsolation"
+        theme="amber"
+        title="Warning"
+        description="Enabling snapshot isolation can cause concurrent updates and deletes to fail and roll back transactions. Disabling it removes this write-conflict protection. The global change applies to new database connections; existing connections retain their session setting."
+      />
+      <p
+        v-if="editing.name === 'MemoryHigh' || editing.name === 'MemoryMax'"
+        class="text-sm text-ink-gray-6"
+      >
+        Requires MemoryHigh below MemoryMax and projected host memory use at or below 90%. Custom
+        memory settings reset after a RAM change at the host level.
+      </p>
       <div v-if="editor.value_type === 'boolean'" class="flex items-center justify-between gap-4">
         <p class="font-medium text-ink-gray-8">Enabled</p>
         <Switch

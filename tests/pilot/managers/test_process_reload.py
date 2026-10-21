@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import signal
 import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import ANY
+
+import pytest
 
 from pilot.managers.processes.definitions import ProcessDefinition
 from pilot.managers.processes.local import ProcessManager
@@ -206,3 +209,30 @@ assert manager._procs["probe"].wait(timeout=5) == 0
     )
 
     assert output.read_text() == ""
+
+
+def test_spawn_skips_a_noncritical_process_that_cannot_launch(tmp_path: Path, monkeypatch) -> None:
+    manager = _manager(tmp_path, monkeypatch)
+    missing = ProcessDefinition(
+        name="app-x", argv=["true"], log_file=Path("/dev/null"), working_dir=tmp_path / "gone", critical=False
+    )
+
+    manager._spawn(missing)
+
+    assert "app-x" not in manager._procs
+
+
+def test_failed_critical_launch_stops_the_running_processes(tmp_path: Path, monkeypatch) -> None:
+    manager = _manager(tmp_path, monkeypatch)
+    running = subprocess.Popen(["sleep", "30"], start_new_session=True)
+    manager._procs = {"web": running}
+    missing = ProcessDefinition(
+        name="x", argv=["true"], log_file=Path("/dev/null"), working_dir=tmp_path / "gone"
+    )
+    sigterm = signal.getsignal(signal.SIGTERM)
+
+    with pytest.raises(OSError):
+        manager._run_processes([missing])
+
+    assert running.poll() is not None
+    assert signal.getsignal(signal.SIGTERM) is sigterm

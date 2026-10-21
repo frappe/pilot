@@ -15,7 +15,7 @@ from pilot.exceptions import BenchError
 if TYPE_CHECKING:
     from pilot.core.app import App
 
-# Frappe builds every app's page islands here; they belong to the bench, not the frappe archive.
+# Frappe builds every app's page islands here. Its archive holds only Frappe's own.
 PAGE_ISLAND_DIR = Path("frappe/public/dist/page-island")
 PAGE_ISLAND_URL = "/assets/frappe/dist/page-island/"
 _DOWNLOAD_TIMEOUT_SECONDS = 60
@@ -60,6 +60,7 @@ class PrebuiltAssets:
         self.app = app
         # The archive's assets.json entries; None for archives without them.
         self.asset_maps: dict[str, dict[str, str]] | None = None
+        self.has_page_islands = False
 
     def install(self) -> bool:
         """Swap in the assets built for HEAD. False when none are published or the download
@@ -125,12 +126,25 @@ class PrebuiltAssets:
             self._replace(extracted / path, self.app.path / path)
 
     def _carry_over_page_islands(self, extracted: Path, paths: list[Path]) -> None:
+        """Use the archive's islands when only Frappe has pages; else keep the bench's for its rebuild."""
         if self.app.config.name != "frappe" or PAGE_ISLAND_DIR.parent not in paths:
+            return
+        if (extracted / PAGE_ISLAND_DIR).is_dir() and not self.has_other_page_islands:
+            self.has_page_islands = True
             return
         shutil.rmtree(extracted / PAGE_ISLAND_DIR, ignore_errors=True)
         current = self.app.path / PAGE_ISLAND_DIR
         if current.is_dir():
             shutil.copytree(current, extracted / PAGE_ISLAND_DIR, symlinks=True)
+        if self.asset_maps:
+            self.asset_maps = {
+                name: {key: url for key, url in entries.items() if not url.startswith(PAGE_ISLAND_URL)}
+                for name, entries in self.asset_maps.items()
+            }
+
+    @property
+    def has_other_page_islands(self) -> bool:
+        return any(app.has_page_islands for app in self.app.bench.apps() if app.config.name != "frappe")
 
     def _asset_maps(self, manifest: dict) -> dict[str, dict[str, str]] | None:
         names = [name for name in ("assets.json", "assets-rtl.json") if name in manifest]

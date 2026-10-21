@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from pilot.exceptions import BenchError
 
 if TYPE_CHECKING:
+    from pilot.config import AppConfig
     from pilot.core.app import App
     from pilot.core.bench import Bench
     from pilot.core.site import Site
@@ -17,9 +18,6 @@ class BenchInventory:
         self.bench = bench
 
     def app(self, name: str) -> "App":
-        from pilot.config import AppConfig
-        from pilot.core.app import App
-
         app_path = self.bench.apps_path / name
         if not app_path.is_dir():
             app_path = self.bench.apps_path / name.replace("_", "-")
@@ -27,35 +25,32 @@ class BenchInventory:
         if not app_path.is_dir():
             raise BenchError(f"App {name} not found in bench")
 
+        return self.get_app_at(app_path)
+
+    def apps(self) -> list["App"]:
+        if not self.bench.apps_path.is_dir():
+            return []
+        return [
+            self.get_app_at(app_path)
+            for app_path in sorted(self.bench.apps_path.iterdir())
+            if app_path.is_dir() and (app_path / ".git").exists()
+        ]
+
+    def get_app_at(self, app_path: Path) -> "App":
+        """The app cloned at `app_path`, with git state over bench.toml for its branch."""
+        from pilot.config import AppConfig
+        from pilot.core.app import App
+
+        configured = self.get_configured_app(app_path.name)
         return App(
             AppConfig(
                 name=app_path.name,
                 repo=self._git_remote(app_path),
-                branch=self._git_branch(app_path) or self._configured_branch(app_path.name),
+                branch=self._git_branch(app_path) or configured.branch,
+                follow_branch=configured.follow_branch,
             ),
             self.bench,
         )
-
-    def apps(self) -> list["App"]:
-        from pilot.config import AppConfig
-        from pilot.core.app import App
-
-        if not self.bench.apps_path.is_dir():
-            return []
-        result = []
-        for app_path in sorted(self.bench.apps_path.iterdir()):
-            if app_path.is_dir() and (app_path / ".git").exists():
-                result.append(
-                    App(
-                        AppConfig(
-                            name=app_path.name,
-                            repo=self._git_remote(app_path),
-                            branch=self._git_branch(app_path) or self._configured_branch(app_path.name),
-                        ),
-                        self.bench,
-                    )
-                )
-        return result
 
     def registered_apps(self) -> list[str]:
         apps_txt = self.bench.sites_path / "apps.txt"
@@ -130,6 +125,12 @@ class BenchInventory:
 
         return GitRepo(path).branch
 
-    def _configured_branch(self, name: str) -> str:
-        """The branch bench.toml records for this app, used when a pinned checkout leaves it detached."""
-        return next((app.branch for app in self.bench.config.apps if app.name == name), "")
+    def get_configured_app(self, name: str) -> "AppConfig":
+        """The bench.toml entry for this app, or an empty one when it has none. Its branch
+        covers a pinned checkout that leaves HEAD detached."""
+        from pilot.config import AppConfig
+
+        return next(
+            (app for app in self.bench.config.apps if app.name == name),
+            AppConfig(name=name, repo="", branch=""),
+        )

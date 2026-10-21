@@ -1,8 +1,22 @@
-export const GENERAL_SECTIONS = [
+export interface SettingsSection {
+  id: string
+  label: string
+  description?: string
+  /** A screen opened from another section, so Back returns there. Hidden from section lists. */
+  parent?: string
+}
+
+export const GENERAL_SECTIONS: SettingsSection[] = [
   {
     id: 'github',
     label: 'Git settings',
     description: 'Connect GitHub for private installs and repo browsing.',
+  },
+  {
+    id: 'github-token',
+    label: 'Personal access token',
+    description: 'Store your own GitHub token on this server.',
+    parent: 'github',
   },
   {
     id: 's3-bucket',
@@ -31,7 +45,7 @@ export const GENERAL_SECTIONS = [
   },
 ]
 
-export const DATABASE_SECTIONS = [
+export const DATABASE_SECTIONS: SettingsSection[] = [
   {
     id: 'configurations',
     label: 'Database configurations',
@@ -43,7 +57,7 @@ export const DATABASE_SECTIONS = [
   },
 ]
 
-export const SECURITY_SECTIONS = [
+export const SECURITY_SECTIONS: SettingsSection[] = [
   {
     id: 'password',
     label: 'Change password',

@@ -1,5 +1,7 @@
 from datetime import date, timedelta
 
+import pytest
+
 from pilot.config import BackupConfig
 from pilot.core.site.retention import BackupRetentionPolicy
 
@@ -72,3 +74,40 @@ def test_gfs_yearly_tier_keeps_one_run_per_year() -> None:
 def test_backup_defaults_are_gfs() -> None:
     config = BackupConfig()
     assert config.scheme == "gfs"
+
+
+@pytest.mark.parametrize(
+    ("today", "timestamp", "kept"),
+    [
+        (date(2026, 10, 18), "20261011_000000", True),
+        (date(2026, 10, 18), "20261010_235959", False),
+        (date(2026, 10, 18), "20260920_060000", True),
+        (date(2026, 10, 19), "20260920_060000", False),
+        (date(2026, 10, 2), "20251001_000000", True),
+        (date(2026, 10, 3), "20251001_000000", False),
+        (date(2026, 1, 1), "20160101_000000", True),
+        (date(2026, 1, 2), "20160101_000000", False),
+    ],
+)
+def test_calendar_gfs_window_boundaries(today: date, timestamp: str, kept: bool) -> None:
+    newest = today.strftime("%Y%m%d_230000")
+    policy = BackupRetentionPolicy(BackupConfig(keep_weekly=4, keep_yearly=10, calendar_rotation=True))
+
+    deleted = policy.select_deletions([timestamp, newest], today=today)
+
+    assert (timestamp not in deleted) is kept
+    assert newest not in deleted
+
+
+def test_calendar_gfs_keeps_all_runs_on_an_anchor_day() -> None:
+    runs = ["20260920_000000", "20260920_060000", "20260920_120000", "20261018_000000"]
+    policy = BackupRetentionPolicy(BackupConfig(keep_weekly=4, keep_yearly=10, calendar_rotation=True))
+
+    assert policy.select_deletions(runs, today=date(2026, 10, 18)) == []
+
+
+def test_calendar_gfs_clears_expired_history_but_keeps_the_newest() -> None:
+    runs = ["20140101_000000", "20150101_000000", "20160101_000000"]
+    policy = BackupRetentionPolicy(BackupConfig(keep_weekly=4, keep_yearly=10, calendar_rotation=True))
+
+    assert set(policy.select_deletions(runs, today=date(2026, 10, 18))) == set(runs[:2])

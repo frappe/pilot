@@ -161,32 +161,64 @@ def test_merging_an_app_s_entries_drops_its_stale_keys(tmp_path: Path) -> None:
     }
 
 
-def test_a_frappe_archive_keeps_the_bench_s_page_islands(tmp_path: Path, release: Path) -> None:
-    """Frappe builds every app's page islands into its own dist; the archive cannot hold them."""
+def _frappe_with_islands(tmp_path: Path, release: Path, other_app_has_islands: bool) -> SimpleNamespace:
+    """A frappe archive with Frappe's own page island, on a bench whose islands include crm's."""
     app = _app(tmp_path)
     app.config.name = "frappe"
+    other_app = SimpleNamespace(config=SimpleNamespace(name="crm"), has_page_islands=other_app_has_islands)
+    app.bench = SimpleNamespace(apps=lambda: [app, other_app])
     islands = app.path / "frappe" / "public" / "dist" / "page-island"
     islands.mkdir(parents=True)
     (islands / "crm.page.board.js").write_text("crm island")
     name = f"frappe-{app.installed_hash}.tar.gz"
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
-        manifest = {"app": "frappe", "commit": app.installed_hash, "paths": ["frappe/public/dist"]}
+        manifest = {
+            "app": "frappe",
+            "commit": app.installed_hash,
+            "paths": ["frappe/public/dist"],
+            "assets.json": {
+                "desk.bundle.js": "/assets/frappe/dist/js/desk.bundle.CCCCCCCC.js",
+                "frappe.page.setup.js": "/assets/frappe/dist/page-island/setup.js",
+            },
+        }
         for member, content in {
             "manifest.json": json.dumps(manifest),
             "frappe/public/dist/js/desk.bundle.CCCCCCCC.js": "desk",
-            "frappe/public/dist/page-island/stale.js": "from CI",
+            "frappe/public/dist/page-island/setup.js": "frappe island",
         }.items():
             info = tarfile.TarInfo(member)
             info.size = len(content)
             archive.addfile(info, io.BytesIO(content.encode()))
     (release / name).write_bytes(buffer.getvalue())
     (release / f"{name}.sha256").write_text(f"{hashlib.sha256(buffer.getvalue()).hexdigest()}  {name}\n")
+    return app
 
-    assert PrebuiltAssets(app).install() is True
 
+def test_a_frappe_archive_keeps_the_bench_s_page_islands_for_other_apps(tmp_path: Path, release: Path) -> None:
+    """Frappe builds every app's page islands into one dist; the bench rebuilds them after."""
+    app = _frappe_with_islands(tmp_path, release, other_app_has_islands=True)
+    prebuilt = PrebuiltAssets(app)
+
+    assert prebuilt.install() is True
+
+    islands = app.path / "frappe" / "public" / "dist" / "page-island"
     assert sorted(path.name for path in islands.iterdir()) == ["crm.page.board.js"]
     assert (app.path / "frappe" / "public" / "dist" / "js" / "desk.bundle.CCCCCCCC.js").exists()
+    assert prebuilt.has_page_islands is False
+    assert prebuilt.asset_maps == {"assets.json": {"desk.bundle.js": "/assets/frappe/dist/js/desk.bundle.CCCCCCCC.js"}}
+
+
+def test_a_frappe_archive_s_page_islands_serve_a_bench_with_only_frappe_pages(tmp_path: Path, release: Path) -> None:
+    app = _frappe_with_islands(tmp_path, release, other_app_has_islands=False)
+    prebuilt = PrebuiltAssets(app)
+
+    assert prebuilt.install() is True
+
+    islands = app.path / "frappe" / "public" / "dist" / "page-island"
+    assert sorted(path.name for path in islands.iterdir()) == ["setup.js"]
+    assert prebuilt.has_page_islands is True
+    assert "frappe.page.setup.js" in prebuilt.asset_maps["assets.json"]
 
 
 def test_replacing_frappe_s_entries_keeps_page_island_entries(tmp_path: Path) -> None:

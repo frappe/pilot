@@ -106,6 +106,10 @@ class GitRepo:
     def commit_subject(self, ref: str = "HEAD") -> str:
         return self._text("log", "-1", "--format=%s", ref)
 
+    def get_commit_time(self, ref: str = "HEAD") -> int:
+        """Committer time of `ref` in Unix seconds, or 0 when it is missing."""
+        return int(self._text("log", "-1", "--format=%ct", ref) or 0)
+
     @property
     def has_local_changes(self) -> bool:
         """True if the tree has uncommitted edits or commits not yet on upstream."""

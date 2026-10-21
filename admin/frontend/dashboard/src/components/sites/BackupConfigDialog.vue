@@ -105,7 +105,7 @@ const open = async () => {
   show.value = true
   try {
     const data = await sitesApi.backups.schedule.get(props.siteName)
-    isEnabled.value = !!data.schedule
+    isEnabled.value = !!data.schedule || !!data.retention?.calendar_rotation
     applySchedule(data.schedule)
     applyRetention(data.retention)
   } catch (e) {

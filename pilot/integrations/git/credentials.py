@@ -1,4 +1,4 @@
-"""Reads/writes provider PATs in .bench.git.info."""
+"""Reads/writes provider PATs, or the GitHub App marker, in .bench.git.info."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from pathlib import Path
 from pilot.utils import write_private_text
 
 CREDENTIALS_FILENAME = ".bench.git.info"
+GITHUB_APP_AUTH_TYPE = "github_app"
 
 
 class GitCredentialStore:
@@ -27,6 +28,17 @@ class GitCredentialStore:
             "token": token,
             "username": username or existing.get("username", ""),
             "token_expires_at": expires_at or existing.get("token_expires_at"),
+            "is_token_valid": True,
+        }
+        self._write(record)
+        return record
+
+    def save_github_app(self, account: str) -> dict:
+        """Mark Central's GitHub App grant in place of a token."""
+        record = {
+            "provider": "github",
+            "auth_type": GITHUB_APP_AUTH_TYPE,
+            "username": account,
             "is_token_valid": True,
         }
         self._write(record)

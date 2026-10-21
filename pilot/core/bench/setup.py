@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from pilot.core.bench.admin_domain import ProductionAdminDomain
 from pilot.core.bench.telemetry import apply_credential as apply_telemetry_credential
@@ -10,6 +10,7 @@ from pilot.exceptions import BenchError
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
+    from pilot.managers.processes.base import ManagedProcessManager
 
 
 class ProductionSetup:
@@ -44,15 +45,18 @@ class ProductionSetup:
         try:
             self.bench.config.validate()
             old_pm = self._installed_manager()
+            # The new manager's configuration must build before the old manager stops the bench.
+            self._target_manager().check_config()
             self._write_dns_multitenancy()
+            # Free the old manager's ports before the new one binds them: systemd binds
+            # the admin socket during setup, before the workload starts.
+            self._migrate_from(old_pm, on_progress)
             pm = self.bench.config.production.process_manager
             if pm == "systemd":
                 self._setup_systemd()
             else:
                 self._setup_supervisor()
 
-            # Free the old manager's ports before the new one binds them.
-            self._migrate_from(old_pm, on_progress)
             self._start_workload()
             self.bench.setup_nginx(on_progress=on_progress)
             self._setup_letsencrypt_if_needed()
@@ -117,15 +121,24 @@ class ProductionSetup:
                 "A contact email is required with --tls for Let's Encrypt. Pass --letsencrypt-email <email>, or set letsencrypt.email in common_config.toml."
             )
 
+    def _target_manager(self) -> "ManagedProcessManager":
+        from pilot.managers.processes.local import ProcessManager
+
+        return cast("ManagedProcessManager", ProcessManager.for_bench(self.bench))
+
     def _installed_manager(self) -> str | None:
-        """Return the process manager already deployed on disk, if any."""
+        """Return the process manager that runs the bench, else the one deployed on disk.
+        A switch that failed halfway leaves both configured, and the running one must be torn down."""
         from pilot.managers.processes.supervisor import SupervisorProcessManager
         from pilot.managers.processes.systemd import SystemdProcessManager
 
-        if SystemdProcessManager(self.bench).is_configured():
-            return "systemd"
-        if SupervisorProcessManager(self.bench).is_configured():
-            return "supervisor"
+        managers = {"systemd": SystemdProcessManager(self.bench), "supervisor": SupervisorProcessManager(self.bench)}
+        for name, manager in managers.items():
+            if manager.is_running():
+                return name
+        for name, manager in managers.items():
+            if manager.is_configured():
+                return name
         return None
 
     def _migrate_from(self, old_pm: str | None, on_progress: Callable[[str], None]) -> None:

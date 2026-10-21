@@ -14,15 +14,19 @@ from pilot.integrations.git.base import (
     repo_host,
     without_credentials,
 )
-from pilot.integrations.git.credentials import CREDENTIALS_FILENAME, GitCredentialStore
+from pilot.integrations.git.credentials import CREDENTIALS_FILENAME, GITHUB_APP_AUTH_TYPE, GitCredentialStore
 from pilot.integrations.git.github import GitHubProvider, parse_github_owner_repo
+from pilot.integrations.git.github_app import GitHubAppGrant, GitHubAppTokens
 
 __all__ = [
     "CREDENTIALS_FILENAME",
+    "GITHUB_APP_AUTH_TYPE",
     "TOKEN_HELP_URLS",
     "BranchNotFoundError",
     "GitAuthError",
     "GitCredentialStore",
+    "GitHubAppGrant",
+    "GitHubAppTokens",
     "GitHubProvider",
     "GitProvider",
     "GitProviderError",
@@ -33,6 +37,7 @@ __all__ = [
     "provider_for_repo",
     "repo_host",
     "resolve_app_name_from_repo",
+    "token_for",
     "without_credentials",
 ]
 
@@ -62,10 +67,7 @@ def resolve_app_name_from_repo(bench_root: Path, repo_url: str, branch: str = ""
     """Return pyproject project name/description from a repo."""
     import tomllib
 
-    record = GitCredentialStore(bench_root).load()
-    token = record.get("token", "") if record else ""
-
-    provider = provider_for_repo(repo_url, token)
+    provider = provider_for_repo(repo_url, token_for(bench_root, repo_url))
     if provider is None:
         raise GitProviderError(
             f"No supported git provider found for {repo_url!r}. "
@@ -103,12 +105,26 @@ def resolve_app_name_from_repo(bench_root: Path, repo_url: str, branch: str = ""
     return {"name": name, "description": description}
 
 
+def token_for(bench_root: Path, repo_url: str) -> str:
+    """The stored PAT, or a Central-minted token under a GitHub App grant. "" when none applies."""
+    record = GitCredentialStore(bench_root).load()
+    provider = provider_for_repo(repo_url)
+    if not record or provider is None or provider.name != record.get("provider"):
+        return ""
+    if record.get("auth_type") != GITHUB_APP_AUTH_TYPE:
+        return record.get("token", "")
+
+    try:
+        owner, name = parse_github_owner_repo(repo_url)
+    except GitProviderError:
+        return ""
+    return GitHubAppTokens.get(f"{owner}/{name}")
+
+
 def auth_config_for(bench_root: Path, repo_url: str) -> dict[str, str]:
     """Git config authenticating this repo when stored credentials apply to its host."""
-    record = GitCredentialStore(bench_root).load()
-    if not record or not record.get("token"):
-        return {}
-    provider = provider_for_repo(repo_url, record["token"])
-    if provider is None or provider.name != record.get("provider"):
+    token = token_for(bench_root, repo_url)
+    provider = provider_for_repo(repo_url, token)
+    if not token or provider is None:
         return {}
     return provider.auth_config(repo_url)

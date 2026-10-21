@@ -44,6 +44,10 @@ EnvironmentFile={conf_dir}/token.env
 ExecStart={fluent_bit} -c {conf_dir}/fluent-bit.conf
 Restart=on-failure
 RestartSec=5s
+# Fluent Bit logs every refused request. Cap what reaches the journal, and
+# through it syslog, so a refusing endpoint cannot fill the disk.
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=200
 
 [Install]
 WantedBy=default.target
@@ -95,15 +99,16 @@ class LogsConfigurator(SystemdUserMixin):
         return result.returncode == 0
 
     def install(self, config: TelemetryConfig) -> None:
+        """Write the config and unit. A running shipper is restarted, as `enable --now` would not."""
         self._write_configs(config)
-        if user_service_installed(self.unit_name):
-            self._restart_service()
-            return
+        was_installed = user_service_installed(self.unit_name)
         install_user_service(
             unit_dir=self.conf_dir,
             unit_name=self.unit_name,
             unit_text=self._render_unit(),
         )
+        if was_installed:
+            self._restart_service()
 
     def remove(self) -> None:
         env = self._systemctl_env()
@@ -135,10 +140,11 @@ class LogsConfigurator(SystemdUserMixin):
             "parsers.conf": _PARSERS_CONF,
             "pilot.lua": _PILOT_LUA,
             "token.env": f"DATUM_LOG_TOKEN={config.token}",
+            self.unit_name: self._render_unit(),
         }
 
     def _read_files(self) -> dict[str, str]:
-        names = ("fluent-bit.conf", "parsers.conf", "pilot.lua", "token.env")
+        names = ("fluent-bit.conf", "parsers.conf", "pilot.lua", "token.env", self.unit_name)
         return {name: path.read_text() for name in names if (path := self.conf_dir / name).exists()}
 
     def _render_unit(self) -> str:

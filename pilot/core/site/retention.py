@@ -1,6 +1,6 @@
 """Decide which backup runs to prune. Pure logic, no I/O."""
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pilot.config import SCHEME_FIFO, BackupConfig
 
@@ -13,16 +13,36 @@ class BackupRetentionPolicy:
     def __init__(self, config: BackupConfig) -> None:
         self.config = config
 
-    def select_deletions(self, timestamps: list[str]) -> list[str]:
+    def select_deletions(self, timestamps: list[str], today: date | None = None) -> list[str]:
         runs = self._parse(timestamps)
         if len(runs) <= 1:
             return []
-        keep = self._keep_fifo(runs) if self.config.scheme == SCHEME_FIFO else self._keep_gfs(runs)
+        if self.config.scheme == SCHEME_FIFO:
+            keep = self._keep_fifo(runs)
+        elif self.config.calendar_rotation:
+            keep = self._keep_calendar_gfs(runs, today or date.today())
+        else:
+            keep = self._keep_gfs(runs)
         keep.add(runs[0][1])  # newest run is never pruned
         return [ts for _, ts in runs if ts not in keep]
 
     def _keep_fifo(self, runs: list[tuple[datetime, str]]) -> set[str]:
         return {ts for _, ts in runs[: self.config.keep_last]}
+
+    def _keep_calendar_gfs(self, runs: list[tuple[datetime, str]], today: date) -> set[str]:
+        """Keep every run on an anchor day while its calendar window is open."""
+        keep = set()
+        for when, timestamp in runs:
+            age = (today - when.date()).days
+            tiers = (
+                (7, True),
+                (28, when.weekday() == 6),
+                (366, when.day == 1),
+                (3653, when.month == 1 and when.day == 1),
+            )
+            if any(anchor and age <= window for window, anchor in tiers):
+                keep.add(timestamp)
+        return keep
 
     def _keep_gfs(self, runs: list[tuple[datetime, str]]) -> set[str]:
         config = self.config

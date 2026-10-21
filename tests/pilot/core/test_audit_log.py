@@ -1,5 +1,5 @@
 import stat
-from datetime import UTC
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from pilot.core.bench.audit_log import AuditLog
@@ -29,6 +29,19 @@ def test_filter_by_type_status_and_site(tmp_path) -> None:
     assert len(log.entries(entry_type="backup", status="failed")) == 1
     assert len(log.entries(site="a")) == 3
     assert log.entries(limit=1)[0]["type"] == "activity"
+
+
+def test_since_limits_polling_to_recent_history_and_includes_the_boundary(tmp_path) -> None:
+    log = AuditLog(_bench(tmp_path))
+    for day in (15, 16, 17):
+        log.append("backup", {"site": "a", "logged_at": f"2026-10-{day:02d}T00:00:00+00:00"})
+
+    records = log.entries(entry_type="backup", site="a", since=datetime(2026, 10, 16, tzinfo=UTC))
+
+    assert [record["logged_at"] for record in records] == [
+        "2026-10-17T00:00:00+00:00", "2026-10-16T00:00:00+00:00",
+    ]
+    assert len(log.entries()) == 3
 
 
 def test_filter_by_jti_matches_subject_or_actor(tmp_path) -> None:

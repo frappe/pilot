@@ -71,6 +71,25 @@ class CentralClient:
             },
         )
 
+    def get_github_status(self) -> dict[str, Any]:
+        return self.forward("central.api.integrations.github.status", "GET")
+
+    def start_github_connection(self, return_url: str) -> str:
+        return self.forward(
+            "central.api.integrations.github.start_connection", "POST", {"return_url": return_url}
+        )["url"]
+
+    def get_github_repositories(self) -> list[dict[str, Any]]:
+        return self.forward("central.api.integrations.github.repositories", "GET")
+
+    def get_github_repository_token(self, repository: str) -> dict[str, str]:
+        return self.forward(
+            "central.api.integrations.github.repository_token", "POST", {"repository": repository}
+        )
+
+    def disconnect_github(self) -> None:
+        self.forward("central.api.integrations.github.disconnect", "POST", {})
+
     def forward(self, method_path: str, http_method: str, data: dict[str, Any] | None = None) -> Any:
         """Call a Central pilot-API method, returning its result with the
         ``{"message": ...}`` envelope unwrapped. The caller decides what's reachable."""

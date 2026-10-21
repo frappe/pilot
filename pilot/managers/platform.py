@@ -1,5 +1,6 @@
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -37,6 +38,20 @@ def detect() -> Platform:
 
 def is_macos() -> bool:
     return detect() == Platform.MACOS
+
+
+def get_process_start_time(pid: int) -> float | None:
+    """When the process started, in epoch seconds, from /proc. None when unreadable."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+        boot_time = re.search(r"^btime (\d+)$", Path("/proc/stat").read_text(), re.MULTILINE)
+    except OSError:
+        return None
+    # The command name, the second field, may hold spaces; the start time is the 20th field after it.
+    fields = re.search(r"\) (.*)$", stat)
+    if not boot_time or not fields:
+        return None
+    return int(boot_time[1]) + int(fields[1].split()[19]) / os.sysconf("SC_CLK_TCK")
 
 
 def is_linux() -> bool:

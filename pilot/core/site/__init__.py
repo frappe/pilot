@@ -139,6 +139,9 @@ class Site:
         from pilot.core.site.restore import SiteRestore
 
         SiteRestore(self).restore(run, parts, on_progress, skip_failing_patches)
+        # The restored database decides which apps the site runs.
+        if "database" in parts:
+            self.bench.processes.apply()
 
     def set_config_values(self, values: dict) -> None:
         """Write keys into site_config.json under its lock."""
@@ -154,7 +157,11 @@ class Site:
     def install_app(self, app: "App") -> None:
         from pilot.core.site.apps import SiteApps
 
-        SiteApps(self).install_app(app)
+        apps = SiteApps(self)
+        apps.install_app(app)
+        # Frappe installs the required apps along with it.
+        if self.bench.processes.has_declarations(apps.get_dependency_closure(app)):
+            self.bench.processes.apply()
 
     def install_app_with_dependencies(self, app: "App") -> list["App"]:
         """Install the app and return dependencies cascaded by Frappe."""
@@ -165,17 +172,27 @@ class Site:
     def uninstall_app(self, app: "App", force: bool = False) -> None:
         from pilot.core.site.apps import SiteApps
 
+        # Checked first: the app may leave the bench along with its declarations.
+        has_processes = self.bench.processes.has_declarations([app.config.name])
         SiteApps(self).uninstall_app(app, force)
+        if has_processes:
+            self.bench.processes.apply()
 
     def enable_app(self, app: "App") -> None:
         from pilot.core.site.apps import SiteApps
 
-        SiteApps(self).enable_app(app)
+        apps = SiteApps(self)
+        apps.enable_app(app)
+        # The required apps come back with it.
+        if self.bench.processes.has_declarations(apps.get_dependency_closure(app)):
+            self.bench.processes.apply()
 
     def disable_app(self, app: "App") -> None:
         from pilot.core.site.apps import SiteApps
 
         SiteApps(self).disable_app(app)
+        if self.bench.processes.has_declarations([app.config.name]):
+            self.bench.processes.apply()
 
     def disabled_apps(self) -> list[str]:
         from pilot.core.site.apps import SiteApps
@@ -258,6 +275,7 @@ class Site:
         from pilot.managers.nginx import NginxManager
 
         provider_domains = self._provider_domains()
+        has_processes = self.bench.processes.has_declarations(self.active_apps())
         cmd = [*self.bench.frappe_call, "frappe", "drop-site", self.config.name]
         if no_backup:
             cmd.append("--no-backup")
@@ -278,6 +296,8 @@ class Site:
         self._release_domains(provider_domains)
         on_progress(f"\nSite '{self.config.name}' dropped.")
         NginxManager(self.bench).reload_for_site_change()
+        if has_processes:
+            self.bench.processes.apply()
 
     def rename_to(
         self,
@@ -316,11 +336,15 @@ class Site:
         admin_password: str,
         db_type: str | None = None,
         on_progress: Callable[[str], None] = lambda message: None,
+        *,
+        schedule_backups: bool = True,
     ) -> "Site":
         """Create a site, install apps, reload nginx, and issue TLS if needed."""
         from pilot.core.site.provisioning import SiteProvisioner
 
-        return SiteProvisioner(bench, name, apps, admin_password, db_type).provision(on_progress)
+        return SiteProvisioner(bench, name, apps, admin_password, db_type).provision(
+            on_progress, schedule_backups=schedule_backups
+        )
 
     def set_ssl(self, enabled: bool) -> None:
         set_site_ssl_flag(self.bench.sites_path, self.config.name, enabled)

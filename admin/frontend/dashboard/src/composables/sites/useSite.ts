@@ -4,7 +4,7 @@ import { sitesApi } from '@/api/sites'
 import type { SiteApp } from '@/types/siteApps'
 import type { Backup } from '@/types/siteBackups'
 import type { SiteDetail } from '@/types/sites'
-import { openSiteLogin } from '@/utils/siteLogin'
+import { openSiteLink } from '@/utils/siteLogin'
 import { errorMessage } from '@/utils/error'
 
 type SiteWithConfig = SiteDetail & { site_config: Record<string, unknown> }
@@ -140,7 +140,7 @@ export const useSite = (name: string) => {
   }
 
   const login = async (options: SiteLoginOptions = {}) => {
-    return openSiteLogin(() => sitesApi.loginLink(name), options)
+    return openSiteLink(() => sitesApi.loginLink(name), options)
   }
 
   const backup = async () => {

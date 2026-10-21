@@ -15,11 +15,21 @@ from typing import TYPE_CHECKING
 from pilot.exceptions import BenchError
 from pilot.managers.environment import AdminEnvManager
 from pilot.managers.gunicorn import GunicornManager
-from pilot.managers.processes.definitions import ProcessDefinition, ProcessDefinitionBuilder
+from pilot.managers.processes.definitions import ProcessDefinition, ProcessDefinitionBuilder, ProcessState
 from pilot.utils import cli_root
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
+
+
+def _live_pid(pid_file: Path) -> int | None:
+    """The pid in the file while that process is alive."""
+    try:
+        pid = int(pid_file.read_text().strip())
+        os.kill(pid, 0)
+    except (ValueError, OSError):
+        return None
+    return pid
 
 
 def _tcp_port_open(port: int, host: str = "127.0.0.1") -> bool:
@@ -125,7 +135,7 @@ class ProcessManager:
         AdminEnvManager(cli_root()).ensure()
         self._ensure_redis_config()
         self._ensure_gunicorn_config()
-        lines = [f"{pd.name}: {shlex.join(pd.argv)}\n" for pd in self._process_definitions()]
+        lines = [f"{pd.name}: {shlex.join(pd.argv_with_hooks)}\n" for pd in self._process_definitions()]
         self.procfile_path.write_text("".join(lines))
 
     def _ensure_gunicorn_config(self) -> None:
@@ -175,13 +185,7 @@ class ProcessManager:
                 os.kill(pid, signal.SIGTERM)
 
     def is_running(self) -> bool:
-        if not self.pid_file.exists():
-            return False
-        try:
-            os.kill(int(self.pid_file.read_text().strip()), 0)
-            return True
-        except (ValueError, ProcessLookupError, PermissionError, OSError):
-            return False
+        return _live_pid(self.pid_file) is not None
 
     def stop_admin(self) -> None:
         pass
@@ -197,6 +201,17 @@ class ProcessManager:
 
     def is_admin_running(self) -> bool:
         return _tcp_port_open(self.bench.config.admin.port)
+
+    def get_process_states(self, definitions: list[ProcessDefinition]) -> dict[str, ProcessState]:
+        """Read from the pid files the dev runner writes for each process."""
+        states = {}
+        for definition in definitions:
+            pid = _live_pid(self.bench.pids_path / f"{definition.name}.pid")
+            states[definition.name] = ProcessState("running", pid) if pid else ProcessState("stopped")
+        return states
+
+    def restart_processes(self, definitions: list[ProcessDefinition]) -> None:
+        raise BenchError("Restarting one process needs a production bench; restart `pilot start` instead.")
 
     def reload_workers(self, web_only: bool = False) -> None:
         """Ask the running dev supervisor to restart its workload processes.
@@ -241,15 +256,21 @@ class ProcessManager:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
 
     def _spawn(self, pd: ProcessDefinition) -> None:
-        proc = subprocess.Popen(
-            pd.argv,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            preexec_fn=os.setsid,
-            cwd=str(pd.working_dir) if pd.working_dir else None,
-            env={**os.environ, **pd.env} if pd.env else None,
-        )
+        try:
+            proc = subprocess.Popen(
+                pd.argv_with_hooks,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                preexec_fn=os.setsid,
+                cwd=str(pd.working_dir) if pd.working_dir else None,
+                env={**os.environ, **pd.env} if pd.env else None,
+            )
+        except OSError as exc:
+            if pd.critical:
+                raise
+            print(f"[{pd.name}] failed to start: {exc}; continuing without it", file=sys.stderr)
+            return
         self._procs[pd.name] = proc
         (self.bench.pids_path / f"{pd.name}.pid").write_text(str(proc.pid))
         threading.Thread(target=self._stream, args=(pd.name, proc, self._color(pd.name)), daemon=True).start()
@@ -269,29 +290,31 @@ class ProcessManager:
         signal.signal(signal.SIGINT, _stop)
 
         self.reload_request_file.unlink(missing_ok=True)
-        for pd in defs:
-            self._spawn(pd)
-
         defs_by_name = {pd.name: pd for pd in defs}
         is_critical = {pd.name: pd.critical for pd in defs}
-        while not self._stopping:
-            for name, proc in list(self._procs.items()):
-                if proc.poll() is None:
-                    continue
-                if is_critical[name]:
-                    print(f"[{name}] exited with code {proc.returncode}", file=sys.stderr)
-                    self._stopping = True
-                    break
-                print(f"[{name}] exited with code {proc.returncode}; continuing without it", file=sys.stderr)
-                del self._procs[name]
-                (self.bench.pids_path / f"{name}.pid").unlink(missing_ok=True)
-            if not self._stopping:
-                self._apply_reload_request(defs_by_name)
-                time.sleep(0.5)
+        # finally also stops what already started when a critical process cannot launch.
+        try:
+            for pd in defs:
+                self._spawn(pd)
 
-        self._stop_all()
-        signal.signal(signal.SIGTERM, original_sigterm)
-        signal.signal(signal.SIGINT, original_sigint)
+            while not self._stopping:
+                for name, proc in list(self._procs.items()):
+                    if proc.poll() is None:
+                        continue
+                    if is_critical[name]:
+                        print(f"[{name}] exited with code {proc.returncode}", file=sys.stderr)
+                        self._stopping = True
+                        break
+                    print(f"[{name}] exited with code {proc.returncode}; continuing without it", file=sys.stderr)
+                    del self._procs[name]
+                    (self.bench.pids_path / f"{name}.pid").unlink(missing_ok=True)
+                if not self._stopping:
+                    self._apply_reload_request(defs_by_name)
+                    time.sleep(0.5)
+        finally:
+            self._stop_all()
+            signal.signal(signal.SIGTERM, original_sigterm)
+            signal.signal(signal.SIGINT, original_sigint)
 
     def _stream(self, name: str, proc: subprocess.Popen, color: str) -> None:
         assert proc.stdout is not None
@@ -324,6 +347,11 @@ class ProcessManager:
     def _cleanup_proc_pid_files(self) -> None:
         for name in self._procs:
             (self.bench.pids_path / f"{name}.pid").unlink(missing_ok=True)
+
+    @property
+    def process_definitions(self) -> list[ProcessDefinition]:
+        """The processes this manager runs."""
+        return self._process_definitions()
 
     def _prod_process_definitions(self) -> list[ProcessDefinition]:
         return self._definitions.prod_process_definitions()

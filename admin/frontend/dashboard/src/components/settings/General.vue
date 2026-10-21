@@ -8,13 +8,14 @@ import Mail from '@/components/settings/Mail.vue'
 import Notifications from '@/components/settings/Notifications.vue'
 import S3Bucket from '@/components/settings/S3Bucket.vue'
 import SettingsRow from '@/components/settings/SettingsRow.vue'
-import { GENERAL_SECTIONS as sections } from '@/components/settings/sections'
+import { GENERAL_SECTIONS } from '@/components/settings/sections'
 import Version from '@/components/settings/Version.vue'
 import Workers from '@/components/settings/Workers.vue'
 import { useSession } from '@/composables/auth/useSession'
 import { errorMessage } from '@/utils/error'
 
 const openSection = defineModel<{ id: string } | null>('openSection')
+const sections = GENERAL_SECTIONS.filter((section) => !section.parent)
 
 const { session } = useSession()
 
@@ -73,7 +74,10 @@ onMounted(async () => {
     <Spinner size="lg" class="text-ink-gray-4" />
   </div>
 
-  <Git v-else-if="openSection?.id === 'github'" />
+  <Git
+    v-else-if="openSection?.id === 'github' || openSection?.id === 'github-token'"
+    v-model:open-section="openSection"
+  />
   <S3Bucket v-else-if="openSection?.id === 's3-bucket'" />
   <LLM v-else-if="openSection?.id === 'llm'" />
   <Notifications v-else-if="openSection?.id === 'notifications'" />

@@ -1,5 +1,11 @@
 [SERVICE]
-    Flush                     1
+    # Datum allows 12 requests a minute per token. Every line reaches the
+    # output through one emitter (see rewrite_tag below), so a flush sends one
+    # chunk: 2 a minute, each sent at most 1 + Retry_Limit (3) times, is at
+    # most 8 a minute even while Datum refuses every one.
+    Flush                     30
+    scheduler.base            10
+    scheduler.cap             60
     Log_Level                 info
     Parsers_File              {{ conf_dir }}/parsers.conf
 
@@ -193,12 +199,29 @@
 
 
 # ============================================================
+# Funnel every input into one stream
+#
+# Each input keeps its own chunks, and the output sends each
+# chunk as its own request. Re-emitting every normalized line
+# under one tag gives the output a single chunk stream.
+# ============================================================
+
+[FILTER]
+    Name                  rewrite_tag
+    Match                 pilot.*
+    Rule                  $product ^pilot$ datum.logs false
+    Emitter_Name          datum
+    Emitter_Storage.type  filesystem
+    Emitter_Mem_Buf_Limit 10M
+
+
+# ============================================================
 # Datum
 # ============================================================
 
 [OUTPUT]
     Name          http
-    Match         pilot.*
+    Match         datum.logs
 
     Host          {{ host }}
     Port          {{ port }}
@@ -210,8 +233,12 @@
 
     Header        Authorization Bearer ${DATUM_LOG_TOKEN}
 
-    Body_Key      body
-    Headers_Key   headers
+    # One JSON array of Datum log lines per chunk.
+    Format        json
+    json_date_key false
 
-    Workers       2
-    Retry_Limit   False
+    Workers       1
+    # A refused chunk is dropped after a few tries rather than retried
+    # forever, and the backlog on disk is bounded.
+    Retry_Limit   3
+    storage.total_limit_size 100M
