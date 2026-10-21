@@ -284,9 +284,6 @@ class App:
     def update(self, pin: RevisionPin | None = None) -> None:
         self._repository.update(pin)
 
-    def create_worktree(self, path: Path, commit: str, branch: str) -> None:
-        self._repository.create_worktree(path, commit, branch)
-
     def switch_branch(self, branch: str) -> None:
         self._repository.switch_branch(branch)
 

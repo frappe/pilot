@@ -14,29 +14,6 @@ class BenchArtifacts:
     def __init__(self, root: Path) -> None:
         self.root = root.resolve()
 
-    @staticmethod
-    def get_paths(bench) -> list[str]:
-        paths = ["sites/assets"]
-        for app in bench.apps():
-            prefix = f"apps/{app.config.name}"
-            paths.extend(
-                f"{prefix}/{suffix}"
-                for suffix in (
-                    "node_modules",
-                    "frontend/node_modules",
-                    "roster/node_modules",
-                    f"{app.module_name}/public",
-                )
-            )
-        return [path for path in paths if (bench.path / path).is_dir()]
-
-    def capture(self, bench) -> list[str]:
-        existing = self.get_paths(bench)
-        for path in existing:
-            self.copy_directory(bench.path / path, self.root / path)
-        self.relocate_links(bench.path.resolve(), self.root)
-        return existing
-
     def restore(self, bench, paths: list[str]) -> None:
         for path in paths:
             self.copy_directory(self.root / path, bench.path / path)

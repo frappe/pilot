@@ -13,26 +13,6 @@ from pilot.integrations.git import auth_config_for
 from pilot.utils import run_command
 
 
-def clone_with_site(source, name: str, site: str, on_progress, branch="default", app_branches=None):
-    BenchConfig.default(name).validate()
-    if (source.path.parent / name).exists():
-        raise BenchError(f"Destination bench '{name}' already exists.")
-    if site:
-        fixture = source.site(site)
-    else:
-        sites = source.sites()
-        if len(sites) != 1:
-            raise BenchError("Select the source site with --site when the bench has multiple sites.")
-        fixture = sites[0]
-    from pilot.internal.validators import validate_site_name
-
-    if error := validate_site_name(fixture.config.name):
-        raise BenchError(error)
-    if not fixture.exists:
-        raise BenchError("Source site does not exist.")
-    return BenchClone(source, name, branch, app_branches).run(on_progress, site_source=fixture)
-
-
 class BenchClone:
     """Copy code and dependencies into an independent, site-free development bench."""
 
@@ -46,7 +26,7 @@ class BenchClone:
         if unknown:
             raise BenchError(f"Unknown app branch overrides: {', '.join(sorted(unknown))}")
 
-    def run(self, on_progress=print, *, site_source=None):
+    def run(self, on_progress=print):
         from pilot.core.bench import Bench
 
         BenchConfig.default(self.name).validate()
@@ -71,15 +51,7 @@ class BenchClone:
             BenchArtifacts.copy_directory(assets, destination.sites_path / "assets")
         BenchArtifacts.relocate_links(self.source.path.resolve(), destination.path.resolve())
         destination.write_apps_txt()
-        if site_source is None:
-            self.prepare_environment(destination, rebuild, on_progress)
-        else:
-            from pilot.core.site.clone import SiteClone
-
-            SiteClone(site_source, destination, f"{self.name}.localhost", "admin").run(
-                on_progress,
-                prepare_bench=lambda: self.prepare_environment(destination, rebuild, on_progress),
-            )
+        self.prepare_environment(destination, rebuild, on_progress)
         destination.enforce_lite_mode_rules()
         on_progress(f"Bench '{self.name}' cloned.")
         return destination

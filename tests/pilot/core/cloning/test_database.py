@@ -8,26 +8,23 @@ from types import SimpleNamespace
 
 import pytest
 
-from pilot.core.bench.cloning.bench import BenchClone
 from pilot.core.site.clone import SiteClone
 from pilot.core.site.clone_database import SiteDatabaseClone, stream_database
 from pilot.exceptions import BenchError, CommandError
 
 
-@pytest.mark.parametrize("failure", [None, "database", "environment", "uploads", "multiple"])
-def test_fork_overlaps_database_and_environment_and_waits_before_cleanup(source, monkeypatch, failure):
+@pytest.mark.parametrize("failure", [None, "database", "uploads", "multiple"])
+def test_site_clone_overlaps_database_and_uploads_and_waits_before_cleanup(source, monkeypatch, failure):
     from threading import Event
 
-    started, preparing, completed = Event(), Event(), Event()
+    started, completed = Event(), Event()
     files_completed = Event()
-    original = BenchClone.prepare_environment
     copy_files = SiteClone.copy_files
     cleaned = []
     progress = []
 
     def import_database(self):
         started.set()
-        assert preparing.wait(5), "Database import did not overlap environment preparation"
         assert files_completed.wait(5), "Uploads did not overlap database import"
         completed.set()
         if failure in ("database", "multiple"):
@@ -42,39 +39,32 @@ def test_fork_overlaps_database_and_environment_and_waits_before_cleanup(source,
         finally:
             files_completed.set()
 
-    def prepare(self, destination, rebuild, on_progress):
-        assert started.wait(5), "Database import was not started before environment preparation"
-        preparing.set()
-        if failure in ("environment", "multiple"):
-            raise RuntimeError("environment failed")
-        original(self, destination, rebuild, on_progress)
-
     def cleanup(self):
         assert completed.is_set(), "Cleanup raced with the database import"
         assert files_completed.is_set(), "Cleanup raced with upload copying"
         cleaned.append(self.config["db_name"])
 
-    monkeypatch.setattr(BenchClone, "prepare_environment", prepare)
     monkeypatch.setattr(SiteDatabaseClone, "run", import_database)
     monkeypatch.setattr(SiteDatabaseClone, "cleanup", cleanup)
     monkeypatch.setattr(SiteClone, "finish", lambda *args: None)
     monkeypatch.setattr(SiteClone, "copy_files", copy_uploads)
-    monkeypatch.setattr("pilot.core.bench.cloning.runtime.ForkRuntime", lambda *args, **kwargs: nullcontext())
+    monkeypatch.setattr("pilot.core.site.clone_runtime.CloneRuntime", lambda *args, **kwargs: nullcontext())
     if failure:
-        expected = "environment" if failure == "multiple" else failure
+        expected = "database" if failure == "multiple" else failure
         with pytest.raises(RuntimeError, match=f"{expected} failed") as raised:
-            source.fork("parallel", on_progress=progress.append)
+            source.site("source.localhost").clone("parallel.localhost", on_progress=progress.append)
         if failure == "multiple":
             assert raised.value.__notes__ == [
-                "Database import failed: database failed",
                 "Upload copying failed: uploads failed",
             ]
             assert all(note in progress for note in raised.value.__notes__)
         assert len(cleaned) == 1
-        assert not (source.path.parent / "parallel/sites/parallel.localhost").exists()
+        assert not (source.sites_path / "parallel.localhost").exists()
     else:
-        destination = source.fork("parallel", on_progress=lambda message: None)
-        assert destination.site("parallel.localhost").exists
+        destination = source.site("source.localhost").clone(
+            "parallel.localhost", on_progress=lambda message: None
+        )
+        assert destination.exists
         assert cleaned == []
 
 

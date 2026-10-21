@@ -156,7 +156,7 @@ See [Admin UI](docs/admin-ui.md) and [Admin API](docs/admin-api.md).
 - [Admin UI](docs/admin-ui.md)
 - [Production](docs/production.md)
 - [Domain Provider](docs/domain-provider.md)
-- [Development forks](docs/development-forks.md)
+- [Bench and site cloning](docs/cloning.md)
 
 ## Development
 

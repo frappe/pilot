@@ -16,7 +16,7 @@ def test_site_clones_are_fresh_and_files_and_credentials_are_independent(source,
     (original.path / "public/files/alias.txt").symlink_to(original.path / "public/files/marker.txt")
     monkeypatch.setattr(SiteDatabaseClone, "run", lambda self: imports.append(self.config.copy()))
     monkeypatch.setattr(SiteClone, "finish", lambda self, site: None)
-    monkeypatch.setattr("pilot.core.bench.cloning.runtime.ForkRuntime", lambda *args, **kwargs: nullcontext())
+    monkeypatch.setattr("pilot.core.site.clone_runtime.CloneRuntime", lambda *args, **kwargs: nullcontext())
     first = source.site("source.localhost").clone("first.localhost", on_progress=lambda message: None)
     original = source.site("source.localhost")
     (original.path / "public/files/marker.txt").write_text("new source data")
@@ -47,7 +47,7 @@ def test_failed_site_clone_releases_route_and_owned_resources(source, monkeypatc
     monkeypatch.setattr(SiteClone, "validate", lambda self: True)
     monkeypatch.setattr("pilot.core.site.clone.register_with_provider", lambda *args: None)
     monkeypatch.setattr(DomainRouteProvider, "release", lambda self, name: released.append(name))
-    monkeypatch.setattr("pilot.core.bench.cloning.runtime.ForkRuntime", lambda *args, **kwargs: nullcontext())
+    monkeypatch.setattr("pilot.core.site.clone_runtime.CloneRuntime", lambda *args, **kwargs: nullcontext())
 
     def fail(*args):
         raise RuntimeError("original clone failure")
@@ -133,7 +133,7 @@ def test_late_clone_failure_removes_owned_hosts_and_refreshes_nginx(
     monkeypatch.setattr(
         "pilot.managers.platform.remove_hosts_entry", lambda name: events.append("hosts removed")
     )
-    monkeypatch.setattr("pilot.core.bench.cloning.runtime.ForkRuntime", lambda *args, **kwargs: nullcontext())
+    monkeypatch.setattr("pilot.core.site.clone_runtime.CloneRuntime", lambda *args, **kwargs: nullcontext())
 
     def reload(self):
         if (source.sites_path / "failed.localhost").exists():

@@ -12,7 +12,7 @@ from pilot.managers.redis import RedisManager, redis_server_binary
 from pilot.utils import open_private
 
 
-class ForkRuntime:
+class CloneRuntime:
     """Own the temporary Redis processes required during restore and asset builds."""
 
     def __init__(self, bench, *, allow_existing=False) -> None:
@@ -25,11 +25,11 @@ class ForkRuntime:
     def __enter__(self):
         binary = redis_server_binary()
         if not binary:
-            raise BenchError("Redis is required to fork a development bench.")
-        with exclusive_file_lock(self.bench.path / "fork-runtime"):
+            raise BenchError("Redis is required to clone a site.")
+        with exclusive_file_lock(self.bench.path / "clone-runtime"):
             try:
                 self.lease = self.stack.enter_context(
-                    open_private(self.bench.path / ".fork-runtime-users", mode="a")
+                    open_private(self.bench.path / ".clone-runtime-users", mode="a")
                 )
                 fcntl.flock(self.lease.fileno(), fcntl.LOCK_SH)
                 self.start_services(binary)
@@ -51,7 +51,7 @@ class ForkRuntime:
     def start(self, binary: str, name: str, port: int) -> None:
         if self.allow_existing and self.has_existing_redis(port):
             return
-        log = self.stack.enter_context((self.bench.logs_path / f"fork-{name}.log").open("a"))
+        log = self.stack.enter_context((self.bench.logs_path / f"clone-{name}.log").open("a"))
         process = subprocess.Popen(
             [binary, str(self.bench.config_path / f"{name}.conf")],
             stdout=log,
@@ -62,7 +62,7 @@ class ForkRuntime:
         self.owns_processes = True
         for _ in range(100):
             if process.poll() is not None:
-                raise BenchError(f"Fork Redis {name} exited; inspect {log.name}.")
+                raise BenchError(f"Clone Redis {name} exited; inspect {log.name}.")
             try:
                 with socket.create_connection(("127.0.0.1", port), timeout=0.1) as connection:
                     connection.sendall(b"*2\r\n$4\r\nINFO\r\n$6\r\nserver\r\n")
@@ -71,7 +71,7 @@ class ForkRuntime:
             except OSError:
                 pass
             time.sleep(0.05)
-        raise BenchError(f"Fork Redis {name} did not become ready.")
+        raise BenchError(f"Clone Redis {name} did not become ready.")
 
     @staticmethod
     def has_existing_redis(port: int) -> bool:
@@ -98,6 +98,6 @@ class ForkRuntime:
             return
         assert self.lease is not None
         fcntl.flock(self.lease.fileno(), fcntl.LOCK_UN)
-        with exclusive_file_lock(self.bench.path / "fork-runtime"):
+        with exclusive_file_lock(self.bench.path / "clone-runtime"):
             fcntl.flock(self.lease.fileno(), fcntl.LOCK_EX)
             self.stack.close()
