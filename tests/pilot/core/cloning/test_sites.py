@@ -10,6 +10,45 @@ from pilot.core.site.clone_database import SiteDatabaseClone
 from pilot.exceptions import BenchError
 
 
+@pytest.mark.parametrize("bench_engine", ["mariadb", "postgres"])
+@pytest.mark.parametrize("site_engine", ["mariadb", "postgres"])
+@pytest.mark.parametrize("destination_engine", ["mariadb", "postgres"])
+def test_clone_uses_site_engine_instead_of_bench_defaults(
+    source, monkeypatch, bench_engine, site_engine, destination_engine
+):
+    from pilot.config import BenchConfig
+    from pilot.core.bench import Bench
+
+    source.config.db_type = bench_engine
+    original = source.site("source.localhost")
+    path = original.path / "site_config.json"
+    config = json.loads(path.read_text())
+    config["db_type"] = site_engine
+    path.write_text(json.dumps(config))
+    destination = Bench(BenchConfig.default("target"), source.path.parent / "target")
+    destination.config.db_type = destination_engine
+    destination.create_directories()
+    (destination.sites_path / "apps.txt").write_text("frappe\n")
+    imported = []
+    monkeypatch.setattr(SiteDatabaseClone, "run", lambda self: imported.append(self.config.copy()))
+    monkeypatch.setattr(SiteClone, "finish", lambda *args: None)
+    monkeypatch.setattr("pilot.core.site.clone_runtime.CloneRuntime", lambda *args, **kwargs: nullcontext())
+    cloned = original.clone("copy.localhost", destination, on_progress=lambda message: None)
+    assert cloned.db_type == site_engine
+    assert imported[0]["db_type"] == site_engine
+    assert imported[0]["db_port"] == getattr(destination.config, site_engine).port
+
+
+def test_clone_rejects_unsupported_site_engine_even_on_mariadb_bench(source):
+    original = source.site("source.localhost")
+    path = original.path / "site_config.json"
+    config = json.loads(path.read_text())
+    config["db_type"] = "sqlite"
+    path.write_text(json.dumps(config))
+    with pytest.raises(BenchError, match="MariaDB and PostgreSQL"):
+        original.clone("copy.localhost", on_progress=lambda message: None)
+
+
 def test_site_clones_are_fresh_and_files_and_credentials_are_independent(source, monkeypatch):
     imports = []
     original = source.site("source.localhost")

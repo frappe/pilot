@@ -36,9 +36,7 @@ class SiteClone:
         self.validate_names()
         if not self.source.exists:
             raise BenchError("Source site does not exist.")
-        if self.source.bench.config.db_type != self.bench.config.db_type:
-            raise BenchError("Source and destination must use the same database engine.")
-        if self.bench.config.db_type not in ("mariadb", "postgres"):
+        if self.source.db_type not in ("mariadb", "postgres"):
             raise BenchError("Site cloning currently supports MariaDB and PostgreSQL.")
         if not self.password.strip():
             raise BenchError("Administrator password must not be empty.")
@@ -137,7 +135,7 @@ class SiteClone:
     def site_config(self) -> dict:
         original = json.loads((self.source.path / "site_config.json").read_text())
         database = f"_{secrets.token_hex(8)}"
-        engine = self.bench.config.db_type
+        engine = self.source.db_type
         settings = getattr(self.bench.config, engine)
         config = {
             "db_type": engine,

@@ -2,6 +2,7 @@ import socket
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
 from threading import Event
+from types import SimpleNamespace
 
 import pytest
 
@@ -21,8 +22,8 @@ def test_site_clone_reuses_running_redis_without_stopping_it(source, monkeypatch
         pass
 
 
-@pytest.mark.parametrize("restart", [False, True])
-def test_temporary_redis_owner_waits_for_other_clone(source, monkeypatch, restart):
+@pytest.fixture
+def redis_clones(source, monkeypatch):
     if not runtime.redis_server_binary():
         pytest.skip("Redis server unavailable")
     with socket.socket() as cache, socket.socket() as queue:
@@ -30,65 +31,81 @@ def test_temporary_redis_owner_waits_for_other_clone(source, monkeypatch, restar
         queue.bind(("127.0.0.1", 0))
         source.config.redis.cache_port = cache.getsockname()[1]
         source.config.redis.queue_port = queue.getsockname()[1]
-    owner_ready = Event()
-    borrower_ready = Event()
-    finish_owner = Event()
-    finish_borrower = Event()
-    shutdown_waiting = Event()
-    flock = runtime.fcntl.flock
-    processes = []
-    runtimes = []
-    popen = runtime.subprocess.Popen
+    state = SimpleNamespace(
+        owner_ready=Event(),
+        borrower_ready=Event(),
+        finish_owner=Event(),
+        finish_borrower=Event(),
+        shutdown_waiting=Event(),
+        processes=[],
+        runtimes=[],
+        futures=[],
+        ports=(source.config.redis.cache_port, source.config.redis.queue_port),
+    )
+    flock, popen = runtime.fcntl.flock, runtime.subprocess.Popen
 
     def observe_lock(descriptor, operation):
         if isinstance(descriptor, int) and operation == runtime.fcntl.LOCK_EX:
-            shutdown_waiting.set()
+            state.shutdown_waiting.set()
         return flock(descriptor, operation)
 
     def spawn(*args, **kwargs):
         process = popen(*args, **kwargs)
-        processes.append(process)
+        state.processes.append(process)
         return process
-
-    monkeypatch.setattr(runtime.fcntl, "flock", observe_lock)
-    monkeypatch.setattr(runtime.subprocess, "Popen", spawn)
 
     def clone(ready, finish):
         services = runtime.CloneRuntime(source, allow_existing=True)
-        runtimes.append(services)
+        state.runtimes.append(services)
         with services:
             ready.set()
             assert finish.wait(10)
 
-    ports = (source.config.redis.cache_port, source.config.redis.queue_port)
+    monkeypatch.setattr(runtime.fcntl, "flock", observe_lock)
+    monkeypatch.setattr(runtime.subprocess, "Popen", spawn)
     with ThreadPoolExecutor(max_workers=2) as executor:
-        owner = executor.submit(clone, owner_ready, finish_owner)
-        borrower = None
+
+        def start(ready, finish):
+            future = executor.submit(clone, ready, finish)
+            state.futures.append(future)
+            return future
+
+        state.start = start
         try:
-            if not owner_ready.wait(5):
-                owner.result(timeout=1)
-                pytest.fail("Owner runtime did not become ready")
-            if restart:
-                for process in processes:
-                    runtime.CloneRuntime.stop(process)
-            borrower = executor.submit(clone, borrower_ready, finish_borrower)
-            assert borrower_ready.wait(5)
-            finish_owner.set()
-            assert shutdown_waiting.wait(5)
-            assert not owner.done()
-            assert all(runtime.CloneRuntime.has_existing_redis(port) for port in ports)
-            assert len(processes) == (4 if restart else 2)
+            yield state
         finally:
-            finish_owner.set()
-            finish_borrower.set()
-            try:
-                owner.result(timeout=5)
-                if borrower is not None:
-                    borrower.result(timeout=5)
-            finally:
-                for services in runtimes:
-                    with suppress(OSError, ValueError):
-                        if services.lease is not None and not services.lease.closed:
-                            runtime.fcntl.flock(services.lease.fileno(), runtime.fcntl.LOCK_UN)
-    assert all(process.poll() is not None for process in processes)
-    assert not any(runtime.CloneRuntime.has_existing_redis(port) for port in ports)
+            finish_clones(state)
+    assert all(process.poll() is not None for process in state.processes)
+    assert not any(runtime.CloneRuntime.has_existing_redis(port) for port in state.ports)
+
+
+def finish_clones(state):
+    state.finish_owner.set()
+    state.finish_borrower.set()
+    try:
+        for future in state.futures:
+            future.result(timeout=5)
+    finally:
+        for services in state.runtimes:
+            with suppress(OSError, ValueError):
+                if services.lease is not None and not services.lease.closed:
+                    runtime.fcntl.flock(services.lease.fileno(), runtime.fcntl.LOCK_UN)
+
+
+@pytest.mark.parametrize("restart", [False, True])
+def test_temporary_redis_owner_waits_for_other_clone(redis_clones, restart):
+    state = redis_clones
+    owner = state.start(state.owner_ready, state.finish_owner)
+    if not state.owner_ready.wait(5):
+        owner.result(timeout=1)
+        pytest.fail("Owner runtime did not become ready")
+    if restart:
+        for process in state.processes:
+            runtime.CloneRuntime.stop(process)
+    state.start(state.borrower_ready, state.finish_borrower)
+    assert state.borrower_ready.wait(5)
+    state.finish_owner.set()
+    assert state.shutdown_waiting.wait(5)
+    assert not owner.done()
+    assert all(runtime.CloneRuntime.has_existing_redis(port) for port in state.ports)
+    assert len(state.processes) == (4 if restart else 2)

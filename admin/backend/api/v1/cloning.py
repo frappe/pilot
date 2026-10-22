@@ -128,7 +128,7 @@ def clone_site(name: str):
             target_bench=bench_name,
             admin_password=password,
             idempotency_key=request.headers.get("Idempotency-Key"),
-            resource_key=[f"site:{name}", f"bench:{bench_name}", host_resource_key(target)],
+            resource_key=[f"site:{name.lower()}", f"bench:{bench_name}", host_resource_key(target)],
         )
     except TaskConflictError as error:
         return task_failure(error)

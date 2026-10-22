@@ -108,9 +108,10 @@ def test_invalid_bench_targets_cannot_queue(cloning_client, target):
     assert client.post("/api/v1/benches/dev/actions/clone", json={"name": target}).status_code == 422
 
 
-def test_cloning_requires_bench_scope(cloning_client):
+@pytest.mark.parametrize("scope", ["source.localhost", "other.localhost"])
+def test_cloning_requires_bench_scope(cloning_client, scope):
     client, bench = cloning_client
-    client.set_cookie("sid", Session(bench).issue_site_token("source.localhost"))
+    client.set_cookie("sid", Session(bench).issue_site_token(scope))
     assert (
         client.post(
             "/api/v1/sites/source.localhost/actions/clone",
@@ -132,6 +133,12 @@ def test_cross_bench_cloning_obeys_management_guard(cloning_client):
         ).status_code
         == 403
     )
+
+
+def test_same_bench_clone_does_not_require_bench_management(cloning_client):
+    client, bench = cloning_client
+    bench.config.admin.allow_bench_management = False
+    bench.config.write(bench.path)
     assert client.post("/api/v1/benches/dev/actions/clone", json={"name": "uat"}).status_code == 403
     assert (
         client.post(
@@ -140,6 +147,21 @@ def test_cross_bench_cloning_obeys_management_guard(cloning_client):
         ).status_code
         == 202
     )
+
+
+def test_clone_site_reserves_the_canonical_source_resource(cloning_client):
+    from pilot.internal.tasks.store import TaskStore
+
+    client, bench = cloning_client
+    original = bench.sites_path / "source.localhost"
+    original.rename(bench.sites_path / "Source.Localhost")
+    response = client.post(
+        "/api/v1/sites/Source.Localhost/actions/clone",
+        json={"name": "uat.localhost", "target_bench": "dev"},
+    )
+    assert response.status_code == 202
+    task = TaskStore(bench.path).read_metadata(response.get_json()["task_id"])
+    assert "site:source.localhost" in task["resource_keys"]
 
 
 @pytest.mark.parametrize("kind", ["bench", "site"])

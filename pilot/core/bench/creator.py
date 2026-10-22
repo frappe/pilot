@@ -102,7 +102,7 @@ class BenchCreator:
         }
 
         offset = 0
-        while self.ports_in_use(bases, used, offset):
+        while self.has_ports_in_use(bases, used, offset):
             offset += 1
         return offset
 
@@ -117,7 +117,7 @@ class BenchCreator:
             config.admin.port + 1,
         }
 
-    def ports_in_use(self, bases: list[int], used: set[int], offset: int) -> bool:
+    def has_ports_in_use(self, bases: list[int], used: set[int], offset: int) -> bool:
         candidates = {base + offset for base in bases}
         return bool(candidates & used) or any(self._port_is_live(port) for port in candidates)
 
