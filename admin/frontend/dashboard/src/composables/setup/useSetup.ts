@@ -49,6 +49,8 @@ export const useSetup = () => {
   const postgresPasswordConfigured = ref(false)
   const mariadbLocalAvailable = ref(false)
   const postgresLocalAvailable = ref(false)
+  const mariadbDefaultPort = ref('')
+  const postgresDefaultPort = ref('')
 
   const terminal = useTemplateRef<TerminalHandle>('terminal')
   const setupTaskId = ref('')
@@ -92,7 +94,9 @@ export const useSetup = () => {
   )
 
   const rootUserPlaceholder = computed(() => (dbType.value === 'mariadb' ? 'root' : 'postgres'))
-  const dbPortPlaceholder = computed(() => (dbType.value === 'mariadb' ? '3306' : '5432'))
+  const dbPortPlaceholder = computed(() =>
+    dbType.value === 'mariadb' ? mariadbDefaultPort.value : postgresDefaultPort.value,
+  )
   const resolvedDbUser = computed(() => dbUser.value || rootUserPlaceholder.value)
 
   const branchOptions = computed(() =>
@@ -142,6 +146,8 @@ export const useSetup = () => {
 
       mariadbLocalAvailable.value = config.mariadb_local_available === true
       postgresLocalAvailable.value = config.postgres_local_available === true
+      mariadbDefaultPort.value = String(config.mariadb_port)
+      postgresDefaultPort.value = String(config.postgres_port)
 
       if (config.db_type) dbType.value = config.db_type
       if (config.app_repo) appRepo.value = config.app_repo
@@ -151,14 +157,14 @@ export const useSetup = () => {
         if (config.postgres_existing) {
           dbMode.value = 'external'
           dbHost.value = config.postgres_host || '127.0.0.1'
-          dbPort.value = config.postgres_port ? String(config.postgres_port) : '5432'
+          dbPort.value = postgresDefaultPort.value
         }
       } else {
         if (config.mariadb_admin_user) dbUser.value = config.mariadb_admin_user
         if (config.mariadb_existing) {
           dbMode.value = 'external'
           dbHost.value = config.mariadb_host || '127.0.0.1'
-          dbPort.value = config.mariadb_port ? String(config.mariadb_port) : '3306'
+          dbPort.value = mariadbDefaultPort.value
         }
       }
 
@@ -274,7 +280,7 @@ export const useSetup = () => {
         admin_user: resolvedDbUser.value,
         existing: true,
         host: dbHost.value,
-        port: Number(dbPort.value) || Number(dbPortPlaceholder.value),
+        port: Number(dbPort.value) || Number(dbPortPlaceholder.value) || undefined,
       })
       if (hasApiError(result)) {
         return apiErrorMessage(result, `Could not validate the ${databaseName} configuration.`)

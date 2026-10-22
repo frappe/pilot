@@ -57,6 +57,8 @@ The UI should treat task ids as the handle for long work.
 
 The Frappe branch picker lists the branches reported by the repository. Type a different full branch name and select `Use branch` to choose it. `Set up bench` saves the selection before setup starts. The wizard restores a saved custom branch even when the repository list does not contain it.
 
+For an external database, a blank port uses the bench's configured MariaDB or PostgreSQL port (3310 or 5450 by default), shown as the field's placeholder.
+
 ## Site Navigation
 
 **Visit site** opens the site's Desk URL using the browser's current site session. It does not sign you in or switch users, and shows no loading or success toast. **Login as admin** explicitly creates an admin login session and can replace an existing normal-user session for that site. These actions are available in the sites dropdown, with matching labels on the site detail page.
