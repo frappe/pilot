@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.client
 import json
 import urllib.error
 import urllib.request
@@ -128,7 +129,7 @@ class CentralClient:
             ) from exc
         except urllib.error.URLError as exc:
             raise CentralClientError(f"Cannot reach Central at {endpoint}: {exc.reason}") from exc
-        except OSError as exc:
+        except (OSError, http.client.HTTPException) as exc:
             raise CentralClientError(f"Cannot reach Central at {endpoint}: {exc}") from exc
         except ValueError as exc:
             raise CentralClientError(f"Central sent a non-JSON response for {method_path}: {exc}") from exc

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.client
 import io
 import json
 import urllib.error
@@ -201,6 +202,19 @@ def test_a_timeout_while_reading_is_wrapped() -> None:
         CentralClient().config()
 
     assert urlopen.call_args.kwargs["timeout"] < client_module._TIMEOUT_SECONDS
+
+
+def test_an_incomplete_reply_is_wrapped() -> None:
+    _stage_credentials("https://central.test", "tok")
+
+    with (
+        patch(
+            "pilot.integrations.central.client.urllib.request.urlopen",
+            side_effect=http.client.IncompleteRead(b"{"),
+        ),
+        pytest.raises(CentralClientError, match="Cannot reach Central"),
+    ):
+        CentralClient().config()
 
 
 def _app_client(bench_root: Path):
