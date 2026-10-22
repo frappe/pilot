@@ -36,9 +36,7 @@ class SetupTelemetryCommand(Command):
         from pilot.core.bench.telemetry import apply_credential
         from pilot.managers.fluentbit import LogsConfigurator
 
-        apply_credential(
-            self.bench, endpoint=self.endpoint, token=self.token, on_progress=self.report
-        )
+        apply_credential(self.bench, endpoint=self.endpoint, token=self.token, on_progress=self.report)
         telemetry = self.bench.config.telemetry
 
         if not (telemetry.endpoint and telemetry.token):
@@ -54,6 +52,12 @@ class SetupTelemetryCommand(Command):
             self.report(f"Metrics will ship to {telemetry.endpoint}.")
         if not telemetry.is_shipping_logs:
             self.report("Logs are off. Set [telemetry] logs_enabled to ship them.")
+            return
+
+        from pilot.managers.platform import is_linux
+
+        if not is_linux():
+            self.report("Skipping Fluent Bit: log shipping is Linux-only.")
             return
 
         configurator = LogsConfigurator(self.bench)
