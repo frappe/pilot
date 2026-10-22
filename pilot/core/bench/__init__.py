@@ -86,6 +86,16 @@ class Bench:
             self._db = make_database(self.config)
         return self._db
 
+    def clone(self, name: str, on_progress=print, *, branch="default", app_branches=None) -> "Bench":
+        from pilot.core.bench.cloning.bench import BenchClone
+
+        return BenchClone(self, name, branch, app_branches).run(on_progress)
+
+    def get_clone_branch_options(self) -> list[dict]:
+        from pilot.core.bench.cloning.branches import get_app_branch_options
+
+        return get_app_branch_options(self)
+
     @cached_property
     def tasks(self) -> "TaskRunner":
         from pilot.tasks import TaskRunner

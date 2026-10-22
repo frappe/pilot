@@ -7,7 +7,7 @@ import tomllib
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pilot.core.app.node_packages import PACKAGE_MANAGERS, YARN, NodePackages
+from pilot.core.app.node_packages import PACKAGE_MANAGERS, YARN, get_app_packages
 from pilot.exceptions import BenchError, CommandError
 from pilot.managers.platform import add_mysqlclient_flags, is_macos, which
 from pilot.managers.python_assets import PythonAssetBuilder
@@ -179,11 +179,26 @@ class PythonEnvManager:
             )
             self._install_editable(str(app.path))
 
-    def _install_editable(self, target: str) -> None:
+    def install_apps(self, apps: list["App"]) -> None:
+        """Resolve editable apps together in the destination environment."""
+        if not apps:
+            return
+        targets = [app.editable_target for app in apps]
+        bare_targets = [str(app.path) for app in apps]
+        try:
+            self._install_editable(*targets)
+        except CommandError:
+            if targets == bare_targets:
+                raise
+            print("Warning: the dev extras do not install; installing apps without them.")
+            self._install_editable(*bare_targets)
+
+    def _install_editable(self, *targets: str) -> None:
         uv = ensure_uv()
         python = str(self.bench.env_path / "bin" / "python")
+        arguments = [argument for target in targets for argument in ("-e", target)]
         run_command(
-            [uv, "pip", "install", "--python", python, "-e", target],
+            [uv, "pip", "install", "--python", python, *arguments],
             stream_output=True,
             env=self._build_env(),
         )
@@ -220,7 +235,8 @@ class PythonEnvManager:
 
     def install_node_dependencies(self) -> None:
         for app in self.bench.apps():
-            NodePackages(app.path).install()
+            for packages in get_app_packages(app.path, self._assets.frontend_dirs(app)):
+                packages.ensure_installed()
 
     def build_assets(self) -> None:
         self._assets.build_assets()

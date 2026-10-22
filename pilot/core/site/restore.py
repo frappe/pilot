@@ -74,7 +74,11 @@ class BackupRun:
         config = self.files.get("config")
         if not config:
             return {}
-        return {key: value for key, value in json.loads(config.read_text()).items() if not is_local_config_key(key)}
+        return {
+            key: value
+            for key, value in json.loads(config.read_text()).items()
+            if not is_local_config_key(key)
+        }
 
 
 def is_local_config_key(key: str) -> bool:
