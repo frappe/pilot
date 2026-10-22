@@ -91,10 +91,14 @@ class Bench:
 
         return BenchClone(self, name, branch, app_branches).run(on_progress)
 
-    def get_clone_branch_options(self) -> list[dict]:
-        from pilot.core.bench.cloning.branches import get_app_branch_options
+    def get_clone_branch_options(self, app_name: str) -> dict:
+        from pilot.core.bench.cloning.branches import get_branch_options
+        from pilot.integrations.git import auth_config_for
 
-        return get_app_branch_options(self)
+        app = next((app for app in self.apps() if app.config.name == app_name), None)
+        if app is None:
+            raise BenchError(f"Unknown app: {app_name}")
+        return get_branch_options(app.path, auth_config_for(self.path, app.config.repo))
 
     @cached_property
     def tasks(self) -> "TaskRunner":

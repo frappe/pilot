@@ -324,16 +324,51 @@ def test_clone_branch_options_list_origin_branches_with_default_first(source):
     git(app, "push", "origin", "feature/test")
     git(app, "branch", "local-only")
     before = git(app, "status", "--porcelain")
-    assert source.get_clone_branch_options() == [
-        {"name": "frappe", "default_branch": "main", "branches": ["main", "feature/test"]}
-    ]
+    assert source.get_clone_branch_options("frappe") == {
+        "name": "frappe",
+        "default_branch": "main",
+        "branches": ["main", "feature/test"],
+    }
     assert git(app, "status", "--porcelain") == before
+
+
+def test_clone_branch_options_offer_current_checkout_without_origin(source):
+    git(source.apps_path / "frappe", "remote", "remove", "origin")
+    assert source.get_clone_branch_options("frappe") == {
+        "name": "frappe",
+        "default_branch": "current",
+        "branches": ["current"],
+    }
+
+
+def test_github_ssh_remote_is_read_over_https_first(monkeypatch, tmp_path):
+    from pilot.core.bench.cloning import branches
+
+    calls = []
+
+    def ls_remote(source, remote, git_config):
+        calls.append(remote)
+        if remote.startswith("https://"):
+            raise CommandError("private repository")
+        return "ok"
+
+    monkeypatch.setattr(branches, "ls_remote", ls_remote)
+    assert branches.read_remote_refs(tmp_path, "git@github.com:frappe/frappe.git", None) == "ok"
+    assert calls == ["https://github.com/frappe/frappe.git", "origin"]
+    calls.clear()
+    assert branches.read_remote_refs(tmp_path, "https://gitlab.com/acme/app", None) == "ok"
+    assert calls == ["origin"]
+
+
+def test_clone_branch_options_reject_unknown_apps(source):
+    with pytest.raises(BenchError, match="Unknown app"):
+        source.get_clone_branch_options("missing")
 
 
 def test_clone_branch_options_fail_when_origin_is_unavailable(source):
     git(source.apps_path / "frappe", "remote", "set-url", "origin", "/missing-pilot-test-origin")
     with pytest.raises(BenchError, match="Could not read branches for frappe"):
-        source.get_clone_branch_options()
+        source.get_clone_branch_options("frappe")
 
 
 @pytest.mark.parametrize("staged", [False, True])
@@ -451,7 +486,7 @@ def test_branch_discovery_and_fetch_use_source_credentials(source, monkeypatch):
         return original(argv, **kwargs)
 
     monkeypatch.setattr(clone_branches, "run_command", run)
-    assert source.get_clone_branch_options()[0]["default_branch"] == "main"
+    assert source.get_clone_branch_options("frappe")["default_branch"] == "main"
     destination = source.clone("authenticated", lambda message: None)
     assert sum("ls-remote" in argv for argv in authenticated) == 2
     assert sum("fetch" in argv for argv in authenticated) == 1
