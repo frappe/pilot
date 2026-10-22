@@ -2,9 +2,12 @@
 
 import re
 from dataclasses import asdict
+from datetime import datetime, timedelta
+from hashlib import sha256
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pilot.config.backup import BackupConfig
 from pilot.config.site_backup import clear_retention, read_retention, write_retention
 from pilot.core.site.retention import BackupRetentionPolicy
 from pilot.integrations.s3.backups import OffsiteBackup
@@ -13,6 +16,7 @@ from pilot.internal.atomic_file import exclusive_file_lock
 if TYPE_CHECKING:
     from pilot.core.site import Site
 
+MAX_DAILY_FAILURES = 6
 _TS_RE = re.compile(r"^(\d{8}_\d{6})")
 
 
@@ -153,7 +157,7 @@ class SiteBackups:
         retention = read_retention(self.site.path / "site_config.json")
         return {"schedule": schedule, "retention": asdict(retention) if retention else None}
 
-    def set_schedule(self, schedule: str, retention) -> dict:
+    def set_schedule(self, schedule: str, retention: BackupConfig) -> dict:
         from pilot.managers.cron import CronManager
 
         CronManager(self.site.bench.path).set_schedule(
@@ -163,6 +167,68 @@ class SiteBackups:
         )
         write_retention(self.site.path / "site_config.json", retention)
         return self.schedule()
+
+    def enable_default_schedule(self) -> None:
+        """Default backups for a site without a custom schedule. `set_schedule` replaces them.
+        The bench job goes in first, so a failed install leaves the site unenrolled for a retry."""
+        self.site.bench.backups.install_schedule()
+        write_retention(
+            self.site.path / "site_config.json",
+            BackupConfig(keep_weekly=4, keep_yearly=10, calendar_rotation=True),
+        )
+
+    @property
+    def is_default_schedule_enabled(self) -> bool:
+        retention = read_retention(self.site.path / "site_config.json")
+        return retention is not None and retention.calendar_rotation
+
+    def get_recent_backup_history(self, now: datetime) -> list[tuple[datetime, dict]]:
+        return self.site.bench.backups.get_recent_history(now).get(self.site.config.name, [])
+
+    def get_failures_since_last_success(self, now: datetime) -> int:
+        failures = 0
+        for _, entry in self.get_recent_backup_history(now):
+            if entry["status"] == "success":
+                break
+            failures += entry["status"] == "failed"
+        return failures
+
+    def get_scheduled_backup(
+        self, now: datetime, history: list[tuple[datetime, dict]] | None = None
+    ) -> dict[str, bool] | None:
+        """Daily logical backup, due 23 hours after the last success so it keeps its hour. Files once a day."""
+        if not self.is_default_schedule_enabled:
+            return None
+
+        backups = self.get_recent_backup_history(now) if history is None else history
+        successful = [(when, entry) for when, entry in backups if entry["status"] == "success"]
+        failures = sum(entry["status"] == "failed" for _, entry in backups)
+        if failures >= MAX_DAILY_FAILURES or any(when > now - timedelta(hours=23) for when, _ in successful):
+            return None
+
+        has_file_backup_today = any(
+            entry.get("with_files") and when.date() == now.date() for when, entry in successful
+        )
+        return {"with_files": not has_file_backup_today}
+
+    def queue_scheduled(self, now: datetime, history: list[tuple[datetime, dict]] | None = None) -> None:
+        from pilot.exceptions import TaskConflictError
+        from pilot.tasks.backup_site import BackupSiteTask
+
+        if self.get_scheduled_backup(now, history) is None:
+            return
+
+        slot = f"{self.site.config.name}:{now:%Y%m%d%H}"
+        try:
+            BackupSiteTask.queue(
+                self.site.bench,
+                site=self.site.config.name,
+                automatic=True,
+                idempotency_key=f"scheduled-backup:{sha256(slot.encode()).hexdigest()}",
+                resource_key=f"site:{self.site.config.name.lower()}",
+            )
+        except TaskConflictError:
+            print(f"Skipped scheduled backup: {self.site.config.name} has an active site task.")
 
     def move_schedule(self, old_name: str) -> None:
         """Carry a renamed site's backup schedule over from its old name."""

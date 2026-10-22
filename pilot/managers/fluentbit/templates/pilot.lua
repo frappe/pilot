@@ -1,43 +1,5 @@
 -- Pilot -> Datum normalizer
 
-local function json_escape(value)
-    if value == nil then
-        return ""
-    end
-
-    value = tostring(value)
-
-    value = string.gsub(value, "\\", "\\\\")
-    value = string.gsub(value, "\"", "\\\"")
-    value = string.gsub(value, "\b", "\\b")
-    value = string.gsub(value, "\f", "\\f")
-    value = string.gsub(value, "\n", "\\n")
-    value = string.gsub(value, "\r", "\\r")
-    value = string.gsub(value, "\t", "\\t")
-
-    return value
-end
-
-
-local function json_string(value)
-    return "\"" .. json_escape(value) .. "\""
-end
-
-
-local function serialize_attributes(attributes)
-    local parts = {}
-
-    for key, value in pairs(attributes) do
-        table.insert(
-            parts,
-            json_string(key) .. ":" .. json_string(value)
-        )
-    end
-
-    return "{" .. table.concat(parts, ",") .. "}"
-end
-
-
 -- Extract filename from Path_Key
 
 local function get_source(filename)
@@ -330,29 +292,66 @@ local function add_attribute(attributes, key, value)
 end
 
 
--- Datum request body
+-- Datum caps one message at 8 KiB. Cut on a byte boundary, then drop the
+-- last character only if the cut left it short of the bytes its lead byte
+-- announces, so the line stays valid UTF-8 without losing a whole one.
 
-local function build_body(
-    ts,
-    level,
-    message,
-    service,
-    source,
-    attributes
-)
+local MAX_MESSAGE = 8192
 
-    local line =
-        "{"
-        .. "\"ts\":" .. json_string(ts)
-        .. ",\"level\":" .. json_string(level)
-        .. ",\"message\":" .. json_string(message)
-        .. ",\"service\":" .. json_string(service)
-        .. ",\"source\":" .. json_string(source)
-        .. ",\"product\":\"pilot\""
-        .. ",\"attributes\":" .. serialize_attributes(attributes)
-        .. "}"
+local function utf8_width(byte)
+    if byte >= 240 then
+        return 4
+    elseif byte >= 224 then
+        return 3
+    elseif byte >= 192 then
+        return 2
+    end
+    return 1
+end
 
-    return "{\"lines\":[" .. line .. "]}"
+local function cap_message(message)
+    if #message <= MAX_MESSAGE then
+        return message
+    end
+
+    local cut = string.sub(message, 1, MAX_MESSAGE)
+
+    local lead = MAX_MESSAGE
+    while lead > MAX_MESSAGE - 3 do
+        local byte = string.byte(cut, lead)
+        if byte < 128 or byte >= 192 then
+            break
+        end
+        lead = lead - 1
+    end
+
+    if MAX_MESSAGE - lead + 1 < utf8_width(string.byte(cut, lead)) then
+        return string.sub(cut, 1, lead - 1)
+    end
+
+    return cut
+end
+
+
+-- Datum log line. Fluent Bit's http output batches these into one JSON
+-- array per chunk, which Datum accepts as a batch. An empty Lua table
+-- encodes as an array, so attributes are left out when there are none.
+
+local function datum_line(ts, level, message, service, source, attributes)
+    local line = {
+        ts = ts,
+        level = level,
+        message = cap_message(message),
+        service = service,
+        source = source,
+        product = "pilot",
+    }
+
+    if next(attributes) ~= nil then
+        line["attributes"] = attributes
+    end
+
+    return line
 end
 
 
@@ -470,9 +469,7 @@ function normalize(tag, timestamp, record)
                 and key ~= "product"
                 and key ~= "service"
                 and key ~= "source"
-                and key ~= "attributes"
-                and key ~= "body"
-                and key ~= "headers" then
+                and key ~= "attributes" then
 
                 add_attribute(
                     attributes,
@@ -807,9 +804,7 @@ function normalize(tag, timestamp, record)
     end
 
 
-    -- Build Datum request
-
-    record["body"] = build_body(
+    return 1, timestamp, datum_line(
         ts,
         level,
         message,
@@ -817,12 +812,4 @@ function normalize(tag, timestamp, record)
         source,
         attributes
     )
-
-
-    record["headers"] = {
-        ["Content-Type"] = "application/json"
-    }
-
-
-    return 1, timestamp, record
 end

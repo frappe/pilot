@@ -60,6 +60,10 @@ class GitRepo:
         in `path`, or '' when there is none. On a merged branch, that commit is the merge."""
         return self._text("log", "--first-parent", "-1", "--format=%cI", "-S", text, "--", path)
 
+    def get_commit_time(self, ref: str = "HEAD") -> int:
+        """Committer time of `ref` in Unix seconds, or 0 when it is missing."""
+        return int(self._text("log", "-1", "--format=%ct", ref) or 0)
+
     @property
     def has_local_changes(self) -> bool:
         """True if the tree has uncommitted edits or commits not yet on upstream."""

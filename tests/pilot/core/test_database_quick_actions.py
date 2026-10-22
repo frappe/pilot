@@ -132,18 +132,15 @@ def test_external_mariadb_restart_is_rejected_before_manager_call() -> None:
     manager.restart_managed_server.assert_not_called()
 
 
-def test_disabled_bench_management_blocks_mutations_but_not_binlog_view() -> None:
+def test_actions_do_not_depend_on_bench_management() -> None:
     manager = _manager()
-    result = DatabaseQuickActions(
-        _config(allow_management=False),
-        manager,
-    ).capabilities()
+    with patch(f"{MODULE}.is_linux", return_value=True):
+        result = DatabaseQuickActions(
+            _config(allow_management=False),
+            manager,
+        ).capabilities()
 
-    assert result["actions"]["restart"]["reason"] == "Bench management is disabled on this server."
-    assert result["actions"]["performance_schema"]["available"] is False
-    assert result["actions"]["innodb_buffer_pool_size"]["available"] is False
-    assert result["actions"]["max_connections"]["available"] is False
-    assert result["actions"]["manage_binlogs"]["available"] is True
+    assert all(action["available"] for action in result["actions"].values())
 
 
 def test_unreachable_mariadb_can_be_restarted_but_cannot_be_configured() -> None:
@@ -263,7 +260,10 @@ def test_the_memory_split_previews_the_sizing_of_each_share() -> None:
 
 @pytest.mark.parametrize("share", [0.1, 0.9, "0.5"])
 def test_a_memory_share_outside_the_range_is_refused(share) -> None:
-    with patch(f"{MODULE}.is_linux", return_value=True), pytest.raises(ValueError, match=r"between 0\.2 and 0\.8"):
+    with (
+        patch(f"{MODULE}.is_linux", return_value=True),
+        pytest.raises(ValueError, match=r"between 0\.2 and 0\.8"),
+    ):
         DatabaseQuickActions(_config(), _manager()).require_memory_share(share)
 
 
@@ -273,11 +273,20 @@ def test_setting_the_memory_share_saves_it_for_every_bench_and_sizes_mariadb(tmp
     manager = _manager()
     manager.database_action_lock.return_value = MagicMock()
     actions = DatabaseQuickActions(_config(), manager)
+    with CommonConfig.open(tmp_path) as common:
+        common.mariadb.memory_high_mb = 1200
+        common.mariadb.memory_max_mb = 1600
+    actions.config.mariadb.memory_high_mb = 1200
+    actions.config.mariadb.memory_max_mb = 1600
     with patch(f"{MODULE}.is_linux", return_value=True):
         actions.set_memory_share(0.65, tmp_path)
 
     assert CommonConfig.read(tmp_path).mariadb.memory_share == 0.65
     assert actions.config.mariadb.memory_share == 0.65
+    assert CommonConfig.read(tmp_path).mariadb.memory_high_mb is None
+    assert CommonConfig.read(tmp_path).mariadb.memory_max_mb is None
+    assert actions.config.mariadb.memory_high_mb is None
+    assert actions.config.mariadb.memory_max_mb is None
     manager.tune_to_host_locked.assert_called_once()
 
 

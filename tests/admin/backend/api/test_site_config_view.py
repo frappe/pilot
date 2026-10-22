@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from admin.backend.api.v1.sites.configuration import _public_config
 from tests.admin.backend.test_admin_app import _client
 
@@ -191,6 +193,22 @@ def test_site_config_patch_rejects_protected_keys_and_hidden_container_changes(t
         422,
         422,
     ]
+    assert json.loads(config_path.read_text()) == original
+
+
+@pytest.mark.parametrize("key", ["cloud_server_url", "cloud_settings_embed_url"])
+@pytest.mark.parametrize("value", ["https://attacker.example", None])
+def test_site_config_patch_rejects_the_browser_admin_urls(tmp_path, key: str, value: str | None) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    config_path = bench_root / "sites" / "s.localhost" / "site_config.json"
+    config_path.parent.mkdir(parents=True)
+    original = {key: "https://admin.example.com"}
+    config_path.write_text(json.dumps(original))
+
+    response = client.patch("/api/v1/sites/s.localhost/configuration", json={key: value})
+
+    assert response.status_code == 422
     assert json.loads(config_path.read_text()) == original
 
 

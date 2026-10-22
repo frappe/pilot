@@ -21,7 +21,7 @@ import SiteSkeleton from '@/components/sites/SiteSkeleton.vue'
 import { useIsMobile } from '@/composables/common/useIsMobile'
 import { useSiteStorage } from '@/composables/sites/useSiteStorage'
 import { useSites } from '@/composables/sites/useSites'
-import { openSiteLogin } from '@/utils/siteLogin'
+import { openSiteLink } from '@/utils/siteLogin'
 import { openTaskDetailPage } from '@/utils/taskRoute'
 import type { SiteResource } from '@/types/sites'
 import { errorMessage } from '@/utils/error'
@@ -92,6 +92,7 @@ const filteredSites = computed(() => {
 })
 
 const hasCount = computed(() => !loading.value || sites.value.length > 0)
+const showSkeleton = computed(() => loading.value && sites.value.length === 0)
 
 const listColumns = [
   { label: 'Site', key: 'site', class: 'w-1/2' },
@@ -111,12 +112,23 @@ const listRows = computed(() =>
 )
 
 const loginAsAdmin = async (site: SiteResource) => {
-  return openSiteLogin(() => sitesApi.loginLink(site.name), {
+  return openSiteLink(() => sitesApi.loginLink(site.name), {
     onHint: (hint) => toast.info(hint),
   })
 }
 
-const openSite = (site: SiteResource) => {
+const openSite = async (site: SiteResource) => {
+  try {
+    await openSiteLink(async () => {
+      const detail = await sitesApi.detail(site.name)
+      return { url: `${detail.url}/desk` }
+    })
+  } catch (caught) {
+    toast.error(errorMessage(caught, 'Could not open site'))
+  }
+}
+
+const openAsAdmin = (site: SiteResource) => {
   toast.promise(loginAsAdmin(site), {
     loading: 'Logging in as admin',
     success: 'Logged in as admin',
@@ -136,7 +148,8 @@ const backupNow = async (site: SiteResource) => {
 
 const siteMenuOptions = (site: SiteResource) => {
   return [
-    { label: 'Open site', icon: 'lucide-external-link', onClick: () => openSite(site) },
+    { label: 'Visit site', icon: 'lucide-external-link', onClick: () => openSite(site) },
+    { label: 'Login as admin', icon: 'lucide-log-in', onClick: () => openAsAdmin(site) },
     { label: 'Back up now', icon: 'lucide-archive', onClick: () => backupNow(site) },
     {
       label: 'View analytics',
@@ -199,13 +212,13 @@ onMounted(() => {
 
     <ErrorMessage v-if="error" class="mt-16" :message="error" />
 
-    <template v-else-if="loading || filteredSites.length">
+    <template v-else-if="showSkeleton || filteredSites.length">
       <div
-        v-if="loading || view === 'grid'"
+        v-if="showSkeleton || view === 'grid'"
         class="gap-3 grid mt-1"
-        :class="loading || filteredSites.length > 1 ? 'md:grid-cols-2' : ''"
+        :class="showSkeleton || filteredSites.length > 1 ? 'md:grid-cols-2' : ''"
       >
-        <template v-if="loading">
+        <template v-if="showSkeleton">
           <SiteSkeleton v-for="index in 4" :key="index" :index="index - 1" />
         </template>
 

@@ -57,6 +57,10 @@ The UI should treat task ids as the handle for long work.
 
 The Frappe branch picker lists the branches reported by the repository. Type a different full branch name and select `Use branch` to choose it. `Set up bench` saves the selection before setup starts. The wizard restores a saved custom branch even when the repository list does not contain it.
 
+## Site Navigation
+
+**Visit site** opens the site's Desk URL using the browser's current site session. It does not sign you in or switch users, and shows no loading or success toast. **Login as admin** explicitly creates an admin login session and can replace an existing normal-user session for that site. These actions are available in the sites dropdown, with matching labels on the site detail page.
+
 ## Settings
 
 Settings screens edit `bench.toml` through the backend. The frontend should not know how to rewrite TOML or infer production side effects.
@@ -70,6 +74,7 @@ The Billing panel changes the site plan in the dialog. **Change plan** opens an 
 ## UX Expectations
 
 - Show the current bench and site context clearly.
+- Show site skeletons only when no sites are cached; keep cached sites visible while refreshing after navigation.
 - Prefer dense operational screens over marketing-style pages.
 - Keep destructive actions explicit and reversible where possible.
 - Show task progress and logs near the operation that started them.

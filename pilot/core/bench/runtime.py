@@ -77,6 +77,8 @@ class BenchRuntime:
             raise BenchError(incomplete_production_message(self.bench))
 
         manager.write_config()
+        # Links app units added since the last setup, and unlinks removed ones.
+        manager.install_config()
         manager.reload_manager_config()
         manager.restart()
         if include_admin:

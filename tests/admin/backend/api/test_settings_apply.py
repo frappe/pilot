@@ -3,9 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from flask import Flask
 
 from admin.backend.api.v1.settings import settings_bp
+from admin.backend.api.v1.settings.config import _GROUP_TYPES
 from pilot.config import BenchConfig
 
 
@@ -29,6 +31,29 @@ def _client(bench_root: Path, configure=None):
 
 def _worker_update() -> dict:
     return {"workers": [{"queues": ["default"], "count": 2}]}
+
+
+@pytest.mark.parametrize("group", sorted(_GROUP_TYPES))
+@pytest.mark.parametrize("value", [1, "text", True])
+def test_settings_reject_a_malformed_group(tmp_path: Path, group: str, value) -> None:
+    bench_root = tmp_path / "bench"
+    client = _client(bench_root)
+    before = (bench_root / "bench.toml").read_text()
+
+    response = client.patch("/api/v1/settings", json={group: value})
+
+    assert response.status_code == 422
+    assert response.get_json()["error"]["code"] == "invalid_settings"
+    assert (bench_root / "bench.toml").read_text() == before
+
+
+def test_settings_reject_an_object_where_workers_expects_a_list(tmp_path: Path) -> None:
+    client = _client(tmp_path / "bench")
+
+    response = client.patch("/api/v1/settings", json={"workers": {"queues": ["default"]}})
+
+    assert response.status_code == 422
+    assert response.get_json()["error"]["message"] == "workers must be a list."
 
 
 def test_settings_report_config_generation_failure_after_save(tmp_path: Path) -> None:

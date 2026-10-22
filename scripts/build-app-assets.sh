@@ -110,6 +110,11 @@ done
 echo "==> Building"
 # FRAPPE_DOCKER_BUILD skips the Redis cache refresh; there is no Redis here.
 (cd "$bench/apps/frappe" && FRAPPE_DOCKER_BUILD=1 yarn run production --apps "$app" --run-build-command)
+# Frappe's `after_app_build` hook builds page islands, which yarn does not run. On this bench
+# they hold only Frappe's pages, which a bench with no other app's pages uses as they are.
+if [ "$app" = frappe ] && [ -f "$app_dir/ui/vite/island/build-pages.js" ]; then
+    (cd "$app_dir" && node ui/vite/island/build-pages.js --production)
+fi
 
 # esbuild bundles are optional (an app may only ship a SPA); declared SPA paths are not.
 paths=()
@@ -154,18 +159,14 @@ from pathlib import Path
 
 app, commit, assets_dir, *paths = sys.argv[1:]
 manifest = {"app": app, "commit": commit, "paths": paths}
-# Page islands belong to each bench, not to the archive.
-page_islands = "/assets/frappe/dist/page-island/"
 for name in ("assets.json", "assets-rtl.json"):
     source = Path(assets_dir) / name
     entries = json.loads(source.read_text()) if source.exists() else {}
-    manifest[name] = {
-        key: url for key, url in entries.items() if url.startswith(f"/assets/{app}/") and not url.startswith(page_islands)
-    }
+    manifest[name] = {key: url for key, url in entries.items() if url.startswith(f"/assets/{app}/")}
 print(json.dumps(manifest, indent=1))
 EOF
 archive="$app-$commit.tar.gz"
-tar_args=(--exclude=frappe/public/dist/page-island -C "$work" manifest.json)
+tar_args=(-C "$work" manifest.json)
 [ ${#paths[@]} -gt 0 ] && tar_args+=(-C "$app_dir" "${paths[@]}")
 tar -czf "$out_dir/$archive" "${tar_args[@]}"
 (cd "$out_dir" && sha256sum "$archive" > "$archive.sha256")

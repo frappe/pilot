@@ -107,6 +107,22 @@ def record_alert(
         return False
 
 
+def backups_failing(bench: "Bench", site: str, failures: int) -> None:
+    """Raised once when a site reaches the failure limit since its last successful backup."""
+    try:
+        bench.notifications.create(
+            f"Backups of {site} are failing",
+            category="Sites",
+            event="backups_failing",
+            severity="Error",
+            message=f"{failures} backup attempts failed since the last successful backup.",
+            site=site,
+            action_route=f"/sites/{site}",
+        )
+    except Exception as exc:
+        logging.warning("Notification skipped for failing backups of %s: %s", site, exc)
+
+
 def _readable(command: str) -> str:
     """`backup-site` -> `Backup site`, so the title reads like a sentence."""
     return command.replace("-", " ").capitalize()

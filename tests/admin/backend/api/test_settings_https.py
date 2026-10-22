@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from admin.backend.api.v1.settings import build_settings_response
+from admin.backend.api.v1.settings import ConfigPatcher, build_settings_response
 from pilot.config import BenchConfig
 
 
@@ -29,3 +29,27 @@ def test_settings_response_exposes_tls_and_email() -> None:
     assert payload["admin"]["public_scheme"] == "https"
     assert payload["admin"]["domain"] == "admin.example.com"
     assert payload["letsencrypt"]["email"] == "ops@example.com"
+
+
+def test_patcher_sets_letsencrypt_email() -> None:
+    config = _config()
+
+    assert ConfigPatcher(config, {"letsencrypt": {"email": " ops@example.com "}}).apply() is None
+    assert config.letsencrypt.email == "ops@example.com"
+
+
+def test_patcher_rejects_invalid_letsencrypt_email() -> None:
+    config = _config()
+
+    error = ConfigPatcher(config, {"letsencrypt": {"email": "not-an-email"}}).apply()
+
+    assert error == "letsencrypt.email 'not-an-email' is not a valid email address."
+
+
+def test_patcher_leaves_letsencrypt_email_alone_when_unmentioned() -> None:
+    config = _config()
+    config.letsencrypt.email = "ops@example.com"
+
+    ConfigPatcher(config, {"bench": {"http_port": 8001}}).apply()
+
+    assert config.letsencrypt.email == "ops@example.com"

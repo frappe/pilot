@@ -605,29 +605,45 @@ def test_sizing_actions_return_range_errors_as_unprocessable(
 
 
 @pytest.mark.parametrize(
-    "path",
+    ("path", "body", "queue_target"),
     [
-        "/api/v1/database/configurations/connect_timeout",
-        "/api/v1/database/quick-actions/restart",
-        "/api/v1/database/quick-actions/performance-schema",
-        "/api/v1/database/quick-actions/innodb-buffer-pool-size",
-        "/api/v1/database/quick-actions/max-connections",
+        ("configurations/connect_timeout", {"value": 20}, "_queue_configuration_change"),
+        ("quick-actions/restart", None, "RestartDatabaseTask.queue"),
+        ("quick-actions/performance-schema", {"enabled": True}, "SetPerformanceSchemaTask.queue"),
+        ("quick-actions/innodb-buffer-pool-size", {"size_mb": 256}, "SetInnoDBBufferPoolSizeTask.queue"),
+        ("quick-actions/max-connections", {"max_connections": 40}, "SetMaxDatabaseConnectionsTask.queue"),
+        ("quick-actions/memory-share", {"memory_share": 0.6}, "SetMariaDBMemoryShareTask.queue"),
     ],
 )
-def test_database_mutations_are_forbidden_when_bench_management_is_disabled(
+def test_database_settings_queue_without_bench_management(
     tmp_path: Path,
     path: str,
+    body: dict | None,
+    queue_target: str,
 ) -> None:
     client = _client(
         tmp_path / "benches" / "current",
         allow_bench_management=False,
     )
-    with patch("admin.backend.api.v1.databases._quick_actions") as actions:
-        response = client.post(path)
+    actions = Mock()
+    actions.require_performance_schema.return_value = {"enabled": False}
+    actions.require_innodb_buffer_pool_size.return_value = {"current_mb": 128}
+    actions.require_max_connections.return_value = {"current": 50}
+    configurations = Mock()
+    configurations.prepare_change.return_value = {"changed": True}
+    with (
+        patch("admin.backend.api.v1.databases._quick_actions", return_value=actions),
+        patch("admin.backend.api.v1.databases._configurations", return_value=configurations),
+        patch(f"admin.backend.api.v1.databases.{queue_target}", return_value="task-1") as queue,
+        patch(
+            "admin.backend.api.v1.databases.accepted_task_response",
+            return_value=({"task_id": "task-1"}, 202),
+        ),
+    ):
+        response = client.post(f"/api/v1/database/{path}", json=body)
 
-    assert response.status_code == 403
-    assert response.get_json()["error"]["code"] == "bench_management_forbidden"
-    actions.assert_not_called()
+    assert response.status_code == 202
+    queue.assert_called_once()
 
 
 def test_diagnostics_maps_unexpected_failure_to_500(tmp_path: Path) -> None:

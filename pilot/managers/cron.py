@@ -56,6 +56,8 @@ class CronManager:
             lines = self._read_crontab()
             marker = self._marker(job_key)
             entry = f"{cron_expr} {command}"
+            if marker in lines and lines[lines.index(marker) + 1 :][:1] == [entry]:
+                return
             try:
                 i = lines.index(marker)
             except ValueError:

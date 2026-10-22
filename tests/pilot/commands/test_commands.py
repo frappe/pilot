@@ -1206,6 +1206,7 @@ def test_write_common_site_config_preserves_custom_keys(tmp_path: Path) -> None:
     config = json.loads(config_path.read_text())
     assert config["server_script_enabled"] == 1
     assert config["redis_cache"] == "redis://localhost:13000"
+    assert config["webserver_host"] == "127.0.0.1"
 
 
 def test_write_common_site_config_does_not_enable_server_scripts(tmp_path: Path) -> None:

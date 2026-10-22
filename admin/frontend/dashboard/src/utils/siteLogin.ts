@@ -3,13 +3,13 @@ export type SiteLoginLink = {
   hint?: string
 }
 
-export const openSiteLogin = async (
+export const openSiteLink = async (
   createLink: () => Promise<SiteLoginLink>,
   { onHint }: { onHint?: (hint: string) => void } = {},
 ) => {
   const link = await createLink()
   if (typeof link?.url !== 'string') {
-    throw new Error('The site login link is invalid.')
+    throw new Error('The site link is invalid.')
   }
 
   const popup = window.open(link.url, '_blank')

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 
 from pilot.internal.jsonl_log import JsonlLog, utc_now
 
@@ -67,10 +68,14 @@ class AuditLog:
     def append(self, entry_type: str, entry: dict) -> None:
         self._log.append({"type": entry_type, "logged_at": utc_now(), **entry})
 
-    def entries(self, entry_type=None, site=None, status=None, jti=None, limit=None) -> list[dict]:
+    def entries(
+        self, entry_type=None, site=None, status=None, jti=None, limit=None, since: datetime | None = None
+    ) -> list[dict]:
         """Return matching records newest first across weekly files."""
         matched = []
         for record in self._log.read_newest_first():
+            if since is not None and datetime.fromisoformat(record["logged_at"]) < since:
+                break
             if self._matches(record, entry_type, site, status, jti):
                 matched.append(record)
                 if limit is not None and len(matched) >= limit:

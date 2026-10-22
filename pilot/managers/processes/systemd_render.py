@@ -1,9 +1,34 @@
 from __future__ import annotations
 
+import re
 import shlex
 
 from pilot.managers.processes.base import ServiceRenderer, override
 from pilot.managers.processes.local import ProcessDefinition
+
+_SAFE_ARGUMENT = re.compile(r"[\w@%+=:,./-]+", re.ASCII)
+
+
+def _exec(argv: list[str]) -> str:
+    # Exec lines need an absolute path, so `env` does the PATH lookup for a bare name.
+    if "/" not in argv[0]:
+        argv = ["/usr/bin/env", *argv]
+    return " ".join(_quote(argument) for argument in argv)
+
+
+def _quote(argument: str) -> str:
+    """systemd reads C escapes inside quotes and expands % specifiers and $ variables everywhere."""
+    if not _SAFE_ARGUMENT.fullmatch(argument):
+        argument = '"' + argument.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return argument.replace("%", "%%").replace("$", "$$")
+
+
+def _render_env(env: dict) -> str:
+    lines = []
+    for key, value in env.items():
+        value = value.replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%")
+        lines.append(f'Environment="{key}={value}"\n')
+    return "".join(lines)
 
 
 class SystemdRenderer(ServiceRenderer):
@@ -12,8 +37,11 @@ class SystemdRenderer(ServiceRenderer):
     @override
     def render(self, pd: ProcessDefinition) -> str:
         working_dir = f"WorkingDirectory={pd.working_dir}\n" if pd.working_dir else ""
-        env = "".join(f"Environment={k}={v}\n" for k, v in pd.env.items())
+        env = _render_env(pd.env)
         stop = f"TimeoutStopSec={pd.stop_timeout}\n" if pd.stop_timeout is not None else ""
+        pre = f"ExecStartPre={_exec(pd.pre_run)}\n" if pd.pre_run else ""
+        post = f"ExecStopPost={_exec(pd.post_run)}\n" if pd.post_run else ""
+        restart = "on-failure" if pd.restart_on_failure else "no"
         remove_socket = f"ExecStartPre=/bin/rm -f {pd.socket_file}\n" if pd.socket_file else ""
         # systemd stops in reverse start order; redis must outlive a lite runner draining into it.
         after_redis = (
@@ -21,17 +49,20 @@ class SystemdRenderer(ServiceRenderer):
             if pd.name.startswith("redis")
             else f"After={self.bench_name}-redis_cache.service {self.bench_name}-redis_queue.service\n"
         )
+        socket = self.get_socket_name(pd)
+        requires_socket = f"Requires={socket}\nAfter={socket}\n" if socket else ""
         return (
             f"[Unit]\n"
             f"Description={self.bench_name} {pd.name}\n"
             f"PartOf={self.bench_name}.target\n"
-            f"{after_redis}\n"
+            f"{after_redis}{requires_socket}\n"
             f"[Service]\n"
             f"Type=simple\n"
             f"{working_dir}{env}"
-            f"{remove_socket}"
-            f"ExecStart={shlex.join(pd.argv)}\n"
-            f"Restart=on-failure\n"
+            f"{remove_socket}{pre}"
+            f"ExecStart={_exec(pd.argv)}\n"
+            f"{post}"
+            f"Restart={restart}\n"
             f"LimitNOFILE=65535\n"
             f"{stop}"
             f"StandardOutput=append:{pd.log_file}\n"
@@ -50,7 +81,7 @@ class SystemdRenderer(ServiceRenderer):
         )
 
     def render_admin_service(self, pd: ProcessDefinition, socket_name: str) -> str:
-        env = "".join(f"Environment={k}={v}\n" for k, v in pd.env.items())
+        env = _render_env(pd.env)
         return (
             f"[Unit]\n"
             f"Description={self.bench_name} admin\n"
@@ -95,6 +126,19 @@ class SystemdRenderer(ServiceRenderer):
             f"StandardError=append:{log_file}.error.log\n\n"
             f"[Install]\n"
             f"WantedBy=default.target\n"
+        )
+
+    def get_socket_name(self, pd: ProcessDefinition) -> str | None:
+        return f"{self.bench_name}-{pd.name}.socket" if pd.listen_address else None
+
+    def render_socket(self, pd: ProcessDefinition) -> str:
+        # A target stop stops the socket. A target restart would restart it too, so `restart` avoids one.
+        return (
+            f"[Unit]\n"
+            f"Description={self.bench_name} {pd.name} (socket)\n"
+            f"StopPropagatedFrom={self.bench_name}.target\n\n"
+            f"[Socket]\n"
+            f"ListenStream={pd.listen_address}\n"
         )
 
     def render_target(self, unit_names: list[str]) -> str:

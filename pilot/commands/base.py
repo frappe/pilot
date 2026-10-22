@@ -36,6 +36,7 @@ class Command:
     """Dataclass-backed CLI command base."""
 
     name: ClassVar[str]
+    aliases: ClassVar[tuple[str, ...]] = ()
     help: ClassVar[str] = ""
     group: ClassVar[str | None] = None
     bench_mode: ClassVar[BenchMode] = BenchMode.AUTO

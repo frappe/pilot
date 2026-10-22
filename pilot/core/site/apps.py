@@ -70,8 +70,9 @@ class SiteApps:
             self._clear_cache()
 
     def restore_installed_apps_copy(self) -> None:
-        """Frappe clears its installed apps cache before it commits an uninstall, so a process
-        that reads in between caches the old list, and Frappe copies it to site_config.json."""
+        """Match the installed_apps copy in site_config.json to the database. A restore leaves it
+        stale, and so can an uninstall: Frappe clears its installed apps cache before it commits,
+        so a process that reads in between caches the old list, and Frappe copies it here."""
         from pilot.core.site.config import query_installed_apps_setting_via_db, set_site_config_values
 
         if not (self.site.path / "site_config.json").exists():
@@ -107,6 +108,19 @@ class SiteApps:
                 elif name not in installed:
                     self.install_app(dependency)
         self._toggle_app("enable-app", app)
+
+    def get_dependency_closure(self, app: "App") -> list[str]:
+        """The app and each bench app it requires, directly or through another."""
+        names: list[str] = []
+        pending = [app]
+        while pending:
+            current = pending.pop()
+            if current.config.name in names:
+                continue
+            names.append(current.config.name)
+            bench = self.site.bench
+            pending += [bench.app(name) for name in self.get_required_apps(current) if bench.is_app_installed(name)]
+        return names
 
     def get_required_apps(self, app: "App") -> list[str]:
         """Frappe validates these itself and names what is missing, so an unreadable

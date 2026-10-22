@@ -125,6 +125,8 @@ def _source_config(tmp_path: Path) -> Path:
         "ssl": True,
         "cert_name": "source.example.com",
         "backup_retention": {"scheme": "simple"},
+        "cloud_server_url": "https://admin.source.example.com",
+        "cloud_settings_embed_url": "https://admin.source.example.com",
     }
     config.write_text(json.dumps(source_config))
     return config

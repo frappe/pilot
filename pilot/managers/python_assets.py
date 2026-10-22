@@ -94,8 +94,10 @@ class PythonAssetBuilder:
 
             prebuilt = PrebuiltAssets(app)
             if prebuilt.install():
-                self.setup_prebuilt_assets(app.config.name, app_public_dir, dist_dir, prebuilt.asset_maps)
-                if app.has_page_islands:
+                self.setup_prebuilt_assets(
+                    app.config.name, app_public_dir, dist_dir, prebuilt.asset_maps, prebuilt.has_page_islands
+                )
+                if app.has_page_islands and not prebuilt.has_page_islands:
                     self.build_page_islands()
                 return
 
@@ -145,6 +147,7 @@ class PythonAssetBuilder:
         app_public_dir: Path,
         dist_dir: Path,
         asset_maps: dict[str, dict[str, str]] | None = None,
+        has_page_islands: bool = False,
     ) -> None:
         assets_dir = self.bench.sites_path / "assets"
         assets_dir.mkdir(exist_ok=True)
@@ -167,8 +170,10 @@ class PythonAssetBuilder:
         else:
             from pilot.core.app.prebuilt_assets import PAGE_ISLAND_URL
 
+            # Islands from the archive replace the bench's; otherwise the bench's stay for its rebuild.
+            keeping = "" if has_page_islands else PAGE_ISLAND_URL
             for name, entries in asset_maps.items():
-                self.merge_json(assets_dir / name, entries, replacing=f"/assets/{app_name}/", keeping=PAGE_ISLAND_URL)
+                self.merge_json(assets_dir / name, entries, replacing=f"/assets/{app_name}/", keeping=keeping)
         print(f"  Linked {app_link} -> {app_public_dir.resolve()}")
 
     def build_page_islands(self) -> None:

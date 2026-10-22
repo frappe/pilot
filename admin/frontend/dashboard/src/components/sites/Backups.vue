@@ -41,13 +41,15 @@ const error = ref('')
 
 const configRef = ref<InstanceType<typeof BackupConfigDialog> | null>(null)
 const config = ref<BackupSchedule | null>(null)
-const enabled = computed(() => !!config.value?.schedule)
+const isDefault = computed(() => !!config.value?.retention?.calendar_rotation)
+const enabled = computed(() => !!config.value?.schedule || isDefault.value)
 
-const scheduleSummary = computed(() =>
-  enabled.value
+const scheduleSummary = computed(() => {
+  if (isDefault.value) return 'Daily, with the default retention policy.'
+  return enabled.value
     ? `${cronToLabel(config.value?.schedule)}.`
-    : 'Manual backups are kept until you delete them.',
-)
+    : 'Manual backups are kept until you delete them.'
+})
 
 const loadConfig = async () => {
   try {

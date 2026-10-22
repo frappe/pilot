@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { openSiteLogin } from './siteLogin.ts'
+import { openSiteLink } from './siteLogin.ts'
 
 const installBrowser = () => {
   const events = []
@@ -25,7 +25,7 @@ test('navigates the pre-opened window to the login link', async () => {
   const { events, popup } = installBrowser()
   const link = { url: 'http://site.localhost:7000/desk?sid=one-time-sid' }
 
-  await openSiteLogin(async () => {
+  await openSiteLink(async () => {
     events.push('request')
     return link
   })
@@ -40,7 +40,7 @@ test('closes the pre-opened window when link creation fails', async () => {
   const { events } = installBrowser()
 
   await assert.rejects(
-    openSiteLogin(async () => {
+    openSiteLink(async () => {
       throw new Error('failed')
     }),
     /failed/,
@@ -53,7 +53,7 @@ test('closes the pre-opened window when the link has no url', async () => {
   const { events } = installBrowser()
 
   await assert.rejects(
-    openSiteLogin(async () => ({})),
+    openSiteLink(async () => ({})),
     /invalid/,
   )
 
@@ -64,7 +64,7 @@ test('reports the hint after the popup opens', async () => {
   installBrowser()
   const hints = []
 
-  await openSiteLogin(async () => ({ url: 'http://a.test/desk?sid=x', hint: 'add a.test to /etc/hosts' }), {
+  await openSiteLink(async () => ({ url: 'http://a.test/desk?sid=x', hint: 'add a.test to /etc/hosts' }), {
     onHint: (hint) => hints.push(hint),
   })
 
@@ -75,9 +75,18 @@ test('does not report a hint when the link has none', async () => {
   installBrowser()
   const hints = []
 
-  await openSiteLogin(async () => ({ url: 'http://site.localhost:7000/desk?sid=x' }), {
+  await openSiteLink(async () => ({ url: 'http://site.localhost:7000/desk?sid=x' }), {
     onHint: (hint) => hints.push(hint),
   })
 
   assert.deepEqual(hints, [])
+})
+
+test('opens a regular site URL without adding login credentials', async () => {
+  const { events, popup } = installBrowser()
+
+  await openSiteLink(async () => ({ url: 'https://site.example/desk' }))
+
+  assert.deepEqual(events, [['open', 'https://site.example/desk', '_blank']])
+  assert.equal(popup.opener, null)
 })

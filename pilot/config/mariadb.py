@@ -16,6 +16,8 @@ class MariaDBConfig:
     socket_path: str = ""
     existing: bool = False
     memory_share: float = 0.5
+    memory_high_mb: int | None = None
+    memory_max_mb: int | None = None
 
     def validate(self) -> None:
         low, high = MEMORY_SHARE_RANGE

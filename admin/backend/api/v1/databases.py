@@ -196,10 +196,6 @@ def get_database_configurations():
 
 @database_bp.post("/configurations/<variable>")
 def set_database_configuration(variable: str):
-    forbidden = guard_bench_management()
-    if forbidden is not None:
-        return forbidden
-
     data = request.get_json(silent=True)
     if not isinstance(data, dict) or set(data) != {"value"}:
         return error_response(
@@ -238,10 +234,6 @@ def set_database_configuration(variable: str):
 
 @database_bp.post("/quick-actions/restart")
 def restart_database():
-    forbidden = guard_bench_management()
-    if forbidden is not None:
-        return forbidden
-
     try:
         _quick_actions().require_restart()
         bench = _bench()
@@ -261,10 +253,6 @@ def restart_database():
 
 @database_bp.post("/quick-actions/performance-schema")
 def set_performance_schema():
-    forbidden = guard_bench_management()
-    if forbidden is not None:
-        return forbidden
-
     data = request.get_json(silent=True)
     enabled = data.get("enabled") if isinstance(data, dict) else None
     if type(enabled) is not bool:
@@ -302,10 +290,6 @@ def set_performance_schema():
 
 @database_bp.post("/quick-actions/innodb-buffer-pool-size")
 def set_innodb_buffer_pool_size():
-    forbidden = guard_bench_management()
-    if forbidden is not None:
-        return forbidden
-
     data = request.get_json(silent=True)
     size_mb = data.get("size_mb") if isinstance(data, dict) else None
     if type(size_mb) is not int:
@@ -342,10 +326,6 @@ def set_innodb_buffer_pool_size():
 
 @database_bp.post("/quick-actions/max-connections")
 def set_max_connections():
-    forbidden = guard_bench_management()
-    if forbidden is not None:
-        return forbidden
-
     data = request.get_json(silent=True)
     max_connections = data.get("max_connections") if isinstance(data, dict) else None
     if type(max_connections) is not int:
@@ -386,10 +366,6 @@ def set_max_connections():
 
 @database_bp.post("/quick-actions/memory-share")
 def set_memory_share():
-    forbidden = guard_bench_management()
-    if forbidden is not None:
-        return forbidden
-
     data = request.get_json(silent=True)
     memory_share = data.get("memory_share") if isinstance(data, dict) else None
     if type(memory_share) not in (int, float):

@@ -126,7 +126,7 @@ def register_editor_frontend(app: Flask) -> None:
 def register_in_app_embed_frontend(app: Flask) -> None:
     """Serve Desk's Cloud Settings IIFE at the URL Frappe boots into desk.
 
-    Desk loads `{pilot_endpoint}/embed/cloud-settings/cloud-settings.js` cross-origin.
+    Desk loads `{cloud_settings_embed_url}/embed/cloud-settings/cloud-settings.js` cross-origin.
     This must be registered before the dashboard SPA catch-all, which would otherwise
     answer with index.html and break script load.
     """

@@ -71,6 +71,8 @@ branch = "develop"
 follow_branch = true
 ```
 
+A registry release is offered only when it is newer than the installed commit. A full clone checks that the release descends from it. A shallow clone fetches only the release commit, without the history between them, so a newer version decides, and between equal versions, such as `17.0.0-dev` on `develop`, a later commit date decides.
+
 `[redis]` defines separate cache and queue ports. `[[workers]]` defines queue groups and their process counts.
 
 ## Runtime modes
@@ -108,7 +110,9 @@ tls = true
 allow_bench_management = true
 ```
 
-Nginx proxies admin traffic to `port + 1` on localhost. In production, `admin.domain` is required. `allow_bench_management` permits this admin to manage sibling benches and defaults to enabled only for development installs.
+Nginx proxies admin traffic to `port + 1` on localhost. In production, `admin.domain` is required. `allow_bench_management` permits this admin to manage sibling benches and defaults to enabled only for development installs. It also permits killing database processes and purging binlogs, because both affect every bench on the host. Database settings and the MariaDB restart do not need it.
+
+A new site calls Pilot at `pilot_endpoint` in its `site_config.json`. This is the admin URL on localhost, so it does not depend on DNS or `admin.domain`. The browser loads Cloud Settings from `cloud_server_url` and `cloud_settings_embed_url`, which hold the public admin URL. An admin domain change updates the public URLs and any `pilot_endpoint` that is not on localhost.
 
 Set the admin password with `pilot set-admin-password` or the Settings page. Pilot stores a PBKDF2-HMAC-SHA256 verifier. `jwt_secret` is local; `jwks_url` and `jwks_audience` are for a remote token issuer and are host-shared. Pilot keeps the issuer's public keys in `.jwks-cache.json` in the benches directory. A token whose key is in the cache is verified without a fetch, and a cache older than one minute is refreshed in the background. A key that is not in the cache causes a fetch, at most once every 30 seconds. A failed fetch keeps the cached keys.
 
@@ -151,6 +155,7 @@ These tables are per-bench unless noted otherwise:
 
 - `[gunicorn]`: Gunicorn settings.
 - `[build]`: manual override for the asset build memory cap.
+- `[processes]`: `disabled`, the app processes that stay off. `pilot processes disable` and `enable` write it. See [App Processes](app-processes.md).
 - `[firewall]`: firewall behavior.
 - `[waf]`: WAF rules and behavior.
 - `[s3]`: backup storage credentials and bucket settings. Set `endpoint_url` for a custom S3-compatible provider.
@@ -235,11 +240,17 @@ Central endpoint and authentication data come from instance metadata. While Cent
 
 Before it applies the Central credential, bootstrap sizes Pilot's MariaDB for the VM's memory, because an image built on another host keeps that host's sizing. It writes `my.cnf` and the unit for the next start, then applies the values to the running server without a restart: the buffer pool and its automatic minimum, `innodb_log_file_size`, `key_buffer_size`, and `max_connections`. An option set in `managed.cnf` keeps its value. The buffer pool cannot grow above the running `innodb_buffer_pool_size_max`, so a larger pool waits for the next start. Higher unit memory limits apply before MariaDB grows. Lower limits apply only after MariaDB uses less than the new `MemoryHigh`. The unit file is written last, after the limits apply; if the usage stays higher or cannot be read for a minute, the old unit stays and a later attempt tries again.
 
-The same sizing runs again when the host's memory changes, for example after a VM resize. `my.cnf` records the memory it was sized for. The user unit `pilot-mariadb-sizing.service` runs before every start of `pilot-mariadb.service`; when the host memory differs from the recorded value by 100 MB or more, it writes `my.cnf` and the unit for the new memory and sets the new memory limits for this start. MariaDB then starts with the new buffer pool, with no restart. A buffer pool size saved in `managed.cnf` that is larger than the new host allows is removed, so the automatic sizing takes over.
+The user unit `pilot-mariadb-sizing.service` prepares MariaDB before its first start in each host boot and stays active for that boot. Pilot records the boot ID and total host RAM in `memory-sizing.json`. On the first allocation, or a new boot with changed RAM, it recalculates the generated settings and clears custom buffer-pool sizes, log-file size, key-buffer size, connection count, and service memory limits. A MariaDB restart or a host reboot with unchanged RAM preserves custom values. Other database-variable overrides, including `innodb_snapshot_isolation`, remain unchanged. The upgrade patch records the current host capacity and starts the sizing service outside the database action lock, so installation preserves existing settings and the first MariaDB restart can proceed.
+
+Settings, Database, Database Configurations exposes `MemoryHigh` and `MemoryMax` in MiB for the shared managed Linux service. Optional `mariadb.memory_high_mb` and `mariadb.memory_max_mb` in `common_config.toml` persist manual limits across restarts. Both must be positive integers, with `MemoryHigh` below `MemoryMax`. The hard limit must exceed current MariaDB use and the configured buffer pool; lowering the soft limit requires it to remain above current use. At submission and execution, Pilot rejects a hard limit that, combined with estimated memory use by other host processes, exceeds 90% of total RAM. Unavailable MariaDB usage blocks the change. This check reflects current usage and does not reserve capacity against later growth. A host RAM change clears both saved limits and applies automatic values using `mariadb.memory_share`. Swap is not editable here.
+
+`innodb_snapshot_isolation` is editable in Database Configurations. Its warning explains that enabling it can reject conflicting updates or deletes and roll back transactions; disabling it removes that conflict protection. The change affects new connections to the shared database. Existing connections retain their session setting. The custom value is saved in `managed.cnf` and survives host RAM changes.
+
+The buffer-pool editor also caps its maximum below the effective MariaDB `MemoryMax`, in addition to the host-based range. The setter reads the hard limit again under the database action lock before writing settings or changing the pool, so a queued resize cannot exceed a newly lowered limit.
 
 On a host with less than 800 MB of memory, MariaDB gets a 64 MB buffer pool, an 8 MB key buffer, and 20 connections, which is enough for one bench with one site. `MemoryHigh` then stays at least a quarter of `MemoryMax` below it.
 
-`mariadb.memory_share` is the share of host memory that Pilot's MariaDB may use, from 0.2 to 0.8 (default 0.5); the benches keep the rest. Settings, Database, Memory split changes it for every bench of the host and re-sizes the running server. A larger buffer pool than the running server allows takes effect at the next MariaDB start.
+`mariadb.memory_share` is the share of host memory that Pilot's MariaDB may use, from 0.2 to 0.8 (default 0.5); the benches keep the rest. Settings, Database, Memory split changes it for every bench of the host and re-sizes the running server. Selecting a split clears manual service-limit overrides. When the new limits apply, Pilot saves them in both the main unit and its memory drop-in so they survive a reboot with unchanged RAM. A deferred shrink keeps the previous saved limits until it can apply safely. A larger buffer pool than the running server allows takes effect at the next MariaDB start.
 
 The domain provider controls the edge route for each hostname. Its route policy gives Pilot the public scheme, origin scheme, and client IP source.
 
@@ -256,6 +267,12 @@ Set `proxy.cloudflare = true` when site domains use Cloudflare's proxy. nginx th
 When `[central] enabled` is set, Pilot offers each marketplace release to a share of servers that grows over time. Central Settings holds the steps: a start percent, a step percent, an interval in hours and a max percent. The rollout does not go above the max percent, and a max percent of 0 stops it. Each host picks a fixed number from 1 to 100 one time and keeps it in `system/rollout-number`. When that file is damaged, the update check stops with an error until you correct the number or delete the file. The Apps page shows a release when this number is at or below the start percent plus one step for each full interval since the release was added to the marketplace registry. Pilot reads that time from the git history of its registry clone, so every server uses the same time. An app that follows a branch is not in the registry, so its new commits show at once. Without Central, or when Central sends no rollout steps, every update shows at once. When Central does not answer, sends bad steps, or the registry does not give the time of a release, that release waits. Central can hold a release that fails on too many servers, and a held release does not show until a person releases it in Central. The rollout only controls when an update shows. A person still starts each update.
 
 After each app update, Pilot writes one line for each updated app to `<bench>/logs/app_updates.json.log`, with `status` set to `success` or `failed`. The line also has the app, the old and new commits, the host's rollout number and, on failure, the error. The log shipper sends these lines to Datum with the other logs.
+
+### Scheduled Backups
+
+Each bench has one hourly `0 * * * *` cron job for scheduled backups. It is installed with the first enrolled site. Sites without a custom backup schedule use this default. New sites are enrolled, including sites created from a backup, and the `enroll_sites_in_scheduled_backups` patch enrolls existing sites that have no backup schedule. Each run reads the last 24 hours of the bench audit log once, then queues a logical backup of the database and site config for each enrolled site with no successful backup in the last 23 hours. Measuring 23 hours keeps each site's backup at the same hour every day. A backup also includes public and private files when the site has no file backup that day (UTC). Physical backups are not scheduled. After six failed backups in 24 hours, the job skips the site until the count drops. The sixth failure since the last successful backup adds a "Backups of <site> are failing" notification to the bench feed. Scheduled backups stay on disk in `sites/<site>/backups`, outside the directory that Frappe prunes. When S3 is configured, each backup is also uploaded and expired runs are deleted from S3. The host must have cron and the Pilot task worker running. A scheduled backup does not start while another task holds the site.
+
+After each backup, Pilot clears expired runs with the default GFS policy: every run is kept for 7 days, Sunday runs for 28 days, runs on the first day of a month for 366 days, and January 1 runs for 3,653 days. The newest run is always kept. The `backup_retention` object in `site_config.json` marks this policy with `scheme: "gfs"` and `calendar_rotation: true`. A custom schedule set in the dashboard or through the backup schedule API replaces the default. It installs a cron job for the site and stores a GFS or FIFO retention record without `calendar_rotation`, so the bench job skips the site and the count-based policy clears its runs. Turning off automated backups removes the schedule and the retention record, and the site then keeps only manual backups.
 
 ### Telemetry
 

@@ -70,6 +70,15 @@ def test_lite_runs_the_frappe_runner(tmp_path: Path) -> None:
     assert web.working_dir == bench.sites_path
 
 
+def test_lite_takes_a_systemd_socket_only_from_a_runner_that_reads_one(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    assert _web(bench).listen_address is None
+
+    (tmp_path / "apps" / "frappe" / "frappe" / "runner.py").write_text('os.environ.get("LISTEN_FDS")')
+    assert _web(bench).listen_address == "127.0.0.1:8000"
+    assert _web(bench, dev=True).listen_address is None
+
+
 def test_lite_passes_config_through_as_flags(tmp_path: Path) -> None:
     bench = make_bench(
         tmp_path,

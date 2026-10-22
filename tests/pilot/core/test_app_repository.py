@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -150,9 +151,7 @@ def test_update_of_a_full_repo_passes_no_depth(
     assert "--depth=1" not in git_calls[0]
 
 
-def test_pinned_tag_fetch_passes_git_auth_env(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_pinned_tag_fetch_passes_git_auth_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[list[str], dict]] = []
 
     def record(cmd, **kwargs):
@@ -171,9 +170,7 @@ def test_pinned_tag_fetch_passes_git_auth_env(
     assert calls[0][1]["env"] == {"GIT_CONFIG_COUNT": "1"}
 
 
-def test_pinned_commit_fetch_passes_git_auth_env(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_pinned_commit_fetch_passes_git_auth_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[list[str], dict]] = []
 
     def record(cmd, **kwargs):
@@ -258,6 +255,7 @@ def test_a_commit_the_server_will_not_fetch_by_sha_comes_from_the_full_history(
     _set_dev_install(monkeypatch, False)
     remote, _ = _repo_with_two_commits(tmp_path / "remote")
     first = GitRepo(remote)._run("rev-parse", "HEAD~1").stdout.strip()
+
     def refuse(self: AppRepository, commit: str) -> None:
         subprocess.run(["git", "init", "-q", str(self.app.path)], check=True)
         raise CommandError("fatal: remote error: upload-pack: not our ref")
@@ -344,3 +342,75 @@ def test_has_migrate_changes_sees_a_doctype_moved_out_of_place(tmp_path: Path) -
 
     pin = RevisionPin(kind="commit", ref=target)
     assert _repository(path).has_migrate_changes(pin) is True
+
+
+def _remote_with_three_commits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tip_date: str = "2090-01-01T00:00:00"
+) -> tuple[Path, list[str]]:
+    """A remote whose third commit is committed at `tip_date`, and its commits oldest first."""
+    _set_dev_install(monkeypatch, False)
+    remote, _ = _repo_with_two_commits(tmp_path / "remote")
+    (remote / "file").write_text("third")
+    subprocess.run(
+        ["git", "-C", str(remote), "commit", "-qam", "third"],
+        check=True,
+        capture_output=True,
+        env={**os.environ, "GIT_COMMITTER_DATE": tip_date},
+    )
+    return remote, GitRepo(remote)._run("rev-list", "--reverse", "HEAD").stdout.split()
+
+
+def _shallow_clone_at(remote: Path, commit: str, path: Path) -> AppRepository:
+    repository = _repository_of(remote, path)
+    repository.clone_rev(commit)
+    return repository
+
+
+def test_a_shallow_clone_fetches_the_update_target_without_its_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A plain fetch into a shallow clone downloads the whole repository, gigabytes for erpnext."""
+    remote, (first, middle, tip) = _remote_with_three_commits(tmp_path, monkeypatch)
+    repository = _shallow_clone_at(remote, first, tmp_path / "app")
+
+    assert repository.has_migrate_changes(RevisionPin(kind="commit", ref=tip)) is False
+    assert repository.repo.has_commit(tip)
+    assert not repository.repo.has_commit(middle)
+
+
+def test_a_shallow_clone_decides_an_update_by_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    remote, (first, _, tip) = _remote_with_three_commits(tmp_path, monkeypatch)
+    repository = _shallow_clone_at(remote, first, tmp_path / "app")
+    repository.app.installed_version = "1.0.0"
+
+    assert repository._is_ahead_of_installed(tip, "1.1.0") is True
+    assert repository._is_ahead_of_installed(tip, "0.9.0") is False
+
+
+def test_a_shallow_clone_decides_a_same_version_update_by_commit_date(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Releases on a develop branch share one version, such as 17.0.0-dev."""
+    remote, (first, _, tip) = _remote_with_three_commits(tmp_path, monkeypatch)
+    behind = _shallow_clone_at(remote, first, tmp_path / "behind")
+    ahead = _shallow_clone_at(remote, tip, tmp_path / "ahead")
+    behind.app.installed_version = ahead.app.installed_version = "17.0.0.dev0"
+
+    assert behind._is_ahead_of_installed(tip, "17.0.0-dev") is True
+    assert ahead._is_ahead_of_installed(first, "17.0.0-dev") is False
+
+
+def test_a_shallow_clone_does_not_offer_a_same_version_commit_from_the_same_time(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without history or a later date, nothing proves the release is newer."""
+    monkeypatch.setenv("GIT_COMMITTER_DATE", "2030-01-01T00:00:00")
+    remote, (first, _, tip) = _remote_with_three_commits(
+        tmp_path, monkeypatch, tip_date="2030-01-01T00:00:00"
+    )
+    repository = _shallow_clone_at(remote, first, tmp_path / "app")
+    repository.app.installed_version = "17.0.0.dev0"
+
+    assert repository._is_ahead_of_installed(tip, "17.0.0-dev") is False

@@ -13,6 +13,7 @@ from pilot.managers.processes.base import (
     UnitGroup,
     override,
 )
+from pilot.managers.processes.definitions import ProcessState
 from pilot.managers.processes.local import ProcessDefinition
 from pilot.managers.processes.systemd_render import SystemdRenderer
 from pilot.managers.systemd_user import SystemdUserMixin
@@ -31,6 +32,8 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
     # Until write_config compares them, assume both admin units changed.
     admin_service_changed = True
     admin_socket_changed = True
+    # Workload sockets write_config rewrote, which install_config must hand their ports to.
+    changed_sockets: tuple[str, ...] = ()
 
     @property
     def systemd_conf_dir(self) -> Path:
@@ -39,11 +42,15 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
     @override
     def write_config(self) -> None:
         service_before, socket_before = self._admin_unit_text()
+        sockets_before = self._workload_socket_text()
         AdminEnvManager(cli_root()).ensure()
         self._ensure_redis_config()
         self._ensure_gunicorn_config()
         GunicornManager(self.bench).generate_admin_config()
         self.systemd_conf_dir.mkdir(parents=True, exist_ok=True)
+
+        # Build first, so a broken app declaration leaves the current units in place.
+        defs = self._prod_process_definitions()
 
         target_file = self._target_name()
         for path in list(self.systemd_conf_dir.iterdir()):
@@ -52,7 +59,7 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
 
         renderer = SystemdRenderer(self.bench.config.name)
         workload_units: list[str] = []
-        for pd in self._prod_process_definitions():
+        for pd in defs:
             if pd.name == "admin":
                 (self.systemd_conf_dir / self._unit_name("admin")).write_text(self._admin_service_text())
                 (self.systemd_conf_dir / self._admin_socket_name()).write_text(
@@ -61,6 +68,9 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
             else:
                 (self.systemd_conf_dir / self._unit_name(pd.name)).write_text(renderer.render(pd))
                 workload_units.append(self._unit_name(pd.name))
+                if socket := renderer.get_socket_name(pd):
+                    (self.systemd_conf_dir / socket).write_text(renderer.render_socket(pd))
+                    workload_units.append(socket)
         (self.systemd_conf_dir / self._target_name()).write_text(renderer.render_target(workload_units))
         if self.bench.config.central.enabled:
             (self.systemd_conf_dir / self._central_bootstrap_name()).write_text(
@@ -74,6 +84,15 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         service_after, socket_after = self._admin_unit_text()
         self.admin_service_changed = service_after != service_before
         self.admin_socket_changed = socket_after != socket_before
+        sockets_after = self._workload_socket_text()
+        self.changed_sockets = tuple(
+            name for name, text in sockets_after.items() if sockets_before.get(name) != text
+        )
+
+    def _workload_socket_text(self) -> dict[str, str]:
+        """The workload socket units as they stand on disk, by name."""
+        sockets = self.systemd_conf_dir.glob("*.socket") if self.systemd_conf_dir.is_dir() else []
+        return {path.name: path.read_text() for path in sockets if path.name != self._admin_socket_name()}
 
     def _admin_unit_text(self) -> list[str]:
         """The admin unit files as they stand on disk."""
@@ -84,11 +103,28 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
 
     @override
     def install_config(self) -> None:
+        units = self.link_units()
+        self._ensure_linger()
 
+        env = self._systemctl_env()
+        run_command(self._systemctl("daemon-reload"), env=env)
+        # reset-failed clears rate-limit state so re-deploys can restart the admin socket.
+        subprocess.run(self._systemctl("reset-failed", *units), capture_output=True, env=env)
+        run_command(self._systemctl("enable", self._target_name()), env=env)
+        self.enable_admin_at_boot()
+        self._enable_central_bootstrap(env)
+        self._activate_admin(env)
+        self._activate_sockets(env)
+
+    def link_units(self) -> set[str]:
+        """Link the bench's generated units into the user unit dir; stop and unlink dropped ones."""
         self.user_unit_dir.mkdir(parents=True, exist_ok=True)
         defs = self._prod_process_definitions()
+        renderer = SystemdRenderer(self.bench.config.name)
+        sockets = {socket for pd in defs if (socket := renderer.get_socket_name(pd))}
         units = (
             set(self._unit_name(pd.name) for pd in defs)
+            | sockets
             | {self._target_name(), self._admin_socket_name()}
             | self._central_bootstrap_units()
         )
@@ -112,17 +148,27 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
             if dst.is_symlink() or dst.exists():
                 dst.unlink()
             dst.symlink_to(src)
+        return units
 
-        self._ensure_linger()
+    def reopen_sockets(self) -> None:
+        """Give each workload socket the address in its unit file, as after a port change."""
+        self.changed_sockets = tuple(self._workload_socket_text())
+        self._activate_sockets(self._systemctl_env())
 
-        env = self._systemctl_env()
-        run_command(self._systemctl("daemon-reload"), env=env)
-        # reset-failed clears rate-limit state so re-deploys can restart the admin socket.
-        subprocess.run(self._systemctl("reset-failed", *units), capture_output=True, env=env)
-        run_command(self._systemctl("enable", self._target_name()), env=env)
-        self.enable_admin_at_boot()
-        self._enable_central_bootstrap(env)
-        self._activate_admin(env)
+    def _activate_sockets(self, env: dict) -> None:
+        """A service that bound its port itself has to let go before its new socket can listen.
+        A stopped workload keeps its sockets closed, or a request would start web alone."""
+        is_workload_running = self.is_running()
+        for socket in self.changed_sockets:
+            service = socket.removesuffix(".socket") + ".service"
+            was_active = subprocess.run(self._systemctl("is-active", service), capture_output=True, env=env)
+            subprocess.run(self._systemctl("stop", service), capture_output=True, env=env)
+            if not is_workload_running:
+                continue
+            run_command(self._systemctl("restart", socket), env=env, timeout=_SYSTEMCTL_TIMEOUT)
+            if was_active.returncode == 0:
+                run_command(self._systemctl("start", service), env=env, timeout=_SYSTEMCTL_TIMEOUT)
+        self.changed_sockets = ()
 
     @staticmethod
     def _ensure_linger() -> None:
@@ -149,15 +195,23 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
 
     @override
     def ensure_ready(self) -> None:
-        self.reload_manager_config()
+        # Links the units an upgrade added, such as the web socket a web unit requires.
+        self.install_config()
+
+    @override
+    def restart(self) -> None:
+        # A target restart also restarts the sockets, which drops the requests waiting in them.
+        if not self.is_running():
+            return super().restart()
+        units = [self._unit_name(pd.name) for pd in self.process_definitions if pd.name != "admin"]
+        run_command(self._systemctl("restart", *units), env=self._systemctl_env())
+        return None
 
     @override
     def apply_unit_action(self, action: str, role: UnitGroup) -> None:
         env = self._systemctl_env()
         if role is UnitGroup.ADMIN:
             self._control_admin(action, env)
-        elif role is UnitGroup.WEB:
-            run_command(self._systemctl("restart", self._unit_name("web")), env=env)
         else:
             run_command(self._systemctl(action, self._target_name()), env=env)
 
@@ -196,6 +250,29 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         self.bench.logs_path.mkdir(parents=True, exist_ok=True)
         self.write_config()
         self.install_config()
+
+    @override
+    def get_process_states(self, definitions: list[ProcessDefinition]) -> dict[str, ProcessState]:
+        units = {self._unit_name(definition.name): definition.name for definition in definitions}
+        result = subprocess.run(
+            self._systemctl("show", *units, "--property=Id,ActiveState,SubState,MainPID"),
+            capture_output=True,
+            text=True,
+            env=self._systemctl_env(),
+        )
+        states = {}
+        for block in result.stdout.strip().split("\n\n"):
+            properties = dict(line.split("=", 1) for line in block.splitlines() if "=" in line)
+            name = units.get(properties.get("Id", ""))
+            if name:
+                state = f"{properties.get('ActiveState')} ({properties.get('SubState')})"
+                states[name] = ProcessState(state, int(properties.get("MainPID") or 0) or None)
+        return states
+
+    @override
+    def restart_processes(self, definitions: list[ProcessDefinition]) -> None:
+        units = [self._unit_name(definition.name) for definition in definitions]
+        run_command(self._systemctl("restart", *units), env=self._systemctl_env(), timeout=_SYSTEMCTL_TIMEOUT)
 
     def is_configured(self) -> bool:
         result = subprocess.run(
