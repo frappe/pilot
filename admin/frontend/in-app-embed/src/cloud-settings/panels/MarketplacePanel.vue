@@ -244,7 +244,7 @@ const settle = async (taskId: string, action: { verb: string; progress: string }
   if (outcome !== 'cancelled') {
     toast.warning(
       __(
-        '{0} {1} is taking longer than expected. It will keep running in the background — reopen to check.',
+        '{0} {1} is taking longer than expected. It will keep running in the background. Reopen to check.',
         [action.progress, label],
       ),
     )

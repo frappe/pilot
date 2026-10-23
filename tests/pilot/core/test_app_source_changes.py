@@ -95,6 +95,26 @@ def test_an_app_with_a_frappe_ui_page_has_page_islands(app: App) -> None:
     assert app.has_page_islands is True
 
 
+def test_an_app_with_an_exported_studio_app_has_studio_apps(app: App) -> None:
+    # Frappe keeps its Studio editor in studio/frontend, which is not a Studio app.
+    (app.path / "studio" / "frontend").mkdir(parents=True)
+    (app.path / "studio" / "frontend" / "package.json").write_text("{}")
+    assert app.has_studio_apps is False
+
+    (app.path / "studio" / "Help-Desk").mkdir()
+    (app.path / "studio" / "Help-Desk" / "help_desk.json").write_text("{}")
+
+    assert app.has_studio_apps is True
+
+
+def test_a_studio_build_does_not_count_even_when_git_does_not_ignore_it(app: App) -> None:
+    build = app.path / "crm" / "public" / "app_builds" / "portal" / "index.js"
+    build.parent.mkdir(parents=True)
+    build.write_text("built")
+
+    assert app.has_source_changes is False
+
+
 def test_a_failed_build_leaves_its_lockfiles_and_they_do_not_count(app: App) -> None:
     with pytest.raises(RuntimeError), app.record_lockfiles_on_failure():
         (app.path / "yarn.lock").write_text("rewritten by yarn install")

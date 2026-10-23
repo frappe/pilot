@@ -133,12 +133,6 @@ class DiskIoRates(TypedDict):
     write_bytes_per_sec: float
 
 
-class PathSize(TypedDict):
-    label: str
-    path: str
-    used_bytes: int
-
-
 class SystemMetrics(TypedDict):
     cpu_percent: float
     cpu_count: int | None
@@ -153,4 +147,3 @@ class SystemMetrics(TypedDict):
     disk_total: int
     network: NetworkRates
     disk_io: DiskIoRates
-    paths: list[PathSize]

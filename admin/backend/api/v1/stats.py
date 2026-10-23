@@ -73,18 +73,6 @@ def _memory_breakdown(mem, swap) -> dict:
     }
 
 
-def _path_sizes(bench_root: Path, config: BenchConfig) -> list[dict]:
-    from admin.backend.providers.storage import directory_size_bytes
-    from pilot.managers.database import MariaDBManager
-
-    benches_dir = str(bench_root)
-    mariadb_dir = str(MariaDBManager(config.mariadb).data_dir)
-    return [
-        {"label": "Benches", "path": benches_dir, "used_bytes": directory_size_bytes(benches_dir)},
-        {"label": "MariaDB", "path": mariadb_dir, "used_bytes": directory_size_bytes(mariadb_dir)},
-    ]
-
-
 def _log_file_info(description: str, path: Path) -> dict:
     from datetime import datetime
 
@@ -184,12 +172,9 @@ def system_info():
 
 @stats_bp.get("/metrics")
 def stats():
-    bench_root = current_app.config["BENCH_ROOT"]
-    config = BenchConfig.read(bench_root)
     mem = psutil.virtual_memory()
     swap = psutil.swap_memory()
     disk = psutil.disk_usage("/")
-    paths = _path_sizes(bench_root, config)
     return jsonify(
         {
             "cpu_percent": psutil.cpu_percent(),
@@ -204,7 +189,6 @@ def stats():
             "disk_used": disk.used,
             "disk_total": disk.total,
             **_io_rates(),
-            "paths": paths,
         }
     )
 

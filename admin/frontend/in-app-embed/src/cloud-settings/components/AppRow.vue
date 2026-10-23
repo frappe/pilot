@@ -33,7 +33,7 @@ const incompatibleLabel = computed(() =>
 )
 const incompatibleReason = computed(() =>
   requiredVersion.value
-    ? __("Needs Version {0} — change your server's version to install it", [requiredVersion.value])
+    ? __("Needs version {0}. Change your server's version to install it.", [requiredVersion.value])
     : __('Not available for this version of Frappe'),
 )
 </script>

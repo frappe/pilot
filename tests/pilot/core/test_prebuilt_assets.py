@@ -37,6 +37,7 @@ def _publish(directory: Path, app, manifest: dict | None = None, checksum: str |
             "manifest.json": json.dumps(manifest),
             "myapp/public/dist/js/new.bundle.BBBBBBBB.js": "new",
             "myapp/www/x.html": "<html>",
+            "myapp/public/app_builds/portal/index.js": "portal",
         }
         for member, content in files.items():
             data = content.encode()
@@ -69,6 +70,19 @@ def test_published_assets_replace_the_old_build(tmp_path: Path, release: Path) -
     dist = app.path / "myapp" / "public" / "dist" / "js"
     assert [path.name for path in dist.iterdir()] == ["new.bundle.BBBBBBBB.js"]
     assert (app.path / "myapp" / "www" / "x.html").read_text() == "<html>"
+
+
+@pytest.mark.parametrize("has_studio_apps", [False, True])
+def test_the_archive_tells_whether_it_has_the_studio_apps(tmp_path: Path, release: Path, has_studio_apps: bool) -> None:
+    app = _app(tmp_path)
+    paths = ["myapp/public/dist", *(["myapp/public/app_builds"] if has_studio_apps else [])]
+    _publish(release, app, manifest={"app": "myapp", "commit": app.installed_hash, "paths": paths})
+    prebuilt = PrebuiltAssets(app)
+
+    assert prebuilt.install() is True
+
+    assert prebuilt.has_studio_apps is has_studio_apps
+    assert (app.path / "myapp" / "public" / "app_builds").is_dir() is has_studio_apps
 
 
 def test_no_assets_for_this_commit_means_build(tmp_path: Path, release: Path) -> None:

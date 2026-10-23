@@ -168,7 +168,7 @@ class App:
         from pilot.core.app.prebuilt_assets import build_output_paths
 
         repo = self._repository.repo
-        outputs = build_output_paths(self)
+        outputs = [*build_output_paths(self), f"{self.config.name}/public/app_builds"]
         build_lockfiles = self.failed_build_lockfiles
         return any(
             Path(path).name != "components.d.ts"
@@ -221,6 +221,14 @@ class App:
     def has_page_islands(self) -> bool:
         """Whether the app has Frappe UI pages, whose islands Frappe builds."""
         return any((self.path / self.config.name).glob("*/page/*/*.island.js"))
+
+    @property
+    def has_studio_apps(self) -> bool:
+        """Whether the app exports Studio apps: `studio/<name>/<scrubbed name>.json`."""
+        return any(
+            path.stem == path.parent.name.replace(" ", "_").replace("-", "_").lower()
+            for path in (self.path / "studio").glob("*/*.json")
+        )
 
     @property
     def current_branch(self) -> str:

@@ -12,7 +12,7 @@ Apps that publish nothing continue to work. Pilot builds their assets on the ser
 4. The workflow deletes the files of older commits, as the [retention inputs](#keep-or-delete-old-assets) set.
 5. When Pilot installs or updates the app, it downloads the archive for the checked-out commit, checks the checksum, and puts the files in place.
 
-The archive holds `<app>/public/dist`, each declared SPA, and the files the build writes that git ignores under `<app>/public` and `<app>/www`, such as a generated CSS file. Its manifest also holds the app's entries of `assets.json` and `assets-rtl.json`, and Pilot merges them in place of the app's old entries. The framework app `frappe` uses the same workflow. Its archive also holds the page islands of Frappe's own pages. A bench where no other app has Frappe UI pages uses them as they are; otherwise Pilot builds every app's page islands after the download. An app that has no `package.json` and no `*.bundle.*` files publishes an empty archive, so that benches do not build it.
+The archive holds `<app>/public/dist`, each declared SPA, and the files the build writes that git ignores under `<app>/public` and `<app>/www`, such as a generated CSS file. Its manifest also holds the app's entries of `assets.json` and `assets-rtl.json`, and Pilot merges them in place of the app's old entries. The framework app `frappe` uses the same workflow. Its archive also holds the Studio editor, the islands that desk draws, such as charts, and the page islands of Frappe's own pages. A bench where no other app has Frappe UI pages uses the page islands as they are; otherwise Pilot builds every app's page islands after the download. An app that exports Studio apps (`studio/<name>/`) also publishes their build, `<app>/public/app_builds`. Frappe builds them in Python, so for such an app the workflow also installs Frappe's Python package, without `mysqlclient`. When an archive does not hold them, Pilot builds them after the download with Frappe's Studio editor. Before a server build of such an app, Pilot installs the JS dependencies of the editor, which a prebuilt Frappe does not have. An app that has no `package.json` and no `*.bundle.*` files publishes an empty archive, so that benches do not build it.
 
 The release `assets-<branch>` is a pre-release that holds files only. It is not a version release of the app. Do not edit it.
 
@@ -156,7 +156,7 @@ git clone https://github.com/frappe/pilot
 pilot/scripts/build-app-assets.sh <app checkout> <frappe branch> <output dir>
 ```
 
-It needs git, Python 3.11 or later, and Node.js 24. It installs JS dependencies with the same rules as Pilot on a server. See [JS dependencies](production.md#js-dependencies). When yarn or pnpm is missing, it installs the tool into `~/.local`. It writes the archive and its checksum to the output directory.
+It needs git, Python 3.11 or later, and Node.js 24. An app with Studio apps also needs uv, which the script installs into `~/.local` when it is missing. It installs JS dependencies with the same rules as Pilot on a server. See [JS dependencies](production.md#js-dependencies). When yarn or pnpm is missing, it installs the tool into `~/.local`. It writes the archive and its checksum to the output directory.
 
 ## Troubleshooting
 

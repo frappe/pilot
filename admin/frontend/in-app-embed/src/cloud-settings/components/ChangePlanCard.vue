@@ -15,7 +15,7 @@ interface Props {
 }
 
 const props = defineProps<Props>()
-const emit = defineEmits<{ close: []; 'add-payment': [] }>()
+const emit = defineEmits<{ close: [] }>()
 const store = props.store
 
 const options = ref<PlanOptions | null>(null)
@@ -75,25 +75,16 @@ onMounted(() => {
     <div class="flex items-start justify-between gap-4">
       <div>
         <h3 class="text-base-semibold text-ink-gray-8">{{ __("Change plan") }}</h3>
-        <p class="mt-1 text-p-sm text-ink-gray-5">
+        <p v-if="!needsPaymentMethod" class="mt-1 text-p-sm text-ink-gray-5">
           {{ __("Pick the size this site runs on. You pay for the new plan from today.") }}
         </p>
       </div>
       <Button variant="ghost" icon="lucide-x" :aria-label="__('Close plan list')" @click="emit('close')" />
     </div>
 
-    <div v-if="needsPaymentMethod" class="mt-4 rounded-6 bg-surface-gray-2 p-4">
-      <p class="text-p-sm text-ink-gray-7">
-        {{ __("Your site is on a free trial. Add a payment method to keep it and choose a bigger plan.") }}
-      </p>
-      <Button
-        class="mt-3"
-        variant="solid"
-        icon-left="lucide-credit-card"
-        :label="__('Add payment method')"
-        @click="emit('add-payment')"
-      />
-    </div>
+    <p v-if="needsPaymentMethod" class="mt-4 rounded-6 bg-surface-gray-2 p-4 text-p-sm text-ink-gray-7">
+      {{ __("Other plans open once you add a payment method.") }}
+    </p>
 
     <div v-else-if="started" class="mt-4 rounded-6 bg-surface-gray-2 p-4" role="status">
       <p class="text-p-sm text-ink-gray-7">

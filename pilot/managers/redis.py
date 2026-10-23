@@ -2,14 +2,20 @@ from __future__ import annotations
 
 import re
 import subprocess
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.config import RedisConfig
+from pilot.exceptions import ConfigError
 from pilot.managers.packages import get_package_manager
 from pilot.managers.platform import is_macos, which
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
+
+_BLOCK_START = "# BEGIN PILOT MANAGED BLOCK. Pilot rewrites this block; add your settings outside it."
+_BLOCK_END = "# END PILOT MANAGED BLOCK"
+_PILOT_DIRECTIVE = re.compile(r"^(port|bind|save)\b")
 
 
 def redis_server_binary() -> str | None:
@@ -62,5 +68,21 @@ class RedisManager:
 
     def _write_config(self, filename: str, port: int) -> None:
         self.bench.config_path.mkdir(parents=True, exist_ok=True)
-        content = f'port {port}\nbind 127.0.0.1\nsave ""\n'
-        (self.bench.config_path / filename).write_text(content)
+        path = self.bench.config_path / filename
+        before, after = self._split_custom_config(path)
+        block = f'{_BLOCK_START}\nport {port}\nbind 127.0.0.1\nsave ""\n{_BLOCK_END}\n'
+        path.write_text(before + block + after)
+
+    @staticmethod
+    def _split_custom_config(path: Path) -> tuple[str, str]:
+        """The lines before and after Pilot's block. A file without the block keeps all but Pilot's directives."""
+        if not path.exists():
+            return "", ""
+        text = path.read_text()
+        before, start, rest = text.partition(_BLOCK_START)
+        if not start:
+            return "", "".join(line for line in text.splitlines(keepends=True) if not _PILOT_DIRECTIVE.match(line))
+        _, end, after = rest.partition(_BLOCK_END)
+        if not end:
+            raise ConfigError(f"{path} has no '{_BLOCK_END}' line. Restore it or delete the file.")
+        return before, after.removeprefix("\n")

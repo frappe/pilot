@@ -6,6 +6,7 @@ import json
 import shutil
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -117,3 +118,76 @@ def test_two_lockfiles_stop_the_install_before_any_manager_runs(
     assert result.returncode == 1
     assert "error:" in result.stderr and "yarn.lock and pnpm-lock.yaml" in result.stderr
     assert read_calls(environment) == []
+
+
+# `uv venv` writes a python stub that logs its call and builds what `build_standard_apps` would.
+UV_STUB = (
+    STUB
+    + """if [ "$1" = venv ]; then
+    mkdir -p "$3/bin"
+    printf '#!/bin/sh\\necho "python $3 @ ${PWD##*/}" >> "$LOG"\\nmkdir -p "$PYTHONPATH/frappe/public/app_builds/portal"\\n' > "$3/bin/python"
+    chmod +x "$3/bin/python"
+fi
+"""
+)
+
+
+def test_script_builds_and_publishes_exported_studio_apps(tmp_path: Path, environment: dict[str, str]) -> None:
+    app = tmp_path / "checkout"
+    (app / "frappe").mkdir(parents=True)
+    (app / "frappe" / "hooks.py").write_text("")
+    write_package(app / "studio" / "frontend")
+    (app / "studio" / "Help-Desk").mkdir()
+    (app / "studio" / "Help-Desk" / "help_desk.json").write_text("{}")
+    write_executable(tmp_path / "bin" / "uv", UV_STUB)
+    subprocess.run(["git", "init", "-q", str(app)], check=True)
+    subprocess.run(["git", "-C", str(app), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(app), "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "c"],
+        check=True,
+    )
+
+    subprocess.run(
+        ["bash", str(SCRIPT), str(app), "develop", str(tmp_path / "out")],
+        env=environment,
+        check=True,
+        capture_output=True,
+    )
+
+    install_editor, create_env, install_frappe, build = read_calls(environment)[-4:]
+    assert install_editor == "yarn install --frozen-lockfile @ frappe/studio/frontend"
+    assert create_env.startswith("uv venv --quiet ") and create_env.endswith(" @ frappe")
+    assert install_frappe.startswith("uv pip install --quiet --override ")
+    assert install_frappe.partition(" @ ")[0].endswith("/bench/apps/frappe") and " -e " in install_frappe
+    assert build == "python frappe @ sites"
+    archive = next((tmp_path / "out").glob("*.tar.gz"))
+    with tarfile.open(archive) as tar:
+        manifest = json.load(tar.extractfile("manifest.json"))
+    assert "frappe/public/app_builds" in manifest["paths"]
+
+
+def test_script_builds_frappe_s_framework_and_page_islands(tmp_path: Path, environment: dict[str, str]) -> None:
+    app = tmp_path / "checkout"
+    (app / "frappe").mkdir(parents=True)
+    (app / "frappe" / "hooks.py").write_text("")
+    for script in ("build-framework.js", "build-pages.js"):
+        write_executable(app / "ui" / "vite" / "island" / script, "")
+    write_executable(tmp_path / "bin" / "node", STUB)
+    subprocess.run(["git", "init", "-q", str(app)], check=True)
+    subprocess.run(["git", "-C", str(app), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(app), "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "c"],
+        check=True,
+    )
+
+    subprocess.run(
+        ["bash", str(SCRIPT), str(app), "develop", str(tmp_path / "out")],
+        env=environment,
+        check=True,
+        capture_output=True,
+    )
+
+    assert [call for call in read_calls(environment) if call.startswith("node ")] == [
+        "node ui/vite/island/build-framework.js --production @ frappe",
+        "node ui/vite/island/build-pages.js --production @ frappe",
+    ]

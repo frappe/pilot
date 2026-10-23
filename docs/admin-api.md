@@ -105,6 +105,10 @@ A site calls Central through `GET` or `POST /sites/<name>/central/<method>`. Pil
 | `central.api.pilot.heartbeat` | Check that the site reaches Central |
 | `central.api.pilot.get_team_identity_token` | Get a 5-minute token that proves the team to an outside service. Send `{"audience": "<service URL>"}`; the answer is `{"token": "..."}`. |
 | `central.billing.api.billing_api.*` | Billing calls from the site's Cloud Settings |
+| `central.api.email_oauth.start` | Start connecting a mailbox through Frappe Cloud's OAuth app. `POST` `{"provider", "state", "code_challenge", "return_url"}`; the answer is `{"authorize_url", "client_id", "scopes"}`. |
+| `central.api.email_oauth.relay_token` | Exchange a mailbox's sign-in code or refresh token at the provider with Frappe Cloud's app secret. `POST` `{"provider", "grant_type", ...}`; the answer is the provider's token response. |
+
+The provider sends the browser to Central's `central.api.email_oauth.callback` directly, not through Pilot, and Central sends it back to the site's `return_url`.
 
 ### Renaming And Domains
 
@@ -149,6 +153,8 @@ A restore puts the site in maintenance mode, restores only the chosen parts, and
 
 The dashboard sends large backup files in chunks of up to 256 MB, because one request cannot carry them. The routes take a bench session, or a site token for its own site.
 
+On a server that Central locks, such as an open free trial, a site token cannot change the site configuration (`PATCH /sites/<name>/configuration`) or download the site config file of a backup. Pilot asks Central (`central.api.pilot.get_server_access`) on each such request. A locked server answers 403 `upgrade_required`. When Central does not answer, or a server that Central manages cannot read its credential, Pilot answers 503 `central_unavailable`. The download links of an offsite backup leave out the config file. A bench session and a server without Central are never locked.
+
 | Route | Purpose |
 |---|---|
 | `POST /sites/<name>/uploads` | Takes `{"files": {part: {"filename", "size"}}}`. Returns `upload_id` and `chunk_size`. Refuses files larger than the free disk space. |
@@ -188,6 +194,12 @@ A user of the team opens `approval_url` and enters the code within 10 minutes. F
 The first three sections come from MariaDB's Performance Schema, so they are empty and the flag is `false` whenever `performance_schema` is off - the instrumentation is a startup setting, and MariaDB collects nothing until the server restarts with it on. `redundant_indexes` reads `information_schema.STATISTICS` instead and stays populated either way. The UI keys off the flag to explain the empty panels rather than reporting them as an error.
 
 `?site=<name>` narrows every section to that site's schema; without it the report covers every user schema on the server, system schemas excluded. Only MariaDB implements it - other engines raise, and the route answers 422.
+
+### Live Metrics
+
+`GET /metrics` returns the host's current CPU, load, memory, and root disk readings from `psutil`, plus network and disk I/O rates measured as the delta since the previous call. The Analytics live view polls it every 10 seconds for its top bar and live charts, so it must stay cheap: no `du`, no database queries, nothing that can fail on file permissions. Directory and database sizes belong to `GET /storage` and `GET /sites/storage`.
+
+The live view loads `/metrics` and `/monitor/history` independently. If `/metrics` fails, the top bar shows the error and the application charts still refresh from `/monitor/history`.
 
 ### Setup
 

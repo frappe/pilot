@@ -1,7 +1,12 @@
 {
   "name": "@frappe/cloud-sdk",
-  "version": "0.3.0",
+  "version": "0.4.1",
   "description": "API client and dialog for Frappe Cloud site settings",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/frappe/pilot.git",
+    "directory": "admin/frontend/cloud-sdk"
+  },
   "type": "module",
   "exports": {
     ".": {
@@ -13,7 +18,9 @@
       "default": "./dist/api.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc && npm --prefix ../in-app-embed run build:sdk && node tests/check-bundle.mjs",
     "test": "node --test tests/*.test.ts"

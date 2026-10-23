@@ -19,7 +19,14 @@ class CentralAccountLink(TypedDict):
 
 
 _ALLOWED_PREFIXES = ("central.billing.api.billing_api.",)
-_ALLOWED_EXACT = frozenset({"central.api.pilot.heartbeat", "central.api.pilot.get_team_identity_token"})
+_ALLOWED_EXACT = frozenset(
+    {
+        "central.api.pilot.heartbeat",
+        "central.api.pilot.get_team_identity_token",
+        "central.api.email_oauth.start",
+        "central.api.email_oauth.relay_token",
+    }
+)
 
 
 def _is_allowed(method_path: str) -> bool:

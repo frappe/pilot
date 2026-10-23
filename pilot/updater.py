@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import urllib.request
 from collections.abc import Callable
@@ -56,6 +58,26 @@ def perform_upgrade(on_progress: Progress = lambda message: None) -> None:
     else:
         _upgrade_release(on_progress)
     run_patches("post_update", on_progress=on_progress)
+
+
+def restart_admin_with_new_code(bench_path: Path) -> None:
+    """Restart the admin service from a new process, because this process still holds the old modules."""
+    env = {**os.environ, "PYTHONPATH": str(cli_root())}
+    subprocess.run([sys.executable, "-m", "pilot.updater", str(bench_path)], check=True, env=env)
+
+
+def restart_admin(bench_path: Path) -> None:
+    """Restart a managed admin service. `pilot start` must be restarted by the operator."""
+    from pilot.core.bench import Bench
+    from pilot.managers.processes.base import ManagedProcessManager
+    from pilot.managers.processes.local import ProcessManager
+
+    manager = ProcessManager.detect_running(Bench(bench_path))
+    if not isinstance(manager, ManagedProcessManager):
+        print("`pilot start` runs the admin here. Restart it to run the new version.")
+        return
+    print("Restarting admin service...")
+    manager.restart_admin()
 
 
 def _upgrade_dev(on_progress: Progress) -> None:
@@ -148,3 +170,8 @@ def _remove(path: Path) -> None:
         path.unlink()
     elif path.is_dir():
         shutil.rmtree(path)
+
+
+# An older Pilot runs this module after it updates, so keep this command line stable.
+if __name__ == "__main__":
+    restart_admin(Path(sys.argv[1]))

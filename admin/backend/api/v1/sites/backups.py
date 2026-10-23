@@ -10,6 +10,7 @@ from admin.backend.api.v1.sites.shared import (
     internal_error,
     invalid_fields,
     malformed_body,
+    server_access_locked_response,
     site_name,
     site_not_found,
     task_failure,
@@ -17,6 +18,7 @@ from admin.backend.api.v1.sites.shared import (
 )
 from admin.backend.middleware import require_scope
 from pilot.core.bench import Bench
+from pilot.core.site.restore import backup_part
 from pilot.exceptions import BenchError, CronError
 from pilot.internal.site_paths import site_exists
 from pilot.internal.validators import validate_cron_expression
@@ -116,6 +118,9 @@ def _backup_set_resource(s) -> dict:
 def download_backup_file(name: str, timestamp: str, file_id: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     bench = Bench(bench_root)
+    # The config file holds the site's secrets, which reach past the site.
+    if backup_part(file_id) == "config" and (refused := server_access_locked_response()):
+        return refused
     try:
         target = bench.site(name).backups.download_file_path(timestamp, file_id)
     except BenchError:
@@ -144,6 +149,9 @@ def backup_download_links(name: str, timestamp: str):
         return error_response("backup_not_found", "Offsite backup not found.", 404)
     except Exception:
         return internal_error("Could not create offsite backup URLs.")
+    # The config file holds the site's secrets, which reach past the site.
+    if "site_config" in links and server_access_locked_response():
+        links.pop("site_config")
 
     bench.audit_action("backup", {"site": name, "event": "download", "timestamp": timestamp, "via": "s3"})
     return jsonify(links)

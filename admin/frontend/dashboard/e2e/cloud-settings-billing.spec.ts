@@ -8,17 +8,15 @@ const trial = (state: 'Active' | 'Ended') => ({
   ends_on: '2026-10-21',
   days_left: state === 'Active' ? 5 : 0,
   deletes_on: '2026-10-28',
-  credit: state === 'Active' ? { amount: 10, currency: 'USD', validity_days: 60, ends_on: '2026-10-21' } : null,
-  sleeps_after_minutes: 10,
 })
 
-const billing = ({ onTrial = 'Active' as 'Active' | 'Ended' | null, hasCard = false } = {}) => ({
+const billing = ({ onTrial = 'Active' as 'Active' | 'Ended' | null, hasCard = false, profileComplete = true } = {}) => ({
   currency: 'USD',
   plan: { name: 'Starter', subtitle: '1 vCPU · 2 GB RAM · 25 GB disk', specs: {} },
   estimate: { amount: '$0.00', note: 'Due Nov 1 · 16d left' },
   credit: { amount: '$0.00', note: 'Available credit', warning: false },
   payment_method: hasCard ? { name: 'pm-1', label: 'Visa •••• 4242' } : null,
-  profile_complete: true,
+  profile_complete: profileComplete,
   trial: onTrial ? trial(onTrial) : null,
 })
 
@@ -57,35 +55,82 @@ const accountLinks = () => ({
   message: { url: 'https://cloud.example.test', billing: '', change_plan: 'https://cloud.example.test/plans', server: '' },
 })
 
-test('an active trial names the credit deadline and the idle sleep', async ({ page }) => {
+const stripeOnly = () => ({ message: [{ name: 'Stripe', label: 'Stripe', adapter_key: 'Stripe', method_types: ['Card'] }] })
+
+const emptyProfile = () => ({
+  message: { currency: '', legal_name: '', email: '', address_line1: '', city: '', state: '', country: '', pincode: '', gstin: '', supported_currencies: ['USD', 'INR'] },
+})
+
+test('an active trial shows the days left above the plan, with one primary action', async ({ page }) => {
   await openBilling(page, { get_billing: () => ({ message: billing() }), get_account_url: accountLinks })
 
-  await expect(page.getByText(/Your free trial ends in 5 days\. Add a payment method by .+ to keep this site running and get .*10.* credit\./)).toBeVisible()
-  await expect(page.getByText('Until you add a payment method, your site sleeps after 10 minutes without visitors. The next visit wakes it in a few seconds.')).toBeVisible()
-  await expect(page.getByText('Credit', { exact: true })).toBeVisible()
-  await expect(page.getByText('Trial credit')).toHaveCount(0)
+  await expect(page.getByText('Your free trial ends in 5 days')).toBeVisible()
+  await expect(page.getByText(/Your site is free until .+\. To keep the site, add a payment method\. Billing for the Starter plan then starts, and full server access turns on\./)).toBeVisible()
+  await expect(page.getByText(/credit/i)).toHaveCount(0)
+  await expect(page.getByText('Free trial', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Add payment method' })).toHaveCount(1)
+  await expect(page.getByText('Estimated this cycle')).toHaveCount(0)
+  await expect(page.getByText(/sleeps/)).toHaveCount(0)
 })
 
-test('an ended trial names the deletion date, with no credit and no sleep note', async ({ page }) => {
+test('an ended trial names the deletion date', async ({ page }) => {
   await openBilling(page, { get_billing: () => ({ message: billing({ onTrial: 'Ended' }) }), get_account_url: accountLinks })
 
-  await expect(page.getByText(/Your free trial has ended and this site is stopped\. Add a payment method before .+ to keep it\./)).toBeVisible()
-  await expect(page.getByText(/sleeps after/)).toHaveCount(0)
+  await expect(page.getByText('Your free trial has ended')).toBeVisible()
+  await expect(page.getByText(/This site is stopped\. To keep the site and its data, add a payment method before .+\./)).toBeVisible()
 })
 
-test('during a trial, Change plan asks for a payment method and opens the card flow', async ({ page }) => {
-  const calls = await openBilling(page, {
-    get_billing: () => ({ message: billing() }),
-    get_account_url: accountLinks,
-    get_payment_gateways: () => ({ message: [{ name: 'Stripe', label: 'Stripe', adapter_key: 'Stripe', method_types: ['Card'] }] }),
-  })
+test('during a trial, Change plan says plans open after a payment method', async ({ page }) => {
+  const calls = await openBilling(page, { get_billing: () => ({ message: billing() }), get_account_url: accountLinks })
 
   await page.getByRole('button', { name: 'Change plan' }).click()
-  await expect(page.getByText('Your site is on a free trial. Add a payment method to keep it and choose a bigger plan.')).toBeVisible()
+  await expect(page.getByText('Other plans open once you add a payment method.')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Add payment method' })).toHaveCount(1)
   expect(calls.some((call) => call.method === 'get_plan_options')).toBe(false)
+})
 
-  await page.getByRole('button', { name: 'Add payment method' }).first().click()
-  await expect(page.getByText('Visa, Mastercard, RuPay, Amex')).toBeVisible()
+test('adding a payment method asks for billing details first, then shows only the payment step', async ({ page }) => {
+  const calls = await openBilling(page, {
+    get_billing: () => ({ message: billing({ profileComplete: false }) }),
+    get_account_url: accountLinks,
+    get_billing_profile: emptyProfile,
+    save_billing_profile: () => ({ message: { saved: true } }),
+    get_payment_gateways: stripeOnly,
+  })
+
+  await page.getByRole('button', { name: 'Add payment method' }).click()
+  await expect(page.getByText('Step 1 of 2')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Add payment method' })).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Continue', exact: true }).click()
+  await expect(page.getByText('Enter the name to show on invoices.')).toBeVisible()
+  expect(calls.some((call) => call.method === 'save_billing_profile')).toBe(false)
+
+  await page.getByLabel('Legal name').fill('Acme Inc')
+  await page.getByLabel('Address').fill('1 Main St')
+  await page.getByLabel('City').fill('Austin')
+  await page.getByLabel('Country').fill('United States')
+  await page.getByRole('button', { name: 'Continue', exact: true }).click()
+
+  await expect(page.getByText('Step 2 of 2')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Continue with Stripe' })).toBeVisible()
+  await expect(page.getByText('UPI')).toHaveCount(0)
+  expect(calls.find((call) => call.method === 'save_billing_profile')?.form.get('currency')).toBe('USD')
+})
+
+test('India asks for the state and offers GSTIN', async ({ page }) => {
+  await openBilling(page, {
+    get_billing: () => ({ message: billing({ profileComplete: false }) }),
+    get_account_url: accountLinks,
+    get_billing_profile: emptyProfile,
+  })
+
+  await page.getByRole('button', { name: 'Add payment method' }).click()
+  await expect(page.getByLabel('GSTIN (optional)')).toHaveCount(0)
+
+  await page.getByLabel('Country').fill('India')
+  await expect(page.getByLabel('GSTIN (optional)')).toBeVisible()
+  await expect(page.getByLabel('State', { exact: true })).toBeVisible()
 })
 
 test('a paid site moves to a bigger plan and opens the progress page', async ({ page }) => {
@@ -174,4 +219,77 @@ test('a failed plan list offers a retry, and See more plans opens Central', asyn
   })
   await page.getByRole('button', { name: 'See more plans in Frappe Cloud' }).click()
   expect(await page.evaluate(() => (window as unknown as { opened: string }).opened)).toBe('https://cloud.example.test/plans')
+})
+
+test('India requires the state, and a currency the owner picks stays', async ({ page }) => {
+  const calls = await openBilling(page, {
+    get_billing: () => ({ message: billing({ profileComplete: false }) }),
+    get_account_url: accountLinks,
+    get_billing_profile: emptyProfile,
+  })
+
+  await page.getByRole('button', { name: 'Add payment method' }).click()
+  await page.getByLabel('Currency').click()
+  await page.getByRole('option', { name: 'USD' }).click()
+
+  await page.getByLabel('Legal name').fill('Acme Pvt Ltd')
+  await page.getByLabel('Address').fill('1 MG Road')
+  await page.getByLabel('City').fill('Bengaluru')
+  await page.getByLabel('Country').fill('India')
+  await page.getByRole('button', { name: 'Continue', exact: true }).click()
+
+  await expect(page.getByText('Enter your state. GST needs it.')).toBeVisible()
+  await expect(page.getByLabel('Currency')).toContainText('USD')
+  expect(calls.some((call) => call.method === 'save_billing_profile')).toBe(false)
+})
+
+test('a trial held by the spending limit says why and offers no payment action', async ({ page }) => {
+  await openBilling(page, {
+    get_billing: () => ({ message: { ...billing({ hasCard: true }), trial: { ...trial('Active'), held: true } } }),
+    get_account_url: accountLinks,
+  })
+
+  await expect(page.getByText('Your site is still on the free trial')).toBeVisible()
+  await expect(page.getByText(/above your spending limit\. Contact support to raise the limit\./)).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Add payment method' })).toHaveCount(0)
+})
+
+test('Razorpay needs a phone number before it opens', async ({ page }) => {
+  const calls = await openBilling(page, {
+    get_billing: () => ({ message: billing() }),
+    get_account_url: accountLinks,
+    get_payment_gateways: () => ({ message: [{ name: 'Razorpay', label: 'Razorpay', adapter_key: 'Razorpay', method_types: ['Card', 'UPI Autopay'] }] }),
+  })
+
+  await page.getByRole('button', { name: 'Add payment method' }).click()
+  await expect(page.getByText('UPI', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Continue with Razorpay' }).click()
+
+  await expect(page.getByText('Enter a phone number. Razorpay needs it to save a card.')).toBeVisible()
+  expect(calls.some((call) => call.method === 'add_payment_method')).toBe(false)
+})
+
+test('a payment method that converts the trial closes the payment step', async ({ page }) => {
+  let converted = false
+  await openBilling(page, {
+    get_billing: () => ({ message: converted ? billing({ onTrial: null, hasCard: true }) : billing() }),
+    get_account_url: accountLinks,
+    get_payment_gateways: stripeOnly,
+    create_payment_method_checkout: () => ({ message: { checkout_url: 'https://checkout.example.test/1', reference: 'ref-1' } }),
+    confirm_payment_method_checkout: () => {
+      converted = true
+      return { message: { status: 'Active', active: true } }
+    },
+  })
+  await page.evaluate(() => {
+    window.open = () => null
+  })
+
+  await page.getByRole('button', { name: 'Add payment method' }).click()
+  await page.getByRole('button', { name: 'Continue with Stripe' }).click()
+  await page.getByRole('button', { name: 'Check status' }).click()
+
+  await expect(page.getByText('Visa •••• 4242')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Check status' })).toHaveCount(0)
+  await expect(page.getByText('Free trial', { exact: true })).toHaveCount(0)
 })

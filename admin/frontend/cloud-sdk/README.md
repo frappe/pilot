@@ -120,11 +120,17 @@ Direct API calls and errors before the dialog opens belong to your app. Catch `C
 
 Desk loads `/embed/cloud-settings/cloud-settings.js` from Pilot. It exposes `window.FrappeCloudSettings` with the same availability, open, and close methods. The existing Desk entry is `frappe.cloudSettings.show(context, options)`. An npm consumer uses the packaged UI instead.
 
+## Release
+
+Raise `version` in `package.json` and `package-lock.json` in a pull request. When it merges into `develop`, the `Publish Cloud SDK` workflow tests, builds and publishes that version to npm. It skips a version that npm already has. Run the workflow by hand to publish the current version again after a failed run.
+
+npm trusts the workflow through trusted publishing, so the repository holds no npm token. A package maintainer sets this once on npmjs.com: in the `@frappe/cloud-sdk` settings, add a GitHub Actions trusted publisher for the repository `frappe/pilot` and the workflow `cloud-sdk-publish.yml`.
+
 ## Build and test
 
 Run `npm test` and `npm run build` in this package. Run `npm run build` in `admin/frontend/in-app-embed` to build the Pilot browser bundle. Build both outputs after a UI change. Refresh local file dependencies before you rebuild a consumer such as Raven.
 
-To run browser regression tests, install the dependencies in `admin/frontend/dashboard` and `admin/frontend/in-app-embed`, then build this package. Run `npx playwright install chromium` and `npx playwright test --config cloud-settings.config.ts` from `admin/frontend/dashboard`. The tests check dialog cleanup, custom feedback translations, task cancellation and resume, and the phone layout. `cloud-settings-billing.spec.ts` checks the billing tab: the trial credit and sleep notes, the payment step during a trial, the plan list, the move to the progress page, and the refusal, spending limit and retry states. CI runs these tests in the MariaDB browser job.
+To run browser regression tests, install the dependencies in `admin/frontend/dashboard` and `admin/frontend/in-app-embed`, then build this package. Run `npx playwright install chromium` and `npx playwright test --config cloud-settings.config.ts` from `admin/frontend/dashboard`. The tests check dialog cleanup, custom feedback translations, task cancellation and resume, and the phone layout. `cloud-settings-billing.spec.ts` checks the billing tab: the trial notice and its states, the billing details and payment steps during a trial, the plan list, the move to the progress page, and the refusal, spending limit and retry states. CI runs these tests in the MariaDB browser job.
 
 To test all panels with sample data, run `python3 -m http.server 8123` in this package. Open `http://localhost:8123/tests/embed.html`. No real payment or site action runs in this fixture.
 

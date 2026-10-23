@@ -36,10 +36,8 @@ export interface BillingTrial {
   days_left: number
   /** When an ended trial's server is deleted. */
   deletes_on: string | null
-  /** The credit a card adds before the trial ends, or null when there is none to earn. */
-  credit?: { amount: number; currency: string; ends_on?: string | null } | null
-  /** Idle minutes before the trial server sleeps. */
-  sleeps_after_minutes?: number
+  /** The team has a payment method, but the plan is above its spending limit, so the trial stays open. */
+  held?: boolean
 }
 
 export interface PlanOption {

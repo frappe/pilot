@@ -77,6 +77,10 @@ class CentralClient:
             },
         )
 
+    def is_server_access_locked(self) -> bool:
+        """Whether Central locks access to this server past its sites, as for an open free trial."""
+        return bool(self.forward("central.api.pilot.get_server_access", "GET")["is_locked"])
+
     def get_github_status(self) -> dict[str, Any]:
         return self.forward("central.api.integrations.github.status", "GET")
 
@@ -129,6 +133,9 @@ class CentralClient:
             ) from exc
         except urllib.error.URLError as exc:
             raise CentralClientError(f"Cannot reach Central at {endpoint}: {exc.reason}") from exc
+        # A response that stalls after the connection opens times out outside URLError.
+        except TimeoutError as exc:
+            raise CentralClientError(f"Central did not answer {method_path} in time.") from exc
         except (OSError, http.client.HTTPException) as exc:
             raise CentralClientError(f"Cannot reach Central at {endpoint}: {exc}") from exc
         except ValueError as exc:

@@ -73,7 +73,7 @@ follow_branch = true
 
 A registry release is offered only when it is newer than the installed commit. A full clone checks that the release descends from it. A shallow clone fetches only the release commit, without the history between them, so a newer version decides, and between equal versions, such as `17.0.0-dev` on `develop`, a later commit date decides.
 
-`[redis]` defines separate cache and queue ports. `[[workers]]` defines queue groups and their process counts.
+`[redis]` defines separate cache and queue ports. Pilot writes them to `config/redis_cache.conf` and `config/redis_queue.conf` inside a `PILOT MANAGED BLOCK` and keeps the lines outside it, such as `loadmodule /path/to/redisearch.so`. `[[workers]]` defines queue groups and their process counts.
 
 ## Runtime modes
 

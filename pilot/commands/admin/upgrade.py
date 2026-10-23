@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from typing import ClassVar
 
@@ -16,21 +15,8 @@ class UpgradeCommand(Command):
     bench_mode: ClassVar[BenchMode] = BenchMode.OPTIONAL
 
     def run(self) -> None:
-        from pilot.updater import perform_upgrade
+        from pilot.updater import perform_upgrade, restart_admin_with_new_code
 
         perform_upgrade(on_progress=self.report)
-        self._restart_admin_if_managed()
-
-    def _restart_admin_if_managed(self) -> None:
-        if not self.bench:
-            return
-        try:
-            from pilot.managers.processes.local import ProcessManager
-
-            manager = ProcessManager.detect_running(self.bench)
-            if type(manager) is ProcessManager:
-                return
-            self.report("Restarting admin service...")
-            manager.restart_admin()
-        except Exception as exc:
-            logging.debug("Post-upgrade admin restart failed: %s", exc)
+        if self.bench:
+            restart_admin_with_new_code(self.bench.path)

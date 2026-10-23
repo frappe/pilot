@@ -111,7 +111,7 @@ const stats = computed(() => {
   return [
     {
       label: __('Uptime'),
-      value: percent == null ? '—' : `${percent.toFixed(2)}%`,
+      value: percent == null ? '-' : `${percent.toFixed(2)}%`,
       icon: 'lucide-activity',
     },
     {

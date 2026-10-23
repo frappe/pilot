@@ -201,6 +201,7 @@ watch(
 
 // Live mode state
 const stats = ref<SystemMetrics | null>(null)
+const statsError = ref('')
 const liveHistory = ref<MetricPoint[]>([])
 const liveNow = ref(Date.now())
 const timeOffset = ref(0)
@@ -254,11 +255,14 @@ const loadStats = async () => {
   try {
     const s = await monitorApi.stats()
     stats.value = s
+    statsError.value = ''
     liveNow.value = serverTime()
     appendLivePoint(s)
     trimLiveHistory()
-    await refreshAppData()
-  } catch {}
+  } catch (caught) {
+    statsError.value = errorMessage(caught, 'Failed to load live metrics.')
+  }
+  await refreshAppData()
 }
 
 const appendLivePoint = (s: SystemMetrics) => {
@@ -700,7 +704,8 @@ onUnmounted(() => clearTimeout(statsTimer))
     </template>
 
     <template v-else>
-      <Skeleton v-if="!isHistorical && !liveStats" class="mb-4 rounded-6 h-[88px]" />
+      <ErrorMessage v-if="!isHistorical && !liveStats && statsError" :message="statsError" class="mb-4" />
+      <Skeleton v-else-if="!isHistorical && !liveStats" class="mb-4 rounded-6 h-[88px]" />
 
       <!-- Live stats bar: CPU / Memory / Storage -->
       <div

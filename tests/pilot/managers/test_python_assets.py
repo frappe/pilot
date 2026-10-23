@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pilot.core.app import App
 from pilot.exceptions import BenchError
 from pilot.managers.python_assets import PythonAssetBuilder
 
@@ -30,6 +31,7 @@ def build_app(app_path: Path, on_install: Callable[[], None] = lambda: None) -> 
     manager = MagicMock()
     manager.bench.frappe_call = ["python"]
     manager.bench.sites_path = app_path.parent / "sites"
+    manager.bench.apps_path = app_path.parent
     builder = PythonAssetBuilder(manager)
     commands: list[list[str]] = []
 
@@ -47,6 +49,7 @@ def build_app(app_path: Path, on_install: Callable[[], None] = lambda: None) -> 
     ):
         app = make_app(app_path, app_path.name)
         app.has_source_changes = True
+        app.has_studio_apps = App.has_studio_apps.fget(app)
         builder.build_assets_for_app(app)
     return commands
 
@@ -129,6 +132,69 @@ def test_page_islands_are_built_with_frappe_s_own_script(tmp_path: Path) -> None
         builder.build_page_islands()
 
     assert compile_islands.call_args.args[0] == ["node", str(script), "--production"]
+
+
+def test_the_studio_editor_installs_before_frappe_builds_an_app_s_studio_apps(tmp_path: Path) -> None:
+    """A prebuilt Frappe has no editor dependencies, and its `after_app_build` hook needs them."""
+    app_path = tmp_path / "helpdesk"
+    app_path.mkdir()
+    editor = tmp_path / "frappe" / "studio" / "frontend"
+    write_package(editor)
+    (editor / "yarn.lock").write_text("")
+
+    assert ["yarn", "install", "--frozen-lockfile"] not in build_app(app_path)
+
+    (app_path / "studio" / "helpdesk").mkdir(parents=True)
+    (app_path / "studio" / "helpdesk" / "helpdesk.json").write_text("{}")
+    commands = build_app(app_path)
+
+    assert commands.index(["yarn", "install", "--frozen-lockfile"]) < commands.index(
+        ["python", "frappe", "build", "--force", "--app", "helpdesk"]
+    )
+
+
+def test_studio_apps_are_built_with_frappe_s_own_builder(tmp_path: Path) -> None:
+    manager = MagicMock()
+    manager.bench.apps_path = tmp_path / "apps"
+    manager.bench.python = tmp_path / "env" / "bin" / "python"
+    builder = PythonAssetBuilder(manager)
+    app = make_app(tmp_path / "apps" / "helpdesk", "helpdesk")
+
+    with patch.object(builder, "run_compiler") as compile_studio_apps:
+        builder.build_studio_apps(app)
+        compile_studio_apps.assert_not_called()  # version-16 has no Studio editor
+
+        write_package(builder.studio_editor.path)
+        (builder.studio_editor.path / "node_modules").mkdir()
+        (builder.studio_editor.path / "node_modules" / ".yarn-integrity").write_text("")
+        builder.build_studio_apps(app)
+
+    assert compile_studio_apps.call_args.args[0] == [
+        str(manager.bench.python),
+        "-c",
+        "from frappe.studio.build import build_standard_apps; build_standard_apps(['helpdesk'])",
+    ]
+
+
+@pytest.mark.parametrize(("archive_has_studio_apps", "builds"), [(False, 1), (True, 0)])
+def test_studio_apps_are_built_after_a_download_only_when_the_archive_lacks_them(
+    tmp_path: Path, archive_has_studio_apps: bool, builds: int
+) -> None:
+    builder = make_builder()
+    app = make_app(tmp_path / "helpdesk", "helpdesk")
+    app.has_page_islands = False
+    app.has_studio_apps = True
+    prebuilt = MagicMock(has_studio_apps=archive_has_studio_apps, has_page_islands=False)
+    prebuilt.install.return_value = True
+
+    with (
+        patch("pilot.core.app.prebuilt_assets.PrebuiltAssets", return_value=prebuilt),
+        patch.object(builder, "setup_prebuilt_assets"),
+        patch.object(builder, "build_studio_apps") as build_studio_apps,
+    ):
+        assert builder.install_prebuilt_assets(app) is True
+
+    assert build_studio_apps.call_count == builds
 
 
 def test_a_declared_build_dir_gets_its_dependencies_when_only_the_root_has_them(tmp_path: Path) -> None:

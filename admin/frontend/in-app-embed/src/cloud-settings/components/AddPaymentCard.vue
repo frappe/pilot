@@ -21,10 +21,12 @@ const getErrorMessage = useErrorMessage()
 
 interface Props {
   store: Store
+  /** Where this form sits in the payment steps, such as "Step 2 of 2". */
+  step?: string
 }
 
 const props = defineProps<Props>()
-const emit = defineEmits(['close'])
+const emit = defineEmits(['close', 'added'])
 const store = props.store
 
 const GATEWAY_LOGO: Record<string, string> = { Stripe: StripeLogo, Razorpay: RazorpayLogo }
@@ -64,16 +66,19 @@ const visibleGateways = computed(() =>
 
 const gateway = computed(() => visibleGateways.value.find((g) => g.name === selected.value))
 
+// UPI Autopay runs only through Razorpay, so it is offered only where a Razorpay gateway serves the currency.
+const methods = computed(() =>
+  METHODS.filter(
+    (option) => option.value !== 'UPI Autopay' || (gateways.value || []).some((g) => g.adapter_key === 'Razorpay'),
+  ),
+)
+
 const needsContact = computed(
   () => method.value === 'Card' && gateway.value?.adapter_key === 'Razorpay',
 )
 
-const canContinue = computed(
-  () =>
-    Boolean(gateway.value) &&
-    !working.value &&
-    (!needsContact.value || Boolean(contact.value.trim())),
-)
+const contactError = ref('')
+const canContinue = computed(() => Boolean(gateway.value) && !working.value)
 
 watch(
   visibleGateways,
@@ -97,6 +102,9 @@ onMounted(load)
 
 const start = () => {
   if (!canContinue.value || !gateway.value) return
+
+  contactError.value = needsContact.value && !contact.value.trim() ? __('Enter a phone number. Razorpay needs it to save a card.') : ''
+  if (contactError.value) return
 
   return gateway.value.adapter_key === 'Razorpay' ? startRazorpay() : startStripe()
 }
@@ -169,7 +177,7 @@ const openRazorpayCheckout = (handles: PaymentMethodSetup) => {
   })
 
   rzp.on('payment.failed', (response) => {
-    error.value = response?.error?.description || __('Authorisation failed.')
+    error.value = response?.error?.description || __('Your bank did not approve this. Try again or use another card.')
     working.value = false
   })
 
@@ -188,11 +196,11 @@ const confirmRazorpay = async (paymentMethod: string, response: RazorpayResponse
     if (result.status === 'Active') {
       await store.loadBilling(true)
 
-      emit('close')
+      emit('added')
       return
     }
 
-    error.value = __('Saved but not active ({0}).', [result.status])
+    error.value = __('Your payment method is saved but not active yet ({0}). Check again in a minute.', [result.status])
   })
 }
 
@@ -219,12 +227,12 @@ const check = async () => {
     if (result.active) {
       await store.loadBilling(true)
 
-      emit('close')
+      emit('added')
       return
     }
 
     message.value =
-      result.message || __('Not confirmed yet — finish adding the card, then check again.')
+      result.message || __('Not confirmed yet. Finish adding the card, then check again.')
   })
 }
 
@@ -250,20 +258,24 @@ const tileClass = (isSelected: boolean) => [
 
 <template>
   <section class="space-y-4 rounded-6 border border-outline-gray-2 p-5">
-    <h2 class="text-base-semibold text-ink-gray-8">
-      {{ __("Add payment method") }}
-    </h2>
+    <div>
+      <p v-if="step" class="text-p-sm text-ink-gray-5">{{ step }}</p>
+
+      <h3 class="text-base-semibold text-ink-gray-8" :class="step && 'mt-1'">
+        {{ __("Payment method") }}
+      </h3>
+    </div>
 
     <ErrorMessage :message="error" />
 
-    <div>
+    <div v-if="methods.length > 1">
       <p class="mb-2 text-p-sm text-ink-gray-5">
-        {{ __("Choose a payment method") }}
+        {{ __("Pay by") }}
       </p>
 
       <div class="grid gap-3 sm:grid-cols-2">
         <button
-          v-for="option in METHODS"
+          v-for="option in methods"
           :key="option.value"
           type="button"
           :class="tileClass(method === option.value)"
@@ -292,7 +304,7 @@ const tileClass = (isSelected: boolean) => [
       </div>
     </div>
 
-    <div>
+    <div v-if="!gateways || visibleGateways.length !== 1">
       <p class="mb-2 text-p-sm text-ink-gray-5">{{ __("Pay through") }}</p>
       <Skeleton v-if="!gateways && !error" class="h-16 rounded-6" />
       <Button v-else-if="!gateways" :label="__('Try again')" @click="load" />
@@ -351,14 +363,18 @@ const tileClass = (isSelected: boolean) => [
       </div>
     </div>
 
-    <TextInput
-      v-if="needsContact"
-      v-model="contact"
-      :label="__('Phone')"
-      placeholder="+91 98765 43210"
-      :disabled="working"
-      class="max-w-xs"
-    />
+    <div v-if="needsContact" class="max-w-xs">
+      <TextInput
+        v-model="contact"
+        type="tel"
+        autocomplete="tel"
+        :label="__('Phone')"
+        placeholder="+91 98765 43210"
+        :disabled="working"
+        :aria-invalid="Boolean(contactError) || undefined"
+      />
+      <ErrorMessage :message="contactError" class="mt-1" />
+    </div>
 
     <p class="flex items-center gap-1.5 text-p-sm text-ink-gray-5">
       <template v-if="message">{{ message }}</template>
@@ -366,7 +382,8 @@ const tileClass = (isSelected: boolean) => [
       <template v-else>
         <span class="lucide-lock size-3.5 shrink-0" aria-hidden="true" />
         {{ __(
-            "The gateway collects your card securely — this site never sees it.",
+            "{0} collects your payment details. This site never sees them.",
+            [gateway?.label || __("The payment gateway")],
           ) }}
       </template>
     </p>
