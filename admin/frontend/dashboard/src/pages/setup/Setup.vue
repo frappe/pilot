@@ -26,6 +26,7 @@ const {
   rootUserPlaceholder,
   dbTypeOptions,
   branchOptions,
+  isBranchLocked,
   validatingFramework,
   frameworkIsValid,
   stepSequence,
@@ -107,6 +108,8 @@ const {
             label="Frappe branch"
             v-model="appBranch"
             :options="branchOptions"
+            :disabled="isBranchLocked"
+            :description="isBranchLocked ? 'PostgreSQL needs the develop branch.' : undefined"
             trigger="button"
             placeholder="Search or type a branch…"
           >

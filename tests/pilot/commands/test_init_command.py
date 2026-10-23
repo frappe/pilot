@@ -54,6 +54,15 @@ def test_raises_when_existing_credentials_are_wrong() -> None:
     manager.provision.assert_not_called()
 
 
+def test_rejects_postgres_bench_off_develop() -> None:
+    bench = MagicMock()
+    bench.config.db_type = "postgres"
+    bench.config.framework_app.branch = "version-16"
+
+    with pytest.raises(BenchError, match="develop"):
+        BenchInitializer(bench)._validate_config()
+
+
 def test_ensure_database_credentials_generates_for_a_fresh_server() -> None:
     bench = MagicMock()
     bench.config.db_type = "mariadb"

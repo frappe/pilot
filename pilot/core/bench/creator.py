@@ -5,6 +5,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pilot.config.bench import POSTGRES_FRAMEWORK_BRANCH
 from pilot.exceptions import BenchAlreadyExistsError
 from pilot.utils import iter_sibling_benches
 
@@ -80,6 +81,8 @@ class BenchCreator:
             "db_type": self.db_type,
             "lite_mode_enabled": True,
         }
+        if self.db_type == "postgres":
+            settings["app_branch"] = POSTGRES_FRAMEWORK_BRANCH
         if self.process_manager:
             settings["production_process_manager"] = self.process_manager
         return settings

@@ -6,6 +6,7 @@ from pathlib import Path
 from admin.backend.api.v1.setup.database import local_database_credentials
 from admin.backend.api.v1.setup.state import setup_handoff_task
 from pilot.config import BenchConfig
+from pilot.config.bench import get_framework_branch_error
 from pilot.internal.validators import validate_branch_name, validate_repo_url
 
 _PASSWORD_KEYS = ("admin_password", "mariadb_password", "postgres_password")
@@ -35,6 +36,8 @@ def validate_configuration(data: dict) -> str | None:
     if error := _validate_required_fields(data):
         return error
     if error := _validate_existing_database(data):
+        return error
+    if error := get_framework_branch_error(data.get("db_type", "mariadb"), data.get("app_branch", "")):
         return error
     return _validate_app_source(data)
 

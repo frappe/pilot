@@ -4,7 +4,9 @@ import shutil
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from pilot.config.bench import get_framework_branch_error
 from pilot.config.common_site_config import update_common_site_config
+from pilot.exceptions import ConfigError
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -40,7 +42,7 @@ class BenchInitializer:
         # by install.sh, and MariaDB/PostgreSQL run as a rootless per-user
         # server (see MariaDBManager/PostgresManager).
         steps: list[tuple[str, Callable[[], None]]] = [
-            ("Validate bench.toml", self.bench.config.validate),
+            ("Validate bench.toml", self._validate_config),
             ("Ensure admin password", self._ensure_admin_password),
             ("Ensure database credentials", self._ensure_database_credentials),
             ("Install system packages", self._install_system_packages),
@@ -66,6 +68,12 @@ class BenchInitializer:
         on_progress("\nBench initialised. Next steps:")
         on_progress("  pilot new-site site1.example.com   # create your first site")
         on_progress("  pilot start                        # start all processes")
+
+    def _validate_config(self) -> None:
+        config = self.bench.config
+        config.validate()
+        if error := get_framework_branch_error(config.db_type, config.framework_app.branch):
+            raise ConfigError(error)
 
     def _rollback(self, on_progress: Callable[[str], None]) -> None:
         if not self._rollback_actions:

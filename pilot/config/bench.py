@@ -84,6 +84,14 @@ FLAT_KEYS = {
 
 # Framework branches the setup wizard offers, newest/recommended first.
 FRAMEWORK_BRANCHES = ["version-16", "develop"]
+# Frappe supports PostgreSQL only on develop.
+POSTGRES_FRAMEWORK_BRANCH = "develop"
+
+
+def get_framework_branch_error(db_type: str, branch: str) -> str | None:
+    if db_type == "postgres" and branch != POSTGRES_FRAMEWORK_BRANCH:
+        return f"PostgreSQL benches need Frappe branch '{POSTGRES_FRAMEWORK_BRANCH}', not '{branch}'."
+    return None
 
 _DEFAULT_DATA: dict = {
     "bench": {"name": "", "python": "3.14"},

@@ -37,7 +37,9 @@ def complete_dev_wizard(
     # choice - that's a separate `pilot setup production` step run from the terminal
     # afterwards). We keep the repo default.
     expect(page.get_by_text("Customize your bench")).to_be_visible(timeout=30_000)
-    if framework_branch:
+    if db_type == "postgres":
+        _expect_branch_locked(page)
+    elif framework_branch:
         _choose_combobox_button(page, "Frappe branch", framework_branch)
 
     page.get_by_role("button", name="Set up bench").click()
@@ -78,6 +80,13 @@ def _choose_select(page: Page, label: str, option_name: str) -> None:
     """Choose a reka-ui Select option by combobox label."""
     page.get_by_role("combobox", name=label).click()
     page.get_by_role("option", name=option_name).click()
+
+
+def _expect_branch_locked(page: Page) -> None:
+    """PostgreSQL benches are locked to the develop branch."""
+    picker = page.get_by_role("button", name="Frappe branch")
+    expect(picker).to_be_disabled()
+    expect(picker).to_contain_text("develop")
 
 
 def _choose_combobox_button(page: Page, label: str, option_name: str) -> None:

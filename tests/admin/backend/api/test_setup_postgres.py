@@ -13,8 +13,14 @@ def test_validate_configuration_requires_postgres_password() -> None:
 
 
 def test_validate_configuration_accepts_postgres_password() -> None:
-    data = {"admin_password": "x", "db_type": "postgres", "postgres_password": "pw"}
+    data = {"admin_password": "x", "db_type": "postgres", "postgres_password": "pw", "app_branch": "develop"}
     assert validate_configuration(data) is None
+
+
+def test_validate_configuration_rejects_postgres_off_develop() -> None:
+    data = {"admin_password": "x", "db_type": "postgres", "postgres_password": "pw", "app_branch": "version-16"}
+    error = validate_configuration(data)
+    assert error and "develop" in error
 
 
 def test_validate_configuration_requires_mariadb_password() -> None:

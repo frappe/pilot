@@ -32,7 +32,7 @@ queues = ["default", "short", "long"]
 count = 1
 ```
 
-The first app is the framework app. A bench uses one database type for all its sites. Supported types are `mariadb` and `postgres`.
+The first app is the framework app. A bench uses one database type for all its sites. Supported types are `mariadb` and `postgres`. A `postgres` bench needs the framework app on `develop`; `pilot init` and setup reject other branches.
 
 ## Bench settings
 

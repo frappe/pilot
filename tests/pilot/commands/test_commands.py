@@ -178,6 +178,7 @@ def test_new_command_postgres_bench_has_no_password_yet(
     with open(benches_dir / "pg" / "bench.toml", "rb") as f:
         data = tomllib.load(f)
     assert data["bench"]["db_type"] == "postgres"
+    assert data["apps"][0]["branch"] == "develop"
     assert not CommonConfig.read(benches_dir).postgres.root_password
 
 
