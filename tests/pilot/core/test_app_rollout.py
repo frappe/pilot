@@ -206,24 +206,25 @@ def test_a_damaged_rollout_number_does_not_fail_the_update_log(
     assert "Could not write the app update log" in capsys.readouterr().out
 
 
-def _repository(release: dict | None, is_offered: bool) -> AppRepository:
+def _repository(releases: list[dict], offered: set[str], installed: str = "") -> AppRepository:
     app = MagicMock()
     app.config.name = "frappe"
     app.config.branch = "main"
     app.config.follow_branch = False
-    app.bench.app_rollout.is_offered.return_value = is_offered
+    app.bench.app_rollout.is_offered.side_effect = lambda _app, commit: commit in offered
     repository = AppRepository(app)
-    repository.newest_release = MagicMock(return_value=release)
-    repository._is_ahead_of_installed = MagicMock(return_value=True)
+    repository.get_branch_releases = MagicMock(return_value=releases)
+    repository._is_ahead_of_installed = MagicMock(side_effect=lambda commit, _version: commit != installed)
     return repository
 
 
 ENTRY = {"name": "frappe"}
 RELEASE = {"version": "16.1.0", "branch": "main", "commit": "abc"}
+OLDER_RELEASE = {"version": "16.0.0", "branch": "main", "commit": "old"}
 
 
 def test_update_target_holds_back_a_release_the_rollout_has_not_offered() -> None:
-    repository = _repository(RELEASE, is_offered=False)
+    repository = _repository([RELEASE], offered=set())
 
     with patch.object(AppRepository, "marketplace_entry", ENTRY):
         assert repository.update_target() is None
@@ -232,14 +233,37 @@ def test_update_target_holds_back_a_release_the_rollout_has_not_offered() -> Non
 
 
 def test_update_target_gives_a_release_the_rollout_has_offered() -> None:
-    repository = _repository(RELEASE, is_offered=True)
+    repository = _repository([RELEASE], offered={"abc"})
 
     with patch.object(AppRepository, "marketplace_entry", ENTRY):
         assert repository.update_target() == RevisionPin(kind="commit", ref="abc")
 
 
+def test_update_target_gives_an_older_release_while_the_newest_has_not_reached_this_server() -> None:
+    repository = _repository([RELEASE, OLDER_RELEASE], offered={"old"})
+
+    with patch.object(AppRepository, "marketplace_entry", ENTRY):
+        assert repository.update_target() == RevisionPin(kind="commit", ref="old")
+
+
+def test_update_target_stops_at_the_newest_offered_release_when_it_is_installed() -> None:
+    repository = _repository([RELEASE, OLDER_RELEASE], offered={"abc", "old"}, installed="abc")
+
+    with patch.object(AppRepository, "marketplace_entry", ENTRY):
+        assert repository.update_target() is None
+
+    repository.app.bench.app_rollout.is_offered.assert_called_once_with("frappe", "abc")
+
+
+def test_update_target_gives_nothing_when_only_the_installed_release_is_offered() -> None:
+    repository = _repository([RELEASE, OLDER_RELEASE], offered={"old"}, installed="old")
+
+    with patch.object(AppRepository, "marketplace_entry", ENTRY):
+        assert repository.update_target() is None
+
+
 def test_update_target_gives_a_branch_app_its_new_commit_at_once() -> None:
-    repository = _repository(None, is_offered=False)
+    repository = _repository([], offered=set())
     branch_repo = MagicMock()
     branch_repo.remote_branch_sha.return_value = "tip"
 
