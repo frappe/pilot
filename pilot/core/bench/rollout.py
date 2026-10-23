@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from datetime import UTC, datetime
 from functools import cached_property
 from typing import TYPE_CHECKING, Literal
@@ -20,12 +21,19 @@ class AppRollout:
 
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
+        self._settings_lock = threading.Lock()
 
-    @cached_property
+    @property
     def settings(self) -> dict | None | Literal[False]:
         """Central's `start_percent`, `step_percent`, `interval_hours`, `max_percent` and
         `held_commits`. None when there is no rollout and every update is offered at once. False
         when Central cannot answer or sends bad steps, so new updates wait for it."""
+        # The app update check asks from several threads at once, and Central is asked one time.
+        with self._settings_lock:
+            return self._central_settings
+
+    @cached_property
+    def _central_settings(self) -> dict | None | Literal[False]:
         from pilot.integrations.central.client import CentralClient, CentralClientError
 
         if not self.bench.config.central.enabled:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -24,7 +26,7 @@ def cli_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def _rollout(tmp_path: Path) -> AppRollout:
     rollout = AppRollout(MagicMock(path=tmp_path, logs_path=tmp_path))
-    rollout.settings = STEPS
+    rollout._central_settings = STEPS
     return rollout
 
 
@@ -58,7 +60,7 @@ def test_percent_grows_one_step_per_full_interval_up_to_100(tmp_path: Path) -> N
 
 def test_the_max_percent_caps_the_rollout(tmp_path: Path) -> None:
     rollout = _rollout(tmp_path)
-    rollout.settings = {**STEPS, "max_percent": 30}
+    rollout._central_settings = {**STEPS, "max_percent": 30}
 
     assert rollout.get_percent(datetime.now(UTC) - timedelta(hours=1000)) == 30
 
@@ -66,7 +68,7 @@ def test_the_max_percent_caps_the_rollout(tmp_path: Path) -> None:
 def test_a_max_percent_of_0_offers_the_update_to_no_server(tmp_path: Path, cli_root: Path) -> None:
     _set_rollout_number(cli_root, 1)
     rollout = _rollout(tmp_path)
-    rollout.settings = {**STEPS, "max_percent": 0}
+    rollout._central_settings = {**STEPS, "max_percent": 0}
 
     with _added_hours_ago(1000):
         assert rollout.is_offered("frappe", "abc") is False
@@ -115,7 +117,7 @@ def test_a_reply_that_is_not_an_object_makes_updates_wait(tmp_path: Path, reply:
 def test_every_update_is_offered_without_rollout_steps(tmp_path: Path, cli_root: Path) -> None:
     _set_rollout_number(cli_root, 100)
     rollout = AppRollout(MagicMock(path=tmp_path))
-    rollout.settings = None
+    rollout._central_settings = None
 
     assert rollout.is_offered("frappe", "abc") is True
 
@@ -125,6 +127,22 @@ def test_a_bench_without_central_asks_central_nothing(tmp_path: Path) -> None:
         assert _settings_from_central(tmp_path, {"app_rollout": STEPS}, central_enabled=False) is None
 
     config.assert_not_called()
+
+
+def test_threads_that_ask_at_once_ask_central_one_time(tmp_path: Path) -> None:
+    def slow_config() -> dict:
+        time.sleep(0.05)
+        return {"app_rollout": STEPS}
+
+    rollout = AppRollout(MagicMock(path=tmp_path))
+    with (
+        patch("pilot.integrations.central.client.CentralClient.config", side_effect=slow_config) as config,
+        ThreadPoolExecutor(max_workers=8) as pool,
+    ):
+        results = list(pool.map(lambda _: rollout.settings, range(8)))
+
+    assert results == [STEPS] * 8
+    config.assert_called_once_with()
 
 
 def test_updates_wait_while_central_is_unreachable(tmp_path: Path, cli_root: Path) -> None:
@@ -160,7 +178,7 @@ def test_an_update_waits_when_the_registry_has_no_time_for_it(tmp_path: Path, cl
 def test_a_held_commit_is_not_offered_even_at_100_percent(tmp_path: Path, cli_root: Path) -> None:
     _set_rollout_number(cli_root, 1)
     rollout = _rollout(tmp_path)
-    rollout.settings = {**STEPS, "held_commits": ["bad"]}
+    rollout._central_settings = {**STEPS, "held_commits": ["bad"]}
 
     with _added_hours_ago(1000):
         assert rollout.is_offered("frappe", "bad") is False
