@@ -64,12 +64,12 @@ class AppRepository:
 
     def update_target(self) -> RevisionPin | None:
         """The fixed revision this app would update to, or None (forward only). A marketplace
-        app follows the registry's releases, or its branch tip with `follow_branch` or no release."""
+        app follows the registry's releases, or its branch tip with `follow_branch` or no release.
+        A release waits until the app update rollout reaches this server."""
         entry = None if self.app.config.follow_branch else self.marketplace_entry
-        release = self.newest_release(entry) if entry else None
-        if release is not None:
-            is_newer = self._is_ahead_of_installed(release["commit"], release.get("version", ""))
-            return RevisionPin.from_marketplace_release(release) if is_newer else None
+        releases = self.get_branch_releases(entry) if entry else []
+        if releases:
+            return self.get_offered_release(releases)
         if not self.app.config.branch:
             return None
         tip = self.repo.remote_branch_sha(self.app.config.branch)
@@ -105,18 +105,28 @@ class AppRepository:
             return None
         return entry
 
-    def newest_release(self, marketplace_entry: dict) -> dict | None:
-        """The newest release the registry advertises for this app's branch."""
+    def get_branch_releases(self, marketplace_entry: dict) -> list[dict]:
+        """The releases the registry advertises for this app's branch, newest first."""
         from pilot.integrations.marketplace import Marketplace
 
-        return next(
-            (
-                release
-                for release in Marketplace.releases(marketplace_entry["name"])
-                if release.get("branch") == self.app.config.branch and release.get("commit")
-            ),
-            None,
-        )
+        releases = []
+        for release in Marketplace.releases(marketplace_entry["name"]):
+            if release.get("branch") == self.app.config.branch and release.get("commit"):
+                releases.append(release)
+        return releases
+
+    def get_offered_release(self, releases: list[dict]) -> RevisionPin | None:
+        """The newest release that the app update rollout offers this server, if it is ahead of
+        HEAD. An older release still reaches this server while a newer one has not."""
+        for release in releases:
+            if not self.app.bench.app_rollout.is_offered(self.app.config.name, release["commit"]):
+                continue
+
+            if not self._is_ahead_of_installed(release["commit"], release.get("version", "")):
+                return None
+
+            return RevisionPin.from_marketplace_release(release)
+        return None
 
     def _is_ahead_of_installed(self, commit: str, version: str) -> bool:
         """Whether `commit` descends from HEAD. A stale registry can advertise an older

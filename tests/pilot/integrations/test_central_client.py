@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.client
 import io
 import json
 import urllib.error
@@ -18,6 +19,7 @@ from pilot.config import (
 )
 from pilot.core.bench import Bench
 from pilot.integrations.central import CentralClient, CentralClientError
+from pilot.integrations.central import client as client_module
 
 
 def _bench(root: Path, name: str = "b1") -> Bench:
@@ -186,6 +188,33 @@ def test_a_non_json_response_is_wrapped() -> None:
         pytest.raises(CentralClientError),
     ):
         CentralClient().forward("central.api.pilot.heartbeat", "GET")
+
+
+def test_a_timeout_while_reading_is_wrapped() -> None:
+    _stage_credentials("https://central.test", "tok")
+
+    with (
+        patch(
+            "pilot.integrations.central.client.urllib.request.urlopen", side_effect=TimeoutError("timed out")
+        ) as urlopen,
+        pytest.raises(CentralClientError, match="did not answer"),
+    ):
+        CentralClient().config()
+
+    assert urlopen.call_args.kwargs["timeout"] < client_module._TIMEOUT_SECONDS
+
+
+def test_an_incomplete_reply_is_wrapped() -> None:
+    _stage_credentials("https://central.test", "tok")
+
+    with (
+        patch(
+            "pilot.integrations.central.client.urllib.request.urlopen",
+            side_effect=http.client.IncompleteRead(b"{"),
+        ),
+        pytest.raises(CentralClientError, match="Cannot reach Central"),
+    ):
+        CentralClient().config()
 
 
 def _app_client(bench_root: Path):

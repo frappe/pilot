@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import time
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -291,6 +292,45 @@ def test_load_raises_when_index_is_not_a_list(tmp_path: Path, _point_at_local_re
 
     with pytest.raises(RegistryUnavailableError, match="not a list of apps"):
         make_cache(tmp_path).load()
+
+
+def _head_time(remote: Path) -> datetime:
+    result = subprocess.run(
+        ["git", "-C", str(remote), "log", "-1", "--format=%cI"], check=True, capture_output=True, text=True
+    )
+    return datetime.fromisoformat(result.stdout.strip())
+
+
+def test_get_added_at_returns_when_the_release_was_added(tmp_path: Path, _point_at_local_remote) -> None:
+    publish(_point_at_local_remote, INDEX)
+    added_at = _head_time(_point_at_local_remote)
+    time.sleep(1)
+    commit_new_content(_point_at_local_remote, json.dumps(INDEX, indent=2))
+    cache = make_cache(tmp_path)
+    cache.load()
+
+    assert cache.get_added_at("helpdesk", "a" * 40) == added_at
+
+
+def test_get_added_at_is_none_for_a_commit_never_added(tmp_path: Path, _point_at_local_remote) -> None:
+    publish(_point_at_local_remote, INDEX)
+    cache = make_cache(tmp_path)
+    cache.load()
+
+    assert cache.get_added_at("helpdesk", "b" * 40) is None
+
+
+def test_refresh_turns_a_shallow_clone_into_a_full_one(tmp_path: Path, _point_at_local_remote) -> None:
+    publish(_point_at_local_remote, INDEX)
+    commit_new_content(_point_at_local_remote, json.dumps(INDEX, indent=2))
+    cache = make_cache(tmp_path)
+    # Older Pilots cloned with --depth 1. A file:// URL makes git honour --depth locally.
+    _git(tmp_path, "clone", "-q", "--depth", "1", f"file://{_point_at_local_remote}", str(cache.path))
+    assert cache.get_added_at("helpdesk", "a" * 40) is None
+
+    cache.ensure_fresh()
+
+    assert cache.get_added_at("helpdesk", "a" * 40) is not None
 
 
 def _age_last_checked(cache: RegistryCache) -> None:
