@@ -13,6 +13,8 @@ from admin.backend.api.responses import (
 from admin.backend.api.v1.sites.shared import task_failure
 from pilot.core.bench import Bench
 from pilot.core.bench.migration.operation import MigrationOperation
+from pilot.core.bench.migration.recovery import reconcile_migration
+from pilot.core.bench.migration.state import MigrationStateError
 from pilot.exceptions import MigrationNotFoundError, TaskNotFoundError
 from pilot.internal.tasks.store import TaskStore
 from pilot.managers.task import TaskReader
@@ -157,6 +159,31 @@ def get_migration(operation_id: str):
     operation = _load(operation_id)
     if operation is None:
         return _not_found()
+    return jsonify(_summary(operation))
+
+
+
+@migrations_bp.post("/migrations/<operation_id>/actions/recover")
+def recover_action(operation_id: str):
+    return _recover_operation(operation_id, force=False)
+
+
+@migrations_bp.post("/migrations/<operation_id>/actions/force-needs-attention")
+def force_needs_attention_action(operation_id: str):
+    body = request.get_json(silent=True) or {}
+    if body.get("confirm") is not True:
+        return error_response("confirmation_required", "Explicit confirmation is required.", 422)
+    return _recover_operation(operation_id, force=True)
+
+
+def _recover_operation(operation_id: str, *, force: bool):
+    bench = _bench()
+    try:
+        operation = reconcile_migration(bench, operation_id, force=force)
+    except MigrationNotFoundError:
+        return _not_found()
+    except (MigrationStateError, ValueError, OSError) as error:
+        return error_response("migration_recovery_unavailable", str(error), 409)
     return jsonify(_summary(operation))
 
 
