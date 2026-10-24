@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import shlex
+from pathlib import Path
 
 from pilot.managers.processes.base import ServiceRenderer, override
 from pilot.managers.processes.local import ProcessDefinition
@@ -23,6 +24,34 @@ def _quote(argument: str) -> str:
     return argument.replace("%", "%%").replace("$", "$$")
 
 
+def sandbox_properties(writable: Path) -> list[str]:
+    """Namespaces, seccomp and no_new_privs for a workload that may write only under `writable`."""
+    return [
+        "NoNewPrivileges=yes",
+        "PrivateUsers=yes",
+        "ProtectSystem=strict",
+        # strict leaves /home writable; benches live there, so ReadWritePaths re-opens only ours.
+        "ProtectHome=read-only",
+        f"ReadWritePaths={_quote(str(writable))}",
+        "PrivateTmp=yes",
+        "PrivateDevices=yes",
+        "ProtectKernelTunables=yes",
+        "ProtectKernelModules=yes",
+        "ProtectKernelLogs=yes",
+        "ProtectControlGroups=yes",
+        "ProtectClock=yes",
+        "ProtectHostname=yes",
+        "RestrictNamespaces=yes",
+        "RestrictRealtime=yes",
+        "RestrictSUIDSGID=yes",
+        "LockPersonality=yes",
+        "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK",
+        "SystemCallArchitectures=native",
+        "SystemCallFilter=@system-service",
+        "SystemCallErrorNumber=EPERM",
+    ]
+
+
 def _render_env(env: dict) -> str:
     lines = []
     for key, value in env.items():
@@ -33,6 +62,10 @@ def _render_env(env: dict) -> str:
 
 class SystemdRenderer(ServiceRenderer):
     """Builds systemd --user unit/socket/target text for a bench."""
+
+    def __init__(self, bench_name: str, sandbox_root: Path | None = None) -> None:
+        super().__init__(bench_name)
+        self.sandbox_root = sandbox_root
 
     @override
     def render(self, pd: ProcessDefinition) -> str:
@@ -51,6 +84,11 @@ class SystemdRenderer(ServiceRenderer):
         )
         socket = self.get_socket_name(pd)
         requires_socket = f"Requires={socket}\nAfter={socket}\n" if socket else ""
+        sandbox = (
+            "".join(f"{line}\n" for line in sandbox_properties(self.sandbox_root))
+            if self.sandbox_root
+            else ""
+        )
         return (
             f"[Unit]\n"
             f"Description={self.bench_name} {pd.name}\n"
@@ -64,6 +102,7 @@ class SystemdRenderer(ServiceRenderer):
             f"{post}"
             f"Restart={restart}\n"
             f"LimitNOFILE=65535\n"
+            f"{sandbox}"
             f"{stop}"
             f"StandardOutput=append:{pd.log_file}\n"
             f"StandardError=append:{pd.log_file}.error.log\n"

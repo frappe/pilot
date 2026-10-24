@@ -35,6 +35,21 @@ def can_cap_memory() -> bool:
     return trial.returncode == 0
 
 
+def can_sandbox(properties: list[str]) -> bool:
+    """Whether a user unit can run with these sandbox properties. User-mode PrivateUsers
+    needs unprivileged user namespaces, which some kernels disable."""
+    argv = ["systemd-run", "--user", "--wait", "--quiet", "--collect"]
+    for prop in properties:
+        argv += ["-p", prop]
+    try:
+        trial = subprocess.run(
+            [*argv, "true"], env=systemctl_env(), capture_output=True, timeout=30, check=False
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return trial.returncode == 0
+
+
 def memory_capped(argv: list[str], memory_max_mb: int, swap_max_mb: int) -> list[str]:
     """Run argv in a transient scope capped at memory_max_mb of RAM and swap_max_mb of
     swap. Only where `can_cap_memory` holds. Swap lets small hosts finish large builds."""
