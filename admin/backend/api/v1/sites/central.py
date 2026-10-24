@@ -23,6 +23,7 @@ _ALLOWED_EXACT = frozenset(
     {
         "central.api.pilot.heartbeat",
         "central.api.pilot.get_team_identity_token",
+        "central.api.email_oauth.get_active_providers",
         "central.api.email_oauth.start",
         "central.api.email_oauth.relay_token",
     }
