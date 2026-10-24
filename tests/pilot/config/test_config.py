@@ -339,6 +339,21 @@ def test_production_defaults() -> None:
     assert p.enabled is False
 
 
+def test_production_sandbox_round_trips() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = {"enabled": True, "process_manager": "systemd", "sandbox": True}
+    config = load_from_dict(data)
+    assert config.production.sandbox is True
+    assert config._production_section()["sandbox"] is True
+
+
+def test_production_sandbox_needs_systemd() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = {"enabled": True, "process_manager": "supervisor", "sandbox": True}
+    with pytest.raises(ConfigError, match="sandbox"):
+        load_from_dict(data)
+
+
 def test_production_parse_new_format_supervisor() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
     data["production"] = {"enabled": True, "process_manager": "supervisor"}

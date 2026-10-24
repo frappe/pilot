@@ -5,6 +5,7 @@ import os
 import subprocess
 from pathlib import Path
 
+from pilot.exceptions import BenchError
 from pilot.managers.environment import AdminEnvManager
 from pilot.managers.gunicorn import GunicornManager
 from pilot.managers.platform import _privileged
@@ -15,8 +16,8 @@ from pilot.managers.processes.base import (
 )
 from pilot.managers.processes.definitions import ProcessState
 from pilot.managers.processes.local import ProcessDefinition
-from pilot.managers.processes.systemd_render import SystemdRenderer
-from pilot.managers.systemd_user import SystemdUserMixin
+from pilot.managers.processes.systemd_render import SystemdRenderer, sandbox_properties
+from pilot.managers.systemd_user import SystemdUserMixin, can_sandbox
 from pilot.utils import cli_root, run_command
 
 # Seconds of inactivity before the socket-activated admin stops. This outlives the
@@ -51,13 +52,14 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
 
         # Build first, so a broken app declaration leaves the current units in place.
         defs = self._prod_process_definitions()
+        sandbox_root = self._get_sandbox_root()
 
         target_file = self._target_name()
         for path in list(self.systemd_conf_dir.iterdir()):
             if path.is_file() and (path.suffix in (".service", ".socket") or path.name == target_file):
                 path.unlink()
 
-        renderer = SystemdRenderer(self.bench.config.name)
+        renderer = SystemdRenderer(self.bench.config.name, sandbox_root)
         workload_units: list[str] = []
         for pd in defs:
             if pd.name == "admin":
@@ -88,6 +90,17 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         self.changed_sockets = tuple(
             name for name, text in sockets_after.items() if sockets_before.get(name) != text
         )
+
+    def _get_sandbox_root(self) -> Path | None:
+        """The bench path when sandboxing is on. Fails before any unit is replaced."""
+        if not self.bench.config.production.sandbox:
+            return None
+        if not can_sandbox(sandbox_properties(self.bench.path)):
+            raise BenchError(
+                "This host cannot sandbox systemd user units (unprivileged user namespaces may be "
+                "disabled). Set [production] sandbox = false in bench.toml."
+            )
+        return self.bench.path
 
     def _workload_socket_text(self) -> dict[str, str]:
         """The workload socket units as they stand on disk, by name."""

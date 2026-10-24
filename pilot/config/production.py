@@ -11,6 +11,7 @@ VALID_PROCESS_MANAGERS = ("systemd", "supervisor")
 class ProductionConfig:
     enabled: bool = False
     process_manager: str = ""  # systemd | supervisor - required when enabled
+    sandbox: bool = False  # systemd sandboxing for workload units
 
     @classmethod
     def from_dict(cls, data: dict | None) -> "ProductionConfig":
@@ -25,7 +26,7 @@ class ProductionConfig:
         # Oldest format derived the manager from a `lightweight` flag.
         if enabled and not pm and "lightweight" in data:
             pm = "systemd" if data.get("lightweight", False) else "supervisor"
-        return cls(enabled=enabled, process_manager=pm)
+        return cls(enabled=enabled, process_manager=pm, sandbox=bool(data.get("sandbox", False)))
 
     @staticmethod
     def _normalize_process_manager(value: str) -> str:
@@ -38,6 +39,10 @@ class ProductionConfig:
 
     def validate(self, bench_name: str) -> None:
         pm = self.process_manager
+        if self.sandbox and pm != "systemd":
+            raise ConfigError(
+                f"production.sandbox needs process_manager = \"systemd\" (bench '{bench_name}')."
+            )
         if self.enabled:
             if pm not in VALID_PROCESS_MANAGERS:
                 raise ConfigError(
