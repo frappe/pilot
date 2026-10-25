@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 from pilot.exceptions import CommandError, RegistryUnavailableError
@@ -24,7 +25,8 @@ _APP_NAME = re.compile(r"[a-z][a-z0-9_]*")
 
 
 class RegistryCache:
-    """Shallow, read-only clone at <cli_root>/registry-cache."""
+    """Read-only clone at <cli_root>/registry-cache. It keeps full history, which says
+    when each release was added."""
 
     def __init__(self, cli_root: Path) -> None:
         self._cli_root = cli_root
@@ -64,6 +66,18 @@ class RegistryCache:
             raise RegistryUnavailableError(f"apps/{app_name}.json does not hold a 'releases' list.")
         return releases
 
+    def get_added_at(self, app_name: str, commit: str) -> datetime | None:
+        """When `commit` was added to the app's releases, or None when the clone cannot tell."""
+        repo = GitRepo(self.path)
+        if repo.is_shallow:
+            return None
+
+        added_at = repo.get_last_change_time(commit, f"apps/{app_name}.json")
+        if not added_at:
+            return None
+
+        return datetime.fromisoformat(added_at)
+
     @staticmethod
     def _reject_foreign_pointer(entry: dict) -> None:
         """An entry may only point 'releases' at its own apps/<name>.json."""
@@ -102,7 +116,7 @@ class RegistryCache:
     def _clone(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            run_command(["git", "clone", "--depth", "1", REGISTRY_URL, str(self.path)])
+            run_command(["git", "clone", REGISTRY_URL, str(self.path)])
         except CommandError as exc:
             raise RegistryUnavailableError(f"Could not clone marketplace registry:\n{exc.message}") from exc
         self.install_daily_refresh_cron()
@@ -132,13 +146,16 @@ class RegistryCache:
         if remote_head is None:
             return  # offline - keep serving the existing clone
         try:
+            if GitRepo(self.path).is_shallow:
+                run_command(["git", "-C", str(self.path), "fetch", "--unshallow", "origin"])
+
             local_head = (
                 run_command(["git", "-C", str(self.path), "rev-parse", "HEAD"]).stdout.decode().strip()
             )
             if remote_head == local_head:
                 return
             GitRepo(self.path).prune_stale_temp_packs()
-            run_command(["git", "-C", str(self.path), "fetch", "--depth", "1", "origin", "HEAD"])
+            run_command(["git", "-C", str(self.path), "fetch", "origin", "HEAD"])
             run_command(["git", "-C", str(self.path), "reset", "--hard", "FETCH_HEAD"])
         except CommandError:
             return  # local git trouble or network dropped mid-fetch - keep serving the existing clone

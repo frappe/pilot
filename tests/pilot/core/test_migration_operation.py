@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -11,8 +12,21 @@ from pilot.core.app import RevisionPin
 from pilot.core.bench.migration.diagnosis import diagnose
 from pilot.core.bench.migration.operation import AppRevision, SiteProgress
 from pilot.core.bench.migration.state import MigrationStateError, get_state, validate_transition
+from pilot.core.bench.rollout import AppRollout
 from pilot.exceptions import BenchError, MigrateError
 from pilot.integrations.marketplace import Marketplace
+
+
+@pytest.fixture(autouse=True)
+def cli_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """The update log reads this host's rollout number from the CLI root."""
+    monkeypatch.setattr("pilot.utils.cli_root", lambda: tmp_path)
+    return tmp_path
+
+
+def _update_log(logs_path: Path) -> list[dict]:
+    path = logs_path / "app_updates.json.log"
+    return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
 
 def test_state_transitions() -> None:
@@ -562,6 +576,82 @@ def test_update_failure_after_the_install_step_also_auto_reverts(tmp_path: Path)
 
     assert operation.state == "reverting_apps"
     assert operation.apps_updated is False
+
+
+def test_a_completed_update_logs_one_success_line_per_app(tmp_path: Path) -> None:
+    mock_bench = MagicMock()
+    mock_bench.path = tmp_path
+    mock_bench.logs_path = tmp_path
+    mock_bench.app_rollout = AppRollout(mock_bench)
+    mock_bench.app.return_value.installed_hash = "2222222"
+
+    from pilot.core.bench.migration.store import MigrationStore
+
+    operation = MigrationStore(mock_bench)._create(
+        "update",
+        apps=[
+            AppRevision("frappe", "1111111", target_sha="2222222"),
+            AppRevision("erpnext", "3333333", target_sha=None),
+            AppRevision("hrms", "4444444", target_sha="4444444"),
+        ],
+        apps_filter=None,
+        sites=[],
+    )
+    operation.state = get_state("updating")
+
+    operation.update_apps()
+
+    [line] = _update_log(tmp_path)
+    assert line["time"]
+    assert line["status"] == "success"
+    assert line["level"] == "info"
+    assert (line["app"], line["from_commit"], line["to_commit"]) == ("frappe", "1111111", "2222222")
+    assert 1 <= line["rollout_number"] <= 100
+
+
+def test_a_failed_update_logs_the_error(tmp_path: Path) -> None:
+    mock_bench = MagicMock()
+    mock_bench.path = tmp_path
+    mock_bench.logs_path = tmp_path
+    mock_bench.app_rollout = AppRollout(mock_bench)
+    mock_bench._rebuild_assets.side_effect = MigrateError("yarn build failed")
+
+    from pilot.core.bench.migration.store import MigrationStore
+
+    operation = MigrationStore(mock_bench)._create(
+        "update",
+        apps=[AppRevision("frappe", "1111111", target_sha="2222222")],
+        apps_filter=None,
+        sites=[],
+    )
+    operation.state = get_state("updating")
+
+    with pytest.raises(MigrateError):
+        operation.update_apps()
+
+    [line] = _update_log(tmp_path)
+    assert (line["status"], line["level"], line["message"]) == ("failed", "error", "yarn build failed")
+
+
+def test_a_site_migration_logs_no_app_update(tmp_path: Path) -> None:
+    mock_bench = MagicMock()
+    mock_bench.path = tmp_path
+    mock_bench.logs_path = tmp_path
+    mock_bench.app_rollout = AppRollout(mock_bench)
+    site_mock = MagicMock()
+    site_mock.path = tmp_path / "sites" / "site1.localhost"
+    site_mock.migrate.side_effect = MigrateError("patch failed", output="")
+    mock_bench.site.return_value = site_mock
+
+    from pilot.core.bench.migration.store import MigrationStore
+
+    operation = MigrationStore(mock_bench).create_site_migrate("site1.localhost")
+    operation.state = get_state("migrating")
+
+    with pytest.raises(MigrateError):
+        operation.migrate_site("site1.localhost")
+
+    assert _update_log(tmp_path) == []
 
 
 def test_migrate_failure_still_waits_for_the_user(tmp_path: Path) -> None:

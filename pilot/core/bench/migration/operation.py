@@ -429,6 +429,11 @@ class MigrationOperation:
             raise
         self._transition("reverted")
 
+    def log_app_updates(self, status: Literal["success", "failed"], error: str = "") -> None:
+        revisions = [revision for revision in self.apps if revision.target_sha not in (None, revision.sha)]
+        if self.kind == "update" and revisions:
+            self.bench.app_rollout.log_updates(revisions, status, error)
+
     def _advance_revert(self) -> None:
         """Enter the next revert phase, staying put while the current one has more units to do."""
         phase = self._next_revert_phase()
@@ -459,6 +464,9 @@ class MigrationOperation:
             self._transition("updating" if self.needs_app_update else "migrating")
 
     def _enter_needs_attention(self, phase: str, site: str | None) -> None:
+        if phase in ("updating", "migrating"):
+            self.log_app_updates("failed", (self.diagnosis or {}).get("message", ""))
+
         self.return_state = phase
         self.failed_site = site
         self._transition("needs_attention")
@@ -485,6 +493,7 @@ class MigrationOperation:
         for site in self.sites:
             if site.backup_status == "backed_up":
                 self.bench.site(site.name).migration_backup.discard()
+        self.log_app_updates("success")
         self._transition("completed")
 
     def _union_touched_tables(self, site: SiteProgress) -> None:
