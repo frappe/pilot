@@ -5,7 +5,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pilot.exceptions import BenchAlreadyExistsError
+from pilot.exceptions import BenchAlreadyExistsError, BenchError
+from pilot.internal.validators import validate_branch_name
 from pilot.utils import iter_sibling_benches
 
 if TYPE_CHECKING:
@@ -44,6 +45,12 @@ class BenchCreator:
         bench_toml = self.target_directory / "bench.toml"
         if bench_toml.exists():
             raise BenchAlreadyExistsError(f"Bench '{self.name}' already exists.")
+
+        if self.frappe_branch is not None:
+            if not self.frappe_branch:
+                raise BenchError("Frappe branch must not be empty.")
+            if error := validate_branch_name(self.frappe_branch):
+                raise BenchError(error)
 
         benches_dir = self.target_directory.parent
         if not benches_dir.exists():

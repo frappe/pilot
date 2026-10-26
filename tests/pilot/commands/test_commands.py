@@ -93,6 +93,22 @@ def test_new_command_persists_framework_branch(tmp_path: Path, options: dict, ex
     assert BenchConfig.read(target).framework_app.branch == expected_branch
 
 
+@pytest.mark.parametrize("branch", ["", "-x", "a..b"])
+def test_new_command_rejects_invalid_framework_branch(tmp_path: Path, branch: str) -> None:
+    from pilot.commands.bench.create import NewCommand
+
+    target = tmp_path / "benches" / "my-bench"
+    with pytest.raises(BenchError, match=r"[Bb]ranch"):
+        NewCommand(
+            target_directory=target,
+            bench_name="my-bench",
+            admin_password="Test-password1!",
+            frappe_branch=branch,
+        ).run()
+
+    assert not target.exists()
+
+
 def test_new_command_raises_if_bench_already_exists(tmp_path: Path) -> None:
     from pilot.commands.bench.create import NewCommand
 
