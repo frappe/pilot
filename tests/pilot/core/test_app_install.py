@@ -12,6 +12,7 @@ from pilot.config import AppConfig
 from pilot.core.app import App
 from pilot.core.app.repository import AppRepository
 from pilot.exceptions import AppValidationError, BenchError
+from pilot.internal.git import GitRepo
 from tests.pilot.commands.test_commands import make_bench
 
 
@@ -35,6 +36,44 @@ def _cloner(module: str, seen: list[Path]):
         _write_app_tree(self.app.path, module)
 
     return clone
+
+
+@pytest.mark.parametrize("phase", ["validation", "environment"])
+@pytest.mark.parametrize("existing", [False, True])
+def test_install_keeps_original_failure_when_repository_cleanup_fails(tmp_path, phase, existing):
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    if existing:
+        _write_app_tree(bench.apps_path / "myapp", "myapp")
+    progress = []
+    original = AppValidationError("original install failure")
+    move = GitRepo.move
+
+    def move_unless_cleanup(repo, target):
+        if target == bench.apps_path / "myapp":
+            raise BenchError("cleanup move failed")
+        return move(repo, target)
+
+    def remove_unless_cleanup(repo):
+        if repo.path.exists():
+            raise BenchError("cleanup remove failed")
+
+    with (
+        patch.object(AppRepository, "clone", _cloner("myapp", [])),
+        patch.object(App, "validate", side_effect=original if phase == "validation" else None),
+        patch.object(App, "_install_into_environment", side_effect=original),
+        patch.object(App, "_deregister"),
+        patch.object(App, "_pip_uninstall"),
+        patch.object(App, "promote", return_value=None),
+        patch.object(GitRepo, "remove", remove_unless_cleanup),
+        patch.object(GitRepo, "move", move_unless_cleanup),
+        pytest.raises(AppValidationError, match="original install failure") as caught,
+    ):
+        _make_app(bench, "myapp").install(on_progress=progress.append)
+    assert caught.value is original
+    if phase == "validation" or not existing:
+        assert any("cleanup" in note for note in original.__notes__)
+        assert any("cleanup" in message for message in progress)
 
 
 def test_install_clones_into_staging_then_moves_into_apps(tmp_path: Path) -> None:

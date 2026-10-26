@@ -385,8 +385,8 @@ class App:
             if self.is_staged:
                 self.validate()
             self.promote()
-        except BenchError:
-            self._undo_clone(existing_clone)
+        except BenchError as error:
+            self._cleanup_after_failure(error, on_progress, lambda: self._undo_clone(existing_clone))
             raise
 
         on_progress(f"Installing {self.config.name}...")
@@ -399,13 +399,25 @@ class App:
                 self._build_assets_via_env_manager()
             else:
                 on_progress(f"\nSkipping assets for {self.config.name}...")
-        except Exception:
-            self._roll_back_install(delete_clone=existing_clone is None, on_progress=on_progress)
+        except Exception as error:
+            self._cleanup_after_failure(
+                error,
+                on_progress,
+                lambda: self._roll_back_install(delete_clone=existing_clone is None, on_progress=on_progress),
+            )
             raise
 
         self.record_branch()
         on_progress(f"\n'{self.config.name}' installed successfully.")
         return AppInstallResult(self, already_installed=False, installed_dependencies=dependencies)
+
+    def _cleanup_after_failure(self, error: Exception, on_progress, cleanup: Callable[[], None]) -> None:
+        try:
+            cleanup()
+        except Exception as cleanup_error:
+            message = f"App cleanup failed; retained files at {self.path}: {cleanup_error}"
+            error.add_note(message)
+            on_progress(message)
 
     def _undo_clone(self, existing_clone: Path | None) -> None:
         """Undo the clone after a failure: delete a tree this run created, and put

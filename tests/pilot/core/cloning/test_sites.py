@@ -49,6 +49,38 @@ def test_clone_rejects_unsupported_site_engine_even_on_mariadb_bench(source):
         original.clone("copy.localhost", on_progress=lambda message: None)
 
 
+def test_clone_cleans_database_if_config_disappears_during_import(source, monkeypatch):
+    cleaned = []
+
+    def fail(database):
+        (database.destination.path / "site_config.json").unlink()
+        raise RuntimeError("import failed after config disappeared")
+
+    monkeypatch.setattr(SiteDatabaseClone, "run", fail)
+    monkeypatch.setattr(
+        SiteDatabaseClone, "cleanup", lambda database: cleaned.append(database.config["db_name"])
+    )
+    with pytest.raises(RuntimeError, match="config disappeared"):
+        source.site("source.localhost").clone("failed.localhost", on_progress=lambda message: None)
+    assert len(cleaned) == 1
+    assert not (source.sites_path / "failed.localhost").exists()
+
+
+def test_clone_does_not_clean_database_before_import_starts(source, monkeypatch):
+    cleaned = []
+
+    def fail(*args):
+        raise OSError("config write failed")
+
+    monkeypatch.setattr("pilot.core.site.clone.write_private_text", fail)
+    monkeypatch.setattr(
+        SiteDatabaseClone, "cleanup", lambda database: cleaned.append(database.config["db_name"])
+    )
+    with pytest.raises(OSError, match="config write failed"):
+        source.site("source.localhost").clone("failed.localhost", on_progress=lambda message: None)
+    assert cleaned == []
+
+
 def test_site_clones_are_fresh_and_files_and_credentials_are_independent(source, monkeypatch):
     imports = []
     original = source.site("source.localhost")

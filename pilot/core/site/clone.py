@@ -31,6 +31,7 @@ class SiteClone:
         self.route_registered = False
         self.hosts_added = False
         self.nginx_changed = False
+        self.database_started = False
 
     def validate(self) -> bool:
         self.validate_names()
@@ -59,6 +60,7 @@ class SiteClone:
             self.route_registered = False
             self.hosts_added = False
             self.nginx_changed = False
+            self.database_started = False
             wildcard = self.validate()
             site = self.bench.site(self.name)
             config = self.site_config()
@@ -94,7 +96,7 @@ class SiteClone:
     def prepare(self, site, database, on_progress) -> None:
         on_progress("Streaming source database into a new database")
         with ThreadPoolExecutor(max_workers=2) as executor:
-            imported = executor.submit(database.run)
+            imported = executor.submit(self.import_database, database)
             on_progress("Copying public and private uploads")
             files = executor.submit(self.copy_files, site)
             error: BaseException | None = None
@@ -111,6 +113,10 @@ class SiteClone:
             if error is not None:
                 raise error
 
+    def import_database(self, database) -> None:
+        self.database_started = True
+        database.run()
+
     def rollback(self, site, database, error: BaseException, on_progress) -> None:
         from pilot.core.site.drop import SiteDropper
 
@@ -121,7 +127,7 @@ class SiteClone:
                 from pilot.managers.platform import remove_hosts_entry
 
                 remove_hosts_entry(self.name)
-            if (site.path / "site_config.json").exists():
+            if self.database_started:
                 database.cleanup()
             shutil.rmtree(site.path)
             if self.nginx_changed:
