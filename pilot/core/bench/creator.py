@@ -98,7 +98,9 @@ class BenchCreator:
         defaults = BenchConfig.default_ports()
         bases = [*defaults.values(), defaults["admin.port"] + 1]
         used = {
-            port for _, config in iter_sibling_benches(bench_path) for port in self.configured_ports(config)
+            port
+            for _, config in iter_sibling_benches(bench_path)
+            for port in self.get_configured_ports(config)
         }
 
         offset = 0
@@ -107,7 +109,7 @@ class BenchCreator:
         return offset
 
     @staticmethod
-    def configured_ports(config) -> set[int]:
+    def get_configured_ports(config) -> set[int]:
         return {
             config.http_port,
             config.socketio_port,

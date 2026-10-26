@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from dataclasses import MISSING, fields
 from typing import Annotated, Any, Literal, NamedTuple, get_args, get_origin, get_type_hints
 
@@ -79,6 +80,8 @@ def argument_kwargs(arg_field: ArgField, base_hint: Any) -> dict[str, Any]:
         kwargs["choices"] = get_args(base_hint)
     elif get_origin(base_hint) is list:
         update_list_kwargs(kwargs, arg_field, base_hint)
+    elif get_origin(base_hint) is dict:
+        kwargs["type"] = json.loads
     elif base_hint is not str:
         kwargs["type"] = base_hint
     return kwargs

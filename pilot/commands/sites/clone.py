@@ -12,7 +12,9 @@ class CloneSiteCommand(Command):
     source: Annotated[str, Arg(help="Source site name.")]
     target: Annotated[str, Arg(help="New site name.")]
     target_bench: Annotated[str, Arg(help="Destination bench; defaults to the current bench.")] = ""
-    admin_password: Annotated[str, Arg(help="New site's Administrator password.")] = "admin"
+    admin_password: Annotated[
+        str | None, Arg(help="New site's Administrator password; generated if omitted.")
+    ] = None
 
     def run(self) -> None:
         from pilot.config import BenchConfig

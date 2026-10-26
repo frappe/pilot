@@ -81,6 +81,19 @@ def test_clone_does_not_clean_database_before_import_starts(source, monkeypatch)
     assert cleaned == []
 
 
+@pytest.mark.parametrize("password", [None, "chosen-password"])
+def test_site_clone_generates_password_unless_explicitly_supplied(source, monkeypatch, password):
+    monkeypatch.setattr(SiteClone, "run", lambda self, on_progress: self.password)
+    original = source.site("source.localhost")
+    first = original.clone("first.localhost", admin_password=password)
+    second = original.clone("second.localhost", admin_password=password)
+    if password is None:
+        assert len(first) >= 24
+        assert first != second
+    else:
+        assert first == second == password
+
+
 def test_site_clones_are_fresh_and_files_and_credentials_are_independent(source, monkeypatch):
     imports = []
     original = source.site("source.localhost")
@@ -107,7 +120,7 @@ def test_site_clones_are_fresh_and_files_and_credentials_are_independent(source,
     assert (original.path / "private/files/marker.txt").read_text() == "source files"
 
 
-@pytest.mark.parametrize("stage", ["database", "finish"])
+@pytest.mark.parametrize("stage", ["database", "finish", "domain_cleanup"])
 @pytest.mark.parametrize("cleanup_fails", [False, True])
 def test_failed_site_clone_releases_route_and_owned_resources(source, monkeypatch, stage, cleanup_fails):
     from pilot.core.adapters.domain_provider import DomainRouteProvider
@@ -123,6 +136,14 @@ def test_failed_site_clone_releases_route_and_owned_resources(source, monkeypatc
     def fail(*args):
         raise RuntimeError("original clone failure")
 
+    if stage == "domain_cleanup":
+
+        def release(self, name):
+            released.append(name)
+            raise RuntimeError("provider unavailable")
+
+        monkeypatch.setattr(DomainRouteProvider, "release", release)
+
     def cleanup(self):
         dropped.append(self.config["db_name"])
         if cleanup_fails:
@@ -131,8 +152,10 @@ def test_failed_site_clone_releases_route_and_owned_resources(source, monkeypatc
     monkeypatch.setattr(SiteDatabaseClone, "cleanup", cleanup, raising=False)
     monkeypatch.setattr(SiteDatabaseClone, "run", fail if stage == "database" else lambda self: None)
     monkeypatch.setattr(SiteClone, "finish", fail)
-    with pytest.raises(RuntimeError, match="original clone failure"):
+    with pytest.raises(RuntimeError, match="original clone failure") as caught:
         original.clone("failed.localhost", on_progress=lambda message: None)
+    if stage == "domain_cleanup":
+        assert any("provider unavailable" in note for note in caught.value.__notes__)
     assert released == ["failed.localhost"]
     assert len(dropped) == 1 and dropped[0] != "source_db"
     target = source.sites_path / "failed.localhost"

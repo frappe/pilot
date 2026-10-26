@@ -36,6 +36,17 @@ def parse_task(cls: type[Task], tmp_path: Path, argv: list[str]) -> Task:
     return task_from_args(cls, make_bench(tmp_path), tmp_path, args)
 
 
+def test_clone_branch_overrides_round_trip_through_worker_arguments(tmp_path):
+    from pilot.tasks.clone_bench import CloneBenchTask
+
+    overrides = {"frappe": "feature/one", "erpnext": "version-16"}
+    argv = task_argv_suffix(
+        CloneBenchTask, {"source_bench": "dev", "name": "copy", "app_branches": overrides}
+    )
+    parsed = parse_task(CloneBenchTask, tmp_path, argv)
+    assert parsed.app_branches == overrides
+
+
 def test_step_reports_failure_once(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     demo = task(tmp_path)
 
@@ -118,7 +129,9 @@ def test_task_bool_field_becomes_store_true_flag(tmp_path: Path) -> None:
 def test_a_bool_field_that_defaults_to_true_reaches_the_task_either_way(tmp_path: Path, value: bool) -> None:
     from pilot.tasks.rename_site import RenameSiteTask
 
-    argv = task_argv_suffix(RenameSiteTask, {"site": "a.localhost", "new_name": "b.localhost", "keep_old_hostname": value})
+    argv = task_argv_suffix(
+        RenameSiteTask, {"site": "a.localhost", "new_name": "b.localhost", "keep_old_hostname": value}
+    )
 
     assert parse_task(RenameSiteTask, tmp_path, argv).keep_old_hostname is value
 

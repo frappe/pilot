@@ -63,7 +63,7 @@ class SiteClone:
             self.database_started = False
             wildcard = self.validate()
             site = self.bench.site(self.name)
-            config = self.site_config()
+            config = self.site_config
             database = SiteDatabaseClone(self.source, site, config)
             site.path.mkdir(mode=0o700)
             try:
@@ -121,7 +121,11 @@ class SiteClone:
         from pilot.core.site.drop import SiteDropper
 
         if self.route_registered:
-            SiteDropper(site).release_domains([self.name])
+            try:
+                SiteDropper(site).release_domains([self.name])
+            except Exception as cleanup_error:
+                error.add_note(f"Clone domain cleanup failed: {cleanup_error}")
+                on_progress(f"Clone domain cleanup failed for {self.name}: {cleanup_error}")
         try:
             if self.hosts_added:
                 from pilot.managers.platform import remove_hosts_entry
@@ -138,6 +142,7 @@ class SiteClone:
             error.add_note(f"Clone cleanup failed: {cleanup_error}")
             on_progress(f"Clone cleanup failed; retained recovery files at {site.path}.")
 
+    @property
     def site_config(self) -> dict:
         original = json.loads((self.source.path / "site_config.json").read_text())
         database = f"_{secrets.token_hex(8)}"
