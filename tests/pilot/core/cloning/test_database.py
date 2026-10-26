@@ -133,7 +133,7 @@ def test_postgres_clone_uses_resolved_client_binaries(source, monkeypatch):
     source.config.db_type = "postgres"
     original = source.site("source.localhost")
     destination = source.site("uat.localhost")
-    config = {"db_name": "_target", "db_password": "target-secret"}
+    config = {"db_name": "_0123456789abcdef", "db_password": "target-secret"}
     sql_calls = []
     streams = []
     monkeypatch.setattr(
@@ -165,6 +165,23 @@ def mariadb_clone_metadata(tables, unsupported):
     elif unsupported == "escaped":
         rows[0] = "table\\tname\tBASE TABLE\tInnoDB"
     return "\n".join(["1" if unsupported == "relationships" else "0", *rows]).encode()
+
+
+@pytest.mark.parametrize("engine", ["mariadb", "postgres"])
+def test_clone_rejects_ungenerated_database_before_creation(source, monkeypatch, engine):
+    from pilot.managers.database import MariaDBManager
+
+    statements = []
+    monkeypatch.setattr(MariaDBManager, "run_admin_sql", lambda self, sql: statements.append(sql))
+    monkeypatch.setattr(SiteDatabaseClone, "postgres_admin_sql", lambda self, sql: statements.append(sql))
+    clone = SiteDatabaseClone(
+        source.site("source.localhost"),
+        source.site("copy.localhost"),
+        {"db_name": "source_db", "db_type": engine},
+    )
+    with pytest.raises(BenchError, match="not generated"):
+        clone.run()
+    assert statements == []
 
 
 @pytest.mark.parametrize(

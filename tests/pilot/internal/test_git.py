@@ -5,7 +5,23 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from pilot.internal.git import GitRepo
+
+
+def test_remove_reports_filesystem_failure_but_allows_missing_path(tmp_path, monkeypatch):
+    path = tmp_path / "repo"
+    GitRepo(path).remove()
+    path.mkdir()
+
+    def fail(path):
+        raise PermissionError("cannot delete repository")
+
+    monkeypatch.setattr("pilot.internal.git.shutil.rmtree", fail)
+    with pytest.raises(PermissionError, match="cannot delete repository"):
+        GitRepo(path).remove()
+    assert path.exists()
 
 
 def _git(path: Path, *args: str) -> None:

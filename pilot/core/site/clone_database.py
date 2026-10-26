@@ -53,9 +53,7 @@ class SiteDatabaseClone:
 
     def cleanup(self) -> None:
         """Drop only the generated destination database and its login."""
-        name = self.config["db_name"]
-        if not re.fullmatch(r"_[0-9a-f]{16}", name):
-            raise BenchError("Refusing to clean up a database not generated for this clone.")
+        name = self.generated_database_name
         if self.config["db_type"] == "postgres":
             self.postgres_admin_sql(f'DROP DATABASE IF EXISTS "{name}";\nDROP ROLE IF EXISTS "{name}";')
         else:
@@ -65,11 +63,18 @@ class SiteDatabaseClone:
                 f"DROP DATABASE IF EXISTS `{name}`;\nDROP USER IF EXISTS '{name}'@'%';"
             )
 
+    @property
+    def generated_database_name(self) -> str:
+        name = self.config["db_name"]
+        if not re.fullmatch(r"_[0-9a-f]{16}", name):
+            raise BenchError("Refusing to modify a database not generated for this clone.")
+        return name
+
     def mariadb(self, original: dict) -> None:
         from pilot.managers.database import MariaDBManager
 
         manager = MariaDBManager(self.destination.bench.config.mariadb)
-        name = self.config["db_name"]
+        name = self.generated_database_name
         password = manager._sql_quote(self.config["db_password"])
         manager.run_admin_sql(
             f"CREATE DATABASE `{name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\n"
@@ -196,10 +201,10 @@ class SiteDatabaseClone:
     def postgres(self, original: dict) -> None:
         from pilot.managers.database import PostgresManager
 
+        name = self.generated_database_name
         settings = self.destination.bench.config.postgres
         psql = PostgresManager(settings).client_binary("psql")
         pg_dump = PostgresManager(self.source.bench.config.postgres).client_binary("pg_dump")
-        name = self.config["db_name"]
         password = self.config["db_password"].replace("'", "''")
         self.postgres_admin_sql(
             f"CREATE ROLE {name} LOGIN PASSWORD '{password}';\nCREATE DATABASE {name} OWNER {name};"

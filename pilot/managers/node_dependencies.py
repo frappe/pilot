@@ -23,7 +23,10 @@ class NodeDependencies:
                 file = Path(binary).resolve()
                 digest.update(f"{file}:{file.stat().st_mtime_ns}:{file.stat().st_size}".encode())
         environment = {
-            key: value for key, value in os.environ.items() if key not in {"PWD", "OLDPWD", "SHLVL", "_"}
+            key: value
+            for key, value in os.environ.items()
+            if key not in {"PWD", "OLDPWD", "SHLVL", "_", "PILOT_NONINTERACTIVE_PRIVILEGES"}
+            and not key.startswith("BENCH_TASK_")
         }
         digest.update(json.dumps(environment, sort_keys=True).encode())
         return digest.hexdigest()

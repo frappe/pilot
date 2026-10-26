@@ -35,6 +35,19 @@ def capture_install(source, cache):
     cache.capture(source)
 
 
+def test_cache_restores_between_distinct_task_processes(install, monkeypatch):
+    source, target, cache = install
+    capture_install(source, cache)
+    for key in ("BENCH_TASK_ID", "BENCH_TASK_LAUNCH_ID", "BENCH_TASK_SECRETS_FILE", "BENCH_TASK_READY_FD"):
+        monkeypatch.setenv(key, "first-task")
+    monkeypatch.setenv("PILOT_NONINTERACTIVE_PRIVILEGES", "1")
+    assert NodeDependencies.has_matching_install(source, NodeDependencies.get_key(source))
+    for key in ("BENCH_TASK_ID", "BENCH_TASK_LAUNCH_ID", "BENCH_TASK_SECRETS_FILE", "BENCH_TASK_READY_FD"):
+        monkeypatch.setenv(key, "second-task")
+    assert cache.restore(target)
+    assert NodeDependencies.has_matching_install(target, NodeDependencies.get_key(target))
+
+
 @pytest.mark.parametrize("target_kind", ["external", "dangling", "loop", "modules"])
 def test_dependency_copy_rejects_linked_installs(install, target_kind):
     source, target, _cache = install

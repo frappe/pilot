@@ -83,8 +83,8 @@ class GitRepo:
                 .strip()
             )
             run_command(["git", "--git-dir", common, "worktree", "remove", str(self.path.resolve())])
-        else:
-            shutil.rmtree(self.path, ignore_errors=True)
+        elif self.path.exists():
+            shutil.rmtree(self.path)
 
     @property
     def branch(self) -> str:
