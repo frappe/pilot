@@ -35,6 +35,19 @@ def save_configuration(client):
     )
 
 
+def test_bootstrap_keeps_interrupted_initialization_in_setup(tmp_path: Path) -> None:
+    client = setup_client(tmp_path)
+    python = tmp_path / "env" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.touch()
+    marker = tmp_path / ".initializing"
+    marker.touch()
+
+    assert client.get("/api/v1/bootstrap").get_json()["mode"] == "setup"
+    marker.unlink()
+    assert client.get("/api/v1/bootstrap").get_json()["mode"] == "admin"
+
+
 def start_setup(client, key: str = "wizard-setup"):
     with patch("pilot.internal.tasks.runner.task_workers.wake"):
         return client.post(

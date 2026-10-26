@@ -9,6 +9,7 @@ from admin.backend.api.v1.sites import sites_bp
 from admin.backend.api.v1.sites.shared import (
     internal_error,
     malformed_body,
+    server_access_locked_response,
     site_name,
     site_not_found,
 )
@@ -55,6 +56,8 @@ def update_configuration(name: str):
     data = request.get_json(silent=True)
     if data is None or not isinstance(data, dict):
         return malformed_body()
+    if refused := server_access_locked_response():
+        return refused
 
     try:
         public = Bench(bench_root).site(name).update_public_config(data)

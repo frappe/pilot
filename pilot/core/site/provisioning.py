@@ -33,6 +33,7 @@ class SiteProvisioner:
         from pilot.core.site import Site
 
         via_wildcard = validate_new_site(self.bench, self.name, self.apps)
+        self.bench.site_aliases.release(self.name)
         route = None
         if via_wildcard:
             route = register_with_provider(self.bench, self.name)
@@ -160,7 +161,8 @@ def validate_new_site(bench: "Bench", name: str, apps: list[str]) -> bool:
     from pilot.core.adapters.domain_provider import DomainRouteProvider
     from pilot.utils import host_owner, matches_wildcard, normalize_host
 
-    if (bench.sites_path / name / "site_config.json").exists():
+    path = bench.sites_path / name
+    if not path.is_symlink() and (path / "site_config.json").exists():
         raise BenchError(f"Site '{name}' already exists.")
     owner = host_owner(bench.path, name)
     if owner:

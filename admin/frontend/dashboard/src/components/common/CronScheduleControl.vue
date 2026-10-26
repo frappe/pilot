@@ -252,9 +252,10 @@ defineExpose({ disabled, currentScheduleLabel, loading, enable })
   <!-- Custom schedule dialog -->
   <Dialog v-model="showCustomDialog" :title="`Custom ${noun} schedule`" size="sm">
     <div class="space-y-4">
-      <Select label="Frequency" v-model="schedFrequency" :options="FREQ_OPTIONS" class="w-full" />
+      <Select side="bottom" label="Frequency" v-model="schedFrequency" :options="FREQ_OPTIONS" class="w-full" />
 
       <Select
+        side="bottom"
         v-if="schedFrequency === 'weekly'"
         label="Day of week"
         v-model="schedWeekday"
@@ -263,6 +264,7 @@ defineExpose({ disabled, currentScheduleLabel, loading, enable })
       />
 
       <Select
+        side="bottom"
         v-if="schedFrequency === 'monthly'"
         label="Day of month"
         v-model="schedMonthDay"
@@ -270,7 +272,7 @@ defineExpose({ disabled, currentScheduleLabel, loading, enable })
         class="w-full"
       />
 
-      <Select label="Time" v-model.number="schedHourPick" :options="hourOptions" class="w-full" />
+      <Select side="bottom" label="Time" v-model.number="schedHourPick" :options="hourOptions" class="w-full" />
 
       <p v-if="retentionHint" class="text-ink-gray-4 text-p-sm">{{ retentionHint }}</p>
       <ErrorMessage v-if="error" :message="error" />

@@ -220,7 +220,6 @@ def test_setup_monitoring_runs_privileged_setup_at_provision_time(tmp_path: Path
 
     called = []
     monkeypatch.setattr(MonitorConfigurator, "install", lambda self: None)
-    monkeypatch.setattr(UptimeMonitorConfigurator, "install", lambda self: None)
     monkeypatch.setattr(SiteStorageConfigurator, "install", lambda self: None)
     monkeypatch.setattr(MonitorConfigurator, "setup", lambda self: called.append("monitor"))
     monkeypatch.setattr(UptimeMonitorConfigurator, "setup", lambda self: called.append("uptime"))
@@ -246,8 +245,8 @@ def test_setup_monitoring_runs_without_psutil(tmp_path: Path, monkeypatch) -> No
     cmd = ProductionSetup(bench)
 
     monkeypatch.setattr(SiteStorageConfigurator, "install", lambda self: None)
+    monkeypatch.setattr(MonitorConfigurator, "install", lambda self: None)
     for configurator in (MonitorConfigurator, UptimeMonitorConfigurator):
-        monkeypatch.setattr(configurator, "install", lambda self: None)
         monkeypatch.setattr(configurator, "setup", lambda self: None)
 
     for module in ("psutil", "pilot.core.server.monitoring", "pilot.core.server.monitoring_proc"):

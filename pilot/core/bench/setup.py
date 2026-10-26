@@ -165,9 +165,7 @@ class ProductionSetup:
         monitor.install()
         monitor.setup()
 
-        uptime = UptimeMonitorConfigurator(self.bench)
-        uptime.install()
-        uptime.setup()
+        UptimeMonitorConfigurator(self.bench).setup()
 
         SiteStorageConfigurator().install()
 

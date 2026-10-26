@@ -61,6 +61,7 @@ class PrebuiltAssets:
         # The archive's assets.json entries; None for archives without them.
         self.asset_maps: dict[str, dict[str, str]] | None = None
         self.has_page_islands = False
+        self.has_studio_apps = False
 
     def install(self) -> bool:
         """Swap in the assets built for HEAD. False when none are published or the download
@@ -121,6 +122,7 @@ class PrebuiltAssets:
             if not (extracted / path).exists():
                 raise BenchError(f"Prebuilt assets list {str(path)!r} but do not contain it.")
         self.asset_maps = self._asset_maps(manifest)
+        self.has_studio_apps = Path(self.app.config.name, "public", "app_builds") in paths
         self._carry_over_page_islands(extracted, paths)
         for path in paths:
             self._replace(extracted / path, self.app.path / path)

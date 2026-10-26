@@ -7,4 +7,11 @@ export default {
     "./src/**/*.{vue,js,ts}",
     ...content,
   ],
+  theme: {
+    extend: {
+      borderColor: {
+        "outline-gray-1.5": "var(--outline-gray-1-5)",
+      },
+    },
+  },
 };

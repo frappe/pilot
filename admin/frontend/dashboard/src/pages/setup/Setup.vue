@@ -68,8 +68,8 @@ const {
         <LoadingText v-show="currentStep === 'loading'" class="justify-center py-10" />
 
         <div v-show="currentStep === 'database'" class="flex flex-col gap-4">
-          <Select label="Database engine" v-model="dbType" :options="dbTypeOptions" />
-          <Select label="Database setup" v-model="dbMode" :options="dbModeOptions" />
+          <Select side="bottom" label="Database engine" v-model="dbType" :options="dbTypeOptions" />
+          <Select side="bottom" label="Database setup" v-model="dbMode" :options="dbModeOptions" />
           <template v-if="dbMode === 'external'">
             <div class="flex gap-4">
               <TextInput

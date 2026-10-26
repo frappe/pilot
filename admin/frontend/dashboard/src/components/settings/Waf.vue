@@ -188,7 +188,7 @@ onMounted(async () => {
 
       <div class="items-start gap-4 grid md:grid-cols-2">
         <div class="space-y-1.5">
-          <Select label="Action" :options="ACTION_OPTIONS" v-model="mode" />
+          <Select side="bottom" label="Action" :options="ACTION_OPTIONS" v-model="mode" />
           <p v-if="mode === 'DetectionOnly'" class="text-ink-gray-5 text-p-sm">
             Matches are logged, not blocked. Review
             <RouterLink

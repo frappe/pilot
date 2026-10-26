@@ -458,6 +458,7 @@ onMounted(load)
 <template>
   <Teleport defer to="#header-actions">
     <Select
+      side="bottom"
       v-if="siteOptions.length > 1"
       v-model="selectedSite"
       :options="siteOptions"

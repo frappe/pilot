@@ -1,0 +1,62 @@
+name: Publish Cloud SDK
+
+# A version bump of @frappe/cloud-sdk on develop publishes that version to npm.
+# npm trusts this workflow through OIDC (trusted publishing), so the repository holds no token.
+on:
+  push:
+    branches: [develop]
+    paths:
+      - admin/frontend/cloud-sdk/package.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: cloud-sdk-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: admin/frontend/cloud-sdk
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Skip a version npm already has
+        id: version
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if npm view "@frappe/cloud-sdk@$version" version >/dev/null 2>&1; then
+            echo "@frappe/cloud-sdk@$version is already on npm."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install
+        if: steps.version.outputs.publish == 'true'
+        run: |
+          npm ci
+          npm ci --prefix ../in-app-embed
+
+      - name: Test
+        if: steps.version.outputs.publish == 'true'
+        run: npm test
+
+      - name: Build
+        if: steps.version.outputs.publish == 'true'
+        run: npm run build
+
+      - name: Publish
+        if: steps.version.outputs.publish == 'true'
+        run: npm publish --access public --provenance

@@ -18,6 +18,16 @@ def _layout(root: Path, *, source: bool, dist: bool) -> None:
     if dist:
         assets = root / "admin" / "backend" / "static" / "dashboard" / "assets"
         assets.mkdir(parents=True, exist_ok=True)
+        (assets.parent / "index.html").write_text("<!doctype html>")
+
+
+def write_build_output(argv, **kwargs) -> None:
+    if argv[:3] != ["npm", "run", "build"]:
+        return
+    staged = Path(argv[-1])
+    (staged / "assets").mkdir(parents=True)
+    (staged / "assets" / "new.js").write_text("new asset")
+    (staged / "index.html").write_text("new index")
 
 
 def _ensure(root: Path, *, is_dev: bool) -> object:
@@ -47,6 +57,7 @@ def test_build_frontend_skips_when_dist_already_exists(tmp_path: Path) -> None:
     dist_dir = tmp_path / "dist"
     frontend_dir.mkdir(parents=True)
     (dist_dir / "assets").mkdir(parents=True)
+    (dist_dir / "index.html").write_text("old index")
 
     with patch("pilot.utils.run_command") as run_command:
         frontend._build_frontend(frontend_dir, dist_dir, "dashboard", lambda message: None)
@@ -70,9 +81,12 @@ def test_build_frontend_builds_when_dist_is_missing(tmp_path: Path) -> None:
     dist_dir = tmp_path / "dist"
     frontend_dir.mkdir(parents=True)
 
-    with patch("pilot.utils.run_command") as run_command:
+    with patch("pilot.utils.run_command", side_effect=write_build_output) as run_command:
         frontend._build_frontend(frontend_dir, dist_dir, "dashboard", lambda message: None)
-    run_command.assert_any_call(["npm", "run", "build"], cwd=frontend_dir, stream_output=True)
+    command = run_command.call_args.args[0]
+    assert command[:5] == ["npm", "run", "build", "--", "--outDir"]
+    assert Path(command[-1]) != dist_dir
+    assert (dist_dir / "index.html").read_text() == "new index"
 
 
 def test_build_frontend_forces_rebuild_even_when_dist_exists(tmp_path: Path) -> None:
@@ -80,10 +94,25 @@ def test_build_frontend_forces_rebuild_even_when_dist_exists(tmp_path: Path) -> 
     dist_dir = tmp_path / "dist"
     frontend_dir.mkdir(parents=True)
     (dist_dir / "assets").mkdir(parents=True)
+    (dist_dir / "index.html").write_text("old index")
+    (dist_dir / "assets" / "old.js").write_text("old asset")
 
-    with patch("pilot.utils.run_command") as run_command:
+    with patch("pilot.utils.run_command", side_effect=write_build_output):
         frontend._build_frontend(frontend_dir, dist_dir, "dashboard", lambda message: None, force=True)
-    run_command.assert_any_call(["npm", "run", "build"], cwd=frontend_dir, stream_output=True)
+    assert (dist_dir / "index.html").read_text() == "new index"
+    assert (dist_dir / "assets" / "old.js").read_text() == "old asset"
+    assert (dist_dir / "assets" / "new.js").read_text() == "new asset"
+
+
+def test_incomplete_build_keeps_the_served_frontend(tmp_path: Path) -> None:
+    dist_dir = tmp_path / "dist"
+    (dist_dir / "assets").mkdir(parents=True)
+    (dist_dir / "index.html").write_text("old index")
+    (dist_dir / "assets" / "old.js").write_text("old asset")
+    with patch("pilot.utils.run_command"), pytest.raises(BenchError, match="complete frontend"):
+        frontend._build_frontend(tmp_path, dist_dir, "dashboard", lambda message: None, force=True)
+    assert (dist_dir / "index.html").read_text() == "old index"
+    assert (dist_dir / "assets" / "old.js").read_text() == "old asset"
 
 
 def test_released_install_without_dist_raises(tmp_path: Path) -> None:

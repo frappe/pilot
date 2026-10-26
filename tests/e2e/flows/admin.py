@@ -34,6 +34,13 @@ def login(page: Page, base_url: str, password: str) -> None:
     expect(page.get_by_role("button", name="New site")).to_be_visible(timeout=30_000)
 
 
+def dismiss_onboarding(page: Page, base_url: str, password: str) -> None:
+    expect(page.request.post(f"{base_url}/api/v1/auth/session", data={"password": password})).to_be_ok()
+    res = page.request.patch(f"{base_url}/api/v1/settings", data={"bench": {"onboarding": "dismissed"}})
+    expect(res).to_be_ok()
+    page.context.clear_cookies()
+
+
 def create_site(page: Page, base_url: str, site_name: str) -> None:
     open_root(page, base_url)
     page.get_by_role("button", name="New site").click()

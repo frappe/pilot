@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from flask import Flask, send_file, send_from_directory
+from flask import Flask, render_template, send_file, send_from_directory
 from werkzeug.exceptions import NotFound
 
 from admin.backend.api.errors import install_api_error_handlers
@@ -160,11 +160,6 @@ def register_frontend(app: Flask) -> None:
         if path == "api" or path.startswith("api/"):
             return error_response("not_found", "API route not found.", 404)
         dashboard_dir = STATIC_DIR / "dashboard"
-        if not dashboard_dir.exists():
-            return (
-                "Frontend not built. Run: cd admin/frontend/dashboard && npm install && npm run build",
-                503,
-            )
         if path:
             try:
                 # send_from_directory, never `dir / path`: it is what keeps a traversing
@@ -176,7 +171,10 @@ def register_frontend(app: Flask) -> None:
                     return "Asset not found.", 404
             else:
                 return _immutable(response) if path.startswith("assets/") else response
-        return send_file(str(dashboard_dir / "index.html"))
+        try:
+            return send_file(str(dashboard_dir / "index.html"))
+        except FileNotFoundError:
+            return render_template("startup.html")
 
 
 def configure_idle_watchdog(

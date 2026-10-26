@@ -12,6 +12,16 @@ export const PILLS = [
   'Dev Tools',
 ]
 
+export const pillIcons: Record<string, string> = {
+  All: 'lucide-layout-grid',
+  Integrations: 'lucide-plug',
+  Utility: 'lucide-wrench',
+  Payments: 'lucide-credit-card',
+  Localization: 'lucide-languages',
+  Business: 'lucide-briefcase',
+  'Dev Tools': 'lucide-code',
+}
+
 const PILL_BY_CATEGORY: Record<string, string> = {
   Integrations: 'Integrations',
   'CRM Integration': 'Integrations',

@@ -232,6 +232,29 @@ def test_proxy_forwards_a_team_identity_token_request(tmp_path: Path) -> None:
     forward.assert_called_once_with(method, "POST", body)
 
 
+@pytest.mark.parametrize("method", ["central.api.email_oauth.start", "central.api.email_oauth.relay_token"])
+def test_proxy_forwards_the_mailbox_connect_calls(tmp_path: Path, method: str) -> None:
+    client = _app_client(tmp_path / "bench")
+    body = {"provider": "microsoft", "state": "s1"}
+    with patch(
+        "admin.backend.api.v1.sites.central.CentralClient.forward", return_value={"ok": True}
+    ) as forward:
+        response = client.post(f"/api/v1/sites/s1.localhost/central/{method}", json=body)
+
+    assert response.status_code == 200
+    forward.assert_called_once_with(method, "POST", body)
+
+
+def test_proxy_rejects_the_mailbox_callback(tmp_path: Path) -> None:
+    # the browser goes to Central's callback directly; a site never calls it
+    client = _app_client(tmp_path / "bench")
+    with patch("admin.backend.api.v1.sites.central.CentralClient.forward") as forward:
+        response = client.get("/api/v1/sites/s1.localhost/central/central.api.email_oauth.callback")
+
+    assert response.status_code == 403
+    forward.assert_not_called()
+
+
 def test_proxy_rejects_non_allowlisted_method(tmp_path: Path) -> None:
     client = _app_client(tmp_path / "bench")
     with patch("admin.backend.api.v1.sites.central.CentralClient.forward") as forward:
@@ -252,7 +275,7 @@ def test_account_url_returns_the_endpoint_from_metadata(tmp_path: Path) -> None:
         "url": "https://central.test",
         "billing": "https://central.test/dashboard/billing",
         "change_plan": "https://central.test/dashboard/servers?pilot=vm-1&action=resize",
-        "server": "https://central.test/dashboard/servers?pilot=vm-1&action=open-bench",
+        "server": "https://central.test/api/method/central.api.sso.open_bench?pilot=vm-1",
     }
 
 

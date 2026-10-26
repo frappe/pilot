@@ -11,16 +11,12 @@ export const isFrappeApp = (app: { repo?: string }) => {
   return Boolean(app.repo?.includes('github.com/frappe/'))
 }
 
-// The whole catalog is too much to scan while naming a site: Frappe's own apps
-// plus whatever is already cloned onto this bench, marketplace for the rest.
 export const buildSiteAppChoices = (
   registry: SiteAppChoice[] = [],
   benchApps: SiteAppChoice[] = [],
 ) => {
   const apps = new Map<string, SiteAppChoice>()
-  registry
-    .filter((app) => app.name !== 'frappe' && isFrappeApp(app))
-    .forEach((app) => apps.set(app.name, app))
+  registry.filter((app) => app.name !== 'frappe').forEach((app) => apps.set(app.name, app))
   benchApps
     // Bench-only apps carry no registry title, so this falls back to the folder
     // name - `insights` next to `ERPNext`. Same tidy-up the marketplace does.

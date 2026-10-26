@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from pilot.exceptions import BenchError
 
@@ -22,7 +23,7 @@ def ensure_admin_frontend(on_progress: Callable[[str], None] = lambda message: N
     if is_dev_build and _has_frontend_source(root):
         build_admin_frontend(on_progress=on_progress)
         return
-    if _has_admin_dist(root):
+    if is_admin_frontend_built(root):
         return
     raise BenchError(
         "Admin UI is missing from this release. Reinstall Pilot, or run it from a source checkout."
@@ -67,22 +68,33 @@ def _build_frontend(
         on_progress(f"Running npm install for {label}...")
         run_command(["npm", "install"], cwd=frontend, stream_output=True)
     on_progress(f"Running npm run build for {label}")
-    run_command(["npm", "run", "build"], cwd=frontend, stream_output=True)
+    dist.parent.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(prefix=f".{label}-build-", dir=dist.parent) as temporary:
+        staged = Path(temporary)
+        run_command(["npm", "run", "build", "--", "--outDir", str(staged)], cwd=frontend, stream_output=True)
+        if not _is_built(staged):
+            raise BenchError(f"The {label} build did not produce a complete frontend.")
+        files = sorted(staged.rglob("*"), key=lambda path: path.name == "index.html")
+        for source in files:
+            if source.is_file():
+                target = dist / source.relative_to(staged)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                source.replace(target)
 
 
 def _is_built(dist: Path) -> bool:
     if not dist.is_dir():
         return False
     # Dashboard/editor write an assets/ folder; the in-app embed ships a single IIFE.
-    return (dist / "assets").exists() or any(dist.glob("*.js"))
+    return ((dist / "index.html").is_file() and (dist / "assets").is_dir()) or any(dist.glob("*.js"))
 
 
 def _has_frontend_source(root: Path) -> bool:
     return (root / "admin" / "frontend" / "dashboard" / "package.json").exists()
 
 
-def _has_admin_dist(root: Path) -> bool:
-    return (root / "admin" / "backend" / "static" / "dashboard" / "assets").exists()
+def is_admin_frontend_built(root: Path) -> bool:
+    return _is_built(root / "admin" / "backend" / "static" / "dashboard")
 
 
 def _find_frontend() -> Path:

@@ -92,11 +92,13 @@ class ListCommand(Command):
         return f"{scheme}://{admin.domain}"
 
     def _site_count(self, bench_dir: Path) -> int:
-        """A sites/ subdir counts as a site iff it has a site_config.json."""
+        """A sites/ subdir counts as a site iff it has a site_config.json and is not a rename alias."""
         sites_dir = bench_dir / "sites"
         if not sites_dir.is_dir():
             return 0
-        return sum(1 for d in sites_dir.iterdir() if d.is_dir() and (d / "site_config.json").exists())
+        return sum(
+            1 for d in sites_dir.iterdir() if not d.is_symlink() and d.is_dir() and (d / "site_config.json").exists()
+        )
 
     def _state(self, bench, production: bool) -> str:
         """Return running/admin/stopped using the same states as the admin UI."""

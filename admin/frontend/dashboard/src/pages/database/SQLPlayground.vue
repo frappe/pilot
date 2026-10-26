@@ -234,6 +234,7 @@ onMounted(async () => {
 <template>
   <Teleport v-if="selectedSite" defer to="#header-actions">
     <Select
+      side="bottom"
       v-model="selectedSite"
       :options="siteOptions"
       class="w-28 sm:w-44 max-w-[140px] sm:max-w-[180px]"
@@ -248,7 +249,7 @@ onMounted(async () => {
     description="Queries run against that site's database."
     :bordered="false"
   >
-    <Select v-model="selectedSite" :options="siteOptions" class="w-56" />
+    <Select side="bottom" v-model="selectedSite" :options="siteOptions" class="w-56" />
   </EmptyState>
 
   <main v-else class="p-3 md:p-4 flex flex-col gap-3">
@@ -356,7 +357,7 @@ onMounted(async () => {
                 class="hidden sm:flex items-center gap-1.5 pr-3 border-r-2 border-outline-gray-2"
               >
                 <span class="text-ink-gray-5 text-xs shrink-0">Per Page</span>
-                <Select v-model="perPage" class="max-w-16" :options="pageOptions" />
+                <Select side="bottom" v-model="perPage" class="max-w-16" :options="pageOptions" />
               </div>
 
               <span class="hidden sm:inline tabular-nums text-ink-gray-5 text-xs whitespace-nowrap">

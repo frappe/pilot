@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
+import traceback
 import typing
 from datetime import UTC, datetime
 from pathlib import Path
@@ -17,6 +19,7 @@ from pilot.core.server.monitoring_config import MonitorConfigurator
 from pilot.core.server.monitoring_datum import MetricShipper
 from pilot.core.server.monitoring_proc import ProcMetricsReader
 from pilot.core.server.monitoring_processes import ProcessResolver
+from pilot.core.site import uptime_monitoring
 from pilot.managers.fluentbit import LogsConfigurator
 from pilot.utils import cli_root, iter_sibling_benches
 
@@ -25,6 +28,9 @@ if typing.TYPE_CHECKING:
 
 # Gap between the two samples used to turn cumulative counters into a rate.
 CPU_SAMPLE_INTERVAL = 1.0
+# Seconds from the end of one tick to the start of the next.
+METRICS_INTERVAL = 10.0
+UPTIME_INTERVAL = 5.0
 
 ALERT_EVENT = "resource_limit_breached"
 
@@ -363,7 +369,8 @@ def _production_monitors() -> list[Monitor]:
     ]
 
 
-def main() -> None:
+def collect_metrics() -> None:
+    """One metrics tick across every production bench."""
     monitors = _production_monitors()
     if not monitors:
         return
@@ -394,6 +401,24 @@ def main() -> None:
     shipper.send()
     # Logs read the same config, so a credential that arrives later starts both.
     LogsConfigurator().sync(host.bench.config.telemetry)
+
+
+def run_every(interval: float, job: typing.Callable[[], None]) -> None:
+    """Run job, then wait interval, forever. A failed tick is logged and the next one runs."""
+    while True:
+        try:
+            job()
+        except Exception:
+            traceback.print_exc()
+        time.sleep(interval)
+
+
+def main() -> None:
+    """Uptime pings get their own thread, so a slow metrics tick cannot delay them."""
+    threading.Thread(
+        target=run_every, args=(UPTIME_INTERVAL, uptime_monitoring.main), name="uptime", daemon=True
+    ).start()
+    run_every(METRICS_INTERVAL, collect_metrics)
 
 
 if __name__ == "__main__":

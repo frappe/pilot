@@ -26,13 +26,25 @@ server {
     listen [::]:{{ http_port }};
     server_name {{ alias.server_name }};
 
+{{ startup_recovery }}
     location /.well-known/acme-challenge/ {
         allow all;
         root {{ acme_root }};
         try_files $uri =404;
     }
 
-    {% if alias.redirect %}
+    {% if alias.pending %}
+    location = /api/method/ping {
+        default_type application/json;
+        return 503 '{"message":"Site is not ready"}';
+    }
+
+    location / {
+        root {{ error_dir }};
+        add_header Cache-Control "no-store";
+        try_files /starting.html =503;
+    }
+    {% elif alias.redirect %}
     {% if alias.site %}
     {# Central probes the alias for readiness without following redirects. #}
     location = /api/method/ping {
@@ -272,7 +284,9 @@ server {
     {% endif %}
     {# custom error pages for nginx-generated errors #}
     {% for code in error_codes %}
+    {% if code != 502 %}
     error_page {{ code }} /_errors/{{ code }}.html;
+    {% endif %}
     {% endfor %}
     location ^~ /_errors/ {
         internal;
@@ -280,6 +294,7 @@ server {
         alias {{ error_dir }}/;
     }
 
+{{ startup_recovery }}
     {% if vhost.kind == "site" %}
     {# static assets and public files served straight from disk #}
     location /assets {

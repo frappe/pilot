@@ -182,8 +182,11 @@ export const createStore = (context?: CloudContext, translator: CloudSettingsTra
     }
   }
 
+  const isOnTrial = () => Boolean(state.billing?.trial)
+
   return {
     state,
+    isOnTrial,
     loadAccountLinks,
     loadBilling,
     loadMarketplace,

@@ -80,36 +80,52 @@ class ProcessDefinitionBuilder:
         self.watch_admin_js = watch_admin_js
 
     def prod_process_definitions(self) -> list[ProcessDefinition]:
+        defs = [
+            *self.workload_definitions(),
+            self.redis_definition("redis_cache", "redis_cache.conf"),
+            self.redis_definition("redis_queue", "redis_queue.conf"),
+        ]
+        if self.bench.config.production.process_manager == "systemd":
+            self.wait_for_database_before_web(defs)
+        defs.extend(self.bench.processes.get_app_definitions())
+        check_unique_names(defs)
+        return defs
+
+    def workload_definitions(self) -> list[ProcessDefinition]:
         if self.bench.is_lite_mode:
             # web, realtime and jobs all live in the one lite process.
-            defs = [self.web_definition(), self.admin_definition()]
-        elif self.bench.config.production.process_manager == "systemd":
+            return [self.web_definition(), self.admin_definition()]
+        if self.bench.config.production.process_manager == "systemd":
             all_queues = ",".join(q for group in self.bench.config.workers.groups for q in group.queues)
             num_workers = sum(group.count for group in self.bench.config.workers.groups)
-            defs = [
+            return [
                 self.web_definition(),
                 self.socketio_definition(),
                 self.admin_definition(),
                 self.worker_pool_definition(all_queues, num_workers),
             ]
-        else:
-            worker_defs = [
-                pd
-                for group in self.bench.config.workers.groups
-                for pd in self.worker_definitions(",".join(group.queues), group.count)
-            ]
-            defs = [
-                self.web_definition(),
-                self.socketio_definition(),
-                self.admin_definition(),
-                *worker_defs,
-                self.schedule_definition(),
-            ]
-        defs.append(self.redis_definition("redis_cache", "redis_cache.conf"))
-        defs.append(self.redis_definition("redis_queue", "redis_queue.conf"))
-        defs.extend(self.bench.processes.get_app_definitions())
-        check_unique_names(defs)
-        return defs
+        worker_defs = [
+            pd
+            for group in self.bench.config.workers.groups
+            for pd in self.worker_definitions(",".join(group.queues), group.count)
+        ]
+        return [
+            self.web_definition(),
+            self.socketio_definition(),
+            self.admin_definition(),
+            *worker_defs,
+            self.schedule_definition(),
+        ]
+
+    def wait_for_database_before_web(self, defs: list[ProcessDefinition]) -> None:
+        web = next(pd for pd in defs if pd.name == "web")
+        web.pre_run = [
+            str(AdminEnvManager(cli_root()).python),
+            str(cli_root() / "bin" / "pilot"),
+            "-b",
+            str(self.bench.path),
+            "wait-for-database",
+        ]
 
     def process_definitions(self) -> list[ProcessDefinition]:
         defs = [self.to_dev(pd) for pd in self.prod_process_definitions()]

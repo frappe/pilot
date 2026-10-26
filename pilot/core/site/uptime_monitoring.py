@@ -1,7 +1,7 @@
 """Pings every production site's /api/method/ping and appends the result to
-that site's bench's uptime log. Invoked by the shared pilot-uptime systemd
-timer (pilot.core.site.uptime_monitoring_config); one pass per invocation,
-covering every sibling bench - the timer itself controls the interval."""
+that site's bench's uptime log. The shared pilot-monitor service
+(pilot.core.server.monitoring) runs one pass every few seconds, covering every
+sibling bench."""
 
 from __future__ import annotations
 

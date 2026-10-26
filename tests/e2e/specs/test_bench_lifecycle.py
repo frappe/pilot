@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from flows.admin import (
     create_site,
+    dismiss_onboarding,
     drop_site,
     installed_apps,
     login,
@@ -54,6 +55,7 @@ def test_completes_setup_wizard(bench, page):
 
 
 def test_logs_into_admin(bench, page):
+    dismiss_onboarding(page, bench.admin_url, bench.admin_password)
     login(page, bench.admin_url, bench.admin_password)
 
 

@@ -170,25 +170,27 @@ defineExpose({ open })
           class="gap-4 grid"
           :class="frequency === 'daily' ? 'md:grid-cols-2' : 'md:grid-cols-3'"
         >
-          <Select label="Frequency" v-model="frequency" :options="FREQ_OPTIONS" />
+          <Select side="bottom" label="Frequency" v-model="frequency" :options="FREQ_OPTIONS" />
           <Select
+            side="bottom"
             v-if="frequency === 'weekly'"
             label="Day of week"
             v-model.number="weekday"
             :options="weekdayOptions"
           />
           <Select
+            side="bottom"
             v-if="frequency === 'monthly'"
             label="Day of month"
             v-model.number="monthDay"
             :options="monthDayOptions"
           />
-          <Select label="Time" v-model.number="hourPick" :options="hourOptions" />
+          <Select side="bottom" label="Time" v-model.number="hourPick" :options="hourOptions" />
         </div>
 
         <div class="space-y-4 pt-5 border-t border-outline-gray-1">
           <div class="space-y-1.5">
-            <Select label="Retention" v-model="scheme" :options="SCHEME_OPTIONS" />
+            <Select side="bottom" label="Retention" v-model="scheme" :options="SCHEME_OPTIONS" />
             <p class="text-ink-gray-5 text-p-sm">{{ schemeHint }}</p>
           </div>
 

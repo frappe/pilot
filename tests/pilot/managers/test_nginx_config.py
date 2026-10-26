@@ -518,7 +518,16 @@ def test_generate_config_writes_error_page_files(tmp_path: Path) -> None:
     NginxManager(bench).generate_config(ssl_ready=False)
 
     error_dir = bench.config_path / "nginx" / "error_pages"
-    assert sorted(p.name for p in error_dir.iterdir()) == ["403.html", "404.html", "502.html", "503.html"]
+    assert sorted(p.name for p in error_dir.iterdir()) == [
+        "403.html",
+        "404.html",
+        "502.html",
+        "503.html",
+        "reconnecting.html",
+        "starting.html",
+    ]
+    assert "Waiting for your site" in (error_dir / "starting.html").read_text()
+    assert "Reconnecting" in (error_dir / "reconnecting.html").read_text()
     assert "404" in (error_dir / "404.html").read_text()
 
 
@@ -831,6 +840,19 @@ def test_vm_hostnames_serve_site_and_admin(tmp_path: Path) -> None:
     assert "return 301 http://admin.example.com$request_uri;" in config
 
 
+def test_the_admin_alias_comes_before_a_zone_wide_site_alias(tmp_path: Path) -> None:
+    """nginx tries regex server names in order, and `*.zone` also matches the admin hostname."""
+    zone_glob = f"*.{_VM_DOMAIN}"
+    config = _cloud_config(
+        tmp_path,
+        [(_PLACEHOLDER_SITE, False)],
+        hostname_mappings={zone_glob: _PLACEHOLDER_SITE.name, _ADMIN_GLOB: "admin.example.com"},
+    )
+
+    zone_block = config.index(f"server_name {vm_hostname_pattern(zone_glob)};")
+    assert config.index(f"server_name {_ADMIN_PATTERN};") < zone_block
+
+
 def test_vm_hostname_redirects_to_renamed_site(tmp_path: Path) -> None:
     renamed = SiteConfig(name="shop.example.com", apps=["frappe"])
     config = _cloud_config(tmp_path, [(renamed, False)], hostname_mappings={_SITE_GLOB: renamed.name})
@@ -938,6 +960,32 @@ def test_a_redirecting_alias_has_no_static_locations(tmp_path: Path) -> None:
     alias_block = _alias_block(config)
     assert "location /assets" not in alias_block
     assert "return 301" in alias_block
+
+
+def test_configured_cloud_alias_waits_until_its_site_exists(tmp_path: Path) -> None:
+    mappings = {_SITE_GLOB: _PLACEHOLDER_SITE.name}
+    pending = _alias_block(_cloud_config(tmp_path, [], hostname_mappings=mappings))
+    assert "try_files /starting.html =503;" in pending
+    assert "return 503" in pending
+    assert "return 301" not in pending
+
+    ready = _alias_block(_cloud_config(tmp_path, [(_PLACEHOLDER_SITE, False)], hostname_mappings=mappings))
+    assert "try_files /starting.html" not in ready
+    assert f"return 301 http://{_PLACEHOLDER_SITE.name}$request_uri;" in ready
+
+
+def test_cloud_alias_gateway_recovery_preserves_api_errors(tmp_path: Path) -> None:
+    config = _cloud_config(
+        tmp_path,
+        [(_PLACEHOLDER_SITE, False)],
+        hostname_mappings={_SITE_GLOB: _PLACEHOLDER_SITE.name},
+        redirect=False,
+    )
+    alias = _alias_block(config)
+    assert "error_page 502 = @recover_502;" in alias
+    assert "if ($request_method != GET) { return 502; }" in alias
+    assert 'if ($request_uri ~ "^/api(?:/|$)") { return 502; }' in alias
+    assert 'if ($http_accept !~* "text/html") { return 502; }' in alias
 
 
 def test_self_hosted_bench_has_no_vm_hostnames(tmp_path: Path) -> None:
@@ -1171,7 +1219,9 @@ def test_a_pinned_lineage_is_what_the_vhost_references(tmp_path: Path) -> None:
     assert "/etc/letsencrypt/live/new.example.com/" not in config
 
 
-def test_admin_takes_backup_uploads_of_at_least_one_gigabyte_while_sites_keep_their_limit(tmp_path: Path) -> None:
+def test_admin_takes_backup_uploads_of_at_least_one_gigabyte_while_sites_keep_their_limit(
+    tmp_path: Path,
+) -> None:
     config = _renderer(tmp_path, _ADMIN_DATA).generate_bench_config([], admin_ssl=False)
     admin = config[config.index("server_name admin.example.com;") :]
 
@@ -1302,7 +1352,9 @@ def test_a_config_change_holds_the_host_lock_until_nginx_accepts_it(tmp_path: Pa
         return []
 
     with (
-        patch("pilot.core.adapters.domain_provider.DomainRouteProvider.proxy_servers", side_effect=proxy_servers),
+        patch(
+            "pilot.core.adapters.domain_provider.DomainRouteProvider.proxy_servers", side_effect=proxy_servers
+        ),
         patch.object(manager, "reload", side_effect=lambda: locked_at_reload.append(_is_locked(lock_file))),
     ):
         manager.apply_config(ssl_ready=False)

@@ -80,6 +80,7 @@ const confirm = async () => {
       {{ app?.title }} is on {{ app?.branch || 'a detached commit' }}. This applies to every site.
     </p>
     <Select
+        side="bottom"
         v-model="branch"
         label="New branch"
         :options="options"

@@ -33,6 +33,7 @@ markers = [
 
 [tool.setuptools.package-data]
 "admin.backend" = [
+  "templates/*.html",
   "static/dashboard/**/*",
   "static/editor/**/*",
 ]

@@ -5,6 +5,7 @@ import os
 import subprocess
 from pathlib import Path
 
+from pilot.internal.atomic_file import fsync_directory_files
 from pilot.managers.environment import AdminEnvManager
 from pilot.managers.gunicorn import GunicornManager
 from pilot.managers.platform import _privileged
@@ -52,12 +53,37 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         # Build first, so a broken app declaration leaves the current units in place.
         defs = self._prod_process_definitions()
 
+        self._remove_units()
+        renderer = SystemdRenderer(self.bench.config.name, self.database_service)
+        workload_units = self._write_units(defs, renderer)
+        (self.systemd_conf_dir / self._target_name()).write_text(renderer.render_target(workload_units))
+        if self.bench.config.central.enabled:
+            self._write_central_bootstrap(renderer)
+        fsync_directory_files(self.systemd_conf_dir)
+        service_after, socket_after = self._admin_unit_text()
+        self.admin_service_changed = service_after != service_before
+        self.admin_socket_changed = socket_after != socket_before
+        sockets_after = self._workload_socket_text()
+        self.changed_sockets = tuple(
+            name for name, text in sockets_after.items() if sockets_before.get(name) != text
+        )
+
+    @property
+    def database_service(self) -> str:
+        """The managed database unit the web process needs, or empty when the database is external."""
+        database = self.bench.config.db_type
+        if database not in {"mariadb", "postgres"} or getattr(self.bench.config, database).existing:
+            return ""
+        return f"pilot-{database}.service"
+
+    def _remove_units(self) -> None:
         target_file = self._target_name()
         for path in list(self.systemd_conf_dir.iterdir()):
             if path.is_file() and (path.suffix in (".service", ".socket") or path.name == target_file):
                 path.unlink()
 
-        renderer = SystemdRenderer(self.bench.config.name)
+    def _write_units(self, defs: list, renderer: SystemdRenderer) -> list[str]:
+        """Write each process unit and return the workload units the target groups."""
         workload_units: list[str] = []
         for pd in defs:
             if pd.name == "admin":
@@ -65,28 +91,22 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
                 (self.systemd_conf_dir / self._admin_socket_name()).write_text(
                     renderer.render_admin_socket(self.bench.config.admin.internal_port)
                 )
-            else:
-                (self.systemd_conf_dir / self._unit_name(pd.name)).write_text(renderer.render(pd))
-                workload_units.append(self._unit_name(pd.name))
-                if socket := renderer.get_socket_name(pd):
-                    (self.systemd_conf_dir / socket).write_text(renderer.render_socket(pd))
-                    workload_units.append(socket)
-        (self.systemd_conf_dir / self._target_name()).write_text(renderer.render_target(workload_units))
-        if self.bench.config.central.enabled:
-            (self.systemd_conf_dir / self._central_bootstrap_name()).write_text(
-                renderer.render_central_bootstrap(
-                    str(AdminEnvManager(cli_root()).python),
-                    str(cli_root()),
-                    str(self.bench.path),
-                    str(self.bench.logs_path / "central-bootstrap.log"),
-                )
+                continue
+            (self.systemd_conf_dir / self._unit_name(pd.name)).write_text(renderer.render(pd))
+            workload_units.append(self._unit_name(pd.name))
+            if socket := renderer.get_socket_name(pd):
+                (self.systemd_conf_dir / socket).write_text(renderer.render_socket(pd))
+                workload_units.append(socket)
+        return workload_units
+
+    def _write_central_bootstrap(self, renderer: SystemdRenderer) -> None:
+        (self.systemd_conf_dir / self._central_bootstrap_name()).write_text(
+            renderer.render_central_bootstrap(
+                str(AdminEnvManager(cli_root()).python),
+                str(cli_root()),
+                str(self.bench.path),
+                str(self.bench.logs_path / "central-bootstrap.log"),
             )
-        service_after, socket_after = self._admin_unit_text()
-        self.admin_service_changed = service_after != service_before
-        self.admin_socket_changed = socket_after != socket_before
-        sockets_after = self._workload_socket_text()
-        self.changed_sockets = tuple(
-            name for name, text in sockets_after.items() if sockets_before.get(name) != text
         )
 
     def _workload_socket_text(self) -> dict[str, str]:

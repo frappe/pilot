@@ -20,14 +20,19 @@ class BenchInitializer:
         self.bench = bench
         self.commit = commit
         self._rollback_actions: list[tuple[str, Callable[[], None]]] = []
+        self._created_directories: list[str] = []
 
     def run(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        marker = self.bench.path / ".initializing"
+        if not self.bench.is_initialized:
+            marker.touch(mode=0o600)
         try:
             self._run_steps(on_progress)
         except Exception as exc:
             on_progress(f"\nError: {exc}")
             self._rollback(on_progress)
             raise
+        marker.unlink(missing_ok=True)
 
     def _run_steps(self, on_progress: Callable[[str], None]) -> None:
         from pilot.managers.environment import PythonEnvManager
@@ -80,17 +85,22 @@ class BenchInitializer:
         on_progress("\nRollback complete. bench.toml is preserved - fix the issue and run init again.")
 
     def _remove_bench_dirs(self) -> None:
-        for name in _BENCH_DIRS:
+        for name in self._created_directories:
             p = self.bench.path / name
             if p.exists() or p.is_symlink():
                 shutil.rmtree(p, ignore_errors=True)
 
     def _create_bench_structure(self) -> None:
+        self._created_directories = [
+            name
+            for name in _BENCH_DIRS
+            if not (self.bench.path / name).exists() and not (self.bench.path / name).is_symlink()
+        ]
+        self._rollback_actions.append(("bench directories", self._remove_bench_dirs))
         self.bench.create_directories()
         self.bench.write_common_site_config()
         with update_common_site_config(self.bench.sites_path) as config:
             config.setdefault("server_script_enabled", True)
-        self._rollback_actions.append(("bench directories", self._remove_bench_dirs))
 
     def _create_virtualenv(self, python_env_manager) -> None:
         python_env_manager.ensure_python()

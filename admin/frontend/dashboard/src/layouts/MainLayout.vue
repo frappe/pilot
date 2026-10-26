@@ -1,32 +1,29 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-
 import {
-  Breadcrumbs,
   BottomSheet,
+  Breadcrumbs,
   DesktopShell,
-  MobileShell,
   MobileNav,
   MobileNavItem,
+  MobileShell,
 } from 'frappe-ui'
-
-import Sidebar from '@/components/navigation/Sidebar.vue'
-import PilotLogo from '@/components/icons/Pilot.vue'
-import UpdateStatusButton from '@/components/common/UpdateStatusButton.vue'
-import SettingsDialog from '@/components/settings/SettingsDialog.vue'
+import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import BenchSwitcherDialog from '@/components/benches/BenchSwitcherDialog.vue'
 import NewBenchDialog from '@/components/benches/NewBenchDialog.vue'
 import CloneDialog from '@/components/common/CloneDialog.vue'
-import { openTaskDetailPage } from '@/utils/taskRoute'
-import SearchDialog from '@/components/search/SearchDialog.vue'
+import UpdateStatusButton from '@/components/common/UpdateStatusButton.vue'
+import PilotLogo from '@/components/icons/Pilot.vue'
+import Sidebar from '@/components/navigation/Sidebar.vue'
+import { useAppMenu } from '@/components/navigation/useAppMenu'
 import NotificationsPanel from '@/components/notifications/NotificationsPanel.vue'
-
+import SearchDialog from '@/components/search/SearchDialog.vue'
+import SettingsDialog from '@/components/settings/SettingsDialog.vue'
+import { useSession } from '@/composables/auth/useSession'
 import { useBreadcrumbs } from '@/composables/common/useBreadcrumbs'
 import { useIsMobile } from '@/composables/common/useIsMobile'
-import { useSession } from '@/composables/auth/useSession'
-import { useAppMenu } from '@/components/navigation/useAppMenu'
 import { openSearch, searchOpen, useSearchShortcut } from '@/composables/common/useSearch'
+import { openTaskDetailPage } from '@/utils/taskRoute'
 
 const route = useRoute()
 const router = useRouter()
@@ -89,16 +86,17 @@ const breadcrumbsFromRouteMeta = ({ title = '' }) => {
 <template>
   <MobileShell v-if="isMobile">
     <header
-      class="sticky top-0 z-20 flex min-h-12 flex-col justify-center border-b border-outline-gray-2 bg-surface-base px-3 md:px-4"
+      class="sticky top-0 z-20 flex min-h-12 flex-col justify-center border-b bg-surface-base px-3 md:px-4"
     >
       <div class="flex items-center justify-between">
-        <div v-if="route.name == 'Home'" class="flex items-center gap-2">
+        <div v-if="route.name === 'Home'" class="flex items-center gap-2">
           <PilotLogo class="size-6 rounded-1" />
           <span>Home</span>
         </div>
 
         <button
           v-else
+          type="button"
           class="flex items-center gap-1 max-w-[50%] min-w-0"
           @click="mobileNavDrawer = true"
         >
@@ -123,7 +121,7 @@ const breadcrumbsFromRouteMeta = ({ title = '' }) => {
           label="Home"
           icon="lucide-house"
           route="/home"
-          :active="route.name == 'Home'"
+          :active="route.name === 'Home'"
         />
         <MobileNavItem label="Search" icon="lucide-search" @click="openSearch" />
         <NotificationsPanel mobile />
@@ -131,7 +129,7 @@ const breadcrumbsFromRouteMeta = ({ title = '' }) => {
           label="Settings"
           icon="lucide-settings"
           route="/mobile/settings"
-          :active="route.name == 'MobileSettings'"
+          :active="route.name === 'MobileSettings'"
         />
       </MobileNav>
     </template>
@@ -147,7 +145,7 @@ const breadcrumbsFromRouteMeta = ({ title = '' }) => {
     </template>
 
     <header
-      class="sticky top-0 z-20 flex min-h-12 flex-col justify-center border-b border-outline-gray-2 bg-surface-base px-3 md:px-4"
+      class="sticky top-0 z-20 flex min-h-12 flex-col justify-center border-b bg-surface-base px-3 md:px-4"
     >
       <div class="flex flex-1 items-center gap-1">
         <Breadcrumbs :items="breadcrumbs" />

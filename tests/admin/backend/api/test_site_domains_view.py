@@ -250,7 +250,8 @@ def test_adding_a_domain_rejects_an_invalid_certificate_email_before_attaching(t
 
     with patch("pilot.core.site.domains.SiteDomains.register") as register:
         response = client.post(
-            "/api/v1/sites/site.example.com/domains", json={"domain": "shop.example.com", "email": "not-an-email"}
+            "/api/v1/sites/site.example.com/domains",
+            json={"domain": "shop.example.com", "email": "not-an-email"},
         )
 
     assert response.status_code == 422
@@ -275,3 +276,31 @@ def test_adding_a_domain_with_an_email_passes_it_to_the_certificate_task(tmp_pat
 
     assert response.status_code == 202
     apply_task.assert_called_once_with(email="ops@example.com")
+
+
+def test_attaching_a_primary_domain_keeps_the_site_directory_and_can_be_retried(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    _make_site(bench_root, "site.local", domains=["shop.example.com"])
+    client = _client(bench_root)
+    with (
+        patch("pilot.core.site.domains.SiteDomains.apply_task", return_value="task-1"),
+        patch("admin.backend.api.v1.sites.domains.accepted_task_response", return_value=("", 202)),
+    ):
+        for _ in range(2):
+            response = client.post(
+                "/api/v1/sites/site.local/domains", json={"domain": "shop.example.com", "primary": True}
+            )
+            assert response.status_code == 202
+    config = json.loads((bench_root / "sites/site.local/site_config.json").read_text())
+    assert config["domains"] == ["shop.example.com"]
+    assert config["host_name"] == "http://shop.example.com"
+    assert not (bench_root / "sites/shop.example.com").exists()
+
+
+def test_primary_domain_flag_requires_a_boolean(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    _make_site(bench_root, "site.local")
+    response = _client(bench_root).post(
+        "/api/v1/sites/site.local/domains", json={"domain": "shop.example.com", "primary": "true"}
+    )
+    assert response.status_code == 422

@@ -281,6 +281,7 @@ const restore = async () => {
 
       <template v-else>
         <Select
+          side="bottom"
           v-if="source === 'site'"
           v-model="sourceSite"
           label="Site"
@@ -308,6 +309,7 @@ const restore = async () => {
             data-bwignore
           />
           <Select
+            side="bottom"
             v-if="remoteBackups"
             v-model="remoteBackup"
             label="Backup"

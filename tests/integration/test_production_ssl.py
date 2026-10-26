@@ -408,7 +408,7 @@ class TestProductionSSL:
         assert r.returncode == 0, f"rename-site failed:\n{r.stdout}\n{r.stderr}"
 
         assert _site_dir(production, RENAMED_SITE).exists()
-        assert not _site_dir(production, SITE).exists()
+        assert _site_dir(production, SITE).is_symlink()
 
         conf = (_nginx_conf_dir(production) / "include.conf").read_text()
         # The old hostname stays on the renamed site so nobody already on that

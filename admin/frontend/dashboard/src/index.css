@@ -2,6 +2,12 @@
   /* Strong UI easing curves (built-in CSS easings are too weak) */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --surface-gray-0: color-mix(in srgb, var(--surface-gray-1) 50%, transparent);
+  --outline-gray-1-5: color-mix(in srgb, var(--outline-gray-1) 50%, var(--outline-gray-2));
+}
+
+[data-theme='dark'] {
+  --surface-gray-0: color-mix(in srgb, var(--surface-gray-1) 30%, transparent);
 }
 
 body {
@@ -132,4 +138,15 @@ body {
 
 .hover-scrollbar::-webkit-scrollbar-track {
   background: transparent;
+}
+
+input:autofill {
+  filter: none;
+  -webkit-text-fill-color: var(--ink-gray-8);
+  transition: background-color 600000s 0s;
+}
+
+.dialog-content,
+.dialog-content .bg-surface-elevation-1 {
+	@apply bg-surface-base;
 }

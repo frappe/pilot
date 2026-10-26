@@ -159,7 +159,7 @@ onUnmounted(() => clearInterval(badgeTimer))
 
       <div class="flex flex-none items-center gap-2 px-4 py-3">
         <TabButtons v-model="activeTab" :options="tabs" />
-        <Select v-model="category" class="ml-auto" :options="categories" />
+        <Select side="bottom" v-model="category" class="ml-auto" :options="categories" />
       </div>
 
       <Alert v-if="error" class="border border-outline-gray-2" theme="red" title="Couldn't load notifications" :dismissible="false">

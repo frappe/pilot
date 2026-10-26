@@ -1,0 +1,12 @@
+    {% for code in [502, 504] %}
+    error_page {{ code }} = @recover_{{ code }};
+    location @recover_{{ code }} {
+        if ($request_method != GET) { return {{ code }}; }
+        if ($request_uri ~ "^/api(?:/|$)") { return {{ code }}; }
+        if ($http_accept !~* "text/html") { return {{ code }}; }
+        root {{ error_dir }};
+        add_header Cache-Control "no-store";
+        try_files /reconnecting.html ={{ code }};
+    }
+
+    {% endfor %}

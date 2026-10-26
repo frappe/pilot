@@ -44,6 +44,7 @@ def test_success_exit_but_no_files_records_failure(tmp_path, monkeypatch) -> Non
 
 def test_nonzero_exit_records_failure(tmp_path, monkeypatch) -> None:
     task, bench = _task(tmp_path)
+
     def fail(*a, **k):
         raise CommandError("frappe backup failed", returncode=2)
 
@@ -89,3 +90,28 @@ def test_backup_is_written_outside_private_backups(tmp_path, monkeypatch) -> Non
     backup_path = Path(calls[0][calls[0].index("--backup-path") + 1])
     assert backup_path.parent == bench.sites_path / "site1" / "backups"
     assert not backup_path.exists()
+
+
+@pytest.mark.parametrize(
+    ("s3_configured", "encrypt_backup_rows", "streams"),
+    [(False, [], False), (True, [], True), (True, [["1"]], False), (True, None, False)],
+    ids=["no-s3", "s3", "encrypted", "encryption-unreadable"],
+)
+def test_backups_stream_only_with_s3_and_encryption_known_off(
+    tmp_path, monkeypatch, s3_configured, encrypt_backup_rows, streams
+) -> None:
+    from pilot.core.site.backups import SiteBackups
+
+    task, bench = _task(tmp_path)
+    bench.config.s3.is_configured = s3_configured
+    monkeypatch.setattr("pilot.core.site.config._query_site_database", lambda *args: encrypt_backup_rows)
+    monkeypatch.setattr(SiteBackups, "stream", lambda self, with_files: ("20261022_114241", {"streamed": 1}))
+    disk_file = tmp_path / "20261022_114241-site1-database.sql.gz"
+    disk_file.write_bytes(b"x")
+    monkeypatch.setattr(SiteBackups, "take", lambda self, with_files: ("20261022_114241", [disk_file]))
+    monkeypatch.setattr(BackupSiteTask, "upload", lambda self, timestamp, files: False)
+    monkeypatch.setattr(BackupSiteTask, "prune", lambda self: [])
+
+    task.run()
+
+    assert ("streamed" in AuditLog(bench).entries()[0]["files"]) is streams

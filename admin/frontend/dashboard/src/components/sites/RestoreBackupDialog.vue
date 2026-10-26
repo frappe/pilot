@@ -85,7 +85,7 @@ const confirm = async () => {
       Backup from {{ backup ? fmtDateTime(backup.created_at) : '' }}
     </p>
     <div>
-      <Select v-model="target" label="Restore into" :options="siteOptions" />
+      <Select side="bottom" v-model="target" label="Restore into" :options="siteOptions" />
       <div class="flex flex-wrap gap-1 mt-3">
         <Checkbox
           v-for="item in available"

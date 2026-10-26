@@ -1110,6 +1110,30 @@ def test_start_dev_uninitialized_runs_wizard(tmp_path: Path) -> None:
     rebuild.assert_not_called()
 
 
+@pytest.mark.parametrize("database", ["mariadb", "postgres"])
+def test_database_startup_wait_times_out_without_starting_work(tmp_path: Path, database: str) -> None:
+    from pilot.core.bench.runtime import BenchRuntime
+
+    bench = make_bench(tmp_path)
+    bench.config.production.enabled = True
+    bench.config.db_type = database
+    manager = "PostgresManager" if database == "postgres" else "MariaDBManager"
+    with patch(f"pilot.managers.database.{manager}") as manager_class:
+        manager_class.return_value.config.existing = False
+        manager_class.return_value.is_reachable.return_value = False
+        with pytest.raises(BenchError, match="database did not become ready"):
+            BenchRuntime(bench).wait_for_database(timeout_seconds=0)
+
+
+def test_database_startup_wait_skips_a_development_bench(tmp_path: Path) -> None:
+    from pilot.core.bench.runtime import BenchRuntime
+
+    bench = make_bench(tmp_path)
+    with patch("pilot.managers.database.MariaDBManager") as manager_class:
+        BenchRuntime(bench).wait_for_database(timeout_seconds=0)
+    manager_class.assert_not_called()
+
+
 def test_start_dev_initialized_stops_then_starts(tmp_path: Path) -> None:
     from pilot.core.bench.runtime import BenchRuntime
 

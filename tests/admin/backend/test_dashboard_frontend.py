@@ -59,8 +59,22 @@ def test_dashboard_route_serves_the_build_and_falls_back_to_the_spa(
     assert b"dashboard" in unknown_route.data
 
 
-def test_a_chunk_removed_by_a_rebuild_is_a_404_not_the_spa(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_chunk_removed_by_a_rebuild_is_a_404_not_the_spa(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """index.html served as a module script hides the real failure."""
     response = _client(tmp_path, monkeypatch).get("/assets/TaskDetail-old.js")
 
     assert response.status_code == 404
+
+
+def test_missing_index_keeps_a_recoverable_page(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _client(tmp_path, monkeypatch)
+    (tmp_path / "static" / "dashboard" / "index.html").unlink()
+
+    response = client.get("/sites")
+
+    assert response.status_code == 200
+    assert b"Preparing Pilot" in response.data
+    assert b'http-equiv="refresh"' in response.data
+    assert client.get("/assets/app.js").status_code == 200

@@ -68,6 +68,22 @@ class SiteBackups:
             raise BenchError(f"The backup of {self.site.config.name} produced no files.")
         return timestamp, files
 
+    @property
+    def is_streaming_supported(self) -> bool:
+        """Streams need S3, and Frappe's encryption pass rereads files a FIFO cannot replay."""
+        from pilot.core.site.config import is_backup_encryption_enabled
+
+        if not self.site.bench.config.s3.is_configured:
+            return False
+        return not is_backup_encryption_enabled(self.site.bench.path, self.site.config.name)
+
+    def stream(self, with_files: bool = True) -> tuple[str, dict[str, int]]:
+        """Back up straight into S3 and return the run's timestamp and file sizes."""
+        from pilot.core.site.backup_stream import SiteBackupStream
+
+        offsite = OffsiteBackup.from_config(self.site.bench.config.s3, self.site.bench.path)
+        return SiteBackupStream(self.site, offsite).run(with_files)
+
     def _publish(self, staged: list[Path]) -> list[Path]:
         """Move a run in under the backups lock, so retention sees all of it or none of it."""
         from pilot.exceptions import BenchError

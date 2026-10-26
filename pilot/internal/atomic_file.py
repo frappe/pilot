@@ -1,14 +1,36 @@
 from __future__ import annotations
 
+import ctypes
+import errno
 import fcntl
 import os
 import stat
+import sys
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from pathlib import Path
 
 from pilot.utils import PRIVATE_FILE_MODE, open_private
+
+
+def exchange_paths(first: Path, second: Path) -> None:
+    """Atomically swap two directory entries without following symbolic links."""
+    library = ctypes.CDLL(None, use_errno=True)
+    if sys.platform == "darwin":
+        exchange = library.renamex_np
+        exchange.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+        arguments = [os.fsencode(first), os.fsencode(second), 2]  # RENAME_SWAP
+    else:
+        exchange = getattr(library, "renameat2", None)
+        if exchange is None:
+            raise OSError(errno.ENOTSUP, "Atomic directory exchange is unavailable")
+        exchange.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+        arguments = [-100, os.fsencode(first), -100, os.fsencode(second), 2]  # AT_FDCWD, RENAME_EXCHANGE
+    exchange.restype = ctypes.c_int
+    if exchange(*arguments) != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error), str(first))
 
 
 def _lock_path(path: Path) -> Path:
@@ -96,6 +118,15 @@ def _verify_existing_file(path: Path, expected: os.stat_result | None) -> None:
         raise OSError(f"File changed during atomic write: {path}")
     if (current.st_dev, current.st_ino) != (expected.st_dev, expected.st_ino):
         raise OSError(f"File changed during atomic write: {path}")
+
+
+def fsync_directory_files(path: Path) -> None:
+    """Flush every file in a directory, then the directory entries, to disk."""
+    for child in Path(path).iterdir():
+        if child.is_file() and not child.is_symlink():
+            with child.open("rb") as file:
+                os.fsync(file.fileno())
+    _fsync_directory(path)
 
 
 def _fsync_directory(path: Path) -> None:

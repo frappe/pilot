@@ -111,7 +111,7 @@ const stats = computed(() => {
   return [
     {
       label: __('Uptime'),
-      value: percent == null ? '—' : `${percent.toFixed(2)}%`,
+      value: percent == null ? '-' : `${percent.toFixed(2)}%`,
       icon: 'lucide-activity',
     },
     {
@@ -179,7 +179,7 @@ const formatTime = (time: number) =>
         class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 rounded-6 border border-outline-gray-2 p-4"
       >
         <span class="row-span-2 grid size-9 place-items-center rounded-5 bg-surface-gray-2">
-          <span :class="[stat.icon, 'size-4']" aria-hidden="true" />
+          <span :class="[stat.icon, 'size-4 text-ink-gray-6']" aria-hidden="true" />
         </span>
 
         <p class="text-sm text-ink-gray-5">{{ stat.label }}</p>

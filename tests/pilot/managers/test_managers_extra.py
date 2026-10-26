@@ -10,7 +10,7 @@ import pytest
 
 from pilot.config import AppConfig, BenchConfig, MariaDBConfig, RedisConfig, WorkerConfig, WorkerGroup
 from pilot.core.bench import Bench
-from pilot.exceptions import CommandError
+from pilot.exceptions import CommandError, ConfigError
 from pilot.managers.processes.systemd import _ADMIN_IDLE_TIMEOUT
 from pilot.managers.redis import RedisManager
 
@@ -65,6 +65,44 @@ def test_redis_manager_cache_config_has_no_save(tmp_path: Path) -> None:
 
     cache = (bench.config_path / "redis_cache.conf").read_text()
     assert 'save ""' in cache
+
+
+def test_redis_manager_keeps_lines_outside_its_block(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    RedisManager(RedisConfig(cache_port=13000, queue_port=11000), bench).generate_configs()
+    path = bench.config_path / "redis_cache.conf"
+    path.write_text("# mine\n" + path.read_text() + "loadmodule /opt/redisearch.so\n")
+
+    RedisManager(RedisConfig(cache_port=14000, queue_port=11000), bench).generate_configs()
+
+    lines = path.read_text().splitlines()
+    assert lines[0] == "# mine"
+    assert lines[-1] == "loadmodule /opt/redisearch.so"
+    assert "port 14000" in lines
+    assert "port 13000" not in lines
+
+
+def test_redis_manager_upgrades_a_config_without_its_block(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    path = bench.config_path / "redis_cache.conf"
+    path.write_text('port 13000\nbind 127.0.0.1\nsave ""\nloadmodule /opt/redisearch.so\n')
+
+    RedisManager(RedisConfig(cache_port=13000, queue_port=11000), bench).generate_configs()
+
+    lines = path.read_text().splitlines()
+    assert lines.count("port 13000") == 1
+    assert lines[-1] == "loadmodule /opt/redisearch.so"
+
+
+def test_redis_manager_rejects_a_block_without_its_end(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    manager = RedisManager(RedisConfig(cache_port=13000, queue_port=11000), bench)
+    manager.generate_configs()
+    path = bench.config_path / "redis_cache.conf"
+    path.write_text(path.read_text().replace("# END PILOT MANAGED BLOCK", ""))
+
+    with pytest.raises(ConfigError):
+        manager.generate_configs()
 
 
 def test_redis_manager_brew_package_with_version() -> None:
@@ -486,6 +524,33 @@ def test_systemd_generate_config_writes_unit_files(tmp_path: Path) -> None:
         mgr.write_config()
     assert (mgr.systemd_conf_dir / "test-bench-web.service").exists()
     assert (mgr.systemd_conf_dir / "test-bench.target").exists()
+
+
+def test_systemd_write_config_flushes_units_to_disk(tmp_path: Path) -> None:
+    from pilot.managers.processes.local import ProcessDefinition
+
+    mgr = _make_systemd_manager(tmp_path)
+    mgr.systemd_conf_dir.mkdir(parents=True, exist_ok=True)
+    fake_defs = [ProcessDefinition("web", ["/env/bin/python", "serve"], tmp_path / "logs" / "web.log")]
+    flushed = []
+    with (
+        patch("pilot.managers.environment.AdminEnvManager"),
+        patch.object(mgr, "_prod_process_definitions", return_value=fake_defs),
+        patch("pilot.managers.processes.systemd.fsync_directory_files", side_effect=flushed.append),
+    ):
+        mgr.write_config()
+    assert flushed == [mgr.systemd_conf_dir]
+
+
+def test_fsync_directory_files_flushes_each_file(tmp_path: Path) -> None:
+    from pilot.internal.atomic_file import fsync_directory_files
+
+    (tmp_path / "a.service").write_text("a")
+    (tmp_path / "b.target").write_text("b")
+    (tmp_path / "link.service").symlink_to(tmp_path / "a.service")
+    with patch("pilot.internal.atomic_file.os.fsync") as fsync:
+        fsync_directory_files(tmp_path)
+    assert fsync.call_count == 3
 
 
 def test_systemd_write_config_keeps_units_when_a_declaration_is_broken(tmp_path: Path) -> None:

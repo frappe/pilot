@@ -73,7 +73,7 @@ def bootstrap():
     if config.central.is_awaiting_bootstrap:
         return jsonify({"mode": "pending", "name": config.name, "enabled": True})
 
-    initialized = (bench_root / "env" / "bin" / "python").exists()
+    initialized = Bench(bench_root).is_initialized
     if not initialized or not config.admin.password:
         return jsonify(_setup_bootstrap(bench_root))
 
@@ -124,7 +124,7 @@ def _setup_bootstrap(bench_root: Path) -> dict:
 
 
 def _is_setup_complete(bench_root: Path, config: BenchConfig) -> bool:
-    if not (bench_root / "env" / "bin" / "python").exists():
+    if not Bench(bench_root).is_initialized:
         return False
     if not config.admin.password:
         return False

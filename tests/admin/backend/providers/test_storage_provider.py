@@ -205,8 +205,8 @@ def test_sqlite_engine_is_not_supported(tmp_path: Path) -> None:
 
 
 def test_get_breakdown_remeasures_instead_of_serving_the_cache(tmp_path: Path) -> None:
-    """directory_size_bytes is cached for the /metrics poll and never expires,
-    so a refresh would otherwise report the first reading forever."""
+    """directory_size_bytes is cached and never expires, so a refresh would
+    otherwise report the first reading forever."""
     from admin.backend.providers.storage import StorageProvider
 
     _write_bench(tmp_path)

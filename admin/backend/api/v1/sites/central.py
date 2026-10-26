@@ -19,7 +19,14 @@ class CentralAccountLink(TypedDict):
 
 
 _ALLOWED_PREFIXES = ("central.billing.api.billing_api.",)
-_ALLOWED_EXACT = frozenset({"central.api.pilot.heartbeat", "central.api.pilot.get_team_identity_token"})
+_ALLOWED_EXACT = frozenset(
+    {
+        "central.api.pilot.heartbeat",
+        "central.api.pilot.get_team_identity_token",
+        "central.api.email_oauth.start",
+        "central.api.email_oauth.relay_token",
+    }
+)
 
 
 def _is_allowed(method_path: str) -> bool:
@@ -67,6 +74,6 @@ def account_url(name: str):
         "url": url,
         "billing": f"{url}/dashboard/billing",
         "change_plan": f"{url}/dashboard/servers?{urlencode({'pilot': audience, 'action': 'resize'})}",
-        "server": f"{url}/dashboard/servers?{urlencode({'pilot': audience, 'action': 'open-bench'})}",
+        "server": f"{url}/api/method/central.api.sso.open_bench?{urlencode({'pilot': audience})}",
     }
     return jsonify(link)

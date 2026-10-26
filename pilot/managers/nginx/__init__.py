@@ -48,6 +48,8 @@ ADMIN_CLIENT_MAX_BODY_SIZE = "1024m"
 _BENCH_TEMPLATE = Template.from_path(_TEMPLATES / "bench.conf.template")
 _SERVER_TEMPLATE = Template.from_path(_TEMPLATES / "server.conf.template")
 _ERROR_PAGE_TEMPLATE = Template.from_path(_TEMPLATES / "error_page.html.template")
+_STARTUP_PAGE_TEMPLATE = Template.from_path(_TEMPLATES / "startup_page.html.template")
+_RECOVERY_TEMPLATE = Template.from_path(_TEMPLATES / "recovery.conf.template")
 
 _CORS_PATHS = ["/api/v1/health", "/api/v1/bootstrap", "/api/v1/setup/actions/finish"]
 
@@ -144,7 +146,10 @@ class NginxConfigRenderer:
             return []
 
         aliases = []
-        for mapping in central.hostname_aliases:
+        # nginx tries regex server names in order, so the pattern with the most literal text wins.
+        for mapping in sorted(
+            central.hostname_aliases, key=lambda alias: len(alias.pattern.replace("*", "")), reverse=True
+        ):
             if mapping.type == "admin":
                 alias = self._admin_alias(mapping, admin_ssl)
             elif mapping.type == "site":
@@ -164,6 +169,7 @@ class NginxConfigRenderer:
         scheme = "https" if admin_ssl else "http"
         return SimpleNamespace(
             server_name=vm_hostname_pattern(mapping.pattern),
+            pending=False,
             redirect=f"{scheme}://{mapping.target}" if mapping.redirect else "",
             proxy_pass=f"http://127.0.0.1:{admin.internal_port}",
             site="",
@@ -174,7 +180,7 @@ class NginxConfigRenderer:
     ) -> SimpleNamespace | None:
         entry = next((entry for entry in sites if entry[0].name == mapping.target), None)
         if entry is None:
-            return None
+            return SimpleNamespace(server_name=vm_hostname_pattern(mapping.pattern), pending=True)
 
         site, tls_domains = entry
         # Redirect to the domain the site calls home, on the scheme clients reach it with.
@@ -185,6 +191,7 @@ class NginxConfigRenderer:
             scheme = "https" if target in tls_domains else "http"
         return SimpleNamespace(
             server_name=vm_hostname_pattern(mapping.pattern),
+            pending=False,
             redirect=f"{scheme}://{target}" if mapping.redirect else "",
             proxy_pass=f"http://bench-{self.bench.config.name}",
             site=site.name,
@@ -220,20 +227,22 @@ class NginxConfigRenderer:
         for domain in site.all_domains:
             route = site.configured_route_for(domain)
             ssl = domain in tls_domains
-            client_ip_source = route.client_ip_source if route else (
-                "proxy_protocol_v2"
-                if ssl and self.bench.config.proxy.protocol_v2
-                else "x_forwarded_for"
-                if self.get_proxy_servers()
-                else "direct"
+            client_ip_source = (
+                route.client_ip_source
+                if route
+                else (
+                    "proxy_protocol_v2"
+                    if ssl and self.bench.config.proxy.protocol_v2
+                    else "x_forwarded_for"
+                    if self.get_proxy_servers()
+                    else "direct"
+                )
             )
             public_scheme = route.public_scheme if route else self._unrouted_scheme(client_ip_source)
             key = (ssl, public_scheme, client_ip_source)
             groups.setdefault(key, []).append(domain)
         for (ssl, public_scheme, client_ip_source), domains in groups.items():
-            vhosts.append(
-                self._site_vhost(site, domains, ssl, public_scheme, client_ip_source)
-            )
+            vhosts.append(self._site_vhost(site, domains, ssl, public_scheme, client_ip_source))
         return vhosts
 
     @staticmethod
@@ -307,6 +316,7 @@ class NginxConfigRenderer:
     ) -> dict[str, Any]:
         config = self.bench.config
         nginx = config.nginx
+        error_dir = self.bench.config_path / "nginx" / "error_pages"
         return {
             "upstream_name": config.name,
             "upstream_server": GunicornManager(self.bench).upstream_server,
@@ -325,13 +335,12 @@ class NginxConfigRenderer:
             "sites_root": f"{self.bench.path}/sites",
             "logs_path": str(self.bench.logs_path),
             "acme_root": config.letsencrypt.webroot_path,
-            "error_dir": self.bench.config_path / "nginx" / "error_pages",
+            "error_dir": error_dir,
+            "startup_recovery": _RECOVERY_TEMPLATE.render(error_dir=error_dir),
             "error_codes": list(ERROR_PAGES),
             "proxy_servers": self.get_proxy_servers(),
             "cloudflare_networks": CLOUDFLARE_NETWORKS if config.proxy.cloudflare else (),
-            "proxy_gate_variable": "$bench_"
-            + re.sub(r"[^a-zA-Z0-9_]", "_", config.name)
-            + "_from_proxy",
+            "proxy_gate_variable": "$bench_" + re.sub(r"[^a-zA-Z0-9_]", "_", config.name) + "_from_proxy",
             "proxy_gate_enabled": any(vhost.trusted_proxy for vhost in vhosts),
             "firewall": config.firewall,
             "waf_active": self._is_waf_active(),
@@ -397,7 +406,9 @@ class NginxManager:
             (site.config, self.serviceable_tls_domains(site.config, ssl_ready)) for site in self.bench.sites()
         ]
         admin_ssl = self.bench.config.admin.tls and ssl_ready and self.has_admin_cert
-        self._write_config_file(nginx_dir / "include.conf", self._renderer.generate_bench_config(sites, admin_ssl))
+        self._write_config_file(
+            nginx_dir / "include.conf", self._renderer.generate_bench_config(sites, admin_ssl)
+        )
 
     @contextmanager
     def config_lock(self) -> Iterator[None]:
@@ -444,6 +455,16 @@ class NginxManager:
     def _write_error_pages(self, nginx_dir: Path) -> None:
         error_dir = nginx_dir / "error_pages"
         error_dir.mkdir(parents=True, exist_ok=True)
+        (error_dir / "starting.html").write_text(
+            _STARTUP_PAGE_TEMPLATE.render(
+                title="Waiting for your site", message="Your site is being prepared."
+            )
+        )
+        (error_dir / "reconnecting.html").write_text(
+            _STARTUP_PAGE_TEMPLATE.render(
+                title="Reconnecting", message="The server is starting or recovering."
+            )
+        )
         for code, (title, message) in ERROR_PAGES.items():
             (error_dir / f"{code}.html").write_text(render_error_html(code, title, message))
 

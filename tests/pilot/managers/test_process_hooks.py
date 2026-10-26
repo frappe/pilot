@@ -33,6 +33,19 @@ def test_systemd_renders_hooks_and_restart() -> None:
     assert "Restart=no\n" in unit
 
 
+@pytest.mark.parametrize("database_service", ["pilot-mariadb.service", "pilot-postgres.service"])
+def test_systemd_orders_web_with_managed_database(database_service: str) -> None:
+    definition = ProcessDefinition(name="web", argv=["/bin/web"], log_file=Path("/tmp/web.log"))
+    renderer = SystemdRenderer("bench", database_service)
+    unit = renderer.render(definition)
+    for relationship in ("After", "Requires", "PartOf"):
+        assert f"{relationship}={database_service}\n" in unit
+
+    assert database_service not in SystemdRenderer("bench").render(definition)
+    definition.name = "admin"
+    assert database_service not in renderer.render(definition)
+
+
 def test_systemd_escapes_specifiers_and_quotes() -> None:
     unit = SystemdRenderer("bench").render(
         _definition(argv=["/bin/stalwart", "--rate=100%", "$HOME"], env={"MESSAGE": 'say "50%"'})
@@ -45,7 +58,9 @@ def test_systemd_escapes_specifiers_and_quotes() -> None:
 def test_supervisor_wraps_hooks_and_escapes_percent() -> None:
     program = SupervisorRenderer("bench", Path("/tmp")).render(
         _definition(
-            argv=["/bin/stalwart", "--rate=100%"], pre_run=["/bin/install.sh"], env={"MESSAGE": 'say "50%" now'}
+            argv=["/bin/stalwart", "--rate=100%"],
+            pre_run=["/bin/install.sh"],
+            env={"MESSAGE": 'say "50%" now'},
         )
     )
 
@@ -148,7 +163,7 @@ def test_supervisor_keeps_a_semicolon_or_hash_after_whitespace(tmp_path: Path) -
 
 
 # supervisord strips every quote from both ends of a value, so "50%" would arrive as 50%.
-@pytest.mark.parametrize("value", ["a ;b", "say \"it's\"", '"50%"', "it's'"])
+@pytest.mark.parametrize("value", ["a ;b", 'say "it\'s"', '"50%"', "it's'"])
 def test_supervisor_rejects_an_env_value_it_cannot_hold(value) -> None:
     with pytest.raises(BenchError, match="Supervisor cannot hold the value of MESSAGE"):
         SupervisorRenderer("bench", Path("/tmp")).render(_definition(env={"MESSAGE": value}))
@@ -161,7 +176,9 @@ def test_names_that_supervisor_would_merge_are_rejected() -> None:
         ProcessDefinition(name="redis-cache", argv=["/bin/cache"], log_file=Path("/tmp/x.log"), app="redis"),
     ]
 
-    with pytest.raises(BenchError, match="Process 'redis-cache' of app 'redis' has the same name as 'redis_cache'"):
+    with pytest.raises(
+        BenchError, match="Process 'redis-cache' of app 'redis' has the same name as 'redis_cache'"
+    ):
         check_unique_names(definitions)
 
 
@@ -171,4 +188,4 @@ def test_systemd_keeps_backslashes_and_quotes_in_hook_arguments() -> None:
         _definition(pre_run=["/usr/bin/python3", "-c", "print('a\\nb')", 'say "hi"', ""])
     )
 
-    assert "ExecStartPre=/usr/bin/python3 -c \"print('a\\\\nb')\" \"say \\\"hi\\\"\" \"\"\n" in unit
+    assert 'ExecStartPre=/usr/bin/python3 -c "print(\'a\\\\nb\')" "say \\"hi\\"" ""\n' in unit

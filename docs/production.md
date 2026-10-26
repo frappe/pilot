@@ -31,6 +31,16 @@ pilot setup letsencrypt
 
 `pilot remove production` removes production deployment files and services while keeping logs, certificates, and admin domain config.
 
+## Startup pages
+
+A configured cloud site alias shows a waiting page while its target site is absent. The page refreshes every five seconds. `/api/method/ping` returns 503 until the target exists, so readiness checks do not treat the waiting page as a working site. Unknown hostnames still return 404.
+
+Production web processes wait up to 60 seconds for the managed database before they start. systemd keeps the web socket open during this wait. Existing external databases keep their current startup behavior.
+
+If nginx cannot reach a backend, browser GET requests receive a reconnecting page that refreshes every five seconds. API requests and form submissions retain their gateway error status.
+
+Pilot builds Admin frontends in a separate directory and publishes index.html after the assets. Existing hashed assets remain available to open tabs. If index.html is missing, Admin serves a preparing page until the build is restored.
+
 ## Process Managers
 
 Supported managers are `systemd` and `supervisor`.
@@ -127,6 +137,10 @@ The cap applies only to hosts with `systemd-run` and cgroup memory delegation av
 To set a fixed cap instead, add `memory_limit_mb` under `[build]` in `bench.toml`. Leave it unset (or 0) to keep the automatic 85% sizing.
 
 Node.js builds get a heap of 75% of the cap through `NODE_OPTIONS=--max-old-space-size`. A `--max-old-space-size` that you set in `NODE_OPTIONS` takes priority.
+
+## Monitoring
+
+`pilot setup production` installs `pilot-monitor.service`, one user service for the host. It collects host, database and bench metrics every 10 seconds, and it pings every production site every 5 seconds on a separate thread, so a slow metrics tick does not delay the pings. Its output goes to `system/logs/monitor.log` and `system/logs/monitor.error.log`. The service runs for the life of the host, so a Pilot upgrade restarts it to load the new code. Check it with `systemctl --user status pilot-monitor.service`.
 
 ## Operational Notes
 

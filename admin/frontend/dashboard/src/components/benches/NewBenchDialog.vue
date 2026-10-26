@@ -336,6 +336,7 @@ const createBench = async () => {
                 @keyup.enter="createBench"
               />
               <Select
+                side="bottom"
                 v-if="wildcardDomains.length > 1"
                 class="w-48 shrink-0"
                 v-model="selectedSuffix"

@@ -84,6 +84,7 @@ FLAT_KEYS = {
 
 # Framework branches the setup wizard offers, newest/recommended first.
 FRAMEWORK_BRANCHES = ["version-16", "develop"]
+ONBOARDING_STATES = ("", "minimized", "dismissed")
 
 _DEFAULT_DATA: dict = {
     "bench": {"name": "", "python": "3.14"},
@@ -129,6 +130,7 @@ class BenchConfig:
     allow_developer_mode: bool = False
     # Whether `uv pip install -e` pulls an app's `dev` extra, such as frappe's watchdog.
     install_dev_extra: bool = True
+    onboarding: str = ""
     production: ProductionConfig = field(default_factory=ProductionConfig)
     lite_mode: LiteModeConfig = field(default_factory=LiteModeConfig)
     nginx: NginxConfig = field(default_factory=NginxConfig)
@@ -224,6 +226,7 @@ class BenchConfig:
             default_branch=bench_data.get("default_branch", ""),
             allow_developer_mode=bench_data.get("allow_developer_mode", False),
             install_dev_extra=bench_data.get("install_dev_extra", True),
+            onboarding=bench_data.get("onboarding", ""),
             apps=apps,
             mariadb=common.mariadb,
             postgres=common.postgres,
@@ -543,6 +546,8 @@ class BenchConfig:
         }
         if self.default_branch:
             bench["default_branch"] = self.default_branch
+        if self.onboarding:
+            bench["onboarding"] = self.onboarding
         return bench
 
     def _apps_section(self) -> list[ConfigDict]:
@@ -889,6 +894,7 @@ _BENCH_KEYS = {
     "default_branch",
     "allow_developer_mode",
     "install_dev_extra",
+    "onboarding",
 }
 # Keys older Pilot versions wrote that the parser still tolerates.
 _PRODUCTION_LEGACY = {"lightweight", "nginx", "use_companion_manager"}

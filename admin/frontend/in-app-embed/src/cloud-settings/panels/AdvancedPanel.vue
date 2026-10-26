@@ -38,11 +38,16 @@ watch(
         label-for=""
         :title="__('Open your server')"
         class="flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-8"
-        :description="__('Deploys, scaling, SSH, backups, sites — the full server controls.')"
+        :description="
+          store.isOnTrial()
+            ? __('Not in the free trial. Upgrade to use it.')
+            : __('Deploys, scaling, SSH, backups and sites. The full server controls.')
+        "
       >
         <Button
           icon-right="lucide-arrow-up-right"
           :label="__('Open server')"
+          :disabled="store.isOnTrial()"
           @click="openExternal(store.state.accountLinks?.server)"
         />
       </SettingsRow>

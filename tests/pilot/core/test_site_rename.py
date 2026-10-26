@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import threading
 from pathlib import Path
 from unittest.mock import patch
 
@@ -68,14 +69,48 @@ def test_the_old_path_still_resolves_until_nginx_has_swung_over(tmp_path: Path) 
     assert seen == {"is_symlink": True, "resolves": True}
 
 
-def test_the_compatibility_link_is_gone_afterwards(tmp_path: Path) -> None:
+def test_old_requests_keep_resolving_after_nginx_reload_returns(tmp_path: Path) -> None:
     bench = _bench(tmp_path)
     _site(bench, OLD)
 
     _rename(bench)
 
-    assert not (bench.sites_path / OLD).is_symlink()
-    assert not (bench.sites_path / OLD).exists()
+    assert (bench.sites_path / OLD).is_symlink()
+    assert (bench.sites_path / OLD / "site_config.json").read_bytes() == (
+        bench.sites_path / NEW / "site_config.json"
+    ).read_bytes()
+
+
+def test_readers_keep_the_old_path_during_moves_and_rollbacks(tmp_path: Path) -> None:
+    bench = _bench(tmp_path)
+    _site(bench, OLD)
+    rename = SiteRename(bench.site(OLD), NEW)
+    stopped = threading.Event()
+    started = threading.Event()
+    errors = []
+    reads = []
+
+    def read_config():
+        started.set()
+        while not stopped.is_set():
+            try:
+                reads.append((bench.sites_path / OLD / "site_config.json").read_bytes())
+            except OSError as error:
+                errors.append(error)
+
+    reader = threading.Thread(target=read_config)
+    reader.start()
+    try:
+        assert started.wait(timeout=5)
+        for _ in range(500):
+            rename._move_site_directory()
+            rename._move_site_directory_back()
+    finally:
+        stopped.set()
+        reader.join(timeout=5)
+    assert not reader.is_alive()
+    assert reads and all(content == b"{}" for content in reads)
+    assert not errors
 
 
 def test_a_failed_reload_rolls_the_rename_back(tmp_path: Path) -> None:
@@ -96,19 +131,48 @@ def test_a_failed_reload_rolls_the_rename_back(tmp_path: Path) -> None:
     assert (old / "site_config.json").read_text() == original
 
 
-def test_failed_compatibility_link_cleanup_rolls_the_rename_back(tmp_path: Path) -> None:
+def test_failed_atomic_exchange_leaves_the_original_site_available(tmp_path: Path) -> None:
     bench = _bench(tmp_path)
     _site(bench, OLD)
 
     with (
         patch.object(SiteRename, "_reload_nginx"),
-        patch.object(SiteRename, "_drop_compatibility_link", side_effect=OSError("unlink failed")),
-        pytest.raises(OSError, match="unlink failed"),
+        patch("pilot.core.site.rename.exchange_paths", side_effect=OSError("exchange failed")),
+        pytest.raises(OSError, match="exchange failed"),
     ):
         SiteRename(bench.site(OLD), NEW).run(lambda message: None)
 
     assert (bench.sites_path / OLD).is_dir()
     assert not (bench.sites_path / NEW).exists()
+
+
+@pytest.mark.parametrize("write_completed", [False, True])
+def test_failed_alias_record_leaves_the_original_site_available(tmp_path: Path, write_completed: bool) -> None:
+    from pilot.core.bench.site_aliases import SiteAliases
+
+    bench = _bench(tmp_path)
+    _site(bench, OLD, db_password="original-password")
+    original = (bench.sites_path / OLD / "site_config.json").read_bytes()
+    write = SiteAliases._write
+
+    def fail_write(aliases, renamed):
+        if write_completed:
+            write(aliases, renamed)
+        raise OSError("alias registry write failed")
+
+    with (
+        patch.object(SiteAliases, "_write", fail_write),
+        patch.object(SiteRename, "_release_route") as release,
+        pytest.raises(OSError, match="alias registry write failed"),
+    ):
+        SiteRename(bench.site(OLD), NEW).run(lambda message: None)
+
+    old = bench.sites_path / OLD
+    assert old.is_dir() and not old.is_symlink()
+    assert (old / "site_config.json").read_bytes() == original
+    assert not (bench.sites_path / NEW).exists()
+    assert not (bench.sites_path / NEW).is_symlink()
+    release.assert_called_once_with(NEW)
 
 
 def test_a_rolled_back_rename_can_simply_be_run_again(tmp_path: Path) -> None:
@@ -124,7 +188,7 @@ def test_a_rolled_back_rename_can_simply_be_run_again(tmp_path: Path) -> None:
     _rename(bench)
 
     assert (bench.sites_path / NEW / "site_config.json").exists()
-    assert not (bench.sites_path / OLD).exists()
+    assert (bench.sites_path / OLD).resolve() == bench.sites_path / NEW
 
 
 def test_a_failure_part_way_through_restores_what_had_changed(tmp_path: Path) -> None:
@@ -227,7 +291,7 @@ def test_a_revocation_sync_failure_does_not_roll_back_the_rename(tmp_path: Path)
         SiteRename(bench.site(OLD), NEW).run(lambda message: None)
 
     assert _config(bench, NEW)["pilot_auth_token"] == "new-token"
-    assert not (bench.sites_path / OLD).exists()
+    assert (bench.sites_path / OLD).resolve() == bench.sites_path / NEW
 
 
 def test_a_committed_revocation_sync_failure_still_releases_the_old_route(

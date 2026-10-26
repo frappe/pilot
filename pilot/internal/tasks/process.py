@@ -219,6 +219,18 @@ class TaskProcess:
 
     def interrupt(self, task_id: str) -> None:
         """Fail a task whose process died without finalizing."""
+        try:
+            record = self.read(task_id)
+        except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError, TaskNotFoundError):
+            record = None
+        if record is not None:
+            ownership = self._inspector.inspect(record.identity, record.argv)
+            if ownership == ProcessOwnership.UNKNOWN:
+                return
+            if ownership == ProcessOwnership.OWNED:
+                outcome = self._signal(record, signal.SIGKILL)
+                if outcome == ProcessOwnership.UNKNOWN or self._inspector.owned_pids(record.identity):
+                    return
         self._store.transition(
             task_id,
             TaskStatus.RUNNING,

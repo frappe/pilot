@@ -1,22 +1,18 @@
 <script setup lang="ts">
-import { Badge, Button, ErrorMessage, Skeleton } from 'frappe-ui'
-import { computed, onMounted, ref, watch } from 'vue'
+import { Button, ErrorMessage, Select, Skeleton, TabButtons, TextInput } from 'frappe-ui'
+import { computed, h, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import AddAppFromGithubDialog from '@/components/apps/AddAppFromGithubDialog.vue'
-import NewAppDialog from '@/components/apps/NewAppDialog.vue'
+import AppIcon from '@/components/apps/AppIcon.vue'
 import InstallAppDialog from '@/components/apps/InstallAppDialog.vue'
-import PageHero from '@/components/common/PageHero.vue'
-import MarketplaceAppCard from '@/components/marketplace/MarketplaceAppCard.vue'
-import MarketplaceAppCardSkeleton from '@/components/marketplace/MarketplaceAppCardSkeleton.vue'
-import MarketplaceFilters from '@/components/marketplace/MarketplaceFilters.vue'
-import ChooseSiteDialog from '@/components/sites/ChooseSiteDialog.vue'
-
-import { useMarketplace } from '@/composables/apps/useMarketplace'
-import { useIsMobile } from '@/composables/common/useIsMobile'
+import NewAppDialog from '@/components/apps/NewAppDialog.vue'
+import GithubMark from '@/components/icons/GithubMark.vue'
+import MarketplaceAppTile from '@/components/marketplace/MarketplaceAppTile.vue'
 import type { MarketplaceListing } from '@/composables/apps/useMarketplace'
+import { useMarketplace } from '@/composables/apps/useMarketplace'
+import { PILLS, pillIcons } from '@/utils/marketplaceCategories'
 
-const isMobile = useIsMobile()
 const route = useRoute()
 const router = useRouter()
 const siteQuery = route.query.site
@@ -25,14 +21,12 @@ const initialSiteName = typeof siteQuery === 'string' ? siteQuery : ''
 const {
   loading,
   error,
-  appCount,
   search,
   selectedPill,
   worksWith,
   worksWithOptions,
   isFiltered,
   filteredApps,
-  benchVersionLabel,
   frappeApps,
   communityApps,
   load,
@@ -41,19 +35,44 @@ const {
   otherBenchApps,
 } = useMarketplace(initialSiteName)
 
-const siteLabel = computed(() => currentSiteName.value || 'All sites')
+const siteOptions = computed(() => [
+  { label: 'All sites', value: '' },
+  ...sites.value.map((site) => ({ label: site.name, value: site.name })),
+])
 
-const appCountLabel = computed(
-  () => `${appCount.value} ${appCount.value === 1 ? 'app' : 'apps'} available`,
-)
+const pillOptions = PILLS.map((pill) => ({ label: pill, value: pill, iconLeft: pillIcons[pill] }))
 
-const filteredHeading = computed(() => {
-  const name = selectedPill.value !== 'All' ? selectedPill.value : 'Matching apps'
-  const count = filteredApps.value.length
-  return `${name} · ${count} ${count === 1 ? 'app' : 'apps'}`
+const isBrowsing = computed(() => !isFiltered.value && !search.value.trim())
+
+const privateApps = computed(() => (isFiltered.value ? [] : otherBenchApps.value))
+
+const sortBy = ref('stars')
+
+const sortOptions = [
+  { label: 'Most stars', value: 'stars' },
+  { label: 'Name', value: 'name' },
+]
+
+const apps = computed(() => {
+  const listed = isBrowsing.value
+    ? [...frappeApps.value, ...communityApps.value]
+    : filteredApps.value
+
+  if (sortBy.value === 'name') return [...listed].sort((a, b) => a.title.localeCompare(b.title))
+
+  return [...listed].sort((a, b) => (b.stars ?? -1) - (a.stars ?? -1))
 })
 
-const showChooseSite = ref(false)
+const worksWithSelectOptions = computed(() => [
+  { label: 'Any app', value: '', icon: 'lucide-blocks' },
+  ...worksWithOptions.value.map((option) => ({
+    label: option.title,
+    value: option.name,
+    icon: () =>
+      h(AppIcon, { name: option.name, label: option.title, logo: option.logo_url, size: 'xs' }),
+  })),
+])
+
 const showInstallApp = ref(false)
 const showAddFromGithub = ref(false)
 const showNewApp = ref(false)
@@ -74,96 +93,98 @@ const onInstall = (app: MarketplaceListing) => {
   showInstallApp.value = true
 }
 
+const clearFilters = () => {
+  search.value = ''
+  selectedPill.value = 'All'
+  worksWith.value = ''
+}
+
 onMounted(load)
 </script>
 
 <template>
-  <PageHero v-if="loading">
-    <template #icon><Skeleton class="rounded-6 size-9 sm:size-10 shrink-0" /></template>
-    <template #title>
-      <Skeleton class="rounded-4 w-40 h-4" />
-      <Skeleton class="rounded-full w-14 h-5 shrink-0" />
-    </template>
+  <Teleport defer to="#header-actions">
+    <Button aria-label="Import app" @click="showAddFromGithub = true">
+      <template #prefix><GithubMark class="size-4" /></template>
+      <span class="hidden lg:inline">Import app</span>
+    </Button>
 
-    <template #subtitle><Skeleton class="rounded-4 w-24 h-3.5" /></template>
-    <template #actions><Skeleton class="rounded-4 w-28 h-8 sm:h-7" /></template>
-  </PageHero>
+    <Button variant="solid" aria-label="New app" @click="showNewApp = true">
+      <template #prefix><span class="size-4 lucide-plus" /></template>
+      <span class="hidden lg:inline">New app</span>
+    </Button>
+  </Teleport>
 
-  <PageHero v-else icon="lucide-store">
-    <template #title>
-      <h1 class="text-lg-medium truncate">Frappe Marketplace</h1>
-      <Badge v-if="benchVersionLabel" :label="benchVersionLabel" class="shrink-0">
-        <template #prefix><span class="size-2.5 lucide-box" /></template>
-      </Badge>
-    </template>
-
-    <template #subtitle>{{ error ? '' : appCountLabel }}</template>
-    <template #actions>
-      <Button
-        class="[&>.truncate]:flex-1 [&>.truncate]:text-left text-base max-w-[180px] sm:max-w-[250px] overflow-hidden"
-        :size="isMobile ? 'md' : 'sm'"
-        @click="showChooseSite = true"
+  <div class="flex flex-col gap-4 mx-auto px-3 md:px-8 pt-4 md:pt-8 pb-40 max-w-6xl">
+    <header class="flex flex-wrap gap-2">
+      <TextInput
+        v-model="search"
+        class="flex-1 basis-full md:basis-0 md:min-w-64"
+        placeholder="Search apps"
       >
-        <template #prefix>
-          <span class="size-4 text-ink-gray-5 lucide-globe" />
-        </template>
-        {{ siteLabel }}
-        <template #suffix>
-          <span class="size-4 text-ink-gray-5 lucide-chevron-down" />
-        </template>
-      </Button>
-    </template>
-  </PageHero>
+        <template #prefix><span class="size-4 text-ink-gray-5 lucide-search" /></template>
+      </TextInput>
 
-  <MarketplaceFilters
-    v-model:search="search"
-    v-model:pill="selectedPill"
-    v-model:works-with="worksWith"
-    :works-with-options="worksWithOptions"
-    @add-from-github="showAddFromGithub = true"
-    @new-app="showNewApp = true"
-  />
+      <Select
+        v-model="currentSiteName"
+        :options="siteOptions"
+        side="bottom"
+        class="flex-1 md:flex-none md:w-48"
+      >
+        <template #prefix><span class="size-4 text-ink-gray-5 lucide-globe" /></template>
+      </Select>
 
-  <div class="px-3 sm:px-4 mx-auto box-content max-w-3xl pb-40">
-    <section v-if="loading" class="mt-12">
-      <div class="flex items-center h-4">
-        <Skeleton class="rounded-4 w-32 h-3.5" />
-      </div>
+      <Select v-model="sortBy" :options="sortOptions" side="bottom" class="w-36">
+        <template #prefix><span class="size-4 text-ink-gray-5 lucide-arrow-down-up" /></template>
+      </Select>
 
-      <div class="gap-x-6 gap-y-4 grid md:grid-cols-2 mt-3">
-        <MarketplaceAppCardSkeleton v-for="i in 8" :key="i" :index="i - 1" />
-      </div>
-    </section>
+      <Select v-model="worksWith" :options="worksWithSelectOptions" side="bottom" class="w-44" />
+    </header>
 
-    <div v-else-if="error" class="flex justify-center items-center w-full h-[250px]">
-      <ErrorMessage :message="error" />
+    <TabButtons
+      v-model="selectedPill"
+      :options="pillOptions"
+      variant="ghost"
+      class="mb-2 overflow-x-auto"
+    />
+
+    <div v-if="loading" class="gap-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+      <Skeleton v-for="i in 9" :key="i" class="rounded-6 h-24" />
     </div>
 
-    <template v-else-if="isFiltered">
-      <section v-if="filteredApps.length" class="mt-12">
-        <h2 class="font-medium">
-          {{ filteredHeading }}
-        </h2>
+    <ErrorMessage
+      v-else-if="error"
+      :message="error"
+      class="flex justify-center items-center h-64"
+    />
 
-        <div class="gap-x-6 gap-y-4 grid md:grid-cols-2 mt-3">
-          <MarketplaceAppCard
-            v-for="app in filteredApps"
-            :key="app.name"
-            :app="app"
-            @install="onInstall"
-          />
-        </div>
-      </section>
+    <div
+      v-else-if="!apps.length && !privateApps.length"
+      class="flex flex-col items-center gap-3 py-20 border border-dashed rounded-7 border-outline-gray-2 text-center"
+    >
+      <span class="size-6 text-ink-gray-4 lucide-package-search" />
 
-      <p v-else class="mt-8 text-ink-gray-5 text-sm text-center">No apps found.</p>
-    </template>
+      <div>
+        <p class="text-base-medium text-ink-gray-8">No apps match</p>
+
+        <p class="mt-1 text-ink-gray-5 text-p-sm">
+          Try another search, or import the app from GitHub.
+        </p>
+      </div>
+
+      <Button label="Clear filters" @click="clearFilters" />
+    </div>
 
     <template v-else>
-      <section v-if="otherBenchApps.length" class="mt-4">
-        <h2 class="font-medium">Your custom apps</h2>
-        <div class="gap-x-6 gap-y-4 grid md:grid-cols-2 mt-3">
-          <MarketplaceAppCard
-            v-for="app in otherBenchApps"
+      <section v-if="privateApps.length" class="mb-4">
+        <h2 class="flex items-baseline gap-2 mb-3 text-2xl-semibold text-ink-gray-8">
+          Private apps
+          <span class="text-ink-gray-5 text-base">{{ privateApps.length }}</span>
+        </h2>
+
+        <div class="gap-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+          <MarketplaceAppTile
+            v-for="app in privateApps"
             :key="app.name"
             :app="app"
             @install="onInstall"
@@ -171,46 +192,26 @@ onMounted(load)
         </div>
       </section>
 
-      <section v-if="frappeApps.length" :class="otherBenchApps.length ? 'mt-10' : 'mt-12'">
-        <h2 class="font-medium">From Frappe</h2>
-        <div class="gap-x-6 gap-y-4 grid md:grid-cols-2 mt-3">
-          <MarketplaceAppCard
-            v-for="app in frappeApps"
-            :key="app.name"
-            :app="app"
-            @install="onInstall"
-          />
+      <section v-if="apps.length">
+        <h2 class="flex items-baseline gap-2 mb-3 text-2xl-semibold text-ink-gray-8">
+          {{ selectedPill === 'All' ? 'All apps' : selectedPill }}
+          <span class="text-ink-gray-5 text-base">{{ apps.length }}</span>
+        </h2>
+
+        <div class="gap-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+          <MarketplaceAppTile v-for="app in apps" :key="app.name" :app="app" @install="onInstall" />
         </div>
       </section>
-
-      <section v-if="communityApps.length" class="mt-10">
-        <h2 class="font-medium">Community</h2>
-        <div class="gap-x-6 gap-y-4 grid md:grid-cols-2 mt-3">
-          <MarketplaceAppCard
-            v-for="app in communityApps"
-            :key="app.name"
-            :app="app"
-            @install="onInstall"
-          />
-        </div>
-      </section>
-
-      <p
-        v-if="!frappeApps.length && !communityApps.length && !otherBenchApps.length"
-        class="mt-8 text-ink-gray-5 text-sm text-center"
-      >
-        No apps found.
-      </p>
     </template>
   </div>
 
-  <ChooseSiteDialog v-model:open="showChooseSite" v-model:site="currentSiteName" :sites="sites" />
   <InstallAppDialog
     v-model:open="showInstallApp"
     :app="installTarget"
     :sites="sites"
     :site-name="currentSiteName"
   />
+
   <AddAppFromGithubDialog v-model:open="showAddFromGithub" :site-name="currentSiteName" />
 
   <NewAppDialog v-model:open="showNewApp" />

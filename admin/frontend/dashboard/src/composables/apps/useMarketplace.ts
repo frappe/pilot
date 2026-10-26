@@ -26,6 +26,7 @@ export interface MarketplaceListing extends MarketplaceApp {
   needs: string
   label: string
   nightly: boolean
+  requires: WorksWithOption[]
 }
 
 const parseVersion = (branch: string | undefined) => {
@@ -126,11 +127,20 @@ export const useMarketplace = (initialSiteName = '') => {
       .sort((a, b) => a.title.localeCompare(b.title))
   })
 
+  const getRequiredApps = (app: MarketplaceApp) =>
+    Object.keys(app.dependencies || {})
+      .filter((name) => name !== 'frappe')
+      .map((name) => {
+        const entry = registry.value.find((candidate) => candidate.name === name)
+
+        return { name, title: entry?.title || name, logo_url: entry?.logo_url || '' }
+      })
+
   const matchesWorksWith = (app: MarketplaceApp) => {
     return !worksWith.value || Object.hasOwn(app.dependencies || {}, worksWith.value)
   }
 
-  const matchesSearch = (app: MarketplaceApp, query: string) => {
+  const matchesSearch = (app: { title?: string; description?: string }, query: string) => {
     return (
       !query ||
       app.title?.toLowerCase().includes(query) ||
@@ -151,6 +161,7 @@ export const useMarketplace = (initialSiteName = '') => {
         needs: app.required_version,
         label: app.version ? `v${app.version}` : '',
         nightly: app.channel === 'nightly',
+        requires: getRequiredApps(app),
       }))
   })
 
@@ -174,7 +185,8 @@ export const useMarketplace = (initialSiteName = '') => {
         description: app.description,
         compatible: true,
         inBench: true,
-      })),
+      }))
+      .filter((app) => matchesSearch(app, search.value.toLowerCase().trim())),
   )
 
   return {

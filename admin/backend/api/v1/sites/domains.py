@@ -159,7 +159,7 @@ def add_domain(name: str):
         return response
     try:
         domains = _site_domains(bench_root, name)
-        domains.register(fields["domain"])
+        domains.attach(fields["domain"], primary=fields["primary"])
         task_id = domains.apply_task(email=fields["email"])
     except BenchError as error:
         return _domain_failure(error, "Could not attach the domain.")
@@ -175,6 +175,9 @@ def _add_domain_request():
     fields = text_fields(data, "domain", "email")
     if fields is None:
         return None, invalid_fields()
+    if "primary" in data and not isinstance(data["primary"], bool):
+        return None, invalid_fields()
+    fields["primary"] = data.get("primary", False)
     if err := validate_site_name(fields["domain"]):
         return None, error_response("invalid_domain", err, 422)
     # Optional: without any email the domain is served over HTTP until one is set.

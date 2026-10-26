@@ -187,7 +187,7 @@ onMounted(async () => {
           <div class="flex items-end gap-2">
             <div class="space-y-1.5 w-28 shrink-0">
               <p v-if="index === 0" class="font-medium text-ink-gray-7">Action</p>
-              <Select v-model="rule.action" :options="ACTION_OPTIONS" class="w-full" />
+              <Select side="bottom" v-model="rule.action" :options="ACTION_OPTIONS" class="w-full" />
             </div>
 
             <div class="flex-1 space-y-1.5">

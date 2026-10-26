@@ -110,15 +110,41 @@ done
 echo "==> Building"
 # FRAPPE_DOCKER_BUILD skips the Redis cache refresh; there is no Redis here.
 (cd "$bench/apps/frappe" && FRAPPE_DOCKER_BUILD=1 yarn run production --apps "$app" --run-build-command)
-# Frappe's `after_app_build` hook builds page islands, which yarn does not run. On this bench
-# they hold only Frappe's pages, which a bench with no other app's pages uses as they are.
-if [ "$app" = frappe ] && [ -f "$app_dir/ui/vite/island/build-pages.js" ]; then
-    (cd "$app_dir" && node ui/vite/island/build-pages.js --production)
+# `bench build` builds the islands desk draws, such as charts, and its `after_app_build` hook
+# builds page islands; yarn does neither. Page islands here hold only Frappe's pages, which a
+# bench with no other app's pages uses as they are.
+if [ "$app" = frappe ]; then
+    for script in build-framework.js build-pages.js; do
+        if [ -f "$app_dir/ui/vite/island/$script" ]; then
+            (cd "$app_dir" && node "ui/vite/island/$script" --production)
+        fi
+    done
+fi
+
+# Exported Studio apps are studio/<name>/<scrubbed name>.json; Frappe's own studio/frontend is the editor.
+has_studio_apps() {
+    python3 -c 'import sys; from pathlib import Path; sys.exit(not any(
+        path.stem == path.parent.name.replace(" ", "_").replace("-", "_").lower()
+        for path in Path(sys.argv[1]).glob("studio/*/*.json")))' "$app_dir"
+}
+# The `after_app_build` hook builds them in Python into <app>/public/app_builds, so this needs
+# Frappe's Python package. The build reads no database, so mysqlclient and its headers are left out.
+if [ -f "$bench/apps/frappe/studio/frontend/package.json" ] && has_studio_apps; then
+    echo "==> Building Studio apps"
+    command -v uv > /dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh
+    install_js_dependencies "$bench/apps/frappe/studio/frontend"
+    echo "mysqlclient; python_version < '0'" > "$work/overrides.txt"
+    # Editable, so Frappe finds the editor in this clone; uv takes the Python Frappe requires.
+    (cd "$bench/apps/frappe" && uv venv --quiet "$work/env")
+    VIRTUAL_ENV="$work/env" uv pip install --quiet --override "$work/overrides.txt" -e "$bench/apps/frappe"
+    (cd "$bench/sites" && PYTHONPATH="$app_dir" "$work/env/bin/python" -c \
+        'import sys; from frappe.studio.build import build_standard_apps; build_standard_apps(sys.argv[1:])' "$app")
 fi
 
 # esbuild bundles are optional (an app may only ship a SPA); declared SPA paths are not.
 paths=()
 [ -d "$app_dir/$app/public/dist" ] && paths+=("$app/public/dist")
+[ -d "$app_dir/$app/public/app_builds" ] && paths+=("$app/public/app_builds")
 for spa in "${spas[@]}"; do
     read -r _ out index <<< "$spa"
     for path in "$out" "$index"; do

@@ -22,7 +22,7 @@ defineEmits(['retry'])
 
 <template>
   <SettingsHeader
-    class="!px-4 !pt-6 sm:!px-10 sm:!pt-9 relative z-10 pb-6 grid bg-surface-base grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4"
+    class="!px-4 !pt-6 sm:!px-10 sm:!pt-9 relative z-10 pb-5 grid bg-surface-base grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4"
   >
     <h2 class="text-lg-semibold text-ink-gray-8">{{ title }}</h2>
 
@@ -31,7 +31,7 @@ defineEmits(['retry'])
     <slot name="actions" />
   </SettingsHeader>
 
-  <SettingsBody viewport-class="px-4 pb-10 sm:px-10 sm:pb-16">
+  <SettingsBody viewport-class="px-4 pt-1 pb-10 sm:px-10 sm:pb-16">
     <div v-if="loading" class="space-y-3" role="status" :aria-label="__('Loading')">
       <Skeleton v-for="n in 3" :key="n" class="h-24 rounded-6" />
     </div>

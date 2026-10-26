@@ -12,34 +12,25 @@ from pilot.config.monitor import (
 )
 from pilot.exceptions import BenchError
 from pilot.managers.platform import is_linux
-from pilot.managers.systemd_user import SystemdUserMixin, install_user_timer, user_timer_installed
-from pilot.utils import cli_root
+from pilot.managers.systemd_user import SystemdUserMixin, install_user_service, user_service_installed
+from pilot.utils import cli_root, run_command
 
 if typing.TYPE_CHECKING:
     from pilot.core.bench import Bench
-
-MONITOR_TIMER_TEMPLATE = """\
-[Unit]
-Description=bench monitor timer
-
-[Timer]
-OnBootSec=10s
-OnUnitInactiveSec=10s
-AccuracySec=1s
-
-[Install]
-WantedBy=timers.target
-"""
 
 MONITOR_DAEMON_TEMPLATE = """\
 [Unit]
 Description=bench monitor
 
 [Service]
-Type=oneshot
+Type=simple
 WorkingDirectory={cli_root}
 Environment=PYTHONPATH={cli_root}
+Environment=PYTHONUNBUFFERED=1
 ExecStart={python} -m pilot.core.server.monitoring
+Restart=always
+RestartSec=5s
+MemoryMax=128M
 StandardOutput=append:{cli_root}/system/logs/monitor.log
 StandardError=append:{cli_root}/system/logs/monitor.error.log
 
@@ -49,28 +40,31 @@ WantedBy=default.target
 
 
 class MonitorConfigurator(SystemdUserMixin):
-    """Installs the shared host-wide monitor timer and configures per-bench
-    log files. One timer for the whole host, regardless of how many benches
-    exist - install() is a no-op once it's already set up."""
+    """Installs the shared host-wide monitor service and configures per-bench
+    log files. One service runs host metrics and site uptime pings for every bench."""
 
     def __init__(self, bench: "Bench | None" = None):
         self.bench = bench
         self.unit_name = "pilot-monitor.service"
-        self.timer_unit_name = "pilot-monitor.timer"
         self.monitor_dir = cli_root() / "system" / "monitor"
 
     def install(self) -> None:
-        if user_timer_installed(self.timer_unit_name):
+        """Write, enable and start the service. A no-op when the installed unit is current. A running
+        service is restarted, as `enable --now` would not."""
+        unit_text = self._render_unit()
+        was_installed = user_service_installed(self.unit_name)
+        if was_installed and (self.monitor_dir / self.unit_name).read_text() == unit_text:
             return
         # systemd cannot open the unit's append: targets if this is missing.
         monitor_log_dir().mkdir(parents=True, exist_ok=True)
-        install_user_timer(
-            unit_dir=self.monitor_dir,
-            unit_name=self.unit_name,
-            unit_text=self._render_unit(),
-            timer_unit_name=self.timer_unit_name,
-            timer_text=MONITOR_TIMER_TEMPLATE,
-        )
+        install_user_service(unit_dir=self.monitor_dir, unit_name=self.unit_name, unit_text=unit_text)
+        if was_installed:
+            self.restart()
+
+    def restart(self) -> None:
+        """Restart the service, so it runs the Pilot code on disk."""
+        if user_service_installed(self.unit_name):
+            run_command(self._systemctl("restart", self.unit_name), env=self._systemctl_env())
 
     @property
     def log_path(self) -> Path:

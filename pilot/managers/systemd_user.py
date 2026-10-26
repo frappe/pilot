@@ -81,9 +81,7 @@ def install_user_timer(
     timer_text: str,
 ) -> None:
     """Write a oneshot service + its timer into unit_dir, symlink both into
-    ~/.config/systemd/user, then reload and enable the timer. Shared by
-    MonitorConfigurator and UptimeMonitorConfigurator - identical install
-    shape, different unit content."""
+    ~/.config/systemd/user, then reload and enable the timer."""
     unit_dir.mkdir(parents=True, exist_ok=True)
     service_path = unit_dir / unit_name
     timer_path = unit_dir / timer_unit_name

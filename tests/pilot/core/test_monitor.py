@@ -575,3 +575,46 @@ def test_a_delivered_alert_whose_local_write_failed_is_still_recorded(tmp_path: 
         monitor.send_alert_if_required(_system_record(cpu=95.0))
 
     assert [item.title for item in monitor.bench.notifications.list(10)] == ["Resource limit breached"]
+
+
+def test_run_every_keeps_running_after_a_failed_tick(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pilot.core.server import monitoring
+
+    ticks: list[str] = []
+
+    def job() -> None:
+        ticks.append("tick")
+        if len(ticks) == 1:
+            raise RuntimeError("one bad tick")
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(monitoring.time, "sleep", lambda seconds: None)
+    with pytest.raises(KeyboardInterrupt):
+        monitoring.run_every(10.0, job)
+
+    assert ticks == ["tick", "tick"]
+
+
+def test_main_pings_sites_on_their_own_thread(monkeypatch: pytest.MonkeyPatch) -> None:
+    import threading
+
+    from pilot.core.server import monitoring
+    from pilot.core.site import uptime_monitoring
+
+    loops: list[tuple[str, float, object]] = []
+    uptime_started = threading.Event()
+
+    def record_loop(interval: float, job: object) -> None:
+        loops.append((threading.current_thread().name, interval, job))
+        if threading.current_thread().name == "uptime":
+            uptime_started.set()
+
+    monkeypatch.setattr(monitoring, "run_every", record_loop)
+
+    monitoring.main()
+
+    assert uptime_started.wait(timeout=5)
+    assert sorted(loops, key=lambda loop: loop[1]) == [
+        ("uptime", monitoring.UPTIME_INTERVAL, uptime_monitoring.main),
+        ("MainThread", monitoring.METRICS_INTERVAL, monitoring.collect_metrics),
+    ]

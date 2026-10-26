@@ -58,3 +58,37 @@ class HostnameAliases:
         for alias in _matching(self.bench.config.central.hostname_aliases, alias_type, old_target):
             alias.target = new_target
         return True
+
+    def start_redirecting(self, alias_type: str, target: str) -> list[str]:
+        """Make the aliases serving `target` redirect to it, and return the patterns this changed."""
+        from pilot.config.common import CommonConfig
+
+        with CommonConfig.open(self.bench.path.parent) as common:
+            changed = [
+                alias
+                for alias in _matching(common.central.hostname_aliases, alias_type, target)
+                if not alias.redirect
+            ]
+            for alias in changed:
+                alias.redirect = True
+
+        patterns = [alias.pattern for alias in changed]
+        self._keep_redirect_in_memory(patterns, True)
+        return patterns
+
+    def stop_redirecting(self, patterns: list[str]) -> None:
+        from pilot.config.common import CommonConfig
+
+        if not patterns:
+            return
+        with CommonConfig.open(self.bench.path.parent) as common:
+            for alias in common.central.hostname_aliases:
+                if alias.pattern in patterns:
+                    alias.redirect = False
+
+        self._keep_redirect_in_memory(patterns, False)
+
+    def _keep_redirect_in_memory(self, patterns: list[str], redirect: bool) -> None:
+        for alias in self.bench.config.central.hostname_aliases:
+            if alias.pattern in patterns:
+                alias.redirect = redirect

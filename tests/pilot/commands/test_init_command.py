@@ -172,6 +172,47 @@ def test_a_failed_init_keeps_the_task_records(tmp_path: Path) -> None:
     assert not bench.apps_path.exists()
 
 
+def test_failed_init_preserves_existing_bench_data(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    records = [bench.sites_path / "test.local" / "site_config.json", bench.apps_path / "custom" / "data"]
+    for record in records:
+        record.parent.mkdir(parents=True)
+        record.write_text("preserve me")
+    initializer = BenchInitializer(bench)
+
+    def create_structure_then_fail(on_progress) -> None:
+        initializer._create_bench_structure()
+        raise BenchError("install failed")
+
+    with patch.object(initializer, "_run_steps", create_structure_then_fail), pytest.raises(BenchError):
+        initializer.run()
+
+    assert all(record.read_text() == "preserve me" for record in records)
+
+
+def test_interrupted_init_does_not_publish_a_partial_environment(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.config.write(bench.path)
+    initializer = BenchInitializer(bench)
+
+    def create_environment_then_interrupt(on_progress) -> None:
+        bench.python.parent.mkdir(parents=True)
+        bench.python.touch()
+        raise KeyboardInterrupt
+
+    with (
+        patch.object(initializer, "_run_steps", create_environment_then_interrupt),
+        pytest.raises(KeyboardInterrupt),
+    ):
+        initializer.run()
+
+    assert bench.python.exists()
+    assert not Bench(bench.path).is_initialized
+    with patch.object(initializer, "_run_steps"):
+        initializer.run()
+    assert Bench(bench.path).is_initialized
+
+
 def test_init_builds_the_framework_assets(tmp_path: Path) -> None:
     """A get-app before the first new-site links `sites/assets/frappe` without building it."""
     bench = make_bench(tmp_path)

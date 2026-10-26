@@ -57,6 +57,8 @@ The UI should treat task ids as the handle for long work.
 
 The Frappe branch picker lists the branches reported by the repository. Type a different full branch name and select `Use branch` to choose it. `Set up bench` saves the selection before setup starts. The wizard restores a saved custom branch even when the repository list does not contain it.
 
+For an external database, a blank port uses the bench's configured MariaDB or PostgreSQL port (3310 or 5450 by default), shown as the field's placeholder.
+
 ## Site Navigation
 
 **Visit site** opens the site's Desk URL using the browser's current site session. It does not sign you in or switch users, and shows no loading or success toast. **Login as admin** explicitly creates an admin login session and can replace an existing normal-user session for that site. These actions are available in the sites dropdown, with matching labels on the site detail page.
@@ -69,7 +71,7 @@ Post-save changes such as restarts, firewall sync, WAF sync, or S3 credential sy
 
 ## Cloud Settings Billing
 
-The Billing panel changes the site plan in the dialog. **Change plan** opens an inline plan list from `getPlanOptions`. During a free trial, the list asks for a payment method first and opens the card flow. A bigger plan stops the site for a few minutes, so the panel says so, calls `changePlan`, and opens the `progress_url` that Central returns. That page lives on Central and brings the user back when the site answers. **See more plans in Frappe Cloud** opens Central for custom sizes. During a trial, the panel also says the last day to earn the welcome credit, and that the site sleeps when idle. See the [Cloud SDK](../admin/frontend/cloud-sdk/README.md) for the call shapes.
+The Billing panel changes the site plan in the dialog. **Change plan** opens an inline plan list from `getPlanOptions`. During a free trial, the list says that other plans open once a payment method is added. A bigger plan stops the site for a few minutes, so the panel says so, calls `changePlan`, and opens the `progress_url` that Central returns. That page lives on Central and brings the user back when the site answers. **Check more plans** opens Central for custom sizes. During a trial, a notice above the plan shows the days left, the end date and one **Add payment method** action. That action asks for billing details only when Central still needs them, then shows the payment step. Adding a payment method converts the trial: billing for the plan starts and full server access opens. See the [Cloud SDK](../admin/frontend/cloud-sdk/README.md) for the call shapes.
 
 ## UX Expectations
 

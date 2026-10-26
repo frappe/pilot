@@ -22,6 +22,12 @@ class SiteDomains:
         """Register a domain and return its provider route policy."""
         return self._provider.register(self.site.config.name, domain)
 
+    def attach(self, domain: str, *, primary: bool = False) -> None:
+        if not primary or not self.status(domain)[0]:
+            self.register(domain)
+        if primary:
+            self.set_primary(domain)
+
     def deregister(self, domain: str) -> None:
         self._provider.deregister(self.site.config.name, domain)
 

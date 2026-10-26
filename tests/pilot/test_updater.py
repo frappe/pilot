@@ -6,6 +6,14 @@ from unittest.mock import patch
 import pytest
 
 from pilot import updater
+from pilot.core.server.monitoring_config import MonitorConfigurator
+
+
+@pytest.fixture(autouse=True)
+def _keep_the_host_monitor_running(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    restarts: list[str] = []
+    monkeypatch.setattr(MonitorConfigurator, "restart", lambda self: restarts.append("restart monitor"))
+    return restarts
 
 
 def test_update_available_true_when_tag_differs() -> None:
@@ -64,8 +72,10 @@ def test_perform_upgrade_routes_to_release_when_not_dev() -> None:
     dev.assert_not_called()
 
 
-def test_perform_upgrade_runs_pre_and_post_update_patches_in_order() -> None:
-    calls: list[str] = []
+def test_perform_upgrade_runs_patches_in_order_then_restarts_the_monitor(
+    _keep_the_host_monitor_running: list[str],
+) -> None:
+    calls = _keep_the_host_monitor_running
     with (
         patch.object(updater.pilot, "is_dev_build", True),
         patch.object(updater, "_upgrade_dev", side_effect=lambda _on_progress: calls.append("upgrade")),
@@ -76,7 +86,7 @@ def test_perform_upgrade_runs_pre_and_post_update_patches_in_order() -> None:
     ):
         updater.perform_upgrade()
 
-    assert calls == ["pre_update", "upgrade", "post_update"]
+    assert calls == ["pre_update", "upgrade", "post_update", "restart monitor"]
 
 
 def test_perform_upgrade_skips_post_update_patches_when_upgrade_fails() -> None:

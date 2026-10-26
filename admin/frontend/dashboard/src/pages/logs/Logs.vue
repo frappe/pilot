@@ -353,6 +353,7 @@ onUnmounted(() => stopLive())
           </template>
 
           <Select
+            side="bottom"
             v-model="linesCount"
             :size="isMobile ? 'md' : 'sm'"
             :disabled="liveMode"

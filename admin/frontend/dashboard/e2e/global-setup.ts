@@ -9,6 +9,11 @@ const globalSetup = async (config) => {
   })
   await expect(res).toBeOK()
 
+  const onboarding = await context.patch('/api/v1/settings', {
+    data: { bench: { onboarding: 'dismissed' } },
+  })
+  await expect(onboarding).toBeOK()
+
   await context.storageState({ path: storageState })
   await context.dispose()
 }

@@ -117,7 +117,7 @@ const submit = async () => {
       </div>
 
       <div class="flex gap-2">
-        <Select label="License" v-model="license" :options="licenseOptions" class="flex-1" />
+        <Select side="bottom" label="License" v-model="license" :options="licenseOptions" class="flex-1" />
         <TextInput label="Initial branch" v-model="branch" class="flex-1" />
       </div>
 

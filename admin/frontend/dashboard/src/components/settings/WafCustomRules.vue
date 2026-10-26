@@ -256,7 +256,7 @@ const confirmRemove = () => {
             <div class="flex flex-wrap items-center gap-1 text-ink-gray-7">
               <template v-if="rule.conditions.length > 1">
                 <span>When</span>
-                <Select v-model="rule.match" :options="MATCH_OPTIONS" />
+                <Select side="bottom" v-model="rule.match" :options="MATCH_OPTIONS" />
                 <span>of the following match:</span>
               </template>
 
@@ -276,7 +276,7 @@ const confirmRemove = () => {
                   class="gap-2 grid sm:grid-cols-[10rem_11rem_minmax(0,1fr)_2rem] items-start"
                 >
                   <div class="space-y-1.5 min-w-0">
-                    <Select v-model="cond.field" :options="fieldOptions" class="w-full" />
+                    <Select side="bottom" v-model="cond.field" :options="fieldOptions" class="w-full" />
                     <TextInput
                       v-if="cond.field === 'header'"
                       v-model="cond.header_name"
@@ -285,7 +285,7 @@ const confirmRemove = () => {
                     />
                   </div>
 
-                  <Select v-model="cond.operator" :options="operatorOptions" class="w-full" />
+                  <Select side="bottom" v-model="cond.operator" :options="operatorOptions" class="w-full" />
                   <TextInput
                     v-model="cond.value"
                     :placeholder="placeholder(cond.field)"
@@ -321,7 +321,7 @@ const confirmRemove = () => {
             />
             <div class="flex flex-wrap items-center gap-2 text-ink-gray-7">
               <span>Then</span>
-              <Select v-model="rule.action" :options="actionOptions" class="w-48" />
+              <Select side="bottom" v-model="rule.action" :options="actionOptions" class="w-48" />
               <Button
                 class="ml-auto"
                 variant="ghost"

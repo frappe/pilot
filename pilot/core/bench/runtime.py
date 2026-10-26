@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
+import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
@@ -26,6 +27,27 @@ class BenchRuntime:
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
 
+    def wait_for_database(self, timeout_seconds: float = 60) -> None:
+        from pilot.managers.database import MariaDBManager, PostgresManager
+
+        config = self.bench.config
+        if not config.production.enabled or config.db_type == "sqlite":
+            return
+        manager = (
+            PostgresManager(config.postgres)
+            if config.db_type == "postgres"
+            else MariaDBManager(config.mariadb)
+        )
+        if manager.config.existing:
+            return
+        deadline = time.monotonic() + timeout_seconds
+        while not manager.is_reachable():
+            if time.monotonic() >= deadline:
+                raise BenchError(
+                    "The database did not become ready. Check its service and restart the workload."
+                )
+            time.sleep(0.1)
+
     @property
     def is_database_ready(self) -> bool:
         """Whether the database that Pilot runs for this production bench is reachable.
@@ -39,6 +61,7 @@ class BenchRuntime:
         return manager.config.existing or manager.is_reachable()
 
     def start(self, on_progress: Callable[[str], None]) -> None:
+        self.bench.site_aliases.release_expired()
         initialized = self.bench.is_initialized
         process_manager = self.bench.config.production.process_manager
 
@@ -81,6 +104,7 @@ class BenchRuntime:
         manager.install_config()
         manager.reload_manager_config()
         manager.restart()
+        self.bench.site_aliases.release_expired()
         if include_admin:
             manager.restart_admin()
 
@@ -183,16 +207,16 @@ class BenchRuntime:
         self.bench.write_common_site_config()
 
     def _ensure_admin_dist(self, on_progress: Callable[[str], None]) -> None:
+        from admin.backend.frontend import is_admin_frontend_built
         from pilot import is_dev_build
         from pilot.utils import cli_root
 
         root = cli_root()
-        dist = root / "admin" / "backend" / "static" / "dashboard"
         frontend = root / "admin" / "frontend" / "dashboard"
         # Releases ship the source too; only dev builds may (re)compile it.
         can_build = is_dev_build and (frontend / "package.json").exists()
 
-        if not (dist / "assets").exists() and not can_build:
+        if not is_admin_frontend_built(root) and not can_build:
             raise BenchError(
                 "Admin UI is missing from this release. Reinstall Pilot, or run it from a source checkout."
             )
@@ -200,15 +224,18 @@ class BenchRuntime:
             self._rebuild_admin(on_progress)
 
     def _rebuild_admin(self, on_progress: Callable[[str], None]) -> None:
-        from admin.backend.frontend import build_admin_frontend
+        from admin.backend.frontend import build_admin_frontend, is_admin_frontend_built
+        from pilot.utils import cli_root
 
         try:
             build_admin_frontend(on_progress=on_progress)
         except BenchError as error:
+            if not is_admin_frontend_built(cli_root()):
+                raise
             on_progress(f"  Could not rebuild the admin UI ({error}); serving the existing build.")
 
     def _start_wizard(self, on_progress: Callable[[str], None]) -> None:
-        from admin.backend.frontend import ensure_admin_frontend
+        from admin.backend.frontend import ensure_admin_frontend, is_admin_frontend_built
         from pilot.managers.environment import AdminEnvManager
         from pilot.utils import cli_root
 
@@ -216,8 +243,7 @@ class BenchRuntime:
         admin_mgr = AdminEnvManager(root)
         admin_mgr.ensure()
 
-        assets = root / "admin" / "backend" / "static" / "dashboard" / "assets"
-        if not assets.exists():
+        if not is_admin_frontend_built(root):
             ensure_admin_frontend(on_progress)
 
         port = self._admin_port()

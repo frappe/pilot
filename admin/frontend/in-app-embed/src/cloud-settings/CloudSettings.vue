@@ -119,16 +119,23 @@ const GROUPS = [
   },
 ]
 
+const store = ref(createStore(props.context, __))
+if (props.open) store.value.loadBilling()
+
+// The site config editor reaches past the site, so a free trial site does not get it.
+const TRIAL_HIDDEN_TABS = new Set(['site-config'])
+
 // An omitted or empty selection shows every panel. Unknown names are ignored.
 const visibleGroups = computed(() => {
   const allowed = new Set<string>(props.options.panels || [])
-  if (!allowed.size) return GROUPS
-  const groups = GROUPS.map((group) => ({
-    ...group,
-    tabs: group.tabs.filter((item) => allowed.has(item.value)),
-  })).filter((group) => group.tabs.length)
+  const isShown = (value: string) =>
+    (!allowed.size || allowed.has(value)) &&
+    !(store.value.isOnTrial() && TRIAL_HIDDEN_TABS.has(value))
 
-  return groups
+  return GROUPS.map((group) => ({
+    ...group,
+    tabs: group.tabs.filter((item) => isShown(item.value)),
+  })).filter((group) => group.tabs.length)
 })
 const visibleTabs = computed(() => visibleGroups.value.flatMap((group) => group.tabs))
 const getFirstTab = () =>
@@ -142,7 +149,6 @@ providePortalTarget(overlays)
 
 const isOpen = ref(props.open)
 const tab = ref(getFirstTab())
-const store = ref(createStore(props.context, __))
 
 watch(
   () => props.open,
@@ -150,6 +156,7 @@ watch(
     if (open) {
       store.value = createStore(props.context, __)
       tab.value = getFirstTab()
+      store.value.loadBilling()
     }
 
     isOpen.value = open
@@ -157,6 +164,11 @@ watch(
 )
 
 watch(isOpen, (open) => !open && emit('close'))
+
+// A panel that the trial hides may be the one asked for, so fall back to the first one shown.
+watch(visibleTabs, (tabs) => {
+  if (!tabs.some((item) => item.value === tab.value)) tab.value = getFirstTab()
+})
 
 // Desk sets `data-theme="dark"`. Tailwind apps, such as Raven, set the `dark` class.
 const isPageDark = () =>
@@ -258,6 +270,9 @@ const updateCount = computed(() => store.value.state.marketplace?.update_count |
         </SettingsSidebar>
 
         <SettingsContent class="min-w-0 bg-surface-base">
+          <p v-if="!visibleTabs.length" class="p-8 text-p-base text-ink-gray-6">
+            {{ __('Not in the free trial. Upgrade to use it.') }}
+          </p>
           <SettingsPanel
             v-for="item in visibleTabs"
             :key="item.value"
