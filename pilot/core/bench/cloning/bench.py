@@ -62,12 +62,7 @@ class BenchClone:
 
         on_progress("Creating Python environment with destination editable paths")
         environment = PythonEnvManager(destination)
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            dependencies = executor.submit(self.copy_dependencies, destination) if rebuild else None
-            environment.create_venv()
-            environment.install_apps(destination.apps())
-            if dependencies is not None:
-                dependencies.result()
+        self.create_python_environment(destination, environment, rebuild)
         if rebuild:
             on_progress("Checking Node dependencies for selected branches")
             environment.install_node_dependencies()
@@ -85,6 +80,22 @@ class BenchClone:
             else:
                 on_progress("Installing Node dependencies and rebuilding assets for selected branches")
                 environment.build_assets()
+
+    def create_python_environment(self, destination, environment, rebuild: bool) -> None:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            dependencies = executor.submit(self.copy_dependencies, destination) if rebuild else None
+            try:
+                environment.create_venv()
+                environment.install_apps(destination.apps())
+            except BaseException as error:
+                if dependencies is not None:
+                    try:
+                        dependencies.result()
+                    except BaseException as copy_error:
+                        error.add_note(f"Dependency copying also failed: {copy_error}")
+                raise
+            if dependencies is not None:
+                dependencies.result()
 
     def copy_dependencies(self, destination) -> None:
         from pilot.managers.node_cache import NodeDependencyCache

@@ -1,3 +1,4 @@
+import secrets
 from dataclasses import dataclass
 from typing import Annotated, ClassVar
 
@@ -23,4 +24,7 @@ class CloneSiteCommand(Command):
         if self.target_bench:
             BenchConfig.default(self.target_bench).validate()
         destination = Bench(self.bench.path.parent / self.target_bench) if self.target_bench else self.bench
-        self.bench.site(self.source).clone(self.target, destination, self.admin_password, self.report)
+        password = secrets.token_urlsafe(24) if self.admin_password is None else self.admin_password
+        self.bench.site(self.source).clone(self.target, destination, password, self.report)
+        if self.admin_password is None:
+            self.report(f"Generated Administrator password: {password}")

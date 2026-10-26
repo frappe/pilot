@@ -62,7 +62,8 @@ def add_argument(parser: argparse.ArgumentParser, arg_field: ArgField) -> None:
 
 def add_value_argument(parser: argparse.ArgumentParser, arg_field: ArgField, kwargs: dict[str, Any]) -> None:
     if arg_field.metadata.positional and arg_field.has_default:
-        parser.add_argument(arg_field.name, nargs="?", default=arg_field.default, **kwargs)
+        kwargs.setdefault("nargs", "?")
+        parser.add_argument(arg_field.name, default=arg_field.default, **kwargs)
         return
     if not arg_field.has_default and not arg_field.metadata.required:
         parser.add_argument(arg_field.name, **kwargs)

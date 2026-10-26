@@ -11,6 +11,35 @@ from pilot.managers.environment import PythonEnvManager
 from .git_repository import git
 
 
+@pytest.mark.parametrize("copy_fails", [False, True])
+def test_python_failure_waits_for_dependency_copy_and_preserves_both_errors(source, monkeypatch, copy_fails):
+    from threading import Event
+
+    from pilot.core.bench.cloning.bench import BenchClone
+
+    started, finished = Event(), Event()
+    original = RuntimeError("Python install failed")
+
+    def copy(self, destination):
+        started.set()
+        finished.set()
+        if copy_fails:
+            raise RuntimeError("dependency copy failed")
+
+    def fail(self):
+        assert started.wait(5)
+        raise original
+
+    monkeypatch.setattr(BenchClone, "copy_dependencies", copy)
+    monkeypatch.setattr(PythonEnvManager, "create_venv", fail)
+    with pytest.raises(RuntimeError, match="Python install failed") as caught:
+        BenchClone(source, "copy").run(on_progress=lambda message: None)
+    assert caught.value is original
+    assert finished.is_set()
+    if copy_fails:
+        assert any("dependency copy failed" in note for note in original.__notes__)
+
+
 @pytest.mark.parametrize("declaration", ['build_dir = "desk"', 'index_html_path = "frappe/www/custom.html"'])
 def test_declared_asset_builds_skip_incomplete_standard_output_cache(source, declaration):
     from pilot.core.bench.build_artifacts import BuildArtifacts
