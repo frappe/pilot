@@ -71,6 +71,28 @@ def test_new_command_creates_directory_and_toml(tmp_path: Path, monkeypatch: pyt
     assert 'name = "my-bench"' in content
 
 
+@pytest.mark.parametrize(
+    ("options", "expected_branch"),
+    [({}, "version-16"), ({"frappe_branch": "develop"}, "develop")],
+)
+def test_new_command_persists_framework_branch(tmp_path: Path, options: dict, expected_branch: str) -> None:
+    from pilot.commands.bench.create import NewCommand
+
+    target = tmp_path / "benches" / "my-bench"
+    NewCommand(
+        target_directory=target, bench_name="my-bench", admin_password="Test-password1!", **options
+    ).run()
+
+    with (target / "bench.toml").open("rb") as f:
+        data = tomllib.load(f)
+    assert data["apps"][0] == {
+        "name": "frappe",
+        "repo": "https://github.com/frappe/frappe",
+        "branch": expected_branch,
+    }
+    assert BenchConfig.read(target).framework_app.branch == expected_branch
+
+
 def test_new_command_raises_if_bench_already_exists(tmp_path: Path) -> None:
     from pilot.commands.bench.create import NewCommand
 

@@ -66,12 +66,14 @@ class Bench:
         db_type: str = "mariadb",
         admin_password: str = "",
         on_progress: Callable[[str], None] = lambda message: None,
+        frappe_branch: str | None = None,
     ) -> "Bench":
         from pilot.core.bench.creator import BenchCreator
 
         return BenchCreator(
             target_directory,
             name,
+            frappe_branch=frappe_branch,
             process_manager=process_manager,
             admin_domain=admin_domain,
             admin_tls=admin_tls,

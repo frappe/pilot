@@ -26,6 +26,7 @@ class BenchCreator:
         admin_tls: bool | None = None,
         db_type: str = "mariadb",
         admin_password: str = "",
+        frappe_branch: str | None = None,
     ) -> None:
         self.target_directory = target_directory
         self.name = name
@@ -34,6 +35,7 @@ class BenchCreator:
         self.admin_tls = admin_tls
         self.db_type = db_type
         self.admin_password = admin_password
+        self.frappe_branch = frappe_branch
 
     def run(self, on_progress: Callable[[str], None] = lambda message: None) -> "Bench":
         from pilot.config import BenchConfig
@@ -80,6 +82,8 @@ class BenchCreator:
             "db_type": self.db_type,
             "lite_mode_enabled": True,
         }
+        if self.frappe_branch is not None:
+            settings["app_branch"] = self.frappe_branch
         if self.process_manager:
             settings["production_process_manager"] = self.process_manager
         return settings

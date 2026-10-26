@@ -12,6 +12,9 @@ class NewCommand(Command):
     bench_mode: ClassVar[BenchMode] = BenchMode.NONE
 
     bench_name: Annotated[str, Arg(help="Name for the new bench.", metavar="name")]
+    frappe_branch: Annotated[
+        str | None, Arg(help="Frappe branch to use (default: version-16).")
+    ] = None
     target_directory: Annotated[Path | None, Arg(cli=False)] = None
     process_manager: Annotated[str, Arg(cli=False)] = ""
     admin_domain: Annotated[
@@ -45,6 +48,7 @@ class NewCommand(Command):
         Bench.create_at(
             self.target_directory,
             self.bench_name,
+            frappe_branch=self.frappe_branch,
             process_manager=self.process_manager,
             admin_domain=self.admin_domain,
             admin_tls=self.admin_tls,
