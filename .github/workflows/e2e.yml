@@ -1,143 +1,33 @@
-name: E2E (Admin UI)
-
+name: App Install Cache Probe
 on:
-  push:
-    branches: [develop]
-  pull_request:
-    branches: [develop]
-  # Heavy (pilot init clones the framework); allow manual runs too.
   workflow_dispatch:
-
 jobs:
-  e2e:
+  probe:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    name: e2e (${{ matrix.variant }})
-    strategy:
-      # Variants run as independent jobs in parallel, so adding one doesn't add
-      # wall-clock time. Don't cancel the others if one fails.
-      fail-fast: false
-      matrix:
-        include:
-          # Dev bench on the rootless, per-user MariaDB server the wizard
-          # provisions from scratch.
-          - variant: mariadb
-            db_type: mariadb
-          # PostgreSQL bench on the rootless, per-user PostgreSQL server the
-          # wizard provisions from scratch.
-          - variant: postgres
-            db_type: postgres
-
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
-
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-
-      - name: Install common system dependencies
+      - name: Setup Pilot
         run: |
-          # Runners preconfigure Microsoft apt repos that intermittently 403;
-          # they aren't needed here and otherwise fail the whole apt-get update.
-          sudo rm -f /etc/apt/sources.list.d/microsoft*.list /etc/apt/sources.list.d/azure*.list
-          sudo apt-get update -y
-          sudo apt-get install -y redis-server git nginx openssl
-          sudo systemctl start redis-server
-
-      - name: Install MariaDB
-        if: matrix.db_type == 'mariadb'
-        env:
-          MARIADB_REPO_SETUP_URL: https://r.mariadb.com/downloads/mariadb_repo_setup
-          MARIADB_VERSION: "11.8"
+          curl -fsSL https://raw.githubusercontent.com/frappe/pilot/develop/install.sh | sh
+          export PATH="$HOME/pilot/bin:$HOME/.local/bin:$PATH"
+          printf '%s\n' "$HOME/pilot/bin" "$HOME/.local/bin" >> "$GITHUB_PATH"
+          pilot new cache-proof --frappe-branch develop
+          pilot -b cache-proof init --commit 2d2094c252060a5c478eec0efe8dd904b52f985b
+      - name: Start Pilot
         run: |
-          curl -LsSf "$MARIADB_REPO_SETUP_URL" -o /tmp/mariadb_repo_setup
-          sudo bash /tmp/mariadb_repo_setup \
-            --mariadb-server-version="mariadb-$MARIADB_VERSION"
-          sudo apt-get update -y
-          sudo apt-get install -y mariadb-server mariadb-client libmariadb-dev
-          mariadbd --version
-          # bench runs its own rootless, per-user MariaDB server (see
-          # MariaDBManager) — disable the system service install.sh would
-          # also disable, so it doesn't hold the port the wizard provisions
-          # a fresh server on.
-          sudo systemctl disable --now mariadb
-
-      - name: Install PostgreSQL
-        if: matrix.db_type == 'postgres'
-        run: |
-          sudo apt-get install -y postgresql postgresql-client libpq-dev libmariadb-dev
-          # Same as MariaDB above: bench provisions its own rootless server.
-          sudo systemctl disable --now postgresql
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+          pilot -b cache-proof start > "$RUNNER_TEMP/pilot.log" 2>&1 &
+          curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 1 http://127.0.0.1:7000/api/v1/health
+      - name: Probe stale module cache
+        run: python scripts/probe-install-cache.py
+      - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          enable-cache: true
-
-      - name: Install yarn, Pilot and e2e deps
-        run: |
-          npm install -g yarn
-          pip install -e ".[test,admin,e2e]"
-
-      - name: Cache admin frontend node_modules
-        uses: actions/cache@v4
-        with:
-          path: admin/frontend/dashboard/node_modules
-          key: admin-npm-${{ runner.os }}-${{ hashFiles('admin/frontend/dashboard/package-lock.json') }}
-
-      - name: Install admin frontend deps
-        # The harness builds the admin UI from source (E2E_BUILD_ADMIN below)
-        # around the bench lifecycle, so it just needs node_modules.
-        working-directory: admin/frontend/dashboard
-        run: npm ci
-
-      - name: Cache Playwright browser
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'admin/frontend/dashboard/package-lock.json') }}
-
-      - name: Install Playwright browser
-        run: playwright install --with-deps chromium
-
-      - name: Install dashboard Playwright browser
-        working-directory: admin/frontend/dashboard
-        run: npx playwright install chromium
-
-      - name: Test Cloud Settings embed
-        if: matrix.db_type == 'mariadb'
-        run: |
-          npm ci --prefix admin/frontend/cloud-sdk
-          npm ci --prefix admin/frontend/in-app-embed
-          npm --prefix admin/frontend/cloud-sdk test
-          npm --prefix admin/frontend/cloud-sdk run build
-          npm --prefix admin/frontend/in-app-embed run build
-          cd admin/frontend/dashboard
-          npx playwright test --config cloud-settings.config.ts
-
-      - name: Run e2e tests
-        working-directory: tests/e2e
-        # PILOT_BIN is intentionally unset so the harness uses the repo launcher
-        # (<repo>/bin/pilot), which writes to <repo>/benches where the harness reads.
-        run: pytest -v -s --durations=10
-        env:
-          E2E_MARIADB_PASSWORD: admin
-          E2E_POSTGRES_PASSWORD: admin
-          # CI validates this branch's frontend, so build the admin UI from source.
-          E2E_BUILD_ADMIN: "1"
-          E2E_DB_TYPE: ${{ matrix.db_type }}
-          GITHUB_TOKEN: ${{ github.token }}
-
-      - name: Upload Playwright traces
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-traces-${{ matrix.variant }}
-          path: |
-            tests/e2e/test-results
-            admin/frontend/dashboard/test-results
-          retention-days: 7
+          name: app-install-cache-proof
+          path: cache-proof-results/
