@@ -159,14 +159,10 @@ pkg_available() {
 }
 
 # Naming an installed provider's package again makes pacman remove the provider.
-pkg_install_missing() {
-    missing=""
+missing_packages() {
     for package in "$@"; do
-        pkg_installed "$package" || missing="$missing $package"
+        pkg_installed "$package" || printf '%s\n' "$package"
     done
-    [ -z "$missing" ] && return 0
-    # shellcheck disable=SC2086
-    pkg_install $missing
 }
 
 # Vendors (MariaDB, NodeSource, Homebrew) only publish `curl | bash` installers
@@ -190,7 +186,7 @@ fetch_and_run_as_root() {
     rm -f "$tmp"
 }
 
-# download_installer needs curl before bootstrap_packages would install it.
+# download_installer needs curl before the system packages are installed.
 ensure_curl() {
     command -v curl >/dev/null 2>&1 && return 0
     [ "$DISTRO" = "macos" ] && return 0
@@ -227,13 +223,13 @@ ensure_homebrew() {
 bootstrap_packages() {
     case "$DISTRO" in
         macos)
-            pkg_install git python3 ;;
+            printf '%s\n' git python3 ;;
         debian|ubuntu)
-            pkg_install git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file ;;
+            printf '%s\n' git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file ;;
         fedora)
-            pkg_install git curl bash sudo shadow-utils python3 python3-devel gcc gcc-c++ make tzdata cronie file ;;
+            printf '%s\n' git curl bash sudo shadow-utils python3 python3-devel gcc gcc-c++ make tzdata cronie file ;;
         arch)
-            pkg_install git curl bash sudo python base-devel tzdata cronie file ;;
+            printf '%s\n' git curl bash sudo python base-devel tzdata cronie file ;;
     esac
 }
 
@@ -281,33 +277,33 @@ add_fluent_bit_repo() {
 # One MariaDB, PostgreSQL and Redis per bench user (rootless, systemctl --user),
 # shared across that user's benches. The dev headers are for the Python client
 # libraries frappe's virtualenv compiles during `pilot init`.
-install_database_engines() {
+database_packages() {
     case "$DISTRO" in
         macos)
-            pkg_install "mariadb@$MARIADB_VERSION" "postgresql@$POSTGRES_VERSION" redis ;;
+            printf '%s\n' "mariadb@$MARIADB_VERSION" "postgresql@$POSTGRES_VERSION" redis ;;
         debian|ubuntu)
-            pkg_install mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config redis-server ;;
+            printf '%s\n' mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config redis-server ;;
         fedora)
             # Fedora 41+ ships valkey in place of redis (the alias the runtime resolves).
-            pkg_install mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config valkey ;;
+            printf '%s\n' mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config valkey ;;
         arch)
-            pkg_install_missing mariadb mariadb-clients mariadb-libs postgresql postgresql-libs pkgconf redis ;;
+            missing_packages mariadb mariadb-clients mariadb-libs postgresql postgresql-libs pkgconf redis ;;
     esac
 }
 
 # What `pilot setup production` needs. Installing the WAF module up front keeps
 # enabling the WAF later a non-root operation too.
-install_production_packages() {
+production_packages() {
     case "$DISTRO" in
-        macos)  pkg_install nginx certbot ;;
+        macos)  printf '%s\n' nginx certbot ;;
         debian|ubuntu|fedora)
             waf=$(waf_packages)
-            [ -n "$waf" ] || echo "Warning: the nginx ModSecurity module is not packaged for this release, so the WAF is unavailable."
+            [ -n "$waf" ] || echo "Warning: the nginx ModSecurity module is not packaged for this release, so the WAF is unavailable." >&2
             # shellcheck disable=SC2086
-            pkg_install nginx certbot supervisor $waf
+            printf '%s\n' nginx certbot supervisor $waf
             # The bench user cannot sudo apt, so `pilot setup telemetry` relies on this install.
-            if pkg_available fluent-bit; then pkg_install fluent-bit; fi ;;
-        arch)   pkg_install nginx certbot supervisor ;;
+            if pkg_available fluent-bit; then printf '%s\n' fluent-bit; fi ;;
+        arch)   printf '%s\n' nginx certbot supervisor ;;
     esac
 }
 
@@ -392,10 +388,10 @@ install_system_packages() {
     ensure_curl
     add_distro_repos
     pkg_update
-    bootstrap_packages
+    # Package lists contain whitespace-separated package names.
+    # shellcheck disable=SC2046
+    pkg_install $(bootstrap_packages) $(database_packages) $(production_packages)
     enable_cron
-    install_database_engines
-    install_production_packages
     # shellcheck disable=SC2086
     disable_system_services $new_services
     install_node

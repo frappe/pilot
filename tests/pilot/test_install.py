@@ -133,6 +133,54 @@ system_packages_present
     assert result.returncode != 0
 
 
+@pytest.mark.parametrize(
+    ("distro", "bootstrap"),
+    [
+        ("macos", "git python3"),
+        ("debian", "git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file"),
+        ("ubuntu", "git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file"),
+        (
+            "fedora",
+            "git curl bash sudo shadow-utils python3 python3-devel gcc gcc-c++ make tzdata cronie file",
+        ),
+        ("arch", "git curl bash sudo python base-devel tzdata cronie file"),
+    ],
+)
+def test_system_packages_are_installed_in_one_transaction(
+    distro: str, bootstrap: str, tmp_path: Path
+) -> None:
+    result = run_installer_functions(
+        f"""
+DISTRO={distro}
+is_root() {{ return 0; }}
+services_to_disable() {{ :; }}
+ensure_curl() {{ :; }}
+add_distro_repos() {{ :; }}
+pkg_update() {{ :; }}
+pkg_available() {{ return 0; }}
+pkg_installed() {{ return 1; }}
+pkg_install() {{ printf 'install:%s\\n' "$*"; }}
+enable_cron() {{ :; }}
+disable_system_services() {{ :; }}
+install_node() {{ :; }}
+ensure_tzdata() {{ :; }}
+install_system_packages
+""",
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    installs = [
+        line.removeprefix("install:").split()
+        for line in result.stdout.splitlines()
+        if line.startswith("install:")
+    ]
+    assert len(installs) == 1
+    expected = bootstrap.split() + EXPECTED_PACKAGES[distro]
+    if distro in {"debian", "ubuntu", "fedora"}:
+        expected.append("fluent-bit")
+    assert installs[0] == expected
+
+
 def test_non_root_install_skips_provisioning_only_when_stack_is_present(
     tmp_path: Path,
 ) -> None:
@@ -157,10 +205,11 @@ system_packages_present() { return 1; }
 ensure_curl() { echo ensure_curl; }
 add_distro_repos() { echo add_distro_repos; }
 pkg_update() { echo pkg_update; }
-bootstrap_packages() { echo bootstrap_packages; }
+bootstrap_packages() { echo bootstrap-package; }
 enable_cron() { echo enable_cron; }
-install_database_engines() { echo install_database_engines; }
-install_production_packages() { echo install_production_packages; }
+database_packages() { echo database-package; }
+production_packages() { echo production-package; }
+pkg_install() { echo "pkg_install $*"; }
 disable_system_services() { echo disable_system_services; }
 install_node() { echo install_node; }
 ensure_tzdata() { echo ensure_tzdata; }
@@ -169,7 +218,9 @@ install_system_packages
         tmp_path,
     )
     assert provisioned.returncode == 0, provisioned.stderr
-    assert "install_database_engines" in provisioned.stdout.splitlines()
+    assert (
+        "pkg_install bootstrap-package database-package production-package" in provisioned.stdout.splitlines()
+    )
 
 
 def zoneinfo_dir(tmp_path: Path, *, with_alias: bool) -> Path:
@@ -267,15 +318,13 @@ def test_missing_waf_module_is_skipped_with_a_warning(tmp_path: Path) -> None:
         """
 DISTRO=ubuntu
 pkg_available() { return 1; }
-pkg_install() { echo "pkg_install $*"; }
-install_production_packages
+production_packages
 """,
         tmp_path,
     )
     assert result.returncode == 0, result.stderr
-    assert "WAF is unavailable" in result.stdout
-    assert "pkg_install nginx certbot supervisor" in result.stdout
-    assert "modsecurity" not in result.stdout.split("pkg_install", 1)[1]
+    assert "WAF is unavailable" in result.stderr
+    assert result.stdout.splitlines() == ["nginx", "certbot", "supervisor"]
 
 
 def test_arch_keeps_an_installed_mariadb_provider(tmp_path: Path) -> None:
@@ -284,13 +333,12 @@ def test_arch_keeps_an_installed_mariadb_provider(tmp_path: Path) -> None:
         """
 DISTRO=arch
 pkg_installed() { case "$1" in mariadb*) return 0 ;; *) return 1 ;; esac; }
-pkg_install() { echo "pkg_install $*"; }
-install_database_engines
+database_packages
 """,
         tmp_path,
     )
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "pkg_install postgresql postgresql-libs pkgconf redis"
+    assert result.stdout.splitlines() == ["postgresql", "postgresql-libs", "pkgconf", "redis"]
 
 
 def test_sudoers_grant_falls_back_when_wildcards_are_rejected(tmp_path: Path) -> None:
