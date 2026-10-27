@@ -111,6 +111,7 @@ class MigrationOperation:
     chain: list[dict] = field(default_factory=list)  # ordered chain task records
     revert_checkpoints: dict = field(default_factory=dict)
     decisions: list = field(default_factory=list)  # user decisions, e.g. patch skips
+    recovery_events: list = field(default_factory=list)
 
     bench: "Bench" = field(default=None, repr=False, compare=False)  # type: ignore[assignment]
     store: "MigrationStore" = field(default=None, repr=False, compare=False)  # type: ignore[assignment]
@@ -547,6 +548,7 @@ class MigrationOperation:
             "chain": self.chain,
             "revert_checkpoints": self.revert_checkpoints,
             "decisions": self.decisions,
+            "recovery_events": self.recovery_events,
         }
 
     @classmethod
@@ -571,6 +573,7 @@ class MigrationOperation:
             chain=data.get("chain", []),
             revert_checkpoints=data.get("revert_checkpoints", {}),
             decisions=data.get("decisions", []),
+            recovery_events=data.get("recovery_events", []),
         )
         operation.bench = bench
         operation.store = store
