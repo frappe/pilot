@@ -220,4 +220,4 @@ def test_build_env_finds_pnpm_installed_into_local_after_startup(tmp_path: Path,
         (tmp_path / ".local" / "bin").mkdir(parents=True)
         (tmp_path / ".local" / "bin" / "pnpm").write_text("")
 
-        assert manager._build_env()["PATH"].split(":")[0] == str(tmp_path / ".local" / "bin")
+        assert manager._build_env()["PATH"].split(":") == ["/usr/bin", str(tmp_path / ".local" / "bin")]
