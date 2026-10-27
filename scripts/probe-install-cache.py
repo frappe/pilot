@@ -14,7 +14,7 @@ doctype = module / 'doctype/cache_probe_item'
 doctype.mkdir(parents=True)
 for path in (app / 'cache_probe', module, module / 'doctype', doctype):
     (path / '__init__.py').write_text('')
-(app / 'cache_probe/hooks.py').write_text('app_name = "cache_probe"\napp_title = "Cache Probe"\napp_publisher = "Frappe"\napp_email = "test@example.com"\napp_license = "MIT"\n')
+(app / 'cache_probe/hooks.py').write_text('app_name = "cache_probe"\napp_title = "Cache Probe"\napp_description = "Isolated cache probe"\napp_publisher = "Frappe"\napp_email = "test@example.com"\napp_license = "MIT"\n')
 (app / 'cache_probe/modules.txt').write_text('Cache Probe\n')
 (doctype / 'cache_probe_item.py').write_text('from frappe.model.document import Document\nclass CacheProbeItem(Document):\n    pass\n')
 (doctype / 'cache_probe_item.json').write_text(json.dumps({
