@@ -159,6 +159,8 @@ install_system_packages
     assert result.returncode == 0, result.stderr
     installs = [line for line in result.stdout.splitlines() if line.startswith("install:")]
     assert len(installs) == 1
+    packages = installs[0].removeprefix("install:").split()
+    assert {"git", *EXPECTED_PACKAGES[distro]} <= set(packages)
 
 
 def test_non_root_install_skips_provisioning_only_when_stack_is_present(
@@ -198,7 +200,9 @@ install_system_packages
         tmp_path,
     )
     assert provisioned.returncode == 0, provisioned.stderr
-    assert any(line.startswith("pkg_install ") for line in provisioned.stdout.splitlines())
+    assert (
+        "pkg_install bootstrap-package database-package production-package" in provisioned.stdout.splitlines()
+    )
 
 
 def zoneinfo_dir(tmp_path: Path, *, with_alias: bool) -> Path:
