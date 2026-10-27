@@ -157,10 +157,10 @@ class PythonEnvManager:
         """Build subprocess env with yarn and pnpm on PATH and macOS mysqlclient flags."""
         env = os.environ.copy()
 
-        # A tool can be missing, for example while C extensions compile before Node is set up.
+        # Append tool directories so their bundled Node cannot override the selected version.
         for manager in PACKAGE_MANAGERS:
             if manager.is_installed:
-                env["PATH"] = os.pathsep.join([str(Path(manager.bin).parent), env.get("PATH", "")])
+                env["PATH"] = os.pathsep.join([env.get("PATH", ""), str(Path(manager.bin).parent)])
 
         add_mysqlclient_flags(env)
 
