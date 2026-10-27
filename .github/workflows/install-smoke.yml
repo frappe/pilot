@@ -1,25 +1,57 @@
-name: System Package Transaction Benchmark
+name: Install Script Smoke Tests
 
 on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - install.sh
+      - scripts/smoke_install.sh
+      - scripts/smoke_install_macos.sh
+      - .github/workflows/install-smoke.yml
   workflow_dispatch:
 
 jobs:
-  benchmark:
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        mode: [before, after]
-        repeat: [1, 2, 3]
+  shellcheck:
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
-      - name: Benchmark package installation
-        env:
-          MODE: ${{ matrix.mode }}
-        run: bash scripts/benchmark-package-transactions.sh
-      - uses: actions/upload-artifact@v4
-        if: always()
+      - name: Lint install.sh
+        run: shellcheck -s sh install.sh
+
+      - name: Lint smoke test script
+        run: shellcheck scripts/smoke_install.sh
+
+      - name: Lint macOS smoke test script
+        run: shellcheck scripts/smoke_install_macos.sh
+
+  smoke:
+    needs: shellcheck
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - debian:bookworm
+          - ubuntu:24.04
+          - fedora:latest
+          - archlinux:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run install.sh inside ${{ matrix.image }}
+        run: ./scripts/smoke_install.sh "${{ matrix.image }}"
+
+  smoke-macos:
+    needs: shellcheck
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Node.js 24
+        uses: actions/setup-node@v4
         with:
-          name: packages-${{ matrix.mode }}-${{ matrix.repeat }}
-          path: package-benchmark/
+          node-version: '24'
+          
+      - name: Run install.sh on macOS
+        run: ./scripts/smoke_install_macos.sh
