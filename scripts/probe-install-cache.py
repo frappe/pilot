@@ -42,15 +42,16 @@ for preclear in (False, True):
     site = f'cache-{int(preclear)}.localhost'
     execute(['pilot', '-b', 'cache-proof', 'new-site', site, '--apps', 'frappe', '--admin-password', 'admin'], f'{site}-create.log')
     timings = [execute([*frappe_call, '--site', site, 'clear-cache'], f'{site}-clear-{repeat}.log')[0] for repeat in range(3)]
-    seed = f'''import frappe, json
+    (app / 'cache_probe/modules.txt').write_text('')
+    seed = f'''import frappe
 frappe.init({site!r})
 frappe.connect()
-mapping = dict(frappe.local.app_modules)
-mapping['cache_probe'] = []
-frappe.cache.set_value('app_modules', mapping)
+frappe.cache.delete_value('app_modules')
+frappe.setup_module_map(include_all_apps=True)
 frappe.destroy()
 '''
     execute([python, '-c', seed], f'{site}-seed.log')
+    (app / 'cache_probe/modules.txt').write_text('Cache Probe\n')
     if preclear:
         execute([*frappe_call, '--site', site, 'clear-cache'], f'{site}-preclear.log')
     elapsed, _ = execute([*frappe_call, '--site', site, 'install-app', 'cache_probe'], f'{site}-install.log')
