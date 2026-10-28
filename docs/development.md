@@ -28,6 +28,10 @@ benches/dev-gameplan/              created by pilot dev setup
 
 Both are fixed once the bench exists. Run `pilot dev drop` to start over with different ones.
 
+To start a new workspace site with an existing site's database and uploads, use `pilot dev setup --from-site SOURCE_BENCH/SOURCE_SITE`. Setup uses the source's MariaDB or PostgreSQL engine unless `--database` selects that same engine explicitly. SQLite copying is not supported. The destination bench must contain all apps installed on the source site; install any additional apps before retrying setup. Copying creates the workspace's usual site, enables developer mode, migrates it against the checkout, and uses the development login `Administrator / admin`. Scheduler and outgoing mail remain disabled. The source site is unchanged.
+
+`--from-site` refuses to overwrite an existing workspace site. After the initial copy, run `pilot dev setup` without the flag to update the workspace normally.
+
 Setup records the bench's name in `pilot-bench` inside the repository's git directory. Pilot commands run inside the repository read it to find the bench. If the record is missing or names a bench that no longer links the repository, Pilot looks through every bench's `bench.toml` instead. `pilot dev drop` removes the record. When git cannot read the repository's git directory, setup writes no record.
 
 Run `pilot dev setup` again after pulling. It installs new Python and JavaScript requirements, migrates the site, and builds the app's assets again. If an earlier run stopped before the app was installed on the site, it installs the app first.

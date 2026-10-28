@@ -207,6 +207,23 @@ def test_failed_object_copy_discards_partial_objects_before_clone(source, monkey
     assert not list(destination.parent.glob(".pilot-git-*"))
 
 
+def test_clone_materializes_linked_app_without_retaining_checkout_configuration(source):
+    app = source.apps_path / "frappe"
+    checkout = source.path.parent / "checkout"
+    app.rename(checkout)
+    app.symlink_to(checkout, target_is_directory=True)
+    source.config.apps[0].path = str(checkout)
+    source.config.write(source.path)
+
+    destination = source.clone("independent", on_progress=lambda message: None, branch="current")
+
+    assert not (destination.apps_path / "frappe").is_symlink()
+    assert destination.config.apps[0].path == ""
+    assert (destination.apps_path / "frappe/frappe/__init__.py").read_bytes() == (
+        checkout / "frappe/__init__.py"
+    ).read_bytes()
+
+
 def test_bench_clone_preserves_dirty_files_but_has_independent_git_and_ports(source):
     app = source.apps_path / "frappe"
     (app / "frappe/__init__.py").write_text("VALUE = 'dirty'\n")

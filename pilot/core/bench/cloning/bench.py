@@ -144,6 +144,7 @@ class BenchClone:
         destination.config.apps = [copy.deepcopy(app.config) for app in self.source.apps()]
         configured = {app.name: app.repo for app in self.source.config.apps}
         for app in destination.config.apps:
+            app.path = ""
             app.repo = app.repo or configured.get(app.name) or str(self.source.apps_path / app.name)
         destination.config.watch_admin_js = False
         destination.config.write(destination.path)
