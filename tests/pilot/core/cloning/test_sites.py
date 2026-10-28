@@ -199,9 +199,10 @@ def test_clone_file_cleanup_failure_keeps_original_error(source, monkeypatch):
     assert (source.sites_path / "failed.localhost/site_config.json").exists()
 
 
+@pytest.mark.parametrize("cleanup_failure", [None, "hosts", "database"])
 @pytest.mark.parametrize("existing_hosts_entry", [False, True])
 def test_late_clone_failure_removes_owned_hosts_and_refreshes_nginx(
-    source, monkeypatch, existing_hosts_entry
+    source, monkeypatch, existing_hosts_entry, cleanup_failure
 ):
     from pathlib import Path
 
@@ -220,17 +221,26 @@ def test_late_clone_failure_removes_owned_hosts_and_refreshes_nginx(
 
     monkeypatch.setattr(Path, "read_text", hosts)
     monkeypatch.setattr(SiteDatabaseClone, "run", lambda self: None)
-    monkeypatch.setattr(SiteDatabaseClone, "cleanup", lambda self: events.append("database removed"))
+
+    def cleanup(self):
+        events.append("database removed")
+        if cleanup_failure == "database":
+            raise RuntimeError("database cleanup failed")
+
+    def remove_hosts(name):
+        events.append("hosts removed")
+        if cleanup_failure == "hosts":
+            raise RuntimeError("hosts cleanup failed")
+
+    monkeypatch.setattr(SiteDatabaseClone, "cleanup", cleanup)
     monkeypatch.setattr(SiteCommands, "set_admin_password", lambda *args: None)
     monkeypatch.setattr(SiteProvisioner, "write_pilot_communication_config", lambda *args: None)
     monkeypatch.setattr(SiteProvisioner, "add_to_hosts", lambda *args: events.append("hosts added"))
-    monkeypatch.setattr(
-        "pilot.managers.platform.remove_hosts_entry", lambda name: events.append("hosts removed")
-    )
+    monkeypatch.setattr("pilot.managers.platform.remove_hosts_entry", remove_hosts)
     monkeypatch.setattr("pilot.core.site.clone_runtime.CloneRuntime", lambda *args, **kwargs: nullcontext())
 
     def reload(self):
-        if (source.sites_path / "failed.localhost").exists():
+        if "database removed" not in events:
             events.append("nginx published")
             raise RuntimeError("nginx publish failed")
         events.append("nginx cleared")
@@ -243,3 +253,4 @@ def test_late_clone_failure_removes_owned_hosts_and_refreshes_nginx(
         + ([] if existing_hosts_entry else ["hosts removed"])
         + ["database removed", "nginx cleared"]
     )
+    assert (source.sites_path / "failed.localhost").exists() == (cleanup_failure == "database")

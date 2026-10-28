@@ -121,26 +121,27 @@ class SiteClone:
         from pilot.core.site.drop import SiteDropper
 
         if self.route_registered:
-            try:
-                SiteDropper(site).release_domains([self.name])
-            except Exception as cleanup_error:
-                error.add_note(f"Clone domain cleanup failed: {cleanup_error}")
-                on_progress(f"Clone domain cleanup failed for {self.name}: {cleanup_error}")
+            self.cleanup_step(lambda: SiteDropper(site).release_domains([self.name]), error, on_progress)
+        if self.hosts_added:
+            from pilot.managers.platform import remove_hosts_entry
+
+            self.cleanup_step(lambda: remove_hosts_entry(self.name), error, on_progress)
+        database_clean = not self.database_started or self.cleanup_step(database.cleanup, error, on_progress)
+        if database_clean:
+            self.cleanup_step(lambda: shutil.rmtree(site.path), error, on_progress)
+        if self.nginx_changed:
+            from pilot.managers.nginx import NginxManager
+
+            self.cleanup_step(lambda: NginxManager(self.bench).reload_for_site_change(), error, on_progress)
+
+    def cleanup_step(self, operation, error: BaseException, on_progress) -> bool:
         try:
-            if self.hosts_added:
-                from pilot.managers.platform import remove_hosts_entry
-
-                remove_hosts_entry(self.name)
-            if self.database_started:
-                database.cleanup()
-            shutil.rmtree(site.path)
-            if self.nginx_changed:
-                from pilot.managers.nginx import NginxManager
-
-                NginxManager(self.bench).reload_for_site_change()
+            operation()
         except Exception as cleanup_error:
             error.add_note(f"Clone cleanup failed: {cleanup_error}")
-            on_progress(f"Clone cleanup failed; retained recovery files at {site.path}.")
+            on_progress(f"Clone cleanup failed for {self.name}: {cleanup_error}")
+            return False
+        return True
 
     @property
     def site_config(self) -> dict:

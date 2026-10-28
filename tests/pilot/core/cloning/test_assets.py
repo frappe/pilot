@@ -11,6 +11,54 @@ from pilot.managers.environment import PythonEnvManager
 from .git_repository import git
 
 
+@pytest.mark.parametrize("failure", [PermissionError, OSError])
+def test_asset_fingerprint_rejects_unreadable_metadata(tmp_path, monkeypatch, failure):
+    from pathlib import Path
+
+    from pilot.core.bench.build_artifacts import BuildArtifacts
+
+    path = tmp_path / "source.js"
+
+    def unreadable(self):
+        raise failure("unreadable metadata")
+
+    monkeypatch.setattr(Path, "lstat", unreadable)
+    assert BuildArtifacts.get_file_key(path) is None
+
+
+@pytest.mark.parametrize("entry", ["../../other-bench", "/tmp/outside", "apps/frappe/hooks.py", 123])
+def test_asset_cache_rejects_unsafe_manifest_before_copying(source, monkeypatch, entry):
+    from pilot.core.bench.artifacts import BenchArtifacts
+    from pilot.core.bench.build_artifacts import BuildArtifacts
+
+    artifacts = BuildArtifacts(source)
+    cached = artifacts.root / "key"
+    (cached / "sites/assets").mkdir(parents=True)
+    (cached / "manifest.json").write_text(json.dumps(["sites/assets", entry]))
+    copied = []
+    monkeypatch.setattr(BenchArtifacts, "restore", lambda *args: copied.append(args))
+    assert not artifacts.restore("key")
+    assert copied == []
+
+
+@pytest.mark.parametrize("linked", ["source", "destination"])
+def test_asset_cache_rejects_output_symlink_outside_bench(source, tmp_path, linked):
+    from pilot.core.bench.build_artifacts import BuildArtifacts
+
+    artifacts = BuildArtifacts(source)
+    cached = artifacts.root / "key"
+    (cached / "sites/assets").mkdir(parents=True)
+    (cached / "manifest.json").write_text(json.dumps(["sites/assets"]))
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    path = (cached if linked == "source" else source.path) / "sites/assets"
+    if path.exists():
+        path.rmdir()
+    path.symlink_to(outside, target_is_directory=True)
+    assert not artifacts.restore("key")
+    assert list(outside.iterdir()) == []
+
+
 @pytest.mark.parametrize("copy_fails", [False, True])
 def test_python_failure_waits_for_dependency_copy_and_preserves_both_errors(source, monkeypatch, copy_fails):
     from threading import Event
@@ -173,7 +221,7 @@ def test_build_fingerprint_tracks_link_targets_modes_and_missing_files(source):
     assert BuildArtifacts.get_app_key(app) is not None
     link.unlink()
     link.symlink_to("linked.py")
-    assert BuildArtifacts.get_app_key(app) is not None
+    assert BuildArtifacts.get_app_key(app) is None
     link.unlink()
     link.symlink_to("frappe")
     assert BuildArtifacts.get_app_key(app) is None
