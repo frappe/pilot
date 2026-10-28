@@ -121,20 +121,26 @@ class SiteClone:
         from pilot.core.site.drop import SiteDropper
 
         if self.route_registered:
-            self.cleanup_step(lambda: SiteDropper(site).release_domains([self.name]), error, on_progress)
+            self.has_cleanup_succeeded(
+                lambda: SiteDropper(site).release_domains([self.name]), error, on_progress
+            )
         if self.hosts_added:
             from pilot.managers.platform import remove_hosts_entry
 
-            self.cleanup_step(lambda: remove_hosts_entry(self.name), error, on_progress)
-        database_clean = not self.database_started or self.cleanup_step(database.cleanup, error, on_progress)
+            self.has_cleanup_succeeded(lambda: remove_hosts_entry(self.name), error, on_progress)
+        database_clean = not self.database_started or self.has_cleanup_succeeded(
+            database.cleanup, error, on_progress
+        )
         if database_clean:
-            self.cleanup_step(lambda: shutil.rmtree(site.path), error, on_progress)
+            self.has_cleanup_succeeded(lambda: shutil.rmtree(site.path), error, on_progress)
         if self.nginx_changed:
             from pilot.managers.nginx import NginxManager
 
-            self.cleanup_step(lambda: NginxManager(self.bench).reload_for_site_change(), error, on_progress)
+            self.has_cleanup_succeeded(
+                lambda: NginxManager(self.bench).reload_for_site_change(), error, on_progress
+            )
 
-    def cleanup_step(self, operation, error: BaseException, on_progress) -> bool:
+    def has_cleanup_succeeded(self, operation, error: BaseException, on_progress) -> bool:
         try:
             operation()
         except Exception as cleanup_error:
