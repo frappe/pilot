@@ -136,7 +136,7 @@ pkg_install() {
         # -Sy: stale Arch mirrors 404 otherwise. The download timeout aborts
         # large transfers on slow links, so turn it off.
         arch)   run_sudo pacman -Sy --noconfirm --needed --disable-download-timeout "$@" ;;
-        *)      run_sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "$@" ;;
+        *)      run_sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@" ;;
     esac
 }
 
@@ -282,7 +282,7 @@ database_packages() {
         macos)
             printf '%s\n' "mariadb@$MARIADB_VERSION" "postgresql@$POSTGRES_VERSION" redis ;;
         debian|ubuntu)
-            printf '%s\n' mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config redis-server ;;
+            printf '%s\n' mariadb-server mariadb-server-compat mariadb-client mariadb-client-compat libmariadb-dev postgresql postgresql-client postgresql-contrib libpq-dev pkg-config redis-server ;;
         fedora)
             # Fedora 41+ ships valkey in place of redis (the alias the runtime resolves).
             printf '%s\n' mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config valkey ;;
@@ -417,7 +417,7 @@ system_packages_present() {
         macos)
             packages="mariadb@$MARIADB_VERSION postgresql@$POSTGRES_VERSION redis nginx certbot" ;;
         debian|ubuntu)
-            packages="mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config redis-server nginx certbot supervisor $(waf_packages)" ;;
+            packages="mariadb-server mariadb-server-compat mariadb-client mariadb-client-compat libmariadb-dev postgresql postgresql-client postgresql-contrib libpq-dev pkg-config redis-server nginx certbot supervisor $(waf_packages)" ;;
         fedora)
             packages="mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config valkey nginx certbot supervisor $(waf_packages)" ;;
         arch)
