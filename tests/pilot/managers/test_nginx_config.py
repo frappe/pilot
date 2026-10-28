@@ -447,10 +447,25 @@ def test_in_app_embed_bundle_revalidates_instead_of_immutable(tmp_path: Path) ->
     data["admin"] = {"domain": "admin.example.com"}
     config = _renderer(tmp_path, data).generate_bench_config([], admin_ssl=False)
 
-    start = config.index("location /embed/cloud-settings/")
+    start = config.index("location /embed/cloud-settings/ ")
     embed_block = config[start : config.index("}", start)]
     assert 'add_header Cache-Control "no-cache";' in embed_block
     assert 'Cache-Control "public, immutable"' not in embed_block
+    assert "add_header Access-Control-Allow-Origin * always;" in embed_block
+
+
+def test_sdk_runtime_chunks_are_immutable_and_cross_origin(tmp_path: Path) -> None:
+    # The SDK imports the ES runtime as a module from the site's origin; its chunk
+    # names carry a content hash, so they can be cached for a year.
+    data = copy.deepcopy(_BASE_DATA)
+    data["admin"] = {"domain": "admin.example.com"}
+    config = _renderer(tmp_path, data).generate_bench_config([], admin_ssl=False)
+
+    start = config.index("location /embed/cloud-settings/esm/chunks/")
+    chunk_block = config[start : config.index("}", start)]
+    assert "/static/in-app-embed/cloud-settings/esm/chunks/;" in chunk_block
+    assert 'add_header Cache-Control "public, immutable";' in chunk_block
+    assert "add_header Access-Control-Allow-Origin * always;" in chunk_block
 
 
 def test_every_vhost_gets_error_log_including_admin(tmp_path: Path) -> None:

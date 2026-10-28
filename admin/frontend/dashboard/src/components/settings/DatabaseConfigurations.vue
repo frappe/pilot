@@ -266,13 +266,6 @@ onMounted(load)
         title="Warning"
         description="Enabling snapshot isolation can cause concurrent updates and deletes to fail and roll back transactions. Disabling it removes this write-conflict protection. The global change applies to new database connections; existing connections retain their session setting."
       />
-      <p
-        v-if="editing.name === 'MemoryHigh' || editing.name === 'MemoryMax'"
-        class="text-sm text-ink-gray-6"
-      >
-        Requires MemoryHigh below MemoryMax and projected host memory use at or below 90%. Custom
-        memory settings reset after a RAM change at the host level.
-      </p>
       <div v-if="editor.value_type === 'boolean'" class="flex items-center justify-between gap-4">
         <p class="font-medium text-ink-gray-8">Enabled</p>
         <Switch

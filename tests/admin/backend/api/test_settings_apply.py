@@ -179,3 +179,33 @@ def test_a_failed_restart_on_production_still_rewrites_nginx(tmp_path: Path) -> 
 
     assert response.get_json()["error"]["code"] == "service_restart_failed"
     regenerate_nginx.assert_called_once()
+
+
+@pytest.mark.parametrize(("timeout", "saved"), [(1500, 1500), ("1500", 1500), ("", None), (None, None)])
+def test_settings_save_a_worker_timeout(tmp_path: Path, timeout, saved) -> None:
+    bench_root = tmp_path / "bench"
+    client = _client(bench_root)
+    with (
+        patch("pilot.core.bench.settings.regenerate_configs"),
+        patch("pilot.core.bench.settings.restart_running_workload", return_value=True),
+    ):
+        response = client.patch(
+            "/api/v1/settings",
+            json={"workers": [{"queues": ["guard-review"], "count": 1, "timeout": timeout}]},
+        )
+
+    assert response.status_code == 200
+    assert BenchConfig.from_file(bench_root / "bench.toml").workers.groups[0].timeout == saved
+    assert client.get("/api/v1/settings").get_json()["workers"][0]["timeout"] == saved
+
+
+@pytest.mark.parametrize("timeout", ["soon", True, 600.5, 0])
+def test_settings_reject_a_bad_worker_timeout(tmp_path: Path, timeout) -> None:
+    client = _client(tmp_path / "bench")
+
+    response = client.patch(
+        "/api/v1/settings", json={"workers": [{"queues": ["long"], "count": 1, "timeout": timeout}]}
+    )
+
+    assert response.status_code == 422
+    assert "timeout must be a positive number of seconds" in response.get_json()["error"]["message"]

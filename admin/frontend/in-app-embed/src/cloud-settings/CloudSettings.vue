@@ -124,13 +124,16 @@ if (props.open) store.value.loadBilling()
 
 // The site config editor reaches past the site, so a free trial site does not get it.
 const TRIAL_HIDDEN_TABS = new Set(['site-config'])
+// These panels only show Central's data and links, so a server without Central drops them.
+const CENTRAL_TABS = new Set(['billing', 'advanced'])
 
 // An omitted or empty selection shows every panel. Unknown names are ignored.
 const visibleGroups = computed(() => {
   const allowed = new Set<string>(props.options.panels || [])
   const isShown = (value: string) =>
     (!allowed.size || allowed.has(value)) &&
-    !(store.value.isOnTrial() && TRIAL_HIDDEN_TABS.has(value))
+    !(store.value.isOnTrial() && TRIAL_HIDDEN_TABS.has(value)) &&
+    !(store.value.state.isNotConnectedToCentral && CENTRAL_TABS.has(value))
 
   return GROUPS.map((group) => ({
     ...group,

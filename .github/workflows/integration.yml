@@ -100,6 +100,11 @@ jobs:
         env:
           BENCH_TEST_ROOT: ${{ github.workspace }}/benches/ci-bench
 
+      - name: Verify validation environment package installs
+        run: pytest tests/pilot/core/test_app_validator.py -v -k test_validation_env_reuses_framework_source_but_packages_app
+        env:
+          PILOT_TEST_PACKAGE_INSTALLS: "1"
+
       - name: Stop manually-started redis
         if: ${{ !cancelled() }}
         run: |

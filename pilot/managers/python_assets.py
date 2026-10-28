@@ -93,7 +93,13 @@ class PythonAssetBuilder:
         if app.config.name == "frappe":
             NodePackages(app.path).ensure_installed()
 
-        if not force and not app.has_source_changes and self.install_prebuilt_assets(app):
+        # A linked checkout is built from its own source, never from a release.
+        if (
+            not force
+            and not app.is_linked
+            and not app.has_source_changes
+            and self.install_prebuilt_assets(app)
+        ):
             return
 
         with app.record_lockfiles_on_failure():
@@ -139,7 +145,7 @@ class PythonAssetBuilder:
         )
 
         # Frappe's build already ran the app's own build script, which builds its frontends.
-        if NodePackages(app.path).has_build_script:
+        if NodePackages(app.path).has_script("build"):
             return
         for frontend_dir in self.frontend_dirs(app):
             print(f"  Building {frontend_dir.name} for {app.config.name}...")

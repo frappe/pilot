@@ -344,6 +344,7 @@ def test_only_lite_and_admin_cap_glibc_arenas(tmp_path: Path) -> None:
 
 def test_python_processes_run_unbuffered(tmp_path: Path) -> None:
     bench = make_bench(tmp_path, GunicornConfig())
+    bench.config.admin.enabled = True
     definitions = _definitions(bench)
 
     dev = {pd.name: pd for pd in definitions.process_definitions()}

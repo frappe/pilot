@@ -1,10 +1,28 @@
 import { expect, test } from '@playwright/test'
 import path from 'node:path'
 
-const runtime = `/@fs${path.resolve('../cloud-sdk/dist/embed/cloud-settings.js')}`
+const embed = path.resolve('../../backend/static/in-app-embed/cloud-settings')
+const runtime = `/@fs${embed}/esm/cloud-settings.js`
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/tests/host.html')
+})
+
+test('the SDK loads the UI from Pilot and fetches a panel only when it is shown', async ({ page }) => {
+  const chunks: string[] = []
+  page.on('request', (request) => {
+    if (request.url().includes('/esm/chunks/')) chunks.push(request.url())
+  })
+  await page.route('**/api/method/**', (route) => route.fulfill({ json: { message: {} } }))
+
+  await page.evaluate(async ({ sdk, script }) => {
+    const { openCloudSettings } = await import(sdk)
+    await openCloudSettings({ context: { enabled: true, site_name: 'example.test', bundle: { js: script } }, panels: ['maintenance'] })
+  }, { sdk: `/@fs${path.resolve('../cloud-sdk/src/dialog.ts')}`, script: `/@fs${embed}/cloud-settings.js?v=1` })
+
+  await expect(page.getByRole('heading', { name: 'Maintenance' })).toBeVisible()
+  expect(chunks.some((url) => url.includes('/MaintenancePanel-'))).toBe(true)
+  expect(chunks.some((url) => url.includes('/BillingPanel-'))).toBe(false)
 })
 
 test('mount, replace, and close remove the host and restore focus', async ({ page }) => {

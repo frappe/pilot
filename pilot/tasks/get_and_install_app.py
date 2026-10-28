@@ -35,7 +35,7 @@ class GetAndInstallAppTask(Task):
     def reload_for_new_app(self) -> None:
         """install-app enqueues jobs that import the app, and the running workers
         were started before it existed - they must restart before the site install."""
-        self.bench.reload_workers()
+        self.bench.reload_workers(raises=True)
 
     @step("fetch", lambda self: f"Fetch {self.marketplace_app or self.repo}")
     def fetch(self) -> AppInstallResult:

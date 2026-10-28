@@ -71,6 +71,44 @@ def test_new_command_creates_directory_and_toml(tmp_path: Path, monkeypatch: pyt
     assert 'name = "my-bench"' in content
 
 
+@pytest.mark.parametrize(
+    ("options", "expected_branch"),
+    [({}, "version-16"), ({"frappe_branch": "develop"}, "develop")],
+)
+def test_new_command_persists_framework_branch(tmp_path: Path, options: dict, expected_branch: str) -> None:
+    from pilot.commands.bench.create import NewCommand
+
+    target = tmp_path / "benches" / "my-bench"
+    NewCommand(
+        target_directory=target, bench_name="my-bench", admin_password="Test-password1!", **options
+    ).run()
+
+    with (target / "bench.toml").open("rb") as f:
+        data = tomllib.load(f)
+    assert data["apps"][0] == {
+        "name": "frappe",
+        "repo": "https://github.com/frappe/frappe",
+        "branch": expected_branch,
+    }
+    assert BenchConfig.read(target).framework_app.branch == expected_branch
+
+
+@pytest.mark.parametrize("branch", ["", "-x", "a..b"])
+def test_new_command_rejects_invalid_framework_branch(tmp_path: Path, branch: str) -> None:
+    from pilot.commands.bench.create import NewCommand
+
+    target = tmp_path / "benches" / "my-bench"
+    with pytest.raises(BenchError, match=r"[Bb]ranch"):
+        NewCommand(
+            target_directory=target,
+            bench_name="my-bench",
+            admin_password="Test-password1!",
+            frappe_branch=branch,
+        ).run()
+
+    assert not target.exists()
+
+
 def test_new_command_raises_if_bench_already_exists(tmp_path: Path) -> None:
     from pilot.commands.bench.create import NewCommand
 
@@ -187,7 +225,7 @@ def test_new_command_second_postgres_bench_inherits_password(
     from pilot.commands.bench.create import NewCommand
 
     monkeypatch.setattr("builtins.input", lambda _: "")
-    monkeypatch.setattr("pilot.utils._port_is_live", lambda port: False)
+    monkeypatch.setattr("pilot.utils.is_port_listening", lambda port: False)
     benches_dir = tmp_path / "benches"
     NewCommand(target_directory=benches_dir / "pg1", bench_name="pg1", database="postgres").run()
     _ensure_database_credentials(benches_dir / "pg1")
@@ -209,7 +247,7 @@ def test_new_command_postgres_port_is_not_offset_between_benches(
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
-    monkeypatch.setattr("pilot.utils._port_is_live", lambda port: False)
+    monkeypatch.setattr("pilot.utils.is_port_listening", lambda port: False)
     benches_dir = tmp_path / "benches"
     NewCommand(target_directory=benches_dir / "first", bench_name="first", database="postgres").run()
     _ensure_database_credentials(benches_dir / "first")
@@ -230,7 +268,7 @@ def test_new_command_postgres_port_ignores_live_scan_on_macos(
     monkeypatch.setattr("builtins.input", lambda _: "")
     default_port = PostgresConfig().port
     # The default port reads as live, which would normally push the picker up.
-    monkeypatch.setattr("pilot.utils._port_is_live", lambda port: port == default_port)
+    monkeypatch.setattr("pilot.utils.is_port_listening", lambda port: port == default_port)
     target = tmp_path / "benches" / "pg"
     with patch("pilot.managers.platform.is_macos", return_value=True):
         NewCommand(target_directory=target, bench_name="pg", database="postgres").run()
@@ -262,7 +300,7 @@ def test_new_command_mariadb_port_is_not_offset_between_benches(
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
-    monkeypatch.setattr("pilot.utils._port_is_live", lambda port: False)
+    monkeypatch.setattr("pilot.utils.is_port_listening", lambda port: False)
     benches_dir = tmp_path / "benches"
     NewCommand(target_directory=benches_dir / "first", bench_name="first").run()
     _ensure_database_credentials(benches_dir / "first")
@@ -283,7 +321,7 @@ def test_new_command_mariadb_port_ignores_live_scan_on_macos(
     monkeypatch.setattr("builtins.input", lambda _: "")
     default_port = MariaDBConfig().port
     # The default port reads as live, which would normally push the picker up.
-    monkeypatch.setattr("pilot.utils._port_is_live", lambda port: port == default_port)
+    monkeypatch.setattr("pilot.utils.is_port_listening", lambda port: port == default_port)
     target = tmp_path / "benches" / "m"
     with patch("pilot.managers.platform.is_macos", return_value=True):
         NewCommand(target_directory=target, bench_name="m").run()
@@ -299,7 +337,7 @@ def test_new_command_second_mariadb_bench_inherits_password(
     from pilot.commands.bench.create import NewCommand
 
     monkeypatch.setattr("builtins.input", lambda _: "")
-    monkeypatch.setattr("pilot.utils._port_is_live", lambda port: False)
+    monkeypatch.setattr("pilot.utils.is_port_listening", lambda port: False)
     benches_dir = tmp_path / "benches"
     NewCommand(target_directory=benches_dir / "m1", bench_name="m1").run()
     _ensure_database_credentials(benches_dir / "m1")
@@ -1151,11 +1189,18 @@ def test_start_dev_initialized_stops_then_starts(tmp_path: Path) -> None:
     start.assert_called_once()
 
 
-def test_start_dev_watch_admin_js_from_config_skips_static_admin_build(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("admin_enabled", "watch_admin_js", "builds_admin"),
+    [(True, False, True), (True, True, False), (False, False, False)],
+)
+def test_start_dev_builds_static_admin_only_when_admin_runs_without_watcher(
+    tmp_path: Path, admin_enabled: bool, watch_admin_js: bool, builds_admin: bool
+) -> None:
     from pilot.core.bench.runtime import BenchRuntime
 
     bench = make_bench(tmp_path)
-    bench.config.watch_admin_js = True
+    bench.config.admin.enabled = admin_enabled
+    bench.config.watch_admin_js = watch_admin_js
     _mark_initialized(bench)
     with (
         patch("pilot.managers.processes.local.ProcessManager.stop"),
@@ -1165,7 +1210,7 @@ def test_start_dev_watch_admin_js_from_config_skips_static_admin_build(tmp_path:
     ):
         BenchRuntime(bench).start(lambda _message: None)
 
-    ensure_admin_dist.assert_not_called()
+    assert ensure_admin_dist.call_count == int(builds_admin)
 
 
 def test_start_production_uninitialized_brings_up_admin(tmp_path: Path) -> None:

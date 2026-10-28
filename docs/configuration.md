@@ -72,9 +72,17 @@ branch = "develop"
 follow_branch = true
 ```
 
+A linked app uses `path` instead of `repo` and `branch`. Pilot symlinks that checkout into `apps/` and never pulls, switches, or checks out commits in it. `pilot dev setup` writes this entry:
+
+```toml
+[[apps]]
+name = "gameplan"
+path = "/home/me/Projects/gameplan"
+```
+
 A registry release is offered only when it is newer than the installed commit. A full clone checks that the release descends from it. A shallow clone fetches only the release commit, without the history between them, so a newer version decides, and between equal versions, such as `17.0.0-dev` on `develop`, a later commit date decides.
 
-`[redis]` defines separate cache and queue ports. Pilot writes them to `config/redis_cache.conf` and `config/redis_queue.conf` inside a `PILOT MANAGED BLOCK` and keeps the lines outside it, such as `loadmodule /path/to/redisearch.so`. `[[workers]]` defines queue groups and their process counts.
+`[redis]` defines separate cache and queue ports. Pilot writes them to `config/redis_cache.conf` and `config/redis_queue.conf` inside a `PILOT MANAGED BLOCK` and keeps the lines outside it, such as `loadmodule /path/to/redisearch.so`. `[[workers]]` defines queue groups, their process counts and an optional `timeout`: the default job timeout of the group's queues, in seconds. Without it, Frappe uses 1500 for `long` and 300 for other queues. Two groups cannot give one queue different timeouts. Lite mode folds the groups into one, which takes the longest timeout; there a blank timeout counts as Frappe's default for its queues. Frappe only knows `default`, `short` and `long`, so Pilot lists every other queue, and every queue with a timeout, under `workers` in `sites/common_site_config.json`. Pilot leaves entries there for queues that no worker group lists.
 
 ## Runtime modes
 
@@ -96,7 +104,7 @@ request_drain_seconds = 60
 job_drain_seconds = 600
 ```
 
-Request and job limits are counted from the last restart; `0` disables a limit. The process waits until it is idle before restarting. Drain settings bound graceful shutdown; a job that exceeds its limit is abandoned. Lite mode uses one worker group, so multiple groups are merged by taking the union of queues and the sum of their counts.
+Request and job limits are counted from the last restart; `0` disables a limit. The process waits until it is idle before restarting. Drain settings bound graceful shutdown; a job that exceeds its limit is abandoned. Lite mode uses one worker group, so multiple groups are merged by taking the union of queues, the sum of their counts and the longest timeout.
 
 The process listens on `127.0.0.1:<http_port>` and serves realtime there too. Pilot updates `common_site_config.json` and nginx when lite mode changes. Frappe must provide `frappe/runner.py`; otherwise Pilot disables lite mode.
 
@@ -110,6 +118,8 @@ domain = "admin.example.com"
 tls = true
 allow_bench_management = true
 ```
+
+With `enabled = false`, `pilot start` does not run the Admin. `pilot dev setup` creates benches this way.
 
 Nginx proxies admin traffic to `port + 1` on localhost. In production, `admin.domain` is required. `allow_bench_management` permits this admin to manage sibling benches and defaults to enabled only for development installs. It also permits killing database processes and purging binlogs, because both affect every bench on the host. Database settings and the MariaDB restart do not need it.
 
@@ -241,15 +251,17 @@ Central endpoint and authentication data come from instance metadata. While Cent
 
 Before it applies the Central credential, bootstrap sizes Pilot's MariaDB for the VM's memory, because an image built on another host keeps that host's sizing. It writes `my.cnf` and the unit for the next start, then applies the values to the running server without a restart: the buffer pool and its automatic minimum, `innodb_log_file_size`, `key_buffer_size`, and `max_connections`. An option set in `managed.cnf` keeps its value. The buffer pool cannot grow above the running `innodb_buffer_pool_size_max`, so a larger pool waits for the next start. Higher unit memory limits apply before MariaDB grows. Lower limits apply only after MariaDB uses less than the new `MemoryHigh`. The unit file is written last, after the limits apply; if the usage stays higher or cannot be read for a minute, the old unit stays and a later attempt tries again.
 
-The user unit `pilot-mariadb-sizing.service` prepares MariaDB before its first start in each host boot and stays active for that boot. Pilot records the boot ID and total host RAM in `memory-sizing.json`. On the first allocation, or a new boot with changed RAM, it recalculates the generated settings and clears custom buffer-pool sizes, log-file size, key-buffer size, connection count, and service memory limits. A MariaDB restart or a host reboot with unchanged RAM preserves custom values. Other database-variable overrides, including `innodb_snapshot_isolation`, remain unchanged. The upgrade patch records the current host capacity and starts the sizing service outside the database action lock, so installation preserves existing settings and the first MariaDB restart can proceed.
+The user unit `pilot-mariadb-sizing.service` prepares MariaDB before its first start in each host boot and stays active for that boot. Pilot records the boot ID and total host RAM in `memory-sizing.json`. On the first allocation, or a new boot with changed RAM, it recalculates the generated settings and clears custom buffer-pool sizes, log-file size, key-buffer size, and connection count. A MariaDB restart or a host reboot with unchanged RAM preserves custom database variables. Service memory limits are recalculated from host RAM and `mariadb.memory_share` at each boot. Other database-variable overrides, including `innodb_snapshot_isolation`, remain unchanged. The upgrade patch records the current host capacity and starts the sizing service outside the database action lock, so installation preserves existing settings and the first MariaDB restart can proceed.
 
-Settings, Database, Database Configurations exposes `MemoryHigh` and `MemoryMax` in MiB for the shared managed Linux service. Optional `mariadb.memory_high_mb` and `mariadb.memory_max_mb` in `common_config.toml` persist manual limits across restarts. Both must be positive integers, with `MemoryHigh` below `MemoryMax`. The hard limit must exceed current MariaDB use and the configured buffer pool; lowering the soft limit requires it to remain above current use. At submission and execution, Pilot rejects a hard limit that, combined with estimated memory use by other host processes, exceeds 90% of total RAM. Unavailable MariaDB usage blocks the change. This check reflects current usage and does not reserve capacity against later growth. A host RAM change clears both saved limits and applies automatic values using `mariadb.memory_share`. Swap is not editable here.
+`MemoryHigh` and `MemoryMax` are internal service limits. They are not shown in Database Configurations, and the API rejects manual changes, including previously queued changes. Use the database memory split to change the allocation. Legacy `mariadb.memory_high_mb` and `mariadb.memory_max_mb` values are ignored and cleared at the next host boot. Swap is not editable here.
 
 `innodb_snapshot_isolation` is editable in Database Configurations. Its warning explains that enabling it can reject conflicting updates or deletes and roll back transactions; disabling it removes that conflict protection. The change affects new connections to the shared database. Existing connections retain their session setting. The custom value is saved in `managed.cnf` and survives host RAM changes.
 
 The buffer-pool editor also caps its maximum below the effective MariaDB `MemoryMax`, in addition to the host-based range. The setter reads the hard limit again under the database action lock before writing settings or changing the pool, so a queued resize cannot exceed a newly lowered limit.
 
-On a host with less than 800 MB of memory, MariaDB gets a 64 MB buffer pool, an 8 MB key buffer, and 20 connections, which is enough for one bench with one site. `MemoryHigh` then stays at least a quarter of `MemoryMax` below it.
+Pilot also sets `aria-pagecache-buffer-size` to the size of the key buffer and counts it in the budget. MariaDB keeps its on-disk temporary tables in Aria, and its default 128 MB page cache put a 2 GB host's server above its `MemoryHigh` from the start. Above `MemoryHigh` without swap, the kernel can reclaim only the server's code pages, so MariaDB reads them from disk again and again and stops answering. The `size_mariadb_aria_pagecache` patch writes the value into an existing `my.cnf`; it applies when MariaDB next starts.
+
+On a host with less than 800 MB of memory, MariaDB gets a 64 MB buffer pool, an 8 MB key buffer, an 8 MB Aria page cache, and 20 connections, which is enough for one bench with one site. `MemoryHigh` then stays at least a quarter of `MemoryMax` below it.
 
 `mariadb.memory_share` is the share of host memory that Pilot's MariaDB may use, from 0.2 to 0.8 (default 0.5); the benches keep the rest. Settings, Database, Memory split changes it for every bench of the host and re-sizes the running server. Selecting a split clears manual service-limit overrides. When the new limits apply, Pilot saves them in both the main unit and its memory drop-in so they survive a reboot with unchanged RAM. A deferred shrink keeps the previous saved limits until it can apply safely. A larger buffer pool than the running server allows takes effect at the next MariaDB start.
 

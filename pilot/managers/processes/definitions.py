@@ -6,11 +6,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pilot.core.app.node_packages import NodePackages
 from pilot.exceptions import BenchError
 from pilot.managers.environment import AdminEnvManager
 from pilot.utils import cli_root
 
 if TYPE_CHECKING:
+    from pilot.core.app import App
     from pilot.core.bench import Bench
 
 
@@ -33,6 +35,7 @@ class ProcessDefinition:
     socket_file: Path | None = None  # removed before each start; a stale one blocks listen()
     listen_address: str | None = None  # systemd holds it, so a restart queues requests instead of refusing them
     restart_on_failure: bool = True
+    stop_main_process_only: bool = False  # it stops its own children; a signal to them too kills their jobs
     pre_run: list[str] = field(default_factory=list)
     post_run: list[str] = field(default_factory=list)
 
@@ -61,6 +64,11 @@ class ProcessDefinition:
             f'{shlex.join(self.post_run)}; exit "$status"'
         )
         return ["sh", "-c", script]
+
+
+def queue_slug(queues: str) -> str:
+    """Commas in queue names break supervisor's programs= list; slug them."""
+    return re.sub(r"[^A-Za-z0-9]+", "_", queues).strip("_") or "default"
 
 
 def check_unique_names(definitions: list[ProcessDefinition]) -> None:
@@ -96,13 +104,11 @@ class ProcessDefinitionBuilder:
             # web, realtime and jobs all live in the one lite process.
             return [self.web_definition(), self.admin_definition()]
         if self.bench.config.production.process_manager == "systemd":
-            all_queues = ",".join(q for group in self.bench.config.workers.groups for q in group.queues)
-            num_workers = sum(group.count for group in self.bench.config.workers.groups)
             return [
                 self.web_definition(),
                 self.socketio_definition(),
                 self.admin_definition(),
-                self.worker_pool_definition(all_queues, num_workers),
+                *self.worker_pool_definitions(),
             ]
         worker_defs = [
             pd
@@ -128,12 +134,38 @@ class ProcessDefinitionBuilder:
         ]
 
     def process_definitions(self) -> list[ProcessDefinition]:
-        defs = [self.to_dev(pd) for pd in self.prod_process_definitions()]
+        """The dev runner's processes. With the Admin disabled, neither the Admin nor its
+        UI dev server runs. Each linked app with a `dev` script runs that script."""
+        has_admin = self.bench.config.admin.enabled
+        defs = [self.to_dev(pd) for pd in self.prod_process_definitions() if has_admin or pd.name != "admin"]
         if self.bench.config.watch_apps_js:
             defs.append(self.watch_definition())
-        if self.watch_admin_js:
+        if has_admin and self.watch_admin_js:
             defs.append(self.admin_frontend_dev_definition())
+        defs.extend(self.linked_app_dev_definitions())
         return defs
+
+    def linked_app_dev_definitions(self) -> list[ProcessDefinition]:
+        return [
+            self.app_dev_definition(app)
+            for app in self.bench.apps()
+            if app.is_linked and NodePackages(app.path).has_script("dev")
+        ]
+
+    def app_dev_definition(self, app: "App") -> ProcessDefinition:
+        # frappe-ui's Vite plugins read these, since a linked app has no bench folder above it.
+        name = f"{app.config.name}-dev"
+        return ProcessDefinition(
+            name=name,
+            argv=NodePackages(app.path).get_script_command("dev"),
+            log_file=self.bench.logs_path / f"{name}.log",
+            env={
+                "FRAPPE_BENCH_PATH": str(self.bench.path),
+                "FRAPPE_WEB_SERVER_PORT": str(self.bench.config.http_port),
+            },
+            working_dir=app.path,
+            critical=False,
+        )
 
     def to_dev(self, pd: ProcessDefinition) -> ProcessDefinition:
         if pd.name == "admin":
@@ -257,9 +289,22 @@ class ProcessDefinitionBuilder:
             critical=False,
         )
 
-    def worker_pool_definition(self, queues: str, num_workers: int) -> ProcessDefinition:
+    def worker_pool_definitions(self) -> list[ProcessDefinition]:
+        """Combine identical queue groups; keep `worker_pool` for a single pool."""
+        counts: dict[str, int] = {}
+        for group in self.bench.config.workers.groups:
+            queues = ",".join(group.queues)
+            counts[queues] = counts.get(queues, 0) + group.count
+        return [
+            self.worker_pool_definition(
+                "worker_pool" if len(counts) == 1 else f"worker_pool_{queue_slug(queues)}", queues, count
+            )
+            for queues, count in counts.items()
+        ]
+
+    def worker_pool_definition(self, name: str, queues: str, num_workers: int) -> ProcessDefinition:
         return ProcessDefinition(
-            name="worker_pool",
+            name=name,
             argv=[
                 str(self.python),
                 "-m",
@@ -271,15 +316,15 @@ class ProcessDefinitionBuilder:
                 "--queue",
                 queues,
             ],
-            log_file=self.bench.logs_path / "worker_pool.log",
+            log_file=self.bench.logs_path / f"{name}.log",
             env=self.python_env(),
             working_dir=self.bench.sites_path,
+            stop_main_process_only=True,
         )
 
     def worker_definitions(self, queue: str, count: int) -> list[ProcessDefinition]:
         sites = self.bench.sites_path
-        # Commas in queue names break supervisor's programs= list; slug them.
-        slug = re.sub(r"[^A-Za-z0-9]+", "_", queue).strip("_") or "default"
+        slug = queue_slug(queue)
         return [
             ProcessDefinition(
                 name=f"worker_{slug}_{i}",

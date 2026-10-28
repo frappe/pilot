@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from pilot.config import SiteConfig
 from pilot.config.site import email_sender_name
+from pilot.core.site.creation import SiteCreationOwner
 from pilot.exceptions import BenchError
+from pilot.internal.tasks.process import TASK_ID_ENV
 
 if TYPE_CHECKING:
     from pilot.config import RoutePolicy
@@ -30,10 +33,17 @@ class SiteProvisioner:
         self.db_type = db_type
 
     def provision(self, on_progress: Callable[[str], None], *, schedule_backups: bool = True) -> "Site":
+        with SiteCreationOwner(self.bench.path, self.name).locked() as owner:
+            via_wildcard = validate_new_site(self.bench, self.name, self.apps)
+            self.bench.site_aliases.release(self.name)
+            owner.claim(os.environ.get(TASK_ID_ENV, ""))
+            return self._provision(via_wildcard, on_progress, schedule_backups)
+
+    def _provision(
+        self, via_wildcard: bool, on_progress: Callable[[str], None], schedule_backups: bool
+    ) -> "Site":
         from pilot.core.site import Site
 
-        via_wildcard = validate_new_site(self.bench, self.name, self.apps)
-        self.bench.site_aliases.release(self.name)
         route = None
         if via_wildcard:
             route = register_with_provider(self.bench, self.name)
@@ -54,6 +64,16 @@ class SiteProvisioner:
         site.create(db_type=self.db_type)
         self.write_email_sender_name(site)
         self.write_route_policy(site)
+        self.finish(site, on_progress)
+        if origin_tls:
+            self.obtain_cert(site, on_progress)
+        if schedule_backups:
+            site.backups.enable_default_schedule()
+        on_progress(f"\nSite '{self.name}' created successfully.")
+        return site
+
+    def finish(self, site: "Site", on_progress: Callable[[str], None]) -> None:
+        """The steps after the site is created, from installing its apps on."""
         self.install_apps(site, on_progress)
         self.write_pilot_communication_config(site)
         self.bench.write_common_site_config()
@@ -61,12 +81,6 @@ class SiteProvisioner:
         self.build_missing_assets()
         self.add_to_hosts(site)
         self.reload_nginx()
-        if origin_tls:
-            self.obtain_cert(site, on_progress)
-        if schedule_backups:
-            site.backups.enable_default_schedule()
-        on_progress(f"\nSite '{self.name}' created successfully.")
-        return site
 
     def write_email_sender_name(self, site: "Site") -> None:
         site.set_config_values({"email_sender_name": email_sender_name(site.config.name)})

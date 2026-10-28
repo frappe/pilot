@@ -14,7 +14,7 @@ from pilot.core.database.mariadb_variables import (
 from pilot.core.database.quick_actions import DatabaseQuickActions
 from pilot.exceptions import DatabaseError
 from pilot.managers.database.mariadb import MariaDBManager
-from pilot.managers.database.memory import MEMORY_LIMIT_NAMES
+from pilot.managers.database.memory import MEMORY_LIMIT_NAMES, MEMORY_LIMIT_READ_ONLY_REASON
 from pilot.managers.platform import is_linux
 
 if TYPE_CHECKING:
@@ -137,8 +137,6 @@ class DatabaseConfigurations:
                     "step": spec.step,
                 }
             )
-        if managed and is_linux():
-            variables.extend(manager.memory.get_variables(edit_reason))
         return {
             "engine": self.config.db_type,
             "managed": managed,
@@ -151,7 +149,7 @@ class DatabaseConfigurations:
 
     def prepare_change(self, name: str, value: object) -> DatabaseConfigurationChange:
         if name in MEMORY_LIMIT_NAMES:
-            return self._prepare_memory_change(name, value)
+            raise DatabaseError(MEMORY_LIMIT_READ_ONLY_REASON)
         spec = mariadb_variable_spec(name)
         if not spec.editable:
             spec.validate_input(value)
@@ -179,30 +177,9 @@ class DatabaseConfigurations:
             "changed": current != requested,
         }
 
-    def _prepare_memory_change(self, name: str, value: object) -> DatabaseConfigurationChange:
-        reason = self._edit_reason(require_reachable=True)
-        if reason:
-            raise DatabaseError(reason)
-        manager = self._manager()
-        limits = manager.memory.validate(name, value)
-        current_limit = manager.memory.limits[name]
-        if current_limit is None:
-            raise DatabaseError("Cannot prepare a memory change because the current limit is unavailable.")
-        return {
-            "action": "configuration",
-            "name": name,
-            "value": limits[name],
-            "current": current_limit,
-            "changed": current_limit != value,
-        }
-
     def set(self, name: str, value: object) -> bool:
         if name in MEMORY_LIMIT_NAMES:
-            reason = self._edit_reason(require_reachable=True)
-            if reason:
-                raise DatabaseError(reason)
-            self._manager().memory.set(name, value)
-            return True
+            raise DatabaseError(MEMORY_LIMIT_READ_ONLY_REASON)
         spec = mariadb_variable_spec(name)
         requested: MariaDBValue = spec.validate_input(value)
         edit_reason = self._edit_reason(require_reachable=True)

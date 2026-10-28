@@ -12,6 +12,7 @@ from pilot.tasks import Task, step
 @dataclass(kw_only=True)
 class SetMariaDBConfigurationTask(Task):
     command: ClassVar[str] = "set-mariadb-configuration"
+    timeout_seconds: ClassVar[int] = 300
     is_cancellable_while_running: ClassVar[bool] = False
     _AUDIT_ARG_KEYS: ClassVar[tuple[str, ...]] = ("variable", "value_json")
 

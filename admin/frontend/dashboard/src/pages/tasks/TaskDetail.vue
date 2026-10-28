@@ -173,6 +173,7 @@ onMounted(() => {
     </div>
 
     <ErrorMessage v-if="actionError" :message="actionError" class="mt-3" />
+    <ErrorMessage v-if="task.failure" :message="task.failure.message" class="mt-3" />
 
     <!-- Steps -->
     <div class="mt-3">

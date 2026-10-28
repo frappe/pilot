@@ -76,7 +76,7 @@ class Migrating(MigrationState):
 
     def next_step(self, operation: "MigrationOperation") -> ChainStep | None:
         site = operation.next_migrate_site()
-        return ("migrate", {"site": site}) if site else None
+        return ("migrate", {"site": site}) if site else ("complete-migration", {})
 
 
 class NeedsAttention(MigrationState):
@@ -89,7 +89,7 @@ class NeedsAttention(MigrationState):
 class Retrying(MigrationState):
     name = "retrying"
     label = "Retrying"
-    allowed = frozenset({"backing_up", "updating", "migrating"})
+    allowed = frozenset({"backing_up", "updating", "migrating", "needs_attention"})
 
 
 class RevertingApps(MigrationState):

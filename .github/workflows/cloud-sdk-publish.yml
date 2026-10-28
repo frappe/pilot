@@ -47,7 +47,6 @@ jobs:
         if: steps.version.outputs.publish == 'true'
         run: |
           npm ci
-          npm ci --prefix ../in-app-embed
 
       - name: Test
         if: steps.version.outputs.publish == 'true'

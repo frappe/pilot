@@ -156,6 +156,46 @@ def start_wrapper_lookalike(task_dir: Path) -> subprocess.Popen:
     )
 
 
+@pytest.mark.parametrize("record", ["{}", "not json"])
+def test_finished_task_with_a_corrupt_record_does_not_block_the_queue(tmp_path: Path, record: str) -> None:
+    store = TaskStore(tmp_path)
+    create_task(store, RUNNING_TASK)
+    create_task(store, QUEUED_TASK)
+    store.transition(RUNNING_TASK, TaskStatus.QUEUED, TaskStatus.RUNNING)
+    store.transition(RUNNING_TASK, TaskStatus.RUNNING, TaskStatus.SUCCESS)
+    (store.task_dir(RUNNING_TASK) / "process.json").write_text(record)
+
+    assert TaskProcess(tmp_path).reconcile() is None
+    assert not (store.task_dir(RUNNING_TASK) / "process.json").exists()
+    assert store.read_status(RUNNING_TASK) == TaskStatus.SUCCESS
+    assert TaskWorker(tmp_path)._claim_next() == QUEUED_TASK
+
+
+def test_corrupt_recovery_record_preserves_a_live_callback(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    create_task(store, RUNNING_TASK)
+    store.transition(RUNNING_TASK, TaskStatus.QUEUED, TaskStatus.RUNNING)
+    store.transition(RUNNING_TASK, TaskStatus.RUNNING, TaskStatus.SUCCESS)
+    task_dir = store.task_dir(RUNNING_TASK)
+    (task_dir / "process.json").write_text("{}")
+    callback = subprocess.Popen(
+        [sys.executable, "-m", "pilot.internal.tasks.callbacks", str(task_dir)],
+        stdin=subprocess.PIPE,
+        start_new_session=True,
+    )
+    try:
+        assert TaskProcess(tmp_path).reconcile() == RUNNING_TASK
+        assert callback.poll() is None
+        assert (task_dir / "process.json").exists()
+    finally:
+        callback.kill()
+        callback.wait(timeout=5)
+        callback.stdin.close()
+
+    assert TaskProcess(tmp_path).reconcile() is None
+    assert store.read_status(RUNNING_TASK) == TaskStatus.SUCCESS
+
+
 def test_unreadable_orphan_record_blocks_while_the_wrapper_lives(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

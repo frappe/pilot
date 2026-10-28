@@ -82,6 +82,12 @@ Before the first task is queued, Pilot:
 
 Putting the sites into maintenance mode first prevents writes while the bench is partly updated.
 
+Maintenance mode also stops each site's scheduler, but jobs that are already queued or running continue. Before a site's backup, before the app update, and before a site's migrate, Pilot runs Frappe's `ready-for-migration` for the site until it reports no queued or running job, for up to 300 seconds. This is what Frappe Cloud does before it migrates a site. If the jobs do not finish in time, the operation goes to `needs_attention` before the step starts, so a retry runs the same step again. Pilot skips the wait while the workload is stopped, because then no worker runs jobs.
+
+Frappe reads a site's config again only after 60 seconds. So before the first step, Pilot restarts web once, and web stops serving the sites at once. When Pilot turns maintenance mode off, it restarts web again, so the sites answer at once instead of up to 60 seconds later. Under systemd, the web socket stays open during restart and queues new requests. Supervisor and older lite-mode runners briefly refuse requests while web starts.
+
+If either web restart fails, the task fails and the operation pauses for Retry. A failed restart cannot be treated as a completed maintenance change.
+
 ### Which Sites Are Migrated
 
 An update backs up and migrates sites only when an app change needs a migrate. When the update is created, Pilot compares each app's installed commit with its target commit. An app needs a migrate when the diff changes any of these, the same rule Frappe Cloud uses:
@@ -219,7 +225,7 @@ Migration snapshots are separate from normal user backups. They are not shown in
 
 ### Backup failure
 
-Pilot stops before updating code, records the failed site, and restores every site's original maintenance and scheduler settings.
+Pilot stops before updating code, records the failed site, and restores every site's original maintenance and scheduler settings. Retry takes fresh backups of every site because the sites can receive new writes while the operation is paused.
 
 ### Update or migration failure
 
@@ -261,7 +267,7 @@ it today has no visible effect — leave it `None` until that lookup exists.
 
 ### Retry
 
-Retry changes `needs_attention` to `retrying`, resets only the failed unit to pending, and returns to the failed phase.
+Retry changes `needs_attention` to `retrying` and returns to the failed phase. It resets every backup to pending after a backup-phase failure; otherwise it resets only the failed unit.
 
 Successful sites are not migrated again. If the retry succeeds, Pilot continues with the remaining pending sites.
 
@@ -285,6 +291,8 @@ The Admin API calls this action **Restore**. Internally, the current task and st
 4. `RestartServicesTask` restores maintenance and scheduler settings, restarts services, and marks the operation `reverted`.
 
 Each step is checkpointed in `revert_checkpoints` (`apps`, `site:<name>` per site, `restarted`). A failure moves the operation to `revert_failed`; a later Restore resumes from whichever checkpoint is still unset instead of repeating finished work.
+
+Before importing MariaDB tables, Restore checks that the saved table inventory is valid and every required table dump exists. A missing inventory or dump stops Restore before database changes. Repair the recovery files, then use Restore again.
 
 ## Admin API and UI
 

@@ -9,11 +9,12 @@ import {
 } from '@frappe/cloud-sdk/api'
 import { Button, ErrorMessage, Skeleton, TextInput } from 'frappe-ui'
 import type { PaymentCheckout, PaymentGateway, PaymentMethodSetup } from '@frappe/cloud-sdk'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import RazorpayLogo from '../assets/Razorpay-1.svg?inline'
 import StripeLogo from '../assets/Stripe.svg?inline'
 import UpiLogo from '../assets/UPI-1.svg?inline'
 import { openExternal } from '../external'
+import { holdRazorpayCheckout, releaseRazorpayCheckout } from '../razorpayCheckout'
 import { useErrorMessage, type Store } from '../store'
 
 const __ = useTranslation()
@@ -99,6 +100,7 @@ const load = async () => {
 }
 
 onMounted(load)
+onBeforeUnmount(releaseRazorpayCheckout)
 
 const start = () => {
   if (!canContinue.value || !gateway.value) return
@@ -170,21 +172,32 @@ const openRazorpayCheckout = (handles: PaymentMethodSetup) => {
     handler: (response: RazorpayResponse) => confirmRazorpay(handles.payment_method, response),
     modal: {
       ondismiss: () => {
+        releaseRazorpayCheckout()
         working.value = false
         message.value = __('Setup cancelled.')
       },
     },
   })
 
+  // The modal stays open after a decline so the customer can try another card.
   rzp.on('payment.failed', (response) => {
     error.value = response?.error?.description || __('Your bank did not approve this. Try again or use another card.')
     working.value = false
   })
 
-  rzp.open()
+  holdRazorpayCheckout()
+
+  try {
+    rzp.open()
+  } catch (exception) {
+    releaseRazorpayCheckout()
+    throw exception
+  }
 }
 
 const confirmRazorpay = async (paymentMethod: string, response: RazorpayResponse) => {
+  releaseRazorpayCheckout()
+
   await run(async () => {
     const result = await confirmPaymentMethod({
       payment_method: paymentMethod,
@@ -228,6 +241,13 @@ const check = async () => {
       await store.loadBilling(true)
 
       emit('added')
+      return
+    }
+
+    // A failed card is final, so clear the checkout and let the customer start again.
+    if (result.status === 'Failed') {
+      checkout.value = null
+      error.value = result.message || __('We could not verify this card. Try another card.')
       return
     }
 
@@ -374,16 +394,22 @@ const tileClass = (isSelected: boolean) => [
       <ErrorMessage :message="contactError" class="mt-1" />
     </div>
 
-    <p class="flex items-center gap-1.5 text-p-sm text-ink-gray-5">
-      <template v-if="message">{{ message }}</template>
+    <p class="flex items-start gap-1.5 text-p-sm text-ink-gray-5">
+      <span class="lucide-info mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+      {{ __("To check your card, we may charge a small amount and refund it. After that, we charge it only when your billing cycle ends.")
+      }}
+    </p>
 
-      <template v-else>
-        <span class="lucide-lock size-3.5 shrink-0" aria-hidden="true" />
-        {{ __(
-            "{0} collects your payment details. This site never sees them.",
-            [gateway?.label || __("The payment gateway")],
-          ) }}
-      </template>
+    <p class="flex items-start gap-1.5 text-p-sm text-ink-gray-5">
+      <span
+        class="mt-0.5 size-3.5 shrink-0"
+        :class="message ? 'lucide-info' : 'lucide-lock'"
+        aria-hidden="true"
+      />
+      {{ message || __(
+          "{0} collects your payment details. This site never sees them.",
+          [gateway?.label || __("The payment gateway")],
+        ) }}
     </p>
 
     <div class="flex justify-end gap-2">

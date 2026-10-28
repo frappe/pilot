@@ -117,15 +117,17 @@ class CentralClient:
         except urllib.error.HTTPError as exc:
             detail = _error_detail(exc.read())
             raise CentralClientError(
-                detail or f"Central returned HTTP {exc.code} for {method_path}", status_code=exc.code
+                detail or f"Frappe Cloud returned HTTP {exc.code}.", status_code=exc.code
             ) from exc
         except urllib.error.URLError as exc:
-            raise CentralClientError(f"Cannot reach Central at {endpoint}: {exc.reason}") from exc
+            raise CentralClientError(f"Cannot reach Frappe Cloud at {endpoint}: {exc.reason}") from exc
         # A response that stalls after the connection opens times out outside URLError.
         except TimeoutError as exc:
-            raise CentralClientError(f"Central did not answer {method_path} in time.") from exc
+            raise CentralClientError("Frappe Cloud did not answer in time. Try again in a minute.") from exc
         except ValueError as exc:
-            raise CentralClientError(f"Central sent a non-JSON response for {method_path}: {exc}") from exc
+            raise CentralClientError(
+                "Frappe Cloud sent a response that could not be read. Try again in a minute."
+            ) from exc
 
         if isinstance(payload, dict) and "message" in payload:
             return payload["message"]
@@ -137,6 +139,6 @@ class CentralClient:
 
         credentials = InstanceMetadata().get_credentials()
         if credentials is None:
-            raise CentralClientError("This host has no Central credential in its instance metadata.")
+            raise CentralClientError("This host has no Frappe Cloud credential in its instance metadata.")
 
         return credentials["central_endpoint"].rstrip("/"), credentials["central_auth_token"]

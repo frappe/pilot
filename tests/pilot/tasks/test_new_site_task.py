@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from pilot.core.app import App
 from pilot.integrations.marketplace import Marketplace, Resolver
 from pilot.tasks.new_site import NewSiteTask
@@ -123,7 +125,7 @@ def test_run_reloads_workers_after_fetching_apps_and_before_provisioning(tmp_pat
     ):
         task.run()
 
-    assert order.mock_calls == [call.fetch(), call.reload(), call.create()]
+    assert order.mock_calls == [call.fetch(), call.reload(raises=True), call.create()]
 
 
 def test_run_reloads_workers_even_when_no_app_was_fetched(tmp_path: Path) -> None:
@@ -150,10 +152,65 @@ def test_failure_cleanup_targets_a_site_this_task_would_create(tmp_path: Path) -
     assert task.remove_failed_site() == {"site": "site1.localhost"}
 
 
+def test_restore_creation_cleanup_preserves_a_preexisting_site(tmp_path):
+    from pilot.tasks.new_site_from_backup import NewSiteFromBackupTask
+
+    bench = make_task(tmp_path, []).bench
+    task = NewSiteFromBackupTask(
+        bench=bench,
+        bench_root=tmp_path,
+        name="site1.localhost",
+        db_file="backup.sql",
+        admin_password="secret",
+    )
+    assert task.remove_failed_site() == {"site": "site1.localhost"}
+    site = bench.sites_path / "site1.localhost"
+    site.mkdir()
+    (site / "site_config.json").write_text("{}")
+    from pilot.internal.tasks.callbacks import run_callback
+
+    run_callback(
+        {"operation": "remove-failed-site", "args": task.remove_failed_site()},
+        {"bench_root": str(tmp_path), "task_id": "queued-task"},
+    )
+    assert (site / "site_config.json").read_text() == "{}"
+
+
 def test_failure_cleanup_never_targets_a_site_that_already_exists(tmp_path: Path) -> None:
     task = make_task(tmp_path, ["frappe"])
     site_path = task.bench.sites_path / "site1.localhost"
     site_path.mkdir(parents=True)
     (site_path / "site_config.json").write_text("{}")
 
-    assert task.remove_failed_site() is None
+    from pilot.internal.tasks.callbacks import run_callback
+
+    run_callback(
+        {"operation": "remove-failed-site", "args": task.remove_failed_site()},
+        {"bench_root": str(tmp_path), "task_id": "queued-task"},
+    )
+    assert (site_path / "site_config.json").read_text() == "{}"
+
+
+@pytest.mark.parametrize("creator", ["", "other-task"])
+def test_cancelled_queued_creation_preserves_a_site_created_by_someone_else(tmp_path, monkeypatch, creator):
+    from pilot.core.site.creation import SiteCreationOwner
+    from pilot.internal.tasks import callbacks
+
+    task = make_task(tmp_path, [])
+    queued_cleanup = task.remove_failed_site()
+    site = task.bench.sites_path / task.name
+    site.mkdir()
+    config = site / "site_config.json"
+    config.write_text('{"db_name": "other_database"}')
+    with SiteCreationOwner(tmp_path, task.name).locked() as owner:
+        owner.claim(creator)
+    monkeypatch.setattr(
+        callbacks, "_drop_failed_site", lambda *args: pytest.fail("another site's database was dropped")
+    )
+
+    callbacks.run_callback(
+        {"operation": "remove-failed-site", "args": queued_cleanup},
+        {"bench_root": str(tmp_path), "task_id": "cancelled-queued-task"},
+    )
+
+    assert config.read_text() == '{"db_name": "other_database"}'

@@ -17,6 +17,7 @@ The command line and Admin API should stay thin. They parse input, authorize the
 - `Bench` owns a bench path, `bench.toml`, apps, sites, runtime, production setup, audit log, and task runner.
 - `Site` owns site operations: creation, app install/uninstall, domains, backups, restore, retention, rename, and login URLs.
 - `App` owns repository state, dependency install, validation, and revision tracking.
+- `Workspace` owns an app repository developed on its own linked bench through `pilot dev`.
 - Database engines are bench-level services selected by `bench.db_type`.
 
 Use `Server().bench("name")`, `Bench("name")`, or `Bench(path)` to load an existing bench. Use `bench.site("site.local")` for site objects.
@@ -76,6 +77,7 @@ Use `@step` for visible progress and `@on_success`, `@on_failure`, or `@on_cance
 ## Documentation Map
 
 - [Architecture](docs/architecture.md)
+- [App Development](docs/development.md)
 - [Commands](docs/commands.md)
 - [Development proxies](docs/development-proxies.md)
 - [Configuration](docs/configuration.md)

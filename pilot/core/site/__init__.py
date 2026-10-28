@@ -236,6 +236,12 @@ class Site:
 
         return SiteCommands(self).migrate(skip_failing)
 
+    @property
+    def has_pending_background_jobs(self) -> bool:
+        from pilot.core.site.commands import SiteCommands
+
+        return SiteCommands(self).has_pending_background_jobs()
+
     def clear_cache(self) -> None:
         from pilot.core.site.commands import SiteCommands
 
@@ -351,6 +357,15 @@ class Site:
         return SiteProvisioner(bench, name, apps, admin_password, db_type).provision(
             on_progress, schedule_backups=schedule_backups
         )
+
+    def finish_provisioning(
+        self, apps: list[str], on_progress: Callable[[str], None] = lambda message: None
+    ) -> None:
+        """Install `apps` and run the provisioning steps after them, for a site whose
+        provisioning stopped before its apps were installed."""
+        from pilot.core.site.provisioning import SiteProvisioner
+
+        SiteProvisioner(self.bench, self.config.name, apps, None).finish(self, on_progress)
 
     def set_ssl(self, enabled: bool) -> None:
         set_site_ssl_flag(self.bench.sites_path, self.config.name, enabled)

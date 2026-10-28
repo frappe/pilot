@@ -64,16 +64,38 @@ def test_build_frontend_skips_when_dist_already_exists(tmp_path: Path) -> None:
     run_command.assert_not_called()
 
 
-def test_build_frontend_skips_when_in_app_embed_iife_exists(tmp_path: Path) -> None:
+def test_build_frontend_skips_when_in_app_embed_outputs_exist(tmp_path: Path) -> None:
     frontend_dir = tmp_path / "frontend"
     dist_dir = tmp_path / "dist"
     frontend_dir.mkdir(parents=True)
-    dist_dir.mkdir(parents=True)
+    (dist_dir / "esm").mkdir(parents=True)
     (dist_dir / "cloud-settings.js").write_text("// iife")
+    (dist_dir / "esm" / "cloud-settings.js").write_text("export {}")
 
     with patch("pilot.utils.run_command") as run_command:
         frontend._build_frontend(frontend_dir, dist_dir, "in-app-embed", lambda message: None)
     run_command.assert_not_called()
+
+
+def test_build_frontend_rebuilds_an_in_app_embed_without_the_sdk_runtime(tmp_path: Path) -> None:
+    frontend_dir = tmp_path / "frontend"
+    dist_dir = tmp_path / "dist"
+    frontend_dir.mkdir(parents=True)
+    dist_dir.mkdir(parents=True)
+    (dist_dir / "cloud-settings.js").write_text("// iife from an older Pilot")
+
+    def write_embed(command, **kwargs) -> None:
+        if command[:3] != ["npm", "run", "build"]:
+            return
+        staged = Path(command[-1])
+        (staged / "esm").mkdir(parents=True)
+        (staged / "cloud-settings.js").write_text("// iife")
+        (staged / "esm" / "cloud-settings.js").write_text("export {}")
+
+    with patch("pilot.utils.run_command", side_effect=write_embed) as run_command:
+        frontend._build_frontend(frontend_dir, dist_dir, "in-app-embed", lambda message: None)
+    run_command.assert_called()
+    assert (dist_dir / "esm" / "cloud-settings.js").is_file()
 
 
 def test_build_frontend_builds_when_dist_is_missing(tmp_path: Path) -> None:

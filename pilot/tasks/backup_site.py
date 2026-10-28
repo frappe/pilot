@@ -15,6 +15,7 @@ from pilot.tasks import Task, step
 @dataclass(kw_only=True)
 class BackupSiteTask(Task):
     command: ClassVar[str] = "backup-site"
+    timeout_seconds: ClassVar[int] = 86400
 
     site: str
     with_files: bool = False

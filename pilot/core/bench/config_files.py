@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from pilot.config.common_site_config import update_common_site_config
+from pilot.config.worker import FRAPPE_QUEUES
+from pilot.exceptions import MalformedSiteConfig
 
 if TYPE_CHECKING:
     from pilot.config import S3Config
@@ -75,3 +77,24 @@ class BenchConfigFiles:
                 config["client_cache_max_bytes"] = _LITE_CLIENT_CACHE_BYTES
             else:
                 config.pop("client_cache_max_bytes", None)
+            self.set_worker_queues(config)
+
+    def set_worker_queues(self, config: dict) -> None:
+        """Frappe rejects a queue missing from `workers` and reads each queue's job timeout there.
+        Queues no worker group lists are left alone."""
+        entries = config.get("workers", {})
+        if not isinstance(entries, dict):
+            raise MalformedSiteConfig("common_site_config.json `workers` must be an object, fix it by hand.")
+        workers = self.bench.config.workers
+        timeouts = workers.queue_timeouts
+        for queue in workers.queues:
+            if queue in timeouts:
+                entries[queue] = {"timeout": timeouts[queue]}
+            elif queue in FRAPPE_QUEUES:
+                entries.pop(queue, None)
+            else:
+                entries[queue] = {}
+        if entries:
+            config["workers"] = entries
+        else:
+            config.pop("workers", None)

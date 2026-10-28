@@ -13,6 +13,7 @@ _ALLOWED_TASK_TRANSITIONS = {
 _FAILURE_MESSAGES = {
     "command_failed": "Task command failed.",
     "task_interrupted": "Task execution was interrupted.",
+    "task_timeout": "Task exceeded its execution time limit. Review its output before retrying.",
 }
 
 

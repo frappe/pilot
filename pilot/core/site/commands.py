@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
-from pilot.exceptions import BenchError, MigrateError
+from pilot.exceptions import BenchError, CommandError, MigrateError
 from pilot.utils import run_command
 
 if TYPE_CHECKING:
@@ -106,6 +106,20 @@ class SiteCommands:
                 returncode=result.returncode,
             )
         return result.stdout
+
+    def has_pending_background_jobs(self) -> bool:
+        """Frappe's `ready-for-migration`: whether the site has a queued or running job."""
+        cmd = self.site._frappe_call("frappe", "--site", self.site.config.name, "ready-for-migration")
+        try:
+            run_command(cmd, cwd=self.site.bench.sites_path, timeout=120)
+        except CommandError as error:
+            if "NOT READY for migration" in str(error):
+                return True
+            reason = str(error).strip().splitlines()[-1]
+            raise BenchError(
+                f"Could not check the background jobs of {self.site.config.name}: {reason}"
+            ) from error
+        return False
 
     def clear_cache(self) -> None:
         cmd = self.site._frappe_call("frappe", "--site", self.site.config.name, "clear-cache")

@@ -85,8 +85,10 @@ def _build_frontend(
 def _is_built(dist: Path) -> bool:
     if not dist.is_dir():
         return False
-    # Dashboard/editor write an assets/ folder; the in-app embed ships a single IIFE.
-    return ((dist / "index.html").is_file() and (dist / "assets").is_dir()) or any(dist.glob("*.js"))
+    # Dashboard/editor write an assets/ folder; the in-app embed ships Desk's IIFE and the SDK's ES runtime.
+    is_app = (dist / "index.html").is_file() and (dist / "assets").is_dir()
+    is_embed = (dist / "cloud-settings.js").is_file() and (dist / "esm" / "cloud-settings.js").is_file()
+    return is_app or is_embed
 
 
 def _has_frontend_source(root: Path) -> bool:

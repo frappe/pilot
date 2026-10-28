@@ -105,6 +105,7 @@ A site calls Central through `GET` or `POST /sites/<name>/central/<method>`. Pil
 | `central.api.pilot.heartbeat` | Check that the site reaches Central |
 | `central.api.pilot.get_team_identity_token` | Get a 5-minute token that proves the team to an outside service. Send `{"audience": "<service URL>"}`; the answer is `{"token": "..."}`. |
 | `central.billing.api.billing_api.*` | Billing calls from the site's Cloud Settings |
+| `central.api.email_oauth.get_active_providers` | List the providers a mailbox can connect with through Frappe Cloud right now. `POST` with no body; the answer is a list of provider keys, such as `["microsoft"]`. |
 | `central.api.email_oauth.start` | Start connecting a mailbox through Frappe Cloud's OAuth app. `POST` `{"provider", "state", "code_challenge", "return_url"}`; the answer is `{"authorize_url", "client_id", "scopes"}`. |
 | `central.api.email_oauth.relay_token` | Exchange a mailbox's sign-in code or refresh token at the provider with Frappe Cloud's app secret. `POST` `{"provider", "grant_type", ...}`; the answer is the provider's token response. |
 

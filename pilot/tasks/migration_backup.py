@@ -10,12 +10,15 @@ class MigrationBackupTask(Task):
     """Chain link: back up one site's tables before a migration, then queue the next step."""
 
     command: ClassVar[str] = "migration-backup"
+    timeout_seconds: ClassVar[int] = 86400
 
     operation_id: str
     site: str
 
     def run(self) -> None:
-        operation = self.bench.migrations.get(self.operation_id)
+        operation = self.bench.migrations.get_for_chain_task(
+            self.operation_id, self.running_task_id, self.command, {"site": self.site}
+        )
         try:
             operation.back_up_site(self.site, on_step=self.step, on_progress=self.report)
         except Exception:
@@ -32,4 +35,3 @@ class MigrationBackupTask(Task):
 
 if __name__ == "__main__":
     MigrationBackupTask.main()
-

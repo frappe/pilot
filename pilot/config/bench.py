@@ -32,7 +32,7 @@ from pilot.config.s3 import S3Config
 from pilot.config.schema import TomlSchema, field_names
 from pilot.config.telemetry import TelemetryConfig
 from pilot.config.waf import WafCondition, WafConfig, WafRule
-from pilot.config.worker import WorkerConfig, WorkerGroup
+from pilot.config.worker import WorkerConfig, WorkerGroup, parse_timeout
 from pilot.exceptions import ConfigError
 from pilot.internal.atomic_file import (
     atomic_write_private_text,
@@ -208,6 +208,7 @@ class BenchConfig:
                 repo=a.get("repo", ""),
                 branch=a.get("branch", ""),
                 branches=a.get("branches", []),
+                path=a.get("path", ""),
                 follow_branch=bool(a.get("follow_branch", False)),
             )
             for a in data.get("apps", [])
@@ -291,12 +292,19 @@ class BenchConfig:
         if not self.python_version:
             raise ConfigError("bench.python is required and must not be empty.")
         for app in self.apps:
-            if not app.name or not app.repo or not app.branch:
-                raise ConfigError(f"App '{app.name or '(unnamed)'}' must have name, repo, and branch.")
-            if app.branches and app.branch not in app.branches:
-                raise ConfigError(
-                    f"App '{app.name}': active branch '{app.branch}' is not listed in branches {app.branches}."
-                )
+            self._validate_app(app)
+
+    def _validate_app(self, app: AppConfig) -> None:
+        if app.is_linked:
+            if not app.name:
+                raise ConfigError(f"Linked app at '{app.path}' must have a name.")
+            return
+        if not app.name or not app.repo or not app.branch:
+            raise ConfigError(f"App '{app.name or '(unnamed)'}' must have name, repo, and branch.")
+        if app.branches and app.branch not in app.branches:
+            raise ConfigError(
+                f"App '{app.name}': active branch '{app.branch}' is not listed in branches {app.branches}."
+            )
 
     def _validate_bench_name(self) -> None:
         if not _BENCH_NAME_PATTERN.match(self.name):
@@ -419,6 +427,15 @@ class BenchConfig:
     def read_raw(cls, bench_root: Path) -> dict:
         """Parsed TOML as a plain dict, preserving every section as written."""
         return Toml.loads(cls.toml_path(bench_root).read_text(encoding="utf-8"))
+
+    @classmethod
+    def get_linked_app_paths(cls, bench_root: Path) -> list[Path]:
+        """Resolved checkouts linked into apps/, parsed without validation."""
+        try:
+            apps = cls.read_raw(bench_root).get("apps", [])
+            return [Path(app["path"]).resolve() for app in apps if app.get("path")]
+        except (OSError, RuntimeError, AttributeError, TypeError, tomllib.TOMLDecodeError) as error:
+            raise ConfigError(f"Cannot read {cls.toml_path(bench_root)}: {error}") from error
 
     @classmethod
     def read_flat(cls, bench_root: Path) -> dict:
@@ -553,6 +570,9 @@ class BenchConfig:
     def _apps_section(self) -> list[ConfigDict]:
         apps: list[ConfigDict] = []
         for app in self.apps:
+            if app.is_linked:
+                apps.append({"name": app.name, "path": app.path})
+                continue
             app_data: ConfigDict = {"name": app.name, "repo": app.repo, "branch": app.branch}
             if app.branches:
                 app_data["branches"] = app.branches
@@ -571,7 +591,11 @@ class BenchConfig:
         return redis
 
     def _workers_section(self) -> list[ConfigDict]:
-        return [{"queues": group.queues, "count": group.count} for group in self.workers.groups]
+        # TOML has no null, so an unset timeout is left out.
+        return [
+            {key: value for key, value in group.to_dict().items() if value is not None}
+            for group in self.workers.groups
+        ]
 
     def _production_section(self) -> ConfigDict:
         production: ConfigDict = {"enabled": self.production.enabled}
@@ -715,7 +739,7 @@ class BenchConfig:
         app = self.framework_app
         settings["app_repo"] = app.repo
         settings["app_branch"] = app.branch
-        settings["workers"] = [{"queues": list(g.queues), "count": g.count} for g in self.workers.groups]
+        settings["workers"] = [group.to_dict() for group in self.workers.groups]
         settings["production_process_manager"] = self.production.process_manager or "none"
         return settings
 
@@ -875,7 +899,13 @@ def _workers_to_groups(value) -> list[WorkerGroup]:
         queues = [str(q) for q in queues if str(q).strip()]
         if not queues:
             continue
-        groups.append(WorkerGroup(queues=queues, count=max(1, int(entry.get("count", 1)))))
+        groups.append(
+            WorkerGroup(
+                queues=queues,
+                count=max(1, int(entry.get("count", 1))),
+                timeout=parse_timeout(entry.get("timeout")),
+            )
+        )
     return groups or WorkerConfig().groups
 
 

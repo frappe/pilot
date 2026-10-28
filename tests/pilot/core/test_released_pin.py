@@ -164,7 +164,7 @@ def test_a_released_hostname_gives_its_route_back(tmp_path: Path) -> None:
     assert _rename_recording_routes(bench, keep_old_hostname=False) == [("register", NEW), ("release", OLD)]
 
 
-def test_a_failed_move_gives_the_new_route_back(tmp_path: Path) -> None:
+def test_a_failed_move_retains_the_new_route_for_forward_recovery(tmp_path: Path) -> None:
     bench = _bench(tmp_path)
     _site(bench, OLD)
     calls: list[tuple[str, str]] = []
@@ -179,7 +179,8 @@ def test_a_failed_move_gives_the_new_route_back(tmp_path: Path) -> None:
     ):
         SiteRename(bench.site(OLD), NEW).run(lambda message: None)
 
-    assert calls == [("register", NEW), ("release", NEW)]
+    assert calls == [("register", NEW)]
+    assert SiteRename(bench.site(OLD), NEW).progress_path.exists()
 
 
 # --- smaller pieces -----------------------------------------------------------

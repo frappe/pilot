@@ -132,7 +132,10 @@ class ProductionSetup:
         from pilot.managers.processes.supervisor import SupervisorProcessManager
         from pilot.managers.processes.systemd import SystemdProcessManager
 
-        managers = {"systemd": SystemdProcessManager(self.bench), "supervisor": SupervisorProcessManager(self.bench)}
+        managers = {
+            "systemd": SystemdProcessManager(self.bench),
+            "supervisor": SupervisorProcessManager(self.bench),
+        }
         for name, manager in managers.items():
             if manager.is_running():
                 return name
@@ -319,10 +322,10 @@ class ProductionSetup:
         if not self.bench.config.admin.tls:
             return
 
-        from pilot.managers.letsencrypt import public_domains
+        from pilot.managers.letsencrypt import local_public_domains
 
         for site in self.bench.sites():
-            if not site.config.ssl and public_domains(site.config):
+            if not site.config.ssl and local_public_domains(site.config):
                 site.set_ssl(True)
 
     def _build_admin_for_production(self) -> None:

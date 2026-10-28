@@ -31,7 +31,7 @@
 
     Path              {{ cli_root }}/benches/*/logs/*.log
 
-    Exclude_Path      {{ cli_root }}/benches/*/logs/nginx-access.log,{{ cli_root }}/benches/*/logs/nginx-error.log,{{ cli_root }}/benches/*/logs/*.json.log,{{ cli_root }}/benches/*/logs/redis_*.log,{{ cli_root }}/benches/*/logs/worker_pool.log,{{ cli_root }}/benches/*/logs/*.error.log,{{ cli_root }}/benches/*/logs/socketio.log,{{ cli_root }}/benches/*/logs/web.log,{{ cli_root }}/benches/*/logs/cssutils.log,{{ cli_root }}/benches/*/logs/render-template.log
+    Exclude_Path      {{ cli_root }}/benches/*/logs/nginx-access.log,{{ cli_root }}/benches/*/logs/nginx-error.log,{{ cli_root }}/benches/*/logs/*.json.log,{{ cli_root }}/benches/*/logs/redis_*.log,{{ cli_root }}/benches/*/logs/worker_pool*.log,{{ cli_root }}/benches/*/logs/*.error.log,{{ cli_root }}/benches/*/logs/socketio.log,{{ cli_root }}/benches/*/logs/web.log,{{ cli_root }}/benches/*/logs/cssutils.log,{{ cli_root }}/benches/*/logs/render-template.log
 
     Path_Key          filename
 
@@ -156,7 +156,9 @@
     Name              tail
     Tag               pilot.worker_pool
 
-    Path              {{ cli_root }}/benches/*/logs/worker_pool.log,{{ cli_root }}/benches/*/sites/*/logs/worker_pool.log
+    Path              {{ cli_root }}/benches/*/logs/worker_pool*.log,{{ cli_root }}/benches/*/sites/*/logs/worker_pool.log
+
+    Exclude_Path      {{ cli_root }}/benches/*/logs/*.error.log
 
     Path_Key          filename
 

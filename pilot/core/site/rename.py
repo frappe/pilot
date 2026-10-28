@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from pilot.exceptions import BenchError, CronError
 from pilot.internal.atomic_file import exchange_paths, exclusive_file_lock, replace_private_text_locked
-from pilot.utils import normalize_host
+from pilot.utils import make_private_directory, normalize_host
 
 if TYPE_CHECKING:
     from pilot.config import RoutePolicy, SiteConfig
@@ -26,50 +26,97 @@ class SiteRename:
         self.bench = site.bench
         self.old_name = site.config.name
         self.new_name = new_name
+        for name in (self.old_name, self.new_name):
+            if not name or name in {".", ".."} or Path(name).name != name:
+                raise BenchError("Site names must stay within the bench's sites directory.")
         self.keep_old_hostname = keep_old_hostname
         self.make_primary = make_primary
         self._original_site_config: str | None = None
         self._old_pilot_auth_token = ""
         self._new_route: RoutePolicy | None = None
-        self._redirected_alias_patterns: list[str] = []
 
     @property
     def new_path(self) -> Path:
         return self.bench.sites_path / self.new_name
 
+    @property
+    def progress_path(self) -> Path:
+        return self.bench.config_path / "site-renames" / f"{self.old_name}.json"
+
     def run(self, on_progress: Callable[[str], None]) -> None:
+        make_private_directory(self.progress_path.parent, parents=True)
+        with exclusive_file_lock(self.progress_path.parent / "operations"):
+            self._prepare()
+            on_progress(f"Renaming site '{self.old_name}' -> '{self.new_name}'...")
+            self._move_or_resume()
+            try:
+                self._finish(on_progress)
+            except BaseException:
+                on_progress("The rename is pending. The old path is retained. Retry this task to finish it.")
+                raise
+
+    def _prepare(self) -> None:
+        if self.progress_path.exists():
+            progress = _load_site_config(self.progress_path)
+            expected = [self.new_name, self.keep_old_hostname, self.make_primary]
+            if progress["target"] != expected:
+                raise BenchError("A different rename is pending for this site. Finish that rename first.")
+            self._original_site_config = progress["site_config"]
+            if progress["route"]:
+                from pilot.config import RoutePolicy
+
+                self._new_route = RoutePolicy.from_dict(progress["route"])
+            return
+        for path in self.progress_path.parent.glob("*.json"):
+            if _load_site_config(path)["target"][0] == self.old_name:
+                raise BenchError("This site's previous rename is pending. Finish that rename first.")
         self.validate()
         self.bench.site_aliases.release(self.new_name)
-
-        on_progress(f"Renaming site '{self.old_name}' -> '{self.new_name}'...")
-        # Register first so a provider failure needs no rollback.
         self._register_route(self.new_name)
-        try:
-            self._move_site_directory()
-        except BaseException:
-            self._release_route(self.new_name)
-            raise
-        try:
-            self._pin_certificate_name()
-            self._carry_old_hostname()
-            self._refresh_pilot_auth_token()
-            self._rename_email_sender_name()
-            self._update_default_site(self.old_name, self.new_name)
-            self._rename_in_bench_toml(self.old_name, self.new_name)
-            self._retarget_hostname_aliases(self.old_name, self.new_name)
-            if self.make_primary:
-                self._redirected_alias_patterns = self.bench.hostname_aliases.start_redirecting(
-                    "site", self.new_name
-                )
-            self._add_to_hosts()
-            # Reload only after both names resolve on disk.
+        replace_private_text_locked(
+            self.progress_path,
+            json.dumps(
+                {
+                    "target": [self.new_name, self.keep_old_hostname, self.make_primary],
+                    "site_config": self._original_site_config,
+                    "route": self._new_route.to_dict() if self._new_route else None,
+                }
+            ),
+        )
+
+    @property
+    def is_directory_moved(self) -> bool:
+        return (
+            self.site.path.is_symlink()
+            and self.site.path.readlink() == Path(self.new_name)
+            and self.new_path.is_dir()
+            and not self.new_path.is_symlink()
+        )
+
+    def _move_or_resume(self) -> None:
+        if self.is_directory_moved:
+            return
+        if not self.site.path.is_dir() or self.site.path.is_symlink():
+            raise BenchError("The pending rename's original directory is unavailable.")
+        if self.new_path.is_symlink() and self.new_path.readlink() == Path(self.new_name):
+            self.new_path.unlink()
+        self._move_site_directory()
+
+    def _finish(self, on_progress: Callable[[str], None]) -> None:
+        self.bench.site_aliases.retarget(self.old_name, self.new_name)
+        self._pin_certificate_name()
+        self._carry_old_hostname()
+        self._refresh_pilot_auth_token()
+        self._rename_email_sender_name()
+        self._update_default_site(self.old_name, self.new_name)
+        self._rename_in_bench_toml(self.old_name, self.new_name)
+        self._retarget_hostname_aliases(self.old_name, self.new_name)
+        if self.make_primary:
+            self.bench.hostname_aliases.start_redirecting("site", self.new_name)
+        self._add_to_hosts()
+        self._reload_nginx()
+        if self._update_primary_hostname():
             self._reload_nginx()
-        except BaseException:
-            # nginx still names the old site, so restore that state.
-            self._roll_back(on_progress)
-            raise
-        # Revocation can commit before its durability sync reports failure. The rename
-        # must stay committed once this starts, or rollback could restore a dead token.
         self._revoke_old_pilot_auth_token()
         try:
             self.bench.site(self.new_name).backups.move_schedule(self.old_name)
@@ -82,6 +129,8 @@ class SiteRename:
         on_progress(f"\nSite renamed to '{self.new_name}'.")
         self.run_followups(on_progress)
         self._report_reserved_hostname(on_progress)
+        self.bench.site_aliases.record(self.old_name)
+        self.progress_path.unlink()
 
     def validate(self) -> None:
         from pilot.utils import host_owner
@@ -96,7 +145,6 @@ class SiteRename:
         if self.new_name in sites or (self.new_path.exists() and not self.new_path.is_symlink()):
             raise BenchError(f"Site '{self.new_name}' already exists in this bench.")
 
-        # Read and retain the config before any write so rollback is lossless.
         config_path = self.site.path / "site_config.json"
         _load_site_config(config_path)
         self._original_site_config = config_path.read_text()
@@ -138,54 +186,13 @@ class SiteRename:
             self.bench.site_aliases.record(self.old_name)
             exchange_paths(old_path, self.new_path)
         except BaseException as error:
-            self.new_path.unlink()
+            if self.new_path.is_symlink():
+                self.new_path.unlink()
             if isinstance(error, OSError) and error.errno in (errno.ENOTSUP, errno.EINVAL, errno.ENOSYS):
                 raise BenchError(
                     "This filesystem cannot swap the site directory atomically. The site was not renamed."
                 ) from error
             raise
-
-    def _roll_back(self, on_progress: Callable[[str], None]) -> None:
-        """Restore the old name, attempting every rollback step."""
-        steps = (
-            ("the site config", self._restore_site_config),
-            ("common_site_config.json", lambda: self._update_default_site(self.new_name, self.old_name)),
-            ("bench.toml", lambda: self._rename_in_bench_toml(self.new_name, self.old_name)),
-            (
-                "the hostname alias redirects",
-                lambda: self.bench.hostname_aliases.stop_redirecting(self._redirected_alias_patterns),
-            ),
-            ("the hostname aliases", lambda: self._retarget_hostname_aliases(self.new_name, self.old_name)),
-            ("the site directory", self._move_site_directory_back),
-            ("the provider route", lambda: self._release_route(self.new_name)),
-            ("nginx", self._reload_nginx),
-        )
-        failed = []
-        for label, step in steps:
-            try:
-                step()
-            except Exception as exc:
-                failed.append(label)
-                on_progress(f"Could not restore {label}: {exc}")
-        if failed:
-            on_progress(
-                f"\nThe rename was only partly rolled back ({', '.join(failed)}). Check the site before retrying."
-            )
-        else:
-            on_progress(f"\nRolled the rename back; the site is '{self.old_name}' again.")
-
-    def _restore_site_config(self) -> None:
-        """Byte for byte, undoing the pin and the carried hostname at once."""
-        if self._original_site_config is not None:
-            path = self.new_path / "site_config.json"
-            with exclusive_file_lock(path):
-                replace_private_text_locked(path, self._original_site_config)
-
-    def _move_site_directory_back(self) -> None:
-        """Restore the real directory at the old path."""
-        old_path = self.site.path
-        exchange_paths(old_path, self.new_path)
-        self.new_path.unlink()
 
     def _pin_certificate_name(self) -> None:
         """Keep an existing certificate lineage across a rename."""
@@ -233,7 +240,10 @@ class SiteRename:
             ]
             known = {normalize_host(_domain_name(entry)) for entry in domains}
             if self.keep_old_hostname and normalize_host(self.old_name) not in known:
-                old_route = self.site.config.route
+                from pilot.config import RoutePolicy
+
+                route = json.loads(self._original_site_config or "{}").get("route")
+                old_route = RoutePolicy.from_dict(route) if route else None
                 domains.append(
                     {"domain": self.old_name, "route": old_route.to_dict()} if old_route else self.old_name
                 )
@@ -242,8 +252,8 @@ class SiteRename:
                 config["route"] = self._new_route.to_dict()
                 config["ssl"] = self._new_route.public_tls
 
-            # A canonical host naming the old site has to move with it, or nginx
-            # redirects every request to a hostname this site no longer answers to.
+    def _update_primary_hostname(self) -> bool:
+        with self._updating_site_config() as config:
             primary = (config.get("host_name") or "").split("://", 1)[-1]
             if self.make_primary or (primary and normalize_host(primary) == normalize_host(self.old_name)):
                 scheme = (
@@ -251,20 +261,27 @@ class SiteRename:
                     if self._new_route
                     else ("https" if config.get("ssl") else "http")
                 )
-                config["host_name"] = f"{scheme}://{self.new_name}"
+                target = f"{scheme}://{self.new_name}"
+                if config.get("host_name") != target:
+                    config["host_name"] = target
+                    return True
+        return False
 
     def _serves_tls(self) -> bool:
         """Whether any site domain terminates TLS on this host."""
-        return bool(self._site_config_from(self._read_site_config()).tls_domains)
+        from pilot.managers.letsencrypt import certificate_domains
+
+        return bool(certificate_domains(self._site_config_from(self._read_site_config())))
 
     def _refresh_pilot_auth_token(self) -> None:
         from admin.backend.internal.session import Session
 
+        original = json.loads(self._original_site_config or "{}").get("pilot_auth_token")
+        self._old_pilot_auth_token = original if isinstance(original, str) else ""
         with self._updating_site_config() as config:
             token = config.get("pilot_auth_token")
-            if not isinstance(token, str) or not token:
+            if not self._old_pilot_auth_token or token != self._old_pilot_auth_token:
                 return
-            self._old_pilot_auth_token = token
             config["pilot_auth_token"] = Session(self.bench).issue_pilot_token(self.new_name)
 
     def _rename_email_sender_name(self) -> None:
@@ -378,4 +395,3 @@ def _load_site_config(path: Path) -> dict:
     if not isinstance(raw, dict):
         raise BenchError(f"{path} must hold a JSON object.")
     return raw
-

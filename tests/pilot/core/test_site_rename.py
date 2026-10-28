@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
+import signal
+import subprocess
+import sys
 import threading
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -12,6 +17,7 @@ from pilot.config import RoutePolicy
 from pilot.core.bench import Bench
 from pilot.core.site.rename import SiteRename
 from pilot.exceptions import BenchError
+from pilot.internal.atomic_file import exchange_paths
 from tests.pilot.integrations.test_central_client import _bench
 
 OLD = "old.example.com"
@@ -52,6 +58,14 @@ def test_the_site_directory_moves(tmp_path: Path) -> None:
     assert (bench.sites_path / NEW / "site_config.json").exists()
 
 
+@pytest.mark.parametrize("old,new", [("../outside", NEW), (OLD, "../outside"), (".", NEW), ("", NEW)])
+def test_rename_paths_are_checked_before_creating_recovery_files(tmp_path: Path, old: str, new: str) -> None:
+    bench = _bench(tmp_path)
+    with pytest.raises(BenchError, match="within the bench"):
+        SiteRename(bench.site(old), new).run(lambda message: None)
+    assert not (bench.config_path / "site-renames").exists()
+
+
 def test_the_old_path_still_resolves_until_nginx_has_swung_over(tmp_path: Path) -> None:
     """The old path remains resolvable until nginx reloads."""
     bench = _bench(tmp_path)
@@ -81,43 +95,86 @@ def test_old_requests_keep_resolving_after_nginx_reload_returns(tmp_path: Path) 
     ).read_bytes()
 
 
-def test_readers_keep_the_old_path_during_moves_and_rollbacks(tmp_path: Path) -> None:
+def test_kept_hostnames_keep_their_paths_after_the_hold_expires(tmp_path: Path) -> None:
     bench = _bench(tmp_path)
-    _site(bench, OLD)
-    rename = SiteRename(bench.site(OLD), NEW)
+    _site(bench, OLD, db_name="original")
+    _rename(bench)
+    with patch("pilot.core.bench.site_aliases.time.time", return_value=time.time() + 1000):
+        bench.site_aliases.release_expired()
+    assert _config(bench, OLD)["db_name"] == "original"
+    assert (bench.sites_path / OLD).is_symlink()
+
+
+def test_repeated_renames_keep_older_paths_direct(tmp_path: Path) -> None:
+    bench = _bench(tmp_path)
+    _site(bench, OLD, db_name="original")
+    _rename(bench)
+    third = "third.example.com"
+    _rename(bench, old=NEW, new=third)
+    assert (bench.sites_path / OLD).readlink() == Path(third)
+    assert (bench.sites_path / NEW).readlink() == Path(third)
+    assert _config(bench, OLD)["db_name"] == "original"
+
+
+def test_a_pending_destination_cannot_be_renamed_again(tmp_path: Path) -> None:
+    bench = _bench(tmp_path)
+    _site(bench, OLD, db_name="original")
+    with (
+        patch.object(SiteRename, "_finish", side_effect=RuntimeError("interrupted")),
+        pytest.raises(RuntimeError, match="interrupted"),
+    ):
+        _rename(bench)
+    with pytest.raises(BenchError, match="previous rename is pending"):
+        _rename(bench, old=NEW, new="third.example.com")
+    assert _config(bench, OLD)["db_name"] == "original"
+    _rename(bench)
+
+
+def test_readers_keep_the_old_path_during_failed_renames_and_retries(tmp_path: Path) -> None:
+    bench = _bench(tmp_path)
+    _site(bench, OLD, db_name="original")
     stopped = threading.Event()
     started = threading.Event()
     errors = []
-    reads = []
+    reads = 0
 
     def read_config():
+        nonlocal reads
         started.set()
         while not stopped.is_set():
             try:
-                reads.append((bench.sites_path / OLD / "site_config.json").read_bytes())
-            except OSError as error:
+                assert _config(bench, OLD)["db_name"] == "original"
+                reads += 1
+            except (OSError, ValueError, KeyError, AssertionError) as error:
                 errors.append(error)
 
     reader = threading.Thread(target=read_config)
     reader.start()
     try:
         assert started.wait(timeout=5)
-        for _ in range(500):
-            rename._move_site_directory()
-            rename._move_site_directory_back()
+        current = OLD
+        with patch("pilot.core.site.rename.exchange_paths", wraps=exchange_paths) as exchange:
+            for index in range(100):
+                target = f"renamed-{index}.example.com"
+                with (
+                    patch.object(SiteRename, "_finish", side_effect=RuntimeError("interrupted")),
+                    pytest.raises(RuntimeError, match="interrupted"),
+                ):
+                    _rename(bench, old=current, new=target)
+                _rename(bench, old=current, new=target)
+                current = target
+            assert exchange.call_count == 100
     finally:
         stopped.set()
         reader.join(timeout=5)
     assert not reader.is_alive()
-    assert reads and all(content == b"{}" for content in reads)
+    assert reads > 0
     assert not errors
 
 
-def test_a_failed_reload_rolls_the_rename_back(tmp_path: Path) -> None:
-    """A failed reload restores the old directory."""
+def test_a_failed_reload_preserves_both_paths_and_can_resume(tmp_path: Path) -> None:
     bench = _bench(tmp_path)
     _site(bench, OLD, db_password="s3cret")
-    original = (bench.sites_path / OLD / "site_config.json").read_text()
 
     with (
         patch.object(SiteRename, "_reload_nginx", side_effect=RuntimeError("nginx is unhappy")),
@@ -126,9 +183,123 @@ def test_a_failed_reload_rolls_the_rename_back(tmp_path: Path) -> None:
         SiteRename(bench.site(OLD), NEW).run(lambda message: None)
 
     old = bench.sites_path / OLD
-    assert old.is_dir() and not old.is_symlink()
-    assert not (bench.sites_path / NEW).exists()
-    assert (old / "site_config.json").read_text() == original
+    assert old.is_symlink() and old.resolve() == bench.sites_path / NEW
+    assert _config(bench, OLD)["db_password"] == "s3cret"
+    pending = SiteRename(bench.site(OLD), NEW).progress_path
+    assert pending.exists()
+    assert pending.stat().st_mode & 0o777 == 0o600
+    assert pending.parent.stat().st_mode & 0o777 == 0o700
+    _rename(bench)
+    assert not pending.exists()
+
+
+def test_primary_hostname_waits_until_nginx_accepts_the_new_site(tmp_path: Path) -> None:
+    bench = _bench(tmp_path)
+    _site(bench, OLD, host_name=f"https://{OLD}")
+    with (
+        patch.object(SiteRename, "_reload_nginx", side_effect=RuntimeError("reload failed")),
+        pytest.raises(RuntimeError, match="reload failed"),
+    ):
+        SiteRename(bench.site(OLD), NEW, make_primary=True).run(lambda message: None)
+    assert _config(bench, OLD)["host_name"] == f"https://{OLD}"
+    _rename(bench, make_primary=True)
+    assert _config(bench, NEW)["host_name"] == f"http://{NEW}"
+
+
+def test_unfinished_move_reserves_both_names_across_benches(tmp_path: Path) -> None:
+    from pilot.utils import host_owner
+
+    bench = _bench(tmp_path)
+    other = _bench(tmp_path, "other")
+    _site(bench, OLD)
+    with (
+        patch.object(SiteRename, "_move_site_directory", side_effect=OSError("disk full")),
+        pytest.raises(OSError, match="disk full"),
+    ):
+        _rename(bench)
+    assert host_owner(other.path, OLD) == bench.config.name
+    assert host_owner(other.path, NEW) == bench.config.name
+    assert bench.resolve_site_name(NEW) == OLD
+
+
+def test_pending_move_resolves_both_api_names_before_metadata_finishes(tmp_path: Path) -> None:
+    bench = _bench(tmp_path)
+    _site(bench, OLD)
+    with (
+        patch.object(SiteRename, "_finish", side_effect=RuntimeError("interrupted")),
+        pytest.raises(RuntimeError, match="interrupted"),
+    ):
+        _rename(bench)
+    assert bench.resolve_site_name(OLD) == NEW
+    assert bench.resolve_site_name(NEW) == NEW
+
+
+@pytest.mark.parametrize("progress", ["[]", '{"target": []}', '{"target": ["../outside", true, false]}'])
+def test_corrupt_progress_preserves_compatibility_paths(tmp_path: Path, progress: str) -> None:
+    bench = _bench(tmp_path)
+    _site(bench, OLD)
+    _rename(bench, keep_old_hostname=False)
+    pending = SiteRename(bench.site(OLD), NEW, keep_old_hostname=False).progress_path
+    pending.write_text(progress)
+    with patch("pilot.core.bench.site_aliases.time.time", return_value=time.time() + 1000):
+        bench.site_aliases.release_expired()
+    assert (bench.sites_path / OLD / "site_config.json").exists()
+
+
+@pytest.mark.parametrize("stage", ["before-exchange", "before-reload"])
+def test_a_killed_rename_retains_its_alias_and_resumes_without_rotating_again(
+    tmp_path: Path, stage: str
+) -> None:
+    from admin.backend.internal.session import Session
+
+    bench = _bench(tmp_path)
+    old_token = Session(bench).issue_pilot_token(OLD)
+    _site(bench, OLD, pilot_auth_token=old_token)
+    ready = tmp_path / "before-reload"
+    script = """
+import sys, time
+from pathlib import Path
+from pilot.core.bench import Bench
+import pilot.core.site.rename as rename_module
+from pilot.core.site.rename import SiteRename
+SiteRename._add_to_hosts = lambda self: None
+def pause(self):
+    Path(sys.argv[2]).touch()
+    time.sleep(60)
+if sys.argv[5] == "before-exchange":
+    rename_module.exchange_paths = lambda *args: pause(None)
+else:
+    SiteRename._reload_nginx = pause
+SiteRename(Bench(Path(sys.argv[1])).site(sys.argv[3]), sys.argv[4]).run(lambda message: None)
+"""
+    process = subprocess.Popen(
+        [sys.executable, "-c", script, str(bench.path), str(ready), OLD, NEW, stage], start_new_session=True
+    )
+    try:
+        deadline = time.monotonic() + 10
+        while not ready.exists() and process.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert ready.exists()
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait(timeout=5)
+
+    token_after_move = _config(bench, OLD)["pilot_auth_token"]
+    assert (token_after_move == old_token) == (stage == "before-exchange")
+    with patch("pilot.core.bench.site_aliases.time.time", return_value=time.time() + 1000):
+        bench.site_aliases.release_expired()
+        assert (bench.sites_path / OLD / "site_config.json").exists()
+        with pytest.raises(BenchError, match="pending"):
+            bench.site_aliases.release(NEW if stage == "before-exchange" else OLD)
+    _rename(bench)
+    new_token = _config(bench, NEW)["pilot_auth_token"]
+    assert new_token != old_token
+    if stage == "before-reload":
+        assert new_token == token_after_move
+    assert Session(bench).verify_token(old_token) is None
+    with pytest.raises(BenchError, match="moments"):
+        bench.site_aliases.release(OLD)
 
 
 def test_failed_atomic_exchange_leaves_the_original_site_available(tmp_path: Path) -> None:
@@ -147,7 +318,9 @@ def test_failed_atomic_exchange_leaves_the_original_site_available(tmp_path: Pat
 
 
 @pytest.mark.parametrize("write_completed", [False, True])
-def test_failed_alias_record_leaves_the_original_site_available(tmp_path: Path, write_completed: bool) -> None:
+def test_failed_alias_record_leaves_the_original_site_available(
+    tmp_path: Path, write_completed: bool
+) -> None:
     from pilot.core.bench.site_aliases import SiteAliases
 
     bench = _bench(tmp_path)
@@ -172,10 +345,12 @@ def test_failed_alias_record_leaves_the_original_site_available(tmp_path: Path, 
     assert (old / "site_config.json").read_bytes() == original
     assert not (bench.sites_path / NEW).exists()
     assert not (bench.sites_path / NEW).is_symlink()
-    release.assert_called_once_with(NEW)
+    release.assert_not_called()
+    _rename(bench)
+    assert _config(bench, NEW)["db_password"] == "original-password"
 
 
-def test_a_rolled_back_rename_can_simply_be_run_again(tmp_path: Path) -> None:
+def test_a_failed_rename_can_simply_be_run_again(tmp_path: Path) -> None:
     bench = _bench(tmp_path)
     _site(bench, OLD)
 
@@ -191,7 +366,7 @@ def test_a_rolled_back_rename_can_simply_be_run_again(tmp_path: Path) -> None:
     assert (bench.sites_path / OLD).resolve() == bench.sites_path / NEW
 
 
-def test_a_failure_part_way_through_restores_what_had_changed(tmp_path: Path) -> None:
+def test_a_failure_part_way_through_keeps_the_forward_state_for_retry(tmp_path: Path) -> None:
     bench = _bench(tmp_path)
     _site(bench, OLD)
     common = bench.sites_path / "common_site_config.json"
@@ -203,12 +378,13 @@ def test_a_failure_part_way_through_restores_what_had_changed(tmp_path: Path) ->
     ):
         SiteRename(bench.site(OLD), NEW).run(lambda message: None)
 
-    assert json.loads(common.read_text())["default_site"] == OLD
-    assert (bench.sites_path / OLD).is_dir()
-    assert not (bench.sites_path / NEW).exists()
+    assert json.loads(common.read_text())["default_site"] == NEW
+    assert (bench.sites_path / OLD).resolve() == bench.sites_path / NEW
+    _rename(bench)
+    assert (bench.sites_path / NEW).is_dir()
 
 
-def test_a_rolled_back_rename_gives_the_new_route_back(tmp_path: Path) -> None:
+def test_a_failed_rename_keeps_the_new_route_for_recovery(tmp_path: Path) -> None:
     bench = _bench(tmp_path)
     _site(bench, OLD)
     released = []
@@ -223,7 +399,7 @@ def test_a_rolled_back_rename_gives_the_new_route_back(tmp_path: Path) -> None:
     ):
         SiteRename(bench.site(OLD), NEW).run(lambda message: None)
 
-    assert released == [NEW]
+    assert released == []
 
 
 def test_the_old_hostname_keeps_being_served(tmp_path: Path) -> None:
@@ -253,7 +429,7 @@ def test_the_site_token_is_reissued_for_the_new_name(tmp_path: Path) -> None:
     revoke_token.assert_called_once_with("old-token")
 
 
-def test_a_failed_rename_restores_and_does_not_revoke_the_old_token(tmp_path: Path) -> None:
+def test_a_failed_rename_reuses_its_new_token_and_revokes_the_old_one_on_completion(tmp_path: Path) -> None:
     bench = _bench(tmp_path)
     _site(bench, OLD, pilot_auth_token="old-token")
 
@@ -261,15 +437,20 @@ def test_a_failed_rename_restores_and_does_not_revoke_the_old_token(tmp_path: Pa
         patch(
             "admin.backend.internal.session.Session.issue_pilot_token",
             return_value="new-token",
-        ),
+        ) as issue_token,
         patch("admin.backend.internal.session.Session.revoke_token") as revoke_token,
-        patch.object(SiteRename, "_reload_nginx", side_effect=RuntimeError("reload failed")),
-        pytest.raises(RuntimeError, match="reload failed"),
     ):
-        SiteRename(bench.site(OLD), NEW).run(lambda message: None)
+        with (
+            patch.object(SiteRename, "_reload_nginx", side_effect=RuntimeError("reload failed")),
+            pytest.raises(RuntimeError, match="reload failed"),
+        ):
+            SiteRename(bench.site(OLD), NEW).run(lambda message: None)
 
-    assert _config(bench, OLD)["pilot_auth_token"] == "old-token"
-    revoke_token.assert_not_called()
+        assert _config(bench, OLD)["pilot_auth_token"] == "new-token"
+        revoke_token.assert_not_called()
+        _rename(bench)
+        issue_token.assert_called_once_with(NEW)
+        revoke_token.assert_called_once_with("old-token")
 
 
 def test_a_revocation_sync_failure_does_not_roll_back_the_rename(tmp_path: Path) -> None:

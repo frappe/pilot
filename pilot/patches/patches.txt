@@ -17,3 +17,5 @@ enable_database_at_boot
 add_mariadb_boot_sizing
 enroll_sites_in_scheduled_backups
 run_monitor_as_service
+size_mariadb_aria_pagecache
+register_worker_queues

@@ -7,6 +7,7 @@ from pilot.tasks import Task, step
 @dataclass(kw_only=True)
 class ClearCacheTask(Task):
     command: ClassVar[str] = "clear-cache"
+    timeout_seconds: ClassVar[int] = 300
 
     site: str
 

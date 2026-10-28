@@ -22,6 +22,12 @@ from pilot.tasks import TaskRunner
 TASK_ID = "20260715-120000-aabbcc"
 
 
+@pytest.fixture(autouse=True)
+def inline_test_callbacks(monkeypatch):
+    # Synthetic callbacks in this module exist only in the test process.
+    monkeypatch.setattr(wrapper_module, "run_bounded_callback", callback_module.run_callback)
+
+
 def successful_callback(meta: dict, args: dict) -> None:
     return None
 
@@ -94,6 +100,7 @@ def test_run_persists_task_before_starting_wrapper(
         "queue_sequence",
         "started_at",
         "task_id",
+        "timeout_seconds",
     }
     assert meta["task_id"] == TASK_ID
     assert meta["command"] == "build"

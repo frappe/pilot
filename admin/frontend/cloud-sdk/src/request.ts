@@ -50,6 +50,12 @@ export class CloudSettingsError extends Error {
 export const isMigrationConflict = (exception: unknown) =>
   exception instanceof CloudSettingsError && exception.excType === 'CloudMigrationConflictError'
 
+// Pilot's text when its server has no Central, so billing is unavailable.
+const NOT_CONNECTED_MESSAGE = 'This server is not connected to Frappe Cloud.'
+
+export const isNotConnectedToCentral = (exception: unknown) =>
+  exception instanceof CloudSettingsError && exception.serverMessages.includes(NOT_CONNECTED_MESSAGE)
+
 const encodeValue = (value: unknown) => {
   if (value == null) return ''
 

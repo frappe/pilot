@@ -11,6 +11,7 @@ from pilot.tasks import Task, step
 @dataclass(kw_only=True)
 class SetInnoDBBufferPoolSizeTask(Task):
     command: ClassVar[str] = "set-innodb-buffer-pool-size"
+    timeout_seconds: ClassVar[int] = 300
     is_cancellable_while_running: ClassVar[bool] = False
     _AUDIT_ARG_KEYS: ClassVar[tuple[str, ...]] = ("size_mb",)
 

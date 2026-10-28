@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createCloudSettings } from '../src/controller.ts'
+import { getRuntimeUrl } from '../src/dialog.ts'
 import { isCloudSettingsAvailable } from '../src/context.ts'
-import { call, CloudSettingsError } from '../src/request.ts'
+import { call, CloudSettingsError, isNotConnectedToCentral } from '../src/request.ts'
 
 test('opening twice mounts only the latest request; closing cancels a pending open', async () => {
   let resolveRuntime: (value: ReturnType<typeof makeRuntime>) => void = () => {}
@@ -39,6 +40,21 @@ test('a failed UI load can be retried and unavailable context never loads it', a
   assert.equal(attempts, 2)
 })
 
+test('the UI loads from the runtime Pilot serves next to the Desk script', async () => {
+  const loaded: unknown[] = []
+  const context = { enabled: true, bundle: { js: 'https://pilot.example.test/embed/cloud-settings/cloud-settings.js?v=7' } }
+  const settings = createCloudSettings(async (given) => {
+    loaded.push(given)
+    return { mountCloudSettings: () => {}, closeCloudSettings: () => {} }
+  })
+
+  await settings.openCloudSettings({ context })
+
+  assert.deepEqual(loaded, [context])
+  assert.equal(getRuntimeUrl(context), 'https://pilot.example.test/embed/cloud-settings/esm/cloud-settings.js')
+  assert.throws(() => getRuntimeUrl({ enabled: true }), /not set up/)
+})
+
 test('availability distinguishes permission denial from a connection failure', async (context) => {
   context.mock.method(globalThis, 'fetch', async () => new Response('{}', { status: 403 }))
   assert.equal(await isCloudSettingsAvailable(), false)
@@ -66,4 +82,13 @@ test('server error messages render as plain text and malformed messages remain e
   const error = new CloudSettingsError(400, { _server_messages: JSON.stringify([JSON.stringify({ message: '<b>Invalid domain</b>' })]) })
   assert.equal(error.message, 'Invalid domain')
   assert.equal(new CloudSettingsError(403, { _server_messages: 'invalid' }).status, 403)
+})
+
+test('a server without Central is told apart from a Central error', () => {
+  const failure = (message: string) =>
+    new CloudSettingsError(417, { _server_messages: JSON.stringify([JSON.stringify({ message })]) })
+
+  assert.equal(isNotConnectedToCentral(failure('This server is not connected to Frappe Cloud.')), true)
+  assert.equal(isNotConnectedToCentral(failure('Cannot reach Central at https://central.test')), false)
+  assert.equal(isNotConnectedToCentral(new Error('This server is not connected to Frappe Cloud.')), false)
 })

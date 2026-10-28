@@ -68,32 +68,33 @@ export default defineConfig(({ mode }) => ({
 
   server: {
     host: "::",
-    fs: { allow: [".", "../cloud-sdk"] },
+    fs: { allow: [".", "../cloud-sdk", "../../backend/static/in-app-embed"] },
     warmup: { clientFiles: ["./src/cloud-settings/index.ts"] },
   },
 
   build: {
-    lib: mode === 'sdk' ? {
+    // `esm` is the code-split build the SDK imports at runtime; the default is Desk's single script.
+    lib: mode === 'esm' ? {
       entry: path.resolve(__dirname, 'src/cloud-settings/runtime.ts'),
       formats: ['es'],
       fileName: 'cloud-settings',
     } : undefined,
-    outDir: mode === 'sdk' ? '../cloud-sdk/dist/embed' : '../../backend/static/in-app-embed/cloud-settings',
+    outDir: mode === 'esm' ? '../../backend/static/in-app-embed/cloud-settings/esm' : '../../backend/static/in-app-embed/cloud-settings',
     emptyOutDir: true,
     cssCodeSplit: false,
     sourcemap: false,
     minify: true,
     assetsInlineLimit: 1024 * 1024,
     rolldownOptions: {
-      input: path.resolve(__dirname, mode === 'sdk' ? 'src/cloud-settings/runtime.ts' : 'src/cloud-settings/index.ts'),
+      input: path.resolve(__dirname, mode === 'esm' ? 'src/cloud-settings/runtime.ts' : 'src/cloud-settings/index.ts'),
       output: {
-        format: mode === 'sdk' ? 'es' : 'iife',
-        name: mode === 'sdk' ? undefined : 'FrappeCloudSettingsEmbed',
+        format: mode === 'esm' ? 'es' : 'iife',
+        name: mode === 'esm' ? undefined : 'FrappeCloudSettingsEmbed',
         entryFileNames: "cloud-settings.js",
         chunkFileNames: "chunks/[name]-[hash].js",
         assetFileNames: "assets/[name]-[hash][extname]",
         // Desk loads one classic script, which cannot import chunks.
-        codeSplitting: mode === 'sdk',
+        codeSplitting: mode === 'esm',
       },
     },
   },

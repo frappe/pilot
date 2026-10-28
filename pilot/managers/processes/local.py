@@ -132,10 +132,12 @@ class ProcessManager:
         return ProcessDefinitionBuilder(self.bench, self.python, self.watch_admin_js)
 
     def write_config(self) -> None:
-        AdminEnvManager(cli_root()).ensure()
+        definitions = self._process_definitions()
+        if any(pd.name == "admin" for pd in definitions):
+            AdminEnvManager(cli_root()).ensure()
         self._ensure_redis_config()
         self._ensure_gunicorn_config()
-        lines = [f"{pd.name}: {shlex.join(pd.argv_with_hooks)}\n" for pd in self._process_definitions()]
+        lines = [f"{pd.name}: {shlex.join(pd.argv_with_hooks)}\n" for pd in definitions]
         self.procfile_path.write_text("".join(lines))
 
     def _ensure_gunicorn_config(self) -> None:

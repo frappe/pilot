@@ -4,6 +4,8 @@ import gzip
 import json
 import shutil
 import subprocess
+import tempfile
+from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -95,9 +97,19 @@ class SiteMigrationBackup:
 
     @property
     def previous_tables(self) -> list[str]:
-        if not self.previous_tables_path.exists():
-            return []
-        return json.loads(self.previous_tables_path.read_text(encoding="utf-8"))
+        try:
+            tables = json.loads(self.previous_tables_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            raise BenchError(
+                f"Cannot read migration table inventory for {self.site.config.name}: {error}"
+            ) from error
+        if (
+            not isinstance(tables, list)
+            or not tables
+            or any(not isinstance(table, str) or not table for table in tables)
+        ):
+            raise BenchError(f"Invalid migration table inventory for {self.site.config.name}")
+        return tables
 
     def restore(self, tables: list[str]) -> None:
         """Restore a full database backup or selected MariaDB table dumps."""
@@ -107,16 +119,20 @@ class SiteMigrationBackup:
         config = read_site_config(self.site.path)
         db_name = config["db_name"]
         previous = set(self.previous_tables)
-        restore_tables = tables or list(previous)
-
-        for table in restore_tables:
-            dump = self._dump_path(table)
-            if dump.exists():
-                self._import_dump(config, db_name, dump)
+        for dump in self.get_restore_dumps(tables, previous):
+            self._import_dump(config, db_name, dump)
 
         created = [t for t in self._list_tables(config, db_name) if t not in previous]
         if created:
             self._drop_tables(config, db_name, created)
+
+    def get_restore_dumps(self, tables: list[str], previous: set[str]) -> list[Path]:
+        """Validate every required dump before importing any table."""
+        dumps = [self._dump_path(table) for table in (tables or sorted(previous)) if table in previous]
+        for dump in dumps:
+            if not dump.is_file():
+                raise BenchError(f"Missing migration table dump for {self.site.config.name}: {dump.name}")
+        return dumps
 
     def discard(self) -> None:
         if self.directory.exists():
@@ -169,14 +185,21 @@ class SiteMigrationBackup:
 
     def _import_dump(self, config: dict, db_name: str, dump: Path) -> None:
         argv = [self._cli(), *self._conn_args(config), db_name]
-        with gzip.open(dump, "rb") as compressed:
-            process = subprocess.Popen(argv, stdin=subprocess.PIPE)
+        with gzip.open(dump, "rb") as compressed, tempfile.TemporaryFile() as errors:
+            process = subprocess.Popen(argv, stdin=subprocess.PIPE, stderr=errors)
             if process.stdin is None:
                 raise BenchError("Database import input pipe was not created")
-            shutil.copyfileobj(compressed, process.stdin)
-            process.stdin.close()
+            try:
+                shutil.copyfileobj(compressed, process.stdin)
+            except BrokenPipeError:
+                pass  # the client exited early; its exit code and error tell why
+            finally:
+                with suppress(BrokenPipeError):
+                    process.stdin.close()
             if process.wait() != 0:
-                raise BenchError(f"Failed to import {dump.name} for {self.site.config.name}")
+                errors.seek(0)
+                reason = errors.read().decode(errors="replace").strip()[-500:]
+                raise BenchError(f"Failed to import {dump.name} for {self.site.config.name}: {reason}")
 
     def _drop_tables(self, config: dict, db_name: str, tables: list[str]) -> None:
         statements = ";".join(f"DROP TABLE IF EXISTS `{t.replace('`', '')}`" for t in tables)

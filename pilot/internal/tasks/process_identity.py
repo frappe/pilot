@@ -67,13 +67,17 @@ class TaskProcessRecord:
     task_id: str
     argv: list[str]
     identity: ProcessIdentity
+    is_callback: bool = False
 
     def to_dict(self) -> dict:
-        return {
+        record: dict[str, object] = {
             "task_id": self.task_id,
             "argv": self.argv,
             "identity": self.identity.to_dict(),
         }
+        if self.is_callback:
+            record["is_callback"] = True
+        return record
 
     @classmethod
     def from_dict(cls, data: dict) -> "TaskProcessRecord":
@@ -81,6 +85,7 @@ class TaskProcessRecord:
             task_id=str(data["task_id"]),
             argv=[str(value) for value in data["argv"]],
             identity=ProcessIdentity.from_dict(data["identity"]),
+            is_callback=bool(data.get("is_callback", False)),
         )
 
 
@@ -365,6 +370,15 @@ class ProcessInspector:
             )
         except (FileNotFoundError, ProcessLookupError, PermissionError, OSError, ValueError):
             return False
+
+    def is_leader_dead(self, identity: ProcessIdentity) -> bool:
+        try:
+            snapshot = self._read_process(identity.pid)
+        except (FileNotFoundError, ProcessLookupError):
+            return True
+        except (PermissionError, OSError, ValueError):
+            return False
+        return snapshot.state == "Z" or snapshot.start_ticks != identity.start_ticks
 
     def _inspect_group(self, identity: ProcessIdentity) -> ProcessOwnership:
         try:

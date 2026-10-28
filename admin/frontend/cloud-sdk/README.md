@@ -18,7 +18,9 @@ The server checks access on every call. The browser does not receive Pilot or Ce
 npm install @frappe/cloud-sdk
 ```
 
-The package includes the UI and its styles. You do not need to add Vue, Frappe UI, or a stylesheet to your app. The UI loads when you first open it, and each panel loads when it is first shown. Your bundler must support dynamic `import()`, as Vite, webpack, and esbuild do.
+The package holds the API calls and a small loader. It does not hold the UI. When you first open the dialog, the loader imports the UI from the site's Pilot server, at the `esm/` path next to the script URL in `bundle.js` of `get_context`. Each panel then loads when it is first shown. So a Pilot update changes the UI in every app, and your app does not need a new release. You do not need to add Vue, Frappe UI, or a stylesheet to your app.
+
+The browser must reach the Pilot server, and the page's Content Security Policy must allow scripts from it. If the UI does not load, `openCloudSettings()` rejects with a message that says so.
 
 The dialog uses the Inter font. If the page does not load Inter, the dialog adds it to the page the first time it opens.
 
@@ -100,7 +102,7 @@ Build your own UI on the read calls, for example a plan badge or a banner. For c
 
 Requests use the current origin and session. They time out after 30 seconds. The SDK does not retry write calls.
 
-`changePlan(plan)` returns `{ queued, resized, progress_url }`. A new size stops the site for a few minutes. When `progress_url` is set, open it: the page lives on Central and brings the user back when the site is ready. During a free trial, Central refuses the call until the team adds a payment method.
+`changePlan(plan)` returns `{ queued, resized, progress_url }`. A new size stops the site for a few minutes. When `progress_url` is set, open it: the page lives on Central and brings the user back when the site is ready. During a free trial, the call resizes nothing: Central keeps the plan, and the site moves to it when a payment method converts the trial. `getPlanOptions` then lists the paid plans the trial may move to, with `selected` set to the plan it moves to. `getBilling` returns `plan_change.progress_url` while a plan change runs, such as that move.
 
 ## Handle feedback and errors
 
@@ -118,7 +120,23 @@ Direct API calls and errors before the dialog opens belong to your app. Catch `C
 
 ## Use the Desk bundle
 
-Desk loads `/embed/cloud-settings/cloud-settings.js` from Pilot. It exposes `window.FrappeCloudSettings` with the same availability, open, and close methods. The existing Desk entry is `frappe.cloudSettings.show(context, options)`. An npm consumer uses the packaged UI instead.
+Pilot serves two builds of the same UI under `/embed/cloud-settings/`:
+
+| Path | Format | Used by |
+|---|---|---|
+| `cloud-settings.js` | One classic script | Desk, through `frappe.cloudSettings.show(context, options)`. It also exposes `window.FrappeCloudSettings` with the same availability, open, and close methods. |
+| `esm/cloud-settings.js` and `esm/chunks/` | ES module with a chunk per panel | The npm package |
+
+Both entry files revalidate on every load, so a Pilot update takes effect at once. Chunk names contain a content hash, so the browser caches them for a year. The ES files are sent with `Access-Control-Allow-Origin: *`, because a site imports them from the Pilot origin.
+
+## What needs a release
+
+| Change | Release |
+|---|---|
+| Anything inside the dialog, such as copy, layout, fields, or flows that use existing calls | Pilot update |
+| New data in a response | Central deploy. The Frappe proxy passes responses through. |
+| A new or renamed call the dialog makes | Frappe release, because the whitelisted proxy methods live in Frappe |
+| The public API of this package: `openCloudSettings` options, panel names, `isCloudSettingsAvailable`, or the typed calls in `@frappe/cloud-sdk/api` | New version of this package, then an upgrade in each app |
 
 ## Release
 
@@ -128,11 +146,11 @@ npm trusts the workflow through trusted publishing, so the repository holds no n
 
 ## Build and test
 
-Run `npm test` and `npm run build` in this package. Run `npm run build` in `admin/frontend/in-app-embed` to build the Pilot browser bundle. Build both outputs after a UI change. Refresh local file dependencies before you rebuild a consumer such as Raven.
+Run `npm test` and `npm run build` in this package. Run `npm run build` in `admin/frontend/in-app-embed` to build both Pilot outputs into `admin/backend/static/in-app-embed/cloud-settings/`. That build also checks that the ES runtime exports its methods, contains its styles, and loads panels on demand.
 
-To run browser regression tests, install the dependencies in `admin/frontend/dashboard` and `admin/frontend/in-app-embed`, then build this package. Run `npx playwright install chromium` and `npx playwright test --config cloud-settings.config.ts` from `admin/frontend/dashboard`. The tests check dialog cleanup, custom feedback translations, task cancellation and resume, and the phone layout. `cloud-settings-billing.spec.ts` checks the billing tab: the trial notice and its states, the billing details and payment steps during a trial, the plan list, the move to the progress page, and the refusal, spending limit and retry states. CI runs these tests in the MariaDB browser job.
+To run browser regression tests, install the dependencies in `admin/frontend/dashboard` and `admin/frontend/in-app-embed`, then build this package and the in-app embed. Run `npx playwright install chromium` and `npx playwright test --config cloud-settings.config.ts` from `admin/frontend/dashboard`. The tests check that the SDK loads the UI from Pilot and loads a panel only when it is shown, dialog cleanup, custom feedback translations, task cancellation and resume, and the phone layout. `cloud-settings-billing.spec.ts` checks the billing tab: the trial notice and its states, the billing details and payment steps during a trial, the country and Indian state lists, a card that fails verification, the plan list, the move to the progress page, and the refusal, spending limit and retry states. CI runs these tests in the MariaDB browser job.
 
-To test all panels with sample data, run `python3 -m http.server 8123` in this package. Open `http://localhost:8123/tests/embed.html`. No real payment or site action runs in this fixture.
+To test all panels with sample data, build this package and the in-app embed. Run `python3 -m http.server 8123` from the repository root. Open `http://localhost:8123/admin/frontend/cloud-sdk/tests/embed.html`. No real payment or site action runs in this fixture.
 
 To test billing without host metadata, run this from the Pilot repository:
 
@@ -140,4 +158,4 @@ To test billing without host metadata, run this from the Pilot repository:
 .venv/bin/python -m scripts.cloud_settings_simulator --bench-root /path/to/local/bench
 ```
 
-Use a local development site that has the server APIs and a button to open the dialog. Set that site's `pilot_endpoint` to `http://127.0.0.1:8003`, then clear its cache. Keep its existing site token. Sign in as a System Manager and open Billing. The simulation controls are at `http://127.0.0.1:8124`. Save the sample profile, complete the local checkout, then click Check status. You can reset the data or simulate an API failure. State stays in memory. Billing makes no real charges. Other Pilot operations still use the real local bench. Stop the simulator and restore the original endpoint when finished.
+Use a local development site that has the server APIs and a button to open the dialog. Set that site's `pilot_endpoint` to `http://127.0.0.1:8003`, then clear its cache. Keep its existing site token. Sign in as a System Manager and open Billing. The simulation controls are at `http://127.0.0.1:8124`. Save the sample profile, complete the local checkout, then click Check status. To test the trial flow, choose **Start a free trial** on the controls page: Billing then shows an open trial, and a completed checkout converts it. You can reset the data or simulate an API failure. State stays in memory. Billing makes no real charges. Other Pilot operations still use the real local bench. Stop the simulator and restore the original endpoint when finished.

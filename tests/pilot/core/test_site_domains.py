@@ -136,6 +136,25 @@ def test_a_domain_change_with_an_email_issues_certificates(tmp_path: Path) -> No
     assert letsencrypt.call_args.kwargs["email"] == "ops@example.com"
 
 
+def test_a_proxied_domain_change_only_regenerates_nginx(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    domains = _domains(tmp_path, {"ssl": True})
+    domains.site.bench.config.production.enabled = True
+    with (
+        patch(
+            "pilot.core.adapters.domain_provider.DomainRouteProvider.wildcard_domains",
+            return_value=["*.example.com"],
+        ),
+        patch("pilot.tasks.setup_nginx.SetupNginxTask.queue", return_value="nginx-task") as nginx,
+        patch("pilot.tasks.setup_letsencrypt.SetupLetsEncryptTask.queue") as letsencrypt,
+    ):
+        assert not domains.is_certificate_email_required
+        assert domains.apply_task(email="ops@example.com") == "nginx-task"
+    nginx.assert_called_once()
+    letsencrypt.assert_not_called()
+
+
 def test_default_configs_do_not_share_common_settings() -> None:
     first = BenchConfig.default("first")
     first.letsencrypt.email = "ops@example.com"
@@ -158,5 +177,7 @@ def test_a_certificate_is_pending_only_while_its_task_is_active(tmp_path: Path) 
         list_tasks.return_value = tasks(("setup-letsencrypt", TaskStatus.RUNNING))
         assert domains.is_certificate_pending
 
-        list_tasks.return_value = tasks(("setup-letsencrypt", TaskStatus.SUCCESS), ("setup-nginx", TaskStatus.QUEUED))
+        list_tasks.return_value = tasks(
+            ("setup-letsencrypt", TaskStatus.SUCCESS), ("setup-nginx", TaskStatus.QUEUED)
+        )
         assert not domains.is_certificate_pending

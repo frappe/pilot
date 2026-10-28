@@ -58,8 +58,10 @@ def _nginx_reload_hook() -> str:
 def is_public_domain(domain: str) -> bool:
     """Whether certbot can validate the domain publicly."""
     domain = domain.strip().lower().rstrip(".")
-    return bool(domain) and domain not in {"local", "localhost"} and not domain.endswith(
-        (".local", ".localhost")
+    return (
+        bool(domain)
+        and domain not in {"local", "localhost"}
+        and not domain.endswith((".local", ".localhost"))
     )
 
 
@@ -70,7 +72,40 @@ def public_domains(site: "SiteConfig") -> list[str]:
 
 def certificate_domains(site: "SiteConfig") -> list[str]:
     """Return public domains whose TLS terminates on this host."""
-    return [domain for domain in site.tls_domains if is_public_domain(domain)]
+    return [domain for domain in local_public_domains(site) if site.terminates_tls(domain)]
+
+
+def local_public_domains(site: "SiteConfig") -> list[str]:
+    """Public domains eligible for local TLS, respecting provider routing."""
+    from pilot.core.adapters.domain_provider import DomainRouteProvider
+    from pilot.utils import matches_wildcard
+
+    patterns: list[str] | None = None
+    domains = []
+    for domain in public_domains(site):
+        route = site.configured_route_for(domain)
+        if route is not None:
+            if route.origin_tls:
+                domains.append(domain)
+            continue
+        if patterns is None:
+            patterns = DomainRouteProvider.wildcard_domains()
+        if not matches_wildcard(domain, patterns):
+            domains.append(domain)
+    return domains
+
+
+def is_admin_certificate_required(bench: "Bench") -> bool:
+    """Whether the public Admin hostname needs a certificate on this host."""
+    from pilot.core.adapters.domain_provider import DomainRouteProvider
+    from pilot.utils import matches_wildcard
+
+    admin = bench.config.admin
+    if not admin.tls or not is_public_domain(admin.domain):
+        return False
+    if admin.route is not None:
+        return admin.route.origin_tls
+    return not matches_wildcard(admin.domain, DomainRouteProvider.wildcard_domains())
 
 
 def certificate_domain_names(cert_file: Path) -> set[str]:
@@ -126,9 +161,9 @@ def letsencrypt_email_required(bench: "Bench") -> bool:
     if not bench.config.admin.tls:
         return False
     # Admin TLS also enables public site TLS in production.
-    if any(public_domains(site.config) for site in bench.sites()):
+    if any(local_public_domains(site.config) for site in bench.sites()):
         return True
-    return is_public_domain(bench.config.admin.domain)
+    return is_admin_certificate_required(bench)
 
 
 def is_letsencrypt_required(bench: "Bench") -> bool:
@@ -227,6 +262,7 @@ class LetsEncryptManager:
                     "-w",
                     webroot_path,
                     *domain_args,
+                    "--renew-with-new-domains",
                     "--cert-name",
                     self.bench.certificate_name(site),
                     "--expand",
@@ -259,7 +295,7 @@ class LetsEncryptManager:
                     f"Could not obtain a certificate for {domains} (site '{site.config.name}'), skipping: {exc}"
                 )
                 failed.append(site.config.name)
-        if self.bench.config.admin.tls and is_public_domain(self.bench.config.admin.domain):
+        if is_admin_certificate_required(self.bench):
             try:
                 self.obtain_admin()
             except CommandError as exc:
@@ -282,6 +318,8 @@ class LetsEncryptManager:
     def obtain_admin(self) -> None:
         from pilot.managers.nginx import NginxManager
 
+        if not is_admin_certificate_required(self.bench):
+            return
         nginx_manager = NginxManager(self.bench)
         domain = self.bench.config.admin.domain
 
@@ -310,7 +348,20 @@ class LetsEncryptManager:
         )
 
     def renew(self) -> None:
-        run_command(_privileged(["certbot", "renew", "--quiet"]))
+        """Refresh this bench's current origin certificates without renewing retired routes."""
+        from pilot.internal.atomic_file import exclusive_file_lock
+        from pilot.managers.nginx import NginxManager
+        from pilot.utils import make_private_directory
+
+        directory = self.bench.config_path / "site-renames"
+        make_private_directory(directory, parents=True)
+        with exclusive_file_lock(directory / "operations"):
+            if not any(
+                certificate_domains(site.config) for site in self.bench.sites()
+            ) and not is_admin_certificate_required(self.bench):
+                return
+            self.obtain_all()
+            NginxManager(self.bench).apply_config()
 
     def _is_near_expiry(self, site: "SiteConfig") -> bool:
         from pilot.managers.nginx import NginxManager
@@ -322,19 +373,23 @@ class LetsEncryptManager:
         days_left = certificate_days_left(cert_file)
         return days_left is None or days_left < _CERT_EXPIRY_THRESHOLD_DAYS
 
-    def expiring_certificates(self) -> list[tuple[str, int]]:
-        """(certificate name, days left) for this bench's certificates close to expiry."""
+    def get_certificate_paths(self) -> list[tuple[str, Path]]:
+        """Existing certificate files for this bench's current local TLS routes."""
         from pilot.managers.nginx import NginxManager
 
         nginx = NginxManager(self.bench)
         certificates = []
         for site in self.bench.sites():
-            if nginx.has_cert(site.config):
+            if certificate_domains(site.config) and nginx.has_cert(site.config):
                 certificates.append((self.bench.certificate_name(site.config), nginx.cert_path(site.config)))
-        if self.bench.config.admin.tls and nginx.has_admin_cert:
+        if is_admin_certificate_required(self.bench) and nginx.has_admin_cert:
             certificates.append((self.bench.config.admin.domain, nginx.admin_cert_path))
+        return certificates
+
+    def expiring_certificates(self) -> list[tuple[str, int]]:
+        """(certificate name, days left) for this bench's certificates close to expiry."""
         expiring = []
-        for name, path in certificates:
+        for name, path in self.get_certificate_paths():
             days_left = certificate_days_left(path)
             if days_left is not None and days_left < _CERT_ALERT_DAYS:
                 expiring.append((name, days_left))
@@ -383,9 +438,9 @@ def install_renewal_timer() -> None:
 
 
 def main() -> None:
-    """Entry point of the renewal timer: renew once for the host, then check every bench."""
+    """Refresh each bench's local certificates, then check their expiry."""
     from pilot.core.bench import Bench
-    from pilot.exceptions import CommandError
+    from pilot.exceptions import BenchError
     from pilot.utils import cli_root, iter_sibling_benches
 
     benches = [
@@ -393,14 +448,16 @@ def main() -> None:
         for path, config in iter_sibling_benches(cli_root() / "benches" / ".certificates-placeholder")
         if config.production.enabled and config.letsencrypt.email
     ]
-    if not benches:
-        return
-    try:
-        LetsEncryptManager(benches[0]).renew()
-    except CommandError as error:
-        print(f"certbot renew failed: {error}")
     for bench in benches:
-        LetsEncryptManager(bench).alert_expiring_certificates()
+        manager = LetsEncryptManager(bench)
+        try:
+            manager.renew()
+        except (BenchError, OSError, ValueError) as error:
+            print(f"Certificate refresh failed for {bench.path}: {error}")
+        try:
+            manager.alert_expiring_certificates()
+        except (BenchError, OSError, ValueError) as error:
+            print(f"Certificate expiry check failed for {bench.path}: {error}")
 
 
 if __name__ == "__main__":

@@ -243,7 +243,8 @@ class App:
         return self._repository.has_marketplace_update()
 
     def update_target(self) -> RevisionPin | None:
-        return self._repository.update_target()
+        """None for a linked checkout, which Pilot never updates."""
+        return None if self.is_linked else self._repository.update_target()
 
     def has_migrate_changes(self, pin: RevisionPin) -> bool:
         return self._repository.has_migrate_changes(pin)
@@ -265,6 +266,38 @@ class App:
         if by_module_name != by_config_name and (by_module_name / ".git").exists():
             return by_module_name
         return None
+
+    @property
+    def is_linked(self) -> bool:
+        """A local checkout symlinked into apps/. Its git state belongs to the developer."""
+        return self.config.is_linked
+
+    def link(self) -> None:
+        """Symlink the local checkout at config.path into apps/."""
+        source = Path(self.config.path).resolve()
+        if self.path.is_symlink() and self.path.resolve() == source:
+            return
+        if self.path.exists() or self.path.is_symlink():
+            raise BenchError(f"'{self.path}' already exists - remove it before linking {source}.")
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.symlink_to(source, target_is_directory=True)
+
+    def install_linked(self) -> None:
+        """Link the checkout into apps/, install it into the environment, and register it."""
+        self.link()
+        self._install_into_environment()
+        self._register()
+
+    def ensure_not_linked(self) -> None:
+        """Refuse git work in, and moves of, a checkout symlinked into apps/, even
+        when this App was made without its bench.toml entry."""
+        paths = (self.path, self.existing_clone_path)
+        symlink = next((path for path in paths if path and path.is_symlink()), None)
+        if self.is_linked or symlink:
+            raise BenchError(
+                f"'{self.config.name}' is linked to {(symlink or self.path).resolve()}. "
+                "Pull, switch branches, or check out commits in that checkout yourself."
+            )
 
     @property
     def is_cloned(self) -> bool:
@@ -296,13 +329,16 @@ class App:
         self._repository.clone(on_progress)
 
     def update(self, pin: RevisionPin | None = None) -> None:
+        self.ensure_not_linked()
         self._repository.update(pin)
 
     def switch_branch(self, branch: str) -> None:
+        self.ensure_not_linked()
         self._repository.switch_branch(branch)
 
     def checkout_commit(self, sha: str) -> None:
         """Check out a specific commit SHA, refetching it from origin if needed."""
+        self.ensure_not_linked()
         self._repository.checkout_pinned_commit(sha)
 
     def return_to(self, branch: str, sha: str) -> None:
@@ -378,6 +414,7 @@ class App:
         if self.bench.is_app_installed(self.config.name):
             return self._skip_already_installed(on_progress, install_dependencies, skip_assets)
 
+        self.ensure_not_linked()
         existing_clone = self.existing_clone_path
         self.is_staged = not self.is_marketplace
         if self.is_staged or existing_clone is None:
@@ -516,15 +553,21 @@ class App:
             raise BenchError(f"Cannot remove the framework app '{framework}'.")
 
     def remove(self, force: bool = False, on_progress: Callable[[str], None] = lambda message: None) -> None:
-        """Uninstall from sites, deregister, pip-uninstall, and delete the clone."""
+        """Uninstall from sites, deregister, pip-uninstall, and delete the clone.
+        A symlinked checkout is only unlinked."""
         self.ensure_removable()
-        GitRepo(self.path).ensure_removable()
+        if not self.path.is_symlink():
+            GitRepo(self.path).ensure_removable()
         self._uninstall_from_all_sites(force, on_progress)
         self._deregister()
         on_progress(f"Removing '{self.config.name}' from Python environment...")
         self._pip_uninstall()
-        on_progress(f"Deleting {self.path}...")
-        GitRepo(self.path).remove()
+        if self.path.is_symlink():
+            on_progress(f"Unlinking {self.path}...")
+            self.path.unlink()
+        else:
+            on_progress(f"Deleting {self.path}...")
+            GitRepo(self.path).remove()
         on_progress(f"\n'{self.config.name}' removed from bench.")
 
     def _uninstall_from_all_sites(self, force: bool, on_progress: Callable[[str], None]) -> None:

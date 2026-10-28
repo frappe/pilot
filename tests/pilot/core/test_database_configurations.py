@@ -94,49 +94,23 @@ def _manager(values: dict[str, str] | None = None) -> Mock:
     manager.innodb_buffer_pool_size_mb.return_value = 128
     manager.innodb_buffer_pool_size_max_mb.return_value = 352
     manager.max_connections.return_value = 50
-    manager.memory.get_variables.return_value = []
     return manager
 
 
-def test_memory_limits_reuse_configuration_change_and_task_execution() -> None:
+@pytest.mark.parametrize("name", ["MemoryHigh", "MemoryMax"])
+@pytest.mark.parametrize("method", ["prepare_change", "set"])
+def test_computed_memory_limits_cannot_be_changed(name, method) -> None:
     manager = _manager()
-    manager.memory.validate.return_value = {"MemoryHigh": 2500, "MemoryMax": 4500}
-    manager.memory.limits = {"MemoryHigh": 2500, "MemoryMax": 3000}
-    configurations = DatabaseConfigurations(_config(), manager)
-    with patch(f"{MODULE}.is_linux", return_value=True):
-        change = configurations.prepare_change("MemoryMax", 4500)
-        configurations.set("MemoryMax", 4500)
-    assert change == {
-        "action": "configuration",
-        "name": "MemoryMax",
-        "value": 4500,
-        "current": 3000,
-        "changed": True,
-    }
-    manager.memory.set.assert_called_once_with("MemoryMax", 4500)
-
-
-@pytest.mark.parametrize("configuration", [{"existing": True}, {"db_type": "sqlite"}])
-def test_memory_changes_respect_configuration_permissions(configuration) -> None:
-    manager = _manager()
-    with patch(f"{MODULE}.is_linux", return_value=True), pytest.raises(DatabaseError):
-        DatabaseConfigurations(_config(**configuration), manager).set("MemoryMax", 4500)
+    with pytest.raises(DatabaseError, match="Pilot computes this limit"):
+        getattr(DatabaseConfigurations(_config(), manager), method)(name, 4500)
     manager.memory.set.assert_not_called()
 
 
-def test_memory_changes_do_not_require_sibling_bench_management() -> None:
-    manager = _manager()
+def test_service_memory_limits_are_not_in_configuration_snapshot() -> None:
     with patch(f"{MODULE}.is_linux", return_value=True):
-        DatabaseConfigurations(_config(allow_management=False), manager).set("MemoryMax", 4500)
-    manager.memory.set.assert_called_once_with("MemoryMax", 4500)
-
-
-def test_memory_change_requires_an_available_current_limit() -> None:
-    manager = _manager()
-    manager.memory.validate.return_value = {"MemoryHigh": 2500, "MemoryMax": 4500}
-    manager.memory.limits = {"MemoryHigh": 2500, "MemoryMax": None}
-    with patch(f"{MODULE}.is_linux", return_value=True), pytest.raises(DatabaseError, match="unavailable"):
-        DatabaseConfigurations(_config(), manager).prepare_change("MemoryMax", 4500)
+        snapshot = DatabaseConfigurations(_config(), _manager()).snapshot()
+    assert snapshot["readable"] is True
+    assert not {"MemoryHigh", "MemoryMax"} & {item["name"] for item in snapshot["variables"]}
 
 
 def test_catalog_covers_press_variables_and_pilot_mariadb_118_controls() -> None:

@@ -45,7 +45,7 @@ class TmpEnv:
                 f"Failed to create temporary environment for validation:\n{exc.message}"
             ) from exc
         try:
-            self._pip_install([bench.apps_path / "frappe"])
+            self._pip_install(["--editable", bench.apps_path / "frappe"])
         except CommandError as exc:
             raise AppValidationError(
                 f"Failed to install frappe into the validation env:\n{exc.message}"
@@ -64,11 +64,11 @@ class TmpEnv:
     def python(self) -> Path:
         return self.path / "bin" / "python"
 
-    def _pip_install(self, paths: list[Path]) -> None:
+    def _pip_install(self, arguments: list[str | Path]) -> None:
         python = str(self.python)
         env = os.environ.copy()
         add_mysqlclient_flags(env)
-        run_command([ensure_uv(), "pip", "install", "--python", python, *map(str, paths)], env=env)
+        run_command([ensure_uv(), "pip", "install", "--python", python, *map(str, arguments)], env=env)
 
     def delete(self) -> None:
         if self._dir is not None:

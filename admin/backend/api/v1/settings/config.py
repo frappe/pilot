@@ -7,6 +7,7 @@ from pilot.config.alert_limit import RESOURCE_LIMIT_FIELDS
 from pilot.config.bench import ONBOARDING_STATES
 from pilot.config.llm import LLMConfig
 from pilot.config.mail import MailConfig
+from pilot.config.worker import parse_timeout
 from pilot.core.alerts import check_mail_credentials
 
 _GROUP_TYPES: dict[str, type] = {
@@ -106,7 +107,13 @@ class ConfigPatcher:
             queues = [str(queue) for queue in queues if str(queue).strip()]
             if not queues:
                 continue
-            groups.append(WorkerGroup(queues=queues, count=int(entry.get("count", 1))))
+            groups.append(
+                WorkerGroup(
+                    queues=queues,
+                    count=int(entry.get("count", 1)),
+                    timeout=parse_timeout(entry.get("timeout")),
+                )
+            )
         if groups:
             self.config.workers.groups = groups
 

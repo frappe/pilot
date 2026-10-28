@@ -37,7 +37,8 @@ class BenchInventory:
         ]
 
     def get_app_at(self, app_path: Path) -> "App":
-        """The app cloned at `app_path`, with git state over bench.toml for its branch."""
+        """The app at `app_path`, with git state over bench.toml for its branch. bench.toml
+        supplies the path of a linked checkout."""
         from pilot.config import AppConfig
         from pilot.core.app import App
 
@@ -47,6 +48,7 @@ class BenchInventory:
                 name=app_path.name,
                 repo=self._git_remote(app_path),
                 branch=self._git_branch(app_path) or configured.branch,
+                path=configured.path,
                 follow_branch=configured.follow_branch,
             ),
             self.bench,

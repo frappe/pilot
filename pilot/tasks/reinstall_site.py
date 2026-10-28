@@ -7,6 +7,8 @@ from pilot.tasks import Arg, Task, step
 @dataclass(kw_only=True)
 class ReinstallSiteTask(Task):
     command: ClassVar[str] = "reinstall-site"
+    timeout_seconds: ClassVar[int] = 86400
+    is_cancellable_while_running: ClassVar[bool] = False
 
     site: str
     admin_password: Annotated[str, Arg(cli=False)]

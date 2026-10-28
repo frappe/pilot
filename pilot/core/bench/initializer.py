@@ -59,18 +59,16 @@ class BenchInitializer:
             ("Install Node.js dependencies", python_env_manager.install_node_dependencies),
             ("Build framework assets", lambda: self._build_framework_assets(python_env_manager)),
             ("Configure Redis", self._configure_redis),
-            ("Prepare admin frontend", lambda: self._ensure_admin_frontend(on_progress)),
-            ("Generate process config", self._generate_process_config),
         ]
+        # `pilot start` prepares the Admin frontend once a disabled Admin is enabled.
+        if self.bench.config.admin.enabled:
+            steps.append(("Prepare admin frontend", lambda: self._ensure_admin_frontend(on_progress)))
+        steps.append(("Generate process config", self._generate_process_config))
 
         total = len(steps)
         for i, (description, action) in enumerate(steps, start=1):
             on_progress(f"[{i}/{total}] {description}...")
             action()
-
-        on_progress("\nBench initialised. Next steps:")
-        on_progress("  pilot new-site site1.example.com   # create your first site")
-        on_progress("  pilot start                        # start all processes")
 
     def _rollback(self, on_progress: Callable[[str], None]) -> None:
         if not self._rollback_actions:
@@ -108,7 +106,10 @@ class BenchInitializer:
 
     def _install_framework_apps(self, python_env_manager, on_progress: Callable[[str], None]) -> None:
         for app in self.bench.init_apps():
-            if not app.is_cloned:
+            if app.config.is_linked:
+                on_progress(f"  Linking {app.config.name} from {app.config.path}...")
+                app.link()
+            elif not app.is_cloned:
                 on_progress(f"  Cloning {app.config.name}...")
                 app.clone()
             if self.commit and app.config.name == self.bench.config.framework_app.name:

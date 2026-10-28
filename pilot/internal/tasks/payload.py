@@ -32,6 +32,7 @@ class TaskPayload:
     callbacks: dict
     queued_at: str
     bench_root: Path
+    timeout_seconds: int = Task.timeout_seconds
 
     @property
     def metadata(self) -> dict:
@@ -46,6 +47,7 @@ class TaskPayload:
             "exit_code": None,
             "failure": None,
             "bench_root": str(self.bench_root),
+            "timeout_seconds": self.timeout_seconds,
         }
 
     @property
@@ -97,6 +99,7 @@ class TaskPayloadBuilder:
             callbacks=self.validate_callbacks(callbacks),
             queued_at=datetime.now(UTC).isoformat(),
             bench_root=self._bench_root,
+            timeout_seconds=self._jobs[command].timeout_seconds,
         )
 
     def build_command_argv(self, command: str, args: dict) -> list[str]:

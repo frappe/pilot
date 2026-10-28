@@ -10,7 +10,7 @@ import tomllib
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pilot.internal.tasks.callbacks import run_callback, trigger_for_task_status
+from pilot.internal.tasks.callbacks import run_bounded_callback, trigger_for_task_status
 from pilot.internal.tasks.models import TaskStatus
 from pilot.internal.tasks.store import TaskStore
 from pilot.utils import open_private
@@ -109,7 +109,7 @@ def callback_handler(
     prefix = (head + ts + tail).decode()
     with open_private(output_log, "a") as log_file:
         try:
-            run_callback(callback, meta)
+            run_bounded_callback(callback, meta)
             log_file.write(f"{prefix}Callback successfully triggered\n")
         except Exception as error:
             message = str(error)

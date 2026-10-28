@@ -151,16 +151,6 @@ class CommonConfig:
                 "webroot_path": str(self.letsencrypt.webroot_path),
             },
         }
-        data["mariadb"].update(
-            {
-                name: value
-                for name, value in (
-                    ("memory_high_mb", self.mariadb.memory_high_mb),
-                    ("memory_max_mb", self.mariadb.memory_max_mb),
-                )
-                if value is not None
-            }
-        )
         if self.central != CentralConfig():
             data["central"] = {
                 "enabled": self.central.enabled,

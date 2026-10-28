@@ -33,7 +33,8 @@ const form = reactive({
 type Field = keyof typeof form
 
 // Central needs these to invoice and to pick the payment gateway. India also needs the state for GST.
-const isIndia = computed(() => form.country.trim().toLowerCase() === 'india')
+// Central compares the stored country name exactly, so the form does too.
+const isIndia = computed(() => form.country.trim() === 'India')
 const required = computed<Field[]>(() => [
   'legal_name',
   'address_line1',
@@ -48,8 +49,11 @@ const FIELDS = computed(() => [
   { key: 'email' as Field, label: __('Billing email'), type: 'email', autocomplete: 'email', placeholder: __('Enter billing email') },
   { key: 'address_line1' as Field, label: __('Address'), autocomplete: 'address-line1', placeholder: __('Enter street address'), full: true },
   { key: 'city' as Field, label: __('City'), autocomplete: 'address-level2', placeholder: __('Enter city') },
-  { key: 'state' as Field, label: __('State'), autocomplete: 'address-level1', placeholder: __('Enter state') },
-  { key: 'country' as Field, label: __('Country'), autocomplete: 'country-name', placeholder: __('Enter country') },
+  { key: 'country' as Field, label: __('Country'), autocomplete: 'country-name', placeholder: __('Choose country'), options: countries.value },
+  // Only India's state is checked (for GST), so other countries keep a free-text state.
+  isIndia.value && indiaStates.value.length
+    ? { key: 'state' as Field, label: __('State'), autocomplete: 'address-level1', placeholder: __('Choose state'), options: indiaStates.value }
+    : { key: 'state' as Field, label: __('State'), autocomplete: 'address-level1', placeholder: __('Enter state') },
   { key: 'pincode' as Field, label: __('PIN or ZIP code'), autocomplete: 'postal-code', placeholder: __('Enter PIN or ZIP code') },
   ...(isIndia.value ? [{ key: 'gstin' as Field, label: __('GSTIN'), placeholder: __('Enter GSTIN') }] : []),
 ])
@@ -65,6 +69,8 @@ const currencyIcons: Record<string, string> = {
 }
 
 const currencies = ref<{ label: string; value: string; icon: string }[]>([])
+const countries = ref<string[]>([])
+const indiaStates = ref<string[]>([])
 const loaded = ref(false)
 const working = ref(false)
 const error = ref('')
@@ -75,6 +81,9 @@ const noCurrencies = computed(() => loaded.value && !currencies.value.length)
 // The gateway follows the currency, so suggest the one that fits the country until the customer picks one.
 const currencyTouched = ref(false)
 watch(() => form.country, (country) => {
+  // An Indian state is valid only for India, and India accepts only a listed state.
+  if (indiaStates.value.length && indiaStates.value.includes(form.state) !== isIndia.value) form.state = ''
+
   if (currencyTouched.value || !country.trim()) return
   const suggested = isIndia.value ? 'INR' : 'USD'
   if (currencies.value.some((option) => option.value === suggested)) form.currency = suggested
@@ -84,8 +93,8 @@ const MISSING: Partial<Record<Field, string>> = {
   legal_name: __('Enter the name to show on invoices.'),
   address_line1: __('Enter your street address.'),
   city: __('Enter your city.'),
-  state: __('Enter your state. GST needs it.'),
-  country: __('Enter your country.'),
+  state: __('Choose your state. GST needs it.'),
+  country: __('Choose your country.'),
   currency: __('Choose the currency you pay in.'),
 }
 
@@ -102,6 +111,9 @@ const load = async () => {
 
       return { ...option, icon: currencyIcons[option.value] || 'lucide-banknote' }
     })
+
+    countries.value = profile.countries || []
+    indiaStates.value = profile.india_states || []
 
     for (const key of Object.keys(form) as Field[]) form[key] = profile[key] || ''
     currencyTouched.value = Boolean(form.currency)
@@ -158,7 +170,18 @@ const save = async () => {
     <form v-else class="mt-4" novalidate @submit.prevent="save">
       <div class="grid gap-4 sm:grid-cols-2">
         <div v-for="field in FIELDS" :key="field.key" :class="field.full && 'sm:col-span-2'">
+          <Select
+            v-if="field.options?.length"
+            v-model="form[field.key]"
+            :label="field.label"
+            :required="required.includes(field.key)"
+            :placeholder="field.placeholder"
+            :options="field.options.map((option) => ({ label: option, value: option }))"
+            :disabled="working"
+            :aria-invalid="Boolean(fieldError(field.key)) || undefined"
+          />
           <TextInput
+            v-else
             v-model="form[field.key]"
             :type="field.type || 'text'"
             :label="field.label"

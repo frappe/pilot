@@ -25,6 +25,25 @@ export interface CloudSettingsOptions {
 
 export { isCloudSettingsAvailable } from './context.ts'
 
-export const { openCloudSettings, closeCloudSettings } = createCloudSettings(
-  () => import('./embed/cloud-settings.js'),
-)
+/** The ES runtime Pilot serves next to Desk's script, so the UI follows Pilot updates. */
+export const getRuntimeUrl = (context: CloudContext): string => {
+  const script = context.bundle?.js
+  if (!script) throw new Error('Cloud Settings is not set up on this site.')
+
+  return new URL('esm/cloud-settings.js', new URL(script, globalThis.location?.href)).href
+}
+
+const loadRuntime = async (context: CloudContext) => {
+  const url = getRuntimeUrl(context)
+
+  try {
+    return await import(/* @vite-ignore */ /* webpackIgnore: true */ url)
+  } catch (cause) {
+    throw new Error(
+      'Could not load Cloud Settings. Check that this site can reach its Pilot server.',
+      { cause },
+    )
+  }
+}
+
+export const { openCloudSettings, closeCloudSettings } = createCloudSettings(loadRuntime)

@@ -28,6 +28,8 @@ export interface BillingSummary {
   usage?: { name: string; percent: number; detail: string }[]
   /** The site's open free trial. Absent or null when the site is not on one. */
   trial?: BillingTrial | null
+  /** The server's pending plan change, such as a converted trial's move to its paid plan. */
+  plan_change?: { plan: string | null; progress_url: string | null } | null
 }
 
 export interface BillingTrial {
@@ -38,6 +40,16 @@ export interface BillingTrial {
   deletes_on: string | null
   /** The team has a payment method, but the plan is above its spending limit, so the trial stays open. */
   held?: boolean
+  /** The plan the site converts to, at the rate its subscription charges. */
+  plan?: BillingTrialPlan | null
+}
+
+export interface BillingTrialPlan {
+  name: string
+  title: string
+  /** Null until the team has a billing currency. */
+  monthly_rate: number | null
+  currency: string | null
 }
 
 export interface PlanOption {
@@ -53,11 +65,15 @@ export interface PlanOptions {
   provider: string | null
   region: string | null
   current: string | null
+  /** On a free trial, the paid plan the site moves to when the trial converts. */
+  selected?: string | null
+  /** Cheapest first. */
   plans: PlanOption[]
   sufficient: boolean
 }
 
-/** A queued plan change. `progress_url` is the page that follows it while the site restarts. */
+/** A queued plan change. `progress_url` is the page that follows it while the site restarts.
+ *  On a free trial nothing is queued: Central keeps the plan for the conversion. */
 export interface PlanChange {
   queued: boolean
   resized: boolean
@@ -75,6 +91,10 @@ export interface BillingProfile {
   pincode: string
   gstin: string
   supported_currencies?: (string | { label: string; value: string })[]
+  /** Country names the address form picks from. */
+  countries?: string[]
+  /** India's GST state names, the only state list Central checks. */
+  india_states?: string[]
 }
 
 export interface PaymentGateway {

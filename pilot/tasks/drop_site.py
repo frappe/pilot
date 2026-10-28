@@ -7,6 +7,8 @@ from pilot.tasks import Task, step
 @dataclass(kw_only=True)
 class DropSiteTask(Task):
     command: ClassVar[str] = "drop-site"
+    timeout_seconds: ClassVar[int] = 86400
+    is_cancellable_while_running: ClassVar[bool] = False
 
     site: str
     no_backup: bool = False

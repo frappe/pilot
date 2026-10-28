@@ -31,6 +31,7 @@ class MariaDBMemorySizing:
     innodb_buffer_pool_mb: int
     max_connections: int
     key_buffer_mb: int
+    aria_pagecache_mb: int
     innodb_log_file_mb: int
     memory_high_mb: int
     memory_max_mb: int
@@ -62,7 +63,9 @@ def calculate_mariadb_memory(total_memory_mb: int, memory_share: float = 0.5) ->
     key_buffer_mb = 128 if mariadb_memory_mb > 4096 else 32
     if is_small_host:
         key_buffer_mb = _SMALL_HOST_KEY_BUFFER_MB
-    base_memory_mb = key_buffer_mb + 32 + 16
+    # Aria holds MariaDB's on-disk temporary tables; its default page cache is 128M.
+    aria_pagecache_mb = key_buffer_mb
+    base_memory_mb = key_buffer_mb + aria_pagecache_mb + 32 + 16
 
     connection_aware_pool_mb = int(
         mariadb_memory_mb - base_memory_mb - recommended_connections * _MEMORY_PER_CONNECTION_MB
@@ -89,6 +92,7 @@ def calculate_mariadb_memory(total_memory_mb: int, memory_share: float = 0.5) ->
         innodb_buffer_pool_mb=innodb_buffer_pool_mb,
         max_connections=max_connections,
         key_buffer_mb=key_buffer_mb,
+        aria_pagecache_mb=aria_pagecache_mb,
         innodb_log_file_mb=_innodb_log_file_size(total_memory_mb),
         memory_high_mb=memory_high_mb,
         memory_max_mb=memory_max_mb,

@@ -95,6 +95,10 @@ class GitRepo:
     def head_sha(self) -> str:
         return self._text("rev-parse", "HEAD")
 
+    def get_commit_sha(self, ref: str) -> str:
+        """The commit `ref` points at, or '' when this clone does not have it."""
+        return self._text("rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}")
+
     @property
     def short_head(self) -> str:
         return self._text("rev-parse", "--short", "HEAD")

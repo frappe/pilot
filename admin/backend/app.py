@@ -124,11 +124,11 @@ def register_editor_frontend(app: Flask) -> None:
 
 
 def register_in_app_embed_frontend(app: Flask) -> None:
-    """Serve Desk's Cloud Settings IIFE at the URL Frappe boots into desk.
+    """Serve the Cloud Settings UI: Desk's IIFE and the SDK's ES runtime under `esm/`.
 
-    Desk loads `{cloud_settings_embed_url}/embed/cloud-settings/cloud-settings.js` cross-origin.
-    This must be registered before the dashboard SPA catch-all, which would otherwise
-    answer with index.html and break script load.
+    A site loads both from `{cloud_settings_embed_url}/embed/cloud-settings/`, which is
+    another origin, so the ES runtime and its chunks need CORS. This must be registered
+    before the dashboard SPA catch-all, which would otherwise answer with index.html.
     """
     in_app_embed_dist = STATIC_DIR / "in-app-embed" / "cloud-settings"
 
@@ -142,12 +142,14 @@ def register_in_app_embed_frontend(app: Flask) -> None:
                 503,
             )
         try:
-            # Fixed filename, so it must revalidate — a rebuild changes the bytes
-            # but not the URL. `?v=cloud_settings_embed_version` is an extra hint
-            # for CDNs/hard reloads, not something to pin bytes on.
-            return _revalidate(send_from_directory(in_app_embed_dist, path))
+            response = send_from_directory(in_app_embed_dist, path)
         except NotFound:
             return error_response("not_found", "In-app embed asset not found.", 404)
+        # A browser module import from another origin needs CORS; the files are public.
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        # Chunk names carry a content hash. Entry files keep a fixed name, so a rebuild
+        # must be revalidated, never pinned with `immutable`.
+        return _immutable(response) if path.startswith("esm/chunks/") else _revalidate(response)
 
 
 def register_frontend(app: Flask) -> None:

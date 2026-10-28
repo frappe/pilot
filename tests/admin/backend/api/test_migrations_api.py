@@ -54,6 +54,7 @@ def test_migrations_list_and_current(tmp_path: Path) -> None:
 
 def _app_needing_migrate() -> MagicMock:
     app = MagicMock()
+    app.is_linked = False
     app.config.name = "frappe"
     app.config.repo = "https://github.com/frappe/frappe.git"
     app.installed_hash = "1111111"
@@ -184,13 +185,20 @@ def test_migration_detail_includes_retained_task_logs(tmp_path: Path) -> None:
     backup = "20260101-000001-aaaaaa"
     first_try = "20260101-000002-bbbbbb"
     second_try = "20260101-000003-cccccc"
+    finish = "20260101-000004-dddddd"
     operation.chain = [
         {"command": "migration-backup", "task_id": backup, "site": "site1.localhost"},
         {"command": "migrate", "task_id": first_try, "site": "site1.localhost"},
         {"command": "migrate", "task_id": second_try, "site": "site1.localhost"},
+        {"command": "complete-migration", "task_id": finish},
     ]
     operation.store.save(operation)
-    for task_id, status in ((backup, "success"), (first_try, "failed"), (second_try, "running")):
+    for task_id, status in (
+        (backup, "success"),
+        (first_try, "failed"),
+        (second_try, "running"),
+        (finish, "queued"),
+    ):
         _write_task(bench_root, task_id, status)
 
     response = client.get(f"/api/v1/migrations/{operation.id}")
@@ -207,6 +215,7 @@ def test_migration_detail_includes_retained_task_logs(tmp_path: Path) -> None:
             "site": "site1.localhost",
             "status": "running",
         },
+        {"id": finish, "label": "Finish update", "site": None, "status": "queued"},
     ]
     # Pruned task logs are omitted; the operation stays readable.
     assert all("tasks" not in site for site in data["sites"])

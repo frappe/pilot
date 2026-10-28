@@ -13,6 +13,16 @@ from werkzeug.serving import make_server
 
 from pilot.integrations.central.metadata import InstanceMetadata
 
+# The trial plan and the bigger plans Central offers after conversion. Central leaves out
+# plans smaller than the trial plan, so the simulation does too.
+PLANS = {
+    "vm-1-2-1g": ("0.5 vCPU / 1 GB", "0.5 vCPU · 1 GB RAM · 12.5 GB disk", 15),
+    "vm-1-2": ("0.5 vCPU / 2 GB", "0.5 vCPU · 2 GB RAM · 25 GB disk", 20),
+    "vm-1": ("1 vCPU / 4 GB", "1 vCPU · 4 GB RAM · 50 GB disk", 40),
+    "vm-2": ("2 vCPU / 8 GB", "2 vCPU · 8 GB RAM · 100 GB disk", 80),
+}
+TRIAL_PLAN = "vm-1-2-1g"
+
 
 class BillingSimulation:
     """Disposable billing state for the local Cloud Settings flow."""
@@ -24,6 +34,8 @@ class BillingSimulation:
         self.failure = False
         self.profile_complete = False
         self.card_active = False
+        self.is_trial = False
+        self.plan = TRIAL_PLAN
         self.checkouts: dict[str, bool] = {}
         self.profile = {
             "currency": "USD",
@@ -39,14 +51,32 @@ class BillingSimulation:
         }
 
     @property
+    def trial(self) -> dict | None:
+        """An open trial, as Central reports it until a payment method converts it."""
+        if not self.is_trial:
+            return None
+        title, _, rate = PLANS[TRIAL_PLAN]
+        return {
+            "state": "Active",
+            "ends_on": "2026-11-02",
+            "days_left": 5,
+            "deletes_on": "2026-11-09",
+            "held": False,
+            "plan": {"title": title, "monthly_rate": rate, "currency": "USD"},
+        }
+
+    def activate_card(self) -> None:
+        """A new payment method converts the trial, as Central's payment hook does."""
+        self.card_active = True
+        self.is_trial = False
+
+    @property
     def summary(self) -> dict:
+        title, subtitle, _ = PLANS[self.plan]
         return {
             "currency": "USD",
-            "plan": {
-                "name": "Simulated Starter",
-                "subtitle": "Local simulation. No real charges.",
-                "specs": {},
-            },
+            "plan": {"name": title, "subtitle": subtitle, "specs": {}},
+            "trial": self.trial,
             "estimate": {"amount": "$10.00", "note": "Sample monthly estimate"},
             "credit": {"amount": "$25.00", "note": "Sample credit only", "warning": False},
             "payment_method": {"name": "simulated-card", "label": "Simulated Visa ending 4242"}
@@ -70,6 +100,8 @@ class BillingSimulation:
             )
             self.profile_complete = True
             return {"saved": True}
+        if method in ("get_plan_options", "change_plan"):
+            return self.plans(method, data)
         if method == "get_payment_gateways":
             return [
                 {
@@ -82,6 +114,30 @@ class BillingSimulation:
             ]
         return self.payment(method, data, base_url)
 
+    def plans(self, method: str, data: dict) -> dict:
+        if method == "change_plan":
+            if data.get("plan") not in PLANS:
+                abort(400, "Unknown simulated plan.")
+            self.plan = data["plan"]
+            return {"queued": True, "resized": False, "progress_url": None}
+        return {
+            "currency": "USD",
+            "provider": "Simulation",
+            "region": "Local",
+            "current": self.plan,
+            "plans": [
+                {
+                    "name": name,
+                    "title": title,
+                    "subtitle": subtitle,
+                    "price": f"${rate}/mo",
+                    "is_current": name == self.plan,
+                }
+                for name, (title, subtitle, rate) in PLANS.items()
+            ],
+            "sufficient": True,
+        }
+
     def payment(self, method: str, data: dict, base_url: str) -> dict:
         if method == "create_payment_method_checkout":
             reference = secrets.token_hex(12)
@@ -91,11 +147,13 @@ class BillingSimulation:
             if data.get("reference") not in self.checkouts:
                 abort(400, "Unknown simulated checkout.")
             active = self.checkouts[data["reference"]]
-            self.card_active = self.card_active or active
+            if active:
+                self.activate_card()
             return {"active": active, "message": "Finish the local simulated checkout, then check again."}
         if method == "reconcile_payment_setup":
-            self.card_active = self.card_active or any(self.checkouts.values())
-            return {"activated": ["simulated-card"] if self.card_active else []}
+            if any(self.checkouts.values()):
+                self.activate_card()
+            return {"activated": 1 if self.card_active else 0}
         if method == "remove_payment_method":
             self.card_active = False
             self.checkouts.clear()
@@ -129,12 +187,20 @@ def create_simulator(base_url: str) -> Flask:
         continue with Local simulation, complete the simulated checkout, then check its status.</p>
         <p>Simulated API failure: {"on" if state.failure else "off"}</p>
         <form method="post" action="/failure"><button>Toggle API failure</button></form>
+        <p>Free trial: {"open" if state.is_trial else "none"}. A completed checkout converts it.</p>
+        <form method="post" action="/trial"><button>Start a free trial</button></form>
         <form method="post" action="/reset"><button>Reset sample billing data</button></form>
         <p>After reset, close and reopen Cloud Settings.</p>"""
 
     @app.post("/failure")
     def failure():
         state.failure = not state.failure
+        return redirect("/")
+
+    @app.post("/trial")
+    def trial():
+        state.reset()
+        state.is_trial = True
         return redirect("/")
 
     @app.post("/reset")

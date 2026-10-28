@@ -5,6 +5,7 @@ import {
   getDomains,
   getMarketplaceApps,
   getTask,
+  isNotConnectedToCentral,
 } from '@frappe/cloud-sdk/api'
 import { reactive } from 'vue'
 import type { AccountLinks, BillingSummary, CloudContext, Domains, Marketplace, CloudSettingsTranslator } from '@frappe/cloud-sdk'
@@ -128,6 +129,7 @@ export const createStore = (context?: CloudContext, translator: CloudSettingsTra
     accountLinksError: '',
     billing: null as BillingSummary | null,
     billingError: '',
+    isNotConnectedToCentral: false,
     marketplace: null as Marketplace | null,
     marketplaceError: '',
     domains: null as Domains | null,
@@ -154,6 +156,7 @@ export const createStore = (context?: CloudContext, translator: CloudSettingsTra
     try {
       state.billing = await getBilling()
     } catch (exception) {
+      state.isNotConnectedToCentral = isNotConnectedToCentral(exception)
       state.billingError = getErrorMessage(exception, undefined, translator)
     }
   }

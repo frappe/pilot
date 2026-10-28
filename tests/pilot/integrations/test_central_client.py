@@ -188,14 +188,17 @@ def test_a_non_json_response_is_wrapped() -> None:
         CentralClient().forward("central.api.pilot.heartbeat", "GET")
 
 
-def _app_client(bench_root: Path):
+def _app_client(bench_root: Path, central: bool = True):
     from admin.backend.app import create_app
     from admin.backend.internal.session import Session
+    from pilot.config.common import CommonConfig
 
     bench_root.mkdir(parents=True, exist_ok=True)
     (bench_root / "bench.toml").write_text(
         BenchConfig.from_flat(bench_root.name, {"admin_enabled": True, "admin_password": "secret"}).dumps()
     )
+    with CommonConfig.open(bench_root.parent) as common:
+        common.central.enabled = central
     app = create_app(bench_root)
     app.config["TESTING"] = True
     client = app.test_client()
@@ -219,6 +222,27 @@ def test_proxy_forwards_allowlisted_billing_method(tmp_path: Path) -> None:
     assert forward.call_args.args[1] == "GET"
 
 
+def test_proxy_answers_at_once_on_a_server_without_central(tmp_path: Path) -> None:
+    from admin.backend.api.v1.sites.central import NOT_CONNECTED_MESSAGE
+
+    client = _app_client(tmp_path / "bench", central=False)
+    with patch("admin.backend.api.v1.sites.central.CentralClient.forward") as forward:
+        response = client.get(
+            "/api/v1/sites/s1.localhost/central/central.billing.api.billing_api.get_billing_summary"
+        )
+
+    assert response.status_code == 503
+    assert response.get_json()["error"]["message"] == NOT_CONNECTED_MESSAGE
+    forward.assert_not_called()
+
+
+def test_cloud_settings_matches_the_not_connected_message() -> None:
+    from admin.backend.api.v1.sites.central import NOT_CONNECTED_MESSAGE
+
+    request_ts = Path(__file__).parents[3] / "admin/frontend/cloud-sdk/src/request.ts"
+    assert f"'{NOT_CONNECTED_MESSAGE}'" in request_ts.read_text()
+
+
 def test_proxy_forwards_a_team_identity_token_request(tmp_path: Path) -> None:
     client = _app_client(tmp_path / "bench")
     method = "central.api.pilot.get_team_identity_token"
@@ -232,7 +256,14 @@ def test_proxy_forwards_a_team_identity_token_request(tmp_path: Path) -> None:
     forward.assert_called_once_with(method, "POST", body)
 
 
-@pytest.mark.parametrize("method", ["central.api.email_oauth.start", "central.api.email_oauth.relay_token"])
+@pytest.mark.parametrize(
+    "method",
+    [
+        "central.api.email_oauth.get_active_providers",
+        "central.api.email_oauth.start",
+        "central.api.email_oauth.relay_token",
+    ],
+)
 def test_proxy_forwards_the_mailbox_connect_calls(tmp_path: Path, method: str) -> None:
     client = _app_client(tmp_path / "bench")
     body = {"provider": "microsoft", "state": "s1"}
@@ -243,6 +274,20 @@ def test_proxy_forwards_the_mailbox_connect_calls(tmp_path: Path, method: str) -
 
     assert response.status_code == 200
     forward.assert_called_once_with(method, "POST", body)
+
+
+@pytest.mark.parametrize("providers", [["microsoft", "yandex"], []])
+def test_proxy_returns_the_active_providers_list(tmp_path: Path, providers: list[str]) -> None:
+    client = _app_client(tmp_path / "bench")
+    method = "central.api.email_oauth.get_active_providers"
+    with patch(
+        "admin.backend.api.v1.sites.central.CentralClient.forward", return_value=providers
+    ) as forward:
+        response = client.post(f"/api/v1/sites/s1.localhost/central/{method}", json={})
+
+    assert response.status_code == 200
+    assert response.get_json() == providers
+    forward.assert_called_once_with(method, "POST", {})
 
 
 def test_proxy_rejects_the_mailbox_callback(tmp_path: Path) -> None:

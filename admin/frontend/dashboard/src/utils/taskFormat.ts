@@ -44,6 +44,7 @@ export const isTaskCancellable = (task: TaskLike | null) => {
 
 const COMMAND_LABELS: Record<string, string> = {
   migrate: 'Migrate Site',
+  'complete-migration': 'Finish Update',
   'clear-cache': 'Clear Cache',
   'install-app': 'Install App',
   'uninstall-app': 'Uninstall App',
@@ -120,6 +121,7 @@ export const TASK_TYPES = [
     commands: [
       'update',
       'migrate',
+      'complete-migration',
       'retry-update',
       'revert-migration',
       'bypass-patch',

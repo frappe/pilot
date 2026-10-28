@@ -65,6 +65,18 @@ def test_missing_repo_degrades_to_empty(tmp_path: Path) -> None:
     assert repo.last_fetched is None
 
 
+def test_commit_sha_resolves_branches_and_tags_but_not_missing_or_blob_refs(tmp_path: Path) -> None:
+    repo_path = _init_repo(tmp_path / "repo")
+    _commit(repo_path)
+    _git(repo_path, "tag", "-a", "release", "-m", "release")
+    repo = GitRepo(repo_path)
+
+    assert repo.get_commit_sha("main") == repo.head_sha
+    assert repo.get_commit_sha("release") == repo.head_sha
+    assert repo.get_commit_sha("missing") == ""
+    assert repo.get_commit_sha("HEAD:file") == ""
+
+
 def test_has_local_changes_tracks_working_tree(tmp_path: Path) -> None:
     repo_path = _init_repo(tmp_path / "repo")
     _commit(repo_path)

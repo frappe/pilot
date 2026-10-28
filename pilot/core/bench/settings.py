@@ -128,7 +128,7 @@ def is_restart_needed(old: dict, new: dict) -> bool:
 
 
 def worker_groups_payload(config: BenchConfig) -> list[dict]:
-    return [{"queues": list(group.queues), "count": group.count} for group in config.workers.groups]
+    return [group.to_dict() for group in config.workers.groups]
 
 
 def firewall_payload(config: BenchConfig) -> dict:
@@ -259,6 +259,7 @@ def regenerate_configs(bench: "Bench") -> None:
 
     RedisManager(bench.config.redis, bench).generate_configs()
     ProcessManager.for_bench(bench).write_config()
+    bench.write_common_site_config()
 
 
 def regenerate_nginx(bench: "Bench") -> None:
@@ -315,19 +316,8 @@ def _restart_systemd(manager) -> bool:
     )
     # The web port may have changed, and the socket keeps its old one until it restarts.
     manager.reopen_sockets()
-    non_admin_units = [
-        manager._unit_name(process.name)
-        for process in manager._prod_process_definitions()
-        if process.name != "admin"
-    ]
-    if not non_admin_units:
+    definitions = [process for process in manager._prod_process_definitions() if process.name != "admin"]
+    if not definitions:
         return False
-    subprocess.run(
-        [*manager._systemctl(), "restart", *non_admin_units],
-        capture_output=True,
-        text=True,
-        timeout=120,
-        env=env,
-        check=True,
-    )
+    manager.restart_processes(definitions)
     return True

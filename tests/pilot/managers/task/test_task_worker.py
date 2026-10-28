@@ -4,6 +4,7 @@ import signal
 import subprocess
 import threading
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -12,6 +13,18 @@ from pilot.internal.tasks.store import TaskStore
 from pilot.internal.tasks.worker import TaskWorker, WorkerRegistry
 from pilot.internal.tasks.worker_state import WorkerIntent, WorkerStatus, WorkerStore
 from pilot.managers.task.models import TaskStatus
+from tests.pilot.commands.test_commands import make_bench
+
+
+def test_setup_does_not_wait_for_the_database_it_has_not_created(tmp_path):
+    bench = make_bench(tmp_path)
+    bench.config.production.enabled = True
+    with (
+        patch("pilot.core.bench.Bench", return_value=bench),
+        patch("pilot.core.bench.runtime.BenchRuntime") as runtime,
+    ):
+        TaskWorker(tmp_path)._wait_for_database()
+    runtime.assert_not_called()
 
 
 def enqueue(store: TaskStore, task_id: str, sequence: int) -> None:

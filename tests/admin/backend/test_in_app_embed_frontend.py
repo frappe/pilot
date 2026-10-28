@@ -67,3 +67,22 @@ def test_missing_in_app_embed_build_returns_503(tmp_path: Path, monkeypatch: pyt
 
     assert response.status_code == 503
     assert b"not built" in response.data
+
+
+def test_sdk_runtime_is_served_with_cors_and_hashed_chunks_are_immutable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    esm_dir = tmp_path / "in-app-embed" / "cloud-settings" / "esm"
+    (esm_dir / "chunks").mkdir(parents=True)
+    (esm_dir / "cloud-settings.js").write_text("export {}")
+    (esm_dir / "chunks" / "BillingPanel-abc123.js").write_text("export {}")
+    monkeypatch.setattr(admin_app, "STATIC_DIR", tmp_path)
+    client = _client(tmp_path)
+
+    entry = client.get("/embed/cloud-settings/esm/cloud-settings.js")
+    chunk = client.get("/embed/cloud-settings/esm/chunks/BillingPanel-abc123.js")
+
+    assert entry.headers["Access-Control-Allow-Origin"] == "*"
+    assert entry.headers["Cache-Control"] == "no-cache"
+    assert chunk.headers["Access-Control-Allow-Origin"] == "*"
+    assert "immutable" in chunk.headers["Cache-Control"]

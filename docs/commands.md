@@ -11,14 +11,32 @@ Use `pilot --help` and `pilot <command> --help` for exact flags. `pilot --versio
 
 See [Bench and site cloning](cloning.md) for independent environments and cross-bench data copies.
 
-- `pilot new NAME`: create a new bench. Sets the Admin password from `--admin-password`, else prompts on a terminal, else generates and prints one.
+- `pilot new NAME`: create a new bench. `--frappe-branch BRANCH` selects the Frappe branch saved in `bench.toml` (default: `version-16`). Sets the Admin password from `--admin-password`, else prompts on a terminal, else generates and prints one.
 - `pilot start` on an uninitialized bench serves the setup wizard and prints a one-hour `?sid=` sign-in link for it.
 - An interrupted first initialization stays in setup mode. Retry from the wizard or run `pilot init`. Failed initialization preserves directories that existed before the attempt.
 - `pilot init`: initialize a bench from `bench.toml`. This is what the setup wizard runs. `--no-dev` skips apps' `dev` extras. `--commit <sha>` checks out the framework app at that commit and keeps it on the branch that `bench.toml` names, so updates and prebuilt assets still find the branch. When an app's `dev` extra does not install, for example because its dependencies conflict, Pilot warns and installs the app without it. Init enables Pilot's MariaDB or PostgreSQL user unit at boot on every run, so a retry after a failed run is safe. It also builds the framework app's assets, or downloads its prebuilt archive, so `get-app` can come before the first `new-site`.
 - `pilot ls`: list benches in the fixed benches directory.
 - `pilot drop --bench NAME`: remove a bench. The bench must have no sites. A development bench must be stopped first (`pilot -b NAME stop`), including a setup wizard that is still open.
 
+To create and initialize a bench tracking Frappe `develop`:
+
+```bash
+pilot new frappe-bench --frappe-branch develop
+pilot -b frappe-bench init
+```
+
 Bench commands with `--bench NAME` can run from outside the bench directory. `Bench("name")` resolves the same fixed benches directory in Python code.
+
+## Dev Commands
+
+Run these inside a cloned app repository. See [App Development](development.md).
+
+- `pilot dev setup`: create a bench for the app and a site with the app installed. Safe to run again. See [Setup](development.md#setup) for the options, their defaults, and what a re-run does.
+- `pilot dev start`: run the bench in the foreground, with the app's own `dev` script if `package.json` has one. It runs the same processes as `pilot start`, after checking that setup finished.
+- `pilot dev info`: show the bench, site URL, database, and Frappe branch.
+- `pilot dev drop`: delete the bench and its site. The repository is not touched. It fails while `pilot dev start` runs.
+
+Inside the repository, other bench commands such as `pilot frappe -- console` use its bench without `-b`.
 
 ## Runtime Commands
 
@@ -61,9 +79,9 @@ Disabling needs a Frappe that supports it and is exposed through the Admin UI on
 
 ### Renaming Without Downtime
 
-A rename never drops traffic already on the site: requests keep arriving on the old hostname and keep being answered throughout. The new hostname follows a moment later - `systemctl reload` returns before nginx has taken the signal, and the workers still running answer until it has - so a caller that redirects straight to the new URL should expect to retry once. Two things would otherwise break in the gap, and both are handled:
+A rename keeps the old path available while publishing the new name. The new hostname follows a moment later: nginx reload returns before its workers have switched, so a caller that redirects immediately to the new URL may need to retry. Pilot protects the directory, hostname, and Admin token during this transition:
 
-- The directory and a compatibility symlink exchange places atomically. The old path remains a symlink after nginx reload returns, so old workers and in-flight requests can still read the site. Site inventory excludes this link. The old name stays reserved for 150 seconds, longer than nginx's proxy timeout. After that, renaming back or creating a site with that name removes the link, and the next workload start or restart removes it too. Symlinks that a rename did not create, such as development proxy aliases, stay. The filesystem must support atomic directory exchange, or the rename fails before moving the site.
+- The directory and a compatibility symlink exchange places atomically. The old path remains a symlink after nginx reload returns, so old workers and queued jobs can still read the site. Site inventory excludes this link. Pending renames retain their old path and reserve both names until recovery completes. After completion, the old name stays reserved for at least 150 seconds. Workload restart keeps the link while the old hostname belongs to a site. Explicit name reuse can remove it after the hold. If the old hostname is released, a workload restart can remove its expired link. Older compatibility links point directly to the latest directory instead of forming chains. Other symlinks stay. The filesystem must support atomic directory exchange, or the rename fails before moving the site.
 - The old hostname would stop being served. It stays on the site as a domain instead, so anyone already on that URL is served rather than dropped. Pass `--release-old-hostname` to give the name up - a pooled hostname a fleet reuses. The domain provider is asked to route the new hostname before anything moves, and a released one is handed back only once the switch has committed.
 - The site's long-lived Admin API token names the site. The rename replaces it with a token scoped to the new name, so the in-app Cloud Settings embed keeps working without letting the old token follow a hostname that is later assigned to another site.
 
@@ -71,7 +89,7 @@ The site keeps whatever redirect policy it had: a canonical `host_name` naming t
 
 HTTPS survives the move as well. A certbot lineage is named after the site it was first issued for and lives in the host-wide `/etc/letsencrypt`, so a rename would otherwise orphan the certificate: nginx would look under the new name, find nothing, and drop every one of the site's TLS domains to HTTP until a fresh one was issued. The rename pins the site's `cert_name` to the existing lineage instead, so the certificate keeps serving the hostnames it already covers, and the reissue expands that same lineage to the new name. A pinned lineage claims its hostname exactly as a domain does - no site on any bench, and not the admin, can take it while the pin stands - so releasing a hostname whose certificate still serves the site's other TLS domains completes in two steps: the rename keeps the pin so those domains stay on HTTPS, and the next `pilot setup letsencrypt` issues under the new name, drops the pin, and frees the old one. `cert_name` is protected from the site configuration API; only a rename writes it.
 
-A rename that fails before nginx has switched is rolled back: the site directory, its config, `common_site_config.json`, `bench.toml` and the hostname aliases are put back under the old name, and the new provider route is released. nginx was still naming the old site throughout, so it keeps serving, and the rename can simply be run again. Each rollback step is reported if it cannot be completed rather than hiding the original failure.
+Pilot saves private recovery state under `config/site-renames/` before moving the directory. Once the directory moves, failure never reverses that exchange. The old symlink and new route stay available. Retry the failed task, or repeat the same CLI rename with the same options, to finish the saved operation. Retry reuses the new Admin token and revokes the original token only after publishing nginx. Another rename cannot move the destination while this operation is pending. A process crash leaves the recovery state and compatibility link intact; recovery requires a retry and does not run automatically. Recovery files contain the original site config and have private directory and file permissions.
 
 Only the certificate is refreshed afterwards, never the full production deploy - that restarts the workload, which is the downtime this is avoiding. A domain the certificate does not yet name is served over HTTP until it does, rather than taking the rest of the site down with it.
 

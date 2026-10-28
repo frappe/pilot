@@ -43,6 +43,7 @@ class SystemdRenderer(ServiceRenderer):
         working_dir = f"WorkingDirectory={pd.working_dir}\n" if pd.working_dir else ""
         env = _render_env(pd.env)
         stop = f"TimeoutStopSec={pd.stop_timeout}\n" if pd.stop_timeout is not None else ""
+        kill_mode = "KillMode=mixed\n" if pd.stop_main_process_only else ""
         pre = f"ExecStartPre={_exec(pd.pre_run)}\n" if pd.pre_run else ""
         post = f"ExecStopPost={_exec(pd.post_run)}\n" if pd.post_run else ""
         restart = "on-failure" if pd.restart_on_failure else "no"
@@ -60,7 +61,7 @@ class SystemdRenderer(ServiceRenderer):
             f"{post}"
             f"Restart={restart}\n"
             f"LimitNOFILE=65535\n"
-            f"{stop}"
+            f"{stop}{kill_mode}"
             f"StandardOutput=append:{pd.log_file}\n"
             f"StandardError=append:{pd.log_file}.error.log\n"
         )

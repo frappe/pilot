@@ -1,5 +1,3 @@
-"""`pilot init`: existing database handling, the --no-dev opt-out, and --commit."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -153,6 +151,46 @@ def test_new_bench_enables_server_scripts_unless_set_by_hand(tmp_path) -> None:
     assert json.loads(config_path.read_text())["server_script_enabled"] is False
 
 
+def _initialize_until_the_virtualenv_fails(bench: Bench) -> None:
+    def create_env_then_fail(initializer: BenchInitializer, python_env_manager: object) -> None:
+        (bench.path / "env" / "bin").mkdir(parents=True, exist_ok=True)
+        raise BenchError("could not install dependencies")
+
+    with (
+        patch.object(BenchInitializer, "_ensure_admin_password"),
+        patch.object(BenchInitializer, "_ensure_database_credentials"),
+        patch.object(BenchInitializer, "_install_system_packages"),
+        patch.object(BenchInitializer, "_create_virtualenv", create_env_then_fail),
+        pytest.raises(BenchError, match="could not install dependencies"),
+    ):
+        bench.initialize()
+
+
+def test_failed_first_initialization_removes_the_folders_it_created(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.config.write(tmp_path)
+
+    _initialize_until_the_virtualenv_fails(bench)
+
+    assert [path.name for path in tmp_path.iterdir() if path.is_dir()] == []
+    assert (tmp_path / "bench.toml").is_file()
+
+
+def test_failed_initialization_keeps_folders_from_an_earlier_run(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.config.write(tmp_path)
+    (tmp_path / "apps" / "frappe").mkdir(parents=True)
+    (tmp_path / "sites" / "other.localhost").mkdir(parents=True)
+    (tmp_path / "env" / "bin").mkdir(parents=True)
+
+    _initialize_until_the_virtualenv_fails(bench)
+
+    assert (tmp_path / "apps" / "frappe").is_dir()
+    assert (tmp_path / "sites" / "other.localhost").is_dir()
+    assert (tmp_path / "env" / "bin").is_dir()
+    assert not (tmp_path / "logs").exists()
+
+
 def test_a_failed_init_keeps_the_task_records(tmp_path: Path) -> None:
     """The wizard runs init as a task; deleting `tasks/` cut its event stream ("Lost connection")."""
     bench = make_bench(tmp_path)
@@ -237,3 +275,32 @@ def test_init_builds_the_framework_assets(tmp_path: Path) -> None:
 
     built_app = python_env_manager.return_value.build_assets_for_app.call_args.args[0]
     assert built_app.config.name == bench.config.framework_app.name
+
+
+@pytest.mark.parametrize("admin_enabled", [True, False])
+def test_init_prepares_the_admin_frontend_only_for_an_enabled_admin(tmp_path: Path, admin_enabled: bool) -> None:
+    bench = make_bench(tmp_path)
+    bench.config.admin.enabled = admin_enabled
+    initializer = BenchInitializer(bench)
+    steps = [
+        "_ensure_admin_password",
+        "_ensure_database_credentials",
+        "_install_system_packages",
+        "_create_bench_structure",
+        "_create_virtualenv",
+        "_install_framework_apps",
+        "_build_framework_assets",
+        "_configure_redis",
+        "_ensure_admin_frontend",
+        "_generate_process_config",
+    ]
+    mocks = {step: MagicMock() for step in steps}
+    with (
+        patch.multiple(initializer, **mocks),
+        patch.object(bench.config, "validate"),
+        patch("pilot.managers.environment.PythonEnvManager"),
+    ):
+        initializer._run_steps(lambda message: None)
+
+    assert mocks["_ensure_admin_frontend"].called is admin_enabled
+    mocks["_generate_process_config"].assert_called_once()

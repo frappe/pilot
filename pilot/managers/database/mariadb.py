@@ -189,6 +189,7 @@ class MariaDBManager(UserOwnedDBManager):
             "innodb-strict-mode = ON\n"
             "innodb-snapshot-isolation = OFF\n"
             f"key-buffer-size = {sizing.key_buffer_mb}M\n"
+            f"aria-pagecache-buffer-size = {sizing.aria_pagecache_mb}M\n"
             f"max-connections = {sizing.max_connections}\n"
             "slave-connections-needed-for-purge = 0\n"
             "tmp-table-size = 32M\n"
@@ -392,6 +393,15 @@ class MariaDBManager(UserOwnedDBManager):
                 return False
             time.sleep(1)
         return True
+
+    def size_aria_pagecache(self) -> None:
+        """Write the sized Aria cache for the next start."""
+        if is_macos() or self.config.existing or not self.my_cnf_path.exists():
+            return
+        if "aria-pagecache-buffer-size" in self.my_cnf_path.read_text():
+            return
+        with self.database_action_lock():
+            self._write_config()
 
     def keep_out_of_swap(self) -> None:
         """Set MemorySwapMax to 0, live first and then in the unit file, so a failed attempt can retry."""

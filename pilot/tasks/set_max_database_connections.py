@@ -11,6 +11,7 @@ from pilot.tasks import Task, step
 @dataclass(kw_only=True)
 class SetMaxDatabaseConnectionsTask(Task):
     command: ClassVar[str] = "set-max-database-connections"
+    timeout_seconds: ClassVar[int] = 300
     is_cancellable_while_running: ClassVar[bool] = False
     _AUDIT_ARG_KEYS: ClassVar[tuple[str, ...]] = ("max_connections",)
 

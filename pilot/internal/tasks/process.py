@@ -43,6 +43,8 @@ class TaskProcess:
         self._store = TaskStore(bench_root)
         self._inspector = ProcessInspector()
         self._unknown_since: dict[str, float] = {}
+        self._deadlines: dict[str, float] = {}
+        self._expired: set[str] = set()
 
     def start(self, task_id: str) -> subprocess.Popen:
         task_dir = self._store.task_dir(task_id)
@@ -94,9 +96,8 @@ class TaskProcess:
         for task_id in self._store.running_task_ids_without_process():
             self.interrupt(task_id)
         for task_id in self._store.task_ids_with_process():
-            ownership = self.ownership(task_id)
-            if ownership == ProcessOwnership.UNKNOWN:
-                ownership = self._resolve_unknown(task_id)
+            self.enforce_timeout(task_id)
+            ownership = self._reconciled_ownership(task_id)
             if ownership in {ProcessOwnership.OWNED, ProcessOwnership.UNKNOWN}:
                 return task_id
             try:
@@ -105,28 +106,35 @@ class TaskProcess:
                 return task_id
             if status == TaskStatus.RUNNING:
                 self.interrupt(task_id)
-            elif status != TaskStatus.QUEUED:
-                self._run_stored_callback_for_status(task_id)
-                self._store.remove_private_files(
-                    task_id,
-                    "process.json",
-                    "secrets.json",
-                    "callbacks.json",
-                )
-            else:
+            elif status == TaskStatus.QUEUED or not self._recover_finished_task(task_id):
                 return task_id
-        self._recover_terminal_callbacks()
-        return None
+        return self._recover_terminal_callbacks()
+
+    def _reconciled_ownership(self, task_id: str) -> ProcessOwnership:
+        ownership = self.ownership(task_id)
+        if ownership == ProcessOwnership.UNKNOWN:
+            return self._resolve_unknown(task_id)
+        if ownership == ProcessOwnership.OWNED:
+            try:
+                record = self._running_record(task_id)
+            except TaskNotRunningError:
+                return ProcessOwnership.UNKNOWN
+            if record.is_callback or self._inspector.is_leader_dead(record.identity):
+                self.interrupt(task_id)
+        return ownership
 
     def _resolve_unknown(self, task_id: str) -> ProcessOwnership:
-        """Look for the wrapper when the stored record is unreadable."""
-        markers = [WRAPPER_MODULE, str(self._store.task_dir(task_id))]
+        """Look for the wrapper or replay callback when its record is unreadable."""
+        task_dir = str(self._store.task_dir(task_id))
         try:
-            pid = self._inspector.get_pid_matching(markers, self._pid_hint(task_id))
+            for module in (WRAPPER_MODULE, "pilot.internal.tasks.callbacks"):
+                if self._inspector.get_pid_matching([module, task_dir], self._pid_hint(task_id)) is not None:
+                    self._unknown_since.pop(task_id, None)
+                    return ProcessOwnership.OWNED
         except OSError:
             return self._unknown_within_grace(task_id)
         self._unknown_since.pop(task_id, None)
-        return ProcessOwnership.OWNED if pid is not None else ProcessOwnership.DEAD
+        return ProcessOwnership.DEAD
 
     def _unknown_within_grace(self, task_id: str) -> ProcessOwnership:
         # ponytail: in-memory clock, a worker restart extends the wait
@@ -217,30 +225,62 @@ class TaskProcess:
         self._store.remove_private_files(task_id, "process.json", "pid")
         self.interrupt(task_id)
 
+    def enforce_timeout(self, task_id: str) -> None:
+        if self._store.read_status(task_id) != TaskStatus.RUNNING:
+            self._deadlines.pop(task_id, None)
+            self._expired.discard(task_id)
+            return
+        if task_id not in self._deadlines:
+            try:
+                self._deadlines[task_id] = time.monotonic() + self._remaining_budget(task_id)
+            except (OSError, TypeError, ValueError, TaskNotFoundError):
+                logging.exception("Cannot restore the execution deadline for task %s", task_id)
+                return
+        if time.monotonic() >= self._deadlines[task_id]:
+            if task_id not in self._expired:
+                logging.error("Task %s exceeded its execution time limit", task_id)
+            self._expired.add(task_id)
+            self.interrupt(task_id)
+
+    def _remaining_budget(self, task_id: str) -> float:
+        meta = self._store.read_metadata(task_id)
+        timeout = meta.get("timeout_seconds", 24 * 60 * 60)
+        started_at = meta.get("started_at")
+        elapsed = (
+            (datetime.now(UTC) - datetime.fromisoformat(started_at)).total_seconds() if started_at else 0
+        )
+        return max(0, timeout - max(0, elapsed))
+
     def interrupt(self, task_id: str) -> None:
         """Fail a task whose process died without finalizing."""
         try:
             record = self.read(task_id)
         except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError, TaskNotFoundError):
             record = None
-        if record is not None:
-            ownership = self._inspector.inspect(record.identity, record.argv)
-            if ownership == ProcessOwnership.UNKNOWN:
-                return
-            if ownership == ProcessOwnership.OWNED:
-                outcome = self._signal(record, signal.SIGKILL)
-                if outcome == ProcessOwnership.UNKNOWN or self._inspector.owned_pids(record.identity):
-                    return
+        if record is None and task_id in self._expired:
+            return
+        if record is not None and self._stop_interrupted_processes(record) == ProcessOwnership.UNKNOWN:
+            return
         self._store.transition(
             task_id,
             TaskStatus.RUNNING,
             TaskStatus.FAILED,
             {
                 "finished_at": datetime.now(UTC).isoformat(),
-                "failure": {"code": "task_interrupted"},
+                "failure": {"code": "task_timeout" if task_id in self._expired else "task_interrupted"},
             },
         )
         self._store.remove_private_files(task_id, "process.json", "secrets.json")
+        self._deadlines.pop(task_id, None)
+        self._expired.discard(task_id)
+
+    def _stop_interrupted_processes(self, record: TaskProcessRecord) -> ProcessOwnership:
+        ownership = self._inspector.inspect(record.identity, record.argv)
+        if ownership == ProcessOwnership.OWNED:
+            outcome = self._signal(record, signal.SIGKILL)
+            if outcome == ProcessOwnership.UNKNOWN or self._inspector.owned_pids(record.identity):
+                return ProcessOwnership.UNKNOWN
+        return ownership
 
     def _wait_for_exit(self, record: TaskProcessRecord, grace_seconds: float) -> None:
         if self._wait_for_process_to_stop(record, grace_seconds):
@@ -280,7 +320,15 @@ class TaskProcess:
         try:
             run_stored_callback(self._store.task_dir(task_id), trigger)
         except Exception as exc:
-            logging.debug("Stored callback %r failed for task %s: %s", trigger, task_id, exc)
+            from pilot.internal.tasks.wrapper import _load_redactions
+            from pilot.utils import open_private, redact_text
+
+            message = redact_text(
+                str(exc), _load_redactions(self._store.task_dir(task_id), self._store.bench_root)
+            )
+            logging.warning("Stored callback %r failed for task %s: %s", trigger, task_id, message)
+            with open_private(self._store.task_dir(task_id) / "output.log", "a") as output:
+                output.write(f"Recovery callback failed: {message}\n")
 
     def _run_stored_callback_for_status(self, task_id: str) -> None:
         try:
@@ -290,19 +338,29 @@ class TaskProcess:
             return
         self._run_stored_callback(task_id, trigger)
 
-    def _recover_terminal_callbacks(self) -> None:
+    def _recover_terminal_callbacks(self) -> str | None:
         for task_id in self._store.terminal_task_ids_with_callbacks():
-            self._run_stored_callback_for_status(task_id)
-            self._store.remove_private_files(task_id, "secrets.json", "callbacks.json")
+            if not self._recover_finished_task(task_id):
+                return task_id
+        return None
 
-    def _signal(self, record: TaskProcessRecord, signum: signal.Signals) -> ProcessOwnership:
+    def _recover_finished_task(self, task_id: str) -> bool:
+        self._run_stored_callback_for_status(task_id)
+        if self._reconciled_ownership(task_id) in {ProcessOwnership.OWNED, ProcessOwnership.UNKNOWN}:
+            return False
+        self._store.remove_private_files(task_id, "process.json", "secrets.json", "callbacks.json")
+        return True
+
+    def _signal(
+        self, record: TaskProcessRecord, signum: signal.Signals, *, exclude_pids: set[int] | None = None
+    ) -> ProcessOwnership:
         ownership = self._inspector.inspect(record.identity, record.argv)
         if ownership == ProcessOwnership.UNKNOWN:
             return ownership
 
         # The launch id, not the leader pid, is what proves the group is ours, so
         # survivors are still signalled once the leader itself is gone.
-        pids = self._inspector.owned_pids(record.identity)
+        pids = self._inspector.owned_pids(record.identity) - (exclude_pids or set())
         if not pids:
             return ProcessOwnership.DEAD
         signalled = False

@@ -10,6 +10,7 @@ from pilot.tasks import Task, step
 @dataclass(kw_only=True)
 class FetchAppUpdatesTask(Task):
     command: ClassVar[str] = "fetch-all-app-updates"
+    timeout_seconds: ClassVar[int] = 300
     # Polled frequently by the UI and read-only; keep it out of the audit log.
     audit_on_queue: ClassVar[bool] = False
     is_listed: ClassVar[bool] = False

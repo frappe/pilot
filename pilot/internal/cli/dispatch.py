@@ -40,7 +40,7 @@ def find_bench_root(context: CliContext, require_explicit: bool = False) -> Path
     if context.bench_name:
         return _explicit_bench_root(benches_dir, context.bench_name)
 
-    if current_root := _cwd_bench_root():
+    if current_root := _cwd_bench_root() or _cwd_workspace_bench_root():
         return current_root
 
     if require_explicit:
@@ -65,6 +65,15 @@ def _cwd_bench_root() -> Path | None:
         if (directory / "bench.toml").exists():
             return directory
     return None
+
+
+def _cwd_workspace_bench_root() -> Path | None:
+    """The bench linked to the app repository around the current directory."""
+    from pilot.core.workspace import Workspace
+
+    workspace = Workspace.find()
+    bench = workspace.find_bench() if workspace else None
+    return bench.path if bench else None
 
 
 def _implicit_bench_root(benches_dir: Path) -> Path:

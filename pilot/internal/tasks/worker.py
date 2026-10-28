@@ -76,7 +76,10 @@ class TaskWorker:
 
         deadline = time.monotonic() + _DATABASE_START_TIMEOUT_SECONDS
         try:
-            runtime = BenchRuntime(Bench(self._bench_root))
+            bench = Bench(self._bench_root)
+            if not bench.is_initialized:
+                return
+            runtime = BenchRuntime(bench)
             while not runtime.is_database_ready:
                 if time.monotonic() >= deadline:
                     logging.warning("The database is not reachable; queued tasks run anyway.")
@@ -127,7 +130,7 @@ class TaskWorker:
         self._wait_for_task(process, pid, task_id)
         if not self._tasks.read_status(task_id).is_terminal:
             logging.error("Task wrapper exited without finalizing %s", task_id)
-            self._processes.interrupt(task_id)
+        self._processes.interrupt(task_id)
         return True
 
     def _wait_for_task(
@@ -142,6 +145,7 @@ class TaskWorker:
                 process.wait(timeout=0.1)
                 return
             except subprocess.TimeoutExpired:
+                self._processes.enforce_timeout(task_id)
                 if self._should_drain() and not draining:
                     self._write_state(WorkerStatus.DRAINING, pid, task_id)
                     draining = True

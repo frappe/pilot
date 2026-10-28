@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -313,6 +314,42 @@ def _make_hooks_app(tmp_path: Path, hooks: str, **extra_files: str) -> App:
     return _make_app(tmp_path, "myapp", '[project]\nname = "myapp"\n', files)
 
 
+def test_hook_validation_batches_modules_without_caching_between_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pilot.core.app.validator import hooks
+
+    app = _make_app(
+        tmp_path,
+        "myapp",
+        '[project]\nname = "myapp"\n',
+        {
+            "myapp/hooks.py": (
+                "after_install = 'myapp.handlers.first'\n"
+                "before_install = 'myapp.handlers.second'\n"
+                "after_migrate = 'myapp.lifecycle.run'\n"
+            ),
+            "myapp/handlers.py": "def first(): pass\ndef second(): pass\nraise RuntimeError()\n",
+            "myapp/lifecycle.py": "def run(): pass\n",
+        },
+    )
+    calls = []
+    original_run = hooks.run_in_bench
+
+    def run(*args):
+        calls.append(args)
+        return original_run(*args)
+
+    monkeypatch.setattr(hooks, "run_in_bench", run)
+    check = HooksCheck()
+    check.run(app)
+    assert len(calls) == 2
+    (app.path / "myapp" / "handlers.py").write_text("def first(): pass\n")
+    with pytest.raises(AppValidationError, match="'handlers' has no 'second'"):
+        check.run(app)
+    assert len(calls) == 4
+
+
 def test_hooks_passes_for_well_formed_hooks(tmp_path: Path) -> None:
     app = _make_hooks_app(
         tmp_path,
@@ -598,7 +635,39 @@ def _modules_for(app: App, relpath: str, source: str) -> set[str]:
     full = app.path / relpath
     full.parent.mkdir(parents=True, exist_ok=True)
     full.write_text(source)
-    return {module for module, _lineno in ImportCheck()._file_imported_modules(app, full)}
+    return {module for module, _lineno in ImportCheck()._files_imported_modules(app, [full])[full]}
+
+
+def test_import_scan_batches_files_without_executing_them(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pilot.core.app.validator import imports
+
+    app = _make_app(
+        tmp_path,
+        "myapp",
+        '[project]\nname = "myapp"\n',
+        {
+            "myapp/hooks.py": "",
+            "myapp/first.py": "import requests\nfrom .second import value\n",
+            "myapp/second.py": "import yaml\nraise RuntimeError('do not execute')\n",
+            "myapp/test_ignored.py": "import test_only_dependency\n",
+        },
+    )
+    calls = []
+    original_run = imports.run_in_bench
+
+    def run(*args):
+        calls.append(args)
+        return original_run(*args)
+
+    monkeypatch.setattr(imports, "run_in_bench", run)
+    assert ImportCheck()._imported_module_locations(app) == {
+        "requests": ["myapp/first.py:1"],
+        "myapp.second": ["myapp/first.py:2"],
+        "yaml": ["myapp/second.py:1"],
+    }
+    assert len(calls) == 1
 
 
 def test_import_check_skips_stdlib_imports(tmp_path: Path) -> None:
@@ -841,6 +910,42 @@ def test_import_check_skips_the_throwaway_venv_when_everything_resolves(monkeypa
 
     monkeypatch.setattr("pilot.core.app.validator.utils.tmp_env.TmpEnv.create", fail)
     ImportCheck().run(app)
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(
+    os.environ.get("PILOT_TEST_PACKAGE_INSTALLS") != "1",
+    reason="Set PILOT_TEST_PACKAGE_INSTALLS=1 to run real uv package installs",
+)
+def test_validation_env_reuses_framework_source_but_packages_app(tmp_path: Path) -> None:
+    from pilot.core.app.validator.utils.tmp_env import TmpEnv
+
+    _make_fake_frappe(tmp_path)
+    framework = tmp_path / "apps" / "frappe" / "frappe" / "__init__.py"
+    framework.write_text("value = 'before'\n")
+    app = _make_app(
+        tmp_path,
+        "myapp",
+        '[project]\nname = "myapp"\nversion = "0.0.1"\ndependencies = ["frappe"]\n'
+        + _SETUPTOOLS_BUILD,
+        {"myapp/__init__.py": "value = 'before'\n"},
+    )
+    env = TmpEnv()
+    try:
+        env.create(app.bench)
+        env.install_app(app)
+        framework.write_text("value = 'after'\n")
+        (app.path / "myapp" / "__init__.py").write_text("value = 'after'\n")
+        result = subprocess.run(
+            [str(env.python), "-c", "import frappe, myapp; print(frappe.value, myapp.value)"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert result.stdout.strip() == "after before"
+    finally:
+        env.delete()
 
 
 def test_validation_env_installs_uv_when_the_host_has_none(monkeypatch, tmp_path: Path) -> None:
@@ -1279,7 +1384,7 @@ def test_import_check_raises_app_validation_error_on_unparseable_syntax(tmp_path
     )
     bad_file = app.path / "myapp" / "bad.py"
     with pytest.raises(AppValidationError, match=r"has unparseable Python syntax in myapp/bad.py"):
-        ImportCheck()._file_imported_modules(app, bad_file)
+        ImportCheck()._files_imported_modules(app, [bad_file])
 
 
 def test_all_checks_delegate_to_bench_python(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1316,7 +1421,7 @@ def test_all_checks_delegate_to_bench_python(tmp_path: Path, monkeypatch: pytest
 
     SyntaxCheck().run(app)
     HooksCheck().run(app)
-    ImportCheck()._file_imported_modules(app, app.path / "myapp" / "utils.py")
+    ImportCheck()._files_imported_modules(app, [app.path / "myapp" / "utils.py"])
     FrappeCompatibilityCheck().run(app)
 
     assert len(calls) >= 4

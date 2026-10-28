@@ -41,7 +41,7 @@
       if (method === 'install_app') appInstalled = true
       if (method === 'uninstall_app') appInstalled = false
       const values = {
-        get_context: { enabled: true, site_name: 'example.test', server_url: location.href, account_url: location.href },
+        get_context: { enabled: true, site_name: 'example.test', server_url: location.href, account_url: location.href, bundle: { js: new URL('../../../backend/static/in-app-embed/cloud-settings/cloud-settings.js', location.href).href } },
         get_billing: billing(), get_billing_profile: profile,
         reconcile_payment_setup: { activated: [] }, save_billing_profile: {},
         get_payment_gateways: [{ name: 'stripe', label: 'Stripe', adapter_key: 'Stripe', method_types: ['Card'], subtitle: 'Example gateway' }],

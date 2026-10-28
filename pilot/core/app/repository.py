@@ -350,6 +350,9 @@ class AppRepository:
 
     def checkout_pinned_commit(self, sha: str) -> None:
         """Check out a specific commit SHA, staying on the app's configured branch."""
+        if self.repo.has_commit(sha):
+            self._checkout_pinned_ref(sha)
+            return
         self._sync_remote_url()
         self.repo.prune_stale_temp_packs()
         try:
@@ -385,8 +388,10 @@ class AppRepository:
         check anything out. The stash is left alone on success: the revision being
         moved to is free to conflict with it, and dropping it would lose work.
         """
-        stashed = self.repo.stash_all()
+        if self.is_at_pinned_ref(ref):
+            return
         branch = self.app.config.branch
+        stashed = self.repo.stash_all()
         if branch and not self.is_commit_hash(branch) and self.repo.checkout_new_branch(branch, ref):
             return
         try:
@@ -395,3 +400,10 @@ class AppRepository:
             if stashed:
                 self.repo.stash_pop()
             raise
+
+    def is_at_pinned_ref(self, ref: str) -> bool:
+        """Check both the revision and configured branch before touching local edits."""
+        branch = self.app.config.branch
+        if branch and not self.is_commit_hash(branch) and self.repo.branch != branch:
+            return False
+        return self.repo.get_commit_sha(ref) == self.repo.head_sha != ""

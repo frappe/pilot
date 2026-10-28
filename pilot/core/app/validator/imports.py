@@ -20,18 +20,6 @@ if typing.TYPE_CHECKING:
 _IMPORTS_AST_SCRIPT = """
 import ast, json, sys
 
-req = json.load(sys.stdin)
-path = req["path"]
-try:
-    with open(path, "r", encoding="utf-8", errors="replace") as f:
-        tree = ast.parse(f.read(), filename=path)
-except SyntaxError as exc:
-    print(json.dumps({"syntax_error": f"line {exc.lineno}: {exc.msg}"}))
-    sys.exit(0)
-except (OSError, UnicodeDecodeError):
-    print(json.dumps({"imports": []}))
-    sys.exit(0)
-
 def is_type_checking(test):
     return (isinstance(test, ast.Name) and test.id == "TYPE_CHECKING") or (
         isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING"
@@ -48,20 +36,30 @@ def runtime_imports(nodes):
         else:
             yield from runtime_imports(ast.iter_child_nodes(node))
 
-results = []
-for node in runtime_imports(tree.body):
-    if isinstance(node, ast.Import):
-        for alias in node.names:
-            results.append({"type": "import", "name": alias.name, "lineno": node.lineno})
-    elif isinstance(node, ast.ImportFrom):
-        results.append({
-            "type": "import_from",
-            "module": node.module,
-            "level": node.level,
-            "lineno": node.lineno,
-        })
+def file_imports(path):
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            tree = ast.parse(f.read(), filename=path)
+    except SyntaxError as exc:
+        return {"syntax_error": f"line {exc.lineno}: {exc.msg}"}
+    except (OSError, UnicodeDecodeError):
+        return {"imports": []}
 
-print(json.dumps({"imports": results}))
+    results = []
+    for node in runtime_imports(tree.body):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                results.append({"type": "import", "name": alias.name, "lineno": node.lineno})
+        elif isinstance(node, ast.ImportFrom):
+            results.append({
+                "type": "import_from",
+                "module": node.module,
+                "level": node.level,
+                "lineno": node.lineno,
+            })
+    return {"imports": results}
+
+print(json.dumps({path: file_imports(path) for path in json.load(sys.stdin)["paths"]}))
 """
 
 
@@ -158,11 +156,10 @@ class ImportCheck:
     def _imported_module_locations(self, app: "App", stdlib: set[str] | None = None) -> dict[str, list[str]]:
         stdlib_names = sys.stdlib_module_names if stdlib is None else stdlib
         locations: dict[str, list[str]] = {}
-        for path in python_files(app):
+        files = [p for p in python_files(app) if not self._is_test_file(p.relative_to(app.path))]
+        for path, modules in self._files_imported_modules(app, files).items():
             relpath = path.relative_to(app.path)
-            if self._is_test_file(relpath):
-                continue
-            for module, lineno in self._file_imported_modules(app, path):
+            for module, lineno in modules:
                 if module.split(".", 1)[0] in stdlib_names:
                     continue
                 where = f"{relpath}:{lineno}"
@@ -179,23 +176,28 @@ class ImportCheck:
             return True
         return relpath.name.startswith("test_") or relpath.name == "conftest.py"
 
-    def _file_imported_modules(self, app: "App", path: Path) -> list[tuple[str, int]]:
+    def _files_imported_modules(self, app: "App", paths: list[Path]) -> dict[Path, list[tuple[str, int]]]:
+        if not paths:
+            return {}
         bench_python = get_bench_python(app)
-        data = run_in_bench(bench_python, _IMPORTS_AST_SCRIPT, {"path": str(path)})
-        if "syntax_error" in data:
-            relpath = path.relative_to(app.path)
-            raise AppValidationError(
-                f"'{app.config.name}' has unparseable Python syntax in {relpath}: {data['syntax_error']}"
-            )
-        modules: list[tuple[str, int]] = []
-        for item in data.get("imports", []):
-            if item.get("type") == "import" and item.get("name"):
-                modules.append((item["name"], item["lineno"]))
-            elif item.get("type") == "import_from":
-                mod = self._resolve_relative_parts(
-                    app, path, item.get("module"), item.get("level", 0), item["lineno"]
+        results = run_in_bench(bench_python, _IMPORTS_AST_SCRIPT, {"paths": [str(p) for p in paths]})
+        modules: dict[Path, list[tuple[str, int]]] = {}
+        for path in paths:
+            data = results[str(path)]
+            if "syntax_error" in data:
+                relpath = path.relative_to(app.path)
+                raise AppValidationError(
+                    f"'{app.config.name}' has unparseable Python syntax in {relpath}: {data['syntax_error']}"
                 )
-                modules.append((mod, item["lineno"]))
+            modules[path] = []
+            for item in data.get("imports", []):
+                if item["type"] == "import":
+                    modules[path].append((item["name"], item["lineno"]))
+                elif item.get("type") == "import_from":
+                    mod = self._resolve_relative_parts(
+                        app, path, item.get("module"), item.get("level", 0), item["lineno"]
+                    )
+                    modules[path].append((mod, item["lineno"]))
         return modules
 
     @staticmethod

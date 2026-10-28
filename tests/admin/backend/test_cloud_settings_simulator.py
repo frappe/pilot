@@ -36,6 +36,31 @@ def test_simulation_rejects_unknown_calls_and_can_fail():
     assert client.get(prefix + "get_billing_summary").status_code == 401
     token = client.put("/latest/api/token").text
     headers = {"X-Pilot-Token": token}
-    assert client.post(prefix + "change_plan", headers=headers).status_code == 404
+    assert client.post(prefix + "keep_trial_site", headers=headers).status_code == 404
     client.post("/failure")
     assert client.get(prefix + "get_billing_summary", headers=headers).status_code == 503
+
+
+def test_simulated_trial_converts_on_a_card_and_offers_bigger_plans():
+    client = create_simulator("http://127.0.0.1:8124").test_client()
+    token = client.put("/latest/api/token").text
+    headers = {"X-Pilot-Token": token}
+    prefix = "/api/method/central.billing.api.billing_api."
+
+    def call(method, data=None):
+        response = client.post(prefix + method, json=data or {}, headers=headers)
+        assert response.status_code == 200
+        return response.json["message"]
+
+    client.post("/trial")
+    assert call("get_billing_summary")["trial"]["plan"]["monthly_rate"] == 15
+
+    checkout = call("create_payment_method_checkout")
+    client.post("/checkout/" + checkout["reference"])
+    assert call("confirm_payment_method_checkout", checkout)["active"]
+    assert call("get_billing_summary")["trial"] is None
+
+    options = call("get_plan_options")
+    assert options["current"] == "vm-1-2-1g"
+    call("change_plan", {"plan": "vm-1-2"})
+    assert call("get_plan_options")["current"] == "vm-1-2"

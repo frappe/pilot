@@ -102,12 +102,12 @@ def test_memory_split_limits_survive_an_unchanged_ram_reboot(
         manager.memory.state_path.write_text(json.dumps({"boot_id": "old-boot", "total_memory_mb": 8192}))
         manager.tune_to_host_locked()
         manager.memory.prepare_boot()
-        expected = sizing if released else previous
+        expected = sizing
         assert f"MemoryMax={expected.memory_max_mb}M" in manager.unit_path.read_text()
         assert manager.memory.limits_path.read_text() == (
             f"[Service]\nMemoryHigh={expected.memory_high_mb}M\nMemoryMax={expected.memory_max_mb}M\n"
         )
-        assert apply_limits.called is released
+        apply_limits.assert_called_with(sizing)
 
 
 def test_installation_starts_sizing_outside_the_lock_before_the_first_restart(tmp_path: Path) -> None:
@@ -158,6 +158,7 @@ def memory(tmp_path: Path):
     manager.managed_cnf_path.write_text("custom overrides")
     manager.database_action_lock.side_effect = nullcontext
     manager._total_memory_mb.return_value = 8000
+    manager.config.memory_share = 0.5
     manager._write_config.return_value = calculate_mariadb_memory(8000)
     manager._read_managed_options.return_value = {
         "innodb-buffer-pool-size": "400M",
@@ -173,14 +174,8 @@ def memory(tmp_path: Path):
     (tmp_path / "benches").mkdir()
     with (
         patch.object(MariaDBMemory, "boot_id", new_callable=PropertyMock, return_value="boot-two"),
-        patch.object(
-            MariaDBMemory,
-            "host_memory",
-            new_callable=PropertyMock,
-            return_value={"MemTotal": 8000, "MemAvailable": 4500},
-        ),
-        patch("pilot.managers.database.memory.run_command"),
         patch("pilot.managers.database.memory.benches_dir", return_value=tmp_path / "benches"),
+        patch("pilot.managers.database.memory.run_command"),
     ):
         yield memory
 
@@ -219,21 +214,23 @@ def test_first_allocation_is_automatic_and_repeating_it_preserves_manual_values(
     assert memory.manager.managed_cnf_path.read_text() == "new manual settings"
 
 
-def test_unchanged_ram_restores_persisted_limits_on_new_boot(memory) -> None:
-    memory.store_overrides(3500, 4500)
+def test_unchanged_ram_replaces_legacy_limits_with_computed_limits(memory) -> None:
+    root = memory.manager.config_dir.parent / "benches"
+    (root / "common_config.toml").write_text(
+        "[mariadb]\nmemory_share = 0.5\nmemory_high_mb = 3500\nmemory_max_mb = 4500\n"
+    )
+    memory.manager.config = CommonConfig.read(root).mariadb
+    memory.write_limits(3500, 4500)
     memory.state_path.write_text(json.dumps({"boot_id": "previous-boot", "total_memory_mb": 8000}))
     memory.prepare_boot()
-    assert "MemoryMax=4500M" in memory.limits_path.read_text()
+    sizing = calculate_mariadb_memory(8000)
+    memory.manager._install_unit.assert_called_once_with(
+        sizing, preserve_swap_limit=True, reload_manager=False
+    )
+    memory.manager._set_runtime_memory_limits.assert_called_once_with(sizing)
     memory.manager._write_config.assert_not_called()
-
-
-def test_ram_change_clears_memory_overrides_in_shared_config(memory) -> None:
-    memory.store_overrides(3500, 4500)
-    memory.state_path.write_text(json.dumps({"boot_id": "previous-boot", "total_memory_mb": 4000}))
-    memory.prepare_boot()
-    config = CommonConfig.read(memory.manager.config_dir.parent / "benches")
-    assert config.mariadb.memory_high_mb is None
-    assert config.mariadb.memory_max_mb is None
+    assert "memory_high_mb" not in (root / "common_config.toml").read_text()
+    assert "memory_max_mb" not in (root / "common_config.toml").read_text()
 
 
 def test_boot_failure_does_not_mark_capacity_as_applied(memory) -> None:
@@ -259,86 +256,26 @@ def test_install_existing_preserves_custom_limits_and_is_repeatable(memory) -> N
     assert "RemainAfterExit=yes" in service and "Before=pilot-mariadb.service" in service
 
 
-@pytest.mark.parametrize("value", [True, "4000", 2.5, None, 0, -1])
-def test_manual_memory_requires_positive_integers(memory, value) -> None:
-    with pytest.raises(ValueError, match="positive whole"):
-        memory.set("MemoryMax", value)
-    assert not memory.limits_path.exists()
+def test_the_sized_memory_includes_the_aria_page_cache() -> None:
+    sizing = calculate_mariadb_memory(1962)
+    assert sizing.aria_pagecache_mb == sizing.key_buffer_mb == 32
+    startup_mb = sizing.innodb_buffer_pool_mb + sizing.key_buffer_mb + sizing.aria_pagecache_mb + 16
+    assert startup_mb + 100 < sizing.memory_high_mb
 
 
-def test_manual_memory_above_half_ram_is_allowed_when_projected_total_fits(memory) -> None:
-    assert memory.validate("MemoryMax", 5200)["MemoryMax"] == 5200
-    with pytest.raises(ValueError, match="90%"):
-        memory.validate("MemoryMax", 5201)
-
-
-@pytest.mark.parametrize(("name", "value"), [("MemoryHigh", 3000), ("MemoryMax", 2500)])
-def test_high_must_be_strictly_below_max(memory, name, value) -> None:
-    with pytest.raises(ValueError, match="lower than MemoryMax"):
-        memory.validate(name, value)
-
-
-def test_lowering_high_below_current_usage_is_rejected(memory) -> None:
-    with pytest.raises(ValueError, match="current MariaDB"):
-        memory.validate("MemoryHigh", 1400)
-
-
-def test_unknown_usage_fails_closed(memory) -> None:
-    memory.manager._unit_memory_mb.side_effect = {"MemoryHigh": 2500, "MemoryMax": 3000}.get
-    with pytest.raises(DatabaseError, match="unavailable"):
-        memory.validate("MemoryMax", 4000)
-
-
-def test_budget_is_rechecked_when_a_prepared_change_runs(memory) -> None:
-    memory.validate("MemoryMax", 5000)
+def test_an_existing_server_gets_its_aria_page_cache_sized_once(tmp_path: Path) -> None:
+    manager = MariaDBManager(MariaDBConfig())
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "my.cnf").write_text("[mysqld]\nkey-buffer-size = 32M\n")
     with (
-        patch.object(
-            MariaDBMemory,
-            "host_memory",
-            new_callable=PropertyMock,
-            return_value={"MemTotal": 8000, "MemAvailable": 2000},
-        ),
-        pytest.raises(ValueError, match="90%"),
+        patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
+        patch("pilot.managers.database.mariadb.is_macos", return_value=False),
+        patch.object(manager, "_total_memory_mb", return_value=1962),
+        patch.object(manager, "database_action_lock", return_value=nullcontext()),
+        patch.object(manager, "_write_config", wraps=manager._write_config) as write_config,
     ):
-        memory.set("MemoryMax", 5000)
-    assert not memory.limits_path.exists()
-
-
-def test_limit_cannot_be_lower_than_the_buffer_pool(memory) -> None:
-    memory.manager._unit_memory_mb.side_effect = {
-        "MemoryHigh": 400,
-        "MemoryMax": 1500,
-        "MemoryCurrent": 200,
-    }.get
-    with pytest.raises(ValueError, match="Buffer Pool"):
-        memory.validate("MemoryMax", 900)
-
-
-def test_swap_cannot_be_edited(memory) -> None:
-    with pytest.raises(ValueError):
-        memory.set("MemorySwapMax", 1000)
-
-
-def test_live_apply_failure_restores_persisted_and_active_limits(memory) -> None:
-    memory.write_limits(2500, 3000)
-    original = memory.limits_path.read_text()
-    with (
-        patch.object(memory, "apply_limits", side_effect=[DatabaseError("failed"), None]) as apply,
-        pytest.raises(DatabaseError, match="previous limits were restored"),
-    ):
-        memory.set("MemoryMax", 4000)
-    assert memory.limits_path.read_text() == original
-    assert apply.call_args.args[0] == {"MemoryHigh": 2500, "MemoryMax": 3000}
-
-
-def test_successful_manual_apply_does_not_change_boot_baseline_or_swap(memory) -> None:
-    with patch.object(memory, "apply_limits") as apply:
-        memory.set("MemoryMax", 4000)
-    assert "MemoryMax=4000M" in memory.limits_path.read_text()
-    assert "MemorySwapMax" not in memory.limits_path.read_text()
-    apply.assert_called_once_with({"MemoryHigh": 2500, "MemoryMax": 4000})
-    memory.manager._wait_until_healthy.assert_called_once()
-    assert not memory.state_path.exists()
-    config = CommonConfig.read(memory.manager.config_dir.parent / "benches")
-    assert config.mariadb.memory_high_mb == 2500
-    assert config.mariadb.memory_max_mb == 4000
+        manager.size_aria_pagecache()
+        assert "aria-pagecache-buffer-size = 32M" in manager.my_cnf_path.read_text()
+        manager.size_aria_pagecache()
+        write_config.assert_called_once()

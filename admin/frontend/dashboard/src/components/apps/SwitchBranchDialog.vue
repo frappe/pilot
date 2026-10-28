@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Select } from 'frappe-ui'
+import { Combobox } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { appsApi } from '@/api/apps'
@@ -77,15 +77,16 @@ const confirm = async () => {
     @confirm="confirm"
   >
     <p class="text-ink-gray-6 text-p-sm">
-      {{ app?.title }} is on {{ app?.branch || 'a detached commit' }}. This applies to every site.
+      {{ app?.title }}
+      is on {{ app?.branch || 'a detached commit' }}. This applies to every site.
     </p>
-    <Select
-        side="bottom"
-        v-model="branch"
-        label="New branch"
-        :options="options"
-        :placeholder="loadingBranches ? 'Loading branches…' : 'Choose a branch'"
-        :disabled="loadingBranches"
-      />
+
+    <Combobox
+      v-model="branch"
+      label="New branch"
+      :options="options"
+      :placeholder="loadingBranches ? 'Loading branches…' : 'Choose a branch'"
+      :disabled="loadingBranches"
+    />
   </ActionDialog>
 </template>

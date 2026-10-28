@@ -4,12 +4,13 @@ from dataclasses import dataclass
 from typing import Annotated, ClassVar
 
 from pilot.core.site import provision_from_backup
-from pilot.tasks import Arg, Task, step
+from pilot.tasks import Arg, Task, on_cancel, on_failure, on_success, step
 
 
 @dataclass(kw_only=True)
 class NewSiteFromBackupTask(Task):
     command: ClassVar[str] = "new-site-from-backup"
+    timeout_seconds: ClassVar[int] = 86400
 
     name: str
     db_file: str
@@ -20,6 +21,15 @@ class NewSiteFromBackupTask(Task):
     def run(self) -> None:
         self.require_production_privileges()
         self.restore()
+
+    @on_failure
+    @on_cancel
+    def remove_failed_site(self) -> dict:
+        return {"site": self.name}
+
+    @on_success
+    def release_site_creation(self) -> dict:
+        return {"site": self.name}
 
     @step("restore", lambda self: f"Restore site {self.name} from backup")
     def restore(self) -> None:

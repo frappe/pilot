@@ -165,7 +165,7 @@ def test_a_rename_without_a_new_primary_keeps_serving_the_site_alias(tmp_path: P
     assert _redirects(bench) == [False]
 
 
-def test_a_rolled_back_rename_restores_each_alias_redirect(tmp_path: Path) -> None:
+def test_a_failed_rename_retains_aliases_for_forward_recovery(tmp_path: Path) -> None:
     bench = _rename_with_site_aliases(
         tmp_path,
         SERVING_ALIAS,
@@ -174,5 +174,15 @@ def test_a_rolled_back_rename_restores_each_alias_redirect(tmp_path: Path) -> No
         nginx_error=RuntimeError("nginx is unhappy"),
     )
 
-    assert _targets(bench) == ["old.example.com", "old.example.com"]
-    assert _redirects(bench) == [False, True]
+    assert _targets(bench) == ["new.example.com", "new.example.com"]
+    assert _redirects(bench) == [True, True]
+    rename = SiteRename(bench.site("old.example.com"), "new.example.com", make_primary=True)
+    assert rename.progress_path.exists()
+    with (
+        patch("pilot.managers.cron.CronManager.move_schedule"),
+        patch.object(SiteRename, "_reload_nginx"),
+        patch.object(SiteRename, "run_followups"),
+    ):
+        rename.run(lambda message: None)
+    assert not rename.progress_path.exists()
+    assert _targets(bench) == ["new.example.com", "new.example.com"]

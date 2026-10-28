@@ -57,6 +57,16 @@ def test_diagnostics_returns_provider_payload(tmp_path: Path) -> None:
     assert response.get_json() == payload
 
 
+@pytest.mark.parametrize("name", ["MemoryHigh", "MemoryMax"])
+def test_service_memory_limits_cannot_be_queued(tmp_path: Path, name: str) -> None:
+    client = _client(tmp_path / "benches" / "current")
+    response = client.post(f"/api/v1/database/configurations/{name}", json={"value": 4500})
+
+    assert response.status_code == 409
+    assert "Pilot computes this limit" in response.get_json()["error"]["message"]
+    assert not list((tmp_path / "benches" / "current" / "tasks").glob("*/meta.json"))
+
+
 def test_database_quick_actions_returns_capability_payload(tmp_path: Path) -> None:
     client = _client(tmp_path / "benches" / "current")
     payload = {

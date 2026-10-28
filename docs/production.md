@@ -49,6 +49,7 @@ A new bench deploys one bench process plus admin and the two redis servers, beca
 `[lite_mode] enabled` is the default. Turn lite mode off and the set becomes web,
 socketio, admin, workers, and redis - see [Lite Mode](configuration.md#lite-mode).
 Supervisor also runs a `schedule` process; systemd's worker pool runs the scheduler itself.
+systemd runs one Frappe `worker-pool` per `[[workers]]` group, so each set of queues keeps its own worker count. A bench with one group has one `worker_pool` unit; a bench with more has `worker_pool_<queues>` units, such as `worker_pool_default` and `worker_pool_long`. The pools share one scheduler, because Frappe's scheduler takes a bench-wide lock. A pool unit sets `KillMode=mixed`, so a stop signals only the pool. The pool then stops each worker once, and a worker finishes its running job before it exits. systemd's default sends SIGTERM to every process, and RQ's job process exits at once on SIGTERM, which lost the running job. systemd still kills what remains after the 90-second stop timeout.
 
 With systemd, the Node socketio process listens on the Unix socket `config/socketio.sock` in the bench, and nginx proxies `/socket.io` to it, so realtime does not answer on a public port. Supervisor, the Python backend, and a Frappe that does not read `FRAPPE_SOCKETIO_UDS` (before v16) keep `socketio_port`. With systemd, nginx tries the socket first and then `socketio_port`, so realtime answers when the realtime process and nginx were configured for different Frappe versions.
 
@@ -97,7 +98,7 @@ All benches on a host share one nginx. A config change holds the host lock `benc
 Let's Encrypt setup uses configured domains and should run after nginx is rendered. Site domain changes should reload nginx through site/domain code.
 
 With local TLS enabled, `pilot setup production` enables SSL for each existing site with a public site name or custom domain.
-It then requests a certificate for all public domains on each site. The local-only names `local` and `localhost`, and domains ending in `.local` or `.localhost`, stay excluded.
+It then requests certificates for public domains whose TLS ends on this host. The local-only names `local` and `localhost`, and domains ending in `.local` or `.localhost`, stay excluded. Hostnames matching `bench-domain-provider wildcard-domains` are excluded when they have no explicit route policy. An explicit route with `origin_scheme = "https"` still needs a local certificate; a route with `origin_scheme = "http"` does not. These rules apply to site and Admin hostnames, including older sites with `ssl = true` and no route metadata. A bench with only proxy-terminated hostnames needs no Let's Encrypt contact email.
 
 Public certificate requests need a Let's Encrypt contact email. Pass the email during production setup:
 
@@ -107,8 +108,10 @@ pilot setup production --admin-domain admin.example.com --tls --letsencrypt-emai
 
 You can also set `letsencrypt.email` in `common_config.toml` before setup.
 
-Let's Encrypt setup also installs the host-wide user timer `pilot-certificates.timer`. It runs 15 minutes after boot and then daily. It runs `certbot renew` once for the host, then checks every production bench: a certificate with less than 14 days left gets an alert in the bench's notifications and its alert sinks, because certbot renews from 30 days left. Its log is `system/logs/certificates.log` in the Pilot directory.
+Let's Encrypt setup also installs the host-wide user timer `pilot-certificates.timer`. It runs 15 minutes after boot and then daily. It checks each production bench's current local certificate domains and refreshes certificates near expiry or with changed domain coverage. It does not run an unfiltered host-wide `certbot renew`. Proxy-terminated and removed routes are excluded from renewal and expiry alerts. A local certificate with less than 14 days left gets an alert in the bench's notifications and its alert sinks. Its log is `system/logs/certificates.log` in the Pilot directory. Existing certificate files are retained. A separate renewal service installed by the operating system has its own configuration.
 When an upstream proxy terminates HTTPS, set `admin.tls = false` so Pilot does not change site SSL settings or request certificates.
+
+Private names and explicit route policies need no wildcard-provider lookup. If a provider lookup or certificate check fails during daily maintenance, Pilot logs the bench path and the error and continues with the other benches. A failed refresh does not prevent the expiry check for that bench.
 
 When requests arrive from configured proxy servers, Pilot preserves the forwarded scheme supplied by an edge that terminates TLS. Socket.IO also preserves an explicit browser `Origin` and reconstructs a same-origin value from the forwarded scheme and host only when that header is absent.
 

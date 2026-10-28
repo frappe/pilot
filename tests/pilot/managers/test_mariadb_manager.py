@@ -51,9 +51,10 @@ def test_press_unified_memory_sizing_is_adapted_for_pilot() -> None:
     sizing = calculate_mariadb_memory(8192)
 
     assert sizing.mariadb_memory_mb == 3172
-    assert sizing.innodb_buffer_pool_mb == 1692
+    assert sizing.innodb_buffer_pool_mb == 1660
     assert sizing.max_connections == 50
     assert sizing.key_buffer_mb == 32
+    assert sizing.aria_pagecache_mb == 32
     assert sizing.innodb_log_file_mb == 512
     assert sizing.memory_high_mb == 2855
     assert sizing.memory_max_mb == 3172
@@ -103,7 +104,7 @@ def test_larger_vm_variable_limits_preserve_press_memory_guards() -> None:
 
     assert limits.innodb_buffer_pool_min_mb == 640
     assert limits.innodb_buffer_pool_max_mb == 2216
-    assert limits.innodb_buffer_pool_recommended_mb == 1692
+    assert limits.innodb_buffer_pool_recommended_mb == 1660
     assert limits.max_connections_min == 10
     assert limits.max_connections_max == 90
     assert limits.max_connections_recommended == 50

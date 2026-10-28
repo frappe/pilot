@@ -18,6 +18,7 @@ class RestoreSiteTask(Task):
     bench, a fresh backup of one, uploaded files, or the latest backup of a remote Frappe site."""
 
     command: ClassVar[str] = "restore-site"
+    timeout_seconds: ClassVar[int] = 86400
     # Stopping between the database and the files leaves a half-restored site.
     is_cancellable_while_running: ClassVar[bool] = False
 
@@ -77,7 +78,9 @@ class RestoreSiteTask(Task):
         streamed = self.get_streamed_parts(latest)
         wanted = ["config"] if {"database", "config"} & set(self.parts) else []
         wanted += ["database"] if "database" in self.parts and "database" not in streamed else []
-        run = BackupRun.from_paths([remote.download_backup(latest[part], workdir) for part in wanted if latest.get(part)])
+        run = BackupRun.from_paths(
+            [remote.download_backup(latest[part], workdir) for part in wanted if latest.get(part)]
+        )
         run.streams = {
             part: BackupStream(Path(latest[part]).name, functools.partial(remote.open_backup, latest[part]))
             for part in streamed
@@ -93,7 +96,9 @@ class RestoreSiteTask(Task):
         streamed = self.get_streamed_parts(links)
         wanted = ["config"]
         wanted += ["database"] if "database" in self.parts and "database" not in streamed else []
-        run = BackupRun.from_paths([download_backup(links[part], workdir) for part in wanted if links.get(part)])
+        run = BackupRun.from_paths(
+            [download_backup(links[part], workdir) for part in wanted if links.get(part)]
+        )
         run.streams = {
             part: BackupStream(
                 Path(urllib.parse.urlsplit(links[part]).path).name,

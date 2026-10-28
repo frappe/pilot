@@ -10,6 +10,14 @@ from pilot.internal.tasks import callbacks as callbacks
 from pilot.managers import platform
 
 
+def owned_meta(root: Path) -> dict:
+    from pilot.core.site.creation import SiteCreationOwner
+
+    with SiteCreationOwner(root, "new.localhost").locked() as owner:
+        owner.claim("creating-task")
+    return {"bench_root": str(root), "task_id": "creating-task"}
+
+
 def test_remove_failed_site_operation_uses_json_args(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -20,7 +28,7 @@ def test_remove_failed_site_operation_uses_json_args(
 
     callbacks.run_callback(
         {"operation": "remove-failed-site", "args": {"site": "new.localhost"}},
-        {"bench_root": str(tmp_path)},
+        owned_meta(tmp_path),
     )
 
     assert not site_path.exists()
@@ -44,7 +52,7 @@ def test_remove_failed_site_attempts_database_drop_before_file_cleanup(
 
     callbacks.run_callback(
         {"operation": "remove-failed-site", "args": {"site": "new.localhost"}},
-        {"bench_root": str(tmp_path)},
+        owned_meta(tmp_path),
     )
 
     assert attempted_while_present == [(tmp_path, "new.localhost", site_path.resolve(), True)]
@@ -67,7 +75,7 @@ def test_remove_failed_site_preserves_files_when_database_drop_fails(
                 "operation": "remove-failed-site",
                 "args": {"site": "new.localhost"},
             },
-            {"bench_root": str(tmp_path)},
+            owned_meta(tmp_path),
         )
 
     assert (site_path / "site_config.json").is_file()
@@ -157,7 +165,7 @@ def test_cleanup_site_restore_removes_contained_uploads(
                 "remove_site": remove_site,
             },
         },
-        {"bench_root": str(tmp_path)},
+        owned_meta(tmp_path),
     )
 
     assert not upload_dir.exists()

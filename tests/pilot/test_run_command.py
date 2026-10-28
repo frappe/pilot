@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 import time
 from unittest.mock import MagicMock, patch
 
@@ -87,6 +88,28 @@ def test_non_privileged_command_starts_new_session() -> None:
         _start_process(["mkdir", "-p", "/opt/x"], None, None, False)
 
     assert popen.call_args.kwargs["start_new_session"] is True
+
+
+def test_timeout_kills_a_child_that_does_not_lead_its_process_group(monkeypatch) -> None:
+    from pilot import utils
+
+    original_start = utils._start_process
+
+    def start_attached(argv, cwd, env, stream_output, pipe_stdin=False):
+        with patch("pilot.utils.subprocess.Popen", wraps=subprocess.Popen) as popen:
+
+            def attached(*args, **kwargs):
+                kwargs["start_new_session"] = False
+                return popen(*args, **kwargs)
+
+            with patch("pilot.utils.subprocess.Popen", side_effect=attached):
+                return original_start(argv, cwd, env, stream_output, pipe_stdin)
+
+    monkeypatch.setattr(utils, "_start_process", start_attached)
+    started = time.monotonic()
+    with pytest.raises(CommandError, match="timed out"):
+        run_command([sys.executable, "-c", "import time; time.sleep(60)"], timeout=0.2)
+    assert time.monotonic() - started < 3
 
 
 def test_failure_reports_stdout_when_stderr_is_empty() -> None:

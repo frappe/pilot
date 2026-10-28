@@ -115,6 +115,7 @@ jobs:
           npm ci --prefix admin/frontend/in-app-embed
           npm --prefix admin/frontend/cloud-sdk test
           npm --prefix admin/frontend/cloud-sdk run build
+          npm --prefix admin/frontend/in-app-embed run build
           cd admin/frontend/dashboard
           npx playwright test --config cloud-settings.config.ts
 

@@ -84,12 +84,12 @@ def pick_free_port(port: int) -> int:
 
     if is_macos():
         return port
-    while _port_is_live(port):
+    while is_port_listening(port):
         port += 1
     return port
 
 
-def _port_is_live(port: int) -> bool:
+def is_port_listening(port: int) -> bool:
     import socket
 
     try:
@@ -341,11 +341,15 @@ def _site_config_hosts(cfg: Path) -> Iterator[str]:
 
 def host_owner(bench_path: Path, host: str) -> str | None:
     """Return the sibling bench that already claims host, if any."""
+    from pilot.core.bench import Bench
+
     target = normalize_host(host)
     if not target:
         return None
     for sibling, config in iter_sibling_benches(bench_path):
-        if target in _bench_hosts(sibling, config):
+        if target in _bench_hosts(sibling, config) or Bench(config, sibling).site_aliases.pending_owner(
+            target
+        ):
             return config.name
     return None
 
@@ -467,9 +471,12 @@ def _wait_for_process(
 
 
 def _terminate_process_group(process: subprocess.Popen) -> None:
-    # The child leads its own session, so killing its pgid reaches descendants too.
+    # sudo keeps the caller's session; its pid is not a process-group id.
     with contextlib.suppress(ProcessLookupError):
-        os.killpg(process.pid, signal.SIGKILL)
+        if os.getpgid(process.pid) == process.pid:
+            os.killpg(process.pid, signal.SIGKILL)
+        else:
+            process.kill()
     process.wait()
 
 

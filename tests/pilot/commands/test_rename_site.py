@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -85,23 +86,23 @@ def test_rename_followup_never_redeploys_production(tmp_path: Path, monkeypatch)
     """A rename refreshes certificates without restarting production."""
     bench = _bench(tmp_path, "b1")
     bench.config.production.enabled = True
-    _make_site(bench, "new.localhost", ssl=True)
+    _make_site(bench, "new.example.com", ssl=True)
     calls = []
     monkeypatch.setattr(Bench, "setup_production", lambda self, **kwargs: calls.append("prod"))
     monkeypatch.setattr(Bench, "setup_letsencrypt", lambda self: calls.append("le"))
 
-    SiteRename(bench.site("old.localhost"), "new.localhost").run_followups(on_progress=print)
+    SiteRename(bench.site("old.localhost"), "new.example.com").run_followups(on_progress=print)
 
     assert calls == ["le"]
 
 
 def test_rename_followup_runs_letsencrypt_for_a_tls_site(tmp_path: Path, monkeypatch) -> None:
     bench = _bench(tmp_path, "b1")
-    _make_site(bench, "new.localhost", ssl=True)
+    _make_site(bench, "new.example.com", ssl=True)
     calls = []
     monkeypatch.setattr(Bench, "setup_letsencrypt", lambda self: calls.append("le"))
 
-    SiteRename(bench.site("old.localhost"), "new.localhost").run_followups(on_progress=print)
+    SiteRename(bench.site("old.localhost"), "new.example.com").run_followups(on_progress=print)
 
     assert calls == ["le"]
 
@@ -121,18 +122,32 @@ def test_rename_followup_advises_on_failure(
     tmp_path: Path, monkeypatch, capsys: pytest.CaptureFixture
 ) -> None:
     bench = _bench(tmp_path, "b1")
-    _make_site(bench, "new.localhost", ssl=True)
+    _make_site(bench, "new.example.com", ssl=True)
 
     def boom(self):
         raise BenchError("certbot exploded")
 
     monkeypatch.setattr(Bench, "setup_letsencrypt", boom)
-    SiteRename(bench.site("old.localhost"), "new.localhost").run_followups(on_progress=print)
+    SiteRename(bench.site("old.localhost"), "new.example.com").run_followups(on_progress=print)
 
     out = capsys.readouterr().out
     assert "did not complete" in out
     assert "pilot setup letsencrypt -b b1" in out
 
+
+@pytest.mark.parametrize("name", ["new.localhost", "new.zone.example"])
+def test_rename_followup_skips_local_names_and_proxy_terminated_wildcards(tmp_path: Path, name: str) -> None:
+    bench = _bench(tmp_path, "b1")
+    _make_site(bench, name, ssl=True)
+    with (
+        patch(
+            "pilot.core.adapters.domain_provider.DomainRouteProvider.wildcard_domains",
+            return_value=["*.zone.example"],
+        ),
+        patch.object(Bench, "setup_letsencrypt") as letsencrypt,
+    ):
+        SiteRename(bench.site("old.localhost"), name).run_followups(on_progress=print)
+    letsencrypt.assert_not_called()
 
 
 def _age_alias(bench: Bench, name: str) -> None:
@@ -213,7 +228,9 @@ def test_workload_start_retires_expired_rename_aliases_only(tmp_path: Path) -> N
 
     bench = _bench(tmp_path, "b1")
     _make_site(bench, "new.localhost")
-    RenameSiteCommand(bench, old_name="new.localhost", new_name="newer.localhost").run()
+    RenameSiteCommand(
+        bench, old_name="new.localhost", new_name="newer.localhost", release_old_hostname=True
+    ).run()
     (bench.sites_path / "dev.example.com").symlink_to("newer.localhost")
 
     bench.site_aliases.release_expired()

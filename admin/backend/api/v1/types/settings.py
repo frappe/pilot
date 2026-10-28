@@ -14,6 +14,7 @@ class AuditPage(TypedDict):
 class WorkerGroupSettings(TypedDict):
     queues: list[str]
     count: int
+    timeout: int | None
 
 
 class FirewallRuleSettings(TypedDict):

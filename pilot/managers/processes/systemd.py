@@ -24,7 +24,10 @@ from pilot.utils import cli_root, run_command
 # window a host image builder keeps a machine running before it captures a memory
 # snapshot, so the admin is still resident in the snapshot instead of cold on resume.
 _ADMIN_IDLE_TIMEOUT = 600
-_SYSTEMCTL_TIMEOUT = 90
+# Longer than systemd's 90-second start limit, so systemd reports a slow start first.
+_SYSTEMCTL_TIMEOUT = 120
+# systemd's DefaultTimeoutStopSec: how long a unit without TimeoutStopSec may take to stop.
+_SYSTEMD_STOP_TIMEOUT = 90
 
 
 class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
@@ -292,7 +295,11 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
     @override
     def restart_processes(self, definitions: list[ProcessDefinition]) -> None:
         units = [self._unit_name(definition.name) for definition in definitions]
-        run_command(self._systemctl("restart", *units), env=self._systemctl_env(), timeout=_SYSTEMCTL_TIMEOUT)
+        # A restart waits for the slowest unit to stop, then for the units to start.
+        timeout = _SYSTEMCTL_TIMEOUT + max(
+            (definition.stop_timeout or _SYSTEMD_STOP_TIMEOUT for definition in definitions), default=0
+        )
+        run_command(self._systemctl("restart", *units), env=self._systemctl_env(), timeout=timeout)
 
     def is_configured(self) -> bool:
         result = subprocess.run(

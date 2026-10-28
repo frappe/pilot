@@ -7,4 +7,9 @@ class AppConfig:
     repo: str
     branch: str
     branches: list[str] = field(default_factory=list)
+    path: str = ""
     follow_branch: bool = False
+
+    @property
+    def is_linked(self) -> bool:
+        return bool(self.path)

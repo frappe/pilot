@@ -1,6 +1,6 @@
 {
   "name": "@frappe/cloud-sdk",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "API client and dialog for Frappe Cloud site settings",
   "repository": {
     "type": "git",
@@ -22,7 +22,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc && npm --prefix ../in-app-embed run build:sdk && node tests/check-bundle.mjs",
+    "build": "tsc",
     "test": "node --test tests/*.test.ts"
   },
   "devDependencies": {

@@ -5,10 +5,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pilot.exceptions import BenchAlreadyExistsError
+from pilot.exceptions import BenchAlreadyExistsError, BenchError
+from pilot.internal.validators import validate_branch_name
 from pilot.utils import iter_sibling_benches
 
 if TYPE_CHECKING:
+    from pilot.config import BenchConfig
     from pilot.core.bench import Bench
 
 
@@ -26,6 +28,8 @@ class BenchCreator:
         admin_tls: bool | None = None,
         db_type: str = "mariadb",
         admin_password: str = "",
+        frappe_branch: str | None = None,
+        configure: Callable[["BenchConfig"], None] | None = None,
     ) -> None:
         self.target_directory = target_directory
         self.name = name
@@ -34,6 +38,8 @@ class BenchCreator:
         self.admin_tls = admin_tls
         self.db_type = db_type
         self.admin_password = admin_password
+        self.frappe_branch = frappe_branch
+        self.configure = configure
 
     def run(self, on_progress: Callable[[str], None] = lambda message: None) -> "Bench":
         from pilot.internal.atomic_file import exclusive_file_lock
@@ -50,6 +56,12 @@ class BenchCreator:
         if bench_toml.exists():
             raise BenchAlreadyExistsError(f"Bench '{self.name}' already exists.")
 
+        if self.frappe_branch is not None:
+            if not self.frappe_branch:
+                raise BenchError("Frappe branch must not be empty.")
+            if error := validate_branch_name(self.frappe_branch):
+                raise BenchError(error)
+
         benches_dir = self.target_directory.parent
         if not benches_dir.exists():
             on_progress(f"Creating benches directory at {benches_dir}")
@@ -61,8 +73,10 @@ class BenchCreator:
         offset = self._pick_port_offset(self.target_directory)
         on_progress("Writing bench.toml")
         settings = self._initial_settings()
-
-        BenchConfig.write_flat(bench_toml, self.name, settings, port_offset=offset)
+        config = BenchConfig.from_flat(self.name, settings, port_offset=offset, benches_root=benches_dir)
+        if self.configure:
+            self.configure(config)
+        config.write(self.target_directory)
 
         admin_port = BenchConfig.default_ports()["admin.port"] + offset
         on_progress(f"\nBench '{self.name}' created at {self.target_directory}")
@@ -87,6 +101,8 @@ class BenchCreator:
             "db_type": self.db_type,
             "lite_mode_enabled": True,
         }
+        if self.frappe_branch is not None:
+            settings["app_branch"] = self.frappe_branch
         if self.process_manager:
             settings["production_process_manager"] = self.process_manager
         return settings

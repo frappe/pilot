@@ -7,7 +7,7 @@ interface Runtime {
   closeCloudSettings: () => void
 }
 
-export const createCloudSettings = (load: () => Promise<Runtime>) => {
+export const createCloudSettings = (load: (context: CloudContext) => Promise<Runtime>) => {
   let runtime: Runtime | undefined
   let opening = 0
 
@@ -16,7 +16,7 @@ export const createCloudSettings = (load: () => Promise<Runtime>) => {
     const context = options.context ?? (await getContext())
     if (!context.enabled) throw new Error('Cloud Settings is not available on this site.')
 
-    runtime ??= await load()
+    runtime ??= await load(context)
     if (request === opening) runtime.mountCloudSettings(context, options)
   }
 

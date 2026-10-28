@@ -51,7 +51,9 @@ def test_apply_leaves_a_development_bench_alone(bench) -> None:
     manager.write_config.assert_not_called()
 
 
-def _systemctl_calls(manager: SystemdProcessManager, is_workload_running: bool, active: set[str]) -> list[list[str]]:
+def _systemctl_calls(
+    manager: SystemdProcessManager, is_workload_running: bool, active: set[str]
+) -> list[list[str]]:
     calls = []
 
     def run(argv, **kwargs):
@@ -62,7 +64,9 @@ def _systemctl_calls(manager: SystemdProcessManager, is_workload_running: bool, 
     manager.changed_sockets = ("test-bench-web.socket",)
     with (
         patch.object(systemd_module.subprocess, "run", side_effect=run),
-        patch.object(systemd_module, "run_command", side_effect=lambda argv, **kwargs: calls.append(argv[2:])),
+        patch.object(
+            systemd_module, "run_command", side_effect=lambda argv, **kwargs: calls.append(argv[2:])
+        ),
         patch.object(manager, "is_running", return_value=is_workload_running),
     ):
         manager._activate_sockets({})
@@ -118,9 +122,13 @@ def test_restart_keeps_the_web_socket_open(bench, is_running, argv) -> None:
         definition.name = name
     calls = []
     with (
-        patch.object(SystemdProcessManager, "process_definitions", new_callable=PropertyMock, return_value=definitions),
+        patch.object(
+            SystemdProcessManager, "process_definitions", new_callable=PropertyMock, return_value=definitions
+        ),
         patch.object(manager, "is_running", return_value=is_running),
-        patch.object(systemd_module, "run_command", side_effect=lambda argv, **kwargs: calls.append(argv[2:])),
+        patch.object(
+            systemd_module, "run_command", side_effect=lambda argv, **kwargs: calls.append(argv[2:])
+        ),
     ):
         manager.restart()
 
@@ -194,11 +202,18 @@ def test_switch_tears_down_the_running_manager_first(bench, running, expected) -
     [
         ("systemd", "supervisor", 'command = "server"\n', AppProcessError),
         # systemd holds this value, supervisord cannot.
-        ("supervisor", "systemd", 'command = ["server"]\nenv = { MESSAGE = "it\'s \\"here\\"" }\n', BenchError),
+        (
+            "supervisor",
+            "systemd",
+            'command = ["server"]\nenv = { MESSAGE = "it\'s \\"here\\"" }\n',
+            BenchError,
+        ),
     ],
     ids=["broken-declaration", "value-the-target-cannot-hold"],
 )
-def test_the_target_config_must_build_before_the_old_manager_stops(bench, target, old, declaration, error) -> None:
+def test_the_target_config_must_build_before_the_old_manager_stops(
+    bench, target, old, declaration, error
+) -> None:
     app = bench.apps_path / "mail"
     (app / ".git").mkdir(parents=True)
     (app / "pyproject.toml").write_text("[tool.pilot.processes.server]\n" + declaration)
@@ -240,7 +255,11 @@ def test_settings_restart_reopens_the_web_socket_on_its_new_port(bench) -> None:
         patch.object(manager, "is_running", return_value=True),
         patch.object(manager, "link_units", side_effect=lambda: calls.append("link")),
         patch.object(manager, "reopen_sockets", side_effect=lambda: calls.append("reopen")),
-        patch("pilot.core.bench.settings.subprocess.run", side_effect=lambda argv, **kwargs: calls.append(argv[2])),
+        patch.object(manager, "restart_processes", side_effect=lambda definitions: calls.append("restart")),
+        patch(
+            "pilot.core.bench.settings.subprocess.run",
+            side_effect=lambda argv, **kwargs: calls.append(argv[2]),
+        ),
     ):
         assert _restart_systemd(manager)
 
@@ -259,3 +278,24 @@ def test_supervisor_finds_redis_in_the_workload_group_of_an_old_layout(bench) ->
         manager.restart_processes([redis])
 
     assert run.call_args.args[0][-1] == "test-bench:test-bench-redis-cache"
+
+
+def test_systemd_restart_allows_the_lite_worker_to_drain(bench):
+    from pilot.managers.processes.definitions import ProcessDefinition
+
+    manager = SystemdProcessManager(bench)
+    web = ProcessDefinition(name="web", argv=["true"], log_file=bench.logs_path / "web.log", stop_timeout=690)
+    with patch.object(systemd_module, "run_command") as run:
+        manager.restart_processes([web])
+    assert run.call_args.kwargs["timeout"] == 810
+
+
+def test_systemd_restart_waits_for_the_default_stop_timeout(bench):
+    """A worker that finishes its job before it stops may take systemd's whole default stop timeout."""
+    from pilot.managers.processes.definitions import ProcessDefinition
+
+    manager = SystemdProcessManager(bench)
+    workers = ProcessDefinition(name="worker_pool", argv=["true"], log_file=bench.logs_path / "w.log")
+    with patch.object(systemd_module, "run_command") as run:
+        manager.restart_processes([workers])
+    assert run.call_args.kwargs["timeout"] == 210

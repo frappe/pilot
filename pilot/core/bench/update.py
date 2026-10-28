@@ -30,6 +30,9 @@ class BenchUpdater:
         for app in self.bench.apps():
             if apps_filter is not None and app.config.name not in apps_filter:
                 continue
+            if app.is_linked:
+                on_progress(f"{app.config.name} is a linked checkout, skipping.")
+                continue
             pin = pins.get(app.config.name) or (marketplace_pin(app) if live_lookup else None)
             if pin is None and not self._follows_its_branch(app, live_lookup):
                 on_progress(f"{app.config.name} is at the newest advertised release, skipping.")
@@ -65,7 +68,7 @@ class BenchUpdater:
             try:
                 python_env.install_app(app)
             except CommandError as error:
-                raise MigrateError(f"Failed to install app {app}: {error}") from error
+                raise MigrateError(f"Failed to install app {app.config.name}: {error}") from error
 
     def rebuild_assets(self, apps_filter: set | None, on_progress: Callable[[str], None]) -> None:
         from pilot.managers.environment import PythonEnvManager

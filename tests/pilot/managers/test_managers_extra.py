@@ -492,6 +492,17 @@ def test_systemd_unit_redis_gets_stop_timeout(tmp_path: Path) -> None:
     assert "TimeoutStopSec=300" in unit
 
 
+def test_systemd_stops_only_the_worker_pool_process(tmp_path: Path) -> None:
+    """RQ's job process dies on SIGTERM, so systemd must signal only the pool, which drains its workers."""
+    from pilot.managers.processes.local import ProcessDefinition
+    from pilot.managers.processes.systemd import SystemdRenderer
+
+    pool = ProcessDefinition("worker_pool", ["python"], tmp_path / "w.log", stop_main_process_only=True)
+    web = ProcessDefinition("web", ["gunicorn"], tmp_path / "web.log")
+    assert "KillMode=mixed" in SystemdRenderer("test-bench").render(pool)
+    assert "KillMode" not in SystemdRenderer("test-bench").render(web)
+
+
 def test_systemd_unit_raises_descriptor_limit(tmp_path: Path) -> None:
     """A workload unit gets more descriptors than the default of a user unit."""
     from pilot.managers.processes.local import ProcessDefinition

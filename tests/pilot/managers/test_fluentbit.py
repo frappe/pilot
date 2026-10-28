@@ -347,3 +347,24 @@ def test_logs_sync_reinstalls_the_shipper_for_a_changed_unit(tmp_path: Path) -> 
     install = _sync(tmp_path, config, binary="/usr/bin/fluent-bit", active=True)
 
     install.assert_called_once()
+
+
+def test_worker_input_tails_the_pool_of_every_worker_group(tmp_path: Path) -> None:
+    configurator = _configurator(tmp_path)
+    config = TelemetryConfig(endpoint="https://datum.internal", token="secret")
+
+    with (
+        patch("pilot.managers.fluentbit.cli_root", return_value=tmp_path),
+        patch("pilot.managers.fluentbit.shutil.which", return_value="/usr/bin/fluent-bit"),
+        patch("pilot.managers.fluentbit.user_service_installed", return_value=False),
+        patch("pilot.managers.fluentbit.install_user_service"),
+        patch("pilot.managers.fluentbit.run_command"),
+    ):
+        configurator.install(config)
+
+    conf = (tmp_path / "system" / "fluent-bit" / "fluent-bit.conf").read_text()
+    python_block = conf.split("Tag               pilot.python", 1)[1].split("[INPUT]", 1)[0]
+    worker_block = conf.split("Tag               pilot.worker_pool", 1)[1].split("[FILTER]", 1)[0]
+    assert f"{tmp_path}/benches/*/logs/worker_pool*.log" in python_block.split("Exclude_Path", 1)[1]
+    assert f"{tmp_path}/benches/*/logs/worker_pool*.log" in worker_block
+    assert f"{tmp_path}/benches/*/logs/*.error.log" in worker_block.split("Exclude_Path", 1)[1]

@@ -57,6 +57,7 @@ class Task:
     """Dataclass task module discovered by pilot.tasks."""
 
     command: ClassVar[str] = ""
+    timeout_seconds: ClassVar[int] = 3600
     has_done_step: ClassVar[bool] = True
     required_submit_args: ClassVar[tuple[str, ...]] = ()
     # Audit "who queued this" on queue. Turn off for frequent polling/read-only tasks.

@@ -49,7 +49,7 @@ class Bench:
     def _resolve_path(path_or_name: str | Path) -> Path:
         path = Path(path_or_name).expanduser()
         if isinstance(path_or_name, Path) or path.is_absolute() or path.parent != Path("."):
-            return path
+            return path.absolute()
 
         from pilot.utils import benches_dir
 
@@ -65,18 +65,24 @@ class Bench:
         admin_tls: bool | None = None,
         db_type: str = "mariadb",
         admin_password: str = "",
+        configure: Callable[[BenchConfig], None] | None = None,
         on_progress: Callable[[str], None] = lambda message: None,
+        frappe_branch: str | None = None,
     ) -> "Bench":
+        """Create the bench directory and bench.toml. `configure` adjusts the new
+        config before it is written."""
         from pilot.core.bench.creator import BenchCreator
 
         return BenchCreator(
             target_directory,
             name,
+            frappe_branch=frappe_branch,
             process_manager=process_manager,
             admin_domain=admin_domain,
             admin_tls=admin_tls,
             db_type=db_type,
             admin_password=admin_password,
+            configure=configure,
         ).run(on_progress)
 
     @property
@@ -468,6 +474,9 @@ class Bench:
         if not target:
             return None
         skip = normalize_host(ignoring) if ignoring else ""
+        pending_owner = self.site_aliases.pending_owner(target)
+        if pending_owner and normalize_host(pending_owner) != skip:
+            return pending_owner
         for site in self.sites():
             if skip and normalize_host(site.config.name) == skip:
                 continue

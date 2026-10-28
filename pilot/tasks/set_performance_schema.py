@@ -12,6 +12,7 @@ from pilot.tasks import Task, step
 @dataclass(kw_only=True)
 class SetPerformanceSchemaTask(Task):
     command: ClassVar[str] = "set-performance-schema"
+    timeout_seconds: ClassVar[int] = 300
     is_cancellable_while_running: ClassVar[bool] = False
     _AUDIT_ARG_KEYS: ClassVar[tuple[str, ...]] = ("state",)
 

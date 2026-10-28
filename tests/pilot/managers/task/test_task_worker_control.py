@@ -77,8 +77,10 @@ def _worker_with_database(tmp_path: Path, monkeypatch, ready: list[bool]):
     from pilot.internal.tasks import worker as worker_module_internal
 
     events: list[str] = []
-    monkeypatch.setattr("pilot.core.bench.Bench", lambda root: root)
-    monkeypatch.setattr(BenchRuntime, "is_database_ready", property(lambda self: events.append("check") or ready.pop(0)))
+    monkeypatch.setattr("pilot.core.bench.Bench", lambda root: Mock(is_initialized=True))
+    monkeypatch.setattr(
+        BenchRuntime, "is_database_ready", property(lambda self: events.append("check") or ready.pop(0))
+    )
     monkeypatch.setattr(worker_module_internal, "_DATABASE_POLL_SECONDS", 0.01)
     monkeypatch.setattr(worker_module_internal.TaskWorker, "_work", lambda self, pid: events.append("work"))
     return worker_module_internal.TaskWorker(tmp_path), events

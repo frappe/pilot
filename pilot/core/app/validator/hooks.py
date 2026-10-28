@@ -127,18 +127,6 @@ print(json.dumps({"dict_errors": dict_errors, "path_hooks": found_paths}))
 _SYMBOLS_AST_SCRIPT = """
 import ast, json, sys
 
-req = json.load(sys.stdin)
-path = req["path"]
-try:
-    with open(path, "r", encoding="utf-8", errors="replace") as f:
-        tree = ast.parse(f.read(), filename=path)
-except SyntaxError as exc:
-    print(json.dumps({"syntax_error": f"line {exc.lineno}: {exc.msg}"}))
-    sys.exit(0)
-except (OSError, UnicodeDecodeError):
-    print(json.dumps({"symbols": [], "wildcard": False}))
-    sys.exit(0)
-
 def reachable_statements(body):
     stmts = []
     for node in body:
@@ -150,27 +138,37 @@ def reachable_statements(body):
             stmts += reachable_statements(node.body + node.orelse + node.finalbody + handled)
     return stmts
 
-symbols = set()
-wildcard = False
-for node in reachable_statements(tree.body):
-    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-        symbols.add(node.name)
-    elif isinstance(node, (ast.Import, ast.ImportFrom)):
-        for alias in node.names:
-            if alias.name == "*":
-                wildcard = True
-                break
-            symbols.add(alias.asname or alias.name.split(".", 1)[0])
-        if wildcard:
-            break
-    elif isinstance(node, ast.Assign):
-        for t in node.targets:
-            if isinstance(t, ast.Name):
-                symbols.add(t.id)
-    elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-        symbols.add(node.target.id)
+def file_symbols(path):
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            tree = ast.parse(f.read(), filename=path)
+    except SyntaxError as exc:
+        return {"syntax_error": f"line {exc.lineno}: {exc.msg}"}
+    except (OSError, UnicodeDecodeError):
+        return {"symbols": [], "wildcard": False}
 
-print(json.dumps({"wildcard": wildcard, "symbols": list(symbols)}))
+    symbols = set()
+    wildcard = False
+    for node in reachable_statements(tree.body):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            symbols.add(node.name)
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                if alias.name == "*":
+                    wildcard = True
+                    break
+                symbols.add(alias.asname or alias.name.split(".", 1)[0])
+            if wildcard:
+                break
+        elif isinstance(node, ast.Assign):
+            for t in node.targets:
+                if isinstance(t, ast.Name):
+                    symbols.add(t.id)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            symbols.add(node.target.id)
+    return {"wildcard": wildcard, "symbols": list(symbols)}
+
+print(json.dumps({path: file_symbols(path) for path in json.load(sys.stdin)["paths"]}))
 """
 
 
@@ -204,9 +202,12 @@ class HooksCheck:
     @classmethod
     def _validate_hooks(cls, app: "App", hooks_path: Path) -> list[str]:
         data = cls._extract_hooks_data(app, hooks_path)
+        targets = {path: _hook_target(app, path) for _, path, _ in data.path_hooks}
+        modules = {target[0] for target in targets.values() if target and target[0] and target[1]}
+        symbols = _top_level_symbols(sorted(modules), app)
         problems = list(data.dict_errors)
         for name, path, lineno in data.path_hooks:
-            error = _path_error(app, path)
+            error = _path_error(path, targets[path], symbols)
             if error:
                 problems.append(f"line {lineno}: {name} -> {path}: {error}")
         return problems
@@ -236,27 +237,32 @@ def _resolve_package(app: "App", app_module: str) -> Path:
     return app.bench.apps_path / app_module / app_module
 
 
-def _path_error(app: "App", dotted: str) -> str | None:
-    """Why a hook's dotted path doesn't point at real code, or None if it does.
-
-    `"myapp.setup.after_migrate"` looks for `after_migrate` in `myapp/setup.py`.
-    """
+def _hook_target(app: "App", dotted: str) -> tuple[Path | None, list[str]] | None:
     app_module, *rest = dotted.rsplit(":", 1)[-1].split(".")  # jenv-style "alias:path"
     package = _resolve_package(app, app_module)
     if not package.is_dir():
         return None
 
-    module_file, attributes = _find_module(package, rest)
+    return _find_module(package, rest)
+
+
+def _path_error(
+    dotted: str,
+    target: tuple[Path | None, list[str]] | None,
+    symbols: dict[Path, set[str] | str | None],
+) -> str | None:
+    if target is None:
+        return None
+    module_file, attributes = target
     if module_file is None:
         return f"no module '{dotted}'"
     if not attributes:
         return None  # the path names a module, not something inside one
 
-    return _check_module_attribute(module_file, attributes[0], app)
+    return _check_module_attribute(module_file, attributes[0], symbols[module_file])
 
 
-def _check_module_attribute(module_file: Path, attribute: str, app: "App") -> str | None:
-    result = _top_level_symbols(module_file, app)
+def _check_module_attribute(module_file: Path, attribute: str, result: set[str] | str | None) -> str | None:
     if isinstance(result, str):
         return f"cannot parse '{module_file.name}': {result}"
     if result is None or attribute in result:
@@ -287,16 +293,19 @@ def _package_init(package: Path) -> Path | None:
     return init if init.is_file() else None
 
 
-def _top_level_symbols(module_file: Path, app: "App" | None = None) -> set[str] | str | None:
-    """Names a module defines or imports - everything frappe's get_attr() could find.
-
-    None means a `from x import *` hides them, so nothing can be concluded.
-    Returns error string if syntax is unparseable.
-    """
+def _top_level_symbols(module_files: list[Path], app: "App") -> dict[Path, set[str] | str | None]:
+    """Each module's names, syntax error, or None for wildcard imports."""
+    if not module_files:
+        return {}
     bench_python = get_bench_python(app)
-    data = run_in_bench(bench_python, _SYMBOLS_AST_SCRIPT, {"path": str(module_file)})
-    if "syntax_error" in data:
-        return f"syntax error: {data['syntax_error']}"
-    if data.get("wildcard"):
-        return None
-    return set(data.get("symbols", []))
+    results = run_in_bench(bench_python, _SYMBOLS_AST_SCRIPT, {"paths": [str(p) for p in module_files]})
+    symbols: dict[Path, set[str] | str | None] = {}
+    for module_file in module_files:
+        data = results[str(module_file)]
+        if "syntax_error" in data:
+            symbols[module_file] = f"syntax error: {data['syntax_error']}"
+        elif data.get("wildcard"):
+            symbols[module_file] = None
+        else:
+            symbols[module_file] = set(data.get("symbols", []))
+    return symbols

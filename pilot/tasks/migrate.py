@@ -10,12 +10,15 @@ class MigrateTask(Task):
     """Chain link: migrate one site, then queue the next site (or complete)."""
 
     command: ClassVar[str] = "migrate"
+    timeout_seconds: ClassVar[int] = 86400
 
     operation_id: str
     site: str
 
     def run(self) -> None:
-        operation = self.bench.migrations.get(self.operation_id)
+        operation = self.bench.migrations.get_for_chain_task(
+            self.operation_id, self.running_task_id, self.command, {"site": self.site}
+        )
         try:
             operation.migrate_site(self.site, on_step=self.step, on_progress=self.report)
         except Exception:

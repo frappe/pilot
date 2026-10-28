@@ -1,7 +1,7 @@
 import { call } from './request.ts'
 import type { AccountLinks, Analytics, Backups, BillingProfile, BillingSummary, CloudContext, DnsRecord, Domains, Marketplace, PaymentCheckout, PaymentGateway, PaymentMethodSetup, PaymentStatus, PlanChange, PlanOptions, SiteConfiguration, Storage, TaskStatus, TaskSubmission, Uptime } from './types.ts'
 
-export { CloudSettingsError, isMigrationConflict } from './request.ts'
+export { CloudSettingsError, isMigrationConflict, isNotConnectedToCentral } from './request.ts'
 export type * from './types.ts'
 
 
@@ -56,7 +56,8 @@ export const createPaymentMethodCheckout = (redirectUrl: string, gateway: string
 export const confirmPaymentMethodCheckout = (reference: string) =>
   call<PaymentStatus>('confirm_payment_method_checkout', { reference })
 
-export const reconcilePaymentSetup = () => call<{ activated: string[] }>('reconcile_payment_setup', {})
+/** `activated` is the number of cards that Central activated. */
+export const reconcilePaymentSetup = () => call<{ activated: number }>('reconcile_payment_setup', {})
 
 export const getMarketplaceApps = () => call<Marketplace>('get_marketplace_apps', {}, 'GET')
 

@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { useTranslation } from '../translation'
 import { reconcilePaymentSetup, removePaymentMethod } from '@frappe/cloud-sdk/api'
+import type { PlanOption } from '@frappe/cloud-sdk'
 import { Badge, Button, ErrorMessage, toast } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import AddPaymentCard from '../components/AddPaymentCard.vue'
 import BillingProfileCard from '../components/BillingProfileCard.vue'
 import ChangePlanCard from '../components/ChangePlanCard.vue'
 import Panel from '../components/Panel.vue'
+import PlanMoveCard from '../components/PlanMoveCard.vue'
 import TrialCard from '../components/TrialCard.vue'
 import { openExternal } from '../external'
 import { useErrorMessage, type Store } from '../store'
@@ -22,9 +24,11 @@ interface Props {
 const props = defineProps<Props>()
 const store = props.store
 
-const flow = ref<'' | 'plan' | 'profile' | 'payment'>('')
-// Billing details come first only when Central still needs them, so the steps count from there.
-const stepCount = ref(1)
+type Step = 'plan' | 'profile' | 'payment'
+
+const flow = ref<'' | Step | 'moving'>('')
+// The steps of the open flow. Billing details and the payment method show only when Central still needs them.
+const steps = ref<Step[]>([])
 const removing = ref(false)
 const removeError = ref('')
 const paymentSetupError = ref('')
@@ -36,7 +40,7 @@ const load = async () => {
 
   try {
     const result = await reconcilePaymentSetup()
-    if (result.activated.length) await store.loadBilling(true)
+    if (result.activated) await store.loadBilling(true)
   } catch (exception) {
     paymentSetupError.value = getErrorMessage(exception)
   }
@@ -65,15 +69,56 @@ const planSubtitle = computed(() => {
     .join(' · ')
 })
 
-const startPayment = () => {
+const stepLabel = (step: Step) =>
+  steps.value.length > 1 ? __('Step {0} of {1}', [steps.value.indexOf(step) + 1, steps.value.length]) : ''
+
+// Kept here, because the trial is gone once the card converts it.
+const chosenPlan = ref<PlanOption | null>(null)
+
+const openSteps = (firstSteps: Step[]) => {
   removeError.value = ''
-  stepCount.value = billing.value?.profile_complete ? 1 : 2
-  flow.value = billing.value?.profile_complete ? 'payment' : 'profile'
+  chosenPlan.value = null
+  const needsPayment = !billing.value?.payment_method
+  const needsProfile = needsPayment && !billing.value?.profile_complete
+  steps.value = [...firstSteps]
+  if (needsProfile) steps.value.push('profile')
+  if (needsPayment) steps.value.push('payment')
+  flow.value = steps.value[0]
 }
 
-const finishPayment = () => {
+const startUpgrade = () => openSteps(['plan'])
+const startPayment = () => openSteps([])
+
+const nextStep = (current: Step) => {
+  flow.value = steps.value[steps.value.indexOf(current) + 1] || ''
+}
+
+const onPlanChosen = async (plan: PlanOption) => {
+  chosenPlan.value = plan
+  if (!billing.value?.payment_method) return nextStep('plan')
+
+  // A team whose card is already active converts as soon as the plan fits its spending limit.
+  await store.loadBilling(true)
+  flow.value = billing.value?.trial ? '' : 'moving'
+}
+
+const finishPayment = async () => {
   flow.value = ''
   toast.success(__('Payment method added.'))
+
+  await store.loadBilling(true)
+  if (chosenPlan.value && !billing.value?.trial) flow.value = 'moving'
+}
+
+// A pending move also shows after the dialog reopens, for example when the card was added in a new tab.
+const isMoving = computed(
+  () => flow.value === 'moving' || (!flow.value && Boolean(billing.value?.plan_change?.progress_url)),
+)
+const movingPlan = computed(() => chosenPlan.value?.title || billing.value?.plan_change?.plan || '')
+
+const changePlan = () => {
+  steps.value = []
+  flow.value = 'plan'
 }
 
 const removeCard = async () => {
@@ -142,23 +187,37 @@ const changePlanUrl = computed(() => store.state.accountLinks?.change_plan)
       <TrialCard
         v-if="trial"
         :trial="trial"
-        :plan-name="plan.name"
-        :is-adding="isAddingPayment"
-        @add-payment="startPayment"
+        :is-upgrading="Boolean(flow)"
+        @upgrade="startUpgrade"
       />
+
+      <section
+        v-if="chosenPlan && isAddingPayment"
+        class="flex items-center gap-3 rounded-6 border border-outline-gray-1.5 px-4 py-3"
+      >
+        <div class="min-w-0 flex-1">
+          <p class="text-sm text-ink-gray-5">{{ __("Upgrading to") }}</p>
+          <p class="mt-0.5 text-base-medium text-ink-gray-8">
+            {{ chosenPlan.title }}
+            <span class="tabular-nums text-ink-gray-6">· {{ chosenPlan.price }}</span>
+          </p>
+        </div>
+
+        <Button :label="__('Change plan')" @click="flow = 'plan'" />
+      </section>
 
       <BillingProfileCard
         v-if="flow === 'profile'"
         :store="store"
-        :step="__('Step 1 of 2')"
+        :step="stepLabel('profile')"
         @close="flow = ''"
-        @saved="flow = 'payment'"
+        @saved="nextStep('profile')"
       />
 
       <AddPaymentCard
         v-else-if="flow === 'payment'"
         :store="store"
-        :step="stepCount > 1 ? __('Step 2 of 2') : ''"
+        :step="stepLabel('payment')"
         @close="flow = ''"
         @added="finishPayment"
       />
@@ -166,30 +225,38 @@ const changePlanUrl = computed(() => store.state.accountLinks?.change_plan)
       <ChangePlanCard
         v-if="flow === 'plan'"
         :store="store"
+        :step="stepLabel('plan')"
         @close="flow = ''"
+        @chosen="onPlanChosen"
       />
+
+      <PlanMoveCard v-else-if="isMoving" :store="store" :plan="movingPlan" />
 
       <section
         v-else-if="!isAddingPayment"
         class="grid grid-cols-1 items-center gap-x-4 rounded-6 border border-outline-gray-1.5 p-5 sm:grid-cols-[minmax(0,1fr)_auto]"
       >
         <p class="flex items-center gap-2 text-base-semibold text-ink-gray-8">
-          {{ plan.name ? __("{0} plan", [plan.name]) : __("Current plan") }}
-          <Badge v-if="trial" :label="__('Free trial')" theme="blue" />
+          <template v-if="trial">
+            {{ __("Trial plan") }}
+            <Badge :label="__('Free trial')" theme="blue" />
+          </template>
+          <template v-else>{{ plan.name ? __("{0} plan", [plan.name]) : __("Current plan") }}</template>
         </p>
 
         <p class="col-start-1 mt-1 text-sm text-ink-gray-5">{{ planSubtitle }}</p>
 
         <Button
+          v-if="!trial"
           class="mt-3 justify-self-start sm:col-start-2 sm:row-span-2 sm:row-start-1 sm:mt-0"
           :label="__('Change plan')"
-          @click="flow = 'plan'"
+          @click="changePlan"
         />
 
         <ErrorMessage :message="store.state.accountLinksError" class="mt-2 sm:col-span-2" />
       </section>
 
-      <template v-if="!trial && !flow">
+      <template v-if="!trial && !flow && !isMoving">
         <section class="border rounded-6 border-outline-gray-1.5">
           <div class="grid sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-outline-gray-1.5">
             <div class="p-5">

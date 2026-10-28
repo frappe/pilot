@@ -135,12 +135,14 @@ def test_reload_workers_callback_reloads_the_bench(tmp_path: Path, monkeypatch) 
     from pilot.internal.tasks.callbacks import run_callback
 
     make_bench(tmp_path).config.write(tmp_path)
-    scopes: list[bool] = []
-    monkeypatch.setattr(Bench, "reload_workers", lambda self, web_only=False: scopes.append(web_only))
+    scopes: list[tuple[bool, bool]] = []
+    monkeypatch.setattr(
+        Bench, "reload_workers", lambda self, web_only=False, raises=False: scopes.append((web_only, raises))
+    )
 
     run_callback({"operation": "reload-workers", "args": {"web_only": False}}, {"bench_root": str(tmp_path)})
 
-    assert scopes == [False]
+    assert scopes == [(False, True)]
 
 
 def test_get_and_install_reloads_before_installing_on_the_site(tmp_path: Path) -> None:
@@ -162,7 +164,7 @@ def test_get_and_install_reloads_before_installing_on_the_site(tmp_path: Path) -
     ):
         task.run()
 
-    assert order.mock_calls == [call.reload(), call.install(ANY)]
+    assert order.mock_calls == [call.reload(raises=True), call.install(ANY)]
 
 
 def test_stop_all_stops_redis_after_the_workload(tmp_path: Path, monkeypatch) -> None:

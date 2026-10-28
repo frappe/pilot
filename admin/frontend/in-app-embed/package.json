@@ -5,8 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "./dev.sh",
-    "build": "vite build",
-    "build:sdk": "vite build --mode sdk",
+    "build": "node build.mjs",
     "buildwatch": "vite build --watch",
     "preview": "vite preview"
   },
