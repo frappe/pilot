@@ -205,6 +205,32 @@ install_system_packages
     )
 
 
+def test_installed_bootstrap_packages_are_not_upgraded(tmp_path: Path) -> None:
+    result = run_installer_functions(
+        """
+DISTRO=ubuntu
+is_root() { return 0; }
+services_to_disable() { :; }
+ensure_curl() { :; }
+add_distro_repos() { :; }
+pkg_update() { :; }
+bootstrap_packages() { echo 'installed-tool missing-tool'; }
+database_packages() { echo database-package; }
+production_packages() { echo production-package; }
+pkg_installed() { [ "$1" != missing-tool ]; }
+pkg_install() { echo "install:$*"; }
+enable_cron() { :; }
+disable_system_services() { :; }
+install_node() { :; }
+ensure_tzdata() { :; }
+install_system_packages
+""",
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "install:missing-tool database-package production-package" in result.stdout.splitlines()
+
+
 def zoneinfo_dir(tmp_path: Path, *, with_alias: bool) -> Path:
     directory = tmp_path / "zoneinfo" / "Asia"
     directory.mkdir(parents=True, exist_ok=True)

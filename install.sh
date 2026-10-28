@@ -390,7 +390,7 @@ install_system_packages() {
     pkg_update
     # Package lists contain whitespace-separated package names.
     # shellcheck disable=SC2046
-    pkg_install $(bootstrap_packages) $(database_packages) $(production_packages)
+    pkg_install $(missing_packages $(bootstrap_packages)) $(database_packages) $(production_packages)
     enable_cron
     # shellcheck disable=SC2086
     disable_system_services $new_services
