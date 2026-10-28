@@ -190,7 +190,7 @@ class Workspace:
             raise BenchError(f"Source site '{value}' does not exist.")
         if source.db_type not in ("mariadb", "postgres"):
             raise BenchError("Site copying currently supports MariaDB and PostgreSQL.")
-        if db_type and db_type != source.db_type:
+        if db_type not in (None, source.db_type):
             raise BenchError(f"Source site uses '{source.db_type}', not '{db_type}'.")
         return source
 
@@ -301,6 +301,7 @@ class Workspace:
         """Catch up with a pulled repository: new requirements, schema changes, and
         the app's assets. Also finishes the site's setup if an interrupted setup
         left the site without the app."""
+        from pilot.core.site.config import read_site_config
         from pilot.managers.environment import PythonEnvManager
         from pilot.managers.redis import RedisManager
 
@@ -309,7 +310,10 @@ class Workspace:
         self.bench.install_requirements(on_progress)
         with RedisManager(self.bench.config.redis, self.bench).running():
             if self.app_name not in site.installed_apps():
-                site.finish_provisioning([self.app_name], on_progress)
+                if read_site_config(site.path).get("pause_scheduler"):
+                    site.install_app(app)
+                else:
+                    site.finish_provisioning([self.app_name], on_progress)
             on_progress(f"Migrating {site.config.name}...")
             site.migrate()
         PythonEnvManager(self.bench).build_assets_for_app(app)

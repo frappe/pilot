@@ -206,6 +206,34 @@ def test_invalid_clone_source_does_not_create_workspace_bench(
     assert not (benches / "dev-gameplan").exists()
 
 
+@pytest.mark.parametrize("paused", [False, True])
+def test_sync_installs_missing_app_without_enabling_paused_scheduler(tmp_path, benches, paused):
+    repo = make_repo(tmp_path / "gameplan")
+    bench = make_linked_bench(benches / "dev-gameplan", repo)
+    workspace = Workspace(repo)
+    workspace.bench = bench
+    site = workspace.site
+    site.path.mkdir()
+    flags = {"pause_scheduler": 1, "mute_emails": 1} if paused else {}
+    (site.path / "site_config.json").write_text(json.dumps(flags))
+
+    with (
+        patch.object(Bench, "install_requirements"),
+        patch.object(RedisManager, "running"),
+        patch.object(Site, "installed_apps", return_value=["frappe"]),
+        patch.object(Site, "install_app") as install,
+        patch.object(Site, "finish_provisioning") as finish,
+        patch.object(Site, "enable_scheduler") as enable,
+        patch.object(Site, "migrate"),
+        patch.object(PythonEnvManager, "build_assets_for_app"),
+    ):
+        workspace.sync(lambda message: None)
+    assert install.call_count == int(paused)
+    assert finish.call_count == int(not paused)
+    enable.assert_not_called()
+    assert json.loads((site.path / "site_config.json").read_text()) == flags
+
+
 def test_setup_creates_a_linked_bench_and_reruns_only_sync_it(tmp_path: Path, benches: Path) -> None:
     repo = make_repo(tmp_path / "gameplan")
     workspace = Workspace(repo)
