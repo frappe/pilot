@@ -107,15 +107,19 @@ class BuildArtifacts:
     def get_file_key(path: Path) -> bytes | None:
         try:
             metadata = path.lstat()
-        except OSError:
+        except FileNotFoundError:
             return b""
+        except OSError:
+            return None
         prefix = b""
         if stat.S_ISLNK(metadata.st_mode):
             prefix = b"link:" + os.readlink(path).encode()
             try:
                 metadata = path.stat()
-            except OSError:
+            except FileNotFoundError:
                 return prefix
+            except OSError:
+                return None
         if stat.S_ISDIR(metadata.st_mode):
             return None
         if stat.S_ISREG(metadata.st_mode):
@@ -153,6 +157,10 @@ class BuildArtifacts:
 
     @property
     def paths(self) -> list[str]:
+        return [path for path in self.output_paths if (self.bench.path / path).is_dir()]
+
+    @property
+    def output_paths(self) -> list[str]:
         paths = ["sites/assets"]
         for app in self.bench.apps():
             prefix = f"apps/{app.config.name}"
@@ -160,7 +168,7 @@ class BuildArtifacts:
                 f"{prefix}/{suffix}"
                 for suffix in (f"{app.module_name}/public/dist", "frontend/dist", "roster/dist")
             )
-        return [path for path in paths if (self.bench.path / path).is_dir()]
+        return paths
 
     def capture(self, key: str | None) -> None:
         if key is None:
@@ -200,8 +208,25 @@ class BuildArtifacts:
             manifest = target / "manifest.json"
             if not manifest.is_file():
                 return False
-            paths = json.loads(manifest.read_text())
-            if "sites/assets" not in paths or not all((target / path).is_dir() for path in paths):
+            try:
+                paths = json.loads(manifest.read_text())
+            except (OSError, ValueError):
+                return False
+            if not self.has_valid_manifest(target, paths):
                 return False
             BenchArtifacts(target).restore(self.bench, paths)
         return True
+
+    def has_valid_manifest(self, target: Path, paths) -> bool:
+        if not isinstance(paths, list) or not all(isinstance(path, str) for path in paths):
+            return False
+        if "sites/assets" not in paths or not set(paths).issubset(self.output_paths):
+            return False
+        return all(self.is_safe_output(target, path) for path in paths)
+
+    def is_safe_output(self, target: Path, path: str) -> bool:
+        return (
+            (target / path).is_dir()
+            and (target / path).resolve().is_relative_to(target.resolve())
+            and (self.bench.path / path).resolve().is_relative_to(self.bench.path.resolve())
+        )
