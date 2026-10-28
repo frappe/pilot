@@ -222,4 +222,4 @@ Do not parse task output in route handlers except through the task runner APIs.
 
 ## Adding Endpoints
 
-1. Place the route in the closest group. 2. Add a request/response model if the shape is not trivial. 3. Resolve the domain object and delegate. 4. Queue a task for long work. 5. Add backend tests for success and error behavior.
+1. Place the route in the closest group. 2. Add a request/response model if the shape is not trivial. 3. Resolve the domain object and delegate. 4. Queue a task for long work. 5. Add backend tests for success and error behavior. 6. Run `pilot admin api-reference` to update the [route reference](admin-api-reference.md). A test fails when it is out of date.

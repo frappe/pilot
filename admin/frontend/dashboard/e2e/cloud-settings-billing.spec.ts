@@ -383,6 +383,20 @@ test('Razorpay checkout takes clicks while the settings dialog is open', async (
   await expect.poll(() => page.evaluate(() => document.getElementById('razorpay-checkout-clicks') !== null)).toBe(false)
 })
 
+test('Razorpay explains its mandate limit for a card and for UPI', async ({ page }) => {
+  await openBilling(page, {
+    get_billing: () => ({ message: billing() }),
+    get_account_url: accountLinks,
+    ...upgrade,
+    get_payment_gateways: () => ({ message: [{ name: 'Razorpay', label: 'Razorpay', adapter_key: 'Razorpay', method_types: ['Card', 'UPI Autopay'] }] }),
+  })
+
+  await chooseTrialPlan(page)
+  await expect(page.getByText('Razorpay shows a high limit for card payments.')).toBeVisible()
+  await page.getByText('UPI', { exact: true }).click()
+  await expect(page.getByText('Razorpay asks you to approve payments up to your spending limit.')).toBeVisible()
+})
+
 test('Razorpay needs a phone number before it opens', async ({ page }) => {
   const calls = await openBilling(page, {
     get_billing: () => ({ message: billing() }),

@@ -74,6 +74,14 @@ const methods = computed(() =>
   ),
 )
 
+const paymentNote = computed(() => {
+  if (gateway.value?.adapter_key !== 'Razorpay')
+    return __('To check your card, we may charge a small amount and refund it. After that, we charge it only when your billing cycle ends.')
+  if (method.value === 'UPI Autopay')
+    return __('Razorpay asks you to approve payments up to your spending limit. We charge only your monthly bill, on its due date. We refund the ₹1 setup payment.')
+  return __('Razorpay shows a high limit for card payments. We charge only your monthly bill, on its due date. We refund the ₹1 setup payment.')
+})
+
 const needsContact = computed(
   () => method.value === 'Card' && gateway.value?.adapter_key === 'Razorpay',
 )
@@ -396,8 +404,7 @@ const tileClass = (isSelected: boolean) => [
 
     <p class="flex items-start gap-1.5 text-p-sm text-ink-gray-5">
       <span class="lucide-info mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-      {{ __("To check your card, we may charge a small amount and refund it. After that, we charge it only when your billing cycle ends.")
-      }}
+      {{ paymentNote }}
     </p>
 
     <p class="flex items-start gap-1.5 text-p-sm text-ink-gray-5">
