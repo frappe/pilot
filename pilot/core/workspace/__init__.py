@@ -141,66 +141,25 @@ class Workspace:
         db_type: str | None = None,
         frappe_branch: str | None = None,
         on_progress: Callable[[str], None] = lambda message: None,
-        from_site: str | None = None,
     ) -> "Site":
         """Create, initialise, and provision the bench, or bring an existing one
         up to date with the repository. Safe to run again."""
         if self.app_name == "frappe":
             raise BenchError("Pilot dev cannot develop the frappe framework itself yet.")
-        source = self.get_clone_source(from_site, db_type)
-        db_type = source.db_type if source else db_type
         self.bench = self.find_bench() or self.create_bench(
             db_type or DEFAULT_DB_TYPE, frappe_branch or self.default_frappe_branch, on_progress
         )
         if self.bench_record:
             self.bench_record.write_text(f"{self.bench.path.name}\n")
         self.ensure_matches(db_type, frappe_branch)
-        self.initialize_site(source, on_progress)
-        self.configure_site()
-        return self.site
-
-    def initialize_site(self, source: "Site | None", on_progress: Callable[[str], None]) -> None:
-        if source and self.site.exists:
-            raise BenchError("The workspace site already exists. Run setup without --from-site to update it.")
         self.initialize_bench(on_progress)
         self.restore_app(on_progress)
-        if source:
-            self.clone_site(source, on_progress)
-        elif self.site.exists:
+        if self.site.exists:
             self.sync(on_progress)
         else:
             self.create_site(on_progress)
-
-    def get_clone_source(self, value: str | None, db_type: str | None) -> "Site | None":
-        from pilot.config import BenchConfig
-        from pilot.core.bench import Bench
-        from pilot.internal.validators import validate_site_name
-
-        if value is None:
-            return None
-        name, separator, site_name = value.partition("/")
-        if not separator or validate_site_name(site_name):
-            raise BenchError("Use --from-site BENCH/SITE.")
-        BenchConfig.default(name).validate()
-        path = benches_dir() / name
-        if not (path / "bench.toml").is_file():
-            raise BenchError(f"Source bench '{name}' does not exist.")
-        source = Bench(path).site(site_name)
-        if not source.exists:
-            raise BenchError(f"Source site '{value}' does not exist.")
-        if source.db_type not in ("mariadb", "postgres"):
-            raise BenchError("Site copying currently supports MariaDB and PostgreSQL.")
-        if db_type and db_type != source.db_type:
-            raise BenchError(f"Source site uses '{source.db_type}', not '{db_type}'.")
-        return source
-
-    def clone_site(self, source: "Site", on_progress: Callable[[str], None]) -> None:
-        from pilot.internal.patch_state import mark_applied
-        from pilot.patches.enroll_sites_in_scheduled_backups import PATCH_NAME
-
-        source.clone(self.site.config.name, self.bench, ADMIN_PASSWORD, on_progress)
-        mark_applied(self.bench.path, PATCH_NAME)
-        self.sync(on_progress)
+        self.configure_site()
+        return self.site
 
     def initialize_bench(self, on_progress: Callable[[str], None]) -> None:
         """Initialize a new bench, or resume an initialization that did not finish."""
