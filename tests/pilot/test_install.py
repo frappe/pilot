@@ -21,7 +21,7 @@ EXPECTED_PACKAGES = {
         "certbot",
     ],
     "debian": [
-        "mariadb-server",
+        "mariadb-server-core",
         "mariadb-client",
         "libmariadb-dev",
         "postgresql",
@@ -35,7 +35,7 @@ EXPECTED_PACKAGES = {
         "libnginx-mod-http-modsecurity",
     ],
     "ubuntu": [
-        "mariadb-server",
+        "mariadb-server-core",
         "mariadb-client",
         "libmariadb-dev",
         "postgresql",

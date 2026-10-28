@@ -282,7 +282,7 @@ database_packages() {
         macos)
             printf '%s\n' "mariadb@$MARIADB_VERSION" "postgresql@$POSTGRES_VERSION" redis ;;
         debian|ubuntu)
-            printf '%s\n' mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config redis-server ;;
+            printf '%s\n' mariadb-server-core mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config redis-server ;;
         fedora)
             # Fedora 41+ ships valkey in place of redis (the alias the runtime resolves).
             printf '%s\n' mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config valkey ;;
@@ -417,7 +417,7 @@ system_packages_present() {
         macos)
             packages="mariadb@$MARIADB_VERSION postgresql@$POSTGRES_VERSION redis nginx certbot" ;;
         debian|ubuntu)
-            packages="mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config redis-server nginx certbot supervisor $(waf_packages)" ;;
+            packages="mariadb-server-core mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config redis-server nginx certbot supervisor $(waf_packages)" ;;
         fedora)
             packages="mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config valkey nginx certbot supervisor $(waf_packages)" ;;
         arch)
