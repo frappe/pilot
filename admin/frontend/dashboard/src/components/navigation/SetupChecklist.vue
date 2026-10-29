@@ -301,6 +301,7 @@ onMounted(refresh)
               <TextInput v-model="storage.bucket" label="Bucket" placeholder="pilot-backups" />
               <Select
                 v-model="storage.region"
+                side="bottom"
                 label="Region"
                 :options="storage.regionOptions"
                 :disabled="storage.loadingRegions"
@@ -431,6 +432,7 @@ onMounted(refresh)
                 <Select
                   v-if="!site.hasSingleDomain"
                   v-model="site.suffix"
+                  side="bottom"
                   class="w-48 shrink-0"
                   :options="site.wildcardDomains.map((domain) => ({ label: domain, value: domain }))"
                 />
