@@ -4,7 +4,7 @@ import os
 import sys
 from pathlib import Path
 
-from pilot.exceptions import CommandError
+from pilot.exceptions import BenchError, CommandError
 from pilot.utils import run_command
 
 
@@ -21,6 +21,8 @@ class BenchArtifacts:
 
     @staticmethod
     def copy_directory(source: Path, destination: Path) -> None:
+        if destination.is_symlink():
+            raise BenchError(f"Refusing to copy into a symlinked directory: {destination}")
         destination.mkdir(parents=True, exist_ok=True)
         argv = ["cp", "-a"]
         if sys.platform == "linux":

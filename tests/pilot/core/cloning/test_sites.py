@@ -123,13 +123,16 @@ def test_site_clones_are_fresh_and_files_and_credentials_are_independent(source,
 @pytest.mark.parametrize("stage", ["database", "finish", "domain_cleanup"])
 @pytest.mark.parametrize("cleanup_fails", [False, True])
 def test_failed_site_clone_releases_route_and_owned_resources(source, monkeypatch, stage, cleanup_fails):
+    from pilot.config import RoutePolicy
     from pilot.core.adapters.domain_provider import DomainRouteProvider
 
     original = source.site("source.localhost")
     source_config = (original.path / "site_config.json").read_bytes()
     released, dropped = [], []
     monkeypatch.setattr(SiteClone, "validate", lambda self: True)
-    monkeypatch.setattr("pilot.core.site.clone.register_with_provider", lambda *args: None)
+    monkeypatch.setattr(
+        "pilot.core.site.clone.register_with_provider", lambda *args: RoutePolicy.direct(False)
+    )
     monkeypatch.setattr(DomainRouteProvider, "release", lambda self, name: released.append(name))
     monkeypatch.setattr("pilot.core.site.clone_runtime.CloneRuntime", lambda *args, **kwargs: nullcontext())
 
@@ -164,6 +167,35 @@ def test_failed_site_clone_releases_route_and_owned_resources(source, monkeypatc
         assert json.loads((target / "site_config.json").read_text())["db_name"] == dropped[0]
     assert (original.path / "site_config.json").read_bytes() == source_config
     assert (original.path / "public/files/marker.txt").read_text() == "source files"
+
+
+@pytest.mark.parametrize("target", ["/another/site/private/secret", "../../private/files/marker.txt", "loop"])
+def test_clone_rejects_upload_links_outside_their_upload_tree(source, monkeypatch, target):
+    root = source.site("source.localhost").path / "public/files"
+    (root / "loop").symlink_to(target)
+    monkeypatch.setattr(SiteDatabaseClone, "run", lambda self: None)
+    monkeypatch.setattr(SiteDatabaseClone, "cleanup", lambda self: None)
+    with pytest.raises(BenchError, match="Upload symlink"):
+        source.site("source.localhost").clone("unsafe.localhost", on_progress=lambda message: None)
+    assert not source.site("unsafe.localhost").path.exists()
+
+
+def test_no_provider_policy_does_not_release_a_route(source, monkeypatch):
+    from pilot.core.adapters.domain_provider import DomainRouteProvider
+
+    released = []
+    monkeypatch.setattr(SiteClone, "validate", lambda self: True)
+    monkeypatch.setattr("pilot.core.site.clone.register_with_provider", lambda *args: None)
+    monkeypatch.setattr(DomainRouteProvider, "release", lambda self, name: released.append(name))
+    monkeypatch.setattr(SiteDatabaseClone, "cleanup", lambda self: None)
+
+    def fail(self):
+        raise RuntimeError("clone failed")
+
+    monkeypatch.setattr(SiteDatabaseClone, "run", fail)
+    with pytest.raises(RuntimeError, match="clone failed"):
+        source.site("source.localhost").clone("failed.localhost", on_progress=lambda message: None)
+    assert released == []
 
 
 def test_failed_route_registration_does_not_release_an_unowned_route(source, monkeypatch):

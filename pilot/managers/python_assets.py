@@ -78,14 +78,14 @@ class PythonAssetBuilder:
         for app in self.bench.apps():
             for packages in get_app_packages(app.path, self.frontend_dirs(app)):
                 packages.ensure_installed()
-        key = artifacts.get_key()
+        key = artifacts.optional_key
         self.run_compiler(
             [*self.bench.frappe_call, "frappe", "build", "--force"],
             cwd=self.bench.sites_path,
             env=self.manager._build_env(),
             stream_output=True,
         )
-        if artifacts.get_key() == key:
+        if key is not None and artifacts.optional_key == key:
             artifacts.capture(key)
 
     def build_assets_for_app(self, app: "App", force: bool = False) -> None:

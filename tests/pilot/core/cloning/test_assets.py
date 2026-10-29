@@ -110,6 +110,7 @@ def test_asset_cache_failure_keeps_completed_build(source, monkeypatch, caplog, 
 
     assets = source.sites_path / "assets"
     (assets / "app.js").write_text("completed build")
+    (source.apps_path / "frappe/frappe/public/dist").mkdir(parents=True)
     cache = BuildArtifacts(source)
 
     def fail(*args, **kwargs):
@@ -256,6 +257,30 @@ def test_default_clone_reuses_matching_build_without_sharing_writable_artifacts(
     git(app, "push", "origin", "HEAD:main")
     source.clone("changed", lambda message: None)
     assert len(builds) == 1
+
+
+def test_asset_cache_rejects_manifest_missing_framework_dist(source):
+    from pilot.core.bench.build_artifacts import BuildArtifacts
+
+    artifacts = BuildArtifacts(source)
+    cached = artifacts.root / "key"
+    (cached / "sites/assets").mkdir(parents=True)
+    (cached / "manifest.json").write_text(json.dumps(["sites/assets"]))
+    assert not artifacts.restore("key")
+
+
+def test_directory_copy_refuses_symlinked_destination(tmp_path):
+    from pilot.core.bench.artifacts import BenchArtifacts
+    from pilot.exceptions import BenchError
+
+    source, outside, destination = (tmp_path / name for name in ("source", "outside", "destination"))
+    source.mkdir()
+    outside.mkdir()
+    (source / "file").write_text("new data")
+    destination.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(BenchError, match="symlinked directory"):
+        BenchArtifacts.copy_directory(source, destination)
+    assert list(outside.iterdir()) == []
 
 
 def test_pnpm_build_cache_does_not_require_yarn(source, monkeypatch):

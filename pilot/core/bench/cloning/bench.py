@@ -75,7 +75,7 @@ class BenchClone:
                 for relative in (".", "frontend", "roster"):
                     cache.capture(app.path / relative)
             artifacts = BuildArtifacts(destination)
-            if artifacts.restore(artifacts.get_key()):
+            if artifacts.restore(artifacts.optional_key):
                 on_progress("Reusing matching built assets")
             else:
                 on_progress("Installing Node dependencies and rebuilding assets for selected branches")
@@ -156,13 +156,9 @@ class BenchClone:
         # repository, retaining copied dirty/untracked files in the destination.
         git_file = destination / ".git"
         if not git_file.is_file() and not git_file.is_symlink():
-            if (alternates := git_file / "objects/info/alternates").exists():
-                run_command(["git", "-C", str(destination), "repack", "-a", "-d"])
-                alternates.unlink()
-            if (worktrees := git_file / "worktrees").exists():
-                shutil.rmtree(worktrees)
-            return
-        git_file.unlink()
+            shutil.rmtree(git_file)
+        else:
+            git_file.unlink()
         staging = destination / ".pilot-clone-git"
         from pilot.core.bench.cloning.repository import clone_repository
 

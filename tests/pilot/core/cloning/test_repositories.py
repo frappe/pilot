@@ -353,6 +353,20 @@ def test_clone_branch_options_fail_when_origin_is_unavailable(source):
         source.get_clone_branch_options()
 
 
+def test_current_copy_does_not_inherit_local_hooks_or_configuration(source):
+    app = source.apps_path / "frappe"
+    hook = app / ".git/hooks/post-checkout"
+    hook.write_text("#!/bin/sh\nexit 1\n")
+    hook.chmod(0o755)
+    git(app, "config", "core.hooksPath", "/source-only/hooks")
+    git(app, "config", "user.email", "source-only@example.com")
+    destination = source.path.parent / "copy"
+    BenchClone.copy_app(app, destination)
+    assert not (destination / ".git/hooks/post-checkout").exists()
+    assert "source-only" not in (destination / ".git/config").read_text()
+    assert git(destination, "rev-parse", "HEAD") == git(app, "rev-parse", "HEAD")
+
+
 @pytest.mark.parametrize("staged", [False, True])
 def test_copying_linked_worktree_materializes_repository(tmp_path, staged):
     repo = tmp_path / "repo"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import shutil
 from concurrent.futures import ThreadPoolExecutor
@@ -77,7 +78,7 @@ class SiteClone:
         from pilot.core.site.login import site_url
 
         site.config.route = register_with_provider(self.bench, self.name) if wildcard else None
-        self.route_registered = wildcard
+        self.route_registered = site.config.route is not None
         site.config.ssl = (
             site.config.route.public_tls if site.config.route else should_enable_ssl(self.bench, self.name)
         )
@@ -179,8 +180,25 @@ class SiteClone:
         for relative in ("public/files", "private/files"):
             source = self.source.path / relative
             if source.is_dir():
+                self.validate_upload_links(source)
                 BenchArtifacts.copy_directory(source, site.path / relative)
         BenchArtifacts.relocate_links(self.source.path.resolve(), site.path.resolve())
+
+    @staticmethod
+    def validate_upload_links(root: Path) -> None:
+        if root.is_symlink():
+            raise BenchError(f"Source upload directory is a symlink: {root}")
+        for directory, directories, files in os.walk(root):
+            for name in [*directories, *files]:
+                path = Path(directory) / name
+                if not path.is_symlink():
+                    continue
+                try:
+                    internal = path.resolve(strict=True).is_relative_to(root.resolve())
+                except (OSError, RuntimeError):
+                    internal = False
+                if not internal:
+                    raise BenchError(f"Upload symlink escapes its upload directory: {path}")
 
     def finish(self, site) -> None:
         from pilot.core.site.commands import SiteCommands

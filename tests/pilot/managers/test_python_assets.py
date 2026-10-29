@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
@@ -136,6 +136,35 @@ def test_full_build_installs_nested_dependencies_before_compiling(tmp_path: Path
         patch("pilot.core.app.node_packages.shutil.which", side_effect=lambda name: name),
         patch("pilot.core.app.node_packages.run_command", side_effect=install),
         patch.object(builder, "run_compiler", side_effect=compile_assets) as compiler,
+    ):
+        builder.build_assets()
+    compiler.assert_called_once()
+
+
+@pytest.mark.parametrize("stage", ["before", "after", "publish"])
+def test_full_build_succeeds_when_optional_cache_fails(stage):
+    builder = make_builder()
+    builder.bench.apps.return_value = []
+    keys = [OSError("cannot fingerprint")] if stage == "before" else ["key", OSError("cannot fingerprint")]
+    if stage == "publish":
+        keys = ["key", "key"]
+    with (
+        patch("pilot.core.bench.build_artifacts.BuildArtifacts.get_key", side_effect=keys),
+        patch(
+            "pilot.core.bench.build_artifacts.BuildArtifacts.publish",
+            side_effect=OSError("cache unavailable"),
+        ),
+        patch(
+            "pilot.core.bench.build_artifacts.BuildArtifacts.paths",
+            new_callable=PropertyMock,
+            return_value=["sites/assets"],
+        ),
+        patch(
+            "pilot.core.bench.build_artifacts.BuildArtifacts.required_paths",
+            new_callable=PropertyMock,
+            return_value=["sites/assets"],
+        ),
+        patch.object(builder, "run_compiler") as compiler,
     ):
         builder.build_assets()
     compiler.assert_called_once()
