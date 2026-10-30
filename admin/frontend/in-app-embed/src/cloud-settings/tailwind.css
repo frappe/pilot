@@ -10,6 +10,12 @@
   line-height: 1.5;
 }
 
+:host([inline]) {
+  display: block;
+  height: 100%;
+  z-index: auto;
+}
+
 .cloud-settings-root {
   color-scheme: light;
   color: var(--ink-gray-8);

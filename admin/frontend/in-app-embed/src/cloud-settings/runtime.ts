@@ -58,6 +58,7 @@ export const mountCloudSettings = (context: CloudContext, options: CloudSettings
   element.context = context
   element.options = options
   element.open = true
+  if (options.target) element.setAttribute('inline', '')
   host = element
 
   element.addEventListener('close', () => {
@@ -68,5 +69,5 @@ export const mountCloudSettings = (context: CloudContext, options: CloudSettings
     options.onClose?.()
   }, { once: true })
 
-  document.body.append(element)
+  ;(options.target ?? document.body).append(element)
 }

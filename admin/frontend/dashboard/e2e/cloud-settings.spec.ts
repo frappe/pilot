@@ -53,6 +53,27 @@ test('mount, replace, and close remove the host and restore focus', async ({ pag
   await expect(page.locator('#trigger')).toBeFocused()
 })
 
+test('a target mounts the panels inline, without the dialog or its navigation', async ({ page }) => {
+  await page.route('**/api/method/**', (route) => route.fulfill({ json: { message: {} } }))
+  await page.evaluate(async (runtime) => {
+    const { mountCloudSettings } = await import(runtime)
+    const target = document.createElement('div')
+    target.id = 'inline'
+    target.style.height = '600px'
+    document.body.append(target)
+    mountCloudSettings({ enabled: true }, { panels: ['maintenance'], target })
+  }, runtime)
+  await expect(page.locator('#inline fc-cloud-settings')).toHaveCount(1)
+  await expect(page.getByRole('heading', { name: 'Maintenance' })).toBeVisible()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(page.getByRole('tab')).toHaveCount(0)
+  await page.evaluate(async (runtime) => {
+    const { closeCloudSettings } = await import(runtime)
+    closeCloudSettings()
+  }, runtime)
+  await expect(page.locator('fc-cloud-settings')).toHaveCount(0)
+})
+
 test('custom translation applies to panel errors and task feedback', async ({ page }) => {
   await page.evaluate(async () => {
     const { mountCloudSettings } = await import('/src/cloud-settings/runtime.ts')

@@ -3,9 +3,9 @@ import { translate } from './translation'
 import {
   Badge,
   Button,
+  Dialog,
   Select,
   SettingsContent,
-  SettingsDialog,
   SettingsNavGroup,
   SettingsNavItem,
   SettingsPanel,
@@ -13,7 +13,7 @@ import {
   ToastProvider,
   providePortalTarget,
 } from 'frappe-ui'
-import { ConfigProvider } from 'reka-ui'
+import { ConfigProvider, TabsRoot } from 'reka-ui'
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import type { CloudContext, CloudSettingsOptions } from '@frappe/cloud-sdk'
 
@@ -134,6 +134,9 @@ const visibleGroups = computed(() => {
   })).filter((group) => group.tabs.length)
 })
 const visibleTabs = computed(() => visibleGroups.value.flatMap((group) => group.tabs))
+const inline = computed(() => !!props.options.target)
+// A host that mounts one panel inline has its own navigation.
+const showNav = computed(() => !inline.value || visibleTabs.value.length > 1)
 const getFirstTab = () =>
   visibleTabs.value.find((item) => item.value === props.options.tab)?.value || visibleTabs.value[0]?.value
 
@@ -190,85 +193,101 @@ const updateCount = computed(() => store.value.state.marketplace?.update_count |
 </script>
 
 <template>
-  <div class="cloud-settings-root" :data-theme="isDark ? 'dark' : 'light'">
+  <div class="cloud-settings-root" :class="inline && 'h-full'" :data-theme="isDark ? 'dark' : 'light'">
     <ConfigProvider :teleport-to="overlays">
       <div ref="overlays">
         <ToastProvider />
       </div>
-      <SettingsDialog
+      <component
+        :is="inline ? 'div' : Dialog"
         v-if="overlays"
-        v-model:open="isOpen"
-        v-model:tab="tab"
-        size="5xl"
-        :keyboard-shortcut="false"
-        :unmount-on-hide="true"
+        v-bind="inline ? { class: 'h-full' } : { open: isOpen, 'onUpdate:open': (value: boolean) => (isOpen = value), size: '5xl', bare: true }"
       >
-        <template #title>{{ __("Cloud Settings") }}</template>
+        <TabsRoot
+          v-model="tab"
+          orientation="vertical"
+          activation-mode="manual"
+          unmount-on-hide
+          class="flex min-h-0 flex-col overflow-hidden sm:flex-row"
+          :class="inline ? 'h-full' : 'h-[100dvh] w-screen sm:h-[min(860px,calc(100vh-8rem))] sm:min-h-[560px] sm:w-auto'"
+        >
+          <template v-if="!inline">
+            <Dialog.Title as-child>
+              <h1 class="sr-only">{{ __("Cloud Settings") }}</h1>
+            </Dialog.Title>
+            <Dialog.Description as-child>
+              <p class="sr-only">{{ __("Manage your site across the panels in this dialog.") }}</p>
+            </Dialog.Description>
 
-        <Button
-          class="cloud-settings-close absolute right-3 top-3 z-20 max-sm:size-10"
-          variant="ghost"
-          icon="lucide-x"
-          :aria-label="__('Close Cloud Settings')"
-          @click="emit('close')"
-        />
+            <Button
+              class="cloud-settings-close absolute right-3 top-3 z-20 max-sm:size-10"
+              variant="ghost"
+              icon="lucide-x"
+              :aria-label="__('Close Cloud Settings')"
+              @click="emit('close')"
+            />
+          </template>
 
-        <div class="shrink-0 border-b border-outline-gray-1 bg-surface-sidebar px-4 pb-4 pt-3 sm:hidden">
-          <p class="mb-3 pr-12 text-base-semibold text-ink-gray-8">{{ __('Cloud Settings') }}</p>
-          <Select
-            v-model="tab"
-            :label="__('Panel')"
-            :options="visibleTabs.map((item) => ({ label: item.label, value: item.value }))"
-          />
-        </div>
+          <div
+            v-if="showNav"
+            class="shrink-0 border-b border-outline-gray-1 bg-surface-sidebar px-4 pb-4 pt-3 sm:hidden"
+          >
+            <p class="mb-3 pr-12 text-base-semibold text-ink-gray-8">{{ __('Cloud Settings') }}</p>
+            <Select
+              v-model="tab"
+              :label="__('Panel')"
+              :options="visibleTabs.map((item) => ({ label: item.label, value: item.value }))"
+            />
+          </div>
 
-        <SettingsSidebar class="cloud-settings-sidebar hidden !border-0 sm:flex">
-          <SettingsNavGroup>
-            <span class="mb-1 flex h-7 items-center px-2 text-base text-ink-gray-7">
-              <FrappeCloudLogo class="mr-2 size-4 rounded-2" />
-              {{ __("Cloud Settings") }}
-            </span>
-
-            <template v-for="(group, index) in visibleGroups" :key="index">
-              <span
-                v-if="group.label"
-                class="mt-1.5 flex h-7 items-center px-2 text-sm-medium text-ink-gray-5"
-              >
-                {{ group.label }}
+          <SettingsSidebar v-if="showNav" class="cloud-settings-sidebar hidden !border-0 sm:flex">
+            <SettingsNavGroup>
+              <span class="mb-1 flex h-7 items-center px-2 text-base text-ink-gray-7">
+                <FrappeCloudLogo class="mr-2 size-4 rounded-2" />
+                {{ __("Cloud Settings") }}
               </span>
 
-              <SettingsNavItem
-                v-for="(item, position) in group.tabs"
-                :key="item.value"
-                :class="index && !group.label && !position && 'mt-1.5'"
-                :value="item.value"
-              >
-                <template #prefix>
-                  <span :class="[item.icon, 'size-4 shrink-0 text-ink-gray-6']" />
-                </template>
-                {{ item.label }}
+              <template v-for="(group, index) in visibleGroups" :key="index">
+                <span
+                  v-if="group.label"
+                  class="mt-1.5 flex h-7 items-center px-2 text-sm-medium text-ink-gray-5"
+                >
+                  {{ group.label }}
+                </span>
 
-                <template #suffix>
-                  <Badge
-                    v-if="item.value === 'marketplace' && updateCount"
-                    theme="gray"
-                    :label="String(updateCount)"
-                  />
-                </template>
-              </SettingsNavItem>
-            </template>
-          </SettingsNavGroup>
-        </SettingsSidebar>
+                <SettingsNavItem
+                  v-for="(item, position) in group.tabs"
+                  :key="item.value"
+                  :class="index && !group.label && !position && 'mt-1.5'"
+                  :value="item.value"
+                >
+                  <template #prefix>
+                    <span :class="[item.icon, 'size-4 shrink-0 text-ink-gray-6']" />
+                  </template>
+                  {{ item.label }}
 
-        <SettingsContent class="min-w-0 bg-surface-base">
-          <p v-if="!visibleTabs.length" class="p-8 text-p-base text-ink-gray-6">
-            {{ __('Not in the free trial. Upgrade to use it.') }}
-          </p>
-          <SettingsPanel v-for="item in visibleTabs" :key="item.value" :value="item.value" class="min-w-0">
-            <component :is="item.component" :store="store" :active="tab === item.value" />
-          </SettingsPanel>
-        </SettingsContent>
-      </SettingsDialog>
+                  <template #suffix>
+                    <Badge
+                      v-if="item.value === 'marketplace' && updateCount"
+                      theme="gray"
+                      :label="String(updateCount)"
+                    />
+                  </template>
+                </SettingsNavItem>
+              </template>
+            </SettingsNavGroup>
+          </SettingsSidebar>
+
+          <SettingsContent class="min-w-0 bg-surface-base">
+            <p v-if="!visibleTabs.length" class="p-8 text-p-base text-ink-gray-6">
+              {{ __('Not in the free trial. Upgrade to use it.') }}
+            </p>
+            <SettingsPanel v-for="item in visibleTabs" :key="item.value" :value="item.value" class="min-w-0">
+              <component :is="item.component" :store="store" :active="tab === item.value" />
+            </SettingsPanel>
+          </SettingsContent>
+        </TabsRoot>
+      </component>
 
       <TailwindStyles />
     </ConfigProvider>
