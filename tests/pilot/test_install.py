@@ -134,9 +134,11 @@ system_packages_present
 
 
 @pytest.mark.parametrize("distro", EXPECTED_PACKAGES)
+@pytest.mark.parametrize("database_installed", [False, True])
 def test_system_packages_are_installed_in_one_transaction(
-    distro: str, tmp_path: Path
+    distro: str, database_installed: bool, tmp_path: Path
 ) -> None:
+    installed_package = EXPECTED_PACKAGES[distro][0] if database_installed else ""
     result = run_installer_functions(
         f"""
 DISTRO={distro}
@@ -146,7 +148,7 @@ ensure_curl() {{ :; }}
 add_distro_repos() {{ :; }}
 pkg_update() {{ :; }}
 pkg_available() {{ return 0; }}
-pkg_installed() {{ return 1; }}
+pkg_installed() {{ [ "$1" = "{installed_package}" ]; }}
 pkg_install() {{ printf 'install:%s\\n' "$*"; }}
 enable_cron() {{ :; }}
 disable_system_services() {{ :; }}
@@ -160,7 +162,10 @@ install_system_packages
     installs = [line for line in result.stdout.splitlines() if line.startswith("install:")]
     assert len(installs) == 1
     packages = installs[0].removeprefix("install:").split()
-    assert {"git", *EXPECTED_PACKAGES[distro]} <= set(packages)
+    expected = {"git", *EXPECTED_PACKAGES[distro]} - {installed_package}
+    assert expected <= set(packages)
+    if database_installed:
+        assert installed_package not in packages
 
 
 def test_non_root_install_skips_provisioning_only_when_stack_is_present(

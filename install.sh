@@ -280,12 +280,12 @@ add_fluent_bit_repo() {
 database_packages() {
     case "$DISTRO" in
         macos)
-            printf '%s\n' "mariadb@$MARIADB_VERSION" "postgresql@$POSTGRES_VERSION" redis ;;
+            missing_packages "mariadb@$MARIADB_VERSION" "postgresql@$POSTGRES_VERSION" redis ;;
         debian|ubuntu)
-            printf '%s\n' mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config redis-server ;;
+            missing_packages mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config redis-server ;;
         fedora)
             # Fedora 41+ ships valkey in place of redis (the alias the runtime resolves).
-            printf '%s\n' mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config valkey ;;
+            missing_packages mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config valkey ;;
         arch)
             missing_packages mariadb mariadb-clients mariadb-libs postgresql postgresql-libs pkgconf redis ;;
     esac
