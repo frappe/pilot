@@ -1,14 +1,24 @@
 <script setup lang="ts">
-import { Button, Dialog, ErrorMessage, Spinner, Switch, TextInput, Tooltip } from 'frappe-ui'
+import {
+  Alert,
+  Button,
+  Dialog,
+  ErrorMessage,
+  Progress,
+  Slider,
+  Spinner,
+  Switch,
+  TextInput,
+  Tooltip,
+} from 'frappe-ui'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-
-import SettingsRow from '@/components/settings/SettingsRow.vue'
-
 import { databaseApi } from '@/api/database'
-import { openTaskDetailPage } from '@/utils/taskRoute'
+import BinlogSettingsDialog from '@/components/settings/BinlogSettingsDialog.vue'
+import MemoryRing from '@/components/settings/MemoryRing.vue'
 import type { DatabaseActionCapabilities, DatabaseCapabilities } from '@/types/database'
 import { errorMessage } from '@/utils/error'
+import { openTaskDetailPage } from '@/utils/taskRoute'
 
 // The five capability payloads share available/reason and differ past that, so one
 // reader type keeps them and the unavailable fallback interchangeable.
@@ -65,6 +75,7 @@ const capabilities = ref<DatabaseCapabilities | null>(null)
 const error = ref('')
 const actionError = ref('')
 const activeAction = ref('')
+const binlogsOpen = ref(false)
 const confirmation = ref<RestartConfirmation | PerformanceSchemaConfirmation | null>(null)
 const sizingAction = ref<PendingSizing | null>(null)
 const sizingValue = ref<number | string>('')
@@ -76,13 +87,6 @@ const confirmationOpen = computed({
   },
 })
 const confirmationTitle = computed(() => confirmation.value?.title || 'Database action')
-const sizingOpen = computed({
-  get: () => Boolean(sizingAction.value),
-  set: (value) => {
-    if (!value && !activeAction.value) sizingAction.value = null
-  },
-})
-const sizingTitle = computed(() => sizingAction.value?.title || 'Update database setting')
 const sizingValidationError = computed(() => {
   const pending = sizingAction.value
   if (!pending) return ''
@@ -117,17 +121,6 @@ const showManagedMariaDBDisclaimer = computed(
     capabilities.value !== null &&
     (capabilities.value.engine !== 'mariadb' || !capabilities.value.managed),
 )
-const bufferPoolDescription = computed(() => {
-  const capability = action('innodb_buffer_pool_size')
-  const description = ''
-  if (!capability.available) return description
-  return `${description} Current: ${formatSizingValue(capability.current_mb, 'MB')}`
-})
-const maxConnectionsDescription = computed(() => {
-  const current = action('max_connections').current
-  return `Current: ${Number.isInteger(current) ? current : 'unavailable'}`
-})
-
 const action = (name: keyof DatabaseActionCapabilities): ActionCapability => {
   return (
     capabilities.value?.actions?.[name] || {
@@ -137,8 +130,17 @@ const action = (name: keyof DatabaseActionCapabilities): ActionCapability => {
   )
 }
 
-const formatSizingValue = (value: number | null | undefined, unit = '') => {
-  return `${value}${unit ? ` ${unit}` : ''}`
+const formatMegabytes = (megabytes: number) => {
+  if (megabytes < 1024) return { amount: String(megabytes), unit: 'MB' }
+
+  return { amount: String(Number((megabytes / 1024).toFixed(1))), unit: 'GB' }
+}
+
+const cancelSizing = () => {
+  if (activeAction.value) return
+
+  sizingAction.value = null
+  actionError.value = ''
 }
 
 const idempotencyKey = (actionName: string) => {
@@ -173,6 +175,7 @@ const confirmPerformanceSchema = (enabled: boolean) => {
 
 const openSizingAction = (actionName: 'innodb_buffer_pool_size' | 'max_connections') => {
   actionError.value = ''
+  memorySplitOpen.value = false
   const capability = action(actionName)
   if (!capability.available) return
   if (actionName === 'innodb_buffer_pool_size') {
@@ -264,18 +267,136 @@ const memorySplitIdempotencyKey = ref('')
 const formatGB = (mb: number) => `${(mb / 1024).toFixed(1)} GB`
 const sharePercent = (share: number) => Math.round(share * 100)
 
-const memorySplitDescription = computed(() => {
-  const capability = memoryShare.value
-  if (!capability?.available || capability.current == null || !capability.total_memory_mb) {
-    return capability?.reason || 'Choose how much memory the database may use.'
+const editStat = (edit: () => void) => {
+  sizingAction.value = null
+  memorySplitOpen.value = false
+  actionError.value = ''
+
+  edit()
+}
+
+const memoryBreakdown = computed(() => {
+  const share = memoryShare.value
+
+  if (share?.current == null || !share.total_memory_mb) return null
+
+  const database = sharePercent(share.current)
+
+  return {
+    database,
+    databaseSize: formatGB((share.total_memory_mb * database) / 100),
+    appsSize: formatGB((share.total_memory_mb * (100 - database)) / 100),
   }
-  const database = sharePercent(capability.current)
-  return `Apps ${100 - database}% · Database ${database}% of ${formatGB(capability.total_memory_mb)}`
 })
 
-const memorySplitStep = computed(() =>
-  memoryShare.value?.steps.find((step) => sharePercent(step.share) === memorySplitPercent.value),
-)
+const stats = computed(() => {
+  const bufferPool = action('innodb_buffer_pool_size')
+  const connections = action('max_connections')
+  const databaseLimit = memoryBreakdown.value
+    ? ((memoryShare.value?.total_memory_mb ?? 0) * memoryBreakdown.value.database) / 100
+    : 0
+
+  return [
+    {
+      key: 'innodb_buffer_pool_size',
+      label: 'Buffer pool',
+      available: bufferPool.available,
+      ...(bufferPool.current_mb == null
+        ? { amount: '-', unit: '' }
+        : formatMegabytes(bufferPool.current_mb)),
+      note: databaseLimit ? `of ${formatGB(databaseLimit)}` : '',
+      percent:
+        databaseLimit && bufferPool.current_mb != null
+          ? Math.min((bufferPool.current_mb / databaseLimit) * 100, 100)
+          : null,
+      edit: () => openSizingAction('innodb_buffer_pool_size'),
+    },
+    {
+      key: 'max_connections',
+      label: 'Max connections',
+      available: connections.available,
+      amount: connections.current == null ? '-' : String(connections.current),
+      unit: '',
+      note: connections.recommended == null ? '' : `${connections.recommended} advised`,
+      percent:
+        connections.current != null && connections.recommended
+          ? Math.min((connections.current / connections.recommended) * 100, 100)
+          : null,
+      edit: () => openSizingAction('max_connections'),
+    },
+  ]
+})
+
+const memoryRing = computed(() => {
+  const total = memoryShare.value?.total_memory_mb ?? 0
+  const percent = memoryBreakdown.value?.database ?? 0
+
+  return {
+    percent,
+    apps: formatGB((total * (100 - percent)) / 100),
+    bufferPool: stepFor(percent)?.innodb_buffer_pool_mb,
+  }
+})
+
+const insight = computed(() => {
+  const { current, recommended } = action('max_connections')
+
+  if (current == null || recommended == null || current === recommended) return ''
+
+  const direction = current < recommended ? 'below' : 'above'
+
+  return `Max connections is ${Math.abs(recommended - current)} ${direction} the advised ${recommended}.`
+})
+
+const editNote = computed(() => {
+  const pending = sizingAction.value
+
+  if (!pending) return { text: '', class: '' }
+
+  const label = stats.value.find((stat) => stat.key === pending.action)?.label
+
+  if (sizingValidationError.value)
+    return { text: `${label} · use ${pending.min} to ${pending.max}`, class: 'text-ink-red-5' }
+  if (actionError.value) return { text: actionError.value, class: 'text-ink-red-5' }
+  if (sizingRequiresRestart.value)
+    return { text: `${label} · restarts MariaDB`, class: 'text-ink-amber-6' }
+
+  return { text: `${label} · ${pending.recommended} advised`, class: 'text-ink-gray-5' }
+})
+
+const memorySplitSlider = computed({
+  get: () => [memorySplitPercent.value],
+  set: ([percent]: number[]) => {
+    memorySplitPercent.value = percent
+  },
+})
+
+const stepFor = (percent: number) => {
+  const steps = memoryShare.value?.steps ?? []
+  const distance = (share: number) => Math.abs(sharePercent(share) - percent)
+
+  return steps.reduce<(typeof steps)[number] | null>(
+    (closest, step) =>
+      !closest || distance(step.share) < distance(closest.share) ? step : closest,
+    null,
+  )
+}
+
+const memorySplitStep = computed(() => stepFor(memorySplitPercent.value))
+
+const memorySplitSides = computed(() => {
+  const total = memoryShare.value?.total_memory_mb ?? 0
+  const database = memorySplitPercent.value
+
+  return [
+    { label: 'Database', percent: database, size: formatGB((total * database) / 100) },
+    {
+      label: 'Apps, workers and Redis',
+      percent: 100 - database,
+      size: formatGB((total * (100 - database)) / 100),
+    },
+  ]
+})
 
 const openMemorySplit = () => {
   const capability = memoryShare.value
@@ -302,10 +423,6 @@ const applyMemorySplit = async () => {
   } finally {
     activeAction.value = ''
   }
-}
-
-const openBinlogs = () => {
-  router.push('/database/analyzer')
 }
 
 const load = async () => {
@@ -342,97 +459,286 @@ onMounted(load)
     <Spinner size="lg" class="text-ink-gray-4" />
   </div>
 
-  <template v-else>
-  <ErrorMessage v-if="error" :message="error" class="mb-4" />
+  <div v-else class="flex flex-col gap-6">
+    <ErrorMessage v-if="error" :message="error" />
 
-  <div
-    v-if="showManagedMariaDBDisclaimer"
-    class="my-4 border rounded border-outline-gray-2 bg-surface-gray-1 p-2 text-ink-gray-7 text-sm flex"
-  >
-    <span
-      class="size-4 text-ink-gray-5 lucide-circle-alert inline-block mr-2"
-      aria-hidden="true"
+    <Alert
+      v-if="showManagedMariaDBDisclaimer"
+      title="Database actions are available only for Pilot-managed MariaDB instances."
+      :dismissible="false"
     />
-    Database actions are available only for Pilot-managed MariaDB instances.
+
+    <template v-if="capabilities">
+      <p v-if="insight" class="-mt-2 text-ink-gray-6 text-p-base">{{ insight }}</p>
+
+      <div class="gap-4 grid sm:grid-cols-2">
+        <section
+          v-if="memoryBreakdown"
+          class="flex sm:flex-row flex-col sm:items-center gap-6 sm:col-span-2 bg-surface-gray-1 p-4 rounded-6"
+        >
+          <MemoryRing :percent="memoryRing.percent" />
+
+          <div class="flex flex-col flex-1 gap-1 w-full min-w-0">
+            <header class="flex justify-between items-center gap-2 h-5">
+              <h4 class="text-ink-gray-8 text-sm">Database memory</h4>
+
+              <Button
+                v-if="memoryShare?.available"
+                variant="ghost"
+                size="sm"
+                class="-my-1"
+                icon="lucide-bolt"
+                aria-label="Change memory split"
+                :disabled="Boolean(activeAction)"
+                @click="editStat(openMemorySplit)"
+              />
+            </header>
+
+            <div class="flex justify-between items-center gap-4 h-7 text-base">
+              <span class="text-ink-gray-6">Apps, workers and Redis</span>
+              <span class="tabular-nums text-ink-gray-8">{{ memoryRing.apps }}</span>
+            </div>
+
+            <div class="flex justify-between items-center gap-4 h-7 text-base">
+              <span class="text-ink-gray-6">InnoDB buffer pool</span>
+
+              <span class="tabular-nums text-ink-gray-8">
+                {{ memoryRing.bufferPool ? formatGB(memoryRing.bufferPool) : '-' }}
+              </span>
+            </div>
+          </div>
+        </section>
+
+        <section
+          v-for="stat in stats"
+          :key="stat.key"
+          class="flex flex-col gap-3 border border-outline-gray-1.5 p-4 rounded-6"
+        >
+          <header class="flex justify-between items-center gap-2 h-5 text-sm">
+            <span
+              v-if="sizingAction?.action === stat.key"
+              class="truncate"
+              :class="editNote.class"
+              :title="editNote.text"
+            >
+              {{ editNote.text }}
+            </span>
+
+            <h4 v-else class="text-ink-gray-8 truncate">{{ stat.label }}</h4>
+
+            <Button
+              v-if="stat.available && sizingAction?.action !== stat.key"
+              variant="ghost"
+              size="sm"
+              class="-my-1"
+              icon="lucide-bolt"
+              :aria-label="`Edit ${stat.label}`"
+              :disabled="Boolean(activeAction)"
+              @click="editStat(stat.edit)"
+            />
+          </header>
+
+          <div v-if="sizingAction?.action === stat.key" class="flex items-center gap-1.5 h-7">
+            <TextInput
+              v-model.number="sizingValue"
+              type="number"
+              size="sm"
+              :class="['flex-1 min-w-20', sizingAction.unit ? '[&_input]:!pe-20' : '[&_input]:!pe-14']"
+              :min="sizingAction.min"
+              :max="sizingAction.max"
+              step="1"
+              autocomplete="off"
+              autofocus
+              :aria-label="sizingAction.inputLabel"
+              @keydown.enter="runSizingAction"
+              @keydown.esc="cancelSizing"
+            >
+              <template v-if="sizingAction.max !== null" #suffix>
+                <span class="text-ink-gray-5 text-xs whitespace-nowrap">
+                  of {{ sizingAction.max }} {{ sizingAction.unit }}
+                </span>
+              </template>
+            </TextInput>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              icon="lucide-x"
+              aria-label="Cancel"
+              :disabled="Boolean(activeAction)"
+              @click="cancelSizing"
+            />
+
+            <Button
+              size="sm"
+              icon="lucide-check"
+              :aria-label="sizingRequiresRestart ? 'Update and restart' : 'Update'"
+              :loading="Boolean(activeAction)"
+              :disabled="Boolean(sizingValidationError) || sizingUnchanged"
+              @click="runSizingAction"
+            />
+          </div>
+
+          <span v-else class="flex justify-between items-baseline gap-2 h-7 leading-7 tabular-nums">
+            <span class="flex items-baseline gap-1">
+              <span class="text-xl-semibold text-ink-gray-9">{{ stat.amount }}</span>
+              <span v-if="stat.unit" class="text-ink-gray-5 text-sm">{{ stat.unit }}</span>
+            </span>
+
+            <span class="text-ink-gray-5 text-sm truncate">{{ stat.note }}</span>
+          </span>
+
+          <Progress
+            v-if="stat.percent !== null"
+            :value="stat.percent"
+            size="sm"
+            class="mt-auto"
+            :class="{ invisible: sizingAction?.action === stat.key }"
+          />
+        </section>
+      </div>
+
+      <div class="flex flex-col divide-y divide-outline-alpha-gray-1">
+        <div class="flex justify-between items-center gap-3 py-3">
+          <div class="flex flex-col gap-1 min-w-0">
+            <span class="text-base text-ink-gray-8">Performance Schema</span>
+
+            <span class="text-ink-gray-6 text-p-sm">
+              Collect database instrumentation for deeper performance diagnostics.
+            </span>
+          </div>
+
+          <Switch
+            :model-value="Boolean(action('performance_schema').enabled)"
+            :disabled="!action('performance_schema').available || Boolean(activeAction)"
+            aria-label="Performance Schema"
+            @update:model-value="confirmPerformanceSchema"
+          />
+        </div>
+
+        <div class="flex justify-between items-center gap-3 py-3">
+          <div class="flex flex-col gap-1 min-w-0">
+            <span class="text-base text-ink-gray-8">Binary logs</span>
+            <span class="text-ink-gray-6 text-p-sm">Retention, size limit and purging.</span>
+          </div>
+
+          <Button
+            label="Manage"
+            :disabled="!action('manage_binlogs').available"
+            @click="binlogsOpen = true"
+          />
+        </div>
+
+        <div class="flex justify-between items-center gap-3 py-3">
+          <div class="flex flex-col gap-1 min-w-0">
+            <span class="text-base text-ink-gray-8">MariaDB service</span>
+
+            <span class="text-ink-gray-6 text-p-sm">
+              Restart the database service and verify that it accepts connections.
+            </span>
+          </div>
+
+          <Button
+            label="Restart"
+            :disabled="!action('restart').available || Boolean(activeAction)"
+            :loading="activeAction === 'restart'"
+            @click="confirmRestart"
+          />
+        </div>
+
+        <slot />
+      </div>
+    </template>
   </div>
 
-  <div v-if="capabilities" class="divide-y divide-outline-alpha-gray-1">
-    <SettingsRow
-      class="!ps-0"
-      label="Performance Schema"
-      description="Collect database instrumentation for deeper performance diagnostics."
-    >
-      <Switch
-        :model-value="Boolean(action('performance_schema').enabled)"
-        :disabled="!action('performance_schema').available || Boolean(activeAction)"
-        aria-label="Performance Schema"
-        @update:model-value="confirmPerformanceSchema"
-      />
-    </SettingsRow>
+  <BinlogSettingsDialog v-model="binlogsOpen" />
 
-    <SettingsRow
-      class="!ps-0"
-      label="Update InnoDB Buffer Pool Size"
-      :description="bufferPoolDescription"
-    >
-      <Button
-        variant="ghost"
-        icon="lucide-pencil"
-        :disabled="!action('innodb_buffer_pool_size').available || Boolean(activeAction)"
-        @click="openSizingAction('innodb_buffer_pool_size')"
-      />
-    </SettingsRow>
+  <Dialog
+    v-model="memorySplitOpen"
+    title="Memory split"
+    :message="
+      memoryShare?.total_memory_mb
+        ? `Choose how much of the server's ${formatGB(memoryShare.total_memory_mb)} the database may use.`
+        : undefined
+    "
+    size="md"
+  >
+    <div v-if="memoryShare?.total_memory_mb" class="flex flex-col gap-4">
+      <div class="flex items-center gap-5 bg-surface-gray-1 p-4 rounded-6">
+        <MemoryRing :percent="memorySplitPercent" />
 
-    <SettingsRow
-      class="!ps-0"
-      label="Update Max DB Connections"
-      :description="maxConnectionsDescription"
-    >
-      <Button
-        variant="ghost"
-        icon="lucide-pencil"
-        :disabled="!action('max_connections').available || Boolean(activeAction)"
-        @click="openSizingAction('max_connections')"
-      />
-    </SettingsRow>
+        <div class="flex flex-col flex-1 gap-3 min-w-0">
+          <div class="flex flex-col divide-y divide-outline-gray-1">
+            <div
+              v-for="(side, index) in memorySplitSides"
+              :key="side.label"
+              class="flex justify-between items-center gap-4 h-8 text-base"
+            >
+              <span class="flex items-center gap-2 min-w-0 text-ink-gray-6">
+                <span
+                  class="bg-current rounded-full size-2 shrink-0"
+                  :class="index ? 'text-ink-gray-3' : 'text-ink-gray-8'"
+                />
 
-    <SettingsRow class="!ps-0" label="Memory split" :description="memorySplitDescription">
-      <Button
-        variant="ghost"
-        icon="lucide-pencil"
-        :disabled="!memoryShare?.available || Boolean(activeAction)"
-        @click="openMemorySplit"
-      />
-    </SettingsRow>
+                <span class="truncate">{{ side.label }}</span>
+              </span>
 
-    <SettingsRow
-      class="!ps-0"
-      label="Manage Binlogs"
-      description="Inspect binary logs and safely purge complete log ranges."
-    >
-      <Button
-        :disabled="!action('manage_binlogs').available"
-        @click="openBinlogs"
-      >
-        View
-      </Button>
-    </SettingsRow>
+              <span class="tabular-nums text-ink-gray-8">{{ side.size }}</span>
+            </div>
+          </div>
 
-    <SettingsRow
-      class="!ps-0"
-      label="Restart MariaDB"
-      description="Restart the database service and verify that it accepts connections."
-    >
-      <Button
-        :disabled="!action('restart').available || Boolean(activeAction)"
-        :loading="activeAction === 'restart'"
-        @click="confirmRestart"
-      >
-        Restart
-      </Button>
-    </SettingsRow>
-  </div>
-  </template>
+          <Slider
+            v-model="memorySplitSlider"
+            :min="sharePercent(memoryShare.min ?? 0.2)"
+            :max="sharePercent(memoryShare.max ?? 0.8)"
+            :step="5"
+            aria-label="Database share of server memory"
+          />
+        </div>
+      </div>
+
+      <div v-if="memorySplitStep" class="flex flex-col">
+        <div class="flex justify-between items-center gap-4 h-7 text-base">
+          <span class="text-ink-gray-5">InnoDB buffer pool</span>
+
+          <span class="tabular-nums text-ink-gray-8">
+            {{ formatGB(memorySplitStep.innodb_buffer_pool_mb) }}
+          </span>
+        </div>
+
+        <div class="flex justify-between items-center gap-4 h-7 text-base">
+          <span class="text-ink-gray-5">Memory limit</span>
+
+          <span class="tabular-nums text-ink-gray-8">
+            {{ formatGB(memorySplitStep.memory_max_mb) }}
+          </span>
+        </div>
+      </div>
+
+      <Alert title="A larger buffer pool may need a restart to apply." :dismissible="false" />
+
+      <ErrorMessage v-if="actionError" :message="actionError" />
+    </div>
+
+    <template #actions>
+      <div class="flex justify-end gap-2">
+        <Button
+          variant="ghost"
+          label="Cancel"
+          :disabled="Boolean(activeAction)"
+          @click="memorySplitOpen = false"
+        />
+
+        <Button
+          variant="solid"
+          label="Apply"
+          :loading="activeAction === 'memory_share'"
+          :disabled="sharePercent(memoryShare?.current ?? 0) === memorySplitPercent"
+          @click="applyMemorySplit"
+        />
+      </div>
+    </template>
+  </Dialog>
 
   <Dialog v-model="confirmationOpen" :title="confirmationTitle" size="sm">
     <p v-if="confirmation?.message" class="text-ink-gray-7 text-p-sm">
@@ -440,6 +746,7 @@ onMounted(load)
     </p>
 
     <ErrorMessage v-if="actionError" :message="actionError" class="mt-3" />
+
     <template #actions>
       <div class="flex justify-end gap-2">
         <Button variant="ghost" :disabled="Boolean(activeAction)" @click="confirmationOpen = false">
@@ -451,109 +758,5 @@ onMounted(load)
         </Button>
       </div>
     </template>
-  </Dialog>
-
-  <Dialog v-model="memorySplitOpen" title="Memory split" size="sm">
-    <div v-if="memoryShare?.total_memory_mb" class="space-y-4">
-      <p class="text-ink-gray-7 text-p-sm">
-        Choose how much memory the database may use. The rest stays for web, workers and Redis.
-      </p>
-
-      <input
-        v-model.number="memorySplitPercent"
-        type="range"
-        class="w-full accent-[var(--surface-gray-7)]"
-        :min="sharePercent(memoryShare.min ?? 0.2)"
-        :max="sharePercent(memoryShare.max ?? 0.8)"
-        step="5"
-        aria-label="Database share of host memory"
-      />
-      <div class="flex justify-between text-ink-gray-6 text-sm">
-        <span>
-          Apps {{ formatGB((memoryShare.total_memory_mb * (100 - memorySplitPercent)) / 100) }}
-        </span>
-        <span>
-          Database {{ formatGB((memoryShare.total_memory_mb * memorySplitPercent) / 100) }}
-        </span>
-      </div>
-
-      <div v-if="memorySplitStep" class="text-ink-gray-7 text-sm divide-y divide-outline-alpha-gray-1">
-        <div class="flex justify-between py-1.5">
-          <span>InnoDB buffer pool</span>
-          <span>{{ memorySplitStep.innodb_buffer_pool_mb }} MB</span>
-        </div>
-        <div class="flex justify-between py-1.5">
-          <span>Database memory limit (MemoryMax)</span>
-          <span>{{ memorySplitStep.memory_max_mb }} MB</span>
-        </div>
-      </div>
-
-      <p class="text-ink-gray-5 text-p-xs">
-        Applies now. A larger buffer pool than the running server allows takes effect at its next
-        restart.
-      </p>
-
-      <ErrorMessage v-if="actionError" :message="actionError" />
-      <div class="flex justify-end gap-2">
-        <Button variant="ghost" :disabled="Boolean(activeAction)" @click="memorySplitOpen = false">
-          Cancel
-        </Button>
-        <Button
-          variant="solid"
-          :loading="activeAction === 'memory_share'"
-          :disabled="sharePercent(memoryShare.current ?? 0) === memorySplitPercent"
-          @click="applyMemorySplit"
-        >
-          Apply
-        </Button>
-      </div>
-    </div>
-  </Dialog>
-
-  <Dialog v-model="sizingOpen" :title="sizingTitle" size="sm">
-    <div v-if="sizingAction" class="space-y-4">
-      <TextInput
-        v-model.number="sizingValue"
-        type="number"
-        :label="sizingAction.inputLabel"
-        :min="sizingAction.min"
-        :max="sizingAction.max"
-        step="1"
-        autocomplete="off"
-      />
-      <div class="text-ink-gray-6 text-sm">
-        <p>
-          Recommended:
-          {{ formatSizingValue(sizingAction.recommended, sizingAction.unit) }}
-        </p>
-
-        <p>
-          Allowed: {{ formatSizingValue(sizingAction.min, sizingAction.unit) }} to
-          {{ formatSizingValue(sizingAction.max, sizingAction.unit) }}
-        </p>
-      </div>
-
-      <p v-if="sizingRequiresRestart" class="text-ink-orange-6 text-p-sm">
-        MariaDB will restart because this value is above its current live Buffer Pool ceiling of
-        {{ formatSizingValue(sizingAction.dynamicMax, 'MB') }}.
-      </p>
-
-      <ErrorMessage v-if="sizingValidationError" :message="sizingValidationError" />
-      <ErrorMessage v-if="actionError" :message="actionError" />
-      <div class="flex justify-end gap-2">
-        <Button variant="ghost" :disabled="Boolean(activeAction)" @click="sizingOpen = false">
-          Cancel
-        </Button>
-
-        <Button
-          variant="solid"
-          :loading="Boolean(activeAction)"
-          :disabled="Boolean(sizingValidationError) || sizingUnchanged"
-          @click="runSizingAction"
-        >
-          {{ sizingRequiresRestart ? 'Update and restart' : 'Update' }}
-        </Button>
-      </div>
-    </div>
   </Dialog>
 </template>

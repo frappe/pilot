@@ -1,9 +1,19 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { Alert, Button, Combobox, ErrorMessage, Spinner, TextInput, Textarea, toast } from 'frappe-ui'
+import {
+  Alert,
+  Button,
+  Combobox,
+  ErrorMessage,
+  Spinner,
+  Textarea,
+  TextInput,
+  toast,
+} from 'frappe-ui'
+import { computed, h, onMounted, ref, watch } from 'vue'
 
 import { apiErrorMessage, hasApiError } from '@/api/client'
 import { settingsApi } from '@/api/settings'
+import ProviderLogo from '@/components/icons/ProviderLogo.vue'
 import type { LLMProviderOption } from '@/types/settings'
 import { errorMessage } from '@/utils/error'
 
@@ -32,7 +42,11 @@ const modelsNeedApiKey = computed(() => Boolean(selectedProvider.value?.models_n
 const hasApiKey = computed(() => Boolean(apiKey.value.trim() || apiKeySet.value))
 
 const providerOptions = computed(() =>
-  providers.value.map((p) => ({ label: p.label, value: p.value })),
+  providers.value.map((p) => ({
+    label: p.label,
+    value: p.value,
+    icon: () => h(ProviderLogo, { provider: p.value }),
+  })),
 )
 const modelOptions = computed(() => models.value.map((m) => ({ label: m, value: m })))
 const hasApiBase = computed(() => Boolean(apiBase.value.trim()))
@@ -73,7 +87,11 @@ const fetchModels = async (providerValue: string) => {
   if (needsApiBase.value && !hasApiBase.value) return
   modelsLoading.value = true
   try {
-    const result = await settingsApi.llmModels(providerValue, apiKey.value.trim(), apiBase.value.trim())
+    const result = await settingsApi.llmModels(
+      providerValue,
+      apiKey.value.trim(),
+      apiBase.value.trim(),
+    )
     if (hasApiError(result)) modelsError.value = apiErrorMessage(result, 'Could not load models.')
     else models.value = result || []
   } catch (e) {
@@ -171,7 +189,6 @@ onMounted(load)
   <div v-else class="space-y-6">
     <Alert
       v-if="!connected"
-      class="border border-outline-gray-2"
       theme="blue"
       title="Why connect an AI assistant?"
       :dismissible="false"
@@ -189,30 +206,38 @@ onMounted(load)
       class="flex sm:flex-row flex-col sm:justify-between sm:items-center gap-3"
     >
       <div>
-        <p class="font-medium text-ink-gray-8">Connected to {{ providerLabel }}</p>
+        <p class="text-base-medium text-ink-gray-8">Connected to {{ providerLabel }}</p>
         <p class="text-ink-gray-5 text-p-sm">Model {{ model || '—' }} · API key set</p>
       </div>
 
-      <Button
-        theme="red"
-        :loading="disconnecting"
-        @click="disconnect"
-        >Disconnect</Button
-      >
+      <Button theme="red" :loading="disconnecting" @click="disconnect">Disconnect</Button>
     </div>
 
     <div class="space-y-4">
-      <Combobox
-        label="Provider"
-        :options="providerOptions"
-        :model-value="provider"
-        placeholder="Search providers…"
-        @update:model-value="onProviderSelect"
-      />
+      <div class="gap-4 grid sm:grid-cols-2">
+        <Combobox
+          label="Provider"
+          required
+          :options="providerOptions"
+          :model-value="provider"
+          placeholder="Search providers…"
+          @update:model-value="onProviderSelect"
+        />
+
+        <TextInput
+          label="API Key"
+          required
+          type="password"
+          autocomplete="new-password"
+          v-model="apiKey"
+          :placeholder="apiKeySet ? '********' : 'Provider API key'"
+        />
+      </div>
 
       <div v-if="needsApiBase" class="space-y-1.5">
         <TextInput
           label="API Base URL"
+          required
           v-model="apiBase"
           placeholder="http://your-host:8000/v1"
         />
@@ -220,21 +245,16 @@ onMounted(load)
       </div>
 
       <TextInput
-        label="API Key"
-        type="password"
-        v-model="apiKey"
-        :placeholder="apiKeySet ? '••••••••' : 'Provider API key'"
-      />
-
-      <TextInput
         v-if="freeTextModel"
         label="Model"
+        required
         v-model="model"
         placeholder="Your served model name"
       />
       <div v-else class="space-y-1.5">
         <Combobox
           label="Model"
+          required
           :options="modelOptions"
           :model-value="model"
           :loading="modelsLoading"
@@ -252,25 +272,16 @@ onMounted(load)
         placeholder="Instructions sent with every request"
       />
 
-      <details class="group">
-        <summary
-          class="flex items-center gap-1.5 text-ink-gray-6 cursor-pointer select-none"
-        >
-          <span
-            class="size-4 transition-transform group-open:rotate-90 lucide-chevron-right" />
-          Advanced
-        </summary>
+      <div class="gap-4 grid sm:grid-cols-2">
+        <TextInput
+          v-if="!needsApiBase"
+          label="API Base URL"
+          v-model="apiBase"
+          placeholder="Leave blank to use the provider default"
+        />
 
-        <div class="space-y-4 pt-4">
-          <TextInput
-            v-if="!needsApiBase"
-            label="API Base URL"
-            v-model="apiBase"
-            placeholder="Leave blank to use the provider default"
-          />
-          <TextInput label="Max Tokens" type="number" v-model="maxTokens" placeholder="4096" />
-        </div>
-      </details>
+        <TextInput label="Max Tokens" type="number" v-model="maxTokens" placeholder="4096" />
+      </div>
 
       <ErrorMessage v-if="error" :message="error" />
       <div class="flex justify-end">

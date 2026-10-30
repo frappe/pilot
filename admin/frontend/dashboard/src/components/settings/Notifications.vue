@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { Button, ErrorMessage, Spinner, TextInput, toast } from 'frappe-ui'
+import { Button, ErrorMessage, Spinner, Switch, TextInput, toast } from 'frappe-ui'
 import { computed, onMounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import { settingsApi } from '@/api/settings'
 import EmptyState from '@/components/common/EmptyState.vue'
-import SettingsSwitch from '@/components/settings/SettingsSwitch.vue'
+import TagsInput from '@/components/common/TagsInput.vue'
+import NotificationsIllustration from '@/components/settings/NotificationsIllustration.vue'
 import { useSession } from '@/composables/auth/useSession'
 import { errorMessage } from '@/utils/error'
 
@@ -21,20 +23,20 @@ const RESOURCE_ALERTS = [
   {
     key: 'cpu_usage_limit',
     label: 'CPU usage',
+    metric: 'processor use',
     description: 'Alert when processor use on this host crosses the limit.',
-    initial: 85,
   },
   {
     key: 'memory_usage_limit',
     label: 'Memory usage',
+    metric: 'memory use',
     description: 'Alert when memory use on this host crosses the limit.',
-    initial: 90,
   },
   {
     key: 'disk_space_limit',
     label: 'Disk usage',
+    metric: 'disk use',
     description: 'Alert when disk use on this host crosses the limit.',
-    initial: 90,
   },
 ]
 
@@ -47,8 +49,10 @@ const limits = ref(Object.fromEntries(RESOURCE_ALERTS.map((alert) => [alert.key,
 const siteUptime = ref(true)
 const webhooks = ref<WebhookForm[]>([])
 const recipients = ref<string[]>([])
-// Recipients are useless without a mailbox to send from, and that lives in Mail settings.
 const mailConfigured = ref(false)
+const mailRoute = { name: 'Settings', params: { section: 'mail' } }
+
+const invalidRecipient = computed(() => recipients.value.find((address) => !isAddress(address)))
 
 const savedPayload = ref('')
 const dirty = computed(() => JSON.stringify(buildPayload()) !== savedPayload.value)
@@ -72,26 +76,12 @@ const buildPayload = () => {
   }
 }
 
-const addRecipient = () => {
-  recipients.value.push('')
-}
-
-const removeRecipient = (index: number) => {
-  recipients.value.splice(index, 1)
-}
-
-const recipientError = (address: string) => {
-  const trimmed = address.trim()
-  if (trimmed && !/^[^@\s]+@[^@\s]+$/.test(trimmed)) return 'Must be an email address.'
-  return ''
-}
+const isAddress = (address: string) => /^[^@\s]+@[^@\s]+$/.test(address.trim())
 
 const setEnabled = (key: string, on: boolean) => {
   enabled.value[key] = on
-  if (on && !Number(limits.value[key])) {
-    const alert = RESOURCE_ALERTS.find((candidate) => candidate.key === key)
-    if (alert) limits.value[key] = String(alert.initial)
-  }
+
+  if (on && !Number(limits.value[key])) limits.value[key] = '90'
 }
 
 const addWebhook = () => {
@@ -126,7 +116,7 @@ const canSave = computed(
   () =>
     RESOURCE_ALERTS.every((alert) => !limitError(alert.key)) &&
     webhooks.value.every((webhook) => webhookIsComplete(webhook) && !webhookError(webhook)) &&
-    recipients.value.every((address) => !recipientError(address)),
+    !invalidRecipient.value,
 )
 
 const save = async () => {
@@ -171,7 +161,7 @@ onMounted(async () => {
       original_url: webhook.url || '',
     }))
     recipients.value = [...(saved.email_recipients || [])]
-    mailConfigured.value = Boolean((data.mail || {}).server)
+    mailConfigured.value = Boolean(data.mail?.server)
     savedPayload.value = JSON.stringify(buildPayload())
   } catch (e) {
     error.value = errorMessage(e, 'Could not load settings.')
@@ -186,154 +176,162 @@ onMounted(async () => {
     <Spinner size="lg" class="text-ink-gray-4" />
   </div>
 
-  <div v-else class="space-y-6">
-    <SettingsSwitch
-      label="Site uptime"
-      description="Alert when a site stops responding to its uptime check."
-      :model-value="siteUptime"
-      @update:model-value="(on: boolean) => (siteUptime = on)"
-    />
+  <div v-else class="space-y-8">
+    <div class="-mt-3.5 divide-y divide-outline-alpha-gray-1">
+      <div class="flex justify-between items-center gap-4 py-3.5">
+        <div class="flex flex-col gap-1">
+          <p class="text-base-medium text-ink-gray-8">Site uptime</p>
+          <p class="text-ink-gray-6 text-p-sm">
+            Alert when a site stops responding to its uptime check.
+          </p>
+        </div>
 
-    <div v-for="alert in RESOURCE_ALERTS" :key="alert.key" class="space-y-3">
-      <SettingsSwitch
-        :label="alert.label"
-        :description="alert.description"
-        :model-value="enabled[alert.key]"
-        @update:model-value="(on: boolean) => setEnabled(alert.key, on)"
-      />
-      <div v-if="enabled[alert.key]" class="flex items-center gap-2 pl-0.5">
-        <TextInput
-          v-model="limits[alert.key]"
-          type="number"
-          min="1"
-          max="100"
-          class="w-24"
-          :aria-label="`${alert.label} limit`"
+        <Switch v-model="siteUptime" />
+      </div>
+
+      <div
+        v-for="alert in RESOURCE_ALERTS"
+        :key="alert.key"
+        class="flex justify-between items-center gap-4 py-3.5"
+      >
+        <div class="flex flex-col gap-1">
+          <p class="text-base-medium text-ink-gray-8">{{ alert.label }}</p>
+
+          <p v-if="enabled[alert.key]" class="flex items-center gap-1.5 text-ink-gray-6 text-p-sm">
+            Alert when {{ alert.metric }} goes above
+            <TextInput
+              v-model="limits[alert.key]"
+              type="number"
+              min="1"
+              max="100"
+              size="xs"
+              class="-my-0.5 w-14"
+              :aria-label="`${alert.label} limit`"
+            />
+            %
+          </p>
+
+          <p v-else class="text-ink-gray-6 text-p-sm">{{ alert.description }}</p>
+        </div>
+
+        <Switch
+          :model-value="enabled[alert.key]"
+          @update:model-value="(on: boolean) => setEnabled(alert.key, on)"
         />
-        <span class="text-ink-gray-6">% and above</span>
       </div>
     </div>
 
     <div class="space-y-2">
-      <div class="flex justify-between items-center">
-        <p class="font-medium text-ink-gray-8 leading-normal">Email recipients</p>
-        <Button icon-left="lucide-plus" @click="addRecipient">Add recipient</Button>
-      </div>
+      <h4 class="text-base-medium text-ink-gray-8">Email recipients</h4>
 
-      <p class="text-ink-gray-5 text-p-sm">
-        Alerts are emailed to these addresses, using the mailbox in Mail settings.
+      <p class="text-ink-gray-6 text-p-sm">
+        Alerts are emailed to these addresses from the
+        <RouterLink :to="mailRoute" class="mail-link">mailbox</RouterLink>
+        in Mail settings.
       </p>
 
-      <EmptyState
-        compact
-        v-if="!recipients.length"
-        icon="lucide-mail"
-        title="No email recipients"
-        description="Add an address to receive alerts by email."
+      <TagsInput
+        v-model="recipients"
+        placeholder="Add an email"
+        :is-invalid="(address) => !isAddress(address)"
       />
 
-      <div v-else class="space-y-2">
-        <div v-for="(address, index) in recipients" :key="index">
-          <div class="flex items-center gap-2">
-            <TextInput v-model="recipients[index]" placeholder="ops@example.com" class="w-full" />
-            <Button
-              icon="lucide-x"
-              label="Remove recipient"
-              tooltip="Remove recipient"
-              @click="removeRecipient(index)"
-            />
-          </div>
-          <p v-if="recipientError(address)" class="mt-1.5 text-ink-red-5 text-p-sm">
-            {{ recipientError(address) }}
-          </p>
-        </div>
-      </div>
+      <p v-if="invalidRecipient" class="text-ink-red-5 text-p-sm">
+        {{ invalidRecipient }}
+        is not an email address.
+      </p>
 
-      <p v-if="recipients.length && !mailConfigured" class="text-ink-amber-5 text-p-sm">
-        Set up a mailbox in Mail settings before these addresses receive anything.
+      <p v-else-if="recipients.length && !mailConfigured" class="text-ink-amber-6 text-p-sm">
+        Set up a mailbox before these addresses receive anything.
       </p>
     </div>
 
-    <details class="group">
-      <summary
-        class="flex items-center gap-1.5 text-ink-gray-6 cursor-pointer select-none"
-      >
-        <span class="size-4 transition-transform group-open:rotate-90 lucide-chevron-right"></span>
-        Advanced
-      </summary>
+    <div class="space-y-2">
+      <h4 class="text-base-medium text-ink-gray-8">Webhook endpoints</h4>
 
-      <div class="space-y-2 pt-4">
-        <div class="flex justify-between items-center">
-          <p class="font-medium text-ink-gray-8 leading-normal">Webhook endpoints</p>
-          <Button icon-left="lucide-plus" @click="addWebhook">Add endpoint</Button>
-        </div>
-
-        <p class="text-ink-gray-5 text-p-sm">
-          <template v-if="session.centralEnabled"
-            >Alerts go to
-            <a
-              v-if="session.centralUrl"
-              :href="`${session.centralUrl}/dashboard`"
-              target="_blank"
-              rel="noopener"
-              class="text-ink-gray-8 underline underline-offset-2 hover:text-ink-gray-9"
-              >Central</a
-            ><template v-else>Central</template>. Endpoints listed here receive them too, as a POST carrying an</template
+      <p class="text-ink-gray-6 text-p-sm">
+        <template v-if="session.centralEnabled">
+          Alerts go to
+          <a
+            v-if="session.centralUrl"
+            :href="`${session.centralUrl}/dashboard`"
+            target="_blank"
+            rel="noopener"
+            class="inline-flex items-center gap-0.5 text-p-sm-medium text-ink-gray-8 hover:text-ink-gray-9"
           >
-          <template v-else>Endpoints listed here receive alerts as a POST carrying an</template>
-          <code>Authorization: Bearer</code>
-          header, so the token stays out of the URL.
-        </p>
+            Central
+            <span class="size-3 lucide-arrow-up-right" aria-hidden="true" />
+          </a>
+          <template v-else>Central</template>
+          and to these endpoints.
+        </template>
+        Each endpoint gets a POST with your token in the
+        <code>Authorization</code>
+        header.
+      </p>
 
+      <div
+        class="dark:bg-surface-gray-1 border border-outline-gray-1 dark:border-transparent rounded-7 overflow-hidden"
+      >
         <EmptyState
           compact
           v-if="!webhooks.length"
-          icon="lucide-webhook"
+          :bordered="false"
           title="No webhook endpoints"
           :description="
             session.centralEnabled
-              ? 'Alerts are only reported to Central. Add an endpoint to receive them yourself.'
-              : 'Nothing receives alerts yet. Add an endpoint to receive them.'
+              ? 'Alerts only go to Central. Add an endpoint to get them too.'
+              : 'Add one to send alerts to your own service.'
           "
-        />
+          class="py-8"
+        >
+          <template #illustration>
+            <NotificationsIllustration kind="webhook" />
+          </template>
+        </EmptyState>
 
-        <div v-else class="space-y-3">
-          <div v-for="(webhook, index) in webhooks" :key="index">
-            <div class="flex items-end gap-2">
-              <div class="flex-1 space-y-1.5">
-                <p v-if="index === 0" class="font-medium text-ink-gray-7">Endpoint URL</p>
-                <TextInput
-                  v-model="webhook.url"
-                  placeholder="https://alerts.example.com/pilot"
-                  class="w-full"
-                />
-              </div>
+        <div
+          v-else
+          class="items-center gap-x-3 gap-y-2 grid grid-cols-[1fr_9rem_2rem] sm:grid-cols-[1fr_12rem_2rem] p-4"
+        >
+          <span class="text-ink-gray-5 text-sm">Endpoint URL</span>
+          <span class="text-ink-gray-5 text-sm">Token</span>
+          <span />
 
-              <div class="flex-1 space-y-1.5">
-                <p v-if="index === 0" class="font-medium text-ink-gray-7">Token</p>
-                <TextInput
-                  v-model="webhook.token"
-                  type="password"
-                  :placeholder="webhook.token_set ? 'Unchanged' : 'Bearer token'"
-                  class="w-full"
-                />
-              </div>
+          <template v-for="(webhook, index) in webhooks" :key="index">
+            <TextInput v-model="webhook.url" placeholder="https://alerts.example.com/pilot" />
 
-              <Button
-                icon="lucide-x"
-                label="Remove endpoint"
-                tooltip="Remove endpoint"
-                @click="removeWebhook(index)"
-              />
-            </div>
+            <TextInput
+              v-model="webhook.token"
+              type="password"
+              autocomplete="new-password"
+              :placeholder="webhook.token_set ? 'Unchanged' : 'Bearer token'"
+            />
 
-            <p v-if="webhookError(webhook)" class="mt-1.5 text-ink-red-5 text-p-sm">
+            <Button
+              icon="lucide-x"
+              variant="ghost"
+              label="Remove endpoint"
+              tooltip="Remove endpoint"
+              @click="removeWebhook(index)"
+            />
+
+            <p v-if="webhookError(webhook)" class="col-span-3 -mt-1 text-ink-red-5 text-p-sm">
               {{ webhookError(webhook) }}
             </p>
-          </div>
+          </template>
         </div>
+
+        <footer class="flex items-center px-3 py-2.5 border-outline-gray-2 border-t">
+          <Button
+            variant="ghost"
+            icon-left="lucide-plus"
+            label="Add endpoint"
+            @click="addWebhook"
+          />
+        </footer>
       </div>
-    </details>
+    </div>
 
     <ErrorMessage v-if="error" :message="error" />
 
@@ -344,3 +342,9 @@ onMounted(async () => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.mail-link {
+  @apply text-ink-gray-7 underline decoration-dotted decoration-2 decoration-[--ink-gray-4] underline-offset-2 hover:text-ink-gray-8;
+}
+</style>

@@ -2,6 +2,7 @@
 import {
   Alert,
   Button,
+  Dialog,
   Dropdown,
   type DropdownItem,
   ErrorMessage,
@@ -14,8 +15,9 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { apiErrorMessage, hasApiError } from '@/api/client'
 import { gitApi } from '@/api/git'
+import GithubMark from '@/components/icons/GithubMark.vue'
 import SettingsRow from '@/components/settings/SettingsRow.vue'
-import { GENERAL_SECTIONS } from '@/components/settings/sections'
+import { GIT_SECTIONS } from '@/components/settings/sections'
 import type { GitConnection } from '@/types/git'
 import { errorMessage } from '@/utils/error'
 
@@ -28,6 +30,7 @@ const connecting = ref(false)
 const redirecting = ref(false)
 const verifying = ref(false)
 const disconnecting = ref(false)
+const showDisconnect = ref(false)
 const error = ref('')
 const status = ref<GitConnection | null>(null)
 const username = ref('')
@@ -42,7 +45,7 @@ const centralError = computed(() => status.value?.central?.error ?? '')
 const centralAccounts = computed(() => status.value?.central?.connections ?? [])
 const showTokenForm = computed(() => openSection.value?.id === 'github-token')
 const openTokenScreen = (id: 'github' | 'github-token') => {
-  openSection.value = GENERAL_SECTIONS.find((section) => section.id === id) ?? null
+  openSection.value = GIT_SECTIONS.find((section) => section.id === id) ?? null
 }
 const tokenFormVisible = computed(
   () => !viaCentral.value && (!centralAvailable.value || showTokenForm.value || connected.value),
@@ -134,9 +137,18 @@ const disconnect = async () => {
 const centralActions: DropdownItem[] = [
   { label: 'Verify connection', icon: 'lucide-circle-check', onClick: () => verifyConnection() },
   { label: 'Manage repositories', icon: 'lucide-settings-2', onClick: () => connectViaCentral() },
-  { label: 'Disconnect', icon: 'lucide-unplug', theme: 'red', onClick: () => disconnect() },
+  {
+    label: 'Disconnect',
+    icon: 'lucide-unplug',
+    theme: 'red',
+    onClick: () => (showDisconnect.value = true),
+  },
 ]
-const tokenActions: DropdownItem[] = [centralActions[0], centralActions[2]]
+const confirmDisconnect = async () => {
+  await disconnect()
+
+  showDisconnect.value = false
+}
 
 onMounted(async () => {
   await load()
@@ -155,7 +167,7 @@ onMounted(async () => {
   <div v-else-if="viaCentral" class="space-y-6">
     <div class="flex justify-between items-start gap-3">
       <div>
-        <p class="font-medium text-ink-gray-8">Connected through Frappe Cloud</p>
+        <p class="text-base-medium text-ink-gray-8">Connected through Frappe Cloud</p>
         <p class="text-ink-gray-5 text-p-sm">Read-only access to these repositories.</p>
       </div>
       <Dropdown :options="centralActions" align="end">
@@ -172,7 +184,7 @@ onMounted(async () => {
     </div>
 
     <div v-for="account in centralAccounts" :key="account.account" class="space-y-1">
-      <p class="text-sm font-medium text-ink-gray-5">{{ account.account }}</p>
+      <p class="text-sm-medium text-ink-gray-5">{{ account.account }}</p>
       <p v-if="!account.repositories.length" class="py-1.5 text-p-sm text-ink-gray-5">
         No repositories granted.
       </p>
@@ -205,34 +217,91 @@ onMounted(async () => {
       theme="blue"
       title="Connect GitHub"
       :dismissible="false"
-      class="border-outline-gray-2 border"
     >
       <template #description>
         <p class="text-ink-gray-6 text-p-sm">Install private apps and browse your repos.</p>
       </template>
     </Alert>
 
-    <div v-if="connected" class="flex justify-between items-start gap-3">
-      <div>
-        <p class="font-medium text-ink-gray-8">Connected as {{ username }}</p>
-        <p class="text-ink-gray-5 text-p-sm">Personal access token</p>
+    <div
+      v-if="connected"
+      class="flex items-center gap-3 p-4 border border-outline-gray-3 border-dashed rounded-7"
+    >
+      <span class="place-items-center grid bg-surface-gray-2 rounded-full size-10 shrink-0">
+        <GithubMark class="size-5 text-ink-gray-8" />
+      </span>
+
+      <div class="flex flex-col flex-1 gap-0.5 min-w-0">
+        <p class="flex items-center gap-2 text-base-semibold text-ink-gray-8">
+          {{ username }}
+          <span class="flex items-center gap-1.5 text-ink-gray-6 text-sm">
+            <span class="bg-surface-green-5 rounded-full size-1.5" />
+            Connected
+          </span>
+        </p>
+
+        <p class="text-ink-gray-5 text-p-sm">
+          Personal access token · ****{{ status?.token_preview?.slice(-4) }}
+        </p>
       </div>
-      <Dropdown :options="tokenActions" align="end">
-        <template #default="{ open }">
+
+      <div class="flex items-center gap-2">
+        <Button
+          label="Verify"
+          icon-left="lucide-badge-check"
+          :loading="verifying"
+          @click="verifyConnection"
+        />
+
+        <Button
+          label="Disconnect"
+          theme="red"
+          icon-left="lucide-unplug"
+          :loading="disconnecting"
+          @click="showDisconnect = true"
+        />
+      </div>
+    </div>
+
+    <div v-if="connected || tokenFormVisible" class="flex flex-col">
+      <div v-if="tokenFormVisible" class="space-y-4">
+        <TextInput label="GitHub username" v-model="username" placeholder="octocat" />
+
+        <TextInput
+          label="Personal access token"
+          required
+          type="password"
+          autocomplete="new-password"
+          v-model="token"
+          :placeholder="connected ? status?.token_preview : 'ghp_…'"
+          @keydown.enter="verifyAndConnect"
+        />
+
+        <div class="flex justify-between items-center gap-3">
+          <a
+            :href="tokenHelpUrl"
+            target="_blank"
+            rel="noopener"
+            class="inline-flex items-center gap-0.5 text-p-sm text-ink-gray-5 hover:text-ink-gray-8"
+          >
+            Create a token with repo scope
+            <span class="size-3 lucide-arrow-up-right" aria-hidden="true" />
+          </a>
+
           <Button
-            :active="open"
-            :loading="verifying || disconnecting"
-            icon="lucide-ellipsis"
-            label="GitHub actions"
-            tooltip="Actions"
+            variant="solid"
+            :label="connected ? 'Save token' : 'Connect'"
+            :loading="connecting"
+            :disabled="!token.trim()"
+            @click="verifyAndConnect"
           />
-        </template>
-      </Dropdown>
+        </div>
+      </div>
     </div>
 
     <div
       v-if="centralAvailable && !showTokenForm"
-      class="-mx-2.5 divide-y divide-outline-alpha-gray-1 hover-merges-dividers"
+      class="-mx-3 divide-y divide-outline-alpha-gray-1 hover-merges-dividers"
     >
       <SettingsRow
         label="Connect through Frappe Cloud"
@@ -255,32 +324,27 @@ onMounted(async () => {
       </SettingsRow>
     </div>
 
-    <div v-if="tokenFormVisible" class="space-y-4">
-      <TextInput label="GitHub username" v-model="username" placeholder="octocat" />
-      <div class="space-y-1.5">
-        <TextInput
-          label="Personal access token"
-          type="password"
-          v-model="token"
-          :placeholder="connected ? status?.token_preview : 'ghp_…'"
-          @keydown.enter="verifyAndConnect"
-        />
-        <a
-          :href="tokenHelpUrl"
-          target="_blank"
-          rel="noopener"
-          class="inline-flex items-center gap-0.5 text-p-sm text-ink-gray-5 hover:text-ink-gray-8"
-        >
-          Create a token with repo scope
-          <span class="size-3 lucide-arrow-up-right" aria-hidden="true" />
-        </a>
-      </div>
-      <div class="flex justify-end gap-2">
-        <Button :loading="connecting" :disabled="!token.trim()" @click="verifyAndConnect">
-          {{ connected ? 'Update token' : 'Connect' }}
-        </Button>
-      </div>
-    </div>
     <ErrorMessage v-if="error" :message="error" />
   </div>
+
+  <Dialog v-model="showDisconnect" title="Disconnect GitHub" size="sm">
+    <p class="text-ink-gray-7 text-p-sm">
+      Pilot loses access to your GitHub repositories. Private apps can't be installed until you
+      connect again.
+    </p>
+
+    <template #actions>
+      <div class="flex justify-end gap-2">
+        <Button variant="ghost" label="Cancel" @click="showDisconnect = false" />
+
+        <Button
+          variant="solid"
+          theme="red"
+          label="Disconnect"
+          :loading="disconnecting"
+          @click="confirmDisconnect"
+        />
+      </div>
+    </template>
+  </Dialog>
 </template>

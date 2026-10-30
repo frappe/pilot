@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
-import { Alert, Button, ErrorMessage, Select, Spinner, TextInput } from 'frappe-ui'
+import { Alert, Button, Dialog, ErrorMessage, Select, Spinner, TextInput } from 'frappe-ui'
+import { onMounted, ref } from 'vue'
 
 import { useObjectStorage } from '@/composables/settings/useObjectStorage'
 
@@ -27,6 +27,14 @@ const {
   disconnect,
 } = useObjectStorage()
 
+const showDisconnect = ref(false)
+
+const confirmDisconnect = async () => {
+  await disconnect()
+
+  showDisconnect.value = false
+}
+
 onMounted(load)
 </script>
 
@@ -38,7 +46,6 @@ onMounted(load)
   <div v-else class="space-y-6">
     <Alert
       v-if="!connected"
-      class="border border-outline-gray-2"
       theme="blue"
       title="Why connect object storage?"
       :dismissible="false"
@@ -52,24 +59,51 @@ onMounted(load)
 
     <div
       v-if="connected"
-      class="flex sm:flex-row flex-col sm:justify-between sm:items-center gap-3"
+      class="flex items-center gap-3 p-4 border border-outline-gray-3 border-dashed rounded-7"
     >
-      <div>
-        <p class="font-medium text-ink-gray-8">Connected to {{ bucket }}</p>
-        <p class="text-ink-gray-5 text-p-sm">{{ providerLabel }} · Access key {{ accessKey }}</p>
+      <span class="place-items-center grid bg-surface-gray-2 rounded-full size-10 shrink-0">
+        <span class="size-5 text-ink-gray-8 lucide-hard-drive" aria-hidden="true" />
+      </span>
+
+      <div class="flex flex-col flex-1 gap-0.5 min-w-0">
+        <p class="flex items-center gap-2 text-base-semibold text-ink-gray-8">
+          <span class="truncate">{{ bucket }}</span>
+
+          <span class="flex items-center gap-1.5 text-ink-gray-6 text-sm">
+            <span class="bg-surface-green-5 rounded-full size-1.5" />
+            Connected
+          </span>
+        </p>
+
+        <p class="text-ink-gray-5 text-p-sm truncate">
+          {{ providerLabel }}
+          · Access key {{ accessKey }}
+        </p>
       </div>
 
-      <Button class="flex-1 sm:flex-none" theme="red" :loading="disconnecting" @click="disconnect"
-        >Disconnect</Button
-      >
+      <Button
+        label="Disconnect"
+        theme="red"
+        icon-left="lucide-unplug"
+        :loading="disconnecting"
+        @click="showDisconnect = true"
+      />
     </div>
 
     <div class="space-y-4">
       <div class="flex sm:flex-row flex-col gap-4">
-        <Select side="bottom" label="Provider" v-model="provider" :options="providerOptions" class="w-full" />
+        <Select
+          side="bottom"
+          label="Provider"
+          required
+          v-model="provider"
+          :options="providerOptions"
+          class="w-full"
+        />
         <Select
           side="bottom"
           label="Region"
+          required
           v-model="region"
           :options="regionOptions"
           :disabled="loadingRegions"
@@ -78,7 +112,7 @@ onMounted(load)
         />
       </div>
 
-      <TextInput label="Bucket" v-model="bucket" placeholder="storage-bucket" />
+      <TextInput label="Bucket" required v-model="bucket" placeholder="storage-bucket" />
       <TextInput
         label="Endpoint URL"
         v-model="endpointUrl"
@@ -86,12 +120,20 @@ onMounted(load)
       />
 
       <div class="flex sm:flex-row flex-col gap-4">
-        <TextInput label="Access Key" v-model="accessKey" placeholder="AKIA…" class="w-full" />
+        <TextInput
+          label="Access Key"
+          required
+          v-model="accessKey"
+          placeholder="AKIA…"
+          class="w-full"
+        />
         <TextInput
           label="Secret Key"
+          :required="!secretKeySet"
           type="password"
+          autocomplete="new-password"
           v-model="secretKey"
-          :placeholder="secretKeySet ? '••••••••' : 'Secret key'"
+          :placeholder="secretKeySet ? '********' : 'Secret key'"
           class="w-full"
         />
       </div>
@@ -104,4 +146,24 @@ onMounted(load)
       </div>
     </div>
   </div>
+
+  <Dialog v-model="showDisconnect" title="Disconnect object storage" size="sm">
+    <p class="text-ink-gray-7 text-p-sm">
+      Backups stop going to this bucket until you connect storage again.
+    </p>
+
+    <template #actions>
+      <div class="flex justify-end gap-2">
+        <Button variant="ghost" label="Cancel" @click="showDisconnect = false" />
+
+        <Button
+          variant="solid"
+          theme="red"
+          label="Disconnect"
+          :loading="disconnecting"
+          @click="confirmDisconnect"
+        />
+      </div>
+    </template>
+  </Dialog>
 </template>

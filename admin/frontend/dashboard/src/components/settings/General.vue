@@ -2,20 +2,10 @@
 import { ErrorMessage, Spinner, Switch, toast } from 'frappe-ui'
 import { onMounted, ref } from 'vue'
 import { settingsApi } from '@/api/settings'
-import Git from '@/components/settings/Git.vue'
-import LLM from '@/components/settings/LLM.vue'
-import Mail from '@/components/settings/Mail.vue'
-import Notifications from '@/components/settings/Notifications.vue'
-import S3Bucket from '@/components/settings/S3Bucket.vue'
 import SettingsRow from '@/components/settings/SettingsRow.vue'
-import { GENERAL_SECTIONS } from '@/components/settings/sections'
-import Version from '@/components/settings/Version.vue'
 import Workers from '@/components/settings/Workers.vue'
 import { useSession } from '@/composables/auth/useSession'
 import { errorMessage } from '@/utils/error'
-
-const openSection = defineModel<{ id: string } | null>('openSection')
-const sections = GENERAL_SECTIONS.filter((section) => !section.parent)
 
 const { session } = useSession()
 
@@ -74,20 +64,10 @@ onMounted(async () => {
     <Spinner size="lg" class="text-ink-gray-4" />
   </div>
 
-  <Git
-    v-else-if="openSection?.id === 'github' || openSection?.id === 'github-token'"
-    v-model:open-section="openSection"
-  />
-  <S3Bucket v-else-if="openSection?.id === 's3-bucket'" />
-  <LLM v-else-if="openSection?.id === 'llm'" />
-  <Notifications v-else-if="openSection?.id === 'notifications'" />
-  <Mail v-else-if="openSection?.id === 'mail'" />
-  <Workers v-else-if="openSection?.id === 'workers'" />
-
   <template v-else>
     <ErrorMessage v-if="error" :message="error" class="mb-4" />
 
-    <div class="-mx-2.5 divide-y divide-outline-alpha-gray-1 hover-merges-dividers">
+    <div class="-mx-3 -mt-3.5 divide-y divide-outline-alpha-gray-1 hover-merges-dividers">
       <SettingsRow
         label="Allow developer mode"
         description="Enables per-site developer mode and code editor."
@@ -117,19 +97,15 @@ onMounted(async () => {
         />
       </SettingsRow>
 
-      <SettingsRow
-        v-for="section in sections"
-        :key="section.id"
-        as="button"
-        interactive
-        :label="section.label"
-        :description="section.description"
-        @click="openSection = section"
-      >
-        <span class="size-4 text-ink-gray-5 lucide-chevron-right" aria-hidden="true" />
-      </SettingsRow>
+      <section class="px-3 py-3.5">
+        <h4 class="text-base-medium text-ink-gray-8">Background workers</h4>
 
-      <Version />
+        <p class="mt-1 mb-3 text-ink-gray-6 text-p-sm">
+          Configure background worker groups and queues.
+        </p>
+
+        <Workers />
+      </section>
     </div>
   </template>
 </template>

@@ -1,13 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
 import { Button, ErrorMessage, toast } from 'frappe-ui'
-
+import { computed, ref } from 'vue'
+import { settingsApi } from '@/api/settings'
 import PasswordInput from '@/components/common/PasswordInput.vue'
 import PasswordStrengthMeter from '@/components/common/PasswordStrengthMeter.vue'
-
-import { settingsApi } from '@/api/settings'
-import { meetsPasswordRequirements } from '@/utils/passwordStrength'
 import { errorMessage } from '@/utils/error'
+import { meetsPasswordRequirements } from '@/utils/passwordStrength'
 
 const emit = defineEmits(['passwordChanged'])
 
@@ -47,29 +45,43 @@ const save = async () => {
 </script>
 
 <template>
-  <div class="space-y-4">
-    <div class="space-y-2">
+  <div class="space-y-5">
+    <div class="flex justify-between items-center gap-3">
+      <div class="flex flex-col gap-1">
+        <p class="text-base-medium text-ink-gray-8">Change password</p>
+        <p class="text-ink-gray-6 text-p-sm">Update the password that signs in to this bench.</p>
+      </div>
+
+      <Button
+        variant="solid"
+        label="Update"
+        :loading="saving"
+        :disabled="!canSubmit"
+        @click="save"
+      />
+    </div>
+
+    <div class="items-start gap-4 grid sm:grid-cols-2">
+      <div class="space-y-2">
+        <PasswordInput
+          v-model="newPassword"
+          label="New password"
+          required
+          placeholder="New password"
+          autocomplete="new-password"
+        />
+        <PasswordStrengthMeter :password="newPassword" />
+      </div>
+
       <PasswordInput
-        v-model="newPassword"
-        label="New password"
-        placeholder="New password"
+        v-model="confirmPassword"
+        label="Confirm new password"
+        required
+        placeholder="Repeat new password"
         autocomplete="new-password"
       />
-      <PasswordStrengthMeter :password="newPassword" />
     </div>
-
-    <PasswordInput
-      v-model="confirmPassword"
-      label="Confirm new password"
-      placeholder="Repeat new password"
-      autocomplete="new-password"
-    />
 
     <ErrorMessage v-if="error" :message="error" />
-    <div class="flex justify-end">
-      <Button variant="solid" :loading="saving" :disabled="!canSubmit" @click="save">
-        Change password
-      </Button>
-    </div>
   </div>
 </template>

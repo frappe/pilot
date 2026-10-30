@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
 import { Button, ErrorMessage, Spinner, TextInput, toast } from 'frappe-ui'
+import { onMounted, ref } from 'vue'
 
 import { settingsApi } from '@/api/settings'
 import type { WorkerGroupSettings } from '@/types/settings'
@@ -116,43 +116,54 @@ onMounted(async () => {
     <Spinner size="lg" class="text-ink-gray-4" />
   </div>
 
-  <div v-else class="space-y-6">
+  <div v-else class="space-y-3">
     <p v-if="liteMode" class="text-p-sm text-ink-gray-6">
-      Lite mode runs one pool: the count is job threads in the bench process, shared by every
-      queue, and the longest timeout applies to every queue.
+      Lite mode runs one pool: the count is job threads in the bench process, shared by every queue,
+      and the longest timeout applies to every queue.
     </p>
 
-    <div v-for="(group, index) in groups" :key="index" class="flex items-end gap-3">
-      <div class="space-y-1.5 w-28">
-        <p v-if="index === 0" class="font-medium text-ink-gray-7">No of Workers</p>
-        <TextInput v-model="group.count" type="number" min="1" class="w-full" />
+    <form class="bg-surface-gray-1 rounded-7 overflow-hidden" @submit.prevent="save">
+      <div
+        class="items-center gap-x-3 gap-y-2 grid grid-cols-[4rem_1fr_5.5rem_2rem] sm:grid-cols-[6rem_1fr_9rem_2rem] p-4"
+      >
+        <span class="text-ink-gray-5 text-sm">Workers</span>
+        <span class="text-ink-gray-5 text-sm">Queues</span>
+        <span class="text-ink-gray-5 text-sm">Timeout (s)</span>
+        <span />
+
+        <template v-for="(group, index) in groups" :key="index">
+          <TextInput v-model="group.count" type="number" min="1" />
+          <TextInput v-model="group.queues" placeholder="default, short, long" />
+          <TextInput v-model="group.timeout" type="number" min="1" placeholder="Default" />
+
+          <Button
+            v-if="!liteMode"
+            icon="lucide-x"
+            variant="ghost"
+            label="Remove worker group"
+            tooltip="Remove worker group"
+            :disabled="groups.length === 1"
+            @click="removeGroup(index)"
+          />
+          <span v-else />
+        </template>
       </div>
 
-      <div class="flex-1 space-y-1.5">
-        <p v-if="index === 0" class="font-medium text-ink-gray-7">Queues</p>
-        <TextInput v-model="group.queues" placeholder="default, short, long" class="w-full" />
-      </div>
+      <footer
+        class="flex justify-between items-center gap-2 px-3 py-2.5 border-outline-gray-2 border-t"
+      >
+        <Button
+          v-if="!liteMode"
+          variant="ghost"
+          icon-left="lucide-plus"
+          label="Add group"
+          @click="addGroup"
+        />
 
-      <div class="space-y-1.5 w-36">
-        <p v-if="index === 0" class="font-medium text-ink-gray-7">Timeout (seconds)</p>
-        <TextInput v-model="group.timeout" type="number" min="1" placeholder="Default" class="w-full" />
-      </div>
-
-      <Button
-        v-if="!liteMode"
-        icon="lucide-x"
-        label="Remove worker group"
-        tooltip="Remove worker group"
-        :disabled="groups.length === 1"
-        @click="removeGroup(index)"
-      />
-    </div>
+        <Button class="ml-auto" variant="solid" type="submit" label="Save" :loading="saving" />
+      </footer>
+    </form>
 
     <ErrorMessage v-if="error" :message="error" />
-
-    <div class="flex justify-end gap-2">
-      <Button v-if="!liteMode" icon-left="lucide-plus" @click="addGroup">Add</Button>
-      <Button variant="solid" :loading="saving" @click="save">Save Changes</Button>
-    </div>
   </div>
 </template>

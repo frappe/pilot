@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
 import { Alert, Button, ErrorMessage, Select, Spinner, TextInput, toast } from 'frappe-ui'
-
-import EmptyState from '@/components/common/EmptyState.vue'
-import SettingsSwitch from '@/components/settings/SettingsSwitch.vue'
-
+import { computed, onMounted, ref } from 'vue'
 import { settingsApi } from '@/api/settings'
+import EmptyState from '@/components/common/EmptyState.vue'
+import SettingsIllustration from '@/components/settings/SettingsIllustration.vue'
+import SettingsSwitch from '@/components/settings/SettingsSwitch.vue'
 import type { FirewallRuleSettings } from '@/types/settings'
 import { errorMessage } from '@/utils/error'
 
@@ -118,7 +117,6 @@ onMounted(async () => {
   <div v-else class="space-y-6">
     <Alert
       v-if="!production"
-      class="border border-outline-gray-2"
       title="Not enforced yet"
       theme="amber"
       :dismissible="false"
@@ -148,7 +146,6 @@ onMounted(async () => {
 
     <Alert
       v-if="lockoutRisk"
-      class="border border-outline-gray-2"
       title="Heads up"
       theme="amber"
       :dismissible="false"
@@ -166,37 +163,45 @@ onMounted(async () => {
 
     <div class="space-y-2">
       <div class="flex justify-between items-center">
-        <p class="font-medium text-ink-gray-8 leading-normal">Rules</p>
+        <p class="text-base-medium text-ink-gray-8">Rules</p>
         <Button icon-left="lucide-plus" @click="addRule">Add rule</Button>
       </div>
 
       <EmptyState
         compact
         v-if="!rules.length"
-        icon="lucide-shield"
-        title="No firewall rules"
+        title="No rules yet"
         :description="
           defaultPolicy === 'allow'
-            ? 'Everyone can reach the server. Add a rule to block specific IPs or ranges.'
-            : 'No one can reach the server. Add an Allow rule for the IPs that should have access.'
+            ? 'Anyone can reach the server. Block an IP or range to keep it out.'
+            : 'No one can reach the server. Allow the IPs that need access.'
         "
-      />
+      >
+        <template #illustration>
+          <SettingsIllustration kind="ip-rules" />
+        </template>
+      </EmptyState>
 
       <div v-else class="space-y-3">
         <div v-for="(rule, index) in rules" :key="index">
           <div class="flex items-end gap-2">
             <div class="space-y-1.5 w-28 shrink-0">
-              <p v-if="index === 0" class="font-medium text-ink-gray-7">Action</p>
-              <Select side="bottom" v-model="rule.action" :options="ACTION_OPTIONS" class="w-full" />
+              <p v-if="index === 0" class="text-ink-gray-5 text-sm">Action</p>
+              <Select
+                side="bottom"
+                v-model="rule.action"
+                :options="ACTION_OPTIONS"
+                class="w-full"
+              />
             </div>
 
             <div class="flex-1 space-y-1.5">
-              <p v-if="index === 0" class="font-medium text-ink-gray-7">IP / CIDR</p>
+              <p v-if="index === 0" class="text-ink-gray-5 text-sm">IP / CIDR</p>
               <TextInput v-model="rule.ip" placeholder="203.0.113.4 or 10.0.0.0/8" class="w-full" />
             </div>
 
             <div class="flex-1 space-y-1.5">
-              <p v-if="index === 0" class="font-medium text-ink-gray-7">Note</p>
+              <p v-if="index === 0" class="text-ink-gray-5 text-sm">Note</p>
               <TextInput v-model="rule.description" placeholder="optional" class="w-full" />
             </div>
 

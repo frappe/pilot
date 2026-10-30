@@ -68,7 +68,7 @@ const needsGithubConnection = computed(
 
 const goToGithubSettings = () => {
   open.value = false
-  router.push({ name: 'Settings', params: { section: 'general', subSection: 'github' } })
+  router.push({ name: 'Settings', params: { section: 'github' } })
 }
 
 const resolving = ref(false)

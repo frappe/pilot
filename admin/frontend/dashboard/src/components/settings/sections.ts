@@ -4,44 +4,53 @@ export interface SettingsSection {
   description?: string
   /** A screen opened from another section, so Back returns there. Hidden from section lists. */
   parent?: string
+  icon?: string
 }
 
-export const GENERAL_SECTIONS: SettingsSection[] = [
+export interface SettingsPage {
+  id: string
+  label: string
+  icon: string
+}
+
+export const SETTINGS_GROUPS: { label: string; pages: SettingsPage[] }[] = [
   {
-    id: 'github',
-    label: 'Git settings',
-    description: 'Connect GitHub for private installs and repo browsing.',
+    label: 'System',
+    pages: [
+      { id: 'bench', label: 'Bench', icon: 'lucide-box' },
+      { id: 'database', label: 'Database', icon: 'lucide-database' },
+      { id: 'notifications', label: 'Notifications', icon: 'lucide-bell' },
+    ],
   },
+  {
+    label: 'Integrations',
+    pages: [
+      { id: 'github', label: 'Git', icon: 'lucide-git-branch' },
+      { id: 's3-bucket', label: 'Object storage', icon: 'lucide-hard-drive' },
+      { id: 'llm', label: 'AI assistant', icon: 'lucide-bot' },
+      { id: 'mail', label: 'Mail', icon: 'lucide-mail' },
+    ],
+  },
+  {
+    label: 'Access',
+    pages: [
+      { id: 'security', label: 'Security', icon: 'lucide-shield' },
+      { id: 'sessions', label: 'Sessions', icon: 'lucide-monitor' },
+    ],
+  },
+  {
+    label: '',
+    pages: [{ id: 'system-info', label: 'About', icon: 'lucide-info' }],
+  },
+]
+
+export const SETTINGS_PAGES = SETTINGS_GROUPS.flatMap((group) => group.pages)
+
+export const GIT_SECTIONS: SettingsSection[] = [
   {
     id: 'github-token',
     label: 'Personal access token',
     description: 'Store your own GitHub token on this server.',
-    parent: 'github',
-  },
-  {
-    id: 's3-bucket',
-    label: 'Object storage settings',
-    description: 'Connect S3-compatible storage for offsite backups.',
-  },
-  {
-    id: 'llm',
-    label: 'AI assistant settings',
-    description: 'Connect an LLM provider to power assistant features.',
-  },
-  {
-    id: 'notifications',
-    label: 'Notification settings',
-    description: 'Alert when host resource usage crosses a limit.',
-  },
-  {
-    id: 'mail',
-    label: 'Mail settings',
-    description: 'Send alerts to a mailbox alongside Central and webhooks.',
-  },
-  {
-    id: 'workers',
-    label: 'Background workers',
-    description: 'Configure background worker groups and queues.',
   },
 ]
 
@@ -59,28 +68,27 @@ export const DATABASE_SECTIONS: SettingsSection[] = [
 
 export const SECURITY_SECTIONS: SettingsSection[] = [
   {
-    id: 'password',
-    label: 'Change password',
-    description: 'Update the password that signs in to this bench.',
-  },
-  {
-    id: 'two-factor',
-    label: 'Two-factor authentication',
-    description: 'Require a code from an enrolled device at every sign-in.',
-  },
-  {
-    id: 'firewall',
-    label: 'Firewall settings',
-    description: 'Restrict server access with IP allow and block rules.',
-  },
-  {
-    id: 'waf',
-    label: 'Web application firewall',
-    description: 'Inspect incoming requests for attacks before they reach your sites.',
+    id: 'account',
+    label: 'Account',
+    icon: 'lucide-user-round',
+    description: 'Change the admin password and set up two-factor authentication.',
   },
   {
     id: 'ssh-keys',
     label: 'SSH keys',
+    icon: 'lucide-key-round',
     description: 'Manage authorized public keys for server access.',
+  },
+  {
+    id: 'ip-rules',
+    label: 'IP rules',
+    icon: 'lucide-globe-lock',
+    description: 'Restrict server access with IP allow and block rules.',
+  },
+  {
+    id: 'waf',
+    label: 'Web firewall',
+    icon: 'lucide-shield-check',
+    description: 'Inspect incoming requests for attacks before they reach your sites.',
   },
 ]

@@ -1,15 +1,15 @@
-import { computed } from 'vue'
 import { useColorScheme } from 'frappe-ui'
+import { computed } from 'vue'
 
 import { sidebarSections } from '@/components/navigation/list'
 import { useAppMenu } from '@/components/navigation/useAppMenu'
-import { useSession } from '@/composables/auth/useSession'
-
 import {
   DATABASE_SECTIONS,
-  GENERAL_SECTIONS,
+  GIT_SECTIONS,
   SECURITY_SECTIONS,
+  SETTINGS_PAGES,
 } from '@/components/settings/sections'
+import { useSession } from '@/composables/auth/useSession'
 
 export interface SearchItem {
   name: string
@@ -63,10 +63,16 @@ export const useSearchIndex = () => {
 
     groups.Settings = {
       items: [
-        ...GENERAL_SECTIONS.map((section) => ({
+        ...SETTINGS_PAGES.map((page) => ({
+          name: page.label,
+          icon: page.icon,
+          route: `/settings/${page.id}`,
+        })),
+
+        ...GIT_SECTIONS.map((section) => ({
           name: section.label,
-          icon: 'lucide-settings',
-          route: `/settings/general/${section.id}`,
+          icon: 'lucide-git-branch',
+          route: `/settings/github/${section.id}`,
         })),
 
         ...DATABASE_SECTIONS.map((section) => ({
@@ -77,7 +83,7 @@ export const useSearchIndex = () => {
 
         ...SECURITY_SECTIONS.map((section) => ({
           name: section.label,
-          icon: 'lucide-shield',
+          icon: section.icon ?? 'lucide-shield',
           route: `/settings/security/${section.id}`,
         })),
       ],

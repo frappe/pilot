@@ -17,20 +17,22 @@ withDefaults(defineProps<Props>(), { bordered: true })
     class="flex flex-col items-center px-6 text-center"
     :class="[
       bordered ? 'border border-outline-gray-2 border-dashed rounded-7' : '',
-      compact ? 'gap-3 py-6' : 'gap-4 py-12',
+      compact ? 'gap-3 py-6 has-[>svg]:py-8' : 'gap-4 py-12',
     ]"
   >
-    <span
-      v-if="icon"
-      class="place-items-center grid bg-surface-gray-2 text-ink-gray-5 shrink-0"
-      :class="compact ? 'rounded-5 size-8' : 'rounded-6 size-10'"
-    >
-      <span :class="[compact ? 'size-4' : 'size-5', icon]" />
-    </span>
+    <slot name="illustration">
+      <span
+        v-if="icon"
+        class="place-items-center grid bg-surface-gray-2 text-ink-gray-5 shrink-0"
+        :class="compact ? 'rounded-5 size-8' : 'rounded-6 size-10'"
+      >
+        <span :class="[compact ? 'size-4' : 'size-5', icon]" />
+      </span>
+    </slot>
 
     <div>
-      <p class="font-medium text-ink-gray-7">{{ title }}</p>
-      <p v-if="description" class="mt-1 max-w-xs text-ink-gray-5 text-p-sm">{{ description }}</p>
+      <p class="text-base-medium text-ink-gray-7">{{ title }}</p>
+      <p v-if="description" class="mt-1 max-w-xs text-ink-gray-5 text-p-sm text-balance">{{ description }}</p>
     </div>
 
     <slot />
