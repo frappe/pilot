@@ -442,15 +442,23 @@ MARIADB_VARIABLE_SPECS = (
         dynamic=True,
         unit="seconds",
     ),
-    _read_only(
+    _editable_integer(
         "binlog_expire_logs_seconds",
         "Binary log retention",
         "Binary logging and replication",
-        "Seconds before eligible binary logs expire.",
-        "Use Manage Binlogs so Pilot can inspect and purge complete log ranges safely.",
-        value_type="integer",
-        dynamic=True,
+        "Seconds before binary logs are purged automatically. 0 keeps them until purged manually.",
+        0,
+        8553600,
         unit="seconds",
+    ),
+    _editable_integer(
+        "max_binlog_total_size",
+        "Binary log size limit",
+        "Binary logging and replication",
+        "Disk space all binary logs may use before the oldest are purged. 0 means no limit.",
+        0,
+        1024**4,
+        unit="bytes",
     ),
     _read_only(
         "expire_logs_days",
