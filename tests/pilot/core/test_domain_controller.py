@@ -109,14 +109,16 @@ def test_register_passes_domain_only_and_persists(tmp_path: Path, monkeypatch) -
 
     assert _calls(log) == ["register app.example.com", "proxy-servers"]
     saved = json.loads((bench.sites_path / "mysite" / "site_config.json").read_text())
-    assert saved["domains"] == [{
-        "domain": "app.example.com",
-        "route": {
-            "public_scheme": "https",
-            "origin_scheme": "https",
-            "client_ip_source": "proxy_protocol_v2",
-        },
-    }]
+    assert saved["domains"] == [
+        {
+            "domain": "app.example.com",
+            "route": {
+                "public_scheme": "https",
+                "origin_scheme": "https",
+                "client_ip_source": "proxy_protocol_v2",
+            },
+        }
+    ]
 
 
 def test_register_rejects_missing_policy_and_rolls_back(tmp_path: Path, monkeypatch) -> None:
@@ -132,6 +134,16 @@ def test_register_rejects_missing_policy_and_rolls_back(tmp_path: Path, monkeypa
         DomainRouteProvider(bench).register("mysite", "app.example.com")
 
     assert _calls(log) == ["register app.example.com", "deregister app.example.com"]
+
+
+def test_register_releases_route_when_proxy_settings_fail(tmp_path: Path, monkeypatch) -> None:
+    log = _install_provider(tmp_path, monkeypatch)
+    bench = _make_bench(tmp_path)
+    monkeypatch.setenv("PROVIDER_FAIL", "proxy-servers")
+
+    with pytest.raises(DomainProviderError, match="proxy-servers"):
+        DomainRouteProvider(bench).register("mysite", "mysite")
+    assert _calls(log) == ["register mysite", "proxy-servers", "deregister mysite"]
 
 
 def test_deregister_passes_domain_only_and_persists(tmp_path: Path, monkeypatch) -> None:
@@ -214,7 +226,9 @@ def test_a_domain_behind_cloudflare_is_accepted_with_a_warning(tmp_path: Path, m
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
     monkeypatch.setattr(DomainRouteProvider, "_server_ip", staticmethod(lambda: "198.51.100.7"))
     addresses = {"app.example.com": {"104.16.1.2", "2606:4700::1"}}
-    monkeypatch.setattr(DomainRouteProvider, "_resolve", staticmethod(lambda host: set(addresses.get(host, ()))))
+    monkeypatch.setattr(
+        DomainRouteProvider, "_resolve", staticmethod(lambda host: set(addresses.get(host, ())))
+    )
     bench = _make_bench(tmp_path)
     _write_site(bench, "mysite")
 
@@ -228,7 +242,9 @@ def test_a_domain_pointing_elsewhere_is_refused(tmp_path: Path, monkeypatch) -> 
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
     monkeypatch.setattr(DomainRouteProvider, "_server_ip", staticmethod(lambda: "198.51.100.7"))
     addresses = {"app.example.com": {"104.16.1.2", "203.0.113.9"}}
-    monkeypatch.setattr(DomainRouteProvider, "_resolve", staticmethod(lambda host: set(addresses.get(host, ()))))
+    monkeypatch.setattr(
+        DomainRouteProvider, "_resolve", staticmethod(lambda host: set(addresses.get(host, ())))
+    )
     bench = _make_bench(tmp_path)
     _write_site(bench, "mysite")
 

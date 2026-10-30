@@ -70,6 +70,11 @@ class BenchProduction:
 
         name = self.bench.config.name
         self.bench.ensure_no_sites()
+        from pilot.internal.git import GitRepo
+
+        repositories = [GitRepo(app.path) for app in self.bench.apps()]
+        for repository in repositories:
+            repository.ensure_removable()
         if not self.bench.config.production.enabled:
             self._ensure_dev_bench_stopped()
         self.remove_production(on_progress)
@@ -78,6 +83,9 @@ class BenchProduction:
         from pilot.managers.platform import unmount_legacy_bind_mount
 
         unmount_legacy_bind_mount(self.bench.path)
+        for repository in repositories:
+            if repository.is_worktree:
+                repository.remove()
         on_progress(f"Deleting {self.bench.path}...")
         shutil.rmtree(self.bench.path, ignore_errors=True)
         on_progress(f"\nBench '{name}' dropped.")

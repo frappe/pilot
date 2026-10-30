@@ -1,0 +1,253 @@
+from __future__ import annotations
+
+import ast
+import hashlib
+import json
+import logging
+import os
+import shutil
+import stat
+import tempfile
+from pathlib import Path
+
+from pilot.core.app.node_packages import get_app_packages
+from pilot.core.app.prebuilt_assets import asset_build_dirs, build_output_paths
+from pilot.core.bench.artifacts import BenchArtifacts
+from pilot.internal.atomic_file import exclusive_file_lock
+from pilot.managers.node_dependencies import NodeDependencies
+from pilot.utils import run_command
+
+
+class BuildArtifacts:
+    """Reuse completed builds with identical code, environment and toolchains."""
+
+    def __init__(self, bench) -> None:
+        self.bench = bench
+        self.root = bench.path.parent / ".pilot" / "asset-cache"
+
+    @property
+    def optional_key(self) -> str | None:
+        try:
+            return self.get_key()
+        except Exception as error:
+            logging.warning("Skipping asset cache fingerprint: %s", error)
+            return None
+
+    def get_key(self) -> str | None:
+        digest = hashlib.sha256(b"pilot-assets-v1\0")
+        environment = {
+            key: value for key, value in os.environ.items() if key not in {"PWD", "OLDPWD", "SHLVL", "_"}
+        }
+        digest.update(json.dumps(environment, sort_keys=True).encode())
+        config_path = self.bench.sites_path / "common_site_config.json"
+        config = json.loads(config_path.read_text()) if config_path.exists() else {}
+        digest.update(
+            json.dumps({key: config.get(key) for key in ("developer_mode", "esbuild_target")}).encode()
+        )
+        for executable in ("node", *self.get_package_manager_binaries(), str(self.bench.python)):
+            digest.update(run_command([executable, "--version"]).stdout)
+        digest.update(
+            run_command(
+                [
+                    str(self.bench.python),
+                    "-c",
+                    "import importlib.metadata as m; import json; "
+                    "print(json.dumps(sorted((info['Name'], info['Version']) "
+                    "for info in (d.metadata for d in m.distributions()))))",
+                ]
+            ).stdout
+        )
+        for app in self.bench.apps():
+            key = self.get_app_key(app)
+            if key is None:
+                return None
+            digest.update(key.encode())
+        return digest.hexdigest()
+
+    def get_package_manager_binaries(self) -> list[str]:
+        managers = {
+            package.package_manager
+            for app in self.bench.apps()
+            for package in get_app_packages(
+                app.path, [app.path / directory for directory in asset_build_dirs(app)]
+            )
+        }
+        return [manager.bin for manager in sorted(managers, key=lambda manager: manager.name)]
+
+    @staticmethod
+    def get_app_key(app) -> str | None:
+        if not (app.path / ".git").exists() or BuildArtifacts.has_custom_build(app):
+            return None
+        digest = hashlib.sha256(f"{app.config.name}:{app.module_name}".encode() + b"\0")
+        digest.update(run_command(["git", "-C", str(app.path), "rev-parse", "HEAD"]).stdout)
+        digest.update(run_command(["git", "-C", str(app.path), "branch", "--show-current"]).stdout)
+        files = (
+            run_command(
+                ["git", "-C", str(app.path), "ls-files", "-z", "--cached", "--others", "--exclude-standard"]
+            )
+            .stdout.decode()
+            .split("\0")
+        )
+        for relative in (".", "frontend", "roster", "ui"):
+            files.extend(str(path.relative_to(app.path)) for path in (app.path / relative).glob(".env*"))
+            digest.update(NodeDependencies.get_resolved_key(app.path / relative).encode())
+        for name in BuildArtifacts.get_source_files(app, files):
+            path = app.path / name
+            key = BuildArtifacts.get_file_key(path)
+            if key is None:
+                return None
+            digest.update(name.encode() + b"\0")
+            digest.update(key + b"\0")
+        return digest.hexdigest()
+
+    @staticmethod
+    def get_source_files(app, files: list[str]) -> list[str]:
+        outputs = (f"{app.module_name}/public/dist", "frontend/dist", "roster/dist")
+        prefixes = tuple(f"{output}/" for output in outputs)
+        return [
+            name
+            for name in sorted(set(files) - {""})
+            if not ("node_modules" in name.split("/") or name in outputs or name.startswith(prefixes))
+        ]
+
+    @staticmethod
+    def get_file_key(path: Path) -> bytes | None:
+        try:
+            metadata = path.lstat()
+        except FileNotFoundError:
+            return b""
+        except OSError:
+            return None
+        prefix = b""
+        if stat.S_ISLNK(metadata.st_mode):
+            prefix = b"link:" + os.readlink(path).encode()
+            try:
+                metadata = path.stat()
+            except FileNotFoundError:
+                return prefix
+            except OSError:
+                return None
+        if stat.S_ISDIR(metadata.st_mode):
+            return None
+        if stat.S_ISREG(metadata.st_mode):
+            with path.open("rb") as file:
+                return prefix + str(metadata.st_mode).encode() + hashlib.file_digest(file, "sha256").digest()
+        return prefix
+
+    @staticmethod
+    def has_custom_build(app) -> bool:
+        if asset_build_dirs(app) or build_output_paths(app):
+            return True
+        hooks = app.path / app.module_name / "hooks.py"
+        if not hooks.is_file():
+            return False
+        for node in ast.walk(ast.parse(hooks.read_text())):
+            if not isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+                continue
+            if BuildArtifacts.is_custom_build_hook(node, app.module_name):
+                return True
+        return False
+
+    @staticmethod
+    def is_custom_build_hook(node, module_name: str) -> bool:
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        names = {target.id for target in targets if isinstance(target, ast.Name)}
+        if not names & {"after_build", "after_app_build"}:
+            return False
+        if (
+            module_name != "frappe"
+            or not isinstance(node.value, ast.Constant)
+            or not isinstance(node, ast.Assign)
+        ):
+            return True
+        return node.value.value != "frappe.bundler.build_page_islands"
+
+    @property
+    def paths(self) -> list[str]:
+        return [path for path in self.output_paths if (self.bench.path / path).is_dir()]
+
+    @property
+    def output_paths(self) -> list[str]:
+        paths = ["sites/assets"]
+        for app in self.bench.apps():
+            prefix = f"apps/{app.config.name}"
+            paths.extend(
+                f"{prefix}/{suffix}"
+                for suffix in (f"{app.module_name}/public/dist", "frontend/dist", "roster/dist")
+            )
+        return paths
+
+    def capture(self, key: str | None) -> None:
+        if key is None:
+            return
+        try:
+            paths = self.paths
+            if not set(self.required_paths).issubset(paths):
+                return
+            self.publish(key, paths)
+        except Exception as error:
+            logging.warning("Skipping asset cache publication: %s", error)
+
+    def publish(self, key: str, paths: list[str]) -> None:
+        self.root.mkdir(parents=True, exist_ok=True)
+        with exclusive_file_lock(self.root / f"{key}.guard"):
+            target = self.root / key
+            if target.exists():
+                return
+            staging = Path(tempfile.mkdtemp(prefix="build-", dir=self.root))
+            try:
+                for path in paths:
+                    BenchArtifacts.copy_directory(self.bench.path / path, staging / path)
+                BenchArtifacts.relocate_links(self.bench.path.resolve(), target.resolve(), root=staging)
+                (staging / "manifest.json").write_text(json.dumps(paths))
+                staging.rename(target)
+            finally:
+                if staging.exists():
+                    shutil.rmtree(staging)
+
+    def restore(self, key: str | None) -> bool:
+        if key is None:
+            return False
+        target = self.root / key
+        if not target.is_dir():
+            return False
+        with exclusive_file_lock(self.root / f"{key}.guard"):
+            manifest = target / "manifest.json"
+            if not manifest.is_file():
+                return False
+            try:
+                paths = json.loads(manifest.read_text())
+            except (OSError, ValueError):
+                return False
+            if not self.has_valid_manifest(target, paths):
+                return False
+            BenchArtifacts(target).restore(self.bench, paths)
+        return True
+
+    def has_valid_manifest(self, target: Path, paths) -> bool:
+        if not isinstance(paths, list) or not all(isinstance(path, str) for path in paths):
+            return False
+        if not set(self.required_paths).issubset(paths) or not set(paths).issubset(self.output_paths):
+            return False
+        return all(self.is_safe_output(target, path) for path in paths)
+
+    @property
+    def required_paths(self) -> list[str]:
+        paths = ["sites/assets"]
+        for app in self.bench.apps():
+            public = app.path / app.module_name / "public"
+            if app.config.name == "frappe" or any(public.rglob("*.bundle.*")):
+                paths.append(f"apps/{app.config.name}/{app.module_name}/public/dist")
+            for relative in ("frontend", "roster"):
+                from pilot.core.app.node_packages import NodePackages
+
+                if NodePackages(app.path / relative).has_script("build"):
+                    paths.append(f"apps/{app.config.name}/{relative}/dist")
+        return paths
+
+    def is_safe_output(self, target: Path, path: str) -> bool:
+        return (
+            (target / path).is_dir()
+            and (target / path).resolve().is_relative_to(target.resolve())
+            and (self.bench.path / path).resolve().is_relative_to(self.bench.path.resolve())
+        )

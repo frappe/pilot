@@ -15,6 +15,7 @@ from pilot.core.app.install_result import AppInstallResult
 from pilot.core.app.repository import AppRepository
 from pilot.core.app.revisions import RevisionPin
 from pilot.exceptions import BenchError
+from pilot.internal.git import GitRepo
 from pilot.utils import installed_app_version, run_command
 
 if TYPE_CHECKING:
@@ -316,12 +317,12 @@ class App:
             self._repository.clone(on_progress)
             return
 
-        shutil.rmtree(self.path, ignore_errors=True)  # leftovers from an interrupted run
+        GitRepo(self.path).remove()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         apps_clone = self.existing_clone_path
         if apps_clone is not None:
             on_progress(f"'{self.config.name}' already cloned, moving it out of apps/ to validate.")
-            shutil.move(str(apps_clone), str(self.path))
+            GitRepo(apps_clone).move(self.path)
             return
 
         on_progress(f"Cloning {self.config.name}...")
@@ -429,8 +430,8 @@ class App:
             if self.is_staged:
                 self.validate()
             self.promote()
-        except BenchError:
-            self._undo_clone(existing_clone)
+        except BenchError as error:
+            self._cleanup_after_failure(error, on_progress, lambda: self._undo_clone(existing_clone))
             raise
 
         on_progress(f"Installing {self.config.name}...")
@@ -443,22 +444,34 @@ class App:
                 self._build_assets_via_env_manager()
             else:
                 on_progress(f"\nSkipping assets for {self.config.name}...")
-        except Exception:
-            self._roll_back_install(delete_clone=existing_clone is None, on_progress=on_progress)
+        except Exception as error:
+            self._cleanup_after_failure(
+                error,
+                on_progress,
+                lambda: self._roll_back_install(delete_clone=existing_clone is None, on_progress=on_progress),
+            )
             raise
 
         self.record_branch()
         on_progress(f"\n'{self.config.name}' installed successfully.")
         return AppInstallResult(self, already_installed=False, installed_dependencies=dependencies)
 
+    def _cleanup_after_failure(self, error: Exception, on_progress, cleanup: Callable[[], None]) -> None:
+        try:
+            cleanup()
+        except Exception as cleanup_error:
+            message = f"App cleanup failed; retained files at {self.path}: {cleanup_error}"
+            error.add_note(message)
+            on_progress(message)
+
     def _undo_clone(self, existing_clone: Path | None) -> None:
         """Undo the clone after a failure: delete a tree this run created, and put
         one that was already in apps/ back where it was. A working tree we did not
         create is not ours to remove."""
         if existing_clone is None:
-            shutil.rmtree(self.path, ignore_errors=True)
+            GitRepo(self.path).remove()
         elif self.is_staged:
-            shutil.move(str(self.path), str(existing_clone))
+            GitRepo(self.path).move(existing_clone)
 
     def promote(self) -> "App":
         if not self.path.is_dir():
@@ -470,7 +483,7 @@ class App:
         if target.exists():
             raise BenchError(f"'{target}' already exists - remove it before installing this app.")
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(self.path), str(target))  # a rename, unless apps/ is another filesystem
+        GitRepo(self.path).move(target)
         self.config.name = module
         self.is_staged = False
         return self
@@ -484,7 +497,7 @@ class App:
         with contextlib.suppress(Exception):
             self._pip_uninstall()
         if delete_clone:
-            shutil.rmtree(self.path, ignore_errors=True)
+            GitRepo(self.path).remove()
 
     def _install_dependencies(
         self, on_progress: Callable[[str], None], skip_assets: bool = False
@@ -543,6 +556,8 @@ class App:
         """Uninstall from sites, deregister, pip-uninstall, and delete the clone.
         A symlinked checkout is only unlinked."""
         self.ensure_removable()
+        if not self.path.is_symlink():
+            GitRepo(self.path).ensure_removable()
         self._uninstall_from_all_sites(force, on_progress)
         self._deregister()
         on_progress(f"Removing '{self.config.name}' from Python environment...")
@@ -552,7 +567,7 @@ class App:
             self.path.unlink()
         else:
             on_progress(f"Deleting {self.path}...")
-            shutil.rmtree(self.path)
+            GitRepo(self.path).remove()
         on_progress(f"\n'{self.config.name}' removed from bench.")
 
     def _uninstall_from_all_sites(self, force: bool, on_progress: Callable[[str], None]) -> None:

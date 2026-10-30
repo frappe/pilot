@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from dataclasses import MISSING, fields
 from typing import Annotated, Any, Literal, NamedTuple, get_args, get_origin, get_type_hints
 
@@ -56,6 +57,14 @@ def add_argument(parser: argparse.ArgumentParser, arg_field: ArgField) -> None:
         )
         return
 
+    add_value_argument(parser, arg_field, kwargs)
+
+
+def add_value_argument(parser: argparse.ArgumentParser, arg_field: ArgField, kwargs: dict[str, Any]) -> None:
+    if arg_field.metadata.positional and arg_field.has_default:
+        kwargs.setdefault("nargs", "?")
+        parser.add_argument(arg_field.name, default=arg_field.default, **kwargs)
+        return
     if not arg_field.has_default and not arg_field.metadata.required:
         parser.add_argument(arg_field.name, **kwargs)
         return
@@ -76,6 +85,8 @@ def argument_kwargs(arg_field: ArgField, base_hint: Any) -> dict[str, Any]:
         kwargs["choices"] = get_args(base_hint)
     elif get_origin(base_hint) is list:
         update_list_kwargs(kwargs, arg_field, base_hint)
+    elif get_origin(base_hint) is dict:
+        kwargs["type"] = json.loads
     elif base_hint is not str:
         kwargs["type"] = base_hint
     return kwargs
