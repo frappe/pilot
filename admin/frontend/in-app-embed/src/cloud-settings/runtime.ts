@@ -50,10 +50,12 @@ export const closeCloudSettings = (): void => {
 export const mountCloudSettings = (context: CloudContext, options: CloudSettingsOptions = {}): void => {
   loadFontIfMissing()
 
-  const existing = document.querySelector(TAG)
+  // An inline host can sit in a shadow root, where the page query does not reach.
+  const existing = host ?? document.querySelector(TAG)
   existing?.dispatchEvent(new CustomEvent('close'))
 
-  const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : undefined
+  // Inline UI leaves with its host page, so focus stays where the host puts it.
+  const trigger = !options.target && document.activeElement instanceof HTMLElement ? document.activeElement : undefined
   const element = document.createElement(TAG) as InstanceType<typeof CloudSettingsElement>
   element.context = context
   element.options = options

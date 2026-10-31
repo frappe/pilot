@@ -74,6 +74,24 @@ test('a target mounts the panels inline, without the dialog or its navigation', 
   await expect(page.locator('fc-cloud-settings')).toHaveCount(0)
 })
 
+test('inline with several panels shows the sidebar, and a second mount in a shadow root replaces the first', async ({ page }) => {
+  await page.route('**/api/method/**', (route) => route.fulfill({ json: { message: {} } }))
+  await page.evaluate(async (runtime) => {
+    const { mountCloudSettings } = await import(runtime)
+    const shadow = document.createElement('div')
+    document.body.append(shadow)
+    const target = document.createElement('div')
+    target.style.height = '600px'
+    shadow.attachShadow({ mode: 'open' }).append(target)
+    const options = { panels: ['maintenance', 'backups'], target }
+    mountCloudSettings({ enabled: true }, options)
+    mountCloudSettings({ enabled: true }, options)
+  }, runtime)
+  await expect(page.locator('fc-cloud-settings')).toHaveCount(1)
+  await expect(page.getByRole('tab')).toHaveCount(2)
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+})
+
 test('custom translation applies to panel errors and task feedback', async ({ page }) => {
   await page.evaluate(async () => {
     const { mountCloudSettings } = await import('/src/cloud-settings/runtime.ts')
