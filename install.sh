@@ -218,18 +218,25 @@ ensure_homebrew() {
 # password prompt in the middle of `pilot init` or a deploy.
 
 # Bare images ship almost nothing: the tools this script and Pilot both need
-# before first use, plus the build deps for the admin venv and frappe wheels.
+# before first use, plus the build deps for the admin venv and frappe wheels,
+# and shared libraries for Frappe v16+ headless Chromium PDF generator.
 # cron runs scheduled backups; Frappe's restore runs `file` to tell a gzipped dump apart.
 bootstrap_packages() {
     case "$DISTRO" in
         macos)
             printf '%s\n' git python3 ;;
-        debian|ubuntu)
-            printf '%s\n' git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file ;;
+        debian)
+            printf '%s\n' git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file \
+                libnss3 libatk1.0-0 libatk-bridge2.0-0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 libcups2 fonts-liberation ;;
+        ubuntu)
+            printf '%s\n' git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file \
+                libnss3 libatk1.0-0t64 libatk-bridge2.0-0t64 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2t64 libcups2t64 fonts-liberation ;;
         fedora)
-            printf '%s\n' git curl bash sudo shadow-utils python3 python3-devel gcc gcc-c++ make tzdata cronie file ;;
+            printf '%s\n' git curl bash sudo shadow-utils python3 python3-devel gcc gcc-c++ make tzdata cronie file \
+                nss atk at-spi2-atk libXcomposite libXdamage libXfixes libXrandr mesa-libgbm alsa-lib cups-libs liberation-fonts ;;
         arch)
-            printf '%s\n' git curl bash sudo python base-devel tzdata cronie file ;;
+            printf '%s\n' git curl bash sudo python base-devel tzdata cronie file \
+                nss atk at-spi2-atk libxcomposite libxdamage libxfixes libxrandr mesa alsa-lib libcups ttf-liberation ;;
     esac
 }
 
