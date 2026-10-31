@@ -42,6 +42,8 @@ test('mount, replace, and close remove the host and restore focus', async ({ pag
   }, runtime)
   await expect(page.locator('fc-cloud-settings')).toHaveCount(1)
   await expect(page.locator('#trigger')).toHaveAttribute('data-closed', '1')
+  await expect(page.locator('fc-cloud-settings')).not.toHaveAttribute('tabindex')
+  await expect(page.locator('fc-cloud-settings')).not.toHaveAttribute('overlay-open')
   await expect(page.getByRole('button', { name: 'Close Cloud Settings' })).toBeVisible()
   await page.evaluate(async (runtime) => {
     const { closeCloudSettings } = await import(runtime)
@@ -61,24 +63,29 @@ test('a target mounts the panels inline, without the dialog or its navigation', 
     target.id = 'inline'
     target.style.height = '600px'
     document.body.append(target)
+    document.querySelector<HTMLButtonElement>('#trigger')!.focus()
     mountCloudSettings({ enabled: true }, { panels: ['maintenance'], target })
   }, runtime)
   await expect(page.locator('#inline fc-cloud-settings')).toHaveCount(1)
   await expect(page.getByRole('heading', { name: 'Maintenance' })).toBeVisible()
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await expect(page.getByRole('tab')).toHaveCount(0)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(page.getByLabel('Panel')).toHaveCount(0)
   await page.evaluate(async (runtime) => {
     const { closeCloudSettings } = await import(runtime)
     closeCloudSettings()
   }, runtime)
   await expect(page.locator('fc-cloud-settings')).toHaveCount(0)
+  await expect(page.locator('#trigger')).toBeFocused()
 })
 
-test('inline with several panels shows the sidebar, and a second mount in a shadow root replaces the first', async ({ page }) => {
+test('inline with several panels shows the sidebar, a second mount in a shadow root replaces the first, and a popup replaces it', async ({ page }) => {
   await page.route('**/api/method/**', (route) => route.fulfill({ json: { message: {} } }))
   await page.evaluate(async (runtime) => {
     const { mountCloudSettings } = await import(runtime)
     const shadow = document.createElement('div')
+    shadow.id = 'shadow'
     document.body.append(shadow)
     const target = document.createElement('div')
     target.style.height = '600px'
@@ -90,6 +97,16 @@ test('inline with several panels shows the sidebar, and a second mount in a shad
   await expect(page.locator('fc-cloud-settings')).toHaveCount(1)
   await expect(page.getByRole('tab')).toHaveCount(2)
   await expect(page.getByRole('dialog')).toHaveCount(0)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(page.getByLabel('Panel')).toBeVisible()
+
+  await page.evaluate(async (runtime) => {
+    const { mountCloudSettings } = await import(runtime)
+    mountCloudSettings({ enabled: true }, { panels: ['maintenance'] })
+  }, runtime)
+  await expect(page.locator('fc-cloud-settings')).toHaveCount(1)
+  await expect(page.locator('#shadow fc-cloud-settings')).toHaveCount(0)
+  await expect(page.getByRole('dialog')).toBeVisible()
 })
 
 test('custom translation applies to panel errors and task feedback', async ({ page }) => {
