@@ -123,8 +123,6 @@ const visibleGroups = computed(() => {
 })
 const visibleTabs = computed(() => visibleGroups.value.flatMap((group) => group.tabs))
 const inline = computed(() => !!props.options.target)
-// A host that mounts one panel inline has its own navigation.
-const showNav = computed(() => !inline.value || visibleTabs.value.length > 1)
 const getFirstTab = () =>
   visibleTabs.value.find((item) => item.value === props.options.tab)?.value || visibleTabs.value[0]?.value
 
@@ -193,7 +191,7 @@ onBeforeUnmount(() => themeWatcher?.disconnect())
           unmount-on-hide
           class="flex h-full min-h-0 flex-col overflow-hidden sm:flex-row"
         >
-          <CloudSettingsBody v-model:tab="tab" :store="store" :groups="visibleGroups" :show-nav="showNav" inline />
+          <CloudSettingsBody v-model:tab="tab" :store="store" :groups="visibleGroups" inline />
         </TabsRoot>
 
         <SettingsDialog
@@ -214,7 +212,7 @@ onBeforeUnmount(() => themeWatcher?.disconnect())
             @click="emit('close')"
           />
 
-          <CloudSettingsBody v-model:tab="tab" :store="store" :groups="visibleGroups" :show-nav="showNav" />
+          <CloudSettingsBody v-model:tab="tab" :store="store" :groups="visibleGroups" />
         </SettingsDialog>
       </template>
 
