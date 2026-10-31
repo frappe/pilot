@@ -88,6 +88,16 @@ closeCloudSettings()
 
 Opening again, inline or as a dialog, replaces the mounted UI. Menus, dialogs, and toasts stay inside the element's shadow root.
 
+The inline UI is in the tab order, so Tab moves from the host page into the panels. A host can show the inline UI inside its own modal. Then Esc, or a click outside the open Cloud menu or dialog, closes it and also the host modal. To prevent this, ignore the modal's close while `fc-cloud-settings[overlay-open]` exists. The element has this attribute while a Cloud menu or dialog is open.
+
+```ts
+const isCloudOverlayOpen = () => !!document.querySelector('fc-cloud-settings[overlay-open]')
+```
+
+```vue
+<Dialog :open="show" @update:open="(open) => (open || !isCloudOverlayOpen()) && (show = open)">
+```
+
 ## Use API calls without the dialog
 
 You can build your own pages, panels, or controls with the API calls. The `/api` import does not load the shared UI. Your app controls the layout and handles loading, empty states, errors, and success feedback.
