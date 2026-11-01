@@ -14,7 +14,7 @@ interface WebhookForm {
   original_url: string
 }
 
-const { session } = useSession()
+const { session, centralServerUrl } = useSession()
 
 // Every resource alert starts off; site uptime is the only one on by default.
 const RESOURCE_ALERTS = [
@@ -191,7 +191,7 @@ onMounted(async () => {
       This server is managed by
       <a
         v-if="session.centralUrl"
-        :href="`${session.centralUrl}/dashboard`"
+        :href="centralServerUrl()"
         target="_blank"
         rel="noopener"
         class="text-ink-gray-8 underline underline-offset-2 hover:text-ink-gray-9"
