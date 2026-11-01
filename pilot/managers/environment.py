@@ -196,11 +196,12 @@ class PythonEnvManager:
         python = str(self.bench.env_path / "bin" / "python")
         run_command([uv, "pip", "uninstall", "--python", python, app_name], stream_output=True)
 
-    def install_node(self) -> None:
+    def install_node(self, ensure_yarn: bool = True) -> None:
         if not which("node"):
             self._install_node()
         self.require_node_version()
-        YARN.ensure_installed()
+        if ensure_yarn:
+            YARN.ensure_installed()
 
     @staticmethod
     def require_node_version() -> None:
@@ -228,5 +229,5 @@ class PythonEnvManager:
     def build_assets(self) -> None:
         self._assets.build_assets()
 
-    def build_assets_for_app(self, app: "App", force: bool = False) -> None:
-        self._assets.build_assets_for_app(app, force=force)
+    def build_assets_for_app(self, app: "App", force: bool = False, skip_frontend: bool = False) -> None:
+        self._assets.build_assets_for_app(app, force=force, skip_frontend=skip_frontend)
