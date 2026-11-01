@@ -87,7 +87,7 @@ class PythonAssetBuilder:
             NodePackages(app.path).ensure_installed()
 
         # A linked checkout is built from its own source, never from a release.
-        if self._prebuilt_usable(app, force) and self.install_prebuilt_assets(
+        if self._has_usable_prebuilt(app, force) and self.install_prebuilt_assets(
             app, skip_frontend=skip_frontend
         ):
             return
@@ -99,7 +99,7 @@ class PythonAssetBuilder:
             self.build_app_from_source(app)
 
     @staticmethod
-    def _prebuilt_usable(app: "App", force: bool) -> bool:
+    def _has_usable_prebuilt(app: "App", force: bool) -> bool:
         """Whether a published archive could replace a source build."""
         return not force and not app.is_linked and not app.has_source_changes
 
