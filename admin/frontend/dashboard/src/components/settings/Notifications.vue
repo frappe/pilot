@@ -14,7 +14,7 @@ interface WebhookForm {
   original_url: string
 }
 
-const { session } = useSession()
+const { session, centralServerUrl } = useSession()
 
 // Every resource alert starts off; site uptime is the only one on by default.
 const RESOURCE_ALERTS = [
@@ -187,6 +187,18 @@ onMounted(async () => {
   </div>
 
   <div v-else class="space-y-6">
+    <p v-if="session.centralEnabled" class="text-ink-gray-5 text-p-sm">
+      This server is managed by
+      <a
+        v-if="session.centralUrl"
+        :href="centralServerUrl()"
+        target="_blank"
+        rel="noopener"
+        class="text-ink-gray-8 underline underline-offset-2 hover:text-ink-gray-9"
+        >Central</a
+      ><template v-else>Central</template>, so alerts also show there.
+    </p>
+
     <SettingsSwitch
       label="Site uptime"
       description="Alert when a site stops responding to its uptime check."
@@ -255,9 +267,7 @@ onMounted(async () => {
     </div>
 
     <details class="group">
-      <summary
-        class="flex items-center gap-1.5 text-ink-gray-6 cursor-pointer select-none"
-      >
+      <summary class="flex items-center gap-1.5 text-ink-gray-6 cursor-pointer select-none">
         <span class="size-4 transition-transform group-open:rotate-90 lucide-chevron-right"></span>
         Advanced
       </summary>
@@ -269,18 +279,7 @@ onMounted(async () => {
         </div>
 
         <p class="text-ink-gray-5 text-p-sm">
-          <template v-if="session.centralEnabled"
-            >Alerts go to
-            <a
-              v-if="session.centralUrl"
-              :href="`${session.centralUrl}/dashboard`"
-              target="_blank"
-              rel="noopener"
-              class="text-ink-gray-8 underline underline-offset-2 hover:text-ink-gray-9"
-              >Central</a
-            ><template v-else>Central</template>. Endpoints listed here receive them too, as a POST carrying an</template
-          >
-          <template v-else>Endpoints listed here receive alerts as a POST carrying an</template>
+          Endpoints listed here receive alerts as a POST carrying an
           <code>Authorization: Bearer</code>
           header, so the token stays out of the URL.
         </p>
@@ -290,11 +289,7 @@ onMounted(async () => {
           v-if="!webhooks.length"
           icon="lucide-webhook"
           title="No webhook endpoints"
-          :description="
-            session.centralEnabled
-              ? 'Alerts are only reported to Central. Add an endpoint to receive them yourself.'
-              : 'Nothing receives alerts yet. Add an endpoint to receive them.'
-          "
+          description="Add an endpoint to receive alerts by webhook."
         />
 
         <div v-else class="space-y-3">
