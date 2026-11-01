@@ -16,9 +16,10 @@ _BENCH_DIRS = ("apps", "sites", "logs", "config", "pids", "env", "admin")
 class BenchInitializer:
     """Initializes a fresh bench and rolls back partial setup on failure."""
 
-    def __init__(self, bench: "Bench", commit: str = "") -> None:
+    def __init__(self, bench: "Bench", commit: str = "", skip_frontend: bool = False) -> None:
         self.bench = bench
         self.commit = commit
+        self.skip_frontend = skip_frontend
         self._rollback_actions: list[tuple[str, Callable[[], None]]] = []
         self._created_directories: list[str] = []
 
@@ -55,11 +56,21 @@ class BenchInitializer:
                 "Clone and install framework app",
                 lambda: self._install_framework_apps(python_env_manager, on_progress),
             ),
-            ("Install Node.js", python_env_manager.install_node),
-            ("Install Node.js dependencies", python_env_manager.install_node_dependencies),
-            ("Build framework assets", lambda: self._build_framework_assets(python_env_manager)),
-            ("Configure Redis", self._configure_redis),
+            (
+                "Install Node.js",
+                lambda: python_env_manager.install_node(ensure_yarn=not self.skip_frontend),
+            ),
         ]
+        if not self.skip_frontend:
+            # A frontend-skipping run installs JS packages on demand: the asset
+            # build below ensures them when it falls back to a source build.
+            steps.append(("Install Node.js dependencies", python_env_manager.install_node_dependencies))
+        steps.extend(
+            [
+                ("Build framework assets", lambda: self._build_framework_assets(python_env_manager)),
+                ("Configure Redis", self._configure_redis),
+            ]
+        )
         # `pilot start` prepares the Admin frontend once a disabled Admin is enabled.
         if self.bench.config.admin.enabled:
             steps.append(("Prepare admin frontend", lambda: self._ensure_admin_frontend(on_progress)))
@@ -123,7 +134,9 @@ class BenchInitializer:
         """Build the framework app's assets, or download its prebuilt archive."""
         from pilot.core.app import App
 
-        python_env_manager.build_assets_for_app(App(self.bench.config.framework_app, self.bench))
+        python_env_manager.build_assets_for_app(
+            App(self.bench.config.framework_app, self.bench), skip_frontend=self.skip_frontend
+        )
 
     def _ensure_admin_password(self) -> None:
         import secrets

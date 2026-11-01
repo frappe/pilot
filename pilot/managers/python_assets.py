@@ -81,19 +81,29 @@ class PythonAssetBuilder:
             stream_output=True,
         )
 
-    def build_assets_for_app(self, app: "App", force: bool = False) -> None:
+    def build_assets_for_app(self, app: "App", force: bool = False, skip_frontend: bool = False) -> None:
         # Desk serves /assets/frappe/node_modules, and every server build runs Frappe's esbuild.
-        if app.config.name == "frappe":
+        if app.config.name == "frappe" and not skip_frontend:
             NodePackages(app.path).ensure_installed()
 
         # A linked checkout is built from its own source, never from a release.
-        if not force and not app.is_linked and not app.has_source_changes and self.install_prebuilt_assets(app):
+        if self._prebuilt_usable(app, force) and self.install_prebuilt_assets(
+            app, skip_frontend=skip_frontend
+        ):
             return
+        if skip_frontend and app.config.name == "frappe":
+            # The download missed: install JS packages, then build from source like normal.
+            NodePackages(app.path).ensure_installed()
 
         with app.record_lockfiles_on_failure():
             self.build_app_from_source(app)
 
-    def install_prebuilt_assets(self, app: "App") -> bool:
+    @staticmethod
+    def _prebuilt_usable(app: "App", force: bool) -> bool:
+        """Whether a published archive could replace a source build."""
+        return not force and not app.is_linked and not app.has_source_changes
+
+    def install_prebuilt_assets(self, app: "App", skip_frontend: bool = False) -> bool:
         """Install the app's published assets and build what the archive lacks. False when none are published."""
         from pilot.core.app.prebuilt_assets import PrebuiltAssets
 
@@ -104,10 +114,11 @@ class PythonAssetBuilder:
         self.setup_prebuilt_assets(
             app.config.name, app_public_dir, app_public_dir / "dist", prebuilt.asset_maps, prebuilt.has_page_islands
         )
-        if app.has_page_islands and not prebuilt.has_page_islands:
-            self.build_page_islands()
-        if app.has_studio_apps and not prebuilt.has_studio_apps:
-            self.build_studio_apps(app)
+        if not skip_frontend:
+            if app.has_page_islands and not prebuilt.has_page_islands:
+                self.build_page_islands()
+            if app.has_studio_apps and not prebuilt.has_studio_apps:
+                self.build_studio_apps(app)
         return True
 
     def build_app_from_source(self, app: "App") -> None:

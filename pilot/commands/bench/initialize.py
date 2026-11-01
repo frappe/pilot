@@ -20,12 +20,19 @@ class InitCommand(Command):
     commit: Annotated[
         str, Arg(help="Git commit hash to checkout for the framework app, on its bench.toml branch.")
     ] = ""
+    skip_frontend: Annotated[
+        bool,
+        Arg(
+            help="Skip frontend setup: no Node.js dependencies, no asset builds from source. "
+            "Downloads prebuilt assets when published. For test jobs that never serve web pages."
+        ),
+    ] = False
 
     def run(self) -> None:
         if self.no_dev:
             self.bench.config.install_dev_extra = False
             self.bench.config.write(self.bench.path)
-        self.bench.initialize(commit=self.commit, on_progress=self.report)
+        self.bench.initialize(commit=self.commit, skip_frontend=self.skip_frontend, on_progress=self.report)
         self.report("\nBench initialised. Next steps:")
         self.report("  pilot new-site site1.example.com   # create your first site")
         self.report("  pilot start                        # start all processes")
