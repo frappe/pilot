@@ -350,11 +350,12 @@ class Site:
         on_progress: Callable[[str], None] = lambda message: None,
         *,
         schedule_backups: bool = True,
+        skip_assets: bool = False,
     ) -> "Site":
         """Create a site, install apps, reload nginx, and issue TLS if needed."""
         from pilot.core.site.provisioning import SiteProvisioner
 
-        return SiteProvisioner(bench, name, apps, admin_password, db_type).provision(
+        return SiteProvisioner(bench, name, apps, admin_password, db_type, skip_assets).provision(
             on_progress, schedule_backups=schedule_backups
         )
 
