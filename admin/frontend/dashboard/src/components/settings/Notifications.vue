@@ -267,9 +267,7 @@ onMounted(async () => {
     </div>
 
     <details class="group">
-      <summary
-        class="flex items-center gap-1.5 text-ink-gray-6 cursor-pointer select-none"
-      >
+      <summary class="flex items-center gap-1.5 text-ink-gray-6 cursor-pointer select-none">
         <span class="size-4 transition-transform group-open:rotate-90 lucide-chevron-right"></span>
         Advanced
       </summary>
