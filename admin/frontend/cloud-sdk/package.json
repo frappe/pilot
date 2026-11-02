@@ -1,6 +1,6 @@
 {
   "name": "@frappe/cloud-sdk",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "API client and dialog for Frappe Cloud site settings",
   "repository": {
     "type": "git",
