@@ -15,18 +15,13 @@ import { useRouter } from 'vue-router'
 
 import { databaseApi } from '@/api/database'
 import Scrollbar from '@/components/common/Scrollbar.vue'
-import type {
-  DatabaseConfigurationSnapshot,
-  DatabaseVariable,
-  MariaDBVariableDoc,
-} from '@/types/database'
+import type { DatabaseConfigurationSnapshot, DatabaseVariable } from '@/types/database'
 import { errorMessage } from '@/utils/error'
 import { openTaskDetailPage } from '@/utils/taskRoute'
 
 const router = useRouter()
 
 const loading = ref(false)
-const docs = ref<Record<string, MariaDBVariableDoc>>({})
 const snapshot = ref<DatabaseConfigurationSnapshot | null>(null)
 const error = ref('')
 const search = ref('')
@@ -44,17 +39,17 @@ const draftNumber = computed<string | number>({
   set: (value) => (draftValue.value = value),
 })
 
-const groups = ['InnoDB', 'Replication and Binlog', 'Performance Schema', 'Others']
-
-const groupOf = (variable: DatabaseVariable) => {
-  const group = docs.value[variable.name]?.group ?? variable.section
-
-  return groups.includes(group) ? group : 'Others'
+const tabs: Record<string, string> = {
+  InnoDB: 'InnoDB',
+  'Binary logging and replication': 'Replication and Binlog',
+  'Performance Schema': 'Performance Schema',
 }
 
+const tabOf = (variable: DatabaseVariable) => tabs[variable.section] ?? 'Others'
+
 const sectionNames = computed(() =>
-  groups.filter((group) =>
-    (snapshot.value?.variables || []).some((variable) => groupOf(variable) === group),
+  [...Object.values(tabs), 'Others'].filter((tab) =>
+    (snapshot.value?.variables || []).some((variable) => tabOf(variable) === tab),
   ),
 )
 
@@ -79,8 +74,8 @@ watch(search, (query) => {
   if (!query.trim()) return
 
   const variables = snapshot.value?.variables || []
-  const withMatches = ['Others', ...sectionNames.value].find((group) =>
-    variables.some((variable) => groupOf(variable) === group && matches(variable, query)),
+  const withMatches = sectionNames.value.find((name) =>
+    variables.some((variable) => tabOf(variable) === name && matches(variable, query)),
   )
 
   if (withMatches) section.value = withMatches
@@ -88,7 +83,7 @@ watch(search, (query) => {
 
 const rows = computed(() =>
   (snapshot.value?.variables || []).filter(
-    (variable) => groupOf(variable) === section.value && matches(variable, search.value),
+    (variable) => tabOf(variable) === section.value && matches(variable, search.value),
   ),
 )
 
@@ -171,25 +166,6 @@ const formatConstraint = (value: DatabaseVariable['value'], unit: string) => {
   return `${value} ${unit}`
 }
 
-const formatDefault = (variable: DatabaseVariable) => {
-  const doc = docs.value[variable.name]
-
-  if (!doc || doc.default === null) return doc?.default_note ? 'Varies' : '-'
-
-  return formatValue({ ...variable, value: doc.default, supported: true })
-}
-
-const isChanged = (variable: DatabaseVariable) => {
-  const doc = docs.value[variable.name]
-
-  if (!doc || doc.default === null || doc.default_note || variable.value === null) return false
-  if (typeof doc.default === 'string') {
-    return String(variable.value).toUpperCase() !== doc.default.toUpperCase()
-  }
-
-  return Number(variable.value) !== Number(doc.default)
-}
-
 const openEditor = (variable: DatabaseVariable) => {
   if (!variable.editable || !variable.edit) return
   saveError.value = ''
@@ -236,13 +212,7 @@ const load = async () => {
   }
 }
 
-onMounted(async () => {
-  load()
-
-  const { default: variables } = await import('@/data/mariadbVariables.json')
-
-  docs.value = variables
-})
+onMounted(load)
 </script>
 
 <template>
@@ -293,8 +263,7 @@ onMounted(async () => {
           class="top-0 z-10 sticky flex items-center gap-3 bg-surface-elevation-1 mr-4 border-b border-outline-gray-2 h-8 text-ink-gray-5 text-sm"
         >
           <span>Variable</span>
-          <span class="ml-auto w-24 text-right">Default</span>
-          <span class="w-28 text-right">Value</span>
+          <span class="ml-auto w-28 text-right">Value</span>
           <span v-if="snapshot.editable" class="w-7" />
         </div>
 
@@ -305,23 +274,10 @@ onMounted(async () => {
             </code>
 
             <span
-              class="ml-auto w-24 text-ink-gray-5 text-sm text-right truncate tabular-nums shrink-0"
-              :title="docs[variable.name]?.default_note"
-            >
-              {{ formatDefault(variable) }}
-            </span>
-
-            <span
-              class="flex justify-end items-center gap-1.5 w-28 text-sm tabular-nums shrink-0"
+              class="ml-auto w-28 text-sm text-right truncate tabular-nums shrink-0"
               :class="variable.supported ? 'text-ink-gray-8' : 'text-ink-gray-5'"
             >
-              <span
-                v-if="isChanged(variable)"
-                class="bg-surface-blue-5 rounded-full size-1.5 shrink-0"
-                role="img"
-                aria-label="Changed from default"
-              />
-              <span class="truncate">{{ formatValue(variable) }}</span>
+              {{ formatValue(variable) }}
             </span>
 
             <Button
