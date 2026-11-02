@@ -304,8 +304,8 @@ const stats = computed(() => {
       label: 'Database memory',
       icon: 'lucide-memory-stick',
       available: Boolean(memoryShare.value?.available),
-      amount: memoryBreakdown.value ? String(memoryPercent.value) : '-',
-      unit: memoryBreakdown.value ? '%' : '',
+      amount: memoryShare.value?.available ? String(memoryPercent.value) : '-',
+      unit: memoryShare.value?.available ? '%' : '',
       note: total ? `${formatGB((total * memoryPercent.value) / 100)} of ${formatGB(total)}` : '',
       percent: memoryBreakdown.value ? memoryPercent.value : null,
       detail: total ? `Apps get ${formatGB((total * (100 - memoryPercent.value)) / 100)}` : '',
@@ -658,43 +658,39 @@ onMounted(load)
         apps.
       </p>
 
-      <div
-        class="flex items-center gap-4 p-4 border border-outline-gray-1.5 rounded-6 tabular-nums"
-      >
-        <div class="contents">
-          <div class="relative place-items-center grid size-28 shrink-0">
-            <svg
-              viewBox="0 0 36 36"
-              class="absolute inset-0 -rotate-90"
-              fill="none"
-              stroke-width="2.5"
-              aria-hidden="true"
-            >
-              <circle cx="18" cy="18" r="15.9155" class="stroke-ink-gray-3" />
+      <div class="flex items-center gap-5 bg-surface-gray-1 p-4 rounded-6 tabular-nums">
+        <div class="relative place-items-center grid size-24 shrink-0">
+          <svg
+            viewBox="0 0 36 36"
+            class="absolute inset-0 -rotate-90"
+            fill="none"
+            stroke-width="2.5"
+            aria-hidden="true"
+          >
+            <circle cx="18" cy="18" r="15.9155" class="stroke-ink-gray-3" />
 
-              <circle
-                cx="18"
-                cy="18"
-                r="15.9155"
-                :stroke-dasharray="`${memorySplitPercent} 100`"
-                stroke-linecap="round"
-                class="stroke-ink-gray-8 transition-all"
-              />
-            </svg>
+            <circle
+              cx="18"
+              cy="18"
+              r="15.9155"
+              :stroke-dasharray="`${memorySplitPercent} 100`"
+              stroke-linecap="round"
+              class="stroke-ink-gray-8 transition-all"
+            />
+          </svg>
 
-            <span class="flex flex-col items-center gap-0.5">
-              <span class="text-lg-semibold text-ink-gray-9">{{ memorySplitPercent }}%</span>
-              <span class="text-ink-gray-5 text-xs">memory</span>
-            </span>
-          </div>
+          <span class="flex flex-col items-center gap-0.5">
+            <span class="text-base-medium text-ink-gray-9">{{ memorySplitPercent }}%</span>
+            <span class="text-ink-gray-5 text-xs">memory</span>
+          </span>
         </div>
 
+        <span class="self-stretch border-l border-outline-gray-2" />
+
         <div class="flex flex-col flex-1 gap-3 min-w-0">
-          <div class="flex gap-3">
+          <div class="flex gap-10">
             <template v-for="side in memorySplitReadout" :key="side.label">
-              <div
-                class="flex flex-col gap-1.5 dark:bg-surface-gray-1 border border-outline-gray-1 dark:border-transparent px-3 py-2.5 rounded-5 whitespace-nowrap grow"
-              >
+              <div class="flex flex-col gap-1.5 whitespace-nowrap">
                 <span class="flex items-center gap-1.5 text-ink-gray-5 text-sm">
                   <span class="bg-current rounded-full size-2 shrink-0" :class="side.color" />
                   {{ side.label }}
