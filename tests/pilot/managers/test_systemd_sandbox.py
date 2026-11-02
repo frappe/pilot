@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from pilot.config.sandbox import SandboxConfig
+from pilot.managers import systemd_user
 from pilot.managers.processes.definitions import ProcessDefinition
 from pilot.managers.processes.systemd_render import SystemdRenderer, get_sandbox_properties
 
@@ -102,3 +104,29 @@ def test_extra_paths_expand_home_and_quote_spaces() -> None:
 
 def test_extra_hidden_paths_apply_without_the_filesystem_group() -> None:
     assert _properties(filesystem=False, inaccessible_paths=["/srv/keys"]) >= {"InaccessiblePaths=/srv/keys"}
+
+
+@pytest.mark.parametrize(
+    "exit_code, stderr, expected",
+    [(0, "", ""), (1, "Unknown assignment: PrivateUsers=yes\n", "Unknown assignment: PrivateUsers=yes")],
+)
+def test_the_probe_reports_why_a_trial_unit_failed(
+    monkeypatch: pytest.MonkeyPatch, exit_code: int, stderr: str, expected: str
+) -> None:
+    trials: list[list[str]] = []
+
+    def trial(argv, **_kwargs):
+        trials.append(argv)
+        return SimpleNamespace(returncode=exit_code, stderr=stderr)
+
+    monkeypatch.setattr(systemd_user.shutil, "which", lambda _name: "/usr/bin/systemd-run")
+    monkeypatch.setattr(systemd_user.subprocess, "run", trial)
+
+    assert systemd_user.get_sandbox_error(["NoNewPrivileges=yes", "PrivateUsers=yes"]) == expected
+    assert trials[0][:2] == ["systemd-run", "--user"]
+    assert trials[0][-5:] == ["-p", "NoNewPrivileges=yes", "-p", "PrivateUsers=yes", "true"]
+
+
+def test_the_probe_needs_systemd_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(systemd_user.shutil, "which", lambda _name: None)
+    assert "systemd-run" in systemd_user.get_sandbox_error(["NoNewPrivileges=yes"])
