@@ -191,22 +191,27 @@ onMounted(async () => {
       </a><template v-else>Central</template>, so alerts also show there.
     </p>
 
-    <div class="-mt-3.5 divide-y divide-outline-alpha-gray-1">
-      <div class="flex justify-between items-center gap-4 py-3.5">
+    <div class="-mx-3 -mt-3.5 inset-dividers">
+      <div
+        class="flex justify-between items-center gap-4 px-3 py-3.5 rounded-5 transition-colors cursor-pointer hover:bg-surface-gray-2"
+        @click="siteUptime = !siteUptime"
+      >
         <div class="flex flex-col gap-1">
           <p class="text-base-medium text-ink-gray-8">Site uptime</p>
+
           <p class="text-ink-gray-6 text-p-sm">
             Alert when a site stops responding to its uptime check.
           </p>
         </div>
 
-        <Switch v-model="siteUptime" />
+        <Switch v-model="siteUptime" @click.stop />
       </div>
 
       <div
         v-for="alert in RESOURCE_ALERTS"
         :key="alert.key"
-        class="flex justify-between items-center gap-4 py-3.5"
+        class="flex justify-between items-center gap-4 px-3 py-3.5 rounded-5 transition-colors cursor-pointer hover:bg-surface-gray-2"
+        @click="setEnabled(alert.key, !enabled[alert.key])"
       >
         <div class="flex flex-col gap-1">
           <p class="text-base-medium text-ink-gray-8">{{ alert.label }}</p>
@@ -221,6 +226,7 @@ onMounted(async () => {
               size="xs"
               class="-my-0.5 w-14"
               :aria-label="`${alert.label} limit`"
+              @click.stop
             />
             %
           </p>
@@ -230,6 +236,7 @@ onMounted(async () => {
 
         <Switch
           :model-value="enabled[alert.key]"
+          @click.stop
           @update:model-value="(on: boolean) => setEnabled(alert.key, on)"
         />
       </div>
@@ -246,6 +253,7 @@ onMounted(async () => {
 
       <TagsInput
         v-model="recipients"
+        variant="outline"
         placeholder="Add an email"
         :is-invalid="(address) => !isAddress(address)"
       />

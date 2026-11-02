@@ -67,7 +67,7 @@ onMounted(async () => {
   <template v-else>
     <ErrorMessage v-if="error" :message="error" class="mb-4" />
 
-    <div class="-mx-3 -mt-3.5 divide-y divide-outline-alpha-gray-1 hover-merges-dividers">
+    <div class="-mx-3 -mt-3.5 inset-dividers">
       <SettingsRow
         label="Allow developer mode"
         description="Enables per-site developer mode and code editor."

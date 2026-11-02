@@ -122,7 +122,10 @@ onMounted(async () => {
       and the longest timeout applies to every queue.
     </p>
 
-    <form class="bg-surface-gray-1 rounded-7 overflow-hidden" @submit.prevent="save">
+    <form
+      class="dark:bg-surface-gray-1 border border-outline-gray-1 dark:border-transparent rounded-7 overflow-hidden"
+      @submit.prevent="save"
+    >
       <div
         class="items-center gap-x-3 gap-y-2 grid grid-cols-[4rem_1fr_5.5rem_2rem] sm:grid-cols-[6rem_1fr_9rem_2rem] p-4"
       >

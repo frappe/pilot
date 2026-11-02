@@ -301,7 +301,7 @@ onMounted(async () => {
 
     <div
       v-if="centralAvailable && !showTokenForm"
-      class="-mx-3 divide-y divide-outline-alpha-gray-1 hover-merges-dividers"
+      class="-mx-3 inset-dividers"
     >
       <SettingsRow
         label="Connect through Frappe Cloud"

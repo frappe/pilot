@@ -16,7 +16,7 @@ const configurationSection = DATABASE_SECTIONS.find((section) => section.id === 
     <button
       v-if="configurationSection"
       type="button"
-      class="group flex justify-between items-center gap-3 py-3 text-left"
+      class="group flex justify-between items-center gap-3 px-3 py-3 text-left rounded-5 transition-colors cursor-pointer hover:bg-surface-gray-2"
       @click="openSection = configurationSection"
     >
       <span class="flex flex-col gap-1 min-w-0">

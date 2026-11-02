@@ -34,7 +34,7 @@ export const SETTINGS_GROUPS: { label: string; pages: SettingsPage[] }[] = [
   {
     label: 'Access',
     pages: [
-      { id: 'security', label: 'Security', icon: 'lucide-shield' },
+      { id: 'security', label: 'Security', icon: 'lucide-shield-keyhole' },
       { id: 'sessions', label: 'Sessions', icon: 'lucide-monitor' },
     ],
   },

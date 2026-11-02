@@ -93,7 +93,7 @@ onMounted(async () => {
             v-for="tile in hardware"
             v-else
             :key="tile.label"
-            class="flex items-center gap-3 bg-surface-gray-1 p-3 rounded-7"
+            class="flex items-center gap-3 dark:bg-surface-gray-1 border border-outline-gray-1 dark:border-transparent p-3 rounded-7"
           >
             <span
               class="place-items-center grid bg-surface-gray-3 dark:bg-surface-gray-2 rounded-5 size-10 shrink-0"

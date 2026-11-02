@@ -304,8 +304,8 @@ const stats = computed(() => {
       label: 'Database memory',
       icon: 'lucide-memory-stick',
       available: Boolean(memoryShare.value?.available),
-      amount: String(memoryPercent.value),
-      unit: '%',
+      amount: memoryBreakdown.value ? String(memoryPercent.value) : '-',
+      unit: memoryBreakdown.value ? '%' : '',
       note: total ? `${formatGB((total * memoryPercent.value) / 100)} of ${formatGB(total)}` : '',
       percent: memoryBreakdown.value ? memoryPercent.value : null,
       detail: total ? `Apps get ${formatGB((total * (100 - memoryPercent.value)) / 100)}` : '',
@@ -485,7 +485,7 @@ onMounted(load)
 
     <Alert
       v-if="showManagedMariaDBDisclaimer"
-      title="Database actions are available only for Pilot-managed MariaDB instances."
+      title="Database actions only work on MariaDB that Pilot manages."
       :dismissible="false"
     />
 
@@ -494,7 +494,7 @@ onMounted(load)
         <section
           v-for="stat in stats"
           :key="stat.key"
-          class="flex flex-col gap-3 bg-surface-gray-1 p-4 rounded-6"
+          class="flex flex-col gap-3 dark:bg-surface-gray-1 border border-outline-gray-1 dark:border-transparent p-4 rounded-6"
         >
           <header class="flex justify-between items-center gap-2 h-5 text-sm">
             <h4 class="flex items-center gap-2 min-w-0 text-ink-gray-8">
@@ -588,8 +588,15 @@ onMounted(load)
         </section>
       </div>
 
-      <div class="flex flex-col divide-y divide-outline-alpha-gray-1">
-        <div class="flex justify-between items-center gap-3 py-3">
+      <div class="flex flex-col -mx-3 inset-dividers">
+        <div
+          class="flex justify-between items-center gap-3 px-3 py-3 rounded-5 transition-colors cursor-pointer hover:bg-surface-gray-2"
+          @click="
+            action('performance_schema').available &&
+              !activeAction &&
+              confirmPerformanceSchema(!action('performance_schema').enabled)
+          "
+        >
           <div class="flex flex-col gap-1 min-w-0">
             <span class="text-base text-ink-gray-8">Performance Schema</span>
 
@@ -602,11 +609,12 @@ onMounted(load)
             :model-value="Boolean(action('performance_schema').enabled)"
             :disabled="!action('performance_schema').available || Boolean(activeAction)"
             aria-label="Performance Schema"
+            @click.stop
             @update:model-value="confirmPerformanceSchema"
           />
         </div>
 
-        <div class="flex justify-between items-center gap-3 py-3">
+        <div class="flex justify-between items-center gap-3 px-3 py-3">
           <div class="flex flex-col gap-1 min-w-0">
             <span class="text-base text-ink-gray-8">Binary logs</span>
             <span class="text-ink-gray-6 text-p-sm">Retention, size limit and purging.</span>
@@ -619,7 +627,7 @@ onMounted(load)
           />
         </div>
 
-        <div class="flex justify-between items-center gap-3 py-3">
+        <div class="flex justify-between items-center gap-3 px-3 py-3">
           <div class="flex flex-col gap-1 min-w-0">
             <span class="text-base text-ink-gray-8">MariaDB service</span>
 
@@ -685,7 +693,7 @@ onMounted(load)
           <div class="flex gap-3">
             <template v-for="side in memorySplitReadout" :key="side.label">
               <div
-                class="flex flex-col gap-1.5 bg-surface-gray-1 px-3 py-2.5 rounded-5 whitespace-nowrap grow"
+                class="flex flex-col gap-1.5 dark:bg-surface-gray-1 border border-outline-gray-1 dark:border-transparent px-3 py-2.5 rounded-5 whitespace-nowrap grow"
               >
                 <span class="flex items-center gap-1.5 text-ink-gray-5 text-sm">
                   <span class="bg-current rounded-full size-2 shrink-0" :class="side.color" />
