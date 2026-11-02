@@ -91,9 +91,6 @@ class PythonAssetBuilder:
             app, skip_frontend=skip_frontend
         ):
             return
-        if skip_frontend and app.config.name == "frappe":
-            # The download missed: install JS packages, then build from source like normal.
-            NodePackages(app.path).ensure_installed()
 
         with app.record_lockfiles_on_failure():
             self.build_app_from_source(app)

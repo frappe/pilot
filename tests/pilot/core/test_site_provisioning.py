@@ -319,6 +319,5 @@ def test_skip_assets_controls_the_post_provisioning_build(
 def test_skip_assets_refuses_a_production_bench(tmp_path: Path) -> None:
     from pilot.exceptions import BenchError
 
-    provisioner = _provisioner(tmp_path, skip_assets=True)
     with pytest.raises(BenchError, match="production bench"):
-        provisioner.provision(lambda _: None)
+        _provisioner(tmp_path, skip_assets=True)
