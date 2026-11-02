@@ -2,11 +2,40 @@ from __future__ import annotations
 
 import re
 import shlex
+from pathlib import Path
 
+from pilot.config.sandbox import SandboxConfig
 from pilot.managers.processes.base import ServiceRenderer, override
 from pilot.managers.processes.local import ProcessDefinition
 
 _SAFE_ARGUMENT = re.compile(r"[\w@%+=:,./-]+", re.ASCII)
+
+# NoNewPrivileges keeps sudo out; the mount directives need PrivateUsers in a --user unit.
+_SANDBOX_BASELINE = ["NoNewPrivileges=yes", "PrivateUsers=yes"]
+_SANDBOX_GROUPS = {
+    "syscalls": [
+        "SystemCallFilter=@system-service",
+        "SystemCallArchitectures=native",
+        "SystemCallErrorNumber=EPERM",
+    ],
+    "kernel": [
+        "ProtectKernelTunables=yes",
+        "ProtectKernelModules=yes",
+        "ProtectKernelLogs=yes",
+        "ProtectControlGroups=yes",
+        "ProtectClock=yes",
+        "ProtectHostname=yes",
+    ],
+    "devices": ["PrivateDevices=yes"],
+    "namespaces": [
+        "RestrictNamespaces=yes",
+        "RestrictRealtime=yes",
+        "RestrictSUIDSGID=yes",
+        "LockPersonality=yes",
+    ],
+    "network": ["RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK"],
+}
+_HIDDEN_HOME_PATHS = (".ssh", ".config/systemd")
 
 
 def _exec(argv: list[str]) -> str:
@@ -23,6 +52,37 @@ def _quote(argument: str) -> str:
     return argument.replace("%", "%%").replace("$", "$$")
 
 
+def get_sandbox_properties(sandbox: SandboxConfig, bench_path: Path, benches_dir: Path) -> list[str]:
+    """systemd.exec directives for the enabled sandbox groups; empty when the sandbox is off."""
+    if not sandbox.enabled:
+        return []
+    properties = list(_SANDBOX_BASELINE)
+    for group, directives in _SANDBOX_GROUPS.items():
+        if getattr(sandbox, group):
+            properties += directives
+    hidden = [str(Path(path).expanduser()) for path in sandbox.inaccessible_paths]
+    if sandbox.filesystem:
+        # "-" skips a built-in path the host lacks; the user's own paths must exist.
+        hidden = [*(f"-{Path.home() / path}" for path in _HIDDEN_HOME_PATHS), *hidden]
+        # The tmpfs hides the neighbouring benches; the bind brings this one back.
+        writable = [bench_path, *(Path(path).expanduser() for path in sandbox.writable_paths)]
+        properties += [
+            "ProtectSystem=strict",
+            "ProtectHome=read-only",
+            "PrivateTmp=yes",
+            f"TemporaryFileSystem={_quote(f'{benches_dir}:ro')}",
+            f"BindPaths={_quote(str(bench_path))}",
+            f"ReadWritePaths={_join_paths(writable)}",
+        ]
+    if hidden:
+        properties.append(f"InaccessiblePaths={_join_paths(hidden)}")
+    return properties
+
+
+def _join_paths(paths: list[Path] | list[str]) -> str:
+    return " ".join(_quote(str(path)) for path in paths)
+
+
 def _render_env(env: dict) -> str:
     lines = []
     for key, value in env.items():
@@ -34,9 +94,12 @@ def _render_env(env: dict) -> str:
 class SystemdRenderer(ServiceRenderer):
     """Builds systemd --user unit/socket/target text for a bench."""
 
-    def __init__(self, bench_name: str, database_service: str = "") -> None:
+    def __init__(
+        self, bench_name: str, database_service: str = "", sandbox_properties: list[str] | None = None
+    ) -> None:
         super().__init__(bench_name)
         self.database_service = database_service
+        self.sandbox_properties = sandbox_properties or []
 
     @override
     def render(self, pd: ProcessDefinition) -> str:
@@ -48,6 +111,7 @@ class SystemdRenderer(ServiceRenderer):
         post = f"ExecStopPost={_exec(pd.post_run)}\n" if pd.post_run else ""
         restart = "on-failure" if pd.restart_on_failure else "no"
         remove_socket = f"ExecStartPre=/bin/rm -f {pd.socket_file}\n" if pd.socket_file else ""
+        sandbox = "".join(f"{line}\n" for line in self.sandbox_properties)
         return (
             f"[Unit]\n"
             f"Description={self.bench_name} {pd.name}\n"
@@ -61,7 +125,7 @@ class SystemdRenderer(ServiceRenderer):
             f"{post}"
             f"Restart={restart}\n"
             f"LimitNOFILE=65535\n"
-            f"{stop}{kill_mode}"
+            f"{stop}{kill_mode}{sandbox}"
             f"StandardOutput=append:{pd.log_file}\n"
             f"StandardError=append:{pd.log_file}.error.log\n"
         )
