@@ -129,7 +129,7 @@ When you tag a commit after its push, its files stay from then on, if the workfl
 | Operation | Prebuilt assets |
 |---|---|
 | Install an app (`pilot get-app`, Admin) | Yes. `pilot get-app --skip-assets` skips all asset setup. |
-| Initialize a bench (`pilot init`, framework app) | Yes. With `--skip-frontend` it only downloads, never builds. |
+| Initialize a bench (`pilot init`, framework app) | Yes. With `--skip-frontend` it still downloads, but builds from source when no archive is published. |
 | Update the bench or an app | Yes |
 | Switch an app's branch | Yes |
 | Create a site when an app has no built assets yet | Yes, but `pilot new-site --skip-assets` skips it. |

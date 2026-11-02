@@ -27,6 +27,8 @@ class SiteProvisioner:
         db_type: str | None = None,
         skip_assets: bool = False,
     ) -> None:
+        if skip_assets and bench.config.production.enabled:
+            raise BenchError("Cannot skip assets on a production bench.")
         self.bench = bench
         self.name = name
         self.apps = apps
@@ -35,8 +37,6 @@ class SiteProvisioner:
         self.skip_assets = skip_assets
 
     def provision(self, on_progress: Callable[[str], None], *, schedule_backups: bool = True) -> "Site":
-        if self.skip_assets and self.bench.config.production.enabled:
-            raise BenchError("Cannot skip assets on a production bench.")
         with SiteCreationOwner(self.bench.path, self.name).locked() as owner:
             via_wildcard = validate_new_site(self.bench, self.name, self.apps)
             self.bench.site_aliases.release(self.name)

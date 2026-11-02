@@ -119,6 +119,11 @@ class PythonAssetBuilder:
                 self.build_page_islands()
             if app.has_studio_apps and not prebuilt.has_studio_apps:
                 self.build_studio_apps(app)
+        else:
+            if app.has_page_islands and not prebuilt.has_page_islands:
+                print(f"  Skipping page-island build for {app.config.name} (frontend skipped).")
+            if app.has_studio_apps and not prebuilt.has_studio_apps:
+                print(f"  Skipping Studio app build for {app.config.name} (frontend skipped).")
         return True
 
     def build_app_from_source(self, app: "App") -> None:

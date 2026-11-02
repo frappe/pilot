@@ -62,8 +62,7 @@ class BenchInitializer:
             ("Install Node.js", python_env_manager.install_node),
         ]
         if not self.skip_frontend:
-            # A frontend-skipping run installs JS packages on demand: the asset
-            # build below ensures them when it falls back to a source build.
+            # Skipped with --skip-frontend: the asset build installs them on fallback.
             steps.append(("Install Node.js dependencies", python_env_manager.install_node_dependencies))
         steps.extend(
             [

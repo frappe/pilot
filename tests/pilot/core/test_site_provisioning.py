@@ -298,7 +298,9 @@ def test_the_sender_name_turns_dashes_and_underscores_into_spaces() -> None:
 def test_skip_assets_controls_the_post_provisioning_build(
     tmp_path: Path, skip_assets: bool, builds: int
 ) -> None:
-    provisioner = _provisioner(tmp_path, skip_assets=skip_assets)
+    data = {**_BASE_DATA, "production": {"enabled": False}}
+    bench = Bench(BenchConfig._from_dict(data), tmp_path)
+    provisioner = SiteProvisioner(bench, "site1.example.com", ["frappe"], "admin", "mariadb", skip_assets)
 
     with (
         patch.object(provisioner, "install_apps"),

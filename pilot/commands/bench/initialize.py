@@ -23,7 +23,7 @@ class InitCommand(Command):
     skip_frontend: Annotated[
         bool,
         Arg(
-            help="Skip frontend work: no Node.js dependency installs, no asset builds from source. "
+            help="Skip frontend work: no asset builds from source. "
             "Downloads prebuilt assets when published. For test jobs that never serve web pages."
         ),
     ] = False
