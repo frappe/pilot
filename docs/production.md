@@ -123,6 +123,32 @@ The Admin backend runs behind nginx in production. The public Admin port and the
 
 When using Central or another upstream proxy, keep the local Admin service private and set TLS according to where HTTPS terminates.
 
+## Sandbox
+
+`[production.sandbox]` adds `systemd.exec` sandbox directives to the bench's workload units: web, socketio, workers, redis and app processes. It needs `process_manager = "systemd"`. The admin and central bootstrap units stay unsandboxed because the admin runs the nginx and certbot sudo commands.
+
+Every sandboxed unit gets `NoNewPrivileges=yes`, so sudo fails, and `PrivateUsers=yes`, which the mount directives need in a user unit. Each group adds more directives:
+
+| Group | Directives | Effect |
+|---|---|---|
+| `filesystem` | `ProtectSystem=strict`, `ProtectHome=read-only`, `PrivateTmp`, `TemporaryFileSystem=<benches dir>:ro`, `BindPaths=<bench>`, `ReadWritePaths=<bench>`, `InaccessiblePaths=~/.ssh ~/.config/systemd` | Writes only inside the bench. The neighbouring benches and `common_config.toml` are hidden. |
+| `syscalls` | `SystemCallFilter=@system-service`, `SystemCallArchitectures=native`, `SystemCallErrorNumber=EPERM` | Blocks ptrace, mount, module loading and other privileged syscalls. |
+| `kernel` | `ProtectKernelTunables`, `ProtectKernelModules`, `ProtectKernelLogs`, `ProtectControlGroups`, `ProtectClock`, `ProtectHostname` | Kernel settings, logs, cgroups, the clock and the hostname are read-only. |
+| `devices` | `PrivateDevices` | Only pseudo devices such as `/dev/null` are visible. |
+| `namespaces` | `RestrictNamespaces`, `RestrictRealtime`, `RestrictSUIDSGID`, `LockPersonality` | No new namespaces, realtime scheduling or setuid files. |
+| `network` | `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK` | Only local and IP sockets. |
+
+Before Pilot replaces the units, it starts a trial unit with the same directives. When the host cannot start it, setup fails with the systemd error and the current units stay. Switch off the failing group, or set `enabled = false`.
+
+With the sandbox on:
+
+- sudo fails in workload processes and app hooks.
+- A process can write only inside its bench and the paths in `writable_paths`.
+- Each unit has its own `/tmp`, so web and workers no longer share files there.
+- A bench cannot read the other benches in its benches directory.
+
+All benches still run as one user. Code running in one bench can still read the files and environment of another bench's process through `/proc/<pid>`, signal its processes, reach its redis on `127.0.0.1` and reach its loopback ports. Put workloads that must not reach each other under separate host users.
+
 ## Firewall And WAF
 
 Firewall and WAF config are bench settings. Settings apply code should delegate to core/managers so API routes do not perform system orchestration directly.

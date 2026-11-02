@@ -49,7 +49,7 @@ A `command` runs in the app directory, `apps/<app>`. A relative `working_dir` is
 
 `pre_run` runs on every start, so keep it idempotent. A shell line needs an explicit shell: `pre_run = ["bash", "-c", "test -x ./stalwart || ./scripts/install.sh"]`. On systemd, `pre_run` counts toward the 90 second start timeout.
 
-systemd runs the hooks as `ExecStartPre` and `ExecStopPost`. Supervisor and the dev runner run a process with hooks inside `sh`, which runs `post_run` after the process exits and keeps the exit code of the process, or of `pre_run` when it fails.
+systemd runs the hooks as `ExecStartPre` and `ExecStopPost`. With [`[production.sandbox]`](production.md#sandbox) on, the command and both hooks run in the sandbox: they can write only inside the bench, and sudo fails. Supervisor and the dev runner run a process with hooks inside `sh`, which runs `post_run` after the process exits and keeps the exit code of the process, or of `pre_run` when it fails.
 
 ## When they run
 
