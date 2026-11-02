@@ -5,6 +5,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from pilot.config.common_site_config import update_common_site_config
+from pilot.exceptions import BenchError
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -24,6 +25,8 @@ class BenchInitializer:
         self._created_directories: list[str] = []
 
     def run(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        if self.skip_frontend and self.bench.config.production.enabled:
+            raise BenchError("Cannot skip frontend setup on a production bench.")
         marker = self.bench.path / ".initializing"
         if not self.bench.is_initialized:
             marker.touch(mode=0o600)
