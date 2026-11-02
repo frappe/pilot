@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.config import SiteConfig
-from pilot.exceptions import CronError
+from pilot.exceptions import BenchError, CronError
 from pilot.managers.cron import CronManager
 from pilot.utils import run_command
 
@@ -104,6 +104,18 @@ class Site:
             yield
         finally:
             self.set_maintenance_settings(original)
+
+    def ensure_exists(self) -> None:
+        if not self.exists:
+            raise BenchError(f"Site '{self.config.name}' does not exist in this bench.")
+
+    @contextmanager
+    def reserve(self) -> Iterator[None]:
+        """Refuse task submissions for this site until the block exits."""
+        from pilot.internal.tasks.store import TaskStore
+
+        with TaskStore(self.bench.path).reserve(f"site:{self.config.name.lower()}"):
+            yield
 
     def _frappe_call(self, *args: str) -> list[str]:
         """Build a frappe bench_helper command."""
@@ -273,6 +285,7 @@ class Site:
         from pilot.core.site.commands import SiteCommands
         from pilot.managers.nginx import NginxManager
 
+        self.ensure_exists()
         provider_domains = self._provider_domains()
         has_processes = self.bench.processes.has_declarations(self.active_apps())
         cmd = [*self.bench.frappe_call, "frappe", "drop-site", self.config.name]

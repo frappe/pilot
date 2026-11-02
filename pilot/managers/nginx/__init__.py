@@ -12,6 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
+from pilot.config.common import CommonConfig
 from pilot.config.proxy import CLOUDFLARE_NETWORKS
 from pilot.config.waf import parse_nginx_size
 from pilot.exceptions import CommandError
@@ -50,6 +51,7 @@ _SERVER_TEMPLATE = Template.from_path(_TEMPLATES / "server.conf.template")
 _ERROR_PAGE_TEMPLATE = Template.from_path(_TEMPLATES / "error_page.html.template")
 _STARTUP_PAGE_TEMPLATE = Template.from_path(_TEMPLATES / "startup_page.html.template")
 _RECOVERY_TEMPLATE = Template.from_path(_TEMPLATES / "recovery.conf.template")
+_EMBED_TEMPLATE = Template.from_path(_TEMPLATES / "embed.conf.template")
 
 _CORS_PATHS = ["/api/v1/health", "/api/v1/bootstrap", "/api/v1/setup/actions/finish"]
 
@@ -206,6 +208,7 @@ class NginxConfigRenderer:
             https_port=nginx.https_port,
             error_dir=error_dir,
             error_codes=list(ERROR_PAGES),
+            cloudflare_networks=CLOUDFLARE_NETWORKS if self.bench.config.proxy.cloudflare else (),
         )
 
     def get_proxy_servers(self) -> list[str]:
@@ -267,7 +270,7 @@ class NginxConfigRenderer:
             proxy_protocol=client_ip_source == "proxy_protocol_v2",
             trusted_proxy=client_ip_source != "direct",
             forwarded_for=(
-                "$proxy_protocol_addr"
+                "$pilot_client_addr"
                 if client_ip_source == "proxy_protocol_v2"
                 else "$http_x_forwarded_for"
                 if client_ip_source == "x_forwarded_for"
@@ -299,7 +302,7 @@ class NginxConfigRenderer:
             proxy_protocol=client_ip_source == "proxy_protocol_v2",
             trusted_proxy=client_ip_source != "direct",
             forwarded_for=(
-                "$proxy_protocol_addr"
+                "$pilot_client_addr"
                 if client_ip_source == "proxy_protocol_v2"
                 else "$http_x_forwarded_for"
                 if client_ip_source == "x_forwarded_for"
@@ -347,6 +350,7 @@ class NginxConfigRenderer:
             "waf_rules_file": self.bench.config_path / "modsecurity" / "main.conf",
             "cors_paths": _CORS_PATHS,
             "admin_static": _admin_static_dir(),
+            "site_embed": _EMBED_TEMPLATE.render(admin_static=_admin_static_dir()),
             "vhosts": vhosts,
             "aliases": aliases or [],
         }
@@ -361,6 +365,7 @@ class NginxManager:
         self._modsec = ModSecurityRenderer(bench)
         # (content before, content written) of each config file, until `nginx -t` accepts the set.
         self._unvalidated: dict[Path, tuple[str | None, str]] = {}
+        self._unvalidated_privileged: dict[Path, str | None] = {}
 
     def is_installed(self) -> bool:
         return which("nginx") is not None
@@ -426,6 +431,8 @@ class NginxManager:
         # Removing a bench's routes renders nothing, so it never depends on the provider.
         self._renderer.get_proxy_servers()
         with self.config_lock():
+            # The proxy switch is host-wide and may have changed since this bench was read.
+            self.bench.config.proxy = CommonConfig.read(self.bench.path.parent).proxy
             yield
 
     def write_config(self, ssl_ready: bool = False) -> None:
@@ -435,13 +442,14 @@ class NginxManager:
 
     def apply_config(self, ssl_ready: bool = True) -> None:
         """Write this bench's config, test it and reload nginx, or put the old files back."""
-        with self._render_lock():
+        with self._render_lock(), self._restore_on_failure():
             self.generate_config(ssl_ready=ssl_ready)
+            self.install_default_server()
             self.reload()
 
     def publish_config(self, ssl_ready: bool = False) -> None:
         """Write this bench's config and include it in nginx, then test and reload."""
-        with self._render_lock():
+        with self._render_lock(), self._restore_on_failure():
             self.generate_config(ssl_ready=ssl_ready)
             self.install_config()
 
@@ -476,9 +484,24 @@ class NginxManager:
             for code, (title, message) in ERROR_PAGES.items():
                 (error_dir / f"{code}.html").write_text(render_error_html(code, title, message))
             catchall = _shared_nginx_dir() / "00-bench-default.conf"
-            catchall.write_text(self._renderer.generate_server_config(error_dir))
+            self._write_config_file(catchall, self._renderer.generate_server_config(error_dir))
             return
 
+        catchall_conf = default_nginx_config_dir() / "00-bench-default.conf"
+        content = self._renderer.generate_server_config(_SHARED_ERROR_DIR)
+        previous = catchall_conf.read_text() if catchall_conf.exists() else None
+        if content != previous:
+            self._install_privileged_default_server(catchall_conf, content, previous)
+
+        # The distro's stock default site also claims default_server on :80;
+        # nginx rejects a duplicate, so drop it and let ours win.
+        default_site = Path("/etc/nginx/sites-enabled/default")
+        if default_site.exists() or default_site.is_symlink():
+            run_command(_privileged(["rm", "-f", str(default_site)]))
+
+    def _install_privileged_default_server(
+        self, catchall_conf: Path, content: str, previous: str | None
+    ) -> None:
         staging = self.bench.config_path / "nginx"
         for code, (title, message) in ERROR_PAGES.items():
             staged = staging / f"_catchall_{code}.html"
@@ -496,15 +519,8 @@ class NginxManager:
                 )
             )
             staged.unlink()
-
-        catchall_conf = default_nginx_config_dir() / "00-bench-default.conf"
-        self._stage_and_copy(self._renderer.generate_server_config(_SHARED_ERROR_DIR), catchall_conf)
-
-        # The distro's stock default site also claims default_server on :80;
-        # nginx rejects a duplicate, so drop it and let ours win.
-        default_site = Path("/etc/nginx/sites-enabled/default")
-        if default_site.exists() or default_site.is_symlink():
-            run_command(_privileged(["rm", "-f", str(default_site)]))
+        self._stage_and_copy(content, catchall_conf)
+        self._unvalidated_privileged[catchall_conf] = previous
 
     def _write_waf_files(self) -> None:
         """Write this bench's ModSecurity rules when WAF is enabled."""
@@ -529,6 +545,14 @@ class NginxManager:
             self._unvalidated[path] = (previous, content)
             replace_private_text_locked(path, content)
 
+    @contextmanager
+    def _restore_on_failure(self) -> Iterator[None]:
+        try:
+            yield
+        except BaseException:
+            self._restore_unvalidated()
+            raise
+
     def _restore_unvalidated(self) -> None:
         """Put back the files nginx rejected, except a file that another operation rewrote since."""
         for path, (previous, written) in self._unvalidated.items():
@@ -540,6 +564,12 @@ class NginxManager:
                 else:
                     replace_private_text_locked(path, previous)
         self._unvalidated.clear()
+        for path, previous in self._unvalidated_privileged.items():
+            if previous is None:
+                run_command(_privileged(["rm", "-f", str(path)]))
+            else:
+                self._stage_and_copy(previous, path)
+        self._unvalidated_privileged.clear()
 
     @property
     def config_dir(self) -> Path:
@@ -674,6 +704,7 @@ class NginxManager:
             self._restore_unvalidated()
             raise
         self._unvalidated.clear()
+        self._unvalidated_privileged.clear()
         if not is_linux():
             run_command(["nginx", "-s", "reload"])
             return

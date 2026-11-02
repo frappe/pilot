@@ -19,3 +19,4 @@ enroll_sites_in_scheduled_backups
 run_monitor_as_service
 size_mariadb_aria_pagecache
 register_worker_queues
+serve_site_embeds_locally

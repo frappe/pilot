@@ -114,7 +114,8 @@ class SiteProvisioner:
             return
         config = json.loads(config_path.read_text())
         config["pilot_endpoint"] = self.bench.admin_internal_endpoint
-        config["cloud_server_url"] = config["cloud_settings_embed_url"] = self.bench.admin_endpoint
+        config["cloud_server_url"] = self.bench.admin_endpoint
+        config["cloud_settings_embed_url"] = self.bench.embed_endpoint
         config["pilot_auth_token"] = Session(self.bench).issue_pilot_token(site.config.name)
         write_private_text(config_path, json.dumps(config, indent=1))
 

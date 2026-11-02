@@ -404,6 +404,7 @@ class Bench:
         old_firewall: dict,
         old_waf: dict,
         old_s3_config: dict,
+        old_proxy: dict,
     ) -> tuple[bool, str | None]:
         from pilot.core.bench.settings import BenchSettings
 
@@ -412,7 +413,13 @@ class Bench:
             old_firewall,
             old_waf,
             old_s3_config,
+            old_proxy,
         )
+
+    def get_cloudflare_status(self) -> dict:
+        from pilot.core.bench.settings import BenchSettings
+
+        return BenchSettings(self).get_cloudflare_status()
 
     def restart_processes(self) -> None:
         from pilot.core.bench.production import BenchProduction
@@ -512,6 +519,36 @@ class Bench:
         if not self.config.production.enabled:
             return admin_url(self.config)
         return f"http://127.0.0.1:{self.config.admin.internal_port}"
+
+    @property
+    def embed_endpoint(self) -> str:
+        return "/_pilot" if self.config.production.enabled else self.admin_endpoint
+
+    def configure_site_embeds(self) -> None:
+        """Update managed sites after nginx starts serving same-origin embed assets."""
+        import json
+
+        from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
+
+        paths = [
+            self.sites_path / "common_site_config.json",
+            *sorted(self.sites_path.glob("*/site_config.json")),
+        ]
+        managed = False
+        for path in paths:
+            if not path.is_file() or path.is_symlink() or path.parent.is_symlink():
+                continue
+            with exclusive_file_lock(path):
+                config = json.loads(path.read_text())
+                if not (config.get("pilot_endpoint") or config.get("cloud_settings_embed_url")):
+                    continue
+                managed = True
+                if config.get("cloud_settings_embed_url") != self.embed_endpoint:
+                    config["cloud_settings_embed_url"] = self.embed_endpoint
+                    replace_private_text_locked(path, json.dumps(config, indent=2))
+        # Retry cache invalidation even when an earlier attempt already wrote the files.
+        if managed:
+            self.clear_cache()
 
     @property
     def admin_endpoint(self) -> str:

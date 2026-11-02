@@ -1,20 +1,20 @@
-"""Pings every production site's /api/method/ping and appends the result to
-that site's bench's uptime log. The shared pilot-monitor service
-(pilot.core.server.monitoring) runs one pass every few seconds, covering every
-sibling bench."""
+"""Pings every production site's /api/method/ping on its local app server and
+appends the result to that site's bench's uptime log. The shared pilot-monitor
+service (pilot.core.server.monitoring) runs one pass every few seconds, covering
+every sibling bench."""
 
 from __future__ import annotations
 
+import http.client
 import json
 import time
 import typing
-import urllib.error
-import urllib.request
 from datetime import UTC, datetime
 
 from pilot.core.alerts import ALERT_SUSTAINED_SECONDS, SustainedAlerts, notify
 from pilot.core.notification.events import record_alert
 from pilot.core.site.uptime_monitoring_config import UptimeMonitorConfigurator
+from pilot.managers.gunicorn import GunicornManager
 from pilot.utils import cli_root, iter_sibling_benches
 
 if typing.TYPE_CHECKING:
@@ -33,18 +33,31 @@ class UptimeMonitor:
     def get_sites(self) -> list[str]:
         return [site.config.name for site in self.bench.sites()]
 
+    def get_maintenance_sites(self) -> set[str]:
+        """Sites serving frappe's 503 page on purpose, such as during an update."""
+        return {site.config.name for site in self.bench.sites() if site.maintenance_mode}
+
     def ping_site(self, site_name: str) -> dict:
-        url = f"https://{site_name}{PING_PATH}"
+        # Stay on loopback. Traffic over the public address keeps a Sleepy VM awake, so
+        # this client follows no redirect and uses no proxy.
+        connection = http.client.HTTPConnection(
+            GunicornManager(self.bench).upstream_server, timeout=PING_TIMEOUT
+        )
         start = time.monotonic()
         try:
-            request = urllib.request.Request(url, headers={"User-Agent": "pilot-uptime-monitor"})
-            with urllib.request.urlopen(request, timeout=PING_TIMEOUT) as response:
-                return self._result(site_name, start, up=response.status == 200, status_code=response.status)
-        except urllib.error.HTTPError as error:
-            return self._result(site_name, start, up=False, status_code=error.code)
-        except (urllib.error.URLError, TimeoutError, OSError) as error:
-            reason = getattr(error, "reason", error)
-            return self._result(site_name, start, up=False, status_code=None, error=str(reason) or type(reason).__name__)
+            connection.request(
+                "GET",
+                PING_PATH,
+                headers={"User-Agent": "pilot-uptime-monitor", "X-Frappe-Site-Name": site_name},
+            )
+            status = connection.getresponse().status
+            return self._result(site_name, start, up=status == 200, status_code=status)
+        except (http.client.HTTPException, OSError) as error:
+            return self._result(
+                site_name, start, up=False, status_code=None, error=str(error) or type(error).__name__
+            )
+        finally:
+            connection.close()
 
     @property
     def alerts_path(self):
@@ -53,6 +66,10 @@ class UptimeMonitor:
     def collect(self) -> None:
         """Ping every site on this bench once and append results to its uptime log."""
         results = [self.ping_site(site_name) for site_name in self.get_sites()]
+        maintenance_sites = self.get_maintenance_sites()
+        for result in results:
+            if result["site"] in maintenance_sites:
+                result["maintenance"] = True
         with self._configurator.log_path.open("a") as log_file:
             for result in results:
                 log_file.write(json.dumps(result) + "\n")
@@ -60,9 +77,11 @@ class UptimeMonitor:
 
     def send_alert_if_required(self, results: list[dict]) -> None:
         """A site that has failed its ping for five unbroken minutes is an
-        incident worth waking someone for. One ping can fail for any reason."""
+        incident worth waking someone for. One ping can fail for any reason.
+        Sites in maintenance are down on purpose and never alert."""
         alerting = self.bench.config.resource_limits.site_uptime
-        down = [result["site"] for result in results if not result["up"]] if alerting else []
+        down = [result["site"] for result in results if not result["up"] and not result.get("maintenance")]
+        down = down if alerting else []
         alerts = SustainedAlerts(self.alerts_path)
         due = alerts.due(down)
 
@@ -121,7 +140,7 @@ class UptimeMonitor:
             "status_code": status_code,
             "response_ms": int((time.monotonic() - start) * 1000),
         }
-        # A failure with no HTTP status (TLS, DNS, timeout) keeps its reason.
+        # A failure with no HTTP status (refused connection, timeout) keeps its reason.
         if error:
             result["error"] = error
         return result

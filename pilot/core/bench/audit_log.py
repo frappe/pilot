@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import csv
+import io
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 
 from pilot.internal.jsonl_log import JsonlLog, utc_now
 
@@ -42,6 +45,26 @@ class AuditEntry:
     file: str | None = None
     name: str | None = None
 
+
+CSV_COLUMNS = ("logged_at", "type", "event", "site", "app", "status", "actor", "ip", "command", "task_id")
+
+
+def get_csv_row(record: dict) -> list[str]:
+    """One audit record as a CSV row: `CSV_COLUMNS`, then the remaining fields as `key=value` details."""
+    logged_at = datetime.fromisoformat(record["logged_at"]).astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S")
+    details = {
+        key: value for key, value in record.items() if key not in CSV_COLUMNS and value not in (None, "")
+    }
+    return [
+        logged_at,
+        *(record.get(column) or "" for column in CSV_COLUMNS[1:]),
+        "; ".join(
+            f"{key}={json.dumps(value, separators=(',', ':')) if isinstance(value, dict | list) else value}"
+            for key, value in details.items()
+        ),
+    ]
+
+
 # Extra fields merged into every audit entry. The admin backend registers a provider that
 # reads the current request (IP + actor); the CLI/worker leave the empty default.
 def _context_provider() -> dict:
@@ -69,18 +92,35 @@ class AuditLog:
         self._log.append({"type": entry_type, "logged_at": utc_now(), **entry})
 
     def entries(
-        self, entry_type=None, site=None, status=None, jti=None, limit=None, since: datetime | None = None
+        self,
+        entry_type=None,
+        site=None,
+        status=None,
+        jti=None,
+        limit=None,
+        since: datetime | None = None,
+        until: datetime | None = None,
     ) -> list[dict]:
         """Return matching records newest first across weekly files."""
         matched = []
         for record in self._log.read_newest_first():
             if since is not None and datetime.fromisoformat(record["logged_at"]) < since:
                 break
+            if until is not None and datetime.fromisoformat(record["logged_at"]) > until:
+                continue
             if self._matches(record, entry_type, site, status, jti):
                 matched.append(record)
                 if limit is not None and len(matched) >= limit:
                     break
         return matched
+
+    def get_csv(self, **filters) -> str:
+        """Matching records newest first as CSV; remaining fields go in `details` as `key=value` pairs."""
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow([*CSV_COLUMNS, "details"])
+        writer.writerows(get_csv_row(record) for record in self.entries(**filters))
+        return output.getvalue()
 
     @staticmethod
     def _matches(record: dict, entry_type, site, status, jti=None) -> bool:

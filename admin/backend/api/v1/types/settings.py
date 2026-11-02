@@ -29,6 +29,20 @@ class FirewallSettings(TypedDict):
     rules: list[FirewallRuleSettings]
 
 
+class ProxySettings(TypedDict):
+    cloudflare: bool
+
+
+class CloudflareDomain(TypedDict):
+    domain: str
+    is_behind_cloudflare: bool
+
+
+class CloudflareStatus(TypedDict):
+    has_edge_proxy: bool
+    domains: list[CloudflareDomain]
+
+
 class WafConditionSettings(TypedDict):
     field: str
     operator: str
@@ -187,6 +201,7 @@ class Settings(TypedDict):
     redis: RedisSettings
     workers: list[WorkerGroupSettings]
     firewall: FirewallSettings
+    proxy: ProxySettings
     waf: WafSettingsDetail
     production: ProductionSettings
     lite_mode: LiteModeSettings

@@ -2,6 +2,7 @@
 import { TabButtons } from 'frappe-ui'
 import { computed } from 'vue'
 import Account from '@/components/settings/Account.vue'
+import Cloudflare from '@/components/settings/Cloudflare.vue'
 import Firewall from '@/components/settings/Firewall.vue'
 import SshKeys from '@/components/settings/SshKeys.vue'
 import { SECURITY_SECTIONS } from '@/components/settings/sections'
@@ -33,5 +34,6 @@ const selectTab = (id: string | number) => {
   <Account v-if="currentTab === 'account'" />
   <SshKeys v-else-if="currentTab === 'ssh-keys'" />
   <Firewall v-else-if="currentTab === 'ip-rules'" />
+  <Cloudflare v-else-if="currentTab === 'cloudflare'" />
   <Waf v-else />
 </template>

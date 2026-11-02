@@ -191,8 +191,10 @@ def test_restore_only_enables_backups_after_the_database_and_apps_are_ready(rest
         assert provision.call_args.kwargs["schedule_backups"] is False
 
 
-def test_a_new_site_calls_pilot_over_loopback_and_gives_the_browser_the_admin_domain(tmp_path: Path) -> None:
+@pytest.mark.parametrize("production", [True, False])
+def test_a_new_site_uses_same_origin_embeds_with_nginx(tmp_path: Path, production: bool) -> None:
     provisioner = _provisioner(tmp_path)
+    provisioner.bench.config.production.enabled = production
     provisioner.bench.config.admin.domain = "admin.local"
     site = provisioner.bench.site("site1.example.com")
     site.path.mkdir(parents=True)
@@ -202,9 +204,13 @@ def test_a_new_site_calls_pilot_over_loopback_and_gives_the_browser_the_admin_do
         provisioner.write_pilot_communication_config(site)
 
     assert json.loads((site.path / "site_config.json").read_text()) == {
-        "pilot_endpoint": f"http://127.0.0.1:{provisioner.bench.config.admin.internal_port}",
-        "cloud_server_url": "http://admin.local",
-        "cloud_settings_embed_url": "http://admin.local",
+        "pilot_endpoint": (
+            f"http://127.0.0.1:{provisioner.bench.config.admin.internal_port}"
+            if production
+            else "http://localhost:7000"
+        ),
+        "cloud_server_url": "http://admin.local" if production else "http://localhost:7000",
+        "cloud_settings_embed_url": "/_pilot" if production else "http://localhost:7000",
         "pilot_auth_token": "site-token",
     }
 
@@ -243,7 +249,9 @@ def test_enable_scheduler_fails_loudly(tmp_path: Path) -> None:
         (1, "NOT READY for migration: site site1.example.com has pending background jobs", True),
     ],
 )
-def test_pending_background_jobs_come_from_ready_for_migration(tmp_path, returncode, stdout, expected) -> None:
+def test_pending_background_jobs_come_from_ready_for_migration(
+    tmp_path, returncode, stdout, expected
+) -> None:
     from pilot.exceptions import CommandError
 
     bench = Bench(BenchConfig._from_dict(_BASE_DATA), tmp_path)

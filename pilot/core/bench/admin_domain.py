@@ -178,8 +178,9 @@ class AdminDomainChange:
             urls = {
                 "pilot_endpoint": self.bench.admin_internal_endpoint if is_loopback else endpoint,
                 "cloud_server_url": endpoint,
-                "cloud_settings_embed_url": endpoint,
             }
+            if config.get("cloud_settings_embed_url") != "/_pilot":
+                urls["cloud_settings_embed_url"] = endpoint
             changes = {key: url for key, url in urls.items() if key in config and config[key] != url}
             if not changes:
                 return

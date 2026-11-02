@@ -16,6 +16,7 @@ _GROUP_TYPES: dict[str, type] = {
     "letsencrypt": dict,
     "workers": list,
     "firewall": dict,
+    "proxy": dict,
     "waf": dict,
     "llm": dict,
     "s3": dict,
@@ -47,6 +48,7 @@ class ConfigPatcher:
         self._apply_letsencrypt()
         self._apply_workers()
         self._apply_firewall()
+        self._apply_proxy()
         self._apply_waf()
         if error := self._apply_llm():
             return error
@@ -219,6 +221,11 @@ class ConfigPatcher:
             firewall_config.default = str(firewall["default"])
         if "rules" in firewall:
             firewall_config.rules = self._parse_firewall_rules(firewall["rules"] or [])
+
+    def _apply_proxy(self) -> None:
+        proxy = self.data.get("proxy")
+        if proxy is not None and "cloudflare" in proxy:
+            self.config.proxy.cloudflare = bool(proxy["cloudflare"])
 
     @staticmethod
     def _parse_firewall_rules(entries: list[dict]) -> list[FirewallRule]:

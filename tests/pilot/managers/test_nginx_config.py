@@ -1,3 +1,4 @@
+import contextlib
 import copy
 from pathlib import Path
 from unittest.mock import PropertyMock, patch
@@ -494,6 +495,22 @@ def test_server_config_is_default_server(tmp_path: Path) -> None:
     # serving the first TLS vhost's cert.
     assert "listen 443 ssl http2 default_server;" in conf
     assert "ssl_reject_handshake on;" in conf
+    assert "ssl_prefer_server_ciphers" not in conf
+    assert "map $pilot_from_cloudflare $pilot_client_addr" in conf
+    assert "173.245.48.0/20 1;" not in conf
+
+
+def test_server_config_with_cloudflare_trusts_cf_connecting_ip_from_cloudflare_only(tmp_path: Path) -> None:
+    renderer = _renderer(tmp_path)
+    renderer.bench.config.proxy.cloudflare = True
+    conf = renderer.generate_server_config(Path("/usr/share/nginx/bench-error-pages"))
+
+    assert "173.245.48.0/20 1;" in conf
+    assert "2400:cb00::/32 1;" in conf
+    assert "1       $http_cf_connecting_ip;" in conf
+    assert "default $remote_addr;" in conf
+    assert "log_format pilot_access '$pilot_client_addr " in conf
+    assert "ssl_prefer_server_ciphers off;" in conf
 
 
 def test_server_config_declares_pilot_access_log_format(tmp_path: Path) -> None:
@@ -945,6 +962,8 @@ def test_a_serving_alias_serves_static_files(tmp_path: Path) -> None:
     assert f"root {tmp_path}/sites;" in alias_block
     assert "location /assets" in alias_block
     assert "location /socket.io" in alias_block
+    assert "location ^~ /_pilot/embed/cloud-settings/ {" in alias_block
+    assert "location ^~ /_pilot/embed/cloud-settings/esm/chunks/ {" in alias_block
     assert f"root {tmp_path}/sites/{_PLACEHOLDER_SITE.name}/public;" in alias_block
     assert "return 301" not in alias_block
 
@@ -1082,6 +1101,8 @@ def test_provider_passthrough_route_enables_proxy_protocol(tmp_path: Path) -> No
 
     assert "listen 443 ssl http2 proxy_protocol;" in config
     assert "real_ip_header     proxy_protocol;" in config
+    assert "X-Forwarded-For    $pilot_client_addr;" in config
+    assert "X-Real-IP          $pilot_client_addr;" in config
     assert "proxy_set_header   X-Forwarded-Proto  https;" in config
 
 
@@ -1370,6 +1391,7 @@ def test_a_config_change_holds_the_host_lock_until_nginx_accepts_it(tmp_path: Pa
         patch(
             "pilot.core.adapters.domain_provider.DomainRouteProvider.proxy_servers", side_effect=proxy_servers
         ),
+        patch.object(manager, "install_default_server"),
         patch.object(manager, "reload", side_effect=lambda: locked_at_reload.append(_is_locked(lock_file))),
     ):
         manager.apply_config(ssl_ready=False)
@@ -1378,6 +1400,139 @@ def test_a_config_change_holds_the_host_lock_until_nginx_accepts_it(tmp_path: Pa
     assert locked_at_provider == [False]
     assert locked_at_reload == [True]
     assert not _is_locked(lock_file)
+
+
+def test_a_config_change_refreshes_the_catch_all_before_reload(tmp_path: Path) -> None:
+    manager = NginxManager(_bench_with_site(tmp_path, _BASE_DATA))
+    calls: list[str] = []
+
+    with (
+        patch("pilot.core.adapters.domain_provider.DomainRouteProvider.proxy_servers", return_value=[]),
+        patch.object(manager, "install_default_server", side_effect=lambda: calls.append("catch-all")),
+        patch.object(manager, "reload", side_effect=lambda: calls.append("reload")),
+    ):
+        manager.apply_config(ssl_ready=False)
+
+    assert calls == ["catch-all", "reload"]
+
+
+def test_a_rejected_config_change_restores_the_shared_catch_all(tmp_path: Path) -> None:
+    manager = NginxManager(_bench_with_site(tmp_path, _BASE_DATA))
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    catchall = shared / "00-bench-default.conf"
+    catchall.write_text("previous")
+
+    def reject_nginx_test(command, **kwargs):
+        if "-t" in command:
+            raise CommandError("nginx -t failed")
+
+    with (
+        patch("pilot.core.adapters.domain_provider.DomainRouteProvider.proxy_servers", return_value=[]),
+        patch.object(NginxManager, "has_shared_include", new_callable=PropertyMock, return_value=True),
+        patch("pilot.managers.nginx._shared_nginx_dir", return_value=shared),
+        patch("pilot.managers.nginx.run_command", side_effect=reject_nginx_test),
+        pytest.raises(CommandError),
+    ):
+        manager.apply_config(ssl_ready=False)
+
+    assert catchall.read_text() == "previous"
+
+
+def test_a_failed_catch_all_install_restores_the_bench_config(tmp_path: Path) -> None:
+    manager = NginxManager(_bench_with_site(tmp_path, _BASE_DATA))
+    include = manager.bench.config_path / "nginx" / "include.conf"
+    include.parent.mkdir(parents=True, exist_ok=True)
+    include.write_text("previous")
+
+    with (
+        patch("pilot.core.adapters.domain_provider.DomainRouteProvider.proxy_servers", return_value=[]),
+        patch.object(manager, "install_default_server", side_effect=CommandError("install failed")),
+        patch.object(manager, "reload") as reload,
+        pytest.raises(CommandError),
+    ):
+        manager.apply_config(ssl_ready=False)
+
+    reload.assert_not_called()
+    assert include.read_text() == "previous"
+
+
+def test_a_failed_render_restores_the_files_already_written(tmp_path: Path) -> None:
+    manager = NginxManager(_bench_with_site(tmp_path, {**_BASE_DATA, "waf": {"enabled": True}}))
+    rules = manager._modsec.modsec_dir() / "main.conf"
+    rules.parent.mkdir(parents=True, exist_ok=True)
+    rules.write_text("previous")
+
+    with (
+        patch("pilot.core.adapters.domain_provider.DomainRouteProvider.proxy_servers", return_value=[]),
+        patch.object(manager._renderer, "generate_bench_config", side_effect=RuntimeError("render failed")),
+        pytest.raises(RuntimeError),
+    ):
+        manager.apply_config(ssl_ready=False)
+
+    assert rules.read_text() == "previous"
+
+
+def test_a_config_change_renders_the_current_host_wide_cloudflare_switch(tmp_path: Path) -> None:
+    manager = NginxManager(_bench_with_site(tmp_path / "bench", _BASE_DATA))
+    (tmp_path / "common_config.toml").write_text("[proxy]\ncloudflare = true\n")
+    rendered: list[str] = []
+
+    with (
+        patch("pilot.core.adapters.domain_provider.DomainRouteProvider.proxy_servers", return_value=[]),
+        patch.object(
+            manager,
+            "install_default_server",
+            side_effect=lambda: rendered.append(manager._renderer.generate_server_config(tmp_path)),
+        ),
+        patch.object(manager, "reload"),
+    ):
+        manager.apply_config(ssl_ready=False)
+
+    assert "ssl_prefer_server_ciphers off;" in rendered[0]
+
+
+def _legacy_apply(manager: NginxManager, conf_dir: Path, nginx_test_fails: bool) -> list[list[str]]:
+    """Run apply_config on a host without the shared include; return the privileged commands."""
+    commands: list[list[str]] = []
+
+    def run(command, **kwargs):
+        commands.append(command)
+        if nginx_test_fails and "-t" in command:
+            raise CommandError("nginx -t failed")
+
+    with (
+        patch("pilot.core.adapters.domain_provider.DomainRouteProvider.proxy_servers", return_value=[]),
+        patch.object(NginxManager, "has_shared_include", new_callable=PropertyMock, return_value=False),
+        patch("pilot.managers.nginx.default_nginx_config_dir", return_value=conf_dir),
+        patch.object(
+            manager, "_stage_and_copy", side_effect=lambda content, target: target.write_text(content)
+        ),
+        patch("pilot.managers.nginx.run_command", side_effect=run),
+        contextlib.suppress(CommandError),
+    ):
+        manager.apply_config(ssl_ready=False)
+    return commands
+
+
+def test_a_legacy_host_skips_the_privileged_catch_all_when_unchanged(tmp_path: Path) -> None:
+    manager = NginxManager(_bench_with_site(tmp_path / "bench", _BASE_DATA))
+    catchall = tmp_path / "00-bench-default.conf"
+    catchall.write_text(manager._renderer.generate_server_config(Path("/usr/share/nginx/bench-error-pages")))
+
+    commands = _legacy_apply(manager, tmp_path, nginx_test_fails=False)
+
+    assert not any("install" in command for command in commands)
+
+
+def test_a_legacy_host_restores_the_catch_all_nginx_rejects(tmp_path: Path) -> None:
+    manager = NginxManager(_bench_with_site(tmp_path / "bench", _BASE_DATA))
+    catchall = tmp_path / "00-bench-default.conf"
+    catchall.write_text("previous")
+
+    _legacy_apply(manager, tmp_path, nginx_test_fails=True)
+
+    assert catchall.read_text() == "previous"
 
 
 def test_removing_a_bench_from_nginx_does_not_ask_the_domain_provider(tmp_path: Path, monkeypatch) -> None:

@@ -66,7 +66,7 @@ Disabling needs a Frappe that supports it and is exposed through the Admin UI on
 ## Site Commands
 
 - `pilot new-site SITE`: create a site and add it to bench config.
-- `pilot drop-site SITE [--no-backup] [--force] [--archived-sites-path PATH]`: drop a site. Frappe takes a backup first unless you pass `--no-backup`. Pilot also removes the site from `bench.toml`, nginx, its domains and the backup schedule. `pilot --site SITE drop-site SITE` and `pilot frappe drop-site SITE` run the same drop and accept Frappe's options. Pilot always uses the bench's own database credentials, so it does not use the root user and password options.
+- `pilot -b NAME drop-site SITE [--no-backup] [--force] [--archived-sites-path PATH]`: drop a site. It asks for confirmation unless you pass `pilot --yes`, needs `-b` or a bench working directory, and refuses while a task uses the site. Frappe takes a backup first unless you pass `--no-backup`. Pilot also removes the site from `bench.toml`, nginx, its domains and the backup schedule. `pilot --site SITE drop-site SITE` and `pilot frappe drop-site SITE` run the same drop and accept Frappe's options. Pilot always uses the bench's own database credentials, so it does not use the root user and password options.
 - `pilot rename-site OLD NEW [--release-old-hostname]`: rename a site, without dropping a request.
 - `pilot list-site-apps SITE`: list the apps in use on a site, disabled ones excluded. An app the site lists but the bench does not have gets a warning on stderr; `pilot uninstall-app SITE APP` then removes only the site's listing.
 - `pilot set-admin-password`: set the Admin panel password in `bench.toml`; prompts when `--password` is omitted. The password must meet the same rules the dashboard enforces.

@@ -63,6 +63,17 @@ test('availability distinguishes permission denial from a connection failure', a
   assert.equal(await isCloudSettingsAvailable({ enabled: true }), true)
 })
 
+test('a relative embed URL loads the runtime from the current HTTPS site', (context) => {
+  Object.defineProperty(globalThis, 'location', {
+    value: { href: 'https://renamed.example.test/app/home' }, configurable: true,
+  })
+  context.after(() => { Reflect.deleteProperty(globalThis, 'location') })
+  assert.equal(
+    getRuntimeUrl({ enabled: true, bundle: { js: '/_pilot/embed/cloud-settings/cloud-settings.js' } }),
+    'https://renamed.example.test/_pilot/embed/cloud-settings/esm/cloud-settings.js',
+  )
+})
+
 test('requests keep same-origin session and CSRF; invalid responses reject', async (context) => {
   Object.defineProperty(globalThis, 'csrf_token', { value: 'test-csrf', configurable: true })
   context.after(() => { Reflect.deleteProperty(globalThis, 'csrf_token') })

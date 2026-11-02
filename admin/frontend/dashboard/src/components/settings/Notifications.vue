@@ -16,7 +16,7 @@ interface WebhookForm {
   original_url: string
 }
 
-const { session } = useSession()
+const { session, centralServerUrl } = useSession()
 
 // Every resource alert starts off; site uptime is the only one on by default.
 const RESOURCE_ALERTS = [
@@ -177,6 +177,20 @@ onMounted(async () => {
   </div>
 
   <div v-else class="space-y-8">
+    <p v-if="session.centralEnabled" class="text-ink-gray-6 text-p-sm">
+      This server is managed by
+      <a
+        v-if="session.centralUrl"
+        :href="centralServerUrl()"
+        target="_blank"
+        rel="noopener"
+        class="inline-flex items-center gap-0.5 text-p-sm-medium text-ink-gray-8 hover:text-ink-gray-9"
+      >
+        Central
+        <span class="size-3 lucide-arrow-up-right" aria-hidden="true" />
+      </a><template v-else>Central</template>, so alerts also show there.
+    </p>
+
     <div class="-mt-3.5 divide-y divide-outline-alpha-gray-1">
       <div class="flex justify-between items-center gap-4 py-3.5">
         <div class="flex flex-col gap-1">
@@ -250,21 +264,6 @@ onMounted(async () => {
       <h4 class="text-base-medium text-ink-gray-8">Webhook endpoints</h4>
 
       <p class="text-ink-gray-6 text-p-sm">
-        <template v-if="session.centralEnabled">
-          Alerts go to
-          <a
-            v-if="session.centralUrl"
-            :href="`${session.centralUrl}/dashboard`"
-            target="_blank"
-            rel="noopener"
-            class="inline-flex items-center gap-0.5 text-p-sm-medium text-ink-gray-8 hover:text-ink-gray-9"
-          >
-            Central
-            <span class="size-3 lucide-arrow-up-right" aria-hidden="true" />
-          </a>
-          <template v-else>Central</template>
-          and to these endpoints.
-        </template>
         Each endpoint gets a POST with your token in the
         <code>Authorization</code>
         header.
@@ -278,11 +277,7 @@ onMounted(async () => {
           v-if="!webhooks.length"
           :bordered="false"
           title="No webhook endpoints"
-          :description="
-            session.centralEnabled
-              ? 'Alerts only go to Central. Add an endpoint to get them too.'
-              : 'Add one to send alerts to your own service.'
-          "
+          description="Add one to send alerts to your own service."
           class="py-8"
         >
           <template #illustration>

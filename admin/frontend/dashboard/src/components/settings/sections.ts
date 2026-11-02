@@ -86,6 +86,12 @@ export const SECURITY_SECTIONS: SettingsSection[] = [
     description: 'Restrict server access with IP allow and block rules.',
   },
   {
+    id: 'cloudflare',
+    label: 'Cloudflare',
+    icon: 'lucide-cloud',
+    description: 'Accept traffic proxied by Cloudflare and log the real visitor IP.',
+  },
+  {
     id: 'waf',
     label: 'Web firewall',
     icon: 'lucide-shield-check',

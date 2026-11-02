@@ -123,7 +123,7 @@ With `enabled = false`, `pilot start` does not run the Admin. `pilot dev setup` 
 
 Nginx proxies admin traffic to `port + 1` on localhost. In production, `admin.domain` is required. `allow_bench_management` permits this admin to manage sibling benches and defaults to enabled only for development installs. It also permits killing database processes and purging binlogs, because both affect every bench on the host. Database settings and the MariaDB restart do not need it.
 
-A new site calls Pilot at `pilot_endpoint` in its `site_config.json`. This is the admin URL on localhost, so it does not depend on DNS or `admin.domain`. The browser loads Cloud Settings from `cloud_server_url` and `cloud_settings_embed_url`, which hold the public admin URL. An admin domain change updates the public URLs and any `pilot_endpoint` that is not on localhost.
+A production site calls Pilot at the loopback `pilot_endpoint` in its `site_config.json`, independently of DNS or `admin.domain`. The browser loads Cloud Settings assets from `cloud_settings_embed_url = "/_pilot"`; nginx serves `/_pilot/embed/cloud-settings/` on the site's origin. API calls still pass through Frappe with the server-held site token. `cloud_server_url` holds the public admin URL for dashboard links and follows admin domain changes. Development benches without nginx retain the public admin embed URL. The `serve_site_embeds_locally` upgrade patch publishes nginx routes before updating existing production site configs and clearing their caches.
 
 Set the admin password with `pilot set-admin-password` or the Settings page. Pilot stores a PBKDF2-HMAC-SHA256 verifier. `jwt_secret` is local; `jwks_url` and `jwks_audience` are for a remote token issuer and are host-shared. Pilot keeps the issuer's public keys in `.jwks-cache.json` in the benches directory. A token whose key is in the cache is verified without a fetch, and a cache older than one minute is refreshed in the background. A key that is not in the cache causes a fetch, at most once every 30 seconds. A failed fetch keeps the cached keys.
 
@@ -269,7 +269,7 @@ The domain provider controls the edge route for each hostname. Its route policy 
 
 Pilot configures PROXY protocol v2 when an HTTPS origin needs it. See [Per-domain TLS](#per-domain-tls).
 
-Set `proxy.cloudflare = true` when site domains use Cloudflare's proxy. nginx then takes the client IP from the `CF-Connecting-IP` header, but only from [Cloudflare's addresses](https://www.cloudflare.com/ips/). A domain that resolves to Cloudflare's addresses passes the add-domain DNS check with a warning, because Pilot cannot see the server behind the proxy. This check does not need the setting. In Cloudflare, use the Full (strict) SSL mode. In Flexible mode, Cloudflare sends requests to Pilot over HTTP, Pilot redirects them to HTTPS, and the browser loops. Let's Encrypt checks the domain over HTTP, so turn off Always Use HTTPS in Cloudflare until Pilot issues the certificate.
+Set `proxy.cloudflare = true`, or use Settings, Security, Cloudflare settings in Admin, when site domains use Cloudflare's proxy. It applies to the whole host. nginx then takes the client IP from `CF-Connecting-IP`, but only when the connecting address, or the address the edge proxy reports, is one of [Cloudflare's addresses](https://www.cloudflare.com/ips/). It also sets `ssl_prefer_server_ciphers off` on the catch-all TLS server; without it, OpenSSL before 3.5 fails Cloudflare's handshake with a 525. A domain that resolves to Cloudflare's addresses passes the add-domain DNS check with a warning, because Pilot cannot see the server behind the proxy. This check does not need the setting. In Cloudflare, use the Full (strict) SSL mode. In Flexible mode, Cloudflare sends requests to Pilot over HTTP, Pilot redirects them to HTTPS, and the browser loops. Let's Encrypt checks the domain over HTTP, so turn off Always Use HTTPS in Cloudflare until Pilot issues the certificate.
 
 ### Frappe Cloud
 
@@ -293,7 +293,7 @@ The monitor checks this section on every run, so both shippers start when a cred
 
 ### Alert Delivery
 
-`[resource_limits]` sets when an alert is raised and where it goes. A usage percentage of `0` disables that alert; `site_uptime` covers sites that stop answering their ping. A condition must hold for five minutes before anything is sent.
+`[resource_limits]` sets when an alert is raised and where it goes. A usage percentage of `0` disables that alert; `site_uptime` covers sites that stop answering their ping. Pilot sends the ping to the bench's local app server, so a failure in nginx, TLS, DNS, or the edge proxy does not raise this alert. A condition must hold for five minutes before anything is sent.
 
 Where an alert goes depends on what is configured. A Central-managed host reports every alert to Central; a self-hosted one does not, and the dashboard drops the Central wording along with it. Each entry in `webhook_endpoints` receives alerts either way, as a POST with an `Authorization: Bearer` header. Mail is a third sink, off until a mail server is configured and `email_recipients` is set.
 

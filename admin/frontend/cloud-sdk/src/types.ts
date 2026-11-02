@@ -56,6 +56,8 @@ export interface PlanOption {
   name: string
   title: string
   subtitle: string
+  /** Who the plan suits, as the site's product describes it, or null. */
+  note?: string | null
   price: string
   is_current: boolean
 }

@@ -19,6 +19,7 @@ import pytest
 from pilot.config import BenchConfig
 from pilot.core.bench import Bench
 from pilot.managers.nginx import NginxManager
+from tests.integration.nginx_wrapper import catch_all_http_directives
 
 pytestmark = pytest.mark.integration
 
@@ -101,18 +102,14 @@ def _stop(proc: subprocess.Popen) -> None:
         proc.wait(timeout=5)
 
 
-def _http_wrapper(prefix: Path, http_body: str) -> str:
-    log_format = (
-        "    log_format pilot_access '$remote_addr [$time_local] \"$request_method $uri\" "
-        "$status \"$host\" $request_time';\n"
-    )
+def _http_wrapper(prefix: Path, http_body: str, directives: str = "") -> str:
     # Run as root, nginx workers default to `nobody`, which cannot read pytest's private temp dir.
     user = "user root;\n" if os.geteuid() == 0 else ""
     return (
         f"{user}pid {prefix}/nginx.pid;\n"
         f"error_log {prefix}/error.log;\n"
         "events {}\n"
-        f"http {{\n{log_format}    access_log off;\n{http_body}}}\n"
+        f"http {{\n{directives}    access_log off;\n{http_body}}}\n"
     )
 
 
@@ -155,7 +152,9 @@ def _bench_nginx(tmp_path: Path, firewall: dict | None):
     manager.generate_config(ssl_ready=False)
 
     prefix = tmp_path / "bench-run"
-    body = _http_wrapper(prefix, f"    include {bench.config_path}/nginx/include.conf;\n")
+    body = _http_wrapper(
+        prefix, f"    include {bench.config_path}/nginx/include.conf;\n", catch_all_http_directives(bench)
+    )
     proc = _run_nginx(prefix, body)
     try:
         _wait_for_port(_BENCH_PORT)

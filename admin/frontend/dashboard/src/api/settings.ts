@@ -1,5 +1,5 @@
 import { request, unwrap } from '@/api/client'
-import type { ClientAddress, Settings, SettingsUpdate } from '@/types/settings'
+import type { ClientAddress, CloudflareStatus, Settings, SettingsUpdate } from '@/types/settings'
 import type { CliDevUpdate, CliReleaseUpdate } from '@/types/updates'
 
 export type CliUpdate = CliDevUpdate | CliReleaseUpdate
@@ -14,6 +14,9 @@ export const settingsApi = {
     unwrap(request.post('auth/password', { json: data }).json()),
 
   myIp: (): Promise<ClientAddress> => request.get('network/client').json(),
+
+  cloudflareStatus: (): Promise<CloudflareStatus> =>
+    unwrap(request.get('settings/cloudflare').json()),
 
   frappeStorageRegions: (): Promise<string[]> =>
     request.get('settings/s3/frappe-regions').json(),

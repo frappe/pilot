@@ -77,6 +77,7 @@ class ProductionSetup:
 
         # The switch is committed; free the old hostname at the provider.
         self._release_previous_admin_domain()
+        self.bench.configure_site_embeds()
         self._report_summary(on_progress)
 
     def _resolve_target(self) -> None:

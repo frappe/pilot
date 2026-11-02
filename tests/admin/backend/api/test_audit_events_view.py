@@ -103,3 +103,65 @@ def test_an_invalid_cursor_is_treated_as_the_start(tmp_path: Path) -> None:
         )
 
     assert response.get_json()["data"] == entries[:2]
+
+
+def test_export_downloads_filtered_events_as_csv(tmp_path: Path) -> None:
+    from pilot.core.bench import Bench
+    from pilot.core.bench.audit_log import AuditLog
+
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    log = AuditLog(Bench(bench_root))
+    log.append(
+        "backup",
+        {
+            "logged_at": "2026-10-27T09:21:56.999780+00:00",
+            "site": "a.test",
+            "event": "backup",
+            "status": "success",
+            "timestamp": "20261027_145156",
+            "with_files": True,
+            "offsite": False,
+            "files": {"database.sql.gz": 270117, "files.tar": 1536},
+            "pruned": [],
+        },
+    )
+    log.append("ssh_key", {"event": "added"})
+
+    response = client.get("/api/v1/audit-events/export", query_string={"type": "backup", "site": "a.test"})
+
+    lines = response.get_data(as_text=True).splitlines()
+    assert response.status_code == 200
+    assert response.headers["Content-Disposition"] == 'attachment; filename="a.test-activity-log.csv"'
+    assert lines[0] == "logged_at,type,event,site,app,status,actor,ip,command,task_id,details"
+    assert lines[1:] == [
+        "2026-10-27 09:21:56,backup,backup,a.test,,success,,,,,"
+        '"timestamp=20261027_145156; with_files=True; offsite=False; files={""database.sql.gz"":270117,""files.tar"":1536}; pruned=[]"'
+    ]
+
+
+def test_export_keeps_only_events_inside_the_date_range(tmp_path: Path) -> None:
+    from pilot.core.bench import Bench
+    from pilot.core.bench.audit_log import AuditLog
+
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    log = AuditLog(Bench(bench_root))
+    for day in ("01", "02", "03"):
+        log.append("app", {"event": f"day-{day}", "logged_at": f"2026-10-{day}T12:00:00+00:00"})
+
+    response = client.get(
+        "/api/v1/audit-events/export",
+        query_string={"since": "2026-10-02T00:00:00+00:00", "until": "2026-10-02T23:59:59+00:00"},
+    )
+
+    rows = response.get_data(as_text=True).splitlines()[1:]
+    assert [row.split(",")[2] for row in rows] == ["day-02"]
+
+
+def test_a_date_without_an_offset_is_rejected(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+
+    response = client.get("/api/v1/audit-events", query_string={"since": "2026-10-02T00:00:00"})
+
+    assert response.status_code == 422
