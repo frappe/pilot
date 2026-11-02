@@ -453,6 +453,12 @@ def test_production_sandbox_needs_systemd() -> None:
         load_from_dict(data)
 
 
+def test_production_sandbox_can_be_set_before_production_is() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = {"enabled": False, "sandbox": {"enabled": True}}
+    assert load_from_dict(data).production.sandbox.enabled is True
+
+
 @pytest.mark.parametrize("key", ["inaccessible_paths", "writable_paths"])
 def test_production_sandbox_rejects_relative_paths(key: str) -> None:
     with pytest.raises(ConfigError, match=f"production.sandbox.{key}.*relative/path"):

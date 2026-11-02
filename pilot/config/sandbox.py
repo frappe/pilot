@@ -39,7 +39,8 @@ class SandboxConfig:
         return asdict(self)
 
     def validate(self, process_manager: str, bench_name: str) -> None:
-        if self.enabled and process_manager != "systemd":
+        # An empty manager is a bench not yet set up for production; setup picks systemd later.
+        if self.enabled and process_manager not in ("", "systemd"):
             raise ConfigError(
                 f"production.sandbox needs process_manager = \"systemd\" (bench '{bench_name}'), "
                 f"got '{process_manager or '(empty)'}'."
