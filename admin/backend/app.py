@@ -99,12 +99,13 @@ def register_blueprints(app: Flask) -> None:
 
 
 def register_editor_frontend(app: Flask) -> None:
-    """Serve the isolated full-page code editor, scoped by /editor/<app_name>."""
+    """Serve the isolated full-page code editor, scoped by /editor/<app_name> or /editor/site/<site_name>."""
     editor_dist = STATIC_DIR / "editor"
 
     @app.route("/editor/<app_name>")
+    @app.route("/editor/site/<site_name>")
     @allow_unauthenticated
-    def serve_editor(app_name):
+    def serve_editor(app_name=None, site_name=None):
         from admin.backend.api.v1.editor import is_developer_mode_enabled
 
         if not is_developer_mode_enabled(Path(app.config["BENCH_ROOT"])):

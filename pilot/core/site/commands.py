@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import secrets
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -96,6 +97,20 @@ class SiteCommands:
             reason = str(error).strip().splitlines()[-1]
             raise BenchError(f"Could not check the background jobs of {self.site.config.name}: {reason}") from error
         return False
+
+    def delete_server_script(self, name: str) -> None:
+        """Delete a File Server Script's record and file. Names go in as JSON, never eval'd."""
+        cmd = self.site._frappe_call(
+            "frappe",
+            "--site",
+            self.site.config.name,
+            "execute",
+            "frappe.core.doctype.server_script.server_script.delete_file_script",
+            json.dumps(name),
+        )
+        result = run_command(cmd, cwd=self.site.bench.sites_path)
+        if result.returncode != 0:
+            raise BenchError(f"Failed to delete server script {name} on {self.site.config.name}")
 
     def clear_cache(self) -> None:
         cmd = self.site._frappe_call("frappe", "--site", self.site.config.name, "clear-cache")
