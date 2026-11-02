@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { Button, Dialog, ErrorMessage, Spinner, toast } from 'frappe-ui'
+import { Badge, Button, Dialog, ErrorMessage, Skeleton, Spinner, toast } from 'frappe-ui'
 import { computed, onMounted, ref } from 'vue'
 import { cliUpdatesApi } from '@/api/settings'
 import { tasksApi } from '@/api/tasks'
 import CopyBtn from '@/components/common/CopyBtn.vue'
-import SettingsRow from '@/components/settings/SettingsRow.vue'
+import PilotLogo from '@/components/icons/Pilot.vue'
 import type { TaskPayload } from '@/types/tasks'
 import { isTaskActive } from '@/utils/taskFormat'
+
+defineProps<{ platform?: string }>()
 
 const DEV_COMMANDS = 'git pull\npilot admin build\npilot admin upgrade'
 
@@ -119,7 +121,9 @@ const pollTask = async (taskId: string) => {
     latestVersion.value = null
     dialogOpen.value = false
     toast.success('Updated successfully', {
-      description: restartsAdmin ? undefined : 'Stop pilot start and run it again to use the new version.',
+      description: restartsAdmin
+        ? undefined
+        : 'Stop pilot start and run it again to use the new version.',
     })
     return
   }
@@ -127,57 +131,76 @@ const pollTask = async (taskId: string) => {
 </script>
 
 <template>
-  <SettingsRow label="Pilot Version" :description="loading ? '' : versionLabel">
-    <Button :loading="checking" @click="check">Update</Button>
-  </SettingsRow>
+  <div class="flex flex-wrap items-center gap-3.5">
+    <PilotLogo class="size-11 shrink-0" />
+
+    <div class="flex flex-col flex-1 gap-1.5 min-w-0">
+      <div class="flex items-center gap-2">
+        <p class="text-lg-semibold text-ink-gray-8">Pilot</p>
+        <Badge v-if="!loading" :label="versionLabel" />
+      </div>
+
+      <p v-if="platform" class="text-ink-gray-5 text-sm truncate">Running on {{ platform }}</p>
+      <Skeleton v-else class="rounded-1 w-44 h-3" />
+    </div>
+
+    <Button class="max-sm:w-full shrink-0" label="Update" :loading="checking" @click="check" />
+  </div>
 
   <ErrorMessage v-if="versionError" :message="versionError" />
 
-  <Dialog v-model="dialogOpen" title="Update" size="md">
-    <div v-if="isDev" class="flex flex-col gap-3">
-      <p class="text-ink-gray-7 text-p-base">
-        This is a development install. Update it from a terminal:
+  <Dialog
+    v-model="dialogOpen"
+    :title="isDev ? 'Update from a terminal' : updating ? `Updating to ${latestVersion}` : 'Update available'"
+    icon="lucide-arrow-up"
+    size="md"
+  >
+    <p class="mb-4 text-ink-gray-6 text-p-sm">
+      <template v-if="isDev">
+        This is a development install. The last step restarts the admin service.
+      </template>
+      <template v-else-if="updating">This takes a minute. Keep this window open.</template>
+      <template v-else-if="status.restarts_admin !== false">
+        Pilot updates itself and restarts the admin service. Your benches keep running.
+      </template>
+      <template v-else>
+        Pilot updates itself. Then stop <code>pilot start</code> and run it again.
+      </template>
+    </p>
+
+    <div
+      v-if="isDev"
+      class="relative bg-surface-gray-1 py-2.5 border border-outline-gray-1 rounded-6"
+    >
+      <p
+        v-for="command in DEV_COMMANDS.split('\n')"
+        :key="command"
+        class="before:mr-2.5 px-3.5 py-1 font-mono text-ink-gray-8 text-sm before:text-ink-gray-4 before:content-['$']"
+      >
+        {{ command }}
       </p>
 
-      <div class="relative">
-        <pre
-          class="bg-surface-gray-2 p-3 pr-10 rounded-4 overflow-x-auto font-mono text-ink-gray-8 text-sm leading-relaxed"
-        >{{ DEV_COMMANDS }}</pre>
-
-        <CopyBtn
-          :text="DEV_COMMANDS"
-          class="top-2 right-2 absolute text-ink-gray-5 hover:text-ink-gray-8 transition-colors"
-        />
-      </div>
-      <p class="text-ink-gray-5 text-p-sm">The last step restarts the admin service.</p>
+      <CopyBtn
+        :text="DEV_COMMANDS.replaceAll('\n', ' && ')"
+        class="top-3 right-3 absolute text-ink-gray-5 hover:text-ink-gray-8 transition-colors"
+      />
     </div>
 
-    <div v-else-if="updating" class="flex flex-col gap-3">
-      <p class="text-ink-gray-7">Updating to {{ latestVersion }}…</p>
-      <div v-if="!log" class="flex justify-center items-center py-8">
+    <template v-else-if="updating">
+      <div v-if="!log" class="flex justify-center items-center py-6">
         <Spinner size="lg" class="text-ink-gray-4" />
       </div>
 
       <pre
         v-else
-        class="p-3 bg-surface-gray-2 rounded-4 max-h-64 overflow-auto text-ink-gray-7 text-sm whitespace-pre-wrap"
+        class="bg-surface-gray-1 p-3 border border-outline-gray-1 rounded-6 max-h-64 overflow-auto font-mono text-ink-gray-7 text-sm whitespace-pre-wrap"
       >{{ log }}</pre>
-    </div>
+    </template>
 
-    <div v-else-if="updateAvailable" class="flex flex-col gap-3">
-      <p class="text-ink-gray-7 text-p-base">
-        Version <strong>{{ latestVersion }}</strong> is available. You are on
-        {{ status.current_version || 'an unknown version' }}.
-      </p>
-
-      <p class="text-ink-gray-5 text-p-sm">
-        <template v-if="status.restarts_admin !== false">
-          Pilot updates itself and restarts the admin service. Your benches keep running.
-        </template>
-        <template v-else>
-          Pilot updates itself. Then stop <code>pilot start</code> and run it again to use the new version.
-        </template>
-      </p>
+    <div v-else-if="updateAvailable" class="flex justify-center items-center gap-2">
+      <Badge :label="status.current_version || 'Unknown'" size="lg" />
+      <span class="size-4 text-ink-gray-4 lucide-arrow-right" aria-hidden="true" />
+      <Badge :label="latestVersion ?? ''" theme="green" size="lg" />
     </div>
 
     <ErrorMessage v-if="dialogError" :message="dialogError" class="mt-3" />

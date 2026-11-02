@@ -1,18 +1,18 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref } from 'vue'
 import { Badge, Button, Dialog, Select, Switch, TextInput } from 'frappe-ui'
+import { computed, onUnmounted, ref } from 'vue'
 
 import EmptyState from '@/components/common/EmptyState.vue'
-
+import SettingsIllustration from '@/components/settings/SettingsIllustration.vue'
+import type { WafConditionSettings, WafRuleSettings } from '@/types/settings'
 import {
   ACTION_LABELS,
+  actionLabel,
   FIELD_LABELS,
   OPERATOR_LABELS,
-  actionLabel,
   ruleProblem,
   ruleSummary,
 } from '@/utils/wafRules'
-import type { WafConditionSettings, WafRuleSettings } from '@/types/settings'
 
 // Two-way bound so the child owns list edits without mutating a prop.
 const rules = defineModel<WafRuleSettings[]>({ default: () => [] })
@@ -157,27 +157,28 @@ const confirmRemove = () => {
 </script>
 
 <template>
-  <div class="space-y-3" ref="root">
-    <div class="flex justify-between items-start gap-4">
-      <div class="min-w-0">
-        <p class="font-medium text-ink-gray-8">Custom rules</p>
-        <p class="mt-0.5 max-w-md text-ink-gray-5 text-p-sm">
+  <div class="space-y-5" ref="root">
+    <div class="flex justify-between items-center gap-3">
+      <div class="flex flex-col gap-1 min-w-0">
+        <p class="text-base-medium text-ink-gray-8">Custom rules</p>
+        <p class="text-ink-gray-6 text-p-sm">
           Checked before the managed rules, top to bottom.
         </p>
       </div>
 
-      <Button class="shrink-0" icon-left="lucide-plus" @click="addRule">
-        Add rule
-      </Button>
+      <Button class="shrink-0" icon-left="lucide-plus" @click="addRule"> Add rule </Button>
     </div>
 
     <EmptyState
       v-if="!rules.length"
       compact
-      icon="lucide-list-filter"
       title="No custom rules"
-      description="Add a rule to block or log requests by path, IP, method, header, and more."
-    />
+      description="Block or log requests by path, IP, method or header."
+    >
+      <template #illustration>
+        <SettingsIllustration kind="waf-rules" />
+      </template>
+    </EmptyState>
 
     <div
       v-if="rules.length"
@@ -276,7 +277,12 @@ const confirmRemove = () => {
                   class="gap-2 grid sm:grid-cols-[10rem_11rem_minmax(0,1fr)_2rem] items-start"
                 >
                   <div class="space-y-1.5 min-w-0">
-                    <Select side="bottom" v-model="cond.field" :options="fieldOptions" class="w-full" />
+                    <Select
+                      side="bottom"
+                      v-model="cond.field"
+                      :options="fieldOptions"
+                      class="w-full"
+                    />
                     <TextInput
                       v-if="cond.field === 'header'"
                       v-model="cond.header_name"
@@ -285,7 +291,12 @@ const confirmRemove = () => {
                     />
                   </div>
 
-                  <Select side="bottom" v-model="cond.operator" :options="operatorOptions" class="w-full" />
+                  <Select
+                    side="bottom"
+                    v-model="cond.operator"
+                    :options="operatorOptions"
+                    class="w-full"
+                  />
                   <TextInput
                     v-model="cond.value"
                     :placeholder="placeholder(cond.field)"
@@ -341,14 +352,14 @@ const confirmRemove = () => {
               Matching requests bypass the firewall entirely - no managed rules, no inspection.
             </p>
           </div>
-          </div>
+        </div>
       </div>
     </div>
 
     <Dialog v-model="showRemove" title="Delete rule" size="md">
       <p class="text-ink-gray-7 text-p-base">
-        Delete <strong>{{ removingLabel }}</strong
-        >? Requests it was matching fall through to the managed ruleset.
+        Delete <strong>{{ removingLabel }}</strong>? Requests it was matching fall through to the
+        managed ruleset.
       </p>
 
       <template #actions>

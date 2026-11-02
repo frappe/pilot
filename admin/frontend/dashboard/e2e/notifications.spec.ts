@@ -53,8 +53,7 @@ test('Asks for a webhook endpoint when none is listed', async ({ page }) => {
   await mockBench(page, { central: false })
   await page.goto('/settings/general/notifications')
   const dialog = page.getByRole('dialog')
-  await dialog.getByText('Advanced', { exact: true }).click()
 
   await expect(dialog.getByText('No webhook endpoints')).toBeVisible()
-  await expect(dialog.getByText('Add an endpoint to receive alerts by webhook.')).toBeVisible()
+  await expect(dialog.getByText('Add one to send alerts to your own service.')).toBeVisible()
 })

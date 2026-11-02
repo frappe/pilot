@@ -1,18 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
 import { Button, Dialog, Dropdown, type DropdownItem, Spinner, Tooltip, toast } from 'frappe-ui'
-
-import Table from '@/components/common/Table.vue'
-
-import EmptyState from '@/components/common/EmptyState.vue'
-
+import { computed, onMounted, ref, watch } from 'vue'
 import { auditApi } from '@/api/audit'
 import { sessionApi } from '@/api/session'
-import { relativeTime } from '@/utils/time'
-import { commandLabel, fmtDateTime } from '@/utils/taskFormat'
+import EmptyState from '@/components/common/EmptyState.vue'
+import Table from '@/components/common/Table.vue'
+import SettingsIllustration from '@/components/settings/SettingsIllustration.vue'
 import type { AuditEntry } from '@/types/audit'
 import type { ActiveSession } from '@/types/auth'
 import { errorMessage } from '@/utils/error'
+import { commandLabel, fmtDateTime } from '@/utils/taskFormat'
+import { relativeTime } from '@/utils/time'
 
 interface SessionRow {
   jti: string
@@ -191,7 +189,12 @@ const formatDate = (seconds: number | null) => (seconds ? fmtDateTime(seconds * 
 const menuOptions = (row: SessionRow): DropdownItem[] => {
   return [
     { label: 'View activity', icon: 'lucide-history', onClick: () => (jti.value = row.jti) },
-    { label: 'Revoke session', icon: 'lucide-log-out', theme: 'red', onClick: () => promptRevoke(row) },
+    {
+      label: 'Revoke session',
+      icon: 'lucide-log-out',
+      theme: 'red',
+      onClick: () => promptRevoke(row),
+    },
   ]
 }
 
@@ -249,10 +252,13 @@ onMounted(load)
     <EmptyState
       compact
       v-else-if="!activity.length"
-      icon="lucide-history"
-      title="No activity recorded"
-      description="Actions taken by this session will show up here."
-    />
+      title="Nothing yet"
+      description="Actions from this session show up here."
+    >
+      <template #illustration>
+        <SettingsIllustration kind="activity" />
+      </template>
+    </EmptyState>
     <Table v-else :columns="activityColumns" :rows="activityRows" height="max-h-96">
       <template #event="{ row }">
         <Tooltip :text="row.eventTooltip">
@@ -290,10 +296,13 @@ onMounted(load)
       <EmptyState
         compact
         v-if="!activeTokens.length"
-        icon="lucide-key-round"
-        title="No active sessions"
-        description="Sign-ins appear here while their tokens are valid."
-      />
+        title="No one signed in"
+        description="Active sign-ins show up here."
+      >
+        <template #illustration>
+          <SettingsIllustration kind="sessions" />
+        </template>
+      </EmptyState>
 
       <Table v-else :columns="columns" :rows="rows" height="max-h-96">
         <template #activity="{ row }">

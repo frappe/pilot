@@ -1,16 +1,24 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import {
+  Button,
+  ErrorMessage,
+  FormLabel,
+  Select,
+  Spinner,
+  TabButtons,
+  Textarea,
+  TextInput,
+  toast,
+} from 'frappe-ui'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { Button, ErrorMessage, Select, Spinner, TabButtons, TextInput, Textarea, toast } from 'frappe-ui'
-
+import { settingsApi } from '@/api/settings'
 import SettingsSwitch from '@/components/settings/SettingsSwitch.vue'
 import WafCustomRules from '@/components/settings/WafCustomRules.vue'
-
-import { settingsApi } from '@/api/settings'
-import { ruleProblem } from '@/utils/wafRules'
 import { useUnsavedChanges } from '@/composables/common/useUnsavedChanges'
 import type { WafRuleSettings } from '@/types/settings'
 import { errorMessage } from '@/utils/error'
+import { ruleProblem } from '@/utils/wafRules'
 
 // "Paused" leaves the module loaded and idle; the Enable switch drops it from
 // the server config. The stored value stays "Off" - only the label differs.
@@ -106,6 +114,8 @@ onMounted(() => window.addEventListener('beforeunload', warnIfDirty))
 onUnmounted(() => window.removeEventListener('beforeunload', warnIfDirty))
 
 // A clicked <summary> keeps focus and paints a ring after the panel toggles.
+const analyticsRoute = { name: 'Analytics', query: { view: 'system', window: '1h' } }
+
 const blurSummary = (event: MouseEvent) => {
   if (event.currentTarget instanceof HTMLElement) event.currentTarget.blur()
 }
@@ -172,8 +182,8 @@ onMounted(async () => {
     <Spinner size="lg" class="text-ink-gray-4" />
   </div>
 
-  <div v-else class="space-y-12">
-    <div class="space-y-4">
+  <div v-else class="flex flex-col gap-8">
+    <section class="space-y-5">
       <SettingsSwitch
         label="Enable web application firewall"
         description="Inspects request contents for SQLi, XSS and path traversal, across all sites and the admin."
@@ -191,23 +201,20 @@ onMounted(async () => {
           <Select side="bottom" label="Action" :options="ACTION_OPTIONS" v-model="mode" />
           <p v-if="mode === 'DetectionOnly'" class="text-ink-gray-5 text-p-sm">
             Matches are logged, not blocked. Review
-            <RouterLink
-              class="text-ink-gray-7 hover:text-ink-gray-8"
-              :to="{ name: 'Analytics', query: { view: 'system', window: '1h' } }"
-              >the firewall analytics</RouterLink
-            >, then switch to Block.
+            <RouterLink :to="analyticsRoute" class="analytics-link">firewall analytics</RouterLink>,
+            then switch to Block.
           </p>
 
           <p v-else class="text-ink-gray-5 text-p-sm">{{ ACTION_HINTS[mode] }}</p>
         </div>
 
         <div class="space-y-1.5">
-          <span class="block text-ink-gray-5">Sensitivity</span>
+          <FormLabel label="Sensitivity" />
           <TabButtons :options="SENSITIVITY_OPTIONS" v-model="paranoia" />
           <p class="text-ink-gray-5 text-p-sm">{{ sensitivityHint }}</p>
         </div>
       </div>
-    </div>
+    </section>
 
     <!-- Visible with the WAF off: rules are staged first and save independently
          of `enabled`. -->
@@ -216,23 +223,27 @@ onMounted(async () => {
       :fields="ruleFields"
       :operators="ruleOperators"
       :actions="ruleActions"
+      class="pt-8 border-t border-outline-alpha-gray-1"
     />
 
-    <details class="group">
+    <details class="group pt-8 border-t border-outline-alpha-gray-1">
       <summary
-        class="flex items-center gap-1.5 pr-1.5 rounded-1 w-fit text-ink-gray-6 cursor-pointer select-none"
+        class="flex items-center gap-1.5 rounded-1 w-fit text-base-medium text-ink-gray-8 cursor-pointer select-none"
         @click="blurSummary"
       >
+        Advanced
         <span
-          class="size-4 transition-transform group-open:rotate-90 lucide-chevron-right" />Advanced
+          class="size-4 text-ink-gray-5 transition-transform group-open:rotate-90 lucide-chevron-right"
+        />
       </summary>
 
-      <div class="space-y-4 mt-4">
+      <div class="space-y-4 mt-5">
         <div class="gap-4 grid md:grid-cols-2 items-start">
           <div class="space-y-1.5">
             <TextInput
               type="number"
               label="Anomaly threshold"
+              required
               min="1"
               v-model="inboundThreshold"
             />
@@ -243,7 +254,7 @@ onMounted(async () => {
           </div>
 
           <div class="space-y-1.5">
-            <TextInput label="Max inspected body size" v-model="bodyLimit" />
+            <TextInput label="Max inspected body size" required v-model="bodyLimit" />
             <p class="text-ink-gray-5 text-p-sm">Number with a k, m or g suffix, e.g. 50m.</p>
           </div>
         </div>
@@ -290,3 +301,9 @@ onMounted(async () => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.analytics-link {
+  @apply text-ink-gray-7 underline decoration-dotted decoration-2 decoration-[--ink-gray-4] underline-offset-2 hover:text-ink-gray-8;
+}
+</style>
