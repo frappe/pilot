@@ -129,10 +129,10 @@ When you tag a commit after its push, its files stay from then on, if the workfl
 | Operation | Prebuilt assets |
 |---|---|
 | Install an app (`pilot get-app`, Admin) | Yes. `pilot get-app --skip-assets` skips all asset setup. |
-| Initialize a bench (`pilot init`, framework app) | Yes. `pilot init --skip-frontend` skips installs and source builds, still downloads. |
+| Initialize a bench (`pilot init`, framework app) | Yes. With `--skip-frontend` it only downloads, never builds. |
 | Update the bench or an app | Yes |
 | Switch an app's branch | Yes |
-| Create a site when an app has no built assets yet | Yes, unless `pilot new-site --skip-assets`. |
+| Create a site when an app has no built assets yet | Yes, but `pilot new-site --skip-assets` skips it. |
 | `pilot build` | Yes |
 | `pilot build --force` | No, always builds |
 | Admin **Build assets** for a site or the bench | No, always builds |
@@ -143,7 +143,7 @@ Pilot also builds on the server when the app has local changes in git, because t
 
 | Result | Pilot does |
 |---|---|
-| No archive for the commit | Builds on the server, unless `pilot new-site --skip-assets`. The log shows `No prebuilt assets for <app> at <commit>`. |
+| No archive for the commit | Builds on the server, unless `pilot new-site --skip-assets` was passed. The log shows `No prebuilt assets for <app> at <commit>`. |
 | The download fails | Builds on the server. The log shows the reason. |
 | The archive matches its checksum and its commit | Replaces each published path whole, so files that the new build removed do not stay. |
 | The checksum, the commit, or a path in the archive is wrong | Stops with an error and keeps the current files. A wrong archive is not hidden behind a build. |
