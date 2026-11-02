@@ -59,10 +59,7 @@ class BenchInitializer:
                 "Clone and install framework app",
                 lambda: self._install_framework_apps(python_env_manager, on_progress),
             ),
-            (
-                "Install Node.js",
-                lambda: python_env_manager.install_node(ensure_yarn=not self.skip_frontend),
-            ),
+            ("Install Node.js", python_env_manager.install_node),
         ]
         if not self.skip_frontend:
             # A frontend-skipping run installs JS packages on demand: the asset

@@ -196,12 +196,11 @@ class PythonEnvManager:
         python = str(self.bench.env_path / "bin" / "python")
         run_command([uv, "pip", "uninstall", "--python", python, app_name], stream_output=True)
 
-    def install_node(self, ensure_yarn: bool = True) -> None:
+    def install_node(self) -> None:
         if not which("node"):
             self._install_node()
         self.require_node_version()
-        if ensure_yarn:
-            YARN.ensure_installed()
+        YARN.ensure_installed()
 
     @staticmethod
     def require_node_version() -> None:
