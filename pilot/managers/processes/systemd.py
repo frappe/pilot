@@ -5,6 +5,7 @@ import os
 import subprocess
 from pathlib import Path
 
+from pilot.exceptions import BenchError
 from pilot.internal.atomic_file import fsync_directory_files
 from pilot.managers.environment import AdminEnvManager
 from pilot.managers.gunicorn import GunicornManager
@@ -16,8 +17,8 @@ from pilot.managers.processes.base import (
 )
 from pilot.managers.processes.definitions import ProcessState
 from pilot.managers.processes.local import ProcessDefinition
-from pilot.managers.processes.systemd_render import SystemdRenderer
-from pilot.managers.systemd_user import SystemdUserMixin
+from pilot.managers.processes.systemd_render import SystemdRenderer, get_sandbox_properties
+from pilot.managers.systemd_user import SystemdUserMixin, get_sandbox_error
 from pilot.utils import cli_root, run_command
 
 # Seconds of inactivity before the socket-activated admin stops. This outlives the
@@ -53,11 +54,12 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         GunicornManager(self.bench).generate_admin_config()
         self.systemd_conf_dir.mkdir(parents=True, exist_ok=True)
 
-        # Build first, so a broken app declaration leaves the current units in place.
+        # Build and probe first, so a broken app declaration or sandbox leaves the current units in place.
         defs = self._prod_process_definitions()
+        sandbox_properties = self.get_checked_sandbox_properties()
 
         self._remove_units()
-        renderer = SystemdRenderer(self.bench.config.name, self.database_service)
+        renderer = SystemdRenderer(self.bench.config.name, self.database_service, sandbox_properties)
         workload_units = self._write_units(defs, renderer)
         (self.systemd_conf_dir / self._target_name()).write_text(renderer.render_target(workload_units))
         if self.bench.config.central.enabled:
@@ -111,6 +113,19 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
                 str(self.bench.logs_path / "central-bootstrap.log"),
             )
         )
+
+    def get_checked_sandbox_properties(self) -> list[str]:
+        """Sandbox directives for the workload units, once a trial unit shows this host can start them."""
+        # The bench's siblings are its neighbours, wherever the benches directory is.
+        properties = get_sandbox_properties(
+            self.bench.config.production.sandbox, self.bench.path, self.bench.path.parent
+        )
+        if properties and (error := get_sandbox_error(properties)):
+            raise BenchError(
+                f"This host cannot start sandboxed units for bench '{self.bench.config.name}': {error}\n"
+                "Switch off the failing group in [production.sandbox], or set enabled = false."
+            )
+        return properties
 
     def _workload_socket_text(self) -> dict[str, str]:
         """The workload socket units as they stand on disk, by name."""

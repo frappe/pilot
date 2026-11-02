@@ -2,13 +2,17 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
+from pilot.config.production import ProductionConfig
 from pilot.config.sandbox import SandboxConfig
+from pilot.exceptions import BenchError
 from pilot.managers import systemd_user
 from pilot.managers.processes.definitions import ProcessDefinition
 from pilot.managers.processes.systemd_render import SystemdRenderer, get_sandbox_properties
+from tests.pilot.managers.test_managers_extra import make_bench
 
 
 def _definition(name: str = "web") -> ProcessDefinition:
@@ -130,3 +134,39 @@ def test_the_probe_reports_why_a_trial_unit_failed(
 def test_the_probe_needs_systemd_run(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(systemd_user.shutil, "which", lambda _name: None)
     assert "systemd-run" in systemd_user.get_sandbox_error(["NoNewPrivileges=yes"])
+
+
+def _sandboxed_manager(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, probe_error: str):
+    from pilot.managers.processes import systemd
+
+    bench = make_bench(tmp_path / "benches" / "test-bench")
+    bench.config.production = ProductionConfig(
+        enabled=True, process_manager="systemd", sandbox=SandboxConfig(enabled=True)
+    )
+    manager = systemd.SystemdProcessManager(bench)
+    manager.systemd_conf_dir.mkdir(parents=True, exist_ok=True)
+    web = ProcessDefinition("web", ["/env/bin/python", "serve"], bench.logs_path / "web.log")
+    monkeypatch.setattr(systemd, "AdminEnvManager", MagicMock())
+    monkeypatch.setattr(systemd, "get_sandbox_error", lambda _properties: probe_error)
+    monkeypatch.setattr(manager, "_prod_process_definitions", lambda: [web])
+    return manager
+
+
+def test_write_config_sandboxes_workload_units(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = _sandboxed_manager(tmp_path, monkeypatch, probe_error="")
+    manager.write_config()
+
+    unit = (manager.systemd_conf_dir / "test-bench-web.service").read_text()
+    assert f"TemporaryFileSystem={tmp_path / 'benches'}:ro\n" in unit
+    assert f"BindPaths={tmp_path / 'benches' / 'test-bench'}\n" in unit
+
+
+def test_a_failed_probe_keeps_the_current_units(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = _sandboxed_manager(tmp_path, monkeypatch, probe_error="Unknown assignment: PrivateUsers=yes")
+    existing = manager.systemd_conf_dir / "test-bench-web.service"
+    existing.write_text("[Service]\nExecStart=/env/bin/python serve\n")
+
+    with pytest.raises(BenchError, match="Unknown assignment: PrivateUsers=yes"):
+        manager.write_config()
+
+    assert existing.read_text() == "[Service]\nExecStart=/env/bin/python serve\n"
