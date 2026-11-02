@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   Alert,
+  Badge,
   Button,
   Dialog,
   ErrorMessage,
@@ -15,7 +16,6 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { databaseApi } from '@/api/database'
 import BinlogSettingsDialog from '@/components/settings/BinlogSettingsDialog.vue'
-import MemoryRing from '@/components/settings/MemoryRing.vue'
 import type { DatabaseActionCapabilities, DatabaseCapabilities } from '@/types/database'
 import { errorMessage } from '@/utils/error'
 import { openTaskDetailPage } from '@/utils/taskRoute'
@@ -296,15 +296,33 @@ const stats = computed(() => {
     ? ((memoryShare.value?.total_memory_mb ?? 0) * memoryBreakdown.value.database) / 100
     : 0
 
+  const total = memoryShare.value?.total_memory_mb ?? 0
+
   return [
+    {
+      key: 'memory_share',
+      label: 'Database memory',
+      icon: 'lucide-memory-stick',
+      available: Boolean(memoryShare.value?.available),
+      amount: String(memoryPercent.value),
+      unit: '%',
+      note: total ? `${formatGB((total * memoryPercent.value) / 100)} of ${formatGB(total)}` : '',
+      percent: memoryBreakdown.value ? memoryPercent.value : null,
+      detail: total ? `Apps get ${formatGB((total * (100 - memoryPercent.value)) / 100)}` : '',
+      edit: openMemorySplit,
+    },
     {
       key: 'innodb_buffer_pool_size',
       label: 'Buffer pool',
+      icon: 'lucide-database',
       available: bufferPool.available,
       ...(bufferPool.current_mb == null
         ? { amount: '-', unit: '' }
         : formatMegabytes(bufferPool.current_mb)),
       note: databaseLimit ? `of ${formatGB(databaseLimit)}` : '',
+      detail: bufferPool.dynamic_max_mb
+        ? `No restart up to ${Object.values(formatMegabytes(bufferPool.dynamic_max_mb)).join(' ')}`
+        : '',
       percent:
         databaseLimit && bufferPool.current_mb != null
           ? Math.min((bufferPool.current_mb / databaseLimit) * 100, 100)
@@ -314,10 +332,12 @@ const stats = computed(() => {
     {
       key: 'max_connections',
       label: 'Max connections',
+      icon: 'lucide-cable',
       available: connections.available,
       amount: connections.current == null ? '-' : String(connections.current),
       unit: '',
       note: connections.recommended == null ? '' : `${connections.recommended} advised`,
+      detail: connections.requires_restart ? 'Needs a restart' : 'No restart needed',
       percent:
         connections.current != null && connections.recommended
           ? Math.min((connections.current / connections.recommended) * 100, 100)
@@ -327,25 +347,42 @@ const stats = computed(() => {
   ]
 })
 
-const memoryRing = computed(() => {
+const memoryPercent = computed(() => memoryBreakdown.value?.database ?? 0)
+
+const memorySplitReadout = computed(() => {
   const total = memoryShare.value?.total_memory_mb ?? 0
-  const percent = memoryBreakdown.value?.database ?? 0
+  const database = memorySplitPercent.value
+  const change = (from: number, to: number) => {
+    const difference = ((to - from) * total) / 100 / 1024
 
-  return {
-    percent,
-    apps: formatGB((total * (100 - percent)) / 100),
-    bufferPool: stepFor(percent)?.innodb_buffer_pool_mb,
+    if (!difference) return null
+
+    return {
+      label: `${difference > 0 ? '+' : '−'}${Math.abs(difference).toFixed(1)} GB`,
+      theme: difference > 0 ? ('green' as const) : ('red' as const),
+    }
   }
-})
 
-const insight = computed(() => {
-  const { current, recommended } = action('max_connections')
-
-  if (current == null || recommended == null || current === recommended) return ''
-
-  const direction = current < recommended ? 'below' : 'above'
-
-  return `Max connections is ${Math.abs(recommended - current)} ${direction} the advised ${recommended}.`
+  return [
+    {
+      label: 'Database',
+      color: 'text-ink-gray-8',
+      percent: database,
+      size: formatGB((total * database) / 100),
+      change: change(memoryPercent.value, database),
+      detail: memorySplitStep.value
+        ? `Buffer pool ${formatGB(memorySplitStep.value.innodb_buffer_pool_mb)}`
+        : '',
+    },
+    {
+      label: 'Apps',
+      color: 'text-ink-gray-4',
+      percent: 100 - database,
+      size: formatGB((total * (100 - database)) / 100),
+      change: change(100 - memoryPercent.value, 100 - database),
+      detail: 'Web, workers, Redis',
+    },
+  ]
 })
 
 const editNote = computed(() => {
@@ -371,31 +408,15 @@ const memorySplitSlider = computed({
   },
 })
 
-const stepFor = (percent: number) => {
+const memorySplitStep = computed(() => {
   const steps = memoryShare.value?.steps ?? []
-  const distance = (share: number) => Math.abs(sharePercent(share) - percent)
+  const distance = (share: number) => Math.abs(sharePercent(share) - memorySplitPercent.value)
 
   return steps.reduce<(typeof steps)[number] | null>(
     (closest, step) =>
       !closest || distance(step.share) < distance(closest.share) ? step : closest,
     null,
   )
-}
-
-const memorySplitStep = computed(() => stepFor(memorySplitPercent.value))
-
-const memorySplitSides = computed(() => {
-  const total = memoryShare.value?.total_memory_mb ?? 0
-  const database = memorySplitPercent.value
-
-  return [
-    { label: 'Database', percent: database, size: formatGB((total * database) / 100) },
-    {
-      label: 'Apps, workers and Redis',
-      percent: 100 - database,
-      size: formatGB((total * (100 - database)) / 100),
-    },
-  ]
 })
 
 const openMemorySplit = () => {
@@ -469,69 +490,34 @@ onMounted(load)
     />
 
     <template v-if="capabilities">
-      <p v-if="insight" class="-mt-2 text-ink-gray-6 text-p-base">{{ insight }}</p>
-
-      <div class="gap-4 grid sm:grid-cols-2">
-        <section
-          v-if="memoryBreakdown"
-          class="flex sm:flex-row flex-col sm:items-center gap-6 sm:col-span-2 bg-surface-gray-1 p-4 rounded-6"
-        >
-          <MemoryRing :percent="memoryRing.percent" />
-
-          <div class="flex flex-col flex-1 gap-1 w-full min-w-0">
-            <header class="flex justify-between items-center gap-2 h-5">
-              <h4 class="text-ink-gray-8 text-sm">Database memory</h4>
-
-              <Button
-                v-if="memoryShare?.available"
-                variant="ghost"
-                size="sm"
-                class="-my-1"
-                icon="lucide-bolt"
-                aria-label="Change memory split"
-                :disabled="Boolean(activeAction)"
-                @click="editStat(openMemorySplit)"
-              />
-            </header>
-
-            <div class="flex justify-between items-center gap-4 h-7 text-base">
-              <span class="text-ink-gray-6">Apps, workers and Redis</span>
-              <span class="tabular-nums text-ink-gray-8">{{ memoryRing.apps }}</span>
-            </div>
-
-            <div class="flex justify-between items-center gap-4 h-7 text-base">
-              <span class="text-ink-gray-6">InnoDB buffer pool</span>
-
-              <span class="tabular-nums text-ink-gray-8">
-                {{ memoryRing.bufferPool ? formatGB(memoryRing.bufferPool) : '-' }}
-              </span>
-            </div>
-          </div>
-        </section>
-
+      <div class="gap-4 grid lg:grid-cols-3">
         <section
           v-for="stat in stats"
           :key="stat.key"
-          class="flex flex-col gap-3 border border-outline-gray-1.5 p-4 rounded-6"
+          class="flex flex-col gap-3 bg-surface-gray-1 p-4 rounded-6"
         >
           <header class="flex justify-between items-center gap-2 h-5 text-sm">
-            <span
-              v-if="sizingAction?.action === stat.key"
-              class="truncate"
-              :class="editNote.class"
-              :title="editNote.text"
-            >
-              {{ editNote.text }}
-            </span>
+            <h4 class="flex items-center gap-2 min-w-0 text-ink-gray-8">
+              <span class="size-4 text-ink-gray-4 shrink-0" :class="stat.icon" aria-hidden="true" />
 
-            <h4 v-else class="text-ink-gray-8 truncate">{{ stat.label }}</h4>
+              <span
+                v-if="sizingAction?.action === stat.key"
+                class="truncate"
+                :class="editNote.class"
+                :title="editNote.text"
+              >
+                {{ editNote.text }}
+              </span>
+
+              <span v-else class="truncate">{{ stat.label }}</span>
+            </h4>
 
             <Button
               v-if="stat.available && sizingAction?.action !== stat.key"
               variant="ghost"
               size="sm"
-              class="-my-1"
-              icon="lucide-bolt"
+              class="!text-ink-gray-5 hover:!text-ink-gray-7 -my-1"
+              icon="lucide-chevron-right"
               :aria-label="`Edit ${stat.label}`"
               :disabled="Boolean(activeAction)"
               @click="editStat(stat.edit)"
@@ -595,6 +581,10 @@ onMounted(load)
             class="mt-auto"
             :class="{ invisible: sizingAction?.action === stat.key }"
           />
+
+          <span v-if="stat.detail" class="tabular-nums text-ink-gray-5 text-sm">
+            {{ stat.detail }}
+          </span>
         </section>
       </div>
 
@@ -653,38 +643,71 @@ onMounted(load)
 
   <BinlogSettingsDialog v-model="binlogsOpen" />
 
-  <Dialog
-    v-model="memorySplitOpen"
-    title="Memory split"
-    :message="
-      memoryShare?.total_memory_mb
-        ? `Choose how much of the server's ${formatGB(memoryShare.total_memory_mb)} the database may use.`
-        : undefined
-    "
-    size="md"
-  >
-    <div v-if="memoryShare?.total_memory_mb" class="flex flex-col gap-4">
-      <div class="flex items-center gap-5 bg-surface-gray-1 p-4 rounded-6">
-        <MemoryRing :percent="memorySplitPercent" />
+  <Dialog v-model="memorySplitOpen" title="Memory split" size="lg">
+    <div v-if="memoryShare?.total_memory_mb" class="flex flex-col gap-5">
+      <p class="-mt-2 text-ink-gray-6 text-p-sm">
+        Share {{ formatGB(memoryShare.total_memory_mb) }} of server memory between MariaDB and your
+        apps.
+      </p>
+
+      <div
+        class="flex items-center gap-4 p-4 border border-outline-gray-1.5 rounded-6 tabular-nums"
+      >
+        <div class="contents">
+          <div class="relative place-items-center grid size-28 shrink-0">
+            <svg
+              viewBox="0 0 36 36"
+              class="absolute inset-0 -rotate-90"
+              fill="none"
+              stroke-width="2.5"
+              aria-hidden="true"
+            >
+              <circle cx="18" cy="18" r="15.9155" class="stroke-ink-gray-3" />
+
+              <circle
+                cx="18"
+                cy="18"
+                r="15.9155"
+                :stroke-dasharray="`${memorySplitPercent} 100`"
+                stroke-linecap="round"
+                class="stroke-ink-gray-8 transition-all"
+              />
+            </svg>
+
+            <span class="flex flex-col items-center gap-0.5">
+              <span class="text-lg-semibold text-ink-gray-9">{{ memorySplitPercent }}%</span>
+              <span class="text-ink-gray-5 text-xs">memory</span>
+            </span>
+          </div>
+        </div>
 
         <div class="flex flex-col flex-1 gap-3 min-w-0">
-          <div class="flex flex-col divide-y divide-outline-gray-1">
-            <div
-              v-for="(side, index) in memorySplitSides"
-              :key="side.label"
-              class="flex justify-between items-center gap-4 h-8 text-base"
-            >
-              <span class="flex items-center gap-2 min-w-0 text-ink-gray-6">
-                <span
-                  class="bg-current rounded-full size-2 shrink-0"
-                  :class="index ? 'text-ink-gray-3' : 'text-ink-gray-8'"
-                />
+          <div class="flex gap-3">
+            <template v-for="side in memorySplitReadout" :key="side.label">
+              <div
+                class="flex flex-col gap-1.5 bg-surface-gray-1 px-3 py-2.5 rounded-5 whitespace-nowrap grow"
+              >
+                <span class="flex items-center gap-1.5 text-ink-gray-5 text-sm">
+                  <span class="bg-current rounded-full size-2 shrink-0" :class="side.color" />
+                  {{ side.label }}
+                  · {{ side.percent }}%
+                </span>
 
-                <span class="truncate">{{ side.label }}</span>
-              </span>
+                <span class="flex items-center gap-1.5">
+                  <span class="text-base-medium text-ink-gray-9">{{ side.size }}</span>
 
-              <span class="tabular-nums text-ink-gray-8">{{ side.size }}</span>
-            </div>
+                  <Badge
+                    v-if="side.change"
+                    class="fade-in !rounded-3"
+                    :label="side.change.label"
+                    :theme="side.change.theme"
+                    size="sm"
+                  />
+                </span>
+
+                <span class="text-ink-gray-5 text-sm">{{ side.detail }}</span>
+              </div>
+            </template>
           </div>
 
           <Slider
@@ -697,30 +720,8 @@ onMounted(load)
         </div>
       </div>
 
-      <div v-if="memorySplitStep" class="flex flex-col">
-        <div class="flex justify-between items-center gap-4 h-7 text-base">
-          <span class="text-ink-gray-5">InnoDB buffer pool</span>
-
-          <span class="tabular-nums text-ink-gray-8">
-            {{ formatGB(memorySplitStep.innodb_buffer_pool_mb) }}
-          </span>
-        </div>
-
-        <div class="flex justify-between items-center gap-4 h-7 text-base">
-          <span class="text-ink-gray-5">Memory limit</span>
-
-          <span class="tabular-nums text-ink-gray-8">
-            {{ formatGB(memorySplitStep.memory_max_mb) }}
-          </span>
-        </div>
-      </div>
-
-      <Alert title="A larger buffer pool may need a restart to apply." :dismissible="false" />
-
       <ErrorMessage v-if="actionError" :message="actionError" />
-    </div>
 
-    <template #actions>
       <div class="flex justify-end gap-2">
         <Button
           variant="ghost"
@@ -731,13 +732,13 @@ onMounted(load)
 
         <Button
           variant="solid"
-          label="Apply"
+          :label="memoryShare?.requires_restart ? 'Apply and restart' : 'Apply'"
           :loading="activeAction === 'memory_share'"
           :disabled="sharePercent(memoryShare?.current ?? 0) === memorySplitPercent"
           @click="applyMemorySplit"
         />
       </div>
-    </template>
+    </div>
   </Dialog>
 
   <Dialog v-model="confirmationOpen" :title="confirmationTitle" size="sm">
