@@ -1,0 +1,503 @@
+{
+  "reasons": {
+    "startup": "Read-only because Pilot owns this server-level startup setting.",
+    "memory": "Read-only because an unsafe value can exhaust memory shared by MariaDB and the bench.",
+    "buffer_pool": "Managed automatically with InnoDB Buffer Pool size so Pilot can enforce the host memory budget.",
+    "workload": "Read-only because an unsafe global value can interrupt Frappe requests, jobs, or migrations.",
+    "replication": "Read-only because changing binary logging or replication settings can affect recovery data.",
+    "recovery": "Read-only because this is a recovery control that should only be used during incident response.",
+    "security": "Read-only because Pilot keeps this security-sensitive setting at a safe server default.",
+    "performance_schema": "Use the Performance Schema Quick action so Pilot can restart and verify MariaDB safely.",
+    "innodb_status_output_locks": "Read-only because enabling verbose lock output can produce substantial diagnostic logs.",
+    "long_query_time": "Read-only because MariaDB 11.8 uses version-specific slow-query controls."
+  },
+  "variables": [
+    {
+      "name": "connect_timeout",
+      "label": "Connection handshake timeout",
+      "section": "Connections",
+      "description": "Seconds MariaDB waits for a client to finish its initial handshake.",
+      "type": "integer",
+      "dynamic": true,
+      "edit": "configuration",
+      "min": 2,
+      "max": 60,
+      "step": 1,
+      "unit": "seconds"
+    },
+    {
+      "name": "wait_timeout",
+      "label": "Idle connection timeout",
+      "section": "Connections",
+      "description": "Seconds an inactive non-interactive connection may remain open.",
+      "type": "integer",
+      "dynamic": true,
+      "edit": "configuration",
+      "min": 60,
+      "max": 86400,
+      "step": 1,
+      "unit": "seconds"
+    },
+    {
+      "name": "net_read_timeout",
+      "label": "Network read timeout",
+      "section": "Connections",
+      "description": "Seconds MariaDB waits for more data from a connected client.",
+      "type": "integer",
+      "dynamic": true,
+      "edit": "configuration",
+      "min": 5,
+      "max": 600,
+      "step": 1,
+      "unit": "seconds"
+    },
+    {
+      "name": "net_write_timeout",
+      "label": "Network write timeout",
+      "section": "Connections",
+      "description": "Seconds MariaDB waits while sending a block to a connected client.",
+      "type": "integer",
+      "dynamic": true,
+      "edit": "configuration",
+      "min": 5,
+      "max": 600,
+      "step": 1,
+      "unit": "seconds"
+    },
+    {
+      "name": "max_connections",
+      "label": "Maximum connections",
+      "section": "Connections",
+      "description": "Maximum number of simultaneous client connections.",
+      "type": "integer",
+      "dynamic": true,
+      "edit": "max_connections"
+    },
+    {
+      "name": "extra_max_connections",
+      "label": "Emergency connections",
+      "section": "Connections",
+      "description": "Connections reserved for administrative access when the main limit is full.",
+      "type": "integer",
+      "dynamic": true,
+      "reason": "memory"
+    },
+    {
+      "name": "max_user_connections",
+      "label": "Connections per user",
+      "section": "Connections",
+      "description": "Global default ceiling for simultaneous connections from one database user.",
+      "type": "integer",
+      "dynamic": true,
+      "reason": "workload"
+    },
+    {
+      "name": "net_buffer_length",
+      "label": "Initial network buffer",
+      "section": "Connections",
+      "description": "Starting per-connection network buffer size.",
+      "type": "integer",
+      "dynamic": true,
+      "unit": "bytes",
+      "reason": "memory"
+    },
+    {
+      "name": "max_allowed_packet",
+      "label": "Maximum packet size",
+      "section": "Connections",
+      "description": "Largest packet accepted by MariaDB clients and the server.",
+      "type": "integer",
+      "dynamic": true,
+      "unit": "bytes",
+      "reason": "workload"
+    },
+    {
+      "name": "extra_port",
+      "label": "Emergency connection port",
+      "section": "Connections",
+      "description": "Separate port used for administrative connections.",
+      "type": "integer"
+    },
+    {
+      "name": "innodb_lock_wait_timeout",
+      "label": "InnoDB lock wait timeout",
+      "section": "InnoDB",
+      "description": "Seconds a statement waits for an InnoDB row lock before failing.",
+      "type": "integer",
+      "dynamic": true,
+      "edit": "configuration",
+      "min": 1,
+      "max": 300,
+      "step": 1,
+      "unit": "seconds"
+    },
+    {
+      "name": "innodb_old_blocks_pct",
+      "label": "InnoDB old buffer percentage",
+      "section": "InnoDB",
+      "description": "Percentage of the Buffer Pool LRU reserved for older pages.",
+      "type": "integer",
+      "dynamic": true,
+      "edit": "configuration",
+      "min": 5,
+      "max": 95,
+      "step": 1,
+      "unit": "percent"
+    },
+    {
+      "name": "innodb_old_blocks_time",
+      "label": "InnoDB old block delay",
+      "section": "InnoDB",
+      "description": "Delay before an old Buffer Pool page can move to the new sublist.",
+      "type": "integer",
+      "dynamic": true,
+      "edit": "configuration",
+      "min": 0,
+      "max": 60000,
+      "step": 1,
+      "unit": "milliseconds"
+    },
+    {
+      "name": "innodb_stats_persistent_sample_pages",
+      "label": "Persistent statistics sample pages",
+      "section": "InnoDB",
+      "description": "Index pages sampled when MariaDB calculates persistent optimizer statistics.",
+      "type": "integer",
+      "dynamic": true,
+      "edit": "configuration",
+      "min": 1,
+      "max": 1024,
+      "step": 1,
+      "unit": "pages"
+    },
+    {
+      "name": "innodb_print_all_deadlocks",
+      "label": "Log all InnoDB deadlocks",
+      "section": "InnoDB",
+      "description": "Write every InnoDB deadlock report to the MariaDB error log.",
+      "type": "boolean",
+      "dynamic": true,
+      "edit": "configuration"
+    },
+    {
+      "name": "innodb_status_output_locks",
+      "label": "InnoDB lock status output",
+      "section": "InnoDB",
+      "description": "Include extended lock details in periodic InnoDB status output.",
+      "type": "boolean",
+      "dynamic": true,
+      "reason": "innodb_status_output_locks"
+    },
+    {
+      "name": "innodb_strict_mode",
+      "label": "InnoDB strict mode",
+      "section": "InnoDB",
+      "description": "Reject invalid or incompatible InnoDB table options instead of warning.",
+      "type": "boolean",
+      "dynamic": true,
+      "reason": "security"
+    },
+    {
+      "name": "innodb_buffer_pool_size",
+      "label": "InnoDB Buffer Pool size",
+      "section": "InnoDB",
+      "description": "Memory reserved for caching InnoDB data and indexes.",
+      "type": "integer",
+      "dynamic": true,
+      "edit": "innodb_buffer_pool_size",
+      "unit": "bytes"
+    },
+    {
+      "name": "innodb_buffer_pool_size_max",
+      "label": "InnoDB Buffer Pool live ceiling",
+      "section": "InnoDB",
+      "description": "MariaDB 11.8 ceiling for increasing the Buffer Pool without a restart.",
+      "type": "integer",
+      "unit": "bytes",
+      "reason": "buffer_pool"
+    },
+    {
+      "name": "innodb_buffer_pool_size_auto_min",
+      "label": "InnoDB Buffer Pool automatic minimum",
+      "section": "InnoDB",
+      "description": "MariaDB 11.8 lower boundary for automatic Buffer Pool resizing.",
+      "type": "integer",
+      "unit": "bytes",
+      "reason": "buffer_pool"
+    },
+    {
+      "name": "innodb_log_file_size",
+      "label": "InnoDB redo log size",
+      "section": "InnoDB",
+      "description": "Size of the InnoDB redo log used for crash recovery.",
+      "type": "integer",
+      "dynamic": true,
+      "unit": "bytes",
+      "reason": "memory"
+    },
+    {
+      "name": "innodb_force_recovery",
+      "label": "InnoDB force recovery mode",
+      "section": "InnoDB",
+      "description": "Emergency recovery level used when normal InnoDB startup cannot complete.",
+      "type": "integer",
+      "reason": "recovery"
+    },
+    {
+      "name": "innodb_snapshot_isolation",
+      "label": "InnoDB snapshot isolation",
+      "section": "InnoDB",
+      "description": "Controls write conflict detection for repeatable-read transactions.",
+      "type": "boolean",
+      "dynamic": true,
+      "edit": "configuration"
+    },
+    {
+      "name": "innodb_flush_log_at_trx_commit",
+      "label": "Flush log at transaction commit",
+      "section": "InnoDB",
+      "description": "Controls transaction durability when MariaDB or the host crashes.",
+      "type": "integer",
+      "dynamic": true,
+      "reason": "security"
+    },
+    {
+      "name": "tmp_table_size",
+      "label": "In-memory temporary table size",
+      "section": "Memory and temporary tables",
+      "description": "Per-connection ceiling before internal temporary tables move to disk.",
+      "type": "integer",
+      "dynamic": true,
+      "unit": "bytes",
+      "reason": "memory"
+    },
+    {
+      "name": "max_heap_table_size",
+      "label": "MEMORY table size",
+      "section": "Memory and temporary tables",
+      "description": "Maximum size of user-created MEMORY tables and one temporary-table limit.",
+      "type": "integer",
+      "dynamic": true,
+      "unit": "bytes",
+      "reason": "memory"
+    },
+    {
+      "name": "tmp_disk_table_size",
+      "label": "Temporary disk table size",
+      "section": "Memory and temporary tables",
+      "description": "Size limit used for internal temporary tables stored on disk.",
+      "type": "integer",
+      "dynamic": true,
+      "unit": "bytes",
+      "reason": "memory"
+    },
+    {
+      "name": "key_buffer_size",
+      "label": "MyISAM key buffer size",
+      "section": "Memory and temporary tables",
+      "description": "Memory reserved for MyISAM index blocks.",
+      "type": "integer",
+      "dynamic": true,
+      "unit": "bytes",
+      "reason": "memory"
+    },
+    {
+      "name": "tmpdir",
+      "label": "Temporary file directory",
+      "section": "Memory and temporary tables",
+      "description": "Directory MariaDB uses for server-side temporary files."
+    },
+    {
+      "name": "max_statement_time",
+      "label": "Maximum statement time",
+      "section": "Query behavior",
+      "description": "Global time limit after which MariaDB aborts a statement.",
+      "dynamic": true,
+      "reason": "workload"
+    },
+    {
+      "name": "long_query_time",
+      "label": "Slow query threshold",
+      "section": "Query behavior",
+      "description": "Execution time after which a query is counted as slow.",
+      "dynamic": true,
+      "unit": "seconds",
+      "reason": "long_query_time"
+    },
+    {
+      "name": "binlog_expire_logs_seconds",
+      "label": "Binary log retention",
+      "section": "Binary logging and replication",
+      "description": "Seconds before binary logs are purged automatically. 0 keeps them until purged manually.",
+      "type": "integer",
+      "dynamic": true,
+      "edit": "configuration",
+      "min": 0,
+      "max": 8553600,
+      "step": 1,
+      "unit": "seconds"
+    },
+    {
+      "name": "max_binlog_total_size",
+      "label": "Binary log size limit",
+      "section": "Binary logging and replication",
+      "description": "Disk space all binary logs may use before the oldest are purged. 0 means no limit.",
+      "type": "integer",
+      "dynamic": true,
+      "edit": "configuration",
+      "min": 0,
+      "max": 1099511627776,
+      "step": 1,
+      "unit": "bytes"
+    },
+    {
+      "name": "expire_logs_days",
+      "label": "Legacy binary log retention",
+      "section": "Binary logging and replication",
+      "description": "Legacy day-based retention period for binary logs.",
+      "dynamic": true,
+      "unit": "days",
+      "reason": "replication"
+    },
+    {
+      "name": "log_bin",
+      "label": "Binary logging",
+      "section": "Binary logging and replication",
+      "description": "Whether MariaDB writes binary logs for recovery and replication.",
+      "reason": "replication"
+    },
+    {
+      "name": "binlog_format",
+      "label": "Binary log format",
+      "section": "Binary logging and replication",
+      "description": "How data changes are represented in the binary log.",
+      "reason": "replication"
+    },
+    {
+      "name": "log_slave_updates",
+      "label": "Log replica updates",
+      "section": "Binary logging and replication",
+      "description": "Whether updates received from a primary are written to this server's binary log.",
+      "reason": "replication"
+    },
+    {
+      "name": "slave_connections_needed_for_purge",
+      "label": "Replica connections needed for purge",
+      "section": "Binary logging and replication",
+      "description": "MariaDB 11.8 replica-connection threshold used before old row versions are purged.",
+      "type": "integer",
+      "reason": "replication"
+    },
+    {
+      "name": "read_only",
+      "label": "Read-only mode",
+      "section": "Security and recovery",
+      "description": "Prevents ordinary database users from changing non-temporary tables.",
+      "dynamic": true,
+      "reason": "recovery"
+    },
+    {
+      "name": "local_infile",
+      "label": "Local file imports",
+      "section": "Security and recovery",
+      "description": "Allows clients to upload local files through LOAD DATA LOCAL INFILE.",
+      "type": "boolean",
+      "dynamic": true,
+      "reason": "security"
+    },
+    {
+      "name": "myisam_recover_options",
+      "label": "MyISAM recovery options",
+      "section": "Security and recovery",
+      "description": "Recovery behavior used when MariaDB opens a damaged MyISAM table.",
+      "reason": "recovery"
+    },
+    {
+      "name": "performance_schema",
+      "label": "Performance Schema",
+      "section": "Performance Schema",
+      "description": "Collects instrumentation used by database performance diagnostics.",
+      "type": "boolean",
+      "edit": "performance_schema"
+    },
+    {
+      "name": "performance_schema_instrument",
+      "label": "Performance Schema instruments",
+      "section": "Performance Schema",
+      "description": "Startup rules controlling which operations Performance Schema instruments.",
+      "reason": "performance_schema"
+    },
+    {
+      "name": "performance_schema_consumer_events_statements_current",
+      "label": "Current statement events",
+      "section": "Performance Schema",
+      "description": "Collect current statement instrumentation events.",
+      "type": "boolean",
+      "reason": "performance_schema"
+    },
+    {
+      "name": "performance_schema_consumer_events_statements_history",
+      "label": "Statement event history",
+      "section": "Performance Schema",
+      "description": "Collect short statement instrumentation history.",
+      "type": "boolean",
+      "reason": "performance_schema"
+    },
+    {
+      "name": "performance_schema_consumer_events_statements_history_long",
+      "label": "Long statement event history",
+      "section": "Performance Schema",
+      "description": "Collect long statement instrumentation history.",
+      "type": "boolean",
+      "reason": "performance_schema"
+    },
+    {
+      "name": "performance_schema_consumer_events_stages_current",
+      "label": "Current stage events",
+      "section": "Performance Schema",
+      "description": "Collect current execution-stage instrumentation events.",
+      "type": "boolean",
+      "reason": "performance_schema"
+    },
+    {
+      "name": "performance_schema_consumer_events_stages_history",
+      "label": "Stage event history",
+      "section": "Performance Schema",
+      "description": "Collect short execution-stage instrumentation history.",
+      "type": "boolean",
+      "reason": "performance_schema"
+    },
+    {
+      "name": "performance_schema_consumer_events_stages_history_long",
+      "label": "Long stage event history",
+      "section": "Performance Schema",
+      "description": "Collect long execution-stage instrumentation history.",
+      "type": "boolean",
+      "reason": "performance_schema"
+    },
+    {
+      "name": "performance_schema_consumer_events_waits_current",
+      "label": "Current wait events",
+      "section": "Performance Schema",
+      "description": "Collect current wait instrumentation events.",
+      "type": "boolean",
+      "reason": "performance_schema"
+    },
+    {
+      "name": "performance_schema_consumer_events_waits_history",
+      "label": "Wait event history",
+      "section": "Performance Schema",
+      "description": "Collect short wait instrumentation history.",
+      "type": "boolean",
+      "reason": "performance_schema"
+    },
+    {
+      "name": "performance_schema_consumer_events_waits_history_long",
+      "label": "Long wait event history",
+      "section": "Performance Schema",
+      "description": "Collect long wait instrumentation history.",
+      "type": "boolean",
+      "reason": "performance_schema"
+    }
+  ]
+}

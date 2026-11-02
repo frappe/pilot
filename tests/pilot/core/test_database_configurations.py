@@ -10,6 +10,7 @@ from pilot.core.database.mariadb_variables import (
     EDITABLE_MARIADB_VARIABLE_NAMES,
     MARIADB_VARIABLE_NAMES,
     MARIADB_VARIABLE_SPECS,
+    MariaDBVariableValidator,
     mariadb_variable_spec,
 )
 from pilot.core.mariadb_memory import calculate_mariadb_variable_limits
@@ -327,12 +328,12 @@ def test_catalog_rejects_wrong_types_ranges_and_read_only_variables(
     message: str,
 ) -> None:
     with pytest.raises(ValueError, match=message):
-        mariadb_variable_spec(name).validate_input(value)
+        MariaDBVariableValidator(mariadb_variable_spec(name)).validate_input(value)
 
 
 def test_guarded_action_variables_cannot_reach_the_generic_manager_path() -> None:
     with pytest.raises(ValueError, match="guarded database action"):
-        mariadb_variable_spec("max_connections").validate_input(40)
+        MariaDBVariableValidator(mariadb_variable_spec("max_connections")).validate_input(40)
 
 
 def test_prepare_change_normalizes_live_value_and_detects_noop() -> None:
