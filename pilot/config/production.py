@@ -1,5 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from pilot.config.sandbox import SandboxConfig
 from pilot.exceptions import ConfigError
 
 # Process managers usable in production. "none" is no longer a manager - an
@@ -11,6 +12,7 @@ VALID_PROCESS_MANAGERS = ("systemd", "supervisor")
 class ProductionConfig:
     enabled: bool = False
     process_manager: str = ""  # systemd | supervisor - required when enabled
+    sandbox: SandboxConfig = field(default_factory=SandboxConfig)
 
     @classmethod
     def from_dict(cls, data: dict | None) -> "ProductionConfig":
@@ -25,7 +27,7 @@ class ProductionConfig:
         # Oldest format derived the manager from a `lightweight` flag.
         if enabled and not pm and "lightweight" in data:
             pm = "systemd" if data.get("lightweight", False) else "supervisor"
-        return cls(enabled=enabled, process_manager=pm)
+        return cls(enabled=enabled, process_manager=pm, sandbox=SandboxConfig.from_dict(data.get("sandbox")))
 
     @staticmethod
     def _normalize_process_manager(value: str) -> str:
@@ -48,3 +50,4 @@ class ProductionConfig:
             raise ConfigError(
                 f"production.process_manager '{pm}' is invalid (bench '{bench_name}'). Must be one of {', '.join(VALID_PROCESS_MANAGERS)}."
             )
+        self.sandbox.validate(pm, bench_name)
