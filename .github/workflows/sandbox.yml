@@ -1,0 +1,95 @@
+name: Sandbox Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [process-isolation]
+  pull_request:
+    branches: [develop]
+    paths:
+      - "pilot/config/sandbox.py"
+      - "pilot/config/production.py"
+      - "pilot/managers/processes/systemd*.py"
+      - "pilot/managers/systemd_user.py"
+      - "tests/integration/test_sandbox.py"
+      - ".github/workflows/sandbox.yml"
+
+jobs:
+  sandbox:
+    # A full VM with a user systemd manager; Ubuntu 24.04 ships systemd 255.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install system dependencies
+        env:
+          MARIADB_REPO_SETUP_URL: https://r.mariadb.com/downloads/mariadb_repo_setup
+          MARIADB_VERSION: "11.8"
+        run: |
+          curl -LsSf "$MARIADB_REPO_SETUP_URL" -o /tmp/mariadb_repo_setup
+          sudo bash /tmp/mariadb_repo_setup \
+            --mariadb-server-version="mariadb-$MARIADB_VERSION"
+          sudo apt-get update -y
+          sudo apt-get install -y mariadb-server mariadb-client libmariadb-dev redis-server git nginx openssl
+          # Pilot runs its own rootless MariaDB; free the port for it.
+          sudo systemctl disable --now mariadb
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install yarn and Pilot
+        run: |
+          npm install -g yarn
+          pip install -e ".[test,admin]"
+
+      - name: Show host sandbox support
+        run: |
+          systemctl --version | head -1
+          sysctl kernel.apparmor_restrict_unprivileged_userns || true
+          sysctl kernel.unprivileged_userns_clone || true
+
+      - name: Create bench
+        run: |
+          mkdir -p benches/ci-bench
+          cp tests/fixtures/ci_bench.toml benches/ci-bench/bench.toml
+          cp tests/fixtures/ci_common_config.toml benches/common_config.toml
+
+      - name: Pilot init
+        run: pilot init -b ci-bench
+        timeout-minutes: 45
+
+      - name: Create site
+        run: pilot new-site site1.localhost --admin-password admin
+
+      - name: Run sandbox tests
+        run: pytest tests/integration/test_sandbox.py -v -s
+        env:
+          BENCH_TEST_ROOT: ${{ github.workspace }}/benches/ci-bench
+          BENCH_E2E_SANDBOX: "1"
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          export XDG_RUNTIME_DIR=/run/user/$(id -u)
+          echo "::group::systemd --user units"
+          systemctl --user list-units --all --no-pager | grep -i ci-bench || true
+          echo "::endgroup::"
+          echo "::group::failed unit status"
+          systemctl --user --no-pager status 'ci-bench-*' 'ci-bench.target' || true
+          echo "::endgroup::"
+          echo "::group::journal (user)"
+          journalctl --user -n 300 --no-pager || true
+          echo "::endgroup::"
+          echo "::group::bench logs"
+          tail -n 80 benches/ci-bench/logs/*.log 2>/dev/null || true
+          echo "::endgroup::"
