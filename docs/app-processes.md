@@ -30,6 +30,8 @@ A process runs as `<app>-<name>`, here `mail-stalwart`, and logs to `logs/mail-s
 | `env` | table of strings or numbers | empty | Environment variables, over the defaults below. |
 | `restart_on_failure` | bool | `true` | Restart after a non-zero exit. |
 | `stop_timeout` | int | manager default | Seconds to wait for a graceful stop. |
+| `read_paths` | list of strings | empty | Paths the process may read with [`sandbox = true`](production.md#sandbox). |
+| `write_paths` | list of strings | empty | Paths the process may read and write with the sandbox. |
 
 The table key must match `^[a-z0-9][a-z0-9_]{0,31}$`, with no hyphen so `<app>-<name>` stays unique, and env keys must match `^[A-Z_][A-Z0-9_]*$`. Values must not contain control characters.
 
@@ -40,6 +42,18 @@ Every app process gets the bench venv first on `PATH`, so `python` and the comma
 ## Paths
 
 A `command` runs in the app directory, `apps/<app>`. A relative `working_dir` is read from there. The first entry of `command`, `pre_run` and `post_run` resolves from the working directory when it contains a slash (`./stalwart`, `bin/stalwart`). An absolute path is used as given, and a bare name (`flow`) is looked up on `PATH`. Paths are not checked on disk, so `pre_run` can download the executable.
+
+## Sandbox paths
+
+With the sandbox on, the home directory is empty. A path must be absolute or start with `~/`, without `..`. Pilot refuses `~/.ssh`, `~/.gnupg`, `~/.config/systemd`, `~/.aws`, `~/.kube`, and any directory that contains one, such as `~`.
+
+```toml
+[tool.pilot.sandbox]
+read_paths = ["~/.cache/models"]
+write_paths = ["~/.cache/mail"]
+```
+
+`[tool.pilot.sandbox]` applies to every workload unit while a site uses the app. `read_paths` and `write_paths` on a process apply to that process only. A missing path is skipped.
 
 ## Frappe commands
 

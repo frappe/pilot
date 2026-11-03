@@ -131,14 +131,17 @@ When using Central or another upstream proxy, keep the local Admin service priva
 |---|---|
 | `NoNewPrivileges` | sudo and setuid programs fail. |
 | `PrivateUsers` | Needed by the mount directives in a user unit. |
-| `ProtectSystem=strict`, `ProtectHome=read-only`, `ReadWritePaths=<bench>`, `PrivateTmp` | Writes only inside the bench. Each unit has its own `/tmp`. |
+| `ProtectSystem=strict`, `ReadWritePaths=<bench>`, `PrivateTmp` | Writes only inside the bench. Each unit has its own `/tmp`. |
+| `ProtectHome=tmpfs` | The home directory is empty, so SSH keys, other dotfiles and the user bus in `/run/user` are not there to read. |
+| `BindReadOnlyPaths` | Brings back `~/.local/share/uv/python`, nvm (`$NVM_DIR` or `~/.nvm`), the Pilot install, linked apps, and the `read_paths` of apps. |
 | `TemporaryFileSystem=<benches dir>:ro`, `BindPaths=<bench>` | The neighbouring benches and `common_config.toml` are hidden. |
-| `InaccessiblePaths=~/.ssh ~/.config/systemd` | SSH keys and user units are hidden. |
 | `SystemCallFilter=@system-service`, `SystemCallArchitectures=native`, `SystemCallErrorNumber=EPERM` | Blocks ptrace, mount, module loading and other privileged syscalls. |
 | `ProtectKernelTunables`, `ProtectKernelModules`, `ProtectKernelLogs`, `ProtectControlGroups`, `ProtectClock`, `ProtectHostname` | Kernel settings, logs, cgroups, the clock and the hostname are read-only. |
 | `PrivateDevices` | Only pseudo devices such as `/dev/null` are visible. |
 | `RestrictNamespaces`, `RestrictRealtime`, `RestrictSUIDSGID`, `LockPersonality` | No new namespaces, realtime scheduling or setuid files. |
 | `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK` | Only local and IP sockets. |
+
+Apps can keep more home paths. Declare `read_paths` and `write_paths` under `[tool.pilot.sandbox]` in `pyproject.toml` for every workload unit, or on a `[tool.pilot.processes.<name>]` table for that unit only. See [App Processes](app-processes.md#sandbox-paths).
 
 Before Pilot replaces the units, it starts a trial unit with the same directives. When the host cannot start it, setup fails with the systemd error and the current units stay. Set `sandbox = false` to deploy without it.
 
