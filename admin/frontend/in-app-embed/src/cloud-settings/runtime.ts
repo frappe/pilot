@@ -1,6 +1,7 @@
 import { defineCustomElement, h, nextTick, type PropType } from 'vue'
 import type { CloudContext, CloudSettingsOptions } from '@frappe/cloud-sdk'
 import CloudSettings from './CloudSettings.vue'
+import CloudSettingsToasts from './CloudSettingsToasts.vue'
 
 const TAG = 'fc-cloud-settings'
 const CloudSettingsElement = defineCustomElement({
@@ -22,6 +23,16 @@ const CloudSettingsElement = defineCustomElement({
 })
 
 if (!customElements.get(TAG)) customElements.define(TAG, CloudSettingsElement)
+
+// Toasts live outside the dialog, so a task that ends after it closes can still report.
+const TOASTS_TAG = 'fc-cloud-settings-toasts'
+const ToastsElement = defineCustomElement({
+  styles: ['__CLOUD_SETTINGS_STYLES__'],
+  shadowRoot: true,
+  setup: () => () => h(CloudSettingsToasts),
+})
+
+if (!customElements.get(TOASTS_TAG)) customElements.define(TOASTS_TAG, ToastsElement)
 
 if (typeof CSS !== 'undefined' && 'registerProperty' in CSS) {
   try {
@@ -79,6 +90,7 @@ const trackInline = (element: HTMLElement): (() => void) => {
 
 export const mountCloudSettings = (context: CloudContext, options: CloudSettingsOptions = {}): void => {
   loadFontIfMissing()
+  if (!document.querySelector(TOASTS_TAG)) document.body.append(document.createElement(TOASTS_TAG))
 
   const existing = host ?? document.querySelector(TAG)
   existing?.dispatchEvent(new CustomEvent('close'))
