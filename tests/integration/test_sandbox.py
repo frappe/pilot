@@ -51,7 +51,7 @@ def sandboxed(bench_root: Path, bench_bin: str):
     toml_path = bench_root / "bench.toml"
     data = tomllib.loads(toml_path.read_text())
     data.setdefault("admin", {}).update(password="admin", tls=False)
-    data.setdefault("production", {})["sandbox"] = {"enabled": True}
+    data.setdefault("production", {})["sandbox"] = True
     BenchConfig.write_raw(toml_path, data)
     neighbour = bench_root.parent / NEIGHBOUR
     neighbour.mkdir(exist_ok=True)

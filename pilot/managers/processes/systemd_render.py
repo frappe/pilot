@@ -4,37 +4,34 @@ import re
 import shlex
 from pathlib import Path
 
-from pilot.config.sandbox import SandboxConfig
 from pilot.managers.processes.base import ServiceRenderer, override
 from pilot.managers.processes.local import ProcessDefinition
 
 _SAFE_ARGUMENT = re.compile(r"[\w@%+=:,./-]+", re.ASCII)
 
 # NoNewPrivileges keeps sudo out; the mount directives need PrivateUsers in a --user unit.
-_SANDBOX_BASELINE = ["NoNewPrivileges=yes", "PrivateUsers=yes"]
-_SANDBOX_GROUPS = {
-    "syscalls": [
-        "SystemCallFilter=@system-service",
-        "SystemCallArchitectures=native",
-        "SystemCallErrorNumber=EPERM",
-    ],
-    "kernel": [
-        "ProtectKernelTunables=yes",
-        "ProtectKernelModules=yes",
-        "ProtectKernelLogs=yes",
-        "ProtectControlGroups=yes",
-        "ProtectClock=yes",
-        "ProtectHostname=yes",
-    ],
-    "devices": ["PrivateDevices=yes"],
-    "namespaces": [
-        "RestrictNamespaces=yes",
-        "RestrictRealtime=yes",
-        "RestrictSUIDSGID=yes",
-        "LockPersonality=yes",
-    ],
-    "network": ["RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK"],
-}
+_SANDBOX_DIRECTIVES = [
+    "NoNewPrivileges=yes",
+    "PrivateUsers=yes",
+    "SystemCallFilter=@system-service",
+    "SystemCallArchitectures=native",
+    "SystemCallErrorNumber=EPERM",
+    "ProtectKernelTunables=yes",
+    "ProtectKernelModules=yes",
+    "ProtectKernelLogs=yes",
+    "ProtectControlGroups=yes",
+    "ProtectClock=yes",
+    "ProtectHostname=yes",
+    "PrivateDevices=yes",
+    "RestrictNamespaces=yes",
+    "RestrictRealtime=yes",
+    "RestrictSUIDSGID=yes",
+    "LockPersonality=yes",
+    "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK",
+    "ProtectSystem=strict",
+    "ProtectHome=read-only",
+    "PrivateTmp=yes",
+]
 _HIDDEN_HOME_PATHS = (".ssh", ".config/systemd")
 
 
@@ -52,35 +49,18 @@ def _quote(argument: str) -> str:
     return argument.replace("%", "%%").replace("$", "$$")
 
 
-def get_sandbox_properties(sandbox: SandboxConfig, bench_path: Path, benches_dir: Path) -> list[str]:
-    """systemd.exec directives for the enabled sandbox groups; empty when the sandbox is off."""
-    if not sandbox.enabled:
-        return []
-    properties = list(_SANDBOX_BASELINE)
-    for group, directives in _SANDBOX_GROUPS.items():
-        if getattr(sandbox, group):
-            properties += directives
-    hidden = [str(Path(path).expanduser()) for path in sandbox.inaccessible_paths]
-    if sandbox.filesystem:
-        # "-" skips a built-in path the host lacks; the user's own paths must exist.
-        hidden = [*(f"-{Path.home() / path}" for path in _HIDDEN_HOME_PATHS), *hidden]
+def get_sandbox_properties(bench_path: Path, benches_dir: Path) -> list[str]:
+    """systemd.exec directives that confine a workload unit to its own bench."""
+    hidden = " ".join(_quote(f"-{Path.home() / path}") for path in _HIDDEN_HOME_PATHS)
+    return [
+        *_SANDBOX_DIRECTIVES,
         # The tmpfs hides the neighbouring benches; the bind brings this one back.
-        writable = [bench_path, *(Path(path).expanduser() for path in sandbox.writable_paths)]
-        properties += [
-            "ProtectSystem=strict",
-            "ProtectHome=read-only",
-            "PrivateTmp=yes",
-            f"TemporaryFileSystem={_quote(f'{benches_dir}:ro')}",
-            f"BindPaths={_quote(str(bench_path))}",
-            f"ReadWritePaths={_join_paths(writable)}",
-        ]
-    if hidden:
-        properties.append(f"InaccessiblePaths={_join_paths(hidden)}")
-    return properties
-
-
-def _join_paths(paths: list[Path] | list[str]) -> str:
-    return " ".join(_quote(str(path)) for path in paths)
+        f"TemporaryFileSystem={_quote(f'{benches_dir}:ro')}",
+        f"BindPaths={_quote(str(bench_path))}",
+        f"ReadWritePaths={_quote(str(bench_path))}",
+        # "-" skips a path the host lacks.
+        f"InaccessiblePaths={hidden}",
+    ]
 
 
 def _render_env(env: dict) -> str:

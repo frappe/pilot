@@ -116,14 +116,14 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
 
     def get_checked_sandbox_properties(self) -> list[str]:
         """Sandbox directives for the workload units, once a trial unit shows this host can start them."""
+        if not self.bench.config.production.sandbox:
+            return []
         # The bench's siblings are its neighbours, wherever the benches directory is.
-        properties = get_sandbox_properties(
-            self.bench.config.production.sandbox, self.bench.path, self.bench.path.parent
-        )
-        if properties and (error := get_sandbox_error(properties)):
+        properties = get_sandbox_properties(self.bench.path, self.bench.path.parent)
+        if error := get_sandbox_error(properties):
             raise BenchError(
                 f"This host cannot start sandboxed units for bench '{self.bench.config.name}': {error}\n"
-                "Switch off the failing group in [production.sandbox], or set enabled = false."
+                "Set sandbox = false under [production] to run the bench without it."
             )
         return properties
 

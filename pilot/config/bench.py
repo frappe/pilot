@@ -29,7 +29,6 @@ from pilot.config.production import ProductionConfig
 from pilot.config.proxy import ProxyConfig
 from pilot.config.redis import RedisConfig
 from pilot.config.s3 import S3Config
-from pilot.config.sandbox import SandboxConfig
 from pilot.config.schema import TomlSchema, field_names
 from pilot.config.telemetry import TelemetryConfig
 from pilot.config.waf import WafCondition, WafConfig, WafRule
@@ -602,8 +601,8 @@ class BenchConfig:
         production: ConfigDict = {"enabled": self.production.enabled}
         if self.production.process_manager:
             production["process_manager"] = self.production.process_manager
-        if self.production.sandbox != SandboxConfig():
-            production["sandbox"] = self.production.sandbox.to_dict()
+        if self.production.sandbox:
+            production["sandbox"] = True
         return production
 
     def _lite_mode_section(self) -> ConfigDict:
@@ -940,10 +939,7 @@ def _bench_schema() -> TomlSchema:
         tables={
             "bench": TomlSchema(keys=set(_BENCH_KEYS)),
             "redis": TomlSchema(keys=field_names(RedisConfig)),
-            "production": TomlSchema(
-                keys=field_names(ProductionConfig) - {"sandbox"} | _PRODUCTION_LEGACY,
-                tables={"sandbox": TomlSchema(keys=field_names(SandboxConfig))},
-            ),
+            "production": TomlSchema(keys=field_names(ProductionConfig) | _PRODUCTION_LEGACY),
             "lite_mode": TomlSchema(keys=field_names(LiteModeConfig)),
             "gunicorn": TomlSchema(keys=field_names(GunicornConfig) | _GUNICORN_LEGACY),
             "build": TomlSchema(keys=field_names(BuildConfig)),

@@ -7,7 +7,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from pilot.config.production import ProductionConfig
-from pilot.config.sandbox import SandboxConfig
 from pilot.exceptions import BenchError
 from pilot.managers import systemd_user
 from pilot.managers.processes.definitions import ProcessDefinition
@@ -39,75 +38,43 @@ def test_unsandboxed_unit_has_no_directives() -> None:
 BENCH = Path("/srv/pilot/benches/b")
 BENCHES = Path("/srv/pilot/benches")
 
-GROUP_DIRECTIVES = {
-    "syscalls": {
-        "SystemCallFilter=@system-service",
-        "SystemCallArchitectures=native",
-        "SystemCallErrorNumber=EPERM",
-    },
-    "kernel": {
-        "ProtectKernelTunables=yes",
-        "ProtectKernelModules=yes",
-        "ProtectKernelLogs=yes",
-        "ProtectControlGroups=yes",
-        "ProtectClock=yes",
-        "ProtectHostname=yes",
-    },
-    "devices": {"PrivateDevices=yes"},
-    "namespaces": {
-        "RestrictNamespaces=yes",
-        "RestrictRealtime=yes",
-        "RestrictSUIDSGID=yes",
-        "LockPersonality=yes",
-    },
-    "network": {"RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK"},
-    "filesystem": {
-        "ProtectSystem=strict",
-        "ProtectHome=read-only",
-        "PrivateTmp=yes",
-        "TemporaryFileSystem=/srv/pilot/benches:ro",
-        "BindPaths=/srv/pilot/benches/b",
-        "ReadWritePaths=/srv/pilot/benches/b",
-        f"InaccessiblePaths=-{Path.home()}/.ssh -{Path.home()}/.config/systemd",
-    },
+SANDBOX_DIRECTIVES = {
+    "NoNewPrivileges=yes",
+    "PrivateUsers=yes",
+    "SystemCallFilter=@system-service",
+    "SystemCallArchitectures=native",
+    "SystemCallErrorNumber=EPERM",
+    "ProtectKernelTunables=yes",
+    "ProtectKernelModules=yes",
+    "ProtectKernelLogs=yes",
+    "ProtectControlGroups=yes",
+    "ProtectClock=yes",
+    "ProtectHostname=yes",
+    "PrivateDevices=yes",
+    "RestrictNamespaces=yes",
+    "RestrictRealtime=yes",
+    "RestrictSUIDSGID=yes",
+    "LockPersonality=yes",
+    "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK",
+    "ProtectSystem=strict",
+    "ProtectHome=read-only",
+    "PrivateTmp=yes",
+    "TemporaryFileSystem=/srv/pilot/benches:ro",
+    "BindPaths=/srv/pilot/benches/b",
+    "ReadWritePaths=/srv/pilot/benches/b",
+    f"InaccessiblePaths=-{Path.home()}/.ssh -{Path.home()}/.config/systemd",
 }
 
 
-def _properties(**sandbox: object) -> set[str]:
-    config = SandboxConfig.from_dict({"enabled": True, **sandbox})
-    return set(get_sandbox_properties(config, BENCH, BENCHES))
+def test_the_sandbox_directives() -> None:
+    assert set(get_sandbox_properties(BENCH, BENCHES)) == SANDBOX_DIRECTIVES
 
 
-def test_full_sandbox_is_the_baseline_plus_every_group() -> None:
-    expected = {"NoNewPrivileges=yes", "PrivateUsers=yes"}.union(*GROUP_DIRECTIVES.values())
-    assert _properties() == expected
+def test_a_bench_path_with_a_space_is_quoted() -> None:
+    properties = get_sandbox_properties(Path("/srv/my benches/b"), Path("/srv/my benches"))
 
-
-@pytest.mark.parametrize("group", sorted(GROUP_DIRECTIVES))
-def test_switching_a_group_off_drops_exactly_its_directives(group: str) -> None:
-    assert _properties() - _properties(**{group: False}) == GROUP_DIRECTIVES[group]
-
-
-def test_baseline_stays_with_every_group_off() -> None:
-    assert _properties(**dict.fromkeys(GROUP_DIRECTIVES, False)) == {
-        "NoNewPrivileges=yes",
-        "PrivateUsers=yes",
-    }
-
-
-def test_disabled_sandbox_has_no_properties() -> None:
-    assert get_sandbox_properties(SandboxConfig(), BENCH, BENCHES) == []
-
-
-def test_extra_paths_expand_home_and_quote_spaces() -> None:
-    properties = _properties(writable_paths=["~/shared data"], inaccessible_paths=["/srv/keys"])
-
-    assert f'ReadWritePaths=/srv/pilot/benches/b "{Path.home()}/shared data"' in properties
-    assert f"InaccessiblePaths=-{Path.home()}/.ssh -{Path.home()}/.config/systemd /srv/keys" in properties
-
-
-def test_extra_hidden_paths_apply_without_the_filesystem_group() -> None:
-    assert _properties(filesystem=False, inaccessible_paths=["/srv/keys"]) >= {"InaccessiblePaths=/srv/keys"}
+    assert 'BindPaths="/srv/my benches/b"' in properties
+    assert 'TemporaryFileSystem="/srv/my benches:ro"' in properties
 
 
 @pytest.mark.parametrize(
@@ -136,13 +103,13 @@ def test_the_probe_needs_systemd_run(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "systemd-run" in systemd_user.get_sandbox_error(["NoNewPrivileges=yes"])
 
 
-def _sandboxed_manager(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, probe_error: str):
+def _sandboxed_manager(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, probe_error: str, sandbox: bool = True
+):
     from pilot.managers.processes import systemd
 
     bench = make_bench(tmp_path / "benches" / "test-bench")
-    bench.config.production = ProductionConfig(
-        enabled=True, process_manager="systemd", sandbox=SandboxConfig(enabled=True)
-    )
+    bench.config.production = ProductionConfig(enabled=True, process_manager="systemd", sandbox=sandbox)
     manager = systemd.SystemdProcessManager(bench)
     manager.systemd_conf_dir.mkdir(parents=True, exist_ok=True)
     web = ProcessDefinition("web", ["/env/bin/python", "serve"], bench.logs_path / "web.log")
@@ -170,3 +137,12 @@ def test_a_failed_probe_keeps_the_current_units(tmp_path: Path, monkeypatch: pyt
         manager.write_config()
 
     assert existing.read_text() == "[Service]\nExecStart=/env/bin/python serve\n"
+
+
+def test_write_config_skips_the_sandbox_and_trial_when_off(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = _sandboxed_manager(tmp_path, monkeypatch, probe_error="must not run", sandbox=False)
+    manager.write_config()
+
+    assert "NoNewPrivileges" not in (manager.systemd_conf_dir / "test-bench-web.service").read_text()

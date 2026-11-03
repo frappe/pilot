@@ -423,46 +423,30 @@ def test_production_enabled_requires_process_manager() -> None:
         load_from_dict(data)
 
 
-def _sandboxed_data(**sandbox: object) -> dict:
-    data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["production"] = {"enabled": True, "process_manager": "systemd", "sandbox": sandbox}
-    return data
-
-
 def test_production_sandbox_round_trips() -> None:
-    data = _sandboxed_data(enabled=True, syscalls=False, writable_paths=["~/data"])
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = {"enabled": True, "process_manager": "systemd", "sandbox": True}
     config = load_from_dict(tomllib.loads(load_from_dict(data).dumps()))
-    sandbox = config.production.sandbox
-    assert sandbox.enabled is True
-    assert sandbox.syscalls is False
-    assert sandbox.filesystem is True
-    assert sandbox.writable_paths == ["~/data"]
+    assert config.production.sandbox is True
 
 
-def test_production_sandbox_defaults_write_no_table() -> None:
+def test_production_sandbox_is_off_and_unwritten_by_default() -> None:
     config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
-    assert config.production.sandbox.enabled is False
-    assert config.production.sandbox.network is True
+    assert config.production.sandbox is False
     assert "sandbox" not in config.dumps()
 
 
 def test_production_sandbox_needs_systemd() -> None:
-    data = _sandboxed_data(enabled=True)
-    data["production"]["process_manager"] = "supervisor"
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = {"enabled": True, "process_manager": "supervisor", "sandbox": True}
     with pytest.raises(ConfigError, match="systemd"):
         load_from_dict(data)
 
 
 def test_production_sandbox_can_be_set_before_production_is() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["production"] = {"enabled": False, "sandbox": {"enabled": True}}
-    assert load_from_dict(data).production.sandbox.enabled is True
-
-
-@pytest.mark.parametrize("key", ["inaccessible_paths", "writable_paths"])
-def test_production_sandbox_rejects_relative_paths(key: str) -> None:
-    with pytest.raises(ConfigError, match=f"production.sandbox.{key}.*relative/path"):
-        load_from_dict(_sandboxed_data(enabled=True, **{key: ["relative/path"]}))
+    data["production"] = {"enabled": False, "sandbox": True}
+    assert load_from_dict(data).production.sandbox is True
 
 
 def test_lite_defaults_to_off() -> None:

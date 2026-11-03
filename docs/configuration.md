@@ -92,22 +92,7 @@ enabled = true
 process_manager = "systemd" # or "supervisor"
 ```
 
-Sandbox the workload units of a systemd bench with `[production.sandbox]`. Every group is on when `enabled = true`. See [Production](production.md#sandbox) for what each group blocks.
-
-```toml
-[production.sandbox]
-enabled = true
-filesystem = true
-syscalls = true
-kernel = true
-devices = true
-namespaces = true
-network = true
-inaccessible_paths = ["~/.aws"]
-writable_paths = ["/srv/shared"]
-```
-
-Paths must be absolute or start with `~`. `writable_paths` applies only when `filesystem` is on.
+Add `sandbox = true` to `[production]` to run a systemd bench's workload units in a systemd sandbox. See [Production](production.md#sandbox).
 
 Lite mode runs web, realtime, and jobs in one process:
 
