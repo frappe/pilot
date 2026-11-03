@@ -38,6 +38,8 @@ class ProcessDefinition:
     stop_main_process_only: bool = False  # it stops its own children; a signal to them too kills their jobs
     pre_run: list[str] = field(default_factory=list)
     post_run: list[str] = field(default_factory=list)
+    read_paths: list[str] = field(default_factory=list)  # sandbox: extra paths this unit may read
+    write_paths: list[str] = field(default_factory=list)  # sandbox: extra paths this unit may write
 
     @property
     def argv_with_hooks(self) -> list[str]:

@@ -108,3 +108,32 @@ def test_app_without_declarations_has_no_processes(tmp_path: Path, pyproject: st
 def test_malformed_declaration_is_rejected(tmp_path: Path, pyproject: str) -> None:
     with pytest.raises(AppProcessError, match="App 'mail'"):
         _app(tmp_path, pyproject).processes.get_definitions()
+
+
+def test_a_process_declares_sandbox_paths(tmp_path: Path) -> None:
+    app = _app(
+        tmp_path,
+        _SECTION + 'command = ["./stalwart"]\nread_paths = ["/opt/models"]\nwrite_paths = ["/var/lib/stalwart"]\n',
+    )
+
+    (definition,) = app.processes.get_definitions()
+
+    assert definition.read_paths == ["/opt/models"]
+    assert definition.write_paths == ["/var/lib/stalwart"]
+
+
+def test_a_process_cannot_ask_for_ssh_keys(tmp_path: Path) -> None:
+    app = _app(tmp_path, _SECTION + 'command = ["./stalwart"]\nread_paths = ["~/.ssh"]\n')
+
+    with pytest.raises(AppProcessError, match="never exposes"):
+        app.processes.get_definitions()
+
+
+def test_the_app_sandbox_table_is_read_through_the_app(tmp_path: Path) -> None:
+    app = _app(tmp_path, '[tool.pilot.sandbox]\nwrite_paths = ["/var/cache/mail"]\n')
+
+    assert app.processes.get_sandbox_paths().write == ("/var/cache/mail",)
+
+    bad = _app(tmp_path / "bad", '[tool.pilot.sandbox]\nread_paths = ["relative"]\n')
+    with pytest.raises(AppProcessError, match="App 'mail'"):
+        bad.processes.get_sandbox_paths()
