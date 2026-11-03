@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from pilot.tasks.bypass_patch import BypassPatchTask
+from pilot.tasks.dismiss_migration import DismissMigrationTask
 from pilot.tasks.retry_update import RetryUpdateTask
 from pilot.tasks.revert_migration import RevertMigrationTask
 
@@ -26,3 +27,16 @@ def test_an_action_hands_its_locks_to_the_chain_from_its_own_id(
     task_class(bench=bench, bench_root=tmp_path, operation_id="op1", **extra).run()
 
     operation.enqueue_next.assert_called_once_with(handoff_from="20261027-000000-aaaaaa")
+
+
+def test_dismiss_records_its_task_and_queues_nothing(tmp_path: Path, monkeypatch) -> None:
+    bench = MagicMock()
+    operation = bench.migrations.get.return_value
+    operation.task_ids = {}
+    monkeypatch.setenv("BENCH_TASK_ID", "20261027-000000-aaaaaa")
+
+    DismissMigrationTask(bench=bench, bench_root=tmp_path, operation_id="op1").run()
+
+    operation.dismiss.assert_called_once_with()
+    operation.enqueue_next.assert_not_called()
+    assert operation.task_ids["dismiss"] == "20261027-000000-aaaaaa"

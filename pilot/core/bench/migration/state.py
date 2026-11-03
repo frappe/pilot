@@ -83,7 +83,7 @@ class NeedsAttention(MigrationState):
     name = "needs_attention"
     label = "Needs attention"
     is_failure = True
-    allowed = frozenset({"retrying", "reverting_apps", "reverting_sites", "restarting"})
+    allowed = frozenset({"retrying", "reverting_apps", "reverting_sites", "restarting", "dismissed"})
 
 
 class Retrying(MigrationState):
@@ -127,7 +127,7 @@ class RevertFailed(MigrationState):
     name = "revert_failed"
     label = "Revert failed"
     is_failure = True
-    allowed = frozenset({"reverting_apps", "reverting_sites", "restarting"})
+    allowed = frozenset({"reverting_apps", "reverting_sites", "restarting", "dismissed"})
 
 
 class Completed(MigrationState):
@@ -139,6 +139,14 @@ class Completed(MigrationState):
 class Reverted(MigrationState):
     name = "reverted"
     label = "Reverted"
+    is_terminal = True
+
+
+class Dismissed(MigrationState):
+    """Closed by the user from a failure without a recovery; kept as history."""
+
+    name = "dismissed"
+    label = "Dismissed"
     is_terminal = True
 
 
@@ -157,6 +165,7 @@ _STATES: dict[str, MigrationState] = {
         RevertFailed(),
         Completed(),
         Reverted(),
+        Dismissed(),
     )
 }
 

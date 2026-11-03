@@ -6,6 +6,7 @@ import {
   needsMigrate,
   opTitle,
   patchSkipped,
+  skippedPatches,
   pendingActionLabel,
   siteNames,
   siteStatus,
@@ -118,7 +119,8 @@ test('matchesUpdateFilter groups the states behind each tab', () => {
   assert.equal(matchesUpdateFilter({ state: 'needs_attention' }, 'attention'), true)
   assert.equal(matchesUpdateFilter({ state: 'revert_failed' }, 'attention'), true)
   assert.equal(matchesUpdateFilter({ state: 'completed' }, 'completed'), true)
-  assert.equal(matchesUpdateFilter({ state: 'reverted' }, 'reverted'), true)
+  assert.equal(matchesUpdateFilter({ state: 'reverted' }, 'closed'), true)
+  assert.equal(matchesUpdateFilter({ state: 'dismissed' }, 'closed'), true)
 })
 
 test('matchesUpdateFilter survives an unknown filter or a stateless operation', () => {
@@ -133,6 +135,7 @@ test('every operation state belongs to exactly one tab', () => {
   const states = [
     'completed',
     'reverted',
+    'dismissed',
     'needs_attention',
     'revert_failed',
     'preparing',
@@ -169,4 +172,17 @@ test('needsMigrate is true when any selected app needs a migrate or has no flag'
   assert.equal(needsMigrate(['crm', 'hrms'], updates), true)
   assert.equal(needsMigrate(['helpdesk'], updates), true)
   assert.equal(needsMigrate(['unknown'], updates), true)
+})
+
+test('skippedPatches lists only bypass_patch decisions', () => {
+  const op = {
+    decisions: [
+      { action: 'bypass_patch', patch: 'app.patches.one', site: 'site1.localhost' },
+      { action: 'dismiss', state: 'needs_attention' },
+    ],
+  }
+  assert.deepEqual(
+    skippedPatches(op).map((decision) => decision.patch),
+    ['app.patches.one'],
+  )
 })
