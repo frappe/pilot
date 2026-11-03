@@ -35,7 +35,12 @@ watch(
   { immediate: true },
 )
 
-const domains = computed(() => store.state.domains?.domains)
+// A `.local` site name, such as Central's image site, is not reachable from outside.
+const domains = computed(() =>
+  store.state.domains?.domains.filter(
+    (row) => row.is_primary || !(row.is_default && row.domain.endsWith('.local')),
+  ),
+)
 
 const hasCustomDomains = computed(() => (domains.value || []).some((row) => !row.is_default))
 
@@ -111,7 +116,7 @@ const menuOptions = (row: Domain) =>
       icon: 'lucide-star',
       onClick: () => makePrimary(row.domain),
     },
-    !row.is_default && {
+    !row.is_default && !row.is_primary && {
       label: __('Remove'),
       icon: 'lucide-trash-2',
       theme: 'red' as const,

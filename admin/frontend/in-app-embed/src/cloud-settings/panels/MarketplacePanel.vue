@@ -3,18 +3,21 @@ import { useTranslation } from '../translation'
 import { installApp, isMigrationConflict, uninstallApp, updateApps } from '@frappe/cloud-sdk/api'
 import type { MarketplaceApp, TaskSubmission } from '@frappe/cloud-sdk'
 import { Button, ErrorMessage, Select, TextInput, toast } from 'frappe-ui'
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import ActionableError from '../components/ActionableError.vue'
 import AppRow from '../components/AppRow.vue'
+import AppTaskCard from '../components/AppTaskCard.vue'
 import Panel from '../components/Panel.vue'
 import UninstallAppDialog from '../components/UninstallAppDialog.vue'
 import UpdateAppsDialog from '../components/UpdateAppsDialog.vue'
 import {
+  appTasks,
   useErrorMessage,
   getRememberedTasks,
   rememberTask,
   type Store,
-  waitForTask,
+  type TaskOutcome,
+  watchAppTask,
 } from '../store'
 
 const __ = useTranslation()
@@ -59,10 +62,6 @@ const updateAllError = ref('')
 const blocker = ref<{ message: string; actionLabel: string; actionUrl: string } | null>(null)
 const uninstallTarget = ref<MarketplaceApp | null>(null)
 const showUninstall = ref(false)
-
-let gone = false
-
-onBeforeUnmount(() => (gone = true))
 
 watch(
   () => props.active,
@@ -129,26 +128,58 @@ const sortedApps = computed(() =>
   ),
 )
 
-const sections = computed(() =>
-  [
-    { label: __('Installed'), apps: sortedApps.value.filter((app) => app.installed) },
-    { label: __('Available'), apps: sortedApps.value.filter((app) => !app.installed) },
-  ].filter((section) => section.apps.length),
+// An app with a progress card shows its state there only, not in its row as well.
+const sections = computed(() => {
+  const listed = sortedApps.value.filter((app) => !cardTasks.value.some((item) => item.name === app.name))
+
+  return [
+    { label: __('Installed'), apps: listed.filter((app) => app.installed) },
+    { label: __('Available'), apps: listed.filter((app) => !app.installed) },
+  ].filter((section) => section.apps.length)
+})
+
+// Install and uninstall run as tasks that take minutes, so they get a progress card.
+const isCardVerb = (verb: string) => verb === 'install' || verb === 'uninstall'
+
+const cardTasks = computed(() =>
+  Object.entries(appTasks)
+    .filter(([name, entry]) => name !== '*' && isCardVerb(entry.verb))
+    .map(([name, entry]) => ({
+      ...entry,
+      verb: entry.verb as 'install' | 'uninstall',
+      name,
+      title: appTitles.value[name] || name,
+    })),
 )
+const runningTask = computed(() => cardTasks.value.find((item) => item.task?.status === 'running'))
+
+const retryTask = (item: { name: string; title: string; verb: string }) =>
+  item.verb === 'uninstall' ? uninstall(item, 'uninstall') : install(item)
+
+// A trial can't open its server, so its failed card offers a copy for support instead.
+const getTaskUrl = (taskId: string) => {
+  const server = store.state.context.server_url
+  return server && !store.isOnTrial() ? `${server.replace(/\/$/, '')}/insights/tasks/${taskId}` : ''
+}
+
+const dismissTask = (name: string) => {
+  delete appTasks[name]
+  delete errors[name]
+}
 
 const clearFilters = () => {
   query.value = ''
   category.value = ''
 }
 
-const install = (app: MarketplaceApp) => runAction(app, 'install', () => installApp(app.name))
+const install = (app: Pick<MarketplaceApp, 'name' | 'title'>) => runAction(app, 'install', () => installApp(app.name))
 
 const askUninstall = (app: MarketplaceApp) => {
   uninstallTarget.value = app
   showUninstall.value = true
 }
 
-const uninstall = (app: MarketplaceApp, mode: 'uninstall' | 'disable') => runAction(app, mode, () => uninstallApp(app.name, mode))
+const uninstall = (app: Pick<MarketplaceApp, 'name' | 'title'>, mode: 'uninstall' | 'disable') => runAction(app, mode, () => uninstallApp(app.name, mode))
 const updateOne = (app: MarketplaceApp) => runAction(app, 'update', () => updateApps([app.name]))
 
 const asBlocker = (exception: unknown) => {
@@ -163,23 +194,39 @@ const asBlocker = (exception: unknown) => {
   }
 }
 
+// The page loaded before the change, so a reload shows the app's pages.
+const toastDone = (label: string, verb: keyof typeof ACTION) =>
+  toast.success(__('{0} {1}.', [label, ACTION[verb].done]), {
+    action: { label: __('Reload'), onClick: () => window.location.reload() },
+    duration: 10000,
+  })
+
+// A watch outlives the panel. A reopened panel joins it and leaves the toasts to the first watcher.
+const watchTask = (name: string, taskId: string, verb: keyof typeof ACTION) => {
+  if (!taskId) return undefined
+
+  rememberTask(site, name, { taskId, verb })
+  return watchAppTask(name, taskId, verb)
+}
+
 const updateAll = async ({ apps, taskId }: { apps?: string[]; taskId?: string }) => {
   let finished = false
+  let isJoined = false
   updatingAll.value = true
   updateAllError.value = ''
   blocker.value = null
 
   try {
     const { task_id } = taskId ? { task_id: taskId } : await updateApps(apps)
+    const watch = watchTask('*', task_id, 'update')
+    isJoined = Boolean(watch?.isJoined)
 
-    rememberTask(site, '*', { taskId: task_id, verb: 'update' })
-
-    const done = await settle(task_id, ACTION.update, __('all apps'))
+    const done = await settle(watch?.outcome, ACTION.update, __('all apps'))
     finished = done === true
 
     await store.loadMarketplace(true)
 
-    if (done) toast.success(__('{0} {1}.', [__('All apps'), ACTION.update.done]))
+    if (done && !isJoined) toastDone(__('All apps'), 'update')
 
     showUpdates.value = false
   } catch (exception) {
@@ -191,26 +238,30 @@ const updateAll = async ({ apps, taskId }: { apps?: string[]; taskId?: string })
     } else {
       updateAllError.value = getErrorMessage(exception)
 
-      if (!showUpdates.value) toast.error(updateAllError.value)
+      if (!showUpdates.value && !isJoined) toast.error(updateAllError.value)
     }
   } finally {
-    if (finished) rememberTask(site, '*')
+    if (finished) {
+      rememberTask(site, '*')
+      delete appTasks['*']
+    }
     updatingAll.value = false
   }
 }
 
 const runAction = async (app: Pick<MarketplaceApp, 'name' | 'title'>, verb: keyof typeof ACTION, action: () => TaskSubmission | Promise<TaskSubmission>) => {
   let finished = false
+  let isJoined = false
   errors[app.name] = ''
   blocker.value = null
   pending[app.name] = verb
 
   try {
     const { task_id } = await action()
+    const watch = watchTask(app.name, task_id, verb)
+    isJoined = Boolean(watch?.isJoined)
 
-    rememberTask(site, app.name, { taskId: task_id, verb })
-
-    const done = await settle(task_id, ACTION[verb], app.title)
+    const done = await settle(watch?.outcome, ACTION[verb], app.title)
     finished = done === true
 
     delete errors[app.name]
@@ -226,7 +277,7 @@ const runAction = async (app: Pick<MarketplaceApp, 'name' | 'title'>, verb: keyo
       )
     }
 
-    toast.success(__('{0} {1}.', [app.title, ACTION[verb].done]))
+    if (!isJoined) toastDone(app.title, verb)
   } catch (exception) {
     finished = true
     blocker.value = asBlocker(exception)
@@ -234,10 +285,12 @@ const runAction = async (app: Pick<MarketplaceApp, 'name' | 'title'>, verb: keyo
     if (!blocker.value) {
       errors[app.name] = getErrorMessage(exception)
 
-      toast.error(errors[app.name])
+      if (!isJoined) toast.error(errors[app.name], { description: appTasks[app.name]?.task?.error || undefined })
     }
   } finally {
     if (finished) rememberTask(site, app.name)
+    // A failed card stays until the user dismisses it or tries again.
+    if (finished && !(isCardVerb(verb) && errors[app.name])) delete appTasks[app.name]
     delete pending[app.name]
   }
 }
@@ -258,10 +311,10 @@ const resumeTasks = () => {
   }
 }
 
-const settle = async (taskId: string, action: { verb: string; progress: string }, label: string) => {
-  if (!taskId) return true
+const settle = async (wait: Promise<TaskOutcome> | undefined, action: { verb: string; progress: string }, label: string) => {
+  if (!wait) return true
 
-  const outcome = await waitForTask(taskId, () => gone)
+  const outcome = await wait
 
   if (outcome === 'success') return true
   if (outcome === 'failed' || outcome === 'error') {
@@ -322,6 +375,26 @@ const settle = async (taskId: string, action: { verb: string; progress: string }
       :action-url="blocker.actionUrl"
     />
 
+    <template v-if="cardTasks.length">
+      <h3 class="mb-3 mt-6 text-base-semibold text-ink-gray-8">{{ __("In progress") }}</h3>
+
+      <div class="flex flex-col gap-2">
+        <AppTaskCard
+          v-for="item in cardTasks"
+          :key="item.taskId"
+          :title="item.title"
+          :verb="item.verb"
+          :task-id="item.taskId"
+          :task="item.task"
+          :is-unreachable="item.isUnreachable"
+          :log-url="getTaskUrl(item.taskId)"
+          :waiting-for="runningTask?.title"
+          @retry="retryTask(item)"
+          @dismiss="dismissTask(item.name)"
+        />
+      </div>
+    </template>
+
     <p v-if="!filteredApps.length" class="py-12 text-center text-p-sm text-ink-gray-5">
       {{ __("No apps match your search.") }}
 
@@ -361,6 +434,7 @@ const settle = async (taskId: string, action: { verb: string; progress: string }
     v-model="showUninstall"
     :app="uninstallTarget"
     :can-disable="canDisable"
+    :is-trial="store.isOnTrial()"
     @confirm="uninstall"
   />
 </template>

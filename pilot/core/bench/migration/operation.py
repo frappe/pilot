@@ -146,6 +146,7 @@ class MigrationOperation:
     def begin(self, handoff_from: str | None = None) -> str:
         """Enter the first phase and queue the first chain task. Returns its id.
         `handoff_from` is a running task that passes its resources to this chain."""
+        self.ensure_disk_space()
         try:
             self._prepare_sites()
             self._enter_first_phase()
@@ -158,6 +159,15 @@ class MigrationOperation:
         self.root_task_id = task_id
         self._save()
         return task_id
+
+    def ensure_disk_space(self) -> None:
+        """Refuse to start when the bench disk cannot hold every site's recovery backup."""
+        from pilot.core.site.backups import ensure_free_space
+
+        if self.safeguards_disabled:
+            return
+        needed = sum(self.bench.site(site.name).backups.estimated_database_size for site in self.sites)
+        ensure_free_space(self.bench.sites_path, needed, "the backups this migration takes first")
 
     def enqueue_next(self, handoff_from: str | None = None) -> str | None:
         """Queue the task the current state asks for, or nothing if the chain pauses."""

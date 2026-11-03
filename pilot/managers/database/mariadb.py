@@ -16,6 +16,7 @@ from pilot.core.database.mariadb_variables import (
     GENERIC_EDITABLE_MARIADB_VARIABLE_NAMES,
     MARIADB_VARIABLE_NAMES,
     MariaDBValue,
+    MariaDBVariableValidator,
     mariadb_variable_spec,
 )
 from pilot.core.mariadb_memory import (
@@ -670,7 +671,7 @@ class MariaDBManager(UserOwnedDBManager):
         """Persist, apply, verify, and roll back one safe dynamic variable."""
         spec = self._configuration_variable_spec(name)
         try:
-            requested = spec.validate_input(value)
+            requested = MariaDBVariableValidator(spec).validate_input(value)
         except ValueError as exc:
             raise DatabaseError(str(exc)) from exc
         if not spec.dynamic:
@@ -685,7 +686,9 @@ class MariaDBManager(UserOwnedDBManager):
 
             self.ensure_managed_config()
             previous_content = self.managed_cnf_path.read_text(encoding="utf-8")
-            self._write_managed_option(spec.option_name, spec.option_value(requested))
+            self._write_managed_option(
+                spec.option_name, MariaDBVariableValidator(spec).option_value(requested)
+            )
             try:
                 self._set_configuration_variable(name, requested)
                 self._verify_configuration_variable(name, requested)
@@ -704,14 +707,14 @@ class MariaDBManager(UserOwnedDBManager):
         if raw_value is None:
             raise DatabaseError(f"MariaDB variable '{name}' is not exposed by the installed MariaDB version.")
         try:
-            return spec.parse_server_value(raw_value)
+            return MariaDBVariableValidator(spec).parse_server_value(raw_value)
         except ValueError as exc:
             raise DatabaseError(str(exc)) from exc
 
     def _set_configuration_variable(self, name: str, value: MariaDBValue) -> None:
         spec = self._configuration_variable_spec(name)
         try:
-            validated = spec.validate_input(value)
+            validated = MariaDBVariableValidator(spec).validate_input(value)
         except ValueError as exc:
             raise DatabaseError(str(exc)) from exc
         sql_value = int(validated) if type(validated) is bool else validated

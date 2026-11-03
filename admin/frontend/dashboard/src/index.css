@@ -46,6 +46,23 @@ body {
   border-bottom-color: transparent;
 }
 
+.inset-dividers > * + * {
+  position: relative;
+}
+
+.inset-dividers > * + *::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  inset-inline: 0.75rem;
+  border-top: 1px solid var(--outline-gray-1);
+}
+
+.inset-dividers > [class*='hover:bg-']:hover::before,
+.inset-dividers > [class*='hover:bg-']:hover + *::before {
+  border-top-color: transparent;
+}
+
 /* Reduced motion: keep transitions near-instant, drop movement */
 @media (prefers-reduced-motion: reduce) {
   *,

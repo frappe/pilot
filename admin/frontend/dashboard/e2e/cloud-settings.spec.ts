@@ -42,6 +42,8 @@ test('mount, replace, and close remove the host and restore focus', async ({ pag
   }, runtime)
   await expect(page.locator('fc-cloud-settings')).toHaveCount(1)
   await expect(page.locator('#trigger')).toHaveAttribute('data-closed', '1')
+  await expect(page.locator('fc-cloud-settings')).not.toHaveAttribute('tabindex')
+  await expect(page.locator('fc-cloud-settings')).not.toHaveAttribute('overlay-open')
   await expect(page.getByRole('button', { name: 'Close Cloud Settings' })).toBeVisible()
   await page.evaluate(async (runtime) => {
     const { closeCloudSettings } = await import(runtime)
@@ -51,6 +53,60 @@ test('mount, replace, and close remove the host and restore focus', async ({ pag
   await expect(page.locator('fc-cloud-settings')).toHaveCount(0)
   await expect(page.locator('#trigger')).toHaveAttribute('data-closed', '2')
   await expect(page.locator('#trigger')).toBeFocused()
+})
+
+test('a target mounts the panels inline, without the dialog or its navigation', async ({ page }) => {
+  await page.route('**/api/method/**', (route) => route.fulfill({ json: { message: {} } }))
+  await page.evaluate(async (runtime) => {
+    const { mountCloudSettings } = await import(runtime)
+    const target = document.createElement('div')
+    target.id = 'inline'
+    target.style.height = '600px'
+    document.body.append(target)
+    document.querySelector<HTMLButtonElement>('#trigger')!.focus()
+    mountCloudSettings({ enabled: true }, { panels: ['maintenance'], target })
+  }, runtime)
+  await expect(page.locator('#inline fc-cloud-settings')).toHaveCount(1)
+  await expect(page.getByRole('heading', { name: 'Maintenance' })).toBeVisible()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(page.getByRole('tab')).toHaveCount(0)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(page.getByLabel('Panel')).toHaveCount(0)
+  await page.evaluate(async (runtime) => {
+    const { closeCloudSettings } = await import(runtime)
+    closeCloudSettings()
+  }, runtime)
+  await expect(page.locator('fc-cloud-settings')).toHaveCount(0)
+  await expect(page.locator('#trigger')).toBeFocused()
+})
+
+test('inline with several panels shows the sidebar, a second mount in a shadow root replaces the first, and a popup replaces it', async ({ page }) => {
+  await page.route('**/api/method/**', (route) => route.fulfill({ json: { message: {} } }))
+  await page.evaluate(async (runtime) => {
+    const { mountCloudSettings } = await import(runtime)
+    const shadow = document.createElement('div')
+    shadow.id = 'shadow'
+    document.body.append(shadow)
+    const target = document.createElement('div')
+    target.style.height = '600px'
+    shadow.attachShadow({ mode: 'open' }).append(target)
+    const options = { panels: ['maintenance', 'backups'], target }
+    mountCloudSettings({ enabled: true }, options)
+    mountCloudSettings({ enabled: true }, options)
+  }, runtime)
+  await expect(page.locator('fc-cloud-settings')).toHaveCount(1)
+  await expect(page.getByRole('tab')).toHaveCount(2)
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(page.getByLabel('Panel')).toBeVisible()
+
+  await page.evaluate(async (runtime) => {
+    const { mountCloudSettings } = await import(runtime)
+    mountCloudSettings({ enabled: true }, { panels: ['maintenance'] })
+  }, runtime)
+  await expect(page.locator('fc-cloud-settings')).toHaveCount(1)
+  await expect(page.locator('#shadow fc-cloud-settings')).toHaveCount(0)
+  await expect(page.getByRole('dialog')).toBeVisible()
 })
 
 test('custom translation applies to panel errors and task feedback', async ({ page }) => {
@@ -123,7 +179,7 @@ test('the marketplace resumes a remembered task without submitting it again', as
       }
     } else if (method === 'get_task') {
       taskRequests++
-      message = { status: 'failed', exit_code: 1 }
+      message = { status: 'failed', exit_code: 1, error: 'Error: could not fetch raven' }
     } else if (method === 'install_app') {
       submissions++
     }
@@ -136,10 +192,52 @@ test('the marketplace resumes a remembered task without submitting it again', as
     const { mountCloudSettings } = await import(runtime)
     mountCloudSettings({ enabled: true, site_name: 'example.test' }, { panels: ['marketplace'] })
   }, runtime)
-  await expect(page.getByRole('img', { name: "Couldn't install Raven." })).toBeVisible()
+  // Without server access, the failed card shows the error and offers a copy for support.
+  const panel = page.getByRole('tabpanel', { name: 'Marketplace' })
+  await expect(panel.getByText("Couldn't install Raven", { exact: true })).toBeVisible()
+  await expect(panel.getByText('Error: could not fetch raven', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Copy details for support' })).toBeVisible()
   expect(taskRequests).toBe(1)
   expect(submissions).toBe(0)
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('cloud-settings:tasks:example.test')!))).toEqual({})
+})
+
+test('an install keeps its watch after the dialog closes and reports in a toast', async ({ page }) => {
+  let status = 'running'
+  await page.route('**/api/method/**', async (route) => {
+    const method = new URL(route.request().url()).pathname.split('.').pop()
+    let message: object = {}
+    if (method === 'get_marketplace_apps') {
+      message = {
+        apps: [{ name: 'raven', title: 'Raven', description: 'Chat', installed: false, installable: true }],
+        categories: [], update_count: 0,
+      }
+    } else if (method === 'install_app') {
+      message = { task_id: 'install-raven' }
+    } else if (method === 'get_task') {
+      const steps = [{ key: 'fetch', label: 'Fetch raven', status: 'running', started_at: 1 }]
+      const progress = { activity: 'Updating DocTypes for raven', percent: 45 }
+      message = { status, exit_code: status === 'success' ? 0 : null, started_at: new Date().toISOString(), steps, ...progress }
+    }
+    await route.fulfill({ json: { message } })
+  })
+  await page.evaluate(async (runtime) => {
+    const { mountCloudSettings } = await import(runtime)
+    mountCloudSettings({ enabled: true, site_name: 'example.test' }, { panels: ['marketplace'] })
+  }, runtime)
+
+  await page.getByRole('button', { name: 'Install', exact: true }).click()
+  await expect(page.getByText('Installing Raven', { exact: true })).toBeVisible()
+  await expect(page.getByRole('listitem').filter({ hasText: 'Fetch raven' })).toBeVisible()
+  await expect(page.getByText('Updating DocTypes for raven', { exact: true })).toBeVisible()
+  await expect(page.getByText('45%', { exact: true })).toBeVisible()
+
+  await page.evaluate(async (runtime) => (await import(runtime)).closeCloudSettings(), runtime)
+  await expect(page.locator('fc-cloud-settings')).toHaveCount(0)
+  status = 'success'
+
+  await expect(page.getByText('Raven installed.', { exact: true })).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByRole('button', { name: 'Reload' })).toBeVisible()
 })
 
 test('fills a phone screen with a panel picker and a reachable close button', async ({ page }) => {

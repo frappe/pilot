@@ -1554,3 +1554,19 @@ def test_removing_a_bench_from_nginx_does_not_ask_the_domain_provider(tmp_path: 
         manager.uninstall_config()
 
     unpublish.assert_called_once()
+
+
+# --- search engines ---------------------------------------------------------
+
+
+def test_only_the_admin_is_kept_out_of_search_engines(tmp_path: Path) -> None:
+    data = copy.deepcopy(_BASE_DATA)
+    data["admin"] = {"domain": "admin.example.com"}
+    config = _renderer(tmp_path, data).generate_bench_config([(_BASE_SITE, [])], admin_ssl=False)
+
+    admin_block = config[config.index("server_name admin.example.com;") :]
+    site_block = config[: config.index("server_name admin.example.com;")]
+    assert 'add_header X-Robots-Tag "noindex, nofollow" always;' in admin_block
+    assert 'location = /robots.txt {\n        default_type text/plain;\n        return 200 "User-agent: *\\nDisallow: /\\n";' in admin_block
+    assert "X-Robots-Tag" not in site_block
+    assert "robots.txt" not in site_block

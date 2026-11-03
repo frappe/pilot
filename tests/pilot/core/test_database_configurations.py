@@ -10,6 +10,7 @@ from pilot.core.database.mariadb_variables import (
     EDITABLE_MARIADB_VARIABLE_NAMES,
     MARIADB_VARIABLE_NAMES,
     MARIADB_VARIABLE_SPECS,
+    MariaDBVariableValidator,
     mariadb_variable_spec,
 )
 from pilot.core.mariadb_memory import calculate_mariadb_variable_limits
@@ -114,7 +115,7 @@ def test_service_memory_limits_are_not_in_configuration_snapshot() -> None:
 
 
 def test_catalog_covers_press_variables_and_pilot_mariadb_118_controls() -> None:
-    assert len(MARIADB_VARIABLE_NAMES) == 51
+    assert len(MARIADB_VARIABLE_NAMES) == 52
     assert len(MARIADB_VARIABLE_NAMES) == len(MARIADB_VARIABLE_SPECS)
     assert PRESS_VARIABLE_NAMES <= MARIADB_VARIABLE_NAMES
     assert {
@@ -128,6 +129,7 @@ def test_catalog_covers_press_variables_and_pilot_mariadb_118_controls() -> None
         "slave_connections_needed_for_purge",
     } <= MARIADB_VARIABLE_NAMES
     assert {
+        "binlog_expire_logs_seconds",
         "connect_timeout",
         "innodb_buffer_pool_size",
         "innodb_lock_wait_timeout",
@@ -136,6 +138,7 @@ def test_catalog_covers_press_variables_and_pilot_mariadb_118_controls() -> None
         "innodb_print_all_deadlocks",
         "innodb_snapshot_isolation",
         "innodb_stats_persistent_sample_pages",
+        "max_binlog_total_size",
         "max_connections",
         "net_read_timeout",
         "net_write_timeout",
@@ -313,6 +316,9 @@ def test_unprovisioned_server_is_not_probed() -> None:
         ("innodb_print_all_deadlocks", 1, "enabled or disabled"),
         ("innodb_print_all_deadlocks", "ON", "enabled or disabled"),
         ("innodb_buffer_pool_size_max", 256, "read-only"),
+        ("binlog_expire_logs_seconds", -1, "at least 0"),
+        ("binlog_expire_logs_seconds", 8553601, "greater than 8553600"),
+        ("max_binlog_total_size", 1024**4 + 1, "greater than"),
         ("unknown_variable", 1, "not supported"),
     ],
 )
@@ -322,12 +328,12 @@ def test_catalog_rejects_wrong_types_ranges_and_read_only_variables(
     message: str,
 ) -> None:
     with pytest.raises(ValueError, match=message):
-        mariadb_variable_spec(name).validate_input(value)
+        MariaDBVariableValidator(mariadb_variable_spec(name)).validate_input(value)
 
 
 def test_guarded_action_variables_cannot_reach_the_generic_manager_path() -> None:
     with pytest.raises(ValueError, match="guarded database action"):
-        mariadb_variable_spec("max_connections").validate_input(40)
+        MariaDBVariableValidator(mariadb_variable_spec("max_connections")).validate_input(40)
 
 
 def test_prepare_change_normalizes_live_value_and_detects_noop() -> None:

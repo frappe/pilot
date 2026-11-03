@@ -9,10 +9,19 @@ import pytest
 
 from pilot.core.app import RevisionPin
 from pilot.core.bench.migration.diagnosis import diagnose
-from pilot.core.bench.migration.operation import AppRevision, SiteProgress
+from pilot.core.bench.migration.operation import AppRevision, MigrationOperation, SiteProgress
 from pilot.core.bench.migration.state import MigrationStateError, get_state, validate_transition
-from pilot.exceptions import BenchError, MigrateError
+from pilot.core.site.backups import SYSTEM_RESERVED_BYTES
+from pilot.exceptions import BenchError, InsufficientDiskSpaceError, MigrateError
 from pilot.integrations.marketplace import Marketplace
+
+_ensure_disk_space = MigrationOperation.ensure_disk_space
+
+
+@pytest.fixture(autouse=True)
+def no_disk_space_check(monkeypatch):
+    """Most tests are not about disk space; the disk space tests call the real check."""
+    monkeypatch.setattr(MigrationOperation, "ensure_disk_space", lambda self: None)
 
 
 @pytest.fixture(autouse=True)
@@ -1320,3 +1329,57 @@ def test_a_killed_task_has_no_error_to_name(tmp_path: Path) -> None:
     task_dir.mkdir(parents=True)
     (task_dir / "output.log").write_text("<14>1 t host migrate 1 - - Executing patch\n")
     assert _last_task_error({"bench_root": str(tmp_path), "task_id": "task-101"}) == ""
+
+
+def _operation_with_backups(tmp_path: Path, sizes: dict[str, int]):
+    from pilot.core.bench.migration.store import MigrationStore
+
+    bench = MagicMock()
+    bench.path = tmp_path
+    bench.sites_path = tmp_path
+    bench.apps.return_value = []
+    bench.sites.return_value = [MagicMock(config=MagicMock(name=name)) for name in sizes]
+    bench.site.side_effect = lambda name: MagicMock(backups=MagicMock(estimated_database_size=sizes[name]))
+    return MigrationStore(bench).create_site_migrate(*sizes)
+
+
+def _free_disk(free: int):
+    import shutil
+
+    return patch("shutil.disk_usage", return_value=shutil._ntuple_diskusage(10**12, 10**12 - free, free))
+
+
+def test_a_migration_is_refused_when_the_disk_cannot_hold_every_backup(tmp_path: Path) -> None:
+    operation = _operation_with_backups(tmp_path, {"a.localhost": 600, "b.localhost": 500})
+
+    with _free_disk(SYSTEM_RESERVED_BYTES + 1000), pytest.raises(InsufficientDiskSpaceError) as error:
+        _ensure_disk_space(operation)
+
+    assert (error.value.needed_bytes, error.value.free_bytes) == (1100, SYSTEM_RESERVED_BYTES + 1000)
+
+
+def test_a_migration_the_disk_can_back_up_goes_ahead(tmp_path: Path) -> None:
+    operation = _operation_with_backups(tmp_path, {"a.localhost": 600, "b.localhost": 500})
+
+    with _free_disk(SYSTEM_RESERVED_BYTES + 1200):
+        _ensure_disk_space(operation)
+
+
+def test_a_migration_without_safeguards_takes_no_backup_so_needs_no_space(tmp_path: Path) -> None:
+    operation = _operation_with_backups(tmp_path, {"a.localhost": 600})
+    operation.safeguards_disabled = True
+
+    with _free_disk(0):
+        _ensure_disk_space(operation)
+
+
+def test_a_refused_migration_leaves_no_site_in_maintenance(tmp_path: Path, monkeypatch) -> None:
+    operation = _operation_with_backups(tmp_path, {"a.localhost": 600})
+    monkeypatch.setattr(MigrationOperation, "ensure_disk_space", _ensure_disk_space)
+
+    with _free_disk(100), patch.object(MigrationOperation, "_prepare_sites") as prepare, pytest.raises(
+        InsufficientDiskSpaceError
+    ):
+        operation.begin()
+
+    prepare.assert_not_called()
