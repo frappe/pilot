@@ -23,7 +23,7 @@ class SiteDomains:
         return self._provider.register(self.site.config.name, domain)
 
     def attach(self, domain: str, *, primary: bool = False) -> None:
-        """Register the domain unless it is already attached, so a repeated attach retries setup."""
+        """Register the domain if it is not attached yet."""
         if not self.status(domain)[0]:
             self.register(domain)
         if primary:
@@ -90,8 +90,8 @@ class SiteDomains:
         return self._description(config, attached_domain, is_primary, certificate)
 
     def get_certificate_states(self, config: "SiteConfig") -> dict[str, str]:
-        """Map each domain to `not_required`, `issued`, `pending`, or `missing`. A domain needs a
-        certificate only when its TLS ends on this host."""
+        """Map each domain to `not_required`, `issued`, `pending`, or `missing`.
+        Only a domain whose TLS ends here needs a certificate."""
         from pilot.managers.letsencrypt import certificate_domains
         from pilot.managers.nginx import NginxManager
 

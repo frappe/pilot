@@ -19,7 +19,7 @@ class SiteDomain:
     # reaches this host as plain HTTP; True ends TLS here.
     tls: bool | None = None
     route: RoutePolicy | None = None
-    # False keeps serving this domain after another domain becomes primary.
+    # False serves the site on this domain while another domain is primary.
     redirect_to_primary: bool = True
 
     @classmethod
@@ -108,7 +108,7 @@ class SiteConfig:
         return self.route.origin_tls if self.route else self.ssl
 
     def redirects_to_primary(self, domain: str) -> bool:
-        """Whether nginx sends this domain to an explicitly chosen primary domain."""
+        """Whether nginx redirects this domain to the primary domain, when one is set."""
         if not self.primary_domain or domain.lower() == self.primary.lower():
             return False
         entry = next((entry for entry in self.domains if entry.name.lower() == domain.lower()), None)

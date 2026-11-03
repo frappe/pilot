@@ -54,7 +54,7 @@ class DomainRouteProvider:
         return records
 
     def check_dns(self, site_name: str, domain: str) -> dict:
-        """Whether a new domain points here. A domain provider checks DNS when it registers the domain."""
+        """Check that a new domain points here. Skip the check with a provider, which checks DNS on register."""
         domain = self._validate_new(site_name, domain)
         if which(_PROVIDER_BIN):
             return {"matched": True, "message": ""}
@@ -170,7 +170,7 @@ class DomainRouteProvider:
             config["host_name"] = f"{scheme}://{domain}"
 
     def set_redirect(self, site_name: str, domain: str, redirect: bool) -> None:
-        """Choose whether a custom domain redirects to the primary domain or serves the site."""
+        """Set whether a custom domain redirects to the primary domain."""
         domain = normalize_host(domain)
         with self._edit_config(site_name) as config:
             entries = config.get("domains") or []

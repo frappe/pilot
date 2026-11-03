@@ -151,7 +151,7 @@ def domain_dns_records(name: str, domain: str):
 @sites_bp.get("/<name>/domains/<domain>/dns-check")
 @require_scope(site_name)
 def domain_dns_check(name: str, domain: str):
-    """Check DNS for a new domain before it is attached. A domain provider checks DNS itself, so this passes."""
+    """Check that a new domain points to this server. With a domain provider, skip the check."""
     bench_root = Path(current_app.config["BENCH_ROOT"])
     if not site_exists(bench_root, name):
         return site_not_found()
@@ -169,7 +169,7 @@ def domain_dns_check(name: str, domain: str):
 @sites_bp.get("/<name>/domains/server-ip")
 @require_scope(site_name)
 def domain_server_ip(name: str):
-    """This server's public IP address, for an A record. A domain provider can need other records."""
+    """This server's public IP address, for an A record."""
     bench_root = Path(current_app.config["BENCH_ROOT"])
     if not site_exists(bench_root, name):
         return site_not_found()
@@ -257,12 +257,12 @@ def update_domain(name: str, domain: str):
         return _domain_failure(error, "Could not update the domain.")
     except Exception:
         return internal_error("Could not update the domain.")
-    # nginx renders the redirects to the primary domain, so regenerate it.
+    # nginx redirects non-primary hosts to the primary, so regenerate it.
     return accepted_task_response(bench_root, task_id)
 
 
 def _domain_change(data) -> dict[str, bool]:
-    """The one change a PATCH asks for, or an empty dict when the body is not exactly one valid change."""
+    """Return the one valid change in a PATCH body, or an empty dict."""
     if not isinstance(data, dict) or ("primary" in data) == ("redirect_to_primary" in data):
         return {}
     if "primary" in data:
