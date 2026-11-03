@@ -130,6 +130,11 @@ def run_sandboxed(sandboxed: Path):
         "touch ~/.sandbox-escape",
         "touch ~/.config/systemd/user/sandbox-escape",
         "ls ~/.ssh",
+        "cat ~/.ssh/id_ed25519",
+        "test -e ~/.ssh",
+        "test -e ~/.bashrc",
+        "test -S /run/user/$(id -u)/bus",
+        "systemd-run --user --pipe true",
         f"cat ../{NEIGHBOUR}/secret.txt",
         "unshare -U true",
     ],
@@ -171,3 +176,35 @@ def test_a_background_job_runs_in_the_sandboxed_worker(sandboxed: Path) -> None:
             return
         time.sleep(2)
     pytest.fail("the worker did not write a backup")
+
+
+def test_home_is_an_empty_tmpfs_in_the_web_process(sandboxed: Path) -> None:
+    web = next(unit for unit in _workload_units(sandboxed) if unit.endswith("-web.service"))
+    mountinfo = Path(f"/proc/{_systemctl_value(web, 'MainPID')}/mountinfo").read_text().splitlines()
+    mounts = {line.split()[4]: line.split(" - ")[1].split()[0] for line in mountinfo}
+    assert mounts.get("/home") == "tmpfs", mounts
+
+
+def test_the_sandbox_keeps_the_tools_the_bench_runs_on(run_sandboxed, sandboxed: Path) -> None:
+    assert run_sandboxed(f"{sandboxed}/env/bin/python -c 'import frappe'")
+    assert run_sandboxed("node --version")
+
+
+def test_a_declared_path_is_readable_and_the_rest_of_home_is_not(sandboxed: Path) -> None:
+    shared = Path.home() / ".sandbox-probe-shared"
+    shared.mkdir(exist_ok=True)
+    (shared / "note.txt").write_text("shared")
+    try:
+        properties = [
+            *SystemdProcessManager(Bench(sandboxed)).get_checked_sandbox_properties(),
+            f"BindReadOnlyPaths={shared}",
+        ]
+        argv = ["systemd-run", "--user", "--wait", "--quiet", "--collect"]
+        for directive in properties:
+            argv += ["-p", directive]
+        assert _run(*argv, "bash", "-c", f"cat {shared}/note.txt").returncode == 0
+        assert _run(*argv, "bash", "-c", f"touch {shared}/x").returncode != 0
+        assert _run(*argv, "bash", "-c", "test -e ~/.ssh").returncode != 0
+    finally:
+        (shared / "note.txt").unlink()
+        shared.rmdir()
