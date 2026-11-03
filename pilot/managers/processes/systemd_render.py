@@ -64,6 +64,8 @@ def get_sandbox_properties(
     defaults = [*control, *(str(Path.home() / path) for path in _HOME_READ_PATHS), nvm_dir]
     return [
         *_SANDBOX_DIRECTIVES,
+        # ProtectHome only masks /home and /root; this masks a home elsewhere, such as /srv/frappe.
+        f"TemporaryFileSystem={_quote(f'{Path.home()}:ro')}",
         # The tmpfs hides the neighbouring benches; the bind brings this one back.
         f"TemporaryFileSystem={_quote(f'{benches_dir}:ro')}",
         f"BindPaths={_quote(str(bench_path))}",

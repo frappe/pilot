@@ -64,6 +64,7 @@ SANDBOX_DIRECTIVES = {
     "ReadWritePaths=/srv/pilot/benches/b",
     f"BindReadOnlyPaths=-/srv/pilot/benches/b/config -{Path.home()}/.local/share/uv/python -{Path.home()}/.nvm",
     "InaccessiblePaths=/srv/pilot/benches/b/bench.toml",
+    f"TemporaryFileSystem={Path.home()}:ro",
 }
 
 
@@ -241,3 +242,9 @@ def test_control_files_are_read_only_or_hidden_from_workloads(monkeypatch: pytes
     assert f"-{BENCH}/config" in read_only
     assert f"InaccessiblePaths={BENCH}/bench.toml" in properties
     assert not any(line.startswith("ReadWritePaths=") and "config" in line for line in properties)
+
+
+def test_the_real_home_is_masked_even_when_it_is_not_under_home(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(Path, "home", lambda: Path("/srv/frappe"))
+
+    assert "TemporaryFileSystem=/srv/frappe:ro" in get_sandbox_properties(BENCH, BENCHES)
