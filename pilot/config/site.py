@@ -108,8 +108,10 @@ class SiteConfig:
         return self.route.origin_tls if self.route else self.ssl
 
     def redirects_to_primary(self, domain: str) -> bool:
-        """Whether nginx redirects this domain to the primary domain, when one is set."""
-        if not self.primary_domain or domain.lower() == self.primary.lower():
+        """Whether nginx redirects this domain to the primary domain, when the primary is a site domain."""
+        primary = self.primary_domain.lower()
+        # A stale primary is no longer served here, so a redirect to it strands the request.
+        if primary not in {name.lower() for name in self.all_domains} or domain.lower() == primary:
             return False
         entry = next((entry for entry in self.domains if entry.name.lower() == domain.lower()), None)
         return entry is None or entry.redirect_to_primary

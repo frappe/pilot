@@ -95,6 +95,15 @@ def test_canonical_redirect_with_explicit_primary(tmp_path: Path) -> None:
     assert "return 301 $scheme://www.example.com$request_uri;" in config
 
 
+def test_no_domain_redirects_to_a_primary_that_the_site_no_longer_has(tmp_path: Path) -> None:
+    for domains in ([], ["shop.example.com"]):
+        site = SiteConfig(
+            name="site.localhost", apps=["frappe"], domains=domains, primary_domain="gone.example.com"
+        )
+
+        assert "return 301 $scheme://gone.example.com" not in _site_config(tmp_path, site)
+
+
 def test_a_domain_that_stops_redirecting_serves_the_site(tmp_path: Path) -> None:
     site = SiteConfig(
         name="site.localhost",
