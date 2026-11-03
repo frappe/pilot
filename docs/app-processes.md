@@ -45,7 +45,14 @@ A `command` runs in the app directory, `apps/<app>`. A relative `working_dir` is
 
 ## Sandbox paths
 
-With the sandbox on, the home directory is empty. A path must be absolute or start with `~/`, without `..`. Pilot refuses `~/.ssh`, `~/.gnupg`, `~/.config/systemd`, `~/.aws`, `~/.kube`, and any directory that contains one, such as `~`.
+With the sandbox on, the home directory is empty. A path must be absolute or start with `~/`, without `..`, and name a directory below one of these roots:
+
+| Roots | Directories |
+|---|---|
+| Home | `~/.cache`, `~/.local/share`, `~/.local/state` |
+| System | `/opt`, `/srv`, `/var/lib`, `/var/cache`, `/usr/local/share` |
+
+The root itself is refused. So is a directory named `keyrings`, `gnome-keyring`, `kwalletd`, `applications`, `autostart`, `systemd`, `uv` or `pilot` directly below a root, because those hold credentials, run at login or are code the admin runs. Pilot follows symlinks, so a link inside a root cannot lead out of it. Anything else, such as `~/.ssh`, `~/.bashrc`, `~/.config` or `~/.local/bin`, fails the app's process setup with an error.
 
 ```toml
 [tool.pilot.sandbox]

@@ -125,7 +125,7 @@ def test_a_process_declares_sandbox_paths(tmp_path: Path) -> None:
 def test_a_process_cannot_ask_for_ssh_keys(tmp_path: Path) -> None:
     app = _app(tmp_path, _SECTION + 'command = ["./stalwart"]\nread_paths = ["~/.ssh"]\n')
 
-    with pytest.raises(AppProcessError, match="never exposes"):
+    with pytest.raises(AppProcessError, match="must be a directory below one of"):
         app.processes.get_definitions()
 
 

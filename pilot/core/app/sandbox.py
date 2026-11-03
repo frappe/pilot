@@ -1,18 +1,24 @@
 from __future__ import annotations
 
+import os
 import re
 import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path, PurePath
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from pilot.core.app import App
 
 CONTROL_CHARACTER_PATTERN = re.compile(r"[\x00-\x1f\x7f]")
-# Credential stores no app may bring back into the sandbox, nor any directory above them.
-DENIED_HOME_PATHS = (".ssh", ".gnupg", ".config/systemd", ".aws", ".kube")
+# An app may keep a directory below one of these roots, and nothing else.
+ALLOWED_HOME_ROOTS = (".cache", ".local/share", ".local/state")
+ALLOWED_SYSTEM_ROOTS = ("/opt", "/srv", "/var/lib", "/var/cache", "/usr/local/share")
+# First directory below a root that holds credentials, runs at login, or is code the admin runs.
+RESERVED_NAMES = frozenset(
+    {"keyrings", "gnome-keyring", "kwalletd", "applications", "autostart", "systemd", "uv", "pilot"}
+)
 
 
 @dataclass(frozen=True)
@@ -44,13 +50,30 @@ class SandboxPaths:
     def _get_path(path: str, label: str, error: Callable[[str], Exception]) -> str:
         if CONTROL_CHARACTER_PATTERN.search(path):
             raise error(f"{label} '{path}' must not contain control characters.")
-        expanded = PurePath(Path.home() / path[2:] if path.startswith("~/") else path)
+        expanded = Path.home() / path[2:] if path.startswith("~/") else Path(path)
         if not expanded.is_absolute() or ".." in expanded.parts:
             raise error(f"{label} '{path}' must be absolute or start with ~/, without '..'.")
-        for denied in (Path.home() / name for name in DENIED_HOME_PATHS):
-            if denied.is_relative_to(expanded) or expanded.is_relative_to(denied):
-                raise error(f"{label} '{path}' reaches {denied}, which the sandbox never exposes.")
-        return str(expanded)
+        # The link target counts too, so a link inside an allowed root cannot lead out of it.
+        resolved = Path(os.path.realpath(expanded))
+        if not (is_allowed_path(expanded) and is_allowed_path(resolved)):
+            raise error(
+                f"{label} '{path}' must be a directory below one of: "
+                f"{', '.join(f'~/{root}' for root in ALLOWED_HOME_ROOTS)}, {', '.join(ALLOWED_SYSTEM_ROOTS)}."
+            )
+        return str(resolved)
+
+
+def is_allowed_path(path: Path) -> bool:
+    """Whether `path` is a directory below an allowed root, not the root itself or a reserved name."""
+    for root in _get_allowed_roots():
+        if path.is_relative_to(root) and path != root:
+            return path.relative_to(root).parts[0] not in RESERVED_NAMES
+    return False
+
+
+def _get_allowed_roots() -> set[Path]:
+    roots = {Path.home() / root for root in ALLOWED_HOME_ROOTS} | {Path(root) for root in ALLOWED_SYSTEM_ROOTS}
+    return roots | {Path(os.path.realpath(root)) for root in roots}
 
 
 class AppSandbox:
