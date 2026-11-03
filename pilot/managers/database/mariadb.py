@@ -2,6 +2,7 @@ import configparser
 import logging
 import os
 import re
+import socket
 import subprocess
 import time
 from collections.abc import Callable, Iterable
@@ -974,14 +975,19 @@ class MariaDBManager(UserOwnedDBManager):
         )
 
     def is_reachable(self) -> bool:
-        if not self.is_running():
-            return False
         if is_macos():
             # Homebrew owns the socket location here, not socket_path() (our
             # own state_dir, only ever created for the Linux systemd unit) -
             # is_running() is the only signal we have.
-            return True
-        return Path(self.socket_path).exists()
+            return self.is_running()
+        # Connect instead of asking systemd: the sandboxed web unit has no user bus.
+        with socket.socket(socket.AF_UNIX) as probe:
+            probe.settimeout(_CLIENT_TIMEOUT)
+            try:
+                probe.connect(self.socket_path)
+            except OSError:
+                return False
+        return True
 
     def is_unsecured(self) -> bool:
         """True when the admin account is still reachable without a password."""
