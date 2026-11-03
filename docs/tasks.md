@@ -66,7 +66,7 @@ Replayed callbacks save their process identity before they can change state. Aft
 
 Site creation records its owning task under a per-site lock. Failure cleanup takes the same lock and deletes a partial site only when its owner matches the task. Cancelling queued creation does not delete a site created later by another task or the CLI. Successful creation releases its ownership record. Old tasks without an ownership record preserve partial sites for manual recovery.
 
-Retry enables maintenance mode again before resuming an update. The operation keeps the original maintenance settings and restores them after a successful completion or recovery.
+Retry enables maintenance mode again before resuming an update. A retry of the backups allows reads; a retry of the update or a migrate does not. The operation keeps the original maintenance settings and restores them after a successful completion or recovery.
 
 The limits below are conservative safety limits, not expected operation times. Large backup, restore, and migration tasks have a 24-hour budget because their cost depends on the database and files. Queued tasks can always be cancelled. The last column describes cancellation after a task starts.
 

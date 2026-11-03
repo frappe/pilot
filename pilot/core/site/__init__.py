@@ -77,11 +77,17 @@ class Site:
         return {
             "maintenance_mode": int(bool(config.get("maintenance_mode"))),
             "pause_scheduler": int(bool(config.get("pause_scheduler"))),
+            "allow_reads_during_maintenance": int(bool(config.get("allow_reads_during_maintenance"))),
         }
 
-    def set_maintenance_mode(self, enabled: bool) -> None:
+    def set_maintenance_mode(self, enabled: bool, *, allow_reads: bool | None = None) -> None:
+        """With `allow_reads`, Frappe serves requests in read-only transactions instead of a 503.
+        Without it, the site keeps its own `allow_reads_during_maintenance`."""
         value = 1 if enabled else 0
-        self.set_maintenance_settings({"maintenance_mode": value, "pause_scheduler": value})
+        settings = {"maintenance_mode": value, "pause_scheduler": value}
+        if allow_reads is not None:
+            settings["allow_reads_during_maintenance"] = int(enabled and allow_reads)
+        self.set_maintenance_settings(settings)
 
     def set_maintenance_settings(self, settings: dict[str, int]) -> None:
         import json

@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import itertools
+from collections.abc import Sequence
 from pathlib import Path
 from unittest.mock import MagicMock, PropertyMock, call, patch
 
 import pytest
 
 from pilot.core.app import RevisionPin
+from pilot.core.bench.job_queue import JobQueueState
 from pilot.core.bench.migration.diagnosis import diagnose
-from pilot.core.bench.migration.operation import AppRevision, SiteProgress
+from pilot.core.bench.migration.operation import AppRevision, MigrationOperation, SiteProgress
 from pilot.core.bench.migration.state import MigrationStateError, get_state, validate_transition
 from pilot.exceptions import BenchError, MigrateError
 from pilot.integrations.marketplace import Marketplace
@@ -131,7 +134,7 @@ def test_operation_creation_and_chaining(tmp_path: Path) -> None:
     assert len(op.chain) == 1
     assert op.chain[0]["command"] == "migration-backup"
     assert op.chain[0]["site"] == "site1.localhost"
-    mock_bench.site.return_value.set_maintenance_mode.assert_called_once_with(True)
+    mock_bench.site.return_value.set_maintenance_mode.assert_called_once_with(True, allow_reads=True)
     assert op.sites[0].original_config == {
         "maintenance_mode": 0,
         "pause_scheduler": 1,
@@ -404,7 +407,9 @@ def test_operation_site_lifecycle(tmp_path: Path) -> None:
     assert op.sites[0].migration_status == "success"
     assert op.state == "completed"
     assert op.finished_at is not None
-    site_mock.set_maintenance_settings.assert_called_with({"maintenance_mode": 0, "pause_scheduler": 1})
+    site_mock.set_maintenance_settings.assert_called_with(
+        {"allow_reads_during_maintenance": 0, "maintenance_mode": 0, "pause_scheduler": 1}
+    )
 
 
 def test_operation_failure_and_retry_resumes(tmp_path: Path) -> None:
@@ -629,7 +634,7 @@ def test_backup_failure_restores_every_sites_original_settings(tmp_path: Path) -
 
     for name, scheduler in (("one.local", 1), ("two.local", 0)):
         sites[name].set_maintenance_settings.assert_called_with(
-            {"maintenance_mode": 0, "pause_scheduler": scheduler}
+            {"allow_reads_during_maintenance": 0, "maintenance_mode": 0, "pause_scheduler": scheduler}
         )
 
     operation.retry()
@@ -848,6 +853,7 @@ def test_bypass_patch_auto_resumes_migration(tmp_path: Path) -> None:
 def _branch_switch_migration(tmp_path: Path):
     mock_bench = MagicMock()
     mock_bench.path = tmp_path
+    mock_bench.site.return_value.maintenance_settings = {"maintenance_mode": 0, "pause_scheduler": 0}
 
     from pilot.core.bench.migration.store import MigrationStore
 
@@ -908,11 +914,11 @@ def test_a_killed_backup_task_pauses_the_operation_for_a_retry(tmp_path: Path) -
     assert operation.site("site1.localhost").backup_status == "failed"
     assert "stopped before it finished" in operation.diagnosis["message"]
     mock_bench.site.return_value.set_maintenance_settings.assert_called_with(
-        {"maintenance_mode": 0, "pause_scheduler": 0}
+        {"allow_reads_during_maintenance": 0, "maintenance_mode": 0, "pause_scheduler": 0}
     )
     mock_bench.site.return_value.set_maintenance_mode.reset_mock()
     operation.retry()
-    mock_bench.site.return_value.set_maintenance_mode.assert_called_once_with(True)
+    mock_bench.site.return_value.set_maintenance_mode.assert_called_once_with(True, allow_reads=True)
     assert operation.site("site1.localhost").original_config == {"maintenance_mode": 0, "pause_scheduler": 0}
     assert operation.state == "backing_up"
     assert operation.next_backup_site() == "site1.localhost"
@@ -1131,7 +1137,9 @@ def test_jobs_that_do_not_finish_pause_before_the_backup(tmp_path: Path, workloa
     assert operation.state == "needs_attention"
     assert operation.failed_site == "site1.localhost"
     assert operation.site("site1.localhost").backup_status == "pending"
-    site.set_maintenance_settings.assert_called_with({"maintenance_mode": 0, "pause_scheduler": 0})
+    site.set_maintenance_settings.assert_called_with(
+        {"allow_reads_during_maintenance": 0, "maintenance_mode": 0, "pause_scheduler": 0}
+    )
     operation.retry()
     assert operation.next_backup_site() == "site1.localhost"
 
@@ -1159,7 +1167,7 @@ def test_jobs_that_do_not_finish_pause_before_the_code_changes(tmp_path: Path, w
     assert operation.state == "updating"
 
 
-def test_web_restarts_once_after_maintenance_mode_is_turned_on(tmp_path: Path, workload) -> None:
+def test_web_restarts_each_time_maintenance_mode_changes(tmp_path: Path, workload) -> None:
     from pilot.core.bench.migration.store import MigrationStore
 
     workload.is_running.return_value = True
@@ -1174,12 +1182,247 @@ def test_web_restarts_once_after_maintenance_mode_is_turned_on(tmp_path: Path, w
     mock_bench.reload_workers.assert_not_called()
 
     operation.back_up_site("site1.localhost")
-    assert mock_bench.reload_workers.call_args_list == [call(web_only=True, raises=True)]
-    assert operation.is_web_restarted_in_maintenance is True
+    # Web restarts into read-only mode, then the workers restart to hold new jobs.
+    assert mock_bench.reload_workers.call_args_list == [call(web_only=True, raises=True), call(raises=True)]
+    # Full maintenance replaced read-only mode, so web must restart again before the migrate.
+    assert operation.is_web_restarted_in_maintenance is False
 
     mock_bench.reload_workers.reset_mock()
     operation.migrate_site("site1.localhost")
-    assert mock_bench.reload_workers.call_args_list == [call(raises=True), call(web_only=True, raises=True)]
+    assert mock_bench.reload_workers.call_args_list == [
+        call(web_only=True, raises=True),
+        call(raises=True),
+        call(web_only=True, raises=True),
+    ]
+
+
+def _held_queue(
+    bench: MagicMock, states: Sequence[JobQueueState | Exception] | JobQueueState | None = None
+) -> MagicMock:
+    queue = bench.job_queue
+    if isinstance(states, Sequence):
+        type(queue).state = PropertyMock(side_effect=list(states))
+    else:
+        type(queue).state = PropertyMock(return_value=states or JobQueueState(True, []))
+    return queue
+
+
+def _job_checks(site: MagicMock) -> int:
+    return vars(type(site))["has_pending_background_jobs"].call_count
+
+
+def _two_site_update(tmp_path: Path, workload) -> tuple[MigrationOperation, MagicMock, dict]:
+    from pilot.core.bench.migration.store import MigrationStore
+
+    workload.is_running.return_value = True
+    mock_bench = MagicMock()
+    mock_bench.path = tmp_path
+    mock_bench.app.return_value.installed_hash = "2222222"
+    sites = {name: _site_with_jobs(lambda: False) for name in ("one.local", "two.local")}
+    for site in sites.values():
+        site.path = tmp_path
+    mock_bench.site.side_effect = sites.__getitem__
+    operation = MigrationStore(mock_bench)._create(
+        "update", apps=[AppRevision("frappe", "1111111")], apps_filter=None, sites=list(sites)
+    )
+    with patch("pilot.tasks.migration_backup.MigrationBackupTask.queue", return_value="task-101"):
+        operation.begin()
+    return operation, mock_bench, sites
+
+
+def test_the_first_backup_holds_new_jobs_until_the_update_ends(tmp_path: Path, workload) -> None:
+    operation, mock_bench, sites = _two_site_update(tmp_path, workload)
+    queue = _held_queue(mock_bench)
+
+    operation.back_up_site("one.local")
+
+    # Jobs of every site drain before the queue is suspended, then workers restart into the hold.
+    assert [_job_checks(site) for site in sites.values()] == [1, 1]
+    queue.suspend.assert_called_once_with()
+    assert mock_bench.reload_workers.call_args_list[-1] == call(raises=True)
+    assert operation.is_holding_background_jobs
+
+    operation.back_up_site("two.local")
+    operation.update_apps()
+    operation.migrate_site("one.local")
+
+    # Queued jobs wait for the end of the update: the later steps do not drain them.
+    assert [_job_checks(site) for site in sites.values()] == [1, 1]
+    queue.suspend.assert_called_once_with()
+    queue.resume.assert_not_called()
+
+    operation.migrate_site("two.local")
+
+    assert operation.state == "completed"
+    queue.resume.assert_called_once_with()
+    assert not operation.is_holding_background_jobs
+
+
+def test_a_failed_backup_releases_the_held_jobs(tmp_path: Path, workload) -> None:
+    operation, mock_bench, sites = _two_site_update(tmp_path, workload)
+    queue = _held_queue(mock_bench)
+    sites["one.local"].migration_backup.create.side_effect = RuntimeError("dump failed")
+
+    with pytest.raises(RuntimeError, match="dump failed"):
+        operation.back_up_site("one.local")
+
+    queue.resume.assert_called_once_with()
+    assert not operation.is_holding_background_jobs
+    operation.retry()
+    sites["one.local"].migration_backup.create.side_effect = None
+    operation.back_up_site("one.local")
+    assert queue.suspend.call_count == 2
+
+
+def test_workers_that_keep_taking_jobs_stop_the_backup(tmp_path: Path, workload) -> None:
+    operation, mock_bench, sites = _two_site_update(tmp_path, workload)
+    queue = _held_queue(mock_bench, JobQueueState(True, ["worker-1"]))
+
+    with (
+        patch("pilot.core.bench.migration.operation.time.monotonic", side_effect=itertools.count(0, 31)),
+        patch("pilot.core.bench.migration.operation.time.sleep"),
+        pytest.raises(BenchError, match="these workers still take jobs: worker-1"),
+    ):
+        operation.back_up_site("one.local")
+
+    sites["one.local"].migration_backup.create.assert_not_called()
+    assert operation.state == "needs_attention"
+    queue.resume.assert_called_once_with()
+    sites["one.local"].set_maintenance_settings.assert_called_with(
+        {"allow_reads_during_maintenance": 0, "maintenance_mode": 0, "pause_scheduler": 0}
+    )
+
+
+def test_a_lost_hold_pauses_the_migrate_and_retry_drains_jobs_again(tmp_path: Path, workload) -> None:
+    operation, mock_bench, sites = _two_site_update(tmp_path, workload)
+    _held_queue(mock_bench, [JobQueueState(True, [])] * 3 + [JobQueueState(False, [])])
+    operation.back_up_site("one.local")
+    operation.back_up_site("two.local")
+
+    with pytest.raises(BenchError, match=r"no longer suspended.*a revert loses those writes"):
+        operation.update_apps()
+
+    mock_bench._update_apps.assert_not_called()
+    assert operation.state == "needs_attention"
+    assert not operation.is_holding_background_jobs
+    mock_bench.job_queue.resume.assert_called_once_with()
+    operation.retry()
+    operation.update_apps()
+    assert [_job_checks(site) for site in sites.values()] == [2, 2]
+
+
+def test_a_hold_that_stops_after_the_suspend_is_still_released(tmp_path: Path, workload) -> None:
+    operation, mock_bench, _ = _two_site_update(tmp_path, workload)
+    queue = _held_queue(mock_bench)
+    queue.suspend.side_effect = BenchError("Command timed out")
+
+    with pytest.raises(BenchError, match="timed out"):
+        operation.back_up_site("one.local")
+
+    # The task dies here. Its failure callback must find the hold and release it.
+    assert operation.is_holding_background_jobs
+    operation.fail_stopped_step(operation.chain[-1]["task_id"], "backing_up", "one.local")
+
+    queue.resume.assert_called_once_with()
+    assert not operation.is_holding_background_jobs
+
+
+def test_an_unknown_queue_state_pauses_the_migrate_before_it_starts(tmp_path: Path, workload) -> None:
+    operation, mock_bench, sites = _two_site_update(tmp_path, workload)
+    _held_queue(mock_bench, [JobQueueState(True, [])] * 4 + [BenchError("Connection refused")])
+    operation.back_up_site("one.local")
+    operation.back_up_site("two.local")
+    operation.update_apps()
+
+    with pytest.raises(BenchError, match="job queue state is unknown: Connection refused"):
+        operation.migrate_site("one.local")
+
+    assert operation.state == "needs_attention"
+    assert operation.site("one.local").migration_status == "pending"
+    sites["one.local"].migrate.assert_not_called()
+
+
+def test_a_revert_releases_the_held_jobs(tmp_path: Path) -> None:
+    operation, mock_bench = _backing_up_operation(tmp_path)
+    operation.is_holding_background_jobs = True
+    operation.state = get_state("restarting")
+
+    operation.restart()
+
+    assert operation.state == "reverted"
+    mock_bench.job_queue.resume.assert_called_once_with()
+    assert not operation.is_holding_background_jobs
+
+
+def test_a_stopped_workload_holds_no_jobs(tmp_path: Path) -> None:
+    operation, mock_bench = _backing_up_operation(tmp_path)
+
+    operation.back_up_site("site1.localhost")
+
+    mock_bench.job_queue.suspend.assert_not_called()
+    assert not operation.is_holding_background_jobs
+
+
+def test_the_hold_survives_a_reload_of_the_operation(tmp_path: Path) -> None:
+    operation, mock_bench = _backing_up_operation(tmp_path)
+    operation.is_holding_background_jobs = True
+
+    loaded = MigrationOperation.from_dict(operation.to_dict(), mock_bench, operation.store)
+
+    assert loaded.is_holding_background_jobs
+
+
+def test_sites_stay_readable_only_while_they_are_backed_up(tmp_path: Path) -> None:
+    operation, mock_bench = _backing_up_operation(tmp_path)
+    site = mock_bench.site.return_value
+    site.set_maintenance_mode.assert_called_once_with(True, allow_reads=True)
+    site.set_maintenance_mode.reset_mock()
+
+    operation.back_up_site("site1.localhost")
+
+    assert operation.state == "migrating"
+    site.set_maintenance_mode.assert_called_once_with(True, allow_reads=False)
+    assert operation.site("site1.localhost").original_config == {"maintenance_mode": 0, "pause_scheduler": 0}
+
+
+def test_an_update_without_safeguards_stops_reads_from_the_start(tmp_path: Path) -> None:
+    from pilot.core.bench.migration.store import MigrationStore
+
+    mock_bench = MagicMock()
+    mock_bench.path = tmp_path
+    mock_bench.site.return_value.maintenance_settings = {"maintenance_mode": 0, "pause_scheduler": 0}
+    operation = MigrationStore(mock_bench).create_site_migrate("site1.localhost", with_safeguards=False)
+    with patch("pilot.tasks.migrate.MigrateTask.queue", return_value="task-101"):
+        operation.begin()
+
+    assert operation.state == "migrating"
+    mock_bench.site.return_value.set_maintenance_mode.assert_called_once_with(True, allow_reads=False)
+
+
+def test_a_retry_into_the_migrate_stops_reads(tmp_path: Path) -> None:
+    operation, mock_bench = _backing_up_operation(tmp_path)
+    operation.state = get_state("needs_attention")
+    operation.return_state = "migrating"
+    mock_bench.site.return_value.set_maintenance_mode.reset_mock()
+
+    operation.retry()
+
+    mock_bench.site.return_value.set_maintenance_mode.assert_called_once_with(True, allow_reads=False)
+
+
+def test_lifting_maintenance_keeps_the_sites_own_read_setting(tmp_path: Path) -> None:
+    operation, mock_bench = _backing_up_operation(tmp_path)
+    operation.site("site1.localhost").original_config = {
+        "maintenance_mode": 1,
+        "pause_scheduler": 1,
+        "allow_reads_during_maintenance": 1,
+    }
+
+    operation._lift_maintenance()
+
+    mock_bench.site.return_value.set_maintenance_settings.assert_called_with(
+        {"maintenance_mode": 1, "pause_scheduler": 1, "allow_reads_during_maintenance": 1}
+    )
 
 
 def test_web_restarts_after_maintenance_mode_is_turned_off(tmp_path: Path) -> None:

@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from pilot.core.app import App, NewAppOptions, RevisionPin
     from pilot.core.bench.backups import BenchBackups
     from pilot.core.bench.hostname_aliases import HostnameAliases
+    from pilot.core.bench.job_queue import JobQueue
     from pilot.core.bench.migration.store import MigrationStore
     from pilot.core.bench.processes import BenchProcesses
     from pilot.core.bench.site_aliases import SiteAliases
@@ -110,6 +111,12 @@ class Bench:
         from pilot.core.bench.processes import BenchProcesses
 
         return BenchProcesses(self)
+
+    @cached_property
+    def job_queue(self) -> "JobQueue":
+        from pilot.core.bench.job_queue import JobQueue
+
+        return JobQueue(self)
 
     @cached_property
     def site_aliases(self) -> "SiteAliases":

@@ -26,6 +26,7 @@ LOCAL_CONFIG_KEYS = PROTECTED_CONFIG_KEYS | {
     "rds_db",
     "maintenance_mode",
     "pause_scheduler",
+    "allow_reads_during_maintenance",
     "email_sender_name",
 }
 
@@ -74,7 +75,11 @@ class BackupRun:
         config = self.files.get("config")
         if not config:
             return {}
-        return {key: value for key, value in json.loads(config.read_text()).items() if not is_local_config_key(key)}
+        return {
+            key: value
+            for key, value in json.loads(config.read_text()).items()
+            if not is_local_config_key(key)
+        }
 
 
 def is_local_config_key(key: str) -> bool:

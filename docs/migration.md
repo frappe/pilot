@@ -23,7 +23,7 @@ This separation lets Pilot stop safely, show a useful failure later, and continu
 - the current workflow state;
 - the failed site and failure diagnosis;
 - task IDs, recovery decisions, and restore checkpoints;
-- the site's original maintenance and scheduler settings.
+- the site's original maintenance, scheduler and read-during-maintenance settings.
 
 The operation is saved after every important change. Its JSON file lives at:
 
@@ -75,16 +75,27 @@ A standalone site migration uses the same workflow but skips the app-update step
 
 Before the first task is queued, Pilot:
 
-1. records each migrating site's maintenance and scheduler settings;
+1. records each migrating site's maintenance, scheduler and read-during-maintenance settings;
 2. puts those sites into maintenance mode;
 3. saves the operation;
 4. queues the first task.
 
 Putting the sites into maintenance mode first prevents writes while the bench is partly updated.
 
+During `backing_up`, Pilot also sets `allow_reads_during_maintenance`. Frappe then serves each request in a read-only database transaction instead of the 503 page, so users can still read the site. Web requests cannot write. A write after the snapshot would be lost on a revert, and table dumps from a site that takes writes do not agree with each other. When the last backup is done, Pilot removes `allow_reads_during_maintenance`. The next task restarts web before it changes code or a database, so the sites stop all requests. Old web workers must not serve new code or assets, and readers must not see a schema that a patch is changing. An operation without safeguards has no `backing_up` phase, so its sites stop all requests from the start.
+
 Maintenance mode also stops each site's scheduler, but jobs that are already queued or running continue. Before a site's backup, before the app update, and before a site's migrate, Pilot runs Frappe's `ready-for-migration` for the site until it reports no queued or running job, for up to 300 seconds. This is what Frappe Cloud does before it migrates a site. If the jobs do not finish in time, the operation goes to `needs_attention` before the step starts, so a retry runs the same step again. Pilot skips the wait while the workload is stopped, because then no worker runs jobs.
 
-Frappe reads a site's config again only after 60 seconds. So before the first step, Pilot restarts web once, and web stops serving the sites at once. When Pilot turns maintenance mode off, it restarts web again, so the sites answer at once instead of up to 60 seconds later. Under systemd, the web socket stays open during restart and queues new requests. Supervisor and older lite-mode runners briefly refuse requests while web starts.
+A read-only request can still enqueue a background job, and the job can write. So the first backup step holds new jobs for the whole operation:
+
+1. It waits for the jobs of every site in the operation.
+2. It suspends the bench's RQ queue (`rq:suspended` in the queue Redis).
+3. It restarts web and the workers. A worker that waits for a job reads the suspend flag only after it gets one, so only a restarted worker is sure to hold. A restarted worker waits until the queue resumes.
+4. It waits up to 60 seconds until every live worker reports `suspended`. The local runner restarts its workers after the request returns.
+
+While jobs are held, new jobs wait in Redis for every site on the bench, not only the updated sites. The later steps do not run `ready-for-migration`, because held jobs stay queued. They only check that the queue is still held. Pilot resumes the queue when it lifts maintenance mode: after the update completes, after a restore, and after a failed or stopped backup. Pilot saves the hold in the operation before it suspends the queue, so a backup task that stops during the hold also resumes the queue. A failed update or migrate keeps the jobs held while the operation waits for Retry or Restore, because a held job must not run on a half-updated site. If the hold is lost, for example because the queue Redis restarted, or Pilot cannot read the queue state, the step does not start and the operation goes to `needs_attention`. Jobs can then have written after the backup, and a revert loses those writes. Retry continues without holding jobs. An operation without safeguards and a stopped workload hold no jobs.
+
+Frappe reads a site's config again only after 60 seconds. So before the first step, and again before the first step after the backups, Pilot restarts web, and web applies the new maintenance settings at once. When Pilot turns maintenance mode off, it restarts web again, so the sites answer at once instead of up to 60 seconds later. Under systemd, the web socket stays open during restart and queues new requests. Supervisor and older lite-mode runners briefly refuse requests while web starts.
 
 If either web restart fails, the task fails and the operation pauses for Retry. A failed restart cannot be treated as a completed maintenance change.
 
@@ -225,7 +236,7 @@ Migration snapshots are separate from normal user backups. They are not shown in
 
 ### Backup failure
 
-Pilot stops before updating code, records the failed site, and restores every site's original maintenance and scheduler settings. Retry takes fresh backups of every site because the sites can receive new writes while the operation is paused.
+Pilot stops before updating code, records the failed site, restores every site's original maintenance, scheduler and read-during-maintenance settings, and resumes the held jobs. Retry takes fresh backups of every site because the sites can receive new writes while the operation is paused.
 
 ### Update or migration failure
 

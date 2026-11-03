@@ -144,9 +144,36 @@ def test_under_maintenance_restores_the_previous_settings(tmp_path: Path) -> Non
     with Site.under_maintenance(site):
         site.set_maintenance_mode.assert_called_once_with(True)
 
-    site.set_maintenance_settings.assert_called_once_with(
-        {"maintenance_mode": 1, "pause_scheduler": 0}
-    )
+    site.set_maintenance_settings.assert_called_once_with({"maintenance_mode": 1, "pause_scheduler": 0})
+
+
+def test_maintenance_mode_allows_reads_only_when_asked(tmp_path: Path) -> None:
+    import json
+    from unittest.mock import MagicMock
+
+    bench = MagicMock()
+    bench.sites_path = tmp_path
+    (tmp_path / "site1.localhost").mkdir()
+    (tmp_path / "site1.localhost" / "site_config.json").write_text(json.dumps({"db_name": "site1"}))
+    site = Site(SiteConfig(name="site1.localhost", apps=["frappe"]), bench)
+
+    site.set_maintenance_mode(True, allow_reads=True)
+    assert site.maintenance_settings == {
+        "maintenance_mode": 1,
+        "pause_scheduler": 1,
+        "allow_reads_during_maintenance": 1,
+    }
+    # Without `allow_reads`, the site's own setting stays, as for a restore or an app install.
+    site.set_maintenance_mode(False)
+    assert site.maintenance_settings["allow_reads_during_maintenance"] == 1
+    site.set_maintenance_mode(True, allow_reads=False)
+    assert site.maintenance_settings["allow_reads_during_maintenance"] == 0
+    site.set_maintenance_mode(False, allow_reads=True)
+    assert site.maintenance_settings == {
+        "maintenance_mode": 0,
+        "pause_scheduler": 0,
+        "allow_reads_during_maintenance": 0,
+    }
 
 
 def test_under_maintenance_lifts_maintenance_when_the_body_raises(tmp_path: Path) -> None:
@@ -163,9 +190,7 @@ def test_under_maintenance_lifts_maintenance_when_the_body_raises(tmp_path: Path
     with pytest.raises(RuntimeError), Site.under_maintenance(site):
         raise RuntimeError("install blew up")
 
-    site.set_maintenance_settings.assert_called_once_with(
-        {"maintenance_mode": 0, "pause_scheduler": 0}
-    )
+    site.set_maintenance_settings.assert_called_once_with({"maintenance_mode": 0, "pause_scheduler": 0})
 
 
 def test_install_app_enables_it_when_the_site_has_it_disabled(tmp_path: Path) -> None:
