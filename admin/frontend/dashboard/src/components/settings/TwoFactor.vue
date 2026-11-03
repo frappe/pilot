@@ -1,17 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
 import { Button, Dialog, ErrorMessage, Spinner, TextInput, toast } from 'frappe-ui'
-
 import QrcodeVue from 'qrcode.vue'
-
+import { computed, onMounted, ref, watch } from 'vue'
+import { twoFactorApi } from '@/api/twoFactor'
 import EmptyState from '@/components/common/EmptyState.vue'
 import Table from '@/components/common/Table.vue'
+import SettingsIllustration from '@/components/settings/SettingsIllustration.vue'
 import SettingsRow from '@/components/settings/SettingsRow.vue'
-
-import { twoFactorApi } from '@/api/twoFactor'
-import { fmtDateTime } from '@/utils/taskFormat'
 import type { TwoFactorCredential, TwoFactorEnrollment, TwoFactorStatus } from '@/types/auth'
 import { errorMessage } from '@/utils/error'
+import { fmtDateTime } from '@/utils/taskFormat'
 
 const columns = [
   { label: 'Device', key: 'name', class: 'w-48' },
@@ -190,37 +188,36 @@ onMounted(load)
   </div>
 
   <div v-else class="space-y-5">
-    <div class="flex justify-between items-center">
-      <p class="font-medium text-ink-gray-8">
-        Devices
-        <span class="font-normal text-ink-gray-5">
-          ({{ devices.length }} of {{ status.max_devices }})
-        </span>
-      </p>
+    <div class="flex justify-between items-center gap-3">
+      <div class="flex flex-col gap-1">
+        <p class="text-base-medium text-ink-gray-8">Two-factor authentication</p>
+        <p class="text-ink-gray-6 text-p-sm">
+          {{ devices.length }}
+          of {{ status.max_devices }} devices
+        </p>
+      </div>
 
-      <Button
-        v-if="!atDeviceLimit"
-        icon-left="lucide-plus"
-        @click="openAdd"
-        >Add device</Button
-      >
+      <Button v-if="!atDeviceLimit" icon-left="lucide-plus" @click="openAdd">Add device</Button>
     </div>
 
     <div
       v-if="atDeviceLimit"
       class="bg-surface-amber-1 p-3 border border-outline-amber-2 rounded-6 text-ink-amber-7 text-p-sm"
     >
-      All {{ status.max_devices }} device slots are in use. Remove one to enrol another, or share
-      an existing device's setup key to add another authenticator app.
+      All {{ status.max_devices }} device slots are in use. Remove one to enrol another, or share an
+      existing device's setup key to add another authenticator app.
     </div>
 
     <EmptyState
       compact
       v-if="!devices.length"
-      icon="lucide-shield"
-      title="No devices enrolled"
-      description="Sign-in needs only the admin password. Add a device to require a code from an authenticator app as well."
-    />
+      title="No devices yet"
+      description="Add an authenticator app to ask for a code when you sign in."
+    >
+      <template #illustration>
+        <SettingsIllustration kind="two-factor" />
+      </template>
+    </EmptyState>
 
     <Table v-else :columns="columns" :rows="devices" height="max-h-96">
       <template #name="{ row }">
@@ -250,7 +247,7 @@ onMounted(load)
     </Table>
 
     <div v-if="status.enabled" class="pt-2 border-t border-outline-gray-1">
-      <div class="-mx-2.5">
+      <div class="-mx-3">
         <SettingsRow
           label="Recovery codes"
           :description="`${status.recovery_codes_remaining} unused. Use one when no device is available.`"
@@ -267,6 +264,7 @@ onMounted(load)
         v-if="!enrollment"
         v-model="deviceName"
         label="Device name"
+        required
         placeholder="My Phone"
         maxlength="40"
         @keydown.enter="startEnrollment"
@@ -282,11 +280,8 @@ onMounted(load)
         </div>
 
         <details class="group">
-          <summary
-            class="flex items-center gap-1.5 text-ink-gray-6 cursor-pointer select-none"
-          >
-            <span
-              class="size-4 transition-transform group-open:rotate-90 lucide-chevron-right" />
+          <summary class="flex items-center gap-1.5 text-ink-gray-6 cursor-pointer select-none">
+            <span class="size-4 transition-transform group-open:rotate-90 lucide-chevron-right" />
             Can't scan? Enter the key by hand
           </summary>
 
@@ -298,7 +293,13 @@ onMounted(load)
           </div>
         </details>
 
-        <TextInput v-model="otp" label="Code from the app" placeholder="123456" autofocus />
+        <TextInput
+          v-model="otp"
+          label="Code from the app"
+          required
+          placeholder="123456"
+          autofocus
+        />
       </template>
     </div>
 
@@ -323,16 +324,12 @@ onMounted(load)
 
   <Dialog v-model="showCodes" title="Save your recovery codes" size="md">
     <p class="text-ink-gray-7 text-p-base">
-      These are shown once. Store them somewhere safe — each one signs you in when no device
-      is available, and works only once.
+      These are shown once. Store them somewhere safe — each one signs you in when no device is
+      available, and works only once.
     </p>
 
     <div class="gap-x-6 gap-y-2 grid grid-cols-2 bg-surface-gray-2 mt-3 px-4 py-3.5 rounded-6">
-      <span
-        v-for="code in codes"
-        :key="code"
-        class="font-mono text-ink-gray-8 text-sm text-center"
-      >
+      <span v-for="code in codes" :key="code" class="font-mono text-ink-gray-8 text-sm text-center">
         {{ code }}
       </span>
     </div>
@@ -349,8 +346,8 @@ onMounted(load)
 
   <Dialog v-model="showRemove" title="Remove device" size="md">
     <p class="text-ink-gray-7 text-p-base">
-      Remove <strong>{{ removing?.name }}</strong
-      >? Its codes stop working. Removing the last device turns two-factor off.
+      Remove <strong>{{ removing?.name }}</strong>? Its codes stop working. Removing the last device
+      turns two-factor off.
     </p>
 
     <ErrorMessage v-if="error" :message="error" class="mt-2" />

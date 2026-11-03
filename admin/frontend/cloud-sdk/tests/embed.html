@@ -13,9 +13,11 @@
   <p>Sample data only. No real site, billing, payment, or domain action runs here.</p>
   <button id="open">Open all panels</button>
   <button id="billing">Open Billing only</button>
+  <button id="inline">Mount Billing inline</button>
   <button id="theme">Toggle theme</button>
   <button id="failure">Toggle API failure</button>
   <p id="status" role="status"></p>
+  <div id="target" style="height: 560px; border: 1px solid #ccc; border-radius: 8px; overflow: hidden"></div>
   <script type="module">
     import { openCloudSettings } from '../dist/index.js'
 
@@ -68,6 +70,7 @@
     const open = (options = {}) => openCloudSettings({ ...options, onClose: () => { document.querySelector('#status').textContent = 'Dialog closed' } }).catch((error) => { document.querySelector('#status').textContent = error.message })
     document.querySelector('#open').onclick = () => open()
     document.querySelector('#billing').onclick = () => open({ panels: ['billing'] })
+    document.querySelector('#inline').onclick = () => open({ panels: ['billing'], target: document.querySelector('#target') })
     document.querySelector('#theme').onclick = () => { document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark' }
     document.querySelector('#failure').onclick = () => { failure = !failure; document.querySelector('#status').textContent = `API failure: ${failure}` }
   </script>

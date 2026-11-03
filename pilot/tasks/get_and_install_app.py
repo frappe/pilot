@@ -37,19 +37,25 @@ class GetAndInstallAppTask(Task):
         were started before it existed - they must restart before the site install."""
         self.bench.reload_workers(raises=True)
 
-    @step("fetch", lambda self: f"Fetch {self.marketplace_app or self.repo}")
     def fetch(self) -> AppInstallResult:
         # Marketplace apps can bring dependency apps; raw repos do not.
-        commit = ""
-        if self.marketplace_app:
-            resolver = Marketplace(self.bench).find_app(self.marketplace_app)
-            commit = resolver.commit
-            app = App(AppConfig(name=resolver.app, repo=resolver.repo, branch=resolver.branch), self.bench)
-        else:
-            app = App.from_repo(self.bench, self.repo, self.branch)
+        app, commit = self.look_up()
         return app.install(
-            install_dependencies=bool(self.marketplace_app), commit=commit, on_progress=self.report
+            install_dependencies=bool(self.marketplace_app),
+            commit=commit,
+            on_progress=self.report,
+            on_step=self.step,
         )
+
+    @step("fetch", lambda self: f"Fetch {self.marketplace_app or self.repo}")
+    def look_up(self) -> tuple[App, str]:
+        """The app to install and the commit to pin it at."""
+        if not self.marketplace_app:
+            return App.from_repo(self.bench, self.repo, self.branch), ""
+
+        resolver = Marketplace(self.bench).find_app(self.marketplace_app)
+        app = App(AppConfig(name=resolver.app, repo=resolver.repo, branch=resolver.branch), self.bench)
+        return app, resolver.commit
 
     def install_on_sites(self, app: App) -> None:
         for site in self.sites:

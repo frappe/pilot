@@ -2,10 +2,10 @@ import { expect, test } from '@playwright/test'
 
 test('Shows system info', async ({ page }) => {
   await page.goto('/settings')
-  await page.getByRole('button', { name: 'System Info' }).click()
+  await page.getByRole('button', { name: 'About' }).click()
 
   const dialog = page.getByRole('dialog')
-  await expect(dialog.getByRole('heading', { name: 'System Info' })).toBeVisible()
+  await expect(dialog.getByRole('heading', { name: 'About' })).toBeVisible()
   await expect(dialog.getByText('Runtime')).toBeVisible()
 })
 

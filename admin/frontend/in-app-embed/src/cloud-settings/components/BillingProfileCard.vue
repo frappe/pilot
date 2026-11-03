@@ -160,7 +160,17 @@ const save = async () => {
 
     <ErrorMessage :message="error" class="mt-4" />
 
-    <Skeleton v-if="!loaded && !error" class="mt-4 h-20 rounded-6" />
+    <div
+      v-if="!loaded && !error"
+      class="mt-4 grid gap-4 sm:grid-cols-2"
+      aria-busy="true"
+      :aria-label="__('Loading billing details')"
+    >
+      <div v-for="field in [...FIELDS, { key: 'currency' }]" :key="field.key" :class="field.full && 'sm:col-span-2'">
+        <Skeleton class="h-4 w-24 rounded-4" />
+        <Skeleton class="mt-1.5 h-7 rounded-4" />
+      </div>
+    </div>
 
     <div v-else-if="!loaded" class="mt-4 flex justify-end gap-2">
       <Button :label="__('Cancel')" @click="emit('close')" />

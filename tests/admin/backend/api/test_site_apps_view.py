@@ -159,14 +159,19 @@ def test_site_task_returns_task_owned_by_site(tmp_path: Path) -> None:
     task = Mock(args={"site": "site1.localhost"})
     task.as_dict.return_value = {"id": "task-1", "status": "running"}
 
-    with patch(
-        "admin.backend.api.v1.sites.apps.TaskReader.read_task",
-        return_value=task,
+    progress = {
+        "steps": [{"key": "fetch", "label": "Fetch", "status": "running", "started_at": 1.0}],
+        "error": None,
+    }
+
+    with (
+        patch("admin.backend.api.v1.sites.apps.TaskReader.read_task", return_value=task),
+        patch("admin.backend.api.v1.sites.apps.TaskReader.get_progress", return_value=progress),
     ):
         response = client.get("/api/v1/sites/site1.localhost/tasks/task-1")
 
     assert response.status_code == 200
-    assert response.get_json() == {"id": "task-1", "status": "running"}
+    assert response.get_json() == {"id": "task-1", "status": "running", **progress}
 
 
 def test_site_task_rejects_task_owned_by_another_site(tmp_path: Path) -> None:
