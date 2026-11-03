@@ -1105,7 +1105,7 @@ def test_a_migration_waits_until_the_site_runs_no_background_job(tmp_path: Path,
     operation = MigrationStore(mock_bench).create_site_migrate("site1.localhost", with_safeguards=False)
     operation.state = get_state("migrating")
 
-    with patch("pilot.core.bench.migration.operation.time.sleep") as sleep:
+    with patch("pilot.core.bench.migration.background_jobs.time.sleep") as sleep:
         operation.migrate_site("site1.localhost")
 
     assert sleep.call_count == 2
@@ -1127,8 +1127,8 @@ def test_jobs_that_do_not_finish_pause_before_the_backup(tmp_path: Path, workloa
 
     clock = iter([0, 100, 301])
     with (
-        patch("pilot.core.bench.migration.operation.time.monotonic", side_effect=lambda: next(clock)),
-        patch("pilot.core.bench.migration.operation.time.sleep"),
+        patch("pilot.core.bench.migration.background_jobs.time.monotonic", side_effect=lambda: next(clock)),
+        patch("pilot.core.bench.migration.background_jobs.time.sleep"),
         pytest.raises(BenchError, match="still has background jobs after 300 seconds"),
     ):
         operation.back_up_site("site1.localhost")
@@ -1199,11 +1199,20 @@ def test_web_restarts_each_time_maintenance_mode_changes(tmp_path: Path, workloa
 def _held_queue(
     bench: MagicMock, states: Sequence[JobQueueState | Exception] | JobQueueState | None = None
 ) -> MagicMock:
+    """A queue that is suspended after more suspends than resumes, then reports `states`."""
     queue = bench.job_queue
-    if isinstance(states, Sequence):
-        type(queue).state = PropertyMock(side_effect=list(states))
-    else:
-        type(queue).state = PropertyMock(return_value=states or JobQueueState(True, []))
+    held = JobQueueState(True, [])
+    later = iter(states) if isinstance(states, Sequence) else itertools.repeat(states or held)
+
+    def get_state() -> JobQueueState:
+        if queue.suspend.call_count <= queue.resume.call_count:
+            return JobQueueState(False, [])
+        state = next(later)
+        if isinstance(state, Exception):
+            raise state
+        return state
+
+    type(queue).state = PropertyMock(side_effect=get_state)
     return queue
 
 
@@ -1279,8 +1288,10 @@ def test_workers_that_keep_taking_jobs_stop_the_backup(tmp_path: Path, workload)
     queue = _held_queue(mock_bench, JobQueueState(True, ["worker-1"]))
 
     with (
-        patch("pilot.core.bench.migration.operation.time.monotonic", side_effect=itertools.count(0, 31)),
-        patch("pilot.core.bench.migration.operation.time.sleep"),
+        patch(
+            "pilot.core.bench.migration.background_jobs.time.monotonic", side_effect=itertools.count(0, 31)
+        ),
+        patch("pilot.core.bench.migration.background_jobs.time.sleep"),
         pytest.raises(BenchError, match="these workers still take jobs: worker-1"),
     ):
         operation.back_up_site("one.local")
@@ -1321,6 +1332,7 @@ def test_a_hold_that_stops_after_the_suspend_is_still_released(tmp_path: Path, w
 
     # The task dies here. Its failure callback must find the hold and release it.
     assert operation.is_holding_background_jobs
+    assert operation.has_suspended_job_queue
     operation.fail_stopped_step(operation.chain[-1]["task_id"], "backing_up", "one.local")
 
     queue.resume.assert_called_once_with()
@@ -1345,6 +1357,7 @@ def test_an_unknown_queue_state_pauses_the_migrate_before_it_starts(tmp_path: Pa
 def test_a_revert_releases_the_held_jobs(tmp_path: Path) -> None:
     operation, mock_bench = _backing_up_operation(tmp_path)
     operation.is_holding_background_jobs = True
+    operation.has_suspended_job_queue = True
     operation.state = get_state("restarting")
 
     operation.restart()
@@ -1352,6 +1365,106 @@ def test_a_revert_releases_the_held_jobs(tmp_path: Path) -> None:
     assert operation.state == "reverted"
     mock_bench.job_queue.resume.assert_called_once_with()
     assert not operation.is_holding_background_jobs
+
+
+def test_a_queue_suspended_before_the_update_stays_suspended(tmp_path: Path, workload) -> None:
+    operation, mock_bench, _ = _two_site_update(tmp_path, workload)
+    queue = mock_bench.job_queue
+    type(queue).state = PropertyMock(return_value=JobQueueState(True, []))
+
+    operation.back_up_site("one.local")
+
+    queue.suspend.assert_not_called()
+    assert operation.is_holding_background_jobs
+    assert not operation.has_suspended_job_queue
+    operation.background_jobs.release()
+    queue.resume.assert_not_called()
+    assert not operation.is_holding_background_jobs
+
+
+def test_a_failed_release_does_not_hide_the_backup_error(tmp_path: Path, workload) -> None:
+    operation, mock_bench, sites = _two_site_update(tmp_path, workload)
+    queue = _held_queue(mock_bench)
+    sites["one.local"].migration_backup.create.side_effect = RuntimeError("dump failed")
+    queue.resume.side_effect = BenchError("Connection refused")
+
+    with pytest.raises(RuntimeError, match="dump failed") as raised:
+        operation.back_up_site("one.local")
+
+    note = "Lifting maintenance mode also failed: Connection refused"
+    assert raised.value.__notes__ == [note]
+    assert operation.diagnosis is not None
+    assert operation.diagnosis["message"] == f"Backup failed for one.local: dump failed {note}"
+    assert operation.state == "needs_attention"
+    # The sites are online again even though the jobs stay held for the next lift.
+    sites["one.local"].set_maintenance_settings.assert_called_with(
+        {"allow_reads_during_maintenance": 0, "maintenance_mode": 0, "pause_scheduler": 0}
+    )
+    assert operation.is_holding_background_jobs
+
+
+def test_a_lost_hold_that_cannot_resume_the_queue_checks_the_hold_on_retry(tmp_path: Path, workload) -> None:
+    operation, mock_bench, sites = _two_site_update(tmp_path, workload)
+    queue = _held_queue(mock_bench, [JobQueueState(True, [])] * 3 + [JobQueueState(True, ["worker-1"])] * 2)
+    operation.back_up_site("one.local")
+    operation.back_up_site("two.local")
+    queue.resume.side_effect = BenchError("Connection refused")
+
+    with (
+        patch(
+            "pilot.core.bench.migration.background_jobs.time.monotonic", side_effect=itertools.count(0, 61)
+        ),
+        patch("pilot.core.bench.migration.background_jobs.time.sleep"),
+        pytest.raises(BenchError, match="could not resume the queue, so Retry checks the hold again"),
+    ):
+        operation.update_apps()
+
+    assert operation.state == "needs_attention"
+    assert operation.is_holding_background_jobs
+    queue.resume.side_effect = None
+    type(queue).state = PropertyMock(return_value=JobQueueState(True, []))
+    operation.retry()
+    operation.update_apps()
+    # The hold still stands, so the update does not drain the queued jobs.
+    assert [_job_checks(site) for site in sites.values()] == [1, 1]
+    mock_bench._update_apps.assert_called_once()
+
+
+def test_a_lift_that_fails_twice_keeps_the_first_error(tmp_path: Path) -> None:
+    operation, mock_bench = _backing_up_operation(tmp_path)
+    operation.is_holding_background_jobs = True
+    operation.has_suspended_job_queue = True
+    mock_bench.reload_workers.side_effect = BenchError("web restart failed")
+    mock_bench.job_queue.resume.side_effect = BenchError("Connection refused")
+
+    with pytest.raises(BenchError, match="web restart failed") as raised:
+        operation._lift_maintenance()
+
+    assert raised.value.__notes__ == ["Releasing background jobs also failed: Connection refused"]
+    assert operation.is_holding_background_jobs
+
+
+def test_a_failed_web_restart_still_releases_the_jobs(tmp_path: Path) -> None:
+    operation, mock_bench = _backing_up_operation(tmp_path)
+    operation.is_holding_background_jobs = True
+    operation.has_suspended_job_queue = True
+    mock_bench.reload_workers.side_effect = BenchError("web restart failed")
+
+    with pytest.raises(BenchError, match="web restart failed"):
+        operation._lift_maintenance()
+
+    mock_bench.job_queue.resume.assert_called_once_with()
+    assert not operation.is_holding_background_jobs
+
+
+def test_the_queue_ownership_survives_a_reload_of_the_operation(tmp_path: Path) -> None:
+    operation, mock_bench = _backing_up_operation(tmp_path)
+    operation.is_holding_background_jobs = True
+    operation.has_suspended_job_queue = True
+
+    loaded = MigrationOperation.from_dict(operation.to_dict(), mock_bench, operation.store)
+
+    assert loaded.has_suspended_job_queue
 
 
 def test_a_stopped_workload_holds_no_jobs(tmp_path: Path) -> None:

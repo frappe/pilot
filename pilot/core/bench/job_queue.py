@@ -11,21 +11,15 @@ if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
 # Runs on the bench's Python, so it uses the redis and rq versions of the bench.
-# A worker of another host, or one with no PID, counts as alive.
-_PROGRAM = """
-import json, os, socket, sys
-from redis import Redis
-from rq import Worker
-from rq.suspension import is_suspended, resume, suspend
+_PROGRAM = '''\
+import json
+import os
+import socket
+import sys
 
-action, url = sys.argv[1], sys.argv[2]
-connection = Redis.from_url(url)
-if action == "suspend":
-    suspend(connection)
-elif action == "resume":
-    resume(connection)
 
-def is_alive(worker):
+def is_alive(worker) -> bool:
+    """A worker of another host, or one without a PID, counts as alive."""
     if worker.hostname != socket.gethostname() or not worker.pid:
         return True
     try:
@@ -36,10 +30,33 @@ def is_alive(worker):
         return True
     return True
 
-workers = Worker.all(connection=connection)
-active = [w.name for w in workers if w.get_state() != "suspended" and is_alive(w)]
-print(json.dumps({"is_suspended": bool(is_suspended(connection)), "active_workers": active}))
-"""
+
+def get_active_workers(workers: list) -> list[str]:
+    """The workers that can still take a job.
+
+    The job threads of a lite runner share one PID, and a no-fork worker sends no heartbeat
+    during a job. So a worker left behind by a re-exec looks like a busy thread, and counts."""
+    return [worker.name for worker in workers if worker.get_state() != "suspended" and is_alive(worker)]
+
+
+def main(action: str, url: str) -> None:
+    from redis import Redis
+    from rq import Worker
+    from rq.suspension import is_suspended, resume, suspend
+
+    connection = Redis.from_url(url)
+    if action == "suspend":
+        suspend(connection)
+    elif action == "resume":
+        resume(connection)
+    workers = Worker.all(connection=connection)
+    state = {"is_suspended": bool(is_suspended(connection)), "active_workers": get_active_workers(workers)}
+    print(json.dumps(state))
+
+
+if __name__ == "__main__":
+    main(sys.argv[1], sys.argv[2])
+'''
 
 
 @dataclass(frozen=True)

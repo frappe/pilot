@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-import contextlib
 import importlib
 import json
-import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, NoReturn
 from urllib.parse import urlsplit
 
 from pilot.core.app import RevisionPin
+from pilot.core.bench.migration.background_jobs import BackgroundJobsNotReady, MigrationBackgroundJobs
 from pilot.core.bench.migration.state import (
     MigrationState,
     MigrationStateError,
@@ -40,8 +39,6 @@ _CHAIN_TASKS = {
 }
 _CHAIN_PHASES = ("backing_up", "updating", "migrating")
 _REVERT_PHASES = ("reverting_apps", "reverting_sites", "restarting")
-_JOBS_WAIT_SECONDS = 300
-_HOLD_WAIT_SECONDS = 60
 
 
 def _now() -> str:
@@ -116,7 +113,8 @@ class MigrationOperation:
     revert_checkpoints: dict = field(default_factory=dict)
     decisions: list = field(default_factory=list)  # user decisions, e.g. patch skips
     is_web_restarted_in_maintenance: bool = False
-    is_holding_background_jobs: bool = False  # this operation suspended the job queue
+    is_holding_background_jobs: bool = False  # new jobs wait in the queue until maintenance lifts
+    has_suspended_job_queue: bool = False  # the hold suspended the queue, so its release resumes it
 
     bench: "Bench" = field(default=None, repr=False, compare=False)  # type: ignore[assignment]
     store: "MigrationStore" = field(default=None, repr=False, compare=False)  # type: ignore[assignment]
@@ -207,7 +205,7 @@ class MigrationOperation:
                 "output_excerpt": "",
             }
             self._enter_needs_attention("backing_up", name)
-            self._lift_maintenance()
+            self._lift_maintenance_after(error)
             raise
         self._save()
         if self.next_backup_site() is None:
@@ -275,100 +273,38 @@ class MigrationOperation:
             self.complete(on_step)
 
     @property
-    def is_workload_running(self) -> bool:
-        from pilot.managers.processes.local import ProcessManager
-
-        return ProcessManager.for_bench(self.bench).is_running()
+    def background_jobs(self) -> MigrationBackgroundJobs:
+        return MigrationBackgroundJobs(self)
 
     def wait_for_background_jobs(self, phase: str, names: list[str], on_progress: OnProgress) -> None:
         """Make sure that no background job runs on `names` before a step changes them."""
-        if not names or not self.is_workload_running:
+        jobs = self.background_jobs
+        if not names or not jobs.is_workload_running:
             return
         self._restart_web_in_maintenance(on_progress)
-        if self.is_holding_background_jobs:
-            self._wait_until_background_jobs_held(phase, names[0])
-            return
-        self._drain_background_jobs(phase, names, on_progress)
+        try:
+            jobs.check(phase, names, on_progress)
+        except BackgroundJobsNotReady as error:
+            self._pause_before_step(phase, error.site or names[0], str(error))
 
     def hold_background_jobs(self, name: str, on_progress: OnProgress) -> None:
-        """Keep new jobs in the queue until the operation ends.
-
-        A read-only site can still enqueue a job, and the job can write after the backup."""
-        if self.is_holding_background_jobs or not self.is_workload_running:
+        """Keep new jobs in the queue until the operation lifts maintenance mode."""
+        jobs = self.background_jobs
+        if self.is_holding_background_jobs or not jobs.is_workload_running:
             return
         self.wait_for_background_jobs("backing_up", [site.name for site in self.sites], on_progress)
-        on_progress("Holding new background jobs...")
-        # Saved first, so that a step that stops at any later point still releases the queue.
-        self.is_holding_background_jobs = True
-        self._save()
-        self.bench.job_queue.suspend()
-        # A waiting worker reads the suspend flag only after its next job.
-        self.bench.reload_workers(raises=True)
-        self.is_web_restarted_in_maintenance = True
-        self._save()
-        self._wait_until_background_jobs_held("backing_up", name)
+        try:
+            jobs.hold(on_progress)
+        except BackgroundJobsNotReady as error:
+            self._pause_before_step("backing_up", name, str(error))
 
-    def release_background_jobs(self) -> None:
-        if not self.is_holding_background_jobs:
-            return
-        self.bench.job_queue.resume()
-        self.is_holding_background_jobs = False
-        self._save()
-
-    def _wait_until_background_jobs_held(self, phase: str, name: str) -> None:
-        """The local runner restarts its workers after the request returns, so wait a bit."""
-        deadline = time.monotonic() + _HOLD_WAIT_SECONDS
-        while True:
-            try:
-                state = self.bench.job_queue.state
-            except BenchError as error:
-                detail = f"the job queue state is unknown: {error}"
-                break
-            if state.is_held:
-                return
-            if not state.is_suspended:
-                detail = "the job queue is no longer suspended"
-                break
-            if time.monotonic() >= deadline:
-                detail = f"these workers still take jobs: {', '.join(state.active_workers)}"
-                break
-            time.sleep(1)
-        self._fail_background_jobs_hold(phase, name, detail)
-
-    def _fail_background_jobs_hold(self, phase: str, name: str, detail: str) -> None:
-        if phase == "backing_up":
-            result = "The step did not start. Retry later."
-        else:
-            result = (
-                "Jobs can have written to the sites after the backup, and a revert loses those writes. "
-                "Retry continues without holding jobs."
-            )
-        # The queue Redis can be down. The pause below still reports why, and Retry releases again.
-        with contextlib.suppress(BenchError):
-            self.release_background_jobs()
-        self._pause_before_step(phase, name, f"Background jobs are not held: {detail}. {result}")
-
-    def _drain_background_jobs(self, phase: str, names: list[str], on_progress: OnProgress) -> None:
-        """Wait for queued and running jobs while maintenance mode pauses the scheduler."""
-        deadline = time.monotonic() + _JOBS_WAIT_SECONDS
-        for name in names:
-            on_progress(f"Waiting for the background jobs of {name}...")
-            try:
-                while self.bench.site(name).has_pending_background_jobs:
-                    if time.monotonic() >= deadline:
-                        raise BenchError(
-                            f"{name} still has background jobs after {_JOBS_WAIT_SECONDS} seconds."
-                        )
-                    time.sleep(2)
-            except BenchError as error:
-                self._pause_before_step(phase, name, f"{error} The step did not start. Retry later.")
-
-    def _pause_before_step(self, phase: str, name: str, message: str) -> None:
+    def _pause_before_step(self, phase: str, name: str, message: str) -> NoReturn:
         self.diagnosis = {"phase": phase, "message": message, "output_excerpt": ""}
         self._enter_needs_attention(phase, None if phase == "updating" else name)
+        error = BenchError(message)
         if phase == "backing_up":
-            self._lift_maintenance()
-        raise BenchError(message)
+            self._lift_maintenance_after(error)
+        raise error
 
     def fail_stopped_step(self, task_id: str, phase: str, site_name: str | None, reason: str = "") -> None:
         """Pause an interrupted chain step unless its successor has already taken over."""
@@ -612,10 +548,32 @@ class MigrationOperation:
                 self.bench.site(site.name).set_maintenance_settings(settings)
 
     def _lift_maintenance(self) -> None:
-        """Restore maintenance settings, release held jobs and refresh web workers."""
-        self._restore_maintenance()
-        self.release_background_jobs()
-        self.bench.reload_workers(web_only=True, raises=True)
+        """Restore maintenance settings, refresh web workers and release held jobs, each one after a failure too."""
+        failure: Exception | None = None
+        try:
+            self._restore_maintenance()
+            self.bench.reload_workers(web_only=True, raises=True)
+        except Exception as error:
+            failure = error
+        try:
+            self.background_jobs.release()
+        except Exception as error:
+            if failure is None:
+                raise
+            failure.add_note(f"Releasing background jobs also failed: {error}")
+        if failure is not None:
+            raise failure
+
+    def _lift_maintenance_after(self, error: Exception) -> None:
+        """Lift maintenance after a failed step. A failure to lift is added to `error`, not raised instead."""
+        try:
+            self._lift_maintenance()
+        except Exception as lift_error:
+            note = f"Lifting maintenance mode also failed: {lift_error}"
+            error.add_note(note)
+            if self.diagnosis:
+                self.diagnosis["message"] = f"{self.diagnosis['message']} {note}"
+            self._save()
 
     def _restart_web_in_maintenance(self, on_progress: OnProgress) -> None:
         """Refresh Frappe's 60-second site-config cache before changing site data."""
@@ -695,6 +653,7 @@ class MigrationOperation:
             "decisions": self.decisions,
             "is_web_restarted_in_maintenance": self.is_web_restarted_in_maintenance,
             "is_holding_background_jobs": self.is_holding_background_jobs,
+            "has_suspended_job_queue": self.has_suspended_job_queue,
         }
 
     @classmethod
@@ -721,6 +680,7 @@ class MigrationOperation:
             decisions=data.get("decisions", []),
             is_web_restarted_in_maintenance=data.get("is_web_restarted_in_maintenance", False),
             is_holding_background_jobs=data.get("is_holding_background_jobs", False),
+            has_suspended_job_queue=data.get("has_suspended_job_queue", False),
         )
         operation.bench = bench
         operation.store = store
