@@ -97,7 +97,7 @@ class MigrationBackgroundJobs:
             if state.is_held:
                 return
             if not state.is_suspended:
-                self._fail_hold(phase, "the job queue is no longer suspended")
+                self._fail_lost_hold(phase)
             if time.monotonic() >= deadline:
                 workers = ", ".join(state.active_workers)
                 self._fail_hold(
@@ -113,8 +113,9 @@ class MigrationBackgroundJobs:
         except BenchError as error:
             self._fail_hold(phase, f"the job queue state is unknown: {error}")
 
-    def _fail_hold(self, phase: str, detail: str) -> NoReturn:
-        # The queue Redis can be down. The pause still reports why, and the next lift releases again.
+    def _fail_lost_hold(self, phase: str) -> NoReturn:
+        """The queue runs jobs again, so the hold keeps nothing back. Retry drains them instead."""
+        # The pause still reports why when the resume fails, and the next lift releases again.
         with contextlib.suppress(BenchError):
             self.release()
         if phase == "backing_up":
@@ -125,6 +126,16 @@ class MigrationBackgroundJobs:
                 result = f"{lost} Pilot could not resume the queue, so Retry checks the hold again."
             else:
                 result = f"{lost} Retry continues without holding jobs."
+        raise BackgroundJobsNotReady(
+            f"Background jobs are not held: the job queue is no longer suspended. {result}"
+        )
+
+    def _fail_hold(self, phase: str, detail: str) -> NoReturn:
+        """The queue can still be suspended, so the hold stays: Frappe runs a job also on a site in maintenance."""
+        if phase == "backing_up":
+            result = "The step did not start. Retry later."
+        else:
+            result = "The step did not start. Pilot keeps the new jobs held, and Retry checks the hold again."
         raise BackgroundJobsNotReady(f"Background jobs are not held: {detail}. {result}")
 
     def _save(self) -> None:

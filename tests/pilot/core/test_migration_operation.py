@@ -1322,6 +1322,33 @@ def test_a_lost_hold_pauses_the_migrate_and_retry_drains_jobs_again(tmp_path: Pa
     assert [_job_checks(site) for site in sites.values()] == [2, 2]
 
 
+def test_workers_that_keep_taking_jobs_during_the_update_keep_the_hold(tmp_path: Path, workload) -> None:
+    operation, mock_bench, sites = _two_site_update(tmp_path, workload)
+    queue = _held_queue(mock_bench, [JobQueueState(True, [])] * 3 + [JobQueueState(True, ["worker-1"])])
+    operation.back_up_site("one.local")
+    operation.back_up_site("two.local")
+
+    with (
+        patch(
+            "pilot.core.bench.migration.background_jobs.time.monotonic", side_effect=itertools.count(0, 61)
+        ),
+        patch("pilot.core.bench.migration.background_jobs.time.sleep"),
+        pytest.raises(BenchError, match=r"worker-1.*Pilot keeps the new jobs held"),
+    ):
+        operation.update_apps()
+
+    # Frappe runs a job also on a site in maintenance, so a resume would let held jobs at the sites.
+    queue.resume.assert_not_called()
+    assert operation.is_holding_background_jobs
+    assert operation.state == "needs_attention"
+    mock_bench._update_apps.assert_not_called()
+    type(queue).state = PropertyMock(return_value=JobQueueState(True, []))
+    operation.retry()
+    operation.update_apps()
+    assert [_job_checks(site) for site in sites.values()] == [1, 1]
+    mock_bench._update_apps.assert_called_once()
+
+
 def test_a_hold_that_stops_after_the_suspend_is_still_released(tmp_path: Path, workload) -> None:
     operation, mock_bench, _ = _two_site_update(tmp_path, workload)
     queue = _held_queue(mock_bench)
@@ -1352,6 +1379,8 @@ def test_an_unknown_queue_state_pauses_the_migrate_before_it_starts(tmp_path: Pa
     assert operation.state == "needs_attention"
     assert operation.site("one.local").migration_status == "pending"
     sites["one.local"].migrate.assert_not_called()
+    mock_bench.job_queue.resume.assert_not_called()
+    assert operation.is_holding_background_jobs
 
 
 def test_a_revert_releases_the_held_jobs(tmp_path: Path) -> None:
@@ -1405,18 +1434,12 @@ def test_a_failed_release_does_not_hide_the_backup_error(tmp_path: Path, workloa
 
 def test_a_lost_hold_that_cannot_resume_the_queue_checks_the_hold_on_retry(tmp_path: Path, workload) -> None:
     operation, mock_bench, sites = _two_site_update(tmp_path, workload)
-    queue = _held_queue(mock_bench, [JobQueueState(True, [])] * 3 + [JobQueueState(True, ["worker-1"])] * 2)
+    queue = _held_queue(mock_bench, [JobQueueState(True, [])] * 3 + [JobQueueState(False, [])])
     operation.back_up_site("one.local")
     operation.back_up_site("two.local")
     queue.resume.side_effect = BenchError("Connection refused")
 
-    with (
-        patch(
-            "pilot.core.bench.migration.background_jobs.time.monotonic", side_effect=itertools.count(0, 61)
-        ),
-        patch("pilot.core.bench.migration.background_jobs.time.sleep"),
-        pytest.raises(BenchError, match="could not resume the queue, so Retry checks the hold again"),
-    ):
+    with pytest.raises(BenchError, match="could not resume the queue, so Retry checks the hold again"):
         operation.update_apps()
 
     assert operation.state == "needs_attention"
