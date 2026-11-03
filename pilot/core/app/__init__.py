@@ -5,6 +5,7 @@ import hashlib
 import json
 import re
 import shutil
+import subprocess
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -159,6 +160,18 @@ class App:
     def head_sha(self) -> str:
         """The commit checked out on disk, unlike installed_hash which reads dist-info."""
         return self._repository.repo.head_sha
+
+    def run_git(self, *args: str, capture_output: bool = False) -> subprocess.CompletedProcess:
+        """Run git in this checkout with the stored credential. The token stays in the
+        environment, out of argv and .git/config. Check `returncode`; it does not raise."""
+        return subprocess.run(
+            ["git", *args],
+            cwd=self.path,
+            env=self._repository.git_env,
+            capture_output=capture_output,
+            text=True,
+            check=False,
+        )
 
     @property
     def has_source_changes(self) -> bool:
