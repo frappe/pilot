@@ -42,7 +42,7 @@ def wait_for_task(
                 return
             if status == "failed":
                 output = request.get(f"{base_url}/api/v1/tasks/{task_id}/output/content")
-                tail = "\n".join(output.text().splitlines()[-30:]) if output.ok else ""
+                tail = "\n".join(output.text().splitlines()[-100:]) if output.ok else ""
                 raise RuntimeError(f"Task {task_id} failed:\n{tail}")
         time.sleep(2)
     raise TimeoutError(f"Task {task_id} did not finish within {timeout}s")
