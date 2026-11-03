@@ -225,6 +225,8 @@ Migration snapshots are separate from normal user backups. They are not shown in
 
 ### Backup failure
 
+Before an operation with safeguards starts, Pilot adds up every site's predicted database backup size (see [Scheduled Backups](configuration.md#scheduled-backups)) and refuses the operation when the bench disk cannot hold them and still keep 500 MB free for the system. No site enters maintenance mode, and the Admin API answers `507 insufficient_disk_space`.
+
 Pilot stops before updating code, records the failed site, and restores every site's original maintenance and scheduler settings. Retry takes fresh backups of every site because the sites can receive new writes while the operation is paused.
 
 ### Update or migration failure

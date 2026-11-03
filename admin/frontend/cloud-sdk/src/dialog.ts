@@ -21,6 +21,8 @@ export interface CloudSettingsOptions {
   translate?: CloudSettingsTranslator
   onClose?: () => void
   context?: CloudContext
+  /** Render the panels inside this element instead of a dialog. */
+  target?: HTMLElement
 }
 
 export { isCloudSettingsAvailable } from './context.ts'

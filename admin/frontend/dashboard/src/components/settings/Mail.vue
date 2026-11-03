@@ -101,66 +101,76 @@ onMounted(async () => {
     <Spinner size="lg" class="text-ink-gray-4" />
   </div>
 
-  <div v-else class="space-y-6">
-    <p class="text-ink-gray-5 text-p-sm">
-      The mailbox alert emails are sent from. Settings are checked against the server when you save.
-      Recipients live in Notification settings.
-    </p>
+  <div v-else class="flex flex-col gap-6">
+    <section class="space-y-5">
+      <div class="flex flex-col gap-1">
+        <p class="text-base-medium text-ink-gray-8">Mailbox</p>
+        <p class="text-ink-gray-6 text-p-sm">The account alerts and your sites send email from.</p>
+      </div>
 
-    <div class="space-y-4">
-      <FormControl
-        label="Email address"
-        type="text"
-        v-model="email"
-        placeholder="alerts@example.com"
-      />
-      <ErrorMessage v-if="emailError" :message="emailError" />
-
-      <div class="flex sm:flex-row flex-col gap-4">
+      <div class="space-y-4">
         <FormControl
-          label="Outgoing server"
+          label="Email address"
+          required
           type="text"
-          v-model="server"
-          placeholder="smtp.example.com"
-          class="w-full"
+          v-model="email"
+          placeholder="alerts@example.com"
+          :error="emailError"
         />
+
+        <div class="gap-4 grid sm:grid-cols-[1fr_8rem]">
+          <FormControl
+            label="Outgoing server"
+            required
+            type="text"
+            v-model="server"
+            placeholder="smtp.example.com"
+          />
+
+          <FormControl
+            label="Port"
+            type="text"
+            v-model="port"
+            :placeholder="String(defaultPort)"
+            :error="portError"
+          />
+        </div>
+
+        <!-- Checkbox is inline-flex by default, so the column has to come from here. -->
+        <div class="flex flex-col items-start gap-3">
+          <Checkbox v-model="useSsl" label="Use SSL instead of STARTTLS" />
+          <Checkbox v-model="loginIsDifferent" label="Use a different login name" />
+        </div>
+
         <FormControl
-          label="Port"
+          v-if="loginIsDifferent"
+          label="Login name"
           type="text"
-          v-model="port"
-          :placeholder="String(defaultPort)"
-          class="w-full"
+          v-model="login"
+          placeholder="alerts"
+        />
+
+        <FormControl
+          label="Password"
+          :required="!passwordSet"
+          type="password"
+          autocomplete="new-password"
+          v-model="password"
+          :placeholder="passwordSet ? 'Unchanged' : 'SMTP password'"
         />
       </div>
-      <ErrorMessage v-if="portError" :message="portError" />
+    </section>
 
-      <!-- Checkbox is inline-flex by default, so the column has to come from here. -->
-      <div class="flex flex-col items-start gap-3">
-        <Checkbox v-model="useSsl" label="Use SSL instead of STARTTLS" />
-        <Checkbox v-model="loginIsDifferent" label="Use a different login name" />
-      </div>
+    <ErrorMessage v-if="error" :message="error" />
 
-      <FormControl
-        v-if="loginIsDifferent"
-        label="Login name"
-        type="text"
-        v-model="login"
-        placeholder="alerts"
-      />
-
-      <FormControl
-        label="Password"
-        type="password"
-        v-model="password"
-        :placeholder="passwordSet ? 'Unchanged' : 'SMTP password'"
-      />
-
-      <ErrorMessage v-if="error" :message="error" />
-      <div v-if="dirty" class="flex justify-end">
-        <Button variant="solid" :loading="saving" :disabled="!canSave" @click="save">
-          Save changes
-        </Button>
-      </div>
-    </div>
+    <Button
+      class="self-end"
+      variant="solid"
+      :loading="saving"
+      :disabled="!dirty || !canSave"
+      @click="save"
+    >
+      Save changes
+    </Button>
   </div>
 </template>

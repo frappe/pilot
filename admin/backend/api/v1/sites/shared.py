@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 
 from admin.backend.api.responses import error_response
-from pilot.exceptions import TaskConflictError
+from pilot.exceptions import InsufficientDiskSpaceError, TaskConflictError
 
 
 def site_name(kwargs: dict) -> str:
@@ -42,6 +42,8 @@ def task_failure(error: Exception):
         return error_response("task_conflict", "A conflicting task is already active.", 409)
     if isinstance(error, ValueError):
         return error_response("invalid_task", str(error), 422)
+    if isinstance(error, InsufficientDiskSpaceError):
+        return error_response("insufficient_disk_space", str(error), 507)
 
     # The caller only ever sees a generic 500, so record the cause.
     logging.exception("Could not queue task: %s", error)

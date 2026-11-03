@@ -1,22 +1,26 @@
 <script setup lang="ts">
+import { Button, Dialog } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Dialog, Button } from 'frappe-ui'
-
-import General from '@/components/settings/General.vue'
 import Database from '@/components/settings/Database.vue'
+import General from '@/components/settings/General.vue'
+import Git from '@/components/settings/Git.vue'
+import LLM from '@/components/settings/LLM.vue'
+import Mail from '@/components/settings/Mail.vue'
+import Notifications from '@/components/settings/Notifications.vue'
+import S3Bucket from '@/components/settings/S3Bucket.vue'
 import Security from '@/components/settings/Security.vue'
 import Sessions from '@/components/settings/Sessions.vue'
 import SystemInfo from '@/components/settings/SystemInfo.vue'
-
-import { hasUnsavedChanges } from '@/composables/common/useUnsavedChanges'
-import { useIsMobile } from '@/composables/common/useIsMobile'
-
 import {
   DATABASE_SECTIONS,
-  GENERAL_SECTIONS,
+  GIT_SECTIONS,
   SECURITY_SECTIONS,
+  SETTINGS_GROUPS,
+  SETTINGS_PAGES,
 } from '@/components/settings/sections'
+import { useIsMobile } from '@/composables/common/useIsMobile'
+import { hasUnsavedChanges } from '@/composables/common/useUnsavedChanges'
 
 const openModel = defineModel<boolean>()
 
@@ -53,26 +57,19 @@ const open = computed({
   },
 })
 
-const sections = computed(() => [
-  { id: 'general', label: 'General', icon: 'lucide-settings' },
-  { id: 'database', label: 'Database', icon: 'lucide-database' },
-  { id: 'security', label: 'Security', icon: 'lucide-shield' },
-  { id: 'sessions', label: 'Sessions', icon: 'lucide-monitor' },
-  { id: 'system-info', label: 'System Info', icon: 'lucide-info' },
-])
 // Section and sub-section are routed, so views are deep-linkable.
 const activeSection = computed({
   get: () => route.params.section || null,
   set: (id) =>
     router.push(id ? { name: 'Settings', params: { section: id } } : { name: 'Settings' }),
 })
-const currentSection = computed(() => activeSection.value ?? sections.value[0].id)
+const currentSection = computed(() => activeSection.value ?? SETTINGS_PAGES[0].id)
 const activeSectionLabel = computed(
-  () => sections.value.find((s) => s.id === currentSection.value)?.label,
+  () => SETTINGS_PAGES.find((s) => s.id === currentSection.value)?.label,
 )
 
 const subSectionOptions = computed(() => {
-  if (currentSection.value === 'general') return GENERAL_SECTIONS
+  if (currentSection.value === 'github') return GIT_SECTIONS
   if (currentSection.value === 'database') return DATABASE_SECTIONS
   if (currentSection.value === 'security') return SECURITY_SECTIONS
   return []
@@ -85,6 +82,10 @@ const subSection = computed({
       params: { section: currentSection.value, subSection: section?.id },
     }),
 })
+const nestedSubSection = computed(() =>
+  currentSection.value === 'security' ? null : subSection.value,
+)
+
 // Guarded here, not in `subSection`, so goBack() can move without re-asking.
 const guardedSubSection = computed({
   get: () => subSection.value,
@@ -112,15 +113,15 @@ watch(currentSection, () => (nestedView.value = null))
 
 const headerTitle = computed(() => {
   if (sessionJti.value) return nestedView.value?.title ?? sessionJti.value
-  return subSection.value?.label ?? activeSectionLabel.value
+  return nestedSubSection.value?.label ?? activeSectionLabel.value
 })
 
 const goBack = () => {
   guarded(() => {
     if (sessionJti.value) sessionJti.value = null
-    else if (subSection.value)
+    else if (nestedSubSection.value)
       subSection.value =
-        subSectionOptions.value.find((s) => s.id === subSection.value?.parent) ?? null
+        subSectionOptions.value.find((s) => s.id === nestedSubSection.value?.parent) ?? null
     else activeSection.value = null
   })
 }
@@ -131,10 +132,10 @@ const goBack = () => {
     <template #default="{ close }">
       <div class="relative flex sm:h-[calc(100vh-6rem)] max-h-[calc(100vh-6rem)]">
         <aside
-          class="flex-col bg-surface-sidebar p-2 sm:border-r dark:border-outline-gray-2 w-full sm:w-[220px] shrink-0"
+          class="flex-col bg-surface-gray-1 p-2 w-full sm:w-[220px] shrink-0"
           :class="activeSection ? 'hidden sm:flex' : 'flex'"
         >
-          <h3 class="mb-1 p-2 pb-3 border-b sm:border-b-0 border-outline-gray-1 font-semibold">
+          <h3 class="sm:hidden flex items-center mb-1 px-2 h-7 text-base-semibold text-ink-gray-9">
             Settings
           </h3>
 
@@ -149,36 +150,51 @@ const goBack = () => {
             @click="close"
           />
 
-          <Button
-            v-for="section in sections"
-            :key="section.id"
-            :variant="isMobile ? 'subtle' : 'ghost'"
-            :size="isMobile ? 'md' : 'sm'"
-            class="!justify-start border sm:border-0 w-full mt-0.5"
-            :class="
-                currentSection === section.id
-                  ? 'sm:!bg-surface-elevation-3 sm:!shadow-sm sm:!text-ink-gray-9 !text-ink-gray-6'
-                  : '!text-ink-gray-6'
-              "
-            @click="guarded(() => (activeSection = section.id))"
-          >
-            <template #prefix>
-              <span :class="section.icon" class="size-4" />
-            </template>
-            {{ section.label }}
-          </Button>
+          <nav class="flex flex-col flex-1 gap-5 overflow-y-auto">
+            <section
+              v-for="group in SETTINGS_GROUPS"
+              :key="group.label"
+              class="flex flex-col gap-0.5 last:mt-auto"
+            >
+              <h4
+                v-if="group.label"
+                class="flex items-center px-2 h-7 text-ink-gray-8 text-sm-semibold"
+              >
+                {{ group.label }}
+              </h4>
+
+              <Button
+                v-for="page in group.pages"
+                :key="page.id"
+                :variant="isMobile ? 'subtle' : 'ghost'"
+                :size="isMobile ? 'md' : 'sm'"
+                class="!justify-start border sm:border-0 w-full"
+                :class="
+                  currentSection === page.id
+                    ? 'sm:!bg-surface-gray-3 !text-ink-gray-9'
+                    : '!text-ink-gray-6'
+                "
+                @click="guarded(() => (activeSection = page.id))"
+              >
+                <template #prefix>
+                  <span :class="page.icon" class="size-4" />
+                </template>
+                {{ page.label }}
+              </Button>
+            </section>
+          </nav>
         </aside>
 
         <div
-          class="flex-col flex-1 px-6 sm:px-14 pt-6 sm:pt-10 pb-10 sm:pb-12 overflow-y-auto"
+          class="flex-col flex-1 px-6 sm:px-10 pt-6 sm:pt-9 pb-10 sm:pb-16 overflow-y-auto"
           :class="activeSection ? 'flex' : 'hidden sm:flex'"
         >
           <!-- header -->
-          <div class="flex items-center gap-2 pb-4">
+          <div class="flex items-center gap-2 pb-6">
             <Button
-              v-if="subSection || sessionJti || activeSection"
+              v-if="nestedSubSection || sessionJti || activeSection"
               class="-ml-2"
-              :class="{ 'sm:hidden': !subSection && !sessionJti }"
+              :class="{ 'sm:hidden': !nestedSubSection && !sessionJti }"
               variant="ghost"
               icon="lucide-arrow-left"
               label="Back"
@@ -186,25 +202,34 @@ const goBack = () => {
               @click="goBack"
             />
 
-            <h3 class="text-lg-semibold text-ink-gray-9">{{ headerTitle }}</h3>
+            <h3 class="text-xl-semibold text-ink-gray-9">{{ headerTitle }}</h3>
 
             <div id="settings-header-actions" class="flex items-center gap-2 ml-auto" />
           </div>
 
-          <General v-if="currentSection === 'general'" v-model:open-section="guardedSubSection" />
+          <General v-if="currentSection === 'bench'" />
+          <Git v-else-if="currentSection === 'github'" v-model:open-section="guardedSubSection" />
+          <S3Bucket v-else-if="currentSection === 's3-bucket'" />
+          <LLM v-else-if="currentSection === 'llm'" />
+          <Mail v-else-if="currentSection === 'mail'" />
+          <Notifications v-else-if="currentSection === 'notifications'" />
+
           <Database
             v-else-if="currentSection === 'database'"
             v-model:open-section="guardedSubSection"
           />
+
           <Security
             v-else-if="currentSection === 'security'"
             v-model:open-section="guardedSubSection"
           />
+
           <Sessions
             v-else-if="currentSection === 'sessions'"
             v-model:nested-view="nestedView"
             v-model:jti="sessionJti"
           />
+
           <SystemInfo v-else-if="currentSection === 'system-info'" />
         </div>
       </div>

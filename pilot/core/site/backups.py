@@ -17,7 +17,22 @@ if TYPE_CHECKING:
     from pilot.core.site import Site
 
 MAX_DAILY_FAILURES = 6
+# A dump grows between runs; the newest one plus this margin predicts the next.
+_DUMP_SIZE_HEADROOM = 1.2
+# Kept free after a backup, so the database and the system can still write.
+SYSTEM_RESERVED_BYTES = 500 * 1024**2
 _TS_RE = re.compile(r"^(\d{8}_\d{6})")
+
+
+def ensure_free_space(path: Path, needed_bytes: int, purpose: str) -> None:
+    """Raise when the disk holding `path` cannot take `needed_bytes` and keep the system reserve."""
+    import shutil
+
+    from pilot.exceptions import InsufficientDiskSpaceError
+
+    free = shutil.disk_usage(path).free
+    if free - SYSTEM_RESERVED_BYTES < needed_bytes:
+        raise InsufficientDiskSpaceError(purpose, needed_bytes, free, SYSTEM_RESERVED_BYTES)
 
 
 def parse_backup_timestamp(filename: str) -> str | None:
@@ -47,7 +62,7 @@ class SiteBackups:
         from pilot.exceptions import BenchError
         from pilot.utils import run_command
 
-        self.directory.mkdir(parents=True, exist_ok=True)
+        self.ensure_disk_space(with_files)
         with tempfile.TemporaryDirectory(prefix=".backup-", dir=self.directory) as staging:
             argv = [
                 *self.site.bench.frappe_call,
@@ -67,6 +82,34 @@ class SiteBackups:
         if not timestamp:
             raise BenchError(f"The backup of {self.site.config.name} produced no files.")
         return timestamp, files
+
+    def ensure_disk_space(self, with_files: bool = True) -> None:
+        """Refuse a local run the backups disk cannot hold, before Frappe writes anything."""
+        self.directory.mkdir(parents=True, exist_ok=True)
+        ensure_free_space(
+            self.directory, self.get_estimated_size(with_files), f"the backup of {self.site.config.name}"
+        )
+
+    def get_estimated_size(self, with_files: bool = True) -> int:
+        """Bytes a local run needs. File archives are about the size of the files they hold."""
+        from pilot.utils import directory_bytes
+
+        size = self.estimated_database_size
+        if with_files:
+            size += directory_bytes(self.site.path / "public" / "files")
+            size += directory_bytes(self.site.path / "private" / "files")
+        return size
+
+    @property
+    def estimated_database_size(self) -> int:
+        """The newest local dump with headroom. Without one, the database's size on disk,
+        which is an upper bound because the dump is compressed and holds no indexes."""
+        from pilot.core.site.storage import SiteStorageCollector
+
+        dumps = sorted(self.directory.glob("*-database.sql*")) if self.directory.is_dir() else []
+        if dumps:
+            return int(dumps[-1].stat().st_size * _DUMP_SIZE_HEADROOM)
+        return SiteStorageCollector(self.site.bench).get_database_bytes([self.site])[self.site.config.name]
 
     @property
     def is_streaming_supported(self) -> bool:

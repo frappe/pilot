@@ -424,3 +424,17 @@ create_bench_user frappe
             'export XDG_RUNTIME_DIR="/run/user/$(id -u)"\n'
             'export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"\n'
         )
+
+
+@pytest.mark.parametrize(
+    ("version", "url"),
+    [
+        ("", "https://api.github.com/repos/frappe/pilot/releases?per_page=1"),
+        ("v0.0.87", "https://api.github.com/repos/frappe/pilot/releases/tags/v0.0.87"),
+    ],
+)
+def test_a_pinned_version_fetches_that_release(version: str, url: str, tmp_path: Path) -> None:
+    result = run_installer_functions(f'PILOT_VERSION="{version}"\nrelease_api_url', tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == url

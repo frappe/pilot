@@ -8,7 +8,7 @@ import {
   isNotConnectedToCentral,
 } from '@frappe/cloud-sdk/api'
 import { reactive } from 'vue'
-import type { AccountLinks, BillingSummary, CloudContext, Domains, Marketplace, CloudSettingsTranslator } from '@frappe/cloud-sdk'
+import type { AccountLinks, BillingSummary, CloudContext, Domains, Marketplace, CloudSettingsTranslator, TaskStatus } from '@frappe/cloud-sdk'
 import { translate, useTranslation } from './translation'
 import { toast } from 'frappe-ui'
 
@@ -39,20 +39,28 @@ const MAX_WAIT = 3 * 60 * 1000
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-type TaskOutcome = 'success' | 'failed' | 'timeout' | 'gone' | 'error' | 'cancelled'
+export type TaskOutcome = 'success' | 'failed' | 'timeout' | 'gone' | 'error' | 'cancelled'
+
+interface WaitOptions {
+  /** Receives each poll result, or null while the task can't be read. */
+  onUpdate?: (task: TaskStatus | null) => void
+  maxWait?: number
+}
 
 export const waitForTask = async (
   taskId: string,
   isCancelled = () => false,
+  { onUpdate, maxWait = MAX_WAIT }: WaitOptions = {},
 ): Promise<TaskOutcome> => {
-  const deadline = Date.now() + MAX_WAIT
+  const deadline = Date.now() + maxWait
 
   while (!isCancelled()) {
-    let task: { status?: string; exit_code?: number | null } | undefined
+    let task: TaskStatus | undefined
 
     try {
       task = await getTask(taskId)
     } catch {
+      onUpdate?.(null)
       if (Date.now() > deadline) return 'error'
 
       await sleep(POLL_INTERVAL)
@@ -61,6 +69,7 @@ export const waitForTask = async (
 
     if (isCancelled()) return 'cancelled'
 
+    onUpdate?.(task)
     const status = task?.status
 
     if (!status) return 'gone'
@@ -121,7 +130,39 @@ export const rememberTask = (site: string, name: string, task?: RememberedTask) 
   } catch {}
 }
 
-export const createStore = (context?: CloudContext, translator: CloudSettingsTranslator = translate) => {
+export interface AppTask {
+  taskId: string
+  verb: string
+  task?: TaskStatus
+  isUnreachable: boolean
+}
+
+// Module state, so an app task keeps its watcher, and its toast, after the dialog closes.
+export const appTasks = reactive<Record<string, AppTask>>({})
+const appTaskWaits = new Map<string, Promise<TaskOutcome>>()
+
+/** Wait for an app task until it ends. A second call for the same task joins the first wait. */
+export const watchAppTask = (name: string, taskId: string, verb: string) => {
+  const joined = appTaskWaits.get(taskId)
+  if (joined) return { outcome: joined, isJoined: true }
+
+  appTasks[name] = { taskId, verb, isUnreachable: false }
+  const onUpdate = (task: TaskStatus | null) => {
+    const entry = appTasks[name]
+    if (entry?.taskId !== taskId) return
+
+    entry.isUnreachable = !task
+    if (task) entry.task = task
+  }
+
+  const outcome = waitForTask(taskId, undefined, { onUpdate, maxWait: Infinity })
+  appTaskWaits.set(taskId, outcome)
+  outcome.finally(() => appTaskWaits.delete(taskId))
+
+  return { outcome, isJoined: false }
+}
+
+export const createStore =(context?: CloudContext, translator: CloudSettingsTranslator = translate) => {
   const state = reactive({
     context: context || { enabled: false },
     // Loaded before a click, because a browser blocks a tab opened after an await.

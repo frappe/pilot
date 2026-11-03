@@ -53,7 +53,7 @@ const {
 const storageAction = {
   label: 'Connect storage',
   onClick: () => {
-    router.push({ name: 'Settings', params: { section: 'general', subSection: 's3-bucket' } })
+    router.push({ name: 'Settings', params: { section: 's3-bucket' } })
   },
 }
 
