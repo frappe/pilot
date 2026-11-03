@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import NotRequired, TypedDict
+from typing import Literal, NotRequired, TypedDict
 
 
 class SiteDomain(TypedDict):
@@ -9,6 +9,8 @@ class SiteDomain(TypedDict):
     is_primary: bool
     public_scheme: str
     tls: bool
+    redirect_to_primary: bool
+    certificate: Literal["not_required", "issued", "pending", "missing"]
 
 
 class SiteDomains(TypedDict):
@@ -29,3 +31,12 @@ class DnsRecords(TypedDict):
 
     cname: NotRequired[list[DnsRecord]]
     a: NotRequired[list[DnsRecord]]
+
+
+class DnsCheck(TypedDict):
+    matched: bool
+    message: str
+
+
+class ServerIp(TypedDict):
+    ip: str

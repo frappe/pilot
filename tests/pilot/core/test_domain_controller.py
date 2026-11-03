@@ -198,7 +198,7 @@ def test_host_queries_empty_without_provider(tmp_path: Path, monkeypatch) -> Non
 
 def test_builtin_dns_records_without_provider(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
-    monkeypatch.setattr(DomainRouteProvider, "_server_ip", staticmethod(lambda: ""))
+    monkeypatch.setattr(DomainRouteProvider, "server_ip", staticmethod(lambda: ""))
     bench = _make_bench(tmp_path)
     _write_site(bench, "mysite")
 
@@ -212,7 +212,7 @@ def test_builtin_dns_records_without_provider(tmp_path: Path, monkeypatch) -> No
 
 def test_a_domain_behind_cloudflare_is_accepted_with_a_warning(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
-    monkeypatch.setattr(DomainRouteProvider, "_server_ip", staticmethod(lambda: "198.51.100.7"))
+    monkeypatch.setattr(DomainRouteProvider, "server_ip", staticmethod(lambda: "198.51.100.7"))
     addresses = {"app.example.com": {"104.16.1.2", "2606:4700::1"}}
     monkeypatch.setattr(DomainRouteProvider, "_resolve", staticmethod(lambda host: set(addresses.get(host, ()))))
     bench = _make_bench(tmp_path)
@@ -226,7 +226,7 @@ def test_a_domain_behind_cloudflare_is_accepted_with_a_warning(tmp_path: Path, m
 
 def test_a_domain_pointing_elsewhere_is_refused(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
-    monkeypatch.setattr(DomainRouteProvider, "_server_ip", staticmethod(lambda: "198.51.100.7"))
+    monkeypatch.setattr(DomainRouteProvider, "server_ip", staticmethod(lambda: "198.51.100.7"))
     addresses = {"app.example.com": {"104.16.1.2", "203.0.113.9"}}
     monkeypatch.setattr(DomainRouteProvider, "_resolve", staticmethod(lambda host: set(addresses.get(host, ()))))
     bench = _make_bench(tmp_path)

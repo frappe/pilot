@@ -148,6 +148,34 @@ def domain_dns_records(name: str, domain: str):
     return jsonify(records)
 
 
+@sites_bp.get("/<name>/domains/<domain>/dns-check")
+@require_scope(site_name)
+def domain_dns_check(name: str, domain: str):
+    """Check DNS for a new domain before it is attached. A domain provider checks DNS itself, so this passes."""
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    if not site_exists(bench_root, name):
+        return site_not_found()
+    if err := validate_site_name(domain):
+        return error_response("invalid_domain", err, 422)
+    try:
+        result = _site_domains(bench_root, name).check_dns(domain)
+    except BenchError as error:
+        return _domain_failure(error, "Could not check DNS.")
+    except Exception:
+        return internal_error("Could not check DNS.")
+    return jsonify(result)
+
+
+@sites_bp.get("/<name>/domains/server-ip")
+@require_scope(site_name)
+def domain_server_ip(name: str):
+    """This server's public IP address, for an A record. A domain provider can need other records."""
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    if not site_exists(bench_root, name):
+        return site_not_found()
+    return jsonify({"ip": _site_domains(bench_root, name).server_ip})
+
+
 @sites_bp.post("/<name>/domains")
 @require_scope(site_name)
 def add_domain(name: str):
@@ -213,18 +241,34 @@ def update_domain(name: str, domain: str):
         return site_not_found()
     if err := validate_site_name(domain):
         return error_response("invalid_domain", err, 422)
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict) or data.get("primary") is not True:
-        return error_response("invalid_fields", 'Only setting {"primary": true} is supported.', 422)
+    change = _domain_change(request.get_json(silent=True))
+    if not change:
+        return error_response(
+            "invalid_fields", 'Send {"primary": true} or {"redirect_to_primary": true|false}.', 422
+        )
     try:
-        _site_domains(bench_root, name).set_primary(domain)
+        domains = _site_domains(bench_root, name)
+        if "primary" in change:
+            domains.set_primary(domain)
+        else:
+            domains.set_redirect(domain, change["redirect_to_primary"])
         task_id = _apply_domains(bench_root, name)
     except BenchError as error:
-        return _domain_failure(error, "Could not change the primary domain.")
+        return _domain_failure(error, "Could not update the domain.")
     except Exception:
-        return internal_error("Could not change the primary domain.")
-    # nginx redirects non-primary hosts to the primary, so regenerate it.
+        return internal_error("Could not update the domain.")
+    # nginx renders the redirects to the primary domain, so regenerate it.
     return accepted_task_response(bench_root, task_id)
+
+
+def _domain_change(data) -> dict[str, bool]:
+    """The one change a PATCH asks for, or an empty dict when the body is not exactly one valid change."""
+    if not isinstance(data, dict) or ("primary" in data) == ("redirect_to_primary" in data):
+        return {}
+    if "primary" in data:
+        return {"primary": True} if data["primary"] is True else {}
+    redirect = data["redirect_to_primary"]
+    return {"redirect_to_primary": redirect} if isinstance(redirect, bool) else {}
 
 
 @sites_bp.delete("/<name>/domains/<domain>")

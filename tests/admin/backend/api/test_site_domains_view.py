@@ -304,3 +304,79 @@ def test_primary_domain_flag_requires_a_boolean(tmp_path: Path) -> None:
         "/api/v1/sites/site.local/domains", json={"domain": "shop.example.com", "primary": "true"}
     )
     assert response.status_code == 422
+
+
+def test_update_domain_sets_the_redirect_and_queues_nginx(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    _make_site(bench_root, "site.localhost", domains=["custom.example.com"])
+    client = _client(bench_root)
+    site_domains = _mocked_site_domains(bench_root, "site.localhost", domains=["custom.example.com"])
+
+    with patch("admin.backend.api.v1.sites.domains._site_domains", return_value=site_domains):
+        response = _request(
+            client,
+            "patch",
+            "/api/v1/sites/site.localhost/domains/custom.example.com",
+            json={"redirect_to_primary": False},
+        )
+
+    assert response.status_code == 202
+    assert response.get_json()["command"] == "setup-nginx"
+    site_domains.set_redirect.assert_called_once_with("custom.example.com", False)
+    site_domains.set_primary.assert_not_called()
+
+
+def test_update_domain_takes_exactly_one_valid_change(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    _make_site(bench_root, "site.localhost")
+    client = _client(bench_root)
+    path = "/api/v1/sites/site.localhost/domains/custom.example.com"
+
+    for body in ({"primary": True, "redirect_to_primary": False}, {"redirect_to_primary": "no"}, {}):
+        assert _request(client, "patch", path, json=body).status_code == 422
+
+
+def test_domain_dns_check_returns_the_check_result(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    _make_site(bench_root, "site.localhost")
+    client = _client(bench_root)
+    site_domains = _mocked_site_domains(bench_root, "site.localhost")
+    site_domains.check_dns.return_value = {"matched": False, "message": "Not yet."}
+
+    with patch("admin.backend.api.v1.sites.domains._site_domains", return_value=site_domains):
+        response = client.get("/api/v1/sites/site.localhost/domains/custom.example.com/dns-check")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"matched": False, "message": "Not yet."}
+    site_domains.check_dns.assert_called_once_with("custom.example.com")
+
+
+def test_domain_dns_check_reports_a_domain_conflict(tmp_path: Path) -> None:
+    from pilot.exceptions import DomainConflictError
+
+    bench_root = tmp_path / "benches" / "current"
+    _make_site(bench_root, "site.localhost")
+    client = _client(bench_root)
+    site_domains = _mocked_site_domains(bench_root, "site.localhost")
+    site_domains.check_dns.side_effect = DomainConflictError("custom.example.com is already attached.")
+
+    with patch("admin.backend.api.v1.sites.domains._site_domains", return_value=site_domains):
+        response = client.get("/api/v1/sites/site.localhost/domains/custom.example.com/dns-check")
+
+    assert response.status_code == 409
+    assert response.get_json()["error"]["message"] == "custom.example.com is already attached."
+
+
+def test_server_ip_is_not_read_as_a_domain(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    _make_site(bench_root, "site.localhost")
+    client = _client(bench_root)
+    site_domains = _mocked_site_domains(bench_root, "site.localhost")
+    site_domains.server_ip = "203.0.113.10"
+
+    with patch("admin.backend.api.v1.sites.domains._site_domains", return_value=site_domains):
+        response = client.get("/api/v1/sites/site.localhost/domains/server-ip")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"ip": "203.0.113.10"}
+    site_domains.describe_domain.assert_not_called()

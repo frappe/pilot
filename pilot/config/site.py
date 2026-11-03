@@ -19,6 +19,8 @@ class SiteDomain:
     # reaches this host as plain HTTP; True ends TLS here.
     tls: bool | None = None
     route: RoutePolicy | None = None
+    # False keeps serving this domain after another domain becomes primary.
+    redirect_to_primary: bool = True
 
     @classmethod
     def from_entry(cls, entry) -> "SiteDomain":
@@ -32,13 +34,19 @@ class SiteDomain:
                 name=str(entry.get("domain") or ""),
                 tls=None if tls is None else bool(tls),
                 route=route,
+                redirect_to_primary=entry.get("redirect_to_primary") is not False,
             )
         return cls(name=str(entry))
 
     def to_entry(self) -> "str | dict":
+        entry: dict = {"domain": self.name}
         if self.route:
-            return {"domain": self.name, "route": self.route.to_dict()}
-        return self.name if self.tls is None else {"domain": self.name, "tls": self.tls}
+            entry["route"] = self.route.to_dict()
+        elif self.tls is not None:
+            entry["tls"] = self.tls
+        if not self.redirect_to_primary:
+            entry["redirect_to_primary"] = False
+        return entry if len(entry) > 1 else self.name
 
 
 @dataclass
@@ -98,6 +106,13 @@ class SiteConfig:
                     return entry.route.origin_tls
                 return self.ssl if entry.tls is None else entry.tls
         return self.route.origin_tls if self.route else self.ssl
+
+    def redirects_to_primary(self, domain: str) -> bool:
+        """Whether nginx sends this domain to an explicitly chosen primary domain."""
+        if not self.primary_domain or domain.lower() == self.primary.lower():
+            return False
+        entry = next((entry for entry in self.domains if entry.name.lower() == domain.lower()), None)
+        return entry is None or entry.redirect_to_primary
 
     def route_for(self, domain: str) -> RoutePolicy:
         """Return the configured route or the site's direct-route default."""

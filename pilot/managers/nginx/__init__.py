@@ -262,7 +262,7 @@ class NginxConfigRenderer:
         public_scheme: str,
         client_ip_source: str,
     ) -> SimpleNamespace:
-        canonical = site.primary if (len(site.all_domains) > 1 and site.primary_domain) else ""
+        redirect_hosts = [domain.lower() for domain in domains if site.redirects_to_primary(domain)]
         return SimpleNamespace(
             kind="site",
             server_name=" ".join(domains),
@@ -281,7 +281,8 @@ class NginxConfigRenderer:
             key=live_key_path(self.bench.certificate_name(site)),
             name=site.name,
             public_root=f"{self.bench.path}/sites/{site.name}/public",
-            canonical=canonical,
+            canonical=site.primary,
+            redirect_hosts=redirect_hosts,
         )
 
     def _admin_vhost(self, ssl: bool) -> SimpleNamespace:

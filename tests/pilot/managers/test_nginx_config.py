@@ -90,8 +90,23 @@ def test_canonical_redirect_with_explicit_primary(tmp_path: Path) -> None:
     )
     config = _site_config(tmp_path, site)
 
-    assert 'if ($host != "www.example.com")' in config
+    assert 'if ($host = "site.localhost")' in config
+    assert 'if ($host = "www.example.com")' not in config
     assert "return 301 $scheme://www.example.com$request_uri;" in config
+
+
+def test_a_domain_that_stops_redirecting_serves_the_site(tmp_path: Path) -> None:
+    site = SiteConfig(
+        name="site.localhost",
+        apps=["frappe"],
+        domains=["www.example.com", {"domain": "Shop.Example.com", "redirect_to_primary": False}],
+        primary_domain="www.example.com",
+    )
+    config = _site_config(tmp_path, site)
+
+    assert 'if ($host = "site.localhost")' in config
+    assert 'if ($host = "shop.example.com")' not in config
+    assert config.count("return 301 $scheme://www.example.com$request_uri;") == 1
 
 
 def test_canonical_redirect_preserves_edge_proxy_scheme(tmp_path: Path) -> None:

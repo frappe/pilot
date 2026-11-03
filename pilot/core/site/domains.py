@@ -23,10 +23,18 @@ class SiteDomains:
         return self._provider.register(self.site.config.name, domain)
 
     def attach(self, domain: str, *, primary: bool = False) -> None:
-        if not primary or not self.status(domain)[0]:
+        """Register the domain unless it is already attached, so a repeated attach retries setup."""
+        if not self.status(domain)[0]:
             self.register(domain)
         if primary:
             self.set_primary(domain)
+
+    def check_dns(self, domain: str) -> dict:
+        return self._provider.check_dns(self.site.config.name, domain)
+
+    @property
+    def server_ip(self) -> str:
+        return self._provider.server_ip()
 
     def deregister(self, domain: str) -> None:
         self._provider.deregister(self.site.config.name, domain)
@@ -39,6 +47,9 @@ class SiteDomains:
 
     def set_primary(self, domain: str | None) -> None:
         self._provider.set_primary(self.site.config.name, domain)
+
+    def set_redirect(self, domain: str, redirect: bool) -> None:
+        self._provider.set_redirect(self.site.config.name, domain, redirect)
 
     def status(self, domain: str) -> tuple[bool, bool]:
         from pilot.utils import normalize_host
@@ -55,7 +66,11 @@ class SiteDomains:
         config = self._site_config()
         site_name = config.name
         primary = self.primary() or site_name
-        rows = [self._description(config, domain, domain == primary) for domain in [site_name, *self.names()]]
+        certificates = self.get_certificate_states(config)
+        rows = [
+            self._description(config, domain, domain == primary, certificates[domain])
+            for domain in [site_name, *self.names()]
+        ]
         return rows, primary
 
     def describe_domain(self, domain: str) -> dict[str, str | bool] | None:
@@ -71,7 +86,24 @@ class SiteDomains:
         attached_domain = next(
             candidate for candidate in config.all_domains if normalize_host(candidate) == normalized
         )
-        return self._description(config, attached_domain, is_primary)
+        certificate = self.get_certificate_states(config)[attached_domain]
+        return self._description(config, attached_domain, is_primary, certificate)
+
+    def get_certificate_states(self, config: "SiteConfig") -> dict[str, str]:
+        """Map each domain to `not_required`, `issued`, `pending`, or `missing`. A domain needs a
+        certificate only when its TLS ends on this host."""
+        from pilot.managers.letsencrypt import certificate_domains
+        from pilot.managers.nginx import NginxManager
+
+        required = set(certificate_domains(config))
+        if not required:
+            return dict.fromkeys(config.all_domains, "not_required")
+        issued = set(NginxManager(self.site.bench).serviceable_tls_domains(config, ssl_ready=True))
+        waiting = "pending" if self.is_certificate_pending else "missing"
+        return {
+            domain: "not_required" if domain not in required else "issued" if domain in issued else waiting
+            for domain in config.all_domains
+        }
 
     def apply_task(self, idempotency_key: str | None = None, email: str = "") -> str:
         """Regenerate nginx for the domain change, and issue certificates when the site needs
@@ -131,6 +163,7 @@ class SiteDomains:
         config: "SiteConfig",
         domain: str,
         is_primary: bool,
+        certificate: str,
     ) -> dict[str, str | bool]:
         route = config.route_for(domain)
         tls = route.public_tls
@@ -145,4 +178,6 @@ class SiteDomains:
             "is_primary": is_primary,
             "public_scheme": route.public_scheme,
             "tls": tls,
+            "redirect_to_primary": config.redirects_to_primary(domain),
+            "certificate": certificate,
         }

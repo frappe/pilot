@@ -132,7 +132,7 @@ def _start_production_setup_wizard(new_dir: Path, name: str, admin_domain: str):
             pm = _process_manager(bench)
             pm.start_admin()
             NginxManager(bench).publish_config()
-            server_ip = DomainRouteProvider._server_ip()
+            server_ip = DomainRouteProvider.server_ip()
     except Exception:
         return error_response(
             "bench_start_failed",

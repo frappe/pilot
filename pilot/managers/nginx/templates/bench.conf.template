@@ -347,12 +347,12 @@ server {
     {# everything else to the app upstream #}
     location / {
         access_log {{ logs_path }}/nginx-access.log pilot_access;
-        {% if vhost.canonical %}
-        if ($host != "{{ vhost.canonical }}") {
+        {% for host in vhost.redirect_hosts %}
+        if ($host = "{{ host }}") {
             return 301 {{ vhost.public_scheme }}://{{ vhost.canonical }}$request_uri;
         }
 
-        {% endif %}
+        {% endfor %}
         proxy_pass         http://bench-{{ upstream_name }};
         proxy_read_timeout 120;
         proxy_redirect     off;

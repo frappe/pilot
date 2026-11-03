@@ -49,9 +49,20 @@ class DomainRouteProvider:
         if ran:
             return data if isinstance(data, dict) else {}
         records = {"cname": [{"type": "CNAME", "host": domain, "value": site_name}], "a": []}
-        if ip := self._server_ip():
+        if ip := self.server_ip():
             records["a"] = [{"type": "A", "host": domain, "value": ip}]
         return records
+
+    def check_dns(self, site_name: str, domain: str) -> dict:
+        """Whether a new domain points here. A domain provider checks DNS when it registers the domain."""
+        domain = self._validate_new(site_name, domain)
+        if which(_PROVIDER_BIN):
+            return {"matched": True, "message": ""}
+        try:
+            self.verify_dns(site_name, domain)
+        except DomainConflictError as error:
+            return {"matched": False, "message": str(error)}
+        return {"matched": True, "message": ""}
 
     def register(self, site_name: str, domain: str) -> RoutePolicy | None:
         """Attach a domain locally, delegating DNS/routing checks when available."""
@@ -62,7 +73,7 @@ class DomainRouteProvider:
         domain = self._validate_new(site_name, domain)
         ran, data = self._register_with_provider(domain)
         if not ran:
-            self._verify(site_name, domain)
+            self.verify_dns(site_name, domain)
         policy = self._route_policy(domain, ran, data)
         entry = {"domain": domain, "route": policy.to_dict()} if policy else domain
         with self._edit_config(site_name) as config:
@@ -158,6 +169,23 @@ class DomainRouteProvider:
             scheme = site.route_for(domain).public_scheme
             config["host_name"] = f"{scheme}://{domain}"
 
+    def set_redirect(self, site_name: str, domain: str, redirect: bool) -> None:
+        """Choose whether a custom domain redirects to the primary domain or serves the site."""
+        domain = normalize_host(domain)
+        with self._edit_config(site_name) as config:
+            entries = config.get("domains") or []
+            index = next(
+                (i for i, entry in enumerate(entries) if normalize_host(self._name(entry)) == domain), None
+            )
+            if index is None:
+                raise DomainConflictError(f"{domain} is not a custom domain of this site.")
+            entry = entries[index] if isinstance(entries[index], dict) else {"domain": entries[index]}
+            if redirect:
+                entry.pop("redirect_to_primary", None)
+            else:
+                entry["redirect_to_primary"] = False
+            entries[index] = entry if len(entry) > 1 else entry["domain"]
+
     def _config_path(self, site_name: str):
         return self.bench.sites_path / site_name / "site_config.json"
 
@@ -232,13 +260,13 @@ class DomainRouteProvider:
             )
         return domain
 
-    def _verify(self, site_name: str, domain: str) -> None:
+    def verify_dns(self, site_name: str, domain: str) -> None:
         """Raise unless the domain resolves to this server or to Cloudflare's proxy."""
         candidate = self._resolve(domain)
         if not candidate:
             raise DomainConflictError(f"{domain} doesn't resolve yet. Retry once DNS has updated.")
         expected = self._resolve(site_name)
-        if ip := self._server_ip():
+        if ip := self.server_ip():
             expected.add(ip)
         if candidate & expected:
             return
@@ -253,7 +281,7 @@ class DomainRouteProvider:
         raise DomainConflictError(f"{domain} doesn't point here yet. Retry once DNS has updated.")
 
     @staticmethod
-    def _server_ip() -> str:
+    def server_ip() -> str:
         """Best-effort public IP for A-record suggestions."""
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
