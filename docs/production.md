@@ -133,6 +133,7 @@ When using Central or another upstream proxy, keep the local Admin service priva
 | `PrivateUsers` | Needed by the mount directives in a user unit. |
 | `ProtectSystem=strict`, `ReadWritePaths=<bench>`, `PrivateTmp` | Writes only inside the bench. Each unit has its own `/tmp`. |
 | `ProtectHome=tmpfs` | The home directory is empty, so SSH keys, other dotfiles and the user bus in `/run/user` are not there to read. |
+| `BindReadOnlyPaths=<bench>/config`, `InaccessiblePaths=<bench>/bench.toml` | A workload cannot change the unit files and nginx config that Pilot loads outside the sandbox, and cannot read the admin password hash or JWT secret in `bench.toml`. The web unit waits for the database with the socket or port as an argument, so it never reads `bench.toml`. Production realtime listens on `pids/socketio.sock`. |
 | `BindReadOnlyPaths` | Brings back `~/.local/share/uv/python`, nvm (`$NVM_DIR` or `~/.nvm`), the Pilot install, linked apps, and the `read_paths` of apps. |
 | `TemporaryFileSystem=<benches dir>:ro`, `BindPaths=<bench>` | The neighbouring benches and `common_config.toml` are hidden. |
 | `SystemCallFilter=@system-service`, `SystemCallArchitectures=native`, `SystemCallErrorNumber=EPERM` | Blocks ptrace, mount, module loading and other privileged syscalls. |

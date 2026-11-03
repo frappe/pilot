@@ -59,7 +59,9 @@ def get_sandbox_properties(
 
     `read_paths` and `write_paths` are extra paths every unit gets, such as linked apps."""
     nvm_dir = os.environ.get("NVM_DIR") or str(Path.home() / ".nvm")
-    defaults = [*(str(Path.home() / path) for path in _HOME_READ_PATHS), nvm_dir]
+    # Pilot's control files: the admin trusts them, so a workload must not change them.
+    control = [str(bench_path / "config")]
+    defaults = [*control, *(str(Path.home() / path) for path in _HOME_READ_PATHS), nvm_dir]
     return [
         *_SANDBOX_DIRECTIVES,
         # The tmpfs hides the neighbouring benches; the bind brings this one back.
@@ -67,6 +69,8 @@ def get_sandbox_properties(
         f"BindPaths={_quote(str(bench_path))}",
         f"ReadWritePaths={_quote(str(bench_path))}",
         *get_path_properties([*defaults, *read_paths], write_paths),
+        # Holds the admin password hash and JWT secret.
+        f"InaccessiblePaths={_quote(str(bench_path / 'bench.toml'))}",
     ]
 
 

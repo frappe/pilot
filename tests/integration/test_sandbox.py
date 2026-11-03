@@ -135,18 +135,35 @@ def run_sandboxed(sandboxed: Path):
         "test -e ~/.bashrc",
         "test -S /run/user/$(id -u)/bus",
         "systemd-run --user --pipe true",
+        "touch {bench}/config/services/escape.service",
+        "echo x >> {bench}/config/services/*-web.service",
+        "touch {bench}/config/escape",
+        "cat {bench}/bench.toml",
         f"cat ../{NEIGHBOUR}/secret.txt",
         "unshare -U true",
     ],
 )
 def test_the_sandbox_blocks(run_sandboxed, sandboxed: Path, line: str) -> None:
-    line = line.replace("../", f"{sandboxed.parent}/")
+    line = line.replace("../", f"{sandboxed.parent}/").replace("{bench}", str(sandboxed))
     assert not run_sandboxed(line), f"sandbox allowed: {line}"
+
+
+def test_a_workload_cannot_change_the_unit_files_the_admin_loads(run_sandboxed, sandboxed: Path) -> None:
+    """The units are symlinked into ~/.config/systemd/user, so a write there runs unsandboxed later."""
+    units = sorted((sandboxed / "config" / "services").glob("*.service"))
+    assert units
+    before = {unit: unit.read_text() for unit in units}
+    assert not run_sandboxed(f"echo escape >> {units[0]}")
+    assert {unit: unit.read_text() for unit in units} == before
 
 
 def test_sudo_works_outside_the_sandbox(sandboxed: Path) -> None:
     """Shows the sudo check above is meaningful on this host."""
     assert _run("sudo", "-n", "true").returncode == 0
+
+
+def test_the_sandbox_lets_the_bench_write_its_runtime_files(run_sandboxed, sandboxed: Path) -> None:
+    assert run_sandboxed(f"touch {sandboxed}/pids/probe && rm {sandboxed}/pids/probe")
 
 
 def test_the_sandbox_lets_the_bench_write_its_own_files(run_sandboxed, sandboxed: Path) -> None:

@@ -62,7 +62,8 @@ SANDBOX_DIRECTIVES = {
     "TemporaryFileSystem=/srv/pilot/benches:ro",
     "BindPaths=/srv/pilot/benches/b",
     "ReadWritePaths=/srv/pilot/benches/b",
-    f"BindReadOnlyPaths=-{Path.home()}/.local/share/uv/python -{Path.home()}/.nvm",
+    f"BindReadOnlyPaths=-/srv/pilot/benches/b/config -{Path.home()}/.local/share/uv/python -{Path.home()}/.nvm",
+    "InaccessiblePaths=/srv/pilot/benches/b/bench.toml",
 }
 
 
@@ -75,7 +76,7 @@ def test_home_is_masked_not_hidden_path_by_path() -> None:
     properties = get_sandbox_properties(BENCH, BENCHES)
 
     assert "ProtectHome=read-only" not in properties
-    assert not any(line.startswith("InaccessiblePaths") for line in properties)
+    assert not any(str(Path.home()) in line and "Inaccessible" in line for line in properties)
 
 
 def test_nvm_dir_and_extra_paths_are_bound_read_only(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -230,3 +231,13 @@ def test_sandbox_paths_gather_install_linked_apps_and_active_app_declarations(
 
     assert read == ("/opt/pilot", str((tmp_path / "linked").resolve()), "/r")
     assert write == ("/w",)
+
+
+def test_control_files_are_read_only_or_hidden_from_workloads(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("NVM_DIR", raising=False)
+    properties = get_sandbox_properties(BENCH, BENCHES)
+
+    read_only = next(line for line in properties if line.startswith("BindReadOnlyPaths="))
+    assert f"-{BENCH}/config" in read_only
+    assert f"InaccessiblePaths={BENCH}/bench.toml" in properties
+    assert not any(line.startswith("ReadWritePaths=") and "config" in line for line in properties)
