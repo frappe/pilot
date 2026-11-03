@@ -36,7 +36,3 @@ class DnsRecords(TypedDict):
 class DnsCheck(TypedDict):
     matched: bool
     message: str
-
-
-class ServerIp(TypedDict):
-    ip: str

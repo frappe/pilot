@@ -284,7 +284,7 @@ def test_dns_check_reports_whether_a_new_domain_points_here(tmp_path: Path) -> N
 
     with (
         patch.object(DomainRouteProvider, "_resolve", side_effect=lambda host: set(addresses.get(host, ()))),
-        patch.object(DomainRouteProvider, "server_ip", return_value=""),
+        patch.object(DomainRouteProvider, "_server_ip", return_value=""),
     ):
         assert domains.check_dns("shop.example.com") == {"matched": True, "message": ""}
         assert domains.check_dns("late.example.com") == {

@@ -151,7 +151,7 @@ def domain_dns_records(name: str, domain: str):
 @sites_bp.get("/<name>/domains/<domain>/dns-check")
 @require_scope(site_name)
 def domain_dns_check(name: str, domain: str):
-    """Check that a new domain points to this server. With a domain provider, skip the check."""
+    """Check that a new domain points to this server. With `bench-domain-provider` installed, skip the check."""
     bench_root = Path(current_app.config["BENCH_ROOT"])
     if not site_exists(bench_root, name):
         return site_not_found()
@@ -164,16 +164,6 @@ def domain_dns_check(name: str, domain: str):
     except Exception:
         return internal_error("Could not check DNS.")
     return jsonify(result)
-
-
-@sites_bp.get("/<name>/domains/server-ip")
-@require_scope(site_name)
-def domain_server_ip(name: str):
-    """This server's public IP address, for an A record."""
-    bench_root = Path(current_app.config["BENCH_ROOT"])
-    if not site_exists(bench_root, name):
-        return site_not_found()
-    return jsonify({"ip": _site_domains(bench_root, name).server_ip})
 
 
 @sites_bp.post("/<name>/domains")

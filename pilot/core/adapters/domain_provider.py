@@ -49,12 +49,13 @@ class DomainRouteProvider:
         if ran:
             return data if isinstance(data, dict) else {}
         records = {"cname": [{"type": "CNAME", "host": domain, "value": site_name}], "a": []}
-        if ip := self.server_ip():
+        if ip := self._server_ip():
             records["a"] = [{"type": "A", "host": domain, "value": ip}]
         return records
 
     def check_dns(self, site_name: str, domain: str) -> dict:
-        """Check that a new domain points here. Skip the check with a provider, which checks DNS on register."""
+        """Check that a new domain points here. With `bench-domain-provider` installed, skip the check:
+        the domain can point at the provider's edge, and the provider checks it on register."""
         domain = self._validate_new(site_name, domain)
         if which(_PROVIDER_BIN):
             return {"matched": True, "message": ""}
@@ -266,7 +267,7 @@ class DomainRouteProvider:
         if not candidate:
             raise DomainConflictError(f"{domain} doesn't resolve yet. Retry once DNS has updated.")
         expected = self._resolve(site_name)
-        if ip := self.server_ip():
+        if ip := self._server_ip():
             expected.add(ip)
         if candidate & expected:
             return
@@ -281,7 +282,7 @@ class DomainRouteProvider:
         raise DomainConflictError(f"{domain} doesn't point here yet. Retry once DNS has updated.")
 
     @staticmethod
-    def server_ip() -> str:
+    def _server_ip() -> str:
         """Best-effort public IP for A-record suggestions."""
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:

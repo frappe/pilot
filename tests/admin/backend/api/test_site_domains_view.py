@@ -365,18 +365,3 @@ def test_domain_dns_check_reports_a_domain_conflict(tmp_path: Path) -> None:
 
     assert response.status_code == 409
     assert response.get_json()["error"]["message"] == "custom.example.com is already attached."
-
-
-def test_server_ip_is_not_read_as_a_domain(tmp_path: Path) -> None:
-    bench_root = tmp_path / "benches" / "current"
-    _make_site(bench_root, "site.localhost")
-    client = _client(bench_root)
-    site_domains = _mocked_site_domains(bench_root, "site.localhost")
-    site_domains.server_ip = "203.0.113.10"
-
-    with patch("admin.backend.api.v1.sites.domains._site_domains", return_value=site_domains):
-        response = client.get("/api/v1/sites/site.localhost/domains/server-ip")
-
-    assert response.status_code == 200
-    assert response.get_json() == {"ip": "203.0.113.10"}
-    site_domains.describe_domain.assert_not_called()

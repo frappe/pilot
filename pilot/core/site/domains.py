@@ -32,10 +32,6 @@ class SiteDomains:
     def check_dns(self, domain: str) -> dict:
         return self._provider.check_dns(self.site.config.name, domain)
 
-    @property
-    def server_ip(self) -> str:
-        return self._provider.server_ip()
-
     def deregister(self, domain: str) -> None:
         self._provider.deregister(self.site.config.name, domain)
 
