@@ -31,3 +31,50 @@ def test_a_development_bench_or_an_existing_server_is_always_ready(
         assert _runtime(tmp_path, production, existing).is_database_ready
 
     is_reachable.assert_not_called()
+
+
+def test_the_address_of_a_managed_mariadb_is_its_socket(tmp_path: Path) -> None:
+    runtime = _runtime(tmp_path)
+
+    assert runtime.get_database_address() == f"unix:{MariaDBManager(runtime.bench.config.mariadb).socket_path}"
+
+
+def test_the_address_of_a_managed_postgres_is_its_tcp_port(tmp_path: Path) -> None:
+    runtime = _runtime(tmp_path)
+    runtime.bench.config.db_type = "postgres"
+    runtime.bench.config.postgres.host, runtime.bench.config.postgres.port = "localhost", 5450
+
+    assert runtime.get_database_address() == "tcp:localhost:5450"
+
+
+@pytest.mark.parametrize("production, existing, db_type", [(False, False, "mariadb"), (True, True, "mariadb"), (True, False, "sqlite")])
+def test_there_is_no_address_to_wait_for(tmp_path: Path, production: bool, existing: bool, db_type: str) -> None:
+    runtime = _runtime(tmp_path, production, existing)
+    runtime.bench.config.db_type = db_type
+
+    assert runtime.get_database_address() == ""
+
+
+def test_the_web_unit_waits_with_the_address_and_never_loads_bench_toml(tmp_path: Path) -> None:
+    from pilot.managers.processes.definitions import ProcessDefinition, ProcessDefinitionBuilder
+
+    runtime = _runtime(tmp_path)
+    web = ProcessDefinition("web", ["/bin/web"], tmp_path / "web.log")
+
+    ProcessDefinitionBuilder(runtime.bench, Path("/env/bin/python"), False).wait_for_database_before_web([web])
+
+    assert web.pre_run[-2].endswith("pilot/internal/wait_for_socket.py")
+    assert web.pre_run[-1] == runtime.get_database_address()
+    assert "-b" not in web.pre_run and "wait-for-database" not in web.pre_run
+
+
+def test_a_sqlite_bench_adds_no_wait_to_the_web_unit(tmp_path: Path) -> None:
+    from pilot.managers.processes.definitions import ProcessDefinition, ProcessDefinitionBuilder
+
+    runtime = _runtime(tmp_path)
+    runtime.bench.config.db_type = "sqlite"
+    web = ProcessDefinition("web", ["/bin/web"], tmp_path / "web.log")
+
+    ProcessDefinitionBuilder(runtime.bench, Path("/env/bin/python"), False).wait_for_database_before_web([web])
+
+    assert web.pre_run == []

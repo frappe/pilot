@@ -27,19 +27,29 @@ class BenchRuntime:
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
 
+    def get_database_address(self) -> str:
+        """`unix:PATH` or `tcp:HOST:PORT` of the database Pilot runs, or "" when there is none to wait for."""
+        config = self.bench.config
+        if not config.production.enabled or config.db_type == "sqlite":
+            return ""
+        if config.db_type == "postgres":
+            return "" if config.postgres.existing else f"tcp:{config.postgres.host}:{config.postgres.port}"
+        from pilot.managers.database import MariaDBManager
+
+        manager = MariaDBManager(config.mariadb)
+        return "" if config.mariadb.existing else f"unix:{manager.socket_path}"
+
     def wait_for_database(self, timeout_seconds: float = 60) -> None:
         from pilot.managers.database import MariaDBManager, PostgresManager
 
         config = self.bench.config
-        if not config.production.enabled or config.db_type == "sqlite":
+        if not self.get_database_address():
             return
         manager = (
             PostgresManager(config.postgres)
             if config.db_type == "postgres"
             else MariaDBManager(config.mariadb)
         )
-        if manager.config.existing:
-            return
         deadline = time.monotonic() + timeout_seconds
         while not manager.is_reachable():
             if time.monotonic() >= deadline:

@@ -126,13 +126,17 @@ class ProcessDefinitionBuilder:
         ]
 
     def wait_for_database_before_web(self, defs: list[ProcessDefinition]) -> None:
+        from pilot.core.bench.runtime import BenchRuntime
+
+        # Given the address so the sandboxed unit never reads bench.toml.
+        address = BenchRuntime(self.bench).get_database_address()
+        if not address:
+            return
         web = next(pd for pd in defs if pd.name == "web")
         web.pre_run = [
             str(AdminEnvManager(cli_root()).python),
-            str(cli_root() / "bin" / "pilot"),
-            "-b",
-            str(self.bench.path),
-            "wait-for-database",
+            str(cli_root() / "pilot" / "internal" / "wait_for_socket.py"),
+            address,
         ]
 
     def process_definitions(self) -> list[ProcessDefinition]:
