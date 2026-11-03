@@ -14,6 +14,7 @@ on:
       - "pilot/internal/wait_for_socket.py"
       - "pilot/managers/database/mariadb.py"
       - "pilot/managers/processes/definitions.py"
+      - "pilot/managers/processes/sandbox.py"
       - "pilot/managers/processes/systemd*.py"
       - "pilot/managers/systemd_user.py"
       - "tests/integration/test_sandbox.py"
