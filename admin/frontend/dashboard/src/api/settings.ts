@@ -21,6 +21,15 @@ export const settingsApi = {
   frappeStorageRegions: (): Promise<string[]> =>
     request.get('settings/s3/frappe-regions').json(),
 
+  commonSiteConfig: {
+    get: (): Promise<Record<string, unknown>> =>
+      unwrap(request.get('settings/common-site-config').json()),
+    update: (patch: Record<string, unknown>): Promise<Record<string, unknown>> =>
+      unwrap(request.patch('settings/common-site-config', { json: patch }).json()),
+    managedKeys: (): Promise<string[]> =>
+      unwrap(request.get('settings/common-site-config/managed-keys').json()),
+  },
+
   llmModels: (provider: string, apiKey = '', apiBase = ''): Promise<string[]> =>
     request
       .post('settings/llm/models', { json: { provider, api_key: apiKey, api_base: apiBase } })

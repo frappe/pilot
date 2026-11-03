@@ -285,6 +285,17 @@ class Bench:
 
         BenchConfigFiles(self).write_common_site_config()
 
+    @property
+    def public_common_site_config(self) -> dict:
+        from pilot.core.bench.config_files import BenchConfigFiles
+
+        return BenchConfigFiles(self).public_common_site_config
+
+    def update_public_common_site_config(self, patch: dict) -> dict:
+        from pilot.core.bench.config_files import BenchConfigFiles
+
+        return BenchConfigFiles(self).update_public_common_site_config(patch)
+
     def restart(self):
         """Restart bench in case we are running in production"""
         self.restart_processes()
