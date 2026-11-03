@@ -275,8 +275,17 @@ onMounted(load)
           Scan with Authy, Bitwarden, Microsoft Authenticator or any TOTP app.
         </p>
 
-        <div class="flex justify-center bg-surface-white p-4 rounded-6">
-          <QrcodeVue :value="enrollment.provisioning_url" :size="176" level="M" render-as="svg" />
+        <div class="flex justify-center">
+          <QrcodeVue
+            :value="enrollment.provisioning_url"
+            :size="208"
+            :margin="4"
+            background="#ffffff"
+            foreground="#000000"
+            level="M"
+            render-as="svg"
+            class="rounded-6"
+          />
         </div>
 
         <details class="group">
