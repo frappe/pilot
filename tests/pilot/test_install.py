@@ -332,6 +332,7 @@ def test_sudoers_grant_falls_back_when_wildcards_are_rejected(tmp_path: Path) ->
     """sudo-rs on Ubuntu 26.04 rejects wildcards in arguments."""
     result = run_installer_functions(
         """
+is_root() { return 0; }
 visudo() { ! grep -q '\\*' "$2"; }
 sudo() { echo "sudo-rs 0.2.13"; }
 install() { cp "$3" "$TARGET"; }
@@ -438,3 +439,77 @@ def test_a_pinned_version_fetches_that_release(version: str, url: str, tmp_path:
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == url
+
+
+_FAKE_SUDO = """
+is_root() { return 1; }
+sudo() {
+    [ "$1" = "-n" ] && return 0
+    [ "$1" = "--version" ] && { echo "sudo 1.9"; return 0; }
+    echo "sudo $*" >> "$LOG"
+    case "$1" in
+        visudo) return 0 ;;
+        install) cp "$4" "$5" ;;
+    esac
+}
+"""
+
+
+def test_a_non_root_install_adds_the_build_swap_helper_through_sudo(tmp_path: Path) -> None:
+    result = run_installer_functions(
+        _FAKE_SUDO
+        + f"""
+LOG={tmp_path}/sudo.log
+uname() {{ echo Linux; }}
+command() {{ return 0; }}
+BUILD_SWAP_HELPER={tmp_path}/pilot-build-swap
+ensure_build_swap_helper
+cat "$LOG"
+""",
+        tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "sudo install -m 755" in result.stdout
+    assert "sudo visudo -cf" in result.stdout
+    assert "-pilot-build-swap" in result.stdout.splitlines()[-1]
+    assert "pilot-build-swap on|off" in (tmp_path / "pilot-build-swap").read_text()
+
+
+def test_an_installed_build_swap_helper_needs_no_sudo(tmp_path: Path) -> None:
+    helper = tmp_path / "pilot-build-swap"
+    helper.write_text("#!/bin/sh\n")
+    helper.chmod(0o755)
+    result = run_installer_functions(
+        _FAKE_SUDO
+        + f"""
+LOG={tmp_path}/sudo.log
+BUILD_SWAP_HELPER={helper}
+ensure_build_swap_helper
+""",
+        tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert not (tmp_path / "sudo.log").exists()
+
+
+def test_a_non_root_install_without_working_sudo_only_warns(tmp_path: Path) -> None:
+    result = run_installer_functions(
+        f"""
+is_root() {{ return 1; }}
+sudo() {{ return 1; }}
+SUDO_PASS=wrong
+uname() {{ echo Linux; }}
+command() {{ return 0; }}
+BUILD_SWAP_HELPER={tmp_path}/pilot-build-swap
+ensure_build_swap_helper
+echo continued
+""",
+        tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "could not install the build swap helper" in result.stderr
+    assert result.stdout.strip().endswith("continued")
+    assert not (tmp_path / "pilot-build-swap").exists()
