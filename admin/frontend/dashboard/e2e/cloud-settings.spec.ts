@@ -179,7 +179,7 @@ test('the marketplace resumes a remembered task without submitting it again', as
       }
     } else if (method === 'get_task') {
       taskRequests++
-      message = { status: 'failed', exit_code: 1 }
+      message = { status: 'failed', exit_code: 1, error: 'Error: could not fetch raven' }
     } else if (method === 'install_app') {
       submissions++
     }
@@ -192,10 +192,52 @@ test('the marketplace resumes a remembered task without submitting it again', as
     const { mountCloudSettings } = await import(runtime)
     mountCloudSettings({ enabled: true, site_name: 'example.test' }, { panels: ['marketplace'] })
   }, runtime)
-  await expect(page.getByRole('img', { name: "Couldn't install Raven." })).toBeVisible()
+  // Without server access, the failed card shows the error and offers a copy for support.
+  const panel = page.getByRole('tabpanel', { name: 'Marketplace' })
+  await expect(panel.getByText("Couldn't install Raven", { exact: true })).toBeVisible()
+  await expect(panel.getByText('Error: could not fetch raven', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Copy details for support' })).toBeVisible()
   expect(taskRequests).toBe(1)
   expect(submissions).toBe(0)
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('cloud-settings:tasks:example.test')!))).toEqual({})
+})
+
+test('an install keeps its watch after the dialog closes and reports in a toast', async ({ page }) => {
+  let status = 'running'
+  await page.route('**/api/method/**', async (route) => {
+    const method = new URL(route.request().url()).pathname.split('.').pop()
+    let message: object = {}
+    if (method === 'get_marketplace_apps') {
+      message = {
+        apps: [{ name: 'raven', title: 'Raven', description: 'Chat', installed: false, installable: true }],
+        categories: [], update_count: 0,
+      }
+    } else if (method === 'install_app') {
+      message = { task_id: 'install-raven' }
+    } else if (method === 'get_task') {
+      const steps = [{ key: 'fetch', label: 'Fetch raven', status: 'running', started_at: 1 }]
+      const progress = { activity: 'Updating DocTypes for raven', percent: 45 }
+      message = { status, exit_code: status === 'success' ? 0 : null, started_at: new Date().toISOString(), steps, ...progress }
+    }
+    await route.fulfill({ json: { message } })
+  })
+  await page.evaluate(async (runtime) => {
+    const { mountCloudSettings } = await import(runtime)
+    mountCloudSettings({ enabled: true, site_name: 'example.test' }, { panels: ['marketplace'] })
+  }, runtime)
+
+  await page.getByRole('button', { name: 'Install', exact: true }).click()
+  await expect(page.getByText('Installing Raven', { exact: true })).toBeVisible()
+  await expect(page.getByRole('listitem').filter({ hasText: 'Fetch raven' })).toBeVisible()
+  await expect(page.getByText('Updating DocTypes for raven', { exact: true })).toBeVisible()
+  await expect(page.getByText('45%', { exact: true })).toBeVisible()
+
+  await page.evaluate(async (runtime) => (await import(runtime)).closeCloudSettings(), runtime)
+  await expect(page.locator('fc-cloud-settings')).toHaveCount(0)
+  status = 'success'
+
+  await expect(page.getByText('Raven installed.', { exact: true })).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByRole('button', { name: 'Reload' })).toBeVisible()
 })
 
 test('fills a phone screen with a panel picker and a reachable close button', async ({ page }) => {
