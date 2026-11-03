@@ -62,14 +62,13 @@ SANDBOX_DIRECTIVES = {
     "TemporaryFileSystem=/srv/pilot/benches:ro",
     "BindPaths=/srv/pilot/benches/b",
     "ReadWritePaths=/srv/pilot/benches/b",
-    f"BindReadOnlyPaths=-/srv/pilot/benches/b/config -{Path.home()}/.local/share/uv/python -{Path.home()}/.nvm",
-    "InaccessiblePaths=/srv/pilot/benches/b/bench.toml",
     f"TemporaryFileSystem={Path.home()}:ro",
+    "BindReadOnlyPaths=-/srv/pilot/benches/b/config",
+    "InaccessiblePaths=/srv/pilot/benches/b/bench.toml",
 }
 
 
-def test_the_sandbox_directives(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("NVM_DIR", raising=False)
+def test_the_sandbox_directives() -> None:
     assert set(get_sandbox_properties(BENCH, BENCHES)) == SANDBOX_DIRECTIVES
 
 
@@ -80,15 +79,19 @@ def test_home_is_masked_not_hidden_path_by_path() -> None:
     assert not any(str(Path.home()) in line and "Inaccessible" in line for line in properties)
 
 
-def test_nvm_dir_and_extra_paths_are_bound_read_only(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("NVM_DIR", "/opt/nvm")
+def test_extra_paths_are_bound_next_to_the_control_files() -> None:
     properties = get_sandbox_properties(BENCH, BENCHES, read_paths=("/home/u/app",), write_paths=("/home/u/data",))
 
     read_only = next(line for line in properties if line.startswith("BindReadOnlyPaths="))
-    assert "-/opt/nvm" in read_only
-    assert "-/home/u/app" in read_only
+    assert read_only == f"BindReadOnlyPaths=-{BENCH}/config -/home/u/app"
     assert "BindPaths=-/home/u/data" in properties
     assert "ReadWritePaths=-/home/u/data" in properties
+
+
+def test_the_real_home_is_masked_even_when_it_is_not_under_home(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(Path, "home", lambda: Path("/srv/frappe"))
+
+    assert "TemporaryFileSystem=/srv/frappe:ro" in get_sandbox_properties(BENCH, BENCHES)
 
 
 def test_a_process_gets_its_own_paths_on_top_of_the_shared_ones() -> None:
@@ -202,7 +205,7 @@ def test_write_config_skips_the_sandbox_and_trial_when_off(
     assert "NoNewPrivileges" not in (manager.systemd_conf_dir / "test-bench-web.service").read_text()
 
 
-def test_sandbox_paths_gather_install_linked_apps_and_active_app_declarations(
+def test_sandbox_paths_gather_tier_one_linked_apps_and_active_app_declarations(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from pilot.core.app.sandbox import SandboxPaths
@@ -226,25 +229,18 @@ def test_sandbox_paths_gather_install_linked_apps_and_active_app_declarations(
     manager.bench = SimpleNamespace(
         apps=lambda: [linked, declared, idle], processes=SimpleNamespace(active_apps={"mail"})
     )
-    monkeypatch.setattr(systemd, "cli_root", lambda: Path("/opt/pilot"))
+    monkeypatch.setattr(systemd.PilotSandboxPaths, "read", ["/tier-one"])
 
     read, write = manager.get_sandbox_paths()
 
-    assert read == ("/opt/pilot", str((tmp_path / "linked").resolve()), "/r")
+    assert read == ("/tier-one", str((tmp_path / "linked").resolve()), "/r")
     assert write == ("/w",)
 
 
-def test_control_files_are_read_only_or_hidden_from_workloads(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("NVM_DIR", raising=False)
+def test_control_files_are_read_only_or_hidden_from_workloads() -> None:
     properties = get_sandbox_properties(BENCH, BENCHES)
 
     read_only = next(line for line in properties if line.startswith("BindReadOnlyPaths="))
     assert f"-{BENCH}/config" in read_only
     assert f"InaccessiblePaths={BENCH}/bench.toml" in properties
     assert not any(line.startswith("ReadWritePaths=") and "config" in line for line in properties)
-
-
-def test_the_real_home_is_masked_even_when_it_is_not_under_home(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(Path, "home", lambda: Path("/srv/frappe"))
-
-    assert "TemporaryFileSystem=/srv/frappe:ro" in get_sandbox_properties(BENCH, BENCHES)

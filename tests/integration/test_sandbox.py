@@ -13,8 +13,10 @@ import pytest
 
 from pilot.config import BenchConfig
 from pilot.core.bench import Bench
+from pilot.managers.processes.sandbox import PilotSandboxPaths
 from pilot.managers.processes.systemd import SystemdProcessManager
 from pilot.managers.systemd_user import systemctl_env
+from pilot.utils import cli_root
 
 SITE = "site1.localhost"
 ADMIN_DOMAIN = "bench.localhost"
@@ -139,12 +141,15 @@ def run_sandboxed(sandboxed: Path):
         "echo x >> {bench}/config/services/*-web.service",
         "touch {bench}/config/escape",
         "cat {bench}/bench.toml",
+        "ls {pilot}/databases/mariadb/data",
+        "ls {pilot}/databases/mariadb/config",
+        "ls {pilot}/.admin-venv",
         f"cat ../{NEIGHBOUR}/secret.txt",
         "unshare -U true",
     ],
 )
 def test_the_sandbox_blocks(run_sandboxed, sandboxed: Path, line: str) -> None:
-    line = line.replace("../", f"{sandboxed.parent}/").replace("{bench}", str(sandboxed))
+    line = line.replace("../", f"{sandboxed.parent}/").replace("{bench}", str(sandboxed)).replace("{pilot}", str(cli_root()))
     assert not run_sandboxed(line), f"sandbox allowed: {line}"
 
 
@@ -193,6 +198,11 @@ def test_a_background_job_runs_in_the_sandboxed_worker(sandboxed: Path) -> None:
             return
         time.sleep(2)
     pytest.fail("the worker did not write a backup")
+
+
+def test_the_workload_still_reaches_the_database_socket(run_sandboxed, sandboxed: Path) -> None:
+    socket = PilotSandboxPaths(Bench(sandboxed)).mariadb_socket_path
+    assert run_sandboxed(f"python3 -c \"import socket; socket.socket(socket.AF_UNIX).connect('{socket}')\"")
 
 
 def test_home_is_an_empty_tmpfs_in_the_web_process(sandboxed: Path) -> None:

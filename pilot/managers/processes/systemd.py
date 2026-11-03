@@ -17,6 +17,7 @@ from pilot.managers.processes.base import (
 )
 from pilot.managers.processes.definitions import ProcessState
 from pilot.managers.processes.local import ProcessDefinition
+from pilot.managers.processes.sandbox import PilotSandboxPaths
 from pilot.managers.processes.systemd_render import SystemdRenderer, get_sandbox_properties
 from pilot.managers.systemd_user import SystemdUserMixin, get_sandbox_error
 from pilot.utils import cli_root, run_command
@@ -130,8 +131,10 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         return properties
 
     def get_sandbox_paths(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
-        """Read and write paths every workload unit gets: Pilot's install, linked apps and active apps' declarations."""
-        read = [str(cli_root())]
+        """Paths every workload unit gets back from the masked home.
+
+        Tier 1 is what Pilot needs and linked apps; tier 2 is what the active apps declare."""
+        read = PilotSandboxPaths(self.bench).read
         write: list[str] = []
         active = self.bench.processes.active_apps
         for app in self.bench.apps():

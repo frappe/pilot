@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from pilot.core.app.node_packages import NodePackages
 from pilot.exceptions import BenchError
 from pilot.managers.environment import AdminEnvManager
+from pilot.managers.processes.sandbox import WAITER
 from pilot.utils import cli_root
 
 if TYPE_CHECKING:
@@ -134,8 +135,8 @@ class ProcessDefinitionBuilder:
             return
         web = next(pd for pd in defs if pd.name == "web")
         web.pre_run = [
-            str(AdminEnvManager(cli_root()).python),
-            str(cli_root() / "pilot" / "internal" / "wait_for_socket.py"),
+            str(self.python),
+            str(cli_root() / WAITER),
             address,
         ]
 
