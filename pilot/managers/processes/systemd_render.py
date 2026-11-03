@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 import re
 import shlex
+from collections.abc import Iterable
 from pathlib import Path
 
 from pilot.managers.processes.base import ServiceRenderer, override
@@ -29,10 +31,11 @@ _SANDBOX_DIRECTIVES = [
     "LockPersonality=yes",
     "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK",
     "ProtectSystem=strict",
-    "ProtectHome=read-only",
+    "ProtectHome=tmpfs",
     "PrivateTmp=yes",
 ]
-_HIDDEN_HOME_PATHS = (".ssh", ".config/systemd")
+# Home is an empty tmpfs; these come back read-only because Pilot's own tooling lives there.
+_HOME_READ_PATHS = (".local/share/uv/python",)
 
 
 def _exec(argv: list[str]) -> str:
@@ -49,18 +52,34 @@ def _quote(argument: str) -> str:
     return argument.replace("%", "%%").replace("$", "$$")
 
 
-def get_sandbox_properties(bench_path: Path, benches_dir: Path) -> list[str]:
-    """systemd.exec directives that confine a workload unit to its own bench."""
-    hidden = " ".join(_quote(f"-{Path.home() / path}") for path in _HIDDEN_HOME_PATHS)
+def get_sandbox_properties(
+    bench_path: Path, benches_dir: Path, read_paths: tuple[str, ...] = (), write_paths: tuple[str, ...] = ()
+) -> list[str]:
+    """systemd.exec directives that confine a workload unit to its own bench.
+
+    `read_paths` and `write_paths` are extra paths every unit gets, such as linked apps."""
+    nvm_dir = os.environ.get("NVM_DIR") or str(Path.home() / ".nvm")
+    defaults = [*(str(Path.home() / path) for path in _HOME_READ_PATHS), nvm_dir]
     return [
         *_SANDBOX_DIRECTIVES,
         # The tmpfs hides the neighbouring benches; the bind brings this one back.
         f"TemporaryFileSystem={_quote(f'{benches_dir}:ro')}",
         f"BindPaths={_quote(str(bench_path))}",
         f"ReadWritePaths={_quote(str(bench_path))}",
-        # "-" skips a path the host lacks.
-        f"InaccessiblePaths={hidden}",
+        *get_path_properties([*defaults, *read_paths], write_paths),
     ]
+
+
+def get_path_properties(read_paths: Iterable[str], write_paths: Iterable[str]) -> list[str]:
+    """Directives that bring paths back into the masked home. "-" skips a path the host lacks."""
+    properties = []
+    read_paths, write_paths = list(read_paths), list(write_paths)
+    if read_paths:
+        properties.append("BindReadOnlyPaths=" + " ".join(_quote(f"-{path}") for path in read_paths))
+    if write_paths:
+        writable = " ".join(_quote(f"-{path}") for path in write_paths)
+        properties += [f"BindPaths={writable}", f"ReadWritePaths={writable}"]
+    return properties
 
 
 def _render_env(env: dict) -> str:
@@ -91,7 +110,7 @@ class SystemdRenderer(ServiceRenderer):
         post = f"ExecStopPost={_exec(pd.post_run)}\n" if pd.post_run else ""
         restart = "on-failure" if pd.restart_on_failure else "no"
         remove_socket = f"ExecStartPre=/bin/rm -f {pd.socket_file}\n" if pd.socket_file else ""
-        sandbox = "".join(f"{line}\n" for line in self.sandbox_properties)
+        sandbox = "".join(f"{line}\n" for line in self._sandbox_lines(pd))
         return (
             f"[Unit]\n"
             f"Description={self.bench_name} {pd.name}\n"
@@ -109,6 +128,11 @@ class SystemdRenderer(ServiceRenderer):
             f"StandardOutput=append:{pd.log_file}\n"
             f"StandardError=append:{pd.log_file}.error.log\n"
         )
+
+    def _sandbox_lines(self, pd: ProcessDefinition) -> list[str]:
+        if not self.sandbox_properties:
+            return []
+        return [*self.sandbox_properties, *get_path_properties(pd.read_paths, pd.write_paths)]
 
     def _dependencies(self, pd: ProcessDefinition) -> str:
         # systemd stops in reverse start order; redis must outlive a lite runner draining into it.

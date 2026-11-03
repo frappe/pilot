@@ -57,17 +57,56 @@ SANDBOX_DIRECTIVES = {
     "LockPersonality=yes",
     "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK",
     "ProtectSystem=strict",
-    "ProtectHome=read-only",
+    "ProtectHome=tmpfs",
     "PrivateTmp=yes",
     "TemporaryFileSystem=/srv/pilot/benches:ro",
     "BindPaths=/srv/pilot/benches/b",
     "ReadWritePaths=/srv/pilot/benches/b",
-    f"InaccessiblePaths=-{Path.home()}/.ssh -{Path.home()}/.config/systemd",
+    f"BindReadOnlyPaths=-{Path.home()}/.local/share/uv/python -{Path.home()}/.nvm",
 }
 
 
-def test_the_sandbox_directives() -> None:
+def test_the_sandbox_directives(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("NVM_DIR", raising=False)
     assert set(get_sandbox_properties(BENCH, BENCHES)) == SANDBOX_DIRECTIVES
+
+
+def test_home_is_masked_not_hidden_path_by_path() -> None:
+    properties = get_sandbox_properties(BENCH, BENCHES)
+
+    assert "ProtectHome=read-only" not in properties
+    assert not any(line.startswith("InaccessiblePaths") for line in properties)
+
+
+def test_nvm_dir_and_extra_paths_are_bound_read_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NVM_DIR", "/opt/nvm")
+    properties = get_sandbox_properties(BENCH, BENCHES, read_paths=("/home/u/app",), write_paths=("/home/u/data",))
+
+    read_only = next(line for line in properties if line.startswith("BindReadOnlyPaths="))
+    assert "-/opt/nvm" in read_only
+    assert "-/home/u/app" in read_only
+    assert "BindPaths=-/home/u/data" in properties
+    assert "ReadWritePaths=-/home/u/data" in properties
+
+
+def test_a_process_gets_its_own_paths_on_top_of_the_shared_ones() -> None:
+    definition = _definition()
+    definition.read_paths = ["/home/u/models"]
+    definition.write_paths = ["/home/u/state"]
+
+    service = SystemdRenderer("b", sandbox_properties=["NoNewPrivileges=yes"]).render(definition)
+
+    assert "BindReadOnlyPaths=-/home/u/models\n" in service
+    assert "BindPaths=-/home/u/state\n" in service
+    other = SystemdRenderer("b", sandbox_properties=["NoNewPrivileges=yes"]).render(_definition("worker"))
+    assert "/home/u/models" not in other
+
+
+def test_an_unsandboxed_unit_ignores_declared_paths() -> None:
+    definition = _definition()
+    definition.read_paths = ["/home/u/models"]
+
+    assert "/home/u/models" not in SystemdRenderer("b").render(definition)
 
 
 def test_a_bench_path_with_a_space_is_quoted() -> None:
@@ -123,6 +162,7 @@ def _sandboxed_manager(
     bench = make_bench(tmp_path / "benches" / "test-bench")
     bench.config.production = ProductionConfig(enabled=True, process_manager="systemd", sandbox=sandbox)
     manager = systemd.SystemdProcessManager(bench)
+    monkeypatch.setattr(manager, "get_sandbox_paths", lambda: ((), ()))
     manager.systemd_conf_dir.mkdir(parents=True, exist_ok=True)
     web = ProcessDefinition("web", ["/env/bin/python", "serve"], bench.logs_path / "web.log")
     monkeypatch.setattr(systemd, "AdminEnvManager", MagicMock())
@@ -158,3 +198,35 @@ def test_write_config_skips_the_sandbox_and_trial_when_off(
     manager.write_config()
 
     assert "NoNewPrivileges" not in (manager.systemd_conf_dir / "test-bench-web.service").read_text()
+
+
+def test_sandbox_paths_gather_install_linked_apps_and_active_app_declarations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pilot.core.app.sandbox import SandboxPaths
+    from pilot.managers.processes import systemd
+
+    manager = _sandboxed_manager(tmp_path, monkeypatch, probe_error="")
+    monkeypatch.undo()
+    linked = SimpleNamespace(is_linked=True, path=tmp_path / "linked", module_name="linked", processes=None)
+    declared = SimpleNamespace(
+        is_linked=False,
+        path=tmp_path / "mail",
+        module_name="mail",
+        processes=SimpleNamespace(get_sandbox_paths=lambda: SandboxPaths(read=("/r",), write=("/w",))),
+    )
+    idle = SimpleNamespace(
+        is_linked=False,
+        path=tmp_path / "idle",
+        module_name="idle",
+        processes=SimpleNamespace(get_sandbox_paths=lambda: SandboxPaths(read=("/idle",))),
+    )
+    manager.bench = SimpleNamespace(
+        apps=lambda: [linked, declared, idle], processes=SimpleNamespace(active_apps={"mail"})
+    )
+    monkeypatch.setattr(systemd, "cli_root", lambda: Path("/opt/pilot"))
+
+    read, write = manager.get_sandbox_paths()
+
+    assert read == ("/opt/pilot", str((tmp_path / "linked").resolve()), "/r")
+    assert write == ("/w",)
