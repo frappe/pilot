@@ -291,6 +291,10 @@ Either shipper runs only when its switch is on and both `endpoint` and `token` a
 
 The monitor checks this section on every run, so both shippers start when a credential arrives later, such as from Central's bootstrap. It rewrites the Fluent Bit config and restarts Fluent Bit when the endpoint or token changes, and it starts Fluent Bit again when it is not running. Fluent Bit must be installed. `install.sh` installs it on Debian and Ubuntu. `pilot remove logs` stops Fluent Bit and sets `logs_enabled = false`, so the monitor does not start it again.
 
+### Automatic Updates
+
+`[updates] auto = true` in `common_config.toml` turns on daily Pilot updates for the host. It is off by default. Turn it on or off with `pilot admin auto-update on|off`, which also adds or removes a cron entry that runs at 03:37 each day. When a newer release exists, the entry queues one `update-cli` task on the first bench by name, so the update shows in that bench's task log. The task updates Pilot and restarts the admin of every bench. A source checkout (`dev` version) is never updated this way. A failed update is tried again the next day.
+
 ### Alert Delivery
 
 `[resource_limits]` sets when an alert is raised and where it goes. A usage percentage of `0` disables that alert; `site_uptime` covers sites that stop answering their ping. Pilot sends the ping to the bench's local app server, so a failure in nginx, TLS, DNS, or the edge proxy does not raise this alert. A condition must hold for five minutes before anything is sent.

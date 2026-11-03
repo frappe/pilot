@@ -126,6 +126,7 @@ These commands control the task worker, not individual Frappe workers.
 - `pilot admin build`: rebuild Admin frontend assets from source.
 - `pilot admin api-reference`: write the [Admin API reference](admin-api-reference.md) from the routes.
 - `pilot admin upgrade`: update Pilot to the latest version, run pending upgrade patches (pre_update before, post_update after), and restart the admin service.
+- `pilot admin auto-update on|off|status`: turn daily automatic Pilot updates on or off for the host, or show the setting (see [Configuration](configuration.md#automatic-updates)).
 - `pilot admin issue-site-token`: issue a scoped site-to-bench API token.
 - `pilot admin revoke-totp --device-name NAME`: revoke a device's TOTP credential, for a lost authenticator.
 - `pilot admin run-patches [--phase pre_update|post_update|all]`: run pending Pilot upgrade patches by hand (see [Configuration](configuration.md#common-config)); `pilot admin upgrade` already runs both phases automatically.
