@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import pwd
 import shutil
+import time
 from datetime import UTC
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pilot.exceptions import CommandError
 from pilot.managers.nginx import LETSENCRYPT_LIVE
 from pilot.managers.packages import get_package_manager
 from pilot.managers.platform import _privileged, which
@@ -20,6 +22,10 @@ if TYPE_CHECKING:
 _CERT_EXPIRY_THRESHOLD_DAYS = 30
 # certbot renews from 30 days left, so a certificate this close to expiry is failing to renew.
 _CERT_ALERT_DAYS = 14
+# certbot exits at once while another run (e.g. the renewal timer) holds its lock.
+_CERTBOT_LOCKED = "Another instance of Certbot is already running"
+_CERTBOT_LOCK_ATTEMPTS = 6
+_CERTBOT_LOCK_WAIT_SECONDS = 10
 _RENEWAL_TIMER = """\
 [Unit]
 Description=certificate renewal timer
@@ -253,32 +259,29 @@ class LetsEncryptManager:
         webroot_path = str(self.bench.config.letsencrypt.webroot_path)
         email = self.bench.config.letsencrypt.email
 
-        run_command(
-            _privileged(
-                [
-                    "certbot",
-                    "certonly",
-                    "--webroot",
-                    "-w",
-                    webroot_path,
-                    *domain_args,
-                    "--renew-with-new-domains",
-                    "--cert-name",
-                    self.bench.certificate_name(site),
-                    "--expand",
-                    "--email",
-                    email,
-                    "--agree-tos",
-                    "--non-interactive",
-                    "--deploy-hook",
-                    _nginx_reload_hook(),
-                ]
-            )
+        self.run_certbot(
+            [
+                "certbot",
+                "certonly",
+                "--webroot",
+                "-w",
+                webroot_path,
+                *domain_args,
+                "--renew-with-new-domains",
+                "--cert-name",
+                self.bench.certificate_name(site),
+                "--expand",
+                "--email",
+                email,
+                "--agree-tos",
+                "--non-interactive",
+                "--deploy-hook",
+                _nginx_reload_hook(),
+            ]
         )
 
     def obtain_all(self) -> None:
         """Issue certificates for domains whose TLS ends on this host."""
-        from pilot.exceptions import CommandError
 
         failed = []
         for site in self.bench.sites():
@@ -327,25 +330,40 @@ class LetsEncryptManager:
             print(f"Certificate for {domain} already exists and is not near expiry. Skipping.")
             return
 
-        run_command(
-            _privileged(
-                [
-                    "certbot",
-                    "certonly",
-                    "--webroot",
-                    "-w",
-                    str(self.bench.config.letsencrypt.webroot_path),
-                    "-d",
-                    domain,
-                    "--email",
-                    self.bench.config.letsencrypt.email,
-                    "--agree-tos",
-                    "--non-interactive",
-                    "--deploy-hook",
-                    _nginx_reload_hook(),
-                ]
-            )
+        self.run_certbot(
+            [
+                "certbot",
+                "certonly",
+                "--webroot",
+                "-w",
+                str(self.bench.config.letsencrypt.webroot_path),
+                "-d",
+                domain,
+                "--email",
+                self.bench.config.letsencrypt.email,
+                "--agree-tos",
+                "--non-interactive",
+                "--deploy-hook",
+                _nginx_reload_hook(),
+            ]
         )
+
+    def run_certbot(self, argv: list[str]) -> None:
+        """Run certbot with sudo, waiting while another certbot run holds its lock."""
+        for attempt in range(1, _CERTBOT_LOCK_ATTEMPTS + 1):
+            try:
+                run_command(_privileged(argv))
+                return
+            except CommandError as error:
+                if _CERTBOT_LOCKED not in error.message:
+                    raise
+                if attempt == _CERTBOT_LOCK_ATTEMPTS:
+                    raise CommandError(
+                        "Another certbot run is in progress. Try again in a minute.",
+                        returncode=error.returncode,
+                    ) from error
+            print(f"Another certbot run is in progress. Retrying in {_CERTBOT_LOCK_WAIT_SECONDS} seconds...")
+            time.sleep(_CERTBOT_LOCK_WAIT_SECONDS)
 
     def renew(self) -> None:
         """Refresh this bench's current origin certificates without renewing retired routes."""
