@@ -35,6 +35,10 @@ def can_cap_memory() -> bool:
     return trial.returncode == 0
 
 
+# systemd's exit status when it cannot set up a unit's namespaces.
+_EXIT_NAMESPACE = 226
+
+
 def get_sandbox_error(properties: list[str]) -> str:
     """Why a trial unit with these properties fails to start here, or "" when it runs."""
     if not shutil.which("systemd-run"):
@@ -50,6 +54,12 @@ def get_sandbox_error(properties: list[str]) -> str:
         return str(exc)
     if trial.returncode == 0:
         return ""
+    if trial.returncode == _EXIT_NAMESPACE:
+        return (
+            "systemd could not create the sandbox's user namespace (exit 226). "
+            "The host blocks unprivileged user namespaces; on Ubuntu 24.04 that is "
+            "kernel.apparmor_restrict_unprivileged_userns = 1."
+        )
     return trial.stderr.strip() or f"systemd-run exited with code {trial.returncode}."
 
 

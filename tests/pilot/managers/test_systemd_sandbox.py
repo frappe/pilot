@@ -98,6 +98,18 @@ def test_the_probe_reports_why_a_trial_unit_failed(
     assert trials[0][-5:] == ["-p", "NoNewPrivileges=yes", "-p", "PrivateUsers=yes", "true"]
 
 
+def test_the_probe_names_blocked_user_namespaces(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ubuntu 24.04 blocks them through AppArmor; systemd-run then exits 226 and prints nothing."""
+    monkeypatch.setattr(systemd_user.shutil, "which", lambda _name: "/usr/bin/systemd-run")
+    monkeypatch.setattr(
+        systemd_user.subprocess, "run", lambda *_a, **_k: SimpleNamespace(returncode=226, stderr="")
+    )
+
+    error = systemd_user.get_sandbox_error(["PrivateUsers=yes"])
+    assert "user namespaces" in error
+    assert "kernel.apparmor_restrict_unprivileged_userns" in error
+
+
 def test_the_probe_needs_systemd_run(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(systemd_user.shutil, "which", lambda _name: None)
     assert "systemd-run" in systemd_user.get_sandbox_error(["NoNewPrivileges=yes"])
