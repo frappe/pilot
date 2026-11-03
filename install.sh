@@ -23,6 +23,8 @@ SUDO_PASS="${SUDO_PASS:-}"
 # The default install pulls a prebuilt release tarball; --dev clones develop and
 # compiles the admin frontend from source.
 DEV_MODE="${PILOT_DEV:-}"
+# A release tag such as v0.0.87 installs that release instead of the latest.
+PILOT_VERSION="${PILOT_VERSION:-}"
 
 MARIADB_REPO_SETUP_URL="https://r.mariadb.com/downloads/mariadb_repo_setup"
 FLUENT_BIT_REPO="https://packages.fluentbit.io"
@@ -35,6 +37,8 @@ while [ $# -gt 0 ]; do
         --user) BENCH_USER="$2"; shift 2 ;;
         --user=*) BENCH_USER="${1#*=}"; shift ;;
         --dev) DEV_MODE=1; shift ;;
+        --version) PILOT_VERSION="$2"; shift 2 ;;
+        --version=*) PILOT_VERSION="${1#*=}"; shift ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
@@ -680,7 +684,7 @@ prepare_host() {
     echo " the installer again:"
     echo ""
     echo "   su - $BENCH_USER"
-    echo "   curl -fsSL $INSTALL_URL | bash"
+    echo "   curl -fsSL $INSTALL_URL | ${PILOT_VERSION:+PILOT_VERSION=$PILOT_VERSION }bash"
     echo "========================================================================"
 }
 
@@ -703,6 +707,14 @@ require_linger() {
     exit 1
 }
 
+release_api_url() {
+    if [ -n "$PILOT_VERSION" ]; then
+        echo "https://api.github.com/repos/$GITHUB_SLUG/releases/tags/$PILOT_VERSION"
+    else
+        echo "https://api.github.com/repos/$GITHUB_SLUG/releases?per_page=1"
+    fi
+}
+
 # The release tarball ships the compiled admin frontend and a VERSION file;
 # --dev clones the source so contributors build the frontend locally.
 fetch_pilot() {
@@ -717,9 +729,8 @@ fetch_pilot() {
         return
     fi
 
-    echo "Fetching the latest pilot release..."
-    asset_url=$(curl -fsSL --proto '=https' --tlsv1.2 \
-        "https://api.github.com/repos/$GITHUB_SLUG/releases?per_page=1" \
+    echo "Fetching pilot ${PILOT_VERSION:-(latest release)}..."
+    asset_url=$(curl -fsSL --proto '=https' --tlsv1.2 "$(release_api_url)" \
         | grep -o 'https://[^"]*/pilot\.tar\.gz' | head -n1)
     if [ -z "$asset_url" ]; then
         echo "Could not find a pilot.tar.gz release asset." >&2
