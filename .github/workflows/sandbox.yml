@@ -58,6 +58,10 @@ jobs:
           sysctl kernel.apparmor_restrict_unprivileged_userns || true
           sysctl kernel.unprivileged_userns_clone || true
 
+      # Ubuntu 24.04 blocks unprivileged user namespaces, which the sandbox needs.
+      - name: Allow user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
       - name: Create bench
         run: |
           mkdir -p benches/ci-bench
