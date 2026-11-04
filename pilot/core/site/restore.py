@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -12,7 +13,6 @@ from typing import IO, TYPE_CHECKING
 
 from pilot.core.site.config import PROTECTED_CONFIG_KEYS
 from pilot.exceptions import BenchError
-from pilot.utils import run_command
 
 if TYPE_CHECKING:
     from pilot.core.site import Site
@@ -20,6 +20,8 @@ if TYPE_CHECKING:
 RESTORE_PARTS = ("database", "public", "private", "config")
 # The end of tar's error output says why it failed.
 _STDERR_TAIL_BYTES = 4096
+SERVER_SCRIPTS_MEMBER = "*/server_scripts"
+_TAR_FAILURE_SUMMARY = "Exiting with failure status due to previous errors"
 # Keys that belong to this site's own database, cache, domains, host or Pilot.
 LOCAL_CONFIG_PREFIXES = ("db_", "redis_", "pilot_", "atlas_")
 LOCAL_CONFIG_KEYS = PROTECTED_CONFIG_KEYS | {
@@ -79,6 +81,12 @@ class BackupRun:
 
 def is_local_config_key(key: str) -> bool:
     return key in LOCAL_CONFIG_KEYS or key.startswith(LOCAL_CONFIG_PREFIXES)
+
+
+def is_only_missing_server_scripts(error: str) -> bool:
+    """Older backups and sites without File Server Scripts have no server_scripts folder."""
+    lines = [line for line in error.splitlines() if not line.endswith(_TAR_FAILURE_SUMMARY)]
+    return bool(lines) and all(line.endswith(f"{SERVER_SCRIPTS_MEMBER}: Not found in archive") for line in lines)
 
 
 class SiteRestore:
@@ -154,21 +162,20 @@ class SiteRestore:
     def extract_files(self, archive: Path, part: str) -> None:
         """Frappe's own extraction of ./<site>/<part>/files/, limited to that directory so
         an archive from elsewhere cannot reach site_config.json."""
-        run_command(
-            ["tar", "xf", str(archive.resolve()), "--strip", "2", "--wildcards", f"*/{part}/files"],
-            cwd=self.site.path,
-        )
+        self.extract_files_stream(BackupStream(archive.name, lambda: archive.open("rb")), part)
 
     def extract_files_stream(self, stream: BackupStream, part: str) -> None:
         """`extract_files` for an archive as it downloads. tar cannot detect compression
-        on a pipe, so a .tgz needs -z."""
+        on a pipe, so a .tgz needs -z. Frappe puts File Server Scripts in the private archive."""
         compression = ["-z"] if stream.name.endswith(".tgz") else []
+        members = [f"*/{part}/files", *([SERVER_SCRIPTS_MEMBER] if part == "private" else [])]
         with tempfile.TemporaryFile() as stderr:
             process = subprocess.Popen(
-                ["tar", "xf", "-", *compression, "--strip", "2", "--wildcards", f"*/{part}/files"],
+                ["tar", "xf", "-", *compression, "--strip", "2", "--wildcards", *members],
                 cwd=self.site.path,
                 stdin=subprocess.PIPE,
                 stderr=stderr,
+                env={**os.environ, "LC_ALL": "C"},
             )
             assert process.stdin is not None
             try:
@@ -180,6 +187,9 @@ class SiteRestore:
                 process.stdin.close()
                 return_code = process.wait()
             if return_code != 0:
+                stderr.seek(0)
+                if is_only_missing_server_scripts(stderr.read().decode(errors="replace")):
+                    return
                 stderr.seek(max(0, stderr.seek(0, 2) - _STDERR_TAIL_BYTES))
                 error = stderr.read().decode(errors="replace").strip()
                 raise BenchError(f"Extracting the {part} files failed: {error}")
