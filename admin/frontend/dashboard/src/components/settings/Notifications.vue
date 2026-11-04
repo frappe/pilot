@@ -211,8 +211,10 @@ onMounted(async () => {
         target="_blank"
         rel="noopener"
         class="inline-flex items-center gap-0.5 text-p-sm-medium text-ink-gray-8 hover:text-ink-gray-9"
-        >Central<span class="size-3 lucide-arrow-up-right" aria-hidden="true" /></a
-      ><template v-else>Central</template>, so alerts also show there.
+      >
+        <span>Central</span>
+        <span class="size-3 lucide-arrow-up-right" aria-hidden="true" />
+      </a><template v-else>Central</template>, so alerts also show there.
     </p>
 
     <div class="-mx-3 -mt-3.5 inset-dividers">

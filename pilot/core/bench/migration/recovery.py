@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pilot.core.bench.migration.state import MigrationStateError
+from pilot.core.bench.migration.state import MigrationState, MigrationStateError
 from pilot.exceptions import BenchError
 from pilot.internal.jsonl_log import utc_now
 
 if TYPE_CHECKING:
-    from pilot.core.bench.migration.operation import OnProgress, OnStep
+    from pilot.core.bench import Bench
+    from pilot.core.bench.migration.operation import AppRevision, OnProgress, OnStep, SiteProgress
 
 
 def _no_step(key: str, label: str) -> None:
@@ -20,6 +21,34 @@ def _no_progress(message: str) -> None:
 
 class MigrationRecovery:
     """Recovery actions of a paused MigrationOperation: retry, skip a patch, restore, dismiss."""
+
+    if TYPE_CHECKING:
+        id: str
+        state: MigrationState
+        return_state: str | None
+        failed_site: str | None
+        diagnosis: dict | None
+        sites: list[SiteProgress]
+        apps: list[AppRevision]
+        apps_filter: list[str] | None
+        revert_checkpoints: dict
+        decisions: list
+        bench: Bench
+
+        @property
+        def can_revert(self) -> bool: ...
+
+        def site(self, name: str) -> SiteProgress: ...
+
+        def _prepare_sites(self) -> None: ...
+
+        def _transition(self, target: str) -> None: ...
+
+        def _save(self) -> None: ...
+
+        def _restart_services(self) -> None: ...
+
+        def _discard_snapshots(self) -> None: ...
 
     def retry(self) -> None:
         """Resume the chain from needs_attention so the failed unit runs again."""
