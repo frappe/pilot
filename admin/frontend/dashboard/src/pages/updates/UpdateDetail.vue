@@ -12,7 +12,13 @@ import { useAppRegistry } from '@/composables/apps/useAppRegistry'
 import { useBreadcrumbs } from '@/composables/common/useBreadcrumbs'
 import { processLine } from '@/utils/ansi'
 import { fmtDateTime, fmtDuration } from '@/utils/taskFormat'
-import { opTitle, patchSkipped, pendingActionLabel, siteStatus } from '@/utils/updateFormat'
+import {
+  opTitle,
+  patchSkipped,
+  pendingActionLabel,
+  siteStatus,
+  skippedPatches,
+} from '@/utils/updateFormat'
 import type {
   MigrationAccepted,
   MigrationApp,
@@ -36,6 +42,7 @@ const acting = ref(false)
 const error = ref('')
 const confirmSkip = ref(false)
 const confirmRestore = ref(false)
+const confirmDismiss = ref(false)
 let timer: ReturnType<typeof setTimeout> | undefined
 
 const title = computed(() => opTitle(op.value))
@@ -43,6 +50,7 @@ const isAttention = computed(() => needsAttention(op.value))
 const pending = computed(() => op.value?.pending_action || null)
 const pendingLabel = computed(() => pendingActionLabel(pending.value))
 const patchAlreadySkipped = computed(() => patchSkipped(op.value))
+const skipped = computed(() => skippedPatches(op.value))
 
 const durationSeconds = computed(() => {
   if (!op.value?.started_at) return null
@@ -58,6 +66,11 @@ const serverJobs = computed(() => (op.value?.task_logs || []).filter((log) => !l
 const alertTitle = computed(() =>
   op.value?.state === 'revert_failed' ? 'Restore failed' : 'This update needs attention',
 )
+const alertDescription = computed(() => {
+  const diagnosis = op.value?.diagnosis
+  const patch = patchAlreadySkipped.value ? 'Patch skipped' : diagnosis?.patch && `Failing patch: ${diagnosis.patch}`
+  return [diagnosis?.message, patch].filter(Boolean).join(' · ')
+})
 
 const showOutput = ref(false)
 const outputLines = computed(() =>
@@ -140,6 +153,10 @@ const doRetry = () => runAction(() => updatesApi.retry(props.operationId))
 const doRestore = () => {
   confirmRestore.value = false
   return runAction(() => updatesApi.restore(props.operationId))
+}
+const doDismiss = () => {
+  confirmDismiss.value = false
+  return runAction(() => updatesApi.dismiss(props.operationId))
 }
 const doSkip = () => {
   confirmSkip.value = false
@@ -255,86 +272,44 @@ onUnmounted(() => clearTimeout(timer))
       <ErrorMessage v-if="error" class="mt-4" :message="error" />
 
       <!-- Unresolved failure -->
-      <section
-        v-if="isAttention"
-        class="mt-4 overflow-hidden rounded-6 border border-outline-gray-2"
-      >
-        <div class="p-4">
+      <section v-if="isAttention" class="mt-4 rounded-6 border border-outline-gray-2 p-1">
+        <div class="px-2.5 py-2">
           <div class="flex items-center gap-2">
-            <span class="lucide-alert-triangle size-4 shrink-0 text-ink-red-5" />
-            <h2 class="font-medium text-ink-red-7">
-              {{ alertTitle }}
-            </h2>
+            <span class="size-4 shrink-0 text-ink-red-5 lucide-alert-triangle" />
+            <h2 class="font-medium text-ink-gray-8">{{ alertTitle }}</h2>
           </div>
+          <p class="mt-1 text-ink-gray-6">{{ alertDescription }}</p>
 
-          <pre
-            v-if="op.diagnosis?.message"
-            class="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-ink-gray-8"
-          >{{ op.diagnosis.message }}</pre>
-          <p v-if="op.diagnosis?.patch" class="mt-2 text-p-sm text-ink-gray-7">
-            Failing patch
-            <code
-              class="ml-1 rounded-4 bg-surface-gray-2 px-1.5 py-0.5 font-mono text-xs text-ink-gray-8"
-            >
-              {{ op.diagnosis.patch }}
-            </code>
-          </p>
-
-          <p
-            v-if="patchAlreadySkipped"
-            class="mt-2 flex items-center gap-1 text-p-sm font-medium text-ink-green-6"
-          >
-            <span class="lucide-check size-4" />
-            Patch skipped
-          </p>
-
-          <p class="mt-3 text-p-sm text-ink-gray-6">
-            <template v-if="op.state === 'revert_failed'"
-              >Fix the cause and run the restore again.</template
-            >
-            <template v-else>
-              Fix the cause manually, then retry. Or restore everything back to its pre-update
-              state.
-            </template>
-          </p>
-
-          <!-- Links to the running action task so the user can watch it. -->
-          <button
-            v-if="pending"
-            type="button"
-            class="mt-4 flex items-center gap-2 px-2 py-1 rounded-4 transition-colors text-p-sm text-ink-gray-7 hover:bg-surface-gray-1"
-            @click="openTaskLog({ id: pending.task_id })"
-          >
-            <Spinner size="md" class="text-ink-amber-6" />
-            {{ pendingLabel }}
-            <span class="lucide-square-terminal size-4" />
-          </button>
-
-          <!-- Skip patch leads: it is the cheapest recovery, ahead of a restore. -->
-          <div v-else class="mt-4 flex flex-wrap gap-2">
+          <div class="mt-3 flex flex-wrap gap-2">
             <Button
-              v-if="op.state === 'needs_attention' && op.diagnosis?.patch && !patchAlreadySkipped"
-              theme="red"
-              :loading="acting"
-              @click="confirmSkip = true"
+              v-if="pending"
+              variant="ghost"
+              icon-right="lucide-square-terminal"
+              @click="openTaskLog({ id: pending.task_id })"
             >
-              Skip patch
+              <template #prefix><Spinner size="sm" /></template>
+              {{ pendingLabel }}
             </Button>
-
-            <Button v-if="op.state === 'needs_attention'" :loading="acting" @click="doRetry">
-              Retry update
-            </Button>
-
-            <Button v-if="op.can_restore" :loading="acting" @click="confirmRestore = true">
-              Restore backup
-            </Button>
+            <template v-else>
+              <Button v-if="op.state === 'needs_attention'" :loading="acting" @click="doRetry">
+                Retry
+              </Button>
+              <Button
+                v-if="op.state === 'needs_attention' && op.diagnosis?.patch && !patchAlreadySkipped"
+                :loading="acting"
+                @click="confirmSkip = true"
+              >
+                Skip patch
+              </Button>
+              <Button v-if="op.can_restore" :loading="acting" @click="confirmRestore = true">
+                Restore backup
+              </Button>
+              <Button :loading="acting" @click="confirmDismiss = true">Dismiss</Button>
+            </template>
           </div>
         </div>
 
-        <div
-          v-if="op.diagnosis?.output_excerpt"
-          class="border-t border-outline-gray-1 px-2.5 py-1.5"
-        >
+        <div v-if="op.diagnosis?.output_excerpt" class="border-t border-outline-gray-1 px-1 pt-1">
           <Button variant="ghost" @click="showOutput = !showOutput">
             {{ showOutput ? 'Hide error output' : 'Show error output' }}
             <template #suffix>
@@ -345,7 +320,7 @@ onUnmounted(() => clearTimeout(timer))
             </template>
           </Button>
 
-          <LogView v-if="showOutput" class="mt-1 mb-2" :lines="outputLines" wrap />
+          <LogView v-if="showOutput" class="mt-1 mb-1" :lines="outputLines" wrap />
         </div>
       </section>
 
@@ -456,14 +431,14 @@ onUnmounted(() => clearTimeout(timer))
       </div>
 
       <UpdateSection
-        v-if="op.decisions?.length"
+        v-if="skipped.length"
         class="mt-2"
         icon="lucide-skip-forward"
         title="Skipped patches"
-        :count="op.decisions.length"
+        :count="skipped.length"
       >
         <div
-          v-for="(decision, index) in op.decisions"
+          v-for="(decision, index) in skipped"
           :key="index"
           class="px-2.5 py-2 text-sm text-ink-gray-7"
         >
@@ -475,33 +450,26 @@ onUnmounted(() => clearTimeout(timer))
         </div>
       </UpdateSection>
 
-      <Dialog v-model="confirmSkip" title="Skip this patch permanently?">
-        <p class="text-p-sm text-ink-gray-6">
-          Skipping marks
-          <code class="rounded-4 bg-surface-gray-2 px-1 font-mono">{{ op.diagnosis?.patch }}</code>
-          as completed for
-          <b class="text-ink-gray-9">{{ op.failed_site }}</b>
-          without running it. This cannot be undone, and the migration carries on from where it
-          stopped.
-        </p>
+      <Dialog
+        v-model="confirmSkip"
+        title="Skip this patch?"
+        :message="`${op.diagnosis?.patch} is marked as done on ${op.failed_site} without running. This can't be undone.`"
+        :actions="[{ label: 'Skip patch', variant: 'solid', theme: 'red', onClick: doSkip }]"
+      />
 
-        <template #actions>
-          <Button variant="solid" theme="red" :loading="acting" @click="doSkip">Skip patch</Button>
-        </template>
-      </Dialog>
+      <Dialog
+        v-model="confirmRestore"
+        title="Restore backup?"
+        message="Apps go back to their old versions, and migrated sites get their data back from the backup."
+        :actions="[{ label: 'Restore backup', variant: 'solid', theme: 'red', onClick: doRestore }]"
+      />
 
-      <Dialog v-model="confirmRestore" title="Restore this update?">
-        <p class="text-p-sm text-ink-gray-6">
-          Apps return to their previous revisions, and migrated sites get their pre-update data back
-          from the recovery backup. Sites that were not migrated yet are left untouched.
-        </p>
-
-        <template #actions>
-          <Button variant="solid" theme="red" :loading="acting" @click="doRestore"
-            >Restore backup</Button
-          >
-        </template>
-      </Dialog>
+      <Dialog
+        v-model="confirmDismiss"
+        title="Dismiss this update?"
+        message="Pilot restarts services and deletes the backup. Sites stay as they are now."
+        :actions="[{ label: 'Dismiss', variant: 'solid', theme: 'red', onClick: doDismiss }]"
+      />
     </template>
   </div>
 </template>

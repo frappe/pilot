@@ -31,6 +31,7 @@ _CATEGORY_BY_COMMAND = {
     "retry-update": "Updates",
     "revert-apps": "Updates",
     "revert-migration": "Updates",
+    "dismiss-migration": "Updates",
     "revert-site": "Updates",
     "update": "Updates",
     "update-cli": "Updates",

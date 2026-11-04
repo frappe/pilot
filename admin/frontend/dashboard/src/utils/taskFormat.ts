@@ -121,6 +121,7 @@ export const TASK_TYPES = [
       'complete-migration',
       'retry-update',
       'revert-migration',
+      'dismiss-migration',
       'bypass-patch',
       'build',
       'update-cli',
