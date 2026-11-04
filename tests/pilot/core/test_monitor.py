@@ -303,7 +303,7 @@ def test_collect_application_metrics_marks_a_vanished_process_missing(tmp_path: 
 
 def _alerting_monitor(tmp_path: Path, **limits: int) -> Monitor:
     bench = _make_bench(tmp_path / "my-bench")
-    for name, value in limits.items():
+    for name, value in {"cpu_usage_limit": 0, "memory_usage_limit": 0, "disk_space_limit": 0, **limits}.items():
         setattr(bench.config.resource_limits, name, value)
     monitor = _make_monitor(bench)
     # MonitorConfigurator.setup() makes this directory on a real host, and it
@@ -449,16 +449,17 @@ def _age_alerts(monitor: Monitor) -> None:
 
 
 def test_alert_body_matches_centrals_event_schema(tmp_path: Path) -> None:
-    """Every sink gets the same event/message/context body. CentralClient maps
-    ``event`` to Central's ``event_type`` on the wire."""
+    """Central gets event, message and context; the feed and webhooks also use the title,
+    category, severity and dashboard route."""
     bench = _make_bench(tmp_path / "my-bench")
     bench.config.resource_limits.cpu_usage_limit = 80
     monitor = _make_monitor(bench)
 
     payload = monitor._alert_payload(["cpu_usage_limit"], _system_record(cpu=95.0))
 
-    assert set(payload) == {"event", "message", "context"}
+    assert set(payload) == {"event", "title", "category", "severity", "action_route", "message", "context"}
     assert payload["event"] == "resource_limit_breached"
+    assert (payload["title"], payload["category"], payload["severity"]) == ("Resource limit breached", "Server", "Warning")
     assert payload["message"] == "my-bench: cpu_usage_limit at 95.0%"
     assert payload["context"]["breached_limits"] == [
         {"limit": "cpu_usage_limit", "threshold": 80, "reading": 95.0}

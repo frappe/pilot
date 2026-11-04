@@ -171,7 +171,7 @@ def test_a_certificate_close_to_expiry_raises_an_alert(tmp_path: Path) -> None:
     payload = notify.call_args.args[1]
     assert payload["event"] == "certificate_expiry"
     assert payload["context"]["days_left"] == 9
-    assert record_alert.call_args.kwargs["severity"] == "Warning"
+    assert record_alert.call_args.args[1]["severity"] == "Warning"
 
 
 def test_a_certificate_with_time_left_raises_nothing(tmp_path: Path) -> None:

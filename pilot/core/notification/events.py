@@ -181,15 +181,7 @@ def _task_event(bench_root: Path, meta: dict, **event: typing.Any) -> None:
     )
 
 
-def record_alert(
-    bench: "Bench",
-    payload: dict,
-    *,
-    category: str,
-    severity: str,
-    title: str,
-    site: str | None = None,
-) -> bool:
+def record_alert(bench: "Bench", payload: dict) -> bool:
     """Record a sustained alert in the bench's own feed, reporting whether it landed.
 
     The caller still hands the same payload to `alerts.notify` for the webhook and
@@ -198,13 +190,13 @@ def record_alert(
     the next tick, rather than losing the incident until it clears and recurs."""
     try:
         bench.notifications.create(
-            title,
-            category=category,
+            payload["title"],
+            category=payload["category"],
             event=str(payload.get("event") or "alert"),
-            severity=severity,
+            severity=payload["severity"],
             message=payload.get("message"),
-            site=site,
-            action_route=f"/sites/{site}" if site else "/insights/analytics",
+            site=payload.get("site"),
+            action_route=payload.get("action_route"),
         )
         return True
     except Exception as exc:

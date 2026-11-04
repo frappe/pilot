@@ -312,6 +312,18 @@ def test_an_http_failure_has_no_extra_error_field(tmp_path: Path) -> None:
     assert "error" not in result
 
 
+def test_a_site_down_alert_names_the_site_or_counts_them(tmp_path: Path) -> None:
+    monitor = _monitor(tmp_path)
+    results = [_ping("a.test", up=False), _ping("b.test", up=False)]
+
+    one = monitor._alert_payload(["a.test"], results)
+    two = monitor._alert_payload(["a.test", "b.test"], results)
+
+    assert (one["title"], one["site"], one["action_route"]) == ("a.test is unreachable", "a.test", "/sites/a.test")
+    assert (two["title"], two["site"], two["action_route"]) == ("2 sites are unreachable", None, "/sites")
+    assert one["severity"] == "Error" and one["category"] == "Sites"
+
+
 def test_a_site_that_answers_again_after_its_alert_sends_site_up(tmp_path: Path) -> None:
     monitor = _monitor(tmp_path)
     monitor.send_alert_if_required([_ping("a.test", up=False)])

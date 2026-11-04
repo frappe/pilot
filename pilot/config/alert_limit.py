@@ -2,22 +2,19 @@ from dataclasses import dataclass, field
 
 from pilot.config.mail import ADDRESS_RE
 
+DEFAULT_USAGE_LIMIT = 90
 RESOURCE_LIMIT_FIELDS = ("cpu_usage_limit", "memory_usage_limit", "disk_space_limit")
 
 
 @dataclass
 class ResourceLimitConfig:
-    """Usage percentages that raise a resource alert. Zero disables the alert.
-    By defult we will be sending notifications to central however will let users add
-    Their custom webhook urls and mail recipients to send notifications to.
-    """
+    """Usage percentages that raise a resource alert, on by default. Zero disables the alert.
+    Alerts go to Central on a managed host, and to the webhooks and mail recipients set here."""
 
-    cpu_usage_limit: int = 0
-    memory_usage_limit: int = 0
-    disk_space_limit: int = 0
-    site_uptime: bool = (
-        True  # This is boolean to check if site uptime alert is enabled or not. By default it is enabled.
-    )
+    cpu_usage_limit: int = DEFAULT_USAGE_LIMIT
+    memory_usage_limit: int = DEFAULT_USAGE_LIMIT
+    disk_space_limit: int = DEFAULT_USAGE_LIMIT
+    site_uptime: bool = True
     email_recipients: list[str] = field(default_factory=list)
 
     def validate(self) -> None:

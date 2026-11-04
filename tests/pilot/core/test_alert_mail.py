@@ -374,7 +374,7 @@ def test_alerts_skip_central_on_a_self_hosted_bench(tmp_path: Path) -> None:
     bench.config.central.enabled = False
 
     with patch.object(alerts, "CentralClient") as client:
-        alerts.notify(bench, {"event": "cpu", "message": "high", "context": {}})
+        alerts.notify(bench, {"event": "resource_limit_breached", "message": "high", "context": {}})
 
     client.assert_not_called()
 
@@ -388,11 +388,48 @@ def test_alerts_reach_central_when_it_is_managed(tmp_path: Path) -> None:
     bench.config.central.enabled = True
 
     with patch.object(alerts, "CentralClient") as client:
-        assert alerts.notify(bench, {"event": "cpu", "message": "high", "context": {}}) is True
+        assert alerts.notify(bench, {"event": "resource_limit_breached", "message": "high", "context": {}}) is True
 
     client.return_value.notify_central.assert_called_once_with(
-        event="cpu", message="high", context={}, reference_name=bench.config.name
+        event="resource_limit_breached", message="high", context={}, reference_name=bench.config.name
     )
+
+
+@pytest.mark.parametrize(
+    ("payload", "central_event_type"),
+    [
+        ({"event": "resource_limit_breached"}, "resource_limit_breached"),
+        ({"event": "site_down"}, "site_unavailable"),
+        ({"event": "backups_failing"}, "backup_failure"),
+        ({"event": "task_failed", "category": "Updates"}, "migration_failure"),
+        ({"event": "task_failed", "category": "Sites"}, None),
+        ({"event": "update_completed", "category": "Updates"}, None),
+    ],
+)
+def test_events_use_the_names_central_accepts(payload: dict, central_event_type: str | None) -> None:
+    """Central refuses a Pilot event whose type is not one of its Server event types."""
+    from pilot.core.alerts import get_central_event_type
+
+    assert get_central_event_type(payload) == central_event_type
+
+
+def test_a_failed_task_reaches_webhooks_but_not_mail_or_central(tmp_path: Path) -> None:
+    from pilot.core import alerts
+    from pilot.core.notification.webhooks import WebhookDelivery
+
+    bench = _bench(tmp_path, _mail(), webhook_endpoints=[WebhookEndpoint("https://all.test")])
+    bench.config.central.enabled = True
+
+    with (
+        patch("smtplib.SMTP", FakeSMTP),
+        patch.object(alerts, "CentralClient") as central,
+        patch("pilot.core.notification.webhooks.send_webhook", return_value=WebhookDelivery(200, "")) as webhook,
+    ):
+        assert notify(bench, {**PAYLOAD, "event": "task_failed", "category": "Sites"}) is True
+
+    webhook.assert_called_once()
+    assert FakeSMTP.sends == []
+    central.assert_not_called()
 
 
 def test_a_webhook_receives_only_the_events_it_chose(tmp_path: Path) -> None:
@@ -480,3 +517,17 @@ def test_a_ping_goes_to_an_endpoint_whatever_events_it_chose(tmp_path: Path) -> 
     sent_endpoint, body = send.call_args.args
     assert sent_endpoint is endpoint
     assert body["event"] == "ping"
+
+
+def test_a_certificate_alert_is_mailed_but_not_sent_to_central(tmp_path: Path) -> None:
+    """Central has no certificate event type and would refuse it."""
+    from pilot.core import alerts
+
+    bench = _bench(tmp_path, _mail())
+    bench.config.central.enabled = True
+
+    with patch("smtplib.SMTP", FakeSMTP), patch.object(alerts, "CentralClient") as central:
+        assert notify(bench, {**PAYLOAD, "event": "certificate_expiry", "title": "Certificate for a.test is not renewing"})
+
+    assert FakeSMTP.sends[0].messages[0]["Subject"] == "[Pilot] Certificate for a.test is not renewing"
+    central.assert_not_called()

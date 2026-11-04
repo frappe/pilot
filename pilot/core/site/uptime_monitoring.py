@@ -90,14 +90,7 @@ class UptimeMonitor:
         recorded = [
             site
             for site in alerts.unrecorded(alerts.sustained())
-            if record_alert(
-                self.bench,
-                self._alert_payload([site], results),
-                category="Sites",
-                severity="Error",
-                title=f"{site} is unreachable",
-                site=site,
-            )
+            if record_alert(self.bench, self._alert_payload([site], results))
         ]
         if recorded:
             alerts.mark_recorded(recorded)
@@ -134,8 +127,14 @@ class UptimeMonitor:
             }
             for site in down
         ]
+        site = down[0] if len(down) == 1 else None
         return {
             "event": SITE_DOWN_EVENT,
+            "title": f"{site} is unreachable" if site else f"{len(down)} sites are unreachable",
+            "category": "Sites",
+            "severity": "Error",
+            "site": site,
+            "action_route": f"/sites/{site}" if site else "/sites",
             "message": f"{self.bench.config.name}: {', '.join(down)} unreachable",
             "context": {
                 "bench": self.bench.config.name,
