@@ -192,7 +192,8 @@ def test_a_background_job_runs_in_the_sandboxed_worker(sandboxed: Path) -> None:
         job,
         cwd=sandboxed / "sites",
     )
-    assert result.returncode == 0, result.stderr
+    # `frappe execute` exits 1 when it cannot print the queued Job as JSON; the job is queued anyway.
+    assert "Traceback" not in result.stderr, result.stderr
     for _ in range(60):
         if set(backups.glob("*.sql.gz")) - before:
             return
