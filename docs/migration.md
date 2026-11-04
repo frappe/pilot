@@ -218,6 +218,8 @@ database.sql.gz
 site_config.json
 ```
 
+When the bench has an S3 bucket and `[s3] upload_migration_backups` is on (the default), MariaDB table dumps do not go to the disk. Pilot ignores the setting when the bucket is not configured. Each dump streams gzip-compressed to `sites/<site>/migration_backups/<operation-id>/<table>.sql.gz` in the bucket. Only `previous_tables.json`, `site_config.json`, and `offsite.json` (bucket and key prefix) stay in `.migrate/`. The disk check before an update then counts only the sites that back up locally. A dump that fails part way deletes its object. Restore checks that every required object exists. Then it streams each dump from the bucket through gunzip into the database client, so restore also needs no disk space. A restore that stops part way is safe to run again, because each dump drops and recreates its table. Discard and a new snapshot delete the objects. SQLite and PostgreSQL backups stay local. To keep the dumps on the disk, turn the setting off in Settings > Bench, or set `upload_migration_backups = false` under `[s3]`.
+
 Frappe creates these full backups with explicit paths inside `.migrate/`. Backup include/exclude settings are ignored so the safeguard always covers the whole database. Files remain excluded.
 
 The snapshot service checks that the requesting operation is the only unresolved operation that owns the site. This prevents a later workflow from erasing an earlier workflow's recovery data.

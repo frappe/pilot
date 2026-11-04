@@ -1334,7 +1334,7 @@ def test_a_killed_task_has_no_error_to_name(tmp_path: Path) -> None:
     assert _last_task_error({"bench_root": str(tmp_path), "task_id": "task-101"}) == ""
 
 
-def _operation_with_backups(tmp_path: Path, sizes: dict[str, int]):
+def _operation_with_backups(tmp_path: Path, sizes: dict[str, int], in_s3: frozenset[str] = frozenset()):
     from pilot.core.bench.migration.store import MigrationStore
 
     bench = MagicMock()
@@ -1342,7 +1342,10 @@ def _operation_with_backups(tmp_path: Path, sizes: dict[str, int]):
     bench.sites_path = tmp_path
     bench.apps.return_value = []
     bench.sites.return_value = [MagicMock(config=MagicMock(name=name)) for name in sizes]
-    bench.site.side_effect = lambda name: MagicMock(backups=MagicMock(estimated_database_size=sizes[name]))
+    bench.site.side_effect = lambda name: MagicMock(
+        backups=MagicMock(estimated_database_size=sizes[name]),
+        migration_backup=MagicMock(is_stored_in_s3=name in in_s3),
+    )
     return MigrationStore(bench).create_site_migrate(*sizes)
 
 
@@ -1365,6 +1368,15 @@ def test_a_migration_the_disk_can_back_up_goes_ahead(tmp_path: Path) -> None:
     operation = _operation_with_backups(tmp_path, {"a.localhost": 600, "b.localhost": 500})
 
     with _free_disk(SYSTEM_RESERVED_BYTES + 1200):
+        _ensure_disk_space(operation)
+
+
+def test_a_backup_kept_in_s3_needs_no_local_space(tmp_path: Path) -> None:
+    operation = _operation_with_backups(
+        tmp_path, {"a.localhost": 600, "b.localhost": 500}, in_s3=frozenset({"a.localhost"})
+    )
+
+    with _free_disk(SYSTEM_RESERVED_BYTES + 500):
         _ensure_disk_space(operation)
 
 

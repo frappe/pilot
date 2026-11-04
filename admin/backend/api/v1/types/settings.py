@@ -77,6 +77,7 @@ class S3Settings(TypedDict):
     provider: str
     region: str
     endpoint_url: str
+    upload_migration_backups: bool
 
 
 class LLMSettings(TypedDict):

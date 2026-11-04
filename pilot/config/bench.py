@@ -705,6 +705,7 @@ class BenchConfig:
             "provider": self.s3.provider,
             "region": self.s3.region,
             "endpoint_url": self.s3.endpoint_url,
+            "upload_migration_backups": self.s3.upload_migration_backups,
         }
 
     def _llm_section(self) -> ConfigDict:

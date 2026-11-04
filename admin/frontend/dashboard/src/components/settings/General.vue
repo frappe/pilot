@@ -16,6 +16,8 @@ const error = ref('')
 const allowDeveloperMode = ref(false)
 const liteMode = ref(false)
 const liteModeSupported = ref(false)
+const hasBucket = ref(false)
+const bucketBackups = ref(true)
 
 const toggleAllowDeveloperMode = async (value: boolean) => {
   saving.value = true
@@ -46,12 +48,28 @@ const toggleLiteMode = async (value: boolean) => {
   }
 }
 
+const toggleBucketBackups = async (value: boolean) => {
+  saving.value = true
+  error.value = ''
+  try {
+    await settingsApi.update({ s3: { upload_migration_backups: value } })
+    bucketBackups.value = value
+    toast.success(`Update backups ${value ? 'go to object storage' : 'stay on the disk'}`)
+  } catch (e) {
+    error.value = errorMessage(e, 'Could not update the backup setting.')
+  } finally {
+    saving.value = false
+  }
+}
+
 onMounted(async () => {
   try {
     const data = await settingsApi.get()
     allowDeveloperMode.value = Boolean(data?.bench?.allow_developer_mode)
     liteMode.value = Boolean(data?.lite_mode?.enabled)
     liteModeSupported.value = Boolean(data?.lite_mode?.supported)
+    hasBucket.value = Boolean(data?.s3?.bucket)
+    bucketBackups.value = data?.s3?.upload_migration_backups ?? true
   } catch {
     error.value = 'Could not load settings.'
   } finally {
@@ -95,6 +113,21 @@ onMounted(async () => {
           :disabled="saving"
           @click.stop
           @update:model-value="toggleLiteMode"
+        />
+      </SettingsRow>
+
+      <SettingsRow
+        v-if="hasBucket"
+        label="Keep update backups in object storage"
+        description="Pilot backs up sites to the bucket before an update, not to the disk."
+        interactive
+        @click="!saving && toggleBucketBackups(!bucketBackups)"
+      >
+        <Switch
+          :model-value="bucketBackups"
+          :disabled="saving"
+          @click.stop
+          @update:model-value="toggleBucketBackups"
         />
       </SettingsRow>
 
