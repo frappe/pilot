@@ -1,5 +1,6 @@
 from unittest.mock import Mock
 
+import pytest
 from flask import Flask
 
 from admin.backend.api.v1.settings import ConfigPatcher, s3_provider_options, settings_bp
@@ -227,3 +228,35 @@ def test_aws_regions_outside_the_original_list_need_no_custom_endpoint() -> None
 
         assert ConfigPatcher(config, update).apply() is None
         assert base.build_endpoint_url("aws", region) == f"https://s3.{region}.amazonaws.com"
+
+
+@pytest.mark.parametrize(
+    ("provider", "endpoint_url", "style"),
+    [("aws", "", "virtual"), ("aws", "https://s3.example.test", "path"), ("hetzner", "", "path")],
+)
+def test_bucket_subdomains_are_used_only_on_the_aws_endpoint(
+    monkeypatch, provider: str, endpoint_url: str, style: str
+) -> None:
+    config = Mock(return_value="client-config")
+    monkeypatch.setattr(base, "load_boto3", lambda: None)
+    monkeypatch.setattr(base, "boto3", Mock())
+    monkeypatch.setattr(base, "Config", config)
+
+    base.S3(
+        "access", "secret", "fsn1" if provider == "hetzner" else "us-east-1", provider, "bucket", endpoint_url
+    )
+
+    assert config.call_args.kwargs["s3"] == {"addressing_style": style}
+
+
+def test_a_tls_failure_while_checking_the_bucket_says_why(monkeypatch) -> None:
+    storage = base.S3.__new__(base.S3)
+    storage.endpoint_url = "https://s3.example.test"
+    storage.client = Mock()
+    base.load_boto3()
+    from botocore.exceptions import SSLError
+
+    storage.client.head_bucket.side_effect = SSLError(endpoint_url=storage.endpoint_url, error="SSL validation failed")
+
+    with pytest.raises(base.S3IntegrationError, match="SSL validation failed"):
+        storage.create_bucket_if_not_present("bucket")
