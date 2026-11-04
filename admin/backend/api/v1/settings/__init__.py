@@ -474,3 +474,6 @@ def apply_post_save_changes(
         old_s3_config,
         old_proxy,
     )
+
+
+from admin.backend.api.v1.settings import common_site_config  # noqa: E402, F401

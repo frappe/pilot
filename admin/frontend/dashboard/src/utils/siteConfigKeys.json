@@ -1,0 +1,320 @@
+[
+  {
+    "key": "auto_email_id",
+    "title": "Auto Email ID",
+    "type": "String"
+  },
+  {
+    "key": "backup_encryption_key",
+    "title": "Backup Encryption Key",
+    "type": "Password"
+  },
+  {
+    "key": "data_import_batch_size",
+    "title": "Batch Size for Data Import",
+    "type": "Number"
+  },
+  {
+    "key": "converted_rupee_to_paisa",
+    "title": "Converted Rupee To Paisa",
+    "type": "Boolean",
+    "description": "for RazorPay Settings"
+  },
+  {
+    "key": "deny_multiple_sessions",
+    "title": "Deny Multiple Sessions",
+    "type": "Boolean"
+  },
+  {
+    "key": "disable_async",
+    "title": "Disable Async",
+    "type": "Boolean",
+    "description": "Skips socket.IO setup on frontend"
+  },
+  {
+    "key": "disable_error_snapshot",
+    "title": "Disable Error Snapshot",
+    "type": "Boolean"
+  },
+  {
+    "key": "disable_global_search",
+    "title": "Disable Global Search",
+    "type": "Boolean"
+  },
+  {
+    "key": "disable_scheduler",
+    "title": "Disable Scheduler",
+    "type": "Boolean"
+  },
+  {
+    "key": "disable_session_cache",
+    "title": "Disable Session Cache",
+    "type": "Boolean"
+  },
+  {
+    "key": "disable_website_cache",
+    "title": "Disable Website Cache",
+    "type": "Boolean"
+  },
+  {
+    "key": "dropbox_access_key",
+    "title": "Dropbox Access Key",
+    "type": "String"
+  },
+  {
+    "key": "dropbox_broker_site",
+    "title": "Dropbox Broker Site",
+    "type": "String"
+  },
+  {
+    "key": "dropbox_secret_key",
+    "title": "Dropbox Secret Key",
+    "type": "Password"
+  },
+  {
+    "key": "email_sender_name",
+    "title": "Email Sender Name",
+    "type": "String"
+  },
+  {
+    "key": "enable_frappe_logger",
+    "title": "Enable Frappe Logger",
+    "type": "Boolean",
+    "description": "If set, logs basic info from the requests and saves them under ./sites/{site}/logs/frappe.web.log."
+  },
+  {
+    "key": "server_script_enabled",
+    "title": "Enable Server Script",
+    "type": "Boolean"
+  },
+  {
+    "key": "encryption_key",
+    "title": "Encryption Key",
+    "type": "Password",
+    "description": "Key used to encrypt Passwords"
+  },
+  {
+    "key": "error_report_email",
+    "title": "Error Report Email",
+    "type": "String"
+  },
+  {
+    "key": "google_analytics_id",
+    "title": "Google Analytics ID",
+    "type": "String"
+  },
+  {
+    "key": "ignore_csrf",
+    "title": "Ignore CSRF",
+    "type": "Boolean"
+  },
+  {
+    "key": "limit",
+    "title": "Limit",
+    "type": "JSON"
+  },
+  {
+    "key": "limits",
+    "title": "Limits",
+    "type": "JSON"
+  },
+  {
+    "key": "local_infile",
+    "title": "Local Infile",
+    "type": "String",
+    "description": "Load Data from local infile for mysql"
+  },
+  {
+    "key": "logging",
+    "title": "Logging",
+    "type": "Number",
+    "description": "Utilise frappe.debug_log via frappe.log to enable different levels of logging. At level 2, shows queries and results run at every action."
+  },
+  {
+    "key": "mail_login",
+    "title": "Mail Login",
+    "type": "String"
+  },
+  {
+    "key": "mail_password",
+    "title": "Mail Password",
+    "type": "Password"
+  },
+  {
+    "key": "mail_port",
+    "title": "Mail Port",
+    "type": "String"
+  },
+  {
+    "key": "mail_server",
+    "title": "Mail Server",
+    "type": "String"
+  },
+  {
+    "key": "max_file_size",
+    "title": "Max File Size",
+    "type": "Number"
+  },
+  {
+    "key": "mixpanel_id",
+    "title": "Mixpanel ID",
+    "type": "String",
+    "description": "For MixPanel analytics on desk"
+  },
+  {
+    "key": "mute_emails",
+    "title": "Mute Emails",
+    "type": "Boolean"
+  },
+  {
+    "key": "pause_scheduler",
+    "title": "Pause Scheduler",
+    "type": "Boolean"
+  },
+  {
+    "key": "paypal_password",
+    "title": "PayPal Password",
+    "type": "Password"
+  },
+  {
+    "key": "paypal_signature",
+    "title": "Paypal Signature",
+    "type": "String"
+  },
+  {
+    "key": "paypal_username",
+    "title": "Paypal Username",
+    "type": "String"
+  },
+  {
+    "key": "pop_timeout",
+    "title": "POP Timeout",
+    "type": "Number"
+  },
+  {
+    "key": "press_bootstrap_aws_access_key_id",
+    "title": "Press Bootstrap Aws Access Key Id",
+    "type": "String"
+  },
+  {
+    "key": "press_bootstrap_aws_secret_access_key",
+    "title": "Press Bootstrap Aws Secret Access Key",
+    "type": "Password"
+  },
+  {
+    "key": "press_bootstrap_cluster",
+    "title": "Press Bootstrap Cluster",
+    "type": "JSON"
+  },
+  {
+    "key": "press_bootstrap_eff_registration_email",
+    "title": "Press Bootstrap Eff Registration Email",
+    "type": "String"
+  },
+  {
+    "key": "press_bootstrap_github_access_token",
+    "title": "Press Bootstrap Github Access Token",
+    "type": "Password"
+  },
+  {
+    "key": "press_bootstrap_home_directory",
+    "title": "Press Bootstrap Home Directory",
+    "type": "String"
+  },
+  {
+    "key": "press_bootstrap_root_domain",
+    "title": "Press Bootstrap Root Domain",
+    "type": "String"
+  },
+  {
+    "key": "press_bootstrap_telegram_bot_token",
+    "title": "Press Bootstrap Telegram Bot Token",
+    "type": "Password"
+  },
+  {
+    "key": "press_bootstrap_telegram_chat_id",
+    "title": "Press Bootstrap Telegram Chat Id",
+    "type": "String"
+  },
+  {
+    "key": "push_relay_server_url",
+    "title": "Push Relay Server URL",
+    "type": "String",
+    "description": "Relay Server URL for sending out push notifications"
+  },
+  {
+    "key": "sfu_secret",
+    "title": "Sae SFU JWT Secret",
+    "type": "Password"
+  },
+  {
+    "key": "sfu_server_url",
+    "title": "Sae SFU URL",
+    "type": "String"
+  },
+  {
+    "key": "sandbox_api_key",
+    "title": "Sandbox API Key",
+    "type": "String"
+  },
+  {
+    "key": "sandbox_api_password",
+    "title": "Sandbox API Password",
+    "type": "Password"
+  },
+  {
+    "key": "sandbox_api_secret",
+    "title": "Sandbox API Secret",
+    "type": "Password"
+  },
+  {
+    "key": "sandbox_api_username",
+    "title": "Sandbox API Username",
+    "type": "String"
+  },
+  {
+    "key": "sandbox_publishable_key",
+    "title": "Sandbox Publishable Key",
+    "type": "String"
+  },
+  {
+    "key": "sandbox_signature",
+    "title": "Sandbox Signature",
+    "type": "String"
+  },
+  {
+    "key": "skip_setup_wizard",
+    "title": "Skip Setup Wizard",
+    "type": "Boolean"
+  },
+  {
+    "key": "always_use_account_email_id_as_sender",
+    "title": "Use Account Email ID As Sender",
+    "type": "Boolean"
+  },
+  {
+    "key": "always_use_account_name_as_sender_name",
+    "title": "Use Account Name as Sender Name",
+    "type": "Boolean"
+  },
+  {
+    "key": "use_ssl",
+    "title": "Use SSL",
+    "type": "Boolean"
+  },
+  {
+    "key": "use_tls",
+    "title": "Use TLS",
+    "type": "Boolean"
+  },
+  {
+    "key": "user_type_doctype_limit",
+    "title": "User Type DocType Limit",
+    "type": "JSON"
+  },
+  {
+    "key": "workers",
+    "title": "Workers",
+    "type": "JSON"
+  }
+]

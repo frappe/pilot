@@ -3,6 +3,7 @@ import { ErrorMessage, Spinner, Switch, toast } from 'frappe-ui'
 import { onMounted, ref } from 'vue'
 import { settingsApi } from '@/api/settings'
 import SettingsRow from '@/components/settings/SettingsRow.vue'
+import CommonSiteConfig from '@/components/settings/CommonSiteConfig.vue'
 import Workers from '@/components/settings/Workers.vue'
 import { useSession } from '@/composables/auth/useSession'
 import { errorMessage } from '@/utils/error'
@@ -105,6 +106,10 @@ onMounted(async () => {
         </p>
 
         <Workers />
+      </section>
+
+      <section class="px-3 py-3.5">
+        <CommonSiteConfig />
       </section>
     </div>
   </template>

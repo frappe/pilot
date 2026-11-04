@@ -37,6 +37,8 @@ PROTECTED_CONFIG_KEYS = frozenset(
         "ssl",
     }
 )
+# What a write-only secret reads back as. A caller sets or removes it but never sees it.
+SECRET_MASK = "********"
 _SENSITIVE_CONFIG_KEY_PARTS = (
     "_key",
     "access_key",
@@ -259,7 +261,12 @@ def read_site_config(site_path: Path) -> dict:
 
 
 def public_config(config: dict) -> dict:
-    return {key: _public_config_value(value) for key, value in config.items() if is_public_config_key(key)}
+    """What a caller may read: protected keys left out, top-level secrets masked, nested ones hidden."""
+    return {
+        key: SECRET_MASK if is_secret_config_key(key) else _public_config_value(value)
+        for key, value in config.items()
+        if is_public_config_key(key) or is_secret_config_key(key)
+    }
 
 
 def merge_public_config(current: dict, submitted: dict) -> dict:
@@ -268,17 +275,33 @@ def merge_public_config(current: dict, submitted: dict) -> dict:
         if submitted_value is None:
             merged.pop(key, None)
             continue
+        if is_secret_config_key(key):
+            merged[key] = copy.deepcopy(submitted_value)
+            continue
         current_value = current.get(key)
         merged[key] = _merge_public_value(current_value, submitted_value)
     return merged
 
 
 def config_patch_error(current, submitted) -> str | None:
+    """Why a top-level patch is refused. A top-level secret may be set or removed, never read."""
     if not isinstance(submitted, dict):
         return "Configuration patches must be JSON objects."
     for key, value in submitted.items():
-        error = _config_patch_item_error(current, key, value)
+        if isinstance(key, str) and is_secret_config_key(key):
+            error = f"Enter the new value for {key}." if value == SECRET_MASK else None
+        else:
+            error = _config_patch_item_error(current, key, value)
         if error:
+            return error
+    return None
+
+
+def _nested_config_patch_error(current, submitted) -> str | None:
+    if not isinstance(submitted, dict):
+        return "Configuration patches must be JSON objects."
+    for key, value in submitted.items():
+        if error := _config_patch_item_error(current, key, value):
             return error
     return None
 
@@ -292,7 +315,7 @@ def _config_patch_item_error(current, key, value) -> str | None:
         return _config_remove_error(existing)
     if isinstance(value, dict):
         nested = existing if isinstance(existing, dict) else {}
-        return config_patch_error(nested, value)
+        return _nested_config_patch_error(nested, value)
     if isinstance(value, list):
         return _config_list_replace_error(existing, value)
     if _has_protected_config(existing):
@@ -317,15 +340,7 @@ def _config_list_replace_error(existing, value: list) -> str | None:
 
 
 def is_public_config_key(key: str) -> bool:
-    normalized = (
-        re.sub(
-            r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])",
-            "_",
-            key,
-        )
-        .lower()
-        .replace("-", "_")
-    )
+    normalized = _normalize_config_key(key)
     compact = normalized.replace("_", "")
     compact_secret_parts = (
         "accesskey",
@@ -340,6 +355,15 @@ def is_public_config_key(key: str) -> bool:
         and not any(part in compact for part in compact_secret_parts)
         and not any(part in normalized for part in _SENSITIVE_CONFIG_KEY_PARTS)
     )
+
+
+def is_secret_config_key(key: str) -> bool:
+    """A secret-like key that is not system-managed: write-only at the top level."""
+    return not is_public_config_key(key) and _normalize_config_key(key) not in PROTECTED_CONFIG_KEYS
+
+
+def _normalize_config_key(key: str) -> str:
+    return re.sub(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", "_", key).lower().replace("-", "_")
 
 
 def safe_site_config_path(sites_root: Path, site_name: str) -> Path:
@@ -360,7 +384,7 @@ def safe_site_config_path(sites_root: Path, site_name: str) -> Path:
 
 def _public_config_value(value):
     if isinstance(value, dict):
-        return public_config(value)
+        return {key: _public_config_value(child) for key, child in value.items() if is_public_config_key(key)}
     if isinstance(value, list):
         return [_public_config_value(item) for item in value]
     return copy.deepcopy(value)
@@ -374,7 +398,7 @@ def _merge_public_value(current, submitted):
 
 def _submitted_config_value_error(value) -> str | None:
     if isinstance(value, dict):
-        return config_patch_error({}, value)
+        return _nested_config_patch_error({}, value)
     if isinstance(value, list):
         for item in value:
             if error := _submitted_config_value_error(item):
