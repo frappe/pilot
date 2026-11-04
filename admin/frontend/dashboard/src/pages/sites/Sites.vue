@@ -269,7 +269,7 @@ onMounted(() => {
         <router-link
           v-for="site in filteredSites"
           :key="site.name"
-          class="flex flex-col gap-3 bg-surface-gray-0 p-4 border border-outline-gray-1.5 hover:border-outline-gray-4 rounded-6"
+          class="flex flex-col gap-3 bg-surface-gray-0 px-4 pt-3.5 pb-4 border border-outline-gray-1.5 hover:border-outline-gray-4 rounded-6"
           :to="{ name: 'SiteDetail', params: { name: site.name } }"
         >
           <div class="flex items-center gap-2 text-ink-gray-5 text-sm">
@@ -309,7 +309,7 @@ onMounted(() => {
             </span>
           </div>
 
-          <div v-if="site.requests?.length" class="flex flex-col gap-2.5 mt-1">
+          <div v-if="site.requests?.length" class="flex flex-col gap-3 mt-1">
             <SiteSparkline :values="site.requests || []" class="w-full h-8" />
 
             <div class="flex justify-between text-ink-gray-5 text-xs tabular-nums">
