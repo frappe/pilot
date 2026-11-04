@@ -1,5 +1,5 @@
 import { call } from './request.ts'
-import type { AccountLinks, Analytics, Backups, BillingProfile, BillingSummary, CloudContext, DnsRecord, Domains, Marketplace, PaymentCheckout, PaymentGateway, PaymentMethodSetup, PaymentStatus, PlanChange, PlanOptions, SiteConfiguration, Storage, TaskStatus, TaskSubmission, Uptime } from './types.ts'
+import type { AccountLinks, Analytics, Backups, BillingProfile, BillingSummary, CloudContext, DnsRecord, DnsRecords, Domains, Marketplace, PaymentCheckout, PaymentGateway, PaymentMethodSetup, PaymentStatus, PlanChange, PlanOptions, SiteConfiguration, Storage, TaskStatus, TaskSubmission, Uptime } from './types.ts'
 
 export { CloudSettingsError, isMigrationConflict, isNotConnectedToCentral } from './request.ts'
 export type * from './types.ts'
@@ -76,7 +76,7 @@ export const getTask = (taskId: string) => call<TaskStatus>('get_task', { task_i
 
 export const getDomains = () => call<Domains>('get_domains', {}, 'GET')
 
-export const getDomainDnsRecords = (domain: string) => call<{ records: DnsRecord[]; options?: DnsRecord[][] }>('get_domain_dns_records', { domain })
+export const getDomainDnsRecords = (domain: string) => call<DnsRecords & { records: DnsRecord[] }>('get_domain_dns_records', { domain })
 
 export const addDomain = (domain: string) => call('add_domain', { domain })
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useTranslation } from '../translation'
 import { addDomain, getDomainDnsRecords, removeDomain, setPrimaryDomain } from '@frappe/cloud-sdk/api'
-import type { DnsRecord, Domain } from '@frappe/cloud-sdk'
+import type { DnsRecord, DnsRecords, Domain } from '@frappe/cloud-sdk'
 import { Badge, Button, Dialog, Dropdown, ErrorMessage, TextInput, toast } from 'frappe-ui'
 import { computed, inject, ref, watch } from 'vue'
 import Panel from '../components/Panel.vue'
@@ -17,6 +17,11 @@ interface Props {
   active?: boolean
 }
 
+interface DnsRecordGroup {
+  type: string
+  records: DnsRecord[]
+}
+
 const props = defineProps<Props>()
 const store = props.store
 
@@ -25,7 +30,7 @@ const working = ref(false)
 const loadingRecords = ref(false)
 const showAdd = ref(false)
 const addTarget = ref('')
-const recordOptions = ref<DnsRecord[][]>([])
+const dnsRecordGroups = ref<DnsRecordGroup[]>([])
 const verifying = ref(false)
 const addError = ref('')
 const removeTarget = ref('')
@@ -83,15 +88,18 @@ const canContinue = computed(
     !loadingRecords.value,
 )
 
-// frappe without `options` lists Pilot's CNAME set, then its A set, in one list.
-const toRecordOptions = (records: DnsRecord[]) => {
+// frappe without `cname` and `a` lists Pilot's CNAME set, then its A set, in one list.
+const splitRecords = (records: DnsRecord[]): DnsRecords => {
   const split = records.findIndex((record) => record.type.toUpperCase() === 'A')
-  if (split < 0) return records.length ? [records] : []
-  return [records.slice(0, split), records.slice(split)].filter((option) => option.length)
+  return split < 0 ? { cname: records } : { cname: records.slice(0, split), a: records.slice(split) }
 }
 
-const optionType = (option: DnsRecord[]) =>
-  option.find((record) => ['CNAME', 'A'].includes(record.type.toUpperCase()))?.type ?? option[0].type
+const toRecordGroups = (records: DnsRecords): DnsRecordGroup[] => {
+  const groups: DnsRecordGroup[] = []
+  if (records.cname?.length) groups.push({ type: 'CNAME', records: records.cname })
+  if (records.a?.length) groups.push({ type: 'A', records: records.a })
+  return groups
+}
 
 const continueAdd = async () => {
   const domain = normalizedDomain.value
@@ -104,7 +112,7 @@ const continueAdd = async () => {
   try {
     const response = await getDomainDnsRecords(domain)
 
-    recordOptions.value = response.options ?? toRecordOptions(response.records || [])
+    dnsRecordGroups.value = toRecordGroups('cname' in response ? response : splitRecords(response.records || []))
     addTarget.value = domain
     addError.value = ''
     showAdd.value = true
@@ -300,24 +308,24 @@ const run = async (action: () => Promise<void>) => {
 
   <Dialog v-model="showAdd" :title="__('Use your own domain')" size="xl">
     <template #default>
-      <template v-if="recordOptions.length">
+      <template v-if="dnsRecordGroups.length">
         <p class="text-p-base text-ink-gray-7">
-          {{ recordOptions.length > 1
+          {{ dnsRecordGroups.length > 1
               ? __('Add either one of these records at your domain provider.')
               : __('Add this record at your domain provider.') }}
         </p>
 
-        <div v-for="(option, index) in recordOptions" :key="index" class="mt-4">
+        <div v-for="(group, index) in dnsRecordGroups" :key="group.type" class="mt-4">
           <p class="mb-2 text-sm text-ink-gray-7">
-            {{ recordOptions.length > 1
-                ? __('Option {0}: {1} record', [index + 1, optionType(option)])
-                : __('{0} record', [optionType(option)]) }}
+            {{ dnsRecordGroups.length > 1
+                ? __('Option {0}: {1} record', [index + 1, group.type])
+                : __('{0} record', [group.type]) }}
           </p>
 
           <Table
             class="border rounded-6 border-outline-gray-2"
             :columns="recordColumns"
-            :rows="recordRows(option)"
+            :rows="recordRows(group.records)"
           >
             <template #value="{ row }">
               <div class="flex items-center gap-2">
@@ -356,7 +364,7 @@ const run = async (action: () => Promise<void>) => {
         <Button
           variant="solid"
           :loading="verifying"
-          :label="recordOptions.length ? __('Verify DNS') : __('Register')"
+          :label="dnsRecordGroups.length ? __('Verify DNS') : __('Register')"
           @click="verifyAdd"
         />
       </div>

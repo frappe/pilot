@@ -20,9 +20,9 @@ const records = (...entries: [string, string, string][]) => ({
 
 const record = ([type, host, value]: [string, string, string]) => ({ type, host, value })
 
-// A frappe with frappe/frappe#46394 also returns each record set as one option.
-const recordSets = (...sets: [string, string, string][][]) => ({
-  message: { records: sets.flat().map(record), options: sets.map((set) => set.map(record)) },
+// A frappe with frappe/frappe#46394 also returns Pilot's record sets as Pilot sends them.
+const recordSets = (cname: [string, string, string][], a: [string, string, string][]) => ({
+  message: { records: [...cname, ...a].map(record), cname: cname.map(record), a: a.map(record) },
 })
 
 const refused = (message: string) => ({
