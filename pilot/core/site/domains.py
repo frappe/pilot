@@ -145,4 +145,23 @@ class SiteDomains:
             "is_primary": is_primary,
             "public_scheme": route.public_scheme,
             "tls": tls,
+            "tls_status": self.get_tls_status(config, domain),
         }
+
+    def get_tls_status(self, config: "SiteConfig", domain: str) -> dict | None:
+        """The certificate state for a domain whose TLS ends on this host, read from disk."""
+        from pilot.core.bench.certificates import CertificateRecord
+        from pilot.managers.letsencrypt import certificate_domains
+        from pilot.managers.nginx import NginxManager
+
+        domains = certificate_domains(config)
+        if domain not in domains:
+            return None
+        certificates = self.site.bench.certificates
+        record = certificates.get(config.name)
+        nginx = NginxManager(self.site.bench)
+        if record is None and nginx.has_cert(config):
+            record = certificates.refresh(config.name, domains, nginx.cert_path(config))
+        if record is None:
+            return CertificateRecord(config.name, [domain]).get_status()
+        return record.get_status(domain)

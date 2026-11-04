@@ -22,7 +22,8 @@ WEBHOOK_EVENTS = {
     "update_dismissed": "Update dismissed",
     "pilot_updated": "Pilot updated",
     "certificate_issued": "Certificate issued",
-    "certificate_expiry": "Certificate not renewing",
+    "certificate_expiry": "Certificate expiring or expired",
+    "certificate_failed": "Certificate failed to issue or renew",
     "resource_limit_breached": "Resource limit crossed",
     "resource_limit_recovered": "Resource use back under the limit",
 }

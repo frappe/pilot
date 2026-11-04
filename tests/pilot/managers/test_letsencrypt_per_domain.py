@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,6 +15,8 @@ from pilot.managers.letsencrypt import (
     public_domains,
 )
 from tests.pilot.integrations.test_central_client import _bench
+
+_CERTBOT_OK = subprocess.CompletedProcess([], 0, "", "")
 
 
 def _site(bench, name: str, **config) -> None:
@@ -135,7 +138,7 @@ def test_a_certificate_is_reissued_unless_it_names_exactly_the_site_domains(
         patch.object(NginxManager, "has_cert", return_value=True),
         patch.object(LetsEncryptManager, "_is_near_expiry", return_value=False),
         patch("pilot.managers.letsencrypt.certificate_domain_names", return_value=certificate_names),
-        patch("pilot.managers.letsencrypt.run_command") as certbot,
+        patch("pilot.managers.letsencrypt.run_command", return_value=_CERTBOT_OK) as certbot,
     ):
         LetsEncryptManager(bench).obtain(site)
 
@@ -154,37 +157,45 @@ def test_certificate_domain_names_reads_only_the_dns_names(tmp_path: Path) -> No
     assert names == {"erp.example.com", "site1.example.com"}
 
 
-def test_a_certificate_close_to_expiry_raises_an_alert(tmp_path: Path) -> None:
+def _check(bench, tmp_path: Path, days_left: float):
+    from datetime import UTC, datetime, timedelta
+
     from pilot.managers.nginx import NginxManager
 
-    bench = _bench(tmp_path)
-    _site(bench, "site.example.com", ssl=True)
-
+    cert_file = tmp_path / "fullchain.pem"
+    cert_file.write_text("cert")
+    expiry = datetime.now(UTC) + timedelta(days=days_left)
     with (
-        patch.object(NginxManager, "has_cert", return_value=True),
-        patch("pilot.managers.letsencrypt.certificate_days_left", return_value=9),
+        patch.object(NginxManager, "cert_path", return_value=cert_file),
+        patch("pilot.core.bench.certificates.read_certificate", return_value=(expiry.isoformat(), ["site.example.com"])),
         patch("pilot.core.notification.events.record_alert") as record_alert,
         patch("pilot.core.alerts.notify") as notify,
     ):
-        LetsEncryptManager(bench).alert_expiring_certificates()
+        LetsEncryptManager(bench).check_certificates()
+    return record_alert, notify
+
+
+def test_a_certificate_close_to_expiry_raises_an_alert(tmp_path: Path) -> None:
+    bench = _bench(tmp_path)
+    _site(bench, "site.example.com", ssl=True)
+
+    record_alert, notify = _check(bench, tmp_path, days_left=9.5)
 
     payload = notify.call_args.args[1]
     assert payload["event"] == "certificate_expiry"
     assert payload["context"]["days_left"] == 9
+    assert payload["site"] == "site.example.com"
     assert record_alert.call_args.args[1]["severity"] == "Warning"
 
 
 def test_a_certificate_with_time_left_raises_nothing(tmp_path: Path) -> None:
-    from pilot.managers.nginx import NginxManager
-
     bench = _bench(tmp_path)
     _site(bench, "site.example.com", ssl=True)
 
-    with (
-        patch.object(NginxManager, "has_cert", return_value=True),
-        patch("pilot.managers.letsencrypt.certificate_days_left", return_value=40),
-    ):
-        assert LetsEncryptManager(bench).expiring_certificates() == []
+    _record_alert, notify = _check(bench, tmp_path, days_left=40.5)
+
+    notify.assert_not_called()
+    assert bench.certificates.get("site.example.com").state == "valid"
 
 
 def test_the_renewal_timer_is_installed_once_for_the_host(tmp_path: Path) -> None:
@@ -244,7 +255,7 @@ def test_the_daily_renewal_refreshes_every_eligible_bench(tmp_path: Path, renew_
     benches = [call.args[0].path for call in manager.call_args_list]
     assert benches == [Path("/benches/bench0"), Path("/benches/bench2")]
     assert manager.return_value.renew.call_count == 2
-    assert manager.return_value.alert_expiring_certificates.call_count == 2
+    assert manager.return_value.check_certificates.call_count == 2
 
 
 @pytest.mark.parametrize(
@@ -298,14 +309,14 @@ def test_a_provider_failure_does_not_stop_a_later_bench_with_explicit_routes(tmp
         ),
         patch.object(NginxManager, "has_cert", return_value=False),
         patch.object(NginxManager, "apply_config"),
-        patch("pilot.managers.letsencrypt.run_command") as certbot,
+        patch("pilot.managers.letsencrypt.run_command", return_value=_CERTBOT_OK) as certbot,
     ):
         letsencrypt.main()
     assert certbot.call_count == 1
     assert "known.example.com" in certbot.call_args.args[0]
     output = capsys.readouterr().out
     assert f"Certificate refresh failed for {first.path}" in output
-    assert f"Certificate expiry check failed for {first.path}" in output
+    assert f"Certificate check failed for {first.path}" in output
 
 
 @pytest.mark.parametrize("route,expected", [(None, []), ("http", []), ("https", ["site.zone.example"])])
@@ -339,7 +350,7 @@ def test_proxy_only_bench_does_not_need_an_email_or_install_certbot(tmp_path: Pa
             return_value=["*.zone.example"],
         ),
         patch.object(LetsEncryptManager, "install") as install,
-        patch("pilot.managers.letsencrypt.run_command") as certbot,
+        patch("pilot.managers.letsencrypt.run_command", return_value=_CERTBOT_OK) as certbot,
     ):
         assert not letsencrypt_email_required(bench)
         bench.setup_letsencrypt()
@@ -382,12 +393,11 @@ def test_renewal_and_expiry_checks_skip_legacy_proxy_domains_but_keep_custom_dom
         patch.object(NginxManager, "has_cert", return_value=True),
         patch.object(LetsEncryptManager, "_is_near_expiry", return_value=True),
         patch.object(NginxManager, "apply_config") as apply_config,
-        patch("pilot.managers.letsencrypt.certificate_days_left", return_value=9),
-        patch("pilot.managers.letsencrypt.run_command") as certbot,
+        patch("pilot.managers.letsencrypt.run_command", return_value=_CERTBOT_OK) as certbot,
     ):
         manager = LetsEncryptManager(bench)
         manager.renew()
-        assert manager.expiring_certificates() == [("customer.example.com", 9)]
+        assert [file.name for file in manager.get_certificate_files()] == ["customer.example.com"]
     command = certbot.call_args.args[0]
     assert certbot.call_count == 1
     assert command[command.index("-d") + 1] == "customer.example.com"
