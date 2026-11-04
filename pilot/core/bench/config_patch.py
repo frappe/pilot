@@ -37,3 +37,9 @@ class ConfigPatch:
         if self.common_site_config:
             with update_common_site_config(bench.sites_path) as data:
                 apply_merge_patch(data, self.common_site_config)
+
+        if "app_common_site_config" in self.bench_config:
+            from pilot.core.bench import Bench
+
+            # A signup image already carries its site, so no app install writes these keys later.
+            Bench(BenchConfig.read(bench.path), bench.path).write_common_site_config()

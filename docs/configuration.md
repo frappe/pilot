@@ -173,6 +173,17 @@ These tables are per-bench unless noted otherwise:
 - `[llm]`: admin assistant provider settings.
 - `[resource_limits]`: CPU, memory, disk, uptime, and webhook alerts.
 
+### App site config
+
+`[app_common_site_config]` holds `sites/common_site_config.json` keys for one app. Pilot writes an app's keys while at least one site on the bench has the app installed, and removes them when no site has it. Use it for a key that only an app's sites need, such as a Raven relay URL. Put a key that every site needs in `pilot-common-site-config` instead.
+
+```toml
+[app_common_site_config.raven]
+raven_push_notification_server_url = "https://cloud.ravenchat.ai"
+```
+
+Pilot updates the keys when it writes `common_site_config.json`: after an app install or uninstall, after a site is created, when Pilot rebuilds the bench config, and during Central bootstrap. Central sends the table in the `pilot-config` attribute, for example `{"app_common_site_config": {"raven": {"raven_push_notification_server_url": "https://cloud.ravenchat.ai"}}}`. Each app entry must be a table.
+
 `[monitor]` contains this bench's application metric log path. Host-wide system, database, and slow-query logs always use `cli_root()/system/logs/` and cannot be configured.
 
 Nginx uses compiled-in defaults; it has no `[nginx]` table in `bench.toml`.

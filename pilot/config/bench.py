@@ -148,6 +148,8 @@ class BenchConfig:
     llm: LLMConfig = field(default_factory=LLMConfig)
     resource_limits: ResourceLimitConfig = field(default_factory=ResourceLimitConfig)
     frappe_cloud: FrappeCloudConfig = field(default_factory=FrappeCloudConfig)
+    # common_site_config.json keys per app, written only while a site has the app installed.
+    app_common_site_config: dict[str, dict[str, Any]] = field(default_factory=dict)
     # What common_config.toml held when this was read, so a write can tell which
     # shared settings this view changed. Not a setting itself: kept out of
     # equality so it never makes a write look necessary, and out of repr.
@@ -285,6 +287,14 @@ class BenchConfig:
         self.waf.validate(self.nginx.client_max_body_size)
         self.llm.validate()
         self.resource_limits.validate()
+        self._validate_app_common_site_config()
+
+    def _validate_app_common_site_config(self) -> None:
+        if not isinstance(self.app_common_site_config, dict):
+            raise ConfigError("app_common_site_config must be a table keyed by app name.")
+        for app_name, keys in self.app_common_site_config.items():
+            if not isinstance(keys, dict):
+                raise ConfigError(f"app_common_site_config.{app_name} must be a table of site config keys.")
 
     def _validate_required_fields(self) -> None:
         if not self.name:
@@ -862,6 +872,11 @@ _SECTIONS: tuple[_Section, ...] = (
         lambda data: LLMConfig(**BenchConfig._known_fields(LLMConfig, data.get("llm", {}))),
         lambda config: config._llm_section() if (config.llm.api_key or config.llm.provider) else None,
     ),
+    _Section(
+        "app_common_site_config",
+        lambda data: copy.deepcopy(data.get("app_common_site_config", {})),
+        lambda config: copy.deepcopy(config.app_common_site_config) or None,
+    ),
 )
 
 
@@ -959,6 +974,8 @@ def _bench_schema() -> TomlSchema:
                 },
             ),
         },
+        # Free-form: an app's keys are whatever Frappe reads from common_site_config.json.
+        keys={"app_common_site_config"},
         arrays={
             "apps": TomlSchema(keys=field_names(AppConfig)),
             "workers": TomlSchema(keys=field_names(WorkerGroup) | _WORKER_LEGACY),

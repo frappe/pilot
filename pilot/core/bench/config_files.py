@@ -78,6 +78,26 @@ class BenchConfigFiles:
             else:
                 config.pop("client_cache_max_bytes", None)
             self.set_worker_queues(config)
+            self.set_app_keys(config)
+
+    def set_app_keys(self, config: dict) -> None:
+        """Write each app's keys while a site has the app installed, and remove them after."""
+        app_keys = self.bench.config.app_common_site_config
+        if not app_keys:
+            return
+
+        installed = self.get_apps_installed_on_any_site()
+        # Remove first, so a key two apps share stays when one of them is still installed.
+        for app_name, keys in app_keys.items():
+            if app_name not in installed:
+                for key in keys:
+                    config.pop(key, None)
+        for app_name, keys in app_keys.items():
+            if app_name in installed:
+                config.update(keys)
+
+    def get_apps_installed_on_any_site(self) -> set[str]:
+        return {app for site in self.bench.sites() for app in site.installed_apps()}
 
     def set_worker_queues(self, config: dict) -> None:
         """Frappe rejects a queue missing from `workers` and reads each queue's job timeout there.

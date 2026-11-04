@@ -59,3 +59,58 @@ def test_an_unknown_toml_key_is_rejected_before_writing(tmp_path: Path, patch: C
         patch.apply(bench)
 
     assert CommonConfig.path(bench.path.parent).read_text() == before
+
+
+RAVEN_KEYS = {"raven_push_notification_server_url": "https://relay.test"}
+
+
+def _add_site(bench, name: str, apps: list[str]) -> None:
+    site_path = bench.sites_path / name
+    site_path.mkdir(parents=True, exist_ok=True)
+    (site_path / "site_config.json").write_text(json.dumps({"installed_apps": apps}))
+
+
+def _common_site_config(bench) -> dict:
+    return json.loads((bench.sites_path / "common_site_config.json").read_text())
+
+
+def test_bootstrap_writes_app_keys_only_for_an_installed_app(tmp_path: Path) -> None:
+    bench = _bench(tmp_path)
+    _add_site(bench, "chat.test", ["frappe", "raven"])
+    patch = ConfigPatch(
+        bench_config={"app_common_site_config": {"raven": RAVEN_KEYS, "helpdesk": {"helpdesk_key": "h"}}}
+    )
+
+    patch.apply(bench)
+
+    config = _common_site_config(bench)
+    assert config["raven_push_notification_server_url"] == "https://relay.test"
+    assert "helpdesk_key" not in config
+    assert BenchConfig.read(bench.path).app_common_site_config["raven"] == RAVEN_KEYS
+
+
+def test_app_keys_follow_the_app_across_sites(tmp_path: Path) -> None:
+    bench = _bench(tmp_path)
+    bench.config.app_common_site_config = {"raven": RAVEN_KEYS}
+    _add_site(bench, "desk.test", ["frappe", "helpdesk"])
+
+    bench.write_common_site_config()
+    assert "raven_push_notification_server_url" not in _common_site_config(bench)
+
+    _add_site(bench, "chat.test", ["frappe", "raven"])
+    bench.write_common_site_config()
+    assert _common_site_config(bench)["raven_push_notification_server_url"] == "https://relay.test"
+
+    _add_site(bench, "chat.test", ["frappe"])
+    bench.write_common_site_config()
+    assert "raven_push_notification_server_url" not in _common_site_config(bench)
+
+
+def test_app_keys_must_be_a_table(tmp_path: Path) -> None:
+    bench = _bench(tmp_path)
+    before = BenchConfig.toml_path(bench.path).read_text()
+
+    with pytest.raises(ConfigError, match=r"app_common_site_config\.raven"):
+        ConfigPatch(bench_config={"app_common_site_config": {"raven": "https://relay.test"}}).apply(bench)
+
+    assert BenchConfig.toml_path(bench.path).read_text() == before

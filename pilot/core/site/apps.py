@@ -39,6 +39,7 @@ class SiteApps:
             )
         finally:
             self._clear_cache()
+        self.site.bench.write_common_site_config()
 
     def install_app_with_dependencies(self, app: "App") -> list["App"]:
         self.site.install_app(app)
@@ -68,6 +69,7 @@ class SiteApps:
             self.restore_installed_apps_copy()
         finally:
             self._clear_cache()
+        self.site.bench.write_common_site_config()
 
     def restore_installed_apps_copy(self) -> None:
         """Match the installed_apps copy in site_config.json to the database. A restore leaves it
