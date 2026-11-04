@@ -50,6 +50,19 @@ def test_install_app_clears_cache_before_and_after_success(tmp_path: Path) -> No
     assert commands[2][-1] == "clear-cache"
 
 
+def test_install_app_passes_force_to_frappe(tmp_path: Path) -> None:
+    site, app = make_site_and_app(tmp_path)
+
+    with (
+        patch("pilot.core.site.apps.run_command") as mock_rc,
+        patch.object(Bench, "reload_workers"),
+    ):
+        site.install_app(app, force=True)
+
+    commands = [call.args[0] for call in mock_rc.call_args_list]
+    assert commands[1][-3:] == ["install-app", "erpnext", "--force"]
+
+
 def test_install_app_clears_cache_after_failure(tmp_path: Path) -> None:
     site, app = make_site_and_app(tmp_path)
 

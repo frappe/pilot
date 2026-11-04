@@ -33,5 +33,5 @@ class InstallAppCommand(Command):
                 self.report(f"'{app_name}' is already installed on '{self.site_name}', skipping.")
                 continue
             self.report(f"Installing '{app_name}' on '{self.site_name}'...")
-            self.site.install_app(app)
+            self.site.install_app(app, force=self.force)
             self.report(f"'{app_name}' installed on '{self.site_name}'.")
