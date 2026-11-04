@@ -110,7 +110,7 @@ class BenchProduction:
         nginx_manager.enable_at_boot()
         self._report_site_urls(nginx_manager, on_progress)
 
-    def setup_letsencrypt(self) -> None:
+    def setup_letsencrypt(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
         from pilot.exceptions import ConfigError
         from pilot.managers.letsencrypt import (
             LetsEncryptManager,
@@ -120,6 +120,11 @@ class BenchProduction:
         from pilot.managers.nginx import NginxManager
 
         if not letsencrypt_email_required(self.bench):
+            on_progress(
+                "No certificates to obtain: no site has a public domain and admin TLS is off. "
+                "To enable TLS, run 'pilot setup production --admin-domain <domain> --tls "
+                "--letsencrypt-email <email>'."
+            )
             return
         if not self.bench.config.letsencrypt.email:
             raise ConfigError(

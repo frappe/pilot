@@ -586,10 +586,10 @@ class Bench:
 
         CentralSetup(self, admin_pattern, site_pattern, redirect, rebootstrap).run(on_progress)
 
-    def setup_letsencrypt(self) -> None:
+    def setup_letsencrypt(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
         from pilot.core.bench.production import BenchProduction
 
-        BenchProduction(self).setup_letsencrypt()
+        BenchProduction(self).setup_letsencrypt(on_progress)
 
     def issue_setup_link(self) -> str:
         """Issue a short-lived setup-wizard sign-in token."""

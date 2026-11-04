@@ -186,3 +186,21 @@ def test_frappe_regions_route_reports_an_unreachable_central(monkeypatch) -> Non
     assert response.get_json()["error"]["message"] == (
         "Could not read Frappe storage regions from Central: Cannot reach Central"
     )
+
+
+def test_aws_regions_outside_the_original_list_need_no_custom_endpoint() -> None:
+    for region in ("eu-west-3", "me-central-1", "me-south-1"):
+        config = bench_config()
+        update = {
+            "s3": {
+                "access_key": "aws-access",
+                "secret_key": "aws-secret",
+                "bucket": "backups",
+                "provider": "aws",
+                "region": region,
+                "endpoint_url": "",
+            }
+        }
+
+        assert ConfigPatcher(config, update).apply() is None
+        assert base.build_endpoint_url("aws", region) == f"https://s3.{region}.amazonaws.com"

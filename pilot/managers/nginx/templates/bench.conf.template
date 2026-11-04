@@ -370,6 +370,13 @@ server {
     gzip_min_length 1024;
     gzip_types application/javascript text/javascript text/css application/json image/svg+xml;
 
+    {# the admin is a login page; keep it out of search engines #}
+    add_header X-Robots-Tag "noindex, nofollow" always;
+    location = /robots.txt {
+        default_type text/plain;
+        return 200 "User-agent: *\nDisallow: /\n";
+    }
+
     {# health/bootstrap answered with open CORS regardless of the app #}
     {% for path in cors_paths %}
     location = {{ path }} {
