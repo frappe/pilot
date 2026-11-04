@@ -77,27 +77,42 @@ def test_has_passwordless_sudo_checks_certbot_grant(tmp_path: Path) -> None:
     assert checked_command[-2:] == ["renew", "--quiet"]
 
 
-_LOCKED = CommandError("Command 'sudo' failed with exit code 1.\nAnother instance of Certbot is already running.")
+def _certbot(returncode: int, output: str = ""):
+    import subprocess
+
+    return subprocess.CompletedProcess([], returncode, output, "")
+
+
+_LOCKED = _certbot(1, "Another instance of Certbot is already running.\n")
+_CHALLENGE_FAILED = """Saving debug log to /var/log/letsencrypt/letsencrypt.log
+Certbot failed to authenticate some domains (authenticator: webroot).
+  Domain: shop.example.com
+  Type:   connection
+  Detail: Timeout during connect (likely firewall problem)
+
+Some challenges have failed.
+"""
 
 
 def test_certbot_waits_while_another_run_holds_its_lock(tmp_path: Path) -> None:
     manager = LetsEncryptManager(_make_bench(tmp_path, _BASE_DATA))
 
     with (
-        patch("pilot.managers.letsencrypt.run_command", side_effect=[_LOCKED, _LOCKED, None]) as certbot,
+        patch("pilot.managers.letsencrypt.run_command", side_effect=[_LOCKED, _LOCKED, _certbot(0)]) as certbot,
         patch("pilot.managers.letsencrypt.time.sleep") as sleep,
     ):
         manager.run_certbot(["certbot", "certonly"])
 
     assert certbot.call_count == 3
     assert sleep.call_count == 2
+    assert certbot.call_args.kwargs == {"tee_output": True}
 
 
 def test_certbot_gives_a_clear_error_when_the_lock_stays_held(tmp_path: Path) -> None:
     manager = LetsEncryptManager(_make_bench(tmp_path, _BASE_DATA))
 
     with (
-        patch("pilot.managers.letsencrypt.run_command", side_effect=_LOCKED) as certbot,
+        patch("pilot.managers.letsencrypt.run_command", return_value=_LOCKED) as certbot,
         patch("pilot.managers.letsencrypt.time.sleep"),
         pytest.raises(CommandError, match="Another certbot run is in progress"),
     ):
@@ -106,16 +121,18 @@ def test_certbot_gives_a_clear_error_when_the_lock_stays_held(tmp_path: Path) ->
     assert certbot.call_count == 6
 
 
-def test_certbot_does_not_retry_other_failures(tmp_path: Path) -> None:
+def test_certbot_does_not_retry_other_failures_and_keeps_its_reason(tmp_path: Path) -> None:
     manager = LetsEncryptManager(_make_bench(tmp_path, _BASE_DATA))
-    failure = CommandError("Challenge failed for domain example.com")
 
     with (
-        patch("pilot.managers.letsencrypt.run_command", side_effect=failure) as certbot,
+        patch("pilot.managers.letsencrypt.run_command", return_value=_certbot(1, _CHALLENGE_FAILED)) as certbot,
         patch("pilot.managers.letsencrypt.time.sleep") as sleep,
-        pytest.raises(CommandError, match="Challenge failed"),
+        pytest.raises(CommandError) as raised,
     ):
         manager.run_certbot(["certbot", "certonly"])
 
+    assert raised.value.message == (
+        "Domain: shop.example.com\nType:   connection\nDetail: Timeout during connect (likely firewall problem)"
+    )
     assert certbot.call_count == 1
     sleep.assert_not_called()

@@ -390,15 +390,14 @@ const editNote = computed(() => {
 
   if (!pending) return { text: '', class: '' }
 
-  const label = stats.value.find((stat) => stat.key === pending.action)?.label
-
+  // The card header is narrow, so the note leaves out the label the icon already stands for.
   if (sizingValidationError.value)
-    return { text: `${label} · use ${pending.min} to ${pending.max}`, class: 'text-ink-red-5' }
+    return { text: `Use ${pending.min} to ${pending.max}`, class: 'text-ink-red-5' }
   if (actionError.value) return { text: actionError.value, class: 'text-ink-red-5' }
-  if (sizingRequiresRestart.value)
-    return { text: `${label} · restarts MariaDB`, class: 'text-ink-amber-6' }
+  if (sizingRequiresRestart.value) return { text: 'Restarts MariaDB', class: 'text-ink-amber-6' }
 
-  return { text: `${label} · ${pending.recommended} advised`, class: 'text-ink-gray-5' }
+  const limit = pending.max === null ? '' : ` · up to ${pending.max}`
+  return { text: `${pending.recommended} advised${limit}`, class: 'text-ink-gray-5' }
 })
 
 const memorySplitSlider = computed({
@@ -529,7 +528,7 @@ onMounted(load)
               v-model.number="sizingValue"
               type="number"
               size="sm"
-              :class="['flex-1 min-w-20', sizingAction.unit ? '[&_input]:!pe-20' : '[&_input]:!pe-14']"
+              :class="['flex-1 min-w-20', sizingAction.unit && '[&_input]:!pe-10']"
               :min="sizingAction.min"
               :max="sizingAction.max"
               step="1"
@@ -539,10 +538,8 @@ onMounted(load)
               @keydown.enter="runSizingAction"
               @keydown.esc="cancelSizing"
             >
-              <template v-if="sizingAction.max !== null" #suffix>
-                <span class="text-ink-gray-5 text-xs whitespace-nowrap">
-                  of {{ sizingAction.max }} {{ sizingAction.unit }}
-                </span>
+              <template v-if="sizingAction.unit" #suffix>
+                <span class="text-ink-gray-5 text-xs">{{ sizingAction.unit }}</span>
               </template>
             </TextInput>
 

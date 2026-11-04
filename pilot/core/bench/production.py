@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
+from pilot.core.site.login import origin
+
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
@@ -230,9 +232,7 @@ class BenchProduction:
             if tls and site.config.ssl and nginx_manager.has_cert(site.config):
                 on_progress(f"  https://{site.config.name}")
             else:
-                http_port = self.bench.config.nginx.http_port
-                port_suffix = "" if http_port == 80 else f":{http_port}"
-                on_progress(f"  http://{site.config.name}{port_suffix}")
+                on_progress(f"  {origin('http', site.config.name, self.bench.config.nginx.http_port)}")
         domain = self.bench.config.admin.domain
         if domain:
             scheme = "https" if tls and nginx_manager.has_admin_cert else "http"
