@@ -15,6 +15,7 @@ from pilot.config.postgres import PostgresConfig
 from pilot.config.proxy import ProxyConfig
 from pilot.config.schema import TomlSchema, field_names
 from pilot.config.telemetry import TelemetryConfig
+from pilot.config.updates import UpdatesConfig
 from pilot.exceptions import ConfigError
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
 from pilot.internal.toml import ConfigDict, Toml
@@ -34,6 +35,7 @@ class CommonConfig:
     telemetry: TelemetryConfig = field(default_factory=TelemetryConfig)
     resource_limits: ResourceLimitConfig = field(default_factory=ResourceLimitConfig)
     frappe_cloud: FrappeCloudConfig = field(default_factory=FrappeCloudConfig)
+    updates: UpdatesConfig = field(default_factory=UpdatesConfig)
     jwks_url: str = ""
     jwks_audience: str = ""
 
@@ -67,6 +69,7 @@ class CommonConfig:
                 **_known_fields(ResourceLimitConfig, data.get("resource_limits", {}))
             ),
             frappe_cloud=FrappeCloudConfig.from_dict(data.get("frappe_cloud", {})),
+            updates=UpdatesConfig.from_dict(data.get("updates", {})),
             jwks_url=admin.get("jwks_url", ""),
             jwks_audience=admin.get("jwks_audience", ""),
         )
@@ -178,6 +181,8 @@ class CommonConfig:
             data["resource_limits"] = asdict(self.resource_limits)
         if self.frappe_cloud != FrappeCloudConfig():
             data["frappe_cloud"] = {"url": self.frappe_cloud.url}
+        if self.updates != UpdatesConfig():
+            data["updates"] = asdict(self.updates)
         if self.jwks_url:
             data["admin"] = {"jwks_url": self.jwks_url, "jwks_audience": self.jwks_audience}
         return data
@@ -196,6 +201,7 @@ _SCHEMA = TomlSchema(
         "telemetry": TomlSchema(keys=field_names(TelemetryConfig)),
         "resource_limits": TomlSchema(keys=field_names(ResourceLimitConfig)),
         "frappe_cloud": TomlSchema(keys=field_names(FrappeCloudConfig)),
+        "updates": TomlSchema(keys=field_names(UpdatesConfig)),
         "admin": TomlSchema(keys={"jwks_url", "jwks_audience"}),
     }
 )
