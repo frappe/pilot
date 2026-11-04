@@ -32,6 +32,7 @@ from pilot.config.s3 import S3Config
 from pilot.config.schema import TomlSchema, field_names
 from pilot.config.telemetry import TelemetryConfig
 from pilot.config.waf import WafCondition, WafConfig, WafRule
+from pilot.config.webhook import WebhookEndpoint, validate_webhook_endpoints
 from pilot.config.worker import WorkerConfig, WorkerGroup, parse_timeout
 from pilot.exceptions import ConfigError
 from pilot.internal.atomic_file import (
@@ -147,6 +148,7 @@ class BenchConfig:
     s3: S3Config = field(default_factory=S3Config)
     llm: LLMConfig = field(default_factory=LLMConfig)
     resource_limits: ResourceLimitConfig = field(default_factory=ResourceLimitConfig)
+    webhook_endpoints: list[WebhookEndpoint] = field(default_factory=list)
     frappe_cloud: FrappeCloudConfig = field(default_factory=FrappeCloudConfig)
     # What common_config.toml held when this was read, so a write can tell which
     # shared settings this view changed. Not a setting itself: kept out of
@@ -241,6 +243,7 @@ class BenchConfig:
             proxy=common.proxy,
             telemetry=common.telemetry,
             resource_limits=common.resource_limits,
+            webhook_endpoints=common.webhook_endpoints,
             frappe_cloud=common.frappe_cloud,
             **sections,
         )
@@ -290,6 +293,7 @@ class BenchConfig:
         self.waf.validate(self.nginx.client_max_body_size)
         self.llm.validate()
         self.resource_limits.validate()
+        validate_webhook_endpoints(self.webhook_endpoints)
 
     def _validate_required_fields(self) -> None:
         if not self.name:
@@ -520,6 +524,7 @@ class BenchConfig:
             proxy=self.proxy,
             telemetry=self.telemetry,
             resource_limits=self.resource_limits,
+            webhook_endpoints=self.webhook_endpoints,
             frappe_cloud=self.frappe_cloud,
             jwks_url=self.admin.jwks_url,
             jwks_audience=self.admin.jwks_audience,

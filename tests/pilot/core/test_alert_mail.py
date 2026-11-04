@@ -12,6 +12,7 @@ import pytest
 from pilot.config import BenchConfig, MariaDBConfig, RedisConfig, WorkerConfig
 from pilot.config.alert_limit import ResourceLimitConfig
 from pilot.config.mail import MailConfig
+from pilot.config.webhook import WebhookEndpoint
 from pilot.core.alerts import check_mail_credentials, notify, send_mail
 from pilot.core.bench import Bench
 from pilot.exceptions import MalformedSiteConfig
@@ -80,6 +81,7 @@ def _bench(tmp_path: Path, mail: MailConfig, **limit_overrides) -> Bench:
         redis=RedisConfig(),
         workers=WorkerConfig(),
     )
+    config.webhook_endpoints = limit_overrides.pop("webhook_endpoints", [])
     config.resource_limits = ResourceLimitConfig(
         email_recipients=limit_overrides.pop("email_recipients", list(RECIPIENTS)),
         **limit_overrides,
@@ -236,11 +238,11 @@ def test_broken_settings_disable_mail_instead_of_raising(tmp_path: Path) -> None
 
 
 def test_mail_counts_as_delivery_when_every_webhook_fails(tmp_path: Path) -> None:
-    bench = _bench(tmp_path, _mail(), webhook_endpoints={"https://one.test": "token"})
+    bench = _bench(tmp_path, _mail(), webhook_endpoints=[WebhookEndpoint("https://one.test", "token")])
 
     with (
         patch("smtplib.SMTP", FakeSMTP),
-        patch("pilot.core.alerts.send_alert", side_effect=OSError("unreachable")),
+        patch("pilot.core.notification.webhooks.send_webhook", side_effect=OSError("unreachable")),
     ):
         delivered = notify(bench, PAYLOAD)
 
@@ -391,3 +393,90 @@ def test_alerts_reach_central_when_it_is_managed(tmp_path: Path) -> None:
     client.return_value.notify_central.assert_called_once_with(
         event="cpu", message="high", context={}, reference_name=bench.config.name
     )
+
+
+def test_a_webhook_receives_only_the_events_it_chose(tmp_path: Path) -> None:
+    from pilot.core.notification.webhooks import WebhookDelivery
+
+    endpoints = [
+        WebhookEndpoint("https://all.test"),
+        WebhookEndpoint("https://tasks.test", events=["task_failed"]),
+    ]
+    bench = _bench(tmp_path, MailConfig(), webhook_endpoints=endpoints)
+    reached = []
+
+    def send(endpoint, body):
+        reached.append((endpoint.url, body["event"]))
+        return WebhookDelivery(200, "")
+
+    with patch("pilot.core.notification.webhooks.send_webhook", send):
+        notify(bench, PAYLOAD)
+        notify(bench, {**PAYLOAD, "event": "task_failed"})
+
+    assert reached == [
+        ("https://all.test", "site_down"),
+        ("https://all.test", "task_failed"),
+        ("https://tasks.test", "task_failed"),
+    ]
+
+
+def test_an_info_event_skips_mail_and_central(tmp_path: Path) -> None:
+    from pilot.core import alerts
+    from pilot.core.notification.webhooks import WebhookDelivery
+
+    bench = _bench(tmp_path, _mail(), webhook_endpoints=[WebhookEndpoint("https://all.test")])
+    bench.config.central.enabled = True
+
+    with (
+        patch("smtplib.SMTP", FakeSMTP),
+        patch.object(alerts, "CentralClient") as central,
+        patch("pilot.core.notification.webhooks.send_webhook", return_value=WebhookDelivery(200, "")) as webhook,
+    ):
+        assert notify(bench, {**PAYLOAD, "event": "site_created", "severity": "Info"}) is True
+
+    webhook.assert_called_once()
+    assert FakeSMTP.sends == []
+    central.assert_not_called()
+
+
+def test_a_rejected_webhook_does_not_count_as_delivered(tmp_path: Path) -> None:
+    from pilot.core.notification.webhooks import WebhookDelivery
+
+    bench = _bench(tmp_path, MailConfig(), webhook_endpoints=[WebhookEndpoint("https://all.test")])
+
+    with patch("pilot.core.notification.webhooks.send_webhook", return_value=WebhookDelivery(500, "boom")):
+        assert notify(bench, PAYLOAD) is False
+
+
+def test_the_webhook_body_is_fixed_and_links_to_the_dashboard(tmp_path: Path) -> None:
+    from pilot.core.notification.webhooks import get_webhook_body
+
+    bench = _bench(tmp_path, MailConfig())
+    payload = {**PAYLOAD, "title": "a.test is down", "site": "a.test", "action_route": "/sites/a.test"}
+
+    with patch("pilot.utils.admin_url", return_value="https://admin.example.com"):
+        body = get_webhook_body(bench, payload)
+
+    assert body["event"] == "site_down"
+    assert body["bench"] == "my-bench"
+    assert body["title"] == "a.test is down"
+    assert body["message"] == PAYLOAD["message"]
+    assert body["severity"] == "Warning"
+    assert body["site"] == "a.test"
+    assert body["url"] == "https://admin.example.com/sites/a.test"
+    assert body["context"] == PAYLOAD["context"]
+    assert len(body["delivery"]) == 32 and body["sent_at"]
+
+
+def test_a_ping_goes_to_an_endpoint_whatever_events_it_chose(tmp_path: Path) -> None:
+    from pilot.core.notification.webhooks import WebhookDelivery, ping_webhook
+
+    bench = _bench(tmp_path, MailConfig())
+    endpoint = WebhookEndpoint("https://tasks.test", events=["task_failed"])
+
+    with patch("pilot.core.notification.webhooks.send_webhook", return_value=WebhookDelivery(204, "")) as send:
+        assert ping_webhook(bench, endpoint).is_success
+
+    sent_endpoint, body = send.call_args.args
+    assert sent_endpoint is endpoint
+    assert body["event"] == "ping"

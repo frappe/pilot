@@ -14,7 +14,7 @@ import psutil
 
 from pilot.core.alerts import ALERT_SUSTAINED_SECONDS, SustainedAlerts, notify
 from pilot.core.bench.telemetry import DatumCredential
-from pilot.core.notification.events import record_alert
+from pilot.core.notification.events import raise_event, record_alert
 from pilot.core.server.monitoring_config import MonitorConfigurator
 from pilot.core.server.monitoring_datum import MetricShipper
 from pilot.core.server.monitoring_proc import ProcMetricsReader
@@ -175,6 +175,8 @@ class Monitor:
         """Send system alerts if required based on the breach limits set"""
         alerts = SustainedAlerts(self.alerts_path)
         due = alerts.due(self._breached_limits(system_record))
+        limits = self.bench.config.resource_limits
+        self.announce_recovered([name for name in alerts.recovered if getattr(limits, name, 0)])
 
         # Recording runs off `sustained`, not `due`: a sink accepting the alert retires
         # the condition from `due` for good, and must not retire an incident the bench
@@ -194,6 +196,22 @@ class Monitor:
 
         if notify(self.bench, self._alert_payload(due, system_record)):
             alerts.mark_notified(due)
+
+    def announce_recovered(self, names: list[str]) -> None:
+        """Tell webhooks that resource use they heard about is back under its limit."""
+        if not names:
+            return
+        raise_event(
+            self.bench,
+            feed=False,
+            event="resource_limit_recovered",
+            title="Resource use back under the limit",
+            category="Server",
+            severity="Info",
+            message=f"{self.bench.config.name}: {', '.join(names)} back under the limit",
+            action_route="/insights/analytics",
+            context={"recovered_limits": names},
+        )
 
     @staticmethod
     def _readings(system_record: dict) -> dict[str, float]:

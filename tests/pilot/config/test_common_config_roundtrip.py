@@ -180,3 +180,40 @@ def test_default_nginx_ports_are_not_written(tmp_path: Path) -> None:
 def test_invalid_nginx_ports_fail_loudly(ports: dict) -> None:
     with pytest.raises(ConfigError, match="nginx"):
         CommonConfig.from_raw_dict({"nginx": ports})
+
+
+def test_webhook_endpoints_round_trip_with_their_events(tmp_path: Path) -> None:
+    from pilot.config.webhook import WebhookEndpoint
+
+    common = CommonConfig()
+    common.webhook_endpoints = [
+        WebhookEndpoint("https://one.example.com", "tok", ["site_down"]),
+        WebhookEndpoint("https://two.example.com"),
+    ]
+    common.write(tmp_path)
+
+    assert CommonConfig.read(tmp_path).webhook_endpoints == common.webhook_endpoints
+    assert "[[webhook_endpoints]]" in CommonConfig.path(tmp_path).read_text()
+
+
+@pytest.mark.parametrize(
+    "older",
+    [
+        '[resource_limits.webhook_endpoints]\n"https://one.example.com" = "tok"\n',
+        '[[resource_limits.webhook_endpoints]]\nurl = "https://one.example.com"\ntoken = "tok"\n',
+    ],
+)
+def test_webhooks_under_resource_limits_still_read_and_move_to_the_top_level(tmp_path: Path, older: str) -> None:
+    from pilot.config.webhook import WebhookEndpoint
+
+    path = CommonConfig.path(tmp_path)
+    path.write_text(older)
+
+    with CommonConfig.open(tmp_path) as common:
+        assert common.webhook_endpoints == [WebhookEndpoint("https://one.example.com", "tok")]
+        common.resource_limits.cpu_usage_limit = 80
+
+    written = path.read_text()
+    assert "[[webhook_endpoints]]" in written
+    assert "resource_limits.webhook_endpoints" not in written
+    assert CommonConfig.read(tmp_path).webhook_endpoints == [WebhookEndpoint("https://one.example.com", "tok")]

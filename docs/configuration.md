@@ -239,14 +239,18 @@ cpu_usage_limit = 85
 memory_usage_limit = 90
 disk_space_limit = 0
 site_uptime = true
-webhook_endpoints = { "https://alerts.example.com/pilot" = "bearer-token" }
 email_recipients = ["ops@example.com"]
+
+[[webhook_endpoints]]
+url = "https://alerts.example.com/pilot"
+token = "shared-secret"
+events = ["site_down", "task_failed"]
 
 [frappe_cloud]
 url = "https://cloud.frappe.io"
 ```
 
-Shared tables are MariaDB, Postgres, Let's Encrypt, Central, the edge proxy, telemetry, resource limits, Frappe Cloud, and the admin JWKS issuer. A bench exposes these values through its own `BenchConfig`; the model merges shared values on read and writes them back to the common file.
+Shared tables are MariaDB, Postgres, Let's Encrypt, Central, the edge proxy, telemetry, resource limits, webhook endpoints, Frappe Cloud, and the admin JWKS issuer. A bench exposes these values through its own `BenchConfig`; the model merges shared values on read and writes them back to the common file.
 
 Central endpoint and authentication data come from instance metadata. While Central is enabled and bootstrap is pending, remote-token verification uses only the current staged JWKS URL, audience, and initial key set from instance metadata. Pilot caches that staged issuer in each Admin process until shared config changes or bootstrap completes. After bootstrap, it clears the staged entry and uses only the issuer saved in shared config. The metadata can include `initial_jwks_cache`, the issuer's JWK set. Pilot uses it to initialize an empty JWKS cache before it marks the host bootstrapped, so the first remote token does not wait for an issuer fetch. It does not replace keys already fetched from the issuer. The Central configuration is in the `pilot-central` attribute. Three optional attributes hold [JSON Merge Patches](https://www.rfc-editor.org/rfc/rfc7396) for config files: `pilot-common-config` for `common_config.toml`, `pilot-config` for `bench.toml`, and `pilot-common-site-config` for `sites/common_site_config.json`. For example, `pilot-config` can hold `{"s3": {"bucket": "team-backups"}}`. A patch changes only the keys it names, and `null` resets a key to its default. `pilot-common-config` must not change `central`, because bootstrap owns that table. Pilot rejects unknown TOML keys and validates the result before it writes a file. Pilot applies the patches once, during bootstrap, before it marks the host bootstrapped, and does not read them again. Central must write them before `pilot-central`. Each file has its own attribute because the cloud caps a metadata value at 1 KiB. `central.hostname_aliases` maps a VM hostname pattern to its current local target. The VM ID is assigned at runtime, so use `*` for that part. A pattern such as `*.par-1.frappe.cloud` matches every name in the zone. When patterns overlap, the pattern with the most literal text wins, so `admin-vm-*.par-1.frappe.cloud` takes precedence over it, and a site's own domains take precedence over every pattern. Pilot creates redirect rules only for aliases whose targets exist on the bench. A redirecting site alias sends clients to the site's primary domain, on the scheme clients reach it with, but still answers `/api/method/ping`, because Central probes the alias for readiness without following redirects. Renaming a site or moving the admin domain re-points the matching alias automatically; remove one when the rule is no longer needed. `pilot setup central` writes these settings - see [Setup Commands](commands.md#setup-commands).
 
@@ -312,7 +316,59 @@ Run `pilot setup nginx` on each production bench after a change. The front proxy
 
 `[resource_limits]` sets when an alert is raised and where it goes. A usage percentage of `0` disables that alert; `site_uptime` covers sites that stop answering their ping. Pilot sends the ping to the bench's local app server, so a failure in nginx, TLS, DNS, or the edge proxy does not raise this alert. A condition must hold for five minutes before anything is sent.
 
-Where an alert goes depends on what is configured. A Central-managed host reports every alert to Central; a self-hosted one does not, and the dashboard drops the Central wording along with it. Each entry in `webhook_endpoints` receives alerts either way, as a POST with an `Authorization: Bearer` header. Mail is a third sink, off until a mail server is configured and `email_recipients` is set.
+Where an alert goes depends on what is configured. A Central-managed host reports every alert to Central; a self-hosted one does not, and the dashboard drops the Central wording along with it. Each `[[webhook_endpoints]]` entry receives events either way. Mail is a third sink, off until a mail server is configured and `email_recipients` is set. Mail and Central get only Warning and Error events. Webhooks also get Info events, such as a new site or a finished backup. Of the Info events, only long operations that a user waits for (a new, restored or reinstalled site, a finished update, and a Pilot update) also go to the activity feed.
+
+#### Webhooks
+
+`[[webhook_endpoints]]` is a top-level array in `common_config.toml`, because an endpoint receives every kind of event, not only resource alerts. Each endpoint receives a fixed JSON body, like a GitHub webhook. There is no body template. `events` lists the events the endpoint receives. Leave it empty to receive every event, including events added later. `token` is optional. Pilot still reads endpoints from the older place under `[resource_limits]`, as an array or as a `{ url = token }` table, and moves them to the top level on the next save.
+
+| Event | When |
+| --- | --- |
+| `task_failed` | A task failed, except noisy ones such as `build`. |
+| `site_created` | A new site, or a site from a backup, is ready. |
+| `site_deleted` | A site was dropped. |
+| `site_renamed` | A site was renamed. `context.new_name` holds the new name. |
+| `site_restored` | A backup was restored into a site. |
+| `site_reinstalled` | A site was reinstalled. |
+| `site_down` | A site stopped answering its uptime ping. |
+| `site_up` | A site that was reported down answers again. |
+| `backup_completed` | A site backup finished, scheduled or manual. `context.automatic` tells which. |
+| `backup_deleted` | Backups of a site were deleted. |
+| `backups_failing` | A site reached its limit of failed backups. |
+| `app_installed` | An app was installed on a site. |
+| `app_uninstalled` | An app was uninstalled from a site. |
+| `app_added` | An app was added to the bench. |
+| `app_removed` | An app was removed from the bench. |
+| `app_branch_switched` | An app moved to another branch. |
+| `update_completed` | An update finished. |
+| `update_restored` | A failed update was restored from its backup. |
+| `update_dismissed` | A failed update was dismissed. |
+| `pilot_updated` | Pilot itself was updated. |
+| `certificate_issued` | A TLS certificate was issued. |
+| `certificate_expiry` | A TLS certificate expires in less than the alert window and has not renewed. |
+| `resource_limit_breached` | CPU, memory, or disk use held above its limit. |
+| `resource_limit_recovered` | Use that was reported above its limit is back under it. |
+| `ping` | The Test button in Settings > Notifications. It goes to every endpoint, whatever events it chose. |
+
+Each request is a `POST` with `Content-Type: application/json`, `User-Agent: Pilot-Hookshot`, `X-Pilot-Event: <event>` and `X-Pilot-Delivery: <id>`. With a token, it also has `Authorization: Bearer <token>` and `X-Pilot-Signature-256: sha256=<hex>`, the HMAC-SHA256 of the raw body keyed with the token. Any 2xx answer counts as delivered.
+
+```json
+{
+  "event": "site_down",
+  "delivery": "5f0c…",
+  "sent_at": "2026-11-04T10:00:00+00:00",
+  "bench": "main",
+  "title": "a.example.com is unreachable",
+  "message": "main: a.example.com unreachable",
+  "severity": "Error",
+  "category": "Sites",
+  "site": "a.example.com",
+  "url": "https://admin.example.com/sites/a.example.com",
+  "context": {"bench": "main", "sites": ["a.example.com"]}
+}
+```
+
+For a task event, `context` holds `command`, `task_id`, and the task arguments that are safe to share, such as `site`, `name`, `new_name`, `app`, `apps`, `branch`, and `automatic`. Passwords, tokens, and repository URLs are never sent.
 
 Outgoing mail lives in the bench's `sites/common_site_config.json`, under the keys the framework's Email Account already reads, so a site picks the same mailbox up without any further setup:
 

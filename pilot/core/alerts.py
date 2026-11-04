@@ -6,7 +6,6 @@ import smtplib
 import ssl
 import time
 import typing
-import urllib.request
 from email.message import EmailMessage
 from email.utils import make_msgid
 from html import escape as html_escape
@@ -24,21 +23,6 @@ ALERT_SUSTAINED_SECONDS = 300
 
 # A sink that hangs must not hold up the tick that writes the metrics log.
 ALERT_TIMEOUT_SECONDS = 10
-
-
-def send_alert(endpoint: str, token: str, payload: dict[str, typing.Any]) -> None:
-    """POST one alert to a webhook endpoint."""
-    request = urllib.request.Request(
-        endpoint,
-        data=json.dumps(payload).encode(),
-        method="POST",
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {token}",
-        },
-    )
-    with urllib.request.urlopen(request, timeout=ALERT_TIMEOUT_SECONDS):
-        pass
 
 
 @contextlib.contextmanager
@@ -75,7 +59,10 @@ _TEMPLATE = Template.from_path(Path(__file__).parent / "templates" / "alert_mail
 
 # Detail columns per alert type: (context key holding the rows, [(heading, row key), ...]).
 _ALERT_TABLES = {
-    "resource_limit_breached": ("breached_limits", [("Limit", "limit"), ("Threshold", "threshold"), ("Reading", "reading")]),
+    "resource_limit_breached": (
+        "breached_limits",
+        [("Limit", "limit"), ("Threshold", "threshold"), ("Reading", "reading")],
+    ),
     "site_down": ("sites", [("Site", "site"), ("Status", "status_code"), ("Response (ms)", "response_ms")]),
 }
 
@@ -154,33 +141,56 @@ def send_mail(mail: MailConfig, recipients: list[str], payload: dict[str, typing
 
 
 def notify(bench: "Bench", payload: dict[str, typing.Any]) -> bool:
-    """If we made it to any of the webhooks or mailboxes we will mark this as a successful delivery."""
+    """Send one event to every sink; True when any of them accepted it.
+
+    `payload` holds `event`, `message` and `context`, and may add `title`, `severity`,
+    `category`, `site` and `action_route`. Webhooks get every event they chose. Mail
+    and Central get only Warning and Error events, so a finished task stays out of inboxes.
+    """
+    delivered = notify_webhooks(bench, payload)
+    if payload.get("severity", "Warning") == "Info":
+        return delivered
+    delivered = notify_mail(bench, payload) or delivered
+    return notify_central(bench, payload) or delivered
+
+
+def notify_webhooks(bench: "Bench", payload: dict[str, typing.Any]) -> bool:
+    from pilot.core.notification.webhooks import get_webhook_body, send_webhook
+
+    body = get_webhook_body(bench, payload)
     delivered = False
-    limits = bench.config.resource_limits
-
-    for endpoint, token in limits.webhook_endpoints.items():
-        try:
-            send_alert(endpoint, token, payload)
-        except OSError:
+    for endpoint in bench.config.webhook_endpoints:
+        if not endpoint.receives(body["event"]):
             continue
-        delivered = True
+        with contextlib.suppress(OSError):
+            delivered = send_webhook(endpoint, body).is_success or delivered
+    return delivered
 
+
+def notify_mail(bench: "Bench", payload: dict[str, typing.Any]) -> bool:
+    recipients = bench.config.resource_limits.email_recipients
     mail = MailConfig.read(bench.sites_path)
-    if mail.is_configured and limits.email_recipients:
-        try:
-            send_mail(mail, limits.email_recipients, payload)
-        except OSError:
-            pass
-        else:
-            delivered = True
-
-    if not bench.config.central.enabled:
-        return delivered
-
+    if not mail.is_configured or not recipients:
+        return False
     try:
-        CentralClient().notify_central(**payload, reference_name=bench.config.name)
+        send_mail(mail, recipients, payload)
+    except OSError:
+        return False
+    return True
+
+
+def notify_central(bench: "Bench", payload: dict[str, typing.Any]) -> bool:
+    if not bench.config.central.enabled:
+        return False
+    try:
+        CentralClient().notify_central(
+            event=payload["event"],
+            message=payload["message"],
+            context=payload.get("context"),
+            reference_name=bench.config.name,
+        )
     except CentralClientError:
-        return delivered
+        return False
     return True
 
 
@@ -192,6 +202,8 @@ class SustainedAlerts:
     def __init__(self, path: Path, window_seconds: int = ALERT_SUSTAINED_SECONDS) -> None:
         self.path = path
         self.window_seconds = window_seconds
+        # Names whose alert went out and that are no longer active, set by `due()`.
+        self.recovered: list[str] = []
 
     def due(self, active: list[str]) -> list[str]:
         """Record this round and return the names that have crossed the window.
@@ -199,6 +211,9 @@ class SustainedAlerts:
         so a round where every sink was down is retried on the next tick."""
         previous = self._read()
         now = time.time()
+        self.recovered = sorted(
+            name for name, entry in previous.items() if entry["notified"] and name not in active
+        )
 
         state = {}
         due = []
