@@ -169,7 +169,7 @@ These tables are per-bench unless noted otherwise:
 - `[processes]`: `disabled`, the app processes that stay off. `pilot processes disable` and `enable` write it. See [App Processes](app-processes.md).
 - `[firewall]`: firewall behavior.
 - `[waf]`: WAF rules and behavior.
-- `[s3]`: backup storage credentials and bucket settings. Set `endpoint_url` for a custom S3-compatible provider.
+- `[s3]`: backup storage credentials and bucket settings. Set `endpoint_url` for a custom S3-compatible provider. With the `frappe` provider, Pilot connects to the private address of `internal-<endpoint host>` when this machine can reach it, and keeps the endpoint host for TLS and signatures. Presigned download URLs keep the public host.
 - `[llm]`: admin assistant provider settings.
 - `[resource_limits]`: CPU, memory, disk, uptime, and webhook alerts.
 
