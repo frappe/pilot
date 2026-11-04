@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 type Reply = { message?: unknown; status?: number; body?: unknown }
-type Handlers = Record<string, () => Reply>
+type Handlers = Record<string, () => Reply | Promise<Reply>>
 
 // Frappe's get_domains shape: the site's own name first, then Pilot's attached domains.
 const domains = (primary: string) => ({
@@ -33,7 +33,7 @@ const refused = (message: string) => ({
 async function openDomains(page: Page, primary: string, handlers: Handlers = {}) {
   await page.route('**/api/method/**', async (route) => {
     const method = new URL(route.request().url()).pathname.split('.').pop() || ''
-    const reply = handlers[method]?.() ?? { message: method === 'get_domains' ? domains(primary) : {} }
+    const reply = (await handlers[method]?.()) ?? { message: method === 'get_domains' ? domains(primary) : {} }
     await route.fulfill(reply.status ? { status: reply.status, json: reply.body } : { json: { message: reply.message } })
   })
   await page.goto('/tests/host.html')
@@ -133,6 +133,29 @@ test('a refused verify keeps the records on screen until the add succeeds', asyn
   await dialog.getByRole('button', { name: 'Verify DNS' }).click()
   await expect(dialog).toBeHidden()
   await expect(page.getByText('blog.example.com added.')).toBeVisible()
+})
+
+test('a running verify blocks the other domain actions', async ({ page }) => {
+  let finishAdd = () => {}
+  const added = new Promise<void>((resolve) => (finishAdd = resolve))
+  await openDomains(page, 'shop.example.com', {
+    get_domain_dns_records: () => records(['CNAME', 'blog.example.com', 'site.local']),
+    add_domain: async () => {
+      await added
+      return { message: {} }
+    },
+  })
+
+  await continueWith(page, 'blog.example.com')
+  const dialog = page.getByRole('dialog', { name: 'Use your own domain' })
+  await dialog.getByRole('button', { name: 'Verify DNS' }).click()
+  await dialog.getByRole('button', { name: 'Cancel' }).click()
+
+  const actions = page.getByRole('button', { name: 'Actions for www.example.com' })
+  await expect(actions).toBeDisabled()
+
+  finishAdd()
+  await expect(actions).toBeEnabled()
 })
 
 test('a failed records call shows its error', async ({ page }) => {

@@ -31,7 +31,6 @@ const loadingRecords = ref(false)
 const showAdd = ref(false)
 const addTarget = ref('')
 const dnsRecordGroups = ref<DnsRecordGroup[]>([])
-const verifying = ref(false)
 const addError = ref('')
 const removeTarget = ref('')
 const showRemove = ref(false)
@@ -124,7 +123,7 @@ const continueAdd = async () => {
 }
 
 const verifyAdd = async () => {
-  verifying.value = true
+  working.value = true
   addError.value = ''
 
   try {
@@ -138,7 +137,7 @@ const verifyAdd = async () => {
   } catch (exception) {
     addError.value = getErrorMessage(exception)
   } finally {
-    verifying.value = false
+    working.value = false
   }
 }
 
@@ -363,7 +362,7 @@ const run = async (action: () => Promise<void>) => {
 
         <Button
           variant="solid"
-          :loading="verifying"
+          :loading="working"
           :label="dnsRecordGroups.length ? __('Verify DNS') : __('Register')"
           @click="verifyAdd"
         />
