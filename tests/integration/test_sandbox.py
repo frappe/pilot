@@ -139,7 +139,9 @@ def run_sandboxed(sandboxed: Path):
         "systemd-run --user --pipe true",
         "touch {bench}/config/services/escape.service",
         "echo x >> {bench}/config/services/*-web.service",
-        "touch {bench}/config/escape",
+        "echo x >> {bench}/config/admin-gunicorn.conf.py",
+        "mkdir {bench}/config/nginx/planted",
+        "mkdir {bench}/config/letsencrypt/planted",
         "cat {bench}/bench.toml",
         "ls {pilot}/databases/mariadb/data",
         "ls {pilot}/databases/mariadb/config",
@@ -165,6 +167,11 @@ def test_a_workload_cannot_change_the_unit_files_the_admin_loads(run_sandboxed, 
 def test_sudo_works_outside_the_sandbox(sandboxed: Path) -> None:
     """Shows the sudo check above is meaningful on this host."""
     assert _run("sudo", "-n", "true").returncode == 0
+
+
+def test_the_sandbox_lets_frappe_create_its_global_lock_files(run_sandboxed, sandboxed: Path) -> None:
+    """Frappe locks `<bench>/config/<name>.lock` with an exclusive create, so config/ must stay writable."""
+    assert run_sandboxed(f"touch {sandboxed}/config/probe.lock && rm {sandboxed}/config/probe.lock")
 
 
 def test_the_sandbox_lets_the_bench_write_its_runtime_files(run_sandboxed, sandboxed: Path) -> None:

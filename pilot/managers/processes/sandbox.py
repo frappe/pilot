@@ -13,6 +13,39 @@ if TYPE_CHECKING:
 # The home directory is masked; these hold the rest of the user's home on other layouts.
 MASKED_ROOTS = (Path("/home"), Path("/root"))
 WAITER = Path("pilot") / "internal" / "wait_for_socket.py"
+# What Pilot keeps in <bench>/config for the admin, which loads and runs it unsandboxed. A workload
+# must not change these. Everything else in config/ stays writable, because Frappe creates its
+# global lock files there. A test checks this list against every config path Pilot uses.
+CONTROL_DIRECTORIES = (
+    "services",
+    "nginx",
+    "modsecurity",
+    "letsencrypt",
+    "frappe_cloud",
+    "site-renames",
+    "site-creations",
+)
+CONTROL_FILES = (
+    "site-aliases.json",
+    "realtime-folders.txt",
+    "gunicorn.conf.py",
+    "admin-gunicorn.conf.py",
+    "Procfile",
+    "redis_cache.conf",
+    "redis_queue.conf",
+)
+CONTROL_ENTRIES = (*CONTROL_DIRECTORIES, *CONTROL_FILES)
+
+
+def create_control_entries(bench: Bench) -> None:
+    """Make the protected folders exist, so a workload cannot plant one before the admin does."""
+    for name in CONTROL_DIRECTORIES:
+        (bench.config_path / name).mkdir(parents=True, exist_ok=True)
+    aliases = bench.config_path / "site-aliases.json"
+    if not aliases.exists():
+        aliases.write_text("{}\n")
+    if not (bench.config_path / "realtime-folders.txt").exists():
+        bench.processes.save_realtime_folders()
 
 
 def get_masked_roots() -> tuple[Path, ...]:

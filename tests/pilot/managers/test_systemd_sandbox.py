@@ -10,6 +10,7 @@ from pilot.config.production import ProductionConfig
 from pilot.exceptions import BenchError
 from pilot.managers import systemd_user
 from pilot.managers.processes.definitions import ProcessDefinition
+from pilot.managers.processes.sandbox import CONTROL_ENTRIES
 from pilot.managers.processes.systemd_render import SystemdRenderer, get_sandbox_properties
 from tests.pilot.managers.test_managers_extra import make_bench
 
@@ -63,7 +64,7 @@ SANDBOX_DIRECTIVES = {
     "BindPaths=/srv/pilot/benches/b",
     "ReadWritePaths=/srv/pilot/benches/b",
     f"TemporaryFileSystem={Path.home()}:ro",
-    "BindReadOnlyPaths=-/srv/pilot/benches/b/config",
+    "BindReadOnlyPaths=" + " ".join(f"-{BENCH}/config/{name}" for name in CONTROL_ENTRIES),
     "InaccessiblePaths=/srv/pilot/benches/b/bench.toml",
 }
 
@@ -83,7 +84,8 @@ def test_extra_paths_are_bound_next_to_the_control_files() -> None:
     properties = get_sandbox_properties(BENCH, BENCHES, read_paths=("/home/u/app",), write_paths=("/home/u/data",))
 
     read_only = next(line for line in properties if line.startswith("BindReadOnlyPaths="))
-    assert read_only == f"BindReadOnlyPaths=-{BENCH}/config -/home/u/app"
+    assert read_only.endswith(" -/home/u/app")
+    assert read_only.startswith(f"BindReadOnlyPaths=-{BENCH}/config/{CONTROL_ENTRIES[0]} ")
     assert "BindPaths=-/home/u/data" in properties
     assert "ReadWritePaths=-/home/u/data" in properties
 
@@ -241,6 +243,15 @@ def test_control_files_are_read_only_or_hidden_from_workloads() -> None:
     properties = get_sandbox_properties(BENCH, BENCHES)
 
     read_only = next(line for line in properties if line.startswith("BindReadOnlyPaths="))
-    assert f"-{BENCH}/config" in read_only
+    for name in ("services", "nginx", "admin-gunicorn.conf.py", "gunicorn.conf.py"):
+        assert f"-{BENCH}/config/{name}" in read_only
     assert f"InaccessiblePaths={BENCH}/bench.toml" in properties
     assert not any(line.startswith("ReadWritePaths=") and "config" in line for line in properties)
+
+
+def test_config_is_not_bound_as_a_whole_so_frappe_can_create_its_lock_files() -> None:
+    properties = get_sandbox_properties(BENCH, BENCHES)
+    read_only = next(line for line in properties if line.startswith("BindReadOnlyPaths="))
+
+    assert f"-{BENCH}/config " not in read_only + " "
+    assert not any(line.endswith(f"{BENCH}/config") for line in properties)

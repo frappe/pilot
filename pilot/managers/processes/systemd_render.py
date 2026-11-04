@@ -7,6 +7,7 @@ from pathlib import Path
 
 from pilot.managers.processes.base import ServiceRenderer, override
 from pilot.managers.processes.local import ProcessDefinition
+from pilot.managers.processes.sandbox import CONTROL_ENTRIES
 
 _SAFE_ARGUMENT = re.compile(r"[\w@%+=:,./-]+", re.ASCII)
 
@@ -56,7 +57,7 @@ def get_sandbox_properties(
 
     `read_paths` and `write_paths` are what every unit gets back from the masked home."""
     # Pilot's control files: the admin trusts them, so a workload must not change them.
-    control = [str(bench_path / "config")]
+    control = [str(bench_path / "config" / name) for name in CONTROL_ENTRIES]
     return [
         *_SANDBOX_DIRECTIVES,
         # ProtectHome only masks /home and /root; this masks a home elsewhere, such as /srv/frappe.

@@ -17,7 +17,7 @@ from pilot.managers.processes.base import (
 )
 from pilot.managers.processes.definitions import ProcessState
 from pilot.managers.processes.local import ProcessDefinition
-from pilot.managers.processes.sandbox import PilotSandboxPaths
+from pilot.managers.processes.sandbox import PilotSandboxPaths, create_control_entries
 from pilot.managers.processes.systemd_render import SystemdRenderer, get_sandbox_properties
 from pilot.managers.systemd_user import SystemdUserMixin, get_sandbox_error
 from pilot.utils import cli_root, run_command
@@ -121,6 +121,7 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         if not self.bench.config.production.sandbox:
             return []
         # The bench's siblings are its neighbours, wherever the benches directory is.
+        create_control_entries(self.bench)
         read_paths, write_paths = self.get_sandbox_paths()
         properties = get_sandbox_properties(self.bench.path, self.bench.path.parent, read_paths, write_paths)
         if error := get_sandbox_error(properties):
