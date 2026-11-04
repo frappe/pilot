@@ -30,12 +30,14 @@ interface Props {
 
 const props = defineProps<Props>()
 
-defineEmits(['install'])
+defineEmits(['install', 'uninstall'])
 
 const compactNumber = new Intl.NumberFormat('en', { notation: 'compact' })
 const isOpen = ref(false)
 
-const hasMeta = computed(() => props.app.stars || props.app.label || props.app.requires?.length)
+const hasMeta = computed(
+  () => props.app.installed || props.app.stars || props.app.label || props.app.requires?.length,
+)
 
 const categories = computed(() =>
   (props.app.categories?.length ? props.app.categories : [props.app.category])
@@ -62,8 +64,9 @@ const statusTheme = computed(() => {
   <Popover v-model:open="isOpen" trigger="manual" side="bottom" align="start" :offset="8">
     <template #trigger>
       <article
-        class="relative flex flex-col dark:bg-surface-gray-0 p-4 border rounded-6 transition-colors"
+        class="flex flex-col dark:bg-surface-gray-0 p-4 border rounded-6 transition-colors cursor-pointer"
         :class="isOpen ? 'border-outline-gray-5' : 'border-outline-gray-1.5'"
+        @click="isOpen = !isOpen"
       >
         <div class="flex items-center gap-3">
           <AppIcon
@@ -75,23 +78,20 @@ const statusTheme = computed(() => {
           />
 
           <h3 class="flex-1 min-w-0 text-lg-semibold text-ink-gray-8">
-            <button
-              type="button"
-              class="after:absolute after:inset-0 max-w-full after:rounded-6 text-left truncate focus-visible:outline-none focus-visible:after:focus-ring"
-              :aria-expanded="isOpen"
-              @click="isOpen = !isOpen"
-            >
-              {{ app.title }}
-            </button>
+            {{ app.title }}
           </h3>
 
-          <Tooltip v-if="app.installed" text="Installed">
-            <span
-              class="size-4 text-ink-green-7 lucide-circle-check"
-              role="img"
-              aria-label="Installed"
-            />
-          </Tooltip>
+          <Button
+            v-if="app.installed"
+            size="xs"
+            variant="ghost"
+            theme="red"
+            class="-mt-2 -mr-2"
+            icon="lucide-trash-2"
+            :tooltip="`Uninstall ${app.title}`"
+            :aria-label="`Uninstall ${app.title}`"
+            @click.stop="$emit('uninstall', app)"
+          />
 
           <Tooltip v-else-if="app.compatible === false" text="Needs a newer Frappe version">
             <span
@@ -108,8 +108,8 @@ const statusTheme = computed(() => {
             icon="lucide-download"
             :tooltip="`Install ${app.title}`"
             :aria-label="`Install ${app.title}`"
-            class="z-10 relative -mr-1"
-            @click="$emit('install', app)"
+            class="-mr-1"
+            @click.stop="$emit('install', app)"
           />
         </div>
 
@@ -117,7 +117,10 @@ const statusTheme = computed(() => {
           {{ app.description || 'No description yet.' }}
         </p>
 
-        <div v-if="hasMeta" class="flex items-center gap-3 mt-auto pt-2 h-7 text-ink-gray-5 text-xs">
+        <div
+          v-if="hasMeta"
+          class="flex items-center gap-3 mt-auto pt-2 h-7 text-ink-gray-5 text-xs"
+        >
           <span v-if="app.stars" class="flex items-center gap-1 shrink-0">
             <span class="size-3 lucide-star" />
             {{ compactNumber.format(app.stars) }}
@@ -130,8 +133,10 @@ const statusTheme = computed(() => {
             :key="dependency.name"
             :text="`Needs ${dependency.title}`"
           >
-            <Badge :label="dependency.title" class="z-10 relative" />
+            <Badge :label="dependency.title" />
           </Tooltip>
+
+          <Badge v-if="app.installed" label="Installed" theme="green" class="ml-auto" />
         </div>
       </article>
     </template>
