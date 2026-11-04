@@ -175,7 +175,8 @@ These tables are per-bench unless noted otherwise:
 
 `[monitor]` contains this bench's application metric log path. Host-wide system, database, and slow-query logs always use `cli_root()/system/logs/` and cannot be configured.
 
-Nginx uses compiled-in defaults; it has no `[nginx]` table in `bench.toml`.
+Nginx is shared by every bench on the host, so its listen ports live in `common_config.toml`, not `bench.toml`. A `[nginx]` table in `bench.toml` is an error. See [Nginx Ports](#nginx-ports).
+
 Unknown fields are ignored during normal loads. Strict validation reports them.
 
 ## Shared host configuration
@@ -290,6 +291,18 @@ Either shipper runs only when its switch is on and both `endpoint` and `token` a
 `pilot setup telemetry` writes this section and installs the log shipper. Central is asked for the credential when `[central] enabled` is set, and what it returns replaces what is already there, because the token expires. `--endpoint` and `--token` override the fetch. `pilot setup production` does the same, once, before configuring either shipper.
 
 The monitor checks this section on every run, so both shippers start when a credential arrives later, such as from Central's bootstrap. It rewrites the Fluent Bit config and restarts Fluent Bit when the endpoint or token changes, and it starts Fluent Bit again when it is not running. Fluent Bit must be installed. `install.sh` installs it on Debian and Ubuntu. `pilot remove logs` stops Fluent Bit and sets `logs_enabled = false`, so the monitor does not start it again.
+
+### Nginx Ports
+
+`[nginx]` sets the ports that nginx listens on for every bench. The defaults are `http_port = 80` and `https_port = 443`. Change them when another reverse proxy (Traefik, Caddy, or another nginx) owns ports 80 and 443 on the host:
+
+```toml
+[nginx]
+http_port = 8081
+https_port = 8443
+```
+
+Run `pilot setup nginx` on each production bench after a change. The front proxy must forward public ports 80 and 443 to these ports. The HTTP to HTTPS redirect goes to port 443, and Let's Encrypt checks domains on port 80. To keep TLS in Pilot, use TCP passthrough on 443.
 
 ### Automatic Updates
 

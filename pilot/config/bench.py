@@ -200,6 +200,10 @@ class BenchConfig:
         cls, data: dict, *, common: CommonConfig | None = None, strict: bool = False
     ) -> "BenchConfig":
         cls._report_unknown_fields(data, strict=strict)
+        if "nginx" in data:
+            raise ConfigError(
+                "[nginx] belongs in common_config.toml, not bench.toml: nginx is shared by every bench."
+            )
         common = common or CommonConfig()
         bench_data = data.get("bench", {})
         apps = [
@@ -232,6 +236,7 @@ class BenchConfig:
             mariadb=common.mariadb,
             postgres=common.postgres,
             letsencrypt=common.letsencrypt,
+            nginx=common.nginx,
             central=common.central,
             proxy=common.proxy,
             telemetry=common.telemetry,
@@ -510,6 +515,7 @@ class BenchConfig:
             mariadb=self.mariadb,
             postgres=self.postgres,
             letsencrypt=self.letsencrypt,
+            nginx=self.nginx,
             central=self.central,
             proxy=self.proxy,
             telemetry=self.telemetry,
@@ -991,4 +997,3 @@ def _preserve_unknown_array(original: list, replacement: list, table: TomlSchema
         if isinstance(old_entry, Mapping) and isinstance(new_entry, Mapping):
             result[index] = _preserve_unknown(old_entry, new_entry, table)
     return result
-

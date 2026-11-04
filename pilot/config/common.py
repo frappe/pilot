@@ -11,6 +11,7 @@ from pilot.config.central import CentralConfig, HostnameAlias
 from pilot.config.frappe_cloud import FrappeCloudConfig
 from pilot.config.letsencrypt import LetsEncryptConfig
 from pilot.config.mariadb import MariaDBConfig
+from pilot.config.nginx import NginxConfig
 from pilot.config.postgres import PostgresConfig
 from pilot.config.proxy import ProxyConfig
 from pilot.config.schema import TomlSchema, field_names
@@ -30,6 +31,7 @@ class CommonConfig:
     mariadb: MariaDBConfig = field(default_factory=MariaDBConfig)
     postgres: PostgresConfig = field(default_factory=PostgresConfig)
     letsencrypt: LetsEncryptConfig = field(default_factory=LetsEncryptConfig)
+    nginx: NginxConfig = field(default_factory=NginxConfig)
     central: CentralConfig = field(default_factory=CentralConfig)
     proxy: ProxyConfig = field(default_factory=ProxyConfig)
     telemetry: TelemetryConfig = field(default_factory=TelemetryConfig)
@@ -62,6 +64,7 @@ class CommonConfig:
             mariadb=MariaDBConfig(**_known_fields(MariaDBConfig, data.get("mariadb", {}))),
             postgres=PostgresConfig(**_known_fields(PostgresConfig, data.get("postgres", {}))),
             letsencrypt=LetsEncryptConfig.from_dict(data.get("letsencrypt", {})),
+            nginx=NginxConfig.from_dict(data.get("nginx", {})),
             central=CentralConfig.from_dict(data.get("central", {})),
             proxy=ProxyConfig.from_dict(data.get("proxy", {})),
             telemetry=TelemetryConfig.from_dict(data.get("telemetry", {})),
@@ -154,22 +157,16 @@ class CommonConfig:
                 "webroot_path": str(self.letsencrypt.webroot_path),
             },
         }
+        # Tables written only when they differ from their defaults.
+        optional = {
+            "nginx": (self.nginx.ports, NginxConfig().ports),
+            "proxy": (asdict(self.proxy), asdict(ProxyConfig())),
+            "resource_limits": (asdict(self.resource_limits), asdict(ResourceLimitConfig())),
+            "updates": (asdict(self.updates), asdict(UpdatesConfig())),
+        }
+        data.update({name: value for name, (value, default) in optional.items() if value != default})
         if self.central != CentralConfig():
-            data["central"] = {
-                "enabled": self.central.enabled,
-                "bootstrapped": self.central.bootstrapped,
-                "hostname_aliases": [
-                    {
-                        "type": alias.type,
-                        "pattern": alias.pattern,
-                        "target": alias.target,
-                        "redirect": alias.redirect,
-                    }
-                    for alias in self.central.hostname_aliases
-                ],
-            }
-        if self.proxy != ProxyConfig():
-            data["proxy"] = asdict(self.proxy)
+            data["central"] = self._central_table()
         if self.telemetry != TelemetryConfig():
             data["telemetry"] = {
                 "endpoint": self.telemetry.endpoint,
@@ -177,15 +174,18 @@ class CommonConfig:
                 "logs_enabled": self.telemetry.logs_enabled,
                 "metrics_enabled": self.telemetry.metrics_enabled,
             }
-        if self.resource_limits != ResourceLimitConfig():
-            data["resource_limits"] = asdict(self.resource_limits)
         if self.frappe_cloud != FrappeCloudConfig():
             data["frappe_cloud"] = {"url": self.frappe_cloud.url}
-        if self.updates != UpdatesConfig():
-            data["updates"] = asdict(self.updates)
         if self.jwks_url:
             data["admin"] = {"jwks_url": self.jwks_url, "jwks_audience": self.jwks_audience}
         return data
+
+    def _central_table(self) -> ConfigDict:
+        return {
+            "enabled": self.central.enabled,
+            "bootstrapped": self.central.bootstrapped,
+            "hostname_aliases": [asdict(alias) for alias in self.central.hostname_aliases],
+        }
 
 
 _SCHEMA = TomlSchema(
@@ -193,6 +193,7 @@ _SCHEMA = TomlSchema(
         "mariadb": TomlSchema(keys=field_names(MariaDBConfig)),
         "postgres": TomlSchema(keys=field_names(PostgresConfig)),
         "letsencrypt": TomlSchema(keys=field_names(LetsEncryptConfig)),
+        "nginx": TomlSchema(keys=set(NginxConfig().ports)),
         "central": TomlSchema(
             keys=field_names(CentralConfig) - {"hostname_aliases"},
             arrays={"hostname_aliases": TomlSchema(keys=field_names(HostnameAlias))},
