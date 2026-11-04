@@ -14,7 +14,6 @@ class SiteResource(TypedDict):
     primary_domain: str
     ssl: bool
     uptime_percent: NotRequired[float | None]
-    uptime_buckets: NotRequired[list[float | None]]
     requests: NotRequired[list[int]]
 
 

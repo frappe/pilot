@@ -6,7 +6,6 @@ from pathlib import Path
 from admin.backend.providers.site_monitoring import SiteMonitoringProvider
 from admin.backend.providers.windowed_log import WindowedLogProvider
 
-UPTIME_BUCKETS = 28
 REQUEST_BUCKETS = 24
 
 
@@ -24,25 +23,23 @@ class SiteSummaryProvider:
         requests = self.get_requests(names)
         return {
             name: {
-                "uptime_percent": self.get_percent([check for bucket in uptime[name] for check in bucket]),
-                "uptime_buckets": [self.get_percent(bucket) for bucket in uptime[name]],
+                "uptime_percent": self.get_percent(uptime[name]),
                 "requests": requests[name],
             }
             for name in names
         }
 
-    def get_uptime(self, names: set[str]) -> dict[str, list[list[bool]]]:
-        buckets = {name: [[] for _ in range(UPTIME_BUCKETS)] for name in names}
+    def get_uptime(self, names: set[str]) -> dict[str, list[bool]]:
+        checks: dict[str, list[bool]] = {name: [] for name in names}
         path = self.bench_root / "logs" / "uptime.json.log"
         if not path.exists():
-            return buckets
+            return checks
 
         for record in self.uptime_log.records_in_window(path, time_key="time"):
             site, up = record.get("site"), record.get("up")
-            if site in buckets and isinstance(up, bool):
-                index = self.get_bucket(self.uptime_log, record.get("time"), UPTIME_BUCKETS)
-                buckets[site][index].append(up)
-        return buckets
+            if site in checks and isinstance(up, bool):
+                checks[site].append(up)
+        return checks
 
     def get_requests(self, names: set[str]) -> dict[str, list[int]]:
         counts = {name: [0] * REQUEST_BUCKETS for name in names}

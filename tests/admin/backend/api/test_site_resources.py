@@ -175,8 +175,6 @@ def test_list_sites_includes_uptime_and_requests(tmp_path: Path) -> None:
     site = client.get("/api/v1/sites").get_json()[0]
 
     assert site["uptime_percent"] == 75.0
-    assert len(site["uptime_buckets"]) == 28
-    assert site["uptime_buckets"][-1] == 75.0
     assert sum(site["requests"]) == 1
     assert len(site["requests"]) == 24
     assert site["ssl"] is False
