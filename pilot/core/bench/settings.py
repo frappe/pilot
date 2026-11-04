@@ -242,6 +242,7 @@ def s3_payload(config: BenchConfig) -> dict:
         "provider": config.s3.provider,
         "region": config.s3.region,
         "endpoint_url": config.s3.endpoint_url,
+        "upload_migration_backups": config.s3.upload_migration_backups,
     }
 
 

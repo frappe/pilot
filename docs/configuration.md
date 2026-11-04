@@ -169,7 +169,7 @@ These tables are per-bench unless noted otherwise:
 - `[processes]`: `disabled`, the app processes that stay off. `pilot processes disable` and `enable` write it. See [App Processes](app-processes.md).
 - `[firewall]`: firewall behavior.
 - `[waf]`: WAF rules and behavior.
-- `[s3]`: backup storage credentials and bucket settings. Set `endpoint_url` for a custom S3-compatible provider.
+- `[s3]`: backup storage credentials and bucket settings. Set `endpoint_url` for a custom S3-compatible provider. `upload_migration_backups` (default `true`) puts the MariaDB backup that Pilot takes before an update into the bucket, not on the local disk. Pilot ignores it when the bucket is not configured.
 - `[llm]`: admin assistant provider settings.
 - `[resource_limits]`: CPU, memory, disk, uptime, and webhook alerts.
 

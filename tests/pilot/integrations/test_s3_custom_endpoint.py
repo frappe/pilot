@@ -8,6 +8,7 @@ from pilot.config.bench import BenchConfig
 from pilot.core.bench.settings import s3_payload
 from pilot.integrations.central import CentralClient, CentralClientError
 from pilot.integrations.s3 import base
+from pilot.internal.toml import Toml
 
 
 def bench_config() -> BenchConfig:
@@ -100,6 +101,28 @@ def test_s3_payload_tracks_the_custom_endpoint() -> None:
     config.s3.endpoint_url = "https://s3.in-mumbai.example.test"
 
     assert s3_payload(config)["endpoint_url"] == "https://s3.in-mumbai.example.test"
+
+
+def test_migration_backups_go_to_the_bucket_until_turned_off() -> None:
+    config = bench_config()
+    config.s3 = S3Config(
+        access_key="access", secret_key="secret", bucket="backups", provider="aws", region="us-east-1"
+    )
+    assert config.s3.stores_migration_backups
+
+    error = ConfigPatcher(config, {"s3": {"upload_migration_backups": False}}).apply()
+
+    assert error is None
+    assert not config.s3.stores_migration_backups
+    assert s3_payload(config)["upload_migration_backups"] is False
+    assert BenchConfig._from_dict(Toml.loads(config.dumps())).s3.upload_migration_backups is False
+
+
+def test_upload_migration_backups_is_ignored_without_a_bucket() -> None:
+    config = bench_config()
+    config.s3 = S3Config(upload_migration_backups=True)
+
+    assert not config.s3.stores_migration_backups
 
 
 FRAPPE_REGIONS = {"Aradhya-Local": "https://s3.aradhya-local.example.test"}

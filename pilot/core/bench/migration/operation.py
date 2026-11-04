@@ -163,7 +163,10 @@ class MigrationOperation(MigrationRecovery):
 
         if self.safeguards_disabled:
             return
-        needed = sum(self.bench.site(site.name).backups.estimated_database_size for site in self.sites)
+        sites = [self.bench.site(site.name) for site in self.sites]
+        needed = sum(
+            site.backups.estimated_database_size for site in sites if not site.migration_backup.is_stored_in_s3
+        )
         ensure_free_space(self.bench.sites_path, needed, "the backups this migration takes first")
 
     def enqueue_next(self, handoff_from: str | None = None) -> str | None:

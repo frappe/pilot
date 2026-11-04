@@ -329,6 +329,8 @@ class ConfigPatcher:
             s3_config.region = str(s3["region"]).strip()
         if "endpoint_url" in s3:
             s3_config.endpoint_url = str(s3["endpoint_url"]).strip()
+        if "upload_migration_backups" in s3:
+            s3_config.upload_migration_backups = bool(s3["upload_migration_backups"])
 
     @staticmethod
     def _s3_has_any_value(s3_config: S3Config) -> bool:
