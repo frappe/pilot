@@ -76,7 +76,7 @@ export const getTask = (taskId: string) => call<TaskStatus>('get_task', { task_i
 
 export const getDomains = () => call<Domains>('get_domains', {}, 'GET')
 
-export const getDomainDnsRecords = (domain: string) => call<{ records: DnsRecord[] }>('get_domain_dns_records', { domain })
+export const getDomainDnsRecords = (domain: string) => call<{ records: DnsRecord[]; options?: DnsRecord[][] }>('get_domain_dns_records', { domain })
 
 export const addDomain = (domain: string) => call('add_domain', { domain })
 

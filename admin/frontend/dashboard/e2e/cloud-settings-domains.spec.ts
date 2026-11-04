@@ -15,7 +15,14 @@ const domains = (primary: string) => ({
 
 // Frappe's get_domain_dns_records lists Pilot's CNAME set, then its A set.
 const records = (...entries: [string, string, string][]) => ({
-  message: { records: entries.map(([type, host, value]) => ({ type, host, value })) },
+  message: { records: entries.map(record) },
+})
+
+const record = ([type, host, value]: [string, string, string]) => ({ type, host, value })
+
+// A frappe with frappe/frappe#46394 also returns each record set as one option.
+const recordSets = (...sets: [string, string, string][][]) => ({
+  message: { records: sets.flat().map(record), options: sets.map((set) => set.map(record)) },
 })
 
 const refused = (message: string) => ({
@@ -83,6 +90,27 @@ test('continue shows each record set as one option', async ({ page }) => {
   await expect(dialog.getByText('Option 2: A record')).toBeVisible()
   await expect(dialog.getByRole('table').first().getByText('token-1')).toBeVisible()
   await expect(dialog.getByRole('table').nth(1).getByText('203.0.113.10')).toBeVisible()
+})
+
+test('record sets from frappe are shown as they are', async ({ page }) => {
+  await openDomains(page, 'shop.example.com', {
+    get_domain_dns_records: () =>
+      recordSets(
+        [['CNAME', 'blog.example.com', 'site.local']],
+        [
+          ['TXT', '_verify.blog.example.com', 'token-1'],
+          ['A', 'blog.example.com', '203.0.113.10'],
+        ],
+      ),
+  })
+
+  await continueWith(page, 'blog.example.com')
+
+  const dialog = page.getByRole('dialog', { name: 'Use your own domain' })
+  await expect(dialog.getByText('Option 1: CNAME record')).toBeVisible()
+  await expect(dialog.getByText('Option 2: A record')).toBeVisible()
+  await expect(dialog.getByRole('table').first().getByText('token-1')).toHaveCount(0)
+  await expect(dialog.getByRole('table').nth(1).getByText('token-1')).toBeVisible()
 })
 
 test('a refused verify keeps the records on screen until the add succeeds', async ({ page }) => {

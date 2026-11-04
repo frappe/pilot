@@ -83,12 +83,15 @@ const canContinue = computed(
     !loadingRecords.value,
 )
 
-// frappe lists Pilot's CNAME set, then its A set, in one list. Each set is one complete option.
+// frappe without `options` lists Pilot's CNAME set, then its A set, in one list.
 const toRecordOptions = (records: DnsRecord[]) => {
   const split = records.findIndex((record) => record.type.toUpperCase() === 'A')
   if (split < 0) return records.length ? [records] : []
   return [records.slice(0, split), records.slice(split)].filter((option) => option.length)
 }
+
+const optionType = (option: DnsRecord[]) =>
+  option.find((record) => ['CNAME', 'A'].includes(record.type.toUpperCase()))?.type ?? option[0].type
 
 const continueAdd = async () => {
   const domain = normalizedDomain.value
@@ -101,7 +104,7 @@ const continueAdd = async () => {
   try {
     const response = await getDomainDnsRecords(domain)
 
-    recordOptions.value = toRecordOptions(response.records || [])
+    recordOptions.value = response.options ?? toRecordOptions(response.records || [])
     addTarget.value = domain
     addError.value = ''
     showAdd.value = true
@@ -307,8 +310,8 @@ const run = async (action: () => Promise<void>) => {
         <div v-for="(option, index) in recordOptions" :key="index" class="mt-4">
           <p class="mb-2 text-sm text-ink-gray-7">
             {{ recordOptions.length > 1
-                ? __('Option {0}: {1} record', [index + 1, option[0].type])
-                : __('{0} record', [option[0].type]) }}
+                ? __('Option {0}: {1} record', [index + 1, optionType(option)])
+                : __('{0} record', [optionType(option)]) }}
           </p>
 
           <Table
