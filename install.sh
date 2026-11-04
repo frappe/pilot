@@ -868,6 +868,9 @@ install_for_user() {
     ensure_uv
     add_pilot_to_path
     ensure_admin_venv
+    if [ -z "$DEV_MODE" ] && [ -f "$PILOT_DIR/pilot/patches/update_auto_update_schedule.py" ]; then
+        PYTHONPATH="$PILOT_DIR" "$PILOT_DIR/.admin-venv/bin/python" -m pilot.patches.update_auto_update_schedule
+    fi
 
     echo ""
     echo "Pilot installed to $PILOT_DIR"

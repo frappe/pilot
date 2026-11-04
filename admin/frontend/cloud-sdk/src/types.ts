@@ -171,6 +171,7 @@ export interface Domain {
 
 export interface Domains { primary: string; domains: Domain[] }
 export interface DnsRecord { type: string; host: string; value: string }
+export interface DnsRecords { cname?: DnsRecord[]; a?: DnsRecord[] }
 
 export interface BackupFile {
   filename: string

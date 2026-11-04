@@ -3,10 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal, TypedDict
 
-from flask import Blueprint, current_app, jsonify
+from flask import Blueprint, current_app, jsonify, request
 
 from admin.backend.api.responses import error_response
 from pilot.core.bench import Bench
+from pilot.core.server import Server
+from pilot.exceptions import CronError
 from pilot.internal.git import GitRepo
 from pilot.utils import cli_root
 
@@ -34,6 +36,7 @@ class CliDevUpdate(TypedDict):
     local_commit: str
     remote_commit: str
     last_fetched: float | None
+    auto_update: bool
 
 
 class CliReleaseUpdate(TypedDict):
@@ -42,6 +45,7 @@ class CliReleaseUpdate(TypedDict):
     update_available: bool
     latest_version: str | None
     restarts_admin: bool
+    auto_update: bool
 
 
 updates_bp = Blueprint("updates", __name__)
@@ -108,12 +112,35 @@ def check_cli_update():
         return error_response("cli_update_check_failed", "Could not check for a CLI update.", 500)
 
 
+@updates_bp.patch("/cli-auto-update")
+def set_cli_auto_update():
+    """Turn automatic Pilot updates on or off for the host."""
+    import pilot
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not isinstance(data.get("enabled"), bool):
+        return error_response("malformed_request", "Expected an enabled boolean.", 400)
+    if pilot.is_dev_build:
+        return error_response(
+            "auto_update_unavailable", "Automatic updates are unavailable for source installs.", 409
+        )
+    auto_update = Server().auto_update
+    try:
+        if data["enabled"]:
+            auto_update.enable()
+        else:
+            auto_update.disable()
+    except (CronError, OSError) as error:
+        return error_response("auto_update_failed", str(error), 500)
+    return jsonify({"auto_update": auto_update.is_enabled})
+
+
 def _cli_update(*, fetch: bool) -> dict:
     import pilot
 
-    if pilot.is_dev_build:
-        return _cli_update_dev(fetch=fetch)
-    return _cli_update_release(fetch=fetch)
+    result = _cli_update_dev(fetch=fetch) if pilot.is_dev_build else _cli_update_release(fetch=fetch)
+    result["auto_update"] = Server().auto_update.is_enabled
+    return result
 
 
 def _cli_update_dev(*, fetch: bool) -> dict:

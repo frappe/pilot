@@ -17,6 +17,7 @@ from pilot.exceptions import MigrationNotFoundError, TaskNotFoundError
 from pilot.internal.tasks.store import TaskStore
 from pilot.managers.task import TaskReader
 from pilot.tasks.bypass_patch import BypassPatchTask
+from pilot.tasks.dismiss_migration import DismissMigrationTask
 from pilot.tasks.retry_update import RetryUpdateTask
 from pilot.tasks.revert_migration import RevertMigrationTask
 
@@ -57,8 +58,8 @@ _CHAIN_LABELS = {
     "update": "Update apps",
     "migrate": "Migrate",
     "complete-migration": "Finish update",
-    "revert-apps": "Revert apps",
-    "revert-site": "Recover site",
+    "revert-apps": "Restore apps",
+    "revert-site": "Restore site",
     "restart-services": "Restart services",
 }
 
@@ -181,6 +182,17 @@ def restore_action(operation_id: str):
             "restore_unavailable", "Restore is unavailable: no safeguards were created.", 409
         )
     return _queue_action(operation, RevertMigrationTask, "restore")
+
+
+@migrations_bp.post("/migrations/<operation_id>/actions/dismiss")
+def dismiss_action(operation_id: str):
+    """Close a failed update without recovering it; sites leave maintenance and updates unblock."""
+    operation = _load(operation_id)
+    if operation is None:
+        return _not_found()
+    if not operation.state.is_failure:
+        return _invalid_state(operation)
+    return _queue_action(operation, DismissMigrationTask, "dismiss")
 
 
 @migrations_bp.post("/migrations/<operation_id>/actions/bypass-patch")

@@ -5,6 +5,7 @@ import socket
 from pathlib import Path
 
 from pilot.config import BenchConfig
+from pilot.config.common import CommonConfig
 
 
 class BenchProvider:
@@ -66,10 +67,7 @@ class BenchProvider:
 
     def is_wizard_ready(self, domain: str, scheme: str = "http") -> bool:
         """Whether a production bench's wizard answers at its admin domain."""
-        try:
-            port = int(BenchConfig.read_raw(self._bench_dir).get("nginx", {}).get("http_port", 80))
-        except Exception:
-            port = 80
+        port = CommonConfig.read(Path(self._bench_dir).parent).nginx.http_port
 
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
         try:

@@ -13,6 +13,10 @@ def _domains(tmp_path: Path, config: dict):
     return bench.site("site.example.com").domains
 
 
+# A domain whose TLS ends on this host, before its first certificate.
+NO_CERTIFICATE_YET = {"state": "pending", "expires_at": None, "days_left": None, "error": None, "checked_at": None}
+
+
 def test_describe_returns_public_route_state(tmp_path: Path) -> None:
     edge_route = {
         "public_scheme": "https",
@@ -47,6 +51,7 @@ def test_describe_returns_public_route_state(tmp_path: Path) -> None:
             "is_primary": False,
             "public_scheme": "https",
             "tls": True,
+            "tls_status": None,
         },
         {
             "domain": "custom.example.com",
@@ -54,6 +59,7 @@ def test_describe_returns_public_route_state(tmp_path: Path) -> None:
             "is_primary": True,
             "public_scheme": "https",
             "tls": True,
+            "tls_status": NO_CERTIFICATE_YET,
         },
     ]
 
@@ -86,7 +92,7 @@ def test_describe_domain_uses_attached_hostname_for_case_variant(tmp_path: Path)
         "is_site": False,
         "is_primary": False,
         "public_scheme": "https",
-        "tls": True,
+        "tls": True,        "tls_status": NO_CERTIFICATE_YET,
     }
 
 

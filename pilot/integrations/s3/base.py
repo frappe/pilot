@@ -115,12 +115,13 @@ class S3:
             load_boto3()
         except ImportError as error:
             raise RuntimeError("boto3 is not installed. Run: pip install boto3") from error
+        # Bucket subdomains are only certain to have a valid certificate on AWS's own endpoint.
+        addressing_style = "virtual" if self.provider == "aws" and not self.endpoint_url else "path"
         if not self.endpoint_url:
             try:
                 self.endpoint_url = build_endpoint_url(self.provider, self.region_name)
             except ValueError as error:
                 raise S3IntegrationError(str(error)) from error
-        addressing_style = "virtual" if self.provider == "aws" else "path"
 
         self.client = boto3.client(
             "s3",
@@ -153,6 +154,10 @@ class S3:
         except EndpointConnectionError as error:
             raise S3IntegrationError(
                 f"Could not reach S3 endpoint '{self.endpoint_url}'. Check the endpoint URL and network access."
+            ) from error
+        except BotoCoreError as error:
+            raise S3IntegrationError(
+                f"Could not connect to S3 endpoint '{self.endpoint_url}': {error}"
             ) from error
         except ClientError as error:
             code = error.response["Error"]["Code"]
@@ -200,16 +205,22 @@ class S3:
             ) from error
         except BotoCoreError as error:
             # Connection and timeout errors. The reader's own errors pass through unwrapped.
-            raise S3IntegrationError(f"Failed to upload stream to '{bucket_name}/{remote_key}': {error}") from error
+            raise S3IntegrationError(
+                f"Failed to upload stream to '{bucket_name}/{remote_key}': {error}"
+            ) from error
 
-    def download_stream(self, bucket_name: str, remote_key: str, fileobj) -> None:
+    def download_stream(self, bucket_name: str, remote_key: str, fileobj, low_memory: bool = False) -> None:
         """Stream an S3 object into a writable file-like object."""
+        config = _BACKUP_STREAM_TRANSFER if low_memory else _STREAM_TRANSFER
         try:
-            self.client.download_fileobj(bucket_name, remote_key, fileobj, Config=_STREAM_TRANSFER)
+            self.client.download_fileobj(bucket_name, remote_key, fileobj, Config=config)
         except ClientError as error:
             raise S3IntegrationError(
                 f"Failed to download stream from '{bucket_name}/{remote_key}': {error.response['Error'].get('Message', error)}",
             ) from error
+        except BotoCoreError as error:
+            # Connection and timeout errors. The writer's own errors pass through unwrapped.
+            raise S3IntegrationError(f"Failed to download stream from '{bucket_name}/{remote_key}': {error}") from error
 
     def download_file(self, bucket_name: str, remote_key: str, local_path: Path) -> None:
         try:

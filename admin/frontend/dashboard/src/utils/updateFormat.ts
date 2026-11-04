@@ -51,7 +51,7 @@ const FILTER_STATES: Record<string, (string | undefined)[]> = {
   active: ACTIVE_STATES,
   attention: ATTENTION_STATES,
   completed: ['completed'],
-  reverted: ['reverted'],
+  closed: ['reverted', 'dismissed'],
 }
 
 // One-word labels: five of them have to fit a 375px phone without scrolling.
@@ -60,7 +60,7 @@ export const UPDATE_FILTERS = [
   { label: 'Running', value: 'active' },
   { label: 'Attention', value: 'attention' },
   { label: 'Completed', value: 'completed' },
-  { label: 'Reverted', value: 'reverted' },
+  { label: 'Closed', value: 'closed' },
 ]
 
 // Every state belongs to exactly one group, so no update is unreachable.
@@ -95,14 +95,14 @@ export const siteNames = (op: UpdateOperation | null) => {
   return (op?.sites || []).map((site) => site.name).join(', ')
 }
 
+export const skippedPatches = (op: UpdateOperation | null) =>
+  (op?.decisions || []).filter((decision) => decision.action === 'bypass_patch')
+
 export const patchSkipped = (op: UpdateOperation | null) => {
   const patch = op?.diagnosis?.patch
   if (!op || !patch) return false
-  return (op.decisions || []).some(
-    (decision) =>
-      decision.action === 'bypass_patch' &&
-      decision.patch === patch &&
-      decision.site === op.failed_site,
+  return skippedPatches(op).some(
+    (decision) => decision.patch === patch && decision.site === op.failed_site,
   )
 }
 
@@ -110,6 +110,7 @@ const ACTION_LABEL: Record<string, string> = {
   retry: 'Retry',
   restore: 'Restore',
   bypass_patch: 'Skip patch',
+  dismiss: 'Dismiss',
 }
 
 export const pendingActionLabel = (
@@ -123,6 +124,7 @@ export const pendingActionLabel = (
 const STATE_TONE: Record<string, StateTone> = {
   completed: 'green',
   reverted: 'blue',
+  dismissed: 'gray',
   needs_attention: 'red',
   revert_failed: 'red',
   preparing: 'amber',
@@ -138,15 +140,16 @@ const STATE_TONE: Record<string, StateTone> = {
 const STATE_LABEL: Record<string, string> = {
   completed: 'Completed',
   reverted: 'Reverted',
+  dismissed: 'Dismissed',
   needs_attention: 'Needs attention',
-  revert_failed: 'Revert failed',
+  revert_failed: 'Restore failed',
   preparing: 'Preparing',
   backing_up: 'Backing up',
   updating: 'Updating',
   migrating: 'Migrating',
   retrying: 'Retrying',
-  reverting_apps: 'Reverting apps',
-  reverting_sites: 'Recovering sites',
+  reverting_apps: 'Restoring apps',
+  reverting_sites: 'Restoring sites',
   restarting: 'Restarting services',
 }
 
