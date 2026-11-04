@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from pilot.config import S3Config, SiteConfig
     from pilot.core.app import App, NewAppOptions, RevisionPin
     from pilot.core.bench.backups import BenchBackups
+    from pilot.core.bench.certificates import BenchCertificates
     from pilot.core.bench.hostname_aliases import HostnameAliases
     from pilot.core.bench.migration.store import MigrationStore
     from pilot.core.bench.processes import BenchProcesses
@@ -122,6 +123,12 @@ class Bench:
         from pilot.core.bench.backups import BenchBackups
 
         return BenchBackups(self)
+
+    @cached_property
+    def certificates(self) -> "BenchCertificates":
+        from pilot.core.bench.certificates import BenchCertificates
+
+        return BenchCertificates(self)
 
     @cached_property
     def notifications(self) -> "NotificationStore":

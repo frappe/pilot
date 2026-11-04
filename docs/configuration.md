@@ -345,7 +345,8 @@ Where an alert goes depends on what is configured. A Central-managed host report
 | `update_dismissed` | A failed update was dismissed. |
 | `pilot_updated` | Pilot itself was updated. |
 | `certificate_issued` | A TLS certificate was issued. |
-| `certificate_expiry` | A TLS certificate expires in less than the alert window and has not renewed. |
+| `certificate_expiry` | A TLS certificate has less than 14 days left, so it is not renewing, or has expired. |
+| `certificate_failed` | Certbot could not issue or renew a certificate. |
 | `resource_limit_breached` | CPU, memory, or disk use held above its limit. |
 | `resource_limit_recovered` | Use that was reported above its limit is back under it. |
 | `ping` | The Test button in Settings > Notifications. It goes to every endpoint, whatever events it chose. |

@@ -142,7 +142,9 @@ def send_mail(mail: MailConfig, recipients: list[str], payload: dict[str, typing
 
 # Events that also go to mail and Central. Others, such as one failed backup attempt
 # or a finished task, go to webhooks and the feed only.
-ALERT_EVENTS = frozenset({"resource_limit_breached", "site_down", "backups_failing", "certificate_expiry"})
+ALERT_EVENTS = frozenset(
+    {"resource_limit_breached", "site_down", "backups_failing", "certificate_expiry", "certificate_failed"}
+)
 # Central refuses an event type it does not define, so each alert uses Central's name.
 CENTRAL_EVENT_TYPES = {
     "resource_limit_breached": "resource_limit_breached",
