@@ -39,4 +39,6 @@ export const settingsApi = {
 export const cliUpdatesApi = {
   status: (): Promise<CliUpdate> => unwrap(request.get('cli-updates').json()),
   check: (): Promise<CliUpdate> => unwrap(request.post('cli-update-checks').json()),
+  autoUpdate: (enabled: boolean): Promise<{ auto_update: boolean }> =>
+    unwrap(request.patch('cli-auto-update', { json: { enabled } }).json()),
 }
