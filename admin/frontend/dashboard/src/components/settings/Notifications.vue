@@ -23,7 +23,6 @@ interface WebhookForm {
 
 const { session, centralServerUrl } = useSession()
 
-// Every resource alert starts off; site uptime is the only one on by default.
 const RESOURCE_ALERTS = [
   {
     key: 'cpu_usage_limit',

@@ -421,11 +421,14 @@ class LetsEncryptManager:
         for name, days_left in self.expiring_certificates():
             payload = {
                 "event": "certificate_expiry",
+                "title": f"Certificate for {name} is not renewing",
+                "category": "Sites",
+                "severity": "Warning",
+                "action_route": "/insights/analytics",
                 "message": f"The certificate for {name} expires in {days_left} days and has not renewed.",
                 "context": {"bench": self.bench.config.name, "certificate": name, "days_left": days_left},
             }
-            title = f"Certificate for {name} is not renewing"
-            record_alert(self.bench, payload, category="Sites", severity="Warning", title=title)
+            record_alert(self.bench, payload)
             notify(self.bench, payload)
 
 

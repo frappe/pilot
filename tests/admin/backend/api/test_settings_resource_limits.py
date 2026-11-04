@@ -81,8 +81,8 @@ def test_settings_response_exposes_limits() -> None:
 
     assert build_settings_response(config)["resource_limits"] == {
         "cpu_usage_limit": 85,
-        "memory_usage_limit": 0,
-        "disk_space_limit": 0,
+        "memory_usage_limit": 90,
+        "disk_space_limit": 90,
         "site_uptime": True,
         "email_recipients": [],
     }
@@ -380,5 +380,5 @@ def test_patch_rejects_invalid_limit_without_saving(tmp_path: Path) -> None:
     response = client.patch("/api/v1/settings", json={"resource_limits": {"memory_usage_limit": 120}})
 
     assert response.status_code == 422
-    assert CommonConfig.read(benches_root).resource_limits.memory_usage_limit == 0
+    assert CommonConfig.read(benches_root).resource_limits.memory_usage_limit == 90
     assert CommonConfig.read(benches_root).resource_limits.cpu_usage_limit == 85

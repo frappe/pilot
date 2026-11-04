@@ -124,7 +124,7 @@ def send_mail(mail: MailConfig, recipients: list[str], payload: dict[str, typing
     text, html = _render_alert(payload, logo_cid)
 
     message = EmailMessage()
-    message["Subject"] = f"[Pilot] {payload['message']}"
+    message["Subject"] = f"[Pilot] {payload.get('title') or payload['message']}"
     message["From"] = mail.get_endpoint().sender
     message["To"] = ", ".join(recipients)
     message.set_content(text)
@@ -140,15 +140,41 @@ def send_mail(mail: MailConfig, recipients: list[str], payload: dict[str, typing
             raise smtplib.SMTPRecipientsRefused(refused)
 
 
+# Events that also go to mail and Central. Others, such as one failed backup attempt
+# or a finished task, go to webhooks and the feed only.
+ALERT_EVENTS = frozenset({"resource_limit_breached", "site_down", "backups_failing", "certificate_expiry"})
+# Central refuses an event type it does not define, so each alert uses Central's name.
+CENTRAL_EVENT_TYPES = {
+    "resource_limit_breached": "resource_limit_breached",
+    "site_down": "site_unavailable",
+    "backups_failing": "backup_failure",
+}
+
+
+def is_alert(payload: dict[str, typing.Any]) -> bool:
+    return payload["event"] in ALERT_EVENTS or is_failed_update(payload)
+
+
+def is_failed_update(payload: dict[str, typing.Any]) -> bool:
+    return payload["event"] == "task_failed" and payload.get("category") == "Updates"
+
+
+def get_central_event_type(payload: dict[str, typing.Any]) -> str | None:
+    """Central's event type for this payload, or None when Central has no matching type."""
+    if is_failed_update(payload):
+        return "migration_failure"
+    return CENTRAL_EVENT_TYPES.get(payload["event"])
+
+
 def notify(bench: "Bench", payload: dict[str, typing.Any]) -> bool:
     """Send one event to every sink; True when any of them accepted it.
 
     `payload` holds `event`, `message` and `context`, and may add `title`, `severity`,
     `category`, `site` and `action_route`. Webhooks get every event they chose. Mail
-    and Central get only Warning and Error events, so a finished task stays out of inboxes.
+    and Central get only alerts, so task noise stays out of inboxes.
     """
     delivered = notify_webhooks(bench, payload)
-    if payload.get("severity", "Warning") == "Info":
+    if not is_alert(payload):
         return delivered
     delivered = notify_mail(bench, payload) or delivered
     return notify_central(bench, payload) or delivered
@@ -180,11 +206,12 @@ def notify_mail(bench: "Bench", payload: dict[str, typing.Any]) -> bool:
 
 
 def notify_central(bench: "Bench", payload: dict[str, typing.Any]) -> bool:
-    if not bench.config.central.enabled:
+    event_type = get_central_event_type(payload)
+    if not bench.config.central.enabled or event_type is None:
         return False
     try:
         CentralClient().notify_central(
-            event=payload["event"],
+            event=event_type,
             message=payload["message"],
             context=payload.get("context"),
             reference_name=bench.config.name,

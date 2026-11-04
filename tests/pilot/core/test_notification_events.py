@@ -148,9 +148,17 @@ def test_the_event_context_carries_task_arguments_but_never_secrets(bench_root) 
 
 def test_record_alert_writes_the_benchs_own_copy(tmp_path) -> None:
     bench = SimpleNamespace(notifications=NotificationStore(tmp_path / "logs"))
-    payload = {"event": "site_down", "message": "bench: a.local unreachable"}
+    payload = {
+        "event": "site_down",
+        "title": "a.local is unreachable",
+        "category": "Sites",
+        "severity": "Error",
+        "site": "a.local",
+        "action_route": "/sites/a.local",
+        "message": "bench: a.local unreachable",
+    }
 
-    record_alert(bench, payload, category="Sites", severity="Error", title="a.local is unreachable", site="a.local")
+    record_alert(bench, payload)
 
     (item,) = _feed(tmp_path)
     assert item.title == "a.local is unreachable"
@@ -163,7 +171,8 @@ def test_record_alert_never_raises(tmp_path, caplog) -> None:
     bench = SimpleNamespace(notifications=NotificationStore(tmp_path / "logs"))
     caplog.set_level(logging.WARNING)
     with patch("pilot.core.notification.NotificationStore.create", side_effect=OSError("disk full")):
-        record_alert(bench, {"event": "resource_limit_breached"}, category="Server", severity="Warning", title="x")
+        payload = {"event": "resource_limit_breached", "title": "x", "category": "Server", "severity": "Warning"}
+        record_alert(bench, payload)
 
     assert "Notification skipped for alert resource_limit_breached" in caplog.text
 

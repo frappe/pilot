@@ -162,6 +162,10 @@ class Monitor:
         summary = ", ".join(f"{item['limit']} at {item['reading']}%" for item in crossed)
         return {
             "event": ALERT_EVENT,
+            "title": "Resource limit breached",
+            "category": "Server",
+            "severity": "Warning",
+            "action_route": "/insights/analytics",
             "message": f"{self.bench.config.name}: {summary}",
             "context": {
                 "bench": self.bench.config.name,
@@ -182,13 +186,7 @@ class Monitor:
         # the condition from `due` for good, and must not retire an incident the bench
         # never managed to write down. Once written it is not written again.
         unrecorded = alerts.unrecorded(alerts.sustained())
-        if unrecorded and record_alert(
-            self.bench,
-            self._alert_payload(unrecorded, system_record),
-            category="Server",
-            severity="Warning",
-            title="Resource limit breached",
-        ):
+        if unrecorded and record_alert(self.bench, self._alert_payload(unrecorded, system_record)):
             alerts.mark_recorded(unrecorded)
 
         if not due:
