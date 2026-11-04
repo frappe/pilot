@@ -8,7 +8,7 @@ const mockBench = async (page: Page, central: object) => {
     const responses: Record<string, object> = {
       bootstrap: { mode: 'admin', enabled: true, name: 'test-bench', ...central },
       'auth/session': { authenticated: true },
-      settings: { bench: { onboarding: 'dismissed' }, resource_limits: { webhook_endpoints: [] } },
+      settings: { bench: { onboarding: 'dismissed' }, resource_limits: {}, webhook_endpoints: [] },
       notifications: { data: [], meta: { unread: 0, next_cursor: null } },
     }
     await route.fulfill({ json: responses[path] ?? {} })

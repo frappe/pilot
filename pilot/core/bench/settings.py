@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from pilot.config import BenchConfig
 from pilot.config.mail import MailConfig
 from pilot.config.proxy import is_cloudflare_address
+from pilot.config.webhook import WEBHOOK_EVENTS
 from pilot.managers.waf import WafManager
 
 if TYPE_CHECKING:
@@ -274,12 +275,20 @@ def resource_limits_payload(config: BenchConfig) -> dict:
         "memory_usage_limit": limits.memory_usage_limit,
         "disk_space_limit": limits.disk_space_limit,
         "site_uptime": limits.site_uptime,
-        # Secrets stay server-side; the UI only needs to know one is stored.
-        "webhook_endpoints": [
-            {"url": url, "token_set": bool(token)} for url, token in limits.webhook_endpoints.items()
-        ],
         "email_recipients": limits.email_recipients,
     }
+
+
+def webhook_endpoints_payload(config: BenchConfig) -> list[dict]:
+    # Secrets stay server-side; the UI only needs to know one is stored.
+    return [
+        {"url": endpoint.url, "token_set": bool(endpoint.token), "events": endpoint.events}
+        for endpoint in config.webhook_endpoints
+    ]
+
+
+def webhook_events_payload() -> list[dict]:
+    return [{"value": name, "label": label} for name, label in WEBHOOK_EVENTS.items()]
 
 
 def restart_trigger_values(config: BenchConfig) -> dict:

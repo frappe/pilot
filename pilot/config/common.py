@@ -17,6 +17,7 @@ from pilot.config.proxy import ProxyConfig
 from pilot.config.schema import TomlSchema, field_names
 from pilot.config.telemetry import TelemetryConfig
 from pilot.config.updates import UpdatesConfig
+from pilot.config.webhook import WebhookEndpoint, read_webhook_endpoints
 from pilot.exceptions import ConfigError
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
 from pilot.internal.toml import ConfigDict, Toml
@@ -38,6 +39,7 @@ class CommonConfig:
     resource_limits: ResourceLimitConfig = field(default_factory=ResourceLimitConfig)
     frappe_cloud: FrappeCloudConfig = field(default_factory=FrappeCloudConfig)
     updates: UpdatesConfig = field(default_factory=UpdatesConfig)
+    webhook_endpoints: list[WebhookEndpoint] = field(default_factory=list)
     jwks_url: str = ""
     jwks_audience: str = ""
 
@@ -73,6 +75,7 @@ class CommonConfig:
             ),
             frappe_cloud=FrappeCloudConfig.from_dict(data.get("frappe_cloud", {})),
             updates=UpdatesConfig.from_dict(data.get("updates", {})),
+            webhook_endpoints=read_webhook_endpoints(data),
             jwks_url=admin.get("jwks_url", ""),
             jwks_audience=admin.get("jwks_audience", ""),
         )
@@ -176,6 +179,8 @@ class CommonConfig:
             }
         if self.frappe_cloud != FrappeCloudConfig():
             data["frappe_cloud"] = {"url": self.frappe_cloud.url}
+        if self.webhook_endpoints:
+            data["webhook_endpoints"] = [asdict(endpoint) for endpoint in self.webhook_endpoints]
         if self.jwks_url:
             data["admin"] = {"jwks_url": self.jwks_url, "jwks_audience": self.jwks_audience}
         return data
@@ -200,11 +205,16 @@ _SCHEMA = TomlSchema(
         ),
         "proxy": TomlSchema(keys=field_names(ProxyConfig)),
         "telemetry": TomlSchema(keys=field_names(TelemetryConfig)),
-        "resource_limits": TomlSchema(keys=field_names(ResourceLimitConfig)),
+        # webhook_endpoints here is the older place for them; it is read and moved to the top level.
+        "resource_limits": TomlSchema(
+            keys=field_names(ResourceLimitConfig) | {"webhook_endpoints"},
+            arrays={"webhook_endpoints": TomlSchema(keys=field_names(WebhookEndpoint))},
+        ),
         "frappe_cloud": TomlSchema(keys=field_names(FrappeCloudConfig)),
         "updates": TomlSchema(keys=field_names(UpdatesConfig)),
         "admin": TomlSchema(keys={"jwks_url", "jwks_audience"}),
-    }
+    },
+    arrays={"webhook_endpoints": TomlSchema(keys=field_names(WebhookEndpoint))},
 )
 
 

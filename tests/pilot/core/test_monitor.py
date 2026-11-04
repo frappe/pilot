@@ -1,6 +1,6 @@
 import json
 import urllib.error
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import PropertyMock, patch
@@ -9,8 +9,10 @@ import psutil
 import pytest
 
 from pilot.config import BenchConfig, MariaDBConfig, RedisConfig, WorkerConfig
-from pilot.core.alerts import ALERT_SUSTAINED_SECONDS, ALERT_TIMEOUT_SECONDS, notify, send_alert
+from pilot.config.webhook import WebhookEndpoint
+from pilot.core.alerts import ALERT_SUSTAINED_SECONDS, notify
 from pilot.core.bench import Bench
+from pilot.core.notification.webhooks import WEBHOOK_TIMEOUT_SECONDS, WebhookDelivery, send_webhook
 from pilot.core.server.monitoring import Monitor, MonitorConfigurator
 from pilot.core.server.monitoring_proc import CPU_STAT_FIELDS
 
@@ -307,7 +309,7 @@ def _alerting_monitor(tmp_path: Path, **limits: int) -> Monitor:
     # MonitorConfigurator.setup() makes this directory on a real host, and it
     # is patched out here.
     monitor.alerts_path.parent.mkdir(parents=True, exist_ok=True)
-    bench.config.resource_limits.webhook_endpoints = {"https://alerts.example.com": "tok"}
+    bench.config.webhook_endpoints = [WebhookEndpoint("https://alerts.example.com", "tok")]
     return monitor
 
 
@@ -316,10 +318,12 @@ def _captured_alerts():
     """Collect what reaches the webhook sink. Central is not enrolled on a bare
     test config, so notify() falls through to the webhooks alone."""
     payloads: list[dict] = []
-    with patch(
-        "pilot.core.alerts.send_alert",
-        lambda endpoint, token, payload: payloads.append(payload),
-    ):
+
+    def capture(endpoint, body):
+        payloads.append(body)
+        return WebhookDelivery(200, "")
+
+    with patch("pilot.core.notification.webhooks.send_webhook", capture):
         yield payloads
 
 
@@ -398,6 +402,34 @@ def test_a_recovered_limit_starts_its_window_over(tmp_path: Path) -> None:
     assert payloads == [], "the second breach has to sustain on its own before alerting"
 
 
+def test_usage_back_under_the_limit_after_an_alert_sends_a_recovery(tmp_path: Path) -> None:
+    monitor = _alerting_monitor(tmp_path, cpu_usage_limit=80)
+    monitor.send_alert_if_required(_system_record(cpu=95.0))
+    _age_alerts(monitor)
+
+    with _captured_alerts() as payloads:
+        monitor.send_alert_if_required(_system_record(cpu=95.0))
+        monitor.send_alert_if_required(_system_record(cpu=10.0))
+
+    assert [payload["event"] for payload in payloads] == ["resource_limit_breached", "resource_limit_recovered"]
+    assert payloads[1]["context"]["recovered_limits"] == ["cpu_usage_limit"]
+    assert payloads[1]["severity"] == "Info"
+
+
+def test_a_limit_turned_off_during_an_alert_sends_no_recovery(tmp_path: Path) -> None:
+    monitor = _alerting_monitor(tmp_path, cpu_usage_limit=80)
+    monitor.send_alert_if_required(_system_record(cpu=95.0))
+    _age_alerts(monitor)
+    with _captured_alerts():
+        monitor.send_alert_if_required(_system_record(cpu=95.0))
+    monitor.bench.config.resource_limits.cpu_usage_limit = 0
+
+    with _captured_alerts() as payloads:
+        monitor.send_alert_if_required(_system_record(cpu=95.0))
+
+    assert payloads == []
+
+
 def test_a_corrupt_alerts_file_does_not_stop_the_tick(tmp_path: Path) -> None:
     monitor = _alerting_monitor(tmp_path, cpu_usage_limit=80)
     monitor.alerts_path.write_text("not json")
@@ -435,44 +467,77 @@ def test_alert_body_matches_centrals_event_schema(tmp_path: Path) -> None:
     json.dumps(payload)
 
 
-def test_send_alert_posts_json_with_a_bearer_token() -> None:
+def test_send_webhook_posts_github_style_json_with_a_signature() -> None:
+    import hashlib
+    import hmac
+
+    captured = {}
+
+    class Response:
+        status = 202
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self, size=-1):
+            return b"accepted"
+
+    def fake_urlopen(request, timeout=None):
+        captured["request"] = request
+        captured["timeout"] = timeout
+        return Response()
+
+    body = {"event": "site_down", "delivery": "abc", "context": {}}
+    with patch("urllib.request.urlopen", fake_urlopen):
+        delivery = send_webhook(WebhookEndpoint("https://alerts.example.com/pilot", "tok-123"), body)
+
+    request = captured["request"]
+    signature = hmac.new(b"tok-123", request.data, hashlib.sha256).hexdigest()
+    assert delivery == WebhookDelivery(202, "accepted")
+    assert request.get_method() == "POST", "urllib sends the verb verbatim, so it has to be upper case"
+    assert json.loads(request.data) == body
+    assert request.get_header("Authorization") == "Bearer tok-123"
+    assert request.get_header("X-pilot-signature-256") == f"sha256={signature}"
+    assert request.get_header("X-pilot-event") == "site_down"
+    assert request.get_header("X-pilot-delivery") == "abc"
+    assert captured["timeout"] == WEBHOOK_TIMEOUT_SECONDS
+
+
+def test_send_webhook_without_a_token_sends_no_auth() -> None:
     captured = {}
 
     def fake_urlopen(request, timeout=None):
-        captured["url"] = request.full_url
-        captured["method"] = request.get_method()
-        captured["body"] = json.loads(request.data.decode())
-        captured["auth"] = request.get_header("Authorization")
-        captured["type"] = request.get_header("Content-type")
-        captured["timeout"] = timeout
-        return nullcontext()
+        captured["request"] = request
+        raise urllib.error.HTTPError(request.full_url, 404, "Not Found", {}, None)
 
     with patch("urllib.request.urlopen", fake_urlopen):
-        send_alert("https://alerts.example.com/pilot", "tok-123", {"event": "x", "context": {}})
+        delivery = send_webhook(
+            WebhookEndpoint("https://alerts.example.com"), {"event": "x", "delivery": "d"}
+        )
 
-    assert captured["url"] == "https://alerts.example.com/pilot"
-    assert captured["method"] == "POST", "urllib sends the verb verbatim, so it has to be upper case"
-    assert captured["body"] == {"event": "x", "context": {}}
-    assert captured["auth"] == "Bearer tok-123"
-    assert captured["type"] == "application/json"
-    assert captured["timeout"] == ALERT_TIMEOUT_SECONDS
+    assert captured["request"].get_header("Authorization") is None
+    assert delivery.status == 404 and not delivery.is_success
 
 
 def test_alert_reaches_every_webhook_even_when_one_is_down(tmp_path: Path) -> None:
     bench = _make_bench(tmp_path / "my-bench")
     bench.config.resource_limits.cpu_usage_limit = 80
-    bench.config.resource_limits.webhook_endpoints = {
-        "https://down.example.com": "tok-a",
-        "https://up.example.com": "tok-b",
-    }
+    bench.config.webhook_endpoints = [
+        WebhookEndpoint("https://down.example.com", "tok-a"),
+        WebhookEndpoint("https://up.example.com", "tok-b"),
+    ]
     reached = []
 
-    def fake_send(endpoint, token, payload):
-        if endpoint == "https://down.example.com":
+    def fake_send(endpoint, body):
+        if endpoint.url == "https://down.example.com":
             raise urllib.error.URLError("connection refused")
-        reached.append(endpoint)
+        reached.append(endpoint.url)
+        return WebhookDelivery(200, "")
 
-    with patch("pilot.core.alerts.send_alert", fake_send):
+    with patch("pilot.core.notification.webhooks.send_webhook", fake_send):
         delivered = notify(bench, {"event": "x", "message": "m", "context": {}})
 
     assert reached == ["https://up.example.com"]
@@ -483,12 +548,12 @@ def test_an_alert_no_sink_accepted_is_not_delivered(tmp_path: Path) -> None:
     """The caller marks the condition notified off this, so a round where
     everything was down must not count."""
     bench = _make_bench(tmp_path / "my-bench")
-    bench.config.resource_limits.webhook_endpoints = {"https://down.example.com": "tok"}
+    bench.config.webhook_endpoints = [WebhookEndpoint("https://down.example.com", "tok")]
 
-    def refuse(endpoint, token, payload):
+    def refuse(endpoint, body):
         raise urllib.error.URLError("connection refused")
 
-    with patch("pilot.core.alerts.send_alert", refuse):
+    with patch("pilot.core.notification.webhooks.send_webhook", refuse):
         delivered = notify(bench, {"event": "x", "message": "m", "context": {}})
 
     assert delivered is False
@@ -499,10 +564,10 @@ def test_an_undelivered_alert_is_recorded_locally_once(tmp_path: Path) -> None:
     repeats every tick. The bench's own feed must not grow a row per tick with it."""
     monitor = _alerting_monitor(tmp_path, cpu_usage_limit=80)
 
-    def refuse(endpoint, token, payload):
+    def refuse(endpoint, body):
         raise urllib.error.URLError("connection refused")
 
-    with patch("pilot.core.alerts.send_alert", refuse):
+    with patch("pilot.core.notification.webhooks.send_webhook", refuse):
         monitor.send_alert_if_required(_system_record(cpu=95.0))
         _age_alerts(monitor)
         for _ in range(5):
@@ -538,10 +603,10 @@ def test_a_local_record_that_failed_is_retried_on_the_next_tick(tmp_path: Path) 
 
     monitor = _alerting_monitor(tmp_path, cpu_usage_limit=80)
 
-    def refuse(endpoint, token, payload):
+    def refuse(endpoint, body):
         raise urllib.error.URLError("connection refused")
 
-    with patch("pilot.core.alerts.send_alert", refuse):
+    with patch("pilot.core.notification.webhooks.send_webhook", refuse):
         monitor.send_alert_if_required(_system_record(cpu=95.0))
         _age_alerts(monitor)
 

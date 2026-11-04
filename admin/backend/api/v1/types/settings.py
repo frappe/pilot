@@ -108,6 +108,18 @@ class MailSettings(TypedDict):
 class WebhookEndpointSettings(TypedDict):
     url: str
     token_set: bool
+    events: list[str]
+
+
+class WebhookTestResult(TypedDict):
+    status: int
+    body: str
+    is_success: bool
+
+
+class WebhookEventOption(TypedDict):
+    value: str
+    label: str
 
 
 class ResourceLimitSettings(TypedDict):
@@ -115,7 +127,6 @@ class ResourceLimitSettings(TypedDict):
     memory_usage_limit: int
     disk_space_limit: int
     site_uptime: bool
-    webhook_endpoints: list[WebhookEndpointSettings]
     email_recipients: list[str]
 
 
@@ -213,6 +224,8 @@ class Settings(TypedDict):
     llm: LLMSettingsDetail
     llm_providers: list[LLMProviderOption]
     resource_limits: ResourceLimitSettings
+    webhook_endpoints: list[WebhookEndpointSettings]
+    webhook_events: list[WebhookEventOption]
     mail: MailSettings
     monitor: MonitorSettings
 
