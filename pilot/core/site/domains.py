@@ -50,7 +50,7 @@ class SiteDomains:
         attached = normalized in {normalize_host(name) for name in self.names()}
         return attached, primary is not None and normalize_host(primary) == normalized
 
-    def describe(self) -> tuple[list[dict[str, str | bool]], str]:
+    def describe(self) -> tuple[list[dict[str, str | bool | dict | None]], str]:
         """Return all domains with their primary and public route state."""
         config = self._site_config()
         site_name = config.name
@@ -58,7 +58,7 @@ class SiteDomains:
         rows = [self._description(config, domain, domain == primary) for domain in [site_name, *self.names()]]
         return rows, primary
 
-    def describe_domain(self, domain: str) -> dict[str, str | bool] | None:
+    def describe_domain(self, domain: str) -> dict[str, str | bool | dict | None] | None:
         """Return one attached domain with its primary and public route state."""
         attached, is_primary = self.status(domain)
         if not attached:
@@ -131,7 +131,7 @@ class SiteDomains:
         config: "SiteConfig",
         domain: str,
         is_primary: bool,
-    ) -> dict[str, str | bool]:
+    ) -> dict[str, str | bool | dict | None]:
         route = config.route_for(domain)
         tls = route.public_tls
         if tls and config.configured_route_for(domain) is None:
