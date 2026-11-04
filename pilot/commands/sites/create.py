@@ -18,6 +18,7 @@ class NewSiteCommand(Command):
     site_name: Annotated[str, Arg(help="Site name (e.g. site2.localhost).", metavar="name")]
     admin_password: Annotated[str, Arg(help="Frappe admin password.")] = "admin"
     apps: Annotated[list[str] | None, Arg(help="Apps to assign (defaults to framework app).")] = None
+    skip_assets: Annotated[bool, Arg(help="Skip building missing app assets.")] = False
     db_type: Annotated[str | None, Arg(cli=False)] = None
 
     def __post_init__(self) -> None:
@@ -37,5 +38,6 @@ class NewSiteCommand(Command):
             self.apps,
             self.admin_password,
             db_type=self.db_type,
+            skip_assets=self.skip_assets,
             on_progress=self.report,
         )
