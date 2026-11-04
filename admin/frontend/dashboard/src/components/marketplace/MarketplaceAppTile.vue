@@ -86,7 +86,7 @@ const statusTheme = computed(() => {
             size="xs"
             variant="ghost"
             theme="red"
-            class="-mt-2 -mr-2"
+            class="-mt-3 -mr-2"
             icon="lucide-trash-2"
             :tooltip="`Uninstall ${app.title}`"
             :aria-label="`Uninstall ${app.title}`"

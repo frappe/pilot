@@ -210,8 +210,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="px-3 md:px-4 pb-4" :class="{ 'pt-4': !sites.length }">
-    <StickyToolbar v-if="sites.length" class="flex items-center gap-2">
+  <div class="px-3 md:px-4 pb-4">
+    <StickyToolbar class="flex items-center gap-2">
       <TextInput
         v-model="search"
         placeholder="Search"
