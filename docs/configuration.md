@@ -310,7 +310,7 @@ Run `pilot setup nginx` on each production bench after a change. The front proxy
 
 ### Automatic Updates
 
-`[updates] auto = true` in `common_config.toml` turns on daily Pilot updates for the host. It is off by default. Turn it on or off with `pilot admin auto-update on|off`, which also adds or removes a cron entry that runs at 03:37 each day. When a newer release exists, the entry queues one `update-cli` task on the first bench by name, so the update shows in that bench's task log. The task updates Pilot and restarts the admin of every bench. A source checkout (`dev` version) is never updated this way. A failed update is tried again the next day.
+Automatic Pilot updates are on by default for release installs. Set `auto_pilot_update = false` under `[updates]` in `common_config.toml` to keep them off. Use the Automatic updates switch in Settings > About, or `pilot admin auto-update on|off`. Both add or remove a cron entry. It checks the UTC time each minute and runs Pilot only at 12:00 AM UTC, regardless of the server timezone. When a newer release exists, the entry queues one `update-cli` task on the first bench by name, so the update shows in that bench's task log. The task updates Pilot and restarts the admin of every bench. The installer and upgrade patch install the schedule unless the setting is off. A source checkout (`dev` version) is never updated this way. Its switch is disabled. A failed update is tried again the next day.
 
 ### Alert Delivery
 

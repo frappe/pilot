@@ -3,10 +3,10 @@ from dataclasses import dataclass
 
 @dataclass
 class UpdatesConfig:
-    """Host-wide Pilot update policy. `auto` installs new releases daily; off by default."""
+    """Host-wide Pilot update policy."""
 
-    auto: bool = False
+    auto_pilot_update: bool = True
 
     @classmethod
     def from_dict(cls, data: dict) -> "UpdatesConfig":
-        return cls(auto=bool(data.get("auto", False)))
+        return cls(auto_pilot_update=bool(data.get("auto_pilot_update", True)))
