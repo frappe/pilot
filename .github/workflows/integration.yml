@@ -5,9 +5,15 @@ on:
     branches: [develop]
   pull_request:
     branches: [develop]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   integration:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     # 24.04 ships nginx 1.24; production deploys emit ssl_reject_handshake,
     # which needs nginx >= 1.19.4 (22.04 only has 1.18 and fails nginx -t).
     runs-on: ubuntu-24.04
