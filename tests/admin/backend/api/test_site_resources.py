@@ -132,3 +132,51 @@ def test_list_sites_labels_each_site_by_its_primary_domain(tmp_path: Path) -> No
     labels = {site["name"]: site["primary_domain"] for site in response.get_json()}
     assert response.status_code == 200
     assert labels == {"plain.localhost": "plain.localhost", "custom.localhost": "erp.example.com"}
+
+
+def test_list_sites_includes_uptime_and_requests(tmp_path: Path) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    _write_site(bench_root, "s.localhost")
+    now = datetime.now(UTC)
+    logs = bench_root / "logs"
+    logs.mkdir(exist_ok=True)
+    uptime = [
+        {"time": (now - timedelta(minutes=minutes)).isoformat(), "site": "s.localhost", "up": up}
+        for minutes, up in [(30, True), (20, False), (10, True), (5, True)]
+    ]
+    (logs / "uptime.json.log").write_text("\n".join(json.dumps(record) for record in uptime) + "\n")
+    requests = [
+        {
+            "timestamp": (now - timedelta(minutes=5)).isoformat(),
+            "site": "s.localhost",
+            "transaction_type": "request",
+            "duration": 1,
+            "request": {"path": "/app"},
+        },
+        {
+            "timestamp": (now - timedelta(minutes=4)).isoformat(),
+            "site": "s.localhost",
+            "transaction_type": "request",
+            "duration": 1,
+            "request": {"path": "/api/method/ping"},
+        },
+        {
+            "timestamp": (now - timedelta(minutes=3)).isoformat(),
+            "site": "s.localhost",
+            "transaction_type": "job",
+            "duration": 1,
+        },
+    ]
+    (logs / "monitor.json.log").write_text("\n".join(json.dumps(record) for record in requests) + "\n")
+
+    site = client.get("/api/v1/sites").get_json()[0]
+
+    assert site["uptime_percent"] == 75.0
+    assert len(site["uptime_buckets"]) == 28
+    assert site["uptime_buckets"][-1] == 75.0
+    assert sum(site["requests"]) == 1
+    assert len(site["requests"]) == 24
+    assert site["ssl"] is False
