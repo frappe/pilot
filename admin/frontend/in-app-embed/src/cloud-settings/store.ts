@@ -227,10 +227,13 @@ export const createStore =(context?: CloudContext, translator: CloudSettingsTran
   }
 
   const isOnTrial = () => Boolean(state.billing?.trial)
+  // Central blanks the specs line for a product that sells the site, not the server under it.
+  const hasPlanSpecs = () => Boolean(state.billing?.plan?.subtitle)
 
   return {
     state,
     isOnTrial,
+    hasPlanSpecs,
     loadAccountLinks,
     loadBilling,
     loadMarketplace,

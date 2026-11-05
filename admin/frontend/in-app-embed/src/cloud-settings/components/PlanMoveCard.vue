@@ -58,7 +58,9 @@ onBeforeUnmount(stop)
       {{ plan ? __("Upgrading to {0}", [plan]) : __("Upgrading your plan") }}
     </p>
     <p class="mt-1 text-p-sm text-ink-gray-6">
-      {{ __("Billing has started, and full server access is on. Your site restarts in a few minutes while it moves to the new plan.") }}
+      {{ store.hasPlanSpecs()
+          ? __("Billing has started, and full server access is on. Your site restarts in a few minutes while it moves to the new plan.")
+          : __("Billing has started. Your site restarts in a few minutes while it moves to the new plan.") }}
     </p>
 
     <p v-if="isWaiting" class="mt-4 flex items-center gap-2 text-p-sm text-ink-gray-5">
