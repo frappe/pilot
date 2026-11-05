@@ -119,6 +119,7 @@ test('an upgrade picks the plan first, with the cheapest one selected', async ({
   await expect(page.getByText('Step 1 of 2')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Choose your plan' })).toBeVisible()
   await expect(page.getByRole('radio', { name: /Starter/ })).toBeChecked()
+  await expect(page.getByText(/Every plan gives you full server access/)).toBeVisible()
   await expect(page.getByText(/Larger plans permanently increase/)).toHaveCount(0)
 
   await page.getByRole('radio', { name: /Pro/ }).check()
@@ -478,6 +479,37 @@ test('a payment method that converts the trial opens the progress page of its mo
   await page.getByRole('button', { name: 'Check status' }).click()
 
   await expect(page).toHaveURL(/progress=1/)
+})
+
+test('a product that hides plan specs leaves server access out of the upgrade', async ({ page }) => {
+  let converted = false
+  const plan = { name: 'Starter', subtitle: '', specs: {} }
+  const moving = { ...billing({ onTrial: null, hasCard: true }), plan, plan_change: { plan: 'Starter', progress_url: null } }
+  await openBilling(page, {
+    get_billing: () => ({ message: converted ? moving : { ...billing(), plan } }),
+    get_account_url: accountLinks,
+    ...upgrade,
+    get_payment_gateways: stripeOnly,
+    create_payment_method_checkout: () => ({ message: { checkout_url: 'https://checkout.example.test/1', reference: 'ref-1' } }),
+    confirm_payment_method_checkout: () => {
+      converted = true
+      return { message: { status: 'Active', active: true } }
+    },
+  })
+  await page.evaluate(() => {
+    window.open = () => null
+  })
+
+  await page.getByRole('button', { name: 'Upgrade' }).click()
+  await expect(page.getByText('Billing starts when you add a payment method.', { exact: true })).toBeVisible()
+  await expect(page.getByText(/server access/)).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Continue', exact: true }).click()
+  await page.getByRole('button', { name: 'Continue with Stripe' }).click()
+  await page.getByRole('button', { name: 'Check status' }).click()
+
+  await expect(page.getByText(/^Billing has started\. Your site restarts/)).toBeVisible()
+  await expect(page.getByText(/server access/)).toHaveCount(0)
 })
 
 test('a move that is still running opens its progress page when billing opens again', async ({ page }) => {

@@ -74,6 +74,15 @@ const submitLabel = computed(() => {
   return choice.value && !choice.value.is_current ? __('Move to {0}', [choice.value.title]) : __('Choose a plan')
 })
 
+const intro = computed(() => {
+  if (!isTrial.value)
+    return __('Pick the size this site runs on. You pay for the new plan from today.')
+  if (!store.hasPlanSpecs()) return __('Billing starts when you add a payment method.')
+  return __(
+    'Every plan gives you full server access: SSH, the web console, Pilot and snapshots. Billing starts when you add a payment method.',
+  )
+})
+
 onMounted(load)
 </script>
 
@@ -83,11 +92,7 @@ onMounted(load)
     <h3 class="text-base-semibold text-ink-gray-8" :class="step && 'mt-1'">
       {{ isTrial ? __("Choose your plan") : __("Change plan") }}
     </h3>
-    <p class="mt-1 text-p-sm text-ink-gray-5">
-      {{ isTrial
-          ? __("Every plan gives you full server access: SSH, the web console, Pilot and snapshots. Billing starts when you add a payment method.")
-          : __("Pick the size this site runs on. You pay for the new plan from today.") }}
-    </p>
+    <p class="mt-1 text-p-sm text-ink-gray-5">{{ intro }}</p>
 
     <div v-if="started" class="mt-5 rounded-6 bg-surface-gray-2 p-4" role="status">
       <p class="text-p-sm text-ink-gray-7">
