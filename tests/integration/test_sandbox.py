@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from pilot.config import BenchConfig
+from pilot.config.common_site_config import update_common_site_config
 from pilot.core.bench import Bench
 from pilot.managers.processes.sandbox import PilotSandboxPaths
 from pilot.managers.processes.systemd import SystemdProcessManager
@@ -123,9 +124,13 @@ def test_pilot_rewrites_keep_files_away_from_a_running_unit(sandboxed: Path) -> 
     before = aliases.registry_path.read_text()
     aliases.record("old.example.com")
     aliases.registry_path.write_text(before)
+    with update_common_site_config(sandboxed / "sites"):
+        pass
 
     assert not Path(f"/proc/{pid}/root{toml_path}").exists()
-    assert f" {aliases.registry_path} " in Path(f"/proc/{pid}/mountinfo").read_text()
+    mountinfo = Path(f"/proc/{pid}/mountinfo").read_text()
+    assert f" {aliases.registry_path} " in mountinfo
+    assert f" {sandboxed / 'sites' / 'common_site_config.json'} " in mountinfo
 
 
 @pytest.fixture(scope="module")
@@ -161,6 +166,8 @@ def run_sandboxed(sandboxed: Path):
         "test -e {bench}/bench.toml",
         "ls {bench}/tasks",
         "touch {bench}/planted",
+        "mv {bench}/sites/common_site_config.json {bench}/sites/css.json",
+        "echo x >> {bench}/sites/common_site_config.json",
         "ls {pilot}/databases/mariadb/data",
         "ls {pilot}/databases/mariadb/config",
         "ls {pilot}/.admin-venv",

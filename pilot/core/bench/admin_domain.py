@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from pilot.exceptions import BenchError
-from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
+from pilot.internal.atomic_file import exclusive_file_lock
 from pilot.utils import host_owner, matches_wildcard, normalize_host
 
 if TYPE_CHECKING:
@@ -185,7 +185,7 @@ class AdminDomainChange:
             if not changes:
                 return
             config.update(changes)
-            replace_private_text_locked(config_path, json.dumps(config, indent=indent))
+            config_path.write_text(json.dumps(config, indent=indent))
 
     def _retarget_hostname_aliases(self) -> None:
         self.bench.hostname_aliases.retarget("admin", self.previous, self.domain)

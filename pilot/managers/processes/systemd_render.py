@@ -58,6 +58,7 @@ def get_sandbox_properties(
     `read_paths` and `write_paths` are what every unit gets back from the masked home."""
     # Pilot's control files: the admin trusts them, so a workload must not change them.
     control = [str(bench_path / "config" / name) for name in CONTROL_ENTRIES]
+    control.append(str(bench_path / "sites" / "common_site_config.json"))
     folders = " ".join(_quote(str(bench_path / name)) for name in WORKLOAD_DIRECTORIES)
     return [
         *_SANDBOX_DIRECTIVES,

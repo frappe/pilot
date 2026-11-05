@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from pilot.config.common_site_config import update_common_site_config
 from pilot.managers.processes.sandbox import (
     CONTROL_DIRECTORIES,
     CONTROL_ENTRIES,
@@ -90,3 +91,17 @@ def test_recording_a_site_alias_keeps_the_file_a_sandboxed_unit_binds(tmp_path: 
 
     assert registry.stat().st_ino == inode
     assert "old.example.com" in registry.read_text()
+
+
+def test_updating_common_site_config_keeps_the_file_a_sandboxed_unit_binds(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    path = bench.sites_path / "common_site_config.json"
+    path.write_text("{}")
+    inode = path.stat().st_ino
+
+    with update_common_site_config(bench.sites_path) as config:
+        config["allow_cors"] = "*"
+
+    assert path.stat().st_ino == inode
+    assert '"allow_cors": "*"' in path.read_text()

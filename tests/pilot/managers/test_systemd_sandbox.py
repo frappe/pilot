@@ -65,7 +65,9 @@ SANDBOX_DIRECTIVES = {
     f"BindPaths={FOLDERS}",
     f"ReadWritePaths={FOLDERS}",
     f"TemporaryFileSystem={Path.home()}:ro",
-    "BindReadOnlyPaths=" + " ".join(f"-{BENCH}/config/{name}" for name in CONTROL_ENTRIES),
+    "BindReadOnlyPaths="
+    + " ".join(f"-{BENCH}/config/{name}" for name in CONTROL_ENTRIES)
+    + f" -{BENCH}/sites/common_site_config.json",
 }
 
 
@@ -246,6 +248,7 @@ def test_control_files_are_read_only_or_hidden_from_workloads() -> None:
     read_only = next(line for line in properties if line.startswith("BindReadOnlyPaths="))
     for name in ("services", "nginx", "admin-gunicorn.conf.py", "gunicorn.conf.py"):
         assert f"-{BENCH}/config/{name}" in read_only
+    assert f"-{BENCH}/sites/common_site_config.json" in read_only
     writable = next(line for line in properties if line.startswith("ReadWritePaths="))
     assert not any(f"{BENCH}/config/{name}" in writable for name in CONTROL_ENTRIES)
 
