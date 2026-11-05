@@ -54,6 +54,13 @@ def get_process_start_time(pid: int) -> float | None:
     return int(boot_time[1]) + int(fields[1].split()[19]) / os.sysconf("SC_CLK_TCK")
 
 
+def available_cpu_count() -> int:
+    """CPUs this process may run on. An affinity mask or cpuset can hold it below the host's count."""
+    if hasattr(os, "sched_getaffinity"):
+        return len(os.sched_getaffinity(0))
+    return os.cpu_count() or 1
+
+
 def is_linux() -> bool:
     return detect() == Platform.LINUX
 

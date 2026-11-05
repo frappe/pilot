@@ -99,7 +99,8 @@ class BenchRuntime:
         if not manager.is_configured():
             raise BenchError(incomplete_production_message(self.bench))
 
-        manager.write_config()
+        # Also lists queues added to bench.toml by hand, which Frappe rejects otherwise.
+        self._rebuild_manager_config(manager)
         # Links app units added since the last setup, and unlinks removed ones.
         manager.install_config()
         manager.reload_manager_config()

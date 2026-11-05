@@ -22,3 +22,4 @@ register_worker_queues
 serve_site_embeds_locally
 enable_default_alerts
 update_auto_update_schedule
+size_gunicorn_workers_by_cpu

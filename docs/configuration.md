@@ -82,7 +82,7 @@ path = "/home/me/Projects/gameplan"
 
 A registry release is offered only when it is newer than the installed commit. A full clone checks that the release descends from it. A shallow clone fetches only the release commit, without the history between them, so a newer version decides, and between equal versions, such as `17.0.0-dev` on `develop`, a later commit date decides.
 
-`[redis]` defines separate cache and queue ports. Pilot writes them to `config/redis_cache.conf` and `config/redis_queue.conf` inside a `PILOT MANAGED BLOCK` and keeps the lines outside it, such as `loadmodule /path/to/redisearch.so`. `[[workers]]` defines queue groups, their process counts and an optional `timeout`: the default job timeout of the group's queues, in seconds. Without it, Frappe uses 1500 for `long` and 300 for other queues. Two groups cannot give one queue different timeouts. Lite mode folds the groups into one, which takes the longest timeout; there a blank timeout counts as Frappe's default for its queues. Frappe only knows `default`, `short` and `long`, so Pilot lists every other queue, and every queue with a timeout, under `workers` in `sites/common_site_config.json`. Pilot leaves entries there for queues that no worker group lists.
+`[redis]` defines separate cache and queue ports. Pilot writes them to `config/redis_cache.conf` and `config/redis_queue.conf` inside a `PILOT MANAGED BLOCK` and keeps the lines outside it, such as `loadmodule /path/to/redisearch.so`. `[[workers]]` defines queue groups, their process counts and an optional `timeout`: the default job timeout of the group's queues, in seconds. Without it, Frappe uses 1500 for `long` and 300 for other queues. Two groups cannot give one queue different timeouts. Lite mode folds the groups into one, which takes the longest timeout; there a blank timeout counts as Frappe's default for its queues. Frappe only knows `default`, `short` and `long`, so Pilot lists every other queue, and every queue with a timeout, under `workers` in `sites/common_site_config.json`. Pilot leaves entries there for queues that no worker group lists. Worker groups have no Admin UI: edit `[[workers]]` in `bench.toml` and run `pilot restart`, which registers new queues in `common_site_config.json` before it restarts the workload. Custom queues work in lite mode too; there the one process serves every queue.
 
 ## Runtime modes
 
@@ -164,7 +164,7 @@ A domain the certificate does not name is served over HTTP rather than off a cer
 
 These tables are per-bench unless noted otherwise:
 
-- `[gunicorn]`: Gunicorn settings.
+- `[gunicorn]`: Gunicorn settings. Without `workers`, the bench runs one gunicorn worker per CPU available to Pilot, counted again each time Pilot writes the gunicorn config, so a resized VM is picked up on the next `pilot restart`. Set `workers` to pin a count. `threads` defaults to 8. The `size_gunicorn_workers_by_cpu` patch removes the old default of `workers = 2` from existing benches. Lite mode does not run gunicorn.
 - `[build]`: manual override for the asset build memory cap.
 - `[processes]`: `disabled`, the app processes that stay off. `pilot processes disable` and `enable` write it. See [App Processes](app-processes.md).
 - `[firewall]`: firewall behavior.
