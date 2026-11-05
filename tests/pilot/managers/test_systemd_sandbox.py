@@ -61,13 +61,17 @@ SANDBOX_DIRECTIVES = {
     "ProtectSystem=strict",
     "ProtectHome=tmpfs",
     "PrivateTmp=yes",
+    "TemporaryFileSystem=/run:ro",
+    "TemporaryFileSystem=/dev/shm",
+    "InaccessiblePaths=-/var/log/journal",
     "TemporaryFileSystem=/srv/pilot/benches:ro",
     f"BindPaths={FOLDERS}",
     f"ReadWritePaths={FOLDERS}",
     f"TemporaryFileSystem={Path.home()}:ro",
     "BindReadOnlyPaths="
     + " ".join(f"-{BENCH}/config/{name}" for name in CONTROL_ENTRIES)
-    + f" -{BENCH}/sites/common_site_config.json",
+    + f" -{BENCH}/sites/common_site_config.json"
+    + " -/run/systemd/resolve",
 }
 
 
@@ -269,3 +273,13 @@ def test_config_is_not_bound_as_a_whole_so_frappe_can_create_its_lock_files() ->
 
     assert f"-{BENCH}/config " not in read_only + " "
     assert not any(line.endswith(f"{BENCH}/config") for line in properties)
+
+
+def test_host_sockets_logs_and_shared_memory_stay_outside_the_sandbox() -> None:
+    properties = get_sandbox_properties(BENCH, BENCHES)
+    read_only = next(line for line in properties if line.startswith("BindReadOnlyPaths="))
+
+    assert "TemporaryFileSystem=/run:ro" in properties
+    assert "-/run/systemd/resolve" in read_only.split()
+    assert "TemporaryFileSystem=/dev/shm" in properties
+    assert "InaccessiblePaths=-/var/log/journal" in properties

@@ -156,6 +156,8 @@ def run_sandboxed(sandboxed: Path):
         "test -e ~/.ssh",
         "test -e ~/.bashrc",
         "test -S /run/user/$(id -u)/bus",
+        "test -S /run/dbus/system_bus_socket",
+        "ls /var/log/journal",
         "systemd-run --user --pipe true",
         "touch {bench}/config/services/escape.service",
         "echo x >> {bench}/config/services/*-web.service",
@@ -192,6 +194,20 @@ def test_a_workload_cannot_change_the_unit_files_the_admin_loads(run_sandboxed, 
 def test_sudo_works_outside_the_sandbox(sandboxed: Path) -> None:
     """Shows the sudo check above is meaningful on this host."""
     assert _run("sudo", "-n", "true").returncode == 0
+
+
+def test_the_sandbox_keeps_host_shared_memory_out_but_lets_a_workload_use_its_own(run_sandboxed) -> None:
+    host_file = Path("/dev/shm/pilot-sandbox-probe")
+    host_file.write_text("host")
+    try:
+        assert not run_sandboxed(f"test -e {host_file}")
+    finally:
+        host_file.unlink()
+    assert run_sandboxed("python3 -c 'import multiprocessing; multiprocessing.Lock()'")
+
+
+def test_the_sandbox_resolves_hostnames(run_sandboxed) -> None:
+    assert run_sandboxed("getent hosts github.com")
 
 
 def test_the_sandbox_lets_frappe_create_its_global_lock_files(run_sandboxed, sandboxed: Path) -> None:

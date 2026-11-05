@@ -10,8 +10,8 @@ from pilot.utils import cli_root
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
-# The home directory is masked; these hold the rest of the user's home on other layouts.
-MASKED_ROOTS = (Path("/home"), Path("/root"))
+# The sandbox masks the home directory and these roots; a path a workload needs below them is bound back.
+MASKED_ROOTS = (Path("/home"), Path("/root"), Path("/run"))
 WAITER = Path("pilot") / "internal" / "wait_for_socket.py"
 # What Pilot keeps in <bench>/config for the admin, which loads and runs it unsandboxed. A workload
 # must not change these. Everything else in config/ stays writable, because Frappe creates its

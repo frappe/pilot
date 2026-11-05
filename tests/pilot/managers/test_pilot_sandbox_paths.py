@@ -22,8 +22,8 @@ def paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> PilotSandboxPaths:
 
 
 def test_only_paths_the_sandbox_masks_are_listed(paths: PilotSandboxPaths) -> None:
-    # The interpreter, node, socket and waiter here are all outside the home, so nothing needs binding.
-    assert paths.read == [str(Path.home() / ".nvm")]
+    # The interpreter, node and waiter here are outside the home. The socket is under /run, which the sandbox masks too.
+    assert paths.read == [str(Path.home() / ".nvm"), "/run/mysqld"]
 
 
 def test_a_uv_managed_interpreter_is_bound_by_the_directory_the_venv_links_to(

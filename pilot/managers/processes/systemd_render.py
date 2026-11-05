@@ -33,6 +33,10 @@ _SANDBOX_DIRECTIVES = [
     "ProtectSystem=strict",
     "ProtectHome=tmpfs",
     "PrivateTmp=yes",
+    # Host sockets such as docker.sock and libvirt-sock open to the user's groups.
+    "TemporaryFileSystem=/run:ro",
+    "TemporaryFileSystem=/dev/shm",
+    "InaccessiblePaths=-/var/log/journal",
 ]
 
 
@@ -69,7 +73,8 @@ def get_sandbox_properties(
         f"TemporaryFileSystem={_quote(f'{benches_dir}:ro')}",
         f"BindPaths={folders}",
         f"ReadWritePaths={folders}",
-        *get_path_properties([*control, *read_paths], write_paths),
+        # DNS on hosts that run systemd-resolved.
+        *get_path_properties([*control, "/run/systemd/resolve", *read_paths], write_paths),
     ]
 
 
