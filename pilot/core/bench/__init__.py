@@ -385,8 +385,7 @@ class Bench:
             return None
         if self.config.production.process_manager != "systemd":
             return None
-        # Not in config/, which the sandbox keeps read-only for workloads.
-        socket = self.pids_path / "socketio.sock"
+        socket = self.config_path / "socketio.sock"
         # The kernel caps a Unix socket path at 108 bytes.
         return socket if len(bytes(socket)) < 108 else None
 

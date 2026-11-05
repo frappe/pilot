@@ -48,7 +48,7 @@ def socketio(bench: Bench, dev: bool = False):
 
 def test_production_realtime_listens_on_a_unix_socket(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
-    socket = bench.pids_path / "socketio.sock"
+    socket = bench.config_path / "socketio.sock"
 
     definition = socketio(bench)
     unit = SystemdRenderer("test-bench").render(definition)
@@ -92,7 +92,7 @@ def test_nginx_proxies_realtime_to_the_socket_before_the_port(tmp_path: Path) ->
 
     config = nginx_config(bench)
 
-    assert f"server unix:{bench.pids_path / 'socketio.sock'} max_fails=0;\n    server 127.0.0.1:9000 backup;" in config
+    assert f"server unix:{bench.config_path / 'socketio.sock'} max_fails=0;\n    server 127.0.0.1:9000 backup;" in config
     assert "proxy_pass         http://realtime-test-bench;" in config
 
 

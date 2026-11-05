@@ -22,4 +22,3 @@ register_worker_queues
 serve_site_embeds_locally
 enable_default_alerts
 update_auto_update_schedule
-move_realtime_socket_out_of_config

@@ -54,7 +54,6 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         self._ensure_gunicorn_config()
         GunicornManager(self.bench).generate_admin_config()
         self.systemd_conf_dir.mkdir(parents=True, exist_ok=True)
-        self.bench.pids_path.mkdir(parents=True, exist_ok=True)
 
         # Build and probe first, so a broken app declaration or sandbox leaves the current units in place.
         defs = self._prod_process_definitions()
