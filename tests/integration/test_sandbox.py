@@ -114,6 +114,19 @@ def test_the_web_process_mounts_a_tmpfs_over_the_benches_directory(sandboxed: Pa
     assert str(sandboxed) not in mounts, mounts
 
 
+def test_pilot_rewrites_keep_files_away_from_a_running_unit(sandboxed: Path) -> None:
+    web = next(unit for unit in _workload_units(sandboxed) if unit.endswith("-web.service"))
+    pid = _systemctl_value(web, "MainPID")
+    toml_path = sandboxed / "bench.toml"
+    BenchConfig.write_raw(toml_path, tomllib.loads(toml_path.read_text()))
+    aliases = Bench(sandboxed).site_aliases
+    before = aliases.registry_path.read_text()
+    aliases.record("old.example.com")
+    aliases.registry_path.write_text(before)
+
+    assert not Path(f"/proc/{pid}/root{toml_path}").exists()
+    assert f" {aliases.registry_path} " in Path(f"/proc/{pid}/mountinfo").read_text()
+
 
 @pytest.fixture(scope="module")
 def run_sandboxed(sandboxed: Path):

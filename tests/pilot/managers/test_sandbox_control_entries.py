@@ -77,3 +77,16 @@ def test_creating_the_protected_entries_keeps_what_is_there(tmp_path: Path) -> N
 @pytest.mark.parametrize("name", ["site_config.lock", "flow_server.lock", "bench_build.lock"])
 def test_frappe_lock_files_are_not_protected(name: str) -> None:
     assert name not in CONTROL_ENTRIES
+
+
+def test_recording_a_site_alias_keeps_the_file_a_sandboxed_unit_binds(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    create_sandbox_entries(bench)
+    registry = bench.site_aliases.registry_path
+    inode = registry.stat().st_ino
+
+    bench.site_aliases.record("old.example.com")
+
+    assert registry.stat().st_ino == inode
+    assert "old.example.com" in registry.read_text()

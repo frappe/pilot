@@ -11,6 +11,7 @@ on:
       - "pilot/core/app/sandbox.py"
       - "pilot/core/app/processes.py"
       - "pilot/core/bench/runtime.py"
+      - "pilot/core/bench/site_aliases.py"
       - "pilot/internal/wait_for_socket.py"
       - "pilot/managers/database/mariadb.py"
       - "pilot/managers/processes/definitions.py"
