@@ -131,6 +131,10 @@ class S3:
             region_name=self.region_name,
             config=Config(signature_version="s3v4", s3={"addressing_style": addressing_style}),
         )
+        if self.provider == "frappe":
+            from pilot.integrations.s3.private_network import route_to_private_address
+
+            route_to_private_address(self.client, self.endpoint_url)
 
     @classmethod
     def from_config(cls, config: S3Config) -> "S3":
