@@ -17,7 +17,7 @@ class SiteApps:
     def __init__(self, site: "Site") -> None:
         self.site = site
 
-    def install_app(self, app: "App") -> None:
+    def install_app(self, app: "App", force: bool = False) -> None:
         if app.config.name in self.disabled_apps():
             self.enable_app(app)
             return
@@ -28,15 +28,14 @@ class SiteApps:
                 f"'{app.config.name}' requires {', '.join(missing)}, which this bench does not have. "
                 "Add it with 'pilot get-app <repo>' first, then retry."
             )
+        command = self.site._frappe_call(
+            "frappe", "--site", self.site.config.name, "install-app", app.config.name
+        )
+        if force:
+            command.append("--force")
         self._clear_cache()
         try:
-            run_command(
-                self.site._frappe_call(
-                    "frappe", "--site", self.site.config.name, "install-app", app.config.name
-                ),
-                cwd=self.site.bench.sites_path,
-                stream_output=True,
-            )
+            run_command(command, cwd=self.site.bench.sites_path, stream_output=True)
         finally:
             self._clear_cache()
 

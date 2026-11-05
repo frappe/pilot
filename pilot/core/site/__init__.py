@@ -159,11 +159,11 @@ class Site:
 
         SiteCommands(self).reinstall(admin_password)
 
-    def install_app(self, app: "App") -> None:
+    def install_app(self, app: "App", force: bool = False) -> None:
         from pilot.core.site.apps import SiteApps
 
         apps = SiteApps(self)
-        apps.install_app(app)
+        apps.install_app(app, force=force)
         # Frappe installs the required apps along with it.
         if self.bench.processes.has_declarations(apps.get_dependency_closure(app)):
             self.bench.processes.apply()
