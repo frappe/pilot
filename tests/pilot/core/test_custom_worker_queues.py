@@ -88,14 +88,20 @@ def test_a_malformed_workers_value_fails_loudly(tmp_path: Path, workers) -> None
     assert _workers(bench) == workers
 
 
-def test_saved_settings_rewrite_common_site_config(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "apply",
+    [regenerate_configs, lambda bench: bench.restart_workload()],
+    ids=["saved settings", "restart after editing bench.toml"],
+)
+def test_applying_config_rewrites_common_site_config(tmp_path: Path, apply) -> None:
     bench = _bench(tmp_path, WorkerGroup(queues=["guard-review"], count=1))
+    bench.config.production.enabled = True
 
     with (
         patch("pilot.managers.redis.RedisManager"),
         patch("pilot.managers.processes.local.ProcessManager.for_bench", return_value=MagicMock()),
     ):
-        regenerate_configs(bench)
+        apply(bench)
 
     assert _workers(bench) == {"guard-review": {}}
 
