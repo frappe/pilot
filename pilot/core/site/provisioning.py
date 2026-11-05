@@ -25,12 +25,16 @@ class SiteProvisioner:
         apps: list[str],
         admin_password: str | None,
         db_type: str | None = None,
+        skip_assets: bool = False,
     ) -> None:
+        if skip_assets and bench.config.production.enabled:
+            raise BenchError("Cannot skip assets on a production bench.")
         self.bench = bench
         self.name = name
         self.apps = apps
         self.admin_password = admin_password
         self.db_type = db_type
+        self.skip_assets = skip_assets
 
     def provision(self, on_progress: Callable[[str], None], *, schedule_backups: bool = True) -> "Site":
         with SiteCreationOwner(self.bench.path, self.name).locked() as owner:
@@ -78,7 +82,8 @@ class SiteProvisioner:
         self.write_pilot_communication_config(site)
         self.bench.write_common_site_config()
         site.enable_scheduler()
-        self.build_missing_assets()
+        if not self.skip_assets:
+            self.build_missing_assets()
         self.add_to_hosts(site)
         self.reload_nginx()
 

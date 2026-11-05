@@ -3,7 +3,7 @@ from __future__ import annotations
 import pwd
 import shutil
 import time
-from datetime import UTC
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -17,11 +17,11 @@ from pilot.utils import run_command
 if TYPE_CHECKING:
     from pilot.config import SiteConfig
     from pilot.core.bench import Bench
+    from pilot.core.bench.certificates import CertificateFile
     from pilot.core.site import Site
 
 _CERT_EXPIRY_THRESHOLD_DAYS = 30
 # certbot renews from 30 days left, so a certificate this close to expiry is failing to renew.
-_CERT_ALERT_DAYS = 14
 # certbot exits at once while another run (e.g. the renewal timer) holds its lock.
 _CERTBOT_LOCKED = "Another instance of Certbot is already running"
 _CERTBOT_LOCK_ATTEMPTS = 6
@@ -136,10 +136,9 @@ def has_domain_coverage(cert_file: Path, domains: list[str]) -> bool:
     return set(domains) <= certificate_domain_names(cert_file)
 
 
-def certificate_days_left(cert_file: Path) -> int | None:
-    """Whole days until the on-disk cert expires, or None when it cannot be read."""
+def certificate_expiry(cert_file: Path) -> "datetime | None":
+    """When the on-disk cert expires, or None when it cannot be read."""
     import subprocess
-    from datetime import datetime
 
     result = subprocess.run(
         _privileged(["openssl", "x509", "-enddate", "-noout", "-in", str(cert_file)]),
@@ -150,8 +149,20 @@ def certificate_days_left(cert_file: Path) -> int | None:
     if result.returncode != 0:
         return None
     date_str = result.stdout.strip().replace("notAfter=", "")
-    expiry = datetime.strptime(date_str, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=UTC)
-    return (expiry - datetime.now(tz=UTC)).days
+    return datetime.strptime(date_str, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=UTC)
+
+
+def certificate_days_left(cert_file: Path) -> int | None:
+    """Whole days until the on-disk cert expires, or None when it cannot be read."""
+    expiry = certificate_expiry(cert_file)
+    return None if expiry is None else (expiry - datetime.now(tz=UTC)).days
+
+
+def get_certbot_failure(output: str) -> str:
+    """Certbot's reason for a failure: its Domain, Type and Detail lines, or its last lines."""
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    reasons = [line for line in lines if line.startswith(("Domain:", "Type:", "Detail:"))]
+    return "\n".join(reasons or lines[-3:]) or "Certbot failed."
 
 
 def letsencrypt_active(bench: "Bench") -> bool:
@@ -297,6 +308,7 @@ class LetsEncryptManager:
                 print(
                     f"Could not obtain a certificate for {domains} (site '{site.config.name}'), skipping: {exc}"
                 )
+                self.bench.certificates.record_failure(site.config.name, certificate_domains(site.config), str(exc))
                 failed.append(site.config.name)
         if is_admin_certificate_required(self.bench):
             try:
@@ -305,11 +317,22 @@ class LetsEncryptManager:
                 print(
                     f"Could not obtain a certificate for '{self.bench.config.admin.domain}', skipping: {exc}"
                 )
-                failed.append(self.bench.config.admin.domain)
+                admin_domain = self.bench.config.admin.domain
+                self.bench.certificates.record_failure(admin_domain, [admin_domain], str(exc))
+                failed.append(admin_domain)
+        self.record_obtained(failed)
         # Don't raise: certs that did issue should still get TLS applied. Domains
         # that failed stay on HTTP and can be retried later.
         if failed:
             print(f"Certificate issuance failed for: {', '.join(failed)}. These stay on HTTP.")
+
+    def record_obtained(self, failed: list[str]) -> None:
+        """Record each certificate that issued or was already current, then alert on broken ones."""
+        files = self.get_certificate_files()
+        for file in files:
+            if file.name not in failed:
+                self.bench.certificates.record_success(file.name, file.domains, file.path)
+        self.bench.certificates.alert_broken(files)
 
     def _retire_released_pin(self, site: "Site") -> None:
         """Issue under the site's name, then release its old certificate pin."""
@@ -349,19 +372,18 @@ class LetsEncryptManager:
         )
 
     def run_certbot(self, argv: list[str]) -> None:
-        """Run certbot with sudo, waiting while another certbot run holds its lock."""
+        """Run certbot with sudo, waiting while another certbot run holds its lock. Its output
+        goes to the task log, and a failure keeps certbot's reason."""
         for attempt in range(1, _CERTBOT_LOCK_ATTEMPTS + 1):
-            try:
-                run_command(_privileged(argv))
+            result = run_command(_privileged(argv), tee_output=True)
+            if result.returncode == 0:
                 return
-            except CommandError as error:
-                if _CERTBOT_LOCKED not in error.message:
-                    raise
-                if attempt == _CERTBOT_LOCK_ATTEMPTS:
-                    raise CommandError(
-                        "Another certbot run is in progress. Try again in a minute.",
-                        returncode=error.returncode,
-                    ) from error
+            if _CERTBOT_LOCKED not in result.stdout:
+                raise CommandError(get_certbot_failure(result.stdout), returncode=result.returncode)
+            if attempt == _CERTBOT_LOCK_ATTEMPTS:
+                raise CommandError(
+                    "Another certbot run is in progress. Try again in a minute.", returncode=result.returncode
+                )
             print(f"Another certbot run is in progress. Retrying in {_CERTBOT_LOCK_WAIT_SECONDS} seconds...")
             time.sleep(_CERTBOT_LOCK_WAIT_SECONDS)
 
@@ -391,42 +413,25 @@ class LetsEncryptManager:
         days_left = certificate_days_left(cert_file)
         return days_left is None or days_left < _CERT_EXPIRY_THRESHOLD_DAYS
 
-    def get_certificate_paths(self) -> list[tuple[str, Path]]:
-        """Existing certificate files for this bench's current local TLS routes."""
+    def get_certificate_files(self) -> list["CertificateFile"]:
+        """The certificates this bench's current local TLS routes use, whether or not the file exists yet."""
+        from pilot.core.bench.certificates import CertificateFile
         from pilot.managers.nginx import NginxManager
 
         nginx = NginxManager(self.bench)
-        certificates = []
-        for site in self.bench.sites():
-            if certificate_domains(site.config) and nginx.has_cert(site.config):
-                certificates.append((self.bench.certificate_name(site.config), nginx.cert_path(site.config)))
-        if is_admin_certificate_required(self.bench) and nginx.has_admin_cert:
-            certificates.append((self.bench.config.admin.domain, nginx.admin_cert_path))
-        return certificates
+        files = [
+            CertificateFile(site.config.name, certificate_domains(site.config), nginx.cert_path(site.config), site.config.name)
+            for site in self.bench.sites()
+            if certificate_domains(site.config)
+        ]
+        if is_admin_certificate_required(self.bench):
+            domain = self.bench.config.admin.domain
+            files.append(CertificateFile(domain, [domain], nginx.admin_cert_path, None))
+        return files
 
-    def expiring_certificates(self) -> list[tuple[str, int]]:
-        """(certificate name, days left) for this bench's certificates close to expiry."""
-        expiring = []
-        for name, path in self.get_certificate_paths():
-            days_left = certificate_days_left(path)
-            if days_left is not None and days_left < _CERT_ALERT_DAYS:
-                expiring.append((name, days_left))
-        return expiring
-
-    def alert_expiring_certificates(self) -> None:
-        """Warn in the bench's feed and its alert sinks while a certificate fails to renew."""
-        from pilot.core.alerts import notify
-        from pilot.core.notification.events import record_alert
-
-        for name, days_left in self.expiring_certificates():
-            payload = {
-                "event": "certificate_expiry",
-                "message": f"The certificate for {name} expires in {days_left} days and has not renewed.",
-                "context": {"bench": self.bench.config.name, "certificate": name, "days_left": days_left},
-            }
-            title = f"Certificate for {name} is not renewing"
-            record_alert(self.bench, payload, category="Sites", severity="Warning", title=title)
-            notify(self.bench, payload)
+    def check_certificates(self) -> None:
+        """Read each certificate's expiry from disk and alert on the broken ones."""
+        self.bench.certificates.check(self.get_certificate_files())
 
 
 def is_renewal_timer_installed() -> bool:
@@ -473,9 +478,9 @@ def main() -> None:
         except (BenchError, OSError, ValueError) as error:
             print(f"Certificate refresh failed for {bench.path}: {error}")
         try:
-            manager.alert_expiring_certificates()
+            manager.check_certificates()
         except (BenchError, OSError, ValueError) as error:
-            print(f"Certificate expiry check failed for {bench.path}: {error}")
+            print(f"Certificate check failed for {bench.path}: {error}")
 
 
 if __name__ == "__main__":

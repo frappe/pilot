@@ -29,6 +29,8 @@ from pilot.core.bench.settings import (
     restart_trigger_values,
     s3_payload,
     waf_payload,
+    webhook_endpoints_payload,
+    webhook_events_payload,
     worker_groups_payload,
 )
 from pilot.exceptions import MalformedSiteConfig
@@ -56,6 +58,8 @@ __all__ = [
     "s3_payload",
     "settings_bp",
     "waf_payload",
+    "webhook_endpoints_payload",
+    "webhook_events_payload",
 ]
 
 
@@ -135,6 +139,8 @@ def build_settings_response(config: BenchConfig, bench_root: Path | None = None)
         },
         "llm_providers": llm_provider_options(),
         "resource_limits": resource_limits_payload(config),
+        "webhook_endpoints": webhook_endpoints_payload(config),
+        "webhook_events": webhook_events_payload(),
         "mail": mail_payload(MailConfig.read(bench_root / "sites") if bench_root else MailConfig()),
         "monitor": {
             "system_log_path": str(system_log_path()),
@@ -474,3 +480,6 @@ def apply_post_save_changes(
         old_s3_config,
         old_proxy,
     )
+
+
+from admin.backend.api.v1.settings import common_site_config  # noqa: E402, F401

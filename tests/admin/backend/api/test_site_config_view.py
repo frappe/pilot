@@ -3,10 +3,11 @@ import json
 import pytest
 
 from admin.backend.api.v1.sites.configuration import _public_config
+from pilot.core.site.config import SECRET_MASK
 from tests.admin.backend.test_admin_app import _client
 
 
-def test_public_site_config_hides_system_and_secret_like_fields() -> None:
+def test_public_site_config_hides_system_fields_and_masks_secrets() -> None:
     config = {
         "developer_mode": 1,
         "maintenance_mode": 0,
@@ -36,6 +37,12 @@ def test_public_site_config_hides_system_and_secret_like_fields() -> None:
         "maintenance_mode": 0,
         "pause_scheduler": 1,
         "frappe_branch": "version-16",
+        "encryption_key": SECRET_MASK,
+        "future_provider_api_token": SECRET_MASK,
+        "apiKey": SECRET_MASK,
+        "apiKeys": SECRET_MASK,
+        "accessKey": SECRET_MASK,
+        "key": SECRET_MASK,
         "custom_provider": {
             "endpoint": "https://provider.example",
             "options": [{"region": "eu"}, "unchanged"],
@@ -78,6 +85,7 @@ def test_site_configuration_preserves_custom_keys_without_exposing_secrets(tmp_p
     assert body == {
         "developer_mode": 1,
         "custom_app_mode": "strict",
+        "future_provider_api_token": SECRET_MASK,
     }
     assert "db_name" not in body
     assert "db_host" not in body
@@ -124,6 +132,8 @@ def test_site_config_patch_preserves_omitted_and_hidden_custom_keys(tmp_path) ->
     assert response.status_code == 200
     assert response.get_json() == {
         "developer_mode": 1,
+        "future_provider_api_token": SECRET_MASK,
+        "custom_credential": SECRET_MASK,
         "custom_provider": {
             "endpoint": "https://new.example",
             "regions": [{"name": "eu"}],
@@ -194,6 +204,38 @@ def test_site_config_patch_rejects_protected_keys_and_hidden_container_changes(t
         422,
     ]
     assert json.loads(config_path.read_text()) == original
+
+
+def test_a_secret_can_be_set_and_removed_but_never_read(tmp_path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    config_path = bench_root / "sites" / "s.localhost" / "site_config.json"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(json.dumps({"encryption_key": "old"}))
+    url = "/api/v1/sites/s.localhost/configuration"
+
+    changed = client.patch(url, json={"encryption_key": "new", "mail_password": "p"})
+    masked = client.patch(url, json={"encryption_key": SECRET_MASK})
+
+    assert changed.get_json() == {"encryption_key": SECRET_MASK, "mail_password": SECRET_MASK}
+    assert client.get(url).get_json() == {"encryption_key": SECRET_MASK, "mail_password": SECRET_MASK}
+    assert masked.status_code == 422
+    assert json.loads(config_path.read_text()) == {"encryption_key": "new", "mail_password": "p"}
+
+    assert client.patch(url, json={"mail_password": None}).get_json() == {"encryption_key": SECRET_MASK}
+
+
+def test_a_secret_inside_a_value_stays_hidden_and_unwritable(tmp_path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    config_path = bench_root / "sites" / "s.localhost" / "site_config.json"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(json.dumps({"provider": {"url": "u"}}))
+
+    response = client.patch("/api/v1/sites/s.localhost/configuration", json={"provider": {"api_key": "k"}})
+
+    assert response.status_code == 422
+    assert json.loads(config_path.read_text()) == {"provider": {"url": "u"}}
 
 
 @pytest.mark.parametrize("key", ["cloud_server_url", "cloud_settings_embed_url"])

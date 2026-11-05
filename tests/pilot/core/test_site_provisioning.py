@@ -23,10 +23,10 @@ _BASE_DATA: dict = {
 }
 
 
-def _provisioner(tmp_path: Path) -> SiteProvisioner:
+def _provisioner(tmp_path: Path, skip_assets: bool = False) -> SiteProvisioner:
     bench = Bench(BenchConfig._from_dict(_BASE_DATA), tmp_path)
     bench.config.letsencrypt.email = "ops@example.com"
-    return SiteProvisioner(bench, "site1.example.com", ["frappe"], "admin", "mariadb")
+    return SiteProvisioner(bench, "site1.example.com", ["frappe"], "admin", "mariadb", skip_assets)
 
 
 def test_provisioning_records_its_owner_before_site_creation_starts(tmp_path, monkeypatch):
@@ -292,3 +292,32 @@ def test_a_new_site_sends_mail_under_its_first_label_in_title_case(tmp_path: Pat
 
 def test_the_sender_name_turns_dashes_and_underscores_into_spaces() -> None:
     assert email_sender_name("north_star--labs.example.com") == "North Star Labs"
+
+
+@pytest.mark.parametrize(("skip_assets", "builds"), [(False, 1), (True, 0)])
+def test_skip_assets_controls_the_post_provisioning_build(
+    tmp_path: Path, skip_assets: bool, builds: int
+) -> None:
+    data = {**_BASE_DATA, "production": {"enabled": False}}
+    bench = Bench(BenchConfig._from_dict(data), tmp_path)
+    provisioner = SiteProvisioner(bench, "site1.example.com", ["frappe"], "admin", "mariadb", skip_assets)
+
+    with (
+        patch.object(provisioner, "install_apps"),
+        patch.object(provisioner, "write_pilot_communication_config"),
+        patch.object(provisioner, "build_missing_assets") as build_missing_assets,
+        patch.object(provisioner, "add_to_hosts"),
+        patch.object(provisioner, "reload_nginx"),
+        patch.object(provisioner.bench, "write_common_site_config"),
+        patch.object(Site, "enable_scheduler"),
+    ):
+        provisioner.finish(MagicMock(), lambda _: None)
+
+    assert build_missing_assets.call_count == builds
+
+
+def test_skip_assets_refuses_a_production_bench(tmp_path: Path) -> None:
+    from pilot.exceptions import BenchError
+
+    with pytest.raises(BenchError, match="production bench"):
+        _provisioner(tmp_path, skip_assets=True)

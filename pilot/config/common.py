@@ -11,11 +11,13 @@ from pilot.config.central import CentralConfig, HostnameAlias
 from pilot.config.frappe_cloud import FrappeCloudConfig
 from pilot.config.letsencrypt import LetsEncryptConfig
 from pilot.config.mariadb import MariaDBConfig
+from pilot.config.nginx import NginxConfig
 from pilot.config.postgres import PostgresConfig
 from pilot.config.proxy import ProxyConfig
 from pilot.config.schema import TomlSchema, field_names
 from pilot.config.telemetry import TelemetryConfig
 from pilot.config.updates import UpdatesConfig
+from pilot.config.webhook import WebhookEndpoint, read_webhook_endpoints
 from pilot.exceptions import ConfigError
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
 from pilot.internal.toml import ConfigDict, Toml
@@ -30,12 +32,14 @@ class CommonConfig:
     mariadb: MariaDBConfig = field(default_factory=MariaDBConfig)
     postgres: PostgresConfig = field(default_factory=PostgresConfig)
     letsencrypt: LetsEncryptConfig = field(default_factory=LetsEncryptConfig)
+    nginx: NginxConfig = field(default_factory=NginxConfig)
     central: CentralConfig = field(default_factory=CentralConfig)
     proxy: ProxyConfig = field(default_factory=ProxyConfig)
     telemetry: TelemetryConfig = field(default_factory=TelemetryConfig)
     resource_limits: ResourceLimitConfig = field(default_factory=ResourceLimitConfig)
     frappe_cloud: FrappeCloudConfig = field(default_factory=FrappeCloudConfig)
     updates: UpdatesConfig = field(default_factory=UpdatesConfig)
+    webhook_endpoints: list[WebhookEndpoint] = field(default_factory=list)
     jwks_url: str = ""
     jwks_audience: str = ""
 
@@ -62,6 +66,7 @@ class CommonConfig:
             mariadb=MariaDBConfig(**_known_fields(MariaDBConfig, data.get("mariadb", {}))),
             postgres=PostgresConfig(**_known_fields(PostgresConfig, data.get("postgres", {}))),
             letsencrypt=LetsEncryptConfig.from_dict(data.get("letsencrypt", {})),
+            nginx=NginxConfig.from_dict(data.get("nginx", {})),
             central=CentralConfig.from_dict(data.get("central", {})),
             proxy=ProxyConfig.from_dict(data.get("proxy", {})),
             telemetry=TelemetryConfig.from_dict(data.get("telemetry", {})),
@@ -70,6 +75,7 @@ class CommonConfig:
             ),
             frappe_cloud=FrappeCloudConfig.from_dict(data.get("frappe_cloud", {})),
             updates=UpdatesConfig.from_dict(data.get("updates", {})),
+            webhook_endpoints=read_webhook_endpoints(data),
             jwks_url=admin.get("jwks_url", ""),
             jwks_audience=admin.get("jwks_audience", ""),
         )
@@ -154,22 +160,16 @@ class CommonConfig:
                 "webroot_path": str(self.letsencrypt.webroot_path),
             },
         }
+        # Tables written only when they differ from their defaults.
+        optional = {
+            "nginx": (self.nginx.ports, NginxConfig().ports),
+            "proxy": (asdict(self.proxy), asdict(ProxyConfig())),
+            "resource_limits": (asdict(self.resource_limits), asdict(ResourceLimitConfig())),
+            "updates": (asdict(self.updates), asdict(UpdatesConfig())),
+        }
+        data.update({name: value for name, (value, default) in optional.items() if value != default})
         if self.central != CentralConfig():
-            data["central"] = {
-                "enabled": self.central.enabled,
-                "bootstrapped": self.central.bootstrapped,
-                "hostname_aliases": [
-                    {
-                        "type": alias.type,
-                        "pattern": alias.pattern,
-                        "target": alias.target,
-                        "redirect": alias.redirect,
-                    }
-                    for alias in self.central.hostname_aliases
-                ],
-            }
-        if self.proxy != ProxyConfig():
-            data["proxy"] = asdict(self.proxy)
+            data["central"] = self._central_table()
         if self.telemetry != TelemetryConfig():
             data["telemetry"] = {
                 "endpoint": self.telemetry.endpoint,
@@ -177,15 +177,20 @@ class CommonConfig:
                 "logs_enabled": self.telemetry.logs_enabled,
                 "metrics_enabled": self.telemetry.metrics_enabled,
             }
-        if self.resource_limits != ResourceLimitConfig():
-            data["resource_limits"] = asdict(self.resource_limits)
         if self.frappe_cloud != FrappeCloudConfig():
             data["frappe_cloud"] = {"url": self.frappe_cloud.url}
-        if self.updates != UpdatesConfig():
-            data["updates"] = asdict(self.updates)
+        if self.webhook_endpoints:
+            data["webhook_endpoints"] = [asdict(endpoint) for endpoint in self.webhook_endpoints]
         if self.jwks_url:
             data["admin"] = {"jwks_url": self.jwks_url, "jwks_audience": self.jwks_audience}
         return data
+
+    def _central_table(self) -> ConfigDict:
+        return {
+            "enabled": self.central.enabled,
+            "bootstrapped": self.central.bootstrapped,
+            "hostname_aliases": [asdict(alias) for alias in self.central.hostname_aliases],
+        }
 
 
 _SCHEMA = TomlSchema(
@@ -193,17 +198,23 @@ _SCHEMA = TomlSchema(
         "mariadb": TomlSchema(keys=field_names(MariaDBConfig)),
         "postgres": TomlSchema(keys=field_names(PostgresConfig)),
         "letsencrypt": TomlSchema(keys=field_names(LetsEncryptConfig)),
+        "nginx": TomlSchema(keys=set(NginxConfig().ports)),
         "central": TomlSchema(
             keys=field_names(CentralConfig) - {"hostname_aliases"},
             arrays={"hostname_aliases": TomlSchema(keys=field_names(HostnameAlias))},
         ),
         "proxy": TomlSchema(keys=field_names(ProxyConfig)),
         "telemetry": TomlSchema(keys=field_names(TelemetryConfig)),
-        "resource_limits": TomlSchema(keys=field_names(ResourceLimitConfig)),
+        # webhook_endpoints here is the older place for them; it is read and moved to the top level.
+        "resource_limits": TomlSchema(
+            keys=field_names(ResourceLimitConfig) | {"webhook_endpoints"},
+            arrays={"webhook_endpoints": TomlSchema(keys=field_names(WebhookEndpoint))},
+        ),
         "frappe_cloud": TomlSchema(keys=field_names(FrappeCloudConfig)),
         "updates": TomlSchema(keys=field_names(UpdatesConfig)),
         "admin": TomlSchema(keys={"jwks_url", "jwks_audience"}),
-    }
+    },
+    arrays={"webhook_endpoints": TomlSchema(keys=field_names(WebhookEndpoint))},
 )
 
 

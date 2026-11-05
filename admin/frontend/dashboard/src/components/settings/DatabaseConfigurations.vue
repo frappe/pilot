@@ -140,6 +140,8 @@ const formatValue = (variable: DatabaseVariable) => {
   if (!variable.supported || variable.value === null) return 'Unavailable'
   if (variable.value_type === 'boolean') return variable.value ? 'Enabled' : 'Disabled'
   if (variable.unit === 'bytes' && typeof variable.value === 'number') {
+    // MariaDB stores "no limit" as the largest unsigned 64-bit number.
+    if (variable.value >= 2 ** 63) return 'No limit'
     return Number.isFinite(variable.value) ? formatBytes(variable.value) : 'Unavailable'
   }
   return formatConstraint(variable.value, variable.unit)

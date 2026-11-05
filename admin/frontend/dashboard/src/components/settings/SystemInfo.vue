@@ -52,7 +52,10 @@ const hardware = computed(() => {
 })
 
 const platform = computed(() =>
-  [info.value?.os_version, info.value?.kernel_version && `kernel ${info.value.kernel_version}`]
+  [
+    info.value?.os_version?.split(' (')[0],
+    info.value?.kernel_version && `kernel ${info.value.kernel_version.split('.').slice(0, 3).join('.')}`,
+  ]
     .filter(Boolean)
     .join(' · '),
 )

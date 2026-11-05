@@ -601,8 +601,10 @@ def _nginx_stub(health_status: int = 200):
 
 
 def _set_nginx_http_port(bench_dir: Path, port: int) -> None:
-    path = bench_dir / "bench.toml"
-    path.write_text(path.read_text() + f"\n[nginx]\nhttp_port = {port}\n")
+    from pilot.config.common import CommonConfig
+
+    with CommonConfig.open(bench_dir.parent) as common:
+        common.nginx.http_port = port
 
 
 def test_api_benches_ready_true_when_wizard_answers_at_domain(tmp_path: Path) -> None:

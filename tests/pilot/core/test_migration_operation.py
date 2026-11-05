@@ -49,6 +49,8 @@ def test_state_transitions() -> None:
     validate_transition("reverting_apps", "reverting_sites")
     validate_transition("reverting_sites", "restarting")
     validate_transition("restarting", "reverted")
+    validate_transition("needs_attention", "dismissed")
+    validate_transition("revert_failed", "dismissed")
 
     # Invalid transitions
     with pytest.raises(MigrationStateError, match="Illegal migration transition"):
@@ -163,7 +165,8 @@ def test_create_rejects_new_operation_while_one_is_unresolved(tmp_path: Path) ->
         store.create_site_migrate("site1.localhost")
 
 
-def test_create_allowed_again_once_previous_operation_is_resolved(tmp_path: Path) -> None:
+@pytest.mark.parametrize("state", ["completed", "reverted", "dismissed"])
+def test_create_allowed_again_once_previous_operation_is_resolved(tmp_path: Path, state: str) -> None:
     from pilot.core.bench.migration.store import MigrationStore
 
     mock_bench = MagicMock()
@@ -173,7 +176,7 @@ def test_create_allowed_again_once_previous_operation_is_resolved(tmp_path: Path
 
     store = MigrationStore(mock_bench)
     first = store.create_site_migrate("site1.localhost")
-    first.state = get_state("completed")
+    first.state = get_state(state)
     store.save(first)
 
     second = store.create_site_migrate("site1.localhost")
@@ -1318,7 +1321,7 @@ def test_a_stopped_step_names_the_error_the_task_printed(tmp_path: Path, suffix:
     operation, _mock_bench = _backing_up_operation(tmp_path)
     operation.fail_stopped_step("task-101", "backing_up", "site1.localhost", reason + suffix)
     assert operation.diagnosis["message"] == (
-        "The task stopped before it finished: [Errno 28] No space left on device. Retry it, or revert."
+        "The task stopped before it finished: [Errno 28] No space left on device."
     )
 
 
@@ -1331,7 +1334,7 @@ def test_a_killed_task_has_no_error_to_name(tmp_path: Path) -> None:
     assert _last_task_error({"bench_root": str(tmp_path), "task_id": "task-101"}) == ""
 
 
-def _operation_with_backups(tmp_path: Path, sizes: dict[str, int]):
+def _operation_with_backups(tmp_path: Path, sizes: dict[str, int], in_s3: frozenset[str] = frozenset()):
     from pilot.core.bench.migration.store import MigrationStore
 
     bench = MagicMock()
@@ -1339,7 +1342,10 @@ def _operation_with_backups(tmp_path: Path, sizes: dict[str, int]):
     bench.sites_path = tmp_path
     bench.apps.return_value = []
     bench.sites.return_value = [MagicMock(config=MagicMock(name=name)) for name in sizes]
-    bench.site.side_effect = lambda name: MagicMock(backups=MagicMock(estimated_database_size=sizes[name]))
+    bench.site.side_effect = lambda name: MagicMock(
+        backups=MagicMock(estimated_database_size=sizes[name]),
+        migration_backup=MagicMock(is_stored_in_s3=name in in_s3),
+    )
     return MigrationStore(bench).create_site_migrate(*sizes)
 
 
@@ -1365,6 +1371,15 @@ def test_a_migration_the_disk_can_back_up_goes_ahead(tmp_path: Path) -> None:
         _ensure_disk_space(operation)
 
 
+def test_a_backup_kept_in_s3_needs_no_local_space(tmp_path: Path) -> None:
+    operation = _operation_with_backups(
+        tmp_path, {"a.localhost": 600, "b.localhost": 500}, in_s3=frozenset({"a.localhost"})
+    )
+
+    with _free_disk(SYSTEM_RESERVED_BYTES + 500):
+        _ensure_disk_space(operation)
+
+
 def test_a_migration_without_safeguards_takes_no_backup_so_needs_no_space(tmp_path: Path) -> None:
     operation = _operation_with_backups(tmp_path, {"a.localhost": 600})
     operation.safeguards_disabled = True
@@ -1383,3 +1398,93 @@ def test_a_refused_migration_leaves_no_site_in_maintenance(tmp_path: Path, monke
         operation.begin()
 
     prepare.assert_not_called()
+
+
+def _failed_site_migrate(tmp_path: Path) -> tuple[MigrationOperation, MagicMock]:
+    from pilot.core.bench.migration.store import MigrationStore
+
+    mock_bench = MagicMock()
+    mock_bench.path = tmp_path
+    site_mock = MagicMock()
+    mock_bench.site.return_value = site_mock
+    operation = MigrationStore(mock_bench).create_site_migrate("site1.localhost")
+    operation.sites[0].backup_status = "backed_up"
+    operation.sites[0].migration_status = "failed"
+    operation.sites[0].original_config = {"maintenance_mode": 0, "pause_scheduler": 0}
+    operation.state = get_state("needs_attention")
+    return operation, site_mock
+
+
+@pytest.mark.parametrize("state", ["needs_attention", "revert_failed"])
+def test_dismiss_closes_a_paused_operation(tmp_path: Path, state: str) -> None:
+    operation, site_mock = _failed_site_migrate(tmp_path)
+    operation.state = get_state(state)
+
+    operation.dismiss()
+
+    assert operation.state == "dismissed"
+    assert operation.state.is_terminal
+    operation.bench.processes.apply.assert_called_once()
+    operation.bench.reload_workers.assert_any_call(raises=True)
+    site_mock.set_maintenance_settings.assert_called_once_with({"maintenance_mode": 0, "pause_scheduler": 0})
+    site_mock.migration_backup.discard.assert_called_once()
+    assert operation.decisions[-1]["action"] == "dismiss"
+    operation.bench.audit_action.assert_called_once_with("dismiss_migration", {"operation": operation.id})
+
+
+def test_dismiss_is_rejected_while_the_operation_runs(tmp_path: Path) -> None:
+    operation, _ = _failed_site_migrate(tmp_path)
+    operation.state = get_state("migrating")
+
+    with pytest.raises(MigrationStateError, match="Dismiss is not allowed"):
+        operation.dismiss()
+
+
+def test_dismiss_stays_open_when_services_fail_to_restart(tmp_path: Path) -> None:
+    operation, site_mock = _failed_site_migrate(tmp_path)
+    operation.bench.reload_workers.side_effect = BenchError("supervisor is down")
+
+    with pytest.raises(BenchError, match="supervisor is down"):
+        operation.dismiss()
+
+    assert operation.state == "needs_attention"
+    site_mock.migration_backup.discard.assert_not_called()
+
+
+def test_dismiss_skips_a_site_dropped_after_the_failure(tmp_path: Path) -> None:
+    operation, site_mock = _failed_site_migrate(tmp_path)
+    site_mock.exists = False
+
+    operation.dismiss()
+
+    assert operation.state == "dismissed"
+    site_mock.set_maintenance_settings.assert_not_called()
+    site_mock.migration_backup.discard.assert_not_called()
+
+
+def test_revert_skips_a_site_dropped_after_the_failure(tmp_path: Path) -> None:
+    operation, site_mock = _failed_site_migrate(tmp_path)
+    site_mock.exists = False
+
+    operation.revert()
+
+    assert operation.next_revert_site() is None
+    assert operation.state == "restarting"
+
+
+def test_revert_apps_skips_an_app_removed_after_the_update(tmp_path: Path) -> None:
+    operation, _ = _failed_site_migrate(tmp_path)
+    operation.bench.apps_path = tmp_path / "apps"
+    (operation.bench.apps_path / "frappe").mkdir(parents=True)
+    operation.apps = [
+        AppRevision(name="frappe", sha="a" * 40, branch="version-15"),
+        AppRevision(name="removed_app", sha="b" * 40, branch="main"),
+    ]
+    operation.state = get_state("reverting_apps")
+    progress: list[str] = []
+
+    operation.revert_apps(on_progress=progress.append)
+
+    operation.bench.app.assert_called_once_with("frappe")
+    assert any("Skipping removed_app" in message for message in progress)
+    assert operation.revert_checkpoints["apps"] is True

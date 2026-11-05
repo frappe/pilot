@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from pilot.config import S3Config, SiteConfig
     from pilot.core.app import App, NewAppOptions, RevisionPin
     from pilot.core.bench.backups import BenchBackups
+    from pilot.core.bench.certificates import BenchCertificates
     from pilot.core.bench.hostname_aliases import HostnameAliases
     from pilot.core.bench.migration.store import MigrationStore
     from pilot.core.bench.processes import BenchProcesses
@@ -122,6 +123,12 @@ class Bench:
         from pilot.core.bench.backups import BenchBackups
 
         return BenchBackups(self)
+
+    @cached_property
+    def certificates(self) -> "BenchCertificates":
+        from pilot.core.bench.certificates import BenchCertificates
+
+        return BenchCertificates(self)
 
     @cached_property
     def notifications(self) -> "NotificationStore":
@@ -284,6 +291,17 @@ class Bench:
         from pilot.core.bench.config_files import BenchConfigFiles
 
         BenchConfigFiles(self).write_common_site_config()
+
+    @property
+    def public_common_site_config(self) -> dict:
+        from pilot.core.bench.config_files import BenchConfigFiles
+
+        return BenchConfigFiles(self).public_common_site_config
+
+    def update_public_common_site_config(self, patch: dict) -> dict:
+        from pilot.core.bench.config_files import BenchConfigFiles
+
+        return BenchConfigFiles(self).update_public_common_site_config(patch)
 
     def restart(self):
         """Restart bench in case we are running in production"""
@@ -597,11 +615,13 @@ class Bench:
 
         return Session(self).issue_setup_link_token()
 
-    def initialize(self, commit: str = "", on_progress: Callable[[str], None] = lambda message: None) -> None:
+    def initialize(
+        self, commit: str = "", skip_frontend: bool = False, on_progress: Callable[[str], None] = lambda message: None
+    ) -> None:
         """Set up the bench from bench.toml; `commit` pins the framework app."""
         from pilot.core.bench.initializer import BenchInitializer
 
-        BenchInitializer(self, commit).run(on_progress)
+        BenchInitializer(self, commit, skip_frontend=skip_frontend).run(on_progress)
 
     def setup_production(
         self,

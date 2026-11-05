@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -22,19 +23,19 @@ def benches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path
 
 
-def test_auto_update_is_off_by_default_and_not_written(tmp_path: Path) -> None:
+def test_auto_update_is_on_by_default_and_not_written(tmp_path: Path) -> None:
     config = CommonConfig()
 
-    assert config.updates.auto is False
+    assert config.updates.auto_pilot_update is True
     assert "updates" not in config._to_toml_dict()
 
 
 def test_the_setting_round_trips_through_common_config(tmp_path: Path) -> None:
     with CommonConfig.open(tmp_path) as config:
-        config.updates.auto = True
+        config.updates.auto_pilot_update = False
 
-    assert "[updates]\nauto = true" in CommonConfig.path(tmp_path).read_text()
-    assert CommonConfig.from_raw_dict({"updates": {"auto": True}}, strict=True).updates.auto is True
+    assert "[updates]\nauto_pilot_update = false" in CommonConfig.path(tmp_path).read_text()
+    assert CommonConfig.read(tmp_path).updates.auto_pilot_update is False
 
 
 def test_turning_it_on_saves_the_setting_and_installs_the_daily_cron(benches: Path) -> None:
@@ -45,6 +46,25 @@ def test_turning_it_on_saves_the_setting_and_installs_the_daily_cron(benches: Pa
     key, schedule, command = cron.return_value.set_schedule.call_args.args
     assert (key, schedule) == (CRON_JOB_KEY, CRON_SCHEDULE)
     assert "-m pilot.core.server.auto_update" in command
+
+
+@pytest.mark.parametrize("utc_time", ["0000", "0030", "1200"])
+def test_the_cron_guard_runs_only_at_utc_midnight(benches, tmp_path, utc_time, monkeypatch):
+    date = tmp_path / "date"
+    date.write_text('#!/bin/sh\n[ "$1" = -u ] && [ "$2" = +%H%M ] || exit 1\nprintf "$UTC_TIME"\n')
+    date.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.setenv("TZ", "Asia/Kolkata")
+    monkeypatch.setenv("UTC_TIME", utc_time)
+    with (
+        patch("pilot.core.server.auto_update.CronManager") as cron,
+        patch("pilot.core.server.auto_update.cron_module_command", return_value="printf ran"),
+    ):
+        Server().auto_update.enable()
+    command = cron.return_value.set_schedule.call_args.args[2]
+    # Cron removes the backslash from escaped percent signs before starting the shell.
+    result = subprocess.run(["/bin/sh", "-c", command.replace(r"\%", "%")], capture_output=True)
+    assert result.stdout == (b"ran" if utc_time == "0000" else b"")
 
 
 def test_turning_it_off_saves_the_setting_and_removes_the_cron(benches: Path) -> None:
@@ -88,3 +108,51 @@ def test_nothing_is_queued_unless_on_a_release_build_with_a_newer_release(
         assert Server().auto_update.run() is None
 
     queue.assert_not_called()
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_the_upgrade_patch_reschedules_only_enabled_hosts_once(benches, enabled):
+    from pilot.patches.update_auto_update_schedule import run
+
+    Server().auto_update.set_enabled(enabled)
+    with patch("pilot.core.server.auto_update.CronManager") as cron:
+        run(benches)
+        run(benches)
+    assert cron.return_value.set_schedule.call_count == int(enabled)
+    assert Server().auto_update.is_enabled is enabled
+
+
+def test_a_failed_schedule_patch_can_retry(benches):
+    from pilot.exceptions import CronError
+    from pilot.internal.patch_state import is_applied
+    from pilot.patches.update_auto_update_schedule import PATCH_NAME, run
+
+    Server().auto_update.set_enabled(True)
+    with patch("pilot.core.server.auto_update.CronManager") as cron:
+        cron.return_value.set_schedule.side_effect = CronError("Could not write the crontab.")
+        with pytest.raises(CronError):
+            run(benches)
+    assert not is_applied(benches, PATCH_NAME)
+
+
+def test_the_schedule_patch_skips_source_installs(benches, monkeypatch):
+    from pilot.internal.patch_state import is_applied
+    from pilot.patches.update_auto_update_schedule import PATCH_NAME, run
+
+    monkeypatch.setattr(pilot, "is_dev_build", True)
+    with patch("pilot.core.server.auto_update.CronManager") as cron:
+        run(benches)
+    cron.assert_not_called()
+    assert not is_applied(benches, PATCH_NAME)
+
+
+def test_a_fresh_release_install_enables_updates_without_a_bench(tmp_path, monkeypatch):
+    from pilot.patches.update_auto_update_schedule import run
+
+    root = tmp_path / "new-install" / "benches"
+    monkeypatch.setattr("pilot.utils.benches_dir", lambda: root)
+    monkeypatch.setattr(pilot, "is_dev_build", False)
+    with patch("pilot.core.server.auto_update.CronManager") as cron:
+        run(root)
+    cron.return_value.set_schedule.assert_called_once()
+    assert Server().auto_update.is_enabled

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pilot.config.common_site_config import update_common_site_config
+from pilot.config.common_site_config import read_common_site_config, update_common_site_config
+from pilot.config.mail import CONFIG_KEYS as MAIL_CONFIG_KEYS
 from pilot.config.worker import FRAPPE_QUEUES
-from pilot.exceptions import MalformedSiteConfig
+from pilot.core.site.config import config_patch_error, merge_public_config, public_config
+from pilot.exceptions import BenchError, MalformedSiteConfig
 
 if TYPE_CHECKING:
     from pilot.config import S3Config
@@ -12,6 +14,31 @@ if TYPE_CHECKING:
 
 # One process holds one client cache, so lite mode gives it a ceiling.
 _LITE_CLIENT_CACHE_BYTES = 10 * 1024 * 1024
+
+# Keys Pilot writes from bench.toml or other settings; an edit would be overwritten.
+MANAGED_COMMON_SITE_CONFIG_KEYS = frozenset(
+    {
+        "client_cache_max_bytes",
+        "default_site",
+        "dns_multitenant",
+        "maintenance_mode",
+        "monitor",
+        "redis_cache",
+        "redis_queue",
+        "redis_socketio",
+        "s3_access_key",
+        "s3_bucket",
+        "s3_provider",
+        "s3_region",
+        "s3_secret_key",
+        "socketio_backend",
+        "socketio_port",
+        "webserver_host",
+        "webserver_port",
+        "workers",
+        *MAIL_CONFIG_KEYS,
+    }
+)
 
 
 class BenchConfigFiles:
@@ -56,6 +83,22 @@ class BenchConfigFiles:
             config["s3_provider"] = s3_config.provider
             config["s3_region"] = s3_config.region
 
+    @property
+    def public_common_site_config(self) -> dict:
+        """common_site_config.json with secrets masked and without Pilot-managed keys."""
+        return _editable(read_common_site_config(self.bench.sites_path))
+
+    def update_public_common_site_config(self, patch: dict) -> dict:
+        if managed := sorted(set(patch) & MANAGED_COMMON_SITE_CONFIG_KEYS):
+            raise BenchError(f"Pilot manages {', '.join(managed)}; change it through its own setting.")
+        with update_common_site_config(self.bench.sites_path) as config:
+            if error := config_patch_error(config, patch):
+                raise BenchError(error)
+            merged = merge_public_config(config, patch)
+            config.clear()
+            config.update(merged)
+        return _editable(merged)
+
     def write_common_site_config(self) -> None:
         redis = self.bench.config.redis
         redis_cache = f"redis://localhost:{redis.cache_port}"
@@ -98,3 +141,11 @@ class BenchConfigFiles:
             config["workers"] = entries
         else:
             config.pop("workers", None)
+
+
+def _editable(config: dict) -> dict:
+    return {
+        key: value
+        for key, value in public_config(config).items()
+        if key not in MANAGED_COMMON_SITE_CONFIG_KEYS
+    }

@@ -5,11 +5,11 @@ import json
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlsplit
 
 from pilot.core.app import RevisionPin
+from pilot.core.bench.migration.recovery import MigrationRecovery
 from pilot.core.bench.migration.state import (
     MigrationState,
     MigrationStateError,
@@ -17,6 +17,7 @@ from pilot.core.bench.migration.state import (
     validate_transition,
 )
 from pilot.exceptions import BenchError, MigrateError
+from pilot.internal.jsonl_log import utc_now
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -40,10 +41,6 @@ _CHAIN_TASKS = {
 _CHAIN_PHASES = ("backing_up", "updating", "migrating")
 _REVERT_PHASES = ("reverting_apps", "reverting_sites", "restarting")
 _JOBS_WAIT_SECONDS = 300
-
-
-def _now() -> str:
-    return datetime.now(UTC).isoformat()
 
 
 def _load_task(command: str):
@@ -91,7 +88,7 @@ class SiteProgress:
 
 
 @dataclass
-class MigrationOperation:
+class MigrationOperation(MigrationRecovery):
     """Durable owner of an update/site-migrate workflow, advanced one task at a time via `enqueue_next`."""
 
     id: str
@@ -166,7 +163,10 @@ class MigrationOperation:
 
         if self.safeguards_disabled:
             return
-        needed = sum(self.bench.site(site.name).backups.estimated_database_size for site in self.sites)
+        sites = [self.bench.site(site.name) for site in self.sites]
+        needed = sum(
+            site.backups.estimated_database_size for site in sites if not site.migration_backup.is_stored_in_s3
+        )
         ensure_free_space(self.bench.sites_path, needed, "the backups this migration takes first")
 
     def enqueue_next(self, handoff_from: str | None = None) -> str | None:
@@ -329,7 +329,7 @@ class MigrationOperation:
             self._fail_site_step(phase, site_name)
         self.diagnosis = {
             "phase": phase,
-            "message": f"The task stopped before it finished{detail}. Retry it, or revert.",
+            "message": f"The task stopped before it finished{detail}.",
             "output_excerpt": "",
         }
         self._enter_needs_attention(phase, site_name)
@@ -354,158 +354,6 @@ class MigrationOperation:
         if phase == "backing_up":
             return site.backup_status == "backed_up"
         return site.migration_status == "success"
-
-    def retry(self) -> None:
-        """Resume the chain from needs_attention so the failed unit runs again."""
-        if self.state != "needs_attention":
-            raise MigrationStateError(f"Retry is not allowed from state {self.state}")
-        phase = self.return_state or "migrating"
-        self._prepare_sites()
-        self.diagnosis = None
-        self._transition("retrying")
-        if phase == "backing_up":
-            # Sites were live after the failure, so every snapshot may be stale.
-            for site in self.sites:
-                site.backup_status = "pending"
-        elif phase == "migrating" and self.failed_site:
-            self.site(self.failed_site).migration_status = "pending"
-        self.failed_site = None
-        self._transition(phase)
-
-    def bypass_patch(self, patch: str, on_progress: OnProgress = _NO_PROGRESS) -> None:
-        """Permanently mark one patch as completed for the failed site via Frappe.
-
-        Re-arms the chain so the caller can resume migration immediately: the
-        failed site goes back to pending and the operation returns to migrating.
-        """
-        from pilot.utils import run_command
-
-        if self.state != "needs_attention" or not self.failed_site:
-            raise MigrationStateError("Skip patch is only available on a failed migration.")
-        diagnosed_patch = (self.diagnosis or {}).get("patch")
-        if not diagnosed_patch or patch != diagnosed_patch:
-            raise MigrationStateError("Skip patch must match the diagnosed failing patch.")
-        on_progress(f"Skipping patch {patch} on {self.failed_site}...")
-        command = [
-            *self.bench.frappe_call,
-            "frappe",
-            "--site",
-            self.failed_site,
-            "bypass-patch",
-            patch,
-            "--yes",
-        ]
-        result = run_command(command, cwd=self.bench.sites_path, tee_output=True)
-        if result.returncode != 0:
-            raise BenchError(
-                f"bypass-patch failed for {patch} (exit {result.returncode}). "
-                "This Frappe version may not support bypass-patch."
-            )
-        failed = self.site(self.failed_site)
-        failed.touched_tables = sorted(set(failed.touched_tables) | {"tabPatch Log"})
-        self.decisions.append(
-            {"action": "bypass_patch", "site": self.failed_site, "patch": patch, "at": _now()}
-        )
-        self._save()
-        self.bench.audit_action(
-            "bypass_patch", {"operation": self.id, "site": self.failed_site, "patch": patch}
-        )
-        self.retry()
-
-    def revert(self) -> None:
-        """Resume from needs_attention/revert_failed and enter the next revert phase."""
-        if self.state not in ("needs_attention", "revert_failed"):
-            raise MigrationStateError(f"Restore is not allowed from state {self.state}")
-        if not self.can_revert:
-            raise BenchError("Restore is unavailable: safeguards were not created for this update.")
-        self.diagnosis = None
-        self._advance_revert()
-
-    def next_revert_site(self) -> str | None:
-        return next(
-            (
-                site.name
-                for site in self.sites
-                if site.migration_status != "pending" and not self.revert_checkpoints.get(f"site:{site.name}")
-            ),
-            None,
-        )
-
-    def revert_apps(self, on_step: OnStep = _NO_STEP, on_progress: OnProgress = _NO_PROGRESS) -> None:
-        on_step("revert_apps", "Reverting app revisions")
-        try:
-            for revision in self.apps:
-                on_progress(f"Reverting {revision.name} to {revision.branch or revision.sha[:8]}...")
-                app = self.bench.app(revision.name)
-                if revision.branch:
-                    app.return_to(revision.branch, revision.sha)
-                    app.record_branch()
-                else:
-                    app.checkout_commit(revision.sha)
-            if self.apps:
-                filter_set = set(self.apps_filter) if self.apps_filter else None
-                self.bench._reinstall_apps(filter_set, on_progress)
-                self.bench._rebuild_assets(filter_set, on_progress)
-            self.revert_checkpoints["apps"] = True
-            self._save()
-        except Exception as error:
-            self._fail_revert(error)
-            raise
-        self._advance_revert()
-
-    def revert_site(
-        self, name: str, on_step: OnStep = _NO_STEP, on_progress: OnProgress = _NO_PROGRESS
-    ) -> None:
-        site = self.site(name)
-        on_step("revert_site", f"Recovering {name}")
-        site.migration_status = "recovering"
-        self._save()
-        try:
-            on_progress(f"Restoring database for {name}...")
-            tables = site.touched_tables if site.touched_tables_trusted else []
-            self.bench.site(name).migration_backup.restore(tables)
-            on_progress(f"Clearing cache for {name}...")
-            self.bench.site(name).clear_cache()
-            site.migration_status = "recovered"
-            self.revert_checkpoints[f"site:{name}"] = True
-            self._save()
-        except Exception as error:
-            self._fail_revert(error)
-            raise
-        self._advance_revert()
-
-    def restart(self, on_step: OnStep = _NO_STEP) -> None:
-        on_step("restart", "Restarting services")
-        try:
-            # The reverted apps may declare different processes; the restart then restarts them.
-            self.bench.processes.apply()
-            self.bench.reload_workers(raises=True)
-            self._lift_maintenance()
-            for site in self.sites:
-                if site.backup_status == "backed_up":
-                    self.bench.site(site.name).migration_backup.discard()
-            self.revert_checkpoints["restarted"] = True
-        except Exception as error:
-            self._fail_revert(error)
-            raise
-        self._transition("reverted")
-
-    def _advance_revert(self) -> None:
-        """Enter the next revert phase, staying put while the current one has more units to do."""
-        phase = self._next_revert_phase()
-        if phase != self.state:
-            self._transition(phase)
-
-    def _next_revert_phase(self) -> str:
-        if self.apps and not self.revert_checkpoints.get("apps"):
-            return "reverting_apps"
-        if self.next_revert_site() is not None:
-            return "reverting_sites"
-        return "restarting"
-
-    def _fail_revert(self, error: Exception) -> None:
-        self.diagnosis = {"message": f"Revert failed: {error}", "output_excerpt": ""}
-        self._transition("revert_failed")
 
     def site(self, name: str) -> SiteProgress:
         for site in self.sites:
@@ -535,13 +383,28 @@ class MigrationOperation:
 
     def _restore_maintenance(self) -> None:
         for site in self.sites:
-            if site.original_config:
-                self.bench.site(site.name).set_maintenance_settings(site.original_config)
+            site_obj = self.bench.site(site.name)
+            # A site dropped after the failure has no config left to restore.
+            if site.original_config and site_obj.exists:
+                site_obj.set_maintenance_settings(site.original_config)
+
+    def _discard_snapshots(self) -> None:
+        for site in self.sites:
+            site_obj = self.bench.site(site.name)
+            if site.backup_status == "backed_up" and site_obj.exists:
+                site_obj.migration_backup.discard()
 
     def _lift_maintenance(self) -> None:
         """Restore maintenance settings and refresh web workers."""
         self._restore_maintenance()
         self.bench.reload_workers(web_only=True, raises=True)
+
+    def _restart_services(self) -> None:
+        """Restart every process on the app code now on disk, then lift maintenance."""
+        # The apps may declare different processes now; the restart then restarts them.
+        self.bench.processes.apply()
+        self.bench.reload_workers(raises=True)
+        self._lift_maintenance()
 
     def _restart_web_in_maintenance(self, on_progress: OnProgress) -> None:
         """Refresh Frappe's 60-second site-config cache before changing site data."""
@@ -557,18 +420,13 @@ class MigrationOperation:
             raise MigrationStateError("Finish every site migration before completing the update.")
         on_step("restart", "Restarting services")
         try:
-            # An updated app may declare different processes; the restart then restarts them.
-            self.bench.processes.apply()
-            self.bench.reload_workers(raises=True)
-            self._lift_maintenance()
+            self._restart_services()
         except Exception as error:
             message = f"Restarting services failed: {error}. Retry to restart them again."
             self.diagnosis = {"phase": "migrating", "message": message, "output_excerpt": ""}
             self._enter_needs_attention("migrating", None)
             raise
-        for site in self.sites:
-            if site.backup_status == "backed_up":
-                self.bench.site(site.name).migration_backup.discard()
+        self._discard_snapshots()
         self._transition("completed")
 
     def _union_touched_tables(self, site: SiteProgress) -> None:
@@ -590,9 +448,9 @@ class MigrationOperation:
         validate_transition(self.state, target)
         self.state = get_state(target)
         if self.state.starts_work and self.started_at is None:
-            self.started_at = _now()
+            self.started_at = utc_now()
         if self.state.is_terminal:
-            self.finished_at = _now()
+            self.finished_at = utc_now()
         self._save()
 
     def _save(self) -> None:
