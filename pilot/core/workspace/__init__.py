@@ -17,6 +17,8 @@ if TYPE_CHECKING:
 
 ADMIN_PASSWORD = "admin"
 DEFAULT_DB_TYPE = "sqlite"
+# What Frappe's esbuild builds. See get_all_files_to_build in frappe/esbuild/esbuild.js.
+DESK_BUNDLE_SUFFIXES = {".js", ".ts", ".css", ".sass", ".scss", ".less", ".styl", ".jsx"}
 
 
 class Workspace:
@@ -65,6 +67,16 @@ class Workspace:
     @property
     def is_frappe_app(self) -> bool:
         return bool(self.app_name) and (self.root / self.app_name / "hooks.py").exists()
+
+    @property
+    def has_desk_bundles(self) -> bool:
+        """Only Frappe's asset watcher rebuilds these, and it uses about 2.8 GB while idle."""
+        public = self.root / self.app_name / "public"
+        return any(
+            bundle.suffix in DESK_BUNDLE_SUFFIXES
+            and not {"node_modules", "dist"} & set(bundle.relative_to(public).parts)
+            for bundle in public.rglob("*.bundle.*")
+        )
 
     @property
     def default_frappe_branch(self) -> str:
@@ -188,6 +200,7 @@ class Workspace:
         def configure(config: BenchConfig) -> None:
             config.admin.enabled = False
             config.allow_developer_mode = True
+            config.watch_apps_js = self.has_desk_bundles
             config.apps.append(AppConfig(name=self.app_name, repo="", branch="", path=str(self.root)))
 
         name = self.next_bench_name
