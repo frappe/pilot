@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from functools import cached_property
@@ -19,8 +20,9 @@ class EditorGit:
     patches, combined stderr and NUL parsing that the lifecycle wrapper omits.
     """
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, isolated: bool = False) -> None:
         self.root = Path(root)
+        self.isolated = isolated
 
     @cached_property
     def is_repo(self) -> bool:
@@ -268,6 +270,12 @@ class EditorGit:
         result = self._run(*args, input=input, combine=True)
         return result.returncode == 0, result.stdout.strip()
 
+    def _env(self) -> dict | None:
+        """Isolated roots must not discover a repository in a parent directory."""
+        if not self.isolated:
+            return None
+        return {**os.environ, "GIT_CEILING_DIRECTORIES": str(self.root.resolve().parent)}
+
     def _run(
         self, *args: str, input: str | None = None, combine: bool = False
     ) -> subprocess.CompletedProcess:
@@ -275,6 +283,7 @@ class EditorGit:
             return subprocess.run(
                 ["git", *args],
                 cwd=self.root,
+                env=self._env(),
                 text=True,
                 input=input,
                 stdout=subprocess.PIPE,

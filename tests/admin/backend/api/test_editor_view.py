@@ -248,3 +248,118 @@ def test_git_status_and_stage_roundtrip(tmp_path: Path) -> None:
     assert staged.status_code == 200 and staged.get_json()["ok"] is True
     after = client.get("/api/v1/editor/git/status", query_string={"app": "widgets"}).get_json()
     assert any(f["path"] == "hello.py" for f in after["staged"])
+
+
+def _site_with_scripts(bench_root: Path) -> Path:
+    scripts = bench_root / "sites" / "site.local" / "server_scripts"
+    scripts.mkdir(parents=True)
+    (bench_root / "sites" / "site.local" / "site_config.json").write_text('{"db_password": "x"}')
+    (scripts / "TestScript.py").write_text("doc.bio = 'x'\n")
+    return scripts
+
+
+def test_site_scope_lists_server_scripts(tmp_path: Path) -> None:
+    bench_root = _bench(tmp_path)
+    _site_with_scripts(bench_root)
+    client = _client(bench_root)
+    response = client.get("/api/v1/editor/tree", query_string={"site": "site.local"})
+    assert response.status_code == 200
+    assert [e["name"] for e in response.get_json()] == ["TestScript.py"]
+
+
+def test_site_scope_saves_and_rejects_escape(tmp_path: Path) -> None:
+    bench_root = _bench(tmp_path)
+    scripts = _site_with_scripts(bench_root)
+    client = _client(bench_root)
+    saved = client.put(
+        "/api/v1/editor/file",
+        query_string={"site": "site.local", "path": "TestScript.py"},
+        json={"content": "doc.bio = 'y'\n"},
+        headers={"If-Match": "*"},
+    )
+    assert saved.status_code == 200
+    assert (scripts / "TestScript.py").read_text() == "doc.bio = 'y'\n"
+    escaped = client.get(
+        "/api/v1/editor/file", query_string={"site": "site.local", "path": "../site_config.json"}
+    )
+    assert escaped.status_code == 400
+
+
+def test_site_scope_git_does_not_discover_parent_repo(tmp_path: Path) -> None:
+    bench_root = _bench(tmp_path)
+    _site_with_scripts(bench_root)
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    client = _client(bench_root)
+    status = client.get("/api/v1/editor/git/status", query_string={"site": "site.local"})
+    assert status.get_json()["repo"] is False
+
+
+def test_unknown_site_or_missing_folder_is_404(tmp_path: Path) -> None:
+    bench_root = _bench(tmp_path)
+    client = _client(bench_root)
+    assert client.get("/api/v1/editor/tree", query_string={"site": "nope.local"}).status_code == 404
+    (bench_root / "sites" / "site.local").mkdir()
+    (bench_root / "sites" / "site.local" / "site_config.json").write_text("{}")
+    response = client.get("/api/v1/editor/tree", query_string={"site": "site.local"})
+    assert response.status_code == 404
+    assert response.get_json()["error"]["code"] == "editor_scripts_not_found"
+
+
+def test_site_and_app_state_do_not_collide(tmp_path: Path) -> None:
+    bench_root = _bench(tmp_path)
+    _site_with_scripts(bench_root)
+    client = _client(bench_root)
+    client.put("/api/v1/editor/state", query_string={"site": "site.local"}, json={"tabs": ["a"]})
+    assert client.get("/api/v1/editor/state", query_string={"app": "widgets"}).get_json() == {}
+
+
+def test_site_scope_blocks_create_and_rename(tmp_path: Path) -> None:
+    bench_root = _bench(tmp_path)
+    scripts = _site_with_scripts(bench_root)
+    client = _client(bench_root)
+    created = client.post(
+        "/api/v1/editor/create",
+        query_string={"site": "site.local"},
+        json={"path": "New.py", "type": "file"},
+    )
+    renamed = client.post(
+        "/api/v1/editor/rename",
+        query_string={"site": "site.local"},
+        json={"from": "TestScript.py", "to": "Other.py"},
+    )
+    assert created.status_code == 403 and renamed.status_code == 403
+    assert renamed.get_json()["error"]["code"] == "editor_locked"
+    assert [path.name for path in scripts.iterdir()] == ["TestScript.py"]
+
+
+def test_site_scope_delete_goes_through_the_record(tmp_path: Path, monkeypatch) -> None:
+    from pilot.core.site import Site
+
+    deleted: list[str] = []
+    monkeypatch.setattr(Site, "delete_server_script", lambda self, name: deleted.append(name))
+    bench_root = _bench(tmp_path)
+    scripts = _site_with_scripts(bench_root)
+    client = _client(bench_root)
+    response = client.delete(
+        "/api/v1/editor/delete", query_string={"site": "site.local", "path": "TestScript.py"}
+    )
+    assert response.status_code == 200
+    assert deleted == ["TestScript"]
+    assert (scripts / "TestScript.py").exists()
+
+
+def test_site_scope_delete_rejects_non_script_paths(tmp_path: Path, monkeypatch) -> None:
+    from pilot.core.site import Site
+
+    deleted: list[str] = []
+    monkeypatch.setattr(Site, "delete_server_script", lambda self, name: deleted.append(name))
+    bench_root = _bench(tmp_path)
+    scripts = _site_with_scripts(bench_root)
+    (scripts / "notes.txt").write_text("x")
+    (scripts / "sub").mkdir()
+    (scripts / "sub" / "Nested.py").write_text("x")
+    client = _client(bench_root)
+    for path in ("notes.txt", "sub", "sub/Nested.py"):
+        response = client.delete("/api/v1/editor/delete", query_string={"site": "site.local", "path": path})
+        assert response.status_code == 403
+    assert deleted == []

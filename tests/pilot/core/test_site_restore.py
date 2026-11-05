@@ -10,17 +10,29 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pilot.core.site.restore import BackupRun, BackupStream, SiteRestore, backup_part
+from pilot.core.site.restore import (
+    BackupRun,
+    BackupStream,
+    SiteRestore,
+    backup_part,
+    is_only_missing_server_scripts,
+)
 from pilot.exceptions import BenchError
 
 
-def _frappe_archive(tmp_path: Path, site: str, part: str) -> Path:
-    """Built the way Frappe's backup builds it: `tar cf` of ./<site>/<part>/files from sites/."""
+def _frappe_archive(tmp_path: Path, site: str, part: str, server_scripts: bool = False) -> Path:
+    """Built the way Frappe's backup builds it: `tar cf` of ./<site>/<part>/files from sites/,
+    plus ./<site>/server_scripts when the site has File Server Scripts."""
     sites = tmp_path / "source-sites"
     (sites / site / part / "files").mkdir(parents=True)
     (sites / site / part / "files" / "logo.png").write_text("image")
+    folders = [f"./{site}/{part}/files"]
+    if server_scripts:
+        (sites / site / "server_scripts").mkdir()
+        (sites / site / "server_scripts" / "close_todo.py").write_text("doc.status = 'Closed'\n")
+        folders.append(f"./{site}/server_scripts")
     archive = tmp_path / f"20261004_010000-{site}-{'private-' if part == 'private' else ''}files.tar"
-    subprocess.run(["tar", "-cf", str(archive), f"./{site}/{part}/files"], cwd=sites, check=True)
+    subprocess.run(["tar", "-cf", str(archive), *folders], cwd=sites, check=True)
     return archive
 
 
@@ -202,6 +214,57 @@ def test_a_dump_streams_into_the_client(tmp_path: Path, monkeypatch) -> None:
     manager.import_sql("site_db", gzip.GzipFile(fileobj=io.BytesIO(gzip.compress(b"INSERT 1;\n" * 1000))))
 
     assert output.read_bytes() == b"INSERT 1;\n" * 1000
+
+
+@pytest.mark.parametrize("is_streamed", [False, True])
+def test_private_files_bring_back_server_scripts(tmp_path: Path, is_streamed: bool) -> None:
+    site = _site(tmp_path)
+    archive = _frappe_archive(tmp_path, "source.localhost", "private", server_scripts=True)
+    if is_streamed:
+        data = archive.read_bytes()
+        run = BackupRun(streams={"private": BackupStream(archive.name, lambda: io.BytesIO(data))})
+    else:
+        run = BackupRun.from_paths([archive])
+
+    SiteRestore(site).restore(run, ["private"], on_progress=lambda message: None)
+
+    assert (site.path / "private" / "files" / "logo.png").read_text() == "image"
+    assert (site.path / "server_scripts" / "close_todo.py").read_text() == "doc.status = 'Closed'\n"
+
+
+@pytest.mark.parametrize("is_streamed", [False, True])
+def test_private_files_without_server_scripts_still_restore(tmp_path: Path, is_streamed: bool) -> None:
+    site = _site(tmp_path)
+    archive = _frappe_archive(tmp_path, "source.localhost", "private")
+    if is_streamed:
+        data = archive.read_bytes()
+        run = BackupRun(streams={"private": BackupStream(archive.name, lambda: io.BytesIO(data))})
+    else:
+        run = BackupRun.from_paths([archive])
+
+    SiteRestore(site).restore(run, ["private"], on_progress=lambda message: None)
+
+    assert (site.path / "private" / "files" / "logo.png").read_text() == "image"
+    assert not (site.path / "server_scripts").exists()
+
+
+def test_public_files_cannot_write_server_scripts(tmp_path: Path) -> None:
+    site = _site(tmp_path)
+    archive = _frappe_archive(tmp_path, "source.localhost", "public", server_scripts=True)
+
+    SiteRestore(site).extract_files(archive, "public")
+
+    assert (site.path / "public" / "files" / "logo.png").read_text() == "image"
+    assert not (site.path / "server_scripts").exists()
+
+
+def test_only_a_missing_server_scripts_folder_is_ignored() -> None:
+    missing = "tar: */server_scripts: Not found in archive\ntar: Exiting with failure status due to previous errors\n"
+    corrupt = "tar: Unexpected EOF in archive\n" + missing
+
+    assert is_only_missing_server_scripts(missing)
+    assert not is_only_missing_server_scripts(corrupt)
+    assert not is_only_missing_server_scripts("tar: Exiting with failure status due to previous errors\n")
 
 
 def test_an_archive_cannot_write_outside_the_files_directory(tmp_path: Path) -> None:

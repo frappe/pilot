@@ -18,7 +18,7 @@
         'ring-1 ring-inset ring-outline-gray-4 bg-surface-gray-2': dragOver,
         'opacity-50': entry.ignored,
       }"
-      draggable="true"
+      :draggable="!IS_SITE_SCOPE"
       @click="onClick"
       @dblclick="onDblClick"
       @contextmenu.stop="onContext"
@@ -71,6 +71,7 @@ import { useEditorStore } from '@/stores/editor'
 import { useGitStore } from '@/stores/git'
 import { useContextMenu } from '@/composables/useContextMenu'
 import { useFileOps } from '@/composables/useFileOps'
+import { IS_SITE_SCOPE } from '@/scope'
 
 const props = defineProps({ entry: { type: Object, required: true } })
 
@@ -173,10 +174,12 @@ function onContext(e) {
   clearTimeout(longPressTimer.value)
   const p = props.entry.path
   const baseItems = [
-    { label: 'Rename', icon: 'lucide-pencil', action: () => ops.rename(p) },
+    ...(IS_SITE_SCOPE
+      ? []
+      : [{ label: 'Rename', icon: 'lucide-pencil', action: () => ops.rename(p) }]),
     { label: 'Delete', icon: 'lucide-trash-2', danger: true, action: () => ops.remove(p, isDir.value) },
   ]
-  const items = isDir.value
+  const items = isDir.value && !IS_SITE_SCOPE
     ? [
         { label: 'New File', icon: 'lucide-file-plus', action: () => ops.newFile(p) },
         { label: 'New Folder', icon: 'lucide-folder-plus', action: () => ops.newFolder(p) },

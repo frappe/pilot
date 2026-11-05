@@ -6,20 +6,22 @@ from pathlib import Path
 from flask import Blueprint, current_app, request
 
 from admin.backend.api.responses import error_response
+from admin.backend.core.editor.site_scripts import SiteScriptsWorkspace
 from admin.backend.core.editor.workspace import (
     BinaryFileError,
+    EditorLockedError,
     EditorPathError,
     EditorWorkspace,
 )
 from pilot.core.bench import Bench
 from pilot.exceptions import BenchError
-from pilot.internal.validators import validate_app_name
+from pilot.internal.validators import validate_app_name, validate_site_name
 
 editor_bp = Blueprint("editor", __name__)
 
 
 def with_workspace(view):
-    """Resolve ?app=<name> to a workspace; 404 for unknown or missing apps."""
+    """Resolve ?app=<name> or ?site=<name> to a workspace; 404 for unknown scopes."""
 
     @wraps(view)
     def wrapper(*args, **kwargs):
@@ -27,6 +29,9 @@ def with_workspace(view):
         config = _read_config(bench_root)
         if config is None or not config.allow_developer_mode:
             return error_response("editor_disabled", "Code editor is disabled. Enable Developer Mode in Settings.", 403)
+        site_name = (request.args.get("site") or "").strip()
+        if site_name:
+            return _call_with_site_workspace(view, Bench(config, bench_root), site_name, args, kwargs)
         name = (request.args.get("app") or "").strip()
         if validate_app_name(name) is not None:
             return error_response("editor_app_not_found", "Unknown or missing app.", 404)
@@ -34,9 +39,22 @@ def with_workspace(view):
             root = Bench(config, bench_root).app(name).path
         except BenchError:
             return error_response("editor_app_not_found", "Unknown or missing app.", 404)
-        return view(EditorWorkspace(root), *args, **kwargs)
+        return view(EditorWorkspace(root, scope=name), *args, **kwargs)
 
     return wrapper
+
+
+def _call_with_site_workspace(view, bench, site_name, args, kwargs):
+    site = bench.site(site_name) if validate_site_name(site_name) is None else None
+    if site is None or not site.exists:
+        return error_response("editor_site_not_found", "Unknown or missing site.", 404)
+    if not site.server_scripts_path.is_dir():
+        return error_response(
+            "editor_scripts_not_found",
+            "This site has no server_scripts folder yet. Save a File-sourced Server Script in Desk first.",
+            404,
+        )
+    return view(SiteScriptsWorkspace(site), *args, **kwargs)
 
 
 def is_developer_mode_enabled(bench_root: Path) -> bool:
@@ -65,6 +83,11 @@ def json_body() -> dict:
 @editor_bp.errorhandler(EditorPathError)
 def _path_error(_):
     return error_response("invalid_path", "Path escapes the app directory.", 400)
+
+
+@editor_bp.errorhandler(EditorLockedError)
+def _locked_error(error):
+    return error_response("editor_locked", str(error), 403)
 
 
 @editor_bp.errorhandler(BinaryFileError)
