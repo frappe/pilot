@@ -26,7 +26,10 @@ class ProductionConfig:
         # Oldest format derived the manager from a `lightweight` flag.
         if enabled and not pm and "lightweight" in data:
             pm = "systemd" if data.get("lightweight", False) else "supervisor"
-        return cls(enabled=enabled, process_manager=pm, sandbox=bool(data.get("sandbox", False)))
+        sandbox = data.get("sandbox", False)
+        if not isinstance(sandbox, bool):
+            raise ConfigError(f"production.sandbox must be true or false, got {sandbox!r}.")
+        return cls(enabled=enabled, process_manager=pm, sandbox=sandbox)
 
     @staticmethod
     def _normalize_process_manager(value: str) -> str:
