@@ -58,7 +58,7 @@ class GunicornManager:
             worker_class = "gthread"
         return self.config_template.render(
             bind=self._bind(),
-            workers=cfg.workers,
+            workers=cfg.worker_count,
             threads=cfg.threads,
             worker_class=worker_class,
             timeout=cfg.timeout,
