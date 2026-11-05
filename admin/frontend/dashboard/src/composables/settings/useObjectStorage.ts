@@ -5,6 +5,7 @@ import { apiErrorMessage, hasApiError } from '@/api/client'
 import { settingsApi } from '@/api/settings'
 import type { S3ProviderOption } from '@/types/settings'
 import { errorMessage } from '@/utils/error'
+import { regionOptionsFor } from '@/utils/objectStorage'
 
 export const useObjectStorage = () => {
   const loading = ref(true)
@@ -28,11 +29,12 @@ export const useObjectStorage = () => {
   const providerOptions = computed(() =>
     providers.value.map((p) => ({ label: p.label, value: p.value })),
   )
-  const regionOptions = computed(
-    () =>
-      providers.value
-        .find((p) => p.value === provider.value)
-        ?.regions.map((r) => ({ label: r, value: r })) || [],
+  const regionOptions = computed(() =>
+    regionOptionsFor(
+      providers.value.find((p) => p.value === provider.value)?.regions || [],
+      endpointUrl.value,
+      region.value,
+    ),
   )
 
   const loadFrappeRegions = async () => {

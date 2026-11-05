@@ -1,20 +1,20 @@
-"""Pings every production site's /api/method/ping and appends the result to
-that site's bench's uptime log. The shared pilot-monitor service
-(pilot.core.server.monitoring) runs one pass every few seconds, covering every
-sibling bench."""
+"""Pings every production site's /api/method/ping on its local app server and
+appends the result to that site's bench's uptime log. The shared pilot-monitor
+service (pilot.core.server.monitoring) runs one pass every few seconds, covering
+every sibling bench."""
 
 from __future__ import annotations
 
+import http.client
 import json
 import time
 import typing
-import urllib.error
-import urllib.request
 from datetime import UTC, datetime
 
 from pilot.core.alerts import ALERT_SUSTAINED_SECONDS, SustainedAlerts, notify
-from pilot.core.notification.events import record_alert
+from pilot.core.notification.events import raise_event, record_alert
 from pilot.core.site.uptime_monitoring_config import UptimeMonitorConfigurator
+from pilot.managers.gunicorn import GunicornManager
 from pilot.utils import cli_root, iter_sibling_benches
 
 if typing.TYPE_CHECKING:
@@ -38,17 +38,26 @@ class UptimeMonitor:
         return {site.config.name for site in self.bench.sites() if site.maintenance_mode}
 
     def ping_site(self, site_name: str) -> dict:
-        url = f"https://{site_name}{PING_PATH}"
+        # Stay on loopback. Traffic over the public address keeps a Sleepy VM awake, so
+        # this client follows no redirect and uses no proxy.
+        connection = http.client.HTTPConnection(
+            GunicornManager(self.bench).upstream_server, timeout=PING_TIMEOUT
+        )
         start = time.monotonic()
         try:
-            request = urllib.request.Request(url, headers={"User-Agent": "pilot-uptime-monitor"})
-            with urllib.request.urlopen(request, timeout=PING_TIMEOUT) as response:
-                return self._result(site_name, start, up=response.status == 200, status_code=response.status)
-        except urllib.error.HTTPError as error:
-            return self._result(site_name, start, up=False, status_code=error.code)
-        except (urllib.error.URLError, TimeoutError, OSError) as error:
-            reason = getattr(error, "reason", error)
-            return self._result(site_name, start, up=False, status_code=None, error=str(reason) or type(reason).__name__)
+            connection.request(
+                "GET",
+                PING_PATH,
+                headers={"User-Agent": "pilot-uptime-monitor", "X-Frappe-Site-Name": site_name},
+            )
+            status = connection.getresponse().status
+            return self._result(site_name, start, up=status == 200, status_code=status)
+        except (http.client.HTTPException, OSError) as error:
+            return self._result(
+                site_name, start, up=False, status_code=None, error=str(error) or type(error).__name__
+            )
+        finally:
+            connection.close()
 
     @property
     def alerts_path(self):
@@ -75,18 +84,13 @@ class UptimeMonitor:
         down = down if alerting else []
         alerts = SustainedAlerts(self.alerts_path)
         due = alerts.due(down)
+        up = {result["site"] for result in results if result["up"]}
+        self.announce_recovered([site for site in alerts.recovered if site in up])
 
         recorded = [
             site
             for site in alerts.unrecorded(alerts.sustained())
-            if record_alert(
-                self.bench,
-                self._alert_payload([site], results),
-                category="Sites",
-                severity="Error",
-                title=f"{site} is unreachable",
-                site=site,
-            )
+            if record_alert(self.bench, self._alert_payload([site], results))
         ]
         if recorded:
             alerts.mark_recorded(recorded)
@@ -96,6 +100,20 @@ class UptimeMonitor:
 
         if notify(self.bench, self._alert_payload(due, results)):
             alerts.mark_notified(due)
+
+    def announce_recovered(self, sites: list[str]) -> None:
+        """Tell webhooks that a site they heard was down answers again."""
+        for site in sites:
+            raise_event(
+                self.bench,
+                feed=False,
+                event="site_up",
+                title=f"{site} is reachable again",
+                category="Sites",
+                severity="Info",
+                site=site,
+                action_route=f"/sites/{site}",
+            )
 
     def _alert_payload(self, down: list[str], results: list[dict]) -> dict:
         """Same event/message/context shape the resource alerts use."""
@@ -109,8 +127,14 @@ class UptimeMonitor:
             }
             for site in down
         ]
+        site = down[0] if len(down) == 1 else None
         return {
             "event": SITE_DOWN_EVENT,
+            "title": f"{site} is unreachable" if site else f"{len(down)} sites are unreachable",
+            "category": "Sites",
+            "severity": "Error",
+            "site": site,
+            "action_route": f"/sites/{site}" if site else "/sites",
             "message": f"{self.bench.config.name}: {', '.join(down)} unreachable",
             "context": {
                 "bench": self.bench.config.name,
@@ -131,7 +155,7 @@ class UptimeMonitor:
             "status_code": status_code,
             "response_ms": int((time.monotonic() - start) * 1000),
         }
-        # A failure with no HTTP status (TLS, DNS, timeout) keeps its reason.
+        # A failure with no HTTP status (refused connection, timeout) keeps its reason.
         if error:
             result["error"] = error
         return result

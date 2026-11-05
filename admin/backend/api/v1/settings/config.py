@@ -7,6 +7,7 @@ from pilot.config.alert_limit import RESOURCE_LIMIT_FIELDS
 from pilot.config.bench import ONBOARDING_STATES
 from pilot.config.llm import LLMConfig
 from pilot.config.mail import MailConfig
+from pilot.config.webhook import WebhookEndpoint
 from pilot.config.worker import parse_timeout
 from pilot.core.alerts import check_mail_credentials
 
@@ -21,6 +22,7 @@ _GROUP_TYPES: dict[str, type] = {
     "llm": dict,
     "s3": dict,
     "resource_limits": dict,
+    "webhook_endpoints": list,
     "mail": dict,
 }
 
@@ -56,6 +58,7 @@ class ConfigPatcher:
             return error
         if error := self._apply_resource_limits():
             return error
+        self._apply_webhook_endpoints()
         if error := self._apply_mail():
             return error
         try:
@@ -129,10 +132,6 @@ class ConfigPatcher:
                 setattr(limits, name, _coerce_int(resource_limits[name]))
         if "site_uptime" in resource_limits:
             limits.site_uptime = bool(resource_limits["site_uptime"])
-        if "webhook_endpoints" in resource_limits:
-            limits.webhook_endpoints = self._webhook_endpoints(
-                resource_limits["webhook_endpoints"] or [], limits.webhook_endpoints
-            )
         if "email_recipients" in resource_limits:
             limits.email_recipients = [
                 address.strip()
@@ -196,18 +195,26 @@ class ConfigPatcher:
             return f"Could not reach the mail server: {error}"
         return None
 
+    def _apply_webhook_endpoints(self) -> None:
+        if "webhook_endpoints" in self.data:
+            self.config.webhook_endpoints = self.get_webhook_endpoints(
+                self.data["webhook_endpoints"] or [], self.config.webhook_endpoints
+            )
+
     @staticmethod
-    def _webhook_endpoints(entries: list[dict], stored: dict[str, str]) -> dict[str, str]:
+    def get_webhook_endpoints(entries: list[dict], stored: list[WebhookEndpoint]) -> list[WebhookEndpoint]:
         """A blank token keeps the stored one, found by the URL the row was loaded
-        with so editing the URL does not drop it."""
-        endpoints: dict[str, str] = {}
+        with so editing the URL does not drop it. No events means every event."""
+        tokens = {endpoint.url: endpoint.token for endpoint in stored}
+        endpoints = []
         for entry in entries:
             url = str(entry.get("url", "")).strip()
             if not url:
                 continue
-            token = str(entry.get("token", "")).strip()
             loaded_as = str(entry.get("original_url", "")).strip() or url
-            endpoints[url] = token or stored.get(loaded_as, "")
+            token = str(entry.get("token", "")).strip() or tokens.get(loaded_as, "")
+            events = [str(event) for event in entry.get("events") or []]
+            endpoints.append(WebhookEndpoint(url, token, events))
         return endpoints
 
     def _apply_firewall(self) -> None:
@@ -329,6 +336,8 @@ class ConfigPatcher:
             s3_config.region = str(s3["region"]).strip()
         if "endpoint_url" in s3:
             s3_config.endpoint_url = str(s3["endpoint_url"]).strip()
+        if "upload_migration_backups" in s3:
+            s3_config.upload_migration_backups = bool(s3["upload_migration_backups"])
 
     @staticmethod
     def _s3_has_any_value(s3_config: S3Config) -> bool:

@@ -18,6 +18,7 @@ MigrationStateName = Literal[
     "revert_failed",
     "completed",
     "reverted",
+    "dismissed",
 ]
 
 
@@ -63,10 +64,11 @@ class MigrationDiagnosis(TypedDict):
 
 
 class MigrationDecision(TypedDict):
-    action: Literal["bypass_patch"]
-    site: str | None
-    patch: str
+    action: Literal["bypass_patch", "dismiss"]
     at: str
+    site: NotRequired[str | None]
+    patch: NotRequired[str]
+    state: NotRequired[MigrationStateName]
 
 
 class MigrationTaskLog(TypedDict):

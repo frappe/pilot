@@ -9,7 +9,7 @@ from pathlib import Path
 from pilot.exceptions import BenchError
 
 BUILD_MEMORY_SHARE = 0.85
-# Installed by install.sh's root phase; adds a swap file while a build runs.
+# Installed by install.sh, as root or through sudo; adds a swap file while a build runs.
 BUILD_SWAP_HELPER = Path("/usr/local/sbin/pilot-build-swap")
 # A large frontend build (Helpdesk) needs more than 2 GB.
 BUILD_SWAP_BELOW_MB = 3072

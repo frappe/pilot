@@ -228,5 +228,5 @@ class PythonEnvManager:
     def build_assets(self) -> None:
         self._assets.build_assets()
 
-    def build_assets_for_app(self, app: "App", force: bool = False) -> None:
-        self._assets.build_assets_for_app(app, force=force)
+    def build_assets_for_app(self, app: "App", force: bool = False, skip_frontend: bool = False) -> None:
+        self._assets.build_assets_for_app(app, force=force, skip_frontend=skip_frontend)

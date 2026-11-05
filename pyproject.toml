@@ -41,6 +41,9 @@ markers = [
   "assets/*",
   "templates/*.template",
 ]
+"pilot.core.database" = [
+  "mariadb_variables.json",
+]
 "pilot.managers.nginx" = [
   "templates/*.template",
 ]

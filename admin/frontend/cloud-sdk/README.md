@@ -69,10 +69,34 @@ await openCloudSettings({
 | `translate` | Supply `(message, values?) => string`. The default uses Frappe's translation catalog and replaces numbered values. |
 | `onClose` | Run a callback after the dialog closes. |
 | `context` | Supply a `CloudContext`. Without it, the SDK reads the current site's context. |
+| `target` | Render the panels inside this element instead of a dialog. See [Mount inline](#mount-inline). |
 
 Panel names: `billing`, `marketplace`, `analytics`, `domains`, `backups`, `usage`, `site-config`, `maintenance`, and `advanced`.
 
 The dialog uses Espresso components. On a phone, it fills the viewport and has a panel selector. It keeps clear of the notch and the home indicator when the page sets `viewport-fit=cover` in its viewport meta tag. On a desktop, it has a sidebar. Its styles, menus, dialogs, alerts, and toasts stay inside a shadow root. Closing removes the UI and returns focus to the button. Opening again replaces the current dialog. Closing also cancels a pending open.
+
+## Mount inline
+
+An app with its own settings page can show the panels inside it. Pass the element to fill as `target`. The panels fill its height, so give the element one. With one panel, the UI has no sidebar and no panel selector, so the app's own navigation stays the only one. With several panels, the sidebar shows inside the element.
+
+```ts
+await openCloudSettings({ target: document.querySelector('#cloud-settings'), panels: ['billing'] })
+
+// Call this when the host page or component is removed.
+closeCloudSettings()
+```
+
+Opening again, inline or as a dialog, replaces the mounted UI. Menus, dialogs, and toasts stay inside the element's shadow root.
+
+The inline UI is in the tab order, so Tab moves from the host page into the panels. A host can show the inline UI inside its own modal. Then Esc, or a click outside the open Cloud menu or dialog, closes it and also the host modal. To prevent this, ignore the modal's close while `fc-cloud-settings[overlay-open]` exists. The element has this attribute while a Cloud menu or dialog is open.
+
+```ts
+const isCloudOverlayOpen = () => !!document.querySelector('fc-cloud-settings[overlay-open]')
+```
+
+```vue
+<Dialog :open="show" @update:open="(open) => (open || !isCloudOverlayOpen()) && (show = open)">
+```
 
 ## Use API calls without the dialog
 

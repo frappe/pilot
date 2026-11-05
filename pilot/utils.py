@@ -416,6 +416,7 @@ def _run_command_tee(argv: list[str], cwd: Path | None, env: dict | None) -> sub
     captured: list[str] = []
     if process.stdout is None:
         raise RuntimeError("Command output pipe was not created")
+    process.stdout.reconfigure(newline="")
     try:
         for line in process.stdout:
             sys.stdout.write(line)

@@ -2,20 +2,11 @@
 import { ErrorMessage, Spinner, Switch, toast } from 'frappe-ui'
 import { onMounted, ref } from 'vue'
 import { settingsApi } from '@/api/settings'
-import Git from '@/components/settings/Git.vue'
-import LLM from '@/components/settings/LLM.vue'
-import Mail from '@/components/settings/Mail.vue'
-import Notifications from '@/components/settings/Notifications.vue'
-import S3Bucket from '@/components/settings/S3Bucket.vue'
 import SettingsRow from '@/components/settings/SettingsRow.vue'
-import { GENERAL_SECTIONS } from '@/components/settings/sections'
-import Version from '@/components/settings/Version.vue'
+import CommonSiteConfig from '@/components/settings/CommonSiteConfig.vue'
 import Workers from '@/components/settings/Workers.vue'
 import { useSession } from '@/composables/auth/useSession'
 import { errorMessage } from '@/utils/error'
-
-const openSection = defineModel<{ id: string } | null>('openSection')
-const sections = GENERAL_SECTIONS.filter((section) => !section.parent)
 
 const { session } = useSession()
 
@@ -25,6 +16,8 @@ const error = ref('')
 const allowDeveloperMode = ref(false)
 const liteMode = ref(false)
 const liteModeSupported = ref(false)
+const hasBucket = ref(false)
+const bucketBackups = ref(true)
 
 const toggleAllowDeveloperMode = async (value: boolean) => {
   saving.value = true
@@ -55,12 +48,28 @@ const toggleLiteMode = async (value: boolean) => {
   }
 }
 
+const toggleBucketBackups = async (value: boolean) => {
+  saving.value = true
+  error.value = ''
+  try {
+    await settingsApi.update({ s3: { upload_migration_backups: value } })
+    bucketBackups.value = value
+    toast.success(`Update backups ${value ? 'go to object storage' : 'stay on the disk'}`)
+  } catch (e) {
+    error.value = errorMessage(e, 'Could not update the backup setting.')
+  } finally {
+    saving.value = false
+  }
+}
+
 onMounted(async () => {
   try {
     const data = await settingsApi.get()
     allowDeveloperMode.value = Boolean(data?.bench?.allow_developer_mode)
     liteMode.value = Boolean(data?.lite_mode?.enabled)
     liteModeSupported.value = Boolean(data?.lite_mode?.supported)
+    hasBucket.value = Boolean(data?.s3?.bucket)
+    bucketBackups.value = data?.s3?.upload_migration_backups ?? true
   } catch {
     error.value = 'Could not load settings.'
   } finally {
@@ -74,20 +83,10 @@ onMounted(async () => {
     <Spinner size="lg" class="text-ink-gray-4" />
   </div>
 
-  <Git
-    v-else-if="openSection?.id === 'github' || openSection?.id === 'github-token'"
-    v-model:open-section="openSection"
-  />
-  <S3Bucket v-else-if="openSection?.id === 's3-bucket'" />
-  <LLM v-else-if="openSection?.id === 'llm'" />
-  <Notifications v-else-if="openSection?.id === 'notifications'" />
-  <Mail v-else-if="openSection?.id === 'mail'" />
-  <Workers v-else-if="openSection?.id === 'workers'" />
-
   <template v-else>
     <ErrorMessage v-if="error" :message="error" class="mb-4" />
 
-    <div class="-mx-2.5 divide-y divide-outline-alpha-gray-1 hover-merges-dividers">
+    <div class="-mx-3 -mt-3.5 inset-dividers">
       <SettingsRow
         label="Allow developer mode"
         description="Enables per-site developer mode and code editor."
@@ -118,18 +117,33 @@ onMounted(async () => {
       </SettingsRow>
 
       <SettingsRow
-        v-for="section in sections"
-        :key="section.id"
-        as="button"
+        v-if="hasBucket"
+        label="Keep update backups in object storage"
+        description="Pilot backs up sites to the bucket before an update, not to the disk."
         interactive
-        :label="section.label"
-        :description="section.description"
-        @click="openSection = section"
+        @click="!saving && toggleBucketBackups(!bucketBackups)"
       >
-        <span class="size-4 text-ink-gray-5 lucide-chevron-right" aria-hidden="true" />
+        <Switch
+          :model-value="bucketBackups"
+          :disabled="saving"
+          @click.stop
+          @update:model-value="toggleBucketBackups"
+        />
       </SettingsRow>
 
-      <Version />
+      <section class="px-3 py-3.5">
+        <h4 class="text-base-medium text-ink-gray-8">Background workers</h4>
+
+        <p class="mt-1 mb-3 text-ink-gray-6 text-p-sm">
+          Configure background worker groups and queues.
+        </p>
+
+        <Workers />
+      </section>
+
+      <section class="px-3 py-3.5">
+        <CommonSiteConfig />
+      </section>
     </div>
   </template>
 </template>

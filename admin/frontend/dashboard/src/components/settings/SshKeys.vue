@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
 import { Button, Dialog, ErrorMessage, Spinner, Textarea, toast } from 'frappe-ui'
-
+import { computed, onMounted, ref } from 'vue'
+import { apiErrorMessage } from '@/api/client'
+import { sshKeysApi } from '@/api/sshKeys'
 import EmptyState from '@/components/common/EmptyState.vue'
 import Table from '@/components/common/Table.vue'
-
-import { sshKeysApi } from '@/api/sshKeys'
-import { apiErrorMessage } from '@/api/client'
+import SettingsIllustration from '@/components/settings/SettingsIllustration.vue'
 import type { AuthorizedSSHKey } from '@/types/sshKeys'
 import { errorMessage } from '@/utils/error'
 
@@ -108,9 +107,14 @@ onMounted(load)
     <Spinner size="lg" class="text-ink-gray-4" />
   </div>
 
-  <div v-else class="space-y-6">
-    <div class="flex justify-end">
-      <Button icon-left="lucide-plus" @click="openAdd">Add</Button>
+  <div v-else class="space-y-5">
+    <div class="flex justify-between items-center gap-3">
+      <div class="flex flex-col gap-1">
+        <p class="text-base-medium text-ink-gray-8">Authorized keys</p>
+        <p class="text-ink-gray-6 text-p-sm">Public keys that can SSH into this server.</p>
+      </div>
+
+      <Button icon-left="lucide-plus" label="Add key" @click="openAdd" />
     </div>
 
     <div
@@ -123,10 +127,13 @@ onMounted(load)
     <EmptyState
       compact
       v-else-if="!rows.length"
-      icon="lucide-key-round"
       title="No SSH keys"
-      description="Add a public key to give its holder SSH access to this server."
-    />
+      description="Add a public key to let its owner SSH into this server."
+    >
+      <template #illustration>
+        <SettingsIllustration kind="ssh-keys" />
+      </template>
+    </EmptyState>
     <Table v-else :columns="columns" :rows="rows" height="max-h-96">
       <template #actions="{ row }">
         <Button
@@ -144,6 +151,7 @@ onMounted(load)
   <Dialog v-model="showAdd" title="Add SSH key" size="md">
     <Textarea
       label="Public key"
+      required
       v-model="newKey"
       :rows="3"
       placeholder="ssh-ed25519 AAAA… user@host"
@@ -161,8 +169,7 @@ onMounted(load)
 
   <Dialog v-model="showRemove" title="Remove SSH key" size="md">
     <p v-if="isLastKey" class="text-ink-gray-7 text-p-base">
-      This is the last authorized key. It can't be removed, or you'd lose SSH access to this
-      server.
+      This is the last authorized key. It can't be removed, or you'd lose SSH access to this server.
     </p>
 
     <p v-else class="text-ink-gray-7 text-p-base">

@@ -5,11 +5,17 @@ on:
     branches: [develop]
   pull_request:
     branches: [develop]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   # Heavy (pilot init clones the framework); allow manual runs too.
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   e2e:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     name: e2e (${{ matrix.variant }})

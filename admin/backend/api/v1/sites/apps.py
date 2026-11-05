@@ -285,8 +285,9 @@ def site_task(name: str, task_id: str):
     """Poll a task this site started. Scoped because the bench-wide /tasks/<id>
     needs a bench token, and ownership is checked so one site can't read another's."""
     bench_root = Path(current_app.config["BENCH_ROOT"])
+    reader = TaskReader(bench_root)
     try:
-        task = TaskReader(bench_root).read_task(task_id)
+        task = reader.read_task(task_id)
     except TaskNotFoundError:
         raise  # the app-wide handler answers 404 task_not_found
     except Exception:
@@ -299,7 +300,7 @@ def site_task(name: str, task_id: str):
         return jsonify(_operation_task_data(task.as_dict(), str(operation.state)))
     if args.get("site") != name and name not in (args.get("sites") or []):
         return error_response("forbidden", "Task does not belong to this site.", 403)
-    return jsonify(task.as_dict())
+    return jsonify({**task.as_dict(), **reader.get_progress(task)})
 
 
 def _task_operation(bench_root: Path, args: dict):

@@ -121,3 +121,60 @@ def test_feed_requires_a_session(tmp_path: Path) -> None:
     client.delete_cookie("sid")
 
     assert client.get("/api/v1/notifications").status_code == 401
+
+
+def test_webhook_test_pings_with_the_stored_token(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    from pilot.config.common import CommonConfig
+    from pilot.config.webhook import WebhookEndpoint
+    from pilot.core.notification.webhooks import WebhookDelivery
+
+    benches_root = tmp_path / "benches"
+    common = CommonConfig()
+    common.webhook_endpoints = [WebhookEndpoint("https://hooks.example.com", "tok-123")]
+    benches_root.mkdir()
+    common.write(benches_root)
+    client = _client(benches_root / "current")
+    sent = []
+
+    def send(endpoint, body):
+        sent.append((endpoint, body))
+        return WebhookDelivery(202, "ok")
+
+    with patch("pilot.core.notification.webhooks.send_webhook", send):
+        response = client.post(
+            "/api/v1/notifications/webhooks/test",
+            json={
+                "url": "https://hooks.example.com",
+                "original_url": "https://hooks.example.com",
+                "token": "",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.get_json() == {"status": 202, "body": "ok", "is_success": True}
+    ((endpoint, body),) = sent
+    assert endpoint.token == "tok-123"
+    assert body["event"] == "ping"
+
+
+def test_webhook_test_reports_an_unreachable_receiver(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    client = _client(tmp_path / "benches" / "current")
+
+    with patch("pilot.core.notification.webhooks.send_webhook", side_effect=OSError("connection refused")):
+        response = client.post(
+            "/api/v1/notifications/webhooks/test", json={"url": "https://down.example.com"}
+        )
+
+    assert response.status_code == 502
+    assert "connection refused" in response.get_json()["error"]["message"]
+
+
+def test_webhook_test_needs_a_web_url(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+
+    assert client.post("/api/v1/notifications/webhooks/test", json={"url": ""}).status_code == 422
+    assert client.post("/api/v1/notifications/webhooks/test", json={"url": "ftp://x"}).status_code == 422

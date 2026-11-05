@@ -23,6 +23,24 @@ _TASK_POLL_SECONDS = 0.5
 # A write is the only way to see that a client went away, so a quiet stream still writes.
 HEARTBEAT_SECONDS = 15
 _SYSLOG_RE = re.compile(r"^<\d+>\d+ \S+ \S+ \S+ \S+ \S+ \S+ (.*)$")
+_STEP_RE = re.compile(r"^STEP ([\w-]+),([\d.]+) ?(.*)$")
+_STEP_FAILED_RE = re.compile(r"^STEP-FAILED ([\w-]+),")
+# A progress bar line, such as Frappe's "Updating DocTypes for erpnext : [=====     ] 45%".
+_PERCENT_RE = re.compile(r"\s*:?\s*(?:\[[^\]]*\]\s*)?(\d{1,3})%\s*$")
+
+
+class TaskStep(TypedDict):
+    key: str
+    label: str
+    status: Literal["running", "done", "failed"]
+    started_at: float
+
+
+class TaskProgress(TypedDict):
+    steps: list[TaskStep]
+    activity: str | None
+    percent: int | None
+    error: str | None
 
 
 class OutputEvent(TypedDict):
@@ -92,6 +110,14 @@ def strip_syslog_envelope(segment: str) -> str:
     return match.group(1) if match else segment
 
 
+def _split_percent(line: str) -> tuple[str, int | None]:
+    """Split a progress bar line into its text and its percentage."""
+    match = _PERCENT_RE.search(line)
+    if not match:
+        return line, None
+    return line[: match.start()], min(int(match[1]), 100)
+
+
 class TaskReader:
     def __init__(self, bench_root: Path) -> None:
         self._bench_root = bench_root
@@ -132,6 +158,39 @@ class TaskReader:
         if lines is None:
             return all_lines
         return all_lines[-lines:]
+
+    def get_progress(self, task: TaskInfo) -> TaskProgress:
+        """The steps from the task's STEP markers, the running step's latest output line,
+        and the task's last output line when it failed."""
+        steps: list[TaskStep] = []
+        last_line = step_line = ""
+        for line in self.read_output(task.task_id):
+            if match := _STEP_RE.match(line):
+                if steps and steps[-1]["status"] == "running":
+                    steps[-1]["status"] = "done"
+                step_line = ""
+                if match[1] != "done":
+                    key, started_at, label = match.groups()
+                    steps.append(
+                        {"key": key, "label": label, "status": "running", "started_at": float(started_at)}
+                    )
+            elif match := _STEP_FAILED_RE.match(line):
+                steps = [{**step, "status": "failed"} if step["key"] == match[1] else step for step in steps]
+            elif line.strip():
+                last_line = step_line = line.strip()
+
+        # A task can end without a closing marker, so its last step takes the task's outcome.
+        if steps and steps[-1]["status"] == "running" and not task.status.is_active:
+            steps[-1]["status"] = "done" if task.status == TaskStatus.SUCCESS else "failed"
+
+        is_running = bool(steps) and steps[-1]["status"] == "running"
+        activity, percent = _split_percent(step_line) if is_running else ("", None)
+        return {
+            "steps": steps,
+            "activity": activity[:200] or None,
+            "percent": percent,
+            "error": last_line if task.status == TaskStatus.FAILED else None,
+        }
 
     def iter_output(self, task_id: str) -> Generator[str, None, None]:
         task = self.read_task(task_id)
