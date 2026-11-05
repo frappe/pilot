@@ -164,7 +164,7 @@ A domain the certificate does not name is served over HTTP rather than off a cer
 
 These tables are per-bench unless noted otherwise:
 
-- `[gunicorn]`: Gunicorn settings.
+- `[gunicorn]`: Gunicorn settings. Without `workers`, the bench runs one gunicorn worker per CPU available to Pilot, counted again each time Pilot writes the gunicorn config, so a resized VM is picked up on the next `pilot restart`. Set `workers` to pin a count. `threads` defaults to 8. The `size_gunicorn_workers_by_cpu` patch removes the old default of `workers = 2` from existing benches. Lite mode does not run gunicorn.
 - `[build]`: manual override for the asset build memory cap.
 - `[processes]`: `disabled`, the app processes that stay off. `pilot processes disable` and `enable` write it. See [App Processes](app-processes.md).
 - `[firewall]`: firewall behavior.
