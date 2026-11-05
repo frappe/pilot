@@ -1,4 +1,5 @@
 import contextlib
+import io
 import os
 import signal
 import subprocess
@@ -414,7 +415,7 @@ def _run_command_tee(argv: list[str], cwd: Path | None, env: dict | None) -> sub
         text=True,
     )
     captured: list[str] = []
-    if process.stdout is None:
+    if not isinstance(process.stdout, io.TextIOWrapper):
         raise RuntimeError("Command output pipe was not created")
     process.stdout.reconfigure(newline="")
     try:

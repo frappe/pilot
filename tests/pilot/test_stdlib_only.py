@@ -17,6 +17,7 @@ ADMIN_VENV_IMPORTS = {
     "pilot/core/server/monitoring_proc.py": {"psutil"},
     "pilot/core/server/monitoring_datum.py": {"datum_client"},
     "pilot/integrations/s3/base.py": {"boto3", "botocore"},
+    "pilot/integrations/s3/private_network.py": {"botocore", "urllib3"},
     "pilot/integrations/llm/base.py": {"litellm"},
     "pilot/integrations/llm/lite.py": {"litellm"},
     "pilot/core/database/engines/mariadb.py": {"pymysql"},
