@@ -7,7 +7,7 @@ from pathlib import Path
 
 from pilot.managers.processes.base import ServiceRenderer, override
 from pilot.managers.processes.local import ProcessDefinition
-from pilot.managers.processes.sandbox import CONTROL_ENTRIES
+from pilot.managers.processes.sandbox import CONTROL_ENTRIES, WORKLOAD_DIRECTORIES
 
 _SAFE_ARGUMENT = re.compile(r"[\w@%+=:,./-]+", re.ASCII)
 
@@ -58,17 +58,17 @@ def get_sandbox_properties(
     `read_paths` and `write_paths` are what every unit gets back from the masked home."""
     # Pilot's control files: the admin trusts them, so a workload must not change them.
     control = [str(bench_path / "config" / name) for name in CONTROL_ENTRIES]
+    folders = " ".join(_quote(str(bench_path / name)) for name in WORKLOAD_DIRECTORIES)
     return [
         *_SANDBOX_DIRECTIVES,
         # ProtectHome only masks /home and /root; this masks a home elsewhere, such as /srv/frappe.
         f"TemporaryFileSystem={_quote(f'{Path.home()}:ro')}",
-        # The tmpfs hides the neighbouring benches; the bind brings this one back.
+        # The tmpfs hides the neighbouring benches and this bench's admin files; the binds bring back
+        # the folders a workload uses.
         f"TemporaryFileSystem={_quote(f'{benches_dir}:ro')}",
-        f"BindPaths={_quote(str(bench_path))}",
-        f"ReadWritePaths={_quote(str(bench_path))}",
+        f"BindPaths={folders}",
+        f"ReadWritePaths={folders}",
         *get_path_properties([*control, *read_paths], write_paths),
-        # Holds the admin password hash and JWT secret.
-        f"InaccessiblePaths={_quote(str(bench_path / 'bench.toml'))}",
     ]
 
 

@@ -9,7 +9,8 @@ from pilot.managers.processes.sandbox import (
     CONTROL_DIRECTORIES,
     CONTROL_ENTRIES,
     CONTROL_FILES,
-    create_control_entries,
+    WORKLOAD_DIRECTORIES,
+    create_sandbox_entries,
 )
 from pilot.managers.redis import RedisManager
 from tests.pilot.commands.test_commands import make_bench
@@ -53,8 +54,10 @@ def test_the_protected_folders_exist_before_the_sandbox_starts(tmp_path: Path) -
     bench = make_bench(tmp_path)
     bench.create_directories()
 
-    create_control_entries(bench)
+    create_sandbox_entries(bench)
 
+    for name in WORKLOAD_DIRECTORIES:
+        assert (bench.path / name).is_dir()
     for name in CONTROL_DIRECTORIES:
         assert (bench.config_path / name).is_dir()
     assert (bench.config_path / "site-aliases.json").read_text().strip() == "{}"
@@ -66,7 +69,7 @@ def test_creating_the_protected_entries_keeps_what_is_there(tmp_path: Path) -> N
     bench.create_directories()
     (bench.config_path / "site-aliases.json").write_text('{"old": 1}')
 
-    create_control_entries(bench)
+    create_sandbox_entries(bench)
 
     assert (bench.config_path / "site-aliases.json").read_text() == '{"old": 1}'
 

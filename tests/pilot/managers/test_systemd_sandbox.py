@@ -10,7 +10,7 @@ from pilot.config.production import ProductionConfig
 from pilot.exceptions import BenchError
 from pilot.managers import systemd_user
 from pilot.managers.processes.definitions import ProcessDefinition
-from pilot.managers.processes.sandbox import CONTROL_ENTRIES
+from pilot.managers.processes.sandbox import CONTROL_ENTRIES, WORKLOAD_DIRECTORIES
 from pilot.managers.processes.systemd_render import SystemdRenderer, get_sandbox_properties
 from tests.pilot.managers.test_managers_extra import make_bench
 
@@ -38,6 +38,7 @@ def test_unsandboxed_unit_has_no_directives() -> None:
 
 BENCH = Path("/srv/pilot/benches/b")
 BENCHES = Path("/srv/pilot/benches")
+FOLDERS = " ".join(f"{BENCH}/{name}" for name in WORKLOAD_DIRECTORIES)
 
 SANDBOX_DIRECTIVES = {
     "NoNewPrivileges=yes",
@@ -61,11 +62,10 @@ SANDBOX_DIRECTIVES = {
     "ProtectHome=tmpfs",
     "PrivateTmp=yes",
     "TemporaryFileSystem=/srv/pilot/benches:ro",
-    "BindPaths=/srv/pilot/benches/b",
-    "ReadWritePaths=/srv/pilot/benches/b",
+    f"BindPaths={FOLDERS}",
+    f"ReadWritePaths={FOLDERS}",
     f"TemporaryFileSystem={Path.home()}:ro",
     "BindReadOnlyPaths=" + " ".join(f"-{BENCH}/config/{name}" for name in CONTROL_ENTRIES),
-    "InaccessiblePaths=/srv/pilot/benches/b/bench.toml",
 }
 
 
@@ -119,7 +119,7 @@ def test_an_unsandboxed_unit_ignores_declared_paths() -> None:
 def test_a_bench_path_with_a_space_is_quoted() -> None:
     properties = get_sandbox_properties(Path("/srv/my benches/b"), Path("/srv/my benches"))
 
-    assert 'BindPaths="/srv/my benches/b"' in properties
+    assert 'BindPaths="/srv/my benches/b/apps" ' in " ".join(properties)
     assert 'TemporaryFileSystem="/srv/my benches:ro"' in properties
 
 
@@ -184,7 +184,8 @@ def test_write_config_sandboxes_workload_units(tmp_path: Path, monkeypatch: pyte
 
     unit = (manager.systemd_conf_dir / "test-bench-web.service").read_text()
     assert f"TemporaryFileSystem={tmp_path / 'benches'}:ro\n" in unit
-    assert f"BindPaths={tmp_path / 'benches' / 'test-bench'}\n" in unit
+    bench = tmp_path / "benches" / "test-bench"
+    assert f"BindPaths={' '.join(str(bench / name) for name in WORKLOAD_DIRECTORIES)}\n" in unit
 
 
 def test_a_failed_probe_keeps_the_current_units(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -245,8 +246,18 @@ def test_control_files_are_read_only_or_hidden_from_workloads() -> None:
     read_only = next(line for line in properties if line.startswith("BindReadOnlyPaths="))
     for name in ("services", "nginx", "admin-gunicorn.conf.py", "gunicorn.conf.py"):
         assert f"-{BENCH}/config/{name}" in read_only
-    assert f"InaccessiblePaths={BENCH}/bench.toml" in properties
-    assert not any(line.startswith("ReadWritePaths=") and "config" in line for line in properties)
+    writable = next(line for line in properties if line.startswith("ReadWritePaths="))
+    assert not any(f"{BENCH}/config/{name}" in writable for name in CONTROL_ENTRIES)
+
+
+def test_only_the_workload_folders_of_the_bench_are_mounted() -> None:
+    mounted = " ".join(line.split("=", 1)[1] for line in get_sandbox_properties(BENCH, BENCHES)).split()
+    bench_paths = [Path(path.lstrip("-")) for path in mounted if path.lstrip("-").startswith(f"{BENCH}/")]
+
+    assert str(BENCH) not in mounted
+    assert {path.relative_to(BENCH).parts[0] for path in bench_paths} <= set(WORKLOAD_DIRECTORIES)
+    for admin_file in ("bench.toml", ".credentials", "tasks", ".patches.json", ".active-jtis.json"):
+        assert admin_file not in WORKLOAD_DIRECTORIES
 
 
 def test_config_is_not_bound_as_a_whole_so_frappe_can_create_its_lock_files() -> None:

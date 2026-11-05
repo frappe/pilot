@@ -35,10 +35,18 @@ CONTROL_FILES = (
     "redis_queue.conf",
 )
 CONTROL_ENTRIES = (*CONTROL_DIRECTORIES, *CONTROL_FILES)
+# The bench folders a workload uses. The rest of the bench root, such as bench.toml, .credentials and the
+# admin's tasks/, stays outside the sandbox. Folders, because Linux detaches a file mount once Pilot
+# replaces the file by rename.
+WORKLOAD_DIRECTORIES = ("apps", "env", "sites", "config", "logs", "pids", "chromium", "flow-server")
 
 
-def create_control_entries(bench: Bench) -> None:
-    """Make the protected folders exist, so a workload cannot plant one before the admin does."""
+def create_sandbox_entries(bench: Bench) -> None:
+    """Make the workload folders and the protected folders exist before the units start.
+
+    A workload cannot create a folder in the read-only bench root, and cannot plant a protected one first."""
+    for name in WORKLOAD_DIRECTORIES:
+        (bench.path / name).mkdir(parents=True, exist_ok=True)
     for name in CONTROL_DIRECTORIES:
         (bench.config_path / name).mkdir(parents=True, exist_ok=True)
     aliases = bench.config_path / "site-aliases.json"

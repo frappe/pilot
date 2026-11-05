@@ -131,11 +131,11 @@ When using Central or another upstream proxy, keep the local Admin service priva
 |---|---|
 | `NoNewPrivileges` | sudo and setuid programs fail. |
 | `PrivateUsers` | Needed by the mount directives in a user unit. |
-| `ProtectSystem=strict`, `ReadWritePaths=<bench>`, `PrivateTmp` | Writes only inside the bench. Each unit has its own `/tmp`. |
+| `ProtectSystem=strict`, `ReadWritePaths=<bench>/<folder>`, `PrivateTmp` | Writes only inside the bench's workload folders. Each unit has its own `/tmp`. |
 | `ProtectHome=tmpfs` | The home directory is empty, so SSH keys, other dotfiles and the user bus in `/run/user` are not there to read. |
-| `BindReadOnlyPaths=<bench>/config/<entry>`, `InaccessiblePaths=<bench>/bench.toml` | A workload cannot change the files that the admin trusts and runs outside the sandbox: `services`, `nginx`, `modsecurity`, `letsencrypt`, `frappe_cloud`, `site-renames`, `site-creations`, `site-aliases.json`, `realtime-folders.txt`, the gunicorn configs, `Procfile` and the redis configs. Pilot creates the folders before the units start, so a workload cannot plant one first. The rest of `config/` stays writable, because Frappe creates its lock files there (`config/<name>.lock`) and production realtime creates its socket there (`config/socketio.sock`). A workload also cannot read the admin password hash or JWT secret in `bench.toml`. The web unit waits for the database with the socket or port as an argument, so it never reads `bench.toml`. |
+| `BindReadOnlyPaths=<bench>/config/<entry>` | A workload cannot change the files that the admin trusts and runs outside the sandbox: `services`, `nginx`, `modsecurity`, `letsencrypt`, `frappe_cloud`, `site-renames`, `site-creations`, `site-aliases.json`, `realtime-folders.txt`, the gunicorn configs, `Procfile` and the redis configs. Pilot creates the folders before the units start, so a workload cannot plant one first. The rest of `config/` stays writable, because Frappe creates its lock files there (`config/<name>.lock`) and production realtime creates its socket there (`config/socketio.sock`). The web unit waits for the database with the socket or port as an argument, so it never reads `bench.toml`. |
 | `BindReadOnlyPaths` | Brings back, from the masked home, only what the bench uses: the Python the venv links to (such as a uv-managed one), the Node in use, nvm (`$NVM_DIR` or `~/.nvm`), the database socket directory, the database waiter script, linked apps, and the `read_paths` of apps. The rest of the Pilot install, including the database data files, stays hidden. |
-| `TemporaryFileSystem=<benches dir>:ro`, `BindPaths=<bench>` | The neighbouring benches and `common_config.toml` are hidden. |
+| `TemporaryFileSystem=<benches dir>:ro`, `BindPaths=<bench>/<folder>` | The neighbouring benches and `common_config.toml` are hidden. Of the bench itself, only `apps`, `env`, `sites`, `config`, `logs`, `pids`, `chromium` and `flow-server` are mounted, and Pilot creates them before the units start. So `bench.toml` with the admin password hash and JWT secret, `.credentials`, the admin's `tasks/` and its state files are not there, even after Pilot rewrites them. |
 | `SystemCallFilter=@system-service`, `SystemCallArchitectures=native`, `SystemCallErrorNumber=EPERM` | Blocks ptrace, mount, module loading and other privileged syscalls. |
 | `ProtectKernelTunables`, `ProtectKernelModules`, `ProtectKernelLogs`, `ProtectControlGroups`, `ProtectClock`, `ProtectHostname` | Kernel settings, logs, cgroups, the clock and the hostname are read-only. |
 | `PrivateDevices` | Only pseudo devices such as `/dev/null` are visible. |
@@ -151,7 +151,7 @@ The trial needs unprivileged user namespaces. Ubuntu 24.04 restricts them throug
 With the sandbox on:
 
 - sudo fails in workload processes and app hooks.
-- A process can write only inside its bench.
+- A process can write only inside its bench's workload folders.
 - Web and workers no longer share files in `/tmp`.
 - A bench cannot read the other benches in its benches directory.
 

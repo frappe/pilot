@@ -110,7 +110,9 @@ def test_the_web_process_mounts_a_tmpfs_over_the_benches_directory(sandboxed: Pa
     # Field 5 is the mount point; the fstype follows the " - " separator.
     mounts = {line.split()[4]: line.split(" - ")[1].split()[0] for line in mountinfo}
     assert mounts.get(str(sandboxed.parent)) == "tmpfs", mounts
-    assert str(sandboxed) in mounts, mounts
+    assert str(sandboxed / "sites") in mounts, mounts
+    assert str(sandboxed) not in mounts, mounts
+
 
 
 @pytest.fixture(scope="module")
@@ -143,6 +145,9 @@ def run_sandboxed(sandboxed: Path):
         "mkdir {bench}/config/nginx/planted",
         "mkdir {bench}/config/letsencrypt/planted",
         "cat {bench}/bench.toml",
+        "test -e {bench}/bench.toml",
+        "ls {bench}/tasks",
+        "touch {bench}/planted",
         "ls {pilot}/databases/mariadb/data",
         "ls {pilot}/databases/mariadb/config",
         "ls {pilot}/.admin-venv",
