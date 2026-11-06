@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { translate } from './translation'
-import { Button, SettingsDialog, ToastProvider, providePortalTarget } from 'frappe-ui'
+import { Button, SettingsDialog, providePortalTarget } from 'frappe-ui'
 import { ConfigProvider, TabsRoot } from 'reka-ui'
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, provide, ref, watch } from 'vue'
 import type { CloudContext, CloudSettingsOptions } from '@frappe/cloud-sdk'
 
 import CloudSettingsBody from './components/CloudSettingsBody.vue'
 import PanelFallback from './components/PanelFallback.vue'
 import { createStore } from './store'
 import TailwindStyles from './TailwindStyles.vue'
+import { usePageDark } from './theme'
 
 interface Props {
   context?: CloudContext
@@ -154,34 +155,14 @@ watch(visibleTabs, (tabs) => {
   if (!tabs.some((item) => item.value === tab.value)) tab.value = getFirstTab()
 })
 
-// Desk sets `data-theme="dark"`. Tailwind apps, such as Raven, set the `dark` class.
-const isPageDark = () =>
-  document.documentElement.dataset.theme === 'dark' ||
-  document.documentElement.classList.contains('dark')
-
-const pageDark = ref(isPageDark())
+const pageDark = usePageDark()
 const isDark = computed(() => props.options.theme === 'dark' || (props.options.theme !== 'light' && pageDark.value))
-let themeWatcher: MutationObserver | undefined
-
-onMounted(() => {
-  themeWatcher = new MutationObserver(() => {
-    pageDark.value = isPageDark()
-  })
-
-  themeWatcher.observe(document.documentElement, {
-    attributeFilter: ['data-theme', 'class'],
-  })
-})
-
-onBeforeUnmount(() => themeWatcher?.disconnect())
 </script>
 
 <template>
   <div class="cloud-settings-root" :class="inline && 'h-full'" :data-theme="isDark ? 'dark' : 'light'">
     <ConfigProvider :teleport-to="overlays">
-      <div ref="overlays">
-        <ToastProvider />
-      </div>
+      <div ref="overlays" />
       <template v-if="overlays">
         <TabsRoot
           v-if="inline"

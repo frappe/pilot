@@ -83,7 +83,7 @@ const steps = computed(() => [
   {
     id: 'storage',
     name: 'Storage',
-    label: 'Connect object storage',
+    label: 'Connect storage',
     title: 'Where should backups go?',
     description: 'Pick an S3-compatible bucket for offsite backups.',
     action: 'Continue',
@@ -541,23 +541,26 @@ onMounted(refresh)
     <template #description>{{ doneCount }} of {{ steps.length }} done</template>
 
     <template #actions>
-      <template v-for="(step, index) in steps" :key="step.id">
-        <p
-          v-if="step.done"
-          class="flex items-center gap-2 py-1.5 text-ink-gray-5 text-sm before:size-4 before:text-ink-green-7 before:lucide-circle-check"
-        >
-          {{ step.label }}
-        </p>
+      <Button
+        v-for="(step, index) in steps"
+        :key="step.id"
+        variant="ghost"
+        class="-mx-2"
+        :label="step.label"
+        :disabled="step.done"
+        @click="open(index)"
+      >
+        <template #prefix>
+          <span
+            class="size-4"
+            :class="step.done ? 'lucide-circle-check text-ink-green-7' : 'lucide-circle-dashed'"
+          />
+        </template>
 
-        <button
-          v-else
-          type="button"
-          class="flex items-center gap-2 -mx-1.5 px-1.5 py-1.5 rounded-4 hover:bg-surface-gray-2 text-ink-gray-8 text-sm before:size-4 before:text-ink-gray-4 before:lucide-circle-dashed after:ml-auto after:size-3.5 after:text-ink-gray-4 hover:after:text-ink-gray-6 after:lucide-chevron-right"
-          @click="open(index)"
-        >
-          {{ step.label }}
-        </button>
-      </template>
+        <template #suffix>
+          <span class="ml-auto size-4" :class="{ 'lucide-chevron-right': !step.done }" />
+        </template>
+      </Button>
     </template>
   </SidebarCard>
 </template>

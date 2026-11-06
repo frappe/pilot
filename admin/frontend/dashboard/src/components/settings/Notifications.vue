@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { Button, ErrorMessage, Spinner, Switch, TextInput, toast } from 'frappe-ui'
+import { Button, ErrorMessage, MultiSelect, Spinner, Switch, TextInput, toast } from 'frappe-ui'
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
+import { notificationsApi } from '@/api/notifications'
 import { settingsApi } from '@/api/settings'
 import EmptyState from '@/components/common/EmptyState.vue'
 import TagsInput from '@/components/common/TagsInput.vue'
 import NotificationsIllustration from '@/components/settings/NotificationsIllustration.vue'
 import { useSession } from '@/composables/auth/useSession'
+import type { WebhookEventOption, WebhookTestResult } from '@/types/settings'
 import { errorMessage } from '@/utils/error'
 
 interface WebhookForm {
@@ -14,11 +16,13 @@ interface WebhookForm {
   token: string
   token_set: boolean
   original_url: string
+  events: string[]
+  testing?: boolean
+  test?: { ok: boolean; message: string }
 }
 
 const { session, centralServerUrl } = useSession()
 
-// Every resource alert starts off; site uptime is the only one on by default.
 const RESOURCE_ALERTS = [
   {
     key: 'cpu_usage_limit',
@@ -48,6 +52,7 @@ const enabled = ref(Object.fromEntries(RESOURCE_ALERTS.map((alert) => [alert.key
 const limits = ref(Object.fromEntries(RESOURCE_ALERTS.map((alert) => [alert.key, ''])))
 const siteUptime = ref(true)
 const webhooks = ref<WebhookForm[]>([])
+const webhookEvents = ref<WebhookEventOption[]>([])
 const recipients = ref<string[]>([])
 const mailConfigured = ref(false)
 const mailRoute = { name: 'Settings', params: { section: 'mail' } }
@@ -59,22 +64,28 @@ const dirty = computed(() => JSON.stringify(buildPayload()) !== savedPayload.val
 
 const buildPayload = () => {
   return {
-    ...Object.fromEntries(
-      RESOURCE_ALERTS.map((alert) => [
-        alert.key,
-        enabled.value[alert.key] ? Number(limits.value[alert.key]) || 0 : 0,
-      ]),
-    ),
-    site_uptime: siteUptime.value,
+    resource_limits: {
+      ...Object.fromEntries(
+        RESOURCE_ALERTS.map((alert) => [
+          alert.key,
+          enabled.value[alert.key] ? Number(limits.value[alert.key]) || 0 : 0,
+        ]),
+      ),
+      site_uptime: siteUptime.value,
+      email_recipients: recipients.value.map((address) => address.trim()).filter(Boolean),
+    },
     // Blank token means "keep the stored one"; original_url is how it is found.
-    webhook_endpoints: webhooks.value.map((webhook) => ({
-      url: webhook.url.trim(),
-      token: webhook.token,
-      original_url: webhook.original_url,
-    })),
-    email_recipients: recipients.value.map((address) => address.trim()).filter(Boolean),
+    webhook_endpoints: webhooks.value.map(webhookEntry),
   }
 }
+
+// No chosen events means every event, so an endpoint added today also gets events added later.
+const webhookEntry = (webhook: WebhookForm) => ({
+  url: webhook.url.trim(),
+  token: webhook.token,
+  original_url: webhook.original_url,
+  events: webhook.events,
+})
 
 const isAddress = (address: string) => /^[^@\s]+@[^@\s]+$/.test(address.trim())
 
@@ -85,7 +96,7 @@ const setEnabled = (key: string, on: boolean) => {
 }
 
 const addWebhook = () => {
-  webhooks.value.push({ url: '', token: '', token_set: false, original_url: '' })
+  webhooks.value.push({ url: '', token: '', token_set: false, original_url: '', events: [] })
 }
 
 const removeWebhook = (index: number) => {
@@ -100,8 +111,22 @@ const webhookError = (webhook: WebhookForm) => {
   return ''
 }
 
-const webhookIsComplete = (webhook: WebhookForm) => {
-  return Boolean(webhook.url.trim()) && Boolean(webhook.token || webhook.token_set)
+const testWebhook = async (webhook: WebhookForm) => {
+  webhook.testing = true
+  webhook.test = undefined
+  try {
+    webhook.test = testOutcome(await notificationsApi.testWebhook(webhookEntry(webhook)))
+  } catch (e) {
+    webhook.test = { ok: false, message: errorMessage(e, 'Could not send the test event.') }
+  } finally {
+    webhook.testing = false
+  }
+}
+
+const testOutcome = (result: WebhookTestResult) => {
+  if (result.is_success) return { ok: true, message: `Test event delivered. The endpoint answered ${result.status}.` }
+  const body = result.body.trim().slice(0, 200)
+  return { ok: false, message: `The endpoint answered ${result.status}${body ? `: ${body}` : '.'}` }
 }
 
 const limitError = (key: string) => {
@@ -115,7 +140,7 @@ const limitError = (key: string) => {
 const canSave = computed(
   () =>
     RESOURCE_ALERTS.every((alert) => !limitError(alert.key)) &&
-    webhooks.value.every((webhook) => webhookIsComplete(webhook) && !webhookError(webhook)) &&
+    webhooks.value.every((webhook) => webhook.url.trim() && !webhookError(webhook)) &&
     !invalidRecipient.value,
 )
 
@@ -125,8 +150,7 @@ const save = async () => {
   error.value = ''
   saving.value = true
   try {
-    const payload = buildPayload()
-    await settingsApi.update({ resource_limits: payload })
+    await settingsApi.update(buildPayload())
     // Drop the typed secrets once stored, so the form reads back like a reload.
     for (const webhook of webhooks.value) {
       webhook.token_set = webhook.token_set || Boolean(webhook.token)
@@ -154,12 +178,14 @@ onMounted(async () => {
       limits.value[alert.key] = limit ? String(limit) : ''
     }
     siteUptime.value = saved.site_uptime ?? true
-    webhooks.value = (saved.webhook_endpoints || []).map((webhook) => ({
+    webhooks.value = (data.webhook_endpoints || []).map((webhook) => ({
       url: webhook.url || '',
       token: '',
       token_set: Boolean(webhook.token_set),
       original_url: webhook.url || '',
+      events: [...(webhook.events || [])],
     }))
+    webhookEvents.value = data.webhook_events || []
     recipients.value = [...(saved.email_recipients || [])]
     mailConfigured.value = Boolean(data.mail?.server)
     savedPayload.value = JSON.stringify(buildPayload())
@@ -186,7 +212,7 @@ onMounted(async () => {
         rel="noopener"
         class="inline-flex items-center gap-0.5 text-p-sm-medium text-ink-gray-8 hover:text-ink-gray-9"
       >
-        Central
+        <span>Central</span>
         <span class="size-3 lucide-arrow-up-right" aria-hidden="true" />
       </a><template v-else>Central</template>, so alerts also show there.
     </p>
@@ -272,9 +298,10 @@ onMounted(async () => {
       <h4 class="text-base-medium text-ink-gray-8">Webhook endpoints</h4>
 
       <p class="text-ink-gray-6 text-p-sm">
-        Each endpoint gets a POST with your token in the
+        Each endpoint gets a JSON POST for the events it chose. A token is sent in the
         <code>Authorization</code>
-        header.
+        header and signs the body in
+        <code>X-Pilot-Signature-256</code>.
       </p>
 
       <div
@@ -295,10 +322,11 @@ onMounted(async () => {
 
         <div
           v-else
-          class="items-center gap-x-3 gap-y-2 grid grid-cols-[1fr_9rem_2rem] sm:grid-cols-[1fr_12rem_2rem] p-4"
+          class="items-center gap-x-3 gap-y-2 grid grid-cols-[1fr_8rem_9rem_4.5rem] sm:grid-cols-[1fr_10rem_11rem_4.5rem] p-4"
         >
           <span class="text-ink-gray-5 text-sm">Endpoint URL</span>
           <span class="text-ink-gray-5 text-sm">Token</span>
+          <span class="text-ink-gray-5 text-sm">Events</span>
           <span />
 
           <template v-for="(webhook, index) in webhooks" :key="index">
@@ -308,41 +336,67 @@ onMounted(async () => {
               v-model="webhook.token"
               type="password"
               autocomplete="new-password"
-              :placeholder="webhook.token_set ? 'Unchanged' : 'Bearer token'"
+              :placeholder="webhook.token_set ? 'Unchanged' : 'Optional'"
             />
 
-            <Button
-              icon="lucide-x"
-              variant="ghost"
-              label="Remove endpoint"
-              tooltip="Remove endpoint"
-              @click="removeWebhook(index)"
+            <MultiSelect
+              v-model="webhook.events"
+              :options="webhookEvents"
+              placeholder="All events"
+              :filterable="false"
+              aria-label="Events"
+              class="w-full"
             />
 
-            <p v-if="webhookError(webhook)" class="col-span-3 -mt-1 text-ink-red-5 text-p-sm">
+            <div class="flex">
+              <Button
+                icon="lucide-send"
+                variant="ghost"
+                label="Send a test event"
+                tooltip="Send a test event"
+                :loading="webhook.testing"
+                :disabled="!webhook.url.trim() || Boolean(webhookError(webhook))"
+                @click="testWebhook(webhook)"
+              />
+
+              <Button
+                icon="lucide-x"
+                variant="ghost"
+                label="Remove endpoint"
+                tooltip="Remove endpoint"
+                @click="removeWebhook(index)"
+              />
+            </div>
+
+            <p v-if="webhookError(webhook)" class="col-span-4 -mt-1 text-ink-red-5 text-p-sm">
               {{ webhookError(webhook) }}
+            </p>
+
+            <p
+              v-else-if="webhook.test"
+              class="col-span-4 -mt-1 text-p-sm break-words"
+              :class="webhook.test.ok ? 'text-ink-green-6' : 'text-ink-red-5'"
+            >
+              {{ webhook.test.message }}
             </p>
           </template>
         </div>
 
-        <footer class="flex items-center px-3 py-2.5 border-outline-gray-2 border-t">
+        <footer class="flex justify-between items-center px-3 py-2.5 border-outline-gray-2 border-t">
           <Button
             variant="ghost"
             icon-left="lucide-plus"
             label="Add endpoint"
             @click="addWebhook"
           />
+          <Button v-if="dirty" variant="solid" :loading="saving" :disabled="!canSave" @click="save">
+            Save changes
+          </Button>
         </footer>
       </div>
     </div>
 
     <ErrorMessage v-if="error" :message="error" />
-
-    <div v-if="dirty" class="flex justify-end">
-      <Button variant="solid" :loading="saving" :disabled="!canSave" @click="save">
-        Save changes
-      </Button>
-    </div>
   </div>
 </template>
 

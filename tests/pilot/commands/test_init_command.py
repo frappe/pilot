@@ -304,3 +304,10 @@ def test_init_prepares_the_admin_frontend_only_for_an_enabled_admin(tmp_path: Pa
 
     assert mocks["_ensure_admin_frontend"].called is admin_enabled
     mocks["_generate_process_config"].assert_called_once()
+
+
+def test_skip_frontend_refuses_a_production_bench() -> None:
+    bench = MagicMock()
+    bench.config.production.enabled = True
+    with pytest.raises(BenchError, match="production bench"):
+        BenchInitializer(bench, skip_frontend=True).run(lambda _: None)

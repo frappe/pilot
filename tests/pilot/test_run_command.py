@@ -18,6 +18,20 @@ def test_successful_command_returns_completed_process() -> None:
     assert result.returncode == 0
 
 
+def test_tee_output_preserves_progress_carriage_returns(capsys) -> None:
+    command = [
+        sys.executable,
+        "-c",
+        'import sys; sys.stdout.write("Updating DocTypes: 0%\\rUpdating DocTypes: 50%\\rUpdating DocTypes: 100%\\nDone\\n"); sys.stdout.flush()',
+    ]
+    result = run_command(command, tee_output=True)
+
+    expected = "Updating DocTypes: 0%\rUpdating DocTypes: 50%\rUpdating DocTypes: 100%\nDone\n"
+    assert result.returncode == 0
+    assert result.stdout == expected
+    assert capsys.readouterr().out == expected
+
+
 def test_nonzero_exit_raises_command_error_with_returncode() -> None:
     with pytest.raises(CommandError) as excinfo:
         run_command(["sh", "-c", "exit 3"])

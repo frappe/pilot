@@ -8,6 +8,8 @@ const __ = useTranslation()
 interface Props {
   app?: Record<string, any> | null
   canDisable?: boolean
+  /** A trial site has no backups to fall back on, so the warning does not offer one. */
+  isTrial?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -84,7 +86,9 @@ const confirm = () => {
         <p class="text-sm-medium text-ink-red-8">{{ __("This can't be undone.") }}</p>
 
         <p class="mt-1 text-p-sm text-ink-red-8">
-          {{ __("Everything {0} stores on this site is deleted. Back the site up first if you need the data.", [title]) }}
+          {{ isTrial
+              ? __("Everything {0} stores on this site is deleted.", [title])
+              : __("Everything {0} stores on this site is deleted. Back the site up first if you need the data.", [title]) }}
         </p>
       </div>
     </template>

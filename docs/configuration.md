@@ -169,13 +169,14 @@ These tables are per-bench unless noted otherwise:
 - `[processes]`: `disabled`, the app processes that stay off. `pilot processes disable` and `enable` write it. See [App Processes](app-processes.md).
 - `[firewall]`: firewall behavior.
 - `[waf]`: WAF rules and behavior.
-- `[s3]`: backup storage credentials and bucket settings. Set `endpoint_url` for a custom S3-compatible provider.
+- `[s3]`: backup storage credentials and bucket settings. Set `endpoint_url` for a custom S3-compatible provider. With the `frappe` provider, Pilot connects to the private address of `internal-<endpoint host>` when this machine can reach it, and keeps the endpoint host for TLS and signatures. Presigned download URLs keep the public host. upload_migration_backups` (default `true`) puts the MariaDB backup that Pilot takes before an update into the bucket, not on the local disk. Pilot ignores it when the bucket is not configured.
 - `[llm]`: admin assistant provider settings.
 - `[resource_limits]`: CPU, memory, disk, uptime, and webhook alerts.
 
 `[monitor]` contains this bench's application metric log path. Host-wide system, database, and slow-query logs always use `cli_root()/system/logs/` and cannot be configured.
 
-Nginx uses compiled-in defaults; it has no `[nginx]` table in `bench.toml`.
+Nginx is shared by every bench on the host, so its listen ports live in `common_config.toml`, not `bench.toml`. A `[nginx]` table in `bench.toml` is an error. See [Nginx Ports](#nginx-ports).
+
 Unknown fields are ignored during normal loads. Strict validation reports them.
 
 ## Shared host configuration
@@ -238,14 +239,18 @@ cpu_usage_limit = 85
 memory_usage_limit = 90
 disk_space_limit = 0
 site_uptime = true
-webhook_endpoints = { "https://alerts.example.com/pilot" = "bearer-token" }
 email_recipients = ["ops@example.com"]
+
+[[webhook_endpoints]]
+url = "https://alerts.example.com/pilot"
+token = "shared-secret"
+events = ["site_down", "task_failed"]
 
 [frappe_cloud]
 url = "https://cloud.frappe.io"
 ```
 
-Shared tables are MariaDB, Postgres, Let's Encrypt, Central, the edge proxy, telemetry, resource limits, Frappe Cloud, and the admin JWKS issuer. A bench exposes these values through its own `BenchConfig`; the model merges shared values on read and writes them back to the common file.
+Shared tables are MariaDB, Postgres, Let's Encrypt, Central, the edge proxy, telemetry, resource limits, webhook endpoints, Frappe Cloud, and the admin JWKS issuer. A bench exposes these values through its own `BenchConfig`; the model merges shared values on read and writes them back to the common file.
 
 Central endpoint and authentication data come from instance metadata. While Central is enabled and bootstrap is pending, remote-token verification uses only the current staged JWKS URL, audience, and initial key set from instance metadata. Pilot caches that staged issuer in each Admin process until shared config changes or bootstrap completes. After bootstrap, it clears the staged entry and uses only the issuer saved in shared config. The metadata can include `initial_jwks_cache`, the issuer's JWK set. Pilot uses it to initialize an empty JWKS cache before it marks the host bootstrapped, so the first remote token does not wait for an issuer fetch. It does not replace keys already fetched from the issuer. The Central configuration is in the `pilot-central` attribute. Three optional attributes hold [JSON Merge Patches](https://www.rfc-editor.org/rfc/rfc7396) for config files: `pilot-common-config` for `common_config.toml`, `pilot-config` for `bench.toml`, and `pilot-common-site-config` for `sites/common_site_config.json`. For example, `pilot-config` can hold `{"s3": {"bucket": "team-backups"}}`. A patch changes only the keys it names, and `null` resets a key to its default. `pilot-common-config` must not change `central`, because bootstrap owns that table. Pilot rejects unknown TOML keys and validates the result before it writes a file. Pilot applies the patches once, during bootstrap, before it marks the host bootstrapped, and does not read them again. Central must write them before `pilot-central`. Each file has its own attribute because the cloud caps a metadata value at 1 KiB. `central.hostname_aliases` maps a VM hostname pattern to its current local target. The VM ID is assigned at runtime, so use `*` for that part. A pattern such as `*.par-1.frappe.cloud` matches every name in the zone. When patterns overlap, the pattern with the most literal text wins, so `admin-vm-*.par-1.frappe.cloud` takes precedence over it, and a site's own domains take precedence over every pattern. Pilot creates redirect rules only for aliases whose targets exist on the bench. A redirecting site alias sends clients to the site's primary domain, on the scheme clients reach it with, but still answers `/api/method/ping`, because Central probes the alias for readiness without following redirects. Renaming a site or moving the admin domain re-points the matching alias automatically; remove one when the rule is no longer needed. `pilot setup central` writes these settings - see [Setup Commands](commands.md#setup-commands).
 
@@ -277,7 +282,7 @@ Set `proxy.cloudflare = true`, or use Settings, Security, Cloudflare settings in
 
 ### Scheduled Backups
 
-Each bench has one hourly `0 * * * *` cron job for scheduled backups. It is installed with the first enrolled site. Sites without a custom backup schedule use this default. New sites are enrolled, including sites created from a backup, and the `enroll_sites_in_scheduled_backups` patch enrolls existing sites that have no backup schedule. Each run reads the last 24 hours of the bench audit log once, then queues a logical backup of the database and site config for each enrolled site with no successful backup in the last 23 hours. Measuring 23 hours keeps each site's backup at the same hour every day. A backup also includes public and private files when the site has no file backup that day (UTC). Physical backups are not scheduled. After six failed backups in 24 hours, the job skips the site until the count drops. The sixth failure since the last successful backup adds a "Backups of <site> are failing" notification to the bench feed. Without S3, scheduled backups stay on disk in `sites/<site>/backups`, outside the directory that Frappe prunes. When S3 is configured, every backup streams straight into S3 and writes nothing to disk: Pilot points `frappe backup` at named pipes and uploads what it reads from them as multipart uploads, and a run that fails partway leaves no files in S3. A site with backup encryption turned on in System Settings, or whose setting cannot be read, is backed up to disk and then uploaded instead, because Frappe encrypts in a second pass over the finished files. Expired runs are deleted from S3. The host must have cron and the Pilot task worker running. A scheduled backup does not start while another task holds the site.
+Each bench has one hourly `0 * * * *` cron job for scheduled backups. It is installed with the first enrolled site. Sites without a custom backup schedule use this default. New sites are enrolled, including sites created from a backup, and the `enroll_sites_in_scheduled_backups` patch enrolls existing sites that have no backup schedule. Each run reads the last 24 hours of the bench audit log once, then queues a logical backup of the database and site config for each enrolled site with no successful backup in the last 23 hours. Measuring 23 hours keeps each site's backup at the same hour every day. A backup also includes public and private files when the site has no file backup that day (UTC). Physical backups are not scheduled. After six failed backups in 24 hours, the job skips the site until the count drops. The sixth failure since the last successful backup adds a "Backups of <site> are failing" notification to the bench feed. Without S3, scheduled backups stay on disk in `sites/<site>/backups`, outside the directory that Frappe prunes. When S3 is configured, every backup streams straight into S3 and writes nothing to disk: Pilot points `frappe backup` at named pipes and uploads what it reads from them as multipart uploads, and a run that fails partway leaves no files in S3. A site with backup encryption turned on in System Settings, or whose setting cannot be read, is backed up to disk and then uploaded instead, because Frappe encrypts in a second pass over the finished files. A backup to disk first checks free space and fails at once when the disk cannot hold it and still keep 500 MB free for the system. The newest local database dump plus 20% predicts the database part; with no local dump, the database's size on disk is used, which is an upper bound. File archives count as the size of `public/files` and `private/files`. Expired runs are deleted from S3. The host must have cron and the Pilot task worker running. A scheduled backup does not start while another task holds the site.
 
 After each backup, Pilot clears expired runs with the default GFS policy: every run is kept for 7 days, Sunday runs for 28 days, runs on the first day of a month for 366 days, and January 1 runs for 3,653 days. The newest run is always kept. The `backup_retention` object in `site_config.json` marks this policy with `scheme: "gfs"` and `calendar_rotation: true`. A custom schedule set in the dashboard or through the backup schedule API replaces the default. It installs a cron job for the site and stores a GFS or FIFO retention record without `calendar_rotation`, so the bench job skips the site and the count-based policy clears its runs. Turning off automated backups removes the schedule and the retention record, and the site then keeps only manual backups.
 
@@ -291,11 +296,80 @@ Either shipper runs only when its switch is on and both `endpoint` and `token` a
 
 The monitor checks this section on every run, so both shippers start when a credential arrives later, such as from Central's bootstrap. It rewrites the Fluent Bit config and restarts Fluent Bit when the endpoint or token changes, and it starts Fluent Bit again when it is not running. Fluent Bit must be installed. `install.sh` installs it on Debian and Ubuntu. `pilot remove logs` stops Fluent Bit and sets `logs_enabled = false`, so the monitor does not start it again.
 
+### Nginx Ports
+
+`[nginx]` sets the ports that nginx listens on for every bench. The defaults are `http_port = 80` and `https_port = 443`. Change them when another reverse proxy (Traefik, Caddy, or another nginx) owns ports 80 and 443 on the host:
+
+```toml
+[nginx]
+http_port = 8081
+https_port = 8443
+```
+
+Run `pilot setup nginx` on each production bench after a change. The front proxy must forward public ports 80 and 443 to these ports. The HTTP to HTTPS redirect goes to port 443, and Let's Encrypt checks domains on port 80. To keep TLS in Pilot, use TCP passthrough on 443.
+
+### Automatic Updates
+
+Automatic Pilot updates are on by default for release installs. Set `auto_pilot_update = false` under `[updates]` in `common_config.toml` to keep them off. Use the Automatic updates switch in Settings > About, or `pilot admin auto-update on|off`. Both add or remove a cron entry. It checks the UTC time each minute and runs Pilot only at 12:00 AM UTC, regardless of the server timezone. When a newer release exists, the entry queues one `update-cli` task on the first bench by name, so the update shows in that bench's task log. The task updates Pilot and restarts the admin of every bench. The installer and upgrade patch install the schedule unless the setting is off. A source checkout (`dev` version) is never updated this way. Its switch is disabled. A failed update is tried again the next day.
+
 ### Alert Delivery
 
-`[resource_limits]` sets when an alert is raised and where it goes. A usage percentage of `0` disables that alert; `site_uptime` covers sites that stop answering their ping. Pilot sends the ping to the bench's local app server, so a failure in nginx, TLS, DNS, or the edge proxy does not raise this alert. A condition must hold for five minutes before anything is sent.
+`[resource_limits]` sets when an alert is raised and where it goes. The CPU, memory and disk alerts start at 90%, and `site_uptime` starts on. A usage percentage of `0` disables that alert. The `enable_default_alerts` patch turns the three usage alerts on once, at 90%, on an older host that had all three off. `site_uptime` covers sites that stop answering their ping. Pilot sends the ping to the bench's local app server, so a failure in nginx, TLS, DNS, or the edge proxy does not raise this alert. A condition must hold for five minutes before anything is sent.
 
-Where an alert goes depends on what is configured. A Central-managed host reports every alert to Central; a self-hosted one does not, and the dashboard drops the Central wording along with it. Each entry in `webhook_endpoints` receives alerts either way, as a POST with an `Authorization: Bearer` header. Mail is a third sink, off until a mail server is configured and `email_recipients` is set.
+Where an alert goes depends on what is configured. A Central-managed host reports every alert to Central; a self-hosted one does not, and the dashboard drops the Central wording along with it. Each `[[webhook_endpoints]]` entry receives events either way. Mail is a third sink, off until a mail server is configured and `email_recipients` is set. Mail and Central get only alerts: `resource_limit_breached`, `site_down` (Central's `site_unavailable`), `backups_failing` (Central's `backup_failure`), and a failed update (Central's `migration_failure`). Central refuses an event type it does not define, so Pilot sends Central's names. Webhooks get every event they chose, including Info events such as a new site or a finished backup. Of the Info events, only long operations that a user waits for (a new, restored or reinstalled site, a finished update, and a Pilot update) also go to the activity feed.
+
+#### Webhooks
+
+`[[webhook_endpoints]]` is a top-level array in `common_config.toml`, because an endpoint receives every kind of event, not only resource alerts. Each endpoint receives a fixed JSON body, like a GitHub webhook. There is no body template. `events` lists the events the endpoint receives. Leave it empty to receive every event, including events added later. `token` is optional. Pilot still reads endpoints from the older place under `[resource_limits]`, as an array or as a `{ url = token }` table, and moves them to the top level on the next save.
+
+| Event | When |
+| --- | --- |
+| `task_failed` | A task failed, except noisy ones such as `build`. |
+| `site_created` | A new site, or a site from a backup, is ready. |
+| `site_deleted` | A site was dropped. |
+| `site_renamed` | A site was renamed. `context.new_name` holds the new name. |
+| `site_restored` | A backup was restored into a site. |
+| `site_reinstalled` | A site was reinstalled. |
+| `site_down` | A site stopped answering its uptime ping. |
+| `site_up` | A site that was reported down answers again. |
+| `backup_completed` | A site backup finished, scheduled or manual. `context.automatic` tells which. |
+| `backup_deleted` | Backups of a site were deleted. |
+| `backups_failing` | A site reached its limit of failed backups. |
+| `app_installed` | An app was installed on a site. |
+| `app_uninstalled` | An app was uninstalled from a site. |
+| `app_added` | An app was added to the bench. |
+| `app_removed` | An app was removed from the bench. |
+| `app_branch_switched` | An app moved to another branch. |
+| `update_completed` | An update finished. |
+| `update_restored` | A failed update was restored from its backup. |
+| `update_dismissed` | A failed update was dismissed. |
+| `pilot_updated` | Pilot itself was updated. |
+| `certificate_issued` | A TLS certificate was issued. |
+| `certificate_expiry` | A TLS certificate has less than 14 days left, so it is not renewing, or has expired. |
+| `certificate_failed` | Certbot could not issue or renew a certificate. |
+| `resource_limit_breached` | CPU, memory, or disk use held above its limit. |
+| `resource_limit_recovered` | Use that was reported above its limit is back under it. |
+| `ping` | The Test button in Settings > Notifications. It goes to every endpoint, whatever events it chose. |
+
+Each request is a `POST` with `Content-Type: application/json`, `User-Agent: Pilot-Hookshot`, `X-Pilot-Event: <event>` and `X-Pilot-Delivery: <id>`. With a token, it also has `Authorization: Bearer <token>` and `X-Pilot-Signature-256: sha256=<hex>`, the HMAC-SHA256 of the raw body keyed with the token. Any 2xx answer counts as delivered.
+
+```json
+{
+  "event": "site_down",
+  "delivery": "5f0c…",
+  "sent_at": "2026-11-04T10:00:00+00:00",
+  "bench": "main",
+  "title": "a.example.com is unreachable",
+  "message": "main: a.example.com unreachable",
+  "severity": "Error",
+  "category": "Sites",
+  "site": "a.example.com",
+  "url": "https://admin.example.com/sites/a.example.com",
+  "context": {"bench": "main", "sites": ["a.example.com"]}
+}
+```
+
+For a task event, `context` holds `command`, `task_id`, and the task arguments that are safe to share, such as `site`, `name`, `new_name`, `app`, `apps`, `branch`, and `automatic`. Passwords, tokens, and repository URLs are never sent.
 
 Outgoing mail lives in the bench's `sites/common_site_config.json`, under the keys the framework's Email Account already reads, so a site picks the same mailbox up without any further setup:
 

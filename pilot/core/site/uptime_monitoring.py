@@ -12,7 +12,7 @@ import typing
 from datetime import UTC, datetime
 
 from pilot.core.alerts import ALERT_SUSTAINED_SECONDS, SustainedAlerts, notify
-from pilot.core.notification.events import record_alert
+from pilot.core.notification.events import raise_event, record_alert
 from pilot.core.site.uptime_monitoring_config import UptimeMonitorConfigurator
 from pilot.managers.gunicorn import GunicornManager
 from pilot.utils import cli_root, iter_sibling_benches
@@ -84,18 +84,13 @@ class UptimeMonitor:
         down = down if alerting else []
         alerts = SustainedAlerts(self.alerts_path)
         due = alerts.due(down)
+        up = {result["site"] for result in results if result["up"]}
+        self.announce_recovered([site for site in alerts.recovered if site in up])
 
         recorded = [
             site
             for site in alerts.unrecorded(alerts.sustained())
-            if record_alert(
-                self.bench,
-                self._alert_payload([site], results),
-                category="Sites",
-                severity="Error",
-                title=f"{site} is unreachable",
-                site=site,
-            )
+            if record_alert(self.bench, self._alert_payload([site], results))
         ]
         if recorded:
             alerts.mark_recorded(recorded)
@@ -105,6 +100,20 @@ class UptimeMonitor:
 
         if notify(self.bench, self._alert_payload(due, results)):
             alerts.mark_notified(due)
+
+    def announce_recovered(self, sites: list[str]) -> None:
+        """Tell webhooks that a site they heard was down answers again."""
+        for site in sites:
+            raise_event(
+                self.bench,
+                feed=False,
+                event="site_up",
+                title=f"{site} is reachable again",
+                category="Sites",
+                severity="Info",
+                site=site,
+                action_route=f"/sites/{site}",
+            )
 
     def _alert_payload(self, down: list[str], results: list[dict]) -> dict:
         """Same event/message/context shape the resource alerts use."""
@@ -118,8 +127,14 @@ class UptimeMonitor:
             }
             for site in down
         ]
+        site = down[0] if len(down) == 1 else None
         return {
             "event": SITE_DOWN_EVENT,
+            "title": f"{site} is unreachable" if site else f"{len(down)} sites are unreachable",
+            "category": "Sites",
+            "severity": "Error",
+            "site": site,
+            "action_route": f"/sites/{site}" if site else "/sites",
             "message": f"{self.bench.config.name}: {', '.join(down)} unreachable",
             "context": {
                 "bench": self.bench.config.name,

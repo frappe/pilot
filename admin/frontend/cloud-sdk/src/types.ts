@@ -16,7 +16,20 @@ export interface AccountLinks {
 }
 
 export interface TaskSubmission { task_id: string }
-export interface TaskStatus { status?: string; exit_code?: number | null }
+export interface TaskStep { key: string; label: string; status: 'running' | 'done' | 'failed'; started_at: number }
+export interface TaskStatus {
+  status?: string
+  exit_code?: number | null
+  command?: string
+  started_at?: string | null
+  queue_position?: number | null
+  steps?: TaskStep[]
+  /** The running step's latest output line, and its percentage when the line is a progress bar. */
+  activity?: string | null
+  percent?: number | null
+  /** The task's last output line, when it failed. */
+  error?: string | null
+}
 
 export interface BillingSummary {
   currency: string
@@ -158,6 +171,7 @@ export interface Domain {
 
 export interface Domains { primary: string; domains: Domain[] }
 export interface DnsRecord { type: string; host: string; value: string }
+export interface DnsRecords { cname?: DnsRecord[]; a?: DnsRecord[] }
 
 export interface BackupFile {
   filename: string

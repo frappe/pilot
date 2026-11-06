@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
+from pilot.core.site.login import origin
+
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
@@ -110,7 +112,7 @@ class BenchProduction:
         nginx_manager.enable_at_boot()
         self._report_site_urls(nginx_manager, on_progress)
 
-    def setup_letsencrypt(self) -> None:
+    def setup_letsencrypt(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
         from pilot.exceptions import ConfigError
         from pilot.managers.letsencrypt import (
             LetsEncryptManager,
@@ -120,6 +122,11 @@ class BenchProduction:
         from pilot.managers.nginx import NginxManager
 
         if not letsencrypt_email_required(self.bench):
+            on_progress(
+                "No certificates to obtain: no site has a public domain and admin TLS is off. "
+                "To enable TLS, run 'pilot setup production --admin-domain <domain> --tls "
+                "--letsencrypt-email <email>'."
+            )
             return
         if not self.bench.config.letsencrypt.email:
             raise ConfigError(
@@ -225,9 +232,7 @@ class BenchProduction:
             if tls and site.config.ssl and nginx_manager.has_cert(site.config):
                 on_progress(f"  https://{site.config.name}")
             else:
-                http_port = self.bench.config.nginx.http_port
-                port_suffix = "" if http_port == 80 else f":{http_port}"
-                on_progress(f"  http://{site.config.name}{port_suffix}")
+                on_progress(f"  {origin('http', site.config.name, self.bench.config.nginx.http_port)}")
         domain = self.bench.config.admin.domain
         if domain:
             scheme = "https" if tls and nginx_manager.has_admin_cert else "http"

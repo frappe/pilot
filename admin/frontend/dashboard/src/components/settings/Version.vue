@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Badge, Button, Dialog, ErrorMessage, Skeleton, Spinner, toast } from 'frappe-ui'
+import { Badge, Button, Dialog, ErrorMessage, Skeleton, Spinner, Switch, toast } from 'frappe-ui'
 import { computed, onMounted, ref } from 'vue'
 import { cliUpdatesApi } from '@/api/settings'
 import { tasksApi } from '@/api/tasks'
@@ -7,6 +7,7 @@ import CopyBtn from '@/components/common/CopyBtn.vue'
 import PilotLogo from '@/components/icons/Pilot.vue'
 import type { TaskPayload } from '@/types/tasks'
 import { isTaskActive } from '@/utils/taskFormat'
+import { errorMessage } from '@/utils/error'
 
 defineProps<{ platform?: string }>()
 
@@ -15,13 +16,20 @@ const DEV_COMMANDS = 'git pull\npilot admin build\npilot admin upgrade'
 const POLL_INTERVAL_MS = 1500
 
 const loading = ref(true)
-const status = ref<{ current_version: string; is_dev: boolean; restarts_admin?: boolean }>({
+const status = ref<{
+  current_version: string
+  is_dev: boolean
+  restarts_admin?: boolean
+  auto_update?: boolean
+}>({
   current_version: '',
   is_dev: true,
 })
 const latestVersion = ref<string | null>(null)
 const checking = ref(false)
 const updating = ref(false)
+const savingAutoUpdate = ref(false)
+const autoUpdateError = ref('')
 const log = ref('')
 const versionError = ref<string | null>(null)
 const dialogError = ref<string | null>(null)
@@ -32,6 +40,20 @@ const versionLabel = computed(() => (isDev.value ? 'Development' : status.value.
 const updateAvailable = computed(
   () => Boolean(latestVersion.value) && latestVersion.value !== status.value.current_version,
 )
+
+const toggleAutoUpdate = async (enabled: boolean) => {
+  if (savingAutoUpdate.value) return
+  savingAutoUpdate.value = true
+  autoUpdateError.value = ''
+  try {
+    const result = await cliUpdatesApi.autoUpdate(enabled)
+    status.value.auto_update = result.auto_update
+  } catch (error) {
+    autoUpdateError.value = errorMessage(error, 'Could not save automatic updates.')
+  } finally {
+    savingAutoUpdate.value = false
+  }
+}
 
 onMounted(async () => {
   try {
@@ -148,6 +170,17 @@ const pollTask = async (taskId: string) => {
   </div>
 
   <ErrorMessage v-if="versionError" :message="versionError" />
+
+  <Switch
+    v-if="status.current_version"
+    class="mt-5"
+    label="Automatic updates"
+    :description="isDev ? 'Unavailable for development installs.' : 'Checks daily at 12:00 AM UTC.'"
+    :model-value="!isDev && (status.auto_update ?? false)"
+    :disabled="isDev || savingAutoUpdate || updating"
+    :error="autoUpdateError"
+    @update:model-value="toggleAutoUpdate"
+  />
 
   <Dialog
     v-model="dialogOpen"

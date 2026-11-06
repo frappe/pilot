@@ -48,6 +48,7 @@ Tasks are small workers. Each task performs one job and then stops:
 | `RevertSiteTask` | Restore one site's database and clear its cache |
 | `RestartServicesTask` | Restart services to finish a restore |
 | `BypassPatchTask` | Mark one confirmed failing patch as completed |
+| `DismissMigrationTask` | Close a failed operation without recovering it |
 
 A task owns execution details such as output, cancellation, and success or failure. It does not own the overall migration state.
 
@@ -152,7 +153,9 @@ each, mirroring `backing_up`/`updating`/`migrating` in the forward flow. A
 failure in any of them moves to `revert_failed`; resuming re-enters whichever
 sub-phase has unfinished checkpointed work.
 
-`completed` and `reverted` are terminal states. They no longer appear as the current unresolved migration.
+`needs_attention` and `revert_failed` can also move to `dismissed` (see Dismiss below).
+
+`completed`, `reverted`, and `dismissed` are terminal states. They no longer appear as the current unresolved migration.
 
 ## Per-Site Progress
 
@@ -215,6 +218,8 @@ database.sql.gz
 site_config.json
 ```
 
+When the bench has an S3 bucket and `[s3] upload_migration_backups` is on (the default), MariaDB table dumps do not go to the disk. Pilot ignores the setting when the bucket is not configured. Each dump streams gzip-compressed to `sites/<site>/migration_backups/<operation-id>/<table>.sql.gz` in the bucket. Only `previous_tables.json`, `site_config.json`, and `offsite.json` (bucket and key prefix) stay in `.migrate/`. The disk check before an update then counts only the sites that back up locally. A dump that fails part way deletes its object. Restore checks that every required object exists. Then it streams each dump from the bucket through gunzip into the database client, so restore also needs no disk space. A restore that stops part way is safe to run again, because each dump drops and recreates its table. Discard and a new snapshot delete the objects. SQLite and PostgreSQL backups stay local. To keep the dumps on the disk, turn the setting off in Settings > Bench, or set `upload_migration_backups = false` under `[s3]`.
+
 Frappe creates these full backups with explicit paths inside `.migrate/`. Backup include/exclude settings are ignored so the safeguard always covers the whole database. Files remain excluded.
 
 The snapshot service checks that the requesting operation is the only unresolved operation that owns the site. This prevents a later workflow from erasing an earlier workflow's recovery data.
@@ -225,13 +230,15 @@ Migration snapshots are separate from normal user backups. They are not shown in
 
 ### Backup failure
 
+Before an operation with safeguards starts, Pilot adds up every site's predicted database backup size (see [Scheduled Backups](configuration.md#scheduled-backups)) and refuses the operation when the bench disk cannot hold them and still keep 500 MB free for the system. No site enters maintenance mode, and the Admin API answers `507 insufficient_disk_space`.
+
 Pilot stops before updating code, records the failed site, and restores every site's original maintenance and scheduler settings. Retry takes fresh backups of every site because the sites can receive new writes while the operation is paused.
 
 ### Update or migration failure
 
 Pilot moves the operation to `needs_attention`. Sites remain protected while the user investigates or chooses a recovery action.
 
-A backup, update or migrate task that is cancelled, or whose process dies, has the same result: its failure callback moves the operation to `needs_attention` with the diagnosis "The task stopped before it finished", so the user can retry or revert. A stopped backup also restores the sites' maintenance settings. The callback does nothing when the task had already queued the next task.
+A backup, update or migrate task that is cancelled, or whose process dies, has the same result: its failure callback moves the operation to `needs_attention` with the diagnosis "The task stopped before it finished", so the user can retry, restore, or dismiss it. A stopped backup also restores the sites' maintenance settings. The callback does nothing when the task had already queued the next task.
 
 Every app is checked out to its target revision first, then validated as a group, before anything is installed or built.
 A failure there means no app has been reinstalled yet, so `RevertAppsTask` only has commits to check back out. See
@@ -294,6 +301,12 @@ Each step is checkpointed in `revert_checkpoints` (`apps`, `site:<name>` per sit
 
 Before importing MariaDB tables, Restore checks that the saved table inventory is valid and every required table dump exists. A missing inventory or dump stops Restore before database changes. Repair the recovery files, then use Restore again.
 
+Restore skips an app that was removed from the bench after the update and a site that was dropped after the failure. Neither has anything left to restore.
+
+### Dismiss
+
+Dismiss closes an operation in `needs_attention` or `revert_failed` that nobody will recover, for example after the user fixed the bench by hand. `DismissMigrationTask` restarts every process on the app code now on disk, as Complete and Restore do, restores each site's maintenance and scheduler settings, deletes the recovery snapshots, records the decision, and moves the operation to `dismissed`. The record stays as history, and new updates are no longer blocked. Dismiss does not change app code or site data. When the restart fails, the operation stays open so the user can dismiss again.
+
 ## Admin API and UI
 
 The main endpoints are:
@@ -309,13 +322,14 @@ GET  /migrations/<operation-id>
 POST /migrations/<operation-id>/actions/retry
 POST /migrations/<operation-id>/actions/restore
 POST /migrations/<operation-id>/actions/bypass-patch
+POST /migrations/<operation-id>/actions/dismiss
 ```
 
 Starting an update or standalone migration returns both an operation identity and a task ID. The Admin UI navigates to the migration detail page because the operation—not the first task—is the long-lived workflow.
 
 The global migration status button shows unresolved failures before active work, and active work before ordinary update availability.
 
-The list page filters by status through five tabs — All, Running, Attention, Completed, Reverted — held in the `status` query parameter so a filtered view survives a reload. Running covers every in-flight state and Attention covers both `needs_attention` and `revert_failed`, groupings the `status` API parameter cannot express because it matches one state exactly; the list therefore filters client-side over the page it already fetched.
+The list page filters by status through five tabs — All, Running, Attention, Completed, Closed — held in the `status` query parameter so a filtered view survives a reload. Running covers every in-flight state and Attention covers both `needs_attention` and `revert_failed`, Closed covers `reverted` and `dismissed`, groupings the `status` API parameter cannot express because it matches one state exactly; the list therefore filters client-side over the page it already fetched.
 
 The detail page groups the chain into a Server section and a Sites section, split on whether a `task_logs` entry names a site: bench-level tasks (`update`, `revert-apps`, `restart-services`) on one side, per-site ones under their site row on the other. Every entry carries the task's own `status`, which is how the UI marks the attempt that failed; it is `null` only when the task is no longer readable. The Target Apps card shows the original and updated commit and offers a GitHub comparison link when the app uses a GitHub repository.
 
@@ -324,6 +338,7 @@ The detail page groups the chain into a Server section and a Sites section, spli
 ```text
 pilot/core/bench/migration/
   operation.py    workflow behavior and durable operation data
+  recovery.py     retry, skip patch, restore, and dismiss actions
   state.py        states, allowed transitions, and next-step selection
   store.py        atomic JSON persistence and operation lookup
   diagnosis.py    migration-output classification

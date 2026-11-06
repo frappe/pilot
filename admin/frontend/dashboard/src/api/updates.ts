@@ -20,12 +20,15 @@ export const updatesApi = {
   restore: (id: string): Promise<MigrationAccepted> =>
     request.post(`migrations/${id}/actions/restore`).json(),
 
+  dismiss: (id: string): Promise<MigrationAccepted> =>
+    request.post(`migrations/${id}/actions/dismiss`).json(),
+
   bypassPatch: (id: string, patch: string): Promise<MigrationAccepted> =>
     request.post(`migrations/${id}/actions/bypass-patch`, { json: { patch } }).json(),
 }
 
 export const isResolved = (operation: Operation) => {
-  return !operation || operation.state === 'completed' || operation.state === 'reverted'
+  return !operation || ['completed', 'reverted', 'dismissed'].includes(operation.state)
 }
 
 export const needsAttention = (operation: Operation): boolean => {

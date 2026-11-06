@@ -1,5 +1,6 @@
 from unittest.mock import Mock
 
+import pytest
 from flask import Flask
 
 from admin.backend.api.v1.settings import ConfigPatcher, s3_provider_options, settings_bp
@@ -8,6 +9,7 @@ from pilot.config.bench import BenchConfig
 from pilot.core.bench.settings import s3_payload
 from pilot.integrations.central import CentralClient, CentralClientError
 from pilot.integrations.s3 import base
+from pilot.internal.toml import Toml
 
 
 def bench_config() -> BenchConfig:
@@ -102,6 +104,28 @@ def test_s3_payload_tracks_the_custom_endpoint() -> None:
     assert s3_payload(config)["endpoint_url"] == "https://s3.in-mumbai.example.test"
 
 
+def test_migration_backups_go_to_the_bucket_until_turned_off() -> None:
+    config = bench_config()
+    config.s3 = S3Config(
+        access_key="access", secret_key="secret", bucket="backups", provider="aws", region="us-east-1"
+    )
+    assert config.s3.stores_migration_backups
+
+    error = ConfigPatcher(config, {"s3": {"upload_migration_backups": False}}).apply()
+
+    assert error is None
+    assert not config.s3.stores_migration_backups
+    assert s3_payload(config)["upload_migration_backups"] is False
+    assert BenchConfig._from_dict(Toml.loads(config.dumps())).s3.upload_migration_backups is False
+
+
+def test_upload_migration_backups_is_ignored_without_a_bucket() -> None:
+    config = bench_config()
+    config.s3 = S3Config(upload_migration_backups=True)
+
+    assert not config.s3.stores_migration_backups
+
+
 FRAPPE_REGIONS = {"Aradhya-Local": "https://s3.aradhya-local.example.test"}
 
 
@@ -186,3 +210,53 @@ def test_frappe_regions_route_reports_an_unreachable_central(monkeypatch) -> Non
     assert response.get_json()["error"]["message"] == (
         "Could not read Frappe storage regions from Central: Cannot reach Central"
     )
+
+
+def test_aws_regions_outside_the_original_list_need_no_custom_endpoint() -> None:
+    for region in ("eu-west-3", "me-central-1", "me-south-1"):
+        config = bench_config()
+        update = {
+            "s3": {
+                "access_key": "aws-access",
+                "secret_key": "aws-secret",
+                "bucket": "backups",
+                "provider": "aws",
+                "region": region,
+                "endpoint_url": "",
+            }
+        }
+
+        assert ConfigPatcher(config, update).apply() is None
+        assert base.build_endpoint_url("aws", region) == f"https://s3.{region}.amazonaws.com"
+
+
+@pytest.mark.parametrize(
+    ("provider", "endpoint_url", "style"),
+    [("aws", "", "virtual"), ("aws", "https://s3.example.test", "path"), ("hetzner", "", "path")],
+)
+def test_bucket_subdomains_are_used_only_on_the_aws_endpoint(
+    monkeypatch, provider: str, endpoint_url: str, style: str
+) -> None:
+    config = Mock(return_value="client-config")
+    monkeypatch.setattr(base, "load_boto3", lambda: None)
+    monkeypatch.setattr(base, "boto3", Mock())
+    monkeypatch.setattr(base, "Config", config)
+
+    base.S3(
+        "access", "secret", "fsn1" if provider == "hetzner" else "us-east-1", provider, "bucket", endpoint_url
+    )
+
+    assert config.call_args.kwargs["s3"] == {"addressing_style": style}
+
+
+def test_a_tls_failure_while_checking_the_bucket_says_why(monkeypatch) -> None:
+    storage = base.S3.__new__(base.S3)
+    storage.endpoint_url = "https://s3.example.test"
+    storage.client = Mock()
+    base.load_boto3()
+    from botocore.exceptions import SSLError
+
+    storage.client.head_bucket.side_effect = SSLError(endpoint_url=storage.endpoint_url, error="SSL validation failed")
+
+    with pytest.raises(base.S3IntegrationError, match="SSL validation failed"):
+        storage.create_bucket_if_not_present("bucket")

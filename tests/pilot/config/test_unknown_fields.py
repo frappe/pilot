@@ -36,12 +36,13 @@ def test_mariadb_postgres_letsencrypt_are_now_unknown_tables() -> None:
     assert set(paths) == {"mariadb", "postgres", "letsencrypt"}
 
 
-def test_nginx_is_now_an_unknown_table() -> None:
-    """nginx config is fixed at its compiled-in defaults; a bench.toml carrying
-    a [nginx] table reports it as unrecognized rather than parsing it."""
+def test_nginx_in_bench_toml_is_rejected() -> None:
+    """Nginx ports are host-wide; a bench.toml [nginx] table must not be silently ignored."""
     data = copy.deepcopy(MINIMAL)
     data["nginx"] = {"http_port": 8080}
     assert BenchConfig.unknown_config_paths(data) == ["nginx"]
+    with pytest.raises(ConfigError, match=r"common_config\.toml"):
+        BenchConfig._from_dict(data)
 
 
 def test_monitor_is_now_an_unknown_table() -> None:
