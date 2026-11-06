@@ -1,15 +1,14 @@
 <script setup lang="ts">
-import { translate } from './translation'
-import { Button, SettingsDialog, providePortalTarget } from 'frappe-ui'
+import type { CloudContext, CloudSettingsOptions } from '@frappe/cloud-sdk'
+import { Button, providePortalTarget, SettingsDialog } from 'frappe-ui'
 import { ConfigProvider, TabsRoot } from 'reka-ui'
 import { computed, defineAsyncComponent, provide, ref, watch } from 'vue'
-import type { CloudContext, CloudSettingsOptions } from '@frappe/cloud-sdk'
-
 import CloudSettingsBody from './components/CloudSettingsBody.vue'
 import PanelFallback from './components/PanelFallback.vue'
 import { createStore } from './store'
 import TailwindStyles from './TailwindStyles.vue'
 import { usePageDark } from './theme'
+import { translate } from './translation'
 
 interface Props {
   context?: CloudContext
@@ -125,7 +124,8 @@ const visibleGroups = computed(() => {
 const visibleTabs = computed(() => visibleGroups.value.flatMap((group) => group.tabs))
 const inline = computed(() => !!props.options.target)
 const getFirstTab = () =>
-  visibleTabs.value.find((item) => item.value === props.options.tab)?.value || visibleTabs.value[0]?.value
+  visibleTabs.value.find((item) => item.value === props.options.tab)?.value ||
+  visibleTabs.value[0]?.value
 
 const overlays = ref<HTMLElement>()
 
@@ -156,11 +156,17 @@ watch(visibleTabs, (tabs) => {
 })
 
 const pageDark = usePageDark()
-const isDark = computed(() => props.options.theme === 'dark' || (props.options.theme !== 'light' && pageDark.value))
+const isDark = computed(
+  () => props.options.theme === 'dark' || (props.options.theme !== 'light' && pageDark.value),
+)
 </script>
 
 <template>
-  <div class="cloud-settings-root" :class="inline && 'h-full'" :data-theme="isDark ? 'dark' : 'light'">
+  <div
+    class="cloud-settings-root"
+    :class="inline && 'h-full'"
+    :data-theme="isDark ? 'dark' : 'light'"
+  >
     <ConfigProvider :teleport-to="overlays">
       <div ref="overlays" />
       <template v-if="overlays">

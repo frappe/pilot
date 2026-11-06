@@ -133,11 +133,18 @@ class NodePackages:
 
     @property
     def is_installed(self) -> bool:
-        """Whether node_modules was installed after the lockfile last changed."""
-        marker = self.install_path / "node_modules" / self.package_manager.install_marker
+        """Whether node_modules matches the dependency inputs."""
+        manager = self.package_manager
+        marker = self.install_path / "node_modules" / manager.install_marker
         lockfile = self.lockfile
         if not marker.exists():
             return False
+        if manager == YARN and lockfile is not None:
+            from pilot.managers.node_dependencies import NodeDependencies
+
+            return NodeDependencies.has_matching_install(
+                self.install_path, NodeDependencies.get_key(self.install_path)
+            )
         return lockfile is None or lockfile.stat().st_mtime <= marker.stat().st_mtime
 
     @property
@@ -159,6 +166,12 @@ class NodePackages:
             cwd=self.install_path,
             stream_output=True,
         )
+        if manager == YARN:
+            from pilot.managers.node_dependencies import NodeDependencies
+
+            if NodeDependencies.get_resolved_key(self.install_path):
+                stamp = self.install_path / "node_modules" / ".pilot-install-key"
+                stamp.write_text(NodeDependencies.get_key(self.install_path))
 
     def ensure_installed(self) -> None:
         if self.has_package_json and not self.is_installed:

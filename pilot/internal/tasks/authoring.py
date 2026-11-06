@@ -113,6 +113,8 @@ def is_positional_arg(arg_field) -> bool:
 
 
 def argv_values(value) -> list[str]:
+    if isinstance(value, dict):
+        return [json.dumps(value)]
     return [str(item) for item in value] if isinstance(value, list) else [str(value)]
 
 

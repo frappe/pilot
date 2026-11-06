@@ -83,6 +83,19 @@ def test_positional_field_is_required() -> None:
     assert _parse(_Greet, ["alice", "a"]).who == "alice"
 
 
+def test_defaulted_positional_scalar_and_list():
+    @dataclass(kw_only=True)
+    class Example(Command):
+        name: Annotated[str, Arg(positional=True)] = "default"
+        values: Annotated[list[str], Arg(positional=True)] = None
+
+    assert _parse(Example, []).name == "default"
+    assert _parse(Example, []).values == []
+    parsed = _parse(Example, ["chosen", "one", "two"])
+    assert parsed.name == "chosen"
+    assert parsed.values == ["one", "two"]
+
+
 def test_bool_field_becomes_store_true_flag() -> None:
     assert _parse(_Greet, ["alice", "a", "--loud"]).loud is True
     assert _parse(_Greet, ["alice", "a"]).loud is False

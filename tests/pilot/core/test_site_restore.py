@@ -56,7 +56,9 @@ def test_files_from_another_site_land_in_this_site(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("is_compressed", [False, True])
-def test_a_streamed_archive_lands_in_this_site_without_a_copy_on_disk(tmp_path: Path, is_compressed: bool) -> None:
+def test_a_streamed_archive_lands_in_this_site_without_a_copy_on_disk(
+    tmp_path: Path, is_compressed: bool
+) -> None:
     site = _site(tmp_path)
     archive = _frappe_archive(tmp_path, "source.localhost", "public")
     data = gzip.compress(archive.read_bytes()) if is_compressed else archive.read_bytes()
@@ -100,7 +102,9 @@ def test_a_failed_file_stream_stops_the_restore_before_the_database(tmp_path: Pa
     def broken_download() -> io.BytesIO:
         raise OSError("connection reset")
 
-    run = BackupRun(files={"database": archive}, streams={"public": BackupStream(archive.name, broken_download)})
+    run = BackupRun(
+        files={"database": archive}, streams={"public": BackupStream(archive.name, broken_download)}
+    )
 
     with pytest.raises(OSError, match="connection reset"):
         SiteRestore(site).restore(run, ["public", "database"], lambda message: None)
@@ -132,14 +136,18 @@ def _source_config(tmp_path: Path) -> Path:
     return config
 
 
-def test_a_restored_database_brings_its_apps_and_only_the_encryption_key_of_the_config(tmp_path: Path) -> None:
+def test_a_restored_database_brings_its_apps_and_only_the_encryption_key_of_the_config(
+    tmp_path: Path,
+) -> None:
     site = _site(tmp_path)
     config = _source_config(tmp_path)
     database = tmp_path / "20261004_010000-source-database.sql.gz"
     database.write_bytes(b"")
 
     with patch("pilot.core.site.config.query_installed_apps_via_db", return_value=["frappe", "payments"]):
-        SiteRestore(site).restore(BackupRun.from_paths([database, config]), ["database"], lambda message: None)
+        SiteRestore(site).restore(
+            BackupRun.from_paths([database, config]), ["database"], lambda message: None
+        )
 
     site.restore.assert_called_once_with(str(database))
     site.set_config_values.assert_called_once_with(
@@ -156,14 +164,19 @@ def test_a_restored_site_config_keeps_the_keys_that_belong_to_this_site(tmp_path
     with patch("pilot.core.site.config.query_installed_apps_via_db", return_value=None):
         SiteRestore(site).restore(run, ["database", "config"], lambda message: None)
 
-    assert site.set_config_values.call_args_list[-1].args == ({"encryption_key": "source-key", "max_file_size": 50},)
+    assert site.set_config_values.call_args_list[-1].args == (
+        {"encryption_key": "source-key", "max_file_size": 50},
+    )
 
 
 def test_skipping_failing_patches_reaches_the_migration(tmp_path: Path) -> None:
     site = _site(tmp_path)
 
     SiteRestore(site).restore(
-        BackupRun.from_paths([_source_config(tmp_path)]), ["config"], lambda message: None, skip_failing_patches=True
+        BackupRun.from_paths([_source_config(tmp_path)]),
+        ["config"],
+        lambda message: None,
+        skip_failing_patches=True,
     )
 
     site.migrate.assert_called_once_with(skip_failing=True)
@@ -197,7 +210,9 @@ def test_a_dump_streams_into_the_client(tmp_path: Path, monkeypatch) -> None:
     output = tmp_path / "imported.sql"
     manager = module.MariaDBManager.__new__(module.MariaDBManager)
     manager.config = SimpleNamespace(root_password="secret")
-    monkeypatch.setattr(module.MariaDBManager, "_client_command", lambda self: ["sh", "-c", f"cat > {output}", "x"])
+    monkeypatch.setattr(
+        module.MariaDBManager, "_client_command", lambda self: ["sh", "-c", f"cat > {output}", "x"]
+    )
 
     manager.import_sql("site_db", gzip.GzipFile(fileobj=io.BytesIO(gzip.compress(b"INSERT 1;\n" * 1000))))
 
@@ -211,7 +226,9 @@ def test_an_archive_cannot_write_outside_the_files_directory(tmp_path: Path) -> 
     (sites / "x" / "public" / "files").mkdir(parents=True)
     (sites / "x" / "site_config.json").write_text('{"db_name": "attacker"}')
     archive = tmp_path / "20261004_010000-x-files.tar"
-    subprocess.run(["tar", "-cf", str(archive), "./x/public/files", "./x/site_config.json"], cwd=sites, check=True)
+    subprocess.run(
+        ["tar", "-cf", str(archive), "./x/public/files", "./x/site_config.json"], cwd=sites, check=True
+    )
 
     SiteRestore(site).extract_files(archive, "public")
 
@@ -221,6 +238,8 @@ def test_an_archive_cannot_write_outside_the_files_directory(tmp_path: Path) -> 
 def test_a_config_restored_without_its_database_keeps_this_sites_encryption_key(tmp_path: Path) -> None:
     site = _site(tmp_path)
 
-    SiteRestore(site).restore(BackupRun.from_paths([_source_config(tmp_path)]), ["config"], lambda message: None)
+    SiteRestore(site).restore(
+        BackupRun.from_paths([_source_config(tmp_path)]), ["config"], lambda message: None
+    )
 
     site.set_config_values.assert_called_once_with({"max_file_size": 50})

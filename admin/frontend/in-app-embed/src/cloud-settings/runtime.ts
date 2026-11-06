@@ -1,5 +1,5 @@
-import { defineCustomElement, h, nextTick, type PropType } from 'vue'
 import type { CloudContext, CloudSettingsOptions } from '@frappe/cloud-sdk'
+import { defineCustomElement, h, nextTick, type PropType } from 'vue'
 import CloudSettings from './CloudSettings.vue'
 import CloudSettingsToasts from './CloudSettingsToasts.vue'
 
@@ -14,12 +14,15 @@ const CloudSettingsElement = defineCustomElement({
   styles: ['__CLOUD_SETTINGS_STYLES__'],
   shadowRoot: true,
   inheritAttrs: false,
-  setup: (props, { emit }) => () => h(CloudSettings, {
-    context: props.context,
-    options: props.options,
-    open: props.open,
-    onClose: () => emit('close'),
-  }),
+  setup:
+    (props, { emit }) =>
+    () =>
+      h(CloudSettings, {
+        context: props.context,
+        options: props.options,
+        open: props.open,
+        onClose: () => emit('close'),
+      }),
 })
 
 if (!customElements.get(TAG)) customElements.define(TAG, CloudSettingsElement)
@@ -37,9 +40,14 @@ if (!customElements.get(TOASTS_TAG)) customElements.define(TOASTS_TAG, ToastsEle
 if (typeof CSS !== 'undefined' && 'registerProperty' in CSS) {
   try {
     CSS.registerProperty({
-      name: '--fui-spinner-angle', syntax: '<angle>', inherits: false, initialValue: '0deg',
+      name: '--fui-spinner-angle',
+      syntax: '<angle>',
+      inherits: false,
+      initialValue: '0deg',
     })
-  } catch { /* A second SDK bundle can share the registered property. */ }
+  } catch {
+    /* A second SDK bundle can share the registered property. */
+  }
 }
 
 let host: InstanceType<typeof CloudSettingsElement> | undefined
@@ -61,22 +69,31 @@ export const closeCloudSettings = (): void => {
 
 // Accessibility fixes for the embedded panel.
 const trackInline = (element: HTMLElement): (() => void) => {
-  const root = element.shadowRoot!
+  const root = element.shadowRoot
+  if (!root) throw new Error('Cloud Settings shadow root is unavailable')
   const layers = () => [...root.querySelectorAll<HTMLElement>('[data-dismissable-layer]')]
   const controller = new AbortController()
   const { signal } = controller
 
   element.setAttribute('inline', '')
   element.tabIndex = 0
-  element.addEventListener('keydown', (event) => {
-    if (event.key === 'Tab' && !event.shiftKey && !root.activeElement) event.stopPropagation()
-  }, { signal })
-  document.addEventListener('pointerdown', (event) => {
-    const open = layers()
-    if (open.length && !open.some((layer) => event.composedPath().includes(layer))) {
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    }
-  }, { capture: true, signal })
+  element.addEventListener(
+    'keydown',
+    (event) => {
+      if (event.key === 'Tab' && !event.shiftKey && !root.activeElement) event.stopPropagation()
+    },
+    { signal },
+  )
+  document.addEventListener(
+    'pointerdown',
+    (event) => {
+      const open = layers()
+      if (open.length && !open.some((layer) => event.composedPath().includes(layer))) {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      }
+    },
+    { capture: true, signal },
+  )
 
   const observer = new MutationObserver(() => {
     const open = layers()
@@ -88,14 +105,20 @@ const trackInline = (element: HTMLElement): (() => void) => {
   return () => controller.abort()
 }
 
-export const mountCloudSettings = (context: CloudContext, options: CloudSettingsOptions = {}): void => {
+export const mountCloudSettings = (
+  context: CloudContext,
+  options: CloudSettingsOptions = {},
+): void => {
   loadFontIfMissing()
   if (!document.querySelector(TOASTS_TAG)) document.body.append(document.createElement(TOASTS_TAG))
 
   const existing = host ?? document.querySelector(TAG)
   existing?.dispatchEvent(new CustomEvent('close'))
 
-  const trigger = !options.target && document.activeElement instanceof HTMLElement ? document.activeElement : undefined
+  const trigger =
+    !options.target && document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : undefined
   const element = document.createElement(TAG) as InstanceType<typeof CloudSettingsElement>
   element.context = context
   element.options = options
@@ -104,14 +127,20 @@ export const mountCloudSettings = (context: CloudContext, options: CloudSettings
 
   const stopInline = options.target ? trackInline(element) : undefined
 
-  element.addEventListener('close', () => {
-    stopInline?.()
-    element.open = false
-    element.remove()
-    if (host === element) host = undefined
-    nextTick(() => { if (trigger?.isConnected) trigger.focus() })
-    options.onClose?.()
-  }, { once: true })
+  element.addEventListener(
+    'close',
+    () => {
+      stopInline?.()
+      element.open = false
+      element.remove()
+      if (host === element) host = undefined
+      nextTick(() => {
+        if (trigger?.isConnected) trigger.focus()
+      })
+      options.onClose?.()
+    },
+    { once: true },
+  )
 
   ;(options.target ?? document.body).append(element)
 }

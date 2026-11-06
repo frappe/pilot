@@ -72,14 +72,21 @@ class PythonAssetBuilder:
         return env
 
     def build_assets(self) -> None:
+        from pilot.core.bench.build_artifacts import BuildArtifacts
+
+        artifacts = BuildArtifacts(self.bench)
         for app in self.bench.apps():
-            NodePackages(app.path).ensure_installed()
+            for packages in get_app_packages(app.path, self.frontend_dirs(app)):
+                packages.ensure_installed()
+        key = artifacts.optional_key
         self.run_compiler(
             [*self.bench.frappe_call, "frappe", "build", "--force"],
             cwd=self.bench.sites_path,
             env=self.manager._build_env(),
             stream_output=True,
         )
+        if key is not None and artifacts.optional_key == key:
+            artifacts.capture(key)
 
     def build_assets_for_app(self, app: "App", force: bool = False, skip_frontend: bool = False) -> None:
         # Desk serves /assets/frappe/node_modules, and every server build runs Frappe's esbuild.
@@ -109,7 +116,11 @@ class PythonAssetBuilder:
             return False
         app_public_dir = app.path / app.config.name / "public"
         self.setup_prebuilt_assets(
-            app.config.name, app_public_dir, app_public_dir / "dist", prebuilt.asset_maps, prebuilt.has_page_islands
+            app.config.name,
+            app_public_dir,
+            app_public_dir / "dist",
+            prebuilt.asset_maps,
+            prebuilt.has_page_islands,
         )
         if not skip_frontend:
             if app.has_page_islands and not prebuilt.has_page_islands:
@@ -218,7 +229,9 @@ class PythonAssetBuilder:
         self.studio_editor.ensure_installed()
         print(f"  Building Studio apps for {app.config.name}...")
         sys.stdout.flush()
-        build = f"from frappe.studio.build import build_standard_apps; build_standard_apps([{app.config.name!r}])"
+        build = (
+            f"from frappe.studio.build import build_standard_apps; build_standard_apps([{app.config.name!r}])"
+        )
         self.run_compiler(
             [str(self.bench.python), "-c", build],
             cwd=self.bench.sites_path,
