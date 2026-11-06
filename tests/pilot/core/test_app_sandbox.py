@@ -7,13 +7,15 @@ import pytest
 
 from pilot.core.app.sandbox import AppSandbox, SandboxPaths
 
+BENCH = Path("/srv/pilot/benches/b")
+
 
 def _error(message: str) -> Exception:
     return ValueError(message)
 
 
 def _paths(**declaration) -> SandboxPaths:
-    return SandboxPaths.from_declaration(declaration, "test", _error)
+    return SandboxPaths.from_declaration(declaration, "test", _error, BENCH)
 
 
 def test_tilde_paths_expand_to_the_home_directory() -> None:
@@ -32,7 +34,6 @@ def test_nothing_declared_is_empty() -> None:
     [
         {"read_paths": "~/x"},
         {"read_paths": [1]},
-        {"write_paths": ["relative/dir"]},
         {"read_paths": ["~/a/../.ssh"]},
         {"read_paths": ["~/bad\npath"]},
     ],
@@ -154,7 +155,7 @@ def test_a_link_that_stays_inside_an_allowed_root_is_resolved(
 def _app(tmp_path: Path, pyproject: str | None) -> SimpleNamespace:
     if pyproject is not None:
         (tmp_path / "pyproject.toml").write_text(pyproject)
-    return SimpleNamespace(path=tmp_path)
+    return SimpleNamespace(path=tmp_path, bench=SimpleNamespace(path=BENCH))
 
 
 def test_the_sandbox_table_is_read_from_pyproject(tmp_path: Path) -> None:
@@ -173,3 +174,36 @@ def test_no_pyproject_or_no_table_means_no_paths(tmp_path: Path) -> None:
 def test_a_non_table_sandbox_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="must be a table"):
         AppSandbox(_app(tmp_path, "[tool.pilot]\nsandbox = 1\n")).get_paths(_error)
+
+
+def test_a_name_without_a_prefix_is_a_folder_in_the_bench(tmp_path: Path) -> None:
+    paths = SandboxPaths.from_declaration({"write_paths": ["flow-server"], "read_paths": ["shared/assets"]}, "t", _error, tmp_path)
+
+    assert paths.write == (str(tmp_path.resolve() / "flow-server"),)
+    assert paths.read == (str(tmp_path.resolve() / "shared" / "assets"),)
+
+
+@pytest.mark.parametrize("path", ["", "..", "../x", "a/../../x", ".hidden", ".credentials/x", "tmp", "tmp/x", "migrations", "tasks", "config", "config/services/x"])
+def test_a_bench_folder_the_admin_owns_or_that_climbs_out_is_refused(tmp_path: Path, path: str) -> None:
+    with pytest.raises(ValueError):
+        SandboxPaths.from_declaration({"write_paths": [path]}, "t", _error, tmp_path)
+
+
+def test_a_link_in_the_bench_cannot_lead_out_of_it(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    bench = tmp_path / "bench"
+    bench.mkdir()
+    (bench / "innocent").symlink_to(outside)
+
+    with pytest.raises(ValueError):
+        SandboxPaths.from_declaration({"write_paths": ["innocent"]}, "t", _error, bench)
+
+
+def test_a_link_in_the_bench_cannot_lead_to_an_admin_folder(tmp_path: Path) -> None:
+    (tmp_path / "tmp").mkdir()
+    (tmp_path / "innocent").symlink_to(tmp_path / "tmp")
+
+    with pytest.raises(ValueError):
+        SandboxPaths.from_declaration({"write_paths": ["innocent"]}, "t", _error, tmp_path)
+

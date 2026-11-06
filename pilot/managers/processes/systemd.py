@@ -57,7 +57,7 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
 
         # Build and probe first, so a broken app declaration or sandbox leaves the current units in place.
         defs = self._prod_process_definitions()
-        sandbox_properties = self.get_checked_sandbox_properties()
+        sandbox_properties = self.get_checked_sandbox_properties(defs)
 
         self._remove_units()
         renderer = SystemdRenderer(self.bench.config.name, self.database_service, sandbox_properties)
@@ -115,13 +115,15 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
             )
         )
 
-    def get_checked_sandbox_properties(self) -> list[str]:
+    def get_checked_sandbox_properties(self, defs: list | None = None) -> list[str]:
         """Sandbox directives for the workload units, once a trial unit shows this host can start them."""
         if not self.bench.config.production.sandbox:
             return []
         # The bench's siblings are its neighbours, wherever the benches directory is.
-        create_sandbox_entries(self.bench)
         read_paths, write_paths = self.get_sandbox_paths()
+        # Folders an app declares in the bench: for every unit, or for one process.
+        declared = [*write_paths, *(path for pd in defs or [] for path in pd.write_paths)]
+        create_sandbox_entries(self.bench, declared)
         properties = get_sandbox_properties(self.bench.path, self.bench.path.parent, read_paths, write_paths)
         if error := get_sandbox_error(properties):
             raise BenchError(

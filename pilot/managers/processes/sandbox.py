@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -38,15 +39,20 @@ CONTROL_ENTRIES = (*CONTROL_DIRECTORIES, *CONTROL_FILES)
 # The bench folders a workload uses. The rest of the bench root, such as bench.toml, .credentials and the
 # admin's tasks/, stays outside the sandbox. Folders, because Linux detaches a file mount once Pilot
 # replaces the file by rename.
-WORKLOAD_DIRECTORIES = ("apps", "env", "sites", "config", "logs", "pids", "chromium", "flow-server")
+WORKLOAD_DIRECTORIES = ("apps", "env", "sites", "config", "logs", "pids", "chromium")
 
 
-def create_sandbox_entries(bench: Bench) -> None:
-    """Make the workload folders and the protected folders exist before the units start.
+def create_sandbox_entries(bench: Bench, declared_paths: Iterable[str] = ()) -> None:
+    """Make the workload folders, the folders the apps declare in the bench, and the protected folders
+    exist before the units start.
 
     A workload cannot create a folder in the read-only bench root, and cannot plant a protected one first."""
     for name in WORKLOAD_DIRECTORIES:
         (bench.path / name).mkdir(parents=True, exist_ok=True)
+    bench_root = Path(os.path.realpath(bench.path))
+    for path in map(Path, declared_paths):
+        if path.is_relative_to(bench_root):
+            path.mkdir(parents=True, exist_ok=True)
     for name in CONTROL_DIRECTORIES:
         (bench.config_path / name).mkdir(parents=True, exist_ok=True)
     aliases = bench.config_path / "site-aliases.json"

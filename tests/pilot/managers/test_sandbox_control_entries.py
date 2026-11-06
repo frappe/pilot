@@ -105,3 +105,24 @@ def test_updating_common_site_config_keeps_the_file_a_sandboxed_unit_binds(tmp_p
 
     assert path.stat().st_ino == inode
     assert '"allow_cors": "*"' in path.read_text()
+
+
+def test_a_folder_an_app_declares_in_the_bench_is_created_and_kept(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    declared = bench.path / "flow-server" / "state"
+    (declared).mkdir(parents=True)
+    (declared / "daemon.pid").write_text("1")
+
+    create_sandbox_entries(bench, [str(bench.path / "flow-server"), str(bench.path / "raven-data")])
+
+    assert (bench.path / "raven-data").is_dir()
+    assert (declared / "daemon.pid").read_text() == "1"
+
+
+def test_a_path_outside_the_bench_is_not_created_by_pilot(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path / "bench")
+    outside = tmp_path / "elsewhere"
+
+    create_sandbox_entries(bench, [str(outside)])
+
+    assert not outside.exists()

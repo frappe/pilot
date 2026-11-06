@@ -134,6 +134,20 @@ def test_the_app_sandbox_table_is_read_through_the_app(tmp_path: Path) -> None:
 
     assert app.processes.get_sandbox_paths().write == ("/var/cache/mail",)
 
-    bad = _app(tmp_path / "bad", '[tool.pilot.sandbox]\nread_paths = ["relative"]\n')
+    bad = _app(tmp_path / "bad", '[tool.pilot.sandbox]\nread_paths = ["../outside"]\n')
     with pytest.raises(AppProcessError, match="App 'mail'"):
         bad.processes.get_sandbox_paths()
+
+
+def test_an_app_declares_a_folder_in_its_bench(tmp_path: Path) -> None:
+    app = _app(tmp_path, '[tool.pilot.sandbox]\nwrite_paths = ["flow-server"]\n')
+
+    assert app.processes.get_sandbox_paths().write == (str(app.bench.path.resolve() / "flow-server"),)
+
+
+def test_a_process_declares_a_folder_in_its_bench(tmp_path: Path) -> None:
+    app = _app(tmp_path, _SECTION + 'command = ["./stalwart"]\nwrite_paths = ["stalwart-data"]\n')
+
+    (definition,) = app.processes.get_definitions()
+
+    assert definition.write_paths == [str(app.bench.path.resolve() / "stalwart-data")]
