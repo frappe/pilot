@@ -17,15 +17,20 @@ class DevSetupCommand(Command):
 
     database: Annotated[
         Literal["sqlite", "mariadb", "postgres"] | None,
-        Arg(help="Database engine for a new bench (default: sqlite)."),
+        Arg(help="Database engine for a new bench (default: source site's engine, otherwise sqlite)."),
     ] = None
     frappe_branch: Annotated[
         str | None,
         Arg(help="Frappe branch for a new bench (default: the checked-out version-N branch, or develop)."),
     ] = None
+    from_site: Annotated[
+        str | None, Arg(help="Copy data from BENCH/SITE instead of creating an empty site.")
+    ] = None
 
     def run(self) -> None:
         from pilot.core.workspace import Workspace
 
-        Workspace.current().setup(self.database, self.frappe_branch, on_progress=self.report)
+        Workspace.current().setup(
+            self.database, self.frappe_branch, on_progress=self.report, from_site=self.from_site
+        )
         self.report("\nReady. Start the dev server with: pilot dev start")

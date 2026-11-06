@@ -148,6 +148,92 @@ def test_another_bench_linking_a_symlink_loop_does_not_stop_the_lookup(tmp_path:
     assert found.path == bench.path
 
 
+@pytest.mark.parametrize("engine", ["mariadb", "postgres"])
+def test_setup_clones_source_site_and_inherits_database(tmp_path, benches, engine):
+    source_bench = make_bench(benches / "source")
+    source_bench.create_directories()
+    source_bench.config.write(source_bench.path)
+    source_site = source_bench.site("source.localhost")
+    source_site.path.mkdir()
+    (source_site.path / "site_config.json").write_text(json.dumps({"db_type": engine}))
+    workspace = Workspace(make_repo(tmp_path / "gameplan"))
+
+    def clone(site, name, destination, password, on_progress):
+        assert site.path == source_site.path
+        assert password == "admin"
+        return fake_provision(destination, name, [], password)
+
+    with (
+        patch.object(Bench, "initialize", autospec=True, side_effect=fake_initialize),
+        patch.object(PythonEnvManager, "install_app"),
+        patch.object(Site, "clone", autospec=True, side_effect=clone) as copied,
+        patch.object(Site, "provision") as provision,
+        patch.object(Workspace, "sync") as sync,
+    ):
+        site = workspace.setup(from_site="source/source.localhost")
+        assert workspace.bench.config.db_type == engine
+        assert json.loads((site.path / "site_config.json").read_text())["developer_mode"] == 1
+        copied.assert_called_once()
+        provision.assert_not_called()
+        sync.assert_called_once()
+        with pytest.raises(BenchError, match="already exists"):
+            workspace.setup(from_site="source/source.localhost")
+        copied.assert_called_once()
+    assert is_applied(workspace.bench.path, "enroll_sites_in_scheduled_backups")
+
+
+@pytest.mark.parametrize(
+    "value,engine,database,message",
+    [
+        ("source", "mariadb", None, "BENCH/SITE"),
+        ("source/missing.localhost", "mariadb", None, "does not exist"),
+        ("source/source.localhost", "sqlite", None, "MariaDB and PostgreSQL"),
+        ("source/source.localhost", "mariadb", "postgres", "not 'postgres'"),
+    ],
+)
+def test_invalid_clone_source_does_not_create_workspace_bench(
+    tmp_path, benches, value, engine, database, message
+):
+    source_bench = make_bench(benches / "source")
+    source_bench.create_directories()
+    source_bench.config.write(source_bench.path)
+    site = source_bench.site("source.localhost")
+    site.path.mkdir()
+    (site.path / "site_config.json").write_text(json.dumps({"db_type": engine}))
+    workspace = Workspace(make_repo(tmp_path / "gameplan"))
+    with pytest.raises(BenchError, match=message):
+        workspace.setup(from_site=value, db_type=database)
+    assert not (benches / "dev-gameplan").exists()
+
+
+@pytest.mark.parametrize("paused", [False, True])
+def test_sync_installs_missing_app_without_enabling_paused_scheduler(tmp_path, benches, paused):
+    repo = make_repo(tmp_path / "gameplan")
+    bench = make_linked_bench(benches / "dev-gameplan", repo)
+    workspace = Workspace(repo)
+    workspace.bench = bench
+    site = workspace.site
+    site.path.mkdir()
+    flags = {"pause_scheduler": 1, "mute_emails": 1} if paused else {}
+    (site.path / "site_config.json").write_text(json.dumps(flags))
+
+    with (
+        patch.object(Bench, "install_requirements"),
+        patch.object(RedisManager, "running"),
+        patch.object(Site, "installed_apps", return_value=["frappe"]),
+        patch.object(Site, "install_app") as install,
+        patch.object(Site, "finish_provisioning") as finish,
+        patch.object(Site, "enable_scheduler") as enable,
+        patch.object(Site, "migrate"),
+        patch.object(PythonEnvManager, "build_assets_for_app"),
+    ):
+        workspace.sync(lambda message: None)
+    assert install.call_count == int(paused)
+    assert finish.call_count == int(not paused)
+    enable.assert_not_called()
+    assert json.loads((site.path / "site_config.json").read_text()) == flags
+
+
 def test_setup_creates_a_linked_bench_and_reruns_only_sync_it(tmp_path: Path, benches: Path) -> None:
     repo = make_repo(tmp_path / "gameplan")
     workspace = Workspace(repo)
