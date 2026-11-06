@@ -264,6 +264,8 @@ The user unit `pilot-mariadb-sizing.service` prepares MariaDB before its first s
 
 The buffer-pool editor also caps its maximum below the effective MariaDB `MemoryMax`, in addition to the host-based range. The setter reads the hard limit again under the database action lock before writing settings or changing the pool, so a queued resize cannot exceed a newly lowered limit.
 
+Pilot sets `large-pages = ON`, so MariaDB puts the buffer pool in huge pages. A Firecracker VM disk takes one 4 KiB memory segment per request. In huge pages, one 16 KiB InnoDB page is contiguous, so it needs one request, not four, and the disk IOPS limit goes further. `install.sh` sets `vm.nr_overcommit_hugepages` to the host RAM. The kernel takes huge pages from free memory only when MariaDB starts and returns them when it stops. When no huge pages are free, MariaDB logs a warning and uses normal pages. The kernel does not count huge pages in `MemoryMax`.
+
 Pilot also sets `aria-pagecache-buffer-size` to the size of the key buffer and counts it in the budget. MariaDB keeps its on-disk temporary tables in Aria, and its default 128 MB page cache put a 2 GB host's server above its `MemoryHigh` from the start. Above `MemoryHigh` without swap, the kernel can reclaim only the server's code pages, so MariaDB reads them from disk again and again and stops answering. The `size_mariadb_aria_pagecache` patch writes the value into an existing `my.cnf`; it applies when MariaDB next starts.
 
 On a host with less than 800 MB of memory, MariaDB gets a 64 MB buffer pool, an 8 MB key buffer, an 8 MB Aria page cache, and 20 connections, which is enough for one bench with one site. `MemoryHigh` then stays at least a quarter of `MemoryMax` below it.

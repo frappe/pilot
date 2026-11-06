@@ -536,6 +536,16 @@ set_nginx_worker_user() {
     fi
 }
 
+# MariaDB puts its buffer pool in huge pages when the kernel has them. Overcommit
+# pages come from free memory only while MariaDB holds them, so nothing is reserved.
+install_huge_pages() {
+    [ -d /etc/sysctl.d ] || return 0
+    echo "Allowing MariaDB to use huge pages..."
+    pages=$(awk '/^MemTotal:/ { total = $2 } /^Hugepagesize:/ { size = $2 } END { print int(total / size) }' /proc/meminfo)
+    echo "vm.nr_overcommit_hugepages = $pages" > /etc/sysctl.d/60-pilot-huge-pages.conf
+    sysctl -q -p /etc/sysctl.d/60-pilot-huge-pages.conf || echo "Could not set huge pages; MariaDB uses normal pages."
+}
+
 # logrotate ignores a config it does not own, so the bench user cannot write
 # one. This single glob covers every bench and monitor, present and future.
 install_logrotate() {
@@ -688,6 +698,7 @@ prepare_host() {
     install_nginx_include "$BENCH_USER"
     set_nginx_worker_user "$BENCH_USER"
     install_logrotate "$BENCH_USER"
+    install_huge_pages
     install_sudoers_grants "$BENCH_USER"
     install_build_swap_helper "$BENCH_USER"
 
