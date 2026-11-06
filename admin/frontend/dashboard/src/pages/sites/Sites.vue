@@ -14,11 +14,11 @@ import { useRoute, useRouter } from 'vue-router'
 import { apiErrorMessage, hasApiError } from '@/api/client'
 import { sitesApi } from '@/api/sites'
 import EmptyState from '@/components/common/EmptyState.vue'
+import Sparkline from '@/components/common/Sparkline.vue'
 import StickyToolbar from '@/components/common/StickyToolbar.vue'
 import Table from '@/components/common/Table.vue'
 import NewSiteDialog from '@/components/sites/NewSiteDialog.vue'
 import SiteSkeleton from '@/components/sites/SiteSkeleton.vue'
-import SiteSparkline from '@/components/sites/SiteSparkline.vue'
 import { useIsMobile } from '@/composables/common/useIsMobile'
 import { useSiteStorage } from '@/composables/sites/useSiteStorage'
 import { useSites } from '@/composables/sites/useSites'
@@ -310,7 +310,7 @@ onMounted(() => {
           </div>
 
           <div v-if="site.requests?.length" class="flex flex-col gap-3 mt-1">
-            <SiteSparkline :values="site.requests || []" class="w-full h-8" />
+            <Sparkline :values="site.requests || []" unit="request" class="w-full h-8" />
 
             <div class="flex justify-between text-ink-gray-5 text-xs tabular-nums">
               <span>
