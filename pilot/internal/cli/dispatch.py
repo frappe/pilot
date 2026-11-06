@@ -72,8 +72,7 @@ def _cwd_workspace_bench_root() -> Path | None:
     from pilot.core.workspace import Workspace
 
     workspace = Workspace.find()
-    bench = workspace.find_bench() if workspace else None
-    return bench.path if bench else None
+    return workspace.find_bench_path() if workspace else None
 
 
 def _implicit_bench_root(benches_dir: Path) -> Path:

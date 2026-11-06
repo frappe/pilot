@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum, auto
+from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 from pilot.exceptions import BenchError
@@ -20,6 +21,7 @@ class BenchMode(Enum):
     OPTIONAL = auto()
     AUTO = auto()
     EXPLICIT = auto()
+    PATH = auto()  # Resolve the bench directory without loading its configuration.
 
 
 @dataclass(frozen=True)
@@ -41,9 +43,9 @@ class Command:
     group: ClassVar[str | None] = None
     bench_mode: ClassVar[BenchMode] = BenchMode.AUTO
     supports_all_benches: ClassVar[bool] = False
-    supports_bench_selection: ClassVar[bool] = True
 
     bench: Bench | None = None
+    bench_path: Path | None = field(default=None, kw_only=True)
 
     def run(self) -> None:
         raise NotImplementedError

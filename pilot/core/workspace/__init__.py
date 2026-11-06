@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 import tomllib
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -99,16 +99,30 @@ class Workspace:
         missing or stale. A broken bench.toml fails the lookup only when it is recorded."""
         from pilot.core.bench import Bench
 
+        for path in self.linked_bench_paths:
+            try:
+                return Bench(path)
+            except ConfigError:
+                if path.name == self.recorded_bench_name:
+                    raise
+        return None
+
+    def find_bench_path(self) -> Path | None:
+        """Locate the linked bench directory without constructing or validating a bench."""
+        return next(self.linked_bench_paths, None)
+
+    @property
+    def linked_bench_paths(self) -> Iterator[Path]:
         name = self.recorded_bench_name
         if name and self.is_linked_by(benches_dir() / name):
-            return Bench(benches_dir() / name)
+            yield benches_dir() / name
+            return
         for toml_path in sorted(benches_dir().glob("*/bench.toml")):
             try:
                 if self.is_linked_by(toml_path.parent):
-                    return Bench(toml_path.parent)
+                    yield toml_path.parent
             except ConfigError:
                 continue
-        return None
 
     def is_linked_by(self, bench_root: Path) -> bool:
         from pilot.config import BenchConfig

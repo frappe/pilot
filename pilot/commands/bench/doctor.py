@@ -7,26 +7,22 @@ from typing import Annotated, ClassVar
 
 from pilot.commands import Arg, BenchMode, Command
 from pilot.core.bench.diagnostics import BenchDiagnostics
+from pilot.exceptions import BenchError
 
 
 @dataclass(kw_only=True)
 class DoctorCommand(Command):
     name: ClassVar[str] = "doctor"
     help: ClassVar[str] = "Check local bench files and configuration without changing them."
-    bench_mode: ClassVar[BenchMode] = BenchMode.NONE
-    supports_bench_selection: ClassVar[bool] = False
+    bench_mode: ClassVar[BenchMode] = BenchMode.PATH
 
     path: Annotated[Path | None, Arg(help="Bench directory, including one with broken configuration.")] = None
     json: Annotated[bool, Arg(help="Print a versioned JSON report.")] = False
 
     def run(self) -> None:
-        path = self.path
+        path = self.path or self.bench_path
         if path is None:
-            current = Path.cwd()
-            path = next(
-                (parent for parent in (current, *current.parents) if (parent / "bench.toml").exists()),
-                current,
-            )
+            raise BenchError("No bench selected. Pass --path or run doctor through the CLI.")
         result = BenchDiagnostics(path).run()
         if self.json:
             self.report(json.dumps(result.to_dict(), indent=2))

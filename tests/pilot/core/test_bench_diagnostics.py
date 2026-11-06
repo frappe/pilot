@@ -9,6 +9,8 @@ import pytest
 
 from pilot.config import AppConfig, BenchConfig
 from pilot.core.bench.diagnostics import BenchDiagnostics
+from pilot.internal.cli import CliContext
+from pilot.internal.cli.dispatch import run_native
 
 REPO = Path(__file__).resolve().parents[3]
 
@@ -41,7 +43,7 @@ def bench_path(tmp_path: Path) -> Path:
     root.mkdir()
     config = BenchConfig.from_flat("demo", {"db_type": "sqlite"})
     config.write(root)
-    venv.EnvBuilder(with_pip=False).create(root / "env")
+    venv.EnvBuilder(with_pip=False, symlinks=True).create(root / "env")
     create_checkout(root / "apps" / "frappe", "frappe")
     sites = root / "sites"
     sites.mkdir()
@@ -194,18 +196,103 @@ def test_invalid_site_does_not_prevent_inspecting_the_next_site(bench_path: Path
     assert [check.status for check in site_checks] == ["error", "ok"]
 
 
-def test_doctor_does_not_silently_ignore_global_bench_selection(bench_path: Path) -> None:
+def test_doctor_rejects_conflicting_path_and_bench_selection(bench_path: Path) -> None:
     result = run_doctor(bench_path, "-b", "other")
 
     assert result.returncode == 1
-    assert "uses --path instead of -b" in result.stderr
+    assert "Choose either --path or -b" in result.stderr
+
+
+@pytest.fixture
+def installation(bench_path: Path, tmp_path: Path) -> tuple[Path, Path]:
+    root = tmp_path / "installation"
+    bench = root / "benches" / "demo"
+    bench.parent.mkdir(parents=True)
+    bench_path.rename(bench)
+    return root, bench
+
+
+def test_doctor_discovers_single_installed_bench(installation, tmp_path, monkeypatch, capsys):
+    root, bench = installation
+    monkeypatch.chdir(tmp_path)
+
+    run_native(CliContext(installation_root=root), ["doctor", "--json"])
+
+    assert json.loads(capsys.readouterr().out)["path"] == str(bench)
+
+
+def test_doctor_selects_named_bench_among_multiple(installation, tmp_path, monkeypatch, capsys):
+    root, bench = installation
+    other = root / "benches" / "other"
+    other.mkdir()
+    (other / "bench.toml").write_text("malformed = [")
+    monkeypatch.chdir(tmp_path)
+
+    run_native(CliContext(installation_root=root, bench_name="demo"), ["doctor", "--json"])
+
+    assert json.loads(capsys.readouterr().out)["path"] == str(bench)
+
+
+def test_doctor_rejects_ambiguous_installed_benches(installation, tmp_path, monkeypatch, capsys):
+    root, _ = installation
+    other = root / "benches" / "other"
+    other.mkdir()
+    (other / "bench.toml").write_text("malformed = [")
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(SystemExit) as error:
+        run_native(CliContext(installation_root=root), ["doctor", "--json"])
+
+    assert error.value.code == 1
+    assert "Multiple benches found" in capsys.readouterr().err
+
+
+def test_doctor_discovers_broken_bench_without_parsing_it_first(installation, tmp_path, monkeypatch, capsys):
+    root, bench = installation
+    (bench / "bench.toml").write_text("malformed = [")
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(SystemExit) as error:
+        run_native(CliContext(installation_root=root), ["doctor", "--json"])
+
+    assert error.value.code == 1
+    report = json.loads(capsys.readouterr().out)
+    assert report["path"] == str(bench)
+    assert any(check["code"] == "bench_config" and check["status"] == "error" for check in report["checks"])
+
+
+@pytest.mark.parametrize("invalid_config", [False, True])
+def test_doctor_discovers_bench_from_linked_workspace(
+    installation, tmp_path, monkeypatch, capsys, invalid_config
+):
+    root, bench = installation
+    source = tmp_path / "my_app"
+    create_checkout(source, "my_app")
+    config = BenchConfig.read(bench)
+    config.apps.append(AppConfig(name="my_app", repo="", branch="", path=str(source)))
+    config.write(bench)
+    (bench / "apps" / "my_app").symlink_to(source, target_is_directory=True)
+    (bench / "sites" / "apps.txt").write_text("frappe\nmy_app\n")
+    if invalid_config:
+        toml = bench / "bench.toml"
+        toml.write_text(toml.read_text().replace('name = "demo"', 'name = "invalid name"'))
+    monkeypatch.setattr("pilot.core.workspace.benches_dir", lambda: root / "benches")
+    monkeypatch.chdir(source)
+
+    if invalid_config:
+        with pytest.raises(SystemExit) as error:
+            run_native(CliContext(installation_root=root), ["doctor", "--json"])
+        assert error.value.code == 1
+    else:
+        run_native(CliContext(installation_root=root), ["doctor", "--json"])
+
+    report = json.loads(capsys.readouterr().out)
+    assert report["path"] == str(bench)
+    assert report["ok"] is not invalid_config
 
 
 @pytest.mark.parametrize("json_output", [True, False])
 def test_slow_doctor_keeps_json_parseable_and_human_timing(bench_path, monkeypatch, capsys, json_output):
-    from pilot.internal.cli import CliContext
-    from pilot.internal.cli.dispatch import run_native
-
     ticks = iter([100.0, 103.0])
     monkeypatch.setattr("time.monotonic", lambda: next(ticks))
     arguments = ["doctor", "--path", str(bench_path)]

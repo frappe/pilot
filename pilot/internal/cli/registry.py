@@ -10,7 +10,7 @@ import pilot
 from pilot.commands import BenchMode, Command
 from pilot.exceptions import BenchError
 from pilot.internal.cli.command import add_command_arguments, command_from_args
-from pilot.internal.cli.dispatch import CliContext, load_bench
+from pilot.internal.cli.dispatch import CliContext, find_bench_root, load_bench
 
 # Help text for command groups (e.g. `pilot setup ...`).
 GROUP_HELP = {
@@ -90,14 +90,18 @@ def dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser, context:
         printer = getattr(args, "_help_printer", None)
         (printer or parser.print_help)()
         return
-    if context.bench_name and not cls.supports_bench_selection:
-        raise BenchError(f"'{cls.name}' uses --path instead of -b. Pass the bench directory with --path.")
-    command_from_args(cls, args, _resolve_bench(cls, context)).run()
+    command = command_from_args(cls, args, _resolve_bench(cls, context))
+    if cls.bench_mode is BenchMode.PATH:
+        path = getattr(args, "path", None)
+        if path is not None and context.bench_name:
+            raise BenchError("Choose either --path or -b, not both.")
+        command.bench_path = path if path is not None else find_bench_root(context)
+    command.run()
 
 
 def _resolve_bench(cls: type[Command], context: CliContext):
     mode = cls.bench_mode
-    if mode is BenchMode.NONE:
+    if mode in (BenchMode.NONE, BenchMode.PATH):
         return None
     if mode is BenchMode.OPTIONAL:
         try:

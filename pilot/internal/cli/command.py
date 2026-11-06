@@ -10,7 +10,7 @@ from pilot.internal.cli.fields import add_argument, arg_fields, value_from_names
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
-_EXCLUDED_FIELDS = frozenset({"bench", "skip_confirm"})
+_EXCLUDED_FIELDS = frozenset({"bench", "bench_path", "skip_confirm"})
 _HINT_NAMESPACE = {"Bench": object}
 
 
