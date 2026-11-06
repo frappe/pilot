@@ -90,6 +90,8 @@ def dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser, context:
         printer = getattr(args, "_help_printer", None)
         (printer or parser.print_help)()
         return
+    if context.bench_name and not cls.supports_bench_selection:
+        raise BenchError(f"'{cls.name}' uses --path instead of -b. Pass the bench directory with --path.")
     command_from_args(cls, args, _resolve_bench(cls, context)).run()
 
 

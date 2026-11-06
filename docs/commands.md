@@ -11,6 +11,7 @@ Use `pilot --help` and `pilot <command> --help` for exact flags. `pilot --versio
 - An interrupted first initialization stays in setup mode. Retry from the wizard or run `pilot init`. Failed initialization preserves directories that existed before the attempt.
 - `pilot init`: initialize a bench from `bench.toml`. This is what the setup wizard runs. `--no-dev` skips apps' `dev` extras. `--skip-frontend` is for test jobs that never serve web pages: it skips building assets and only downloads prebuilt ones when published. Refused on production benches. `--commit <sha>` checks out the framework app at that commit and keeps it on the branch that `bench.toml` names, so updates and prebuilt assets still find the branch. When an app's `dev` extra does not install, for example because its dependencies conflict, Pilot warns and installs the app without it. Init enables Pilot's MariaDB or PostgreSQL user unit at boot on every run, so a retry after a failed run is safe. It also builds the framework app's assets, or downloads its prebuilt archive, so `get-app` can come before the first `new-site`.
 - `pilot ls`: list benches in the fixed benches directory.
+- `pilot doctor --path /path/to/bench`: inspect local configuration, initialization markers, the Python executable, app checkouts and links, app registration, and site configuration. Omit `--path` inside a bench (including a subdirectory). It works even when `bench.toml` is broken; use `--path` instead of `-b`. Findings include repair guidance. `--json` returns a report with `schema_version: 1`, `path`, `ok`, and ordered `checks` containing `code`, `status`, `path`, `message`, and `fix`. Exit status is 1 for errors and 0 when these local checks pass. Inspection changes no files and never imports app code, installs dependencies, contacts the network, or checks running services/database connectivity. Configuration values and credentials are omitted from reports.
 - `pilot drop --bench NAME`: remove a bench. The bench must have no sites. A development bench must be stopped first (`pilot -b NAME stop`), including a setup wizard that is still open.
 
 To create and initialize a bench tracking Frappe `develop`:
@@ -21,6 +22,8 @@ pilot -b frappe-bench init
 ```
 
 Bench commands with `--bench NAME` can run from outside the bench directory. `Bench("name")` resolves the same fixed benches directory in Python code.
+
+To try the doctor locally without installing Frappe or contacting any services, run `uv run python scripts/demo_doctor.py` from a source checkout. It creates a disposable fixture with a real virtualenv and Git checkout, demonstrates clean, broken, and repaired configuration, checks the JSON output, and prints the temporary directory for further inspection.
 
 ## Dev Commands
 

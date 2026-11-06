@@ -216,7 +216,8 @@ def run_native(context: CliContext, remaining: list[str]) -> None:
             registry.dispatch_all(args, parser, context)
         else:
             registry.dispatch(args, parser, context)
-    report_elapsed(time.monotonic() - started)
+    if not getattr(args, "json", False):
+        report_elapsed(time.monotonic() - started)
 
 
 def report_elapsed(elapsed: float) -> None:

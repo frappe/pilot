@@ -41,6 +41,7 @@ class Command:
     group: ClassVar[str | None] = None
     bench_mode: ClassVar[BenchMode] = BenchMode.AUTO
     supports_all_benches: ClassVar[bool] = False
+    supports_bench_selection: ClassVar[bool] = True
 
     bench: Bench | None = None
 
