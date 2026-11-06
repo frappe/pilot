@@ -164,6 +164,7 @@ def test_supervisor_shutdown_waits_for_the_daemon_to_exit(bench) -> None:
     manager = SupervisorProcessManager(bench)
     alive = iter([True, True, True, False])
     with (
+        patch.object(supervisor_module.CronManager, "remove_schedule"),
         patch.object(manager, "is_alive", side_effect=lambda: next(alive)),
         patch.object(supervisor_module, "run_command") as run,
         patch.object(supervisor_module.time, "sleep") as sleep,
