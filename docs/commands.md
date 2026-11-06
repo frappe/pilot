@@ -14,7 +14,7 @@ See [Bench and site cloning](cloning.md) for independent environments and cross-
 - `pilot new NAME`: create a new bench. `--frappe-branch BRANCH` selects the Frappe branch saved in `bench.toml` (default: `version-16`). Sets the Admin password from `--admin-password`, else prompts on a terminal, else generates and prints one.
 - `pilot start` on an uninitialized bench serves the setup wizard and prints a one-hour `?sid=` sign-in link for it.
 - An interrupted first initialization stays in setup mode. Retry from the wizard or run `pilot init`. Failed initialization preserves directories that existed before the attempt.
-- `pilot init`: initialize a bench from `bench.toml`. This is what the setup wizard runs. `--no-dev` skips apps' `dev` extras. `--commit <sha>` checks out the framework app at that commit and keeps it on the branch that `bench.toml` names, so updates and prebuilt assets still find the branch. When an app's `dev` extra does not install, for example because its dependencies conflict, Pilot warns and installs the app without it. Init enables Pilot's MariaDB or PostgreSQL user unit at boot on every run, so a retry after a failed run is safe. It also builds the framework app's assets, or downloads its prebuilt archive, so `get-app` can come before the first `new-site`.
+- `pilot init`: initialize a bench from `bench.toml`. This is what the setup wizard runs. `--no-dev` skips apps' `dev` extras. `--skip-frontend` is for test jobs that never serve web pages: it skips building assets and only downloads prebuilt ones when published. Refused on production benches. `--commit <sha>` checks out the framework app at that commit and keeps it on the branch that `bench.toml` names, so updates and prebuilt assets still find the branch. When an app's `dev` extra does not install, for example because its dependencies conflict, Pilot warns and installs the app without it. Init enables Pilot's MariaDB or PostgreSQL user unit at boot on every run, so a retry after a failed run is safe. It also builds the framework app's assets, or downloads its prebuilt archive, so `get-app` can come before the first `new-site`.
 - `pilot ls`: list benches in the fixed benches directory.
 - `pilot drop --bench NAME`: remove a bench. The bench must have no sites. A development bench must be stopped first (`pilot -b NAME stop`), including a setup wizard that is still open.
 
@@ -56,6 +56,7 @@ For public development URLs, see [Development sites behind a proxy](development-
 - `pilot new-app APP`: scaffold a new Frappe app under `apps/` and install it. Prompts for title, description, publisher, email, license, GitHub workflow, and branch; pass any of `--title/--description/--publisher/--email/--license/--branch/--github-workflow` to skip prompts (branch defaults to `develop`).
 - `pilot get-app REPO_OR_NAME`: clone and install an app into the bench. `--skip-assets` skips asset setup for the app and its missing dependencies. `--commit SHA` installs that commit and keeps `--branch` checked out, so Pilot can download the [prebuilt assets](prebuilt-assets.md) of that branch. Example: `pilot get-app https://github.com/frappe/crm --branch main --commit <sha>`.
 - `pilot list-apps`: list apps present in the bench.
+- `pilot git APP ARGS...`: run git in an app's checkout with the bench's stored Git credential, for scripts that fetch private repos. The token stays in the environment, out of argv and `.git/config`. Exits with git's exit code. Example: `pilot -b prod git frappe fetch origin`. From Python, use `bench.app("frappe").run_git("fetch", "origin")`.
 - `pilot install-app SITE APP [APP ...]`: install apps on a site. An app the site only has disabled is enabled instead, bringing back anything it requires first.
 - `pilot uninstall-app SITE APP [APP ...]`: uninstall apps from a site, dropping their data. An app that no site uses afterwards is also removed from the bench; `--keep-on-bench` keeps it. Use `pilot remove-app` to remove an app from the bench.
 - `pilot remove-app APP`: remove an app from the bench when no site needs it.
@@ -70,8 +71,8 @@ Disabling needs a Frappe that supports it and is exposed through the Admin UI on
 
 ## Site Commands
 
-- `pilot new-site SITE`: create a site and add it to bench config.
-- `pilot drop-site SITE [--no-backup] [--force] [--archived-sites-path PATH]`: drop a site. Frappe takes a backup first unless you pass `--no-backup`. Pilot also removes the site from `bench.toml`, nginx, its domains and the backup schedule. `pilot --site SITE drop-site SITE` and `pilot frappe drop-site SITE` run the same drop and accept Frappe's options. Pilot always uses the bench's own database credentials, so it does not use the root user and password options.
+- `pilot new-site SITE`: create a site and add it to bench config. `--skip-assets` is for test jobs that never serve web pages: it skips building missing app assets. Refused on production benches.
+- `pilot -b NAME drop-site SITE [--no-backup] [--force] [--archived-sites-path PATH]`: drop a site. It asks for confirmation unless you pass `pilot --yes`, needs `-b` or a bench working directory, and refuses while a task uses the site. Frappe takes a backup first unless you pass `--no-backup`. Pilot also removes the site from `bench.toml`, nginx, its domains and the backup schedule. `pilot --site SITE drop-site SITE` and `pilot frappe drop-site SITE` run the same drop and accept Frappe's options. Pilot always uses the bench's own database credentials, so it does not use the root user and password options.
 - `pilot rename-site OLD NEW [--release-old-hostname]`: rename a site, without dropping a request.
 - `pilot list-site-apps SITE`: list the apps in use on a site, disabled ones excluded. An app the site lists but the bench does not have gets a warning on stderr; `pilot uninstall-app SITE APP` then removes only the site's listing.
 - `pilot set-admin-password`: set the Admin panel password in `bench.toml`; prompts when `--password` is omitted. The password must meet the same rules the dashboard enforces.
@@ -131,6 +132,7 @@ These commands control the task worker, not individual Frappe workers.
 - `pilot admin build`: rebuild Admin frontend assets from source.
 - `pilot admin api-reference`: write the [Admin API reference](admin-api-reference.md) from the routes.
 - `pilot admin upgrade`: update Pilot to the latest version, run pending upgrade patches (pre_update before, post_update after), and restart the admin service.
+- `pilot admin auto-update on|off|status`: turn daily automatic Pilot updates on or off for the host, or show the setting (see [Configuration](configuration.md#automatic-updates)).
 - `pilot admin issue-site-token`: issue a scoped site-to-bench API token.
 - `pilot admin revoke-totp --device-name NAME`: revoke a device's TOTP credential, for a lost authenticator.
 - `pilot admin run-patches [--phase pre_update|post_update|all]`: run pending Pilot upgrade patches by hand (see [Configuration](configuration.md#common-config)); `pilot admin upgrade` already runs both phases automatically.

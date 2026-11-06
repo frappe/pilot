@@ -126,8 +126,8 @@ def register_editor_frontend(app: Flask) -> None:
 def register_in_app_embed_frontend(app: Flask) -> None:
     """Serve the Cloud Settings UI: Desk's IIFE and the SDK's ES runtime under `esm/`.
 
-    A site loads both from `{cloud_settings_embed_url}/embed/cloud-settings/`, which is
-    another origin, so the ES runtime and its chunks need CORS. This must be registered
+    Development and legacy sites load these across origins, so they need CORS.
+    Production nginx also serves them under the site's `/_pilot/` prefix. Register
     before the dashboard SPA catch-all, which would otherwise answer with index.html.
     """
     in_app_embed_dist = STATIC_DIR / "in-app-embed" / "cloud-settings"

@@ -1,6 +1,7 @@
 import type { CloudContext, CloudSettingsOptions } from '@frappe/cloud-sdk'
 import { defineCustomElement, h, nextTick, type PropType } from 'vue'
 import CloudSettings from './CloudSettings.vue'
+import CloudSettingsToasts from './CloudSettingsToasts.vue'
 
 const TAG = 'fc-cloud-settings'
 const CloudSettingsElement = defineCustomElement({
@@ -12,6 +13,7 @@ const CloudSettingsElement = defineCustomElement({
   emits: ['close'],
   styles: ['__CLOUD_SETTINGS_STYLES__'],
   shadowRoot: true,
+  inheritAttrs: false,
   setup:
     (props, { emit }) =>
     () =>
@@ -24,6 +26,16 @@ const CloudSettingsElement = defineCustomElement({
 })
 
 if (!customElements.get(TAG)) customElements.define(TAG, CloudSettingsElement)
+
+// Toasts live outside the dialog, so a task that ends after it closes can still report.
+const TOASTS_TAG = 'fc-cloud-settings-toasts'
+const ToastsElement = defineCustomElement({
+  styles: ['__CLOUD_SETTINGS_STYLES__'],
+  shadowRoot: true,
+  setup: () => () => h(CloudSettingsToasts),
+})
+
+if (!customElements.get(TOASTS_TAG)) customElements.define(TOASTS_TAG, ToastsElement)
 
 if (typeof CSS !== 'undefined' && 'registerProperty' in CSS) {
   try {
@@ -55,25 +67,70 @@ export const closeCloudSettings = (): void => {
   host?.dispatchEvent(new CustomEvent('close'))
 }
 
+// Accessibility fixes for the embedded panel.
+const trackInline = (element: HTMLElement): (() => void) => {
+  const root = element.shadowRoot
+  if (!root) throw new Error('Cloud Settings shadow root is unavailable')
+  const layers = () => [...root.querySelectorAll<HTMLElement>('[data-dismissable-layer]')]
+  const controller = new AbortController()
+  const { signal } = controller
+
+  element.setAttribute('inline', '')
+  element.tabIndex = 0
+  element.addEventListener(
+    'keydown',
+    (event) => {
+      if (event.key === 'Tab' && !event.shiftKey && !root.activeElement) event.stopPropagation()
+    },
+    { signal },
+  )
+  document.addEventListener(
+    'pointerdown',
+    (event) => {
+      const open = layers()
+      if (open.length && !open.some((layer) => event.composedPath().includes(layer))) {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      }
+    },
+    { capture: true, signal },
+  )
+
+  const observer = new MutationObserver(() => {
+    const open = layers()
+    element.toggleAttribute('overlay-open', open.length > 0)
+    element.style.pointerEvents = open.some((layer) => layer.style.pointerEvents) ? 'none' : ''
+  })
+  observer.observe(root, { childList: true, subtree: true })
+  signal.addEventListener('abort', () => observer.disconnect())
+  return () => controller.abort()
+}
+
 export const mountCloudSettings = (
   context: CloudContext,
   options: CloudSettingsOptions = {},
 ): void => {
   loadFontIfMissing()
+  if (!document.querySelector(TOASTS_TAG)) document.body.append(document.createElement(TOASTS_TAG))
 
-  const existing = document.querySelector(TAG)
+  const existing = host ?? document.querySelector(TAG)
   existing?.dispatchEvent(new CustomEvent('close'))
 
-  const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : undefined
+  const trigger =
+    !options.target && document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : undefined
   const element = document.createElement(TAG) as InstanceType<typeof CloudSettingsElement>
   element.context = context
   element.options = options
   element.open = true
   host = element
 
+  const stopInline = options.target ? trackInline(element) : undefined
+
   element.addEventListener(
     'close',
     () => {
+      stopInline?.()
       element.open = false
       element.remove()
       if (host === element) host = undefined
@@ -85,5 +142,5 @@ export const mountCloudSettings = (
     { once: true },
   )
 
-  document.body.append(element)
+  ;(options.target ?? document.body).append(element)
 }

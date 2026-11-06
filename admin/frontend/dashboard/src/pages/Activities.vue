@@ -1,12 +1,19 @@
 <script setup lang="ts">
-import { Button, Combobox, Dialog, Dropdown, ErrorMessage, Tooltip } from 'frappe-ui'
+import {
+  Button,
+  Combobox,
+  DateTimePicker,
+  Dialog,
+  Dropdown,
+  ErrorMessage,
+  Tooltip,
+} from 'frappe-ui'
 import { computed, onMounted, ref, watch } from 'vue'
 import { type RouteLocationRaw, useRoute, useRouter } from 'vue-router'
-
+import { auditApi } from '@/api/audit'
 import ListSkeleton from '@/components/common/ListSkeleton.vue'
 import Table from '@/components/common/Table.vue'
-
-import { useActivities } from '@/composables/activities/useActivities'
+import { activityFilterParams, useActivities } from '@/composables/activities/useActivities'
 import { useSites } from '@/composables/sites/useSites'
 import type { AuditEntry } from '@/types/audit'
 import { commandLabel, fmtDateTime } from '@/utils/taskFormat'
@@ -180,6 +187,12 @@ const activityTable = computed(() => ({
 }))
 
 const typeFilter = ref('')
+const sinceFilter = ref('')
+const untilFilter = ref('')
+
+// DateTimePicker emits local 'YYYY-MM-DD HH:mm:ss'; the API wants an ISO time with an offset.
+const toIsoTime = (value: string) =>
+  value ? new Date(value.replace(' ', 'T')).toISOString() : undefined
 
 const siteFilter = computed(
   () => props.siteName || (typeof route.query.site === 'string' ? route.query.site : ''),
@@ -192,9 +205,13 @@ const siteFilterModel = computed({
 const currentFilters = computed(() => ({
   type: typeFilter.value || undefined,
   site: siteFilter.value || undefined,
+  since: toIsoTime(sinceFilter.value),
+  until: toIsoTime(untilFilter.value),
 }))
 
 const reload = () => load(currentFilters.value)
+
+const exportUrl = computed(() => auditApi.exportUrl(activityFilterParams(currentFilters.value)))
 
 watch(siteFilter, reload)
 onMounted(reload)
@@ -208,7 +225,7 @@ onMounted(() => {
     <div class="flex flex-wrap items-center gap-3 shrink-0">
       <Combobox
         v-model="typeFilter"
-        class="w-48"
+        class="w-40"
         :options="activityTypeOptions"
         @update:modelValue="reload"
       />
@@ -219,9 +236,28 @@ onMounted(() => {
         :options="siteOptions"
         placeholder="All sites"
       />
-      <Button :loading icon-left="lucide-refresh-cw" class="md:ml-auto" @click="reload">
-        Refresh
-      </Button>
+      <DateTimePicker
+        v-model="sinceFilter"
+        class="w-46"
+        placeholder="From"
+        clearable
+        @update:modelValue="reload"
+      />
+      <DateTimePicker
+        v-model="untilFilter"
+        class="w-46"
+        placeholder="To"
+        clearable
+        @update:modelValue="reload"
+      />
+      <Button
+        :loading
+        icon="lucide-refresh-cw"
+        tooltip="Refresh"
+        class="md:ml-auto"
+        @click="reload"
+      />
+      <Button :href="exportUrl" icon="lucide-download" tooltip="Download" />
     </div>
 
     <ListSkeleton v-if="loading" class="first:mt-4" />

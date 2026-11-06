@@ -13,6 +13,7 @@ from admin.backend.api.v1.settings import ConfigPatcher, build_settings_response
 from pilot.config import BenchConfig
 from pilot.config.common import CommonConfig
 from pilot.config.mail import MailConfig
+from pilot.config.webhook import WEBHOOK_EVENTS, WebhookEndpoint
 
 
 def _config() -> BenchConfig:
@@ -80,22 +81,30 @@ def test_settings_response_exposes_limits() -> None:
 
     assert build_settings_response(config)["resource_limits"] == {
         "cpu_usage_limit": 85,
-        "memory_usage_limit": 0,
-        "disk_space_limit": 0,
+        "memory_usage_limit": 90,
+        "disk_space_limit": 90,
         "site_uptime": True,
-        "webhook_endpoints": [],
         "email_recipients": [],
     }
 
 
+def test_settings_response_lists_webhooks_and_their_events_at_the_top_level() -> None:
+    response = build_settings_response(_config())
+
+    assert response["webhook_endpoints"] == []
+    assert response["webhook_events"] == [{"value": name, "label": label} for name, label in WEBHOOK_EVENTS.items()]
+
+
 def test_settings_response_never_returns_webhook_tokens() -> None:
     config = _config()
-    config.resource_limits.webhook_endpoints = {"https://alerts.example.com/pilot": "tok-123"}
+    config.webhook_endpoints = [
+        WebhookEndpoint("https://alerts.example.com/pilot", "tok-123", ["site_down"])
+    ]
 
-    response = build_settings_response(config)["resource_limits"]
+    response = build_settings_response(config)
 
     assert response["webhook_endpoints"] == [
-        {"url": "https://alerts.example.com/pilot", "token_set": True}
+        {"url": "https://alerts.example.com/pilot", "token_set": True, "events": ["site_down"]}
     ]
     assert "tok-123" not in str(response)
 
@@ -123,34 +132,69 @@ def test_patch_persists_webhooks_with_every_limit_off(tmp_path: Path) -> None:
     response = client.patch(
         "/api/v1/settings",
         json={
-            "resource_limits": {
-                "site_uptime": False,
-                "webhook_endpoints": [
-                    {"url": "https://alerts.example.com/pilot", "token": "tok-123"}
-                ],
-            }
+            "resource_limits": {"site_uptime": False},
+            "webhook_endpoints": [{"url": "https://alerts.example.com/pilot", "token": "tok-123"}],
         },
     )
 
     assert response.status_code == 200
-    limits = CommonConfig.read(benches_root).resource_limits
-    assert limits.webhook_endpoints == {"https://alerts.example.com/pilot": "tok-123"}
-    assert limits.site_uptime is False
+    common = CommonConfig.read(benches_root)
+    assert common.webhook_endpoints == [WebhookEndpoint("https://alerts.example.com/pilot", "tok-123")]
+    assert common.resource_limits.site_uptime is False
 
 
 def test_patch_keeps_stored_token_when_blank(tmp_path: Path) -> None:
     benches_root = tmp_path / "benches"
     client = _client(benches_root / "current")
     endpoint = {"url": "https://alerts.example.com/pilot", "token": "tok-123"}
-    client.patch("/api/v1/settings", json={"resource_limits": {"webhook_endpoints": [endpoint]}})
+    client.patch("/api/v1/settings", json={"webhook_endpoints": [endpoint]})
 
-    client.patch(
-        "/api/v1/settings",
-        json={"resource_limits": {"webhook_endpoints": [{"url": endpoint["url"], "token": ""}]}},
-    )
+    client.patch("/api/v1/settings", json={"webhook_endpoints": [{"url": endpoint["url"], "token": ""}]})
 
-    stored = CommonConfig.read(benches_root).resource_limits.webhook_endpoints
-    assert stored == {"https://alerts.example.com/pilot": "tok-123"}
+    stored = CommonConfig.read(benches_root).webhook_endpoints
+    assert stored == [WebhookEndpoint("https://alerts.example.com/pilot", "tok-123")]
+
+
+def test_patch_keeps_the_token_when_the_url_is_edited() -> None:
+    config = _config()
+    config.webhook_endpoints = [WebhookEndpoint("https://old.example.com", "tok-123")]
+    entry = {"url": "https://new.example.com", "original_url": "https://old.example.com", "token": ""}
+
+    assert ConfigPatcher(config, {"webhook_endpoints": [entry]}).apply() is None
+
+    assert config.webhook_endpoints == [WebhookEndpoint("https://new.example.com", "tok-123")]
+
+
+def test_patch_stores_the_chosen_events_and_allows_no_token(tmp_path: Path) -> None:
+    benches_root = tmp_path / "benches"
+    client = _client(benches_root / "current")
+    endpoint = {"url": "https://hooks.example.com", "events": ["site_down", "task_failed"]}
+
+    response = client.patch("/api/v1/settings", json={"webhook_endpoints": [endpoint]})
+
+    assert response.status_code == 200
+    stored = CommonConfig.read(benches_root).webhook_endpoints
+    assert stored == [WebhookEndpoint("https://hooks.example.com", "", ["site_down", "task_failed"])]
+    returned = client.get("/api/v1/settings").get_json()["webhook_endpoints"]
+    assert returned == [
+        {"url": "https://hooks.example.com", "token_set": False, "events": ["site_down", "task_failed"]}
+    ]
+
+
+def test_patch_rejects_an_unknown_event() -> None:
+    entry = {"url": "https://hooks.example.com", "events": ["push"]}
+
+    error = ConfigPatcher(_config(), {"webhook_endpoints": [entry]}).apply()
+
+    assert error == "Unknown webhook events for https://hooks.example.com: push."
+
+
+def test_patch_rejects_a_repeated_url() -> None:
+    entries = [{"url": "https://hooks.example.com"}, {"url": "https://hooks.example.com"}]
+
+    error = ConfigPatcher(_config(), {"webhook_endpoints": entries}).apply()
+
+    assert error == "Each webhook endpoint needs its own URL."
 
 
 def test_patch_persists_mail_settings_to_common_site_config(tmp_path: Path) -> None:
@@ -336,5 +380,5 @@ def test_patch_rejects_invalid_limit_without_saving(tmp_path: Path) -> None:
     response = client.patch("/api/v1/settings", json={"resource_limits": {"memory_usage_limit": 120}})
 
     assert response.status_code == 422
-    assert CommonConfig.read(benches_root).resource_limits.memory_usage_limit == 0
+    assert CommonConfig.read(benches_root).resource_limits.memory_usage_limit == 90
     assert CommonConfig.read(benches_root).resource_limits.cpu_usage_limit == 85

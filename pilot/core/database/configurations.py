@@ -7,6 +7,7 @@ from pilot.core.database.mariadb_variables import (
     MARIADB_VARIABLE_SPECS,
     MariaDBValue,
     MariaDBVariableSpec,
+    MariaDBVariableValidator,
     VariableEditAction,
     VariableType,
     mariadb_variable_spec,
@@ -152,7 +153,7 @@ class DatabaseConfigurations:
             raise DatabaseError(MEMORY_LIMIT_READ_ONLY_REASON)
         spec = mariadb_variable_spec(name)
         if not spec.editable:
-            spec.validate_input(value)
+            MariaDBVariableValidator(spec).validate_input(value)
         edit_reason = self._edit_reason(require_reachable=True)
         if edit_reason:
             raise DatabaseError(edit_reason)
@@ -160,13 +161,13 @@ class DatabaseConfigurations:
         if spec.edit_action != "configuration":
             return self._prepare_guarded_change(spec, value)
 
-        requested = spec.validate_input(value)
+        requested = MariaDBVariableValidator(spec).validate_input(value)
 
         raw_value = self._manager().global_variable_values((name,)).get(name)
         if raw_value is None:
             raise DatabaseError(f"MariaDB variable '{name}' is not exposed by the installed MariaDB version.")
         try:
-            current = spec.parse_server_value(raw_value)
+            current = MariaDBVariableValidator(spec).parse_server_value(raw_value)
         except ValueError as exc:
             raise DatabaseError(str(exc)) from exc
         return {
@@ -181,7 +182,7 @@ class DatabaseConfigurations:
         if name in MEMORY_LIMIT_NAMES:
             raise DatabaseError(MEMORY_LIMIT_READ_ONLY_REASON)
         spec = mariadb_variable_spec(name)
-        requested: MariaDBValue = spec.validate_input(value)
+        requested: MariaDBValue = MariaDBVariableValidator(spec).validate_input(value)
         edit_reason = self._edit_reason(require_reachable=True)
         if edit_reason:
             raise DatabaseError(edit_reason)
@@ -217,7 +218,7 @@ class DatabaseConfigurations:
             if spec.name not in raw_values:
                 continue
             try:
-                values[spec.name] = spec.parse_server_value(raw_values[spec.name])
+                values[spec.name] = MariaDBVariableValidator(spec).parse_server_value(raw_values[spec.name])
             except ValueError as exc:
                 raise DatabaseError(str(exc)) from exc
         return values

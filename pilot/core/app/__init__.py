@@ -5,6 +5,7 @@ import hashlib
 import json
 import re
 import shutil
+import subprocess
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -160,6 +161,18 @@ class App:
     def head_sha(self) -> str:
         """The commit checked out on disk, unlike installed_hash which reads dist-info."""
         return self._repository.repo.head_sha
+
+    def run_git(self, *args: str, capture_output: bool = False) -> subprocess.CompletedProcess:
+        """Run git in this checkout with the stored credential. The token stays in the
+        environment, out of argv and .git/config. Check `returncode`; it does not raise."""
+        return subprocess.run(
+            ["git", *args],
+            cwd=self.path,
+            env=self._repository.git_env,
+            capture_output=capture_output,
+            text=True,
+            check=False,
+        )
 
     @property
     def has_source_changes(self) -> bool:
@@ -409,14 +422,17 @@ class App:
         skip_assets: bool = False,
         commit: str = "",
         on_progress: Callable[[str], None] = lambda message: None,
+        on_step: Callable[[str, str], object] = lambda key, label: None,
     ) -> AppInstallResult:
         """Pinned commit based Clone, validate, install, register, and build app assets."""
         if self.bench.is_app_installed(self.config.name):
             return self._skip_already_installed(on_progress, install_dependencies, skip_assets)
 
+        name = self.config.name
         self.ensure_not_linked()
         existing_clone = self.existing_clone_path
         self.is_staged = not self.is_marketplace
+        on_step(f"download_{name}", f"Download {name}")
         if self.is_staged or existing_clone is None:
             self.clone(on_progress)
 
@@ -425,7 +441,7 @@ class App:
                 on_progress(f"Checking out {self.config.name} at {commit[:8]}...")
                 self.checkout_commit(commit)
             dependencies = (
-                self._install_dependencies(on_progress, skip_assets) if install_dependencies else []
+                self._install_dependencies(on_progress, skip_assets, on_step) if install_dependencies else []
             )
             if self.is_staged:
                 self.validate()
@@ -434,12 +450,14 @@ class App:
             self._cleanup_after_failure(error, on_progress, lambda: self._undo_clone(existing_clone))
             raise
 
+        on_step(f"python_{name}", f"Install Python packages for {name}")
         on_progress(f"Installing {self.config.name}...")
 
         try:
             self._install_into_environment()
             self._register()
             if not skip_assets:
+                on_step(f"assets_{name}", f"Set up assets for {name}")
                 on_progress(f"\nSetting up assets for {self.config.name}...")
                 self._build_assets_via_env_manager()
             else:
@@ -500,10 +518,14 @@ class App:
             GitRepo(self.path).remove()
 
     def _install_dependencies(
-        self, on_progress: Callable[[str], None], skip_assets: bool = False
+        self,
+        on_progress: Callable[[str], None],
+        skip_assets: bool = False,
+        on_step: Callable[[str, str], object] = lambda key, label: None,
     ) -> list["App"]:
         from pilot.core.app.dependency_installer import AppDependencyInstaller
 
+        on_step(f"dependencies_{self.config.name}", f"Install the apps {self.config.name} needs")
         return AppDependencyInstaller(self.bench, self).install(on_progress, skip_assets=skip_assets)
 
     def validate(self) -> None:

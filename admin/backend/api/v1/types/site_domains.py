@@ -1,6 +1,14 @@
 from __future__ import annotations
 
-from typing import NotRequired, TypedDict
+from typing import Literal, NotRequired, TypedDict
+
+
+class TlsStatus(TypedDict):
+    state: Literal["valid", "pending", "failed", "expiring", "expired"]
+    expires_at: str | None
+    days_left: int | None
+    error: str | None
+    checked_at: str | None
 
 
 class SiteDomain(TypedDict):
@@ -9,6 +17,7 @@ class SiteDomain(TypedDict):
     is_primary: bool
     public_scheme: str
     tls: bool
+    tls_status: TlsStatus | None
 
 
 class SiteDomains(TypedDict):

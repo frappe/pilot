@@ -23,6 +23,8 @@ SUDO_PASS="${SUDO_PASS:-}"
 # The default install pulls a prebuilt release tarball; --dev clones develop and
 # compiles the admin frontend from source.
 DEV_MODE="${PILOT_DEV:-}"
+# A release tag such as v0.0.87 installs that release instead of the latest.
+PILOT_VERSION="${PILOT_VERSION:-}"
 
 MARIADB_REPO_SETUP_URL="https://r.mariadb.com/downloads/mariadb_repo_setup"
 FLUENT_BIT_REPO="https://packages.fluentbit.io"
@@ -35,6 +37,8 @@ while [ $# -gt 0 ]; do
         --user) BENCH_USER="$2"; shift 2 ;;
         --user=*) BENCH_USER="${1#*=}"; shift ;;
         --dev) DEV_MODE=1; shift ;;
+        --version) PILOT_VERSION="$2"; shift 2 ;;
+        --version=*) PILOT_VERSION="${1#*=}"; shift ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
@@ -159,14 +163,10 @@ pkg_available() {
 }
 
 # Naming an installed provider's package again makes pacman remove the provider.
-pkg_install_missing() {
-    missing=""
+missing_packages() {
     for package in "$@"; do
-        pkg_installed "$package" || missing="$missing $package"
+        pkg_installed "$package" || printf '%s\n' "$package"
     done
-    [ -z "$missing" ] && return 0
-    # shellcheck disable=SC2086
-    pkg_install $missing
 }
 
 # Vendors (MariaDB, NodeSource, Homebrew) only publish `curl | bash` installers
@@ -190,7 +190,7 @@ fetch_and_run_as_root() {
     rm -f "$tmp"
 }
 
-# download_installer needs curl before bootstrap_packages would install it.
+# download_installer needs curl before the system packages are installed.
 ensure_curl() {
     command -v curl >/dev/null 2>&1 && return 0
     [ "$DISTRO" = "macos" ] && return 0
@@ -222,18 +222,25 @@ ensure_homebrew() {
 # password prompt in the middle of `pilot init` or a deploy.
 
 # Bare images ship almost nothing: the tools this script and Pilot both need
-# before first use, plus the build deps for the admin venv and frappe wheels.
+# before first use, plus the build deps for the admin venv and frappe wheels,
+# and shared libraries for Frappe v16+ headless Chromium PDF generator.
 # cron runs scheduled backups; Frappe's restore runs `file` to tell a gzipped dump apart.
 bootstrap_packages() {
     case "$DISTRO" in
         macos)
-            pkg_install git python3 ;;
-        debian|ubuntu)
-            pkg_install git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file ;;
+            printf '%s\n' git python3 ;;
+        debian)
+            printf '%s\n' git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file \
+                libnss3 libatk1.0-0 libatk-bridge2.0-0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 ;;
+        ubuntu)
+            printf '%s\n' git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file \
+                libnss3 libatk1.0-0t64 libatk-bridge2.0-0t64 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2t64 ;;
         fedora)
-            pkg_install git curl bash sudo shadow-utils python3 python3-devel gcc gcc-c++ make tzdata cronie file ;;
+            printf '%s\n' git curl bash sudo shadow-utils python3 python3-devel gcc gcc-c++ make tzdata cronie file \
+                nss atk at-spi2-atk libXcomposite libXdamage libXfixes libXrandr mesa-libgbm alsa-lib ;;
         arch)
-            pkg_install git curl bash sudo python base-devel tzdata cronie file ;;
+            printf '%s\n' git curl bash sudo python base-devel tzdata cronie file \
+                nss atk at-spi2-atk libxcomposite libxdamage libxfixes libxrandr mesa alsa-lib ;;
     esac
 }
 
@@ -281,33 +288,33 @@ add_fluent_bit_repo() {
 # One MariaDB, PostgreSQL and Redis per bench user (rootless, systemctl --user),
 # shared across that user's benches. The dev headers are for the Python client
 # libraries frappe's virtualenv compiles during `pilot init`.
-install_database_engines() {
+database_packages() {
     case "$DISTRO" in
         macos)
-            pkg_install "mariadb@$MARIADB_VERSION" "postgresql@$POSTGRES_VERSION" redis ;;
+            missing_packages "mariadb@$MARIADB_VERSION" "postgresql@$POSTGRES_VERSION" redis ;;
         debian|ubuntu)
-            pkg_install mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config redis-server ;;
+            missing_packages mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config redis-server ;;
         fedora)
             # Fedora 41+ ships valkey in place of redis (the alias the runtime resolves).
-            pkg_install mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config valkey ;;
+            missing_packages mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config valkey ;;
         arch)
-            pkg_install_missing mariadb mariadb-clients mariadb-libs postgresql postgresql-libs pkgconf redis ;;
+            missing_packages mariadb mariadb-clients mariadb-libs postgresql postgresql-libs pkgconf redis ;;
     esac
 }
 
 # What `pilot setup production` needs. Installing the WAF module up front keeps
 # enabling the WAF later a non-root operation too.
-install_production_packages() {
+production_packages() {
     case "$DISTRO" in
-        macos)  pkg_install nginx certbot ;;
+        macos)  printf '%s\n' nginx certbot ;;
         debian|ubuntu|fedora)
             waf=$(waf_packages)
-            [ -n "$waf" ] || echo "Warning: the nginx ModSecurity module is not packaged for this release, so the WAF is unavailable."
+            [ -n "$waf" ] || echo "Warning: the nginx ModSecurity module is not packaged for this release, so the WAF is unavailable." >&2
             # shellcheck disable=SC2086
-            pkg_install nginx certbot supervisor $waf
+            printf '%s\n' nginx certbot supervisor $waf
             # The bench user cannot sudo apt, so `pilot setup telemetry` relies on this install.
-            if pkg_available fluent-bit; then pkg_install fluent-bit; fi ;;
-        arch)   pkg_install nginx certbot supervisor ;;
+            if pkg_available fluent-bit; then printf '%s\n' fluent-bit; fi ;;
+        arch)   printf '%s\n' nginx certbot supervisor ;;
     esac
 }
 
@@ -392,10 +399,10 @@ install_system_packages() {
     ensure_curl
     add_distro_repos
     pkg_update
-    bootstrap_packages
+    # Package lists contain whitespace-separated package names.
+    # shellcheck disable=SC2046
+    pkg_install $(bootstrap_packages) $(database_packages) $(production_packages)
     enable_cron
-    install_database_engines
-    install_production_packages
     # shellcheck disable=SC2086
     disable_system_services $new_services
     install_node
@@ -591,11 +598,15 @@ install_sudoers_grants() {
 # Asset builds of large frontends need more memory than a small host without swap
 # has. The bench user may add this swap file for the length of a build; the count
 # lets concurrent builds share it, and a reboot (the file is not in fstab) resets it.
+# Root runs it in the root phase; a non-root install runs it through sudo.
+BUILD_SWAP_HELPER=/usr/local/sbin/pilot-build-swap
 install_build_swap_helper() {
     [ "$(uname)" = "Linux" ] || return 0
     command -v swapon >/dev/null 2>&1 || return 0
-    helper=/usr/local/sbin/pilot-build-swap
-    cat > "$helper" <<'HELPER'
+    [ -d /etc/sudoers.d ] || return 0
+    helper=$BUILD_SWAP_HELPER
+    staged_helper="$(mktemp)"
+    cat > "$staged_helper" <<'HELPER'
 #!/bin/sh
 set -eu
 dir=/var/lib/pilot
@@ -633,8 +644,21 @@ off)
     ;;
 esac
 HELPER
-    chmod 755 "$helper"
+    if ! run_sudo install -m 755 "$staged_helper" "$helper"; then
+        rm -f "$staged_helper"
+        return 1
+    fi
+    rm -f "$staged_helper"
     write_sudoers_file "$1-pilot-build-swap" "$1 ALL=(root) NOPASSWD: $helper on,$helper off"
+}
+
+# Swap is optional, so a non-root install without working sudo only warns.
+ensure_build_swap_helper() {
+    [ -x "$BUILD_SWAP_HELPER" ] && return 0
+    if command -v sudo >/dev/null 2>&1 && install_build_swap_helper "$(id -un)"; then
+        return 0
+    fi
+    echo "Warning: could not install the build swap helper. Large asset builds on hosts with little memory may run out of memory." >&2
 }
 
 # A malformed file in /etc/sudoers.d breaks sudo for every user, including the
@@ -643,12 +667,12 @@ HELPER
 write_sudoers_file() {
     staged="$(mktemp)"
     echo "$2" > "$staged"
-    if [ -n "${3:-}" ] && sudo --version 2>/dev/null | grep -q '^sudo-rs' && ! visudo -cf "$staged" >/dev/null 2>&1; then
+    if [ -n "${3:-}" ] && sudo --version 2>/dev/null | grep -q '^sudo-rs' && ! run_sudo visudo -cf "$staged" >/dev/null 2>&1; then
         echo "Warning: this sudo rejects argument wildcards, so $1 grants its commands without argument limits." >&2
         echo "$3" > "$staged"
     fi
-    if visudo -cf "$staged" >/dev/null 2>&1; then
-        install -m 440 "$staged" "/etc/sudoers.d/$1"
+    if run_sudo visudo -cf "$staged" >/dev/null 2>&1; then
+        run_sudo install -m 440 "$staged" "/etc/sudoers.d/$1"
     else
         echo "Refusing to install a malformed sudoers grant ($1)." >&2
     fi
@@ -677,7 +701,7 @@ prepare_host() {
     echo " the installer again:"
     echo ""
     echo "   su - $BENCH_USER"
-    echo "   curl -fsSL $INSTALL_URL | bash"
+    echo "   curl -fsSL $INSTALL_URL | ${PILOT_VERSION:+PILOT_VERSION=$PILOT_VERSION }bash"
     echo "========================================================================"
 }
 
@@ -700,6 +724,14 @@ require_linger() {
     exit 1
 }
 
+release_api_url() {
+    if [ -n "$PILOT_VERSION" ]; then
+        echo "https://api.github.com/repos/$GITHUB_SLUG/releases/tags/$PILOT_VERSION"
+    else
+        echo "https://api.github.com/repos/$GITHUB_SLUG/releases?per_page=1"
+    fi
+}
+
 # The release tarball ships the compiled admin frontend and a VERSION file;
 # --dev clones the source so contributors build the frontend locally.
 fetch_pilot() {
@@ -714,9 +746,8 @@ fetch_pilot() {
         return
     fi
 
-    echo "Fetching the latest pilot release..."
-    asset_url=$(curl -fsSL --proto '=https' --tlsv1.2 \
-        "https://api.github.com/repos/$GITHUB_SLUG/releases?per_page=1" \
+    echo "Fetching pilot ${PILOT_VERSION:-(latest release)}..."
+    asset_url=$(curl -fsSL --proto '=https' --tlsv1.2 "$(release_api_url)" \
         | grep -o 'https://[^"]*/pilot\.tar\.gz' | head -n1)
     if [ -z "$asset_url" ]; then
         echo "Could not find a pilot.tar.gz release asset." >&2
@@ -830,12 +861,16 @@ ensure_admin_venv() {
 install_for_user() {
     echo "Setting up your environment..."
     require_linger
+    ensure_build_swap_helper
     fetch_pilot
     rm -f "$PILOT_DIR/bench"
     chmod +x "$PILOT_DIR/bin/pilot"
     ensure_uv
     add_pilot_to_path
     ensure_admin_venv
+    if [ -z "$DEV_MODE" ] && [ -f "$PILOT_DIR/pilot/patches/update_auto_update_schedule.py" ]; then
+        PYTHONPATH="$PILOT_DIR" "$PILOT_DIR/.admin-venv/bin/python" -m pilot.patches.update_auto_update_schedule
+    fi
 
     echo ""
     echo "Pilot installed to $PILOT_DIR"

@@ -1,9 +1,20 @@
 <script setup lang="ts">
-import { Alert, Button, Dialog, ErrorMessage, Spinner, Switch, TextInput, Tooltip } from 'frappe-ui'
-import { computed, onMounted, ref } from 'vue'
+import {
+  Alert,
+  Button,
+  Dialog,
+  ErrorMessage,
+  Spinner,
+  Switch,
+  TabButtons,
+  TextInput,
+  Tooltip,
+} from 'frappe-ui'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { databaseApi } from '@/api/database'
+import Scrollbar from '@/components/common/Scrollbar.vue'
 import type { DatabaseConfigurationSnapshot, DatabaseVariable } from '@/types/database'
 import { errorMessage } from '@/utils/error'
 import { openTaskDetailPage } from '@/utils/taskRoute'
@@ -14,6 +25,7 @@ const loading = ref(false)
 const snapshot = ref<DatabaseConfigurationSnapshot | null>(null)
 const error = ref('')
 const search = ref('')
+const selectedSection = ref('')
 const editing = ref<DatabaseVariable | null>(null)
 const draftValue = ref<DatabaseVariable['value']>(null)
 const saving = ref(false)
@@ -27,19 +39,53 @@ const draftNumber = computed<string | number>({
   set: (value) => (draftValue.value = value),
 })
 
-const groups = computed(() => {
-  const query = search.value.trim().toLowerCase()
-  const grouped = new Map<string, DatabaseVariable[]>()
-  for (const variable of snapshot.value?.variables || []) {
-    const searchable = `${variable.name} ${variable.section}`.toLowerCase()
-    if (query && !searchable.includes(query)) continue
+const tabs: Record<string, string> = {
+  InnoDB: 'InnoDB',
+  'Binary logging and replication': 'Replication and Binlog',
+  'Performance Schema': 'Performance Schema',
+}
 
-    const bucket = grouped.get(variable.section)
-    if (bucket) bucket.push(variable)
-    else grouped.set(variable.section, [variable])
-  }
-  return Array.from(grouped, ([name, variables]) => ({ name, variables }))
+const tabOf = (variable: DatabaseVariable) => tabs[variable.section] ?? 'Others'
+
+const sectionNames = computed(() =>
+  [...Object.values(tabs), 'Others'].filter((tab) =>
+    (snapshot.value?.variables || []).some((variable) => tabOf(variable) === tab),
+  ),
+)
+
+const sectionOptions = computed(() =>
+  sectionNames.value.map((name) => ({ label: name, value: name })),
+)
+
+const section = computed({
+  get: () =>
+    sectionNames.value.includes(selectedSection.value)
+      ? selectedSection.value
+      : (sectionNames.value[0] ?? ''),
+  set: (name: string) => {
+    selectedSection.value = name
+  },
 })
+
+const matches = (variable: DatabaseVariable, query: string) =>
+  variable.name.toLowerCase().includes(query.trim().toLowerCase())
+
+watch(search, (query) => {
+  if (!query.trim()) return
+
+  const variables = snapshot.value?.variables || []
+  const withMatches = sectionNames.value.find((name) =>
+    variables.some((variable) => tabOf(variable) === name && matches(variable, query)),
+  )
+
+  if (withMatches) section.value = withMatches
+})
+
+const rows = computed(() =>
+  (snapshot.value?.variables || []).filter(
+    (variable) => tabOf(variable) === section.value && matches(variable, search.value),
+  ),
+)
 
 const editorOpen = computed({
   get: () => Boolean(editing.value),
@@ -94,6 +140,8 @@ const formatValue = (variable: DatabaseVariable) => {
   if (!variable.supported || variable.value === null) return 'Unavailable'
   if (variable.value_type === 'boolean') return variable.value ? 'Enabled' : 'Disabled'
   if (variable.unit === 'bytes' && typeof variable.value === 'number') {
+    // MariaDB stores "no limit" as the largest unsigned 64-bit number.
+    if (variable.value >= 2 ** 63) return 'No limit'
     return Number.isFinite(variable.value) ? formatBytes(variable.value) : 'Unavailable'
   }
   return formatConstraint(variable.value, variable.unit)
@@ -114,6 +162,9 @@ const formatBytes = (value: number) => {
 const formatConstraint = (value: DatabaseVariable['value'], unit: string) => {
   if (!unit) return String(value)
   if (unit === 'percent') return `${value}%`
+  if (unit === 'seconds') return `${value}s`
+  if (unit === 'milliseconds') return `${value}ms`
+
   return `${value} ${unit}`
 }
 
@@ -183,76 +234,74 @@ onMounted(load)
     <Spinner size="lg" class="text-ink-gray-4" />
   </div>
 
-  <template v-else>
-    <ErrorMessage v-if="error" :message="error" class="mb-4" />
+  <div v-else class="flex flex-col flex-1 gap-4 min-h-0">
+    <ErrorMessage v-if="error" :message="error" />
 
-    <div
-      v-if="snapshot && !snapshot.readable"
-      class="border border-outline-gray-2 bg-surface-gray-1 px-3 py-2 text-ink-gray-7 text-sm"
-    >
-      {{ snapshot.reason }}
-    </div>
+    <Alert v-if="snapshot && !snapshot.readable" :title="snapshot.reason" :dismissible="false" />
 
     <template v-else-if="snapshot">
-      <div
-        v-if="snapshot.edit_reason"
-        class="mb-4 border border-outline-gray-2 bg-surface-gray-1 px-3 py-2 text-ink-gray-7 text-sm"
-      >
-        {{ snapshot.edit_reason }}
+      <Alert v-if="snapshot.edit_reason" :title="snapshot.edit_reason" :dismissible="false" />
+
+      <div class="flex justify-between items-center gap-3 shrink-0">
+        <TextInput
+          v-model="search"
+          class="w-44 shrink-0"
+          placeholder="Search"
+          aria-label="Search variables"
+          autocomplete="off"
+        >
+          <template #prefix>
+            <span class="size-4 text-ink-gray-4 lucide-search" aria-hidden="true" />
+          </template>
+        </TextInput>
+
+        <div class="min-w-0 overflow-x-auto [scrollbar-width:none]">
+          <TabButtons v-model="section" :options="sectionOptions" class="w-max" />
+        </div>
       </div>
 
-      <TextInput v-model="search" placeholder="Search variables" autocomplete="off" class="mb-5" />
+      <Scrollbar class="flex-1 -mr-4 min-h-0">
+        <div
+          class="top-0 z-10 sticky flex items-center gap-3 bg-surface-elevation-1 mr-4 border-b border-outline-gray-2 h-8 text-ink-gray-5 text-sm"
+        >
+          <span>Variable</span>
+          <span class="ml-auto w-28 text-right">Value</span>
+          <span v-if="snapshot.editable" class="w-7" />
+        </div>
 
-      <div v-if="groups.length" class="space-y-7">
-        <section v-for="group in groups" :key="group.name">
-          <h4 class="mb-1 font-medium text-ink-gray-6 text-sm">
-            {{ group.name }}
-          </h4>
+        <div class="mr-4 divide-y divide-outline-alpha-gray-1">
+          <div v-for="variable in rows" :key="variable.name" class="flex items-center gap-3 h-10">
+            <code class="min-w-0 font-mono text-ink-gray-8 text-sm truncate">
+              {{ variable.name }}
+            </code>
 
-          <div class="divide-y divide-outline-alpha-gray-1">
-            <div
-              v-for="variable in group.variables"
-              :key="variable.name"
-              class="flex sm:flex-row sm:items-center sm:justify-between flex-col gap-3 py-3"
+            <span
+              class="ml-auto w-28 text-sm text-right truncate tabular-nums shrink-0"
+              :class="variable.supported ? 'text-ink-gray-8' : 'text-ink-gray-5'"
             >
-              <code class="min-w-0 font-medium text-ink-gray-8 break-all">
-                {{ variable.name }}
-              </code>
+              {{ formatValue(variable) }}
+            </span>
 
-              <div class="flex items-center justify-between sm:justify-end gap-3 sm:ml-6 shrink-0">
-                <span
-                  class="max-w-48 text-right text-ink-gray-8 text-sm font-mono break-all"
-                  :class="{ 'text-ink-gray-5': !variable.supported }"
-                >
-                  {{ formatValue(variable) }}
-                </span>
+            <Button
+              v-if="variable.editable"
+              class="!text-ink-gray-5 hover:!text-ink-gray-7 shrink-0"
+              variant="ghost"
+              icon="lucide-pencil"
+              :disabled="saving"
+              :aria-label="`Edit ${variable.name}`"
+              @click="openEditor(variable)"
+            />
 
-                <Button
-                  v-if="variable.editable"
-                  variant="ghost"
-                  icon="lucide-pencil"
-                  :disabled="saving"
-                  aria-label="Edit"
-                  @click="openEditor(variable)"
-                />
-                <Tooltip v-else :text="variable.reason || 'Read-only in Pilot'">
-                  <span
-                    class="block size-4 text-ink-gray-4 lucide-lock"
-                    role="img"
-                    :aria-label="variable.reason || 'Read-only in Pilot'"
-                  />
-                </Tooltip>
-              </div>
-            </div>
+            <span v-else-if="snapshot.editable" class="w-7 shrink-0" />
           </div>
-        </section>
-      </div>
+        </div>
 
-      <p v-else class="py-10 text-center text-ink-gray-5 text-sm">
-        No database variables match this search.
-      </p>
+        <p v-if="!rows.length" class="mr-4 py-10 text-ink-gray-5 text-sm text-center">
+          No database variables match this search.
+        </p>
+      </Scrollbar>
     </template>
-  </template>
+  </div>
 
   <Dialog
     v-model="editorOpen"
@@ -267,7 +316,7 @@ onMounted(load)
         description="Enabling snapshot isolation can cause concurrent updates and deletes to fail and roll back transactions. Disabling it removes this write-conflict protection. The global change applies to new database connections; existing connections retain their session setting."
       />
       <div v-if="editor.value_type === 'boolean'" class="flex items-center justify-between gap-4">
-        <p class="font-medium text-ink-gray-8">Enabled</p>
+        <p class="text-base-medium text-ink-gray-8">Enabled</p>
         <Switch
           class="[&_[data-slot='label']]:sr-only [&>div]:!gap-x-0 [&>div]:!py-0"
           :label="editing.name"
@@ -281,6 +330,7 @@ onMounted(load)
         v-model.number="draftNumber"
         type="number"
         :label="inputLabel"
+        required
         :min="editor.min"
         :max="editor.max"
         :step="editor.step || 1"

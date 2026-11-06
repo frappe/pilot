@@ -13,4 +13,4 @@ class SetupLetsEncryptCommand(Command):
     group: ClassVar[str] = "setup"
 
     def run(self) -> None:
-        self.bench.setup_letsencrypt()
+        self.bench.setup_letsencrypt(on_progress=self.report)

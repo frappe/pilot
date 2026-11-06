@@ -11,13 +11,11 @@ from pilot.exceptions import ConfigError
 
 
 def _config(waf: dict | None = None, client_max_body_size: str = "50m") -> BenchConfig:
-    data: dict = {
-        "bench": {"name": "test-bench", "python": "3.14"},
-        "nginx": {"client_max_body_size": client_max_body_size},
-    }
+    data: dict = {"bench": {"name": "test-bench", "python": "3.14"}}
     if waf is not None:
         data["waf"] = waf
     config = BenchConfig._from_dict(data)
+    config.nginx.client_max_body_size = client_max_body_size
     config.validate()
     return config
 

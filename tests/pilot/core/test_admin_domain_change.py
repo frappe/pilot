@@ -204,14 +204,16 @@ def test_a_tls_move_with_no_certificate_is_refused(tmp_path: Path) -> None:
     bench.config.letsencrypt.email = "ops@example.com"
     released = []
 
-    with patch.object(AdminDomainChange, "_republish_nginx"), patch.object(
-        LetsEncryptManager, "obtain_admin", side_effect=RuntimeError("dns not ready")
-    ), patch.object(
-        NginxManager, "has_admin_cert", new_callable=PropertyMock, return_value=False
-    ), patch(
-        "pilot.core.adapters.domain_provider.DomainRouteProvider.release",
-        lambda self, domain: released.append(domain),
-    ), pytest.raises(BenchError, match="No TLS certificate"):
+    with (
+        patch.object(AdminDomainChange, "_republish_nginx"),
+        patch.object(LetsEncryptManager, "obtain_admin", side_effect=RuntimeError("dns not ready")),
+        patch.object(NginxManager, "has_admin_cert", new_callable=PropertyMock, return_value=False),
+        patch(
+            "pilot.core.adapters.domain_provider.DomainRouteProvider.release",
+            lambda self, domain: released.append(domain),
+        ),
+        pytest.raises(BenchError, match="No TLS certificate"),
+    ):
         AdminDomainChange(bench, NEW).run()
 
     # The admin is left where it still works, and the old hostname is still ours.
@@ -223,8 +225,9 @@ def test_a_tls_move_with_no_certificate_is_refused(tmp_path: Path) -> None:
 def test_a_move_to_plain_http_needs_no_certificate(tmp_path: Path) -> None:
     bench = _admin_bench(tmp_path, tls=True)
 
-    with patch.object(AdminDomainChange, "_republish_nginx"), patch.object(
-        AdminDomainChange, "_reissue_certificate", lambda self, on_progress: False
+    with (
+        patch.object(AdminDomainChange, "_republish_nginx"),
+        patch.object(AdminDomainChange, "_reissue_certificate", lambda self, on_progress: False),
     ):
         AdminDomainChange(bench, NEW, tls=False).run()
 
@@ -257,7 +260,10 @@ def test_a_successful_change_repoints_existing_pilot_endpoints(tmp_path: Path) -
     assert "pilot_endpoint" not in json.loads(bare_site.read_text())
 
 
-def test_a_change_moves_the_browser_urls_and_keeps_a_loopback_pilot_endpoint(tmp_path: Path) -> None:
+@pytest.mark.parametrize("embed_url", [f"http://{OLD}", "/_pilot"])
+def test_a_change_moves_the_browser_urls_and_keeps_a_loopback_pilot_endpoint(
+    tmp_path: Path, embed_url: str
+) -> None:
     bench = _admin_bench(tmp_path)
     loopback = f"http://127.0.0.1:{bench.config.admin.internal_port}"
     site = _write_site_config(
@@ -266,7 +272,7 @@ def test_a_change_moves_the_browser_urls_and_keeps_a_loopback_pilot_endpoint(tmp
         {
             "pilot_endpoint": loopback,
             "cloud_server_url": f"http://{OLD}",
-            "cloud_settings_embed_url": f"http://{OLD}",
+            "cloud_settings_embed_url": embed_url,
         },
     )
 
@@ -279,7 +285,7 @@ def test_a_change_moves_the_browser_urls_and_keeps_a_loopback_pilot_endpoint(tmp
     assert json.loads(site.read_text()) == {
         "pilot_endpoint": loopback,
         "cloud_server_url": f"http://{NEW}",
-        "cloud_settings_embed_url": f"http://{NEW}",
+        "cloud_settings_embed_url": "/_pilot" if embed_url == "/_pilot" else f"http://{NEW}",
     }
 
 
@@ -293,7 +299,9 @@ def test_a_change_keeps_a_stale_loopback_pilot_endpoint_on_loopback(tmp_path: Pa
     ):
         AdminDomainChange(bench, NEW).run()
 
-    assert json.loads(site.read_text()) == {"pilot_endpoint": f"http://127.0.0.1:{bench.config.admin.internal_port}"}
+    assert json.loads(site.read_text()) == {
+        "pilot_endpoint": f"http://127.0.0.1:{bench.config.admin.internal_port}"
+    }
 
 
 def test_a_common_site_config_without_pilot_endpoint_is_left_alone(tmp_path: Path) -> None:

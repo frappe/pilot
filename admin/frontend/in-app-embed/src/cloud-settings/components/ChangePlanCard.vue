@@ -130,8 +130,9 @@ onMounted(load)
         >
           <Radio :value="plan.name" class="flex-1 min-w-0" :description="plan.subtitle">
             <template #label>
-              <span class="flex items-center gap-2">
+              <span class="flex flex-wrap items-center gap-2">
                 {{ plan.title }}
+                <Badge v-if="plan.note" :label="plan.note" theme="blue" />
                 <Badge v-if="plan.is_current" :label="__('Current')" theme="gray" />
               </span>
             </template>

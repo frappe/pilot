@@ -28,7 +28,7 @@ const plans = (sufficient = true) => ({
   sufficient,
   plans: [
     { name: 'starter', title: 'Starter', subtitle: '1 vCPU · 2 GB RAM · 25 GB disk', price: '$18/mo', is_current: true },
-    { name: 'pro', title: 'Pro', subtitle: '2 vCPU · 4 GB RAM · 40 GB disk', price: '$36/mo', is_current: false },
+    { name: 'pro', title: 'Pro', subtitle: '2 vCPU · 4 GB RAM · 40 GB disk', note: 'Up to 200 users', price: '$36/mo', is_current: false },
   ],
 })
 
@@ -223,6 +223,8 @@ test('a paid site moves to a bigger plan and opens the progress page', async ({ 
 
   await page.getByRole('button', { name: 'Change plan' }).click()
   await expect(page.getByText('Current')).toBeVisible()
+  await expect(page.getByRole('radio', { name: /Pro/ })).toHaveAccessibleName('Pro Up to 200 users')
+  await expect(page.getByRole('radio', { name: /Starter/ })).toHaveAccessibleName('Starter Current')
   await expect(page.getByRole('button', { name: 'Choose a plan' })).toBeDisabled()
 
   await page.getByRole('radio', { name: /Pro/ }).check()

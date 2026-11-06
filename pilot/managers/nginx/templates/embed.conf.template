@@ -1,0 +1,12 @@
+    location ^~ /_pilot/embed/cloud-settings/ {
+        alias {{ admin_static }}/in-app-embed/cloud-settings/;
+        try_files $uri =404;
+        add_header Cache-Control "no-cache";
+    }
+
+    location ^~ /_pilot/embed/cloud-settings/esm/chunks/ {
+        alias {{ admin_static }}/in-app-embed/cloud-settings/esm/chunks/;
+        try_files $uri =404;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }

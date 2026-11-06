@@ -12,6 +12,7 @@ import pytest
 from pilot.config import BenchConfig
 from pilot.core.bench import Bench
 from pilot.managers.nginx import NginxManager
+from tests.integration.nginx_wrapper import catch_all_http_directives
 
 pytestmark = pytest.mark.integration
 
@@ -70,7 +71,7 @@ def _make_bench(tmp_path: Path) -> Bench:
     return bench
 
 
-def _wrapper_conf(tmp_path: Path, include_conf: Path) -> Path:
+def _wrapper_conf(tmp_path: Path, bench: Bench, include_conf: Path) -> Path:
     """A self-contained nginx.conf that pulls in the bench's generated vhosts."""
     conf = tmp_path / "nginx.conf"
     conf.write_text(
@@ -78,8 +79,7 @@ def _wrapper_conf(tmp_path: Path, include_conf: Path) -> Path:
         f"error_log {tmp_path}/error.log;\n"
         "events {}\n"
         "http {\n"
-        "    log_format pilot_access '$remote_addr [$time_local] \"$request_method $uri\" "
-        "$status \"$host\" $request_time';\n"
+        f"{catch_all_http_directives(bench)}"
         f"    access_log {tmp_path}/access.log;\n"
         f"    include {include_conf};\n"
         "}\n"
@@ -107,7 +107,7 @@ def test_generated_trusted_proxy_config_passes_nginx_t(tmp_path: Path, monkeypat
     assert "deny               all;" not in site_conf
     assert "X-Forwarded-For    $http_x_forwarded_for" in site_conf
 
-    conf = _wrapper_conf(tmp_path, nginx_dir / "include.conf")
+    conf = _wrapper_conf(tmp_path, bench, nginx_dir / "include.conf")
     result = subprocess.run(
         ["nginx", "-t", "-p", str(tmp_path), "-c", str(conf)],
         capture_output=True,

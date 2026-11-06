@@ -18,6 +18,7 @@ import { sitesApi } from '@/api/sites'
 import type { SiteDomain } from '@/types/siteDomains'
 import { useSite } from '@/composables/sites/useSite'
 import { errorMessage } from '@/utils/error'
+import { isTlsBroken, tlsBadge, tlsTooltip } from '@/utils/tlsStatus'
 
 interface Props {
   siteName: string
@@ -140,24 +141,45 @@ onUnmounted(() => {
         class="flex justify-between items-start gap-x-2.5 first:mt-1 py-4 border-b border-outline-alpha-gray-1"
       >
         <div class="flex items-start gap-2.5 min-w-0">
-          <Tooltip :text="row.tls ? 'TLS active' : certificatePending ? 'Certificate pending' : 'TLS inactive'">
+          <Tooltip :text="tlsTooltip(row.tls_status, row.tls, certificatePending)">
             <span
               class="mt-0.5 size-4 text-ink-gray-5 shrink-0"
-              :class="row.tls ? 'lucide-lock text-ink-green-5' : 'lucide-lock-open'"
+              :class="
+                isTlsBroken(row.tls_status)
+                  ? 'lucide-lock-open text-ink-red-5'
+                  : row.tls
+                    ? 'lucide-lock text-ink-green-5'
+                    : 'lucide-lock-open'
+              "
             />
           </Tooltip>
 
-          <div class="flex items-center gap-2 min-w-0">
-            <p class="font-medium text-ink-gray-8 truncate">{{ row.domain }}</p>
-            <Badge v-if="row.isPrimary" label="Primary" theme="green" size="sm" class="shrink-0" />
-            <Badge v-else-if="row.isSite" label="Included" size="sm" class="shrink-0" />
-            <Badge
-              v-if="!row.tls && certificatePending"
-              label="Certificate pending"
-              theme="amber"
-              size="sm"
-              class="shrink-0"
-            />
+          <div class="flex flex-col gap-1 min-w-0">
+            <div class="flex items-center gap-2 min-w-0">
+              <p class="font-medium text-ink-gray-8 truncate">{{ row.domain }}</p>
+              <Badge v-if="row.isPrimary" label="Primary" theme="green" size="sm" class="shrink-0" />
+              <Badge v-else-if="row.isSite" label="Included" size="sm" class="shrink-0" />
+              <Badge
+                v-if="tlsBadge(row.tls_status)"
+                :label="tlsBadge(row.tls_status)?.label"
+                :theme="tlsBadge(row.tls_status)?.theme"
+                size="sm"
+                class="shrink-0"
+              />
+              <Badge
+                v-else-if="!row.tls && certificatePending"
+                label="Certificate pending"
+                theme="amber"
+                size="sm"
+                class="shrink-0"
+              />
+            </div>
+            <p
+              v-if="row.tls_status?.state === 'failed' && row.tls_status.error"
+              class="text-p-sm text-ink-gray-6 whitespace-pre-line break-words"
+            >
+              {{ row.tls_status.error }}
+            </p>
           </div>
         </div>
 

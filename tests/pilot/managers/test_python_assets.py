@@ -253,6 +253,71 @@ def test_studio_apps_are_built_after_a_download_only_when_the_archive_lacks_them
     assert build_studio_apps.call_count == builds
 
 
+def test_skip_frontend_downloads_prebuilt_assets_without_installing_or_building(tmp_path: Path) -> None:
+    """A frontend-skipping run with a published archive touches neither JS installs nor compilers."""
+    builder = make_builder()
+    app = make_app(tmp_path / "frappe", "frappe")
+    app.is_linked = False
+    app.has_source_changes = False
+    app.has_page_islands = True
+    app.has_studio_apps = True
+    write_package(tmp_path / "frappe")
+    prebuilt = MagicMock(has_studio_apps=False, has_page_islands=False)
+    prebuilt.install.return_value = True
+
+    with (
+        patch("pilot.core.app.prebuilt_assets.PrebuiltAssets", return_value=prebuilt),
+        patch.object(builder, "setup_prebuilt_assets"),
+        patch.object(builder, "build_page_islands") as build_page_islands,
+        patch.object(builder, "build_studio_apps") as build_studio_apps,
+        patch.object(builder, "run_compiler") as run_compiler,
+        patch("pilot.core.app.node_packages.run_command") as run_command,
+    ):
+        builder.build_assets_for_app(app, skip_frontend=True)
+
+    prebuilt.install.assert_called_once()
+    run_command.assert_not_called()
+    run_compiler.assert_not_called()
+    build_page_islands.assert_not_called()
+    build_studio_apps.assert_not_called()
+
+
+def test_skip_frontend_falls_back_to_a_full_build_without_an_archive(tmp_path: Path) -> None:
+    """A frontend-skipping run without a published archive installs and builds like normal."""
+    app_path = tmp_path / "frappe"
+    write_package(app_path)
+    (app_path / "yarn.lock").write_text("")
+    manager = MagicMock()
+    manager.bench.frappe_call = ["python"]
+    manager.bench.sites_path = app_path.parent / "sites"
+    manager.bench.apps_path = app_path.parent
+    builder = PythonAssetBuilder(manager)
+    commands: list[list[str]] = []
+
+    def install(argv: list[str], **kwargs: object) -> None:
+        commands.append(argv)
+        if argv[:2] == ["yarn", "install"]:
+            (app_path / "node_modules").mkdir(exist_ok=True)
+            (app_path / "node_modules" / ".yarn-integrity").write_text("")
+
+    app = make_app(app_path, "frappe")
+    app.is_linked = False
+    app.has_source_changes = False
+    prebuilt = MagicMock(has_studio_apps=False, has_page_islands=False)
+    prebuilt.install.return_value = False
+
+    with (
+        patch("pilot.core.app.node_packages.shutil.which", side_effect=lambda name: name),
+        patch("pilot.core.app.node_packages.run_command", side_effect=install),
+        patch("pilot.core.app.prebuilt_assets.PrebuiltAssets", return_value=prebuilt),
+        patch.object(builder, "run_compiler", side_effect=lambda argv, **kwargs: commands.append(argv)),
+    ):
+        builder.build_assets_for_app(app, skip_frontend=True)
+
+    assert ["yarn", "install", "--frozen-lockfile"] in commands
+    assert ["python", "frappe", "build", "--force", "--app", "frappe"] in commands
+
+
 def test_a_declared_build_dir_gets_its_dependencies_when_only_the_root_has_them(tmp_path: Path) -> None:
     """Helpdesk installs `desk` from a root postinstall, so an installed root hides a missing `desk`."""
     app_path = tmp_path / "helpdesk"

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, cast
 
 from pilot.core.bench.admin_domain import ProductionAdminDomain
 from pilot.core.bench.telemetry import apply_credential as apply_telemetry_credential
+from pilot.core.site.login import origin
 from pilot.exceptions import BenchError
 
 if TYPE_CHECKING:
@@ -77,6 +78,7 @@ class ProductionSetup:
 
         # The switch is committed; free the old hostname at the provider.
         self._release_previous_admin_domain()
+        self.bench.configure_site_embeds()
         self._report_summary(on_progress)
 
     def _resolve_target(self) -> None:
@@ -343,9 +345,7 @@ class ProductionSetup:
             if site.config.ssl and nginx_manager.has_cert(site.config):
                 on_progress(f"  https://{site.config.name}")
             else:
-                http_port = self.bench.config.nginx.http_port
-                port_suffix = "" if http_port == 80 else f":{http_port}"
-                on_progress(f"  http://{site.config.name}{port_suffix}")
+                on_progress(f"  {origin('http', site.config.name, self.bench.config.nginx.http_port)}")
         admin_https = self.bench.config.admin.tls and nginx_manager.has_admin_cert
         scheme = "https" if admin_https else "http"
         on_progress(f"Admin:\n  {scheme}://{self.bench.config.admin.domain}")

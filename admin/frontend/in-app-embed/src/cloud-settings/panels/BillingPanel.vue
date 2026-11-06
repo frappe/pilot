@@ -61,14 +61,6 @@ const plan = computed(() => billing.value?.plan)
 const trial = computed(() => billing.value?.trial)
 const isAddingPayment = computed(() => flow.value === 'profile' || flow.value === 'payment')
 
-const planSubtitle = computed(() => {
-  if (plan.value?.subtitle) return plan.value.subtitle
-
-  return Object.values(plan.value?.specs || {})
-    .filter(Boolean)
-    .join(' · ')
-})
-
 const stepLabel = (step: Step) =>
   steps.value.length > 1 ? __('Step {0} of {1}', [steps.value.indexOf(step) + 1, steps.value.length]) : ''
 
@@ -244,7 +236,7 @@ const changePlanUrl = computed(() => store.state.accountLinks?.change_plan)
           <template v-else>{{ plan.name ? __("{0} plan", [plan.name]) : __("Current plan") }}</template>
         </p>
 
-        <p class="col-start-1 mt-1 text-sm text-ink-gray-5">{{ planSubtitle }}</p>
+        <p v-if="plan.subtitle" class="col-start-1 mt-1 text-sm text-ink-gray-5">{{ plan.subtitle }}</p>
 
         <Button
           v-if="!trial"

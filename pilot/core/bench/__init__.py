@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from pilot.config import S3Config, SiteConfig
     from pilot.core.app import App, NewAppOptions, RevisionPin
     from pilot.core.bench.backups import BenchBackups
+    from pilot.core.bench.certificates import BenchCertificates
     from pilot.core.bench.hostname_aliases import HostnameAliases
     from pilot.core.bench.migration.store import MigrationStore
     from pilot.core.bench.processes import BenchProcesses
@@ -132,6 +133,12 @@ class Bench:
         from pilot.core.bench.backups import BenchBackups
 
         return BenchBackups(self)
+
+    @cached_property
+    def certificates(self) -> "BenchCertificates":
+        from pilot.core.bench.certificates import BenchCertificates
+
+        return BenchCertificates(self)
 
     @cached_property
     def notifications(self) -> "NotificationStore":
@@ -295,6 +302,17 @@ class Bench:
 
         BenchConfigFiles(self).write_common_site_config()
 
+    @property
+    def public_common_site_config(self) -> dict:
+        from pilot.core.bench.config_files import BenchConfigFiles
+
+        return BenchConfigFiles(self).public_common_site_config
+
+    def update_public_common_site_config(self, patch: dict) -> dict:
+        from pilot.core.bench.config_files import BenchConfigFiles
+
+        return BenchConfigFiles(self).update_public_common_site_config(patch)
+
     def restart(self):
         """Restart bench in case we are running in production"""
         self.restart_processes()
@@ -414,6 +432,7 @@ class Bench:
         old_firewall: dict,
         old_waf: dict,
         old_s3_config: dict,
+        old_proxy: dict,
     ) -> tuple[bool, str | None]:
         from pilot.core.bench.settings import BenchSettings
 
@@ -422,7 +441,13 @@ class Bench:
             old_firewall,
             old_waf,
             old_s3_config,
+            old_proxy,
         )
+
+    def get_cloudflare_status(self) -> dict:
+        from pilot.core.bench.settings import BenchSettings
+
+        return BenchSettings(self).get_cloudflare_status()
 
     def restart_processes(self) -> None:
         from pilot.core.bench.production import BenchProduction
@@ -524,6 +549,36 @@ class Bench:
         return f"http://127.0.0.1:{self.config.admin.internal_port}"
 
     @property
+    def embed_endpoint(self) -> str:
+        return "/_pilot" if self.config.production.enabled else self.admin_endpoint
+
+    def configure_site_embeds(self) -> None:
+        """Update managed sites after nginx starts serving same-origin embed assets."""
+        import json
+
+        from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
+
+        paths = [
+            self.sites_path / "common_site_config.json",
+            *sorted(self.sites_path.glob("*/site_config.json")),
+        ]
+        managed = False
+        for path in paths:
+            if not path.is_file() or path.is_symlink() or path.parent.is_symlink():
+                continue
+            with exclusive_file_lock(path):
+                config = json.loads(path.read_text())
+                if not (config.get("pilot_endpoint") or config.get("cloud_settings_embed_url")):
+                    continue
+                managed = True
+                if config.get("cloud_settings_embed_url") != self.embed_endpoint:
+                    config["cloud_settings_embed_url"] = self.embed_endpoint
+                    replace_private_text_locked(path, json.dumps(config, indent=2))
+        # Retry cache invalidation even when an earlier attempt already wrote the files.
+        if managed:
+            self.clear_cache()
+
+    @property
     def admin_endpoint(self) -> str:
         """The public admin URL that a browser on a site reaches."""
         from pilot.core.adapters.domain_provider import DomainRouteProvider
@@ -558,10 +613,10 @@ class Bench:
 
         CentralSetup(self, admin_pattern, site_pattern, redirect, rebootstrap).run(on_progress)
 
-    def setup_letsencrypt(self) -> None:
+    def setup_letsencrypt(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
         from pilot.core.bench.production import BenchProduction
 
-        BenchProduction(self).setup_letsencrypt()
+        BenchProduction(self).setup_letsencrypt(on_progress)
 
     def issue_setup_link(self) -> str:
         """Issue a short-lived setup-wizard sign-in token."""
@@ -569,11 +624,16 @@ class Bench:
 
         return Session(self).issue_setup_link_token()
 
-    def initialize(self, commit: str = "", on_progress: Callable[[str], None] = lambda message: None) -> None:
+    def initialize(
+        self,
+        commit: str = "",
+        skip_frontend: bool = False,
+        on_progress: Callable[[str], None] = lambda message: None,
+    ) -> None:
         """Set up the bench from bench.toml; `commit` pins the framework app."""
         from pilot.core.bench.initializer import BenchInitializer
 
-        BenchInitializer(self, commit).run(on_progress)
+        BenchInitializer(self, commit, skip_frontend=skip_frontend).run(on_progress)
 
     def setup_production(
         self,

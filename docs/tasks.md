@@ -135,6 +135,10 @@ Frappe install, migration, backup, restore, package installation, asset builds, 
 
 Use `@step("key", "Label")` around meaningful phases. Step output is parsed by the task runner and exposed to the Admin UI.
 
+Core code that a task calls takes an optional `on_step` callback for its own phases, and the task passes `self.step`. For example, `App.install` marks the download, dependency, Python package, and asset phases. A step ends when the next step starts.
+
+`GET /sites/<name>/tasks/<task_id>` adds `steps`, `activity`, `percent`, and `error` to an app task. `activity` is the latest output line of the running step, and `percent` is the value of a progress bar in that line, such as Frappe's `Updating DocTypes` bar. `error` is the last output line of a failed task. Cloud Settings shows these on its progress card.
+
 Call `self.step_failed()` only when a task handles an error internally and still needs to mark the active step as failed.
 
 ## Callbacks

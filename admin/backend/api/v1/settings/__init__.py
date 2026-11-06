@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, Response, current_app, jsonify, request
 
 from admin.backend.api.responses import error_response
 from admin.backend.api.v1.settings.config import ConfigPatcher
@@ -24,10 +24,13 @@ from pilot.core.bench.settings import (
     is_restart_needed,
     llm_payload,
     mail_payload,
+    proxy_payload,
     resource_limits_payload,
     restart_trigger_values,
     s3_payload,
     waf_payload,
+    webhook_endpoints_payload,
+    webhook_events_payload,
     worker_groups_payload,
 )
 from pilot.exceptions import MalformedSiteConfig
@@ -55,6 +58,8 @@ __all__ = [
     "s3_payload",
     "settings_bp",
     "waf_payload",
+    "webhook_endpoints_payload",
+    "webhook_events_payload",
 ]
 
 
@@ -104,6 +109,7 @@ def build_settings_response(config: BenchConfig, bench_root: Path | None = None)
         },
         "workers": worker_groups_payload(config),
         "firewall": firewall_payload(config),
+        "proxy": proxy_payload(config),
         "waf": {
             **waf_payload(config),
             "installed": WafManager.is_installed(),
@@ -133,6 +139,8 @@ def build_settings_response(config: BenchConfig, bench_root: Path | None = None)
         },
         "llm_providers": llm_provider_options(),
         "resource_limits": resource_limits_payload(config),
+        "webhook_endpoints": webhook_endpoints_payload(config),
+        "webhook_events": webhook_events_payload(),
         "mail": mail_payload(MailConfig.read(bench_root / "sites") if bench_root else MailConfig()),
         "monitor": {
             "system_log_path": str(system_log_path()),
@@ -227,8 +235,37 @@ def get_settings():
     return jsonify(build_settings_response(config, bench_root))
 
 
+@settings_bp.get("/cloudflare")
+def get_cloudflare_status():
+    """Whether an edge proxy fronts the host, and which site domains resolve to Cloudflare."""
+    from pilot.exceptions import DomainProviderError
+
+    try:
+        return jsonify(Bench(Path(current_app.config["BENCH_ROOT"])).get_cloudflare_status())
+    except DomainProviderError as error:
+        return error_response("cloudflare_status_unavailable", str(error), 502)
+
+
 _AUDIT_LOG_DEFAULT_LIMIT = 50
 _AUDIT_LOG_MAX_LIMIT = 500
+
+
+def _audit_filters(entry_type, site, status, jti, since, until) -> dict:
+    """`AuditLog.entries` filters from raw query values; `since`/`until` are ISO datetimes with an offset."""
+    from datetime import datetime
+
+    filters: dict[str, str | datetime | None] = {
+        "entry_type": entry_type or None,
+        "site": site or None,
+        "status": status or None,
+        "jti": jti or None,
+    }
+    for key, value in (("since", since), ("until", until)):
+        moment = datetime.fromisoformat(value) if value else None
+        if moment is not None and moment.tzinfo is None:
+            raise ValueError(f"{key} must include a timezone offset.")
+        filters[key] = moment
+    return filters
 
 
 @audit_bp.get("/audit-events")
@@ -240,20 +277,55 @@ def audit_log():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     limit, offset = parse_pagination(_AUDIT_LOG_DEFAULT_LIMIT, _AUDIT_LOG_MAX_LIMIT)
     try:
+        filters = _audit_filters(
+            entry_type=request.args.get("type"),
+            site=request.args.get("site"),
+            status=request.args.get("status"),
+            jti=request.args.get("jti"),
+            since=request.args.get("since"),
+            until=request.args.get("until"),
+        )
+    except ValueError as error:
+        return error_response("invalid_filter", str(error), 422)
+    try:
         log = AuditLog(Bench(bench_root))
 
         def fetch_newest(count: int) -> list:
-            return log.entries(
-                entry_type=request.args.get("type") or None,
-                site=request.args.get("site") or None,
-                status=request.args.get("status") or None,
-                jti=request.args.get("jti") or None,
-                limit=count,
-            )
+            return log.entries(**filters, limit=count)
 
         return paginated_response(fetch_newest, limit, offset)
     except Exception:
         return error_response("audit_unavailable", "Could not read audit events.", 500)
+
+
+@audit_bp.get("/audit-events/export")
+def export_audit_log():
+    """Download filtered bench audit events as CSV."""
+    from pilot.core.bench.audit_log import AuditLog
+
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    try:
+        filters = _audit_filters(
+            entry_type=request.args.get("type"),
+            site=request.args.get("site"),
+            status=request.args.get("status"),
+            jti=request.args.get("jti"),
+            since=request.args.get("since"),
+            until=request.args.get("until"),
+        )
+    except ValueError as error:
+        return error_response("invalid_filter", str(error), 422)
+    try:
+        body = AuditLog(Bench(bench_root)).get_csv(**filters)
+    except Exception:
+        return error_response("audit_unavailable", "Could not read audit events.", 500)
+    return Response(
+        body,
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filters["site"] or bench_root.name}-activity-log.csv"'
+        },
+    )
 
 
 @network_bp.get("/network/client")
@@ -327,6 +399,7 @@ def update_settings():
             update["old_firewall"],
             update["old_waf"],
             update["old_s3_config"],
+            update["old_proxy"],
         )
     except SettingsApplyFailed as error:
         return error_response(error.code, error.message, 500, {"saved": True})
@@ -341,6 +414,7 @@ def _save_settings_update(bench_root: Path, data: dict) -> dict:
         old_firewall = firewall_payload(config)
         old_waf = waf_payload(config)
         old_s3_config = s3_payload(config)
+        old_proxy = proxy_payload(config)
 
         patcher = ConfigPatcher(config, data, mail)
         if error := patcher.apply():
@@ -359,6 +433,7 @@ def _save_settings_update(bench_root: Path, data: dict) -> dict:
         "old_firewall": old_firewall,
         "old_waf": old_waf,
         "old_s3_config": old_s3_config,
+        "old_proxy": old_proxy,
     }
 
 
@@ -396,10 +471,15 @@ def apply_post_save_changes(
     old_firewall: dict,
     old_waf: dict,
     old_s3_config: dict,
+    old_proxy: dict,
 ) -> tuple[bool, str | None]:
     return Bench(config, bench_root).apply_saved_settings(
         old_restart,
         old_firewall,
         old_waf,
         old_s3_config,
+        old_proxy,
     )
+
+
+from admin.backend.api.v1.settings import common_site_config  # noqa: E402, F401

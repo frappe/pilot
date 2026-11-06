@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { useTranslation } from '../translation'
 import { addDomain, getDomainDnsRecords, removeDomain, setPrimaryDomain } from '@frappe/cloud-sdk/api'
-import type { DnsRecord, Domain } from '@frappe/cloud-sdk'
-import { Badge, Button, Dialog, Dropdown, ErrorMessage, TextInput } from 'frappe-ui'
-import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
+import type { DnsRecord, DnsRecords, Domain } from '@frappe/cloud-sdk'
+import { Badge, Button, Dialog, Dropdown, ErrorMessage, TextInput, toast } from 'frappe-ui'
+import { computed, inject, ref, watch } from 'vue'
 import Panel from '../components/Panel.vue'
+import Table from '../components/Table.vue'
 import { openExternal } from '../external'
 import { useErrorMessage, type Store } from '../store'
 
@@ -16,12 +17,21 @@ interface Props {
   active?: boolean
 }
 
+interface DnsRecordGroup {
+  type: string
+  records: DnsRecord[]
+}
+
 const props = defineProps<Props>()
 const store = props.store
 
 const input = ref('')
-const dnsRecords = ref<DnsRecord[]>([])
 const working = ref(false)
+const loadingRecords = ref(false)
+const showAdd = ref(false)
+const addTarget = ref('')
+const dnsRecordGroups = ref<DnsRecordGroup[]>([])
+const addError = ref('')
 const removeTarget = ref('')
 const showRemove = ref(false)
 const busyDomain = ref('')
@@ -35,7 +45,12 @@ watch(
   { immediate: true },
 )
 
-const domains = computed(() => store.state.domains?.domains)
+// A `.local` site name, such as Central's image site, is not reachable from outside.
+const domains = computed(() =>
+  store.state.domains?.domains.filter(
+    (row) => row.is_primary || !(row.is_default && row.domain.endsWith('.local')),
+  ),
+)
 
 const hasCustomDomains = computed(() => (domains.value || []).some((row) => !row.is_default))
 
@@ -64,42 +79,84 @@ const domainError = computed(() => {
   return ''
 })
 
-const canAdd = computed(
-  () => Boolean(normalizedDomain.value) && !domainError.value && !working.value,
+const canContinue = computed(
+  () =>
+    Boolean(normalizedDomain.value) &&
+    !domainError.value &&
+    !working.value &&
+    !loadingRecords.value,
 )
 
-let dnsTimer: ReturnType<typeof setTimeout> | undefined
-onBeforeUnmount(() => clearTimeout(dnsTimer))
+// frappe without `cname` and `a` lists Pilot's CNAME set, then its A set, in one list.
+const splitRecords = (records: DnsRecord[]): DnsRecords => {
+  const split = records.findIndex((record) => record.type.toUpperCase() === 'A')
+  return split < 0 ? { cname: records } : { cname: records.slice(0, split), a: records.slice(split) }
+}
 
-watch(normalizedDomain, (domain) => {
-  clearTimeout(dnsTimer)
-  dnsRecords.value = []
+const toRecordGroups = (records: DnsRecords): DnsRecordGroup[] => {
+  const groups: DnsRecordGroup[] = []
+  if (records.cname?.length) groups.push({ type: 'CNAME', records: records.cname })
+  if (records.a?.length) groups.push({ type: 'A', records: records.a })
+  return groups
+}
 
-  if (!domain || domainError.value) return
+const continueAdd = async () => {
+  const domain = normalizedDomain.value
 
-  dnsTimer = setTimeout(() => loadDnsRecords(domain), 400)
-})
+  if (!canContinue.value) return
 
-const loadDnsRecords = async (domain: string) => {
+  loadingRecords.value = true
+  store.state.domainsError = ''
+
   try {
     const response = await getDomainDnsRecords(domain)
 
-    if (domain === normalizedDomain.value) dnsRecords.value = response.records || []
-  } catch {}
+    dnsRecordGroups.value = toRecordGroups('cname' in response ? response : splitRecords(response.records || []))
+    addTarget.value = domain
+    addError.value = ''
+    showAdd.value = true
+  } catch (exception) {
+    store.state.domainsError = getErrorMessage(exception)
+  } finally {
+    loadingRecords.value = false
+  }
 }
 
-const confirmAdd = async () => {
-  const domain = normalizedDomain.value
+const verifyAdd = async () => {
+  working.value = true
+  addError.value = ''
 
-  if (!canAdd.value) return
+  try {
+    await addDomain(addTarget.value)
 
-  await run(async () => {
-    await addDomain(domain)
-
+    showAdd.value = false
     input.value = ''
+    toast.success(__('{0} added.', [addTarget.value]))
 
     await store.loadDomains(true)
-  })
+  } catch (exception) {
+    addError.value = getErrorMessage(exception)
+  } finally {
+    working.value = false
+  }
+}
+
+const recordColumns = [
+  { key: 'type', label: __('Type') },
+  { key: 'host', label: __('Host') },
+  { key: 'value', label: __('Points to'), class: 'w-full', cellClass: 'font-mono' },
+]
+
+const recordRows = (option: DnsRecord[]) =>
+  option.map((record, index) => ({ id: String(index), ...record }))
+
+const copyValue = async (value: string) => {
+  try {
+    await navigator.clipboard.writeText(value)
+    toast.success(__('Copied.'))
+  } catch {
+    toast.error(__("Couldn't copy. Select the text and copy it."))
+  }
 }
 
 const urlFor = (row: Domain) => `${row.public_scheme || (row.tls ? 'https' : 'http')}://${row.domain}`
@@ -111,7 +168,7 @@ const menuOptions = (row: Domain) =>
       icon: 'lucide-star',
       onClick: () => makePrimary(row.domain),
     },
-    !row.is_default && {
+    !row.is_default && !row.is_primary && {
       label: __('Remove'),
       icon: 'lucide-trash-2',
       theme: 'red' as const,
@@ -174,33 +231,21 @@ const run = async (action: () => Promise<void>) => {
         :aria-label="__('Domain')"
         :placeholder="__('Enter domain here')"
         :disabled="working"
-        @keydown.enter="confirmAdd"
+        @keydown.enter="continueAdd"
       >
         <template #prefix><span class="lucide-globe size-4 text-ink-gray-5" /></template>
       </TextInput>
 
       <Button
         variant="solid"
-        :disabled="Boolean(domainError)"
-        :loading="working && !busyDomain"
-        :label="__('Add')"
-        @click="confirmAdd"
+        :disabled="!normalizedDomain || Boolean(domainError) || working"
+        :loading="loadingRecords"
+        :label="__('Continue')"
+        @click="continueAdd"
       />
     </div>
 
     <ErrorMessage v-if="domainError || error" class="mt-2" :message="domainError || error" />
-
-    <div v-else-if="dnsRecords.length" class="mt-3 bg-surface-gray-2 p-4 rounded-6 text-p-sm text-ink-gray-6">
-      <p>{{ __("Add these records at your DNS provider, then add the domain.") }}</p>
-
-      <dl class="mt-3 grid grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)] gap-x-6 gap-y-1.5 font-mono text-xs">
-        <template v-for="(record, index) in dnsRecords" :key="index">
-          <dt class="text-ink-gray-8">{{ record.type }}</dt>
-          <dd class="truncate text-ink-gray-7">{{ record.host }}</dd>
-          <dd class="truncate font-mono text-ink-gray-7">{{ record.value }}</dd>
-        </template>
-      </dl>
-    </div>
 
     <ul v-if="domains?.length" class="gap-3 grid sm:grid-cols-2 mt-4">
       <li
@@ -259,6 +304,71 @@ const run = async (action: () => Promise<void>) => {
       </li>
     </ul>
   </Panel>
+
+  <Dialog v-model="showAdd" :title="__('Use your own domain')" size="xl">
+    <template #default>
+      <template v-if="dnsRecordGroups.length">
+        <p class="text-p-base text-ink-gray-7">
+          {{ dnsRecordGroups.length > 1
+              ? __('Add either one of these records at your domain provider.')
+              : __('Add this record at your domain provider.') }}
+        </p>
+
+        <div v-for="(group, index) in dnsRecordGroups" :key="group.type" class="mt-4">
+          <p class="mb-2 text-sm text-ink-gray-7">
+            {{ dnsRecordGroups.length > 1
+                ? __('Option {0}: {1} record', [index + 1, group.type])
+                : __('{0} record', [group.type]) }}
+          </p>
+
+          <Table
+            class="border rounded-6 border-outline-gray-2"
+            :columns="recordColumns"
+            :rows="recordRows(group.records)"
+          >
+            <template #value="{ row }">
+              <div class="flex items-center gap-2">
+                <span class="truncate">{{ row.value }}</span>
+                <Button
+                  variant="ghost"
+                  icon="lucide-copy"
+                  :label="__('Copy {0}', [row.value])"
+                  @click="copyValue(row.value)"
+                />
+              </div>
+            </template>
+          </Table>
+        </div>
+
+        <p class="mt-3 text-p-sm text-ink-gray-5">
+          {{ __('DNS changes can take a few minutes to propagate.') }}
+        </p>
+      </template>
+
+      <div v-else class="flex flex-col items-center gap-3 py-8">
+        <div class="flex justify-center items-center bg-surface-green-2 rounded-full size-12">
+          <span class="size-6 text-ink-green-2 lucide-check" aria-hidden="true" />
+        </div>
+
+        <p class="font-medium text-ink-gray-8">{{ __('No DNS records needed') }}</p>
+      </div>
+
+      <ErrorMessage v-if="addError" class="mt-3" :message="addError" />
+    </template>
+
+    <template #actions>
+      <div class="flex justify-end gap-2">
+        <Button :label="__('Cancel')" @click="showAdd = false" />
+
+        <Button
+          variant="solid"
+          :loading="working"
+          :label="dnsRecordGroups.length ? __('Verify DNS') : __('Register')"
+          @click="verifyAdd"
+        />
+      </div>
+    </template>
+  </Dialog>
 
   <Dialog v-model="showRemove" :title="__('Remove domain')" size="md">
     <template #default>

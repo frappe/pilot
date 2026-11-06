@@ -6,10 +6,20 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from pilot.config import BenchConfig
 from pilot.core.app import RevisionPin
 from pilot.core.bench import Bench
 from pilot.core.bench.migration.state import get_state
+from pilot.core.site.backups import SiteBackups
+
+
+@pytest.fixture(autouse=True)
+def database_estimate(monkeypatch):
+    """Sites here have no database; a test sets a size to exercise the disk check."""
+    monkeypatch.setattr(SiteBackups, "estimated_database_size", 0)
+    return lambda size: monkeypatch.setattr(SiteBackups, "estimated_database_size", size)
 
 
 def _write_bench_toml(bench_dir: Path, name: str, **settings) -> None:
@@ -152,6 +162,35 @@ def test_restore_action_uses_documented_endpoint(tmp_path: Path) -> None:
     assert response.get_json()["task_id"] == "task-restore"
 
 
+def _paused_operation(bench_root: Path, state: str):
+    site_dir = bench_root / "sites" / "site1.localhost"
+    site_dir.mkdir(parents=True)
+    (site_dir / "site_config.json").write_text("{}")
+    client = _client(bench_root)
+    operation = Bench(bench_root).migrations.create_site_migrate("site1.localhost")
+    operation.state = get_state(state)
+    operation.store.save(operation)
+    return client, operation
+
+
+def test_dismiss_action_queues_the_dismiss_task(tmp_path: Path) -> None:
+    client, operation = _paused_operation(tmp_path / "benches" / "current", "revert_failed")
+
+    with patch("pilot.tasks.dismiss_migration.DismissMigrationTask.queue", return_value="task-dismiss"):
+        response = client.post(f"/api/v1/migrations/{operation.id}/actions/dismiss")
+
+    assert response.status_code == 202
+    assert response.get_json()["task_id"] == "task-dismiss"
+
+
+def test_dismiss_action_is_refused_while_the_update_runs(tmp_path: Path) -> None:
+    client, operation = _paused_operation(tmp_path / "benches" / "current", "migrating")
+
+    response = client.post(f"/api/v1/migrations/{operation.id}/actions/dismiss")
+
+    assert response.status_code == 409
+
+
 def test_bypass_patch_rejects_a_stale_patch_identifier(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
     site_dir = bench_root / "sites" / "site1.localhost"
@@ -274,3 +313,24 @@ def test_detail_reports_a_queued_action_while_the_operation_is_paused(tmp_path: 
     # Once the worker is done, the operation state alone drives the UI again.
     (task_dir / "status").write_text("success")
     assert client.get(f"/api/v1/migrations/{operation.id}").get_json()["pending_action"] is None
+
+
+def test_post_updates_is_refused_when_the_disk_cannot_hold_the_backups(tmp_path: Path, database_estimate) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    (bench_root / "sites" / "site1.localhost").mkdir(parents=True)
+    (bench_root / "sites" / "site1.localhost" / "site_config.json").write_text("{}")
+    client = _client(bench_root)
+    database_estimate(10**18)
+
+    with (
+        patch("pilot.integrations.marketplace.Marketplace.registry", return_value=[]),
+        patch("pilot.core.bench.Bench.apps", return_value=[_app_needing_migrate()]),
+        patch("pilot.tasks.migration_backup.MigrationBackupTask.queue") as queue,
+    ):
+        resp = client.post("/api/v1/updates", json={})
+
+    assert resp.status_code == 507
+    assert resp.get_json()["error"]["code"] == "insufficient_disk_space"
+    assert "Not enough disk space for the backups this migration takes first" in resp.get_json()["error"]["message"]
+    queue.assert_not_called()
+    assert client.get("/api/v1/migrations").get_json()["data"] == []

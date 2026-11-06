@@ -3,6 +3,7 @@ name: Install Script Smoke Tests
 on:
   pull_request:
     branches: [develop]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - install.sh
       - scripts/smoke_install.sh
@@ -10,8 +11,13 @@ on:
       - .github/workflows/install-smoke.yml
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   shellcheck:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -26,6 +32,7 @@ jobs:
         run: shellcheck scripts/smoke_install_macos.sh
 
   smoke:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     needs: shellcheck
     runs-on: ubuntu-22.04
     strategy:
@@ -43,6 +50,7 @@ jobs:
         run: ./scripts/smoke_install.sh "${{ matrix.image }}"
 
   smoke-macos:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     needs: shellcheck
     runs-on: macos-14
     steps:

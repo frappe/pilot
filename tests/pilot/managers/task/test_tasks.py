@@ -276,6 +276,42 @@ def test_read_output_returns_all_lines_when_fewer_than_limit(tmp_path: Path) -> 
     assert result == ["alpha", "beta", "gamma"]
 
 
+def test_get_progress_reads_steps_and_the_running_step_progress_bar(tmp_path: Path) -> None:
+    task_id = "20260521-143022-aabbcc"
+    task_dir = _make_task_dir(tmp_path / "tasks", task_id, status="running")
+    (task_dir / "output.log").write_text(
+        "STEP fetch,100.5 Fetch erpnext\ncloning\nSTEP install,160.0 Install erpnext on site1\n"
+        "Updating DocTypes for erpnext : [====      ] 45%\n"
+    )
+    reader = TaskReader(tmp_path)
+
+    progress = reader.get_progress(reader.read_task(task_id))
+
+    assert progress == {
+        "steps": [
+            {"key": "fetch", "label": "Fetch erpnext", "status": "done", "started_at": 100.5},
+            {"key": "install", "label": "Install erpnext on site1", "status": "running", "started_at": 160.0},
+        ],
+        "activity": "Updating DocTypes for erpnext",
+        "percent": 45,
+        "error": None,
+    }
+
+
+def test_get_progress_marks_the_failed_step_and_keeps_the_last_error_line(tmp_path: Path) -> None:
+    task_id = "20260521-143022-aabbcc"
+    task_dir = _make_task_dir(tmp_path / "tasks", task_id, status="failed")
+    (task_dir / "output.log").write_text(
+        "STEP fetch,100.5 Fetch erpnext\nError: could not fetch payments\nSTEP-FAILED fetch,101.0\n"
+    )
+    reader = TaskReader(tmp_path)
+
+    progress = reader.get_progress(reader.read_task(task_id))
+
+    assert [step["status"] for step in progress["steps"]] == ["failed"]
+    assert progress["error"] == "Error: could not fetch payments"
+
+
 def test_iter_output_streams_display_text_without_syslog_envelopes(tmp_path: Path) -> None:
     task_id = "20260521-143022-aabbcc"
     task_dir = _make_task_dir(tmp_path / "tasks", task_id)
