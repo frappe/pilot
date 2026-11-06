@@ -35,6 +35,34 @@ def can_cap_memory() -> bool:
     return trial.returncode == 0
 
 
+# systemd's exit status when it cannot set up a unit's namespaces.
+_EXIT_NAMESPACE = 226
+
+
+def get_sandbox_error(properties: list[str]) -> str:
+    """Why a trial unit with these properties fails to start here, or "" when it runs."""
+    if not shutil.which("systemd-run"):
+        return "systemd-run is not installed."
+    argv = ["systemd-run", "--user", "--wait", "--quiet", "--collect"]
+    for directive in properties:
+        argv += ["-p", directive]
+    try:
+        trial = subprocess.run(
+            [*argv, "true"], env=systemctl_env(), capture_output=True, text=True, timeout=30, check=False
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return str(exc)
+    if trial.returncode == 0:
+        return ""
+    if trial.returncode == _EXIT_NAMESPACE:
+        return (
+            "systemd could not create the sandbox's user namespace (exit 226). "
+            "The host blocks unprivileged user namespaces; on Ubuntu 24.04 that is "
+            "kernel.apparmor_restrict_unprivileged_userns = 1."
+        )
+    return trial.stderr.strip() or f"systemd-run exited with code {trial.returncode}."
+
+
 def memory_capped(argv: list[str], memory_max_mb: int, swap_max_mb: int) -> list[str]:
     """Run argv in a transient scope capped at memory_max_mb of RAM and swap_max_mb of
     swap. Only where `can_cap_memory` holds. Swap lets small hosts finish large builds."""

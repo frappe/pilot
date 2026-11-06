@@ -1,4 +1,5 @@
 import copy
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -420,6 +421,39 @@ def test_production_enabled_requires_process_manager() -> None:
     data["admin"] = {"domain": "admin.example.com"}
     with pytest.raises(ConfigError):
         load_from_dict(data)
+
+
+def test_production_sandbox_round_trips() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = {"enabled": True, "process_manager": "systemd", "sandbox": True}
+    config = load_from_dict(tomllib.loads(load_from_dict(data).dumps()))
+    assert config.production.sandbox is True
+
+
+def test_production_sandbox_is_off_and_unwritten_by_default() -> None:
+    config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
+    assert config.production.sandbox is False
+    assert "sandbox" not in config.dumps()
+
+
+def test_production_sandbox_needs_systemd() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = {"enabled": True, "process_manager": "supervisor", "sandbox": True}
+    with pytest.raises(ConfigError, match="systemd"):
+        load_from_dict(data)
+
+
+def test_production_sandbox_refuses_a_table() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = {"enabled": True, "process_manager": "systemd", "sandbox": {"enabled": False}}
+    with pytest.raises(ConfigError, match="true or false"):
+        load_from_dict(data)
+
+
+def test_production_sandbox_can_be_set_before_production_is() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = {"enabled": False, "sandbox": True}
+    assert load_from_dict(data).production.sandbox is True
 
 
 def test_lite_defaults_to_off() -> None:

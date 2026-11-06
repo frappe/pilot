@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.exceptions import BenchError
-from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
+from pilot.internal.atomic_file import exclusive_file_lock
 from pilot.utils import normalize_host
 
 if TYPE_CHECKING:
@@ -113,5 +113,5 @@ class SiteAliases:
             return {}
 
     def _write(self, renamed: dict[str, float]) -> None:
-        """Callers hold the registry lock."""
-        replace_private_text_locked(self.registry_path, json.dumps(renamed, indent=2))
+        """Callers hold the registry lock. Written in place, so a sandboxed unit's read-only bind stays."""
+        self.registry_path.write_text(json.dumps(renamed, indent=2))

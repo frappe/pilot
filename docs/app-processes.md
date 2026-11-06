@@ -30,6 +30,8 @@ A process runs as `<app>-<name>`, here `mail-stalwart`, and logs to `logs/mail-s
 | `env` | table of strings or numbers | empty | Environment variables, over the defaults below. |
 | `restart_on_failure` | bool | `true` | Restart after a non-zero exit. |
 | `stop_timeout` | int | manager default | Seconds to wait for a graceful stop. |
+| `read_paths` | list of strings | empty | Paths the process may read with [`sandbox = true`](production.md#sandbox). |
+| `write_paths` | list of strings | empty | Paths the process may read and write with the sandbox. |
 
 The table key must match `^[a-z0-9][a-z0-9_]{0,31}$`, with no hyphen so `<app>-<name>` stays unique, and env keys must match `^[A-Z_][A-Z0-9_]*$`. Values must not contain control characters.
 
@@ -41,6 +43,33 @@ Every app process gets the bench venv first on `PATH`, so `python` and the comma
 
 A `command` runs in the app directory, `apps/<app>`. A relative `working_dir` is read from there. The first entry of `command`, `pre_run` and `post_run` resolves from the working directory when it contains a slash (`./stalwart`, `bin/stalwart`). An absolute path is used as given, and a bare name (`flow`) is looked up on `PATH`. Paths are not checked on disk, so `pre_run` can download the executable.
 
+## Sandbox paths
+
+With the sandbox on, the home directory is empty, and so is the bench except for the folders Pilot knows a workload uses (`apps`, `env`, `sites`, `config`, `logs`, `pids` and `chromium`). An app lists any other folder it needs in its own `pyproject.toml`, and Pilot does not need to know the app.
+
+A path in `read_paths` or `write_paths` is one of three kinds:
+
+- **A folder in the bench.** A name with no `/` or `~/` in front, such as `flow-server`, is a folder in the bench the app is in. Pilot creates a writable one before the units start, because a workload cannot create a folder in the read-only bench root. It cannot be hidden (`.credentials`), an admin folder (`tmp`, `migrations`, `tasks`), or `config`, and it cannot reach out of the bench, even through a link.
+- **A folder in the home directory.** It starts with `~/`.
+- **A folder on the system.** It starts with `/`.
+
+A path in the home directory or on the system must be without `..` and name a directory below one of these roots:
+
+| Roots | Directories |
+|---|---|
+| Home | `~/.cache`, `~/.local/share`, `~/.local/state` |
+| System | `/opt`, `/srv`, `/var/lib`, `/var/cache`, `/usr/local/share` |
+
+The root itself is refused. So is a directory named `keyrings`, `gnome-keyring`, `kwalletd`, `applications`, `autostart`, `systemd`, `uv` or `pilot` directly below a root, because those hold credentials, run at login or are code the admin runs. Pilot follows symlinks, so a link inside a root cannot lead out of it. Anything else, such as `~/.ssh`, `~/.bashrc`, `~/.config` or `~/.local/bin`, fails the app's process setup with an error.
+
+```toml
+[tool.pilot.sandbox]
+read_paths = ["~/.cache/models"]
+write_paths = ["~/.cache/mail", "flow-server"]
+```
+
+`[tool.pilot.sandbox]` applies to every workload unit while a site uses the app. `read_paths` and `write_paths` on a process apply to that process only. A missing path is skipped.
+
 ## Frappe commands
 
 `frappe_command` runs a command the app adds to the Frappe CLI, the same as `bench <command>`. Frappe finds the sites from its working directory, so it runs in `sites` and takes no `working_dir`.
@@ -49,7 +78,7 @@ A `command` runs in the app directory, `apps/<app>`. A relative `working_dir` is
 
 `pre_run` runs on every start, so keep it idempotent. A shell line needs an explicit shell: `pre_run = ["bash", "-c", "test -x ./stalwart || ./scripts/install.sh"]`. On systemd, `pre_run` counts toward the 90 second start timeout.
 
-systemd runs the hooks as `ExecStartPre` and `ExecStopPost`. Supervisor and the dev runner run a process with hooks inside `sh`, which runs `post_run` after the process exits and keeps the exit code of the process, or of `pre_run` when it fails.
+systemd runs the hooks as `ExecStartPre` and `ExecStopPost`. With [`sandbox = true`](production.md#sandbox), the command and both hooks run in the sandbox: they can write only inside the bench, and sudo fails. Supervisor and the dev runner run a process with hooks inside `sh`, which runs `post_run` after the process exits and keeps the exit code of the process, or of `pre_run` when it fails.
 
 ## When they run
 

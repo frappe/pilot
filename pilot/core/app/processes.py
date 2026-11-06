@@ -5,6 +5,7 @@ import sys
 import tomllib
 from typing import TYPE_CHECKING
 
+from pilot.core.app.sandbox import CONTROL_CHARACTER_PATTERN, AppSandbox, SandboxPaths
 from pilot.exceptions import BenchError
 from pilot.managers.processes.definitions import ProcessDefinition, ProcessDefinitionBuilder
 
@@ -16,7 +17,6 @@ if TYPE_CHECKING:
 # No hyphen, so `<app>-<name>` names one process of one app.
 NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_]{0,31}$")
 ENV_KEY_PATTERN = re.compile(r"^[A-Z_][A-Z0-9_]*$")
-CONTROL_CHARACTER_PATTERN = re.compile(r"[\x00-\x1f\x7f]")
 # Fixed rather than the caller's PATH, so a unit reads the same whoever writes it.
 SYSTEM_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 if sys.platform == "darwin":
@@ -81,6 +81,9 @@ class AppProcesses:
         if stop_timeout is not None and not (type(stop_timeout) is int and stop_timeout >= 0):
             raise self._error(f"process '{name}' stop_timeout must be a non-negative integer.")
 
+        paths = SandboxPaths.from_declaration(
+            declaration, f"process '{name}'", self._error, self.app.bench.path
+        )
         full_name = f"{self.app.config.name}-{name}"
         return ProcessDefinition(
             name=full_name,
@@ -94,7 +97,13 @@ class AppProcesses:
             restart_on_failure=restart_on_failure,
             pre_run=self._get_argv(name, "pre_run", declaration, working_dir),
             post_run=self._get_argv(name, "post_run", declaration, working_dir),
+            read_paths=list(paths.read),
+            write_paths=list(paths.write),
         )
+
+    def get_sandbox_paths(self) -> SandboxPaths:
+        """Paths the app's `[tool.pilot.sandbox]` keeps for every workload unit."""
+        return AppSandbox(self.app).get_paths(self._error)
 
     def _get_command(self, name: str, declaration: dict) -> tuple[list[str], Path]:
         """argv and working directory from `command`, or from `frappe_command` run in the sites directory."""

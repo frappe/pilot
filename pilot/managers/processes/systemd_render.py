@@ -2,11 +2,42 @@ from __future__ import annotations
 
 import re
 import shlex
+from collections.abc import Iterable
+from pathlib import Path
 
 from pilot.managers.processes.base import ServiceRenderer, override
 from pilot.managers.processes.local import ProcessDefinition
+from pilot.managers.processes.sandbox import CONTROL_ENTRIES, WORKLOAD_DIRECTORIES
 
 _SAFE_ARGUMENT = re.compile(r"[\w@%+=:,./-]+", re.ASCII)
+
+# NoNewPrivileges keeps sudo out; the mount directives need PrivateUsers in a --user unit.
+_SANDBOX_DIRECTIVES = [
+    "NoNewPrivileges=yes",
+    "PrivateUsers=yes",
+    "SystemCallFilter=@system-service",
+    "SystemCallArchitectures=native",
+    "SystemCallErrorNumber=EPERM",
+    "ProtectKernelTunables=yes",
+    "ProtectKernelModules=yes",
+    "ProtectKernelLogs=yes",
+    "ProtectControlGroups=yes",
+    "ProtectClock=yes",
+    "ProtectHostname=yes",
+    "PrivateDevices=yes",
+    "RestrictNamespaces=yes",
+    "RestrictRealtime=yes",
+    "RestrictSUIDSGID=yes",
+    "LockPersonality=yes",
+    "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK",
+    "ProtectSystem=strict",
+    "ProtectHome=tmpfs",
+    "PrivateTmp=yes",
+    # Host sockets such as docker.sock and libvirt-sock open to the user's groups.
+    "TemporaryFileSystem=/run:ro",
+    "TemporaryFileSystem=/dev/shm",
+    "InaccessiblePaths=-/var/log/journal",
+]
 
 
 def _exec(argv: list[str]) -> str:
@@ -23,6 +54,42 @@ def _quote(argument: str) -> str:
     return argument.replace("%", "%%").replace("$", "$$")
 
 
+def get_sandbox_properties(
+    bench_path: Path, benches_dir: Path, read_paths: tuple[str, ...] = (), write_paths: tuple[str, ...] = ()
+) -> list[str]:
+    """systemd.exec directives that confine a workload unit to its own bench.
+
+    `read_paths` and `write_paths` are what every unit gets back from the masked home."""
+    # Pilot's control files: the admin trusts them, so a workload must not change them.
+    control = [str(bench_path / "config" / name) for name in CONTROL_ENTRIES]
+    control.append(str(bench_path / "sites" / "common_site_config.json"))
+    folders = " ".join(_quote(str(bench_path / name)) for name in WORKLOAD_DIRECTORIES)
+    return [
+        *_SANDBOX_DIRECTIVES,
+        # ProtectHome only masks /home and /root; this masks a home elsewhere, such as /srv/frappe.
+        f"TemporaryFileSystem={_quote(f'{Path.home()}:ro')}",
+        # The tmpfs hides the neighbouring benches and this bench's admin files; the binds bring back
+        # the folders a workload uses.
+        f"TemporaryFileSystem={_quote(f'{benches_dir}:ro')}",
+        f"BindPaths={folders}",
+        f"ReadWritePaths={folders}",
+        # DNS on hosts that run systemd-resolved.
+        *get_path_properties([*control, "/run/systemd/resolve", *read_paths], write_paths),
+    ]
+
+
+def get_path_properties(read_paths: Iterable[str], write_paths: Iterable[str]) -> list[str]:
+    """Directives that bring paths back into the masked home. "-" skips a path the host lacks."""
+    properties = []
+    read_paths, write_paths = list(read_paths), list(write_paths)
+    if read_paths:
+        properties.append("BindReadOnlyPaths=" + " ".join(_quote(f"-{path}") for path in read_paths))
+    if write_paths:
+        writable = " ".join(_quote(f"-{path}") for path in write_paths)
+        properties += [f"BindPaths={writable}", f"ReadWritePaths={writable}"]
+    return properties
+
+
 def _render_env(env: dict) -> str:
     lines = []
     for key, value in env.items():
@@ -34,9 +101,12 @@ def _render_env(env: dict) -> str:
 class SystemdRenderer(ServiceRenderer):
     """Builds systemd --user unit/socket/target text for a bench."""
 
-    def __init__(self, bench_name: str, database_service: str = "") -> None:
+    def __init__(
+        self, bench_name: str, database_service: str = "", sandbox_properties: list[str] | None = None
+    ) -> None:
         super().__init__(bench_name)
         self.database_service = database_service
+        self.sandbox_properties = sandbox_properties or []
 
     @override
     def render(self, pd: ProcessDefinition) -> str:
@@ -48,6 +118,7 @@ class SystemdRenderer(ServiceRenderer):
         post = f"ExecStopPost={_exec(pd.post_run)}\n" if pd.post_run else ""
         restart = "on-failure" if pd.restart_on_failure else "no"
         remove_socket = f"ExecStartPre=/bin/rm -f {pd.socket_file}\n" if pd.socket_file else ""
+        sandbox = "".join(f"{line}\n" for line in self._sandbox_lines(pd))
         return (
             f"[Unit]\n"
             f"Description={self.bench_name} {pd.name}\n"
@@ -61,10 +132,15 @@ class SystemdRenderer(ServiceRenderer):
             f"{post}"
             f"Restart={restart}\n"
             f"LimitNOFILE=65535\n"
-            f"{stop}{kill_mode}"
+            f"{stop}{kill_mode}{sandbox}"
             f"StandardOutput=append:{pd.log_file}\n"
             f"StandardError=append:{pd.log_file}.error.log\n"
         )
+
+    def _sandbox_lines(self, pd: ProcessDefinition) -> list[str]:
+        if not self.sandbox_properties:
+            return []
+        return [*self.sandbox_properties, *get_path_properties(pd.read_paths, pd.write_paths)]
 
     def _dependencies(self, pd: ProcessDefinition) -> str:
         # systemd stops in reverse start order; redis must outlive a lite runner draining into it.

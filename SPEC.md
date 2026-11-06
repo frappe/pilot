@@ -34,7 +34,7 @@ Commands and API handlers must not duplicate Frappe, systemd, nginx, database, o
 
 ## Trust Model
 
-Pilot manages benches for one host user. Every bench under a benches directory runs as that user, shares its sudo grants, and can read the neighbouring bench directories. Benches are a unit of workload, not a security boundary.
+Pilot manages benches for one host user. Every bench under a benches directory runs as that user, shares its sudo grants, and can read the neighbouring bench directories. Benches are a unit of workload, not a security boundary. `[production] sandbox = true` hides the neighbouring benches and the home directory from a systemd bench's workload units and blocks sudo there, but the shared user still lets one bench reach another through `/proc`, signals and loopback ports. See [Production](docs/production.md#sandbox).
 
 Assume from this:
 

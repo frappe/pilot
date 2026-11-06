@@ -1131,6 +1131,36 @@ def test_is_reachable_on_macos_ignores_local_socket_path() -> None:
         assert m.is_reachable() is True
 
 
+def test_is_reachable_on_linux_connects_to_the_socket_without_asking_systemd(tmp_path) -> None:
+    """The sandboxed web unit has no user bus, so systemctl cannot answer there."""
+    import socket
+
+    path = tmp_path / "mysqld.sock"
+    listener = socket.socket(socket.AF_UNIX)
+    listener.bind(str(path))
+    listener.listen()
+    m = _manager()
+    with (
+        patch.object(type(m), "socket_path", new_callable=PropertyMock, return_value=str(path)),
+        patch.object(m, "is_running", side_effect=AssertionError("asked systemd")),
+        patch(f"{MODULE}.is_macos", return_value=False),
+    ):
+        assert m.is_reachable() is True
+    listener.close()
+
+
+def test_is_reachable_on_linux_rejects_a_stale_socket_file(tmp_path) -> None:
+    import socket
+
+    path = tmp_path / "mysqld.sock"
+    stale = socket.socket(socket.AF_UNIX)
+    stale.bind(str(path))
+    stale.close()
+    m = _manager()
+    with patch.object(type(m), "socket_path", new_callable=PropertyMock, return_value=str(path)), patch(f"{MODULE}.is_macos", return_value=False):
+        assert m.is_reachable() is False
+
+
 def test_run_sql_as_superuser_omits_local_socket_on_macos() -> None:
     """Homebrew's mariadb client owns socket resolution on macOS -
     socket_path() (our own _STATE_DIR) is never created there."""

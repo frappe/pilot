@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from pilot.core.app.node_packages import NodePackages
 from pilot.exceptions import BenchError
 from pilot.managers.environment import AdminEnvManager
+from pilot.managers.processes.sandbox import WAITER
 from pilot.utils import cli_root
 
 if TYPE_CHECKING:
@@ -38,6 +39,8 @@ class ProcessDefinition:
     stop_main_process_only: bool = False  # it stops its own children; a signal to them too kills their jobs
     pre_run: list[str] = field(default_factory=list)
     post_run: list[str] = field(default_factory=list)
+    read_paths: list[str] = field(default_factory=list)  # sandbox: extra paths this unit may read
+    write_paths: list[str] = field(default_factory=list)  # sandbox: extra paths this unit may write
 
     @property
     def argv_with_hooks(self) -> list[str]:
@@ -124,13 +127,17 @@ class ProcessDefinitionBuilder:
         ]
 
     def wait_for_database_before_web(self, defs: list[ProcessDefinition]) -> None:
+        from pilot.core.bench.runtime import BenchRuntime
+
+        # Given the address so the sandboxed unit never reads bench.toml.
+        address = BenchRuntime(self.bench).get_database_address()
+        if not address:
+            return
         web = next(pd for pd in defs if pd.name == "web")
         web.pre_run = [
-            str(AdminEnvManager(cli_root()).python),
-            str(cli_root() / "bin" / "pilot"),
-            "-b",
-            str(self.bench.path),
-            "wait-for-database",
+            str(self.python),
+            str(cli_root() / WAITER),
+            address,
         ]
 
     def process_definitions(self) -> list[ProcessDefinition]:
