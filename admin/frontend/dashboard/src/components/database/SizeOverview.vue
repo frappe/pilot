@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Badge, Button, Select, Skeleton, TextInput } from 'frappe-ui'
 import { computed, onUnmounted, ref, watch } from 'vue'
-import Scrollbar from '@/components/common/Scrollbar.vue'
+import Table from '@/components/common/Table.vue'
 import type { DatabaseDiagnostics, DatabaseSize, TableSize } from '@/types/database'
 import { formatBytes } from '@/utils/format'
 import { relativeTime } from '@/utils/time'
@@ -29,17 +29,40 @@ interface Row {
 
 const props = defineProps<Props>()
 
-const emit = defineEmits<{ refresh: []; pick: [site: string] }>()
+const emit = defineEmits<{ refresh: [] }>()
 
 const PAGE_SIZE = 15
 
-const grid = 'grid grid-cols-[minmax(0,2.6fr)_repeat(5,minmax(0,1fr))] items-center gap-6'
+const placeholders: Row[] = Array.from({ length: 7 }, (_, index) => ({
+  key: `placeholder-${index}`,
+  label: '',
+  detail: '',
+  site: '',
+  data: 0,
+  index: 0,
+  claimable: 0,
+  total: 0,
+  other: false,
+}))
 
 const tones = {
   data: 'bg-surface-gray-7',
   index: 'bg-surface-gray-5',
   claimable: 'bg-[var(--ink-amber-6)]',
 }
+
+const partColumns = [
+  { key: 'data', label: 'Data', tone: tones.data },
+  { key: 'index', label: 'Index', tone: tones.index },
+  { key: 'claimable', label: 'Claimable', tone: tones.claimable },
+] as const
+
+const columns = computed(() => [
+  { key: 'name', label: props.site ? 'Table' : 'Database', class: 'w-[34%] max-w-0' },
+  { key: 'size', label: 'Size', class: 'w-[13%]' },
+  { key: 'share', label: 'Share', class: 'w-[13%]' },
+  ...partColumns.map((part) => ({ key: part.key, label: part.label, class: 'w-[13%]' })),
+])
 
 const visible = ref(PAGE_SIZE)
 const query = ref('')
@@ -380,102 +403,67 @@ const updatedLabel = computed(() => {
         <Select v-model="sortKey" :options="sortOptions" side="bottom" size="sm" class="max-w-40" />
       </header>
 
-      <Scrollbar class="flex-1 min-h-0">
-        <div class="flex flex-col mx-3 md:mx-4 min-w-[36rem]">
-          <div
-            class="bg-surface-gray-2 dark:bg-surface-gray-1 px-2 rounded-4 h-8 text-ink-gray-5 text-sm shrink-0"
-            :class="grid"
-          >
-            <span>{{ site ? 'Table' : 'Database' }}</span>
-            <span>Size</span>
-            <span>Share</span>
-            <span
-              v-for="column in [
-                { label: 'Data', tone: tones.data },
-                { label: 'Index', tone: tones.index },
-                { label: 'Claimable', tone: tones.claimable },
-              ]"
-              :key="column.label"
-              class="flex items-center gap-1.5"
+      <div
+        v-if="!loading && (error || !rows.length)"
+        class="flex flex-col flex-1 justify-center items-center gap-1 py-16 text-center"
+      >
+        <span
+          class="mb-2 size-6 text-ink-gray-4"
+          :class="error ? 'lucide-circle-alert' : 'lucide-database'"
+        />
+        <p class="text-base-medium text-ink-gray-8">
+          {{ error ? 'Could not read the size' : query ? 'No matches' : 'No breakdown' }}
+        </p>
+        <p class="max-w-sm text-ink-gray-6 text-p-sm">
+          {{ error || (query ? `Nothing matches "${query}"` : 'This server reports one total for every database.') }}
+        </p>
+        <Button v-if="query && !error" size="sm" label="Clear search" class="mt-3" @click="query = ''" />
+      </div>
+
+      <Table
+        v-else
+        :columns="columns"
+        :rows="loading ? placeholders : rows"
+        height="flex-1"
+        class="mx-3 md:mx-4 text-base"
+      >
+        <template #name="{ row }">
+          <Skeleton v-if="loading" class="rounded-2 w-48 h-3.5" />
+          <span v-else class="flex items-baseline gap-2 min-w-0">
+            <RouterLink
+              v-if="row.site"
+              :to="{ query: { ...$route.query, site: row.site } }"
+              class="after:absolute after:inset-0 text-ink-gray-8 shrink-0"
             >
-              <span class="rounded-full size-1.5 shrink-0" :class="column.tone" />
-              {{ column.label }}
+              {{ row.label }}
+            </RouterLink>
+            <span v-else class="text-ink-gray-6 shrink-0">{{ row.label }}</span>
+            <span v-if="row.site" class="min-w-0 font-mono text-ink-gray-4 text-xs truncate">
+              {{ row.detail }}
             </span>
-          </div>
+          </span>
+        </template>
 
-          <template v-if="loading">
-            <div
-              v-for="index in 7"
-              :key="index"
-              class="border-b border-outline-gray-1 last:border-b-0 h-10"
-              :class="[grid, 'px-2']"
-              aria-busy="true"
-            >
-              <Skeleton class="rounded-2 w-48 h-3.5" />
-              <Skeleton v-for="cell in 5" :key="cell" class="rounded-2 w-14 h-3.5" />
-            </div>
-          </template>
+        <template #size="{ row }">
+          <Skeleton v-if="loading" class="rounded-2 w-14 h-3.5" />
+          <span v-else class="text-base-medium text-ink-gray-8">{{ formatBytes(row.total) }}</span>
+        </template>
 
-          <div
-            v-else-if="error || !rows.length"
-            class="flex flex-col justify-center items-center gap-1 py-16 text-center"
+        <template #share="{ row }">
+          <Skeleton v-if="loading" class="rounded-2 w-14 h-3.5" />
+          <span v-else class="text-ink-gray-5">{{ formatPercent(percent(row.total)) }}</span>
+        </template>
+
+        <template v-for="part in partColumns" :key="part.key" #[part.key]="{ row }">
+          <Skeleton v-if="loading" class="rounded-2 w-14 h-3.5" />
+          <span
+            v-else
+            :class="part.key === 'claimable' && isHeavy(row) ? 'text-ink-gray-8' : 'text-ink-gray-6'"
           >
-            <span
-              class="mb-2 size-6 text-ink-gray-4"
-              :class="error ? 'lucide-circle-alert' : 'lucide-database'"
-            />
-            <p class="text-base-medium text-ink-gray-8">
-              {{ error ? 'Could not read the size' : query ? 'No matches' : 'No breakdown' }}
-            </p>
-            <p class="max-w-sm text-ink-gray-6 text-p-sm">
-              {{ error ||
-                (query
-                  ? `Nothing matches "${query}"`
-                  : 'This server reports one total for every database.') }}
-            </p>
-            <Button
-              v-if="query && !error"
-              size="sm"
-              label="Clear search"
-              class="mt-3"
-              @click="query = ''"
-            />
-          </div>
-
-          <template v-else>
-            <div
-              v-for="row in rows"
-              :key="row.key"
-              class="group size-row hover:bg-surface-gray-1 h-10 text-base"
-              :class="[grid, 'px-2', row.site && 'cursor-pointer']"
-              :role="row.site ? 'button' : undefined"
-              :tabindex="row.site ? 0 : undefined"
-              @click="row.site && emit('pick', row.site)"
-              @keydown.enter="row.site && emit('pick', row.site)"
-            >
-              <span class="flex items-baseline gap-2 min-w-0">
-                <span
-                  class="transition-colors duration-150 shrink-0"
-                  :class="[row.other ? 'text-ink-gray-6' : 'text-ink-gray-8', row.site && 'group-hover:text-ink-gray-9']"
-                >
-                  {{ row.label }}
-                </span>
-                <span v-if="row.site" class="min-w-0 font-mono text-ink-gray-4 text-xs truncate">
-                  {{ row.detail }}
-                </span>
-              </span>
-
-              <span class="text-base-medium text-ink-gray-8">{{ formatBytes(row.total) }}</span>
-              <span class="text-ink-gray-5">{{ formatPercent(percent(row.total)) }}</span>
-              <span class="text-ink-gray-6">{{ formatBytes(row.data) }}</span>
-              <span class="text-ink-gray-6">{{ formatBytes(row.index) }}</span>
-              <span :class="isHeavy(row) ? 'text-ink-gray-8' : 'text-ink-gray-6'">
-                {{ row.claimable ? formatBytes(row.claimable) : '-' }}
-              </span>
-            </div>
-          </template>
-        </div>
-      </Scrollbar>
+            {{ row[part.key] ? formatBytes(row[part.key] ?? 0) : '-' }}
+          </span>
+        </template>
+      </Table>
 
       <footer
         v-if="ready && site && matched.length > PAGE_SIZE"
@@ -493,19 +481,3 @@ const updatedLabel = computed(() => {
     </div>
   </section>
 </template>
-
-<style scoped>
-.size-row {
-  border-bottom: 1px solid var(--outline-gray-1);
-}
-
-.size-row:hover {
-  border-radius: 8px;
-}
-
-.size-row:last-child,
-.size-row:hover,
-.size-row:has(+ .size-row:hover) {
-  border-bottom-color: transparent;
-}
-</style>

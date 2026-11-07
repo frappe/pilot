@@ -547,7 +547,6 @@ onMounted(load)
       :site-by-database="siteByDatabase"
       :site="selectedSite"
       @refresh="loadSize"
-      @pick="selectedSite = $event"
     />
 
     <main v-show="picked !== 'size'" class="md:h-[calc(100dvh-93px)] p-3 md:p-4">
