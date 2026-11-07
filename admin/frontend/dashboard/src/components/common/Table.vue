@@ -97,6 +97,10 @@ tbody tr:not(:last-child) td {
   @apply border-b border-outline-gray-1;
 }
 
+tbody tr {
+  position: relative;
+}
+
 tbody tr.spacer td {
   @apply border-0 p-0;
 }

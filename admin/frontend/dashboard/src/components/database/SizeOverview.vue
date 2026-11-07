@@ -33,7 +33,7 @@ const emit = defineEmits<{ refresh: []; pick: [site: string] }>()
 
 const PAGE_SIZE = 15
 
-const grid = 'grid grid-cols-[minmax(0,2.6fr)_repeat(5,minmax(0,1fr))_1rem] items-center gap-6'
+const grid = 'grid grid-cols-[minmax(0,2.6fr)_repeat(5,minmax(0,1fr))] items-center gap-6'
 
 const tones = {
   data: 'bg-surface-gray-7',
@@ -401,7 +401,6 @@ const updatedLabel = computed(() => {
               <span class="rounded-full size-1.5 shrink-0" :class="column.tone" />
               {{ column.label }}
             </span>
-            <span />
           </div>
 
           <template v-if="loading">
@@ -414,7 +413,6 @@ const updatedLabel = computed(() => {
             >
               <Skeleton class="rounded-2 w-48 h-3.5" />
               <Skeleton v-for="cell in 5" :key="cell" class="rounded-2 w-14 h-3.5" />
-              <span />
             </div>
           </template>
 
@@ -448,7 +446,7 @@ const updatedLabel = computed(() => {
             <div
               v-for="row in rows"
               :key="row.key"
-              class="group hover:bg-surface-gray-1 border-b border-outline-gray-1 last:border-b-0 h-10 text-base"
+              class="group size-row hover:bg-surface-gray-1 h-10 text-base"
               :class="[grid, 'px-2', row.site && 'cursor-pointer']"
               :role="row.site ? 'button' : undefined"
               :tabindex="row.site ? 0 : undefined"
@@ -474,10 +472,6 @@ const updatedLabel = computed(() => {
               <span :class="isHeavy(row) ? 'text-ink-gray-8' : 'text-ink-gray-6'">
                 {{ row.claimable ? formatBytes(row.claimable) : '-' }}
               </span>
-
-              <span
-                :class="row.site && 'lucide-chevron-right size-4 text-ink-gray-3 group-hover:text-ink-gray-6 transition-colors duration-150'"
-              />
             </div>
           </template>
         </div>
@@ -499,3 +493,19 @@ const updatedLabel = computed(() => {
     </div>
   </section>
 </template>
+
+<style scoped>
+.size-row {
+  border-bottom: 1px solid var(--outline-gray-1);
+}
+
+.size-row:hover {
+  border-radius: 8px;
+}
+
+.size-row:last-child,
+.size-row:hover,
+.size-row:has(+ .size-row:hover) {
+  border-bottom-color: transparent;
+}
+</style>
