@@ -240,13 +240,14 @@ class PostgreSQL(Database):
         connection. Reconnecting to every database makes this request linear in
         the number of sites, so server scope uses pg_database_size instead.
         """
-        data, index = self._table_size_totals() if self._database else (None, None)
+        breakdown = self.get_table_sizes() if self._database else []
         return DatabaseSize(
-            data_bytes=data,
-            index_bytes=index,
+            data_bytes=sum(part.data_bytes for part in breakdown) if self._database else None,
+            index_bytes=sum(part.index_bytes for part in breakdown) if self._database else None,
             claimable_bytes=None,
             free_bytes=self.get_free_disk_bytes(),
             total_bytes=None if self._database else self._server_database_bytes(),
+            breakdown=breakdown,
         )
 
     def _server_database_bytes(self) -> int:
@@ -264,14 +265,6 @@ class PostgreSQL(Database):
         return PostgreSQL(
             self._host, self._port, self._user, self._password, database, self._connect_timeout
         )
-
-    def _table_size_totals(self) -> tuple[int, int]:
-        result = self.execute(
-            "SELECT COALESCE(SUM(pg_table_size(c.oid)), 0), COALESCE(SUM(pg_indexes_size(c.oid)), 0) "
-            + self._TABLE_SIZE_SOURCE
-        )
-        data, index = result.rows[0] if result.rows else (0, 0)
-        return int(data), int(index)
 
     def get_table_sizes(self) -> list[TableSize]:
         result = self.execute(
