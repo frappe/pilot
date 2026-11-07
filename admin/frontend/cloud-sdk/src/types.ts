@@ -187,6 +187,8 @@ export interface MarketplaceApp {
   installed_version: string
   latest_version: string
   has_update: boolean
+  /** The installed apps that need this one. Frappe refuses to uninstall it while they stay. */
+  required_by?: string[]
   repo?: string
   documentation?: string
   website?: string

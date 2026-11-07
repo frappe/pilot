@@ -85,11 +85,15 @@ const appLogos = computed(() =>
   Object.fromEntries((marketplace.value?.apps || []).map((app) => [app.name, app.logo_url])),
 )
 
-// The site exists to try this app, so it stays until the trial converts.
-const getUninstallBlockedReason = (app: MarketplaceApp) =>
-  app.name === store.state.billing?.trial?.app
-    ? __('Your trial is for {0}. Upgrade to remove it.', [app.title])
-    : ''
+const listFormat = new Intl.ListFormat(undefined, { type: 'conjunction' })
+
+// The site exists to try its trial app, so that app stays until the trial converts, and so do the apps it needs.
+const getUninstallBlockedReason = (app: MarketplaceApp) => {
+  if (app.name === store.state.billing?.trial?.app) return __('Your trial is for {0}. Upgrade to remove it.', [app.title])
+
+  const dependents = (app.required_by || []).map((name) => appTitles.value[name] || name)
+  return dependents.length ? __('Needed by {0}.', [listFormat.format(dependents)]) : ''
+}
 
 const error = computed(() => store.state.marketplaceError)
 const loadFailed = computed(() => Boolean(error.value) && !marketplace.value)

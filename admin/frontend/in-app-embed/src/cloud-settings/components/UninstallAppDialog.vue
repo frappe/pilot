@@ -96,16 +96,15 @@ const confirm = () => {
           {{ isTrial
               ? __("Everything {0} stores on this site is deleted.", [title])
               : __("Everything {0} stores on this site is deleted. Back the site up first if you need the data.", [title]) }}
+          <button
+            v-if="canOpenBackups"
+            type="button"
+            class="underline decoration-dotted underline-offset-[3px] transition-colors hover:decoration-solid"
+            @click="openBackups"
+          >
+            {{ __("Open Backups") }}
+          </button>
         </p>
-
-        <Button
-          v-if="canOpenBackups"
-          class="col-start-2 mt-2 justify-self-start"
-          size="sm"
-          icon-right="lucide-arrow-right"
-          :label="__('Open Backups')"
-          @click="openBackups"
-        />
       </div>
     </template>
 
