@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { useTranslation } from '../translation'
 import { Button, Dialog } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { computed, inject, ref, watch } from 'vue'
 
 const __ = useTranslation()
 
 interface Props {
   app?: Record<string, any> | null
   canDisable?: boolean
-  /** A trial site has no backups to fall back on, so the warning does not offer one. */
+  /** A trial site cannot take backups, so the warning does not offer one. */
   isTrial?: boolean
 }
 
@@ -19,6 +19,13 @@ const emit = defineEmits(['confirm'])
 const open = defineModel({ type: Boolean, default: false })
 
 const mode = ref('uninstall')
+const panels = inject('cloudSettingsPanels', { isShown: (_value: string) => false, open: (_value: string) => {} })
+const canOpenBackups = computed(() => panels.isShown('backups'))
+
+const openBackups = () => {
+  open.value = false
+  panels.open('backups')
+}
 
 watch(open, (isOpen) => {
   if (isOpen) mode.value = props.canDisable ? 'disable' : 'uninstall'
@@ -90,6 +97,15 @@ const confirm = () => {
               ? __("Everything {0} stores on this site is deleted.", [title])
               : __("Everything {0} stores on this site is deleted. Back the site up first if you need the data.", [title]) }}
         </p>
+
+        <Button
+          v-if="canOpenBackups"
+          class="col-start-2 mt-2 justify-self-start"
+          size="sm"
+          icon-right="lucide-arrow-right"
+          :label="__('Open Backups')"
+          @click="openBackups"
+        />
       </div>
     </template>
 

@@ -161,12 +161,8 @@ const confirmDelete = async () => {
   }
 }
 
-// The config file holds the site's secrets, which a free trial does not give out.
-const downloadableFiles = (backup: Backup) =>
-  props.store.isOnTrial() ? backup.files.filter((file) => file.kind !== 'site_config') : backup.files
-
 const menuOptions = (backup: Backup) => [
-  ...downloadableFiles(backup).map((file) => ({
+  ...backup.files.map((file) => ({
     label: FILE_LABELS[file.kind] || file.kind,
     icon: 'lucide-download',
     onClick: () => download(backup, file),
@@ -182,6 +178,7 @@ const menuOptions = (backup: Backup) => [
 
 <template>
   <Panel
+    skeleton="table"
     :title="__('Backups')"
     :description="__('Back up your site and download past backups.')"
     :loading="!backups && !error"

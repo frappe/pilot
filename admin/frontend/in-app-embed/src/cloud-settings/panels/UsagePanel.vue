@@ -2,10 +2,9 @@
 import { useTranslation } from '../translation'
 import { getStorage, refreshStorage } from '@frappe/cloud-sdk/api'
 import type { Storage } from '@frappe/cloud-sdk'
-import { Button, ErrorMessage } from 'frappe-ui'
+import { Button, ErrorMessage, ScrollArea } from 'frappe-ui'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import Panel from '../components/Panel.vue'
-import Scrollbar from '../components/Scrollbar.vue'
 import { useErrorMessage, type Store, settleTask } from '../store'
 
 const __ = useTranslation()
@@ -201,6 +200,7 @@ const refresh = async () => {
 
 <template>
   <Panel
+    skeleton="tiles"
     :title="__('Usage')"
     :description="__('How much of your server and storage your site uses.')"
     :loading="!usage && !error"
@@ -212,6 +212,7 @@ const refresh = async () => {
       <Button
         class="col-start-2 row-span-2 row-start-1"
         icon-left="lucide-refresh-cw"
+        :disabled="!usage"
         :loading="refreshing"
         :label="__('Refresh')"
         @click="refresh"
@@ -298,7 +299,7 @@ const refresh = async () => {
               </span>
             </summary>
 
-            <Scrollbar
+            <ScrollArea
               class="-mr-2 ml-2 border-l border-outline-gray-2"
               viewport-class="max-h-56 pl-2.5 pr-2"
             >
@@ -311,7 +312,7 @@ const refresh = async () => {
                 <span class="truncate">{{ child.label }}</span>
                 <span class="ml-auto shrink-0 tabular-nums">{{ formatBytes(child.bytes) }}</span>
               </p>
-            </Scrollbar>
+            </ScrollArea>
           </details>
 
           <p v-else class="flex h-8 items-center gap-2 pl-6 pr-1.5">
