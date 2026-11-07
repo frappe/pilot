@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { useTranslation } from '../translation'
 import { getBillingProfile, saveBillingProfile } from '@frappe/cloud-sdk/api'
-import { Button, ErrorMessage, Select, Skeleton, TextInput } from 'frappe-ui'
+import { Button, Combobox, ErrorMessage, Skeleton, TextInput } from 'frappe-ui'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useErrorMessage, type Store } from '../store'
+import PhoneInput from './PhoneInput.vue'
 
 const __ = useTranslation()
 const getErrorMessage = useErrorMessage()
@@ -22,6 +23,7 @@ const form = reactive({
   currency: '',
   legal_name: '',
   email: '',
+  phone: '',
   address_line1: '',
   city: '',
   state: '',
@@ -32,16 +34,15 @@ const form = reactive({
 
 type Field = keyof typeof form
 
-// Central needs these to invoice and to pick the payment gateway. India also needs the state for GST.
-// Central compares the stored country name exactly, so the form does too.
+// Central needs these to invoice and to pick the payment gateway. India also needs the state for GST,
+// and a phone, because Razorpay needs one to save a card. Central compares the country name exactly.
 const isIndia = computed(() => form.country.trim() === 'India')
 const required = computed<Field[]>(() => [
   'legal_name',
   'address_line1',
   'city',
   'country',
-  'currency',
-  ...(isIndia.value ? (['state'] as Field[]) : []),
+  ...(isIndia.value ? (['state', 'phone'] as Field[]) : []),
 ])
 
 const FIELDS = computed(() => [
@@ -58,17 +59,8 @@ const FIELDS = computed(() => [
   ...(isIndia.value ? [{ key: 'gstin' as Field, label: __('GSTIN'), placeholder: __('Enter GSTIN') }] : []),
 ])
 
-const currencyIcons: Record<string, string> = {
-  INR: 'lucide-indian-rupee',
-  USD: 'lucide-dollar-sign',
-  EUR: 'lucide-euro',
-  GBP: 'lucide-pound-sterling',
-  JPY: 'lucide-japanese-yen',
-  CHF: 'lucide-swiss-franc',
-  RUB: 'lucide-russian-ruble',
-}
-
-const currencies = ref<{ label: string; value: string; icon: string }[]>([])
+const currencies = ref<string[]>([])
+const isCurrencyLocked = ref(false)
 const countries = ref<string[]>([])
 const indiaStates = ref<string[]>([])
 const loaded = ref(false)
@@ -76,17 +68,16 @@ const working = ref(false)
 const error = ref('')
 const missing = ref<Field[]>([])
 
-const noCurrencies = computed(() => loaded.value && !currencies.value.length)
+// Central bills India in INR and every other country in USD, and keeps a currency once money moves in it.
+const currency = computed(() => {
+  if (isCurrencyLocked.value) return form.currency
+  return isIndia.value ? 'INR' : 'USD'
+})
+const isCurrencyUnsupported = computed(() => loaded.value && !currencies.value.includes(currency.value))
 
-// The gateway follows the currency, so suggest the one that fits the country until the customer picks one.
-const currencyTouched = ref(false)
-watch(() => form.country, (country) => {
-  // An Indian state is valid only for India, and India accepts only a listed state.
+// An Indian state is valid only for India, and India accepts only a listed state.
+watch(() => form.country, () => {
   if (indiaStates.value.length && indiaStates.value.includes(form.state) !== isIndia.value) form.state = ''
-
-  if (currencyTouched.value || !country.trim()) return
-  const suggested = isIndia.value ? 'INR' : 'USD'
-  if (currencies.value.some((option) => option.value === suggested)) form.currency = suggested
 })
 
 const MISSING: Partial<Record<Field, string>> = {
@@ -95,7 +86,7 @@ const MISSING: Partial<Record<Field, string>> = {
   city: __('Enter your city.'),
   state: __('Choose your state. GST needs it.'),
   country: __('Choose your country.'),
-  currency: __('Choose the currency you pay in.'),
+  phone: __('Enter a phone number. Razorpay needs it to save a card.'),
 }
 
 const fieldError = (key: Field) => (missing.value.includes(key) ? MISSING[key] || '' : '')
@@ -106,17 +97,12 @@ const load = async () => {
   try {
     const profile = await getBillingProfile()
 
-    currencies.value = (profile.supported_currencies || []).map((c) => {
-      const option = typeof c === 'string' ? { label: c, value: c } : c
-
-      return { ...option, icon: currencyIcons[option.value] || 'lucide-banknote' }
-    })
-
+    currencies.value = (profile.supported_currencies || []).map((option) => (typeof option === 'string' ? option : option.value))
+    isCurrencyLocked.value = Boolean(profile.currency_locked)
     countries.value = profile.countries || []
     indiaStates.value = profile.india_states || []
 
     for (const key of Object.keys(form) as Field[]) form[key] = profile[key] || ''
-    currencyTouched.value = Boolean(form.currency)
 
     loaded.value = true
   } catch (exception) {
@@ -130,13 +116,13 @@ const save = async () => {
   if (working.value) return
 
   missing.value = required.value.filter((key) => !String(form[key] || '').trim())
-  if (missing.value.length) return
+  if (missing.value.length || isCurrencyUnsupported.value) return
 
   working.value = true
   error.value = ''
 
   try {
-    await saveBillingProfile({ ...form, gstin: isIndia.value ? form.gstin : '' })
+    await saveBillingProfile({ ...form, currency: currency.value, gstin: isIndia.value ? form.gstin : '' })
     await store.loadBilling(true)
 
     emit('saved')
@@ -155,7 +141,7 @@ const save = async () => {
     <h3 class="text-base-semibold text-ink-gray-8" :class="step && 'mt-1'">{{ __("Billing details") }}</h3>
 
     <p class="mt-1 text-p-sm text-ink-gray-5">
-      {{ __("Shown on your invoices. Your currency sets how you pay.") }}
+      {{ __("Shown on your invoices.") }}
     </p>
 
     <ErrorMessage :message="error" class="mt-4" />
@@ -166,7 +152,7 @@ const save = async () => {
       aria-busy="true"
       :aria-label="__('Loading billing details')"
     >
-      <div v-for="field in [...FIELDS, { key: 'currency' }]" :key="field.key" :class="field.full && 'sm:col-span-2'">
+      <div v-for="field in [...FIELDS, { key: 'phone' }]" :key="field.key" :class="field.full && 'sm:col-span-2'">
         <Skeleton class="h-4 w-24 rounded-4" />
         <Skeleton class="mt-1.5 h-7 rounded-4" />
       </div>
@@ -180,15 +166,17 @@ const save = async () => {
     <form v-else class="mt-4" novalidate @submit.prevent="save">
       <div class="grid gap-4 sm:grid-cols-2">
         <div v-for="field in FIELDS" :key="field.key" :class="field.full && 'sm:col-span-2'">
-          <Select
+          <Combobox
             v-if="field.options?.length"
-            v-model="form[field.key]"
+            trigger="button"
+            :model-value="form[field.key] || null"
             :label="field.label"
             :required="required.includes(field.key)"
             :placeholder="field.placeholder"
-            :options="field.options.map((option) => ({ label: option, value: option }))"
+            :options="field.options"
             :disabled="working"
             :aria-invalid="Boolean(fieldError(field.key)) || undefined"
+            @update:model-value="(value) => (form[field.key] = String(value || ''))"
           />
           <TextInput
             v-else
@@ -197,6 +185,7 @@ const save = async () => {
             :label="field.label"
             :required="required.includes(field.key)"
             :placeholder="field.placeholder"
+            :name="field.key"
             :autocomplete="field.autocomplete"
             :disabled="working"
             :aria-invalid="Boolean(fieldError(field.key)) || undefined"
@@ -204,22 +193,18 @@ const save = async () => {
           <ErrorMessage :message="fieldError(field.key)" class="mt-1" />
         </div>
 
-        <div>
-          <Select
-            v-model="form.currency"
-            :label="__('Currency')"
-            required
-            :placeholder="__('Choose a currency')"
-            :options="currencies"
-            :disabled="working"
-            @update:model-value="currencyTouched = true"
-          />
-          <ErrorMessage :message="fieldError('currency')" class="mt-1" />
-        </div>
+        <PhoneInput
+          v-model="form.phone"
+          :label="__('Phone')"
+          :country="form.country"
+          :required="required.includes('phone')"
+          :disabled="working"
+          :error="fieldError('phone')"
+        />
       </div>
 
-      <p v-if="noCurrencies" class="mt-4 text-p-sm text-ink-amber-8">
-        {{ __("No billing currencies are set up yet. Contact support to add a payment method.") }}
+      <p v-if="isCurrencyUnsupported" class="mt-4 text-p-sm text-ink-amber-8">
+        {{ __("Billing in {0} is not set up yet. Contact support to add a payment method.", [currency]) }}
       </p>
 
       <div class="mt-5 flex justify-end gap-2">

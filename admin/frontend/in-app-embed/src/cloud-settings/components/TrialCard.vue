@@ -36,11 +36,11 @@ const title = computed(() => {
 
 const description = computed(() => {
   if (isEnded.value)
-    return __('This site is stopped. To keep the site and its data, upgrade to a paid plan before {0}.', [formatDate(props.trial.deletes_on)])
+    return __('Your site on Frappe Cloud is stopped. Upgrade before {0} to keep it and its data.', [formatDate(props.trial.deletes_on)])
   if (props.trial.held)
     return __('Your payment method is added, but the {0} plan is above your spending limit. Choose a smaller plan, or contact support to raise the limit.', [props.trial.plan?.title || __('chosen')])
 
-  return __('Your site is free until {0}. Upgrade to a paid plan to keep it running after that.', [formatDate(props.trial.ends_on)])
+  return __('This trial runs on Frappe Cloud until {0}. Upgrade to keep your site running.', [formatDate(props.trial.ends_on)])
 })
 
 const action = computed(() =>
@@ -48,7 +48,6 @@ const action = computed(() =>
     ? undefined
     : {
         label: props.trial.held ? __('Choose a plan') : __('Upgrade'),
-        variant: 'solid' as const,
         onClick: () => emit('upgrade'),
       },
 )

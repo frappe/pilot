@@ -23,6 +23,8 @@ export interface CloudSettingsOptions {
   context?: CloudContext
   /** Render the panels inside this element instead of a dialog. */
   target?: HTMLElement
+  /** The app that serves this page. Uninstalling it sends the user to Desk. */
+  app?: string
 }
 
 export { isCloudSettingsAvailable } from './context.ts'

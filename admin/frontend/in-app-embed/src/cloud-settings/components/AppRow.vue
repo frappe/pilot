@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { useTranslation } from '../translation'
 import { Badge, Button, Dropdown, HoverCard, Tooltip } from 'frappe-ui'
-import { computed, inject, ref } from 'vue'
+import { computed, inject, ref, watch, type Ref } from 'vue'
 import { openExternal } from '../external'
+import AppLogo from './AppLogo.vue'
 import GithubIcon from './GithubIcon.vue'
 
 const __ = useTranslation()
@@ -12,25 +13,59 @@ interface Props {
   appTitles?: Record<string, string>
   pending?: string
   error?: string
+  /** Why the app cannot be uninstalled now. Empty when it can. */
+  uninstallBlockedReason?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   pending: '',
   error: '',
+  uninstallBlockedReason: '',
 })
 const emit = defineEmits(['install', 'uninstall', 'update'])
 
 const busy = computed(() => Boolean(props.pending))
-const imageFailed = ref(false)
 const overlayTarget = inject('overlayTarget', 'body')
 const isDetailsOpen = ref(false)
 const isOverActions = ref(false)
 
-const logoUrl = computed(() => {
-  const url = String(props.app.logo_url || '').trim()
+// A row that scrolls under a still pointer is not being pointed at, so its details wait
+// for the pointer to move, and any scroll closes them.
+const scrolledAt = inject<Ref<number>>('marketplaceScrolledAt', ref(0))
+let pointerMovedAt = 0
+let isWaitingForPointer = false
 
-  return /^https?:\/\//i.test(url) && !imageFailed.value ? url : ''
+watch(scrolledAt, () => {
+  isDetailsOpen.value = false
+  isWaitingForPointer = false
 })
+
+const setDetailsOpen = (value: boolean) => {
+  isWaitingForPointer = false
+  if (!value || isOverActions.value) {
+    isDetailsOpen.value = false
+    return
+  }
+
+  if (pointerMovedAt > scrolledAt.value) isDetailsOpen.value = true
+  else isWaitingForPointer = true
+}
+
+const onPointerMove = () => {
+  pointerMovedAt = performance.now()
+  if (!isWaitingForPointer || isOverActions.value) return
+
+  isWaitingForPointer = false
+  isDetailsOpen.value = true
+}
+
+const uninstallOption = computed(() => ({
+  label: __('Uninstall'),
+  icon: 'lucide-trash-2',
+  disabled: Boolean(props.uninstallBlockedReason),
+  description: props.uninstallBlockedReason || undefined,
+  onClick: () => emit('uninstall', props.app),
+}))
 
 const compactNumber = new Intl.NumberFormat('en', { notation: 'compact' })
 
@@ -68,30 +103,17 @@ const statusTheme = computed(() => {
     align="start"
     :offset="4"
     :portal-to="overlayTarget"
-    @update:open="(value) => (isDetailsOpen = value && !isOverActions)"
+    :hover-delay="500"
+    @update:open="setDetailsOpen"
   >
     <template #trigger>
       <article
         class="flex flex-col px-3 py-2 rounded-6 hover:bg-surface-gray-1 transition-colors"
         :class="{ 'bg-surface-gray-1': isDetailsOpen }"
+        @pointermove="onPointerMove"
       >
         <div class="flex items-center gap-3">
-          <img
-            v-if="logoUrl"
-            class="size-6 rounded-2 object-cover shrink-0"
-            :src="logoUrl"
-            :alt="app.title"
-            loading="lazy"
-            decoding="async"
-            @error="imageFailed = true"
-          />
-
-          <div
-            v-else
-            class="grid place-items-center size-6 rounded-2 bg-surface-gray-2 text-xs-medium uppercase text-ink-gray-6 shrink-0"
-          >
-            {{ (app.title || "?").charAt(0) }}
-          </div>
+          <AppLogo :title="app.title" :url="app.logo_url" />
 
           <span class="flex-1 truncate text-base-semibold text-ink-gray-8" :title="app.title">
             {{ app.title }}
@@ -143,13 +165,7 @@ const statusTheme = computed(() => {
               v-if="app.installed"
               align="end"
               :portal-to="overlayTarget"
-              :options="[
-                {
-                  label: __('Uninstall'),
-                  icon: 'lucide-trash-2',
-                  onClick: () => emit('uninstall', app),
-                },
-              ]"
+              :options="[uninstallOption]"
             >
               <Button
                 variant="ghost"
