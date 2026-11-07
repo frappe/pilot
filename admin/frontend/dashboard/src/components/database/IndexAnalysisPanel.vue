@@ -2,6 +2,7 @@
 import { Button, ErrorMessage, TabButtons } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 
+import EmptyState from '@/components/common/EmptyState.vue'
 import Table from '@/components/common/Table.vue'
 import DatabasePanel from '@/components/database/DatabasePanel.vue'
 import PerformanceSchemaNotice from '@/components/database/PerformanceSchemaNotice.vue'
@@ -12,6 +13,7 @@ import type { PerformanceSection } from '@/types/database'
 import { errorMessage } from '@/utils/error'
 
 interface Props {
+  active?: boolean
   site?: string
   badge?: string
   enabled?: boolean
@@ -27,6 +29,7 @@ interface Column {
 type PerformanceRow = PerformanceSection['data'][number]
 
 const props = withDefaults(defineProps<Props>(), {
+  active: false,
   site: '',
   badge: '',
   enabled: false,
@@ -104,35 +107,37 @@ watch(
 
 <template>
   <DatabasePanel
-    title="Database Index Analysis"
-    subtitle="Analyze the indexes of the database"
+    :active="active"
     :badge="badge"
     :loading="loading"
     @open="load()"
     @refresh="load()"
   >
-    <ErrorMessage v-if="error" :message="error" class="m-4" />
+    <template #start>
+      <TabButtons v-model="tab" :options="tabOptions" size="sm" />
+    </template>
+
+    <ErrorMessage v-if="error" :message="error" />
 
     <template v-else>
-      <div class="px-4 pb-3">
-        <TabButtons v-model="tab" :options="tabOptions" size="sm" />
-      </div>
-
       <PerformanceSchemaNotice v-if="needsPerformanceSchema && !enabled" />
 
-      <p
+      <EmptyState
         v-else-if="!rows.length"
-        class="py-10 border-t border-outline-gray-2 text-ink-gray-5 text-sm text-center"
-      >
-        No results to display
-      </p>
+        icon="lucide-list-tree"
+        :title="tab === 'redundant_indexes' ? 'No redundant indexes' : 'No unused indexes'"
+        :description="tab === 'redundant_indexes' ? 'No index repeats another' : 'Every index has been used'"
+        :bordered="false"
+        compact
+        class="py-10"
+      />
 
       <template v-else>
-        <Table class="px-4" height="max-h-96" :columns="columns" :rows="rows">
+        <Table height="flex-1" :columns="columns" :rows="rows">
           <template #database="{ row }">{{ siteLabel(row.database) }}</template>
         </Table>
 
-        <div class="flex justify-end px-4 pb-4">
+        <div class="flex justify-end">
           <Button v-if="hasNextPage" :loading="loading" @click="load(rows.length)">
             Load more
           </Button>
