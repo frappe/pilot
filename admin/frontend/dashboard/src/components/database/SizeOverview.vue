@@ -33,7 +33,7 @@ const emit = defineEmits<{ refresh: []; pick: [site: string] }>()
 
 const PAGE_SIZE = 15
 
-const grid = 'grid grid-cols-[minmax(0,2.6fr)_repeat(5,minmax(0,1fr))_1rem] items-center gap-6 px-5'
+const grid = 'grid grid-cols-[minmax(0,2.6fr)_repeat(5,minmax(0,1fr))_1rem] items-center gap-6'
 
 const tones = {
   data: 'bg-surface-gray-7',
@@ -351,7 +351,7 @@ const updatedLabel = computed(() => {
     </aside>
 
     <div class="flex flex-col flex-1 min-w-0">
-      <header class="flex items-center gap-2 px-5 h-12 shrink-0">
+      <header class="flex items-center gap-2 px-3 md:px-4 h-12 shrink-0">
         <nav class="flex items-center gap-1.5 min-w-0 text-base-medium">
           <RouterLink
             v-if="site"
@@ -381,9 +381,9 @@ const updatedLabel = computed(() => {
       </header>
 
       <Scrollbar class="flex-1 min-h-0">
-        <div class="flex flex-col min-w-[36rem]">
+        <div class="flex flex-col mx-3 md:mx-4 min-w-[36rem]">
           <div
-            class="border-y border-outline-gray-1.5 h-9 text-ink-gray-5 text-xs shrink-0"
+            class="bg-surface-gray-2 dark:bg-surface-gray-1 px-2 rounded-4 h-8 text-ink-gray-5 text-sm shrink-0"
             :class="grid"
           >
             <span>{{ site ? 'Table' : 'Database' }}</span>
@@ -408,8 +408,8 @@ const updatedLabel = computed(() => {
             <div
               v-for="index in 7"
               :key="index"
-              class="border-b border-outline-gray-1 last:border-b-0 h-11"
-              :class="grid"
+              class="border-b border-outline-gray-1 last:border-b-0 h-10"
+              :class="[grid, 'px-2']"
               aria-busy="true"
             >
               <Skeleton class="rounded-2 w-48 h-3.5" />
@@ -448,8 +448,8 @@ const updatedLabel = computed(() => {
             <div
               v-for="row in rows"
               :key="row.key"
-              class="group hover:bg-surface-gray-1 border-b border-outline-gray-1 last:border-b-0 h-11"
-              :class="[grid, row.site && 'cursor-pointer']"
+              class="group hover:bg-surface-gray-1 border-b border-outline-gray-1 last:border-b-0 h-10 text-base"
+              :class="[grid, 'px-2', row.site && 'cursor-pointer']"
               :role="row.site ? 'button' : undefined"
               :tabindex="row.site ? 0 : undefined"
               @click="row.site && emit('pick', row.site)"
@@ -467,7 +467,7 @@ const updatedLabel = computed(() => {
                 </span>
               </span>
 
-              <span class="text-sm-medium text-ink-gray-8">{{ formatBytes(row.total) }}</span>
+              <span class="text-base-medium text-ink-gray-8">{{ formatBytes(row.total) }}</span>
               <span class="text-ink-gray-5">{{ formatPercent(percent(row.total)) }}</span>
               <span class="text-ink-gray-6">{{ formatBytes(row.data) }}</span>
               <span class="text-ink-gray-6">{{ formatBytes(row.index) }}</span>
@@ -485,7 +485,7 @@ const updatedLabel = computed(() => {
 
       <footer
         v-if="ready && site && matched.length > PAGE_SIZE"
-        class="flex items-center px-5 border-t border-outline-gray-1 h-12 shrink-0"
+        class="flex items-center px-5 md:px-6 border-t border-outline-gray-1 h-12 shrink-0"
       >
         <span class="mr-auto text-ink-gray-5">{{ shownLabel }}</span>
 
