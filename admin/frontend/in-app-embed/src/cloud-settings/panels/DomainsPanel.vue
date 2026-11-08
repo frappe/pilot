@@ -276,7 +276,7 @@ const run = async (action: () => Promise<void>) => {
               />
             </a>
 
-            <Badge v-if="row.is_primary" theme="green" size="sm" :label="__('Primary')" />
+            <Badge v-if="row.is_primary" theme="blue" size="sm" :label="__('Primary')" />
           </div>
 
           <p class="flex mt-1.5 text-sm text-ink-gray-5 leading-none whitespace-nowrap divide-x divide-outline-gray-3">

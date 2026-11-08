@@ -92,17 +92,6 @@ def test_a_locked_server_keeps_its_site_config_unchanged(tmp_path) -> None:
     assert json.loads(config_path.read_text()) == {"installed_apps": [], "developer_mode": 0}
 
 
-def test_a_locked_server_refuses_the_config_backup_file(tmp_path) -> None:
-    client = _client(tmp_path / "benches" / "current")
-
-    with patch("admin.backend.api.v1.sites.backups.server_access_locked_response", _refused):
-        response = client.get(
-            "/api/v1/sites/s.localhost/backups/20261022/files/20261022-s-site_config_backup.json/content"
-        )
-
-    assert response.status_code == 403
-
-
 def test_a_central_that_stalls_keeps_the_request_waiting(site_request) -> None:
     with patch("urllib.request.urlopen", side_effect=TimeoutError("read timed out")):
         _, status = server_access_locked_response()
@@ -110,7 +99,38 @@ def test_a_central_that_stalls_keeps_the_request_waiting(site_request) -> None:
     assert status == 503
 
 
-def test_a_locked_server_leaves_the_config_out_of_offsite_download_links(tmp_path) -> None:
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("post", "/api/v1/sites/site.localhost/backups"),
+        (
+            "get",
+            "/api/v1/sites/site.localhost/backups/20261022_000000/files/20261022_000000-site-database.sql.gz/content",
+        ),
+        ("get", "/api/v1/sites/site.localhost/backups/20261022_000000/download-links"),
+    ],
+)
+def test_a_locked_server_keeps_its_backups_on_the_server(tmp_path, method, path) -> None:
+    from tests.admin.backend.api.test_site_backups_view import _make_site
+
+    bench_root = tmp_path / "benches" / "current"
+    _make_site(bench_root, "site.localhost")
+    client = _client(bench_root)
+
+    with (
+        patch("admin.backend.api.v1.sites.backups.server_access_locked_response", _refused),
+        patch("admin.backend.api.v1.sites.backups.BackupSiteTask.queue") as queue,
+        patch("pilot.integrations.s3.backups.OffsiteBackup.from_config") as offsite,
+    ):
+        response = getattr(client, method)(path)
+
+    assert response.status_code == 403
+    assert response.get_json()["error"]["code"] == "upgrade_required"
+    queue.assert_not_called()
+    offsite.assert_not_called()
+
+
+def test_an_unlocked_server_lists_every_offsite_download_link(tmp_path) -> None:
     from tests.admin.backend.api.test_site_backups_view import _make_site
 
     bench_root = tmp_path / "benches" / "current"
@@ -125,9 +145,9 @@ def test_a_locked_server_leaves_the_config_out_of_offsite_download_links(tmp_pat
 
     with (
         patch("pilot.integrations.s3.backups.OffsiteBackup.from_config", return_value=offsite),
-        patch("admin.backend.api.v1.sites.backups.server_access_locked_response", _refused),
+        patch("admin.backend.api.v1.sites.backups.server_access_locked_response", return_value=None),
     ):
         response = client.get("/api/v1/sites/site.localhost/backups/20261022_000000/download-links")
 
     assert response.status_code == 200
-    assert response.get_json() == {"database": "https://bucket.example/signed"}
+    assert set(response.get_json()) == {"database", "site_config"}
