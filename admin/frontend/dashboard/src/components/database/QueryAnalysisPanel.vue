@@ -135,8 +135,7 @@ const openQuery = ref('')
         :title="tab === 'full_table_scan_queries' ? 'No full table scans' : 'No queries yet'"
         :description="tab === 'full_table_scan_queries' ? 'No query has read a whole table' : 'Nothing recorded since the server started'"
         :bordered="false"
-        compact
-        class="py-10"
+        class="flex-1 justify-center pb-16"
       />
 
       <template v-else>

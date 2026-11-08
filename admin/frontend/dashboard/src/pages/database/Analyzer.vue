@@ -584,8 +584,7 @@ onMounted(load)
           title="No processes"
           :description="selectedSite ? 'Nothing is connected to this database' : 'Nothing is connected to the server'"
           :bordered="false"
-          compact
-          class="py-10"
+          class="flex-1 justify-center pb-16"
         />
       </DatabasePanel>
 
@@ -619,8 +618,7 @@ onMounted(load)
           title="No lock waits"
           description="No query is waiting on a lock"
           :bordered="false"
-          compact
-          class="py-10"
+          class="flex-1 justify-center pb-16"
         />
       </DatabasePanel>
 
@@ -658,8 +656,7 @@ onMounted(load)
           title="No binary logs"
           description="The server has no binary log files"
           :bordered="false"
-          compact
-          class="py-10"
+          class="flex-1 justify-center pb-16"
         />
 
         <template v-else>

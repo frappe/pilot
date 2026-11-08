@@ -128,8 +128,7 @@ watch(
         :title="tab === 'redundant_indexes' ? 'No redundant indexes' : 'No unused indexes'"
         :description="tab === 'redundant_indexes' ? 'No index repeats another' : 'Every index has been used'"
         :bordered="false"
-        compact
-        class="py-10"
+        class="flex-1 justify-center pb-16"
       />
 
       <template v-else>
