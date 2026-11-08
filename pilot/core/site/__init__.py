@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.config import SiteConfig
-from pilot.exceptions import BenchError, CommandError, CronError
+from pilot.exceptions import BenchError, CronError
 from pilot.managers.cron import CronManager
 from pilot.utils import run_command
 
@@ -297,13 +297,8 @@ class Site:
         if archived_sites_path:
             cmd += ["--archived-sites-path", archived_sites_path]
         on_progress(f"Dropping site '{self.config.name}'...")
-        db_type = self.db_type
-        with SiteCommands(self).setup_credentials(db_type) as credentials:
-            try:
-                run_command(cmd + credentials, cwd=self.bench.sites_path, stream_output=True)
-            except CommandError:
-                if db_type != "postgres" or self.path.exists():
-                    raise
+        with SiteCommands(self).setup_credentials(self.db_type) as credentials:
+            run_command(cmd + credentials, cwd=self.bench.sites_path, stream_output=True)
         # The site directory is archived, so only the cron entry remains.
         try:
             CronManager(self.bench.path).remove_schedule(self.config.name)
