@@ -185,6 +185,7 @@ def test_get_database_size_uses_a_connection_bound_to_the_site(tmp_path) -> None
             "claimable_bytes": 4,
             "free_bytes": 99,
             "total_bytes": None,
+            "breakdown": [],
         }
 
     make.assert_called_once_with(tmp_path, "shop.local")

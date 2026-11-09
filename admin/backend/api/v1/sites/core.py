@@ -29,6 +29,7 @@ from admin.backend.api.v1.sites.shared import (
 from admin.backend.internal.session import Session
 from admin.backend.middleware import rate_limit, require_scope
 from admin.backend.providers.apps import AppProvider
+from admin.backend.providers.site_summaries import SiteSummaryProvider
 from admin.backend.providers.sites import SiteInfo, SiteProvider
 from pilot.core.bench import Bench
 from pilot.core.site.login import primary_host, site_url
@@ -47,13 +48,20 @@ def list_sites():
     bench_root = current_app.config["BENCH_ROOT"]
     try:
         sites = SiteProvider(bench_root).get_all()
+        summaries = SiteSummaryProvider(Path(bench_root)).get_all(site.name for site in sites)
     except Exception:
         return internal_error("Could not read sites.")
 
-    payload = []
-    for site in sites:
-        payload.append(_site_resource(site))
-    return jsonify(payload)
+    return jsonify(
+        [
+            {
+                **_site_resource(site),
+                "ssl": bool(site.site_config.get("ssl")),
+                **summaries[site.name],
+            }
+            for site in sites
+        ]
+    )
 
 
 @sites_bp.route("/<name>")

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {
-  Button,
+  KeyboardShortcut,
   Sidebar,
   SidebarCollapseToggle,
   SidebarHeader,
@@ -62,14 +62,12 @@ const isActive = (to: string) => route.path === to || route.path.startsWith(`${t
     />
 
     <nav class="flex-1 overflow-y-auto px-2 pt-2">
-      <SidebarItem
-        v-if="!isMobile"
-        icon="lucide-search"
-        suffix="⌘ K"
-        class="mb-0.5 text-sm"
-        @click="openSearch"
-      >
+      <SidebarItem v-if="!isMobile" icon="lucide-search" class="mb-0.5 text-sm" @click="openSearch">
         Search
+
+        <template #suffix>
+          <KeyboardShortcut combo="Mod+K" class="mr-2" />
+        </template>
       </SidebarItem>
 
       <NotificationsPanel v-if="!isMobile" />
@@ -77,23 +75,20 @@ const isActive = (to: string) => route.path === to || route.path.startsWith(`${t
       <template v-for="section in visibleSections" :key="section.label || 'main'">
         <Collapsable v-if="section.label" v-model:opened="openedSections[section.label]">
           <template #header="{ opened, toggle }">
-            <div class="flex items-center mt-2 pr-1">
-              <SidebarLabel divider class="flex-1 cursor-pointer" @click="toggle">
-                {{ section.label }}
-              </SidebarLabel>
+            <SidebarLabel
+              divider
+              class="mt-3 cursor-pointer *:text-sm-medium"
+              :aria-expanded="opened"
+              @click="toggle"
+            >
+              {{ section.label }}
 
-              <Button
+              <span
                 v-if="!isSidebarCollapsed"
-                size="xs"
-                variant="ghost"
-                icon="lucide-chevron-down"
-                :aria-label="`Toggle ${section.label}`"
-                :aria-expanded="opened"
-                class="transition-transform"
-                :class="{ '-rotate-90': !opened }"
-                @click="toggle"
+                class="top-1.5 right-1 absolute size-4 text-ink-gray-4 transition-transform lucide-chevron-right"
+                :class="{ 'rotate-90': opened }"
               />
-            </div>
+            </SidebarLabel>
           </template>
 
           <SidebarItem

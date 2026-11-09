@@ -77,7 +77,7 @@ onMounted(async () => {
 
 <template>
   <div class="flex flex-col gap-5">
-    <div class="pb-5 border-b border-outline-alpha-gray-1">
+    <div>
       <Version :platform="platform" />
     </div>
 

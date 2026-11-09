@@ -218,24 +218,24 @@ class MariaDB(Database):
         ]
 
     def get_database_size(self) -> DatabaseSize:
-        result = self.execute(
-            "SELECT COALESCE(SUM(data_length), 0), COALESCE(SUM(index_length), 0), "
-            "COALESCE(SUM(data_free), 0) FROM information_schema.TABLES "
-            f"WHERE {self._size_scope}"
-        )
-        data, index, claimable = result.rows[0] if result.rows else (0, 0, 0)
+        breakdown = self._grouped_sizes("table_name" if self._database else "table_schema")
         return DatabaseSize(
-            data_bytes=int(data),
-            index_bytes=int(index),
-            claimable_bytes=int(claimable),
+            data_bytes=sum(part.data_bytes for part in breakdown),
+            index_bytes=sum(part.index_bytes for part in breakdown),
+            claimable_bytes=sum(part.claimable_bytes or 0 for part in breakdown),
             free_bytes=self.get_free_disk_bytes(),
+            breakdown=breakdown,
         )
 
     def get_table_sizes(self) -> list[TableSize]:
+        return self._grouped_sizes("table_name")
+
+    def _grouped_sizes(self, column: str) -> list[TableSize]:
         result = self.execute(
-            "SELECT table_name, COALESCE(data_length, 0), COALESCE(index_length, 0), "
-            "COALESCE(data_free, 0) FROM information_schema.TABLES "
-            f"WHERE {self._size_scope} ORDER BY data_length + index_length DESC"
+            f"SELECT {column}, COALESCE(SUM(data_length), 0), COALESCE(SUM(index_length), 0), "
+            "COALESCE(SUM(data_free), 0) FROM information_schema.TABLES "
+            f"WHERE {self._size_scope} GROUP BY {column} "
+            "ORDER BY SUM(data_length + index_length) DESC"
         )
         return [
             TableSize(
