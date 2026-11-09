@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from functools import cached_property
@@ -29,6 +30,12 @@ class EditorGit:
 
     def is_sha(self, sha: str) -> bool:
         return bool(_SHA_RE.match(sha or ""))
+
+    def is_branch_name(self, name: str) -> bool:
+        """A valid branch name that git cannot read as an option."""
+        if not isinstance(name, str) or not name or name.startswith("-"):
+            return False
+        return self._run("check-ref-format", "--branch", name).returncode == 0
 
     def is_tracked(self, rel: str) -> bool:
         return self._run("ls-files", "--error-unmatch", "--", rel).returncode == 0
@@ -141,7 +148,7 @@ class EditorGit:
         return {"current": current, "branches": branches}
 
     def checkout(self, branch: str, create: bool) -> tuple[bool, str]:
-        args = ["checkout", "-b", branch] if create else ["checkout", branch]
+        args = ["checkout", "-b", branch] if create else ["checkout", branch, "--"]
         return self._combined(*args)
 
     def commit(self, message: str, stage_all: bool) -> tuple[bool, str]:
@@ -275,6 +282,8 @@ class EditorGit:
             return subprocess.run(
                 ["git", *args],
                 cwd=self.root,
+                # Paths are plain names: `:/x` must not reach the repository root above the app.
+                env={**os.environ, "GIT_LITERAL_PATHSPECS": "1"},
                 text=True,
                 input=input,
                 stdout=subprocess.PIPE,

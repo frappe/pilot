@@ -10,6 +10,7 @@ from admin.backend.core.editor.workspace import (
     BinaryFileError,
     EditorPathError,
     EditorWorkspace,
+    HiddenPathError,
 )
 from pilot.core.bench import Bench
 from pilot.exceptions import BenchError
@@ -65,6 +66,13 @@ def json_body() -> dict:
 @editor_bp.errorhandler(EditorPathError)
 def _path_error(_):
     return error_response("invalid_path", "Path escapes the app directory.", 400)
+
+
+@editor_bp.errorhandler(HiddenPathError)
+def _hidden_error(_):
+    return error_response(
+        "hidden_path", "Dot files and folders cannot be opened or changed in the editor.", 403
+    )
 
 
 @editor_bp.errorhandler(BinaryFileError)
