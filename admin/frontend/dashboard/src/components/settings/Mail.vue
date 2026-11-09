@@ -103,10 +103,7 @@ onMounted(async () => {
 
   <div v-else class="flex flex-col gap-6">
     <section class="space-y-5">
-      <div class="flex flex-col gap-1">
-        <p class="text-base-medium text-ink-gray-8">Mailbox</p>
-        <p class="text-ink-gray-6 text-p-sm">The account alerts and your sites send email from.</p>
-      </div>
+      <p class="text-ink-gray-6 text-p-sm">The account alerts and your sites send email from.</p>
 
       <div class="space-y-4">
         <FormControl

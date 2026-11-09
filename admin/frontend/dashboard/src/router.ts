@@ -98,7 +98,7 @@ const routes = [
     meta: { title: 'Update', group: 'Insights' },
   },
   {
-    path: '/database/analyzer',
+    path: '/database/analyzer/:tab?',
     name: 'DB analyzer',
     component: () => import('@/pages/database/Analyzer.vue'),
     meta: { title: 'DB analyzer', group: 'Dev tools' },

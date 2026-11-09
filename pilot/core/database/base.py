@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from pilot.exceptions import DatabaseError
@@ -63,13 +63,15 @@ class DatabaseSize:
     engine cannot split a server-wide total into data and indexes.
     `claimable_bytes` is space a rebuild would return to the filesystem;
     `free_bytes` is what the data directory's disk has left. Fields stay None
-    when the engine or a remote host cannot report them."""
+    when the engine or a remote host cannot report them. `breakdown` holds the
+    same scan per schema server-wide, or per table for one database."""
 
     data_bytes: int | None
     index_bytes: int | None
     claimable_bytes: int | None
     free_bytes: int | None
     total_bytes: int | None = None
+    breakdown: list[TableSize] = field(default_factory=list)
 
 
 @dataclass

@@ -431,7 +431,7 @@ def test_mariadb_get_lock_wait_rows_filters_by_database() -> None:
 def test_mariadb_get_database_size_splits_data_index_and_claimable(tmp_path: Path) -> None:
     db = MariaDB(host="localhost", port=3306, user="u", password="p", database="site_one")
     responses = {
-        "information_schema.TABLES": ([], [[8855552, 6696960, 6291456]]),
+        "information_schema.TABLES": ([], [["tabDocField", 8000000, 6000000, 6000000], ["tabNote", 855552, 696960, 291456]]),
         "@@datadir": (["@@datadir"], [[str(tmp_path)]]),
     }
     with patch.object(MariaDB, "execute", _canned_execute(responses)):
@@ -440,7 +440,23 @@ def test_mariadb_get_database_size_splits_data_index_and_claimable(tmp_path: Pat
     assert size.data_bytes == 8855552
     assert size.index_bytes == 6696960
     assert size.claimable_bytes == 6291456
+    assert [part.name for part in size.breakdown] == ["tabDocField", "tabNote"]
     assert size.free_bytes > 0  # tmp_path is a real local disk
+
+
+def test_mariadb_server_wide_size_breaks_down_by_schema_in_one_scan() -> None:
+    db = MariaDB(host="db.internal", port=3306, user="u", password="p", database="")
+    calls: list = []
+    responses = {"information_schema.TABLES": ([], [["site_one", 800, 400, 100], ["site_two", 50, 20, 0]])}
+
+    with patch.object(MariaDB, "execute", _canned_execute(responses, calls)):
+        size = db.get_database_size()
+
+    assert [(part.name, part.data_bytes) for part in size.breakdown] == [("site_one", 800), ("site_two", 50)]
+    assert size.data_bytes == 850
+    assert size.claimable_bytes == 100
+    assert "GROUP BY table_schema" in calls[0][0]
+    assert len([call for call in calls if "information_schema.TABLES" in call[0]]) == 1
 
 
 def test_mariadb_schema_sizes_count_space_a_rebuild_would_reclaim() -> None:
@@ -477,7 +493,7 @@ def test_mariadb_size_scope_follows_the_connections_database() -> None:
 
 def test_mariadb_free_space_is_none_for_a_remote_server() -> None:
     db = MariaDB(host="db.internal", port=3306, user="u", password="p", database="site_one")
-    responses = {"information_schema.TABLES": ([], [[1, 2, 3]])}
+    responses = {"information_schema.TABLES": ([], [["tabNote", 1, 2, 3]])}
     with patch.object(MariaDB, "execute", _canned_execute(responses)):
         # A local data directory path would be meaningless for a remote host.
         assert db.get_database_size().free_bytes is None
@@ -817,10 +833,11 @@ def test_both_engines_report_the_same_process_shape() -> None:
 
 def test_postgres_get_database_size_leaves_claimable_space_unknown() -> None:
     db = PostgreSQL(host="db.internal", port=5432, user="u", password="p", database="site_one")
-    responses = {"pg_table_size": ([], [[8897315, 4096]])}
+    responses = {"pg_table_size": ([], [["tabNote", 8897315, 4096]])}
     with patch.object(PostgreSQL, "execute", _canned_execute(responses)):
         size = db.get_database_size()
 
+    assert [part.name for part in size.breakdown] == ["tabNote"]
     assert size.data_bytes == 8897315
     assert size.index_bytes == 4096
     # Reclaimable bloat needs the pgstattuple extension; remote host has no readable datadir.

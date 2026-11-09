@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-
-import ActionDialog from '@/components/common/ActionDialog.vue'
-
 import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
-import { openTaskDetailPage } from '@/utils/taskRoute'
+import ActionDialog from '@/components/common/ActionDialog.vue'
+import SiteRow from '@/components/sites/SiteRow.vue'
+import type { SiteResource } from '@/types/sites'
 import { errorMessage } from '@/utils/error'
+import { openTaskDetailPage } from '@/utils/taskRoute'
 
 interface AppRef {
   name: string
@@ -21,7 +21,8 @@ interface AppRef {
 
 interface Props {
   app?: AppRef | null
-  siteName: string
+  siteName?: string
+  sites?: SiteResource[]
   // Only marketplace apps can be disabled - a disabled app is re-enabled by
   // installing it again, which needs the app to still be in the catalog.
   canDisable?: boolean
@@ -29,6 +30,8 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   app: null,
+  siteName: '',
+  sites: () => [],
   canDisable: false,
 })
 const open = defineModel<boolean>('open')
@@ -42,15 +45,21 @@ const error = ref('')
 const appLabel = computed(() => props.app?.title || props.app?.name || '')
 const appName = computed(() => props.app?.name ?? '')
 
+const selectedSite = ref('')
+const sitesWithApp = computed(() =>
+  props.sites.filter((site) => site.active_apps?.includes(appName.value)),
+)
+const targetSite = computed(() => props.siteName || selectedSite.value)
+
 const uninstallWarning = computed(() =>
   props.app?.missing
     ? {
         title: 'Only the listing is removed.',
-        message: `${props.siteName} stops listing ${appLabel.value}. Its doctypes and records, if any, stay in the database.`,
+        message: `${targetSite.value} stops listing ${appLabel.value}. Its doctypes and records, if any, stay in the database.`,
       }
     : {
         title: `This can't be undone.`,
-        message: `Every doctype ${appLabel.value} owns is dropped from ${props.siteName}, along with the records in it. Back the site up first if you need the data.`,
+        message: `Every doctype ${appLabel.value} owns is dropped from ${targetSite.value || 'the site'}, along with the records in it. Back the site up first if you need the data.`,
       },
 )
 
@@ -73,10 +82,11 @@ watch(open, (isOpen) => {
   if (!isOpen) return
   error.value = ''
   mode.value = props.canDisable ? 'disable' : 'uninstall'
+  selectedSite.value = sitesWithApp.value.length === 1 ? sitesWithApp.value[0].name : ''
 })
 
 const confirmRemoval = async () => {
-  if (!props.app || working.value) return
+  if (!props.app || !targetSite.value || working.value) return
   error.value = ''
   working.value = true
   try {
@@ -90,14 +100,14 @@ const confirmRemoval = async () => {
 }
 
 const disableApp = async () => {
-  const result = await sitesApi.apps.remove(props.siteName, appName.value, { mode: 'disable' })
+  const result = await sitesApi.apps.remove(targetSite.value, appName.value, { mode: 'disable' })
   if (!('disabled' in result)) throw new Error(apiErrorMessage(result, 'Could not disable app.'))
   open.value = false
   emit('disabled', appName.value)
 }
 
 const uninstallApp = async () => {
-  const result = await sitesApi.apps.remove(props.siteName, appName.value)
+  const result = await sitesApi.apps.remove(targetSite.value, appName.value)
   if ('disabled' in result || !result.task_id)
     throw new Error(apiErrorMessage(result, 'Uninstall failed.'))
   open.value = false
@@ -108,15 +118,26 @@ const uninstallApp = async () => {
 <template>
   <ActionDialog
     v-model:open="open"
-    :title="canDisable ? 'Remove App' : 'Uninstall App'"
-    :subject="{ name: app?.name, label: appLabel, badge: app?.label, description: app?.description, logo: app?.logo_url }"
+    :title="siteName ? (canDisable ? 'Remove App' : 'Uninstall App') : `Uninstall ${appLabel} from`"
+    :subject="siteName ? { name: app?.name, label: appLabel, badge: app?.label, description: app?.description, logo: app?.logo_url } : null"
     :warning="canDisable ? null : uninstallWarning"
     :error="error"
     :confirm-label="mode === 'disable' ? 'Disable' : 'Uninstall'"
     :confirm-theme="mode === 'disable' ? 'gray' : 'red'"
     :loading="working"
+    :disabled="!targetSite"
     @confirm="confirmRemoval"
   >
+    <div v-if="!siteName" class="gap-1.5 grid max-h-80 overflow-y-auto">
+      <SiteRow
+        v-for="site in sitesWithApp"
+        :key="site.name"
+        :label="site.name"
+        :selected="selectedSite === site.name"
+        @click="selectedSite = site.name"
+      />
+    </div>
+
     <div v-if="canDisable" class="gap-1.5 grid">
       <button
         v-for="option in options"
