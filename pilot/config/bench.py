@@ -75,6 +75,7 @@ FLAT_KEYS = {
     "admin_password": "admin.password",
     "admin_domain": "admin.domain",
     "admin_tls": "admin.tls",
+    "admin_allow_site_to_pilot_communication": "admin.allow_site_to_pilot_communication",
     "admin_jwks_url": "admin.jwks_url",
     "admin_jwks_audience": "admin.jwks_audience",
     "admin_allow_bench_management": "admin.allow_bench_management",
@@ -645,6 +646,7 @@ class BenchConfig:
             "password": self.admin.password,
             "domain": self.admin.domain,
             "tls": self.admin.tls,
+            "allow_site_to_pilot_communication": self.admin.allow_site_to_pilot_communication,
             "allow_bench_management": self.admin.allow_bench_management,
         }
         if self.admin.route:
@@ -891,12 +893,23 @@ def _set_path(config: BenchConfig, path: str, value) -> None:
         obj = getattr(obj, part)
     current = getattr(obj, leaf)
     if isinstance(current, bool):
-        value = bool(value)
+        value = _sbool(value)
     elif isinstance(current, int):
         value = int(value)
     elif isinstance(current, str):
         value = str(value)
     setattr(obj, leaf, value)
+
+
+def _sbool(value):
+    """Frappe sbool: "true"/"1" become True, "false"/"0" become False."""
+    if isinstance(value, str):
+        lowered = value.lower()
+        if lowered in ("true", "1"):
+            return True
+        if lowered in ("false", "0"):
+            return False
+    return value
 
 
 def _workers_to_groups(value) -> list[WorkerGroup]:

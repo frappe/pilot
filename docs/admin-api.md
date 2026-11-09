@@ -152,11 +152,13 @@ A remote source needs a bench session and an `https://` site. The Administrator 
 
 A restore puts the site in maintenance mode, restores only the chosen parts, and migrates it. It restores the files before the database. From a remote site or Frappe Cloud, the file archives and a MariaDB database stream into the site as they download, so they need no copy on disk. The site stays in maintenance mode for the download time. `skip_failing_patches` passes `--skip-failing` to the migration. It takes no backup of the site first. A database from another site brings that site's encryption key. The `config` part merges the source site config into this site, except the keys that belong to this site: `db_*`, `redis_*`, `pilot_*`, `atlas_*`, `rds_db`, `maintenance_mode`, `pause_scheduler`, `email_sender_name`, and the keys a site-scoped config change cannot set either, such as `host_name`, `domains`, `route`, `ssl`, `cert_name`, `backup_retention`, `installed_apps`, `cloud_server_url`, and `cloud_settings_embed_url`. A config restored without its database keeps this site's `encryption_key`, so the passwords in this site's database stay readable. If a step fails, the site stays in maintenance mode. Restoring from another site needs a bench session; a site token can only restore its own backups.
 
+#### Server access lock
+
+On a server that Central locks, such as an open free trial, a site token cannot change the site configuration (`PATCH /sites/<name>/configuration`), take a backup (`POST /sites/<name>/backups`), download a backup file, or get the download links of an offsite backup. A backup restores on another site, so a trial cannot take its data out. Pilot asks Central (`central.api.pilot.get_server_access`) on each such request. A locked server answers 403 `upgrade_required`. When Central does not answer, or a server that Central manages cannot read its credential, Pilot answers 503 `central_unavailable`. A bench session and a server without Central are never locked.
+
 #### Chunked uploads
 
 The dashboard sends large backup files in chunks of up to 256 MB, because one request cannot carry them. The routes take a bench session, or a site token for its own site.
-
-On a server that Central locks, such as an open free trial, a site token cannot change the site configuration (`PATCH /sites/<name>/configuration`) or download the site config file of a backup. Pilot asks Central (`central.api.pilot.get_server_access`) on each such request. A locked server answers 403 `upgrade_required`. When Central does not answer, or a server that Central manages cannot read its credential, Pilot answers 503 `central_unavailable`. The download links of an offsite backup leave out the config file. A bench session and a server without Central are never locked.
 
 | Route | Purpose |
 |---|---|

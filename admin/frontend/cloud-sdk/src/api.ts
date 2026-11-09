@@ -1,5 +1,5 @@
 import { call } from './request.ts'
-import type { AccountLinks, Analytics, Backups, BillingProfile, BillingSummary, CloudContext, DnsRecord, DnsRecords, Domains, Marketplace, PaymentCheckout, PaymentGateway, PaymentMethodSetup, PaymentStatus, PlanChange, PlanOptions, SiteConfiguration, Storage, TaskStatus, TaskSubmission, Uptime } from './types.ts'
+import type { AccountLinks, Analytics, Backups, BillingProfile, BillingSummary, CloudContext, DnsRecord, DnsRecords, Domains, Invoice, InvoicePdf, Marketplace, PaymentCheckout, PaymentGateway, PaymentMethodSetup, PaymentStatus, PlanChange, PlanOptions, SiteConfiguration, Storage, TaskStatus, TaskSubmission, Uptime } from './types.ts'
 
 export { CloudSettingsError, isMigrationConflict, isNotConnectedToCentral } from './request.ts'
 export type * from './types.ts'
@@ -55,6 +55,17 @@ export const createPaymentMethodCheckout = (redirectUrl: string, gateway: string
 
 export const confirmPaymentMethodCheckout = (reference: string) =>
   call<PaymentStatus>('confirm_payment_method_checkout', { reference })
+
+export const getInvoices = () => call<Invoice[]>('get_invoices', {}, 'GET')
+
+export const getInvoicePdf = (invoice: string) => call<InvoicePdf>('get_invoice_pdf', { invoice })
+
+export const createInvoiceCheckout = (invoice: string, redirectUrl: string) =>
+  call<PaymentCheckout>('create_invoice_checkout', { invoice, redirect_url: redirectUrl })
+
+/** `status` is `paid` once the gateway captured the payment, else `pending`. */
+export const getCheckoutStatus = (reference: string) =>
+  call<{ status: 'paid' | 'pending' | string }>('get_checkout_status', { reference })
 
 /** `activated` is the number of cards that Central activated. */
 export const reconcilePaymentSetup = () => call<{ activated: number }>('reconcile_payment_setup', {})

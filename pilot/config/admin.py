@@ -32,6 +32,9 @@ class AdminConfig:
     jwks_audience: str = ""
     domain: str = ""
     tls: bool = False
+    # Write Pilot endpoints and the site auth token into new sites'
+    # site_config.json. Disable to keep sites looking self-hosted to Frappe.
+    allow_site_to_pilot_communication: bool = True
     route: RoutePolicy | None = None
     allow_bench_management: bool = field(default_factory=default_allow_bench_management)
     # Break-glass codes for when no enrolled device is available. Stored in the clear so
@@ -57,6 +60,7 @@ class AdminConfig:
             jwks_audience=data.get("jwks_audience", ""),
             domain=data.get("domain", ""),
             tls=data.get("tls", False),
+            allow_site_to_pilot_communication=data.get("allow_site_to_pilot_communication", True),
             route=RoutePolicy.from_dict(data["route"]) if data.get("route") else None,
             allow_bench_management=data.get("allow_bench_management", default_allow_bench_management()),
             recovery_codes=list(data.get("recovery_codes", [])),
