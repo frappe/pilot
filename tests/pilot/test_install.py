@@ -341,6 +341,7 @@ CI_UBUNTU_PACKAGES = [
     "tzdata",
     "cron",
     "file",
+    "ripgrep",
     "mariadb-client",
     "libmariadb-dev",
     "postgresql-client",

@@ -234,34 +234,34 @@ ensure_homebrew() {
 bootstrap_packages() {
     case "$DISTRO" in
         macos)
-            printf '%s\n' git python3 ;;
+            printf '%s\n' git python3 ripgrep ;;
         debian)
             if [ -n "$CI_MODE" ]; then
-                printf '%s\n' git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file
+                printf '%s\n' git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file ripgrep
             else
                 # Headless browsers for E2E; backend CI jobs bring their own or none.
-                printf '%s\n' git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file \
+                printf '%s\n' git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file ripgrep \
                     libnss3 libatk1.0-0 libatk-bridge2.0-0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2
             fi ;;
         ubuntu)
             if [ -n "$CI_MODE" ]; then
-                printf '%s\n' git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file
+                printf '%s\n' git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file ripgrep
             else
-                printf '%s\n' git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file \
+                printf '%s\n' git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file ripgrep \
                     libnss3 libatk1.0-0t64 libatk-bridge2.0-0t64 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2t64
             fi ;;
         fedora)
             if [ -n "$CI_MODE" ]; then
-                printf '%s\n' git curl bash sudo shadow-utils python3 python3-devel gcc gcc-c++ make tzdata cronie file
+                printf '%s\n' git curl bash sudo shadow-utils python3 python3-devel gcc gcc-c++ make tzdata cronie file ripgrep
             else
-                printf '%s\n' git curl bash sudo shadow-utils python3 python3-devel gcc gcc-c++ make tzdata cronie file \
+                printf '%s\n' git curl bash sudo shadow-utils python3 python3-devel gcc gcc-c++ make tzdata cronie file ripgrep \
                     nss atk at-spi2-atk libXcomposite libXdamage libXfixes libXrandr mesa-libgbm alsa-lib
             fi ;;
         arch)
             if [ -n "$CI_MODE" ]; then
-                printf '%s\n' git curl bash sudo python base-devel tzdata cronie file
+                printf '%s\n' git curl bash sudo python base-devel tzdata cronie file ripgrep
             else
-                printf '%s\n' git curl bash sudo python base-devel tzdata cronie file \
+                printf '%s\n' git curl bash sudo python base-devel tzdata cronie file ripgrep \
                     nss atk at-spi2-atk libxcomposite libxdamage libxfixes libxrandr mesa alsa-lib
             fi ;;
     esac
