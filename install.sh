@@ -236,17 +236,34 @@ bootstrap_packages() {
         macos)
             printf '%s\n' git python3 ;;
         debian)
-            printf '%s\n' git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file
-            [ -n "$CI_MODE" ] || printf '%s\n' libnss3 libatk1.0-0 libatk-bridge2.0-0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 ;;
+            if [ -n "$CI_MODE" ]; then
+                printf '%s\n' git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file
+            else
+                # Headless browsers for E2E; backend CI jobs bring their own or none.
+                printf '%s\n' git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file \
+                    libnss3 libatk1.0-0 libatk-bridge2.0-0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2
+            fi ;;
         ubuntu)
-            printf '%s\n' git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file
-            [ -n "$CI_MODE" ] || printf '%s\n' libnss3 libatk1.0-0t64 libatk-bridge2.0-0t64 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2t64 ;;
+            if [ -n "$CI_MODE" ]; then
+                printf '%s\n' git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file
+            else
+                printf '%s\n' git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file \
+                    libnss3 libatk1.0-0t64 libatk-bridge2.0-0t64 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2t64
+            fi ;;
         fedora)
-            printf '%s\n' git curl bash sudo shadow-utils python3 python3-devel gcc gcc-c++ make tzdata cronie file
-            [ -n "$CI_MODE" ] || printf '%s\n' nss atk at-spi2-atk libXcomposite libXdamage libXfixes libXrandr mesa-libgbm alsa-lib ;;
+            if [ -n "$CI_MODE" ]; then
+                printf '%s\n' git curl bash sudo shadow-utils python3 python3-devel gcc gcc-c++ make tzdata cronie file
+            else
+                printf '%s\n' git curl bash sudo shadow-utils python3 python3-devel gcc gcc-c++ make tzdata cronie file \
+                    nss atk at-spi2-atk libXcomposite libXdamage libXfixes libXrandr mesa-libgbm alsa-lib
+            fi ;;
         arch)
-            printf '%s\n' git curl bash sudo python base-devel tzdata cronie file
-            [ -n "$CI_MODE" ] || printf '%s\n' nss atk at-spi2-atk libxcomposite libxdamage libxfixes libxrandr mesa alsa-lib ;;
+            if [ -n "$CI_MODE" ]; then
+                printf '%s\n' git curl bash sudo python base-devel tzdata cronie file
+            else
+                printf '%s\n' git curl bash sudo python base-devel tzdata cronie file \
+                    nss atk at-spi2-atk libxcomposite libxdamage libxfixes libxrandr mesa alsa-lib
+            fi ;;
     esac
 }
 
@@ -305,18 +322,27 @@ database_packages() {
                 missing_packages "mariadb@$MARIADB_VERSION" "postgresql@$POSTGRES_VERSION" redis
             fi ;;
         debian|ubuntu)
-            missing_packages mariadb-client libmariadb-dev postgresql-client libpq-dev pkg-config redis-server
-            # CI benches use an external database, so the servers stay out.
-            # Clients and headers stay: the CLI shells out to them and the
-            # virtualenv compiles client libraries against the headers.
-            [ -n "$CI_MODE" ] || missing_packages mariadb-server postgresql ;;
+            if [ -n "$CI_MODE" ]; then
+                # CI benches use an external database, so the servers stay out.
+                # Clients and headers stay: the CLI shells out to them and the
+                # virtualenv compiles client libraries against the headers.
+                missing_packages mariadb-client libmariadb-dev postgresql-client libpq-dev pkg-config redis-server
+            else
+                missing_packages mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config redis-server
+            fi ;;
         fedora)
             # Fedora 41+ ships valkey in place of redis (the alias the runtime resolves).
-            missing_packages mariadb mariadb-connector-c-devel postgresql libpq-devel pkgconf-pkg-config valkey
-            [ -n "$CI_MODE" ] || missing_packages mariadb-server postgresql-server ;;
+            if [ -n "$CI_MODE" ]; then
+                missing_packages mariadb mariadb-connector-c-devel postgresql libpq-devel pkgconf-pkg-config valkey
+            else
+                missing_packages mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config valkey
+            fi ;;
         arch)
-            missing_packages mariadb-clients mariadb-libs postgresql-libs pkgconf redis
-            [ -n "$CI_MODE" ] || missing_packages mariadb postgresql ;;
+            if [ -n "$CI_MODE" ]; then
+                missing_packages mariadb-clients mariadb-libs postgresql-libs pkgconf redis
+            else
+                missing_packages mariadb mariadb-clients mariadb-libs postgresql postgresql-libs pkgconf redis
+            fi ;;
     esac
 }
 

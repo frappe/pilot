@@ -116,9 +116,7 @@ system_packages_present
 
 
 @pytest.mark.parametrize("distro", EXPECTED_PACKAGES)
-def test_system_packages_present_fails_when_required_package_is_missing(
-    distro: str, tmp_path: Path
-) -> None:
+def test_system_packages_present_fails_when_required_package_is_missing(distro: str, tmp_path: Path) -> None:
     missing = EXPECTED_PACKAGES[distro][0]
     result = run_installer_functions(
         f"""
@@ -328,6 +326,119 @@ database_packages
     assert result.stdout.splitlines() == ["postgresql", "postgresql-libs", "pkgconf", "redis"]
 
 
+# Everything --ci drops: database servers (init installs what the bench
+# manages), production traffic serving, and headless browsers.
+CI_EXPECTED_PACKAGES = {
+    "macos": [
+        "git",
+        "python3",
+        "redis",
+    ],
+    "debian": [
+        "git",
+        "curl",
+        "bash",
+        "sudo",
+        "ca-certificates",
+        "python3",
+        "python3-dev",
+        "build-essential",
+        "tzdata",
+        "cron",
+        "file",
+        "mariadb-client",
+        "libmariadb-dev",
+        "postgresql-client",
+        "libpq-dev",
+        "pkg-config",
+        "redis-server",
+    ],
+    "ubuntu": [
+        "git",
+        "curl",
+        "bash",
+        "sudo",
+        "ca-certificates",
+        "python3",
+        "python3-dev",
+        "build-essential",
+        "tzdata",
+        "cron",
+        "file",
+        "mariadb-client",
+        "libmariadb-dev",
+        "postgresql-client",
+        "libpq-dev",
+        "pkg-config",
+        "redis-server",
+    ],
+    "fedora": [
+        "git",
+        "curl",
+        "bash",
+        "sudo",
+        "shadow-utils",
+        "python3",
+        "python3-devel",
+        "gcc",
+        "gcc-c++",
+        "make",
+        "tzdata",
+        "cronie",
+        "file",
+        "mariadb",
+        "mariadb-connector-c-devel",
+        "postgresql",
+        "libpq-devel",
+        "pkgconf-pkg-config",
+        "valkey",
+    ],
+    "arch": [
+        "git",
+        "curl",
+        "bash",
+        "sudo",
+        "python",
+        "base-devel",
+        "tzdata",
+        "cronie",
+        "file",
+        "mariadb-clients",
+        "mariadb-libs",
+        "postgresql-libs",
+        "pkgconf",
+        "redis",
+    ],
+}
+
+
+@pytest.mark.parametrize("distro", EXPECTED_PACKAGES)
+def test_ci_mode_installs_clients_but_no_servers_or_production(distro: str, tmp_path: Path) -> None:
+    result = run_installer_functions(
+        f"""
+DISTRO={distro}
+CI_MODE=1
+is_root() {{ return 0; }}
+services_to_disable() {{ :; }}
+ensure_curl() {{ :; }}
+pkg_update() {{ :; }}
+pkg_available() {{ return 1; }}
+pkg_installed() {{ return 1; }}
+pkg_install() {{ printf 'install:%s\\n' "$*"; }}
+enable_cron() {{ :; }}
+disable_system_services() {{ :; }}
+install_node() {{ :; }}
+ensure_tzdata() {{ :; }}
+install_system_packages
+""",
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    installs = [line for line in result.stdout.splitlines() if line.startswith("install:")]
+    assert len(installs) == 1
+    assert installs[0].removeprefix("install:").split() == CI_EXPECTED_PACKAGES[distro]
+
+
 def test_sudoers_grant_falls_back_when_wildcards_are_rejected(tmp_path: Path) -> None:
     """sudo-rs on Ubuntu 26.04 rejects wildcards in arguments."""
     result = run_installer_functions(
@@ -361,7 +472,9 @@ services_to_disable
     assert "mariadb" in result.stdout.split()
 
 
-@pytest.mark.parametrize(("version", "is_accepted"), [("v18.20.3", False), ("v24.1.0", True), ("v26.0.0", True)])
+@pytest.mark.parametrize(
+    ("version", "is_accepted"), [("v18.20.3", False), ("v24.1.0", True), ("v26.0.0", True)]
+)
 def test_node_24_or_later_is_accepted(version: str, is_accepted: bool, tmp_path: Path) -> None:
     """Frappe needs Node 24 or later, and Arch and Homebrew install the current release."""
     result = run_installer_functions(
