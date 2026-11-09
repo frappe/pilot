@@ -326,94 +326,65 @@ database_packages
     assert result.stdout.splitlines() == ["postgresql", "postgresql-libs", "pkgconf", "redis"]
 
 
-# Everything --ci drops: database servers (init installs what the bench
-# manages), production traffic serving, and headless browsers.
-CI_EXPECTED_PACKAGES = {
-    "macos": [
-        "git",
-        "python3",
-        "redis",
-    ],
+# --ci drops the database servers (init installs what the bench manages),
+# production traffic serving, and headless browsers. Ubuntu is pinned exactly
+# since that is what CI runs; the other distros only pin what must be absent.
+CI_UBUNTU_PACKAGES = [
+    "git",
+    "curl",
+    "bash",
+    "sudo",
+    "ca-certificates",
+    "python3",
+    "python3-dev",
+    "build-essential",
+    "tzdata",
+    "cron",
+    "file",
+    "mariadb-client",
+    "libmariadb-dev",
+    "postgresql-client",
+    "libpq-dev",
+    "pkg-config",
+    "redis-server",
+]
+
+# Server, production, and browser packages per distro. Fedora's *client* is
+# literally named mariadb, so this cannot be one shared list.
+CI_DROPPED_PACKAGES = {
+    "macos": ["mariadb@11.8", "postgresql@16", "nginx", "certbot"],
     "debian": [
-        "git",
-        "curl",
-        "bash",
-        "sudo",
-        "ca-certificates",
-        "python3",
-        "python3-dev",
-        "build-essential",
-        "tzdata",
-        "cron",
-        "file",
-        "mariadb-client",
-        "libmariadb-dev",
-        "postgresql-client",
-        "libpq-dev",
-        "pkg-config",
-        "redis-server",
+        "mariadb-server",
+        "postgresql",
+        "nginx",
+        "certbot",
+        "supervisor",
+        "libnginx-mod-http-modsecurity",
+        "libnss3",
     ],
     "ubuntu": [
-        "git",
-        "curl",
-        "bash",
-        "sudo",
-        "ca-certificates",
-        "python3",
-        "python3-dev",
-        "build-essential",
-        "tzdata",
-        "cron",
-        "file",
-        "mariadb-client",
-        "libmariadb-dev",
-        "postgresql-client",
-        "libpq-dev",
-        "pkg-config",
-        "redis-server",
+        "mariadb-server",
+        "postgresql",
+        "nginx",
+        "certbot",
+        "supervisor",
+        "libnginx-mod-http-modsecurity",
+        "libnss3",
     ],
     "fedora": [
-        "git",
-        "curl",
-        "bash",
-        "sudo",
-        "shadow-utils",
-        "python3",
-        "python3-devel",
-        "gcc",
-        "gcc-c++",
-        "make",
-        "tzdata",
-        "cronie",
-        "file",
-        "mariadb",
-        "mariadb-connector-c-devel",
-        "postgresql",
-        "libpq-devel",
-        "pkgconf-pkg-config",
-        "valkey",
+        "mariadb-server",
+        "postgresql-server",
+        "nginx",
+        "certbot",
+        "supervisor",
+        "nginx-mod-modsecurity",
+        "nss",
     ],
-    "arch": [
-        "git",
-        "curl",
-        "bash",
-        "sudo",
-        "python",
-        "base-devel",
-        "tzdata",
-        "cronie",
-        "file",
-        "mariadb-clients",
-        "mariadb-libs",
-        "postgresql-libs",
-        "pkgconf",
-        "redis",
-    ],
+    "arch": ["mariadb", "postgresql", "nginx", "certbot", "supervisor", "nss"],
 }
 
 
-@pytest.mark.parametrize("distro", EXPECTED_PACKAGES)
-def test_ci_mode_installs_clients_but_no_servers_or_production(distro: str, tmp_path: Path) -> None:
+def _ci_install_packages(distro: str, tmp_path: Path) -> list[str]:
     result = run_installer_functions(
         f"""
 DISTRO={distro}
@@ -436,7 +407,18 @@ install_system_packages
     assert result.returncode == 0, result.stderr
     installs = [line for line in result.stdout.splitlines() if line.startswith("install:")]
     assert len(installs) == 1
-    assert installs[0].removeprefix("install:").split() == CI_EXPECTED_PACKAGES[distro]
+    return installs[0].removeprefix("install:").split()
+
+
+def test_ci_mode_installs_the_full_client_stack(tmp_path: Path) -> None:
+    assert _ci_install_packages("ubuntu", tmp_path) == CI_UBUNTU_PACKAGES
+
+
+@pytest.mark.parametrize("distro", EXPECTED_PACKAGES)
+def test_ci_mode_drops_servers_and_production(distro: str, tmp_path: Path) -> None:
+    installed = _ci_install_packages(distro, tmp_path)
+    assert "git" in installed
+    assert not (set(CI_DROPPED_PACKAGES[distro]) & set(installed))
 
 
 def test_sudoers_grant_falls_back_when_wildcards_are_rejected(tmp_path: Path) -> None:
