@@ -1,5 +1,5 @@
 import ky from 'ky'
-import { APP } from '@/scope'
+import { SCOPE, SCOPE_PARAM } from '@/scope'
 
 let redirectingToLogin = false
 
@@ -10,13 +10,13 @@ function redirectToLogin() {
   location.assign(`/login?redirect=${back}`)
 }
 
-// Every editor endpoint is scoped to one app via ?app=. ky merges these instance
+// Every editor endpoint is scoped to one app or site via ?app= / ?site=. ky merges these instance
 // searchParams onto each request, so we never rebuild the Request ourselves —
 // `new Request(url, request)` drops the body on some browsers, which silently
 // turned writes (save, discard, commit) into empty payloads.
 export const request = ky.create({
   prefix: '/api/v1/editor',
-  searchParams: { app: APP },
+  searchParams: { [SCOPE_PARAM]: SCOPE },
   throwHttpErrors: false,
   timeout: 60_000,
   hooks: {

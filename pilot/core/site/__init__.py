@@ -31,6 +31,10 @@ class Site:
         return self.bench.sites_path / self.config.name
 
     @property
+    def server_scripts_path(self) -> Path:
+        return self.path / "server_scripts"
+
+    @property
     def exists(self) -> bool:
         return (self.path / "site_config.json").exists()
 
@@ -240,6 +244,11 @@ class Site:
         from pilot.core.site.commands import SiteCommands
 
         return SiteCommands(self).has_pending_background_jobs()
+
+    def delete_server_script(self, name: str) -> None:
+        from pilot.core.site.commands import SiteCommands
+
+        SiteCommands(self).delete_server_script(name)
 
     def clear_cache(self) -> None:
         from pilot.core.site.commands import SiteCommands

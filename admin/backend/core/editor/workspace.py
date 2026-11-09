@@ -14,17 +14,22 @@ class EditorPathError(ValueError):
     """Requested path escapes the workspace root."""
 
 
+class EditorLockedError(ValueError):
+    """Operation would desync a file from the record that owns it."""
+
+
 class BinaryFileError(ValueError):
     """File is not valid UTF-8 text."""
 
 
 class EditorWorkspace:
-    """One installed app's directory, with path-safe file operations."""
+    """One app's directory or a site's server_scripts folder, with path-safe file operations."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, scope: str | None = None, isolated_git: bool = False) -> None:
         self.root = Path(root)
+        self.scope = scope or self.root.name
         self.root_real = self.root.resolve()
-        self.git = EditorGit(self.root)
+        self.git = EditorGit(self.root, isolated=isolated_git)
 
     def safe(self, rel: str) -> Path:
         """Resolve a client path against the root, rejecting traversal and symlink escapes."""

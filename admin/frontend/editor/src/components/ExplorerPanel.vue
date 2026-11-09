@@ -2,10 +2,10 @@
   <div class="flex h-full flex-col">
     <PanelHeader title="Explorer" @close="emit('close')" @contextmenu="onRootContext">
       <template #actions>
-        <button class="ed-icon-button" title="New file" @click="ops.newFile('')">
+        <button v-if="!IS_SITE_SCOPE" class="ed-icon-button" title="New file" @click="ops.newFile('')">
           <span class="lucide-file-plus h-4 w-4 text-current"></span>
         </button>
-        <button class="ed-icon-button" title="New folder" @click="ops.newFolder('')">
+        <button v-if="!IS_SITE_SCOPE" class="ed-icon-button" title="New folder" @click="ops.newFolder('')">
           <span class="lucide-folder-plus h-4 w-4 text-current"></span>
         </button>
         <button class="ed-icon-button" title="Refresh" @click="refresh">
@@ -51,6 +51,7 @@ import { useEditorStore } from '@/stores/editor'
 import { useGitStore } from '@/stores/git'
 import { useContextMenu } from '@/composables/useContextMenu'
 import { useFileOps } from '@/composables/useFileOps'
+import { IS_SITE_SCOPE } from '@/scope'
 
 const emit = defineEmits(['close'])
 
@@ -148,6 +149,7 @@ function onRootDrop(e) {
   tree.move(from, '').catch((err) => toast.error(err.message))
 }
 function onRootContext(e) {
+  if (IS_SITE_SCOPE) return
   open(e, [
     { label: 'New File', icon: 'lucide-file-plus', action: () => ops.newFile('') },
     { label: 'New Folder', icon: 'lucide-folder-plus', action: () => ops.newFolder('') },
