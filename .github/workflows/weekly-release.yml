@@ -1,0 +1,103 @@
+name: Weekly Release
+
+# Cuts the next vX.Y.N-pre-alpha release from develop every Tuesday.
+# The release stays a draft until its tarball is uploaded, because installs and
+# auto-updates take the newest published release and need pilot.tar.gz on it.
+on:
+  schedule:
+    # Tuesday 05:30 UTC (11:00 IST), ahead of the 00:00 UTC auto-update.
+    - cron: "30 5 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: weekly-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.repository == 'frappe/pilot' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      sha: ${{ steps.version.outputs.sha }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Pick the next version
+        id: version
+        run: |
+          previous=$(git tag --list 'v*-pre-alpha' --sort=-v:refname | head -n1)
+          if ! [[ "$previous" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)(-pre-alpha)$ ]]; then
+            echo "Could not parse the latest release tag: '$previous'." >&2
+            exit 1
+          fi
+          sha=$(git rev-parse HEAD)
+          if [ "$(git rev-list --count "$previous..$sha")" -eq 0 ]; then
+            echo "develop has no commits since $previous. Skipping the release."
+            exit 0
+          fi
+          tag="v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))${BASH_REMATCH[4]}"
+          echo "Releasing $tag at $sha (previous: $previous)."
+          {
+            echo "tag=$tag"
+            echo "sha=$sha"
+            echo "previous=$previous"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Require passing unit tests
+        if: steps.version.outputs.tag
+        env:
+          SHA: ${{ steps.version.outputs.sha }}
+        run: |
+          conclusion=$(gh run list --workflow unit-tests.yml --commit "$SHA" --event push \
+            --limit 1 --json conclusion --jq '.[0].conclusion // ""')
+          if [ "$conclusion" != "success" ]; then
+            echo "Unit Tests on $SHA is '${conclusion:-missing or still running}'. Not releasing." >&2
+            exit 1
+          fi
+
+      - name: Create draft release
+        if: steps.version.outputs.tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          SHA: ${{ steps.version.outputs.sha }}
+          PREVIOUS: ${{ steps.version.outputs.previous }}
+        run: |
+          # A failed earlier run can leave a draft with this tag behind.
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq ".[] | select(.draft and .tag_name == \"$TAG\") | .id" \
+            | xargs -r -I{} gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/{}"
+          gh release create "$TAG" --draft --prerelease --target "$SHA" \
+            --title "$TAG" --generate-notes --notes-start-tag "$PREVIOUS"
+
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.tag
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.prepare.outputs.tag }}
+      ref: ${{ needs.prepare.outputs.sha }}
+
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          gh release view "$TAG" --json assets --jq '.assets[].name' | grep -qx pilot.tar.gz
+          gh release edit "$TAG" --draft=false
