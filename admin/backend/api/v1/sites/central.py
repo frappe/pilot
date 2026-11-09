@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import TypedDict
 
@@ -25,6 +26,8 @@ class CentralAccountLink(TypedDict):
     end_subscription: str
 
 
+# A dotted method name only: `/`, `?` or `#` would let a path reach another Central endpoint.
+_METHOD_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+")
 _ALLOWED_PREFIXES = ("central.billing.api.billing_api.",)
 _ALLOWED_EXACT = frozenset(
     {
@@ -38,6 +41,8 @@ _ALLOWED_EXACT = frozenset(
 
 
 def _is_allowed(method_path: str) -> bool:
+    if not _METHOD_NAME.fullmatch(method_path):
+        return False
     return method_path in _ALLOWED_EXACT or any(method_path.startswith(p) for p in _ALLOWED_PREFIXES)
 
 
