@@ -4,8 +4,6 @@ from dataclasses import dataclass
 from typing import Annotated, ClassVar
 
 from pilot.commands import Arg, Command
-from pilot.config import BenchConfig
-from pilot.config.bench import FLAT_KEYS
 from pilot.exceptions import BenchError
 
 
@@ -34,6 +32,9 @@ class SetBenchConfigCommand(Command):
     value: Annotated[str, Arg(help="New value: true/false, a number, or a string.", metavar="value")]
 
     def run(self) -> None:
+        from pilot.config import BenchConfig
+        from pilot.config.bench import FLAT_KEYS
+
         if self.key not in FLAT_KEYS:
             raise BenchError(
                 f"Unknown bench setting '{self.key}'. Valid keys: {', '.join(sorted(FLAT_KEYS))}."
